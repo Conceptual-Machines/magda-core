@@ -149,7 +149,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
             auto drawRect = audioRect.reduced(0, 4);
             if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, displayStart,
-                                              displayEnd, waveColour, vertZoom);
+                                              displayEnd, waveColour, vertZoom, true);
             }
         }
     }
@@ -183,7 +183,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
             // Draw dimmer to indicate it's outside the loop
             auto dimColour = waveColour.withAlpha(0.4f);
             thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, remainingFileStart,
-                                          remainingFileEnd, dimColour, vertZoom);
+                                          remainingFileEnd, dimColour, vertZoom, true);
             if (clip.isReversed)
                 g.restoreState();
         }
@@ -469,7 +469,7 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
                 fileDuration > 0.0 ? juce::jmin(clippedSrcEnd, fileDuration) : clippedSrcEnd;
             if (finalSrcEnd > finalSrcStart) {
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, finalSrcStart,
-                                              finalSrcEnd, waveColour, vertZoom);
+                                              finalSrcEnd, waveColour, vertZoom, true);
             }
         }
     }
@@ -796,8 +796,11 @@ void WaveformGridComponent::setWarpMarkers(const std::vector<magda::WarpMarkerIn
 }
 
 void WaveformGridComponent::setScrollOffset(int x, int y) {
-    scrollOffsetX_ = x;
-    scrollOffsetY_ = y;
+    if (scrollOffsetX_ != x || scrollOffsetY_ != y) {
+        scrollOffsetX_ = x;
+        scrollOffsetY_ = y;
+        repaint();
+    }
 }
 
 void WaveformGridComponent::setMinimumHeight(int height) {
@@ -810,28 +813,37 @@ void WaveformGridComponent::setMinimumHeight(int height) {
 void WaveformGridComponent::updateGridSize() {
     const auto* clip = getClip();
     if (!clip) {
-        setSize(800, 400);  // Default size when no clip
+        virtualContentWidth_ = parentWidth_;
+        setSize(parentWidth_, 400);
         return;
     }
 
-    // Calculate required width based on mode
+    // Calculate total virtual content width based on mode
     double totalTime = 0.0;
     if (relativeMode_) {
-        // In relative mode, show full file duration + right padding
         totalTime = displayInfo_.fullSourceExtentSeconds + 10.0;
     } else {
-        // In absolute mode, show from 0 to clip end + both left and right padding
         double displayClipLength = displayInfo_.effectiveSourceExtentSeconds;
-        double leftPaddingTime =
-            std::max(10.0, clipStartTime_ * 0.5);  // At least 10s or half the clip start time
+        double leftPaddingTime = std::max(10.0, clipStartTime_ * 0.5);
         totalTime = clipStartTime_ + displayClipLength + 10.0 + leftPaddingTime;
     }
 
-    int requiredWidth =
-        static_cast<int>(totalTime * horizontalZoom_) + LEFT_PADDING + RIGHT_PADDING;
-    int requiredHeight = minimumHeight_;
+    virtualContentWidth_ =
+        static_cast<juce::int64>(totalTime * horizontalZoom_ + LEFT_PADDING + RIGHT_PADDING);
 
-    setSize(requiredWidth, requiredHeight);
+    // Component is always viewport-sized — scrolling is virtual
+    setSize(parentWidth_, minimumHeight_);
+}
+
+juce::int64 WaveformGridComponent::getVirtualContentWidth() const {
+    return virtualContentWidth_;
+}
+
+void WaveformGridComponent::setParentWidth(int w) {
+    if (parentWidth_ != w) {
+        parentWidth_ = juce::jmax(1, w);
+        updateGridSize();
+    }
 }
 
 // ============================================================================
@@ -839,11 +851,11 @@ void WaveformGridComponent::updateGridSize() {
 // ============================================================================
 
 int WaveformGridComponent::timeToPixel(double time) const {
-    return static_cast<int>(time * horizontalZoom_) + LEFT_PADDING;
+    return static_cast<int>(time * horizontalZoom_) + LEFT_PADDING - scrollOffsetX_;
 }
 
 double WaveformGridComponent::pixelToTime(int x) const {
-    return (x - LEFT_PADDING) / horizontalZoom_;
+    return (x + scrollOffsetX_ - LEFT_PADDING) / horizontalZoom_;
 }
 
 // ============================================================================
@@ -877,7 +889,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         if (shiftHeld && isInsideWaveform(x, *clip)) {
             dragMode_ = DragMode::Zoom;
             zoomDragStartY_ = event.y;
-            zoomDragAnchorX_ = x - scrollOffsetX_;  // viewport-relative
+            zoomDragAnchorX_ = x;  // already viewport-relative (component is viewport-sized)
             if (onZoomDrag)
                 onZoomDrag(0, zoomDragAnchorX_);  // Signal drag start
             return;
@@ -959,7 +971,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         // Inside waveform but not near edges — zoom drag
         dragMode_ = DragMode::Zoom;
         zoomDragStartY_ = event.y;
-        zoomDragAnchorX_ = x - scrollOffsetX_;  // viewport-relative
+        zoomDragAnchorX_ = x;  // already viewport-relative (component is viewport-sized)
         if (onZoomDrag)
             onZoomDrag(0, zoomDragAnchorX_);  // Signal drag start
         return;

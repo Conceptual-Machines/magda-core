@@ -33,38 +33,6 @@ void ZoomScrollBar::paint(juce::Graphics& g) {
     g.setColour(thumbColour);
     g.drawRoundedRectangle(thumbBounds.toFloat(), 3.0f, 1.0f);
 
-    // Draw resize handles (subtle lines at edges)
-    int thumbPrimarySize = getPrimarySize(thumbBounds);
-    if (thumbPrimarySize > MIN_THUMB_SIZE + EDGE_HANDLE_SIZE * 2) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
-
-        if (orientation == Orientation::Horizontal) {
-            // Left handle
-            int leftHandleX = thumbBounds.getX() + 3;
-            g.drawVerticalLine(leftHandleX, thumbBounds.getY() + 3, thumbBounds.getBottom() - 3);
-            g.drawVerticalLine(leftHandleX + 2, thumbBounds.getY() + 3,
-                               thumbBounds.getBottom() - 3);
-
-            // Right handle
-            int rightHandleX = thumbBounds.getRight() - 5;
-            g.drawVerticalLine(rightHandleX, thumbBounds.getY() + 3, thumbBounds.getBottom() - 3);
-            g.drawVerticalLine(rightHandleX + 2, thumbBounds.getY() + 3,
-                               thumbBounds.getBottom() - 3);
-        } else {
-            // Top handle
-            int topHandleY = thumbBounds.getY() + 3;
-            g.drawHorizontalLine(topHandleY, thumbBounds.getX() + 3, thumbBounds.getRight() - 3);
-            g.drawHorizontalLine(topHandleY + 2, thumbBounds.getX() + 3,
-                                 thumbBounds.getRight() - 3);
-
-            // Bottom handle
-            int bottomHandleY = thumbBounds.getBottom() - 5;
-            g.drawHorizontalLine(bottomHandleY, thumbBounds.getX() + 3, thumbBounds.getRight() - 3);
-            g.drawHorizontalLine(bottomHandleY + 2, thumbBounds.getX() + 3,
-                                 thumbBounds.getRight() - 3);
-        }
-    }
-
     // Draw label if set (fixed position on right/bottom)
     if (label.isNotEmpty()) {
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));

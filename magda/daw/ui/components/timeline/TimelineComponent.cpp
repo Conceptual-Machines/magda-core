@@ -12,9 +12,10 @@
 namespace magda {
 
 TimelineComponent::TimelineComponent() {
-    // Load configuration
+    // Load configuration, converting bars → seconds at default tempo
     auto& config = magda::Config::getInstance();
-    timelineLength = config.getDefaultTimelineLength();
+    TempoState defaultTempo;
+    timelineLength = defaultTempo.barsToTime(config.getDefaultTimelineLengthBars());
 
     setMouseCursor(juce::MouseCursor::NormalCursor);
     setWantsKeyboardFocus(false);

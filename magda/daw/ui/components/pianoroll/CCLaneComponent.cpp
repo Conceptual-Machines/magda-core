@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/FontManager.hpp"
 #include "VelocityLaneUtils.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
@@ -303,7 +304,7 @@ void CCLaneComponent::paintGrid(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND_ALT));
     g.fillRect(bounds);
 
-    g.setFont(juce::Font(9.0f));
+    g.setFont(FontManager::getInstance().getUIFont(9.0f));
     auto labelColour = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f);
     constexpr int labelMargin = 2;
     constexpr int labelWidth = 36;

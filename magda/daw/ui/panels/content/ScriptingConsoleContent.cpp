@@ -17,8 +17,7 @@ ScriptingConsoleContent::ScriptingConsoleContent() {
     // Output area (monospace font)
     outputArea_.setMultiLine(true);
     outputArea_.setReadOnly(true);
-    outputArea_.setFont(
-        juce::Font(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
+    outputArea_.setFont(FontManager::getInstance().getMonoFont(12.0f));
     outputArea_.setColour(juce::TextEditor::backgroundColourId,
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
     outputArea_.setColour(juce::TextEditor::textColourId,
@@ -28,8 +27,7 @@ ScriptingConsoleContent::ScriptingConsoleContent() {
     addAndMakeVisible(outputArea_);
 
     // Input box (monospace font)
-    inputBox_.setFont(
-        juce::Font(juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
+    inputBox_.setFont(FontManager::getInstance().getMonoFont(12.0f));
     inputBox_.setTextToShowWhenEmpty("> Enter command...", DarkTheme::getSecondaryTextColour());
     inputBox_.setColour(juce::TextEditor::backgroundColourId,
                         DarkTheme::getColour(DarkTheme::BACKGROUND));

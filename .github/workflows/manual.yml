@@ -1,0 +1,34 @@
+name: Deploy Manual
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'manual/**'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r manual/requirements.txt
+
+      - name: Build manual
+        run: mkdocs build --config-file manual/mkdocs.yml --site-dir ../site
+        working-directory: manual
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site

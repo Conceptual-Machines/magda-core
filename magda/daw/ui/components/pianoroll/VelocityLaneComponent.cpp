@@ -2,6 +2,7 @@
 
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "../../themes/FontManager.hpp"
 #include "VelocityLaneUtils.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
@@ -122,20 +123,27 @@ size_t VelocityLaneComponent::findNoteAtX(int x) const {
 
     double clickBeat = pixelToBeat(x);
 
-    // Search for a note that contains this beat
+    // Collect all notes at this beat position
+    size_t firstHit = SIZE_MAX;
     for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
         const auto& note = clip->midiNotes[i];
 
-        // In absolute mode, offset by clip start
         double noteStart = relativeMode_ ? note.startBeat : (clipStartBeats_ + note.startBeat);
         double noteEnd = noteStart + note.lengthBeats;
 
         if (clickBeat >= noteStart && clickBeat < noteEnd) {
-            return i;
+            // Prefer selected notes when multiple overlap
+            if (std::find(selectedNoteIndices_.begin(), selectedNoteIndices_.end(), i) !=
+                selectedNoteIndices_.end()) {
+                return i;
+            }
+            if (firstHit == SIZE_MAX) {
+                firstHit = i;
+            }
         }
     }
 
-    return SIZE_MAX;
+    return firstHit;
 }
 
 juce::Colour VelocityLaneComponent::getClipColour() const {
@@ -255,7 +263,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
 
     // Value labels on the left
     {
-        g.setFont(juce::Font(9.0f));
+        g.setFont(FontManager::getInstance().getUIFont(9.0f));
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.6f));
         constexpr int labelMargin = 2;
         constexpr int labelWidth = 24;
@@ -381,12 +389,18 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
             g.drawVerticalLine(centerX, static_cast<float>(barY) + circleRadius,
                                static_cast<float>(bottomY));
 
-            // Draw circle on top
+            // Draw circle on top — selected notes are larger and brighter
             bool isBeingDragged = isDragging_ && isPrimaryClip && i == draggingNoteIndex_;
-            g.setColour(isBeingDragged ? noteColour.brighter(0.5f) : noteColour);
-            g.fillEllipse(static_cast<float>(centerX) - circleRadius,
-                          static_cast<float>(barY) - circleRadius, circleRadius * 2.0f,
-                          circleRadius * 2.0f);
+            bool isSelected =
+                isPrimaryClip && std::find(selectedNoteIndices_.begin(), selectedNoteIndices_.end(),
+                                           i) != selectedNoteIndices_.end();
+            float radius = isSelected ? 4.5f : circleRadius;
+            auto circleColour = isBeingDragged ? noteColour.brighter(0.5f)
+                                : isSelected   ? noteColour.brighter(0.3f)
+                                               : noteColour;
+            g.setColour(circleColour);
+            g.fillEllipse(static_cast<float>(centerX) - radius, static_cast<float>(barY) - radius,
+                          radius * 2.0f, radius * 2.0f);
         }
     }
 

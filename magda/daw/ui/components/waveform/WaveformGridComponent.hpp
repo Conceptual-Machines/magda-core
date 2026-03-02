@@ -70,9 +70,19 @@ class WaveformGridComponent : public juce::Component {
     void setVerticalZoom(double zoom);
 
     /**
-     * @brief Set scroll offset for coordinate calculations
+     * @brief Set scroll offset for coordinate calculations (virtual scroll)
      */
     void setScrollOffset(int x, int y);
+
+    /**
+     * @brief Get the total virtual content width at current zoom
+     */
+    juce::int64 getVirtualContentWidth() const;
+
+    /**
+     * @brief Set the parent viewport width (component will be sized to this)
+     */
+    void setParentWidth(int w);
 
     /**
      * @brief Update grid size based on clip and zoom
@@ -197,6 +207,8 @@ class WaveformGridComponent : public juce::Component {
     double verticalZoom_ = 1.0;      // amplitude multiplier
     int scrollOffsetX_ = 0;
     int scrollOffsetY_ = 0;
+    juce::int64 virtualContentWidth_ = 0;
+    int parentWidth_ = 800;
 
     // Layout constants
     static constexpr int LEFT_PADDING = 10;

@@ -2,52 +2,95 @@
 
 #include "../../core/Config.hpp"
 #include "../themes/DarkTheme.hpp"
+#include "../themes/DialogLookAndFeel.hpp"
+#include "../themes/FontManager.hpp"
 
 namespace magda {
 
 ExportAudioDialog::ExportAudioDialog() {
+    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
+
     // Format selection
     formatLabel_.setText("Format:", juce::dontSendNotification);
-    formatLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    formatLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(formatLabel_);
 
     formatComboBox_.addItem("WAV 16-bit", 1);
     formatComboBox_.addItem("WAV 24-bit", 2);
     formatComboBox_.addItem("WAV 32-bit Float", 3);
     formatComboBox_.addItem("FLAC", 4);
-    formatComboBox_.setSelectedId(2, juce::dontSendNotification);  // Default to WAV 24-bit
+    // Restore saved format preference
+    auto& config = Config::getInstance();
+    auto savedFormat = config.getExportFormat();
+    int formatId = 2;  // Default WAV 24-bit
+    if (savedFormat == "WAV16")
+        formatId = 1;
+    else if (savedFormat == "WAV24")
+        formatId = 2;
+    else if (savedFormat == "WAV32")
+        formatId = 3;
+    else if (savedFormat == "FLAC")
+        formatId = 4;
+    formatComboBox_.setSelectedId(formatId, juce::dontSendNotification);
     formatComboBox_.onChange = [this]() { onFormatChanged(); };
     addAndMakeVisible(formatComboBox_);
 
     // Sample rate selection
     sampleRateLabel_.setText("Sample Rate:", juce::dontSendNotification);
-    sampleRateLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    sampleRateLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(sampleRateLabel_);
 
     sampleRateComboBox_.addItem("44.1 kHz", 1);
     sampleRateComboBox_.addItem("48 kHz", 2);
     sampleRateComboBox_.addItem("96 kHz", 3);
     sampleRateComboBox_.addItem("192 kHz", 4);
-    sampleRateComboBox_.setSelectedId(2, juce::dontSendNotification);  // Default to 48kHz
+    // Restore saved sample rate preference
+    double savedRate = config.getExportSampleRate();
+    int rateId = 2;  // Default 48kHz
+    if (savedRate == 44100.0)
+        rateId = 1;
+    else if (savedRate == 48000.0)
+        rateId = 2;
+    else if (savedRate == 96000.0)
+        rateId = 3;
+    else if (savedRate == 192000.0)
+        rateId = 4;
+    sampleRateComboBox_.setSelectedId(rateId, juce::dontSendNotification);
     addAndMakeVisible(sampleRateComboBox_);
 
     // Bit depth (read-only, updates based on format)
     bitDepthLabel_.setText("Bit Depth:", juce::dontSendNotification);
-    bitDepthLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    bitDepthLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(bitDepthLabel_);
 
-    bitDepthValueLabel_.setText("24-bit", juce::dontSendNotification);
-    bitDepthValueLabel_.setFont(juce::Font(14.0f));
+    bitDepthValueLabel_.setFont(FontManager::getInstance().getUIFont(14.0f));
     addAndMakeVisible(bitDepthValueLabel_);
+    updateBitDepthOptions();  // Set label based on restored format
 
     // Normalization option
     normalizeCheckbox_.setButtonText("Normalize to 0 dB (peak)");
     normalizeCheckbox_.setToggleState(false, juce::dontSendNotification);
     addAndMakeVisible(normalizeCheckbox_);
 
+    // Real-time render option
+    realTimeRenderCheckbox_.setButtonText("Real-time render (slower, avoids plugin glitches)");
+    realTimeRenderCheckbox_.setToggleState(false, juce::dontSendNotification);
+    addAndMakeVisible(realTimeRenderCheckbox_);
+
+    // Lead-in silence
+    leadInSilenceLabel_.setText("Lead-in Silence:", juce::dontSendNotification);
+    leadInSilenceLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    addAndMakeVisible(leadInSilenceLabel_);
+
+    leadInSilenceSlider_.setSliderStyle(juce::Slider::LinearBar);
+    leadInSilenceSlider_.setRange(0.0, 2.0, 0.1);
+    leadInSilenceSlider_.setValue(0.0, juce::dontSendNotification);
+    leadInSilenceSlider_.setTextValueSuffix(" s");
+    addAndMakeVisible(leadInSilenceSlider_);
+
     // Time range selection
     timeRangeLabel_.setText("Export Range:", juce::dontSendNotification);
-    timeRangeLabel_.setFont(juce::Font(14.0f, juce::Font::bold));
+    timeRangeLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(timeRangeLabel_);
 
     exportEntireSongButton_.setButtonText("Entire Song");
@@ -69,7 +112,13 @@ ExportAudioDialog::ExportAudioDialog() {
     exportButton_.setButtonText("Export");
     exportButton_.onClick = [this]() {
         if (onExport) {
-            onExport(getSettings());
+            auto settings = getSettings();
+            // Persist format and sample rate preferences
+            auto& cfg = Config::getInstance();
+            cfg.setExportFormat(settings.format.toStdString());
+            cfg.setExportSampleRate(settings.sampleRate);
+            cfg.save();
+            onExport(settings);
         }
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) {
             dw->exitModalState(0);
@@ -87,10 +136,12 @@ ExportAudioDialog::ExportAudioDialog() {
     addAndMakeVisible(cancelButton_);
 
     // Set preferred size
-    setSize(500, 380);
+    setSize(500, 450);
 }
 
-ExportAudioDialog::~ExportAudioDialog() = default;
+ExportAudioDialog::~ExportAudioDialog() {
+    setLookAndFeel(nullptr);
+}
 
 void ExportAudioDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
@@ -122,6 +173,17 @@ void ExportAudioDialog::resized() {
 
     // Normalization checkbox
     normalizeCheckbox_.setBounds(bounds.removeFromTop(24));
+    bounds.removeFromTop(5);
+
+    // Real-time render checkbox
+    realTimeRenderCheckbox_.setBounds(bounds.removeFromTop(24));
+    bounds.removeFromTop(10);
+
+    // Lead-in silence
+    auto leadInArea = bounds.removeFromTop(28);
+    leadInSilenceLabel_.setBounds(leadInArea.removeFromLeft(120));
+    leadInArea.removeFromLeft(10);
+    leadInSilenceSlider_.setBounds(leadInArea.removeFromLeft(80));
     bounds.removeFromTop(20);
 
     // Time range label
@@ -191,6 +253,9 @@ ExportAudioDialog::Settings ExportAudioDialog::getSettings() const {
     }
 
     settings.normalize = normalizeCheckbox_.getToggleState();
+    settings.realTimeRender = realTimeRenderCheckbox_.getToggleState();
+
+    settings.leadInSilence = leadInSilenceSlider_.getValue();
 
     // Determine export range
     if (exportTimeSelectionButton_.getToggleState()) {

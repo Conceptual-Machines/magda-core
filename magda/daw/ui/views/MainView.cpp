@@ -66,11 +66,12 @@ MainView::MainView(AudioEngine* audioEngine)
     // Load configuration
     auto& config = magda::Config::getInstance();
     config.load();
-    timelineLength = config.getDefaultTimelineLength();
+    timelineLength = config.getDefaultTimelineLengthBars() * 2.0;  // bars → seconds at 120 BPM
 
-    std::cout << "🎯 CONFIG: Timeline length=" << timelineLength << " seconds" << std::endl;
-    std::cout << "🎯 CONFIG: Default zoom view=" << config.getDefaultZoomViewDuration()
-              << " seconds" << std::endl;
+    std::cout << "🎯 CONFIG: Timeline length=" << config.getDefaultTimelineLengthBars() << " bars ("
+              << timelineLength << " seconds at 120 BPM)" << std::endl;
+    std::cout << "🎯 CONFIG: Default zoom view=" << config.getDefaultZoomViewBars() << " bars"
+              << std::endl;
 
     // Make this component focusable to receive keyboard events
     setWantsKeyboardFocus(true);
@@ -341,8 +342,8 @@ void MainView::setupComponents() {
     // Set up track synchronization between headers and content
     setupTrackSynchronization();
 
-    // Set initial timeline length and zoom
-    setTimelineLength(300.0);
+    // Set initial timeline length from config (bars → seconds at default 120 BPM)
+    setTimelineLength(magda::Config::getInstance().getDefaultTimelineLengthBars() * 2.0);
 }
 
 void MainView::setupCallbacks() {
@@ -599,6 +600,15 @@ void MainView::paint(juce::Graphics& g) {
         g.fillRect(cornerSeparatorLine);
     }
 
+    // Draw borders on both sides of the vertical zoom scrollbar (below corner toolbar)
+    {
+        auto sb = verticalZoomScrollBar->getBounds();
+        int top = getTimelineHeight();
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(sb.getX() - 1, top, 1, getHeight() - top);
+        g.fillRect(sb.getRight(), top, 1, getHeight() - top);
+    }
+
     // Draw resize handles
     paintResizeHandle(g);
     paintMasterResizeHandle(g);
@@ -616,8 +626,8 @@ void MainView::resized() {
     SideColumn headerColumn(!swapped);  // left by default
     SideColumn zoomColumn(swapped);     // right by default (opposite of header)
 
-    // Vertical zoom scroll bar
-    auto verticalScrollBarArea = zoomColumn.removeFrom(bounds, ZOOM_SCROLLBAR_SIZE);
+    // Vertical zoom scroll bar (+ 2px for border lines on each side)
+    auto verticalScrollBarArea = zoomColumn.removeFrom(bounds, ZOOM_SCROLLBAR_SIZE + 2);
 
     // Horizontal zoom scroll bar at the bottom
     auto horizontalScrollBarArea = bounds.removeFromBottom(ZOOM_SCROLLBAR_SIZE);
@@ -656,7 +666,7 @@ void MainView::resized() {
     verticalScrollBarArea.removeFromBottom(ZOOM_SCROLLBAR_SIZE + effectiveMasterHeight +
                                            effectiveResizeHandleHeight + effectiveAuxHeight);
     verticalScrollBarArea.removeFromTop(getTimelineHeight());  // Start below timeline
-    verticalZoomScrollBar->setBounds(verticalScrollBarArea);
+    verticalZoomScrollBar->setBounds(verticalScrollBarArea.reduced(1, 0));
 
     // Timeline viewport at the top - offset by track header width
     auto timelineArea = bounds.removeFromTop(getTimelineHeight());
@@ -664,10 +674,10 @@ void MainView::resized() {
     // Corner toolbar area above track headers — buttons left, axis labels right
     auto cornerArea = headerColumn.removeFrom(timelineArea, trackHeaderWidth);
     {
-        int btnSize = 22;
-        int gap = 2;
-        int sepGap = 4;  // extra gap between rows for separator
-        int margin = 4;
+        int btnSize = 24;
+        int gap = 6;
+        int sepGap = 8;
+        int margin = 8;
         int gridH = btnSize * 2 + sepGap;
         auto grid =
             cornerArea.withTrimmedLeft(margin).withTrimmedRight(margin).withSizeKeepingCentre(
@@ -677,29 +687,41 @@ void MainView::resized() {
         grid.removeFromTop(sepGap);
         auto botRow = grid.removeFromTop(btnSize);
 
+        // Invalidate old separator line position before updating
+        if (!cornerSeparatorLine.isEmpty())
+            repaint(cornerSeparatorLine.expanded(1));
+
         // Store separator line position (drawn in paint())
-        cornerSeparatorLine = juce::Rectangle<int>(topRow.getX(), topRow.getBottom() + sepGap / 2,
-                                                   topRow.getWidth(), 1);
+        // Span the full header column width (corner area + componentSpacing gap)
+        int sepY = topRow.getBottom() + sepGap / 2;
+        int lineX = swapped ? cornerArea.getX() - layout.componentSpacing : cornerArea.getX();
+        int lineW = cornerArea.getWidth() + layout.componentSpacing;
+        cornerSeparatorLine = juce::Rectangle<int>(lineX, sepY, lineW, 1);
 
-        // Top row: action buttons left, axis label right
-        zoomFitButton->setBounds(topRow.removeFromLeft(btnSize));
-        topRow.removeFromLeft(gap);
-        zoomSelButton->setBounds(topRow.removeFromLeft(btnSize));
-        topRow.removeFromLeft(gap);
-        zoomLoopButton->setBounds(topRow.removeFromLeft(btnSize));
-        topRow.removeFromLeft(gap);
-        addTrackButton->setBounds(topRow.removeFromLeft(btnSize));
-        hAxisIcon->setBounds(topRow.removeFromRight(btnSize));
+        // Top row: action buttons on inner side, axis label on outer side
+        SideColumn btnSide(!swapped);  // buttons: left normally, right when swapped
+        SideColumn axisSide(swapped);  // axis icons: right normally, left when swapped
 
-        // Bottom row: action buttons left, axis label right
-        trackSmallButton->setBounds(botRow.removeFromLeft(btnSize));
-        botRow.removeFromLeft(gap);
-        trackMediumButton->setBounds(botRow.removeFromLeft(btnSize));
-        botRow.removeFromLeft(gap);
-        trackLargeButton->setBounds(botRow.removeFromLeft(btnSize));
-        botRow.removeFromLeft(gap);
-        ioToggleButton->setBounds(botRow.removeFromLeft(btnSize));
-        vAxisIcon->setBounds(botRow.removeFromRight(btnSize));
+        zoomFitButton->setBounds(btnSide.removeFrom(topRow, btnSize));
+        btnSide.removeSpacing(topRow, gap);
+        zoomSelButton->setBounds(btnSide.removeFrom(topRow, btnSize));
+        btnSide.removeSpacing(topRow, gap);
+        zoomLoopButton->setBounds(btnSide.removeFrom(topRow, btnSize));
+        btnSide.removeSpacing(topRow, gap);
+        addTrackButton->setBounds(btnSide.removeFrom(topRow, btnSize));
+        axisSide.removeSpacing(topRow, gap);
+        hAxisIcon->setBounds(axisSide.removeFrom(topRow, btnSize));
+
+        // Bottom row: action buttons on inner side, axis label on outer side
+        trackSmallButton->setBounds(btnSide.removeFrom(botRow, btnSize));
+        btnSide.removeSpacing(botRow, gap);
+        trackMediumButton->setBounds(btnSide.removeFrom(botRow, btnSize));
+        btnSide.removeSpacing(botRow, gap);
+        trackLargeButton->setBounds(btnSide.removeFrom(botRow, btnSize));
+        btnSide.removeSpacing(botRow, gap);
+        ioToggleButton->setBounds(btnSide.removeFrom(botRow, btnSize));
+        axisSide.removeSpacing(botRow, gap);
+        vAxisIcon->setBounds(axisSide.removeFrom(botRow, btnSize));
     }
 
     // Add padding space for the resize handle
@@ -750,10 +772,10 @@ void MainView::resized() {
 
             if (availableWidth > 0) {
                 auto& config = magda::Config::getInstance();
-                double zoomViewDuration = config.getDefaultZoomViewDuration();
-                // horizontalZoom is ppb: convert duration to beats
+                int zoomViewBars = config.getDefaultZoomViewBars();
+                // horizontalZoom is ppb: convert bars to beats
                 const auto& st = timelineController->getState();
-                double viewBeats = st.secondsToBeats(zoomViewDuration);
+                double viewBeats = zoomViewBars * st.tempo.timeSignatureNumerator;
                 double zoomForDefaultView =
                     (viewBeats > 0) ? static_cast<double>(availableWidth) / viewBeats : 10.0;
 
@@ -763,8 +785,8 @@ void MainView::resized() {
                 // Dispatch initial zoom via controller
                 timelineController->dispatch(SetZoomCenteredEvent{zoomForDefaultView, 0.0});
 
-                std::cout << "🎯 INITIAL ZOOM: showing " << zoomViewDuration
-                          << " seconds, availableWidth=" << availableWidth
+                std::cout << "🎯 INITIAL ZOOM: showing " << zoomViewBars
+                          << " bars, availableWidth=" << availableWidth
                           << ", zoomForDefaultView=" << zoomForDefaultView << std::endl;
 
                 initialZoomSet = true;
@@ -1381,9 +1403,10 @@ void MainView::mouseExit([[maybe_unused]] const juce::MouseEvent& event) {
 // Resize handle helper methods
 juce::Rectangle<int> MainView::getResizeHandleArea() const {
     // Position the resize handle in the padding space between headers and content
-    // Starts from top of component (covering corner toolbar area) for seamless border
+    // Starts below the corner toolbar / timeline area
     auto& layout = LayoutConfig::getInstance();
-    return juce::Rectangle<int>(trackHeaderWidth, 0, layout.componentSpacing, getHeight());
+    int top = getTimelineHeight();
+    return juce::Rectangle<int>(trackHeaderWidth, top, layout.componentSpacing, getHeight() - top);
 }
 
 void MainView::paintResizeHandle(juce::Graphics& g) {

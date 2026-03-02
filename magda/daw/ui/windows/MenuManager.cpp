@@ -53,12 +53,33 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(NewProject, "New Project", true, false);
         menu.addSeparator();
         menu.addItem(OpenProject, "Open Project...", true, false);
+
+        // Open Recent submenu
+        {
+            juce::PopupMenu recentMenu;
+            auto recentPaths = Config::getInstance().getRecentProjects();
+            if (recentPaths.empty()) {
+                recentMenu.addItem(0, "(No Recent Projects)", false, false);
+            } else {
+                int idx = 0;
+                for (const auto& path : recentPaths) {
+                    if (idx >= 10)
+                        break;
+                    auto name = juce::File(juce::String(path)).getFileNameWithoutExtension();
+                    recentMenu.addItem(RecentProjectBase + idx, name, true, false);
+                    ++idx;
+                }
+                recentMenu.addSeparator();
+                recentMenu.addItem(RecentProjectBase + 10, "Clear Recent Projects", true, false);
+            }
+            menu.addSubMenu("Open Recent", recentMenu);
+        }
+
         menu.addItem(CloseProject, "Close Project", true, false);
         menu.addSeparator();
         menu.addItem(SaveProject, "Save Project", true, false);
         menu.addItem(SaveProjectAs, "Save Project As...", true, false);
         menu.addSeparator();
-        menu.addItem(ImportAudio, "Import Audio...", true, false);
         menu.addItem(ExportAudio, "Export Audio...", true, false);
 
 #if !JUCE_MAC
@@ -149,18 +170,16 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addSeparator();
         menu.addItem(PluginSettings, "Plugin Settings...", true, false);
     } else if (menuName == "View") {
-        menu.addItem(ToggleLeftPanel, "Show Left Panel", true, leftPanelVisible_);
-        menu.addItem(ToggleRightPanel, "Show Right Panel", true, rightPanelVisible_);
-        menu.addItem(ToggleBottomPanel, "Show Bottom Panel", true, bottomPanelVisible_);
-        menu.addSeparator();
         menu.addItem(ShowTrackManager, "Track Manager...", true, false);
         menu.addSeparator();
         bool headersOnRight = Config::getInstance().getScrollbarOnLeft();
-        menu.addItem(ToggleScrollbarPosition, "Headers on Right", true, headersOnRight);
+        menu.addItem(ToggleScrollbarPosition, "Headers on the Right", true, headersOnRight);
         menu.addSeparator();
         menu.addItem(ZoomIn, "Zoom In", true, false);
         menu.addItem(ZoomOut, "Zoom Out", true, false);
         menu.addItem(ZoomToFit, "Zoom to Fit", true, false);
+        menu.addItem(ZoomLoopToFit, "Zoom Loop to Fit", true, false);
+        menu.addItem(ZoomSelectionToFit, "Zoom Selection to Fit", true, false);
         menu.addSeparator();
         menu.addItem(ToggleFullscreen, "Enter Full Screen", true, false);
     } else if (menuName == "Transport") {
@@ -210,6 +229,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(BringAllToFront, "Bring All to Front", true, false);
     } else if (menuName == "Help") {
         menu.addItem(ShowHelp, "MAGDA Help", true, false);
+        menu.addItem(OpenManual, "Online Manual", true, false);
         menu.addSeparator();
         menu.addItem(About, "About MAGDA", true, false);
     }
@@ -341,6 +361,14 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             if (callbacks_.onZoomToFit)
                 callbacks_.onZoomToFit();
             break;
+        case ZoomLoopToFit:
+            if (callbacks_.onZoomLoopToFit)
+                callbacks_.onZoomLoopToFit();
+            break;
+        case ZoomSelectionToFit:
+            if (callbacks_.onZoomSelectionToFit)
+                callbacks_.onZoomSelectionToFit();
+            break;
         case ToggleFullscreen:
             if (callbacks_.onToggleFullscreen)
                 callbacks_.onToggleFullscreen();
@@ -433,12 +461,30 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             if (callbacks_.onShowHelp)
                 callbacks_.onShowHelp();
             break;
+        case OpenManual:
+            if (callbacks_.onOpenManual)
+                callbacks_.onOpenManual();
+            break;
         case About:
             if (callbacks_.onAbout)
                 callbacks_.onAbout();
             break;
 
         default:
+            // Recent projects (IDs 150-159)
+            if (menuItemID >= RecentProjectBase && menuItemID < RecentProjectBase + 10) {
+                int idx = menuItemID - RecentProjectBase;
+                auto recentPaths = Config::getInstance().getRecentProjects();
+                if (idx < static_cast<int>(recentPaths.size()) && callbacks_.onOpenRecentProject) {
+                    callbacks_.onOpenRecentProject(juce::String(recentPaths[idx]));
+                }
+            }
+            // Clear Recent Projects (ID 160)
+            else if (menuItemID == RecentProjectBase + 10) {
+                Config::getInstance().clearRecentProjects();
+                Config::getInstance().save();
+                menuItemsChanged();
+            }
             break;
     }
 }

@@ -13,6 +13,7 @@ using namespace magda;
 // Test fixture to ensure clean state and temp file cleanup between tests
 struct ProjectTestFixture {
     std::vector<juce::File> tempFiles;
+    std::vector<juce::File> tempDirs;
 
     ProjectTestFixture() {
         // Clear all singleton state before each test
@@ -22,6 +23,13 @@ struct ProjectTestFixture {
     }
 
     ~ProjectTestFixture() {
+        // Clean up temp directories (wrapper dirs created by saveProjectAs)
+        for (auto& dir : tempDirs) {
+            if (dir.isDirectory()) {
+                dir.deleteRecursively();
+            }
+        }
+
         // Clean up temp files (even if test fails)
         for (auto& file : tempFiles) {
             if (file.existsAsFile()) {
@@ -42,6 +50,29 @@ struct ProjectTestFixture {
         tempFiles.push_back(file);
         return file;
     }
+
+    // Returns the actual file path after saveProjectAs wraps it in a project directory.
+    // e.g., /tmp/foo.mgd -> /tmp/foo/foo.mgd
+    static juce::File wrappedPath(const juce::File& file) {
+        auto projectName = file.getFileNameWithoutExtension();
+        auto parentDir = file.getParentDirectory();
+        if (parentDir.getFileName() != projectName) {
+            auto wrapperDir = parentDir.getChildFile(projectName);
+            return wrapperDir.getChildFile(file.getFileName());
+        }
+        return file;
+    }
+
+    // Create a temp file and register its wrapper directory for cleanup
+    juce::File createTempProjectFile(const juce::String& suffix) {
+        auto file = juce::File::createTempFile(suffix);
+        tempFiles.push_back(file);
+        // Register the wrapper directory for cleanup
+        auto wrapperDir =
+            file.getParentDirectory().getChildFile(file.getFileNameWithoutExtension());
+        tempDirs.push_back(wrapperDir);
+        return file;
+    }
 };
 
 TEST_CASE("Project Serialization Basics", "[project][serialization]") {
@@ -51,15 +82,16 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
         auto& projectManager = ProjectManager::getInstance();
 
         // Create unique temp file for testing
-        auto tempFile = fixture.createTempFile(".mgd");
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
 
         // Save empty project
         bool saved = projectManager.saveProjectAs(tempFile);
         REQUIRE(saved == true);
-        REQUIRE(tempFile.existsAsFile() == true);
+        REQUIRE(actualFile.existsAsFile() == true);
 
         // Load it back
-        bool loaded = projectManager.loadProject(tempFile);
+        bool loaded = projectManager.loadProject(actualFile);
         REQUIRE(loaded == true);
 
         // Cleanup
@@ -109,7 +141,8 @@ TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
         REQUIRE(trackManager.getTracks().size() == 2);
 
         // Create unique temp file
-        auto tempFile = fixture.createTempFile(".mgd");
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
 
         // Save
         bool saved = projectManager.saveProjectAs(tempFile);
@@ -120,7 +153,7 @@ TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
         REQUIRE(trackManager.getTracks().size() == 0);
 
         // Load back
-        bool loaded = projectManager.loadProject(tempFile);
+        bool loaded = projectManager.loadProject(actualFile);
         REQUIRE(loaded == true);
 
         // Verify tracks restored
@@ -142,21 +175,23 @@ TEST_CASE("Project File Format", "[project][serialization][file]") {
     SECTION("File has .mgd extension") {
         auto& projectManager = ProjectManager::getInstance();
 
-        auto tempFile = fixture.createTempFile(".mgd");
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
 
         bool saved = projectManager.saveProjectAs(tempFile);
         REQUIRE(saved == true);
-        REQUIRE(tempFile.hasFileExtension(".mgd") == true);
+        REQUIRE(actualFile.hasFileExtension(".mgd") == true);
     }
 
     SECTION("File is not empty") {
         auto& projectManager = ProjectManager::getInstance();
 
-        auto tempFile = fixture.createTempFile(".mgd");
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
 
         bool saved = projectManager.saveProjectAs(tempFile);
         REQUIRE(saved == true);
-        REQUIRE(tempFile.getSize() > 0);
+        REQUIRE(actualFile.getSize() > 0);
     }
 }
 
@@ -178,7 +213,7 @@ TEST_CASE("Project Manager State", "[project][manager]") {
         REQUIRE(projectManager.hasUnsavedChanges() == true);
 
         // Save should clear dirty flag
-        auto tempFile = fixture.createTempFile(".mgd");
+        auto tempFile = fixture.createTempProjectFile(".mgd");
 
         projectManager.saveProjectAs(tempFile);
         REQUIRE(projectManager.hasUnsavedChanges() == false);
@@ -190,11 +225,12 @@ TEST_CASE("Project Manager State", "[project][manager]") {
     SECTION("getCurrentProjectFile returns correct file") {
         auto& projectManager = ProjectManager::getInstance();
 
-        auto tempFile = fixture.createTempFile(".mgd");
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
         projectManager.saveProjectAs(tempFile);
 
         auto currentFile = projectManager.getCurrentProjectFile();
-        REQUIRE(currentFile.getFullPathName() == tempFile.getFullPathName());
+        REQUIRE(currentFile.getFullPathName() == actualFile.getFullPathName());
     }
 
     SECTION("hasOpenProject tracks project lifecycle correctly") {
@@ -206,7 +242,8 @@ TEST_CASE("Project Manager State", "[project][manager]") {
         REQUIRE(projectManager.hasUnsavedChanges() == false);
 
         // Save project - should still be open
-        auto tempFile = fixture.createTempFile(".mgd");
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
         projectManager.saveProjectAs(tempFile);
         REQUIRE(projectManager.hasOpenProject() == true);
 
@@ -215,7 +252,7 @@ TEST_CASE("Project Manager State", "[project][manager]") {
         REQUIRE(projectManager.hasOpenProject() == false);
 
         // Load project - should be open again
-        projectManager.loadProject(tempFile);
+        projectManager.loadProject(actualFile);
         REQUIRE(projectManager.hasOpenProject() == true);
 
         // Close again
@@ -245,16 +282,18 @@ TEST_CASE("Error Handling", "[project][serialization][errors]") {
     SECTION("Save to invalid path fails gracefully") {
         auto& projectManager = ProjectManager::getInstance();
 
-        // Use platform-independent method to create invalid parent directory
-        auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
-        auto invalidParentDir = tempDir.getChildFile("nonexistent_parent_dir_for_project_test");
-        if (invalidParentDir.exists()) {
-            invalidParentDir.deleteRecursively();
-        }
-        auto invalidFile = invalidParentDir.getChildFile("test.mgd");
+        // Use a path inside a regular file (not a directory) so directory
+        // creation fails — you can't create a subdirectory inside a file.
+        auto blockingFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                .getChildFile("blocking_file_for_project_test");
+        blockingFile.create();
+        auto invalidFile = blockingFile.getChildFile("sub").getChildFile("test.mgd");
 
         bool saved = projectManager.saveProjectAs(invalidFile);
         REQUIRE(saved == false);
+
+        // Cleanup
+        blockingFile.deleteFile();
     }
 }
 
@@ -304,7 +343,8 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         clip->midiNotes.push_back(note2);
 
         // Save the project
-        auto tempFile = fixture.createTempFile(".mgd");
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
         bool saved = projectManager.saveProjectAs(tempFile);
         REQUIRE(saved == true);
 
@@ -317,7 +357,7 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         REQUIRE(clipManager.getClips().empty() == true);
 
         // Load the project back
-        bool loaded = projectManager.loadProject(tempFile);
+        bool loaded = projectManager.loadProject(actualFile);
         REQUIRE(loaded == true);
 
         // Verify the track was restored
@@ -356,7 +396,8 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         REQUIRE(rackId != INVALID_RACK_ID);
 
         // Save the project
-        auto tempFile = fixture.createTempFile(".mgd");
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
         bool saved = projectManager.saveProjectAs(tempFile);
         REQUIRE(saved == true);
 
@@ -364,7 +405,7 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         trackManager.clearAllTracks();
 
         // Load the project back
-        bool loaded = projectManager.loadProject(tempFile);
+        bool loaded = projectManager.loadProject(actualFile);
         REQUIRE(loaded == true);
 
         // Verify the track was restored
@@ -451,13 +492,14 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
         trackManager.addDeviceToTrack(trackId, device);
 
         auto& projectManager = ProjectManager::getInstance();
-        auto tempFile = fixture.createTempFile(".mgd");
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
         bool saved = projectManager.saveProjectAs(tempFile);
         REQUIRE(saved == true);
 
         trackManager.clearAllTracks();
 
-        bool loaded = projectManager.loadProject(tempFile);
+        bool loaded = projectManager.loadProject(actualFile);
         REQUIRE(loaded == true);
 
         const auto& tracks = trackManager.getTracks();
@@ -483,11 +525,12 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
         // pluginState is empty by default
         trackManager.addDeviceToTrack(trackId, device);
 
-        auto tempFile = fixture.createTempFile(".mgd");
+        auto tempFile = fixture.createTempProjectFile(".mgd");
+        auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
         REQUIRE(projectManager.saveProjectAs(tempFile) == true);
 
         trackManager.clearAllTracks();
-        REQUIRE(projectManager.loadProject(tempFile) == true);
+        REQUIRE(projectManager.loadProject(actualFile) == true);
 
         const auto& tracks = trackManager.getTracks();
         REQUIRE(tracks.size() == 1);

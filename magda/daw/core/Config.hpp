@@ -14,19 +14,19 @@ class Config {
   public:
     static Config& getInstance();
 
-    // Timeline Configuration
-    double getDefaultTimelineLength() const {
-        return defaultTimelineLength;
+    // Timeline Configuration (stored in bars)
+    int getDefaultTimelineLengthBars() const {
+        return defaultTimelineLengthBars;
     }
-    void setDefaultTimelineLength(double length) {
-        defaultTimelineLength = length;
+    void setDefaultTimelineLengthBars(int bars) {
+        defaultTimelineLengthBars = bars;
     }
 
-    double getDefaultZoomViewDuration() const {
-        return defaultZoomViewDuration;
+    int getDefaultZoomViewBars() const {
+        return defaultZoomViewBars;
     }
-    void setDefaultZoomViewDuration(double duration) {
-        defaultZoomViewDuration = duration;
+    void setDefaultZoomViewBars(int bars) {
+        defaultZoomViewBars = bars;
     }
 
     // Zoom Configuration
@@ -206,6 +206,15 @@ class Config {
         customPluginPaths = paths;
     }
 
+    // Recent Projects
+    std::vector<std::string> getRecentProjects() const {
+        return recentProjects;
+    }
+    void addRecentProject(const std::string& path);
+    void clearRecentProjects() {
+        recentProjects.clear();
+    }
+
     // Browser Favorites
     std::vector<std::string> getBrowserFavorites() const {
         return browserFavorites;
@@ -220,6 +229,21 @@ class Config {
     }
     void setBrowserDefaultDirectory(const std::string& dir) {
         browserDefaultDirectory = dir;
+    }
+
+    // Export Audio Configuration
+    std::string getExportFormat() const {
+        return exportFormat;
+    }
+    void setExportFormat(const std::string& format) {
+        exportFormat = format;
+    }
+
+    double getExportSampleRate() const {
+        return exportSampleRate;
+    }
+    void setExportSampleRate(double rate) {
+        exportSampleRate = rate;
     }
 
     // Render Configuration
@@ -291,9 +315,9 @@ class Config {
   private:
     Config() = default;
 
-    // Timeline settings
-    double defaultTimelineLength = 300.0;   // 5 minutes in seconds
-    double defaultZoomViewDuration = 60.0;  // Show 1 minute by default
+    // Timeline settings (in bars)
+    int defaultTimelineLengthBars = 256;  // ~512 seconds at 120 BPM
+    int defaultZoomViewBars = 32;         // ~64 seconds at 120 BPM
 
     // Zoom limits
     double minZoomLevel = 0.01;     // Minimum zoom level (allows extreme zoom out)
@@ -339,12 +363,19 @@ class Config {
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default
 
+    // Recent projects (most recent first, max 10)
+    std::vector<std::string> recentProjects;
+
     // Custom plugin paths
     std::vector<std::string> customPluginPaths;
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;
     std::string browserDefaultDirectory = "";  // empty = user home
+
+    // Export audio settings
+    std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC
+    double exportSampleRate = 48000.0;   // 44100, 48000, 96000, 192000
 
     // Render settings
     std::string renderFolder = "";  // Custom render output folder (empty = renders/ beside source)

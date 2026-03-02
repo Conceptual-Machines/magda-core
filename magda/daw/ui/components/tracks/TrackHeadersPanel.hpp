@@ -9,6 +9,7 @@
 
 #include "../../themes/MixerLookAndFeel.hpp"
 #include "../common/DraggableValueLabel.hpp"
+#include "../common/SideColumn.hpp"
 #include "../common/SvgButton.hpp"
 #include "../mixer/InputTypeSelector.hpp"
 #include "../mixer/RoutingSelector.hpp"
@@ -175,6 +176,9 @@ class TrackHeadersPanel : public juce::Component,
     // I/O routing visibility
     bool showIORouting_ = true;
 
+    // Header orientation (true = headers on right side of content)
+    bool headersOnRight_ = false;
+
     // Resize functionality
     bool isResizing = false;
     int resizingTrackIndex = -1;
@@ -227,6 +231,12 @@ class TrackHeadersPanel : public juce::Component,
     juce::Rectangle<int> getResizeHandleArea(int trackIndex) const;
     bool isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const;
     void updateTrackHeaderLayout();
+    void layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
+                           const SideColumn& outer);
+    void layoutControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
+                           const SideColumn& inner, int trackHeight);
+    void layoutVolPanAndButtons(TrackHeader& header, juce::Rectangle<int>& area,
+                                const SideColumn& inner, int gapOverride = -1);
 
     // Automation lane height helpers
     int getTrackTotalHeight(int trackIndex) const;

@@ -25,6 +25,8 @@ class AudioEngine;
  * - Real-time clip status indicators
  * - Mini mixer strip per track (fader, meter, M/S buttons)
  */
+class ClipSlotButton;
+
 class SessionView : public juce::Component,
                     private juce::ScrollBar::Listener,
                     public juce::FileDragAndDropTarget,
@@ -196,6 +198,7 @@ class SessionView : public juce::Component,
     void removeScene();
     void removeSceneAsync(int sceneIndex);
 
+    void wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, int sceneIndex);
     void onClipSlotClicked(int trackIndex, int sceneIndex);
     void onPlayButtonClicked(int trackIndex, int sceneIndex);
     void onSceneLaunched(int sceneIndex);

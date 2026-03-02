@@ -788,6 +788,20 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             return true;
         }
 
+        case play:
+            if (mainView) {
+                if (mainView->getTimelineController().getState().playhead.isPlaying)
+                    mainView->getTimelineController().dispatch(StopPlaybackEvent{});
+                else
+                    mainView->getTimelineController().dispatch(StartPlaybackEvent{});
+            }
+            return true;
+
+        case stop:
+            if (mainView)
+                mainView->getTimelineController().dispatch(StopPlaybackEvent{});
+            return true;
+
         default:
             return false;
     }
@@ -798,6 +812,17 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
     auto commandID = commandManager.getKeyMappings()->findCommandForKeyPress(key);
     if (commandID != 0) {
         return commandManager.invokeDirectly(commandID, false);
+    }
+
+    // Space: Toggle play/stop
+    if (key == juce::KeyPress::spaceKey) {
+        if (mainView) {
+            if (mainView->getTimelineController().getState().playhead.isPlaying)
+                mainView->getTimelineController().dispatch(StopPlaybackEvent{});
+            else
+                mainView->getTimelineController().dispatch(StartPlaybackEvent{});
+        }
+        return true;
     }
 
     // ESC: Exit link mode and clear edit cursor

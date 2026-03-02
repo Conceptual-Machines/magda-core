@@ -16,7 +16,7 @@ magda::MidiBridge* DebugDialog::midiBridge_ = nullptr;
 static juce::String midiNoteToName(int noteNumber) {
     static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
                                       "F#", "G",  "G#", "A",  "A#", "B"};
-    int octave = (noteNumber / 12) - 1;
+    int octave = (noteNumber / 12) - 2;
     return juce::String(noteNames[noteNumber % 12]) + juce::String(octave);
 }
 
@@ -122,8 +122,7 @@ class DebugDialog::Content : public juce::Component, private juce::Timer {
         midiLog_.setReadOnly(true);
         midiLog_.setScrollbarsShown(true);
         midiLog_.setCaretVisible(false);
-        midiLog_.setFont(
-            juce::Font(juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
+        midiLog_.setFont(FontManager::getInstance().getMonoFont(11.0f));
         midiLog_.setColour(juce::TextEditor::backgroundColourId,
                            DarkTheme::getColour(DarkTheme::BACKGROUND));
         midiLog_.setColour(juce::TextEditor::textColourId,

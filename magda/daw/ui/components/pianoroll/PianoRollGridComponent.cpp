@@ -636,6 +636,24 @@ bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
+    // Cmd+D: Duplicate selected notes (consume key to prevent clip duplication)
+    if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'D') {
+        if (clipId_ == INVALID_CLIP_ID)
+            return true;
+
+        std::vector<size_t> selectedIndices;
+        for (const auto& nc : noteComponents_) {
+            if (nc->isSelected() && nc->getSourceClipId() == clipId_) {
+                selectedIndices.push_back(nc->getNoteIndex());
+            }
+        }
+
+        if (!selectedIndices.empty() && onDuplicateNotes) {
+            onDuplicateNotes(clipId_, selectedIndices);
+        }
+        return true;
+    }
+
     // M2: Delete/Backspace — Delete all selected notes
     if (key.getKeyCode() == juce::KeyPress::deleteKey ||
         key.getKeyCode() == juce::KeyPress::backspaceKey) {

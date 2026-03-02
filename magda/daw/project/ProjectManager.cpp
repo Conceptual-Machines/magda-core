@@ -92,14 +92,30 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     if (onBeforeSave)
         onBeforeSave();
 
+    // Ensure the .mgd file lives inside a wrapper folder named after the project.
+    // If the user picked /path/to/MyProject.mgd, wrap it as /path/to/MyProject/MyProject.mgd.
+    // If it's already inside a matching folder, use it as-is.
+    auto actualFile = file;
+    auto projectName = file.getFileNameWithoutExtension();
+    auto parentDir = file.getParentDirectory();
+
+    if (parentDir.getFileName() != projectName) {
+        auto wrapperDir = parentDir.getChildFile(projectName);
+        if (!wrapperDir.createDirectory()) {
+            lastError_ = "Failed to create project directory: " + wrapperDir.getFullPathName();
+            return false;
+        }
+        actualFile = wrapperDir.getChildFile(file.getFileName());
+    }
+
     // Prepare updated project info without mutating currentProject_ yet
     ProjectInfo newProject = currentProject_;
-    newProject.filePath = file.getFullPathName();
-    newProject.name = file.getFileNameWithoutExtension();
+    newProject.filePath = actualFile.getFullPathName();
+    newProject.name = projectName;
     newProject.touch();
 
     // Save to file
-    if (!ProjectSerializer::saveToFile(file, newProject)) {
+    if (!ProjectSerializer::saveToFile(actualFile, newProject)) {
         lastError_ = "Failed to save project: " + ProjectSerializer::getLastError();
         return false;
     }
@@ -107,13 +123,13 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     // Commit updated state only after successful save
     const bool wasOpen = isProjectOpen_;
     currentProject_ = std::move(newProject);
-    currentFile_ = file;
+    currentFile_ = actualFile;
     isProjectOpen_ = true;
 
     // Set up permanent media directory beside the project file
     auto oldMediaDir = mediaDirectory_;
-    juce::String mediaDirName = file.getFileNameWithoutExtension() + "_Media";
-    mediaDirectory_ = file.getParentDirectory().getChildFile(mediaDirName);
+    juce::String mediaDirName = actualFile.getFileNameWithoutExtension() + "_Media";
+    mediaDirectory_ = actualFile.getParentDirectory().getChildFile(mediaDirName);
     ensureMediaSubdirectories(mediaDirectory_);
 
     // Migrate files from temp directory if needed

@@ -129,7 +129,8 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     }
 
     // Center the view on middle C (C4)
-    void centerOnMiddleC();
+    void centerOnNote(int noteNumber);
+    void centerOnNotes();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PianoRollContent)
 };

@@ -24,6 +24,8 @@ class ExportAudioDialog : public juce::Component {
         juce::String format;  // "WAV16", "WAV24", "WAV32", "FLAC"
         double sampleRate = 48000.0;
         bool normalize = false;
+        bool realTimeRender = false;
+        double leadInSilence = 0.0;  // Seconds of silence before audio (0-2s)
         ExportRange exportRange = ExportRange::EntireSong;
     };
 
@@ -66,6 +68,13 @@ class ExportAudioDialog : public juce::Component {
 
     // Normalization option
     juce::ToggleButton normalizeCheckbox_;
+
+    // Real-time render option
+    juce::ToggleButton realTimeRenderCheckbox_;
+
+    // Lead-in silence
+    juce::Label leadInSilenceLabel_;
+    juce::Slider leadInSilenceSlider_;
 
     // Time range options
     juce::Label timeRangeLabel_;

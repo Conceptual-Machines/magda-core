@@ -79,6 +79,7 @@ class ClipSlotButton : public juce::TextButton {
     std::function<void()> onCopyClip;
     std::function<void()> onCutClip;
     std::function<void()> onPasteClip;
+    std::function<void()> onDuplicateClip;
     std::function<void()> onAddScene;
     std::function<void()> onRemoveScene;
 
@@ -128,6 +129,7 @@ class ClipSlotButton : public juce::TextButton {
             if (hasClip) {
                 menu.addItem(5, "Copy");
                 menu.addItem(6, "Cut");
+                menu.addItem(8, "Duplicate");
             }
             bool hasClipboard = ClipManager::getInstance().hasClipsInClipboard();
             menu.addItem(7, "Paste", hasClipboard);
@@ -155,6 +157,8 @@ class ClipSlotButton : public juce::TextButton {
                     safeThis->onCutClip();
                 else if (result == 7 && safeThis->onPasteClip)
                     safeThis->onPasteClip();
+                else if (result == 8 && safeThis->onDuplicateClip)
+                    safeThis->onDuplicateClip();
             });
             return;
         }
@@ -256,14 +260,14 @@ class ClipSlotButton : public juce::TextButton {
             if (isMidiClip)
                 textArea.removeFromRight(16);  // Reserve space for M badge
             g.setColour(findColour(juce::TextButton::textColourOffId));
-            g.setFont(juce::Font(juce::FontOptions(9.0f)));
+            g.setFont(FontManager::getInstance().getUIFont(9.0f));
             g.drawText(getButtonText(), textArea, juce::Justification::centredLeft, true);
 
             // Draw "M" badge for MIDI clips
             if (isMidiClip) {
                 auto badgeArea = getLocalBounds().removeFromRight(16).removeFromTop(14);
                 g.setColour(juce::Colours::white.withAlpha(0.8f));
-                g.setFont(juce::Font(10.0f, juce::Font::bold));
+                g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
                 g.drawText("M", badgeArea, juce::Justification::centred, false);
             }
         }
@@ -1510,7 +1514,7 @@ SessionView::SessionView() {
 
     // Create drag ghost label for file drag preview (added to grid content)
     dragGhostLabel_ = std::make_unique<juce::Label>();
-    dragGhostLabel_->setFont(juce::Font(11.0f, juce::Font::bold));
+    dragGhostLabel_->setFont(FontManager::getInstance().getUIFontBold(11.0f));
     dragGhostLabel_->setJustificationType(juce::Justification::centred);
     dragGhostLabel_->setColour(juce::Label::backgroundColourId,
                                DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
@@ -1767,55 +1771,7 @@ void SessionView::rebuildTracks() {
             slot->setColour(juce::TextButton::textColourOffId,
                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
 
-            int trackIndex = track;
-            int sceneIndex = scene;
-
-            slot->onSingleClick = [this, trackIndex, sceneIndex]() {
-                onClipSlotClicked(trackIndex, sceneIndex);
-            };
-            slot->onPlayButtonClick = [this, trackIndex, sceneIndex]() {
-                onPlayButtonClicked(trackIndex, sceneIndex);
-            };
-            slot->onDoubleClick = [this, trackIndex, sceneIndex]() {
-                openClipEditor(trackIndex, sceneIndex);
-            };
-            slot->onCreateMidiClip = [this, trackIndex, sceneIndex]() {
-                onCreateMidiClipClicked(trackIndex, sceneIndex);
-            };
-            slot->onDeleteClip = [this, trackIndex, sceneIndex]() {
-                TrackId tId = visibleTrackIds_[trackIndex];
-                ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
-                if (cId != INVALID_CLIP_ID) {
-                    UndoManager::getInstance().executeCommand(
-                        std::make_unique<DeleteClipCommand>(cId));
-                }
-            };
-            slot->onCopyClip = [this, trackIndex, sceneIndex]() {
-                TrackId tId = visibleTrackIds_[trackIndex];
-                ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
-                if (cId != INVALID_CLIP_ID) {
-                    ClipManager::getInstance().copyToClipboard({cId});
-                }
-            };
-            slot->onCutClip = [this, trackIndex, sceneIndex]() {
-                TrackId tId = visibleTrackIds_[trackIndex];
-                ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
-                if (cId != INVALID_CLIP_ID) {
-                    ClipManager::getInstance().copyToClipboard({cId});
-                    UndoManager::getInstance().executeCommand(
-                        std::make_unique<DeleteClipCommand>(cId));
-                }
-            };
-            slot->onPasteClip = [this, trackIndex, sceneIndex]() {
-                if (!ClipManager::getInstance().hasClipsInClipboard())
-                    return;
-                TrackId tId = visibleTrackIds_[trackIndex];
-                auto cmd =
-                    std::make_unique<PasteClipCommand>(0.0, tId, ClipView::Session, sceneIndex);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-            };
-            slot->onAddScene = [this]() { addScene(); };
-            slot->onRemoveScene = [this]() { removeScene(); };
+            wireClipSlotCallbacks(*slot, track, scene);
 
             gridContent->addAndMakeVisible(*slot);
             trackSlots.push_back(std::move(slot));
@@ -2230,50 +2186,7 @@ void SessionView::addScene() {
         slot->setColour(juce::TextButton::textColourOffId,
                         DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
 
-        int trackIndex = track;
-        slot->onSingleClick = [this, trackIndex, sceneIndex]() {
-            onClipSlotClicked(trackIndex, sceneIndex);
-        };
-        slot->onPlayButtonClick = [this, trackIndex, sceneIndex]() {
-            onPlayButtonClicked(trackIndex, sceneIndex);
-        };
-        slot->onDoubleClick = [this, trackIndex, sceneIndex]() {
-            openClipEditor(trackIndex, sceneIndex);
-        };
-        slot->onCreateMidiClip = [this, trackIndex, sceneIndex]() {
-            onCreateMidiClipClicked(trackIndex, sceneIndex);
-        };
-        slot->onDeleteClip = [this, trackIndex, sceneIndex]() {
-            TrackId tId = visibleTrackIds_[trackIndex];
-            ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
-            if (cId != INVALID_CLIP_ID) {
-                UndoManager::getInstance().executeCommand(std::make_unique<DeleteClipCommand>(cId));
-            }
-        };
-        slot->onCopyClip = [this, trackIndex, sceneIndex]() {
-            TrackId tId = visibleTrackIds_[trackIndex];
-            ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
-            if (cId != INVALID_CLIP_ID) {
-                ClipManager::getInstance().copyToClipboard({cId});
-            }
-        };
-        slot->onCutClip = [this, trackIndex, sceneIndex]() {
-            TrackId tId = visibleTrackIds_[trackIndex];
-            ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
-            if (cId != INVALID_CLIP_ID) {
-                ClipManager::getInstance().copyToClipboard({cId});
-                UndoManager::getInstance().executeCommand(std::make_unique<DeleteClipCommand>(cId));
-            }
-        };
-        slot->onPasteClip = [this, trackIndex, sceneIndex]() {
-            if (!ClipManager::getInstance().hasClipsInClipboard())
-                return;
-            TrackId tId = visibleTrackIds_[trackIndex];
-            auto cmd = std::make_unique<PasteClipCommand>(0.0, tId, ClipView::Session, sceneIndex);
-            UndoManager::getInstance().executeCommand(std::move(cmd));
-        };
-        slot->onAddScene = [this]() { addScene(); };
-        slot->onRemoveScene = [this]() { removeScene(); };
+        wireClipSlotCallbacks(*slot, track, sceneIndex);
 
         gridContent->addAndMakeVisible(*slot);
         clipSlots[track].push_back(std::move(slot));
@@ -2360,6 +2273,70 @@ void SessionView::removeSceneAsync(int sceneIndex) {
 
     resized();
     updateAllClipSlots();
+}
+
+void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, int sceneIndex) {
+    slot.onSingleClick = [this, trackIndex, sceneIndex]() {
+        onClipSlotClicked(trackIndex, sceneIndex);
+    };
+    slot.onPlayButtonClick = [this, trackIndex, sceneIndex]() {
+        onPlayButtonClicked(trackIndex, sceneIndex);
+    };
+    slot.onDoubleClick = [this, trackIndex, sceneIndex]() {
+        openClipEditor(trackIndex, sceneIndex);
+    };
+    slot.onCreateMidiClip = [this, trackIndex, sceneIndex]() {
+        onCreateMidiClipClicked(trackIndex, sceneIndex);
+    };
+    slot.onDeleteClip = [this, trackIndex, sceneIndex]() {
+        TrackId tId = visibleTrackIds_[trackIndex];
+        ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
+        if (cId != INVALID_CLIP_ID) {
+            UndoManager::getInstance().executeCommand(std::make_unique<DeleteClipCommand>(cId));
+        }
+    };
+    slot.onCopyClip = [this, trackIndex, sceneIndex]() {
+        TrackId tId = visibleTrackIds_[trackIndex];
+        ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
+        if (cId != INVALID_CLIP_ID) {
+            ClipManager::getInstance().copyToClipboard({cId});
+        }
+    };
+    slot.onCutClip = [this, trackIndex, sceneIndex]() {
+        TrackId tId = visibleTrackIds_[trackIndex];
+        ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
+        if (cId != INVALID_CLIP_ID) {
+            ClipManager::getInstance().copyToClipboard({cId});
+            UndoManager::getInstance().executeCommand(std::make_unique<DeleteClipCommand>(cId));
+        }
+    };
+    slot.onPasteClip = [this, trackIndex, sceneIndex]() {
+        if (!ClipManager::getInstance().hasClipsInClipboard())
+            return;
+        TrackId tId = visibleTrackIds_[trackIndex];
+        auto cmd = std::make_unique<PasteClipCommand>(0.0, tId, ClipView::Session, sceneIndex);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
+    slot.onDuplicateClip = [this, trackIndex, sceneIndex]() {
+        TrackId tId = visibleTrackIds_[trackIndex];
+        ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
+        if (cId != INVALID_CLIP_ID) {
+            int targetScene = sceneIndex + 1;
+            if (targetScene >= numScenes_)
+                addScene();
+            if (ClipManager::getInstance().getClipInSlot(tId, targetScene) != INVALID_CLIP_ID)
+                return;
+            auto cmd = std::make_unique<DuplicateClipCommand>(cId);
+            auto* cmdPtr = cmd.get();
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            ClipId newClipId = cmdPtr->getDuplicatedClipId();
+            if (newClipId != INVALID_CLIP_ID) {
+                ClipManager::getInstance().setClipSceneIndex(newClipId, targetScene);
+            }
+        }
+    };
+    slot.onAddScene = [this]() { addScene(); };
+    slot.onRemoveScene = [this]() { removeScene(); };
 }
 
 void SessionView::onClipSlotClicked(int trackIndex, int sceneIndex) {

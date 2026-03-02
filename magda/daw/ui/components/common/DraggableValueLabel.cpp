@@ -43,8 +43,11 @@ juce::String DraggableValueLabel::formatValue(double val) const {
             if (val <= minValue_ + 0.01) {
                 return "-inf";
             }
-            // Convert linear to dB if needed, or just format if already dB
-            juce::String sign = val >= 0 ? "+" : "";
+            // Snap near-zero to exact zero to avoid "+0.0" / "-0.0"
+            if (std::abs(val) < 0.05) {
+                return "0.0";
+            }
+            juce::String sign = val > 0 ? "+" : "";
             return sign + juce::String(val, 1);
         }
 
@@ -75,7 +78,7 @@ juce::String DraggableValueLabel::formatValue(double val) const {
             noteNumber = juce::jlimit(0, 127, noteNumber);
             static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
                                               "F#", "G",  "G#", "A",  "A#", "B"};
-            int octave = (noteNumber / 12) - 1;
+            int octave = (noteNumber / 12) - 2;
             int noteIndex = noteNumber % 12;
             return juce::String(noteNames[noteIndex]) + juce::String(octave);
         }

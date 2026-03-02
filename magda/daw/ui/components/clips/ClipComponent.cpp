@@ -1154,6 +1154,35 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 double lengthBeats = dragStartLength_ * tempoBPM / 60.0;
                 int newWidth = static_cast<int>(lengthBeats * pixelsPerBeat);
                 setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
+
+                // Show ghost on target track when dragging across tracks
+                auto screenPos = e.getScreenPosition();
+                auto parentPos = parentPanel_->getScreenBounds().getPosition();
+                int localY = screenPos.y - parentPos.y;
+                int trackIndex = parentPanel_->getTrackIndexAtY(localY);
+
+                if (trackIndex >= 0) {
+                    auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
+                        ViewModeController::getInstance().getViewMode());
+
+                    if (trackIndex < static_cast<int>(visibleTracks.size()) &&
+                        visibleTracks[trackIndex] != dragStartTrackId_) {
+                        // Over a different track — show ghost
+                        int targetY = parentPanel_->getTrackYPosition(trackIndex);
+                        int targetH = parentPanel_->getTrackTotalHeight(trackIndex);
+                        const auto* clip = getClipInfo();
+                        juce::Rectangle<int> ghostBounds(newX, targetY, juce::jmax(10, newWidth),
+                                                         targetH);
+                        parentPanel_->setClipGhost(clipId_, ghostBounds,
+                                                   clip ? clip->colour : juce::Colours::grey);
+                    } else {
+                        // Back on source track — clear ghost
+                        parentPanel_->clearClipGhost(clipId_);
+                    }
+                } else {
+                    // Outside any track — clear ghost
+                    parentPanel_->clearClipGhost(clipId_);
+                }
             }
             break;
         }
@@ -1555,6 +1584,11 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     isDuplicating_ = false;
                     duplicateClipId_ = INVALID_CLIP_ID;
                 } else {
+                    // Clear cross-track ghost before committing
+                    if (parentPanel_) {
+                        parentPanel_->clearClipGhost(clipId_);
+                    }
+
                     // Normal move: update original clip position
                     if (onClipMoved) {
                         onClipMoved(clipId_, finalStartTime);

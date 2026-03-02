@@ -1,5 +1,6 @@
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../dialogs/AboutDialog.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/PluginSettingsDialog.hpp"
@@ -10,6 +11,7 @@
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "MainWindow.hpp"
+#include "MenuManager.hpp"
 #include "core/Config.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -86,7 +88,7 @@ void MainWindow::setupMenuCallbacks() {
                                                info.loopStartBeats, info.loopEndBeats);
                     }
                 },
-                [this](bool success, const juce::String& error) {
+                [this, file](bool success, const juce::String& error) {
                     // Hide loading overlay
                     if (mainComponent)
                         mainComponent->hideLoadingMessage();
@@ -94,9 +96,52 @@ void MainWindow::setupMenuCallbacks() {
                     if (!success) {
                         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                                "Open Project", error);
+                    } else {
+                        auto& config = Config::getInstance();
+                        config.addRecentProject(file.getFullPathName().toStdString());
+                        config.save();
+                        MenuManager::getInstance().menuItemsChanged();
                     }
                 });
         });
+    };
+
+    callbacks.onOpenRecentProject = [this](const juce::String& path) {
+        juce::File file(path);
+        if (!file.existsAsFile()) {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Open Recent",
+                                                   "Project file not found:\n" + path);
+            return;
+        }
+
+        if (mainComponent)
+            mainComponent->showLoadingMessage("Loading project...");
+
+        auto& projectManager = ProjectManager::getInstance();
+        projectManager.loadProjectAsync(
+            file,
+            [this](const ProjectInfo& info) {
+                if (mainComponent && mainComponent->mainView) {
+                    auto& tc = mainComponent->mainView->getTimelineController();
+                    tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
+                                           info.timeSignatureDenominator, info.loopEnabled,
+                                           info.loopStartBeats, info.loopEndBeats);
+                }
+            },
+            [this, file](bool success, const juce::String& error) {
+                if (mainComponent)
+                    mainComponent->hideLoadingMessage();
+
+                if (!success) {
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                           "Open Recent", error);
+                } else {
+                    auto& config = Config::getInstance();
+                    config.addRecentProject(file.getFullPathName().toStdString());
+                    config.save();
+                    MenuManager::getInstance().menuItemsChanged();
+                }
+            });
     };
 
     callbacks.onCloseProject = [this]() {
@@ -154,6 +199,11 @@ void MainWindow::setupMenuCallbacks() {
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::AlertWindow::WarningIcon, "Save Project As",
                         "Failed to save project: " + projectManager.getLastError());
+                } else {
+                    auto& config = Config::getInstance();
+                    config.addRecentProject(file.getFullPathName().toStdString());
+                    config.save();
+                    MenuManager::getInstance().menuItemsChanged();
                 }
             });
             return;
@@ -202,6 +252,11 @@ void MainWindow::setupMenuCallbacks() {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::WarningIcon, "Save Project As",
                     "Failed to save project: " + projectManager.getLastError());
+            } else {
+                auto& config = Config::getInstance();
+                config.addRecentProject(file.getFullPathName().toStdString());
+                config.save();
+                MenuManager::getInstance().menuItemsChanged();
             }
         });
     };
@@ -463,23 +518,46 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onZoomIn = [this]() {
-        // TODO: Implement zoom in
         if (mainComponent && mainComponent->mainView) {
-            // mainComponent->mainView->zoomIn();
+            auto& tc = mainComponent->mainView->getTimelineController();
+            double currentZoom = mainComponent->mainView->getHorizontalZoom();
+            tc.dispatch(SetZoomEvent{currentZoom * 1.25});
         }
     };
 
     callbacks.onZoomOut = [this]() {
-        // TODO: Implement zoom out
         if (mainComponent && mainComponent->mainView) {
-            // mainComponent->mainView->zoomOut();
+            auto& tc = mainComponent->mainView->getTimelineController();
+            double currentZoom = mainComponent->mainView->getHorizontalZoom();
+            tc.dispatch(SetZoomEvent{currentZoom / 1.25});
         }
     };
 
     callbacks.onZoomToFit = [this]() {
-        // TODO: Implement zoom to fit
         if (mainComponent && mainComponent->mainView) {
-            // mainComponent->mainView->zoomToFit();
+            auto& tc = mainComponent->mainView->getTimelineController();
+            double length = tc.getState().timelineLength;
+            tc.dispatch(ZoomToFitEvent{0.0, length});
+        }
+    };
+
+    callbacks.onZoomLoopToFit = [this]() {
+        if (mainComponent && mainComponent->mainView) {
+            auto& tc = mainComponent->mainView->getTimelineController();
+            const auto& loop = tc.getState().loop;
+            if (loop.isValid() && loop.enabled) {
+                tc.dispatch(ZoomToFitEvent{loop.startTime, loop.endTime});
+            }
+        }
+    };
+
+    callbacks.onZoomSelectionToFit = [this]() {
+        if (mainComponent && mainComponent->mainView) {
+            auto& tc = mainComponent->mainView->getTimelineController();
+            const auto& sel = tc.getState().selection;
+            if (sel.isActive()) {
+                tc.dispatch(ZoomToFitEvent{sel.startTime, sel.endTime});
+            }
         }
     };
 
@@ -488,6 +566,8 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onToggleScrollbarPosition = [this]() {
         auto& config = Config::getInstance();
         config.setScrollbarOnLeft(!config.getScrollbarOnLeft());
+        config.save();
+        MenuManager::getInstance().menuItemsChanged();
         if (mainComponent && mainComponent->mainView) {
             mainComponent->mainView->resized();
         }
@@ -495,16 +575,14 @@ void MainWindow::setupMenuCallbacks() {
 
     // Transport menu callbacks
     callbacks.onPlay = [this]() {
-        // TODO: Implement play/pause
-        if (mainComponent && mainComponent->transportPanel) {
-            // mainComponent->transportPanel->togglePlay();
+        if (mainComponent && mainComponent->mainView) {
+            mainComponent->mainView->getTimelineController().dispatch(StartPlaybackEvent{});
         }
     };
 
     callbacks.onStop = [this]() {
-        // TODO: Implement stop
-        if (mainComponent && mainComponent->transportPanel) {
-            // mainComponent->transportPanel->stop();
+        if (mainComponent && mainComponent->mainView) {
+            mainComponent->mainView->getTimelineController().dispatch(StopPlaybackEvent{});
         }
     };
 
@@ -515,22 +593,26 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onToggleLoop = [this]() {
-        // TODO: Implement toggle loop
-        if (mainComponent && mainComponent->transportPanel) {
-            // mainComponent->transportPanel->toggleLoop();
+        if (mainComponent && mainComponent->mainView) {
+            auto& tc = mainComponent->mainView->getTimelineController();
+            bool currentlyLooping = tc.getState().loop.enabled;
+            tc.dispatch(SetLoopEnabledEvent{!currentlyLooping});
+            mainComponent->mainView->setLoopEnabled(!currentlyLooping);
         }
     };
 
     callbacks.onGoToStart = [this]() {
-        // TODO: Implement go to start
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Go to Start",
-                                               "Go to start functionality not yet implemented.");
+        if (mainComponent && mainComponent->mainView) {
+            mainComponent->mainView->getTimelineController().dispatch(SetEditPositionEvent{0.0});
+        }
     };
 
     callbacks.onGoToEnd = [this]() {
-        // TODO: Implement go to end
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Go to End",
-                                               "Go to end functionality not yet implemented.");
+        if (mainComponent && mainComponent->mainView) {
+            auto& tc = mainComponent->mainView->getTimelineController();
+            double length = tc.getState().timelineLength;
+            tc.dispatch(SetEditPositionEvent{length});
+        }
     };
 
     // Track menu callbacks - all track operations go through the undo system
@@ -630,11 +712,11 @@ void MainWindow::setupMenuCallbacks() {
                                                "Help functionality not yet implemented.");
     };
 
-    callbacks.onAbout = [this]() {
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::InfoIcon, "About MAGDA",
-            "MAGDA\nVersion 1.0\n\nA professional digital audio workstation.");
+    callbacks.onOpenManual = []() {
+        juce::URL("https://Conceptual-Machines.github.io/magda-core/").launchInDefaultBrowser();
     };
+
+    callbacks.onAbout = [this]() { AboutDialog::show(); };
 
     // Settings menu callbacks
     callbacks.onPluginSettings = [this]() {

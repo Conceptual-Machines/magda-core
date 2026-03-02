@@ -1,7 +1,11 @@
 #include "PreferencesDialog.hpp"
 
+#include "../state/TimelineController.hpp"
+#include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
+#include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+#include "../windows/MainWindow.hpp"
 #include "core/Config.hpp"
 
 // ---------------------------------------------------------------------------
@@ -13,6 +17,7 @@ void setupSlider(juce::Component& owner, juce::Slider& slider, juce::Label& labe
                  const juce::String& labelText, double min, double max, double interval,
                  const juce::String& suffix = "") {
     label.setText(labelText, juce::dontSendNotification);
+    label.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
     label.setColour(juce::Label::textColourId,
                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
     label.setJustificationType(juce::Justification::centredLeft);
@@ -60,6 +65,7 @@ void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce:
 void setupShortcutLabel(juce::Component& owner, juce::Label& label, const juce::String& action,
                         const juce::String& shortcut) {
     label.setText(action + ":  " + shortcut, juce::dontSendNotification);
+    label.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
     label.setColour(juce::Label::textColourId,
                     magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
     label.setJustificationType(juce::Justification::centredLeft);
@@ -73,7 +79,7 @@ void setupShortcutLabel(juce::Component& owner, juce::Label& label, const juce::
 // ---------------------------------------------------------------------------
 namespace magda {
 
-// ---- General tab: Zoom, Timeline, Transport Display -----------------------
+// ---- General tab: Zoom, Timeline ------------------------------------------
 
 class GeneralPage : public juce::Component {
   public:
@@ -87,14 +93,10 @@ class GeneralPage : public juce::Component {
                     1.0, 50.0, 0.5);
 
         setupSectionHeader(*this, timelineHeader, "Timeline");
-        setupSlider(*this, timelineLengthSlider, timelineLengthLabel, "Default Length (sec)", 60.0,
-                    1800.0, 10.0, " sec");
-        setupSlider(*this, viewDurationSlider, viewDurationLabel, "Default View Duration", 10.0,
-                    300.0, 5.0, " sec");
-
-        setupSectionHeader(*this, transportHeader, "Transport Display");
-        setupToggle(*this, showBothFormatsToggle, "Show both time formats");
-        setupToggle(*this, defaultBarsBeatsToggle, "Default to Bars/Beats (vs Seconds)");
+        setupSlider(*this, timelineLengthSlider, timelineLengthLabel, "Default Length", 16.0, 512.0,
+                    1.0, " bars");
+        setupSlider(*this, viewDurationSlider, viewDurationLabel, "Default View", 4.0, 128.0, 1.0,
+                    " bars");
     }
 
     void resized() override {
@@ -102,7 +104,6 @@ class GeneralPage : public juce::Component {
         const int rowH = 32;
         const int labelW = 180;
         const int sliderH = 24;
-        const int toggleH = 24;
         const int headerH = 28;
         const int secGap = 12;
 
@@ -122,14 +123,6 @@ class GeneralPage : public juce::Component {
         layoutSliderRow(bounds, timelineLengthLabel, timelineLengthSlider, rowH, labelW, sliderH);
         bounds.removeFromTop(4);
         layoutSliderRow(bounds, viewDurationLabel, viewDurationSlider, rowH, labelW, sliderH);
-        bounds.removeFromTop(secGap);
-
-        // Transport
-        transportHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        showBothFormatsToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
-        bounds.removeFromTop(4);
-        defaultBarsBeatsToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
     }
 
     void loadSettings(Config& config) {
@@ -138,14 +131,9 @@ class GeneralPage : public juce::Component {
                                           juce::dontSendNotification);
         zoomShiftSensitivitySlider.setValue(config.getZoomInSensitivityShift(),
                                             juce::dontSendNotification);
-        timelineLengthSlider.setValue(config.getDefaultTimelineLength(),
+        timelineLengthSlider.setValue(config.getDefaultTimelineLengthBars(),
                                       juce::dontSendNotification);
-        viewDurationSlider.setValue(config.getDefaultZoomViewDuration(),
-                                    juce::dontSendNotification);
-        showBothFormatsToggle.setToggleState(config.getTransportShowBothFormats(),
-                                             juce::dontSendNotification);
-        defaultBarsBeatsToggle.setToggleState(config.getTransportDefaultBarsBeats(),
-                                              juce::dontSendNotification);
+        viewDurationSlider.setValue(config.getDefaultZoomViewBars(), juce::dontSendNotification);
     }
 
     void applySettings(Config& config) {
@@ -153,10 +141,8 @@ class GeneralPage : public juce::Component {
         config.setZoomOutSensitivity(zoomOutSensitivitySlider.getValue());
         config.setZoomInSensitivityShift(zoomShiftSensitivitySlider.getValue());
         config.setZoomOutSensitivityShift(zoomShiftSensitivitySlider.getValue());
-        config.setDefaultTimelineLength(timelineLengthSlider.getValue());
-        config.setDefaultZoomViewDuration(viewDurationSlider.getValue());
-        config.setTransportShowBothFormats(showBothFormatsToggle.getToggleState());
-        config.setTransportDefaultBarsBeats(defaultBarsBeatsToggle.getToggleState());
+        config.setDefaultTimelineLengthBars(static_cast<int>(timelineLengthSlider.getValue()));
+        config.setDefaultZoomViewBars(static_cast<int>(viewDurationSlider.getValue()));
     }
 
   private:
@@ -167,12 +153,11 @@ class GeneralPage : public juce::Component {
         slider.setBounds(row.reduced(0, (rowH - sliderH) / 2));
     }
 
-    juce::Label zoomHeader, timelineHeader, transportHeader;
+    juce::Label zoomHeader, timelineHeader;
     juce::Slider zoomInSensitivitySlider, zoomOutSensitivitySlider, zoomShiftSensitivitySlider;
     juce::Label zoomInLabel, zoomOutLabel, zoomShiftLabel;
     juce::Slider timelineLengthSlider, viewDurationSlider;
     juce::Label timelineLengthLabel, viewDurationLabel;
-    juce::ToggleButton showBothFormatsToggle, defaultBarsBeatsToggle;
 };
 
 // ---- UI tab: Panels, Behavior (incl. showTooltips), Layout ----------------
@@ -180,18 +165,18 @@ class GeneralPage : public juce::Component {
 class UIPage : public juce::Component {
   public:
     UIPage() {
-        setupSectionHeader(*this, panelsHeader, "Panels (Default Visibility)");
-        setupToggle(*this, showLeftPanelToggle, "Show Left Panel (Browser)");
-        setupToggle(*this, showRightPanelToggle, "Show Right Panel (Inspector)");
-        setupToggle(*this, showBottomPanelToggle, "Show Bottom Panel (Mixer)");
+        setupSectionHeader(*this, panelsHeader, "Panels");
+        setupToggle(*this, showLeftPanelToggle, "Expand Left Panel (Browser)");
+        setupToggle(*this, showRightPanelToggle, "Expand Right Panel (Inspector)");
+        setupToggle(*this, showBottomPanelToggle, "Expand Bottom Panel (Mixer)");
+
+        setupSectionHeader(*this, layoutHeader, "Layout");
+        setupToggle(*this, headersOnRightToggle, "Headers on the Right");
 
         setupSectionHeader(*this, behaviorHeader, "Behavior");
         setupToggle(*this, confirmTrackDeleteToggle, "Confirm before deleting tracks");
         setupToggle(*this, autoMonitorToggle, "Auto-monitor selected track");
         setupToggle(*this, showTooltipsToggle, "Show tooltips");
-
-        setupSectionHeader(*this, layoutHeader, "Layout");
-        setupToggle(*this, leftHandedLayoutToggle, "Headers on Right");
     }
 
     void resized() override {
@@ -210,6 +195,12 @@ class UIPage : public juce::Component {
         showBottomPanelToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
         bounds.removeFromTop(secGap);
 
+        // Layout
+        layoutHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        headersOnRightToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
+        bounds.removeFromTop(secGap);
+
         // Behavior
         behaviorHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
@@ -219,42 +210,39 @@ class UIPage : public juce::Component {
         bounds.removeFromTop(4);
         showTooltipsToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
         bounds.removeFromTop(secGap);
-
-        // Layout
-        layoutHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        leftHandedLayoutToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
     }
 
     void loadSettings(Config& config) {
-        showLeftPanelToggle.setToggleState(config.getShowLeftPanel(), juce::dontSendNotification);
-        showRightPanelToggle.setToggleState(config.getShowRightPanel(), juce::dontSendNotification);
-        showBottomPanelToggle.setToggleState(config.getShowBottomPanel(),
+        showLeftPanelToggle.setToggleState(!config.getLeftPanelCollapsed(),
+                                           juce::dontSendNotification);
+        showRightPanelToggle.setToggleState(!config.getRightPanelCollapsed(),
+                                            juce::dontSendNotification);
+        showBottomPanelToggle.setToggleState(!config.getBottomPanelCollapsed(),
                                              juce::dontSendNotification);
+        headersOnRightToggle.setToggleState(config.getScrollbarOnLeft(),
+                                            juce::dontSendNotification);
         confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
                                                 juce::dontSendNotification);
         autoMonitorToggle.setToggleState(config.getAutoMonitorSelectedTrack(),
                                          juce::dontSendNotification);
         showTooltipsToggle.setToggleState(config.getShowTooltips(), juce::dontSendNotification);
-        leftHandedLayoutToggle.setToggleState(config.getScrollbarOnLeft(),
-                                              juce::dontSendNotification);
     }
 
     void applySettings(Config& config) {
-        config.setShowLeftPanel(showLeftPanelToggle.getToggleState());
-        config.setShowRightPanel(showRightPanelToggle.getToggleState());
-        config.setShowBottomPanel(showBottomPanelToggle.getToggleState());
+        config.setLeftPanelCollapsed(!showLeftPanelToggle.getToggleState());
+        config.setRightPanelCollapsed(!showRightPanelToggle.getToggleState());
+        config.setBottomPanelCollapsed(!showBottomPanelToggle.getToggleState());
+        config.setScrollbarOnLeft(headersOnRightToggle.getToggleState());
         config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
         config.setShowTooltips(showTooltipsToggle.getToggleState());
-        config.setScrollbarOnLeft(leftHandedLayoutToggle.getToggleState());
     }
 
   private:
-    juce::Label panelsHeader, behaviorHeader, layoutHeader;
+    juce::Label panelsHeader, layoutHeader, behaviorHeader;
     juce::ToggleButton showLeftPanelToggle, showRightPanelToggle, showBottomPanelToggle;
+    juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, showTooltipsToggle;
-    juce::ToggleButton leftHandedLayoutToggle;
 };
 
 // ---- Rendering tab --------------------------------------------------------
@@ -265,12 +253,14 @@ class RenderingPage : public juce::Component {
         setupSectionHeader(*this, renderHeader, "Rendering");
 
         renderFolderLabel.setText("Render Output Folder", juce::dontSendNotification);
+        renderFolderLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
         renderFolderLabel.setColour(juce::Label::textColourId,
                                     DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         renderFolderLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(renderFolderLabel);
 
         renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
+        renderFolderValue.setFont(FontManager::getInstance().getUIFont(12.0f));
         renderFolderValue.setColour(juce::Label::textColourId,
                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         renderFolderValue.setJustificationType(juce::Justification::centredLeft);
@@ -352,11 +342,13 @@ class AIPage : public juce::Component {
         setupSectionHeader(*this, aiHeader, "AI Assistant");
 
         aiApiKeyLabel.setText("OpenAI API Key", juce::dontSendNotification);
+        aiApiKeyLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
         aiApiKeyLabel.setColour(juce::Label::textColourId,
                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         aiApiKeyLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(aiApiKeyLabel);
 
+        aiApiKeyEditor.setFont(FontManager::getInstance().getUIFont(12.0f));
         aiApiKeyEditor.setPasswordCharacter(static_cast<juce::juce_wchar>('*'));
         aiApiKeyEditor.setTextToShowWhenEmpty("sk-...", DarkTheme::getColour(DarkTheme::TEXT_DIM));
         aiApiKeyEditor.setColour(juce::TextEditor::backgroundColourId,
@@ -428,6 +420,7 @@ class AIPage : public juce::Component {
         };
         addAndMakeVisible(aiValidateButton);
 
+        aiStatusLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
         aiStatusLabel.setColour(juce::Label::textColourId,
                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         aiStatusLabel.setJustificationType(juce::Justification::centredLeft);
@@ -524,6 +517,8 @@ class ShortcutsPage : public juce::Component {
 // ---------------------------------------------------------------------------
 
 PreferencesDialog::PreferencesDialog() {
+    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
+
     generalPage = std::make_unique<GeneralPage>();
     uiPage = std::make_unique<UIPage>();
     renderingPage = std::make_unique<RenderingPage>();
@@ -561,7 +556,9 @@ PreferencesDialog::PreferencesDialog() {
     setSize(500, 580);
 }
 
-PreferencesDialog::~PreferencesDialog() = default;
+PreferencesDialog::~PreferencesDialog() {
+    setLookAndFeel(nullptr);
+}
 
 void PreferencesDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
@@ -608,6 +605,21 @@ void PreferencesDialog::applySettings() {
     aiPage->applySettings(config);
     shortcutsPage->applySettings(config);
     config.save();
+
+    // Apply timeline length to live session
+    if (auto* tc = TimelineController::getCurrent()) {
+        double newLength = tc->getState().tempo.barsToTime(config.getDefaultTimelineLengthBars());
+        tc->dispatch(SetTimelineLengthEvent{newLength});
+    }
+
+    // Apply panel visibility and layout to live session
+    for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;) {
+        if (auto* mw = dynamic_cast<MainWindow*>(juce::TopLevelWindow::getTopLevelWindow(i))) {
+            mw->applyPanelVisibilityFromConfig();
+            mw->applyLayoutFromConfig();
+            break;
+        }
+    }
 }
 
 void PreferencesDialog::showDialog(juce::Component* parent) {

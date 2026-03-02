@@ -1,6 +1,7 @@
 #include "WaveformEditorContent.hpp"
 
 #include <cmath>
+#include <limits>
 
 #include "../../state/TimelineController.hpp"
 #include "../../themes/CursorManager.hpp"
@@ -11,6 +12,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/TrackManager.hpp"
+#include "core/WarpMarkerCommands.hpp"
 #include "engine/AudioEngine.hpp"
 
 namespace magda::daw::ui {
@@ -109,7 +111,7 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
         if (!clip)
             return;
 
-        int scrollX = owner_.viewport_->getViewPositionX();
+        int scrollX = owner_.virtualScrollX_;
 
         const auto& di = owner_.cachedDisplayInfo_;
 
@@ -229,6 +231,9 @@ WaveformEditorContent::WaveformEditorContent() {
     // Register as ClipManager listener
     magda::ClipManager::getInstance().addListener(this);
 
+    // Register as UndoManager listener (for warp marker refresh on undo/redo)
+    magda::UndoManager::getInstance().addListener(this);
+
     // Create time ruler
     timeRuler_ = std::make_unique<magda::TimeRuler>();
     timeRuler_->setDisplayMode(magda::TimeRuler::DisplayMode::BarsBeats);
@@ -253,10 +258,7 @@ WaveformEditorContent::WaveformEditorContent() {
 
     // Wire up ruler scroll callback
     timeRuler_->onScrollRequested = [this](int deltaX) {
-        if (viewport_) {
-            viewport_->setViewPosition(viewport_->getViewPositionX() + deltaX,
-                                       viewport_->getViewPositionY());
-        }
+        setVirtualScrollX(virtualScrollX_ + deltaX);
     };
 
     addAndMakeVisible(timeRuler_.get());
@@ -374,14 +376,13 @@ WaveformEditorContent::WaveformEditorContent() {
     // Create viewport and add grid
     viewport_ = std::make_unique<ScrollNotifyingViewport>();
     viewport_->setViewedComponent(gridComponent_.get(), false);
-    viewport_->setScrollBarsShown(true, true);
+    viewport_->setScrollBarsShown(true, false);  // vertical only; horizontal is virtual
     viewport_->timeRulerToRepaint = timeRuler_.get();
     addAndMakeVisible(viewport_.get());
 
-    // Setup scroll callback
-    viewport_->onScrolled = [this](int x, int y) {
-        timeRuler_->setScrollOffset(x);
-        gridComponent_->setScrollOffset(x, y);
+    // Viewport scroll callback — vertical only (horizontal is virtual)
+    viewport_->onScrolled = [this](int /*x*/, int /*y*/) {
+        // Vertical scroll may still fire; repaint overlays
         if (playheadOverlay_)
             playheadOverlay_->repaint();
     };
@@ -407,11 +408,12 @@ WaveformEditorContent::WaveformEditorContent() {
         // Could add logic here if needed
     };
 
-    // Warp marker callbacks
+    // Warp marker callbacks — route through UndoManager for undo support
     gridComponent_->onWarpMarkerAdd = [this](double sourceTime, double warpTime) {
         auto* bridge = getBridge();
         if (bridge) {
-            bridge->addWarpMarker(editingClipId_, sourceTime, warpTime);
+            UndoManager::getInstance().executeCommand(std::make_unique<AddWarpMarkerCommand>(
+                bridge, editingClipId_, sourceTime, warpTime));
             refreshWarpMarkers();
         }
     };
@@ -419,7 +421,8 @@ WaveformEditorContent::WaveformEditorContent() {
     gridComponent_->onWarpMarkerMove = [this](int index, double newWarpTime) {
         auto* bridge = getBridge();
         if (bridge) {
-            bridge->moveWarpMarker(editingClipId_, index, newWarpTime);
+            UndoManager::getInstance().executeCommand(std::make_unique<MoveWarpMarkerCommand>(
+                bridge, editingClipId_, index, newWarpTime));
             refreshWarpMarkers();
         }
     };
@@ -427,7 +430,8 @@ WaveformEditorContent::WaveformEditorContent() {
     gridComponent_->onWarpMarkerRemove = [this](int index) {
         auto* bridge = getBridge();
         if (bridge) {
-            bridge->removeWarpMarker(editingClipId_, index);
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<RemoveWarpMarkerCommand>(bridge, editingClipId_, index));
             refreshWarpMarkers();
         }
     };
@@ -437,8 +441,11 @@ WaveformEditorContent::WaveformEditorContent() {
                                                     double newWarpTime) {
         auto* bridge = getBridge();
         if (bridge) {
-            bridge->removeWarpMarker(editingClipId_, index);
-            bridge->addWarpMarker(editingClipId_, newSourceTime, newWarpTime);
+            CompoundOperationScope scope("Reposition Warp Marker");
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<RemoveWarpMarkerCommand>(bridge, editingClipId_, index));
+            UndoManager::getInstance().executeCommand(std::make_unique<AddWarpMarkerCommand>(
+                bridge, editingClipId_, newSourceTime, newWarpTime));
             refreshWarpMarkers();
         }
     };
@@ -464,8 +471,8 @@ WaveformEditorContent::WaveformEditorContent() {
         double zoomRange = std::log(MAX_ZOOM) - std::log(MIN_ZOOM);
         double zoomPosition = (std::log(startZoom) - std::log(MIN_ZOOM)) / zoomRange;
 
-        double minSensitivity = 25.0;
-        double maxSensitivity = 40.0;
+        double minSensitivity = 20.0;
+        double maxSensitivity = 30.0;
         double baseSensitivity = minSensitivity + zoomPosition * (maxSensitivity - minSensitivity);
 
         double sensitivity = baseSensitivity;
@@ -505,6 +512,7 @@ WaveformEditorContent::~WaveformEditorContent() {
     }
 
     magda::ClipManager::getInstance().removeListener(this);
+    magda::UndoManager::getInstance().removeListener(this);
 
     // Clear look and feel before destruction
     if (timeModeButton_)
@@ -572,6 +580,7 @@ void WaveformEditorContent::resized() {
     // Set grid minimum height to match viewport's visible height so waveform fills the space
     if (gridComponent_) {
         gridComponent_->setMinimumHeight(viewport_->getMaximumVisibleHeight());
+        gridComponent_->setParentWidth(viewport_->getWidth());
     }
 
     // Update grid size
@@ -622,8 +631,8 @@ void WaveformEditorContent::mouseDrag(const juce::MouseEvent& event) {
         double zoomRange = std::log(MAX_ZOOM) - std::log(MIN_ZOOM);
         double zoomPosition = (std::log(headerDragStartZoom_) - std::log(MIN_ZOOM)) / zoomRange;
 
-        double minSensitivity = 25.0;  // Fast when zoomed out
-        double maxSensitivity = 40.0;  // Finer when zoomed in
+        double minSensitivity = 20.0;  // Fast when zoomed out
+        double maxSensitivity = 30.0;  // Finer when zoomed in
         double baseSensitivity = minSensitivity + zoomPosition * (maxSensitivity - minSensitivity);
 
         double sensitivity = baseSensitivity;
@@ -689,8 +698,9 @@ void WaveformEditorContent::mouseWheelMove(const juce::MouseEvent& event,
             gridComponent_->setVerticalZoom(verticalZoom_);
         }
     } else {
-        // Normal scroll over waveform area - let viewport handle it
-        Component::mouseWheelMove(event, wheel);
+        // Normal scroll over waveform area — virtual horizontal scroll
+        int scrollDelta = static_cast<int>(-wheel.deltaY * 800.0);
+        setVirtualScrollX(virtualScrollX_ + scrollDelta);
     }
 }
 
@@ -767,6 +777,16 @@ void WaveformEditorContent::clipSelectionChanged(magda::ClipId clipId) {
         if (clip && clip->type == magda::ClipType::Audio) {
             setClip(clipId);
         }
+    }
+}
+
+// ============================================================================
+// UndoManagerListener
+// ============================================================================
+
+void WaveformEditorContent::undoStateChanged() {
+    if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        refreshWarpMarkers();
     }
 }
 
@@ -921,6 +941,29 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
 // Private Helpers
 // ============================================================================
 
+int WaveformEditorContent::getMaxVirtualScrollX() const {
+    if (!gridComponent_ || !viewport_)
+        return 0;
+    juce::int64 maxScroll =
+        gridComponent_->getVirtualContentWidth() - static_cast<juce::int64>(viewport_->getWidth());
+    if (maxScroll <= 0)
+        return 0;
+    // Cap to INT_MAX so downstream int math stays safe
+    return static_cast<int>(
+        juce::jmin(maxScroll, static_cast<juce::int64>(std::numeric_limits<int>::max())));
+}
+
+void WaveformEditorContent::setVirtualScrollX(int x) {
+    x = juce::jlimit(0, getMaxVirtualScrollX(), x);
+    virtualScrollX_ = x;
+    if (gridComponent_)
+        gridComponent_->setScrollOffset(x, 0);
+    if (timeRuler_)
+        timeRuler_->setScrollOffset(x);
+    if (playheadOverlay_)
+        playheadOverlay_->repaint();
+}
+
 void WaveformEditorContent::updateGridSize() {
     if (gridComponent_) {
         gridComponent_->updateGridSize();
@@ -952,9 +995,8 @@ void WaveformEditorContent::updateGridSize() {
             double barSeconds = 4.0 * 60.0 / bpmForPad;  // one 4/4 bar in seconds
             double viewportEndTime = 0.0;
             if (viewport_ && gridComponent_ && horizontalZoom_ > 0.0) {
-                int scrollX = viewport_->getViewPositionX();
                 int viewW = viewport_->getWidth();
-                viewportEndTime = static_cast<double>(scrollX + viewW) / horizontalZoom_;
+                viewportEndTime = static_cast<double>(virtualScrollX_ + viewW) / horizontalZoom_;
             }
             double rulerLength =
                 juce::jmax(totalTime + barSeconds * 4.0, viewportEndTime + barSeconds);
@@ -978,20 +1020,21 @@ void WaveformEditorContent::scrollToClipStart() {
                 }
             }
             auto info = magda::ClipDisplayInfo::from(*clip, bpm, fileDuration);
-            int offsetX = gridComponent_->timeToPixel(info.offsetPositionSeconds);
-            // Center the offset in the viewport
+            // timeToPixel now incorporates scrollOffsetX_, so compute raw pixel position
+            int offsetPixel =
+                static_cast<int>(info.offsetPositionSeconds * horizontalZoom_) + GRID_LEFT_PADDING;
             int viewportWidth = viewport_->getWidth();
-            int scrollX = juce::jmax(0, offsetX - viewportWidth / 4);
-            viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
+            setVirtualScrollX(juce::jmax(0, offsetPixel - viewportWidth / 4));
         } else {
-            viewport_->setViewPosition(0, viewport_->getViewPositionY());
+            setVirtualScrollX(0);
         }
     } else {
         // In absolute mode, scroll to clip start position
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && gridComponent_) {
-            int clipStartX = gridComponent_->timeToPixel(clip->startTime);
-            viewport_->setViewPosition(clipStartX, viewport_->getViewPositionY());
+            int clipStartPixel =
+                static_cast<int>(clip->startTime * horizontalZoom_) + GRID_LEFT_PADDING;
+            setVirtualScrollX(clipStartPixel);
         }
     }
 }
@@ -1035,11 +1078,10 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
 }
 
 void WaveformEditorContent::performAnchorPointZoom(double zoomFactor, int anchorX) {
-    // Calculate anchor point in content space
-    int mouseXInContent = anchorX + viewport_->getViewPositionX();
+    // anchorX is in viewport-local coordinates. Convert to time using current virtual scroll.
     double anchorTime = 0.0;
     if (gridComponent_) {
-        anchorTime = gridComponent_->pixelToTime(mouseXInContent);
+        anchorTime = gridComponent_->pixelToTime(anchorX);
     }
 
     // Apply zoom
@@ -1066,12 +1108,10 @@ void WaveformEditorContent::performAnchorPointZoom(double zoomFactor, int anchor
 
         updateGridSize();
 
-        // Adjust scroll to keep anchor point under mouse
-        if (gridComponent_) {
-            int newAnchorX = gridComponent_->timeToPixel(anchorTime);
-            int newScrollX = newAnchorX - anchorX;
-            viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
-        }
+        // Recompute scroll so anchorTime stays at anchorX
+        int newScrollX =
+            static_cast<int>(anchorTime * horizontalZoom_) + GRID_LEFT_PADDING - anchorX;
+        setVirtualScrollX(newScrollX);
     }
 }
 

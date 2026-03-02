@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
+
 // ---------------------------------------------------------------------------
 // Path helper
 // ---------------------------------------------------------------------------
@@ -28,6 +30,17 @@ Config& Config::getInstance() {
     return instance;
 }
 
+void Config::addRecentProject(const std::string& path) {
+    // Remove existing entry if present (dedup)
+    recentProjects.erase(std::remove(recentProjects.begin(), recentProjects.end(), path),
+                         recentProjects.end());
+    // Prepend
+    recentProjects.insert(recentProjects.begin(), path);
+    // Cap at 10
+    if (recentProjects.size() > 10)
+        recentProjects.resize(10);
+}
+
 // ---------------------------------------------------------------------------
 // Save
 // ---------------------------------------------------------------------------
@@ -35,9 +48,9 @@ Config& Config::getInstance() {
 void Config::save() {
     auto root = juce::DynamicObject::Ptr(new juce::DynamicObject());
 
-    // Timeline
-    root->setProperty("defaultTimelineLength", defaultTimelineLength);
-    root->setProperty("defaultZoomViewDuration", defaultZoomViewDuration);
+    // Timeline (bars)
+    root->setProperty("defaultTimelineLengthBars", defaultTimelineLengthBars);
+    root->setProperty("defaultZoomViewBars", defaultZoomViewBars);
 
     // Zoom limits
     root->setProperty("minZoomLevel", minZoomLevel);
@@ -75,6 +88,10 @@ void Config::save() {
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     root->setProperty("previewOutputChannel", previewOutputChannel);
 
+    // Export audio
+    root->setProperty("exportFormat", toJuceString(exportFormat));
+    root->setProperty("exportSampleRate", exportSampleRate);
+
     // Render
     root->setProperty("renderFolder", toJuceString(renderFolder));
 
@@ -96,6 +113,12 @@ void Config::save() {
     for (const auto& f : browserFavorites)
         favArray.add(toJuceString(f));
     root->setProperty("browserFavorites", favArray);
+
+    // Recent projects
+    juce::Array<juce::var> recentArray;
+    for (const auto& r : recentProjects)
+        recentArray.add(toJuceString(r));
+    root->setProperty("recentProjects", recentArray);
 
     // Custom plugin paths
     juce::Array<juce::var> pluginPathArray;
@@ -170,8 +193,19 @@ void Config::load() {
         return out;
     };
 
-    defaultTimelineLength = getDouble("defaultTimelineLength", defaultTimelineLength);
-    defaultZoomViewDuration = getDouble("defaultZoomViewDuration", defaultZoomViewDuration);
+    // Migrate from old seconds-based keys if new bars keys don't exist yet
+    if (obj->hasProperty("defaultTimelineLengthBars")) {
+        defaultTimelineLengthBars = getInt("defaultTimelineLengthBars", defaultTimelineLengthBars);
+    } else if (obj->hasProperty("defaultTimelineLength")) {
+        // Old config: convert seconds to bars (at 120 BPM, 4/4: 1 bar = 2 sec)
+        defaultTimelineLengthBars =
+            static_cast<int>(getDouble("defaultTimelineLength", 256.0) / 2.0);
+    }
+    if (obj->hasProperty("defaultZoomViewBars")) {
+        defaultZoomViewBars = getInt("defaultZoomViewBars", defaultZoomViewBars);
+    } else if (obj->hasProperty("defaultZoomViewDuration")) {
+        defaultZoomViewBars = static_cast<int>(getDouble("defaultZoomViewDuration", 64.0) / 2.0);
+    }
     minZoomLevel = getDouble("minZoomLevel", minZoomLevel);
     maxZoomLevel = getDouble("maxZoomLevel", maxZoomLevel);
 
@@ -201,6 +235,9 @@ void Config::load() {
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     previewOutputChannel = getInt("previewOutputChannel", previewOutputChannel);
 
+    exportFormat = getString("exportFormat", exportFormat);
+    exportSampleRate = getDouble("exportSampleRate", exportSampleRate);
+
     renderFolder = getString("renderFolder", renderFolder);
 
     preferredAudioDevice = getString("preferredAudioDevice", preferredAudioDevice);
@@ -214,6 +251,7 @@ void Config::load() {
 
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserFavorites = getStringArray("browserFavorites");
+    recentProjects = getStringArray("recentProjects");
     customPluginPaths = getStringArray("customPluginPaths");
 
     DBG("Config::load - " + configFile.getFullPathName());

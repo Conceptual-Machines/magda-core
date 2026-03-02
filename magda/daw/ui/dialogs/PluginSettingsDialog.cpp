@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "../themes/DarkTheme.hpp"
+#include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "engine/PluginScanCoordinator.hpp"
@@ -96,6 +97,7 @@ juce::Component* PluginSettingsDialog::ExcludedTableModel::refreshComponentForCe
 
 PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     : scanProgressBar_(scanProgress_), engine_(engine) {
+    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
     // Load current data
     customPaths_ = Config::getInstance().getCustomPluginPaths();
 
@@ -321,6 +323,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
 }
 
 PluginSettingsDialog::~PluginSettingsDialog() {
+    setLookAndFeel(nullptr);
     systemDirsList_.setModel(nullptr);
     directoriesList_.setModel(nullptr);
     excludedTable_.setModel(nullptr);
@@ -434,7 +437,7 @@ void PluginSettingsDialog::showDialog(TracktionEngineWrapper* engine, juce::Comp
 void PluginSettingsDialog::setupSectionHeader(juce::Label& header, const juce::String& text) {
     header.setText(text, juce::dontSendNotification);
     header.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    header.setFont(juce::Font(14.0f, juce::Font::bold));
+    header.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     header.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(header);
 }

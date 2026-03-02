@@ -204,11 +204,8 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                             configureSessionAutoTempo(audioClip, clip);
                     } else {
                         // Note: do NOT call setAutoTempo(false) here.
-                        // TE's default autoTempo state after insertWaveClip is needed
-                        // for slot rendering. Toggling it in clipPropertyChanged
-                        // (triggered by ANY property change like launchQuantize)
-                        // breaks the audio pipeline. autoTempo is only explicitly
-                        // set during syncSessionClipToSlot when speedRatio != 1.0.
+                        // TE's ClipOwner auto-enables autoTempo on session slot clips
+                        // and toggling it breaks the audio pipeline.
 
                         // Time-based loop state (existing behavior)
                         if (clip->loopEnabled) {
@@ -219,6 +216,19 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                             }
                         } else if (teClip->isLooping()) {
                             teClip->disableLooping();
+                        }
+
+                        // Neutralize embedded tempo metadata: set source BPM =
+                        // project BPM so the auto-enabled autoTempo doesn't cause
+                        // unwanted speed changes.
+                        if (clip->type == ClipType::Audio) {
+                            if (auto* audioClip = dynamic_cast<te::WaveAudioClip*>(teClip)) {
+                                double projectBpm =
+                                    edit_.tempoSequence.getBpmAt(te::TimePosition());
+                                auto& li = audioClip->getLoopInfo();
+                                auto waveInfo = audioClip->getWaveInfo();
+                                li.setBpm(projectBpm, waveInfo);
+                            }
                         }
                     }
 
@@ -348,6 +358,17 @@ void ClipSynchronizer::syncClipToEngine(ClipId clipId) {
         syncAudioClipToEngine(clipId, clip);
     } else {
         DBG("syncClipToEngine: Unknown clip type for clip " << clipId);
+    }
+}
+
+void ClipSynchronizer::removeTeClipByEngineId(const std::string& engineId) {
+    for (auto* track : tracktion::getAudioTracks(edit_)) {
+        for (auto* clip : track->getClips()) {
+            if (clip->itemID.toString().toStdString() == engineId) {
+                clip->removeFromParent();
+                return;
+            }
+        }
     }
 }
 
@@ -517,6 +538,16 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
                 audioClipPtr->setLoopRange(
                     te::TimeRange(te::TimePosition::fromSeconds(clip->getTeLoopStart()),
                                   te::TimePosition::fromSeconds(clip->getTeLoopEnd())));
+            }
+
+            // TE's ClipOwner auto-enables autoTempo on all session slot clips.
+            // Neutralize embedded tempo metadata by setting source BPM = project
+            // BPM so the stretch ratio is 1.0 and no unwanted speed change occurs.
+            {
+                double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                auto& li = audioClipPtr->getLoopInfo();
+                auto waveInfo = audioClipPtr->getWaveInfo();
+                li.setBpm(projectBpm, waveInfo);
             }
         }
 
@@ -1121,8 +1152,11 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
                 }
             }
 
+            // Clip not found on expected track — it may have moved.
+            // Remove the old TE clip from whichever track still holds it.
             if (!midiClipPtr) {
-                // Clear stale mapping and recreate
+                DBG("ClipSynchronizer: MIDI clip moved or stale, removing old TE clip " << clipId);
+                removeTeClipByEngineId(engineId);
                 clipIdToEngineId_.erase(it);
                 engineIdToClipId_.erase(engineId);
             }
@@ -1296,9 +1330,11 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
                 }
             }
 
-            // If mapping is stale, clear it
+            // Clip not found on expected track — it may have moved.
+            // Remove the old TE clip from whichever track still holds it.
             if (!audioClipPtr) {
-                DBG("ClipSynchronizer: Clip mapping stale, recreating for clip " << clipId);
+                DBG("ClipSynchronizer: Clip moved or stale, removing old TE clip " << clipId);
+                removeTeClipByEngineId(engineId);
                 clipIdToEngineId_.erase(it);
                 engineIdToClipId_.erase(engineId);
             }

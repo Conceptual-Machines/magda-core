@@ -356,10 +356,14 @@ void AudioBridge::macroValueChanged(TrackId trackId, bool isRack, int id, int ma
 void AudioBridge::masterChannelChanged() {
     // Master channel property changed - sync to Tracktion Engine
     const auto& master = TrackManager::getInstance().getMasterChannel();
-    setMasterVolume(master.volume);
     setMasterPan(master.pan);
 
-    // TODO: Handle master mute (may need different approach than track mute)
+    // When muted, set volume to silence; otherwise use the actual volume
+    if (master.muted) {
+        setMasterVolume(0.0f);
+    } else {
+        setMasterVolume(master.volume);
+    }
 }
 
 void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue) {
@@ -592,8 +596,12 @@ void AudioBridge::syncAll() {
         ensureTrackMapping(track.id);
         syncTrackPlugins(track.id);
 
-        // Sync frozen state from TE → MAGDA (e.g. on edit load)
         if (auto* teTrack = getAudioTrack(track.id)) {
+            // Sync mute/solo state to TE (essential on project load)
+            teTrack->setMute(track.muted);
+            teTrack->setSolo(track.soloed);
+
+            // Sync frozen state from TE → MAGDA (e.g. on edit load)
             bool teFrozen = teTrack->isFrozen(te::AudioTrack::individualFreeze);
             if (track.frozen != teFrozen) {
                 tm.getTrack(track.id)->frozen = teFrozen;

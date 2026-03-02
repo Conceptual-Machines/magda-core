@@ -35,6 +35,12 @@ class MainWindow : public juce::DocumentWindow {
 
     void closeButtonPressed() override;
 
+    /** Re-read panel visibility from Config and apply immediately. */
+    void applyPanelVisibilityFromConfig();
+
+    /** Re-read layout settings (e.g. headers side) from Config and apply. */
+    void applyLayoutFromConfig();
+
   private:
     class MainComponent;
     MainComponent* mainComponent = nullptr;       // Raw pointer - owned by DocumentWindow

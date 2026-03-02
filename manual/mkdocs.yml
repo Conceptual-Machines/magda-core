@@ -1,0 +1,73 @@
+site_name: MAGDA Manual
+site_description: User manual for MAGDA — a free, open-source digital audio workstation
+site_url: https://Conceptual-Machines.github.io/magda-core/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+
+repo_url: https://github.com/Conceptual-Machines/magda-core
+repo_name: magda-core
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - First Session: getting-started/first-session.md
+  - Session View:
+      - Overview: session-view/overview.md
+      - Clips & Scenes: session-view/clips-and-scenes.md
+      - Mini Mixer: session-view/mini-mixer.md
+  - Arrangement View:
+      - Overview: arrangement-view/overview.md
+      - Tracks & Clips: arrangement-view/tracks-and-clips.md
+      - Timeline Navigation: arrangement-view/timeline-navigation.md
+      - Editing: arrangement-view/editing.md
+  - Mixer View:
+      - Overview: mixer-view/overview.md
+      - Channel Strips: mixer-view/channel-strips.md
+      - Routing & Sends: mixer-view/routing.md
+  - Transport:
+      - Transport Controls: transport/transport-controls.md
+      - Tempo & Grid: transport/tempo-and-grid.md
+  - Reference:
+      - Keyboard Shortcuts: reference/keyboard-shortcuts.md
+      - File Formats: reference/file-formats.md
+      - Troubleshooting: reference/troubleshooting.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.keys
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true

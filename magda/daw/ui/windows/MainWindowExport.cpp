@@ -17,11 +17,14 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
   public:
     ExportProgressWindow(const tracktion::Renderer::Parameters& params,
                          const juce::File& outputFile,
-                         tracktion::engine::TransportControl& transport)
+                         tracktion::engine::TransportControl& transport,
+                         double prerollSeconds = 0.0, double leadInSilence = 0.0)
         : ThreadWithProgressWindow("Exporting Audio...", true, true),
           params_(params),
           outputFile_(outputFile),
-          reallocationInhibitor_(transport) {
+          reallocationInhibitor_(transport),
+          prerollSeconds_(prerollSeconds),
+          leadInSilence_(leadInSilence) {
         setStatusMessage("Preparing to export...");
     }
 
@@ -41,6 +44,14 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
             if (status == juce::ThreadPoolJob::jobHasFinished) {
                 // Verify the file was actually created
                 if (outputFile_.existsAsFile()) {
+                    if (prerollSeconds_ > 0.0) {
+                        setStatusMessage("Trimming preroll...");
+                        if (!trimPreroll()) {
+                            success_ = false;
+                            errorMessage_ = "Render succeeded but failed to trim preroll.";
+                            break;
+                        }
+                    }
                     success_ = true;
                     setStatusMessage("Export complete!");
                     setProgress(1.0);
@@ -111,10 +122,56 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
     }
 
   private:
+    // Trims the warmup preroll from the start, keeping any portion
+    // that overlaps with the user-requested lead-in silence.
+    bool trimPreroll() {
+        juce::AudioFormatManager formatManager;
+        formatManager.registerBasicFormats();
+
+        std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(outputFile_));
+        if (!reader)
+            return false;
+
+        // Keep lead-in silence from the preroll (don't trim it)
+        auto effectiveTrim = std::max(0.0, prerollSeconds_ - leadInSilence_);
+        auto samplesToSkip = (juce::int64)(effectiveTrim * reader->sampleRate);
+        auto samplesToKeep = reader->lengthInSamples - samplesToSkip;
+        if (samplesToKeep <= 0)
+            return false;
+
+        auto tempFile = outputFile_.getSiblingFile(outputFile_.getFileNameWithoutExtension() +
+                                                   "_tmp" + outputFile_.getFileExtension());
+
+        std::unique_ptr<juce::AudioFormat> format;
+        if (outputFile_.hasFileExtension(".flac"))
+            format = std::make_unique<juce::FlacAudioFormat>();
+        else
+            format = std::make_unique<juce::WavAudioFormat>();
+
+        std::unique_ptr<juce::OutputStream> outputStream =
+            std::make_unique<juce::FileOutputStream>(tempFile);
+        auto writerOptions = juce::AudioFormatWriterOptions()
+                                 .withSampleRate(reader->sampleRate)
+                                 .withNumChannels((int)reader->numChannels)
+                                 .withBitsPerSample((int)reader->bitsPerSample);
+        auto writer = format->createWriterFor(outputStream, writerOptions);
+        if (!writer)
+            return false;
+
+        writer->writeFromAudioReader(*reader, samplesToSkip, samplesToKeep);
+        writer.reset();
+        reader.reset();
+
+        outputFile_.deleteFile();
+        return tempFile.moveFileTo(outputFile_);
+    }
+
     tracktion::Renderer::Parameters params_;
     juce::File outputFile_;
     tracktion::engine::TransportControl::ReallocationInhibitor reallocationInhibitor_;
     std::unique_ptr<tracktion::Renderer::RenderTask> renderTask_;
+    double prerollSeconds_ = 0.0;
+    double leadInSilence_ = 0.0;
     bool success_ = false;
     juce::String errorMessage_;
 };
@@ -165,15 +222,8 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
                 transport.stop(false, false);  // Stop immediately without fading
             }
 
-            // Inhibit playback context reallocation for the entire export setup phase.
-            // Plugin enabling (below) can trigger edit.restartPlayback() via
-            // notifyGraphRebuildNeeded(), which would recreate the playback context
-            // and cause a race with the render graph, leading to SIGSEGV.
             te::TransportControl::ReallocationInhibitor setupInhibitor(transport);
 
-            // Free the playback context if not recording
-            // This is essential - the assertion checks isPlayContextActive() which
-            // returns (playbackContext != nullptr), so we must free it
             te::freePlaybackContextIfNotRecording(transport);
 
             // Enable all plugins for offline rendering
@@ -211,38 +261,53 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
             // Allow export even when there are no clips (generator devices can still produce audio)
             params.checkNodesForAudio = false;
 
-            // Optimize for faster-than-realtime offline rendering
-            params.blockSizeForAudio = 8192;  // Much larger than default 512 for faster rendering
-            params.realTimeRender = false;  // Disable real-time simulation (default, but explicit)
+            // Use large block size for faster offline rendering. The 2-second
+            // preroll handles plugin warmup, avoiding the click that large
+            // blocks can cause on the first few blocks.
+            params.blockSizeForAudio = 4096;
+            params.realTimeRender = settings.realTimeRender;
 
             // Set time range based on export range setting
+            te::TimeRange requestedRange;
             using ExportRange = ExportAudioDialog::ExportRange;
             switch (settings.exportRange) {
                 case ExportRange::TimeSelection:
                     // TODO: Get actual time selection from SelectionManager when implemented
-                    // For now, export entire song (TimeSelection option is disabled in UI until
-                    // implemented)
-                    params.time = te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                                                te::TimePosition() + edit->getLength());
+                    requestedRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                                   te::TimePosition() + edit->getLength());
                     break;
 
                 case ExportRange::LoopRegion:
-                    params.time = edit->getTransport().getLoopRange();
+                    requestedRange = edit->getTransport().getLoopRange();
                     break;
 
                 case ExportRange::EntireSong:
                 default:
-                    // Export entire arrangement
-                    params.time = te::TimeRange(te::TimePosition::fromSeconds(0.0),
-                                                te::TimePosition() + edit->getLength());
+                    requestedRange = te::TimeRange(te::TimePosition::fromSeconds(0.0),
+                                                   te::TimePosition() + edit->getLength());
                     break;
+            }
+
+            // Add preroll for offline renders to let plugins settle.
+            // Even with the default 512 block size, some plugins need extra
+            // warmup time. The preroll is rendered then trimmed off.
+            constexpr double prerollSeconds = 2.0;
+            double actualPreroll = 0.0;
+            if (!settings.realTimeRender) {
+                actualPreroll = prerollSeconds;
+                params.time = te::TimeRange(requestedRange.getStart() -
+                                                te::TimeDuration::fromSeconds(actualPreroll),
+                                            requestedRange.getEnd());
+            } else {
+                params.time = requestedRange;
             }
 
             // Launch progress window with background rendering (non-blocking)
             // The window will delete itself via threadComplete() callback.
             // ExportProgressWindow holds a ReallocationInhibitor to prevent
             // edit.restartPlayback() from recreating the playback context during render.
-            auto* progressWindow = new ExportProgressWindow(params, file, transport);
+            auto* progressWindow = new ExportProgressWindow(params, file, transport, actualPreroll,
+                                                            settings.leadInSilence);
             progressWindow->launchThread();
 
             fileChooser_.reset();

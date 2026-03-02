@@ -19,7 +19,7 @@ MidiDrawerComponent::MidiDrawerComponent() {
     pbRangeLabel_ = std::make_unique<juce::Label>("pbRange", "2");
     pbRangeLabel_->setEditable(true);
     pbRangeLabel_->setJustificationType(juce::Justification::centred);
-    pbRangeLabel_->setFont(juce::Font(10.0f));
+    pbRangeLabel_->setFont(FontManager::getInstance().getUIFont(10.0f));
     pbRangeLabel_->setColour(juce::Label::textColourId,
                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     pbRangeLabel_->setColour(juce::Label::backgroundColourId, juce::Colour(0x00000000));
@@ -205,7 +205,7 @@ void MidiDrawerComponent::paint(juce::Graphics& g) {
     // "Range" title above the PB range input
     if (pbRangeLabel_->isVisible() && leftMargin_ > 4) {
         auto labelBounds = pbRangeLabel_->getBounds();
-        g.setFont(juce::Font(9.0f));
+        g.setFont(FontManager::getInstance().getUIFont(9.0f));
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         g.drawText("Range", 2, juce::jmax(0, labelBounds.getY() - 14), leftMargin_ - 4, 12,
                    juce::Justification::centred, false);

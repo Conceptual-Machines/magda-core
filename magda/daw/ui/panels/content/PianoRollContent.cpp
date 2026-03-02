@@ -547,9 +547,9 @@ void PianoRollContent::resized() {
     updateTimeRuler();
     updateVelocityLane();
 
-    // Center on middle C on first layout
+    // Center on notes (or C4) on first layout
     if (needsInitialCentering_ && viewport_->getHeight() > 0) {
-        centerOnMiddleC();
+        centerOnNotes();
         needsInitialCentering_ = false;
     }
 }
@@ -1123,6 +1123,9 @@ void PianoRollContent::setClip(magda::ClipId clipId) {
         }
         viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
 
+        // Center vertically on existing notes (or C4 if empty)
+        centerOnNotes();
+
         repaint();
     }
 }
@@ -1313,28 +1316,40 @@ void PianoRollContent::onVelocityEdited() {
     }
 }
 
-void PianoRollContent::centerOnMiddleC() {
-    if (!viewport_) {
+void PianoRollContent::centerOnNote(int noteNumber) {
+    if (!viewport_)
+        return;
+
+    int noteY = (MAX_NOTE - noteNumber) * noteHeight_;
+    int viewportHeight = viewport_->getHeight();
+    int scrollY = juce::jmax(0, noteY - (viewportHeight / 2) + (noteHeight_ / 2));
+
+    viewport_->setViewPosition(viewport_->getViewPositionX(), scrollY);
+    keyboard_->setScrollOffset(scrollY);
+}
+
+void PianoRollContent::centerOnNotes() {
+    if (!viewport_)
+        return;
+
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (!clip || clip->midiNotes.empty()) {
+        // No notes — default to C4 (MIDI note 72 in C-2 convention)
+        centerOnNote(72);
         return;
     }
 
-    // C4 (middle C) is MIDI note 60
-    constexpr int MIDDLE_C = 60;
+    // Find note range
+    int minNote = 127;
+    int maxNote = 0;
+    for (const auto& note : clip->midiNotes) {
+        minNote = juce::jmin(minNote, note.noteNumber);
+        maxNote = juce::jmax(maxNote, note.noteNumber);
+    }
 
-    // Calculate Y position of middle C
-    int middleCY = (MAX_NOTE - MIDDLE_C) * noteHeight_;
-
-    // Center it in the viewport
-    int viewportHeight = viewport_->getHeight();
-    int scrollY = middleCY - (viewportHeight / 2) + (noteHeight_ / 2);
-
-    // Clamp to valid range
-    scrollY = juce::jmax(0, scrollY);
-
-    viewport_->setViewPosition(viewport_->getViewPositionX(), scrollY);
-
-    // Update keyboard scroll to match
-    keyboard_->setScrollOffset(scrollY);
+    // Center on the midpoint of the note range
+    int midNote = (minNote + maxNote) / 2;
+    centerOnNote(midNote);
 }
 
 }  // namespace magda::daw::ui

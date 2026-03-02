@@ -26,8 +26,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/record_on.svg
     ../../assets/icons/loop_off.svg
     ../../assets/icons/loop_on.svg
-    ../../assets/icons/forward_off.svg
-    ../../assets/icons/forward_on.svg
     ../../assets/icons/rewind_off.svg
     ../../assets/icons/rewind_on.svg
     ../../assets/icons/prev_off.svg
@@ -39,32 +37,21 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/resume/resume_on.svg
     # Audio icons
     ../../assets/icons/volume_up.svg
-    ../../assets/icons/volume_down.svg
     ../../assets/icons/volume_off.svg
     ../../assets/icons/headphones.svg
     ../../assets/icons/metronome.svg
     # UI icons
-    ../../assets/icons/lock.svg
-    ../../assets/icons/lock_open.svg
     ../../assets/icons/add.svg
-    ../../assets/icons/remove.svg
-    ../../assets/icons/settings.svg
     ../../assets/icons/settings_nobg.svg
     ../../assets/icons/menu.svg
     ../../assets/icons/density_small.svg
     ../../assets/icons/density_medium.svg
     ../../assets/icons/density_large.svg
-    ../../assets/icons/close.svg
-    ../../assets/icons/check.svg
-    ../../assets/icons/search.svg
     ../../assets/icons/chord.svg
     ../../assets/icons/bar_chart.svg
-    ../../assets/icons/link.svg
-    ../../assets/icons/link_bright.svg
     ../../assets/icons/link_flat.svg
     ../../assets/icons/knob.svg
     ../../assets/icons/sine-wave.svg
-    ../../assets/icons/sine-wave-bright.svg
     ../../assets/icons/bare_sine.svg
     ../../assets/icons/play_bare.svg
     ../../assets/icons/open_in_new.svg
@@ -77,7 +64,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/folder-open.svg
     ../../assets/icons/infinito.svg
     ../../assets/icons/position.svg
-    ../../assets/icons/Offset.svg
     ../../assets/icons/piano_roll.svg
     ../../assets/icons/drum_grid.svg
     # Footer view mode icons
@@ -96,7 +82,6 @@ juce_add_binary_data(MagdaAssets
     # Media Explorer sidebar icons
     ../../assets/icons/project_home.svg
     ../../assets/icons/harddrive.svg
-    ../../assets/icons/library.svg
     ../../assets/icons/database.svg
     ../../assets/icons/favorite.svg
     # Media Explorer filter icons
@@ -110,19 +95,13 @@ juce_add_binary_data(MagdaAssets
     # View toolbar icons
     ../../assets/icons/zoom_out_map.svg
     ../../assets/icons/fit_width.svg
-    ../../assets/icons/compact.svg
-    ../../assets/icons/large.svg
     ../../assets/icons/fit_loop.svg
     ../../assets/icons/horizontal.svg
     ../../assets/icons/io_routing.svg
     ../../assets/icons/vertical.svg
     # I/O routing icons
     ../../assets/icons/IO/Input.svg
-    ../../assets/icons/IO/InputOutput.svg
     ../../assets/icons/IO/Output.svg
-    # Inspector clip icons
-    ../../assets/icons/pin.svg
-    ../../assets/icons/note.svg
     # Fade curve type icons
     ../../assets/icons/fade_linear.svg
     ../../assets/icons/fade_convex.svg
@@ -136,11 +115,13 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/punchinout/punchin_on.svg
     ../../assets/icons/punchinout/punchout.svg
     ../../assets/icons/punchinout/punchout_on.svg
-    # Panel collapse/expand icons
-    ../../assets/icons/panel/collapse_left.svg
-    ../../assets/icons/panel/collapse_right.svg
-    ../../assets/icons/panel/collapse_up.svg
-    ../../assets/icons/panel/collapse_down.svg
+    # Panel open/close icons
+    ../../assets/icons/panels/left_open.svg
+    ../../assets/icons/panels/left_close.svg
+    ../../assets/icons/panels/right_open.svg
+    ../../assets/icons/panels/right_close.svg
+    ../../assets/icons/panels/bottom_open.svg
+    ../../assets/icons/panels/bottom_close.svg
     # Fontaudio waveform icons
     ../../assets/icons/fontaudio/fad-modsine.svg
     ../../assets/icons/fontaudio/fad-modtri.svg
@@ -153,10 +134,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/fontaudio/fad-filter-highpass.svg
     ../../assets/icons/fontaudio/fad-filter-bandpass.svg
     ../../assets/icons/fontaudio/fad-filter-notch.svg
-    # Fontaudio utility icons
-    ../../assets/icons/fontaudio/fad-powerswitch.svg
     # Fontaudio logo icons
     ../../assets/icons/fontaudio/fad-logo-tracktion.svg
+    # App logo
+    ../../assets/magda-lisa.svg
 )
 
 # DAW Core sources
@@ -176,6 +157,7 @@ set(DAW_CORE_SOURCES
     core/UndoManager.cpp
     core/ClipCommands.cpp
     core/ClipPropertyCommands.cpp
+    core/WarpMarkerCommands.cpp
     core/TrackCommands.cpp
     core/TrackPropertyCommands.cpp
     core/AutomationCommands.cpp
@@ -258,6 +240,8 @@ set(DAW_UI_SOURCES
     ui/dialogs/PluginSettingsDialog.cpp
     ui/dialogs/PreferencesDialog.cpp
     ui/dialogs/TrackManagerDialog.cpp
+    ui/dialogs/AboutDialog.cpp
+    ui/dialogs/SplashScreen.cpp
     # Debug
     ui/debug/DebugDialog.cpp
     # Panels
@@ -412,6 +396,7 @@ set(DAW_HEADERS
     core/UndoManager.hpp
     core/ClipCommands.hpp
     core/ClipPropertyCommands.hpp
+    core/WarpMarkerCommands.hpp
     core/TrackCommands.hpp
     core/TrackPropertyCommands.hpp
     core/AutomationCommands.hpp
@@ -442,6 +427,8 @@ set(DAW_HEADERS
     ui/dialogs/PluginSettingsDialog.hpp
     ui/dialogs/PreferencesDialog.hpp
     ui/dialogs/TrackManagerDialog.hpp
+    ui/dialogs/AboutDialog.hpp
+    ui/dialogs/SplashScreen.hpp
     # Panels
     ui/panels/TransportPanel.hpp
     ui/panels/TimelineHeaderPanel.hpp
@@ -613,8 +600,8 @@ juce_add_gui_app(magda_daw_app
     VERSION "0.1.0"
     COMPANY_NAME "MAGDA"
     PRODUCT_NAME "MAGDA"
-    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/Sleek-M.png"
-    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/Sleek-M.png"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/app_icon.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/app_icon.png"
 )
 
 # Add UI sources to the JUCE app target

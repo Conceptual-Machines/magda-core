@@ -5,6 +5,7 @@
 #include "PanelContent.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipManager.hpp"
+#include "core/UndoManager.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/components/waveform/WaveformGridComponent.hpp"
@@ -26,6 +27,7 @@ namespace magda::daw::ui {
  */
 class WaveformEditorContent : public PanelContent,
                               public magda::ClipManagerListener,
+                              public magda::UndoManagerListener,
                               public TimelineStateListener,
                               public juce::Timer {
   public:
@@ -59,6 +61,9 @@ class WaveformEditorContent : public PanelContent,
     void clipPropertyChanged(magda::ClipId clipId) override;
     void clipSelectionChanged(magda::ClipId clipId) override;
 
+    // UndoManagerListener
+    void undoStateChanged() override;
+
     // TimelineStateListener
     void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
@@ -85,7 +90,7 @@ class WaveformEditorContent : public PanelContent,
     double verticalZoom_ = 1.0;      // amplitude multiplier
     double cachedBpm_ = 120.0;       // last known BPM for zoom scaling on tempo change
     static constexpr double MIN_ZOOM = 5.0;
-    static constexpr double MAX_ZOOM = 100000.0;  // ~2px per sample at 44.1kHz
+    static constexpr double MAX_ZOOM = 1e6;  // ~22 px/sample at 44.1kHz — sample-level editing
     static constexpr double MIN_VERTICAL_ZOOM = 0.25;
     static constexpr double MAX_VERTICAL_ZOOM = 4.0;
 
@@ -123,6 +128,12 @@ class WaveformEditorContent : public PanelContent,
     // Look and feel
     class ButtonLookAndFeel;
     std::unique_ptr<ButtonLookAndFeel> buttonLookAndFeel_;
+
+    // Virtual scroll position (replaces viewport-based horizontal scrolling)
+    int virtualScrollX_ = 0;
+
+    int getMaxVirtualScrollX() const;
+    void setVirtualScrollX(int x);
 
     // Update grid size when clip or zoom changes
     void updateGridSize();
