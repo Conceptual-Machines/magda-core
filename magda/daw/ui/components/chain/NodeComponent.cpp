@@ -785,8 +785,9 @@ void NodeComponent::setNodePath(const magda::ChainNodePath& path) {
 }
 
 void NodeComponent::selectionTypeChanged(magda::SelectionType newType) {
-    // If selection type changed away from ChainNode, deselect this node
-    if (newType != magda::SelectionType::ChainNode) {
+    // If selection type changed away from ChainNode/Device, deselect this node.
+    // Both ChainNode and Device represent a selected device in the chain.
+    if (newType != magda::SelectionType::ChainNode && newType != magda::SelectionType::Device) {
         setSelected(false);
     }
 }
