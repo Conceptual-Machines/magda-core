@@ -103,8 +103,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         modButton_->setActive(modButton_->getToggleState());
         setModPanelVisible(modButton_->getToggleState());
     };
-    // TODO (#801): global mod/macro icons not yet implemented — hidden for now
-    // addAndMakeVisible(*modButton_);
+    addAndMakeVisible(*modButton_);
 
     // Macro button (toggle macro panel) - knob icon
     macroButton_ =
@@ -119,7 +118,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         macroButton_->setActive(macroButton_->getToggleState());
         setParamPanelVisible(macroButton_->getToggleState());
     };
-    // addAndMakeVisible(*macroButton_);
+    addAndMakeVisible(*macroButton_);
 
     // Initialize mods/macros panels from base class
     initializeModsMacrosPanels();
@@ -826,10 +825,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     }
 
     // Show header controls when expanded
-    // Mod/macro buttons hidden — TODO (#801): global mod/macro icons
-    // bool isDrumGrid = drumGridUI_ != nullptr;
-    // modButton_->setVisible(!isDrumGrid);
-    // macroButton_->setVisible(!isDrumGrid);
+    bool isDrumGrid = drumGridUI_ != nullptr;
+    modButton_->setVisible(!isDrumGrid);
+    macroButton_->setVisible(!isDrumGrid);
     uiButton_->setVisible(!isInternalDevice());
     onButton_->setVisible(true);
     gainSlider_.setVisible(true);
@@ -990,11 +988,10 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // Header layout: [Macro] [M] [Name] [UI] [...] [gain slider] [SC] [MO] [on] [X]
     // Note: delete (X) is handled by NodeComponent on the right
 
-    // Macro and Mod buttons hidden — TODO (#801): global mod/macro icons
-    // macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-    // headerArea.removeFromLeft(4);
-    // modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-    // headerArea.removeFromLeft(4);
+    macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+    headerArea.removeFromLeft(4);
+    modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+    headerArea.removeFromLeft(4);
 
     // Power button on the right (before delete which is handled by parent)
     onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
@@ -1055,14 +1052,13 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     uiButton_->setVisible(!isInternalDevice());
     area.removeFromTop(4);
 
-    // Macro and Mod buttons hidden — TODO (#801): global mod/macro icons
-    // macroButton_->setBounds(
-    //     area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    // macroButton_->setVisible(true);
-    // area.removeFromTop(4);
-    // modButton_->setBounds(
-    //     area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    // modButton_->setVisible(true);
+    macroButton_->setBounds(
+        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+    macroButton_->setVisible(true);
+    area.removeFromTop(4);
+    modButton_->setBounds(
+        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+    modButton_->setVisible(true);
 
     // Multi-out button (only if plugin is multi-out)
     if (device_.multiOut.isMultiOut && multiOutButton_) {
@@ -1681,11 +1677,10 @@ void DeviceSlotComponent::createCustomUI() {
     } else if (device_.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName)) {
         drumGridUI_ = std::make_unique<DrumGridUI>();
 
-        // Mod/macro buttons already hidden — TODO (#801): global mod/macro icons
-        // if (modButton_)
-        //     modButton_->setVisible(false);
-        // if (macroButton_)
-        //     macroButton_->setVisible(false);
+        if (modButton_)
+            modButton_->setVisible(false);
+        if (macroButton_)
+            macroButton_->setVisible(false);
 
         // Helper to get DrumGridPlugin pointer
         auto getDrumGrid = [this]() -> daw::audio::DrumGridPlugin* {
