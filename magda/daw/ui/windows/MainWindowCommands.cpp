@@ -544,6 +544,19 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case selectAll: {
+            // If a note selection is active, select all notes in that clip
+            if (selectionManager.hasNoteSelection()) {
+                auto clipId = selectionManager.getNoteSelection().clipId;
+                const auto* clip = clipManager.getClip(clipId);
+                if (clip && clip->type == ClipType::MIDI) {
+                    std::vector<size_t> allIndices;
+                    for (size_t i = 0; i < clip->midiNotes.size(); ++i)
+                        allIndices.push_back(i);
+                    selectionManager.selectNotes(clipId, allIndices);
+                    return true;
+                }
+            }
+            // Fallback: select all arrangement clips
             const auto& allClips = clipManager.getArrangementClips();
             std::unordered_set<ClipId> allClipIds;
             for (const auto& clip : allClips) {
