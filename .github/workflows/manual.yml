@@ -24,7 +24,7 @@ jobs:
         run: pip install -r manual/requirements.txt
 
       - name: Build manual
-        run: mkdocs build --config-file manual/mkdocs.yml --site-dir ../site
+        run: mkdocs build --site-dir ../site
         working-directory: manual
 
       - name: Deploy to GitHub Pages

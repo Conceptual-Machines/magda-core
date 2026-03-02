@@ -1,8 +1,8 @@
-# Transport Controls
+# Transport
 
-The transport panel sits at the top of the window and is available in all views.
+The transport bar sits at the top of the window and is available in all views.
 
-## Playback
+## Playback Controls
 
 | Button | Action | Shortcut |
 |--------|--------|----------|
@@ -25,12 +25,31 @@ Set the loop from a clip: select the clip and press ++ctrl+shift+l++ (++cmd+shif
 
 ## Punch In/Out
 
-Use punch in and punch out to record only within a specific time range. Enable punch mode and set the punch region start and end points in the transport panel.
+Use punch in and punch out to record only within a specific time range. Enable punch mode and set the punch region start and end points in the transport bar.
 
-## Position Display
+## Position Displays
 
 The transport shows editable displays for:
 
 - **Playhead position** — Current playback time
 - **Edit cursor position** — Position of the edit cursor
 - **Time selection** — Start and end of the current selection
+
+## Tempo
+
+The tempo (BPM) is displayed in the transport bar. You can change it by:
+
+- Clicking and dragging the tempo value up or down
+- Clicking the tempo label and typing a new value
+
+## Time Signature
+
+The time signature is displayed alongside the tempo in the transport bar.
+
+## Grid & Snap
+
+The grid controls how clips and edits snap to musical divisions.
+
+- **Snap toggle** — Enable or disable snapping to the grid
+- **Grid quantize** — Set the grid resolution (e.g., 1/4, 1/8, 1/16 notes) using the numerator and denominator controls
+- **Auto-grid** — Automatically adjust the grid resolution based on the current zoom level
