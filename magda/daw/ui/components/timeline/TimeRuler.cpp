@@ -758,7 +758,12 @@ void TimeRuler::initLoopInteraction() {
     LoopMarkerInteraction::Host host;
     host.pixelToTime = [this](int pixel) { return pixelToTime(pixel); };
     host.timeToPixel = [this](double time) { return timeToPixel(time); };
-    host.snapToGrid = nullptr;  // No grid snap in TimeRuler for now
+    host.snapToGrid = [this](double time) -> double {
+        if (tempo <= 0.0)
+            return time;
+        double secondsPerBeat = 60.0 / tempo;
+        return std::round(time / secondsPerBeat) * secondsPerBeat;
+    };
     host.onLoopChanged = [this](double start, double end) {
         if (onLoopRegionChanged)
             onLoopRegionChanged(start, end);
