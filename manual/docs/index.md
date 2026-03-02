@@ -1,6 +1,6 @@
 # Welcome to MAGDA
 
-MAGDA is a free, open-source digital audio workstation (DAW) for recording, editing, and mixing audio and MIDI. Built with [JUCE](https://juce.com/) and [Tracktion Engine](https://github.com/Tracktion/tracktion_engine), it provides a professional-grade audio engine in a lightweight, open-source package.
+MAGDA (**M**ulti **A**gent **D**igital **A**udio) is a free, open-source digital audio workstation (DAW) for recording, editing, and mixing audio and MIDI. Built with [JUCE](https://juce.com/) and [Tracktion Engine](https://github.com/Tracktion/tracktion_engine), it provides a professional-grade audio engine in a lightweight, open-source package.
 
 MAGDA includes a built-in **AI assistant** — describe what you want in natural language ("add a MIDI track with a bass clip", "transpose the selected notes up an octave") and MAGDA translates your request into actions. See [AI Assistant](panels/ai-assistant.md) to learn more.
 
