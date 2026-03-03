@@ -200,7 +200,8 @@ class PluginManager {
      * @param deviceId The MAGDA device ID inside the rack
      * @param plugin The TE plugin created for this device
      */
-    void registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+    void registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin,
+                                     const DeviceInfo& device);
 
     /**
      * @brief Sync a multi-output track's plugin chain

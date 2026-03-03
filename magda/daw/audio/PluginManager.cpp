@@ -2136,7 +2136,8 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
 // Rack Plugin Processor Registration
 // =============================================================================
 
-void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin) {
+void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin,
+                                                const DeviceInfo& device) {
     if (!plugin)
         return;
 
@@ -2183,6 +2184,9 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
     }
 
     if (processor) {
+        // Restore parameter values from DeviceInfo onto the newly created plugin
+        processor->syncFromDeviceInfo(device);
+
         juce::ScopedLock lock(pluginLock_);
         deviceProcessors_[deviceId] = std::move(processor);
         DBG("PluginManager::registerRackPluginProcessor: Registered processor for device "
