@@ -156,6 +156,9 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     for (size_t i = 0; i < toRemove.size(); ++i) {
         pluginWindowBridge_.closeWindowsForDevice(toRemove[i]);
 
+        // Remove any orphaned MidiReceivePlugin for this device
+        removeMidiReceive(trackId, toRemove[i]);
+
         // If this was a wrapped instrument, unwrap it (removes rack + rack type)
         if (instrumentRackManager_.getInnerPlugin(toRemove[i]) != nullptr) {
             instrumentRackManager_.unwrap(toRemove[i]);
