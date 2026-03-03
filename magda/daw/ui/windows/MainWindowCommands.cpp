@@ -30,7 +30,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
     const juce::CommandID allCommands[] = {
         // Edit menu
         undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, splitOrTrim, joinClips,
-        renderClip, renderTimeSelection, setLoopFromClip,
+        renderClip, renderTimeSelection, setLoopFromClip, toggleClipLoop,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -120,6 +120,11 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
                            "Edit", 0);
             result.addDefaultKeypress('l', juce::ModifierKeys::commandModifier |
                                                juce::ModifierKeys::shiftModifier);
+            break;
+
+        case toggleClipLoop:
+            result.setInfo("Toggle Clip Loop", "Toggle loop on/off for selected clip", "Edit", 0);
+            result.addDefaultKeypress('l', juce::ModifierKeys::commandModifier);
             break;
 
         // File menu
@@ -796,6 +801,22 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 if (clip && mainView) {
                     mainView->getTimelineController().dispatch(
                         SetLoopRegionEvent{clip->startTime, clip->getEndTime()});
+                }
+            }
+            return true;
+        }
+
+        case toggleClipLoop: {
+            auto selectedClips = selectionManager.getSelectedClips();
+            if (!selectedClips.empty()) {
+                double bpm = 120.0;
+                if (mainView)
+                    bpm = mainView->getTimelineController().getState().tempo.bpm;
+
+                for (auto clipId : selectedClips) {
+                    auto* clip = clipManager.getClip(clipId);
+                    if (clip)
+                        clipManager.setClipLoopEnabled(clipId, !clip->loopEnabled, bpm);
                 }
             }
             return true;
