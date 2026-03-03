@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "../../../core/SelectionManager.hpp"
+#include "../../../project/ProjectManager.hpp"
 #include "PanelContent.hpp"
 
 namespace magda {
@@ -20,7 +21,8 @@ namespace magda::daw::ui {
  */
 class AIChatConsoleContent : public PanelContent,
                              private juce::Timer,
-                             public magda::SelectionManagerListener {
+                             public magda::SelectionManagerListener,
+                             public magda::ProjectManagerListener {
   public:
     AIChatConsoleContent();
     ~AIChatConsoleContent() override;
@@ -38,6 +40,9 @@ class AIChatConsoleContent : public PanelContent,
 
     void onActivated() override;
     void onDeactivated() override;
+
+    // ProjectManagerListener
+    void projectOpened(const magda::ProjectInfo& info) override;
 
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
