@@ -1425,14 +1425,11 @@ void MainView::paintResizeHandle(juce::Graphics& g) {
     int centerX = handleArea.getCentreX();
     g.fillRect(centerX - 1, handleArea.getY(), 2, handleArea.getHeight());
 
-    // Draw resize indicator dots when hovered or resizing
+    // Draw a subtle highlight line when hovered or resizing
     if (isHovered || isResizingHeaders) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).brighter(0.2f));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.4f));
         int centerY = handleArea.getCentreY();
-
-        for (int i = -1; i <= 1; ++i) {
-            g.fillEllipse(centerX - 1, centerY + i * 4 - 1, 2, 2);
-        }
+        g.fillRect(centerX, handleArea.getY() + 4, 1, handleArea.getHeight() - 8);
     }
 }
 
@@ -1470,15 +1467,10 @@ void MainView::paintMasterResizeHandle(juce::Graphics& g) {
     int centerY = handleArea.getCentreY();
     g.fillRect(handleArea.getX(), centerY - 1, handleArea.getWidth(), 2);
 
-    // Draw resize indicator dots when hovered or resizing
+    // Draw a subtle highlight line when hovered or resizing
     if (isHovered || isResizingMasterStrip) {
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).brighter(0.2f));
-        int centerX = handleArea.getCentreX();
-
-        for (int i = -1; i <= 1; ++i) {
-            g.fillEllipse(static_cast<float>(centerX + i * 4 - 1), static_cast<float>(centerY - 1),
-                          2.0f, 2.0f);
-        }
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.4f));
+        g.fillRect(handleArea.getX() + 4, centerY, handleArea.getWidth() - 8, 1);
     }
 }
 

@@ -395,7 +395,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     }
 
     // Border
-    g.setColour(clip.colour);
+    g.setColour(clip.colour.withAlpha(0.45f));
     g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
 }
 
@@ -501,7 +501,7 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     }
 
     // Border
-    g.setColour(clip.colour);
+    g.setColour(clip.colour.withAlpha(0.45f));
     g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
 }
 

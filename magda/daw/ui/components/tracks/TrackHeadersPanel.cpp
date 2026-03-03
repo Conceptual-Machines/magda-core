@@ -1423,14 +1423,6 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
 void TrackHeadersPanel::paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.fillRect(area);
-
-    // Draw resize grip
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    int centerY = area.getCentreY();
-    for (int i = 0; i < 3; ++i) {
-        int x = area.getX() + 5 + i * 3;
-        g.drawLine(x, centerY - 1, x, centerY + 1, 1.0f);
-    }
 }
 
 juce::Rectangle<int> TrackHeadersPanel::getTrackHeaderArea(int trackIndex) const {
