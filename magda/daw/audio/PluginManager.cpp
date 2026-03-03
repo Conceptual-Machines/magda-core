@@ -1032,10 +1032,14 @@ void PluginManager::rebuildSidechainLFOCache() {
         std::vector<te::LFOModifier*> lfos;
 
         // 1. Self-track LFOs: collect from deviceModifiers_ for this track's devices
+        //    Skip devices that have a cross-track sidechain source — those LFOs
+        //    are triggered by the source track, not by self.
         for (const auto& element : track.chainElements) {
             if (!isDevice(element))
                 continue;
             const auto& device = getDevice(element);
+            if (device.sidechain.sourceTrackId != INVALID_TRACK_ID)
+                continue;  // Has external sidechain — skip self-triggering
             auto it = deviceModifiers_.find(device.id);
             if (it == deviceModifiers_.end())
                 continue;
@@ -1045,8 +1049,33 @@ void PluginManager::rebuildSidechainLFOCache() {
             }
         }
 
-        // Also collect from racks on this track
-        rackSyncManager_.collectLFOModifiers(track.id, lfos);
+        // Also collect from racks on this track (skip racks with external sidechain)
+        {
+            bool hasRackSidechain = false;
+            for (const auto& element : track.chainElements) {
+                if (isRack(element)) {
+                    const auto& rack = getRack(element);
+                    if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                        hasRackSidechain = true;
+                        break;
+                    }
+                    // Also check devices inside rack for sidechain sources
+                    for (const auto& chain : rack.chains) {
+                        for (const auto& ce : chain.elements) {
+                            if (isDevice(ce) &&
+                                getDevice(ce).sidechain.sourceTrackId != INVALID_TRACK_ID) {
+                                hasRackSidechain = true;
+                                break;
+                            }
+                        }
+                        if (hasRackSidechain)
+                            break;
+                    }
+                }
+            }
+            if (!hasRackSidechain)
+                rackSyncManager_.collectLFOModifiers(track.id, lfos);
+        }
 
         // 2. Cross-track LFOs: for each OTHER track that has a device sidechained
         //    from this track, collect that destination track's LFO modifiers

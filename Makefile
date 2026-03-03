@@ -48,6 +48,12 @@ release:
 	cd $(BUILD_DIR_RELEASE) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
 	cd $(BUILD_DIR_RELEASE) && ninja
 
+# Run the release application
+.PHONY: run-release
+run-release: release
+	@echo "🚀 Running MAGDA DAW (Release)..."
+	open "$(BUILD_DIR_RELEASE)/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
+
 # ASAN (AddressSanitizer) build
 .PHONY: asan
 asan:

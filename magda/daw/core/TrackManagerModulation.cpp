@@ -854,14 +854,12 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             bool deviceMidiNoteOff = midiNoteOff;
             float deviceAudioPeak = audioPeak;
 
-            // Cross-track sidechain: use source track's MIDI and audio
+            // Cross-track sidechain: replace self triggers with source track's
             if (device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
                 auto srcId = device.sidechain.sourceTrackId;
-                // MIDI triggers from source track
-                if (midiNoteOnTracks.count(srcId) > 0)
-                    deviceMidiTriggered = true;
-                if (midiAllNotesOffTracks.count(srcId) > 0)
-                    deviceMidiNoteOff = true;
+                // Replace self triggers with source track's MIDI triggers
+                deviceMidiTriggered = midiNoteOnTracks.count(srcId) > 0;
+                deviceMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
 
                 // Audio peak from source track (for Audio-triggered mods)
                 if (srcId >= 0 && srcId < kMaxBusTracks)
@@ -877,28 +875,24 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             bool rackMidiNoteOff = midiNoteOff;
             float rackAudioPeak = audioPeak;
 
-            // Check rack-level sidechain source
+            // Check rack-level sidechain source — replaces self triggers
             if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID) {
                 auto srcId = rack.sidechain.sourceTrackId;
-                if (midiNoteOnTracks.count(srcId) > 0)
-                    rackMidiTriggered = true;
-                if (midiAllNotesOffTracks.count(srcId) > 0)
-                    rackMidiNoteOff = true;
+                rackMidiTriggered = midiNoteOnTracks.count(srcId) > 0;
+                rackMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
                 if (srcId >= 0 && srcId < kMaxBusTracks)
                     rackAudioPeak = audioPeakLevels[srcId];
             }
 
-            // Check devices inside the rack for sidechain sources
+            // Check devices inside the rack for sidechain sources — replaces self triggers
             for (const auto& chain : rack.chains) {
                 for (const auto& chainElement : chain.elements) {
                     if (isDevice(chainElement)) {
                         const auto& dev = magda::getDevice(chainElement);
                         if (dev.sidechain.sourceTrackId != INVALID_TRACK_ID) {
                             auto srcId = dev.sidechain.sourceTrackId;
-                            if (midiNoteOnTracks.count(srcId) > 0)
-                                rackMidiTriggered = true;
-                            if (midiAllNotesOffTracks.count(srcId) > 0)
-                                rackMidiNoteOff = true;
+                            rackMidiTriggered = midiNoteOnTracks.count(srcId) > 0;
+                            rackMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
                             if (srcId >= 0 && srcId < kMaxBusTracks)
                                 rackAudioPeak = audioPeakLevels[srcId];
                             break;
