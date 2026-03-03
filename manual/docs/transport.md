@@ -23,7 +23,8 @@ The transport bar sits at the top of the window and is available in all views.
 
 Enable looping with the **Loop** button in the transport. The loop region is defined by start and end points, displayed as editable time labels (bars:beats:ticks).
 
-Set the loop from a clip: select the clip and press ++ctrl+shift+l++ (++cmd+shift+l++).
+- **Set loop from a time selection** — Make a time selection in the arrangement and press ++l++ to set the loop region to match the selection
+- **Set loop from a clip** — Select the clip and press ++ctrl+shift+l++ (++cmd+shift+l++)
 
 ## Punch In/Out
 

@@ -58,6 +58,11 @@ Both MIDI and audio clips in Session View have additional launch properties:
 !!! note
     Session clips do not have an absolute position property — they are not placed on the timeline. Their position is determined by the scene slot they occupy.
 
+## Creating Clips
+
+- **Double-click** an empty area on a track to create a new 1-bar MIDI clip at that position
+- **Double-click** over a time selection to create a MIDI clip matching the selection length
+
 ## Selecting Clips
 
 - **Click** a clip to select it
