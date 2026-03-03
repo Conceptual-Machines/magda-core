@@ -84,6 +84,12 @@ class RackSyncManager {
     void captureAllPluginStates();
 
     /**
+     * @brief Remove all racks belonging to a specific track
+     * @param trackId The track being deleted
+     */
+    void removeRacksForTrack(TrackId trackId);
+
+    /**
      * @brief Get all currently synced rack IDs
      */
     std::vector<RackId> getSyncedRackIds() const;

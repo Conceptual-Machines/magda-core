@@ -601,8 +601,7 @@ void AudioBridge::syncAll() {
     auto mappedIds = trackController_.getAllTrackIds();
     for (auto trackId : mappedIds) {
         if (magdaTrackIds.find(trackId) == magdaTrackIds.end()) {
-            // This triggers syncTrackPlugins which cleans up plugins/racks for the track
-            pluginManager_.syncTrackPlugins(trackId);
+            pluginManager_.cleanupTrackPlugins(trackId);
             trackController_.removeAudioTrack(trackId);
         }
     }
@@ -626,6 +625,13 @@ void AudioBridge::syncAll() {
 
     // Sync master channel volume/pan to Tracktion Engine
     masterChannelChanged();
+
+    // Safety net: purge any stale entries that slipped through per-track cleanup
+    pluginManager_.purgeStaleEntries();
+
+#if JUCE_DEBUG
+    pluginManager_.validateMappingConsistency();
+#endif
 }
 
 void AudioBridge::syncTrackPlugins(TrackId trackId) {

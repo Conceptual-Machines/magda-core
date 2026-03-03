@@ -147,6 +147,17 @@ void RackSyncManager::removeRack(RackId rackId) {
     syncedRacks_.erase(it);
 }
 
+void RackSyncManager::removeRacksForTrack(TrackId trackId) {
+    std::vector<RackId> toRemove;
+    for (const auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId == trackId)
+            toRemove.push_back(rackId);
+    }
+    for (auto rackId : toRemove) {
+        removeRack(rackId);
+    }
+}
+
 std::vector<RackId> RackSyncManager::getSyncedRackIds() const {
     std::vector<RackId> ids;
     ids.reserve(syncedRacks_.size());
