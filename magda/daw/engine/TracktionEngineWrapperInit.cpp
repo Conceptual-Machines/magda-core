@@ -403,6 +403,10 @@ void TracktionEngineWrapper::shutdown() {
     // Clear the pre-save callback before destroying AudioBridge
     ProjectManager::getInstance().onBeforeSave = nullptr;
 
+    // Clear MidiBridge's reference to AudioBridge before destroying it
+    if (midiBridge_)
+        midiBridge_->clearAudioBridge();
+
     // Destroy AudioBridge first (it references Edit and Engine)
     if (audioBridge_) {
         audioBridge_.reset();

@@ -713,8 +713,8 @@ int RackComponent::getParamPanelWidth() const {
 }
 
 int RackComponent::getModPanelWidth() const {
-    // Width for single column of mod knobs (1x4 grid)
-    return SINGLE_COLUMN_PANEL_WIDTH;
+    // Width for 2 columns of mod knobs (2x4 grid)
+    return DEFAULT_PANEL_WIDTH;
 }
 
 }  // namespace magda::daw::ui

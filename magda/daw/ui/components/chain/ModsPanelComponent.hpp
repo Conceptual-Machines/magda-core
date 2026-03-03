@@ -92,7 +92,7 @@ class ModsPanelComponent : public PagedControlPanel {
         return "MODS";
     }
     int getGridColumns() const override {
-        return 1;  // Single column for mods
+        return 2;  // Two columns for mods (2x4 grid)
     }
 
   private:

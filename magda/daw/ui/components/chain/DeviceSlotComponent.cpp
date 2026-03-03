@@ -1072,7 +1072,7 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
 int DeviceSlotComponent::getModPanelWidth() const {
     if (drumGridUI_)
         return 0;  // No mod panel for drum grid
-    return modPanelVisible_ ? SINGLE_COLUMN_PANEL_WIDTH : 0;
+    return modPanelVisible_ ? DEFAULT_PANEL_WIDTH : 0;
 }
 
 int DeviceSlotComponent::getParamPanelWidth() const {
