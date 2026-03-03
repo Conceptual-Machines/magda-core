@@ -1193,12 +1193,30 @@ void TrackChainContent::rebuildNodeComponents() {
     restoreNodeStates();
 
     // Restore selection state from SelectionManager
-    const auto& selectedPath = magda::SelectionManager::getInstance().getSelectedChainNode();
+    auto& sm = magda::SelectionManager::getInstance();
+    const auto& selectedPath = sm.getSelectedChainNode();
     if (selectedPath.isValid() && selectedPath.trackId == selectedTrackId_) {
         for (auto& node : nodeComponents_) {
             if (node->getNodePath() == selectedPath) {
                 node->setSelected(true);
                 break;
+            }
+        }
+    } else if (sm.getDeviceSelection().isValid()) {
+        // Also restore from Device selection — check validity rather than
+        // SelectionType, since selectTrack() changes type to Track before
+        // rebuildNodeComponents runs.
+        const auto& deviceSel = sm.getDeviceSelection();
+        if (deviceSel.trackId == selectedTrackId_ &&
+            deviceSel.deviceId != magda::INVALID_DEVICE_ID) {
+            selectedDeviceId_ = deviceSel.deviceId;
+            for (auto& node : nodeComponents_) {
+                if (auto* slot = dynamic_cast<DeviceSlotComponent*>(node.get())) {
+                    if (slot->getDeviceId() == deviceSel.deviceId) {
+                        slot->setSelected(true);
+                        break;
+                    }
+                }
             }
         }
     }

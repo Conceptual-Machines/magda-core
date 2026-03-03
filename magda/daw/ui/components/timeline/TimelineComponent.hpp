@@ -8,6 +8,7 @@
 #include "../../../utils/ScopedListener.hpp"
 #include "../../layout/LayoutConfig.hpp"
 #include "../../state/TimelineController.hpp"
+#include "LoopMarkerInteraction.hpp"
 
 namespace magda {
 
@@ -90,14 +91,14 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     void setLoopRegion(double startTime, double endTime);
     void clearLoopRegion();
     bool isLoopEnabled() const {
-        return loopEnabled;
+        return loopInteraction_.isEnabled();
     }
     void setLoopEnabled(bool enabled);
     double getLoopStartTime() const {
-        return loopStartTime;
+        return loopInteraction_.getStartTime();
     }
     double getLoopEndTime() const {
-        return loopEndTime;
+        return loopInteraction_.getEndTime();
     }
 
     // Snap to grid
@@ -156,14 +157,9 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     bool isDraggingStart = false;    // true for start edge, false for end edge
     bool arrangementLocked = false;  // Lock arrangement sections to prevent accidental movement
 
-    // Loop region state
-    double loopStartTime = -1.0;
-    double loopEndTime = -1.0;
-    bool loopEnabled = false;
-    bool isDraggingLoopStart = false;
-    bool isDraggingLoopEnd = false;
-    bool isDraggingLoopRegion = false;  // Dragging entire loop region
-    double loopDragOffset = 0.0;        // Offset from click position to loop start
+    // Loop marker interaction helper
+    LoopMarkerInteraction loopInteraction_;
+    void initLoopInteraction();
 
     // Snap to grid state
     bool snapEnabled = true;    // Snap enabled by default
@@ -201,10 +197,6 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     int findSectionAtPosition(int x, int y) const;
     bool isOnSectionEdge(int x, int sectionIndex, bool& isStartEdge) const;
     juce::String getDefaultSectionName() const;
-
-    // Loop marker interaction helpers
-    bool isOnLoopMarker(int x, int y, bool& isStartMarker) const;
-    bool isOnLoopTopBorder(int x, int y) const;  // Check if on the top connecting line
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimelineComponent)
 };

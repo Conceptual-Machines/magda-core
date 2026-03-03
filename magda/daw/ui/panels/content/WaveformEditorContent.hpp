@@ -95,7 +95,7 @@ class WaveformEditorContent : public PanelContent,
     static constexpr double MAX_VERTICAL_ZOOM = 4.0;
 
     // Layout constants
-    static constexpr int TIME_RULER_HEIGHT = 30;
+    static constexpr int TIME_RULER_HEIGHT = 48;
     static constexpr int TOOLBAR_HEIGHT = 30;
     static constexpr int GRID_LEFT_PADDING = 10;
 

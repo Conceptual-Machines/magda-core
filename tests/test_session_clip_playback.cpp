@@ -472,10 +472,9 @@ TEST_CASE("Session MIDI clip loop offset", "[session][midi][loop]") {
     const auto* clip = cm.getClip(clipId);
     REQUIRE(clip != nullptr);
 
-    SECTION("Session clips default to loop enabled") {
+    SECTION("Session clips default to loop enabled with loop length matching clip length") {
         REQUIRE(clip->loopEnabled == true);
-        // MIDI clips don't get loopLength set by createMidiClip
-        REQUIRE(clip->loopLength == Catch::Approx(0.0));
+        REQUIRE(clip->loopLength == Catch::Approx(4.0));
     }
 
     SECTION("Loop offset defaults to zero") {

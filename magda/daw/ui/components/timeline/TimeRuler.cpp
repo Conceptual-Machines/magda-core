@@ -131,6 +131,17 @@ void TimeRuler::setLoopRegion(double offsetSeconds, double lengthSeconds, bool e
     loopLength = lengthSeconds;
     loopEnabled = enabled;
     loopActive = active;
+
+    // Sync loop interaction helper with absolute pixel coordinates
+    if (enabled && lengthSeconds > 0.0) {
+        double loopStartTime = relativeMode ? loopOffset : (timeOffset + loopOffset);
+        double loopEndTime = loopStartTime + loopLength;
+        loopInteraction_.setLoopRegion(loopStartTime, loopEndTime, true);
+        initLoopInteraction();
+    } else {
+        loopInteraction_.setLoopRegion(-1.0, -1.0, false);
+    }
+
     repaint();
 }
 
@@ -166,6 +177,10 @@ int TimeRuler::getPreferredHeight() const {
 }
 
 void TimeRuler::mouseDown(const juce::MouseEvent& event) {
+    // Try loop marker interaction first
+    if (loopInteraction_.mouseDown(event.x, event.y))
+        return;
+
     mouseDownX = event.x;
     mouseDownY = event.y;
     lastDragX = event.x;
@@ -178,6 +193,10 @@ void TimeRuler::mouseDown(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
+    // Try loop marker interaction first
+    if (loopInteraction_.mouseDrag(event.x, event.y))
+        return;
+
     int deltaX = std::abs(event.x - mouseDownX);
     int deltaY = std::abs(event.y - mouseDownY);
 
@@ -222,6 +241,10 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseUp(const juce::MouseEvent& event) {
+    // Complete loop marker interaction
+    if (loopInteraction_.mouseUp(event.x, event.y))
+        return;
+
     // If it was a click (not a drag), handle playhead positioning
     if (dragMode == DragMode::None) {
         int deltaX = std::abs(event.x - mouseDownX);
@@ -241,7 +264,12 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
     setMouseCursor(CursorManager::getInstance().getZoomCursor());
 }
 
-void TimeRuler::mouseMove(const juce::MouseEvent& /*event*/) {
+void TimeRuler::mouseMove(const juce::MouseEvent& event) {
+    auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
+    if (loopCursor != juce::MouseCursor::NormalCursor) {
+        setMouseCursor(loopCursor);
+        return;
+    }
     setMouseCursor(CursorManager::getInstance().getZoomCursor());
 }
 
@@ -545,24 +573,40 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
         auto markerColour = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
                                        : DarkTheme::getColour(DarkTheme::TEXT_DISABLED);
-        float stripeAlpha = loopActive ? 0.2f : 0.1f;
 
         if (loopEndX >= 0 && loopStartX <= width) {
-            // Semi-transparent stripe across ruler height
-            g.setColour(markerColour.withAlpha(stripeAlpha));
-            g.fillRect(loopStartX, 0, loopEndX - loopStartX, height);
+            int tickAreaTop = height - TICK_HEIGHT_MAJOR;
 
-            // 2px vertical lines at boundaries
+            // Nearly transparent region fill in tick area only (matches arrangement view)
+            auto regionColour = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_REGION)
+                                           : juce::Colour(0x08808080);
+            g.setColour(regionColour);
+            g.fillRect(loopStartX, tickAreaTop, loopEndX - loopStartX, TICK_HEIGHT_MAJOR);
+
+            // 2px vertical lines in tick area only (not covering labels)
             g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
             if (loopStartX >= 0 && loopStartX <= width) {
-                g.fillRect(loopStartX - 1, 0, 2, height);
+                g.fillRect(loopStartX - 1, tickAreaTop, 2, TICK_HEIGHT_MAJOR);
             }
             if (loopEndX >= 0 && loopEndX <= width) {
-                g.fillRect(loopEndX - 1, 0, 2, height);
+                g.fillRect(loopEndX - 1, tickAreaTop, 2, TICK_HEIGHT_MAJOR);
             }
 
             // Small triangular flags at top
             int flagTop = 2;
+            g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
+
+            // Connecting line between flags
+            g.drawLine(static_cast<float>(loopStartX), static_cast<float>(0),
+                       static_cast<float>(loopEndX), static_cast<float>(0), 2.0f);
+
+            // Fill the flag strip area
+            auto flagFill = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
+                                       : juce::Colour(0xFF808080);
+            g.setColour(flagFill.withAlpha(0.3f));
+            g.fillRect(loopStartX, 0, loopEndX - loopStartX, flagTop + 10);
+
+            g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
             if (loopStartX >= 0 && loopStartX <= width) {
                 juce::Path startFlag;
                 startFlag.addTriangle(
@@ -708,6 +752,27 @@ int TimeRuler::timeToPixel(double time) const {
     int currentScrollOffset = linkedViewport ? linkedViewport->getViewPositionX() : scrollOffset;
     double beats = time * tempo / 60.0;
     return static_cast<int>(beats * zoom) - currentScrollOffset + leftPadding;
+}
+
+void TimeRuler::initLoopInteraction() {
+    LoopMarkerInteraction::Host host;
+    host.pixelToTime = [this](int pixel) { return pixelToTime(pixel); };
+    host.timeToPixel = [this](double time) { return timeToPixel(time); };
+    host.snapToGrid = [this](double time) -> double {
+        if (tempo <= 0.0)
+            return time;
+        double secondsPerBeat = 60.0 / tempo;
+        return std::round(time / secondsPerBeat) * secondsPerBeat;
+    };
+    host.onLoopChanged = [this](double start, double end) {
+        if (onLoopRegionChanged)
+            onLoopRegionChanged(start, end);
+    };
+    host.onRepaint = [this]() { repaint(); };
+    host.maxTime = timelineLength;
+    host.topBorderY = 0;           // Flags are at the top of the ruler
+    host.topBorderThreshold = 12;  // Match the flag strip height
+    loopInteraction_.setHost(std::move(host));
 }
 
 }  // namespace magda

@@ -93,7 +93,7 @@ class DarkTheme {
     // Selection and loop regions
     // ==========================================================================
     static constexpr auto TIME_SELECTION = 0x335588AA;  // Semi-transparent blue for time selection
-    static constexpr auto LOOP_REGION = 0x3344AA66;     // Semi-transparent green for loop region
+    static constexpr auto LOOP_REGION = 0x08FFFFFF;     // Nearly transparent white for loop region
     static constexpr auto LOOP_MARKER = 0xFF44AA66;     // Solid green for loop flag markers
     static constexpr auto OFFSET_MARKER = 0xFFCCAA44;   // Solid yellow for content offset marker
 

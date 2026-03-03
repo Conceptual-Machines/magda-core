@@ -211,6 +211,7 @@ set(DAW_CORE_SOURCES
     # Preset management
     core/PresetManager.cpp
     # UI components needed by tests
+    ui/components/timeline/LoopMarkerInteraction.cpp
     ui/components/timeline/TimelineComponent.cpp
     # State management
     ui/state/TimelineController.cpp
@@ -298,6 +299,7 @@ set(DAW_UI_SOURCES
     ui/components/common/DraggableValueLabel.cpp
     ui/components/common/BarsBeatsTicksLabel.cpp
     # Components - Timeline
+    ui/components/timeline/LoopMarkerInteraction.cpp
     ui/components/timeline/TimelineComponent.cpp
     ui/components/timeline/TimelineFiller.cpp
     ui/components/timeline/TimeRuler.cpp
@@ -511,6 +513,7 @@ set(DAW_HEADERS
     ui/components/common/DraggableValueLabel.hpp
     ui/components/common/BarsBeatsTicksLabel.hpp
     # Components - Timeline
+    ui/components/timeline/LoopMarkerInteraction.hpp
     ui/components/timeline/TimelineComponent.hpp
     ui/components/timeline/TimelineFiller.hpp
     ui/components/timeline/TimeRuler.hpp

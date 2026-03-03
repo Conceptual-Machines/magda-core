@@ -51,6 +51,28 @@ MidiEditorContent::MidiEditorContent() {
         }
     };
 
+    // TimeRuler loop region drag callback
+    timeRuler_->onLoopRegionChanged = [this](double displayStart, double displayEnd) {
+        if (editingClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (!clip || !clip->loopEnabled)
+            return;
+
+        double newLoopLength = displayEnd - displayStart;
+        // Reverse the display transform: displayOffset = clip->offset - clip->loopStart
+        // In relative mode: displayStart = loopOffset
+        // In absolute mode: displayStart = timeOffset + loopOffset
+        double loopOffset = relativeTimeMode_ ? displayStart : (displayStart - clip->startTime);
+        double newLoopStart = clip->offset - loopOffset;
+
+        auto* controller = magda::TimelineController::getCurrent();
+        double bpm = controller ? controller->getState().tempo.bpm : 120.0;
+
+        magda::ClipManager::getInstance().setLoopStart(editingClipId_, newLoopStart, bpm);
+        magda::ClipManager::getInstance().setLoopLength(editingClipId_, newLoopLength, bpm);
+    };
+
     // Edit cursor blink timer
     blinkTimer_.callback = [this]() {
         editCursorBlinkVisible_ = !editCursorBlinkVisible_;
@@ -271,12 +293,32 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
             }
         }
 
-        // Offset playhead so it starts from the midiOffset position
-        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+        // Session mode: use the loop-wrapped session playhead position
+        // instead of the arrangement transport position, matching the
+        // approach used by WaveformEditorContent.
+        double sessionPos = state.playhead.sessionPlaybackPosition;
+        if (sessionPos >= 0.0 && state.playhead.sessionPlaybackClipId == editingClipId_ &&
+            editingClipId_ != magda::INVALID_CLIP_ID) {
             const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-            if (clip && clip->midiOffset > 0.0) {
+            if (clip) {
+                // Convert session elapsed seconds to absolute seconds so the
+                // grid's beat conversion (playheadBeats = pos / secondsPerBeat)
+                // produces a beat offset relative to clip start.
                 double secondsPerBeat = 60.0 / state.tempo.bpm;
-                playPos += clip->midiOffset * secondsPerBeat;
+                playPos = clip->startTime + sessionPos;
+
+                if (clip->midiOffset > 0.0) {
+                    playPos += clip->midiOffset * secondsPerBeat;
+                }
+            }
+        } else {
+            // Arrangement mode: offset playhead by midiOffset
+            if (editingClipId_ != magda::INVALID_CLIP_ID) {
+                const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+                if (clip && clip->midiOffset > 0.0) {
+                    double secondsPerBeat = 60.0 / state.tempo.bpm;
+                    playPos += clip->midiOffset * secondsPerBeat;
+                }
             }
         }
 

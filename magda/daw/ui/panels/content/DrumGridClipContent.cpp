@@ -761,6 +761,26 @@ class DrumGridClipGrid : public juce::Component,
             return true;
         }
 
+        // Cmd+A — Select all notes
+        if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'A') {
+            if (clipId_ == magda::INVALID_CLIP_ID)
+                return false;
+
+            std::vector<size_t> allIndices;
+            for (auto& nc : noteComponents_) {
+                if (nc->getSourceClipId() == clipId_) {
+                    nc->setSelected(true);
+                    allIndices.push_back(nc->getNoteIndex());
+                }
+            }
+
+            if (onNoteSelectionChanged)
+                onNoteSelectionChanged(clipId_, allIndices);
+
+            repaint();
+            return true;
+        }
+
         return false;
     }
 

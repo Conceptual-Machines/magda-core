@@ -440,9 +440,7 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onSelectAll = [this]() {
-        // TODO: Implement select all
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Select All",
-                                               "Select all functionality not yet implemented.");
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::selectAll, false);
     };
 
     callbacks.onPreferences = [this]() { PreferencesDialog::showDialog(this); };

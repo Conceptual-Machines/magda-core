@@ -61,8 +61,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
         // Use inherited method to properly handle editor visibility
         setModPanelVisible(modButton_->getToggleState());
     };
-    // TODO (#801): global mod/macro icons not yet implemented — hidden for now
-    // addAndMakeVisible(*modButton_);
+    addAndMakeVisible(*modButton_);
 
     // MACRO button (macros toggle) - knob icon
     macroButton_ =
@@ -77,7 +76,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
         macroButton_->setActive(newState);
         setParamPanelVisible(newState);
     };
-    // addAndMakeVisible(*macroButton_);
+    addAndMakeVisible(*macroButton_);
 
     // Volume slider (dB format)
     volumeSlider_.setRange(-60.0, 6.0, 0.1);
@@ -186,9 +185,8 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     chainsLabel_.setVisible(true);
     addChainButton_.setVisible(true);
     chainViewport_.setVisible(true);
-    // Mod/macro buttons hidden — TODO (#801): global mod/macro icons
-    // modButton_->setVisible(true);
-    // macroButton_->setVisible(true);
+    modButton_->setVisible(true);
+    macroButton_->setVisible(true);
     volumeSlider_.setVisible(true);
 
     // Calculate chain panel positioning
@@ -252,11 +250,10 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    // Macro and Mod buttons hidden — TODO (#801): global mod/macro icons
-    // macroButton_->setBounds(headerArea.removeFromLeft(20));
-    // headerArea.removeFromLeft(4);
-    // modButton_->setBounds(headerArea.removeFromLeft(20));
-    // headerArea.removeFromLeft(4);
+    macroButton_->setBounds(headerArea.removeFromLeft(20));
+    headerArea.removeFromLeft(4);
+    modButton_->setBounds(headerArea.removeFromLeft(20));
+    headerArea.removeFromLeft(4);
 
     // Volume slider on the right side of header
     volumeSlider_.setBounds(headerArea.removeFromRight(45));
@@ -267,14 +264,13 @@ void RackComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     // Add macro and mod buttons vertically when collapsed - matches panel order
     int buttonSize = juce::jmin(16, area.getWidth() - 4);
 
-    // Macro and Mod buttons hidden — TODO (#801): global mod/macro icons
-    // macroButton_->setBounds(
-    //     area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    // macroButton_->setVisible(true);
-    // area.removeFromTop(4);
-    // modButton_->setBounds(
-    //     area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    // modButton_->setVisible(true);
+    macroButton_->setBounds(
+        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+    macroButton_->setVisible(true);
+    area.removeFromTop(4);
+    modButton_->setBounds(
+        area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+    modButton_->setVisible(true);
 }
 
 int RackComponent::getPreferredHeight() const {

@@ -23,7 +23,6 @@ ClipManager& ClipManager::getInstance() {
 ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double length,
                                     const juce::String& audioFilePath, ClipView view,
                                     double projectBPM) {
-    juce::ignoreUnused(projectBPM);
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
@@ -51,8 +50,16 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
         arrangementClips_.push_back(clip);
         resolveOverlaps(clip.id);
     } else {
-        // Session clips loop by default
+        // Session clips loop by default and follow project tempo
         clip.loopEnabled = true;
+        clip.autoTempo = true;
+        double bpm = projectBPM > 0.0 ? projectBPM
+                                      : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+        if (bpm > 0.0) {
+            clip.startBeats = (startTime * bpm) / 60.0;
+            clip.lengthBeats = (length * bpm) / 60.0;
+            clip.loopLengthBeats = clip.lengthBeats;
+        }
         clip.length = length;
         sessionClips_.push_back(clip);
     }
@@ -89,6 +96,8 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
     } else {
         // Session clips loop by default
         clip.loopEnabled = true;
+        clip.loopLengthBeats = clip.lengthBeats;
+        clip.loopLength = length;
         sessionClips_.push_back(clip);
     }
 

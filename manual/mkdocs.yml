@@ -7,15 +7,15 @@ theme:
   palette:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to dark mode
@@ -28,6 +28,8 @@ theme:
     - search.highlight
     - content.code.copy
     - content.tabs.link
+  logo: assets/images/magda-lisa.svg
+  favicon: assets/images/magda-lisa.svg
   icon:
     repo: fontawesome/brands/github
 
@@ -39,26 +41,40 @@ nav:
   - Getting Started:
       - Installation: getting-started/installation.md
       - First Session: getting-started/first-session.md
-  - Session View:
-      - Overview: session-view/overview.md
-      - Clips & Scenes: session-view/clips-and-scenes.md
-      - Mini Mixer: session-view/mini-mixer.md
-  - Arrangement View:
-      - Overview: arrangement-view/overview.md
-      - Tracks & Clips: arrangement-view/tracks-and-clips.md
-      - Timeline Navigation: arrangement-view/timeline-navigation.md
-      - Editing: arrangement-view/editing.md
-  - Mixer View:
-      - Overview: mixer-view/overview.md
-      - Channel Strips: mixer-view/channel-strips.md
-      - Routing & Sends: mixer-view/routing.md
-  - Transport:
-      - Transport Controls: transport/transport-controls.md
-      - Tempo & Grid: transport/tempo-and-grid.md
+  - Interface Layout:
+      - Overview: interface/overview.md
+      - Menus: interface/menus.md
+      - Preferences: interface/preferences.md
+      - Audio Settings: interface/audio-settings.md
+      - Plugin Settings: interface/plugin-settings.md
+  - Tracks: tracks.md
+  - Clips: clips.md
+  - FX Chain & Racks: fx-chain.md
+  - Arrangement View: arrangement-view.md
+  - Session View: session-view.md
+  - Mixer View: mixer-view.md
+  - Panels:
+      - Inspector: panels/inspector.md
+      - Plugin & Media Browser: panels/browsers.md
+      - AI Assistant: panels/ai-assistant.md
+      - Editors: panels/editors.md
+  - Devices:
+      - Built-in Devices: devices/built-in.md
+      - Drum Grid: devices/drum-grid.md
+      - Sampler: devices/sampler.md
+  - Modulation:
+      - Overview: modulation/overview.md
+      - Modulators: modulation/modulators.md
+      - Macros: modulation/macros.md
+      - Linking Parameters: modulation/linking.md
+  - Transport: transport.md
   - Reference:
       - Keyboard Shortcuts: reference/keyboard-shortcuts.md
       - File Formats: reference/file-formats.md
       - Troubleshooting: reference/troubleshooting.md
+
+extra_css:
+  - stylesheets/extra.css
 
 markdown_extensions:
   - admonition
