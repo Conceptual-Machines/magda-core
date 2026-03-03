@@ -591,6 +591,22 @@ void AudioBridge::syncAll() {
     auto& tm = TrackManager::getInstance();
     const auto& tracks = tm.getTracks();
 
+    // Collect MAGDA track IDs for stale-check
+    std::unordered_set<TrackId> magdaTrackIds;
+    for (const auto& track : tracks) {
+        magdaTrackIds.insert(track.id);
+    }
+
+    // Remove TE tracks that no longer exist in MAGDA (e.g. after clearAllTracks)
+    auto mappedIds = trackController_.getAllTrackIds();
+    for (auto trackId : mappedIds) {
+        if (magdaTrackIds.find(trackId) == magdaTrackIds.end()) {
+            // This triggers syncTrackPlugins which cleans up plugins/racks for the track
+            pluginManager_.syncTrackPlugins(trackId);
+            trackController_.removeAudioTrack(trackId);
+        }
+    }
+
     for (const auto& track : tracks) {
         ensureTrackMapping(track.id);
         syncTrackPlugins(track.id);

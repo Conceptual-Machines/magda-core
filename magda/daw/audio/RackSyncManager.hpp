@@ -84,6 +84,11 @@ class RackSyncManager {
     void captureAllPluginStates();
 
     /**
+     * @brief Get all currently synced rack IDs
+     */
+    std::vector<RackId> getSyncedRackIds() const;
+
+    /**
      * @brief Clear all synced rack state (for shutdown)
      */
     void clear();

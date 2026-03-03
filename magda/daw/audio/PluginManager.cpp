@@ -168,22 +168,14 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     }
 
     // Remove stale racks (racks no longer in MAGDA chain elements)
+    // RackInstances are tracked by RackSyncManager, not in deviceToPlugin_,
+    // so we query the synced rack IDs directly.
     {
-        std::vector<RackId> racksToRemove;
-        for (const auto& [rackId, plugin] : deviceToPlugin_) {
-            if (rackSyncManager_.isRackInstance(plugin.get())) {
-                auto actualRackId = rackSyncManager_.getRackIdForInstance(plugin.get());
-                if (std::find(magdaRacks.begin(), magdaRacks.end(), actualRackId) ==
-                    magdaRacks.end()) {
-                    racksToRemove.push_back(actualRackId);
-                }
+        auto syncedIds = rackSyncManager_.getSyncedRackIds();
+        for (auto rackId : syncedIds) {
+            if (std::find(magdaRacks.begin(), magdaRacks.end(), rackId) == magdaRacks.end()) {
+                rackSyncManager_.removeRack(rackId);
             }
-        }
-        // Also check racks not in deviceToPlugin_ (direct iteration of synced racks)
-        // This handles racks that were synced but whose RackInstance might have been tracked
-        // differently
-        for (auto rackId : racksToRemove) {
-            rackSyncManager_.removeRack(rackId);
         }
     }
 

@@ -147,6 +147,15 @@ void RackSyncManager::removeRack(RackId rackId) {
     syncedRacks_.erase(it);
 }
 
+std::vector<RackId> RackSyncManager::getSyncedRackIds() const {
+    std::vector<RackId> ids;
+    ids.reserve(syncedRacks_.size());
+    for (const auto& [rackId, _] : syncedRacks_) {
+        ids.push_back(rackId);
+    }
+    return ids;
+}
+
 te::Plugin* RackSyncManager::getInnerPlugin(DeviceId deviceId) const {
     for (const auto& [rackId, synced] : syncedRacks_) {
         auto it = synced.innerPlugins.find(deviceId);
