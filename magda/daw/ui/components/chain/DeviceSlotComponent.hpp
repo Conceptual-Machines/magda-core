@@ -161,7 +161,6 @@ class DeviceSlotComponent : public NodeComponent,
     bool isDrumGrid_ = false;  // Track if this is a drum grid for custom header painting
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
-    juce::Rectangle<int> tracktionLogoBounds_;
 
     // Header controls
     std::unique_ptr<magda::SvgButton> modButton_;
