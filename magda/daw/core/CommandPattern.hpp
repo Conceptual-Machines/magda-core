@@ -1,7 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <iostream>
 #include <memory>
 #include <vector>
 
@@ -110,9 +109,8 @@ template <typename StateT> class SnapshotCommand : public ValidatedCommand {
         restoreState(beforeState_);
 
         if (!validateState()) {
-            std::cerr << "SnapshotCommand::undo: validation failed after restoring beforeState_. "
-                         "Undo may have left the system in an inconsistent state."
-                      << std::endl;
+            DBG("SnapshotCommand::undo: validation failed after restoring beforeState_. "
+                "Undo may have left the system in an inconsistent state.");
         }
     }
 

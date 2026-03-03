@@ -3,7 +3,6 @@
 #include <BinaryData.h>
 
 #include <cmath>
-#include <iostream>
 #include <set>
 
 #include "../components/common/SideColumn.hpp"
@@ -68,10 +67,9 @@ MainView::MainView(AudioEngine* audioEngine)
     config.load();
     timelineLength = config.getDefaultTimelineLengthBars() * 2.0;  // bars → seconds at 120 BPM
 
-    std::cout << "🎯 CONFIG: Timeline length=" << config.getDefaultTimelineLengthBars() << " bars ("
-              << timelineLength << " seconds at 120 BPM)" << std::endl;
-    std::cout << "🎯 CONFIG: Default zoom view=" << config.getDefaultZoomViewBars() << " bars"
-              << std::endl;
+    DBG("CONFIG: Timeline length=" << config.getDefaultTimelineLengthBars() << " bars ("
+                                   << timelineLength << " seconds at 120 BPM)");
+    DBG("CONFIG: Default zoom view=" << config.getDefaultZoomViewBars() << " bars");
 
     // Make this component focusable to receive keyboard events
     setWantsKeyboardFocus(true);
@@ -785,9 +783,9 @@ void MainView::resized() {
                 // Dispatch initial zoom via controller
                 timelineController->dispatch(SetZoomCenteredEvent{zoomForDefaultView, 0.0});
 
-                std::cout << "🎯 INITIAL ZOOM: showing " << zoomViewBars
-                          << " bars, availableWidth=" << availableWidth
-                          << ", zoomForDefaultView=" << zoomForDefaultView << std::endl;
+                DBG("INITIAL ZOOM: showing " << zoomViewBars
+                                             << " bars, availableWidth=" << availableWidth
+                                             << ", zoomForDefaultView=" << zoomForDefaultView);
 
                 initialZoomSet = true;
             }
@@ -947,7 +945,7 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
             }
 
             selectionManager.clearSelection();
-            std::cout << "🎵 CLIP: Deleted " << selectedClips.size() << " clip(s)" << std::endl;
+            DBG("CLIP: Deleted " << selectedClips.size() << " clip(s)");
             return true;
         }
     }
@@ -1488,8 +1486,8 @@ void MainView::resetZoomToFitTimeline() {
     // Dispatch to controller
     timelineController->dispatch(ResetZoomEvent{});
 
-    std::cout << "🎯 ZOOM RESET: timelineLength=" << timelineController->getState().timelineLength
-              << ", zoom=" << timelineController->getState().zoom.horizontalZoom << std::endl;
+    DBG("ZOOM RESET: timelineLength=" << timelineController->getState().timelineLength << ", zoom="
+                                      << timelineController->getState().zoom.horizontalZoom);
 }
 
 void MainView::zoomToSelection() {
@@ -1520,8 +1518,7 @@ void MainView::createLoopFromSelection() {
 
     const auto& state = timelineController->getState();
     if (state.loop.isValid()) {
-        std::cout << "🔁 LOOP CREATED: " << state.loop.startTime << "s - " << state.loop.endTime
-                  << "s" << std::endl;
+        DBG("LOOP CREATED: " << state.loop.startTime << "s - " << state.loop.endTime << "s");
     }
 }
 

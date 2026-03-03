@@ -1,7 +1,5 @@
 #include "TransportPanel.hpp"
 
-#include <iostream>
-
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
@@ -229,8 +227,8 @@ void TransportPanel::setupTransportButtons() {
         std::make_unique<SvgButton>("Play", BinaryData::play_off_svg, BinaryData::play_off_svgSize,
                                     BinaryData::play_on_svg, BinaryData::play_on_svgSize);
     playButton->onClick = [this]() {
-        std::cout << "[TransportPanel] playButton->onClick: isPlaying was " << isPlaying
-                  << ", toggling to " << !isPlaying << std::endl;
+        DBG("[TransportPanel] playButton->onClick: isPlaying was "
+            << (int)isPlaying << ", toggling to " << (int)!isPlaying);
         isPlaying = !isPlaying;
         if (isPlaying) {
             isPaused = false;
@@ -253,10 +251,10 @@ void TransportPanel::setupTransportButtons() {
         auto mousePos = juce::Desktop::getMousePosition();
         auto localPos = stopButton->getScreenBounds();
         bool mouseIsOver = stopButton->isMouseOver();
-        std::cout << "[TransportPanel] stopButton->onClick mouseOver=" << mouseIsOver
-                  << " mouseScreen=(" << mousePos.x << "," << mousePos.y << ")"
-                  << " btnScreen=(" << localPos.getX() << "," << localPos.getY() << ","
-                  << localPos.getWidth() << "x" << localPos.getHeight() << ")" << std::endl;
+        DBG("[TransportPanel] stopButton->onClick mouseOver="
+            << (int)mouseIsOver << " mouseScreen=(" << mousePos.x << "," << mousePos.y << ")"
+            << " btnScreen=(" << localPos.getX() << "," << localPos.getY() << ","
+            << localPos.getWidth() << "x" << localPos.getHeight() << ")");
         isPlaying = false;
         isPaused = false;
         isRecording = false;
@@ -817,8 +815,7 @@ void TransportPanel::setTempo(double bpm) {
 
 void TransportPanel::setPlaybackState(bool playing) {
     if (isPlaying != playing) {
-        std::cout << "[TransportPanel] setPlaybackState: " << isPlaying << " -> " << playing
-                  << std::endl;
+        DBG("[TransportPanel] setPlaybackState: " << (int)isPlaying << " -> " << (int)playing);
         isPlaying = playing;
         playButton->setActive(isPlaying);
     }

@@ -1,7 +1,5 @@
 #include "PluginScanner.hpp"
 
-#include <iostream>
-
 namespace magda {
 
 PluginScanner::PluginScanner() : juce::Thread("Plugin Scanner") {
@@ -16,7 +14,7 @@ void PluginScanner::startScan(juce::AudioPluginFormatManager& formatManager,
                               const ProgressCallback& progressCallback,
                               const CompletionCallback& completionCallback) {
     if (isThreadRunning()) {
-        std::cout << "Scan already in progress" << std::endl;
+        DBG("Scan already in progress");
         return;
     }
 
@@ -35,10 +33,10 @@ void PluginScanner::abortScan() {
 }
 
 void PluginScanner::run() {
-    std::cout << "Plugin scan started on background thread" << std::endl;
+    DBG("Plugin scan started on background thread");
 
     if (!formatManager_) {
-        std::cerr << "No format manager set" << std::endl;
+        DBG("No format manager set");
         return;
     }
 
@@ -61,7 +59,7 @@ void PluginScanner::run() {
             continue;
         }
 
-        std::cout << "Scanning format: " << formatName << std::endl;
+        DBG("Scanning format: " << formatName);
 
         // Report starting this format
         if (progressCallback_) {
@@ -85,7 +83,7 @@ void PluginScanner::run() {
         if (deadMansPedal.existsAsFile()) {
             juce::String crashedPlugin = deadMansPedal.loadFileAsString().trim();
             if (crashedPlugin.isNotEmpty() && !excluded.contains(crashedPlugin)) {
-                std::cout << "Previous crash detected on: " << crashedPlugin << std::endl;
+                DBG("Previous crash detected on: " << crashedPlugin);
                 excludePlugin(crashedPlugin, "crash");
                 excluded.add(crashedPlugin);
             }
@@ -102,7 +100,7 @@ void PluginScanner::run() {
         while (scanner.scanNextFile(true, nextPlugin) && !threadShouldExit()) {
             // Skip excluded plugins
             if (excluded.contains(nextPlugin)) {
-                std::cout << "Skipping excluded: " << nextPlugin << std::endl;
+                DBG("Skipping excluded: " << nextPlugin);
                 continue;
             }
 
@@ -119,19 +117,18 @@ void PluginScanner::run() {
             }
         }
 
-        std::cout << "Scanned " << scanned << " " << formatName << " plugins" << std::endl;
+        DBG("Scanned " << scanned << " " << formatName << " plugins");
 
         // Copy found plugins to our list
         for (const auto& desc : tempKnownList.getTypes()) {
             foundPlugins_.add(desc);
-            std::cout << "Found: " << desc.name << " (" << desc.pluginFormatName << ")"
-                      << std::endl;
+            DBG("Found: " << desc.name << " (" << desc.pluginFormatName << ")");
         }
 
         // Record failed plugins
         auto failed = scanner.getFailedFiles();
         for (const auto& failedFile : failed) {
-            std::cout << "Failed: " << failedFile << std::endl;
+            DBG("Failed: " << failedFile);
             failedPlugins_.add(failedFile);
             excludePlugin(failedFile, "scan_failed");
         }
@@ -141,12 +138,12 @@ void PluginScanner::run() {
     }
 
     if (threadShouldExit()) {
-        std::cout << "Plugin scan aborted" << std::endl;
+        DBG("Plugin scan aborted");
         return;
     }
 
-    std::cout << "Plugin scan complete. Found " << foundPlugins_.size() << " plugins, "
-              << failedPlugins_.size() << " failed." << std::endl;
+    DBG("Plugin scan complete. Found " << foundPlugins_.size() << " plugins, "
+                                       << failedPlugins_.size() << " failed.");
 
     // Notify completion on message thread
     auto plugins = foundPlugins_;
@@ -192,7 +189,7 @@ juce::File PluginScanner::getExclusionFile() const {
 
 void PluginScanner::loadExclusions() {
     excludedPlugins_ = loadExclusionList(getExclusionFile());
-    std::cout << "Loaded " << excludedPlugins_.size() << " excluded plugins" << std::endl;
+    DBG("Loaded " << excludedPlugins_.size() << " excluded plugins");
 }
 
 void PluginScanner::saveExclusions() {

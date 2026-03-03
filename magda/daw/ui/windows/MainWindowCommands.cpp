@@ -910,13 +910,12 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                     // Set track fader to -12dB
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<SetTrackVolumeCommand>(trackId, minus12dB));
-                    std::cout << "Track " << trackId << ": tone @ 0dB, fader @ -12dB" << std::endl;
+                    DBG("Track " << trackId << ": tone @ 0dB, fader @ -12dB");
                 }
 
                 // Start playback
                 teWrapper->play();
-                std::cout << "Audio test: 2 tracks @ -12dB each, expect -6dB on master"
-                          << std::endl;
+                DBG("Audio test: 2 tracks @ -12dB each, expect -6dB on master");
             }
         }
         return true;

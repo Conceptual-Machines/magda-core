@@ -370,8 +370,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
 }
 
 TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
-    std::cout << "TrackHeadersPanel created with audioEngine=" << (audioEngine ? "valid" : "NULL")
-              << std::endl;
+    DBG("TrackHeadersPanel created with audioEngine=" << (audioEngine ? "valid" : "NULL"));
     setSize(TRACK_HEADER_WIDTH, 400);
     setWantsKeyboardFocus(true);
     addMouseListener(this, true);  // Receive child clicks for track selection

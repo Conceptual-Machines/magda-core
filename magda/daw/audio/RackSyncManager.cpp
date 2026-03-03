@@ -1,7 +1,5 @@
 #include "RackSyncManager.hpp"
 
-#include <iostream>
-
 #include "CurveSnapshot.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginManager.hpp"
@@ -31,8 +29,7 @@ te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackI
     // 1. Create a new RackType in the edit
     auto rackType = edit_.getRackList().addNewRack();
     if (!rackType) {
-        std::cerr << "RackSyncManager: Failed to create RackType for rack " << rackInfo.id
-                  << std::endl;
+        DBG("RackSyncManager: Failed to create RackType for rack " << rackInfo.id);
         return nullptr;
     }
 
@@ -59,8 +56,7 @@ te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackI
     auto rackInstance = edit_.getPluginCache().createNewPlugin(rackInstanceState);
 
     if (!rackInstance) {
-        std::cerr << "RackSyncManager: Failed to create RackInstance for rack " << rackInfo.id
-                  << std::endl;
+        DBG("RackSyncManager: Failed to create RackInstance for rack " << rackInfo.id);
         edit_.getRackList().removeRackType(rackType);
         return nullptr;
     }
@@ -362,8 +358,8 @@ void RackSyncManager::loadChainPlugins(SyncedRack& synced, TrackId trackId,
                                                               << device.id << ") to rack "
                                                               << synced.rackId);
                     } else {
-                        std::cerr << "RackSyncManager: Failed to add plugin '" << device.name
-                                  << "' to rack" << std::endl;
+                        DBG("RackSyncManager: Failed to add plugin '" << device.name
+                                                                      << "' to rack");
                     }
                 }
             }

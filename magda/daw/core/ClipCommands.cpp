@@ -2,8 +2,6 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include <iostream>
-
 #include "../audio/AudioBridge.hpp"
 #include "../audio/DrumGridPlugin.hpp"
 #include "../audio/InstrumentRackManager.hpp"
@@ -113,7 +111,7 @@ bool SplitClipCommand::validateState() const {
 
     // Validate clip has a valid track
     if (leftClip->trackId == INVALID_TRACK_ID) {
-        std::cerr << "ERROR: Clip " << clipId_ << " has invalid track!" << std::endl;
+        DBG("ERROR: Clip " << clipId_ << " has invalid track!");
         return false;
     }
 
@@ -126,7 +124,7 @@ bool SplitClipCommand::validateState() const {
 
         // Validate right clip has valid track
         if (rightClip->trackId == INVALID_TRACK_ID) {
-            std::cerr << "ERROR: Right clip " << rightClipId_ << " has invalid track!" << std::endl;
+            DBG("ERROR: Right clip " << rightClipId_ << " has invalid track!");
             return false;
         }
 
@@ -723,7 +721,7 @@ void RenderClipCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
     if (!clip || clip->type != ClipType::Audio || !engine_) {
-        std::cerr << "RenderClipCommand: invalid clip or engine" << std::endl;
+        DBG("RenderClipCommand: invalid clip or engine");
         return;
     }
 
@@ -733,14 +731,14 @@ void RenderClipCommand::execute() {
     auto* edit = engine_->getEdit();
     auto* bridge = engine_->getAudioBridge();
     if (!edit || !bridge) {
-        std::cerr << "RenderClipCommand: no edit or bridge" << std::endl;
+        DBG("RenderClipCommand: no edit or bridge");
         return;
     }
 
     // Find the TE clip
     auto* teClip = bridge->getArrangementTeClip(clipId_);
     if (!teClip) {
-        std::cerr << "RenderClipCommand: TE clip not found" << std::endl;
+        DBG("RenderClipCommand: TE clip not found");
         return;
     }
 
@@ -780,7 +778,7 @@ void RenderClipCommand::execute() {
     // Find track index in getAllTracks for tracksToDo bitset
     auto* teTrack = teClip->getTrack();
     if (!teTrack) {
-        std::cerr << "RenderClipCommand: clip has no track" << std::endl;
+        DBG("RenderClipCommand: clip has no track");
         restoreTransport();
         return;
     }
@@ -795,7 +793,7 @@ void RenderClipCommand::execute() {
     }
 
     if (trackIndex < 0) {
-        std::cerr << "RenderClipCommand: track not found in edit" << std::endl;
+        DBG("RenderClipCommand: track not found in edit");
         restoreTransport();
         return;
     }
@@ -829,7 +827,7 @@ void RenderClipCommand::execute() {
 
     if (userCancelled || !progressWindow.wasSuccessful()) {
         if (!userCancelled)
-            std::cerr << "RenderClipCommand: render failed, no output file" << std::endl;
+            DBG("RenderClipCommand: render failed, no output file");
         if (renderedFile_.existsAsFile())
             renderedFile_.deleteFile();
         restoreTransport();
@@ -893,14 +891,14 @@ RenderTimeSelectionCommand::RenderTimeSelectionCommand(double startTime, double 
 
 void RenderTimeSelectionCommand::execute() {
     if (!engine_ || startTime_ >= endTime_ || trackIds_.empty()) {
-        std::cerr << "RenderTimeSelectionCommand: invalid inputs" << std::endl;
+        DBG("RenderTimeSelectionCommand: invalid inputs");
         return;
     }
 
     auto* edit = engine_->getEdit();
     auto* bridge = engine_->getAudioBridge();
     if (!edit || !bridge) {
-        std::cerr << "RenderTimeSelectionCommand: no edit or bridge" << std::endl;
+        DBG("RenderTimeSelectionCommand: no edit or bridge");
         return;
     }
 
@@ -973,8 +971,7 @@ void RenderTimeSelectionCommand::execute() {
         // Resolve TE track index
         auto* teTrack = bridge->getAudioTrack(trackId);
         if (!teTrack) {
-            std::cerr << "RenderTimeSelectionCommand: TE track not found for trackId " << trackId
-                      << std::endl;
+            DBG("RenderTimeSelectionCommand: TE track not found for trackId " << trackId);
             continue;
         }
 
@@ -1018,8 +1015,7 @@ void RenderTimeSelectionCommand::execute() {
 
         if (userCancelled || !progressWindow.wasSuccessful()) {
             if (!userCancelled)
-                std::cerr << "RenderTimeSelectionCommand: render failed for track " << trackId
-                          << std::endl;
+                DBG("RenderTimeSelectionCommand: render failed for track " << trackId);
             if (trackState.renderedFile.existsAsFile())
                 trackState.renderedFile.deleteFile();
             if (userCancelled)
@@ -1319,15 +1315,14 @@ void BounceInPlaceCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
     if (!clip || clip->type != ClipType::MIDI || !engine_) {
-        std::cerr << "BounceInPlaceCommand: invalid clip (must be MIDI) or engine" << std::endl;
+        DBG("BounceInPlaceCommand: invalid clip (must be MIDI) or engine");
         return;
     }
 
     // Must be on a track with an instrument
     auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
     if (!trackInfo || !trackInfo->hasInstrument()) {
-        std::cerr << "BounceInPlaceCommand: clip must be on a track with an instrument"
-                  << std::endl;
+        DBG("BounceInPlaceCommand: clip must be on a track with an instrument");
         return;
     }
 
@@ -1337,14 +1332,14 @@ void BounceInPlaceCommand::execute() {
     auto* edit = engine_->getEdit();
     auto* bridge = engine_->getAudioBridge();
     if (!edit || !bridge) {
-        std::cerr << "BounceInPlaceCommand: no edit or bridge" << std::endl;
+        DBG("BounceInPlaceCommand: no edit or bridge");
         return;
     }
 
     // Find the TE clip
     auto* teClip = bridge->getArrangementTeClip(clipId_);
     if (!teClip) {
-        std::cerr << "BounceInPlaceCommand: TE clip not found" << std::endl;
+        DBG("BounceInPlaceCommand: TE clip not found");
         return;
     }
 
@@ -1382,7 +1377,7 @@ void BounceInPlaceCommand::execute() {
     // Find TE track
     auto* teTrack = teClip->getTrack();
     if (!teTrack) {
-        std::cerr << "BounceInPlaceCommand: clip has no track" << std::endl;
+        DBG("BounceInPlaceCommand: clip has no track");
         restoreTransport();
         return;
     }
@@ -1413,7 +1408,7 @@ void BounceInPlaceCommand::execute() {
     }
 
     if (trackIndex < 0) {
-        std::cerr << "BounceInPlaceCommand: track not found in edit" << std::endl;
+        DBG("BounceInPlaceCommand: track not found in edit");
         // Restore bypassed plugins
         for (auto& state : savedStates) {
             state.plugin->setEnabled(state.wasEnabled);
@@ -1456,7 +1451,7 @@ void BounceInPlaceCommand::execute() {
 
     if (userCancelled || !progressWindow.wasSuccessful()) {
         if (!userCancelled)
-            std::cerr << "BounceInPlaceCommand: render failed" << std::endl;
+            DBG("BounceInPlaceCommand: render failed");
         if (renderedFile_.existsAsFile())
             renderedFile_.deleteFile();
         restoreTransport();
@@ -1520,21 +1515,21 @@ void BounceToNewTrackCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
     if (!clip || !engine_) {
-        std::cerr << "BounceToNewTrackCommand: invalid clip or engine" << std::endl;
+        DBG("BounceToNewTrackCommand: invalid clip or engine");
         return;
     }
 
     auto* edit = engine_->getEdit();
     auto* bridge = engine_->getAudioBridge();
     if (!edit || !bridge) {
-        std::cerr << "BounceToNewTrackCommand: no edit or bridge" << std::endl;
+        DBG("BounceToNewTrackCommand: no edit or bridge");
         return;
     }
 
     // Find the TE clip
     auto* teClip = bridge->getArrangementTeClip(clipId_);
     if (!teClip) {
-        std::cerr << "BounceToNewTrackCommand: TE clip not found" << std::endl;
+        DBG("BounceToNewTrackCommand: TE clip not found");
         return;
     }
 
@@ -1572,7 +1567,7 @@ void BounceToNewTrackCommand::execute() {
     // Find TE track
     auto* teTrack = teClip->getTrack();
     if (!teTrack) {
-        std::cerr << "BounceToNewTrackCommand: clip has no track" << std::endl;
+        DBG("BounceToNewTrackCommand: clip has no track");
         restoreTransport();
         return;
     }
@@ -1588,7 +1583,7 @@ void BounceToNewTrackCommand::execute() {
     }
 
     if (trackIndex < 0) {
-        std::cerr << "BounceToNewTrackCommand: track not found in edit" << std::endl;
+        DBG("BounceToNewTrackCommand: track not found in edit");
         restoreTransport();
         return;
     }
@@ -1621,7 +1616,7 @@ void BounceToNewTrackCommand::execute() {
 
     if (userCancelled || !progressWindow.wasSuccessful()) {
         if (!userCancelled)
-            std::cerr << "BounceToNewTrackCommand: render failed" << std::endl;
+            DBG("BounceToNewTrackCommand: render failed");
         if (renderedFile_.existsAsFile())
             renderedFile_.deleteFile();
         restoreTransport();
@@ -1897,7 +1892,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     }
 
     if (!drumGrid) {
-        std::cerr << "buildDrumGridFromSlices: DrumGridPlugin not found on new track" << std::endl;
+        DBG("buildDrumGridFromSlices: DrumGridPlugin not found on new track");
         return;
     }
 

@@ -1,6 +1,5 @@
 #include "PluginManager.hpp"
 
-#include <iostream>
 #include <vector>
 
 #include "../core/RackInfo.hpp"
@@ -442,7 +441,7 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
     }
 
     if (!plugin) {
-        std::cerr << "Failed to load built-in plugin: " << type << std::endl;
+        DBG("Failed to load built-in plugin: " << type);
     }
 
     return plugin;
@@ -510,21 +509,20 @@ PluginLoadResult PluginManager::loadExternalPlugin(TrackId trackId,
             }
 
             track->pluginList.insertPlugin(plugin, -1, nullptr);
-            std::cout << "Loaded external plugin: " << description.name << " on track " << trackId
-                      << std::endl;
+            DBG("Loaded external plugin: " << description.name << " on track " << trackId);
             return PluginLoadResult::Success(plugin);
         } else {
             juce::String error = "Failed to create plugin: " + description.name;
-            std::cerr << error << std::endl;
+            DBG(error);
             return PluginLoadResult::Failure(error);
         }
     } catch (const std::exception& e) {
         juce::String error = "Exception loading plugin " + description.name + ": " + e.what();
-        std::cerr << error << std::endl;
+        DBG(error);
         return PluginLoadResult::Failure(error);
     } catch (...) {
         juce::String error = "Unknown exception loading plugin: " + description.name;
-        std::cerr << error << std::endl;
+        DBG(error);
         return PluginLoadResult::Failure(error);
     }
 }
@@ -532,7 +530,7 @@ PluginLoadResult PluginManager::loadExternalPlugin(TrackId trackId,
 te::Plugin::Ptr PluginManager::addLevelMeterToTrack(TrackId trackId) {
     auto* track = trackController_.getAudioTrack(trackId);
     if (!track) {
-        std::cerr << "Cannot add LevelMeter: track " << trackId << " not found" << std::endl;
+        DBG("Cannot add LevelMeter: track " << trackId << " not found");
         return nullptr;
     }
 
@@ -2067,13 +2065,12 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 if (onPluginLoadFailed) {
                     onPluginLoadFailed(device.id, result.errorMessage);
                 }
-                std::cerr << "Plugin load failed for device " << device.id << ": "
-                          << result.errorMessage << std::endl;
+                DBG("Plugin load failed for device " << device.id << ": " << result.errorMessage);
                 return nullptr;  // Don't proceed with a failed plugin
             }
         } else {
-            std::cout << "Cannot load external plugin without uniqueId or fileOrIdentifier: "
-                      << device.name << std::endl;
+            DBG("Cannot load external plugin without uniqueId or fileOrIdentifier: "
+                << device.name);
         }
     }
 
@@ -2202,8 +2199,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 // The raw plugin is already inside the rack (added by wrapInstrument)
                 track->pluginList.insertPlugin(rackPlugin, -1, nullptr);
 
-                std::cout << "Loaded instrument device " << device.id << " (" << device.name
-                          << ") wrapped in rack" << std::endl;
+                DBG("Loaded instrument device " << device.id << " (" << device.name
+                                                << ") wrapped in rack");
 
                 // Return the INNER plugin (not the rack) so that deviceToPlugin_
                 // maps to the actual synth for parameter access and window opening
@@ -2212,8 +2209,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             // Fallback: if wrapping failed, the plugin was already removed from the
             // track by wrapInstrument, so re-insert it directly
             track->pluginList.insertPlugin(plugin, -1, nullptr);
-            std::cerr << "InstrumentRackManager: Wrapping failed for " << device.name
-                      << ", using raw plugin" << std::endl;
+            DBG("InstrumentRackManager: Wrapping failed for " << device.name
+                                                              << ", using raw plugin");
         }
 
         // For tone generators (always transport-synced), sync initial state with transport
@@ -2226,8 +2223,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             }
         }
 
-        std::cout << "Loaded device " << device.id << " (" << device.name << ") as plugin"
-                  << std::endl;
+        DBG("Loaded device " << device.id << " (" << device.name << ") as plugin");
 
         // Note: Auto-routing MIDI for instruments is handled by AudioBridge
         // (coordination logic, not plugin management responsibility)

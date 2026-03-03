@@ -1,7 +1,5 @@
 #include "TracktionEngineWrapper.hpp"
 
-#include <iostream>
-
 namespace magda {
 
 // Helper: Convert beats to seconds using current tempo
@@ -18,14 +16,14 @@ std::string TracktionEngineWrapper::addMidiClip(const std::string& track_id, dou
                                                 double length, const std::vector<MidiNote>& notes) {
     auto track = findTrackById(track_id);
     if (!track || !currentEdit_) {
-        std::cerr << "addMidiClip: Track not found or no edit: " << track_id << std::endl;
+        DBG("addMidiClip: Track not found or no edit: " << track_id);
         return "";
     }
 
     // Cast to AudioTrack (needed for insertMIDIClip)
     auto* audioTrack = dynamic_cast<tracktion::AudioTrack*>(track);
     if (!audioTrack) {
-        std::cerr << "addMidiClip: Track is not an AudioTrack: " << track_id << std::endl;
+        DBG("addMidiClip: Track is not an AudioTrack: " << track_id);
         return "";
     }
 
@@ -36,7 +34,7 @@ std::string TracktionEngineWrapper::addMidiClip(const std::string& track_id, dou
 
     auto midiClipPtr = audioTrack->insertMIDIClip(timeRange, nullptr);
     if (!midiClipPtr) {
-        std::cerr << "addMidiClip: Failed to create MIDI clip" << std::endl;
+        DBG("addMidiClip: Failed to create MIDI clip");
         return "";
     }
 
@@ -64,8 +62,8 @@ std::string TracktionEngineWrapper::addMidiClip(const std::string& track_id, dou
     auto clipId = generateClipId();
     clipMap_[clipId] = midiClipPtr;
 
-    std::cout << "Created MIDI clip: " << clipId << " on track " << track_id << " with "
-              << notes.size() << " notes" << std::endl;
+    DBG("Created MIDI clip: " << clipId << " on track " << track_id << " with " << notes.size()
+                              << " notes");
     return clipId;
 }
 
@@ -130,7 +128,7 @@ std::string TracktionEngineWrapper::addAudioClip(const std::string& track_id, do
 void TracktionEngineWrapper::deleteClip(const std::string& clip_id) {
     auto* clip = findClipById(clip_id);
     if (!clip) {
-        std::cerr << "deleteClip: Clip not found: " << clip_id << std::endl;
+        DBG("deleteClip: Clip not found: " << clip_id);
         return;
     }
 
@@ -140,13 +138,13 @@ void TracktionEngineWrapper::deleteClip(const std::string& clip_id) {
     // Remove from clipMap_
     clipMap_.erase(clip_id);
 
-    std::cout << "Deleted clip: " << clip_id << std::endl;
+    DBG("Deleted clip: " << clip_id);
 }
 
 void TracktionEngineWrapper::moveClip(const std::string& clip_id, double new_start_time) {
     auto* clip = findClipById(clip_id);
     if (!clip) {
-        std::cerr << "moveClip: Clip not found: " << clip_id << std::endl;
+        DBG("moveClip: Clip not found: " << clip_id);
         return;
     }
 
@@ -161,13 +159,13 @@ void TracktionEngineWrapper::moveClip(const std::string& clip_id, double new_sta
 
     clip->setStart(newTimeRange.getStart(), false, false);
 
-    std::cout << "Moved clip: " << clip_id << " to " << new_start_time << std::endl;
+    DBG("Moved clip: " << clip_id << " to " << new_start_time);
 }
 
 void TracktionEngineWrapper::resizeClip(const std::string& clip_id, double new_length) {
     auto* clip = findClipById(clip_id);
     if (!clip) {
-        std::cerr << "resizeClip: Clip not found: " << clip_id << std::endl;
+        DBG("resizeClip: Clip not found: " << clip_id);
         return;
     }
 
@@ -180,13 +178,13 @@ void TracktionEngineWrapper::resizeClip(const std::string& clip_id, double new_l
 
     clip->setEnd(newEnd, false);
 
-    std::cout << "Resized clip: " << clip_id << " to " << new_length << std::endl;
+    DBG("Resized clip: " << clip_id << " to " << new_length);
 }
 
 double TracktionEngineWrapper::getClipStartTime(const std::string& clip_id) const {
     auto* clip = findClipById(clip_id);
     if (!clip) {
-        std::cerr << "getClipStartTime: Clip not found: " << clip_id << std::endl;
+        DBG("getClipStartTime: Clip not found: " << clip_id);
         return 0.0;
     }
 
@@ -196,7 +194,7 @@ double TracktionEngineWrapper::getClipStartTime(const std::string& clip_id) cons
 double TracktionEngineWrapper::getClipLength(const std::string& clip_id) const {
     auto* clip = findClipById(clip_id);
     if (!clip) {
-        std::cerr << "getClipLength: Clip not found: " << clip_id << std::endl;
+        DBG("getClipLength: Clip not found: " << clip_id);
         return 1.0;
     }
 
@@ -206,7 +204,7 @@ double TracktionEngineWrapper::getClipLength(const std::string& clip_id) const {
 void TracktionEngineWrapper::addNoteToMidiClip(const std::string& clip_id, const MidiNote& note) {
     auto* clip = findClipById(clip_id);
     if (!clip) {
-        std::cerr << "addNoteToMidiClip: Clip not found: " << clip_id << std::endl;
+        DBG("addNoteToMidiClip: Clip not found: " << clip_id);
         return;
     }
 
@@ -214,7 +212,7 @@ void TracktionEngineWrapper::addNoteToMidiClip(const std::string& clip_id, const
     namespace te = tracktion;
     auto* midiClip = dynamic_cast<te::MidiClip*>(clip);
     if (!midiClip) {
-        std::cerr << "addNoteToMidiClip: Clip is not a MIDI clip: " << clip_id << std::endl;
+        DBG("addNoteToMidiClip: Clip is not a MIDI clip: " << clip_id);
         return;
     }
 
@@ -229,14 +227,14 @@ void TracktionEngineWrapper::addNoteToMidiClip(const std::string& clip_id, const
                      0,         // colour index
                      nullptr);  // undo manager
 
-    std::cout << "Added note " << note.noteNumber << " to MIDI clip: " << clip_id << std::endl;
+    DBG("Added note " << note.noteNumber << " to MIDI clip: " << clip_id);
 }
 
 void TracktionEngineWrapper::removeNotesFromMidiClip(const std::string& clip_id, double start_time,
                                                      double end_time) {
     auto* clip = findClipById(clip_id);
     if (!clip) {
-        std::cerr << "removeNotesFromMidiClip: Clip not found: " << clip_id << std::endl;
+        DBG("removeNotesFromMidiClip: Clip not found: " << clip_id);
         return;
     }
 
@@ -244,7 +242,7 @@ void TracktionEngineWrapper::removeNotesFromMidiClip(const std::string& clip_id,
     namespace te = tracktion;
     auto* midiClip = dynamic_cast<te::MidiClip*>(clip);
     if (!midiClip) {
-        std::cerr << "removeNotesFromMidiClip: Clip is not a MIDI clip: " << clip_id << std::endl;
+        DBG("removeNotesFromMidiClip: Clip is not a MIDI clip: " << clip_id);
         return;
     }
 
@@ -264,14 +262,13 @@ void TracktionEngineWrapper::removeNotesFromMidiClip(const std::string& clip_id,
         sequence.removeNote(*note, nullptr);  // nullptr = no undo
     }
 
-    std::cout << "Removed " << notesToRemove.size() << " notes from MIDI clip: " << clip_id
-              << std::endl;
+    DBG("Removed " << notesToRemove.size() << " notes from MIDI clip: " << clip_id);
 }
 
 std::vector<MidiNote> TracktionEngineWrapper::getMidiClipNotes(const std::string& clip_id) const {
     auto* clip = findClipById(clip_id);
     if (!clip) {
-        std::cerr << "getMidiClipNotes: Clip not found: " << clip_id << std::endl;
+        DBG("getMidiClipNotes: Clip not found: " << clip_id);
         return {};
     }
 
@@ -279,7 +276,7 @@ std::vector<MidiNote> TracktionEngineWrapper::getMidiClipNotes(const std::string
     namespace te = tracktion;
     auto* midiClip = dynamic_cast<te::MidiClip*>(clip);
     if (!midiClip) {
-        std::cerr << "getMidiClipNotes: Clip is not a MIDI clip: " << clip_id << std::endl;
+        DBG("getMidiClipNotes: Clip is not a MIDI clip: " << clip_id);
         return {};
     }
 
@@ -305,14 +302,14 @@ std::vector<MidiNote> TracktionEngineWrapper::getMidiClipNotes(const std::string
 std::vector<std::string> TracktionEngineWrapper::getTrackClips(const std::string& track_id) const {
     auto track = findTrackById(track_id);
     if (!track) {
-        std::cerr << "getTrackClips: Track not found: " << track_id << std::endl;
+        DBG("getTrackClips: Track not found: " << track_id);
         return {};
     }
 
     // Cast to AudioTrack (needed for getClips)
     auto* audioTrack = dynamic_cast<tracktion::AudioTrack*>(track);
     if (!audioTrack) {
-        std::cerr << "getTrackClips: Track is not an AudioTrack: " << track_id << std::endl;
+        DBG("getTrackClips: Track is not an AudioTrack: " << track_id);
         return {};
     }
 

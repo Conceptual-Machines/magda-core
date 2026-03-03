@@ -1368,7 +1368,7 @@ void ClipManager::copyToClipboard(const std::unordered_set<ClipId>& clipIds) {
         }
     }
 
-    std::cout << "CLIPBOARD: Copied " << clipboard_.size() << " clip(s)" << std::endl;
+    DBG("CLIPBOARD: Copied " << clipboard_.size() << " clip(s)");
 }
 
 void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,

@@ -3,7 +3,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <tracktion_engine/tracktion_engine.h>
 
-#include <iostream>
 #include <memory>
 
 #include "audio/AudioThumbnailManager.hpp"
@@ -76,12 +75,12 @@ class MagdaDAWApplication : public JUCEApplication {
         // 3. Initialize audio engine
         daw_engine_ = std::make_unique<magda::TracktionEngineWrapper>();
         if (!daw_engine_->initialize()) {
-            std::cerr << "ERROR: Failed to initialize Tracktion Engine" << std::endl;
+            DBG("ERROR: Failed to initialize Tracktion Engine");
             quit();
             return;
         }
 
-        std::cout << "✓ Audio engine initialized" << std::endl;
+        DBG("Audio engine initialized");
 
         // 3b. Clean up stale temp media directories from previous sessions
         magda::ProjectManager::cleanupStaleTempDirectories();
@@ -92,64 +91,53 @@ class MagdaDAWApplication : public JUCEApplication {
         // 5. Dismiss splash screen
         splashScreen_.reset();
 
-        std::cout << "🎵 MAGDA is ready!" << std::endl;
+        DBG("MAGDA is ready!");
     }
 
     void shutdown() override {
         initTimer_.reset();
-        std::cout << "=== SHUTDOWN START ===" << std::endl;
-        std::cout.flush();
+        DBG("=== SHUTDOWN START ===");
 
         // Stop timers first to prevent callbacks during destruction
-        std::cout << "[1] ModulatorEngine shutdown..." << std::endl;
-        std::cout.flush();
+        DBG("[1] ModulatorEngine shutdown...");
         magda::ModulatorEngine::getInstance().shutdown();  // Destroy timer
 
         // Clear default LookAndFeel BEFORE destroying windows
         // This ensures components switch away from our custom L&F before we delete them
-        std::cout << "[2] Clearing LookAndFeel..." << std::endl;
-        std::cout.flush();
+        DBG("[2] Clearing LookAndFeel...");
         juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
 
         // Destroy UI FIRST while all singletons (ClipManager, TrackManager etc.)
         // are still intact. Component destructors trigger removeChildComponent() →
         // repaint() chains that need valid heap state. If singletons are cleared
         // first, freed data + dangling listener references cause heap corruption.
-        std::cout << "[3] Destroying MainWindow..." << std::endl;
-        std::cout.flush();
+        DBG("[3] Destroying MainWindow...");
         mainWindow_.reset();
 
         // Now shut down singletons — no live UI components reference them
-        std::cout << "[4] TrackManager shutdown..." << std::endl;
-        std::cout.flush();
+        DBG("[4] TrackManager shutdown...");
         magda::TrackManager::getInstance().shutdown();
 
-        std::cout << "[5] ClipManager shutdown..." << std::endl;
-        std::cout.flush();
+        DBG("[5] ClipManager shutdown...");
         magda::ClipManager::getInstance().shutdown();
 
-        std::cout << "[5b] AudioThumbnailManager shutdown..." << std::endl;
-        std::cout.flush();
+        DBG("[5b] AudioThumbnailManager shutdown...");
         magda::AudioThumbnailManager::getInstance().shutdown();
 
         // Now destroy engine
-        std::cout << "[6] Destroying DAW engine..." << std::endl;
-        std::cout.flush();
+        DBG("[6] Destroying DAW engine...");
         daw_engine_.reset();
 
         // Destroy our custom LookAndFeel (no components reference it now)
-        std::cout << "[7] Destroying LookAndFeel..." << std::endl;
-        std::cout.flush();
+        DBG("[7] Destroying LookAndFeel...");
         lookAndFeel_.reset();
 
         // Release fonts before JUCE's leak detector runs
-        std::cout << "[8] FontManager shutdown..." << std::endl;
-        std::cout.flush();
+        DBG("[8] FontManager shutdown...");
         magda::FontManager::getInstance().shutdown();
 
-        std::cout << "👋 MAGDA shutdown complete" << std::endl;
-        std::cout << "=== SHUTDOWN END ===" << std::endl;
-        std::cout.flush();
+        DBG("MAGDA shutdown complete");
+        DBG("=== SHUTDOWN END ===");
 
         // Use _exit() to skip static destructors of loaded plugin dylibs.
         // Some third-party plugins (e.g. "Kick 3") have buggy static destructors

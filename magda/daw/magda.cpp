@@ -1,6 +1,5 @@
 #include "magda.hpp"
 
-#include <iostream>
 #include <memory>
 
 #include "engine/TracktionEngineWrapper.hpp"
@@ -9,15 +8,14 @@
 static std::unique_ptr<magda::TracktionEngineWrapper> g_engine;
 
 bool magda_initialize() {
-    std::cout << "MAGDA v" << MAGDA_VERSION
-              << " - Multi-Agent Generative Interface for Creative Audio" << std::endl;
-    std::cout << "Initializing system..." << std::endl;
+    DBG("MAGDA v" << MAGDA_VERSION << " - Multi-Agent Generative Interface for Creative Audio");
+    DBG("Initializing system...");
 
     try {
         // Initialize Tracktion Engine
         g_engine = std::make_unique<magda::TracktionEngineWrapper>();
         if (!g_engine->initialize()) {
-            std::cerr << "ERROR: Failed to initialize Tracktion Engine" << std::endl;
+            DBG("ERROR: Failed to initialize Tracktion Engine");
             return false;
         }
 
@@ -26,17 +24,17 @@ bool magda_initialize() {
         // - Interface registry
         // - Plugin discovery
 
-        std::cout << "MAGDA initialized successfully!" << std::endl;
+        DBG("MAGDA initialized successfully!");
         return true;
 
     } catch (const std::exception& e) {
-        std::cerr << "ERROR: MAGDA initialization failed: " << e.what() << std::endl;
+        DBG("ERROR: MAGDA initialization failed: " << e.what());
         return false;
     }
 }
 
 void magda_shutdown() {
-    std::cout << "Shutting down MAGDA..." << std::endl;
+    DBG("Shutting down MAGDA...");
 
     try {
         // Shutdown Tracktion Engine
@@ -50,10 +48,10 @@ void magda_shutdown() {
         // - Cleanup resources
         // - Unload plugins
 
-        std::cout << "MAGDA shutdown complete." << std::endl;
+        DBG("MAGDA shutdown complete.");
 
     } catch (const std::exception& e) {
-        std::cerr << "ERROR: Error during shutdown: " << e.what() << std::endl;
+        DBG("ERROR: Error during shutdown: " << e.what());
     }
 }
 

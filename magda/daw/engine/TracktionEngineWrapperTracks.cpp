@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include "../audio/AudioBridge.hpp"
 #include "../core/TrackManager.hpp"
 #include "TracktionEngineWrapper.hpp"
@@ -17,7 +15,7 @@ std::string TracktionEngineWrapper::createAudioTrack(const std::string& name) {
     if (track) {
         track->setName(name);
         trackMap_[trackId] = track;
-        std::cout << "Created audio track: " << name << " (ID: " << trackId << ")" << std::endl;
+        DBG("Created audio track: " << name << " (ID: " << trackId << ")");
     }
     return trackId;
 }
@@ -32,7 +30,7 @@ std::string TracktionEngineWrapper::createMidiTrack(const std::string& name) {
     if (track) {
         track->setName(name);
         trackMap_[trackId] = track;
-        std::cout << "Created MIDI track: " << name << " (ID: " << trackId << ")" << std::endl;
+        DBG("Created MIDI track: " << name << " (ID: " << trackId << ")");
     }
     return trackId;
 }
@@ -42,7 +40,7 @@ void TracktionEngineWrapper::deleteTrack(const std::string& track_id) {
     if (it != trackMap_.end() && currentEdit_) {
         currentEdit_->deleteTrack(it->second.get());
         trackMap_.erase(it);
-        std::cout << "Deleted track ID: " << track_id << std::endl;
+        DBG("Deleted track ID: " << track_id);
     }
 }
 
@@ -87,7 +85,7 @@ void TracktionEngineWrapper::setTrackArmed(const std::string& track_id, bool arm
     if (track) {
         if (auto audioTrack = dynamic_cast<tracktion::AudioTrack*>(track)) {
             // Simplified - in real implementation would set input recording
-            std::cout << "Set track armed (stub): " << track_id << " = " << armed << std::endl;
+            DBG("Set track armed (stub): " << track_id << " = " << (int)armed);
         }
     }
 }
@@ -172,7 +170,7 @@ void TracktionEngineWrapper::setTrackVolume(const std::string& track_id, double 
             volPan->setVolumeDb(db);
         } else {
             // No VolumeAndPanPlugin found - this shouldn't happen as Tracktion auto-creates one
-            std::cerr << "Warning: No VolumeAndPanPlugin on track " << track_id << std::endl;
+            DBG("Warning: No VolumeAndPanPlugin on track " << track_id);
         }
     }
 }

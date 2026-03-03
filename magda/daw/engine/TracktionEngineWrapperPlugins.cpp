@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include "PluginScanCoordinator.hpp"
 #include "TracktionEngineWrapper.hpp"
 
@@ -9,20 +7,19 @@ std::string TracktionEngineWrapper::addEffect(const std::string& track_id,
                                               const std::string& effect_name) {
     // TODO: Implement effect addition
     auto effectId = generateEffectId();
-    std::cout << "Added effect (stub): " << effect_name << " to track " << track_id << std::endl;
+    DBG("Added effect (stub): " << effect_name << " to track " << track_id);
     return effectId;
 }
 
 void TracktionEngineWrapper::removeEffect(const std::string& effect_id) {
     // TODO: Implement effect removal
-    std::cout << "Removed effect (stub): " << effect_id << std::endl;
+    DBG("Removed effect (stub): " << effect_id);
 }
 
 void TracktionEngineWrapper::setEffectParameter(const std::string& effect_id,
                                                 const std::string& parameter_name, double value) {
     // TODO: Implement effect parameter setting
-    std::cout << "Set effect parameter (stub): " << effect_id << "." << parameter_name << " = "
-              << value << std::endl;
+    DBG("Set effect parameter (stub): " << effect_id << "." << parameter_name << " = " << value);
 }
 
 double TracktionEngineWrapper::getEffectParameter(const std::string& effect_id,
@@ -33,7 +30,7 @@ double TracktionEngineWrapper::getEffectParameter(const std::string& effect_id,
 
 void TracktionEngineWrapper::setEffectEnabled(const std::string& effect_id, bool enabled) {
     // TODO: Implement effect enable/disable
-    std::cout << "Set effect enabled (stub): " << effect_id << " = " << enabled << std::endl;
+    DBG("Set effect enabled (stub): " << effect_id << " = " << (int)enabled);
 }
 
 bool TracktionEngineWrapper::isEffectEnabled(const std::string& effect_id) const {
@@ -77,8 +74,8 @@ void TracktionEngineWrapper::startPluginScan(
             formatNames.add(format->getName());
         }
     }
-    std::cout << "Starting plugin scan with OUT-OF-PROCESS scanner" << std::endl;
-    std::cout << "Available formats: " << formatNames.joinIntoString(", ") << std::endl;
+    DBG("Starting plugin scan with OUT-OF-PROCESS scanner");
+    DBG("Available formats: " << formatNames.joinIntoString(", "));
 
     // Create coordinator if needed
     if (!pluginScanCoordinator_) {
@@ -103,13 +100,12 @@ void TracktionEngineWrapper::startPluginScan(
             }
 
             int numPlugins = knownPlugins.getNumTypes();
-            std::cout << "Plugin scan complete. Found " << numPlugins << " plugins." << std::endl;
+            DBG("Plugin scan complete. Found " << numPlugins << " plugins.");
 
             if (failedPlugins.size() > 0) {
-                std::cout << "Failed/crashed plugins (" << failedPlugins.size()
-                          << "):" << std::endl;
+                DBG("Failed/crashed plugins (" << failedPlugins.size() << "):");
                 for (const auto& failed : failedPlugins) {
-                    std::cout << "  - " << failed << std::endl;
+                    DBG("  - " << failed);
                 }
             }
 
@@ -140,9 +136,7 @@ void TracktionEngineWrapper::clearPluginExclusions() {
         PluginScanCoordinator tempCoordinator;
         tempCoordinator.clearExclusions();
     }
-    std::cout
-        << "Plugin exclusion list cleared. Previously problematic plugins will be scanned again."
-        << std::endl;
+    DBG("Plugin exclusion list cleared. Previously problematic plugins will be scanned again.");
 }
 
 PluginScanCoordinator* TracktionEngineWrapper::getPluginScanCoordinator() {
@@ -177,7 +171,7 @@ juce::File TracktionEngineWrapper::getPluginListFile() const {
 
 void TracktionEngineWrapper::savePluginList() {
     if (!engine_) {
-        std::cerr << "Cannot save plugin list: engine not initialized" << std::endl;
+        DBG("Cannot save plugin list: engine not initialized");
         return;
     }
 
@@ -187,18 +181,17 @@ void TracktionEngineWrapper::savePluginList() {
     // Create XML representation of the plugin list
     if (auto xml = knownPlugins.createXml()) {
         if (xml->writeTo(pluginListFile)) {
-            std::cout << "Saved plugin list (" << knownPlugins.getNumTypes()
-                      << " plugins) to: " << pluginListFile.getFullPathName() << std::endl;
+            DBG("Saved plugin list (" << knownPlugins.getNumTypes()
+                                      << " plugins) to: " << pluginListFile.getFullPathName());
         } else {
-            std::cerr << "Failed to write plugin list to: " << pluginListFile.getFullPathName()
-                      << std::endl;
+            DBG("Failed to write plugin list to: " << pluginListFile.getFullPathName());
         }
     }
 }
 
 void TracktionEngineWrapper::loadPluginList() {
     if (!engine_) {
-        std::cerr << "Cannot load plugin list: engine not initialized" << std::endl;
+        DBG("Cannot load plugin list: engine not initialized");
         return;
     }
 
@@ -208,24 +201,22 @@ void TracktionEngineWrapper::loadPluginList() {
     if (pluginListFile.existsAsFile()) {
         if (auto xml = juce::XmlDocument::parse(pluginListFile)) {
             knownPlugins.recreateFromXml(*xml);
-            std::cout << "Loaded plugin list (" << knownPlugins.getNumTypes()
-                      << " plugins) from: " << pluginListFile.getFullPathName() << std::endl;
+            DBG("Loaded plugin list (" << knownPlugins.getNumTypes()
+                                       << " plugins) from: " << pluginListFile.getFullPathName());
         } else {
-            std::cerr << "Failed to parse plugin list from: " << pluginListFile.getFullPathName()
-                      << std::endl;
+            DBG("Failed to parse plugin list from: " << pluginListFile.getFullPathName());
             knownPlugins.clear();
         }
     } else {
-        std::cout << "No saved plugin list found at: " << pluginListFile.getFullPathName()
-                  << std::endl;
-        std::cout << "Plugins will need to be scanned manually via the Plugin Browser" << std::endl;
+        DBG("No saved plugin list found at: " << pluginListFile.getFullPathName());
+        DBG("Plugins will need to be scanned manually via the Plugin Browser");
         knownPlugins.clear();
     }
 }
 
 void TracktionEngineWrapper::clearPluginList() {
     if (!engine_) {
-        std::cerr << "Cannot clear plugin list: engine not initialized" << std::endl;
+        DBG("Cannot clear plugin list: engine not initialized");
         return;
     }
 
@@ -237,10 +228,10 @@ void TracktionEngineWrapper::clearPluginList() {
     auto pluginListFile = getPluginListFile();
     if (pluginListFile.existsAsFile()) {
         pluginListFile.deleteFile();
-        std::cout << "Deleted plugin list file: " << pluginListFile.getFullPathName() << std::endl;
+        DBG("Deleted plugin list file: " << pluginListFile.getFullPathName());
     }
 
-    std::cout << "Plugin list cleared. Use 'Scan' to rediscover plugins." << std::endl;
+    DBG("Plugin list cleared. Use 'Scan' to rediscover plugins.");
 }
 
 }  // namespace magda

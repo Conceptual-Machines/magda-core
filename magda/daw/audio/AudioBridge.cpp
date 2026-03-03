@@ -1,6 +1,5 @@
 #include "AudioBridge.hpp"
 
-#include <iostream>
 #include <unordered_set>
 
 #include "../core/ClipOperations.hpp"
@@ -66,11 +65,11 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     // Start timer for metering updates (30 FPS for smooth UI)
     startTimerHz(30);
 
-    std::cout << "AudioBridge initialized" << std::endl;
+    DBG("AudioBridge initialized");
 }
 
 AudioBridge::~AudioBridge() {
-    std::cout << "AudioBridge::~AudioBridge - starting cleanup" << std::endl;
+    DBG("AudioBridge::~AudioBridge - starting cleanup");
 
     // CRITICAL: Acquire lock BEFORE stopping timer to ensure proper synchronization.
     // This prevents race condition where timerCallback() could be running while
@@ -120,7 +119,7 @@ AudioBridge::~AudioBridge() {
         pluginManager_.clearAllMappings();
     }
 
-    std::cout << "AudioBridge destroyed" << std::endl;
+    DBG("AudioBridge destroyed");
 }
 
 // =============================================================================
