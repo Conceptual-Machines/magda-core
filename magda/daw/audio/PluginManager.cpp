@@ -2140,21 +2140,53 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
     if (!plugin)
         return;
 
-    // Only create processors for external plugins (they need parameter enumeration)
+    std::unique_ptr<DeviceProcessor> processor;
+
     if (dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
-        auto processor = std::make_unique<ExternalPluginProcessor>(deviceId, plugin);
-        processor->startParameterListening();
+        auto extProc = std::make_unique<ExternalPluginProcessor>(deviceId, plugin);
+        extProc->startParameterListening();
 
         // Populate parameters back to TrackManager
         DeviceInfo tempInfo;
-        processor->populateParameters(tempInfo);
+        extProc->populateParameters(tempInfo);
         TrackManager::getInstance().updateDeviceParameters(deviceId, tempInfo.parameters);
 
+        processor = std::move(extProc);
+    } else if (dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
+        processor = std::make_unique<FourOscProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<te::DelayPlugin*>(plugin.get())) {
+        processor = std::make_unique<DelayProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<te::ReverbPlugin*>(plugin.get())) {
+        processor = std::make_unique<ReverbProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<te::EqualiserPlugin*>(plugin.get())) {
+        processor = std::make_unique<EqualiserProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<te::CompressorPlugin*>(plugin.get())) {
+        processor = std::make_unique<CompressorProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<te::ChorusPlugin*>(plugin.get())) {
+        processor = std::make_unique<ChorusProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<te::PhaserPlugin*>(plugin.get())) {
+        processor = std::make_unique<PhaserProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<te::LowPassPlugin*>(plugin.get())) {
+        processor = std::make_unique<FilterProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<te::PitchShiftPlugin*>(plugin.get())) {
+        processor = std::make_unique<PitchShiftProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get())) {
+        processor = std::make_unique<ImpulseResponseProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<te::ToneGeneratorPlugin*>(plugin.get())) {
+        processor = std::make_unique<ToneGeneratorProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<te::VolumeAndPanPlugin*>(plugin.get())) {
+        processor = std::make_unique<UtilityProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+        processor = std::make_unique<MagdaSamplerProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
+        processor = std::make_unique<DrumGridProcessor>(deviceId, plugin);
+    }
+
+    if (processor) {
         juce::ScopedLock lock(pluginLock_);
         deviceProcessors_[deviceId] = std::move(processor);
-
         DBG("PluginManager::registerRackPluginProcessor: Registered processor for device "
-            << deviceId << " with " << tempInfo.parameters.size() << " parameters");
+            << deviceId);
     }
 }
 
