@@ -8,8 +8,9 @@ namespace magda {
 // CreateTrackCommand
 // ============================================================================
 
-CreateTrackCommand::CreateTrackCommand(TrackType type, const juce::String& name)
-    : type_(type), name_(name) {}
+CreateTrackCommand::CreateTrackCommand(TrackType type, const juce::String& name,
+                                       TrackId afterTrackId)
+    : type_(type), name_(name), afterTrackId_(afterTrackId) {}
 
 void CreateTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
@@ -18,6 +19,14 @@ void CreateTrackCommand::execute() {
         createdTrackId_ = trackManager.createGroupTrack(name_);
     } else {
         createdTrackId_ = trackManager.createTrack(name_, type_);
+    }
+
+    // Move next to the specified track if provided
+    if (afterTrackId_ != INVALID_TRACK_ID && createdTrackId_ != INVALID_TRACK_ID) {
+        int afterIndex = trackManager.getTrackIndex(afterTrackId_);
+        if (afterIndex >= 0) {
+            trackManager.moveTrack(createdTrackId_, afterIndex + 1);
+        }
     }
 
     executed_ = true;

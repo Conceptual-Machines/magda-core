@@ -942,9 +942,22 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
+    // Cmd/Ctrl+Shift+T: Add Group Track (through undo system)
+    if (key ==
+        juce::KeyPress('t', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
+                       0)) {
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        auto cmd =
+            std::make_unique<CreateTrackCommand>(TrackType::Group, juce::String(), selectedTrack);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+        return true;
+    }
+
     // Cmd/Ctrl+T: Add Track (through undo system)
     if (key == juce::KeyPress('t', juce::ModifierKeys::commandModifier, 0)) {
-        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio);
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        auto cmd =
+            std::make_unique<CreateTrackCommand>(TrackType::Audio, juce::String(), selectedTrack);
         UndoManager::getInstance().executeCommand(std::move(cmd));
         return true;
     }

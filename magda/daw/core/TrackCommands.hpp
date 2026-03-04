@@ -12,7 +12,8 @@ namespace magda {
 class CreateTrackCommand : public UndoableCommand {
   public:
     explicit CreateTrackCommand(TrackType type = TrackType::Audio,
-                                const juce::String& name = juce::String());
+                                const juce::String& name = juce::String(),
+                                TrackId afterTrackId = INVALID_TRACK_ID);
 
     void execute() override;
     void undo() override;
@@ -25,6 +26,7 @@ class CreateTrackCommand : public UndoableCommand {
   private:
     TrackType type_;
     juce::String name_;
+    TrackId afterTrackId_ = INVALID_TRACK_ID;
     TrackId createdTrackId_ = INVALID_TRACK_ID;
     bool executed_ = false;
 };

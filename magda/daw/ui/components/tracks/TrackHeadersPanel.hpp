@@ -271,7 +271,7 @@ class TrackHeadersPanel : public juce::Component,
     void paintAutomationLaneHeaders(juce::Graphics& g, int trackIndex);
 
     // Indentation
-    static constexpr int INDENT_WIDTH = 20;
+    static constexpr int INDENT_WIDTH = 12;
     static constexpr int COLLAPSE_BUTTON_SIZE = 10;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackHeadersPanel)
