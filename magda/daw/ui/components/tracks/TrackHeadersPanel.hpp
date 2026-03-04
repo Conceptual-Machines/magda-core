@@ -14,6 +14,7 @@
 #include "../mixer/InputTypeSelector.hpp"
 #include "../mixer/RoutingSelector.hpp"
 #include "core/AutomationManager.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -26,6 +27,7 @@ class TrackHeadersPanel : public juce::Component,
                           public juce::DragAndDropTarget,
                           public juce::Timer,
                           public TrackManagerListener,
+                          public SelectionManagerListener,
                           public ViewModeListener,
                           public AutomationManagerListener {
   public:
@@ -45,6 +47,10 @@ class TrackHeadersPanel : public juce::Component,
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(magda::TrackId trackId) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
+
+    // SelectionManagerListener
+    void selectionTypeChanged(SelectionType newType) override;
+    void multiTrackSelectionChanged(const std::unordered_set<TrackId>& trackIds) override;
 
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
@@ -174,7 +180,7 @@ class TrackHeadersPanel : public juce::Component,
     std::vector<std::unique_ptr<TrackHeader>> trackHeaders;
     std::vector<TrackId> visibleTrackIds_;  // Track IDs in display order
     std::unordered_map<TrackId, std::vector<AutomationLaneId>> visibleAutomationLanes_;
-    int selectedTrackIndex = -1;
+    std::unordered_set<int> selectedTrackIndices_;
     double verticalZoom = 1.0;  // Track height multiplier
     ViewMode currentViewMode_ = ViewMode::Arrange;
     MixerLookAndFeel sliderLookAndFeel_;  // Custom look and feel for sliders

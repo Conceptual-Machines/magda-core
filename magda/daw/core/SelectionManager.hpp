@@ -75,6 +75,7 @@ namespace magda {
 enum class SelectionType {
     None,            // Nothing selected
     Track,           // Track selected (for mixer/inspector)
+    MultiTrack,      // Multiple tracks selected
     Clip,            // Single clip selected (backward compat)
     MultiClip,       // Multiple clips selected
     TimeRange,       // Time range selected (for operations)
@@ -522,6 +523,8 @@ class SelectionManagerListener {
 
     virtual void selectionTypeChanged(SelectionType newType) = 0;
     virtual void trackSelectionChanged([[maybe_unused]] TrackId trackId) {}
+    virtual void multiTrackSelectionChanged(
+        [[maybe_unused]] const std::unordered_set<TrackId>& trackIds) {}
     virtual void clipSelectionChanged([[maybe_unused]] ClipId clipId) {}
     virtual void multiClipSelectionChanged(
         [[maybe_unused]] const std::unordered_set<ClipId>& clipIds) {}
@@ -579,11 +582,61 @@ class SelectionManager {
     void selectTrack(TrackId trackId);
 
     /**
-     * @brief Get the currently selected track
+     * @brief Get the currently selected track (primary/last-clicked)
      * @return INVALID_TRACK_ID if no track selected
      */
     TrackId getSelectedTrack() const {
         return selectedTrackId_;
+    }
+
+    // ========================================================================
+    // Multi-Track Selection
+    // ========================================================================
+
+    /**
+     * @brief Select multiple tracks (clears other selection types)
+     */
+    void selectTracks(const std::unordered_set<TrackId>& trackIds);
+
+    /**
+     * @brief Add a track to the current selection (converts single→multi if needed)
+     */
+    void addTrackToSelection(TrackId trackId);
+
+    /**
+     * @brief Remove a track from the current selection
+     */
+    void removeTrackFromSelection(TrackId trackId);
+
+    /**
+     * @brief Toggle a track's selection state (add/remove)
+     */
+    void toggleTrackSelection(TrackId trackId);
+
+    /**
+     * @brief Check if a specific track is selected (works for both single and multi)
+     */
+    bool isTrackSelected(TrackId trackId) const;
+
+    /**
+     * @brief Get all selected tracks
+     */
+    const std::unordered_set<TrackId>& getSelectedTracks() const {
+        return selectedTrackIds_;
+    }
+
+    /**
+     * @brief Get the number of selected tracks
+     */
+    size_t getSelectedTrackCount() const {
+        return selectedTrackIds_.size();
+    }
+
+    /**
+     * @brief Get the anchor track (for Shift+click range selection)
+     */
+    TrackId getAnchorTrack() const {
+        return anchorTrackId_;
     }
 
     // ========================================================================
@@ -1096,6 +1149,8 @@ class SelectionManager {
 
     SelectionType selectionType_ = SelectionType::None;
     TrackId selectedTrackId_ = INVALID_TRACK_ID;
+    std::unordered_set<TrackId> selectedTrackIds_;  // For multi-track selection
+    TrackId anchorTrackId_ = INVALID_TRACK_ID;      // Anchor for Shift+click range selection
     ClipId selectedClipId_ = INVALID_CLIP_ID;
     ClipId anchorClipId_ = INVALID_CLIP_ID;       // Anchor for Shift+click range selection
     std::unordered_set<ClipId> selectedClipIds_;  // For multi-clip selection
@@ -1116,6 +1171,7 @@ class SelectionManager {
 
     void notifySelectionTypeChanged(SelectionType type);
     void notifyTrackSelectionChanged(TrackId trackId);
+    void notifyMultiTrackSelectionChanged(const std::unordered_set<TrackId>& trackIds);
     void notifyClipSelectionChanged(ClipId clipId);
     void notifyMultiClipSelectionChanged(const std::unordered_set<ClipId>& clipIds);
     void notifyTimeRangeSelectionChanged(const TimeRangeSelection& selection);

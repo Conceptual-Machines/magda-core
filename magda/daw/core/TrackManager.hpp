@@ -465,6 +465,10 @@ class TrackManager {
     TrackId getSelectedTrack() const {
         return selectedTrackId_;
     }
+    void setSelectedTracks(const std::unordered_set<TrackId>& trackIds);
+    const std::unordered_set<TrackId>& getSelectedTracks() const {
+        return selectedTrackIds_;
+    }
 
     // Chain selection (for plugin browser context menu)
     void setSelectedChain(TrackId trackId, RackId rackId, ChainId chainId);
@@ -557,6 +561,7 @@ class TrackManager {
     int nextAuxBusIndex_ = 0;
     MasterChannelState masterChannel_;
     TrackId selectedTrackId_ = INVALID_TRACK_ID;
+    std::unordered_set<TrackId> selectedTrackIds_;
     TrackId selectedChainTrackId_ = INVALID_TRACK_ID;
     RackId selectedChainRackId_ = INVALID_RACK_ID;
     ChainId selectedChainId_ = INVALID_CHAIN_ID;

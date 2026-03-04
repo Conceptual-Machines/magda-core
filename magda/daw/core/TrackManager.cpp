@@ -1398,6 +1398,10 @@ void TrackManager::setSelectedTrack(TrackId trackId) {
     }
 }
 
+void TrackManager::setSelectedTracks(const std::unordered_set<TrackId>& trackIds) {
+    selectedTrackIds_ = trackIds;
+}
+
 void TrackManager::setSelectedChain(TrackId trackId, RackId rackId, ChainId chainId) {
     selectedChainTrackId_ = trackId;
     selectedChainRackId_ = rackId;

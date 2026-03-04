@@ -384,6 +384,9 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
     ViewModeController::getInstance().addListener(this);
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
 
+    // Register as SelectionManager listener
+    SelectionManager::getInstance().addListener(this);
+
     // Register as AutomationManager listener
     AutomationManager::getInstance().addListener(this);
 
@@ -405,6 +408,7 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
 TrackHeadersPanel::~TrackHeadersPanel() {
     stopTimer();
     TrackManager::getInstance().removeListener(this);
+    SelectionManager::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
     AutomationManager::getInstance().removeListener(this);
 }
@@ -738,7 +742,7 @@ void TrackHeadersPanel::tracksChanged() {
     }
     trackHeaders.clear();
     visibleTrackIds_.clear();
-    selectedTrackIndex = -1;
+    selectedTrackIndices_.clear();
 
     // Build visible tracks list (respecting hierarchy)
     auto& trackManager = TrackManager::getInstance();
@@ -980,7 +984,7 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
         auto headerArea = getTrackHeaderArea(static_cast<int>(i));
         if (headerArea.intersects(getLocalBounds())) {
             paintTrackHeader(g, *trackHeaders[i], headerArea,
-                             static_cast<int>(i) == selectedTrackIndex);
+                             selectedTrackIndices_.count(static_cast<int>(i)) > 0);
 
             // Draw resize handle
             auto resizeArea = getResizeHandleArea(static_cast<int>(i));
@@ -1009,7 +1013,8 @@ void TrackHeadersPanel::resized() {
 
 void TrackHeadersPanel::selectTrack(int index) {
     if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
-        selectedTrackIndex = index;
+        selectedTrackIndices_.clear();
+        selectedTrackIndices_.insert(index);
 
         // Notify SelectionManager of selection change (which syncs with TrackManager)
         TrackId trackId = trackHeaders[index]->trackId;
@@ -1025,11 +1030,25 @@ void TrackHeadersPanel::selectTrack(int index) {
 }
 
 void TrackHeadersPanel::trackSelectionChanged(TrackId trackId) {
-    selectedTrackIndex = -1;
+    selectedTrackIndices_.clear();
     for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
         if (visibleTrackIds_[i] == trackId) {
-            selectedTrackIndex = static_cast<int>(i);
+            selectedTrackIndices_.insert(static_cast<int>(i));
             break;
+        }
+    }
+    repaint();
+}
+
+void TrackHeadersPanel::selectionTypeChanged(SelectionType /*newType*/) {
+    // Handled by trackSelectionChanged / multiTrackSelectionChanged
+}
+
+void TrackHeadersPanel::multiTrackSelectionChanged(const std::unordered_set<TrackId>& trackIds) {
+    selectedTrackIndices_.clear();
+    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+        if (trackIds.count(visibleTrackIds_[i]) > 0) {
+            selectedTrackIndices_.insert(static_cast<int>(i));
         }
     }
     repaint();
@@ -1760,13 +1779,45 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
         // Find which track was clicked
         for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
             if (getTrackHeaderArea(i).contains(pos)) {
-                selectTrack(i);
+                TrackId trackId = trackHeaders[i]->trackId;
+
+                if (event.mods.isCommandDown() && !event.mods.isPopupMenu()) {
+                    // Cmd+click: toggle track in multi-selection
+                    SelectionManager::getInstance().toggleTrackSelection(trackId);
+                    grabKeyboardFocus();
+                } else if (event.mods.isShiftDown() && !event.mods.isPopupMenu()) {
+                    // Shift+click: range select from anchor to clicked track
+                    auto anchorTrack = SelectionManager::getInstance().getAnchorTrack();
+                    int anchorIndex = -1;
+                    for (size_t j = 0; j < visibleTrackIds_.size(); ++j) {
+                        if (visibleTrackIds_[j] == anchorTrack) {
+                            anchorIndex = static_cast<int>(j);
+                            break;
+                        }
+                    }
+                    if (anchorIndex >= 0) {
+                        int lo = std::min(anchorIndex, i);
+                        int hi = std::max(anchorIndex, i);
+                        std::unordered_set<TrackId> rangeIds;
+                        for (int k = lo; k <= hi; ++k) {
+                            rangeIds.insert(trackHeaders[k]->trackId);
+                        }
+                        SelectionManager::getInstance().selectTracks(rangeIds);
+                    } else {
+                        selectTrack(i);
+                    }
+                    grabKeyboardFocus();
+                } else {
+                    // Plain click: single selection
+                    selectTrack(i);
+                }
 
                 // Right-click shows context menu (only for direct clicks, not child forwards)
                 if (event.mods.isPopupMenu() && event.originalComponent == this) {
                     showContextMenu(i, pos);
-                } else if (event.originalComponent == this) {
-                    // Record potential drag start
+                } else if (event.originalComponent == this && !event.mods.isCommandDown() &&
+                           !event.mods.isShiftDown()) {
+                    // Record potential drag start (only for plain clicks)
                     draggedTrackIndex_ = i;
                     dragStartX_ = localEvent.x;
                     dragStartY_ = localEvent.y;

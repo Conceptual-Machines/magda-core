@@ -34,6 +34,13 @@ void SelectionManager::selectTrack(TrackId trackId) {
     selectionType_ = SelectionType::Track;
     selectedTrackId_ = trackId;
 
+    // Set anchor and populate single-entry set
+    anchorTrackId_ = trackId;
+    selectedTrackIds_.clear();
+    if (trackId != INVALID_TRACK_ID) {
+        selectedTrackIds_.insert(trackId);
+    }
+
     // Auto-monitor: turn off old track's monitor, turn on new track's monitor
     if (trackChanged && Config::getInstance().getAutoMonitorSelectedTrack()) {
         if (oldTrackId != INVALID_TRACK_ID) {
@@ -56,6 +63,119 @@ void SelectionManager::selectTrack(TrackId trackId) {
     if (trackChanged) {
         notifyTrackSelectionChanged(trackId);
     }
+}
+
+// ============================================================================
+// Multi-Track Selection
+// ============================================================================
+
+void SelectionManager::selectTracks(const std::unordered_set<TrackId>& trackIds) {
+    if (trackIds.empty()) {
+        clearSelection();
+        return;
+    }
+
+    // Clear other selection types
+    selectedClipId_ = INVALID_CLIP_ID;
+    timeRangeSelection_ = TimeRangeSelection{};
+    ClipManager::getInstance().clearClipSelection();
+
+    selectedTrackIds_ = trackIds;
+
+    if (trackIds.size() == 1) {
+        // Single track — use normal track selection
+        selectTrack(*trackIds.begin());
+        return;
+    }
+
+    selectionType_ = SelectionType::MultiTrack;
+
+    // Primary track is the last one that was the anchor, or pick one from set
+    if (selectedTrackIds_.count(selectedTrackId_) == 0) {
+        selectedTrackId_ = *selectedTrackIds_.begin();
+    }
+
+    TrackManager::getInstance().setSelectedTrack(selectedTrackId_);
+    TrackManager::getInstance().setSelectedTracks(selectedTrackIds_);
+
+    notifySelectionTypeChanged(SelectionType::MultiTrack);
+    notifyMultiTrackSelectionChanged(selectedTrackIds_);
+}
+
+void SelectionManager::addTrackToSelection(TrackId trackId) {
+    if (trackId == INVALID_TRACK_ID)
+        return;
+
+    // If currently in single-track mode, convert to multi
+    if (selectionType_ == SelectionType::Track && selectedTrackId_ != INVALID_TRACK_ID) {
+        selectedTrackIds_.clear();
+        selectedTrackIds_.insert(selectedTrackId_);
+    }
+
+    selectedTrackIds_.insert(trackId);
+    selectedTrackId_ = trackId;  // Last-clicked becomes primary
+    anchorTrackId_ = trackId;
+
+    // Clear other selection types
+    selectedClipId_ = INVALID_CLIP_ID;
+    timeRangeSelection_ = TimeRangeSelection{};
+    ClipManager::getInstance().clearClipSelection();
+
+    if (selectedTrackIds_.size() == 1) {
+        selectionType_ = SelectionType::Track;
+        TrackManager::getInstance().setSelectedTrack(selectedTrackId_);
+        notifySelectionTypeChanged(SelectionType::Track);
+        notifyTrackSelectionChanged(selectedTrackId_);
+    } else {
+        selectionType_ = SelectionType::MultiTrack;
+        TrackManager::getInstance().setSelectedTrack(selectedTrackId_);
+        TrackManager::getInstance().setSelectedTracks(selectedTrackIds_);
+        notifySelectionTypeChanged(SelectionType::MultiTrack);
+        notifyMultiTrackSelectionChanged(selectedTrackIds_);
+    }
+}
+
+void SelectionManager::removeTrackFromSelection(TrackId trackId) {
+    selectedTrackIds_.erase(trackId);
+
+    if (selectedTrackIds_.empty()) {
+        clearSelection();
+        return;
+    }
+
+    if (selectedTrackIds_.size() == 1) {
+        // Convert back to single selection
+        selectTrack(*selectedTrackIds_.begin());
+        return;
+    }
+
+    // Update primary if it was removed
+    if (selectedTrackId_ == trackId) {
+        selectedTrackId_ = *selectedTrackIds_.begin();
+    }
+
+    selectionType_ = SelectionType::MultiTrack;
+    TrackManager::getInstance().setSelectedTrack(selectedTrackId_);
+    TrackManager::getInstance().setSelectedTracks(selectedTrackIds_);
+    notifyMultiTrackSelectionChanged(selectedTrackIds_);
+}
+
+void SelectionManager::toggleTrackSelection(TrackId trackId) {
+    if (selectedTrackIds_.count(trackId) > 0) {
+        removeTrackFromSelection(trackId);
+    } else {
+        addTrackToSelection(trackId);
+    }
+}
+
+bool SelectionManager::isTrackSelected(TrackId trackId) const {
+    if (selectionType_ == SelectionType::Track) {
+        return selectedTrackId_ == trackId;
+    }
+    if (selectionType_ == SelectionType::MultiTrack) {
+        return selectedTrackIds_.count(trackId) > 0;
+    }
+    return false;
 }
 
 // ============================================================================
@@ -480,6 +600,8 @@ void SelectionManager::clearSelection() {
 
     selectionType_ = SelectionType::None;
     selectedTrackId_ = INVALID_TRACK_ID;
+    selectedTrackIds_.clear();
+    anchorTrackId_ = INVALID_TRACK_ID;
     selectedClipId_ = INVALID_CLIP_ID;
     anchorClipId_ = INVALID_CLIP_ID;
     selectedClipIds_.clear();
@@ -532,6 +654,14 @@ void SelectionManager::notifyTrackSelectionChanged(TrackId trackId) {
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->trackSelectionChanged(trackId);
+    }
+}
+
+void SelectionManager::notifyMultiTrackSelectionChanged(
+    const std::unordered_set<TrackId>& trackIds) {
+    for (auto* listener : listeners_) {
+        if (listener != nullptr)
+            listener->multiTrackSelectionChanged(trackIds);
     }
 }
 
