@@ -312,7 +312,7 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                             if (!snapHolder)
                                 snapHolder = std::make_unique<CurveSnapshotHolder>();
                             applyLFOProperties(lfo, modInfo, snapHolder.get());
-                            if (modInfo.running && modInfo.triggerMode != LFOTriggerMode::Free)
+                            if (modInfo.triggered && modInfo.triggerMode != LFOTriggerMode::Free)
                                 triggerLFONoteOnWithReset(lfo);
                         }
 

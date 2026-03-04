@@ -868,8 +868,10 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                     snapHolder = std::make_unique<CurveSnapshotHolder>();
 
                 applyLFOProperties(lfo, modInfo, snapHolder.get());
-                // TE LFO in note mode needs triggerNoteOn() to start oscillating
-                if (modInfo.running && modInfo.triggerMode != LFOTriggerMode::Free)
+                // TE LFO in note mode needs triggerNoteOn() to start oscillating.
+                // Only trigger when the mod *just* started (triggered flag), not on
+                // every property update, to avoid resetting phase on curve edits.
+                if (modInfo.triggered && modInfo.triggerMode != LFOTriggerMode::Free)
                     triggerLFONoteOnWithReset(lfo);
             }
 
