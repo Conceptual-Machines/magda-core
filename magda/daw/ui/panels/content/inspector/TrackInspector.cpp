@@ -541,6 +541,35 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
                         std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_, pan));
             }
         };
+
+        recordButton_.onClick = [this]() {
+            if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+                magda::TrackManager::getInstance().setTrackRecordArmed(
+                    selectedTrackId_, recordButton_.getToggleState());
+            }
+        };
+        monitorButton_.onClick = [this]() {
+            if (selectedTrackId_ == magda::INVALID_TRACK_ID ||
+                selectedTrackId_ == magda::MASTER_TRACK_ID)
+                return;
+            auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+            if (!track)
+                return;
+            magda::InputMonitorMode nextMode;
+            switch (track->inputMonitor) {
+                case magda::InputMonitorMode::Off:
+                    nextMode = magda::InputMonitorMode::In;
+                    break;
+                case magda::InputMonitorMode::In:
+                    nextMode = magda::InputMonitorMode::Auto;
+                    break;
+                case magda::InputMonitorMode::Auto:
+                    nextMode = magda::InputMonitorMode::Off;
+                    break;
+            }
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackInputMonitorCommand>(selectedTrackId_, nextMode));
+        };
     }
 
     updateFromSelectedTrack();
@@ -721,9 +750,11 @@ void TrackInspector::updateFromMultiTrackSelection() {
     trackNameValue_.setText(juce::String(count) + " tracks selected", juce::dontSendNotification);
     trackNameValue_.setEditable(false);
 
-    // Check mute/solo state: "on" only if ALL selected tracks share that state
+    // Check button states: "on" only if ALL selected tracks share that state
     bool allMuted = true;
     bool allSoloed = true;
+    bool allRecordArmed = true;
+    bool allMonitorOn = true;
     for (auto tid : selectedTrackIds_) {
         const auto* track = tm.getTrack(tid);
         if (!track)
@@ -732,12 +763,18 @@ void TrackInspector::updateFromMultiTrackSelection() {
             allMuted = false;
         if (!track->soloed)
             allSoloed = false;
+        if (!track->recordArmed)
+            allRecordArmed = false;
+        if (track->inputMonitor == magda::InputMonitorMode::Off)
+            allMonitorOn = false;
     }
 
     muteButton_.setToggleState(allMuted, juce::dontSendNotification);
     soloButton_.setToggleState(allSoloed, juce::dontSendNotification);
+    recordButton_.setToggleState(allRecordArmed, juce::dontSendNotification);
+    monitorButton_.setToggleState(allMonitorOn, juce::dontSendNotification);
 
-    // Rewire mute/solo callbacks for multi-track mode
+    // Rewire button callbacks for multi-track mode
     muteButton_.onClick = [this]() {
         bool newState = muteButton_.getToggleState();
         for (auto tid : selectedTrackIds_) {
@@ -750,6 +787,21 @@ void TrackInspector::updateFromMultiTrackSelection() {
         for (auto tid : selectedTrackIds_) {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetTrackSoloCommand>(tid, newState));
+        }
+    };
+    recordButton_.onClick = [this]() {
+        bool newState = recordButton_.getToggleState();
+        for (auto tid : selectedTrackIds_) {
+            magda::TrackManager::getInstance().setTrackRecordArmed(tid, newState);
+        }
+    };
+    monitorButton_.onClick = [this]() {
+        // Cycle all selected tracks to the same next mode based on current button state
+        auto nextMode = monitorButton_.getToggleState() ? magda::InputMonitorMode::In
+                                                        : magda::InputMonitorMode::Off;
+        for (auto tid : selectedTrackIds_) {
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackInputMonitorCommand>(tid, nextMode));
         }
     };
 
@@ -838,13 +890,13 @@ void TrackInspector::updateFromMultiTrackSelection() {
             multiTrackBasePans_.clear();
     };
 
-    // Show name + mute/solo + volume/pan; hide everything else
+    // Show name + buttons + volume/pan; hide routing/sends/clips
     trackNameLabel_.setVisible(true);
     trackNameValue_.setVisible(true);
     muteButton_.setVisible(true);
     soloButton_.setVisible(true);
-    recordButton_.setVisible(false);
-    monitorButton_.setVisible(false);
+    recordButton_.setVisible(true);
+    monitorButton_.setVisible(true);
     gainLabel_->setVisible(true);
     panLabel_->setVisible(true);
 
