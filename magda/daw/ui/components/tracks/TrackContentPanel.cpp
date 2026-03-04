@@ -387,6 +387,41 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& lane,
             g.setColour(juce::Colours::black.withAlpha(0.25f));
             g.fillRect(area);
         }
+
+        // Group extent indicator — show the time range covered by all child clips
+        if (trackInfo && trackInfo->isGroup()) {
+            auto descendants = TrackManager::getInstance().getAllDescendants(trackInfo->id);
+            auto& clipManager = ClipManager::getInstance();
+            double earliest = std::numeric_limits<double>::max();
+            double latest = 0.0;
+            bool hasClips = false;
+
+            for (auto childId : descendants) {
+                for (auto clipId : clipManager.getClipsOnTrack(childId)) {
+                    const auto* clip = clipManager.getClip(clipId);
+                    if (clip && clip->view == ClipView::Arrangement) {
+                        earliest = std::min(earliest, clip->startTime);
+                        latest = std::max(latest, clip->startTime + clip->length);
+                        hasClips = true;
+                    }
+                }
+            }
+
+            if (hasClips && latest > earliest) {
+                int x1 = timeToPixel(earliest);
+                int x2 = timeToPixel(latest);
+                auto extentArea =
+                    juce::Rectangle<int>(x1, area.getY() + 2, x2 - x1, area.getHeight() - 4);
+
+                // Subtle filled background
+                g.setColour(juce::Colours::white.withAlpha(0.06f));
+                g.fillRoundedRectangle(extentArea.toFloat(), 3.0f);
+
+                // Outline
+                g.setColour(juce::Colours::white.withAlpha(0.15f));
+                g.drawRoundedRectangle(extentArea.toFloat(), 3.0f, 1.0f);
+            }
+        }
     }
 }
 

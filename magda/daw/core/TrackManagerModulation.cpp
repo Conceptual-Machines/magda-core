@@ -694,14 +694,11 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
     }
 
     // Compute per-track MIDI trigger signals for LFOs.
-    // midiNoteOnTracks / midiAllNotesOffTracks: EXTERNAL MIDI only (used for a
-    // track's own LFOs in MIDI trigger mode)
-    // sidechainNoteOnTracks / sidechainAllNotesOffTracks: external + internal MIDI
-    // combined (used when a device has a sidechain source configured)
+    // Both external MIDI (pendingMidiNoteOns_) and internal MIDI (SidechainTriggerBus)
+    // feed into the trigger signal, but held-note tracking (for gate-close detection)
+    // uses only external MIDI to avoid corruption from imprecise bus note-off counts.
     std::set<TrackId> midiNoteOnTracks;
     std::set<TrackId> midiAllNotesOffTracks;
-    std::set<TrackId> sidechainNoteOnTracks;
-    std::set<TrackId> sidechainAllNotesOffTracks;
     {
         // External MIDI trigger signals
         for (const auto& [id, count] : noteOnsThisTick) {
@@ -709,7 +706,15 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 midiNoteOnTracks.insert(id);
         }
 
-        // Track held-note state for gate-close detection (external MIDI only)
+        // Internal (bus) MIDI trigger signals
+        for (const auto& [id, count] : busNoteOnsThisTick) {
+            if (count > 0)
+                midiNoteOnTracks.insert(id);
+        }
+
+        // Track held-note state for gate-close detection (external MIDI only,
+        // because bus note-off counts can be imprecise and would corrupt the
+        // held count, preventing gate-close from ever firing)
         std::set<TrackId> activeTracks;
         for (const auto& [id, _] : noteOnsThisTick)
             activeTracks.insert(id);
@@ -727,18 +732,11 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 midiAllNotesOffTracks.insert(trackId);
         }
 
-        // Sidechain trigger signals: combine external + internal (bus) MIDI
-        sidechainNoteOnTracks = midiNoteOnTracks;
-        sidechainAllNotesOffTracks = midiAllNotesOffTracks;
-        for (const auto& [id, count] : busNoteOnsThisTick) {
-            if (count > 0)
-                sidechainNoteOnTracks.insert(id);
-        }
+        // Bus gate-close: if bus has note-offs and no external held notes,
+        // treat as gate close
         for (const auto& [id, count] : busNoteOffsThisTick) {
-            // Simple heuristic: if bus has note-offs and no external held notes,
-            // treat as gate close for sidechain purposes
             if (count > 0 && midiHeldNotes_[id] == 0 && busNoteOnsThisTick.count(id) == 0)
-                sidechainAllNotesOffTracks.insert(id);
+                midiAllNotesOffTracks.insert(id);
         }
     }
 
@@ -880,9 +878,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             if (device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
                 auto srcId = device.sidechain.sourceTrackId;
                 // Replace self triggers with source track's MIDI triggers
-                // Use sidechain sets (external + internal MIDI combined)
-                deviceMidiTriggered = sidechainNoteOnTracks.count(srcId) > 0;
-                deviceMidiNoteOff = sidechainAllNotesOffTracks.count(srcId) > 0;
+                deviceMidiTriggered = midiNoteOnTracks.count(srcId) > 0;
+                deviceMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
 
                 // Audio peak from source track (for Audio-triggered mods)
                 if (srcId >= 0 && srcId < kMaxBusTracks)
@@ -901,8 +898,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             // Check rack-level sidechain source — replaces self triggers
             if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID) {
                 auto srcId = rack.sidechain.sourceTrackId;
-                rackMidiTriggered = sidechainNoteOnTracks.count(srcId) > 0;
-                rackMidiNoteOff = sidechainAllNotesOffTracks.count(srcId) > 0;
+                rackMidiTriggered = midiNoteOnTracks.count(srcId) > 0;
+                rackMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
                 if (srcId >= 0 && srcId < kMaxBusTracks)
                     rackAudioPeak = audioPeakLevels[srcId];
             }
@@ -914,8 +911,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                         const auto& dev = magda::getDevice(chainElement);
                         if (dev.sidechain.sourceTrackId != INVALID_TRACK_ID) {
                             auto srcId = dev.sidechain.sourceTrackId;
-                            rackMidiTriggered = sidechainNoteOnTracks.count(srcId) > 0;
-                            rackMidiNoteOff = sidechainAllNotesOffTracks.count(srcId) > 0;
+                            rackMidiTriggered = midiNoteOnTracks.count(srcId) > 0;
+                            rackMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
                             if (srcId >= 0 && srcId < kMaxBusTracks)
                                 rackAudioPeak = audioPeakLevels[srcId];
                             break;
