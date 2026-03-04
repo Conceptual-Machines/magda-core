@@ -138,7 +138,8 @@ void MainView::setupComponents() {
                                              false);  // false = don't delete
     addAndMakeVisible(*trackHeadersViewport);
 
-    // Create track content viewport
+    // Create track content viewport — also set as scroll target for headers panel
+    // (wired after content viewport creation below)
     trackContentViewport = std::make_unique<juce::Viewport>();
     trackContentViewport->setWantsKeyboardFocus(
         false);  // Let TrackContentPanel handle keyboard focus
@@ -148,6 +149,9 @@ void MainView::setupComponents() {
     trackContentViewport->setViewedComponent(trackContentPanel.get(), false);
     trackContentViewport->setScrollBarsShown(false, false, true, true);
     addAndMakeVisible(*trackContentViewport);
+
+    // Wire track headers scroll to content viewport
+    trackHeadersPanel->setScrollTarget(trackContentViewport.get());
 
     // Create grid overlay component (vertical time grid lines - below selection and playhead)
     gridOverlay = std::make_unique<GridOverlayComponent>();

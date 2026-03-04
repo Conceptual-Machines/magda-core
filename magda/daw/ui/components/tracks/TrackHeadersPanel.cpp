@@ -1814,6 +1814,20 @@ void TrackHeadersPanel::mouseDrag(const juce::MouseEvent& event) {
     }
 }
 
+void TrackHeadersPanel::mouseWheelMove(const juce::MouseEvent& event,
+                                       const juce::MouseWheelDetails& wheel) {
+    if (scrollTarget_) {
+        // Match JUCE Viewport's scroll formula: deltaY * 14.0f * singleStepSize (default 16)
+        auto pos = scrollTarget_->getViewPosition();
+        float distance = wheel.deltaY * 14.0f * 16.0f;
+        int step = juce::roundToInt(distance < 0.0f ? juce::jmin(distance, -1.0f)
+                                                    : juce::jmax(distance, 1.0f));
+        scrollTarget_->setViewPosition(pos.x, pos.y - step);
+    } else {
+        juce::Component::mouseWheelMove(event, wheel);
+    }
+}
+
 void TrackHeadersPanel::mouseUp(const juce::MouseEvent& /*event*/) {
     // Handle vertical track height resizing cleanup
     if (isResizing) {

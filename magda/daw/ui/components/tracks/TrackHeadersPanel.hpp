@@ -63,6 +63,13 @@ class TrackHeadersPanel : public juce::Component,
     void paint(juce::Graphics& g) override;
     void resized() override;
     bool keyPressed(const juce::KeyPress& key) override;
+    void mouseWheelMove(const juce::MouseEvent& event,
+                        const juce::MouseWheelDetails& wheel) override;
+
+    // Scroll target — set this to the content viewport so wheel events scroll it
+    void setScrollTarget(juce::Viewport* viewport) {
+        scrollTarget_ = viewport;
+    }
 
     // Track management
     void selectTrack(int index);
@@ -172,6 +179,9 @@ class TrackHeadersPanel : public juce::Component,
     ViewMode currentViewMode_ = ViewMode::Arrange;
     MixerLookAndFeel sliderLookAndFeel_;  // Custom look and feel for sliders
     AudioEngine* audioEngine_ = nullptr;  // Reference to audio engine for metering
+
+    // Scroll forwarding
+    juce::Viewport* scrollTarget_ = nullptr;
 
     // I/O routing visibility
     bool showIORouting_ = true;
