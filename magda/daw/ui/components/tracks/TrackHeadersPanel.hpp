@@ -209,6 +209,7 @@ class TrackHeadersPanel : public juce::Component,
     int dragStartX_ = 0;
     int dragStartY_ = 0;
     int currentDragY_ = 0;
+    int deferredSingleSelectIndex_ = -1;  // Deferred single-select on mouseUp (multi-select drag)
 
     // Drop target state (track reorder)
     enum class DropTargetType { None, BetweenTracks, OntoGroup };

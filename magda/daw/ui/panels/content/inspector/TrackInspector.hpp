@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <unordered_set>
 
 #include "../../common/DraggableValueLabel.hpp"
 #include "../../mixer/InputTypeSelector.hpp"
@@ -40,6 +41,12 @@ class TrackInspector : public BaseInspector,
      */
     void setSelectedTrack(magda::TrackId trackId);
 
+    /**
+     * @brief Set multiple selected tracks for multi-track display
+     * @param trackIds Set of selected track IDs
+     */
+    void setSelectedTracks(const std::unordered_set<magda::TrackId>& trackIds);
+
     // TrackManagerListener interface
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
@@ -54,6 +61,8 @@ class TrackInspector : public BaseInspector,
   private:
     // Current selection
     magda::TrackId selectedTrackId_ = magda::INVALID_TRACK_ID;
+    std::unordered_set<magda::TrackId> selectedTrackIds_;  // For multi-track mode
+    bool isMultiTrackMode_ = false;
 
     // Track properties section
     juce::Label trackNameLabel_;
@@ -95,6 +104,7 @@ class TrackInspector : public BaseInspector,
 
     // Update methods
     void updateFromSelectedTrack();
+    void updateFromMultiTrackSelection();
     void showTrackControls(bool show);
     void rebuildSendsUI();
     void showAddSendMenu();

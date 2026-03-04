@@ -486,8 +486,43 @@ void TrackInspector::resized() {
 }
 
 void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
+    bool wasMulti = isMultiTrackMode_;
+    isMultiTrackMode_ = false;
+    selectedTrackIds_.clear();
     selectedTrackId_ = trackId;
+
+    // Restore single-track callbacks if switching from multi-track mode
+    if (wasMulti) {
+        muteButton_.onClick = [this]() {
+            if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+                if (selectedTrackId_ == magda::MASTER_TRACK_ID)
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetMasterMuteCommand>(
+                            muteButton_.getToggleState()));
+                else
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_,
+                                                                     muteButton_.getToggleState()));
+            }
+        };
+        soloButton_.onClick = [this]() {
+            if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetTrackSoloCommand>(selectedTrackId_,
+                                                                 soloButton_.getToggleState()));
+            }
+        };
+        trackNameValue_.setEditable(true);
+    }
+
     updateFromSelectedTrack();
+}
+
+void TrackInspector::setSelectedTracks(const std::unordered_set<magda::TrackId>& trackIds) {
+    isMultiTrackMode_ = true;
+    selectedTrackIds_ = trackIds;
+    selectedTrackId_ = magda::INVALID_TRACK_ID;
+    updateFromMultiTrackSelection();
 }
 
 // ============================================================================
@@ -499,6 +534,12 @@ void TrackInspector::tracksChanged() {
 }
 
 void TrackInspector::trackPropertyChanged(int trackId) {
+    if (isMultiTrackMode_) {
+        if (selectedTrackIds_.count(static_cast<magda::TrackId>(trackId)) > 0) {
+            updateFromMultiTrackSelection();
+        }
+        return;
+    }
     if (static_cast<magda::TrackId>(trackId) == selectedTrackId_) {
         updateFromSelectedTrack();
     }
@@ -628,6 +669,92 @@ void TrackInspector::updateFromSelectedTrack() {
     } else {
         showTrackControls(false);
     }
+
+    resized();
+    repaint();
+}
+
+void TrackInspector::updateFromMultiTrackSelection() {
+    if (selectedTrackIds_.empty()) {
+        showTrackControls(false);
+        resized();
+        repaint();
+        return;
+    }
+
+    auto& tm = magda::TrackManager::getInstance();
+
+    // Header: "N tracks selected"
+    int count = static_cast<int>(selectedTrackIds_.size());
+    trackNameLabel_.setText("Selection", juce::dontSendNotification);
+    trackNameValue_.setText(juce::String(count) + " tracks selected", juce::dontSendNotification);
+    trackNameValue_.setEditable(false);
+
+    // Check mute/solo state: "on" only if ALL selected tracks share that state
+    bool allMuted = true;
+    bool allSoloed = true;
+    for (auto tid : selectedTrackIds_) {
+        const auto* track = tm.getTrack(tid);
+        if (!track)
+            continue;
+        if (!track->muted)
+            allMuted = false;
+        if (!track->soloed)
+            allSoloed = false;
+    }
+
+    muteButton_.setToggleState(allMuted, juce::dontSendNotification);
+    soloButton_.setToggleState(allSoloed, juce::dontSendNotification);
+
+    // Rewire mute/solo callbacks for multi-track mode
+    muteButton_.onClick = [this]() {
+        bool newState = muteButton_.getToggleState();
+        for (auto tid : selectedTrackIds_) {
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackMuteCommand>(tid, newState));
+        }
+    };
+    soloButton_.onClick = [this]() {
+        bool newState = soloButton_.getToggleState();
+        for (auto tid : selectedTrackIds_) {
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackSoloCommand>(tid, newState));
+        }
+    };
+
+    // Show only name + mute/solo; hide everything else
+    trackNameLabel_.setVisible(true);
+    trackNameValue_.setVisible(true);
+    muteButton_.setVisible(true);
+    soloButton_.setVisible(true);
+    recordButton_.setVisible(false);
+    monitorButton_.setVisible(false);
+    gainLabel_->setVisible(false);
+    panLabel_->setVisible(false);
+
+    routingSectionLabel_.setVisible(false);
+    audioInputSelector_->setVisible(false);
+    inputSelector_->setVisible(false);
+    audioColumnLabel_.setVisible(false);
+    midiColumnLabel_.setVisible(false);
+    inputIcon_->setVisible(false);
+    outputIcon_->setVisible(false);
+    outputSelector_->setVisible(false);
+    midiOutputSelector_->setVisible(false);
+
+    sendReceiveSectionLabel_.setVisible(false);
+    addSendButton_.setVisible(false);
+    noSendsLabel_.setVisible(false);
+    receivesLabel_.setVisible(false);
+    for (auto& l : sendDestLabels_)
+        l->setVisible(false);
+    for (auto& l : sendLevelLabels_)
+        l->setVisible(false);
+    for (auto& b : sendDeleteButtons_)
+        b->setVisible(false);
+
+    clipsSectionLabel_.setVisible(false);
+    clipCountLabel_.setVisible(false);
 
     resized();
     repaint();

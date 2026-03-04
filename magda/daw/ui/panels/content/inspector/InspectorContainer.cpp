@@ -123,6 +123,14 @@ void InspectorContainer::noteSelectionChanged(const magda::NoteSelection& select
     }
 }
 
+void InspectorContainer::multiTrackSelectionChanged(
+    const std::unordered_set<magda::TrackId>& trackIds) {
+    auto* trackInspector = dynamic_cast<TrackInspector*>(currentInspector_.get());
+    if (trackInspector) {
+        trackInspector->setSelectedTracks(trackIds);
+    }
+}
+
 void InspectorContainer::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
     auto* deviceInspector = dynamic_cast<DeviceInspector*>(currentInspector_.get());
     if (deviceInspector) {
@@ -151,6 +159,34 @@ void InspectorContainer::switchToInspector(magda::SelectionType type) {
         // Activate and add to UI
         currentInspector_->onActivated();
         addAndMakeVisible(*currentInspector_);
+
+        // Forward current selection data to the newly created inspector
+        auto& sm = magda::SelectionManager::getInstance();
+        if (type == magda::SelectionType::Track) {
+            auto* trackInspector = dynamic_cast<TrackInspector*>(currentInspector_.get());
+            if (trackInspector)
+                trackInspector->setSelectedTrack(sm.getSelectedTrack());
+        } else if (type == magda::SelectionType::MultiTrack) {
+            auto* trackInspector = dynamic_cast<TrackInspector*>(currentInspector_.get());
+            if (trackInspector)
+                trackInspector->setSelectedTracks(sm.getSelectedTracks());
+        } else if (type == magda::SelectionType::Clip) {
+            auto* clipInspector = dynamic_cast<ClipInspector*>(currentInspector_.get());
+            if (clipInspector)
+                clipInspector->setSelectedClips({sm.getSelectedClip()});
+        } else if (type == magda::SelectionType::MultiClip) {
+            auto* clipInspector = dynamic_cast<ClipInspector*>(currentInspector_.get());
+            if (clipInspector)
+                clipInspector->setSelectedClips(sm.getSelectedClips());
+        } else if (type == magda::SelectionType::Note) {
+            auto* noteInspector = dynamic_cast<NoteInspector*>(currentInspector_.get());
+            if (noteInspector)
+                noteInspector->setSelectedNotes(sm.getNoteSelection());
+        } else if (type == magda::SelectionType::ChainNode) {
+            auto* deviceInspector = dynamic_cast<DeviceInspector*>(currentInspector_.get());
+            if (deviceInspector)
+                deviceInspector->setSelectedChainNode(sm.getSelectedChainNode());
+        }
     }
 
     resized();

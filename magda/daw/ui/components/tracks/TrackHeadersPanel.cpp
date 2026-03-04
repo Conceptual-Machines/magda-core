@@ -1808,8 +1808,14 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
                     }
                     grabKeyboardFocus();
                 } else {
-                    // Plain click: single selection
-                    selectTrack(i);
+                    // Plain click on a track that's already in multi-selection:
+                    // defer single-selection to mouseUp so drag can keep multi-selection
+                    if (selectedTrackIndices_.size() > 1 && selectedTrackIndices_.count(i) > 0) {
+                        deferredSingleSelectIndex_ = i;
+                    } else {
+                        // Plain click: single selection
+                        selectTrack(i);
+                    }
                 }
 
                 // Right-click shows context menu (only for direct clicks, not child forwards)
@@ -1817,7 +1823,7 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
                     showContextMenu(i, pos);
                 } else if (event.originalComponent == this && !event.mods.isCommandDown() &&
                            !event.mods.isShiftDown()) {
-                    // Record potential drag start (only for plain clicks)
+                    // Record potential drag start (plain clicks or clicks on multi-selected track)
                     draggedTrackIndex_ = i;
                     dragStartX_ = localEvent.x;
                     dragStartY_ = localEvent.y;
@@ -1891,7 +1897,12 @@ void TrackHeadersPanel::mouseUp(const juce::MouseEvent& /*event*/) {
     // Handle drag-to-reorder completion
     if (isDraggingToReorder_) {
         executeDrop();
+        deferredSingleSelectIndex_ = -1;  // Don't reduce to single after drag
+    } else if (deferredSingleSelectIndex_ >= 0) {
+        // No drag happened — reduce multi-selection to single click target
+        selectTrack(deferredSingleSelectIndex_);
     }
+    deferredSingleSelectIndex_ = -1;
     resetDragState();
 }
 
@@ -2210,8 +2221,12 @@ void TrackHeadersPanel::calculateDropTarget(int /*mouseX*/, int mouseY) {
         int headerHeight = headerArea.getHeight();
         int quarterHeight = headerHeight / 4;
 
-        // Skip self
-        if (i == draggedTrackIndex_)
+        // Skip selected tracks (all tracks being dragged together)
+        bool isBeingDragged = (selectedTrackIndices_.size() > 1 &&
+                               selectedTrackIndices_.count(draggedTrackIndex_) > 0)
+                                  ? selectedTrackIndices_.count(i) > 0
+                                  : (i == draggedTrackIndex_);
+        if (isBeingDragged)
             continue;
 
         // Check if mouse is in this track's vertical range
@@ -2279,24 +2294,49 @@ void TrackHeadersPanel::executeDrop() {
         return;
 
     auto& trackManager = TrackManager::getInstance();
-    TrackId draggedTrackId = trackHeaders[draggedTrackIndex_]->trackId;
-    const auto* draggedTrack = trackManager.getTrack(draggedTrackId);
-    if (!draggedTrack)
+
+    // Collect tracks to move: if dragged track is part of multi-selection, move all selected
+    // tracks in display order; otherwise move just the single dragged track
+    bool isMultiDrag =
+        selectedTrackIndices_.size() > 1 && selectedTrackIndices_.count(draggedTrackIndex_) > 0;
+
+    std::vector<TrackId> tracksToMove;
+    if (isMultiDrag) {
+        // Collect selected track IDs in display order (ascending index)
+        std::vector<int> sortedIndices(selectedTrackIndices_.begin(), selectedTrackIndices_.end());
+        std::sort(sortedIndices.begin(), sortedIndices.end());
+        for (int idx : sortedIndices) {
+            if (idx >= 0 && idx < static_cast<int>(trackHeaders.size()))
+                tracksToMove.push_back(trackHeaders[idx]->trackId);
+        }
+    } else {
+        TrackId draggedTrackId = trackHeaders[draggedTrackIndex_]->trackId;
+        tracksToMove.push_back(draggedTrackId);
+    }
+
+    if (tracksToMove.empty())
         return;
+
+    // Verify all tracks exist
+    for (auto tid : tracksToMove) {
+        if (!trackManager.getTrack(tid))
+            return;
+    }
+
+    if (isMultiDrag)
+        UndoManager::getInstance().beginCompoundOperation("Move Tracks");
 
     if (dropTargetType_ == DropTargetType::BetweenTracks && dropTargetIndex_ >= 0) {
         // Determine the target parent based on drop position
         TrackId targetParentId = INVALID_TRACK_ID;
 
         if (dropTargetIndex_ < static_cast<int>(visibleTrackIds_.size())) {
-            // Dropping before an existing track - adopt that track's parent
             TrackId targetTrackId = visibleTrackIds_[dropTargetIndex_];
             const auto* targetTrack = trackManager.getTrack(targetTrackId);
             if (targetTrack) {
                 targetParentId = targetTrack->parentId;
             }
         } else if (!visibleTrackIds_.empty()) {
-            // Dropping at the end - adopt the last track's parent
             TrackId lastTrackId = visibleTrackIds_.back();
             const auto* lastTrack = trackManager.getTrack(lastTrackId);
             if (lastTrack) {
@@ -2304,40 +2344,52 @@ void TrackHeadersPanel::executeDrop() {
             }
         }
 
-        // Calculate the target position in TrackManager order
-        int targetIndex;
+        // Calculate the initial target position in TrackManager order
+        int baseTargetIndex;
         if (dropTargetIndex_ >= static_cast<int>(visibleTrackIds_.size())) {
-            // Drop at the end
-            targetIndex = trackManager.getNumTracks();
+            baseTargetIndex = trackManager.getNumTracks();
         } else {
-            // Get the track at drop target position
             TrackId targetTrackId = visibleTrackIds_[dropTargetIndex_];
-            targetIndex = trackManager.getTrackIndex(targetTrackId);
+            baseTargetIndex = trackManager.getTrackIndex(targetTrackId);
         }
 
-        // Adjust if dragging from above
-        int currentIndex = trackManager.getTrackIndex(draggedTrackId);
-        if (currentIndex < targetIndex) {
-            targetIndex--;
-        }
+        // Move each track in display order, adjusting target index as we go
+        int insertAt = baseTargetIndex;
+        for (auto trackId : tracksToMove) {
+            const auto* track = trackManager.getTrack(trackId);
+            if (!track)
+                continue;
 
-        // Only change group membership if moving to a different parent
-        if (draggedTrack->parentId != targetParentId) {
-            // Remove from current group
-            trackManager.removeTrackFromGroup(draggedTrackId);
-
-            // Add to new group if target has a parent
-            if (targetParentId != INVALID_TRACK_ID) {
-                trackManager.addTrackToGroup(draggedTrackId, targetParentId);
+            // Update group membership if needed
+            if (track->parentId != targetParentId) {
+                trackManager.removeTrackFromGroup(trackId);
+                if (targetParentId != INVALID_TRACK_ID) {
+                    trackManager.addTrackToGroup(trackId, targetParentId);
+                }
             }
-        }
 
-        // Move to new position
-        trackManager.moveTrack(draggedTrackId, targetIndex);
+            // Adjust insertion index: if track is currently above insertAt, removing it
+            // shifts insertAt down by one
+            int currentIndex = trackManager.getTrackIndex(trackId);
+            int adjustedTarget = insertAt;
+            if (currentIndex < adjustedTarget) {
+                adjustedTarget--;
+            }
+
+            trackManager.moveTrack(trackId, adjustedTarget);
+
+            // Next track goes after this one
+            insertAt = trackManager.getTrackIndex(trackId) + 1;
+        }
     } else if (dropTargetType_ == DropTargetType::OntoGroup && dropTargetIndex_ >= 0) {
         TrackId groupId = trackHeaders[dropTargetIndex_]->trackId;
-        trackManager.addTrackToGroup(draggedTrackId, groupId);
+        for (auto trackId : tracksToMove) {
+            trackManager.addTrackToGroup(trackId, groupId);
+        }
     }
+
+    if (isMultiDrag)
+        UndoManager::getInstance().endCompoundOperation();
 
     // TrackManager will notify listeners which triggers tracksChanged()
 }
@@ -2358,10 +2410,17 @@ void TrackHeadersPanel::paintDragFeedback(juce::Graphics& g) {
     if (!isDraggingToReorder_ || draggedTrackIndex_ < 0)
         return;
 
-    // Draw semi-transparent overlay on dragged track
-    auto draggedArea = getTrackHeaderArea(draggedTrackIndex_);
+    // Draw semi-transparent overlay on all dragged tracks
     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
-    g.fillRect(draggedArea);
+    bool isMultiDrag =
+        selectedTrackIndices_.size() > 1 && selectedTrackIndices_.count(draggedTrackIndex_) > 0;
+    if (isMultiDrag) {
+        for (int idx : selectedTrackIndices_) {
+            g.fillRect(getTrackHeaderArea(idx));
+        }
+    } else {
+        g.fillRect(getTrackHeaderArea(draggedTrackIndex_));
+    }
 
     // Draw appropriate drop indicator
     if (dropTargetType_ == DropTargetType::BetweenTracks) {

@@ -21,6 +21,9 @@ std::unique_ptr<BaseInspector> InspectorFactory::createInspector(magda::Selectio
         case magda::SelectionType::Note:
             return std::make_unique<NoteInspector>();
 
+        case magda::SelectionType::MultiTrack:
+            return std::make_unique<TrackInspector>();
+
         case magda::SelectionType::ChainNode:
             return std::make_unique<DeviceInspector>();
 
