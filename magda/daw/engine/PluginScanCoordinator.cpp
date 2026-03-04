@@ -1,7 +1,5 @@
 #include "PluginScanCoordinator.hpp"
 
-#include <iostream>
-
 #include "core/Config.hpp"
 
 namespace magda {
@@ -37,7 +35,7 @@ juce::File PluginScanCoordinator::getScannerExecutable() const {
         return scanner;
 #endif
 
-    std::cerr << "[ScanCoordinator] Scanner executable not found!" << std::endl;
+    DBG("[ScanCoordinator] Scanner executable not found!");
     return {};
 }
 
@@ -45,7 +43,7 @@ void PluginScanCoordinator::startScan(juce::AudioPluginFormatManager& formatMana
                                       const ProgressCallback& progressCallback,
                                       const CompletionCallback& completionCallback) {
     if (isScanning_) {
-        std::cout << "[ScanCoordinator] Scan already in progress" << std::endl;
+        DBG("[ScanCoordinator] Scan already in progress");
         return;
     }
 
@@ -68,18 +66,17 @@ void PluginScanCoordinator::startScan(juce::AudioPluginFormatManager& formatMana
     discoverPlugins();
 
     if (pluginsToScan_.empty()) {
-        std::cout << "[ScanCoordinator] No plugins to scan" << std::endl;
+        DBG("[ScanCoordinator] No plugins to scan");
         if (completionCallback)
             completionCallback(true, foundPlugins_, failedPlugins_);
         return;
     }
 
-    std::cout << "[ScanCoordinator] Found " << pluginsToScan_.size() << " plugins to scan"
-              << std::endl;
+    DBG("[ScanCoordinator] Found " << pluginsToScan_.size() << " plugins to scan");
 
     auto scannerExe = getScannerExecutable();
     if (!scannerExe.existsAsFile()) {
-        std::cerr << "[ScanCoordinator] Plugin scanner executable not found" << std::endl;
+        DBG("[ScanCoordinator] Plugin scanner executable not found");
         if (completionCallback)
             completionCallback(false, foundPlugins_, failedPlugins_);
         return;
@@ -118,8 +115,7 @@ void PluginScanCoordinator::discoverPlugins() {
         if (!formatName.containsIgnoreCase("VST3") && !formatName.containsIgnoreCase("AudioUnit"))
             continue;
 
-        std::cout << "[ScanCoordinator] Discovering plugins for format: " << formatName
-                  << std::endl;
+        DBG("[ScanCoordinator] Discovering plugins for format: " << formatName);
 
         auto searchPath = format->getDefaultLocationsToSearch();
 
@@ -138,12 +134,12 @@ void PluginScanCoordinator::discoverPlugins() {
             if (!excludedPaths.contains(file)) {
                 pluginsToScan_.push_back({formatName, file});
             } else {
-                std::cout << "[ScanCoordinator] Skipping excluded: " << file << std::endl;
+                DBG("[ScanCoordinator] Skipping excluded: " << file);
             }
         }
 
-        std::cout << "[ScanCoordinator] Found " << files.size() << " " << formatName << " plugins ("
-                  << excludedPaths.size() << " excluded)" << std::endl;
+        DBG("[ScanCoordinator] Found " << files.size() << " " << formatName << " plugins ("
+                                       << excludedPaths.size() << " excluded)");
     }
 }
 
@@ -154,9 +150,9 @@ void PluginScanCoordinator::assignNextPlugin(int workerIndex) {
     auto& plugin = pluginsToScan_[static_cast<size_t>(nextPluginIndex_)];
     nextPluginIndex_++;
 
-    std::cout << "[ScanCoordinator] Assigning to worker " << workerIndex << ": "
-              << plugin.pluginPath << " (" << completedCount_ + 1 << "/" << pluginsToScan_.size()
-              << ")" << std::endl;
+    DBG("[ScanCoordinator] Assigning to worker " << workerIndex << ": " << plugin.pluginPath << " ("
+                                                 << completedCount_ + 1 << "/"
+                                                 << pluginsToScan_.size() << ")");
 
     if (progressCallback_) {
         float progress =
@@ -198,8 +194,7 @@ void PluginScanCoordinator::onWorkerResult(int workerIndex, const ScanWorker::Re
         failedPlugins_.add(result.pluginPath);
         excludePlugin(result.pluginPath,
                       result.errorMessage.isNotEmpty() ? result.errorMessage : "unknown");
-        std::cout << "[ScanCoordinator] Failed: " << result.pluginPath << " - "
-                  << result.errorMessage << std::endl;
+        DBG("[ScanCoordinator] Failed: " << result.pluginPath << " - " << result.errorMessage);
     }
 
     // Report progress
@@ -244,8 +239,7 @@ void PluginScanCoordinator::timerCallback() {
         juce::int64 elapsed = now - workerStartTimes_[i];
         if (elapsed > pluginTimeoutMs_) {
             juce::String timedOutPlugin = workerCurrentPlugin_[i];
-            std::cout << "[ScanCoordinator] Worker " << i << " timed out on: " << timedOutPlugin
-                      << std::endl;
+            DBG("[ScanCoordinator] Worker " << i << " timed out on: " << timedOutPlugin);
 
             // Abort kills the subprocess (sets busy_=false first, so handleConnectionLost
             // won't fire a result). We handle the timeout result here manually.
@@ -300,7 +294,7 @@ void PluginScanCoordinator::abortScan() {
 }
 
 void PluginScanCoordinator::finishScan(bool success) {
-    std::cout << "[ScanCoordinator] finishScan called, success=" << success << std::endl;
+    DBG("[ScanCoordinator] finishScan called, success=" << (int)success);
 
     isScanning_ = false;
     stopTimer();
@@ -308,8 +302,8 @@ void PluginScanCoordinator::finishScan(bool success) {
 
     writeScanReport();
 
-    std::cout << "[ScanCoordinator] Scan finished. Found " << foundPlugins_.size() << " plugins, "
-              << failedPlugins_.size() << " failed." << std::endl;
+    DBG("[ScanCoordinator] Scan finished. Found " << foundPlugins_.size() << " plugins, "
+                                                  << failedPlugins_.size() << " failed.");
 
     auto callback = completionCallback_;
     completionCallback_ = nullptr;
@@ -351,8 +345,7 @@ void PluginScanCoordinator::excludePlugin(const juce::String& pluginPath,
 
 void PluginScanCoordinator::loadExclusions() {
     excludedPlugins_ = loadExclusionList(getExclusionFile());
-    std::cout << "[ScanCoordinator] Loaded " << excludedPlugins_.size() << " excluded plugins"
-              << std::endl;
+    DBG("[ScanCoordinator] Loaded " << excludedPlugins_.size() << " excluded plugins");
 }
 
 void PluginScanCoordinator::saveExclusions() {
@@ -449,8 +442,7 @@ void PluginScanCoordinator::writeScanReport() {
     }
 
     reportFile.replaceWithText(report);
-    std::cout << "[ScanCoordinator] Scan report written to: " << reportFile.getFullPathName()
-              << std::endl;
+    DBG("[ScanCoordinator] Scan report written to: " << reportFile.getFullPathName());
 }
 
 }  // namespace magda

@@ -162,7 +162,7 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
 
     // Override to provide custom panel widths
     virtual int getModPanelWidth() const {
-        return SINGLE_COLUMN_PANEL_WIDTH;  // Mod panel uses single column
+        return DEFAULT_PANEL_WIDTH;  // Mod panel uses 2-column layout
     }
     // Extra left panel (between mods and params) - returns modulator editor width when visible
     virtual int getExtraLeftPanelWidth() const;

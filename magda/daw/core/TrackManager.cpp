@@ -673,6 +673,15 @@ void TrackManager::setTrackMidiInput(TrackId trackId, const juce::String& device
     // Update track state
     track->midiInputDevice = deviceId;
 
+    // Reset held-note state and flush pending MIDI triggers for this track
+    // so stale triggers from the old input don't keep LFOs running
+    {
+        std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+        midiHeldNotes_.erase(trackId);
+        pendingMidiNoteOns_.erase(trackId);
+        pendingMidiNoteOffs_.erase(trackId);
+    }
+
     // Forward to MidiBridge for MIDI activity monitoring (UI indicators)
     if (audioEngine_) {
         if (auto* midiBridge = audioEngine_->getMidiBridge()) {

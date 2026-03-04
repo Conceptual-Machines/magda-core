@@ -14,8 +14,10 @@ void MidiBridge::setAudioBridge(AudioBridge* audioBridge) {
 }
 
 MidiBridge::~MidiBridge() {
-    // IMPORTANT: Release MIDI inputs carefully to avoid CoreMIDI crashes
-    // Don't hold lock while destroying MIDI inputs (can cause deadlock)
+    // Signal all callbacks to bail out immediately
+    isShuttingDown_.store(true, std::memory_order_release);
+
+    // Move inputs out from under the lock so we can stop/destroy outside it
     std::unordered_map<juce::String, std::unique_ptr<juce::MidiInput>> inputsToDestroy;
 
     {
@@ -28,18 +30,13 @@ MidiBridge::~MidiBridge() {
 
     // Stop all MIDI inputs outside of lock — this unregisters CoreMIDI callbacks
     for (auto& [deviceId, midiInput] : inputsToDestroy) {
-        if (midiInput) {
+        if (midiInput)
             midiInput->stop();
-        }
     }
 
-    // Brief pause to allow any in-flight CoreMIDI callback invocations to complete.
-    // CoreMIDI dispatches callbacks on its own threads; after stop() returns, a callback
-    // that was already dispatched may still be executing. 10ms is sufficient for any
-    // in-progress callback to finish.
-    if (!inputsToDestroy.empty()) {
-        juce::Thread::sleep(10);
-    }
+    // Wait for any in-flight callbacks to finish (they check isShuttingDown_)
+    while (activeCallbacks_.load(std::memory_order_acquire) > 0)
+        juce::Thread::sleep(1);
 
     inputsToDestroy.clear();
 }
@@ -107,15 +104,18 @@ void MidiBridge::enableMidiInput(const juce::String& deviceId) {
 }
 
 void MidiBridge::disableMidiInput(const juce::String& deviceId) {
-    // Stop our MIDI input listener
-    juce::ScopedLock lock(routingLock_);
-    auto it = activeMidiInputs_.find(deviceId);
-    if (it != activeMidiInputs_.end()) {
-        if (it->second) {
-            it->second->stop();
+    std::unique_ptr<juce::MidiInput> inputToDestroy;
+    {
+        juce::ScopedLock lock(routingLock_);
+        auto it = activeMidiInputs_.find(deviceId);
+        if (it != activeMidiInputs_.end()) {
+            inputToDestroy = std::move(it->second);
+            activeMidiInputs_.erase(it);
         }
-        activeMidiInputs_.erase(it);
     }
+    if (inputToDestroy)
+        inputToDestroy->stop();
+    // inputToDestroy destroyed here, outside lock
 }
 
 bool MidiBridge::isMidiInputEnabled(const juce::String& deviceId) const {
@@ -175,13 +175,23 @@ void MidiBridge::clearTrackMidiInput(TrackId trackId) {
 
 void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
                                            const juce::MidiMessage& message) {
+    if (isShuttingDown_.load(std::memory_order_acquire))
+        return;
+    activeCallbacks_.fetch_add(1, std::memory_order_acq_rel);
+    if (isShuttingDown_.load(std::memory_order_acquire)) {
+        activeCallbacks_.fetch_sub(1, std::memory_order_acq_rel);
+        return;
+    }
+
     if (!source) {
+        activeCallbacks_.fetch_sub(1, std::memory_order_acq_rel);
         return;
     }
 
     // Skip MIDI clock and other system messages for activity/routing
     if (message.isMidiClock() || message.isActiveSense() || message.isMidiStart() ||
         message.isMidiStop() || message.isMidiContinue()) {
+        activeCallbacks_.fetch_sub(1, std::memory_order_acq_rel);
         return;
     }
 
@@ -275,6 +285,8 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
             }
         }
     }
+
+    activeCallbacks_.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 void MidiBridge::setRecordingQueue(RecordingNoteQueue* queue, std::atomic<double>* transportPos) {

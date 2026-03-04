@@ -1,7 +1,5 @@
 #include "InstrumentRackManager.hpp"
 
-#include <iostream>
-
 namespace magda {
 
 InstrumentRackManager::InstrumentRackManager(te::Edit& edit) : edit_(edit) {}
@@ -14,7 +12,7 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
     // 1. Create a new RackType in the edit
     auto rackType = edit_.getRackList().addNewRack();
     if (!rackType) {
-        std::cerr << "InstrumentRackManager: Failed to create RackType" << std::endl;
+        DBG("InstrumentRackManager: Failed to create RackType");
         return nullptr;
     }
 
@@ -28,7 +26,7 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
 
     // Add the instrument plugin to the rack
     if (!rackType->addPlugin(instrument, {0.5f, 0.5f}, false)) {
-        std::cerr << "InstrumentRackManager: Failed to add plugin to rack" << std::endl;
+        DBG("InstrumentRackManager: Failed to add plugin to rack");
         edit_.getRackList().removeRackType(rackType);
         return nullptr;
     }
@@ -60,7 +58,7 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
     auto rackInstance = edit_.getPluginCache().createNewPlugin(rackInstanceState);
 
     if (!rackInstance) {
-        std::cerr << "InstrumentRackManager: Failed to create RackInstance" << std::endl;
+        DBG("InstrumentRackManager: Failed to create RackInstance");
         edit_.getRackList().removeRackType(rackType);
         return nullptr;
     }
@@ -80,7 +78,7 @@ te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr in
     // 1. Create a new RackType in the edit
     auto rackType = edit_.getRackList().addNewRack();
     if (!rackType) {
-        std::cerr << "InstrumentRackManager: Failed to create multi-out RackType" << std::endl;
+        DBG("InstrumentRackManager: Failed to create multi-out RackType");
         return nullptr;
     }
 
@@ -93,7 +91,7 @@ te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr in
 
     // Add the instrument plugin to the rack
     if (!rackType->addPlugin(instrument, {0.5f, 0.5f}, false)) {
-        std::cerr << "InstrumentRackManager: Failed to add plugin to multi-out rack" << std::endl;
+        DBG("InstrumentRackManager: Failed to add plugin to multi-out rack");
         edit_.getRackList().removeRackType(rackType);
         return nullptr;
     }
@@ -127,7 +125,7 @@ te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr in
     auto rackInstance = edit_.getPluginCache().createNewPlugin(rackInstanceState);
 
     if (!rackInstance) {
-        std::cerr << "InstrumentRackManager: Failed to create multi-out RackInstance" << std::endl;
+        DBG("InstrumentRackManager: Failed to create multi-out RackInstance");
         edit_.getRackList().removeRackType(rackType);
         return nullptr;
     }
@@ -142,8 +140,7 @@ te::Plugin::Ptr InstrumentRackManager::createOutputInstance(DeviceId deviceId, i
                                                             int firstPin, int numChannels) {
     auto it = wrapped_.find(deviceId);
     if (it == wrapped_.end() || !it->second.isMultiOut) {
-        std::cerr << "InstrumentRackManager: Device " << deviceId
-                  << " is not a multi-out instrument" << std::endl;
+        DBG("InstrumentRackManager: Device " << deviceId << " is not a multi-out instrument");
         return nullptr;
     }
 
@@ -168,8 +165,7 @@ te::Plugin::Ptr InstrumentRackManager::createOutputInstance(DeviceId deviceId, i
     auto rackInstance = edit_.getPluginCache().createNewPlugin(rackInstanceState);
 
     if (!rackInstance) {
-        std::cerr << "InstrumentRackManager: Failed to create output instance for pair "
-                  << pairIndex << std::endl;
+        DBG("InstrumentRackManager: Failed to create output instance for pair " << pairIndex);
         return nullptr;
     }
 

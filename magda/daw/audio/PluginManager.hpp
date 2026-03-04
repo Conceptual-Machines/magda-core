@@ -115,6 +115,17 @@ class PluginManager {
      */
     void syncTrackPlugins(TrackId trackId);
 
+    /**
+     * @brief Clean up all PluginManager state for a deleted track
+     * @param trackId The MAGDA track ID being removed
+     *
+     * Purges all map entries (deviceToPlugin_, pluginToDevice_, deviceProcessors_,
+     * deviceModifiers_, deviceMacroParams_, pendingLoads_, sidechainMonitors_,
+     * midiReceiveMapping_) for the deleted track. Also removes racks belonging
+     * to the track and cleans up cross-track sidechain references.
+     */
+    void cleanupTrackPlugins(TrackId trackId);
+
     // =========================================================================
     // Plugin Loading
     // =========================================================================
@@ -189,7 +200,8 @@ class PluginManager {
      * @param deviceId The MAGDA device ID inside the rack
      * @param plugin The TE plugin created for this device
      */
-    void registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+    void registerRackPluginProcessor(DeviceId deviceId, te::Plugin::Ptr plugin,
+                                     const DeviceInfo& device);
 
     /**
      * @brief Sync a multi-output track's plugin chain
@@ -244,6 +256,23 @@ class PluginManager {
     // =========================================================================
     // Utilities
     // =========================================================================
+
+    /**
+     * @brief Purge stale map entries that reference tracks/devices no longer in TrackManager
+     *
+     * Safety net called at the end of syncAll() to catch any entries that
+     * slipped through per-track cleanup. Validates all map entries against
+     * current TrackManager state and removes orphans.
+     */
+    void purgeStaleEntries();
+
+    /**
+     * @brief Validate internal map consistency (debug builds only)
+     *
+     * Checks that all map entries reference valid tracks and devices.
+     * Logs warnings on inconsistency. No-op in release builds.
+     */
+    void validateMappingConsistency();
 
     /**
      * @brief Clear all plugin mappings and processors

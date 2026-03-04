@@ -154,6 +154,10 @@ struct RackInfo {
     float volume = 0.0f;   // Rack output volume in dB (0 = unity)
     float pan = 0.0f;      // Rack output pan (-1 to 1)
 
+    // UI panel state
+    bool modPanelOpen = false;    // Modulator panel visible
+    bool paramPanelOpen = false;  // Macro panel visible
+
     // Macro controls for rack-wide parameter mapping
     MacroArray macros = createDefaultMacros();
 
@@ -179,6 +183,8 @@ struct RackInfo {
           expanded(other.expanded),
           volume(other.volume),
           pan(other.pan),
+          modPanelOpen(other.modPanelOpen),
+          paramPanelOpen(other.paramPanelOpen),
           macros(other.macros),
           mods(other.mods),
           sidechain(other.sidechain) {}
@@ -193,6 +199,8 @@ struct RackInfo {
             expanded = other.expanded;
             volume = other.volume;
             pan = other.pan;
+            modPanelOpen = other.modPanelOpen;
+            paramPanelOpen = other.paramPanelOpen;
             macros = other.macros;
             mods = other.mods;
             sidechain = other.sidechain;

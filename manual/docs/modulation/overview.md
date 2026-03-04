@@ -2,7 +2,7 @@
 
 MAGDA provides two complementary modulation systems: **Modulators** and **Macros**. Both allow you to dynamically control device parameters without manual automation.
 
-![Modulation — Curve Editor](../assets/images/modulation/curve-editor.png)
+![Modulation Overview](../assets/images/modulation/link-mode.png)
 
 ## Modulators
 

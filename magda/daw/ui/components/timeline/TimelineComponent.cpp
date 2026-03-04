@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -470,7 +469,7 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
     if (deltaY > DRAG_THRESHOLD) {
         // Vertical drag detected - this is a zoom operation
         if (!isZooming) {
-            std::cout << "🎯 STARTING ZOOM MODE (vertical drag detected)" << std::endl;
+            DBG("STARTING ZOOM MODE (vertical drag detected)");
             isZooming = true;
             isPendingPlayheadClick = false;  // Cancel any pending playhead click
             // Capture the time position under the mouse at zoom start (using initial zoom level)
@@ -478,8 +477,7 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
             zoomAnchorTime = juce::jlimit(0.0, timelineLength, zoomAnchorTime);
             // Capture the screen X position where the mouse is (relative to this component)
             zoomAnchorScreenX = mouseDownX;
-            std::cout << "🎯 ZOOM ANCHOR: time=" << zoomAnchorTime
-                      << "s, screenX=" << zoomAnchorScreenX << std::endl;
+            DBG("ZOOM ANCHOR: time=" << zoomAnchorTime << "s, screenX=" << zoomAnchorScreenX);
             repaint();
         }
 

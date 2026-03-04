@@ -34,7 +34,7 @@ Every track provides the following controls (visible in track headers and channe
 ## Adding and Managing Tracks
 
 - Press ++ctrl+t++ (++cmd+t++ on macOS) to add a new track
-- Right-click a track header for options: rename, color, duplicate, delete, freeze
+- Right-click a track header for options: rename, duplicate, delete, freeze
 - Click the track name to rename it
 
 ## FX Chain

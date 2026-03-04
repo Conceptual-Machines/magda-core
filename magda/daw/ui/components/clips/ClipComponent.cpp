@@ -101,18 +101,19 @@ void ClipComponent::paint(juce::Graphics& g) {
                        static_cast<float>(boundaryBeat / beatRange) * clipBounds.getWidth();
 
             // Vertical line at loop boundary
-            g.setColour(markerColour.withAlpha(0.35f));
+            g.setColour(markerColour.withAlpha(0.45f));
             g.drawVerticalLine(static_cast<int>(bx), static_cast<float>(clipBounds.getY()),
                                static_cast<float>(clipBounds.getBottom()));
 
             // Triangular notch on both sides of the boundary
-            constexpr float cutSize = 8.0f;
+            constexpr float cutSize = 12.0f;
             float top = static_cast<float>(clipBounds.getY());
             juce::Path cut;
             // Left triangle
             cut.addTriangle(bx - cutSize, top, bx, top, bx, top + cutSize);
             // Right triangle
             cut.addTriangle(bx, top, bx + cutSize, top, bx, top + cutSize);
+            g.setColour(markerColour.withAlpha(0.6f));
             g.fillPath(cut);
         }
     }
@@ -394,7 +395,7 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     }
 
     // Border
-    g.setColour(clip.colour);
+    g.setColour(clip.colour.withAlpha(0.45f));
     g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
 }
 
@@ -500,7 +501,7 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     }
 
     // Border
-    g.setColour(clip.colour);
+    g.setColour(clip.colour.withAlpha(0.45f));
     g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
 }
 

@@ -1,7 +1,5 @@
 #include "ScanWorker.hpp"
 
-#include <iostream>
-
 namespace magda {
 
 ScanWorker::ScanWorker(int index, const juce::File& scannerExe, ResultCallback callback)
@@ -26,8 +24,7 @@ void ScanWorker::scanPlugin(const juce::String& formatName, const juce::String& 
     currentResult_.pluginPath = pluginPath;
 
     if (!launchSubprocess()) {
-        std::cerr << "[ScanWorker " << workerIndex_
-                  << "] Failed to launch subprocess for: " << pluginPath << std::endl;
+        DBG("[ScanWorker " << workerIndex_ << "] Failed to launch subprocess for: " << pluginPath);
         reportResultAsync(false, "Failed to launch subprocess");
         return;
     }
@@ -45,8 +42,7 @@ void ScanWorker::abort() {
 
 bool ScanWorker::launchSubprocess() {
     if (!scannerExe_.existsAsFile()) {
-        std::cerr << "[ScanWorker " << workerIndex_ << "] Scanner executable not found"
-                  << std::endl;
+        DBG("[ScanWorker " << workerIndex_ << "] Scanner executable not found");
         return false;
     }
 
@@ -88,14 +84,13 @@ void ScanWorker::handleMessageFromWorker(const juce::MemoryBlock& message) {
         desc.category = stream.readString();
 
         currentResult_.foundPlugins.add(desc);
-        std::cout << "[ScanWorker " << workerIndex_ << "] Found: " << desc.name << " ("
-                  << desc.pluginFormatName << ")" << std::endl;
+        DBG("[ScanWorker " << workerIndex_ << "] Found: " << desc.name << " ("
+                           << desc.pluginFormatName << ")");
     } else if (msgType == ScannerIPC::MSG_ERROR) {
         juce::String plugin = stream.readString();
         juce::String error = stream.readString();
         currentResult_.errorMessage = error;
-        std::cout << "[ScanWorker " << workerIndex_ << "] Error: " << plugin << " - " << error
-                  << std::endl;
+        DBG("[ScanWorker " << workerIndex_ << "] Error: " << plugin << " - " << error);
     } else if (msgType == ScannerIPC::MSG_SCAN_COMPLETE) {
         receivedDone_ = true;
         sendQuit();
@@ -120,8 +115,8 @@ void ScanWorker::handleConnectionLost() {
     }
 
     // Subprocess crashed before sending DONE
-    std::cout << "[ScanWorker " << workerIndex_
-              << "] Subprocess crashed while scanning: " << currentPlugin_ << std::endl;
+    DBG("[ScanWorker " << workerIndex_
+                       << "] Subprocess crashed while scanning: " << currentPlugin_);
     // Also defer crash results to avoid re-entrant issues
     reportResultAsync(false, "crash");
 }

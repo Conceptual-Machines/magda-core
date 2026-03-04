@@ -1,8 +1,5 @@
-#include "TracktionEngineWrapper.hpp"
-
-#include <iostream>
-
 #include "../audio/AudioBridge.hpp"
+#include "TracktionEngineWrapper.hpp"
 
 namespace magda {
 
@@ -56,13 +53,13 @@ void TracktionEngineWrapper::notifyDeviceLoadingComplete(const juce::String& mes
     if (isPlaying() && devicesLoading_) {
         wasPlayingBeforeDeviceChange_ = true;
         stop();
-        std::cout << "Stopped playback during device initialization" << std::endl;
+        DBG("Stopped playback during device initialization");
     }
 
     // Mark devices as no longer loading after first change notification
     if (devicesLoading_) {
         devicesLoading_ = false;
-        std::cout << "Device initialization complete: " << message << std::endl;
+        DBG("Device initialization complete: " << message);
 
         if (onDevicesLoadingChanged) {
             onDevicesLoadingChanged(false, message);

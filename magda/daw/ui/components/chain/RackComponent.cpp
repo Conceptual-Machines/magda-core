@@ -41,8 +41,34 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     setNodeName(rack.name);
     setBypassed(rack.bypassed);
 
+    // Restore panel visibility from rack state
+    modPanelVisible_ = rack.modPanelOpen;
+    paramPanelVisible_ = rack.paramPanelOpen;
+
     onBypassChanged = [this](bool bypassed) {
         magda::TrackManager::getInstance().setRackBypassed(trackId_, rackId_, bypassed);
+    };
+
+    onModPanelToggled = [this](bool visible) {
+        if (auto* rackInfo = magda::TrackManager::getInstance().getRackByPath(rackPath_)) {
+            rackInfo->modPanelOpen = visible;
+        }
+        if (modButton_) {
+            modButton_->setToggleState(visible, juce::dontSendNotification);
+            modButton_->setActive(visible);
+        }
+        childLayoutChanged();
+    };
+
+    onParamPanelToggled = [this](bool visible) {
+        if (auto* rackInfo = magda::TrackManager::getInstance().getRackByPath(rackPath_)) {
+            rackInfo->paramPanelOpen = visible;
+        }
+        if (macroButton_) {
+            macroButton_->setToggleState(visible, juce::dontSendNotification);
+            macroButton_->setActive(visible);
+        }
+        childLayoutChanged();
     };
 
     onLayoutChanged = [this]() { childLayoutChanged(); };
@@ -53,12 +79,13 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::bare_sine_svg,
                                                     BinaryData::bare_sine_svgSize);
     modButton_->setClickingTogglesState(true);
+    modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
     modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     modButton_->setActiveColor(juce::Colours::white);
     modButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    modButton_->setActive(modPanelVisible_);
     modButton_->onClick = [this]() {
         modButton_->setActive(modButton_->getToggleState());
-        // Use inherited method to properly handle editor visibility
         setModPanelVisible(modButton_->getToggleState());
     };
     addAndMakeVisible(*modButton_);
@@ -67,14 +94,14 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     macroButton_ =
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
     macroButton_->setClickingTogglesState(true);
+    macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
     macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     macroButton_->setActiveColor(juce::Colours::white);
     macroButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    macroButton_->setActive(paramPanelVisible_);
     macroButton_->onClick = [this]() {
-        bool newState = macroButton_->getToggleState();
-        DBG("RackComponent macro button clicked - new state: " << (newState ? "ON" : "OFF"));
-        macroButton_->setActive(newState);
-        setParamPanelVisible(newState);
+        macroButton_->setActive(macroButton_->getToggleState());
+        setParamPanelVisible(macroButton_->getToggleState());
     };
     addAndMakeVisible(*macroButton_);
 
@@ -713,8 +740,8 @@ int RackComponent::getParamPanelWidth() const {
 }
 
 int RackComponent::getModPanelWidth() const {
-    // Width for single column of mod knobs (1x4 grid)
-    return SINGLE_COLUMN_PANEL_WIDTH;
+    // Width for 2 columns of mod knobs (2x4 grid)
+    return DEFAULT_PANEL_WIDTH;
 }
 
 }  // namespace magda::daw::ui

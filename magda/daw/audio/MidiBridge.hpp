@@ -45,6 +45,14 @@ class MidiBridge : public juce::MidiInputCallback {
     void setAudioBridge(AudioBridge* audioBridge);
 
     /**
+     * @brief Clear the AudioBridge pointer before it's destroyed
+     * Prevents dangling pointer between shutdown steps
+     */
+    void clearAudioBridge() {
+        audioBridge_ = nullptr;
+    }
+
+    /**
      * @brief Enable/disable forwarding MIDI to instrument plugins
      * When enabled, incoming MIDI is injected into Tracktion tracks
      * @param enabled True to forward MIDI to plugins
@@ -187,6 +195,10 @@ class MidiBridge : public juce::MidiInputCallback {
     // Recording note queue for real-time MIDI preview (not owned)
     RecordingNoteQueue* recordingQueue_ = nullptr;
     std::atomic<double>* transportPosition_ = nullptr;
+
+    // Shutdown guard: prevents CoreMIDI callbacks from accessing destroyed state
+    std::atomic<bool> isShuttingDown_{false};
+    std::atomic<int> activeCallbacks_{0};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiBridge)
 };

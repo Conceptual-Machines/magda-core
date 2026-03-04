@@ -30,7 +30,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
     const juce::CommandID allCommands[] = {
         // Edit menu
         undo, redo, cut, copy, paste, duplicate, deleteCmd, selectAll, splitOrTrim, joinClips,
-        renderClip, renderTimeSelection, setLoopFromClip,
+        renderClip, renderTimeSelection, setLoopFromClip, toggleClipLoop,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio,
         // Transport
@@ -120,6 +120,11 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
                            "Edit", 0);
             result.addDefaultKeypress('l', juce::ModifierKeys::commandModifier |
                                                juce::ModifierKeys::shiftModifier);
+            break;
+
+        case toggleClipLoop:
+            result.setInfo("Toggle Clip Loop", "Toggle loop on/off for selected clip", "Edit", 0);
+            result.addDefaultKeypress('l', juce::ModifierKeys::commandModifier);
             break;
 
         // File menu
@@ -801,6 +806,22 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             return true;
         }
 
+        case toggleClipLoop: {
+            auto selectedClips = selectionManager.getSelectedClips();
+            if (!selectedClips.empty()) {
+                double bpm = 120.0;
+                if (mainView)
+                    bpm = mainView->getTimelineController().getState().tempo.bpm;
+
+                for (auto clipId : selectedClips) {
+                    auto* clip = clipManager.getClip(clipId);
+                    if (clip)
+                        clipManager.setClipLoopEnabled(clipId, !clip->loopEnabled, bpm);
+                }
+            }
+            return true;
+        }
+
         case play:
             if (mainView) {
                 if (mainView->getTimelineController().getState().playhead.isPlaying)
@@ -910,13 +931,12 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                     // Set track fader to -12dB
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<SetTrackVolumeCommand>(trackId, minus12dB));
-                    std::cout << "Track " << trackId << ": tone @ 0dB, fader @ -12dB" << std::endl;
+                    DBG("Track " << trackId << ": tone @ 0dB, fader @ -12dB");
                 }
 
                 // Start playback
                 teWrapper->play();
-                std::cout << "Audio test: 2 tracks @ -12dB each, expect -6dB on master"
-                          << std::endl;
+                DBG("Audio test: 2 tracks @ -12dB each, expect -6dB on master");
             }
         }
         return true;

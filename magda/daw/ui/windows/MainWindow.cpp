@@ -1,7 +1,5 @@
 #include "MainWindow.hpp"
 
-#include <iostream>
-
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/SelectionManager.hpp"
@@ -191,28 +189,25 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
 }
 
 MainWindow::~MainWindow() {
-    std::cout << "  [5a] MainWindow::~MainWindow start" << std::endl;
-    std::cout.flush();
+    DBG("  [5a] MainWindow::~MainWindow start");
 
 #if JUCE_DEBUG
     // Print profiling report if enabled, then shutdown to clear JUCE objects
     auto& monitor = magda::PerformanceMonitor::getInstance();
     if (monitor.isEnabled()) {
         auto report = monitor.generateReport();
-        std::cout << "\n" << report.toStdString() << std::endl;
+        DBG("\n" << report.toStdString());
         monitor.shutdown();  // Clear stats map before JUCE cleanup
     }
 #endif
 
 #if JUCE_MAC
-    std::cout << "  [5b] Clearing macOS menu bar..." << std::endl;
-    std::cout.flush();
+    DBG("  [5b] Clearing macOS menu bar...");
     // Clear the macOS menu bar
     juce::MenuBarModel::setMacMainMenu(nullptr);
 #endif
 
-    std::cout << "  [5c] MainWindow::~MainWindow - about to destroy content" << std::endl;
-    std::cout.flush();
+    DBG("  [5c] MainWindow::~MainWindow - about to destroy content");
 }
 
 void MainWindow::closeButtonPressed() {
@@ -261,7 +256,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
         externalAudioEngine_ = externalEngine;  // Store external engine pointer
-        std::cout << "MainComponent using external audio engine" << std::endl;
+        DBG("MainComponent using external audio engine");
     } else {
         // Create audio engine FIRST (before creating views that need it)
         audioEngine_ = std::make_unique<TracktionEngineWrapper>();
@@ -269,7 +264,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
             DBG("Warning: Failed to initialize audio engine");
         }
         externalEngine = audioEngine_.get();
-        std::cout << "MainComponent created internal audio engine" << std::endl;
+        DBG("MainComponent created internal audio engine");
     }
 
     // Initialize TrackManager with audio engine for routing operations
@@ -636,14 +631,12 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     };
 
     transportPanel->onStop = [this]() {
-        std::cout << "[MainWindow] transportPanel->onStop dispatching StopPlaybackEvent"
-                  << std::endl;
+        DBG("[MainWindow] transportPanel->onStop dispatching StopPlaybackEvent");
         mainView->getTimelineController().dispatch(StopPlaybackEvent{});
     };
 
     transportPanel->onPause = [this]() {
-        std::cout << "[MainWindow] transportPanel->onPause dispatching StopPlaybackEvent"
-                  << std::endl;
+        DBG("[MainWindow] transportPanel->onPause dispatching StopPlaybackEvent");
         mainView->getTimelineController().dispatch(StopPlaybackEvent{});
     };
 
@@ -772,8 +765,7 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
 }
 
 MainWindow::MainComponent::~MainComponent() {
-    std::cout << "    [5d] MainComponent::~MainComponent start" << std::endl;
-    std::cout.flush();
+    DBG("    [5d] MainComponent::~MainComponent start");
 
     // Save panel collapse state and sizes to Config for persistence
     auto& config = Config::getInstance();
@@ -789,70 +781,57 @@ MainWindow::MainComponent::~MainComponent() {
     commandManager.setFirstCommandTarget(nullptr);
 
     // Stop position timer before destroying
-    std::cout << "    [5e] Stopping position timer..." << std::endl;
-    std::cout.flush();
+    DBG("    [5e] Stopping position timer...");
     if (positionTimer_) {
         positionTimer_->stop();
         positionTimer_.reset();
     }
 
     // Unregister audio engine listener before destruction
-    std::cout << "    [5f] Removing audio engine listener..." << std::endl;
-    std::cout.flush();
+    DBG("    [5f] Removing audio engine listener...");
     if (audioEngine_ && mainView) {
         mainView->getTimelineController().removeAudioEngineListener(audioEngine_.get());
     }
 
-    std::cout << "    [5g] Removing ViewModeController listener..." << std::endl;
-    std::cout.flush();
+    DBG("    [5g] Removing ViewModeController listener...");
     ViewModeController::getInstance().removeListener(this);
 
-    std::cout << "    [5g.1] Removing SelectionManager listener..." << std::endl;
-    std::cout.flush();
+    DBG("    [5g.1] Removing SelectionManager listener...");
     SelectionManager::getInstance().removeListener(this);
 
-    std::cout << "    [5g.2] Removing TrackManager listener..." << std::endl;
-    std::cout.flush();
+    DBG("    [5g.2] Removing TrackManager listener...");
     TrackManager::getInstance().removeListener(this);
 
     // Explicitly reset unique_ptrs in order to see which one crashes
-    std::cout << "    [5h] Destroying loadingOverlay_..." << std::endl;
-    std::cout.flush();
+    DBG("    [5h] Destroying loadingOverlay_...");
     loadingOverlay_.reset();
 
-    std::cout << "    [5i] Destroying mainView..." << std::endl;
-    std::cout.flush();
+    DBG("    [5i] Destroying mainView...");
     mainView.reset();
 
-    std::cout << "    [5j] Destroying sessionView..." << std::endl;
-    std::cout.flush();
+    DBG("    [5j] Destroying sessionView...");
     sessionView.reset();
 
-    std::cout << "    [5k] Destroying mixerView..." << std::endl;
-    std::cout.flush();
+    DBG("    [5k] Destroying mixerView...");
     mixerView.reset();
 
-    std::cout << "    [5l] Destroying panels..." << std::endl;
-    std::cout.flush();
+    DBG("    [5l] Destroying panels...");
     transportPanel.reset();
     leftPanel.reset();
     rightPanel.reset();
     bottomPanel.reset();
     footerBar.reset();
 
-    std::cout << "    [5m] Destroying resize handles..." << std::endl;
-    std::cout.flush();
+    DBG("    [5m] Destroying resize handles...");
     transportResizer.reset();
     leftResizer.reset();
     rightResizer.reset();
     bottomResizer.reset();
 
-    std::cout << "    [5n] Destroying internal audioEngine_..." << std::endl;
-    std::cout.flush();
+    DBG("    [5n] Destroying internal audioEngine_...");
     audioEngine_.reset();
 
-    std::cout << "    [5o] MainComponent::~MainComponent complete" << std::endl;
-    std::cout.flush();
+    DBG("    [5o] MainComponent::~MainComponent complete");
 }
 
 // ============================================================================
@@ -881,9 +860,16 @@ void MainWindow::MainComponent::resized() {
     const int minRightWidth = rightPanelCollapsed ? 0 : layout.panelCollapseThreshold;
     const int minBottomHeight = bottomPanelCollapsed ? 0 : layout.minBottomPanelHeight;
 
-    leftPanelWidth = juce::jlimit(minLeftWidth, maxLeftWidth, leftPanelWidth);
-    rightPanelWidth = juce::jlimit(minRightWidth, maxRightWidth, rightPanelWidth);
-    bottomPanelHeight = juce::jlimit(minBottomHeight, maxBottomHeight, bottomPanelHeight);
+    leftPanelWidth =
+        juce::jlimit(minLeftWidth, std::max(minLeftWidth, maxLeftWidth), leftPanelWidth);
+    rightPanelWidth =
+        juce::jlimit(minRightWidth, std::max(minRightWidth, maxRightWidth), rightPanelWidth);
+    bottomPanelHeight = juce::jlimit(minBottomHeight, std::max(minBottomHeight, maxBottomHeight),
+                                     bottomPanelHeight);
+
+    DBG("BottomPanel: height=" << bottomPanelHeight << " minHeight=" << minBottomHeight
+                               << " maxHeight=" << maxBottomHeight << " collapsed="
+                               << (int)bottomPanelCollapsed << " windowH=" << getHeight());
 
     auto bounds = getLocalBounds();
 

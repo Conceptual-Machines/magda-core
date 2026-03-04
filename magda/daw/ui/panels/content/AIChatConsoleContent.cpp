@@ -142,12 +142,16 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // Register for selection changes
     magda::SelectionManager::getInstance().addListener(this);
 
+    // Register for project lifecycle events
+    magda::ProjectManager::getInstance().addListener(this);
+
     // Create and start the DAW agent
     agent_ = std::make_unique<magda::DAWAgent>();
     agent_->start();
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
+    magda::ProjectManager::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
     stopTimer();
 
@@ -301,6 +305,27 @@ void AIChatConsoleContent::onActivated() {
 
 void AIChatConsoleContent::onDeactivated() {
     // Could save chat history here
+}
+
+// ============================================================================
+// ProjectManagerListener
+// ============================================================================
+
+void AIChatConsoleContent::projectOpened(const magda::ProjectInfo& /*info*/) {
+    // Reset chat history
+    chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
+
+    // Cancel any in-flight request
+    if (requestThread_ && requestThread_->isThreadRunning()) {
+        agent_->requestCancel();
+        requestThread_->signalThreadShouldExit();
+        requestThread_->stopThread(2000);
+        requestThread_.reset();
+    }
+    stopTimer();
+    processing_ = false;
+    inputBox_.setEnabled(true);
+    sendButton_.setEnabled(true);
 }
 
 // ============================================================================
