@@ -487,9 +487,6 @@ class PluginManager {
     // When true, skip zeroing MIDI-triggered LFO assignments (during offline render)
     bool renderingActive_ = false;
 
-    // Debug: dump all LFO modifier state and assignment values
-    void logLFOState(const char* label);
-
     // Thread safety
     mutable juce::CriticalSection pluginLock_;
 

@@ -1136,10 +1136,6 @@ void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId) {
     for (int i = 0; i < entry.count; ++i) {
         auto* lfo = entry.lfos[static_cast<size_t>(i)];
         bool crossTrack = entry.isCrossTrack[static_cast<size_t>(i)];
-        DBG("triggerSidechainNoteOn: trackId="
-            << sourceTrackId << " lfo=" << i << " crossTrack=" << (int)crossTrack << " phaseBEFORE="
-            << lfo->getCurrentPhase() << " valueBEFORE=" << lfo->getCurrentValue()
-            << " syncType=" << lfo->syncTypeParam->getCurrentValue());
         // Cross-track: force value=0 for transient gap.
         // Self-track: resync phase but preserve value (no zero gap needed).
         triggerLFONoteOnWithReset(lfo, crossTrack);
@@ -1162,76 +1158,12 @@ void PluginManager::gateSidechainLFOs(TrackId sourceTrackId) {
             continue;
         auto* lfo = entry.lfos[static_cast<size_t>(i)];
         // Only gate note-triggered LFOs (syncType == 2)
-        if (juce::roundToInt(lfo->syncTypeParam->getCurrentValue()) == 2) {
-            DBG("gateSidechainLFOs: gating LFO id=" << lfo->itemID.toString()
-                                                    << " sourceTrack=" << sourceTrackId);
+        if (juce::roundToInt(lfo->syncTypeParam->getCurrentValue()) == 2)
             lfo->setGated(true);
-        }
-    }
-}
-
-void PluginManager::logLFOState(const char* label) {
-    auto& tm = TrackManager::getInstance();
-    for (const auto& track : tm.getTracks()) {
-        for (const auto& element : track.chainElements) {
-            if (!isDevice(element))
-                continue;
-            const auto& device = getDevice(element);
-            auto it = deviceModifiers_.find(device.id);
-            if (it == deviceModifiers_.end())
-                continue;
-            for (auto& mod : it->second) {
-                if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
-                    DBG("  [" << label << "] LFO on device " << device.id
-                              << ": syncType=" << lfo->syncTypeParam->getCurrentValue()
-                              << " rateType=" << lfo->rateTypeParam->getCurrentValue()
-                              << " rate=" << lfo->rateParam->getCurrentValue()
-                              << " depth=" << lfo->depthParam->getCurrentValue()
-                              << " wave=" << lfo->waveParam->getCurrentValue());
-                    for (const auto& modInfo : device.mods) {
-                        for (const auto& link : modInfo.links) {
-                            if (!link.isValid())
-                                continue;
-                            te::Plugin::Ptr linkTarget;
-                            {
-                                juce::ScopedLock lock(pluginLock_);
-                                auto pit = deviceToPlugin_.find(link.target.deviceId);
-                                if (pit != deviceToPlugin_.end())
-                                    linkTarget = pit->second;
-                            }
-                            if (!linkTarget && device.isInstrument)
-                                if (auto* inner = instrumentRackManager_.getInnerPlugin(device.id))
-                                    linkTarget = inner;
-                            if (!linkTarget)
-                                continue;
-                            auto params = linkTarget->getAutomatableParameters();
-                            if (link.target.paramIndex >= 0 &&
-                                link.target.paramIndex < static_cast<int>(params.size())) {
-                                auto* param = params[static_cast<size_t>(link.target.paramIndex)];
-                                if (param) {
-                                    for (auto* assignment : param->getAssignments()) {
-                                        if (assignment->isForModifierSource(*mod)) {
-                                            DBG("    [" << label << "] assignment on '"
-                                                        << param->getParameterName()
-                                                        << "': value=" << assignment->value.get());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
 void PluginManager::prepareForRendering() {
-    DBG("PluginManager::prepareForRendering");
-
-    // Log state BEFORE enabling rendering mode
-    logLFOState("PRE-RENDER");
-
     renderingActive_ = true;
     rackSyncManager_.setRenderingActive(true);
 
@@ -1242,24 +1174,6 @@ void PluginManager::prepareForRendering() {
             monitor->reset();
     }
 
-    // Log gated state of all cached LFOs before rendering
-    {
-        const juce::SpinLock::ScopedLockType lock(cacheLock_);
-        for (int t = 0; t < kMaxCacheTracks; ++t) {
-            auto& entry = sidechainLFOCache_[static_cast<size_t>(t)];
-            for (int i = 0; i < entry.count; ++i) {
-                auto* lfo = entry.lfos[static_cast<size_t>(i)];
-                DBG("prepareForRendering: cached LFO trackId="
-                    << t << " idx=" << i
-                    << " isCrossTrack=" << (int)entry.isCrossTrack[static_cast<size_t>(i)]
-                    << " gated=" << (int)lfo->isGated() << " value=" << lfo->getCurrentValue()
-                    << " phase=" << lfo->getCurrentPhase()
-                    << " syncType=" << lfo->syncTypeParam->getCurrentValue()
-                    << " lfoId=" << lfo->itemID.toString());
-            }
-        }
-    }
-
     // Enable all MIDI/Audio-triggered LFO assignments so modulation is active
     // during offline rendering. The message-thread timer gating can't keep up
     // with the renderer's speed, so we disable gating entirely.
@@ -1268,13 +1182,9 @@ void PluginManager::prepareForRendering() {
         updateDeviceModifierProperties(track.id);
         rackSyncManager_.updateAllModifierProperties(track.id);
     }
-
-    // Log state AFTER enabling rendering mode
-    logLFOState("POST-RENDER-PREP");
 }
 
 void PluginManager::restoreAfterRendering() {
-    DBG("PluginManager::restoreAfterRendering");
     renderingActive_ = false;
     rackSyncManager_.setRenderingActive(false);
 }

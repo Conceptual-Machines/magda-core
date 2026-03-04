@@ -24,8 +24,6 @@ void SidechainMonitorPlugin::initialise(const te::PluginInitialisationInfo&) {}
 void SidechainMonitorPlugin::deinitialise() {}
 
 void SidechainMonitorPlugin::reset() {
-    DBG("SidechainMonitor::reset trackId=" << sourceTrackId_
-                                           << " prevHeldCount=" << localHeldNoteCount_);
     localHeldNoteCount_ = 0;
     SidechainTriggerBus::getInstance().setHeldNoteCount(sourceTrackId_, 0);
 }
@@ -63,8 +61,6 @@ void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
         if (hasNoteOff) {
             triggerBus.triggerNoteOff(sourceTrackId_);
-            DBG("SidechainMonitor: noteOff trackId=" << sourceTrackId_
-                                                     << " heldCount=" << localHeldNoteCount_);
             if (localHeldNoteCount_ == 0 && pluginManager_)
                 pluginManager_->gateSidechainLFOs(sourceTrackId_);
         }
@@ -80,11 +76,8 @@ void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
         if (hasNoteOn) {
             triggerBus.triggerNoteOn(sourceTrackId_);
-            if (pluginManager_) {
+            if (pluginManager_)
                 pluginManager_->triggerSidechainNoteOn(sourceTrackId_);
-                DBG("SidechainMonitor: noteOn trackId=" << sourceTrackId_
-                                                        << " heldCount=" << localHeldNoteCount_);
-            }
         }
 
         bus.endBlock(sourceTrackId_);
