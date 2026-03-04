@@ -92,6 +92,11 @@ void ClipComponent::paint(juce::Graphics& g) {
         int numBoundaries = static_cast<int>(clipLengthInBeats / loopLengthBeats);
         auto markerColour = juce::Colours::lightgrey;
 
+        // Calculate pixel spacing between loop boundaries to scale indicators
+        float loopPixelWidth =
+            static_cast<float>(loopLengthBeats / beatRange) * clipBounds.getWidth();
+        float clipHeight = static_cast<float>(clipBounds.getHeight());
+
         for (int i = 1; i <= numBoundaries; ++i) {
             double boundaryBeat = i * loopLengthBeats;
             if (boundaryBeat >= clipLengthInBeats)
@@ -100,13 +105,29 @@ void ClipComponent::paint(juce::Graphics& g) {
             float bx = static_cast<float>(clipBounds.getX()) +
                        static_cast<float>(boundaryBeat / beatRange) * clipBounds.getWidth();
 
+            // Shadow gradient on right side of boundary (subtle fold effect)
+            float shadeWidth = juce::jmin(6.0f, loopPixelWidth * 0.15f);
+            if (shadeWidth >= 1.0f) {
+                float top = static_cast<float>(clipBounds.getY());
+                float bot = static_cast<float>(clipBounds.getBottom());
+                juce::ColourGradient shade(juce::Colours::black.withAlpha(0.25f), bx, 0.0f,
+                                           juce::Colours::transparentBlack, bx + shadeWidth, 0.0f,
+                                           false);
+                g.setGradientFill(shade);
+                g.fillRect(bx, top, shadeWidth, bot - top);
+            }
+
             // Vertical line at loop boundary
             g.setColour(markerColour.withAlpha(0.45f));
             g.drawVerticalLine(static_cast<int>(bx), static_cast<float>(clipBounds.getY()),
                                static_cast<float>(clipBounds.getBottom()));
 
-            // Triangular notch on both sides of the boundary
-            constexpr float cutSize = 12.0f;
+            // Scale triangle size: up to 10px, but no more than 1/3 of the loop pixel
+            // width or 1/4 of clip height, so they don't overlap when zoomed out
+            float cutSize = juce::jmin(6.0f, loopPixelWidth * 0.33f, clipHeight * 0.25f);
+            if (cutSize < 2.0f)
+                continue;  // Too small to draw meaningfully
+
             float top = static_cast<float>(clipBounds.getY());
             juce::Path cut;
             // Left triangle
