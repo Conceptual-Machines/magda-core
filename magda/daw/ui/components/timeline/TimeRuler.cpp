@@ -592,8 +592,14 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
                 g.fillRect(loopEndX - 1, tickAreaTop, 2, TICK_HEIGHT_MAJOR);
             }
 
-            // Small triangular flags at top
+            // Small triangular flags at top — size adapts to zoom so they
+            // don't overlap when the loop region is very short.
             int flagTop = 2;
+            int loopPixelWidth = loopEndX - loopStartX;
+            int maxFlagW = juce::jmax(2, loopPixelWidth / 2);  // each flag gets at most half
+            int flagH = juce::jlimit(3, 8, maxFlagW);
+            int flagW = juce::jlimit(2, 4, maxFlagW);
+
             g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
 
             // Connecting line between flags
@@ -604,23 +610,24 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             auto flagFill = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
                                        : juce::Colour(0xFF808080);
             g.setColour(flagFill.withAlpha(0.3f));
-            g.fillRect(loopStartX, 0, loopEndX - loopStartX, flagTop + 10);
+            g.fillRect(loopStartX, 0, loopEndX - loopStartX, flagTop + flagH);
 
             g.setColour(markerColour.withAlpha(loopActive ? 1.0f : 0.5f));
             if (loopStartX >= 0 && loopStartX <= width) {
                 juce::Path startFlag;
-                startFlag.addTriangle(
-                    static_cast<float>(loopStartX), static_cast<float>(flagTop),
-                    static_cast<float>(loopStartX), static_cast<float>(flagTop + 10),
-                    static_cast<float>(loopStartX + 7), static_cast<float>(flagTop + 5));
+                startFlag.addTriangle(static_cast<float>(loopStartX), static_cast<float>(flagTop),
+                                      static_cast<float>(loopStartX),
+                                      static_cast<float>(flagTop + flagH),
+                                      static_cast<float>(loopStartX + flagW),
+                                      static_cast<float>(flagTop + flagH / 2));
                 g.fillPath(startFlag);
             }
             if (loopEndX >= 0 && loopEndX <= width) {
                 juce::Path endFlag;
-                endFlag.addTriangle(static_cast<float>(loopEndX), static_cast<float>(flagTop),
-                                    static_cast<float>(loopEndX), static_cast<float>(flagTop + 10),
-                                    static_cast<float>(loopEndX - 7),
-                                    static_cast<float>(flagTop + 5));
+                endFlag.addTriangle(
+                    static_cast<float>(loopEndX), static_cast<float>(flagTop),
+                    static_cast<float>(loopEndX), static_cast<float>(flagTop + flagH),
+                    static_cast<float>(loopEndX - flagW), static_cast<float>(flagTop + flagH / 2));
                 g.fillPath(endFlag);
             }
         }
