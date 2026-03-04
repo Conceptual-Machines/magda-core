@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/SessionClipScheduler.hpp"
@@ -27,19 +25,18 @@ void TracktionEngineWrapper::initializePluginFormats() {
     // Enable out-of-process scanning to prevent plugin crashes from crashing the app
     auto& pluginManager = engine_->getPluginManager();
     pluginManager.setUsesSeparateProcessForScanning(true);
-    std::cout << "Enabled out-of-process plugin scanning" << std::endl;
+    DBG("Enabled out-of-process plugin scanning");
 
     // Load saved plugin list from persistent storage
     loadPluginList();
 
     // Log registered plugin formats
     auto& formatManager = pluginManager.pluginFormatManager;
-    std::cout << "Plugin formats registered by Tracktion Engine: " << formatManager.getNumFormats()
-              << std::endl;
+    DBG("Plugin formats registered by Tracktion Engine: " << formatManager.getNumFormats());
     for (int i = 0; i < formatManager.getNumFormats(); ++i) {
         auto* format = formatManager.getFormat(i);
         if (format) {
-            std::cout << "  Format " << i << ": " << format->getName() << std::endl;
+            DBG("  Format " << i << ": " << format->getName());
         }
     }
 }
@@ -263,7 +260,7 @@ void TracktionEngineWrapper::createEditAndBridges() {
     currentEdit_ = tracktion::createEmptyEdit(*engine_, editFile);
 
     if (!currentEdit_) {
-        std::cout << "Tracktion Engine initialized (no Edit created)" << std::endl;
+        DBG("Tracktion Engine initialized (no Edit created)");
         return;
     }
 
@@ -331,7 +328,7 @@ void TracktionEngineWrapper::createEditAndBridges() {
     // Register as transport listener for recording callbacks
     currentEdit_->getTransport().addListener(this);
 
-    std::cout << "Tracktion Engine initialized with Edit, AudioBridge, and MidiBridge" << std::endl;
+    DBG("Tracktion Engine initialized with Edit, AudioBridge, and MidiBridge");
 }
 
 bool TracktionEngineWrapper::initialize() {
@@ -366,13 +363,13 @@ bool TracktionEngineWrapper::initialize() {
         return currentEdit_ != nullptr;
 
     } catch (const std::exception& e) {
-        std::cerr << "ERROR: Failed to initialize Tracktion Engine: " << e.what() << std::endl;
+        DBG("ERROR: Failed to initialize Tracktion Engine: " << e.what());
         return false;
     }
 }
 
 void TracktionEngineWrapper::shutdown() {
-    std::cout << "TracktionEngineWrapper::shutdown - starting..." << std::endl;
+    DBG("TracktionEngineWrapper::shutdown - starting...");
 
     // Release test tone plugin first (before Edit is destroyed)
     testTonePlugin_.reset();
@@ -390,7 +387,7 @@ void TracktionEngineWrapper::shutdown() {
     // CRITICAL: Close all plugin windows FIRST (before plugins are destroyed)
     // This prevents malloc errors from windows trying to access destroyed plugins
     if (pluginWindowManager_) {
-        std::cout << "Closing all plugin windows..." << std::endl;
+        DBG("Closing all plugin windows...");
         pluginWindowManager_->closeAllWindows();
         pluginWindowManager_.reset();
     }
@@ -403,6 +400,10 @@ void TracktionEngineWrapper::shutdown() {
     // Clear the pre-save callback before destroying AudioBridge
     ProjectManager::getInstance().onBeforeSave = nullptr;
 
+    // Clear MidiBridge's reference to AudioBridge before destroying it
+    if (midiBridge_)
+        midiBridge_->clearAudioBridge();
+
     // Destroy AudioBridge first (it references Edit and Engine)
     if (audioBridge_) {
         audioBridge_.reset();
@@ -411,7 +412,7 @@ void TracktionEngineWrapper::shutdown() {
     // CRITICAL: Stop transport and release playback context BEFORE destroying Edit
     // This ensures audio/MIDI devices are properly released
     if (currentEdit_) {
-        std::cout << "Stopping transport and releasing playback context..." << std::endl;
+        DBG("Stopping transport and releasing playback context...");
         auto& transport = currentEdit_->getTransport();
 
         // Stop playback if running
@@ -422,7 +423,7 @@ void TracktionEngineWrapper::shutdown() {
         // Release the playback context - this frees audio/MIDI device resources
         transport.freePlaybackContext();
 
-        std::cout << "Destroying Edit..." << std::endl;
+        DBG("Destroying Edit...");
         currentEdit_.reset();
     }
 
@@ -431,21 +432,21 @@ void TracktionEngineWrapper::shutdown() {
     // which unregisters CoreMIDI callbacks. This must happen while the MIDI
     // devices still exist, but after playback is stopped.
     if (midiBridge_) {
-        std::cout << "Destroying MidiBridge..." << std::endl;
+        DBG("Destroying MidiBridge...");
         midiBridge_.reset();
     }
 
     // Close audio/MIDI devices before destroying engine
     if (engine_) {
-        std::cout << "Closing audio devices..." << std::endl;
+        DBG("Closing audio devices...");
         auto& dm = engine_->getDeviceManager();
         dm.closeDevices();
 
-        std::cout << "Destroying Tracktion Engine..." << std::endl;
+        DBG("Destroying Tracktion Engine...");
         engine_.reset();
     }
 
-    std::cout << "Tracktion Engine shutdown complete" << std::endl;
+    DBG("Tracktion Engine shutdown complete");
 }
 
 }  // namespace magda

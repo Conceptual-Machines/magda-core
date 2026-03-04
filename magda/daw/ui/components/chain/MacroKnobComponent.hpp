@@ -98,10 +98,10 @@ class MacroKnobComponent : public juce::Component, public magda::LinkModeManager
     // Helper to get knob bounds for hit testing
     juce::Rectangle<int> getKnobBounds() const;
 
-    static constexpr int KNOB_SIZE = 40;
+    static constexpr int KNOB_SIZE = 30;
     static constexpr int NAME_LABEL_HEIGHT = 11;
     static constexpr int VALUE_SLIDER_HEIGHT = 14;
-    static constexpr int LINK_BUTTON_HEIGHT = 12;
+    static constexpr int LINK_BUTTON_HEIGHT = 10;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MacroKnobComponent)
 };

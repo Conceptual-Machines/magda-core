@@ -1,6 +1,5 @@
 #include "AudioBridge.hpp"
 
-#include <iostream>
 #include <unordered_set>
 
 #include "../core/ClipOperations.hpp"
@@ -66,11 +65,11 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     // Start timer for metering updates (30 FPS for smooth UI)
     startTimerHz(30);
 
-    std::cout << "AudioBridge initialized" << std::endl;
+    DBG("AudioBridge initialized");
 }
 
 AudioBridge::~AudioBridge() {
-    std::cout << "AudioBridge::~AudioBridge - starting cleanup" << std::endl;
+    DBG("AudioBridge::~AudioBridge - starting cleanup");
 
     // CRITICAL: Acquire lock BEFORE stopping timer to ensure proper synchronization.
     // This prevents race condition where timerCallback() could be running while
@@ -120,7 +119,7 @@ AudioBridge::~AudioBridge() {
         pluginManager_.clearAllMappings();
     }
 
-    std::cout << "AudioBridge destroyed" << std::endl;
+    DBG("AudioBridge destroyed");
 }
 
 // =============================================================================
@@ -592,6 +591,21 @@ void AudioBridge::syncAll() {
     auto& tm = TrackManager::getInstance();
     const auto& tracks = tm.getTracks();
 
+    // Collect MAGDA track IDs for stale-check
+    std::unordered_set<TrackId> magdaTrackIds;
+    for (const auto& track : tracks) {
+        magdaTrackIds.insert(track.id);
+    }
+
+    // Remove TE tracks that no longer exist in MAGDA (e.g. after clearAllTracks)
+    auto mappedIds = trackController_.getAllTrackIds();
+    for (auto trackId : mappedIds) {
+        if (magdaTrackIds.find(trackId) == magdaTrackIds.end()) {
+            pluginManager_.cleanupTrackPlugins(trackId);
+            trackController_.removeAudioTrack(trackId);
+        }
+    }
+
     for (const auto& track : tracks) {
         ensureTrackMapping(track.id);
         syncTrackPlugins(track.id);
@@ -611,6 +625,13 @@ void AudioBridge::syncAll() {
 
     // Sync master channel volume/pan to Tracktion Engine
     masterChannelChanged();
+
+    // Safety net: purge any stale entries that slipped through per-track cleanup
+    pluginManager_.purgeStaleEntries();
+
+#if JUCE_DEBUG
+    pluginManager_.validateMappingConsistency();
+#endif
 }
 
 void AudioBridge::syncTrackPlugins(TrackId trackId) {

@@ -9,7 +9,7 @@ The Inspector panel is on the right side of the window. It displays context-sens
 Displayed when a track is selected. Shows:
 
 - **Track name** — Click to rename
-- **Track color** — Click to change
+- **Track color** — Automatically assigned
 - **Volume and pan** — Numeric readouts and controls
 - **Input routing** — Select audio/MIDI input source
 - **Output routing** — Select audio/MIDI output destination

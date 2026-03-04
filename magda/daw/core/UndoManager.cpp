@@ -1,7 +1,5 @@
 #include "UndoManager.hpp"
 
-#include <iostream>
-
 namespace magda {
 
 // ============================================================================
@@ -17,11 +15,11 @@ UndoManager::UndoManager() = default;
 
 void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
     if (!command) {
-        std::cout << "📝 UNDO: executeCommand called with null command!" << std::endl;
+        DBG("📝 UNDO: executeCommand called with null command!");
         return;
     }
 
-    std::cout << "📝 UNDO: Executing command: " << command->getDescription() << std::endl;
+    DBG("📝 UNDO: Executing command: " << command->getDescription());
 
     // Execute the command
     command->execute();
@@ -46,7 +44,7 @@ void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
 
     notifyListeners();
 
-    std::cout << "📝 UNDO: Executed command, stack size: " << undoStack_.size() << std::endl;
+    DBG("📝 UNDO: Executed command, stack size: " << undoStack_.size());
 }
 
 bool UndoManager::undo() {
@@ -58,7 +56,7 @@ bool UndoManager::undo() {
     auto command = std::move(undoStack_.back());
     undoStack_.pop_back();
 
-    std::cout << "📝 UNDO: Undoing '" << command->getDescription() << "'" << std::endl;
+    DBG("📝 UNDO: Undoing '" << command->getDescription() << "'");
 
     // Undo the command
     command->undo();
@@ -80,7 +78,7 @@ bool UndoManager::redo() {
     auto command = std::move(redoStack_.back());
     redoStack_.pop_back();
 
-    std::cout << "📝 UNDO: Redoing '" << command->getDescription() << "'" << std::endl;
+    DBG("📝 UNDO: Redoing '" << command->getDescription() << "'");
 
     // Re-execute the command
     command->execute();
@@ -143,8 +141,7 @@ void UndoManager::endCompoundOperation() {
         compoundCommands_.clear();
         notifyListeners();
 
-        std::cout << "📝 UNDO: Completed compound operation '" << compoundDescription_ << "'"
-                  << std::endl;
+        DBG("📝 UNDO: Completed compound operation '" << compoundDescription_ << "'");
     }
 }
 

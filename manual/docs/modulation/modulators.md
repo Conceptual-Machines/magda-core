@@ -4,6 +4,8 @@ Modulators are signal generators that modulate device parameters over time. Each
 
 ## LFO
 
+![LFO Editor](../assets/images/modulation/lfo-editor.png)
+
 A low-frequency oscillator that cycles through a waveform shape.
 
 ### Waveforms

@@ -363,8 +363,35 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
         rightClip.lengthBeats = rightLength * tempo / 60.0;
     }
 
-    // Non-looped audio: sync loopStart/loopLength to actual source extent
-    if (!clip->loopEnabled && clip->type == ClipType::Audio) {
+    // Sync loop region after split
+    if (clip->loopEnabled) {
+        // Looped clip: if the loop region is longer than the new clip length,
+        // truncate it so each half only loops over its own portion.
+        double beatsPerSecond = tempo > 0.0 ? tempo / 60.0 : 2.0;
+
+        // Left clip
+        double leftLenBeats = leftLength * beatsPerSecond;
+        if (clip->loopLengthBeats > leftLenBeats) {
+            clip->loopLengthBeats = leftLenBeats;
+            if (clip->type == ClipType::Audio) {
+                double srcBpm = clip->sourceBPM > 0.0 ? clip->sourceBPM : tempo;
+                clip->loopLength = clip->loopLengthBeats / srcBpm * 60.0;
+            }
+        }
+
+        // Right clip
+        double rightLenBeats = rightLength * beatsPerSecond;
+        if (rightClip.loopLengthBeats > rightLenBeats) {
+            rightClip.loopLengthBeats = rightLenBeats;
+            if (rightClip.type == ClipType::Audio) {
+                double srcBpm = rightClip.sourceBPM > 0.0 ? rightClip.sourceBPM : tempo;
+                rightClip.loopStart = rightClip.offset;
+                rightClip.loopStartBeats = rightClip.loopStart * srcBpm / 60.0;
+                rightClip.loopLength = rightClip.loopLengthBeats / srcBpm * 60.0;
+            }
+        }
+    } else if (clip->type == ClipType::Audio) {
+        // Non-looped audio: sync loopStart/loopLength to actual source extent
         // Left clip: loopStart stays at original value, loopLength shrinks
         clip->loopLength = clip->timelineToSource(clip->length);
         if (clip->isBeatsAuthoritative() && tempo > 0.0) {
@@ -1368,7 +1395,7 @@ void ClipManager::copyToClipboard(const std::unordered_set<ClipId>& clipIds) {
         }
     }
 
-    std::cout << "CLIPBOARD: Copied " << clipboard_.size() << " clip(s)" << std::endl;
+    DBG("CLIPBOARD: Copied " << clipboard_.size() << " clip(s)");
 }
 
 void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,

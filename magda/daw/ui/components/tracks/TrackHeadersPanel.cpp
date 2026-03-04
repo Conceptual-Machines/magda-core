@@ -370,8 +370,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
 }
 
 TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
-    std::cout << "TrackHeadersPanel created with audioEngine=" << (audioEngine ? "valid" : "NULL")
-              << std::endl;
+    DBG("TrackHeadersPanel created with audioEngine=" << (audioEngine ? "valid" : "NULL"));
     setSize(TRACK_HEADER_WIDTH, 400);
     setWantsKeyboardFocus(true);
     addMouseListener(this, true);  // Receive child clicks for track selection
@@ -1424,14 +1423,6 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
 void TrackHeadersPanel::paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.fillRect(area);
-
-    // Draw resize grip
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    int centerY = area.getCentreY();
-    for (int i = 0; i < 3; ++i) {
-        int x = area.getX() + 5 + i * 3;
-        g.drawLine(x, centerY - 1, x, centerY + 1, 1.0f);
-    }
 }
 
 juce::Rectangle<int> TrackHeadersPanel::getTrackHeaderArea(int trackIndex) const {

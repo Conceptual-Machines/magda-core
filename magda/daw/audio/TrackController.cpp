@@ -1,7 +1,5 @@
 #include "TrackController.hpp"
 
-#include <iostream>
-
 namespace magda {
 
 TrackController::TrackController(te::Engine& engine, te::Edit& edit)
@@ -40,8 +38,8 @@ te::AudioTrack* TrackController::createAudioTrack(TrackId trackId, const juce::S
         // Register track mapping
         trackMapping_[trackId] = track;
 
-        std::cout << "TrackController: Created Tracktion AudioTrack for MAGDA track " << trackId
-                  << ": " << name << " (routed to master)" << std::endl;
+        DBG("TrackController: Created Tracktion AudioTrack for MAGDA track "
+            << trackId << ": " << name << " (routed to master)");
     }
 
     return track;
@@ -75,8 +73,7 @@ void TrackController::removeAudioTrack(TrackId trackId) {
     // Delete track from edit (expensive operation, done outside lock)
     if (track) {
         edit_.deleteTrack(track);
-        std::cout << "TrackController: Removed Tracktion AudioTrack for MAGDA track " << trackId
-                  << std::endl;
+        DBG("TrackController: Removed Tracktion AudioTrack for MAGDA track " << trackId);
     }
 }
 

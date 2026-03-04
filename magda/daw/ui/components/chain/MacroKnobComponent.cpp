@@ -144,9 +144,6 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
 
     g.setColour(DarkTheme::getTextColour());
     g.drawLine(knobRect.getCentreX(), knobRect.getCentreY(), pointerX, pointerY, 1.5f);
-
-    // Center dot
-    g.fillEllipse(knobRect.getCentreX() - 2.0f, knobRect.getCentreY() - 2.0f, 4.0f, 4.0f);
 }
 
 void MacroKnobComponent::resized() {

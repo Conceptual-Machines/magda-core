@@ -1,7 +1,6 @@
 #include "TimelineController.hpp"
 
 #include <algorithm>
-#include <iostream>
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/TrackManager.hpp"
@@ -27,8 +26,7 @@ TimelineController::TimelineController() {
             state.zoom.horizontalZoom = state.zoom.viewportWidth / beats;
     }
 
-    std::cout << "TimelineController: initialized with timelineLength=" << state.timelineLength
-              << std::endl;
+    DBG("TimelineController: initialized with timelineLength=" << state.timelineLength);
 }
 
 TimelineController::~TimelineController() {
@@ -357,8 +355,8 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlaybackEvent& /*e*/) {
-    std::cout << "[TimelineController] handleEvent(StopPlaybackEvent) isPlaying="
-              << state.playhead.isPlaying << std::endl;
+    DBG("[TimelineController] handleEvent(StopPlaybackEvent) isPlaying="
+        << (int)state.playhead.isPlaying);
     if (!state.playhead.isPlaying) {
         return ChangeFlags::None;  // Already stopped
     }

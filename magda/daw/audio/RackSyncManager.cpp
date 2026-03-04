@@ -1,7 +1,5 @@
 #include "RackSyncManager.hpp"
 
-#include <iostream>
-
 #include "CurveSnapshot.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginManager.hpp"
@@ -31,8 +29,7 @@ te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackI
     // 1. Create a new RackType in the edit
     auto rackType = edit_.getRackList().addNewRack();
     if (!rackType) {
-        std::cerr << "RackSyncManager: Failed to create RackType for rack " << rackInfo.id
-                  << std::endl;
+        DBG("RackSyncManager: Failed to create RackType for rack " << rackInfo.id);
         return nullptr;
     }
 
@@ -59,8 +56,7 @@ te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackI
     auto rackInstance = edit_.getPluginCache().createNewPlugin(rackInstanceState);
 
     if (!rackInstance) {
-        std::cerr << "RackSyncManager: Failed to create RackInstance for rack " << rackInfo.id
-                  << std::endl;
+        DBG("RackSyncManager: Failed to create RackInstance for rack " << rackInfo.id);
         edit_.getRackList().removeRackType(rackType);
         return nullptr;
     }
@@ -149,6 +145,26 @@ void RackSyncManager::removeRack(RackId rackId) {
     DBG("RackSyncManager: Removed rack " << rackId);
 
     syncedRacks_.erase(it);
+}
+
+void RackSyncManager::removeRacksForTrack(TrackId trackId) {
+    std::vector<RackId> toRemove;
+    for (const auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId == trackId)
+            toRemove.push_back(rackId);
+    }
+    for (auto rackId : toRemove) {
+        removeRack(rackId);
+    }
+}
+
+std::vector<RackId> RackSyncManager::getSyncedRackIds() const {
+    std::vector<RackId> ids;
+    ids.reserve(syncedRacks_.size());
+    for (const auto& [rackId, _] : syncedRacks_) {
+        ids.push_back(rackId);
+    }
+    return ids;
 }
 
 te::Plugin* RackSyncManager::getInnerPlugin(DeviceId deviceId) const {
@@ -353,7 +369,7 @@ void RackSyncManager::loadChainPlugins(SyncedRack& synced, TrackId trackId,
                         synced.innerPlugins[device.id] = plugin;
 
                         // Register processor for parameter enumeration
-                        pluginManager_.registerRackPluginProcessor(device.id, plugin);
+                        pluginManager_.registerRackPluginProcessor(device.id, plugin, device);
 
                         // Apply bypass state
                         plugin->setEnabled(!device.bypassed);
@@ -362,8 +378,8 @@ void RackSyncManager::loadChainPlugins(SyncedRack& synced, TrackId trackId,
                                                               << device.id << ") to rack "
                                                               << synced.rackId);
                     } else {
-                        std::cerr << "RackSyncManager: Failed to add plugin '" << device.name
-                                  << "' to rack" << std::endl;
+                        DBG("RackSyncManager: Failed to add plugin '" << device.name
+                                                                      << "' to rack");
                     }
                 }
             }

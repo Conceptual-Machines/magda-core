@@ -1,7 +1,5 @@
 #include "FontManager.hpp"
 
-#include <iostream>
-
 namespace magda {
 
 FontManager& FontManager::getInstance() {
@@ -20,7 +18,7 @@ bool FontManager::initialize() {
     interRegular = juce::Typeface::createSystemTypefaceFor(BinaryData::InterRegular_ttf,
                                                            BinaryData::InterRegular_ttfSize);
     if (!interRegular) {
-        std::cerr << "Failed to load Inter-Regular" << std::endl;
+        DBG("Failed to load Inter-Regular");
         success = false;
     }
 
@@ -28,7 +26,7 @@ bool FontManager::initialize() {
     interMedium = juce::Typeface::createSystemTypefaceFor(BinaryData::InterMedium_ttf,
                                                           BinaryData::InterMedium_ttfSize);
     if (!interMedium) {
-        std::cerr << "Failed to load Inter-Medium" << std::endl;
+        DBG("Failed to load Inter-Medium");
         success = false;
     }
 
@@ -36,7 +34,7 @@ bool FontManager::initialize() {
     interSemiBold = juce::Typeface::createSystemTypefaceFor(BinaryData::InterSemiBold_ttf,
                                                             BinaryData::InterSemiBold_ttfSize);
     if (!interSemiBold) {
-        std::cerr << "Failed to load Inter-SemiBold" << std::endl;
+        DBG("Failed to load Inter-SemiBold");
         success = false;
     }
 
@@ -44,7 +42,7 @@ bool FontManager::initialize() {
     interBold = juce::Typeface::createSystemTypefaceFor(BinaryData::InterBold_ttf,
                                                         BinaryData::InterBold_ttfSize);
     if (!interBold) {
-        std::cerr << "Failed to load Inter-Bold" << std::endl;
+        DBG("Failed to load Inter-Bold");
         success = false;
     }
 
@@ -53,7 +51,7 @@ bool FontManager::initialize() {
         juce::Typeface::createSystemTypefaceFor(BinaryData::Microgramma_D_Extended_Bold_otf,
                                                 BinaryData::Microgramma_D_Extended_Bold_otfSize);
     if (!microgrammaBold) {
-        std::cerr << "Failed to load Microgramma D Extended Bold" << std::endl;
+        DBG("Failed to load Microgramma D Extended Bold");
         success = false;
     }
 
@@ -61,16 +59,16 @@ bool FontManager::initialize() {
     jetBrainsMonoRegular = juce::Typeface::createSystemTypefaceFor(
         BinaryData::JetBrainsMonoRegular_ttf, BinaryData::JetBrainsMonoRegular_ttfSize);
     if (!jetBrainsMonoRegular) {
-        std::cerr << "Failed to load JetBrains Mono Regular" << std::endl;
+        DBG("Failed to load JetBrains Mono Regular");
         success = false;
     }
 
     initialized = success;
 
     if (initialized) {
-        std::cout << "✓ Inter fonts loaded successfully" << std::endl;
+        DBG("Inter fonts loaded successfully");
     } else {
-        std::cerr << "⚠ Some Inter fonts failed to load, falling back to system fonts" << std::endl;
+        DBG("Some Inter fonts failed to load, falling back to system fonts");
     }
 
     return initialized;

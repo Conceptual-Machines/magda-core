@@ -717,12 +717,6 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
     // Call base class paint for standard rendering
     NodeComponent::paint(g);
 
-    // Draw Tracktion Engine logo in header (positioned by resizedHeaderExtra)
-    if (isTracktionDevice_ && tracktionLogo_ && !tracktionLogoBounds_.isEmpty()) {
-        tracktionLogo_->drawWithin(g, tracktionLogoBounds_.toFloat(),
-                                   juce::RectanglePlacement::centred, isBypassed() ? 0.3f : 0.6f);
-    }
-
     // Custom header text for drum grid (two-color text)
     if (isDrumGrid_ && !collapsed_ && getHeaderHeight() > 0) {
         auto bounds = getLocalBounds();
@@ -770,16 +764,34 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         return;
     }
 
-    // Content header: manufacturer / device name (only for non-internal devices)
-    if (!isInternalDevice()) {
+    // Content header subtitle row for all devices
+    {
         auto headerArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
         auto textColour = isBypassed() ? DarkTheme::getSecondaryTextColour().withAlpha(0.5f)
                                        : DarkTheme::getSecondaryTextColour();
         g.setColour(textColour);
-        g.setFont(FontManager::getInstance().getUIFont(9.0f));
-        auto textArea = headerArea.reduced(2, 0);
-        juce::String headerText = device_.manufacturer + " / " + device_.name;
-        g.drawText(headerText, textArea, juce::Justification::centredLeft);
+        auto textArea = headerArea.withTrimmedLeft(6).withTrimmedRight(2);
+
+        if (isDrumGrid_) {
+            // Drum Grid: "MAGDA Drum Grid" in Microgramma
+            g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
+            g.drawText("MAGDA Drum Grid", textArea, juce::Justification::centredLeft);
+        } else if (isTracktionDevice_ && tracktionLogo_) {
+            // Tracktion devices: TE logo inline + "Tracktion / {device name}"
+            constexpr int logoSize = 14;
+            auto logoBounds = textArea.removeFromLeft(logoSize).toFloat();
+            logoBounds = logoBounds.withSizeKeepingCentre(logoSize, logoSize);
+            tracktionLogo_->drawWithin(g, logoBounds, juce::RectanglePlacement::centred,
+                                       isBypassed() ? 0.3f : 0.6f);
+            textArea.removeFromLeft(4);  // spacing after logo
+            g.setFont(FontManager::getInstance().getUIFont(9.0f));
+            g.drawText("Tracktion / " + device_.name, textArea, juce::Justification::centredLeft);
+        } else {
+            // External devices: "manufacturer / device name"
+            g.setFont(FontManager::getInstance().getUIFont(9.0f));
+            g.drawText(device_.manufacturer + " / " + device_.name, textArea,
+                       juce::Justification::centredLeft);
+        }
     }
 }
 
@@ -832,9 +844,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     onButton_->setVisible(true);
     gainSlider_.setVisible(true);
 
-    // Content header area (manufacturer) - only for non-internal devices
-    if (!isInternalDevice())
-        contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
+    // Content header subtitle area (all devices)
+    contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
 
     // Check if this is an internal device with custom UI
     if (isInternalDevice() &&
@@ -1016,15 +1027,6 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     gainSlider_.setBounds(headerArea.removeFromRight(70));
     headerArea.removeFromRight(4);
 
-    // Tracktion Engine logo to the left of the gain slider
-    if (isTracktionDevice_ && tracktionLogo_) {
-        constexpr int logoSize = 14;
-        tracktionLogoBounds_ =
-            headerArea.removeFromRight(logoSize + 8).withSizeKeepingCentre(logoSize, logoSize);
-    } else {
-        tracktionLogoBounds_ = {};
-    }
-
     // Name label gets the remaining left portion (handled by NodeComponent)
     // UI button sits just to the right of the name
     if (uiButton_->isVisible()) {
@@ -1072,7 +1074,7 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
 int DeviceSlotComponent::getModPanelWidth() const {
     if (drumGridUI_)
         return 0;  // No mod panel for drum grid
-    return modPanelVisible_ ? SINGLE_COLUMN_PANEL_WIDTH : 0;
+    return modPanelVisible_ ? DEFAULT_PANEL_WIDTH : 0;
 }
 
 int DeviceSlotComponent::getParamPanelWidth() const {

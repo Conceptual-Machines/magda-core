@@ -327,8 +327,7 @@ void PluginBrowserContent::loadExternalPlugins() {
         plugins_.push_back(PluginBrowserInfo::fromPluginDescription(desc));
     }
 
-    std::cout << "Loaded " << pluginTypes.size() << " external plugins from KnownPluginList"
-              << std::endl;
+    DBG("Loaded " << pluginTypes.size() << " external plugins from KnownPluginList");
 }
 
 void PluginBrowserContent::setEngine(magda::TracktionEngineWrapper* engine) {
