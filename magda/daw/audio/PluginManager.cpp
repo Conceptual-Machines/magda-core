@@ -1833,6 +1833,7 @@ void PluginManager::purgeStaleEntries() {
 
     // Purge stale entries from maps
     int purged = 0;
+    std::vector<te::Plugin::Ptr> pluginsToDelete;
     {
         juce::ScopedLock lock(pluginLock_);
 
@@ -1881,27 +1882,32 @@ void PluginManager::purgeStaleEntries() {
             }
         }
 
-        // sidechainMonitors_ (keyed by TrackId)
+        // sidechainMonitors_ (keyed by TrackId) — collect for deletion outside lock
         for (auto it = sidechainMonitors_.begin(); it != sidechainMonitors_.end();) {
             if (validTrackIds.find(it->first) == validTrackIds.end()) {
                 if (it->second)
-                    it->second->deleteFromParent();
+                    pluginsToDelete.push_back(it->second);
                 it = sidechainMonitors_.erase(it);
             } else {
                 ++it;
             }
         }
 
-        // midiReceiveMapping_ (keyed by DeviceId)
+        // midiReceiveMapping_ (keyed by DeviceId) — collect for deletion outside lock
         for (auto it = midiReceiveMapping_.begin(); it != midiReceiveMapping_.end();) {
             if (validDeviceIds.find(it->first) == validDeviceIds.end()) {
                 if (it->second)
-                    it->second->deleteFromParent();
+                    pluginsToDelete.push_back(it->second);
                 it = midiReceiveMapping_.erase(it);
             } else {
                 ++it;
             }
         }
+    }
+
+    // Delete plugins outside the lock to avoid blocking and re-entrancy
+    for (auto& plugin : pluginsToDelete) {
+        plugin->deleteFromParent();
     }
 
     // Remove stale synced racks

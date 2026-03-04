@@ -860,9 +860,12 @@ void MainWindow::MainComponent::resized() {
     const int minRightWidth = rightPanelCollapsed ? 0 : layout.panelCollapseThreshold;
     const int minBottomHeight = bottomPanelCollapsed ? 0 : layout.minBottomPanelHeight;
 
-    leftPanelWidth = juce::jlimit(minLeftWidth, maxLeftWidth, leftPanelWidth);
-    rightPanelWidth = juce::jlimit(minRightWidth, maxRightWidth, rightPanelWidth);
-    bottomPanelHeight = juce::jlimit(minBottomHeight, maxBottomHeight, bottomPanelHeight);
+    leftPanelWidth =
+        juce::jlimit(minLeftWidth, std::max(minLeftWidth, maxLeftWidth), leftPanelWidth);
+    rightPanelWidth =
+        juce::jlimit(minRightWidth, std::max(minRightWidth, maxRightWidth), rightPanelWidth);
+    bottomPanelHeight = juce::jlimit(minBottomHeight, std::max(minBottomHeight, maxBottomHeight),
+                                     bottomPanelHeight);
 
     DBG("BottomPanel: height=" << bottomPanelHeight << " minHeight=" << minBottomHeight
                                << " maxHeight=" << maxBottomHeight << " collapsed="
