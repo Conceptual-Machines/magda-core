@@ -315,6 +315,16 @@ class PluginManager {
     void triggerSidechainNoteOn(TrackId sourceTrackId);
 
     /**
+     * @brief Gate (zero) all cached LFO values for a track when no notes are held.
+     *
+     * Called from SidechainMonitorPlugin on the audio/render thread when
+     * localHeldNoteCount_ reaches 0. Sets currentValue = 0 on note-triggered
+     * LFOs so the modulation stops, matching the message-thread assignment
+     * gating behavior during live playback.
+     */
+    void gateSidechainLFOs(TrackId sourceTrackId);
+
+    /**
      * @brief Rebuild the sidechain LFO cache for all tracks
      *
      * Must be called on the message thread after sidechain config, modifier,
@@ -322,6 +332,20 @@ class PluginManager {
      * deviceModifiers_ and RackSyncManager into a flat per-track array.
      */
     void rebuildSidechainLFOCache();
+
+    /**
+     * @brief Prepare LFO assignments for offline rendering.
+     *
+     * Sets all MIDI/Audio-triggered LFO assignment values to their link.amount
+     * (enabling modulation) and prevents the message-thread timer from zeroing
+     * them during the render. Call restoreAfterRendering() when done.
+     */
+    void prepareForRendering();
+
+    /**
+     * @brief Restore normal LFO gating after offline rendering.
+     */
+    void restoreAfterRendering();
 
     /**
      * @brief Route a macro value change to the appropriate TE infrastructure
@@ -450,6 +474,7 @@ class PluginManager {
     struct PerTrackEntry {
         static constexpr int kMaxLFOs = 64;
         std::array<te::LFOModifier*, kMaxLFOs> lfos{};
+        std::array<bool, kMaxLFOs> isCrossTrack{};  // true = sidechain destination on another track
         int count = 0;
     };
     static constexpr int kMaxCacheTracks = 512;
@@ -458,6 +483,12 @@ class PluginManager {
 
     // In-flight async plugin loads (prevents duplicate loads on re-entrant syncTrackPlugins)
     std::set<DeviceId> pendingLoads_;
+
+    // When true, skip zeroing MIDI-triggered LFO assignments (during offline render)
+    bool renderingActive_ = false;
+
+    // Debug: dump all LFO modifier state and assignment values
+    void logLFOState(const char* label);
 
     // Thread safety
     mutable juce::CriticalSection pluginLock_;

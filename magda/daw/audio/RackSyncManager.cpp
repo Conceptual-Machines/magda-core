@@ -333,7 +333,8 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                                     for (auto* assignment : param->getAssignments()) {
                                         if (assignment->isForModifierSource(*modifier)) {
                                             float effectiveAmount = link.amount;
-                                            if (modInfo.triggerMode != LFOTriggerMode::Free &&
+                                            if (!renderingActive_ &&
+                                                modInfo.triggerMode != LFOTriggerMode::Free &&
                                                 !modInfo.running && !modInfo.oneShot)
                                                 effectiveAmount = 0.0f;
                                             assignment->value = effectiveAmount;
@@ -710,7 +711,8 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                 auto* param = params[static_cast<size_t>(link.target.paramIndex)];
                 if (param) {
                     float initialAmount = link.amount;
-                    if (modInfo.triggerMode != LFOTriggerMode::Free && !modInfo.running)
+                    if (!renderingActive_ && modInfo.triggerMode != LFOTriggerMode::Free &&
+                        !modInfo.running)
                         initialAmount = 0.0f;
                     param->addModifier(*modifier, initialAmount);
                 }

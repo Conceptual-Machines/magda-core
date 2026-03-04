@@ -144,7 +144,16 @@ class RackSyncManager {
      */
     bool needsModifierResync(TrackId trackId) const;
 
+    /** Set by PluginManager during offline rendering to skip assignment zeroing */
+    void setRenderingActive(bool active) {
+        renderingActive_ = active;
+    }
+    bool isRenderingActive() const {
+        return renderingActive_;
+    }
+
   private:
+    bool renderingActive_ = false;
     /**
      * @brief Internal state for a synced rack
      */

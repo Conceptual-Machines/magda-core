@@ -1,5 +1,6 @@
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "MainWindow.hpp"
+#include "audio/AudioBridge.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda {
@@ -18,11 +19,13 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
     ExportProgressWindow(const tracktion::Renderer::Parameters& params,
                          const juce::File& outputFile,
                          tracktion::engine::TransportControl& transport,
-                         double prerollSeconds = 0.0, double leadInSilence = 0.0)
+                         std::function<void()> onComplete, double prerollSeconds = 0.0,
+                         double leadInSilence = 0.0)
         : ThreadWithProgressWindow("Exporting Audio...", true, true),
           params_(params),
           outputFile_(outputFile),
           reallocationInhibitor_(transport),
+          onComplete_(std::move(onComplete)),
           prerollSeconds_(prerollSeconds),
           leadInSilence_(leadInSilence) {
         setStatusMessage("Preparing to export...");
@@ -90,12 +93,15 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
         auto success = success_;
         auto errorMessage = errorMessage_;
         auto outputFile = outputFile_;
+        auto onComplete = std::move(onComplete_);
 
         // Delete self first — safe because we've captured everything we need
         // and JUCE guarantees no further callbacks after threadComplete().
         delete this;
 
         juce::MessageManager::callAsync([=]() {
+            if (onComplete)
+                onComplete();
             if (userPressedCancel) {
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
                                                        "Export Cancelled", "Export was cancelled.");
@@ -169,6 +175,7 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
     tracktion::Renderer::Parameters params_;
     juce::File outputFile_;
     tracktion::engine::TransportControl::ReallocationInhibitor reallocationInhibitor_;
+    std::function<void()> onComplete_;
     std::unique_ptr<tracktion::Renderer::RenderTask> renderTask_;
     double prerollSeconds_ = 0.0;
     double leadInSilence_ = 0.0;
@@ -261,10 +268,10 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
             // Allow export even when there are no clips (generator devices can still produce audio)
             params.checkNodesForAudio = false;
 
-            // Use large block size for faster offline rendering. The 2-second
-            // preroll handles plugin warmup, avoiding the click that large
-            // blocks can cause on the first few blocks.
-            params.blockSizeForAudio = 4096;
+            // Match live playback block size so LFO phase reset timing
+            // (which has a one-block delay via pendingNoteOnResync_) behaves
+            // identically to live playback.
+            params.blockSizeForAudio = 512;
             params.realTimeRender = settings.realTimeRender;
 
             // Set time range based on export range setting
@@ -302,12 +309,24 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
                 params.time = requestedRange;
             }
 
+            // Enable MIDI-triggered LFO modulation for offline rendering.
+            // During live playback, the message-thread timer gates these LFOs
+            // based on held notes, but it can't keep up with non-real-time rendering.
+            auto* audioBridge = engine->getAudioBridge();
+            if (audioBridge)
+                audioBridge->getPluginManager().prepareForRendering();
+
             // Launch progress window with background rendering (non-blocking)
             // The window will delete itself via threadComplete() callback.
             // ExportProgressWindow holds a ReallocationInhibitor to prevent
             // edit.restartPlayback() from recreating the playback context during render.
-            auto* progressWindow = new ExportProgressWindow(params, file, transport, actualPreroll,
-                                                            settings.leadInSilence);
+            auto* progressWindow = new ExportProgressWindow(
+                params, file, transport,
+                [audioBridge]() {
+                    if (audioBridge)
+                        audioBridge->getPluginManager().restoreAfterRendering();
+                },
+                actualPreroll, settings.leadInSilence);
             progressWindow->launchThread();
 
             fileChooser_.reset();

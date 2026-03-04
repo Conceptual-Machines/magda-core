@@ -105,12 +105,12 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
  * Use this instead of calling lfo->triggerNoteOn() directly so that one-shot
  * custom waveforms restart from the beginning.
  */
-inline void triggerLFONoteOnWithReset(te::LFOModifier* lfo) {
+inline void triggerLFONoteOnWithReset(te::LFOModifier* lfo, bool forceZeroValue = true) {
     auto* holder =
         static_cast<CurveSnapshotHolder*>(lfo->customWaveUserData.load(std::memory_order_acquire));
     if (holder)
         holder->resetOneShot();
-    lfo->triggerNoteOn();
+    lfo->triggerNoteOn(forceZeroValue);
 }
 
 }  // namespace magda

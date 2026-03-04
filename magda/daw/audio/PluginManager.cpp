@@ -833,8 +833,6 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
     if (!trackInfo)
         return;
 
-    DBG("updateDeviceModifierProperties: trackId=" << trackId);
-
     // Update properties on existing TE modifiers without removing/recreating them
     for (const auto& element : trackInfo->chainElements) {
         if (!isDevice(element))
@@ -868,11 +866,12 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                     snapHolder = std::make_unique<CurveSnapshotHolder>();
 
                 applyLFOProperties(lfo, modInfo, snapHolder.get());
-                // TE LFO in note mode needs triggerNoteOn() to start oscillating.
-                // Only trigger when the mod *just* started (triggered flag), not on
-                // every property update, to avoid resetting phase on curve edits.
-                if (modInfo.triggered && modInfo.triggerMode != LFOTriggerMode::Free)
-                    triggerLFONoteOnWithReset(lfo);
+                // Note-triggered LFO retrigger is handled on the audio thread
+                // by SidechainMonitorPlugin → triggerSidechainNoteOn.
+                // Do NOT call triggerLFONoteOnWithReset here — the message thread
+                // runs asynchronously and would reset the ramp a few ms after the
+                // audio-thread trigger, shifting the LFO phase and causing the
+                // rendered output to differ from playback.
             }
 
             // Update assignment values (mod depth) for each link
@@ -906,7 +905,8 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                         for (auto* assignment : param->getAssignments()) {
                             if (assignment->isForModifierSource(*modifier)) {
                                 float effectiveAmount = link.amount;
-                                if (modInfo.triggerMode != LFOTriggerMode::Free &&
+                                if (!renderingActive_ &&
+                                    modInfo.triggerMode != LFOTriggerMode::Free &&
                                     !modInfo.running && !modInfo.oneShot)
                                     effectiveAmount = 0.0f;
                                 assignment->value = effectiveAmount;
@@ -948,8 +948,6 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
         // Instruments are wrapped in an InstrumentRack — modifiers must live on
         // the rack's ModifierList to reach the inner plugin's parameters.
         // Standalone plugins live directly on the track, so use the track's list.
-        // MIDI retrigger is handled programmatically via LFOModifier::triggerNoteOn()
-        // rather than relying on MIDI flowing through applyToBuffer().
         te::ModifierList* modList = nullptr;
         if (device.isInstrument) {
             auto rackType = instrumentRackManager_.getRackType(device.id);
@@ -1083,7 +1081,8 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                     if (param) {
                         // Gate triggered LFOs: start with 0 until triggered
                         float initialAmount = link.amount;
-                        if (modInfo.triggerMode != LFOTriggerMode::Free && !modInfo.running)
+                        if (!renderingActive_ && modInfo.triggerMode != LFOTriggerMode::Free &&
+                            !modInfo.running)
                             initialAmount = 0.0f;
                         param->addModifier(*modifier, initialAmount);
                         DBG("syncDeviceModifiers: linked mod to '"
@@ -1134,8 +1133,150 @@ void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId) {
         return;  // Cache is being rebuilt — skip this trigger
 
     auto& entry = sidechainLFOCache_[static_cast<size_t>(sourceTrackId)];
-    for (int i = 0; i < entry.count; ++i)
-        triggerLFONoteOnWithReset(entry.lfos[static_cast<size_t>(i)]);
+    for (int i = 0; i < entry.count; ++i) {
+        auto* lfo = entry.lfos[static_cast<size_t>(i)];
+        bool crossTrack = entry.isCrossTrack[static_cast<size_t>(i)];
+        DBG("triggerSidechainNoteOn: trackId="
+            << sourceTrackId << " lfo=" << i << " crossTrack=" << (int)crossTrack << " phaseBEFORE="
+            << lfo->getCurrentPhase() << " valueBEFORE=" << lfo->getCurrentValue()
+            << " syncType=" << lfo->syncTypeParam->getCurrentValue());
+        // Cross-track: force value=0 for transient gap.
+        // Self-track: resync phase but preserve value (no zero gap needed).
+        triggerLFONoteOnWithReset(lfo, crossTrack);
+    }
+}
+
+void PluginManager::gateSidechainLFOs(TrackId sourceTrackId) {
+    if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks)
+        return;
+
+    const juce::SpinLock::ScopedTryLockType lock(cacheLock_);
+    if (!lock.isLocked())
+        return;
+
+    auto& entry = sidechainLFOCache_[static_cast<size_t>(sourceTrackId)];
+    for (int i = 0; i < entry.count; ++i) {
+        // Only gate cross-track (sidechain destination) LFOs.
+        // Self-track LFOs should free-run and just reset phase on noteOn.
+        if (!entry.isCrossTrack[static_cast<size_t>(i)])
+            continue;
+        auto* lfo = entry.lfos[static_cast<size_t>(i)];
+        // Only gate note-triggered LFOs (syncType == 2)
+        if (juce::roundToInt(lfo->syncTypeParam->getCurrentValue()) == 2) {
+            DBG("gateSidechainLFOs: gating LFO id=" << lfo->itemID.toString()
+                                                    << " sourceTrack=" << sourceTrackId);
+            lfo->setGated(true);
+        }
+    }
+}
+
+void PluginManager::logLFOState(const char* label) {
+    auto& tm = TrackManager::getInstance();
+    for (const auto& track : tm.getTracks()) {
+        for (const auto& element : track.chainElements) {
+            if (!isDevice(element))
+                continue;
+            const auto& device = getDevice(element);
+            auto it = deviceModifiers_.find(device.id);
+            if (it == deviceModifiers_.end())
+                continue;
+            for (auto& mod : it->second) {
+                if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
+                    DBG("  [" << label << "] LFO on device " << device.id
+                              << ": syncType=" << lfo->syncTypeParam->getCurrentValue()
+                              << " rateType=" << lfo->rateTypeParam->getCurrentValue()
+                              << " rate=" << lfo->rateParam->getCurrentValue()
+                              << " depth=" << lfo->depthParam->getCurrentValue()
+                              << " wave=" << lfo->waveParam->getCurrentValue());
+                    for (const auto& modInfo : device.mods) {
+                        for (const auto& link : modInfo.links) {
+                            if (!link.isValid())
+                                continue;
+                            te::Plugin::Ptr linkTarget;
+                            {
+                                juce::ScopedLock lock(pluginLock_);
+                                auto pit = deviceToPlugin_.find(link.target.deviceId);
+                                if (pit != deviceToPlugin_.end())
+                                    linkTarget = pit->second;
+                            }
+                            if (!linkTarget && device.isInstrument)
+                                if (auto* inner = instrumentRackManager_.getInnerPlugin(device.id))
+                                    linkTarget = inner;
+                            if (!linkTarget)
+                                continue;
+                            auto params = linkTarget->getAutomatableParameters();
+                            if (link.target.paramIndex >= 0 &&
+                                link.target.paramIndex < static_cast<int>(params.size())) {
+                                auto* param = params[static_cast<size_t>(link.target.paramIndex)];
+                                if (param) {
+                                    for (auto* assignment : param->getAssignments()) {
+                                        if (assignment->isForModifierSource(*mod)) {
+                                            DBG("    [" << label << "] assignment on '"
+                                                        << param->getParameterName()
+                                                        << "': value=" << assignment->value.get());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void PluginManager::prepareForRendering() {
+    DBG("PluginManager::prepareForRendering");
+
+    // Log state BEFORE enabling rendering mode
+    logLFOState("PRE-RENDER");
+
+    renderingActive_ = true;
+    rackSyncManager_.setRenderingActive(true);
+
+    // Reset sidechain monitors so held-note counts from playback don't
+    // carry over into the render pass (which would prevent gating).
+    for (auto& [trackId, pluginPtr] : sidechainMonitors_) {
+        if (auto* monitor = dynamic_cast<SidechainMonitorPlugin*>(pluginPtr.get()))
+            monitor->reset();
+    }
+
+    // Log gated state of all cached LFOs before rendering
+    {
+        const juce::SpinLock::ScopedLockType lock(cacheLock_);
+        for (int t = 0; t < kMaxCacheTracks; ++t) {
+            auto& entry = sidechainLFOCache_[static_cast<size_t>(t)];
+            for (int i = 0; i < entry.count; ++i) {
+                auto* lfo = entry.lfos[static_cast<size_t>(i)];
+                DBG("prepareForRendering: cached LFO trackId="
+                    << t << " idx=" << i
+                    << " isCrossTrack=" << (int)entry.isCrossTrack[static_cast<size_t>(i)]
+                    << " gated=" << (int)lfo->isGated() << " value=" << lfo->getCurrentValue()
+                    << " phase=" << lfo->getCurrentPhase()
+                    << " syncType=" << lfo->syncTypeParam->getCurrentValue()
+                    << " lfoId=" << lfo->itemID.toString());
+            }
+        }
+    }
+
+    // Enable all MIDI/Audio-triggered LFO assignments so modulation is active
+    // during offline rendering. The message-thread timer gating can't keep up
+    // with the renderer's speed, so we disable gating entirely.
+    auto& tm = TrackManager::getInstance();
+    for (const auto& track : tm.getTracks()) {
+        updateDeviceModifierProperties(track.id);
+        rackSyncManager_.updateAllModifierProperties(track.id);
+    }
+
+    // Log state AFTER enabling rendering mode
+    logLFOState("POST-RENDER-PREP");
+}
+
+void PluginManager::restoreAfterRendering() {
+    DBG("PluginManager::restoreAfterRendering");
+    renderingActive_ = false;
+    rackSyncManager_.setRenderingActive(false);
 }
 
 void PluginManager::rebuildSidechainLFOCache() {
@@ -1150,6 +1291,7 @@ void PluginManager::rebuildSidechainLFOCache() {
 
         auto& entry = newCache[static_cast<size_t>(track.id)];
         std::vector<te::LFOModifier*> lfos;
+        int selfTrackCount = 0;  // track how many are self-track (added first)
 
         // 1. Self-track LFOs: collect from deviceModifiers_ for this track's devices
         //    Skip devices that have a cross-track sidechain source — those LFOs
@@ -1196,6 +1338,8 @@ void PluginManager::rebuildSidechainLFOCache() {
             if (!hasRackSidechain)
                 rackSyncManager_.collectLFOModifiers(track.id, lfos);
         }
+
+        selfTrackCount = static_cast<int>(lfos.size());
 
         // 2. Cross-track LFOs: for each OTHER track that has a device sidechained
         //    from this track, collect that destination track's LFO modifiers
@@ -1260,11 +1404,13 @@ void PluginManager::rebuildSidechainLFOCache() {
         }
 
         // Write to cache entry (capped at kMaxLFOs)
+        // Self-track LFOs come first (indices 0..selfTrackCount-1),
+        // cross-track LFOs follow (indices selfTrackCount..count-1).
         entry.count = std::min(static_cast<int>(lfos.size()), PerTrackEntry::kMaxLFOs);
-        for (int i = 0; i < entry.count; ++i)
+        for (int i = 0; i < entry.count; ++i) {
             entry.lfos[static_cast<size_t>(i)] = lfos[static_cast<size_t>(i)];
-        if (entry.count > 0)
-            DBG("rebuildSidechainLFOCache: trackId=" << track.id << " lfoCount=" << entry.count);
+            entry.isCrossTrack[static_cast<size_t>(i)] = (i >= selfTrackCount);
+        }
     }
 
     // Swap under lock
@@ -1539,7 +1685,6 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
 
 void PluginManager::checkSidechainMonitor(TrackId trackId) {
     bool needed = trackNeedsSidechainMonitor(trackId);
-    DBG("checkSidechainMonitor: trackId=" << trackId << " needed=" << static_cast<int>(needed));
     if (needed)
         ensureSidechainMonitor(trackId);
     else

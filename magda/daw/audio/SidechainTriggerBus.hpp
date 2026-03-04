@@ -95,12 +95,35 @@ class SidechainTriggerBus {
     }
 
     /**
+     * @brief Set the held-note count for a track (audio thread safe)
+     * @param trackId The track to update
+     * @param count Current number of held notes
+     */
+    void setHeldNoteCount(TrackId trackId, int count) {
+        if (trackId < 0 || trackId >= kMaxTracks)
+            return;
+        tracks_[trackId].heldNoteCount.store(count, std::memory_order_release);
+    }
+
+    /**
+     * @brief Get the held-note count for a track (any thread)
+     * @param trackId The track to check
+     * @return Current number of held notes
+     */
+    int getHeldNoteCount(TrackId trackId) const {
+        if (trackId < 0 || trackId >= kMaxTracks)
+            return 0;
+        return tracks_[trackId].heldNoteCount.load(std::memory_order_acquire);
+    }
+
+    /**
      * @brief Clear all counters and peak levels. Call only when audio is stopped.
      */
     void clearAll() {
         for (auto& track : tracks_) {
             track.noteOnCounter.store(0, std::memory_order_relaxed);
             track.noteOffCounter.store(0, std::memory_order_relaxed);
+            track.heldNoteCount.store(0, std::memory_order_relaxed);
             track.audioPeakLevel.store(0.0f, std::memory_order_relaxed);
         }
     }
@@ -113,6 +136,7 @@ class SidechainTriggerBus {
     struct TrackTriggerState {
         std::atomic<uint64_t> noteOnCounter{0};
         std::atomic<uint64_t> noteOffCounter{0};
+        std::atomic<int> heldNoteCount{0};
         std::atomic<float> audioPeakLevel{0.0f};
     };
 
