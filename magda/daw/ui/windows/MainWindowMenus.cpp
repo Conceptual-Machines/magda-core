@@ -31,6 +31,7 @@ void MainWindow::setupMenuCallbacks() {
 
     // File menu callbacks
     callbacks.onNewProject = [this]() {
+        SelectionManager::getInstance().clearSelection();
         auto& projectManager = ProjectManager::getInstance();
         if (!projectManager.newProject()) {
             auto message = juce::String("Could not create new project.");
@@ -75,6 +76,7 @@ void MainWindow::setupMenuCallbacks() {
             if (mainComponent)
                 mainComponent->showLoadingMessage("Loading project...");
 
+            SelectionManager::getInstance().clearSelection();
             auto& projectManager = ProjectManager::getInstance();
             projectManager.loadProjectAsync(
                 file,

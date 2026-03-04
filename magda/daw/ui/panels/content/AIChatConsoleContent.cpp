@@ -300,7 +300,8 @@ void AIChatConsoleContent::resized() {
 }
 
 void AIChatConsoleContent::onActivated() {
-    inputBox_.grabKeyboardFocus();
+    if (isShowing())
+        inputBox_.grabKeyboardFocus();
 }
 
 void AIChatConsoleContent::onDeactivated() {

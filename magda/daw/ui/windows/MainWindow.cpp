@@ -867,10 +867,6 @@ void MainWindow::MainComponent::resized() {
     bottomPanelHeight = juce::jlimit(minBottomHeight, std::max(minBottomHeight, maxBottomHeight),
                                      bottomPanelHeight);
 
-    DBG("BottomPanel: height=" << bottomPanelHeight << " minHeight=" << minBottomHeight
-                               << " maxHeight=" << maxBottomHeight << " collapsed="
-                               << (int)bottomPanelCollapsed << " windowH=" << getHeight());
-
     auto bounds = getLocalBounds();
 
     // Loading overlay covers entire component

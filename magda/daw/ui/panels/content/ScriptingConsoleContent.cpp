@@ -82,7 +82,8 @@ void ScriptingConsoleContent::executeCommand(const juce::String& command) {
 }
 
 void ScriptingConsoleContent::onActivated() {
-    inputBox_.grabKeyboardFocus();
+    if (isShowing())
+        inputBox_.grabKeyboardFocus();
 }
 
 void ScriptingConsoleContent::onDeactivated() {
