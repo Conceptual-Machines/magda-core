@@ -513,6 +513,34 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
             }
         };
         trackNameValue_.setEditable(true);
+
+        gainLabel_->clearTextOverride();
+        gainLabel_->onValueChange = [this]() {
+            if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+                double db = gainLabel_->getValue();
+                float gain =
+                    (db <= -60.0f) ? 0.0f : std::pow(10.0f, static_cast<float>(db) / 20.0f);
+                if (selectedTrackId_ == magda::MASTER_TRACK_ID)
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetMasterVolumeCommand>(gain));
+                else
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetTrackVolumeCommand>(selectedTrackId_, gain));
+            }
+        };
+
+        panLabel_->clearTextOverride();
+        panLabel_->onValueChange = [this]() {
+            if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+                float pan = static_cast<float>(panLabel_->getValue());
+                if (selectedTrackId_ == magda::MASTER_TRACK_ID)
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetMasterPanCommand>(pan));
+                else
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_, pan));
+            }
+        };
     }
 
     updateFromSelectedTrack();
@@ -535,6 +563,9 @@ void TrackInspector::tracksChanged() {
 
 void TrackInspector::trackPropertyChanged(int trackId) {
     if (isMultiTrackMode_) {
+        // Don't refresh during an active drag — it would reset text overrides and base values
+        if (gainLabel_->isDragging() || panLabel_->isDragging())
+            return;
         if (selectedTrackIds_.count(static_cast<magda::TrackId>(trackId)) > 0) {
             updateFromMultiTrackSelection();
         }
@@ -722,15 +753,100 @@ void TrackInspector::updateFromMultiTrackSelection() {
         }
     };
 
-    // Show only name + mute/solo; hide everything else
+    // Volume/Pan: check if all values are the same or mixed
+    float firstVolDb = 0.0f;
+    float firstPan = 0.0f;
+    bool volumeMixed = false;
+    bool panMixed = false;
+    bool first = true;
+    for (auto tid : selectedTrackIds_) {
+        const auto* track = tm.getTrack(tid);
+        if (!track)
+            continue;
+        float volDb = (track->volume <= 0.0f) ? -60.0f : 20.0f * std::log10(track->volume);
+        if (first) {
+            firstVolDb = volDb;
+            firstPan = track->pan;
+            first = false;
+        } else {
+            if (std::abs(volDb - firstVolDb) > 0.01f)
+                volumeMixed = true;
+            if (std::abs(track->pan - firstPan) > 0.01f)
+                panMixed = true;
+        }
+    }
+
+    if (volumeMixed) {
+        gainLabel_->setTextOverride("mixed");
+    } else {
+        gainLabel_->clearTextOverride();
+        gainLabel_->setValue(firstVolDb, juce::dontSendNotification);
+    }
+
+    if (panMixed) {
+        panLabel_->setTextOverride("mixed");
+    } else {
+        panLabel_->clearTextOverride();
+        panLabel_->setValue(firstPan, juce::dontSendNotification);
+    }
+
+    // Wire up volume/pan for relative multi-track adjustment
+    // Capture base values when drag starts, then apply delta to all tracks
+    gainLabel_->onValueChange = [this]() {
+        // On first call of a new drag, capture base values
+        if (multiTrackBaseVolumes_.empty()) {
+            auto& tmInner = magda::TrackManager::getInstance();
+            for (auto tid : selectedTrackIds_) {
+                const auto* track = tmInner.getTrack(tid);
+                if (track)
+                    multiTrackBaseVolumes_[tid] = track->volume;
+            }
+            multiTrackDragStartDb_ = gainLabel_->getValue();
+        }
+        double delta = gainLabel_->getValue() - multiTrackDragStartDb_;
+        for (auto& [tid, baseVol] : multiTrackBaseVolumes_) {
+            float baseDb = (baseVol <= 0.0f) ? -60.0f : 20.0f * std::log10(baseVol);
+            float newDb = juce::jlimit(-60.0f, 6.0f, static_cast<float>(baseDb + delta));
+            float newGain = (newDb <= -60.0f) ? 0.0f : std::pow(10.0f, newDb / 20.0f);
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackVolumeCommand>(tid, newGain));
+        }
+        gainLabel_->clearTextOverride();
+        // Clear base values when drag ends so next drag re-captures
+        if (!gainLabel_->isDragging())
+            multiTrackBaseVolumes_.clear();
+    };
+
+    panLabel_->onValueChange = [this]() {
+        if (multiTrackBasePans_.empty()) {
+            auto& tmInner = magda::TrackManager::getInstance();
+            for (auto tid : selectedTrackIds_) {
+                const auto* track = tmInner.getTrack(tid);
+                if (track)
+                    multiTrackBasePans_[tid] = track->pan;
+            }
+            multiTrackDragStartPan_ = panLabel_->getValue();
+        }
+        double delta = panLabel_->getValue() - multiTrackDragStartPan_;
+        for (auto& [tid, basePan] : multiTrackBasePans_) {
+            float newPan = juce::jlimit(-1.0f, 1.0f, static_cast<float>(basePan + delta));
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackPanCommand>(tid, newPan));
+        }
+        panLabel_->clearTextOverride();
+        if (!panLabel_->isDragging())
+            multiTrackBasePans_.clear();
+    };
+
+    // Show name + mute/solo + volume/pan; hide everything else
     trackNameLabel_.setVisible(true);
     trackNameValue_.setVisible(true);
     muteButton_.setVisible(true);
     soloButton_.setVisible(true);
     recordButton_.setVisible(false);
     monitorButton_.setVisible(false);
-    gainLabel_->setVisible(false);
-    panLabel_->setVisible(false);
+    gainLabel_->setVisible(true);
+    panLabel_->setVisible(true);
 
     routingSectionLabel_.setVisible(false);
     audioInputSelector_->setVisible(false);

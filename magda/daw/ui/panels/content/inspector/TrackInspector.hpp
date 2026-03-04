@@ -64,6 +64,12 @@ class TrackInspector : public BaseInspector,
     std::unordered_set<magda::TrackId> selectedTrackIds_;  // For multi-track mode
     bool isMultiTrackMode_ = false;
 
+    // Base values for relative multi-track drag (captured at drag start)
+    std::unordered_map<magda::TrackId, float> multiTrackBaseVolumes_;
+    std::unordered_map<magda::TrackId, float> multiTrackBasePans_;
+    double multiTrackDragStartDb_ = 0.0;
+    double multiTrackDragStartPan_ = 0.0;
+
     // Track properties section
     juce::Label trackNameLabel_;
     juce::Label trackNameValue_;
