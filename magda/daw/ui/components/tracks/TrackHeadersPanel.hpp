@@ -137,7 +137,7 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<juce::TextButton> monitorButton;       // Input monitor button
         std::unique_ptr<DraggableValueLabel> volumeLabel;      // Volume as draggable dB label
         std::unique_ptr<DraggableValueLabel> panLabel;         // Pan as draggable L/C/R label
-        std::unique_ptr<juce::TextButton> collapseButton;      // For groups
+        std::unique_ptr<juce::DrawableButton> collapseButton;  // For groups
         std::unique_ptr<SvgButton> automationButton;           // Show automation lanes
         std::unique_ptr<InputTypeSelector> inputTypeSelector;  // Hidden, kept for internal state
         std::unique_ptr<RoutingSelector> audioInputSelector;   // Audio input
@@ -227,6 +227,7 @@ class TrackHeadersPanel : public juce::Component,
     void paintTrackHeader(juce::Graphics& g, const TrackHeader& header, juce::Rectangle<int> area,
                           bool isSelected);
     void paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area);
+    void updateCollapseButtonIcon(TrackHeader& header);
     juce::Rectangle<int> getTrackHeaderArea(int trackIndex) const;
     juce::Rectangle<int> getResizeHandleArea(int trackIndex) const;
     bool isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const;
@@ -271,7 +272,7 @@ class TrackHeadersPanel : public juce::Component,
 
     // Indentation
     static constexpr int INDENT_WIDTH = 20;
-    static constexpr int COLLAPSE_BUTTON_SIZE = 16;
+    static constexpr int COLLAPSE_BUTTON_SIZE = 10;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackHeadersPanel)
 };

@@ -293,12 +293,14 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     panLabel->setRange(-1.0, 1.0, 0.0);  // -1 (L) to +1 (R), default center
     panLabel->setValue(pan, juce::dontSendNotification);
 
-    // Collapse button for groups (triangle indicator)
-    collapseButton = std::make_unique<juce::TextButton>();
-    collapseButton->setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    collapseButton->setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
-    collapseButton->setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    // Collapse button for groups (chevron indicator)
+    collapseButton =
+        std::make_unique<juce::DrawableButton>("Collapse", juce::DrawableButton::ImageFitted);
+    collapseButton->setColour(juce::DrawableButton::backgroundColourId,
+                              juce::Colours::transparentBlack);
+    collapseButton->setColour(juce::DrawableButton::backgroundOnColourId,
+                              juce::Colours::transparentBlack);
+    collapseButton->setEdgeIndent(1);
 
     // Input type selector (hidden, kept for internal state)
     inputTypeSelector = std::make_unique<InputTypeSelector>();
@@ -808,7 +810,7 @@ void TrackHeadersPanel::tracksChanged() {
 
         // Add collapse button for groups and tracks with multi-out children
         if (header->isGroup || track->hasChildren()) {
-            header->collapseButton->setButtonText(header->isCollapsed ? "▶" : "▼");
+            updateCollapseButtonIcon(*header);
             header->collapseButton->onClick = [this, trackId]() { handleCollapseToggle(trackId); };
             addAndMakeVisible(*header->collapseButton);
         }
@@ -1588,7 +1590,10 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
     auto topRow = tcpArea.removeFromTop(nameRowHeight);
 
     if (header.isGroup) {
-        header.collapseButton->setBounds(topRow.removeFromLeft(COLLAPSE_BUTTON_SIZE));
+        auto btnArea = topRow.removeFromLeft(COLLAPSE_BUTTON_SIZE);
+        int btnY = btnArea.getCentreY() - COLLAPSE_BUTTON_SIZE / 2;
+        header.collapseButton->setBounds(btnArea.getX(), btnY, COLLAPSE_BUTTON_SIZE,
+                                         COLLAPSE_BUTTON_SIZE);
         topRow.removeFromLeft(2);
         header.collapseButton->setVisible(true);
     } else {
@@ -1870,6 +1875,21 @@ void TrackHeadersPanel::setTrackPan(int trackIndex, float pan) {
     if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
         trackHeaders[trackIndex]->pan = pan;
         trackHeaders[trackIndex]->panLabel->setValue(pan, juce::dontSendNotification);
+    }
+}
+
+void TrackHeadersPanel::updateCollapseButtonIcon(TrackHeader& header) {
+    auto colour = DarkTheme::getColour(DarkTheme::TEXT_PRIMARY);
+    if (header.isCollapsed) {
+        auto icon = juce::Drawable::createFromImageData(BinaryData::chevron_right_svg,
+                                                        BinaryData::chevron_right_svgSize);
+        icon->replaceColour(juce::Colour(0xFFB3B3B3), colour);
+        header.collapseButton->setImages(icon.get());
+    } else {
+        auto icon = juce::Drawable::createFromImageData(BinaryData::chevron_down_svg,
+                                                        BinaryData::chevron_down_svgSize);
+        icon->replaceColour(juce::Colour(0xFFB3B3B3), colour);
+        header.collapseButton->setImages(icon.get());
     }
 }
 
