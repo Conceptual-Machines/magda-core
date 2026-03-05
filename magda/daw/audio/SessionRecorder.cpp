@@ -193,19 +193,10 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
 void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopTime) {
     auto& clipManager = ClipManager::getInstance();
     const auto* sessionClip = clipManager.getClip(rec.sessionClipId);
-    DBG("SessionRecorder::finalizeRecording: clipId="
-        << rec.sessionClipId << " trackId=" << rec.trackId
-        << " startTime=" << rec.arrangementStartTime << " stopTime=" << stopTime
-        << " sessionClip=" << (sessionClip ? "valid" : "NULL"));
     if (!sessionClip)
         return;
 
     double duration = stopTime - rec.arrangementStartTime;
-    DBG("  duration=" << duration
-                      << " type=" << (sessionClip->type == ClipType::MIDI ? "MIDI" : "Audio")
-                      << " midiNotes=" << (int)sessionClip->midiNotes.size()
-                      << " loopEnabled=" << (int)sessionClip->loopEnabled
-                      << " lengthBeats=" << sessionClip->lengthBeats);
     if (duration <= 0.001)
         return;
 
@@ -313,15 +304,11 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
 }
 
 void SessionRecorder::commitIfNeeded() {
-    DBG("SessionRecorder::commitIfNeeded: activeRecordings="
-        << (int)activeRecordings_.size()
-        << " createdClips=" << (int)createdArrangementClipIds_.size());
     if (activeRecordings_.empty() && createdArrangementClipIds_.empty())
         return;
 
     auto& transport = edit_.getTransport();
     double currentTime = transport.position.get().inSeconds();
-    DBG("  currentTime=" << currentTime);
 
     // Clear recording previews
     if (recordingPreviews_)
