@@ -425,6 +425,11 @@ class PluginManager {
     te::Plugin::Ptr createLevelMeter(te::AudioTrack* track);
     te::Plugin::Ptr createFourOscSynth(te::AudioTrack* track);
 
+    // Create a TE internal plugin, restoring saved ValueTree state if available.
+    // Falls back to creating a fresh plugin from xmlTypeName when no saved state exists.
+    te::Plugin::Ptr createInternalPlugin(const juce::String& xmlTypeName,
+                                         const juce::String& savedPluginState);
+
     // References to dependencies (not owned)
     te::Engine& engine_;
     te::Edit& edit_;

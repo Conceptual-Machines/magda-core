@@ -1866,24 +1866,11 @@ void PluginManager::restorePluginState(TrackId trackId, DeviceId deviceId, te::P
     if (!devInfo || devInfo->pluginState.isEmpty())
         return;
 
-    if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
-        // External plugin: restore base64 blob
-        ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
-    } else {
-        // TE internal plugin: restore ValueTree properties from saved XML
-        if (auto xml = juce::parseXML(devInfo->pluginState)) {
-            auto savedState = juce::ValueTree::fromXml(*xml);
-            if (savedState.isValid()) {
-                // Copy all properties from saved state into the live plugin state.
-                // This restores non-automatable CachedValues (wave shapes, etc.)
-                // while the automatable parameters are handled by DeviceProcessor.
-                for (int i = 0; i < savedState.getNumProperties(); ++i) {
-                    auto name = savedState.getPropertyName(i);
-                    plugin->state.setProperty(name, savedState[name], nullptr);
-                }
-            }
-        }
-    }
+    auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get());
+    if (!ext)
+        return;
+
+    ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
 }
 
 void PluginManager::purgeStaleEntries() {
@@ -2111,30 +2098,29 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
     te::Plugin::Ptr plugin;
 
     if (device.format == PluginFormat::Internal) {
+        const auto& ps = device.pluginState;
         if (device.pluginId.containsIgnoreCase("delay")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::DelayPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("reverb")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::ReverbPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::ReverbPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("eq")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::EqualiserPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::EqualiserPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("compressor")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::CompressorPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::CompressorPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("chorus")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::ChorusPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::ChorusPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("phaser")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::PhaserPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::PhaserPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("lowpass")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::LowPassPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::LowPassPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("pitchshift")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::PitchShiftPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::PitchShiftPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("impulseresponse")) {
-            plugin =
-                edit_.getPluginCache().createNewPlugin(te::ImpulseResponsePlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::ImpulseResponsePlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("tone")) {
-            plugin =
-                edit_.getPluginCache().createNewPlugin(te::ToneGeneratorPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::ToneGeneratorPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("4osc")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::FourOscPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::FourOscPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase(
                        daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
             juce::ValueTree ps(te::IDs::PLUGIN);
@@ -2209,20 +2195,6 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
                     if (!ext->isInitialisingAsync()) {
                         ext->restorePluginStateFromValueTree(ext->state);
                     }
-                }
-            }
-        }
-    }
-
-    // Restore non-automatable state for TE internal plugins
-    if (plugin && device.pluginState.isNotEmpty() &&
-        !dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
-        if (auto xml = juce::parseXML(device.pluginState)) {
-            auto savedState = juce::ValueTree::fromXml(*xml);
-            if (savedState.isValid()) {
-                for (int i = 0; i < savedState.getNumProperties(); ++i) {
-                    auto name = savedState.getPropertyName(i);
-                    plugin->state.setProperty(name, savedState[name], nullptr);
                 }
             }
         }
@@ -2340,8 +2312,9 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 processor = std::make_unique<DrumGridProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("4osc")) {
-            plugin = createFourOscSynth(track);
+            plugin = createInternalPlugin(te::FourOscPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
+                track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<FourOscProcessor>(device.id, plugin);
             }
             // Note: "volume" devices are NOT created here - track volume is separate infrastructure
@@ -2351,72 +2324,67 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             plugin = createLevelMeter(track);
             // No processor for meter - it's just for measurement
         } else if (device.pluginId.containsIgnoreCase("delay")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::DelayPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<DelayProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("reverb")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::ReverbPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::ReverbPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<ReverbProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("eq")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::EqualiserPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::EqualiserPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<EqualiserProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("compressor")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::CompressorPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::CompressorPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<CompressorProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("chorus")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::ChorusPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::ChorusPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<ChorusProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("phaser")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::PhaserPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::PhaserPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<PhaserProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("lowpass")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::LowPassPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::LowPassPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<FilterProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("pitchshift")) {
-            plugin = edit_.getPluginCache().createNewPlugin(te::PitchShiftPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::PitchShiftPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<PitchShiftProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("impulseresponse")) {
             plugin =
-                edit_.getPluginCache().createNewPlugin(te::ImpulseResponsePlugin::xmlTypeName, {});
+                createInternalPlugin(te::ImpulseResponsePlugin::xmlTypeName, device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<ImpulseResponseProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("utility")) {
-            plugin =
-                edit_.getPluginCache().createNewPlugin(te::VolumeAndPanPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::VolumeAndPanPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<UtilityProcessor>(device.id, plugin);
             }
         }
-
-        // Restore non-automatable state (ValueTree properties) for TE internal plugins
-        if (plugin)
-            restorePluginState(trackId, device.id, plugin);
     } else {
         // External plugin - find matching description from KnownPluginList
         if (device.uniqueId.isNotEmpty() || device.fileOrIdentifier.isNotEmpty()) {
@@ -2760,6 +2728,18 @@ te::Plugin::Ptr PluginManager::createFourOscSynth(te::AudioTrack* track) {
         DBG("FourOscPlugin: Created - parameter resolution will be handled by FourOscProcessor");
     }
     return plugin;
+}
+
+te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeName,
+                                                    const juce::String& savedPluginState) {
+    if (savedPluginState.isNotEmpty()) {
+        if (auto xml = juce::parseXML(savedPluginState)) {
+            auto savedState = juce::ValueTree::fromXml(*xml);
+            if (savedState.isValid())
+                return edit_.getPluginCache().createNewPlugin(savedState);
+        }
+    }
+    return edit_.getPluginCache().createNewPlugin(xmlTypeName, {});
 }
 
 }  // namespace magda
