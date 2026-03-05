@@ -214,8 +214,10 @@ void MainWindow::setupMenuCallbacks() {
                         juce::AlertWindow::WarningIcon, "Save Project As",
                         "Failed to save project: " + projectManager.getLastError());
                 } else {
+                    // Use actual saved path (saveProjectAs may wrap in subdirectory)
                     auto& config = Config::getInstance();
-                    config.addRecentProject(file.getFullPathName().toStdString());
+                    config.addRecentProject(
+                        projectManager.getCurrentProjectFile().getFullPathName().toStdString());
                     config.save();
                     MenuManager::getInstance().menuItemsChanged();
                 }
@@ -267,8 +269,10 @@ void MainWindow::setupMenuCallbacks() {
                     juce::AlertWindow::WarningIcon, "Save Project As",
                     "Failed to save project: " + projectManager.getLastError());
             } else {
+                // Use actual saved path (saveProjectAs may wrap in subdirectory)
                 auto& config = Config::getInstance();
-                config.addRecentProject(file.getFullPathName().toStdString());
+                config.addRecentProject(
+                    projectManager.getCurrentProjectFile().getFullPathName().toStdString());
                 config.save();
                 MenuManager::getInstance().menuItemsChanged();
             }
