@@ -315,6 +315,7 @@ class ClipManager {
      * @brief Get all clips on a specific track
      */
     std::vector<ClipId> getClipsOnTrack(TrackId trackId) const;
+    std::vector<ClipId> getClipsOnTrack(TrackId trackId, ClipView view) const;
 
     /**
      * @brief Get clip at a specific position on a track

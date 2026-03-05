@@ -1055,6 +1055,24 @@ std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId) const {
     return result;
 }
 
+std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId, ClipView view) const {
+    const auto& clips = (view == ClipView::Arrangement) ? arrangementClips_ : sessionClips_;
+    std::vector<ClipId> result;
+    for (const auto& clip : clips) {
+        if (clip.trackId == trackId) {
+            result.push_back(clip.id);
+        }
+    }
+    if (view == ClipView::Arrangement) {
+        std::sort(result.begin(), result.end(), [this](ClipId a, ClipId b) {
+            const auto* clipA = getClip(a);
+            const auto* clipB = getClip(b);
+            return clipA && clipB && clipA->startTime < clipB->startTime;
+        });
+    }
+    return result;
+}
+
 ClipId ClipManager::getClipAtPosition(TrackId trackId, double time) const {
     // Only check arrangement clips (timeline-based positioning)
     for (const auto& clip : arrangementClips_) {

@@ -405,9 +405,9 @@ void TracktionEngineWrapper::onTransportRecord(double position) {
     auto viewMode = ViewModeController::getInstance().getViewMode();
 
     if (viewMode == ViewMode::Live) {
-        // Session mode: arm the recorder, then trigger the selected session clip.
-        // triggerClip() sets isQueued which causes SessionClipScheduler to start
-        // the transport and launch the clip via LaunchHandle.
+        // Session mode: arm the session recorder, then trigger the selected clip.
+        // The recorder captures session clip play/stop events into arrangement clips.
+        // This is separate from track R (MIDI input recording).
         if (sessionRecorder_)
             sessionRecorder_->setArmed(true);
 
@@ -425,7 +425,7 @@ void TracktionEngineWrapper::onTransportRecord(double position) {
             }
         }
     } else {
-        // Arrangement mode: arm recorder AND start transport + TE recording
+        // Arrangement mode: arm session recorder + start transport + TE recording
         // so MIDI/audio input is captured on armed tracks.
         if (sessionRecorder_)
             sessionRecorder_->setArmed(true);

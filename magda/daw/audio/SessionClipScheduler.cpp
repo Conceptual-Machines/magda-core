@@ -269,9 +269,17 @@ void SessionClipScheduler::timerCallback() {
         cm.notifyClipPlaybackStateChanged(clipId);
     }
 
-    // Only notify when a clip's state actually changes (e.g. queued → playing)
+    // Only notify when a clip's state actually changes (e.g. queued → playing).
+    // For looping clips, suppress brief Stopped states between loop cycles —
+    // the removal loop above already keeps them in activeClips_, so listeners
+    // (like SessionRecorder) should not see a false stop.
     for (auto clipId : activeClips_) {
         auto state = queryLaunchHandleState(clipId);
+        if (state == SessionClipPlayState::Stopped) {
+            const auto* clip = cm.getClip(clipId);
+            if (clip && clip->loopEnabled)
+                continue;
+        }
         auto& prev = lastNotifiedState_[clipId];
         if (state != prev) {
             prev = state;

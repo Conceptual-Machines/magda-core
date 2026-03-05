@@ -29,7 +29,7 @@ class SessionRecorder : public ClipManagerListener {
     explicit SessionRecorder(te::Edit& edit);
     ~SessionRecorder() override;
 
-    /** Arm/disarm session recording. Set by transport Record button. */
+    /** Arm/disarm session-to-arrangement recording. Set by transport Record button. */
     void setArmed(bool armed);
     bool isArmed() const {
         return armed_;

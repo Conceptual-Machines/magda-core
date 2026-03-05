@@ -196,9 +196,15 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // (armed tracks should receive MIDI even when not selected)
             updateMidiRoutingForSelection();
 
-            // Sync recordArmed state to InputDeviceInstance
+            // Sync recordArmed state to InputDeviceInstance.
+            // Only sync when transport is stopped — if the transport is already
+            // playing (e.g. session clips running), calling setRecordingEnabled()
+            // causes TE to start recording immediately, capturing the session
+            // clip's own MIDI output as "ghost notes".  The armed state is
+            // stored in TrackInfo and will be picked up when transport.record()
+            // is called explicitly.
             auto* playbackContext = edit_.getCurrentPlaybackContext();
-            if (playbackContext) {
+            if (playbackContext && !edit_.getTransport().isPlaying()) {
                 bool foundAnyDest = false;
                 // Find any input device instances (MIDI or audio) routed to this track
                 for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
