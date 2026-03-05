@@ -606,14 +606,26 @@ void AudioBridge::syncAll() {
         }
     }
 
+    // First pass: create all TE tracks so routing targets exist
     for (const auto& track : tracks) {
         ensureTrackMapping(track.id);
+    }
+
+    // Second pass: sync plugins, routing, and state
+    for (const auto& track : tracks) {
         syncTrackPlugins(track.id);
 
         if (auto* teTrack = getAudioTrack(track.id)) {
             // Sync mute/solo state to TE (essential on project load)
             teTrack->setMute(track.muted);
             teTrack->setSolo(track.soloed);
+
+            // Sync audio output routing (group/aux targets now exist from first pass)
+            trackController_.setTrackAudioOutput(track.id, track.audioOutputDevice);
+
+            // Sync volume/pan
+            setTrackVolume(track.id, track.volume);
+            setTrackPan(track.id, track.pan);
 
             // Sync frozen state from TE → MAGDA (e.g. on edit load)
             bool teFrozen = teTrack->isFrozen(te::AudioTrack::individualFreeze);

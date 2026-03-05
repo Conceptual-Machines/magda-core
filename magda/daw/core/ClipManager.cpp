@@ -187,6 +187,9 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
     newClip.id = nextClipId_++;
     newClip.name = original->name + " Copy";
 
+    // Reset looped clips to their base loop length
+    resetLoopedClipLength(newClip);
+
     if (newClip.view == ClipView::Arrangement) {
         // Offset the duplicate to the right on the timeline
         newClip.startTime = original->startTime + original->length;
@@ -216,6 +219,9 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
     newClip.id = nextClipId_++;
     newClip.name = original->name + " Copy";
 
+    // Reset looped clips to their base loop length
+    resetLoopedClipLength(newClip);
+
     // Use specified track or keep same track
     if (trackId != INVALID_TRACK_ID) {
         newClip.trackId = trackId;
@@ -238,6 +244,18 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
     notifyClipsChanged();
 
     return newClip.id;
+}
+
+void ClipManager::resetLoopedClipLength(ClipInfo& clip) {
+    if (!clip.loopEnabled)
+        return;
+
+    if (clip.isBeatsAuthoritative() && clip.loopLengthBeats > 0.0) {
+        clip.lengthBeats = clip.loopLengthBeats;
+    } else if (clip.loopLength > 0.0) {
+        clip.length = clip.sourceToTimeline(clip.loopLength);
+    }
+    clip.loopEnabled = false;
 }
 
 // ============================================================================
@@ -1566,6 +1584,23 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     newClip->loopEnabled = true;
                     newClip->launchMode = clipData.launchMode;
                     newClip->launchQuantize = clipData.launchQuantize;
+
+                    // Reset extended loops to base loop length for session clips
+                    if (clipData.loopEnabled && clipData.loopLengthBeats > 0.0 &&
+                        clipData.lengthBeats > clipData.loopLengthBeats) {
+                        newClip->lengthBeats = clipData.loopLengthBeats;
+                        newClip->loopLengthBeats = clipData.loopLengthBeats;
+                        // Derive time-length from beat ratio
+                        if (clipData.lengthBeats > 0.0) {
+                            double ratio = clipData.loopLengthBeats / clipData.lengthBeats;
+                            newClip->length = clipData.length * ratio;
+                            newClip->loopLength = newClip->length;
+                        }
+                    } else if (clipData.loopEnabled && clipData.loopLength > 0.0 &&
+                               clipData.length > clipData.sourceToTimeline(clipData.loopLength)) {
+                        newClip->length = clipData.sourceToTimeline(clipData.loopLength);
+                        newClip->loopLength = clipData.loopLength;
+                    }
                 }
 
                 forceNotifyClipPropertyChanged(newClipId);

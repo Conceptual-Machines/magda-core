@@ -1348,9 +1348,12 @@ void TrackManager::setTrackLocked(TrackId trackId, ViewMode mode, bool locked) {
     }
 }
 
-void TrackManager::setTrackCollapsed(TrackId trackId, ViewMode mode, bool collapsed) {
+void TrackManager::setTrackCollapsed(TrackId trackId, ViewMode /*mode*/, bool collapsed) {
     if (auto* track = getTrack(trackId)) {
-        track->viewSettings.setCollapsed(mode, collapsed);
+        // Apply to all view modes so collapsed state is consistent across views
+        for (auto m : {ViewMode::Live, ViewMode::Arrange, ViewMode::Mix, ViewMode::Master}) {
+            track->viewSettings.setCollapsed(m, collapsed);
+        }
         // Use tracksChanged since collapsing affects which child tracks are displayed
         notifyTracksChanged();
     }

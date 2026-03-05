@@ -1611,11 +1611,8 @@ void PluginManager::checkSidechainMonitor(TrackId trackId) {
 
 void PluginManager::ensureSidechainMonitor(TrackId sourceTrackId) {
     // Already have a monitor for this track?
-    if (sidechainMonitors_.count(sourceTrackId) > 0) {
-        DBG("PluginManager::ensureSidechainMonitor - track " << sourceTrackId
-                                                             << " already has monitor");
+    if (sidechainMonitors_.count(sourceTrackId) > 0)
         return;
-    }
 
     auto* teTrack = trackController_.getAudioTrack(sourceTrackId);
     if (!teTrack) {

@@ -1619,7 +1619,9 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
         header.collapseButton->setVisible(false);
     }
 
-    header.nameLabel->setBounds(topRow);
+    // Leave some breathing room so the label doesn't span the full header width
+    auto nameArea = topRow.withTrimmedRight(topRow.getWidth() / 4);
+    header.nameLabel->setBounds(nameArea);
     header.nameLabel->setJustificationType(headersOnRight_ ? juce::Justification::centredRight
                                                            : juce::Justification::centredLeft);
     tcpArea.removeFromTop(3);

@@ -467,6 +467,9 @@ class ClipManager {
      */
     void resolveOverlaps(ClipId dominantClipId);
 
+    /// Reset a looped clip's length to its base loop length and disable looping
+    void resetLoopedClipLength(ClipInfo& clip);
+
   private:
     ClipManager() = default;
     ~ClipManager() = default;
