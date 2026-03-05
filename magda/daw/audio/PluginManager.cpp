@@ -1030,6 +1030,11 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                         if (!snapHolder)
                             snapHolder = std::make_unique<CurveSnapshotHolder>();
                         applyLFOProperties(lfo, modInfo, snapHolder.get());
+                        // Cross-track sidechain LFOs must not resync from the
+                        // destination track's own MIDI — they are triggered
+                        // externally via triggerSidechainNoteOn().
+                        if (device.sidechain.sourceTrackId != INVALID_TRACK_ID)
+                            lfo->setSkipNativeResync(true);
                     }
                     modifier = lfoMod;
                     break;
@@ -1085,10 +1090,6 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                             !modInfo.running)
                             initialAmount = 0.0f;
                         param->addModifier(*modifier, initialAmount);
-                        DBG("syncDeviceModifiers: linked mod to '"
-                            << param->getParameterName() << "' amount=" << juce::String(link.amount)
-                            << " modType=" << (int)modInfo.type
-                            << " numAssignments=" << (int)param->getAssignments().size());
                     }
                 }
             }
@@ -1297,11 +1298,15 @@ void PluginManager::rebuildSidechainLFOCache() {
             if (!isDestination)
                 continue;
 
-            // Collect all LFO modifiers from the destination track
+            // Collect LFO modifiers only from devices on the destination track
+            // that are actually sidechained from this source track.
             for (const auto& element : otherTrack.chainElements) {
                 if (!isDevice(element))
                     continue;
                 const auto& device = getDevice(element);
+                // Only collect from devices whose sidechain source is this track
+                if (device.sidechain.sourceTrackId != track.id)
+                    continue;
                 auto it = deviceModifiers_.find(device.id);
                 if (it == deviceModifiers_.end())
                     continue;
@@ -1310,6 +1315,7 @@ void PluginManager::rebuildSidechainLFOCache() {
                         lfos.push_back(lfo);
                 }
             }
+            // TODO: also filter rack LFOs by sidechain source
             rackSyncManager_.collectLFOModifiers(otherTrack.id, lfos);
         }
 
