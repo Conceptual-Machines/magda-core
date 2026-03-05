@@ -206,12 +206,15 @@ void RackSyncManager::captureAllPluginStates() {
 
     for (auto& [rackId, synced] : syncedRacks_) {
         for (auto& [deviceId, plugin] : synced.innerPlugins) {
-            auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get());
-            if (!ext)
-                continue;
+            juce::String stateStr;
 
-            ext->flushPluginStateToValueTree();
-            auto stateStr = ext->state.getProperty(te::IDs::state).toString();
+            if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+                ext->flushPluginStateToValueTree();
+                stateStr = ext->state.getProperty(te::IDs::state).toString();
+            } else {
+                if (auto xml = plugin->state.createXml())
+                    stateStr = xml->toString();
+            }
 
             // Always overwrite pluginState (even if empty) to avoid stale state
             if (auto* devInfo = trackManager.getDevice(synced.trackId, deviceId)) {

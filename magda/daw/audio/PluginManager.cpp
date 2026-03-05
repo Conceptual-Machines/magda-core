@@ -1833,12 +1833,19 @@ void PluginManager::captureAllPluginStates() {
     juce::ScopedLock lock(pluginLock_);
 
     for (const auto& [deviceId, plugin] : deviceToPlugin_) {
-        auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get());
-        if (!ext)
-            continue;
+        juce::String stateStr;
 
-        ext->flushPluginStateToValueTree();
-        auto stateStr = ext->state.getProperty(te::IDs::state).toString();
+        if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+            // External plugin: capture base64 blob from TE state property
+            ext->flushPluginStateToValueTree();
+            stateStr = ext->state.getProperty(te::IDs::state).toString();
+        } else {
+            // TE internal plugin (4osc, EQ, Compressor, etc.):
+            // Capture the full ValueTree as XML so non-automatable
+            // CachedValues (wave shapes, filter type, etc.) are preserved.
+            if (auto xml = plugin->state.createXml())
+                stateStr = xml->toString();
+        }
 
         // Always overwrite pluginState (even if empty) to avoid stale state
         auto& trackManager = TrackManager::getInstance();
@@ -1859,11 +1866,24 @@ void PluginManager::restorePluginState(TrackId trackId, DeviceId deviceId, te::P
     if (!devInfo || devInfo->pluginState.isEmpty())
         return;
 
-    auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get());
-    if (!ext)
-        return;
-
-    ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
+    if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+        // External plugin: restore base64 blob
+        ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
+    } else {
+        // TE internal plugin: restore ValueTree properties from saved XML
+        if (auto xml = juce::parseXML(devInfo->pluginState)) {
+            auto savedState = juce::ValueTree::fromXml(*xml);
+            if (savedState.isValid()) {
+                // Copy all properties from saved state into the live plugin state.
+                // This restores non-automatable CachedValues (wave shapes, etc.)
+                // while the automatable parameters are handled by DeviceProcessor.
+                for (int i = 0; i < savedState.getNumProperties(); ++i) {
+                    auto name = savedState.getPropertyName(i);
+                    plugin->state.setProperty(name, savedState[name], nullptr);
+                }
+            }
+        }
+    }
 }
 
 void PluginManager::purgeStaleEntries() {
@@ -2194,6 +2214,20 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
         }
     }
 
+    // Restore non-automatable state for TE internal plugins
+    if (plugin && device.pluginState.isNotEmpty() &&
+        !dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+        if (auto xml = juce::parseXML(device.pluginState)) {
+            auto savedState = juce::ValueTree::fromXml(*xml);
+            if (savedState.isValid()) {
+                for (int i = 0; i < savedState.getNumProperties(); ++i) {
+                    auto name = savedState.getPropertyName(i);
+                    plugin->state.setProperty(name, savedState[name], nullptr);
+                }
+            }
+        }
+    }
+
     if (plugin) {
         plugin->setEnabled(!device.bypassed);
     }
@@ -2379,6 +2413,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 processor = std::make_unique<UtilityProcessor>(device.id, plugin);
             }
         }
+
+        // Restore non-automatable state (ValueTree properties) for TE internal plugins
+        if (plugin)
+            restorePluginState(trackId, device.id, plugin);
     } else {
         // External plugin - find matching description from KnownPluginList
         if (device.uniqueId.isNotEmpty() || device.fileOrIdentifier.isNotEmpty()) {
