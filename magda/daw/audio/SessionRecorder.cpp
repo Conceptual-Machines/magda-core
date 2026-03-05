@@ -62,12 +62,58 @@ void SessionRecorder::updatePreviews() {
     if (!armed_ || !recordingPreviews_ || activeRecordings_.empty())
         return;
 
+    auto& clipManager = ClipManager::getInstance();
+    auto& tempoSeq = edit_.tempoSequence;
     double currentTime = edit_.getTransport().position.get().inSeconds();
 
     for (const auto& [clipId, rec] : activeRecordings_) {
         auto it = recordingPreviews_->find(rec.trackId);
-        if (it != recordingPreviews_->end()) {
-            it->second.currentLength = currentTime - rec.arrangementStartTime;
+        if (it == recordingPreviews_->end())
+            continue;
+
+        auto& preview = it->second;
+        preview.currentLength = currentTime - rec.arrangementStartTime;
+
+        // Populate preview notes from the session clip's MIDI data
+        const auto* sessionClip = clipManager.getClip(rec.sessionClipId);
+        if (!sessionClip || sessionClip->type != ClipType::MIDI || sessionClip->midiNotes.empty())
+            continue;
+
+        double clipLengthBeats = sessionClip->lengthBeats;
+        if (clipLengthBeats <= 0.0)
+            clipLengthBeats = 4.0;
+
+        auto startBeatPos =
+            tempoSeq.toBeats(te::TimePosition::fromSeconds(rec.arrangementStartTime));
+        auto endBeatPos = tempoSeq.toBeats(te::TimePosition::fromSeconds(currentTime));
+        double totalBeats = endBeatPos.inBeats() - startBeatPos.inBeats();
+        if (totalBeats <= 0.0)
+            continue;
+
+        // Rebuild notes (tiled if looping) — cheap enough at ~30fps.
+        // Note coordinates are in beats relative to the preview start,
+        // matching the rendering code's expectation (currentLength * beatsPerSecond).
+        preview.notes.clear();
+
+        if (sessionClip->loopEnabled && totalBeats > clipLengthBeats) {
+            int numPasses = static_cast<int>(std::ceil(totalBeats / clipLengthBeats));
+            for (int pass = 0; pass < numPasses; ++pass) {
+                double passOffset = pass * clipLengthBeats;
+                for (const auto& note : sessionClip->midiNotes) {
+                    double noteStart = note.startBeat + passOffset;
+                    if (noteStart >= totalBeats)
+                        break;
+                    MidiNote tiled = note;
+                    tiled.startBeat = noteStart;
+                    preview.notes.push_back(tiled);
+                }
+            }
+        } else {
+            for (const auto& note : sessionClip->midiNotes) {
+                if (note.startBeat >= totalBeats)
+                    continue;
+                preview.notes.push_back(note);
+            }
         }
     }
 }
