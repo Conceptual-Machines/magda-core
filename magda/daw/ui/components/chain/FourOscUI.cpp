@@ -1010,8 +1010,40 @@ void FourOscUI::LFOTab::setupLabel(juce::Label& label, const juce::String& text)
 // FXTab
 // =============================================================================
 
+// LookAndFeel override so FX toggle buttons use the theme font
+struct FXToggleLookAndFeel : juce::LookAndFeel_V4 {
+    void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
+                          bool shouldDrawButtonAsHighlighted,
+                          bool shouldDrawButtonAsDown) override {
+        float fontSize = juce::jmin(11.0f, static_cast<float>(button.getHeight()) * 0.6f);
+        float tickWidth = fontSize * 1.0f;
+
+        drawTickBox(g, button, 4.0f, (static_cast<float>(button.getHeight()) - tickWidth) * 0.5f,
+                    tickWidth, tickWidth, button.getToggleState(), button.isEnabled(),
+                    shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+
+        g.setColour(button.findColour(juce::ToggleButton::textColourId));
+        g.setFont(FontManager::getInstance().getUIFont(fontSize));
+
+        if (!button.isEnabled())
+            g.setOpacity(0.5f);
+
+        g.drawFittedText(button.getButtonText(),
+                         button.getLocalBounds()
+                             .withTrimmedLeft(juce::roundToInt(tickWidth) + 10)
+                             .withTrimmedRight(2),
+                         juce::Justification::centredLeft, 10);
+    }
+
+    static FXToggleLookAndFeel& getInstance() {
+        static FXToggleLookAndFeel instance;
+        return instance;
+    }
+};
+
 FourOscUI::FXTab::FXTab(FourOscUI& owner) : owner_(owner) {
     // Distortion
+    distOnButton_.setLookAndFeel(&FXToggleLookAndFeel::getInstance());
     distOnButton_.onClick = [this]() {
         if (owner_.onPluginStateChanged)
             owner_.onPluginStateChanged("distortionOn", juce::var(distOnButton_.getToggleState()));
@@ -1026,6 +1058,7 @@ FourOscUI::FXTab::FXTab(FourOscUI& owner) : owner_(owner) {
     addAndMakeVisible(distAmountSlider_);
 
     // Reverb
+    reverbOnButton_.setLookAndFeel(&FXToggleLookAndFeel::getInstance());
     reverbOnButton_.onClick = [this]() {
         if (owner_.onPluginStateChanged)
             owner_.onPluginStateChanged("reverbOn", juce::var(reverbOnButton_.getToggleState()));
@@ -1065,6 +1098,7 @@ FourOscUI::FXTab::FXTab(FourOscUI& owner) : owner_(owner) {
     addAndMakeVisible(reverbMixSlider_);
 
     // Delay
+    delayOnButton_.setLookAndFeel(&FXToggleLookAndFeel::getInstance());
     delayOnButton_.onClick = [this]() {
         if (owner_.onPluginStateChanged)
             owner_.onPluginStateChanged("delayOn", juce::var(delayOnButton_.getToggleState()));
@@ -1096,6 +1130,7 @@ FourOscUI::FXTab::FXTab(FourOscUI& owner) : owner_(owner) {
     addAndMakeVisible(delayMixSlider_);
 
     // Chorus
+    chorusOnButton_.setLookAndFeel(&FXToggleLookAndFeel::getInstance());
     chorusOnButton_.onClick = [this]() {
         if (owner_.onPluginStateChanged)
             owner_.onPluginStateChanged("chorusOn", juce::var(chorusOnButton_.getToggleState()));
@@ -1138,7 +1173,7 @@ FourOscUI::FXTab::FXTab(FourOscUI& owner) : owner_(owner) {
 void FourOscUI::FXTab::resized() {
     auto area = getLocalBounds().reduced(4);
     constexpr int rowH = 22;
-    constexpr int toggleW = 60;
+    constexpr int toggleW = 50;
     constexpr int labelW = 36;
     constexpr int sliderW = 46;
     constexpr int gap = 4;
