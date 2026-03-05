@@ -311,7 +311,8 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                         auto& modifier = modIt->second;
 
                         if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
-                            auto& snapHolder = synced.curveSnapshots[modInfo.id];
+                            auto snapshotKey = std::make_pair(INVALID_DEVICE_ID, modInfo.id);
+                            auto& snapHolder = synced.curveSnapshots[snapshotKey];
                             if (!snapHolder)
                                 snapHolder = std::make_unique<CurveSnapshotHolder>();
                             applyLFOProperties(lfo, modInfo, snapHolder.get());
@@ -338,8 +339,10 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                                             float effectiveAmount = link.amount;
                                             if (!renderingActive_ &&
                                                 modInfo.triggerMode != LFOTriggerMode::Free &&
-                                                !modInfo.running && !modInfo.oneShot)
-                                                effectiveAmount = 0.0f;
+                                                !modInfo.running) {
+                                                if (!modInfo.oneShot || modInfo.phase < 1.0f)
+                                                    effectiveAmount = 0.0f;
+                                            }
                                             assignment->value = effectiveAmount;
                                             assignment->offset = 0.0f;
                                             break;
@@ -661,7 +664,8 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                     break;
 
                 if (auto* lfo = dynamic_cast<te::LFOModifier*>(lfoMod.get())) {
-                    auto& snapHolder = synced.curveSnapshots[modInfo.id];
+                    auto snapshotKey = std::make_pair(INVALID_DEVICE_ID, modInfo.id);
+                    auto& snapHolder = synced.curveSnapshots[snapshotKey];
                     if (!snapHolder)
                         snapHolder = std::make_unique<CurveSnapshotHolder>();
                     applyLFOProperties(lfo, modInfo, snapHolder.get());
@@ -715,8 +719,10 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                 if (param) {
                     float initialAmount = link.amount;
                     if (!renderingActive_ && modInfo.triggerMode != LFOTriggerMode::Free &&
-                        !modInfo.running)
-                        initialAmount = 0.0f;
+                        !modInfo.running) {
+                        if (!modInfo.oneShot || modInfo.phase < 1.0f)
+                            initialAmount = 0.0f;
+                    }
                     param->addModifier(*modifier, initialAmount);
                 }
             }

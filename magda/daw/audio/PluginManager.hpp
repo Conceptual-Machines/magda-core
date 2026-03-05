@@ -462,8 +462,8 @@ class PluginManager {
     // Device-level TE modifiers (created by syncDeviceModifiers)
     std::map<DeviceId, std::vector<te::Modifier::Ptr>> deviceModifiers_;
 
-    // Double-buffered curve snapshots for custom LFO waveforms (keyed by ModId)
-    std::unordered_map<int, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots_;
+    // Double-buffered curve snapshots for custom LFO waveforms (keyed by DeviceId,ModId)
+    std::map<std::pair<DeviceId, ModId>, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots_;
 
     // Device-level TE macro parameters (created by syncDeviceMacros)
     std::map<DeviceId, std::map<int, te::MacroParameter*>> deviceMacroParams_;

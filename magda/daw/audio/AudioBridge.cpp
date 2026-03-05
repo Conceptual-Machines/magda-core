@@ -425,6 +425,9 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
             // Push gain to the audio-graph atomic so DeviceGainNode picks it up
             deviceMetering_.setGain(deviceId, device->gainValue);
 
+            // When bypass changes, resync modifiers so they are removed/restored
+            pluginManager_.resyncDeviceModifiers(track.id);
+
             // Sync sidechain routing if changed
             auto* tePlugin = pluginManager_.getPlugin(deviceId).get();
             if (tePlugin && tePlugin->canSidechain()) {

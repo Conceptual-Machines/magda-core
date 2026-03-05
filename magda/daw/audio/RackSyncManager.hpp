@@ -169,8 +169,8 @@ class RackSyncManager {
         std::map<ModId, te::Modifier::Ptr> innerModifiers;
         std::map<int, te::MacroParameter*> innerMacroParams;  // index → TE MacroParameter
 
-        // Double-buffered curve snapshots for custom LFO waveforms (keyed by ModId)
-        std::unordered_map<int, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
+        // Double-buffered curve snapshots for custom LFO waveforms (keyed by DeviceId,ModId)
+        std::map<std::pair<DeviceId, ModId>, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
     };
 
     /**

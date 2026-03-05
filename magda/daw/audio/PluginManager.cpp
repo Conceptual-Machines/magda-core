@@ -861,7 +861,7 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
 
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
                 // Ensure CurveSnapshotHolder exists for this mod
-                auto& snapHolder = curveSnapshots_[modInfo.id];
+                auto& snapHolder = curveSnapshots_[{device.id, modInfo.id}];
                 if (!snapHolder)
                     snapHolder = std::make_unique<CurveSnapshotHolder>();
 
@@ -907,8 +907,12 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                                 float effectiveAmount = link.amount;
                                 if (!renderingActive_ &&
                                     modInfo.triggerMode != LFOTriggerMode::Free &&
-                                    !modInfo.running && !modInfo.oneShot)
-                                    effectiveAmount = 0.0f;
+                                    !modInfo.running) {
+                                    // Gate stopped LFOs, but let completed 1-shot hold
+                                    // at end value (phase clamped at 1.0)
+                                    if (!modInfo.oneShot || modInfo.phase < 1.0f)
+                                        effectiveAmount = 0.0f;
+                                }
                                 assignment->value = effectiveAmount;
                                 assignment->offset = 0.0f;
                                 break;
@@ -935,12 +939,14 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
 
         const auto& device = getDevice(element);
 
-        // Check if any mod has active links
+        // Check if any mod has active links AND device is not bypassed
         bool hasActiveMods = false;
-        for (const auto& mod : device.mods) {
-            if (mod.enabled && !mod.links.empty()) {
-                hasActiveMods = true;
-                break;
+        if (!device.bypassed) {
+            for (const auto& mod : device.mods) {
+                if (mod.enabled && !mod.links.empty()) {
+                    hasActiveMods = true;
+                    break;
+                }
             }
         }
 
@@ -960,26 +966,25 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
         // Remove existing TE modifiers for this device before recreating
         auto& existingMods = deviceModifiers_[device.id];
         if (!existingMods.empty()) {
-            // Find target plugin to clean up modifier assignments from its parameters
-            te::Plugin::Ptr targetPlugin;
-            {
-                juce::ScopedLock lock(pluginLock_);
-                auto it = deviceToPlugin_.find(device.id);
-                if (it != deviceToPlugin_.end())
-                    targetPlugin = it->second;
-            }
-            if (!targetPlugin && device.isInstrument)
-                if (auto* inner = instrumentRackManager_.getInnerPlugin(device.id))
-                    targetPlugin = inner;
-
             for (auto& mod : existingMods) {
                 if (!mod)
                     continue;
 
-                // Remove modifier assignments from all target parameters
-                if (targetPlugin) {
-                    for (auto* param : targetPlugin->getAutomatableParameters())
-                        param->removeModifier(*mod);
+                // Remove modifier assignments from ALL plugins on the track
+                // (not just the target plugin) to catch any cross-device assignments
+                for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
+                    if (auto* plugin = teTrack->pluginList[pi]) {
+                        for (auto* param : plugin->getAutomatableParameters())
+                            param->removeModifier(*mod);
+                    }
+                }
+
+                // Also remove from rack inner plugins (instruments)
+                if (device.isInstrument) {
+                    if (auto* inner = instrumentRackManager_.getInnerPlugin(device.id)) {
+                        for (auto* param : inner->getAutomatableParameters())
+                            param->removeModifier(*mod);
+                    }
                 }
 
                 // Remove the modifier from the ModifierList
@@ -1026,7 +1031,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                         break;
 
                     if (auto* lfo = dynamic_cast<te::LFOModifier*>(lfoMod.get())) {
-                        auto& snapHolder = curveSnapshots_[modInfo.id];
+                        auto& snapHolder = curveSnapshots_[{device.id, modInfo.id}];
                         if (!snapHolder)
                             snapHolder = std::make_unique<CurveSnapshotHolder>();
                         applyLFOProperties(lfo, modInfo, snapHolder.get());
@@ -1087,8 +1092,11 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                         // Gate triggered LFOs: start with 0 until triggered
                         float initialAmount = link.amount;
                         if (!renderingActive_ && modInfo.triggerMode != LFOTriggerMode::Free &&
-                            !modInfo.running)
-                            initialAmount = 0.0f;
+                            !modInfo.running) {
+                            // Gate stopped LFOs, but let completed 1-shot hold
+                            if (!modInfo.oneShot || modInfo.phase < 1.0f)
+                                initialAmount = 0.0f;
+                        }
                         param->addModifier(*modifier, initialAmount);
                     }
                 }
@@ -1109,11 +1117,20 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
             continue;
 
         const auto& device = getDevice(element);
+
+        // Skip sidechain LFOs — they are triggered separately via
+        // triggerSidechainNoteOn from the source track's note events.
+        // Triggering them here would reset the TE LFO phase mid-cycle,
+        // causing false wrap-around detection in one-shot mode.
+        if (device.sidechain.sourceTrackId != INVALID_TRACK_ID)
+            continue;
+
         auto it = deviceModifiers_.find(device.id);
         if (it == deviceModifiers_.end())
             continue;
 
-        for (auto& mod : it->second) {
+        for (size_t mi = 0; mi < it->second.size(); ++mi) {
+            auto& mod = it->second[mi];
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
                 lfo->triggerNoteOn();
             }
@@ -1346,10 +1363,13 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
             if (!isDevice(element))
                 continue;
             const auto& device = getDevice(element);
+            // Bypassed devices should have 0 active modifiers
             int activeModCount = 0;
-            for (const auto& mod : device.mods) {
-                if (mod.enabled && !mod.links.empty())
-                    activeModCount++;
+            if (!device.bypassed) {
+                for (const auto& mod : device.mods) {
+                    if (mod.enabled && !mod.links.empty())
+                        activeModCount++;
+                }
             }
             auto it = deviceModifiers_.find(device.id);
             int existingCount =
