@@ -40,7 +40,7 @@ class SetClipOffsetCommand : public UndoableCommand {
     SetClipOffsetCommand(ClipId clipId, double newOffset) : clipId_(clipId), newOffset_(newOffset) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldOffset_ = clip->offset;
+            oldOffset_ = (clip->type == ClipType::MIDI) ? clip->midiOffset : clip->offset;
     }
 
     void execute() override {

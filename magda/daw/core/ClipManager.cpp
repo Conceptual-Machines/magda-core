@@ -561,8 +561,11 @@ void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
 
 void ClipManager::setOffset(ClipId clipId, double offset) {
     if (auto* clip = getClip(clipId)) {
-        clip->offset = juce::jmax(0.0, offset);
-        if (clip->type == ClipType::Audio) {
+        if (clip->type == ClipType::MIDI) {
+            // MIDI phase lives in midiOffset (beats) — caller passes beats directly
+            clip->midiOffset = juce::jmax(0.0, offset);
+        } else {
+            clip->offset = juce::jmax(0.0, offset);
             sanitizeAudioClip(*clip);
         }
         notifyClipPropertyChanged(clipId);

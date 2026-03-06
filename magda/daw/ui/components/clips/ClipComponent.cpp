@@ -451,27 +451,17 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
         double loopLengthBeats =
             midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
 
-        // Compute display midiOffset for note positioning.
-        // For looped clips, derive from the loop phase (offset - loopStart).
-        // During left-resize drag, compute from snapshot + drag delta for smooth preview.
-        double midiOffset = 0.0;
-        if (clip.loopEnabled && midiSrcLength > 0.0) {
-            double phase;
-            if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
-                double expandDelta = previewLength_ - dragStartLength_;
-                double phaseDelta = expandDelta * clip.speedRatio;
-                double relOffset = dragStartClipSnapshot_.offset - dragStartClipSnapshot_.loopStart;
-                phase = wrapPhase(relOffset - phaseDelta, midiSrcLength);
+        // During left-resize drag, compute display midiOffset from snapshot + drag delta
+        // for smooth preview. Outside drag, use the committed value directly.
+        double midiOffset = clip.midiOffset;
+        if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
+            double expandDelta = previewLength_ - dragStartLength_;
+            double deltaBeat = expandDelta * beatsPerSecond;
+            if (clip.loopEnabled && loopLengthBeats > 0.0) {
+                midiOffset =
+                    wrapPhase(dragStartClipSnapshot_.midiOffset - deltaBeat, loopLengthBeats);
             } else {
-                phase = clip.offset - clip.loopStart;
-            }
-            midiOffset = phase * beatsPerSecond;
-        } else if (!clip.loopEnabled) {
-            if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
-                double expandDelta = previewLength_ - dragStartLength_;
-                midiOffset = dragStartClipSnapshot_.midiOffset - expandDelta * beatsPerSecond;
-            } else {
-                midiOffset = clip.midiOffset;
+                midiOffset = dragStartClipSnapshot_.midiOffset - deltaBeat;
             }
         }
         if (clip.loopEnabled && loopLengthBeats > 0.0) {

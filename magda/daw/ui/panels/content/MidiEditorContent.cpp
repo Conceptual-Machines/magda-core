@@ -311,7 +311,7 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
                 }
             }
         } else {
-            // Arrangement mode: offset playhead by midiOffset
+            // Arrangement mode: offset playhead by midiOffset (beats → seconds)
             if (editingClipId_ != magda::INVALID_CLIP_ID) {
                 const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
                 if (clip && clip->midiOffset > 0.0) {

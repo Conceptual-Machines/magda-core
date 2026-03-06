@@ -1200,9 +1200,6 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
         midiClipPtr->setEnd(endPos, false);
     }
 
-    // Force offset to 0 — note shifting is handled manually below
-    midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
-
     // Set up internal looping on the TE clip
     if (clip->loopEnabled && clip->loopLengthBeats > 0.0) {
         // Use the stored loop region length, not the clip container length
@@ -1214,29 +1211,28 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
         midiClipPtr->setLoopRange(te::TimeRange(loopStartTime, loopEndTime));
         midiClipPtr->setLoopRangeBeats(
             {te::BeatPosition::fromBeats(0.0), te::BeatPosition::fromBeats(loopBeats)});
+
+        // Set TE offset from midiOffset (beats) so playback starts at the phase position
+        double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double phaseSeconds = clip->midiOffset * (60.0 / bpm);
+        midiClipPtr->setOffset(te::TimeDuration::fromSeconds(phaseSeconds));
     } else {
         midiClipPtr->disableLooping();
+        midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
     }
 
     // Clear existing notes and rebuild from ClipManager
     auto& sequence = midiClipPtr->getSequence();
     sequence.clear(nullptr);
 
-    // Calculate the beat range visible in this clip based on midiOffset
+    // Calculate the beat range visible in this clip
     double clipLengthBeats = clip->lengthBeats;
-    // When looping, notes only span the loop region — TE handles repetition
     double contentLengthBeats = (clip->loopEnabled && clip->loopLengthBeats > 0.0)
                                     ? clip->loopLengthBeats
                                     : clipLengthBeats;
-    // For looped clips, derive offset from loop phase (offset - loopStart).
-    // For non-looped/session clips, use midiOffset directly.
-    double effectiveOffset = clip->midiOffset;
-    if (clip->loopEnabled && clip->loopLengthBeats > 0.0) {
-        double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-        double phase = clip->offset - clip->loopStart;
-        effectiveOffset = phase * (bpm / 60.0);
-    }
-    double visibleStart = effectiveOffset;  // Where the clip's "view window" starts
+    // For non-looped clips, midiOffset shifts the visible window
+    double effectiveOffset = (clip->loopEnabled) ? 0.0 : clip->midiOffset;
+    double visibleStart = effectiveOffset;
     double visibleEnd = effectiveOffset + contentLengthBeats;
 
     DBG("MIDI SYNC clip " << clipId << ":");
@@ -1247,48 +1243,39 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     DBG("  Visible range: [" << visibleStart << ", " << visibleEnd << ")");
     DBG("  Total notes: " << clip->midiNotes.size());
 
-    // Add notes to TE sequence
+    // Add notes to TE sequence — notes stay at original positions,
+    // TE offset + looping handles phase wrapping natively
     int addedCount = 0;
 
     for (const auto& note : clip->midiNotes) {
         double noteStart = note.startBeat;
+        double noteEnd = noteStart + note.lengthBeats;
+
+        // Skip notes completely outside the visible range
+        if (noteEnd <= visibleStart || noteStart >= visibleEnd)
+            continue;
+
         double adjustedLength = note.lengthBeats;
-        double adjustedStart;
 
-        if (clip->loopEnabled && contentLengthBeats > 0.0 && effectiveOffset != 0.0) {
-            // Looped with phase offset: wrap note position within the loop
-            adjustedStart = wrapPhase(noteStart - effectiveOffset, contentLengthBeats);
-            // Truncate note at loop boundary to prevent stuck notes
-            if (adjustedStart + adjustedLength > contentLengthBeats)
-                adjustedLength = contentLengthBeats - adjustedStart;
-        } else {
-            // Non-looped or no offset: linear positioning
-            double noteEnd = noteStart + note.lengthBeats;
+        // Truncate notes at content boundary to prevent stuck notes
+        if (noteStart >= contentLengthBeats)
+            continue;
+        if (noteEnd > contentLengthBeats)
+            adjustedLength = contentLengthBeats - noteStart;
 
-            // Skip notes completely outside the visible range
-            if (noteEnd <= visibleStart || noteStart >= visibleEnd)
-                continue;
+        // For non-looped clips with midiOffset, shift note positions
+        double adjustedStart = noteStart - effectiveOffset;
 
-            // Truncate notes at content boundary
-            if (noteStart >= contentLengthBeats)
-                continue;
-            if (noteStart + adjustedLength > contentLengthBeats)
-                adjustedLength = contentLengthBeats - noteStart;
-
-            adjustedStart = noteStart - effectiveOffset;
-
-            // Truncate note if it starts before the visible range
-            if (adjustedStart < 0.0) {
-                adjustedLength = noteEnd - visibleStart;
-                adjustedStart = 0.0;
-            }
-
-            // Truncate note if it extends past the content boundary
-            if (adjustedStart + adjustedLength > contentLengthBeats)
-                adjustedLength = contentLengthBeats - adjustedStart;
+        // Truncate note if it starts before the visible range
+        if (adjustedStart < 0.0) {
+            adjustedLength = noteEnd - visibleStart;
+            adjustedStart = 0.0;
         }
 
-        // Add note to Tracktion (all positions are now non-negative)
+        // Truncate note if it extends past the content boundary
+        if (adjustedStart + adjustedLength > contentLengthBeats)
+            adjustedLength = contentLengthBeats - adjustedStart;
+
         if (adjustedLength > 0.0) {
             sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(adjustedStart),
                              te::BeatDuration::fromBeats(adjustedLength), note.velocity, 0,

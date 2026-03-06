@@ -540,16 +540,21 @@ void ClipInspector::initClipPropertiesSection() {
         if (!clip)
             return;
 
-        double bpm = 120.0;
-        if (timelineController_) {
-            bpm = timelineController_->getState().tempo.bpm;
+        double newPhaseBeats = std::max(0.0, clipLoopPhaseValue_->getValue());
+        if (clip->type == magda::ClipType::MIDI) {
+            // MIDI phase lives in midiOffset (beats)
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newPhaseBeats));
+        } else {
+            // Audio phase: convert beats to seconds and set offset
+            double bpm = 120.0;
+            if (timelineController_)
+                bpm = timelineController_->getState().tempo.bpm;
+            double newPhaseSeconds = magda::TimelineUtils::beatsToSeconds(newPhaseBeats, bpm);
+            double newOffset = clip->loopStart + newPhaseSeconds;
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newOffset));
         }
-        double newPhaseBeats = clipLoopPhaseValue_->getValue();
-        double newPhaseSeconds = magda::TimelineUtils::beatsToSeconds(newPhaseBeats, bpm);
-        newPhaseSeconds = std::max(0.0, newPhaseSeconds);
-        double newOffset = clip->loopStart + newPhaseSeconds;
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newOffset));
     };
     clipPropsContainer_.addChildComponent(*clipLoopPhaseValue_);
 }
