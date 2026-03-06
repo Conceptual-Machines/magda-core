@@ -131,8 +131,9 @@ class ClipOperations {
 
         clip.startTime = newStartTime;
         clip.length = newLength;
-        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
+        if (bpm > 0.0)
             clip.startBeats = newStartTime * bpm / 60.0;
+        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.lengthBeats = newLength * bpm / 60.0;
         }
     }
@@ -185,8 +186,9 @@ class ClipOperations {
         clip.startTime = juce::jmax(0.0, clip.startTime + timelineDelta);
         clip.length = juce::jmax(MIN_CLIP_LENGTH, clip.length - timelineDelta);
 
-        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
+        if (bpm > 0.0)
             clip.startBeats = clip.startTime * bpm / 60.0;
+        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.lengthBeats = clip.length * bpm / 60.0;
         }
     }

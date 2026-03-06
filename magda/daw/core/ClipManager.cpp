@@ -47,6 +47,11 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
 
     // Add to appropriate array based on view
     if (view == ClipView::Arrangement) {
+        // Set beat position for tempo-independent placement
+        double bpm = projectBPM > 0.0 ? projectBPM
+                                      : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+        if (bpm > 0.0)
+            clip.startBeats = startTime * bpm / 60.0;
         arrangementClips_.push_back(clip);
         resolveOverlaps(clip.id);
     } else {
@@ -230,9 +235,8 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
     // Add to same array as original
     if (newClip.view == ClipView::Arrangement) {
         newClip.startTime = startTime;
-        if (newClip.isBeatsAuthoritative() && tempo > 0.0) {
+        if (tempo > 0.0)
             newClip.startBeats = startTime * tempo / 60.0;
-        }
         arrangementClips_.push_back(newClip);
         resolveOverlaps(newClip.id);
     } else {
@@ -265,9 +269,8 @@ void ClipManager::resetLoopedClipLength(ClipInfo& clip) {
 void ClipManager::moveClip(ClipId clipId, double newStartTime, double tempo) {
     if (auto* clip = getClip(clipId)) {
         ClipOperations::moveContainer(*clip, newStartTime);
-        if (clip->isBeatsAuthoritative() && tempo > 0.0) {
+        if (tempo > 0.0)
             clip->startBeats = clip->startTime * tempo / 60.0;
-        }
         // Notes maintain their relative position within the clip (startBeat unchanged)
         // so they move with the clip on the timeline
         resolveOverlaps(clipId);
@@ -372,12 +375,11 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     clip->name = clip->name + " L";
 
     // Update beat fields for both halves
+    if (tempo > 0.0)
+        rightClip.startBeats = splitTime * tempo / 60.0;
     if (clip->isBeatsAuthoritative() && tempo > 0.0) {
         // Left clip: lengthBeats changes, startBeats stays the same
         clip->lengthBeats = leftLength * tempo / 60.0;
-
-        // Right clip: new start and length in beats
-        rightClip.startBeats = splitTime * tempo / 60.0;
         rightClip.lengthBeats = rightLength * tempo / 60.0;
     }
 
@@ -455,8 +457,9 @@ void ClipManager::trimClip(ClipId clipId, double newStartTime, double newLength,
     if (auto* clip = getClip(clipId)) {
         clip->startTime = newStartTime;
         clip->length = newLength;
-        if (clip->isBeatsAuthoritative() && tempo > 0.0) {
+        if (tempo > 0.0)
             clip->startBeats = newStartTime * tempo / 60.0;
+        if (clip->isBeatsAuthoritative() && tempo > 0.0) {
             clip->lengthBeats = newLength * tempo / 60.0;
         }
         notifyClipPropertyChanged(clipId);
@@ -955,8 +958,9 @@ void ClipManager::stretchAudioLeft(ClipId clipId, double newLength, double oldLe
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
             ClipOperations::stretchAudioFromLeft(*clip, newLength, oldLength, originalSpeedRatio);
-            if (clip->isBeatsAuthoritative() && bpm > 0.0) {
+            if (bpm > 0.0)
                 clip->startBeats = clip->startTime * bpm / 60.0;
+            if (clip->isBeatsAuthoritative() && bpm > 0.0) {
                 clip->lengthBeats = clip->length * bpm / 60.0;
             }
             notifyClipPropertyChanged(clipId);

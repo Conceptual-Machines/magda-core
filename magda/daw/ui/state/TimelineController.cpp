@@ -793,36 +793,39 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         // First pass: update all seconds from beats
         std::vector<ClipId> updatedClipIds;
         for (const auto& clip : allClips) {
-            if (clip.type == ClipType::MIDI || (clip.autoTempo && clip.type == ClipType::Audio)) {
-                auto* mutableClip = clipManager.getClip(clip.id);
-                if (!mutableClip) {
-                    continue;
-                }
+            if (clip.view != ClipView::Arrangement)
+                continue;
 
-                // Migration: populate beat values if not set
-                if (mutableClip->startBeats < 0) {
-                    mutableClip->startBeats =
-                        magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
-                }
+            auto* mutableClip = clipManager.getClip(clip.id);
+            if (!mutableClip)
+                continue;
+
+            // Migration: populate startBeats if not set (default 0 with non-zero startTime)
+            if (mutableClip->startBeats <= 0.0 && mutableClip->startTime > 0.0) {
+                mutableClip->startBeats =
+                    magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
+            }
+
+            // All arrangement clips: update startTime from beats
+            mutableClip->startTime =
+                magda::TimelineUtils::beatsToSeconds(mutableClip->startBeats, newBpm);
+
+            // Beat-authoritative clips (MIDI, autoTempo audio): also update length
+            if (mutableClip->isBeatsAuthoritative()) {
                 if (mutableClip->lengthBeats <= 0.0) {
                     mutableClip->lengthBeats =
                         magda::TimelineUtils::secondsToBeats(clip.length, oldBpm);
                 }
-
-                // Update derived seconds
-                mutableClip->startTime =
-                    magda::TimelineUtils::beatsToSeconds(mutableClip->startBeats, newBpm);
                 mutableClip->length =
                     magda::TimelineUtils::beatsToSeconds(mutableClip->lengthBeats, newBpm);
 
-                // Keep loopLength in sync for MIDI clips
                 if (mutableClip->type == ClipType::MIDI && mutableClip->loopLengthBeats > 0.0) {
                     mutableClip->loopLength =
                         magda::TimelineUtils::beatsToSeconds(mutableClip->loopLengthBeats, newBpm);
                 }
-
-                updatedClipIds.push_back(clip.id);
             }
+
+            updatedClipIds.push_back(clip.id);
         }
 
         // Second pass: notify so AudioBridge re-syncs TE clip positions
