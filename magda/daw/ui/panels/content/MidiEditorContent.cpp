@@ -140,8 +140,6 @@ void MidiEditorContent::performAnchorPointZoom(double newZoom, double anchorTime
         updateGridResolution();
         updateGridSize();
         updateTimeRuler();
-        // Note: do NOT push auto grid display to shared timeline state —
-        // the MIDI editor has its own independent zoom/grid.
 
         // Adjust scroll to keep anchor position under mouse
         int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;
@@ -166,8 +164,6 @@ void MidiEditorContent::performWheelZoom(double zoomFactor, int mouseXInViewport
         updateGridResolution();
         updateGridSize();
         updateTimeRuler();
-        // Note: do NOT push auto grid display to shared timeline state —
-        // the MIDI editor has its own independent zoom/grid.
 
         // Adjust scroll position to keep anchor point under mouse
         int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;
@@ -352,10 +348,11 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
         }
     }
 
-    // Tempo, timeline, or zoom changes — update ruler and grid
+    // Tempo or timeline length changes — update ruler and grid
+    // Note: do NOT respond to arrangement Zoom changes here;
+    // the MIDI editor has its own independent zoom.
     if (magda::hasFlag(changes, magda::ChangeFlags::Tempo) ||
-        magda::hasFlag(changes, magda::ChangeFlags::Timeline) ||
-        magda::hasFlag(changes, magda::ChangeFlags::Zoom)) {
+        magda::hasFlag(changes, magda::ChangeFlags::Timeline)) {
         updateTimeRuler();
         updateGridSize();
         repaint();

@@ -437,7 +437,10 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
         trackContentPanel->setVerticalZoom(verticalZoom);
 
         timelineViewport->setViewPosition(state.zoom.scrollX, 0);
-        trackContentViewport->setViewPosition(state.zoom.scrollX, state.zoom.scrollY);
+        // Preserve current vertical scroll — state.zoom.scrollY may be stale
+        // since vertical scrolling doesn't always dispatch to the controller
+        int currentScrollY = trackContentViewport->getViewPositionY();
+        trackContentViewport->setViewPosition(state.zoom.scrollX, currentScrollY);
 
         updateContentSizes();
         updateHorizontalZoomScrollBar();
