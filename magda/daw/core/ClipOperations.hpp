@@ -94,6 +94,21 @@ class ClipOperations {
                     clip.offset = clip.loopStart + wrapPhase(relOffset + phaseDelta, sourceLength);
                 }
             }
+        } else if (clip.type == ClipType::MIDI) {
+            if (clip.loopEnabled) {
+                // Looped MIDI: adjust offset (phase) same as audio — loopStart stays fixed.
+                double sourceLength =
+                    clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
+                if (sourceLength > 0.0) {
+                    double phaseDelta = actualDelta * clip.speedRatio;
+                    double relOffset = clip.offset - clip.loopStart;
+                    clip.offset = clip.loopStart + wrapPhase(relOffset + phaseDelta, sourceLength);
+                }
+            } else {
+                // Non-looped MIDI: advance midiOffset linearly
+                double beatsPerSecond = bpm / 60.0;
+                clip.midiOffset += actualDelta * beatsPerSecond;
+            }
         }
 
         clip.startTime = newStartTime;

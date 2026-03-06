@@ -155,13 +155,25 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     // Draw content offset marker (yellow vertical line)
     if (clipIds_.size() <= 1 && clipId_ != INVALID_CLIP_ID) {
         const auto* offsetClip = ClipManager::getInstance().getClip(clipId_);
-        if (offsetClip && offsetClip->midiOffset > 0.0) {
-            double offsetBeat =
-                relativeMode_ ? offsetClip->midiOffset : (clipStartBeats_ + offsetClip->midiOffset);
-            int offsetX = beatToPixel(offsetBeat);
-            if (offsetX >= 0 && offsetX <= bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::OFFSET_MARKER));
-                g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
+        if (offsetClip) {
+            // For session clips use midiOffset; for looped arrangement clips use loop phase
+            double offsetBeats = 0.0;
+            if (offsetClip->view == ClipView::Session) {
+                offsetBeats = offsetClip->midiOffset;
+            } else if (offsetClip->loopEnabled) {
+                double phase = offsetClip->offset - offsetClip->loopStart;
+                double tempo = 120.0;
+                if (auto* controller = TimelineController::getCurrent())
+                    tempo = controller->getState().tempo.bpm;
+                offsetBeats = phase * (tempo / 60.0);
+            }
+            if (offsetBeats > 0.0) {
+                double offsetBeat = relativeMode_ ? offsetBeats : (clipStartBeats_ + offsetBeats);
+                int offsetX = beatToPixel(offsetBeat);
+                if (offsetX >= 0 && offsetX <= bounds.getRight()) {
+                    g.setColour(DarkTheme::getColour(DarkTheme::OFFSET_MARKER));
+                    g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
+                }
             }
         }
     }

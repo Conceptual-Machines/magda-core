@@ -1228,8 +1228,14 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     double contentLengthBeats = (clip->loopEnabled && clip->loopLengthBeats > 0.0)
                                     ? clip->loopLengthBeats
                                     : clipLengthBeats;
-    // Apply midiOffset in all modes so arrangement clips also respect the offset
+    // For looped clips, derive offset from loop phase (offset - loopStart).
+    // For non-looped/session clips, use midiOffset directly.
     double effectiveOffset = clip->midiOffset;
+    if (clip->loopEnabled && clip->loopLengthBeats > 0.0) {
+        double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double phase = clip->offset - clip->loopStart;
+        effectiveOffset = phase * (bpm / 60.0);
+    }
     double visibleStart = effectiveOffset;  // Where the clip's "view window" starts
     double visibleEnd = effectiveOffset + contentLengthBeats;
 
@@ -1241,37 +1247,45 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     DBG("  Visible range: [" << visibleStart << ", " << visibleEnd << ")");
     DBG("  Total notes: " << clip->midiNotes.size());
 
-    // Only add notes that overlap with the visible range
+    // Add notes to TE sequence
     int addedCount = 0;
 
     for (const auto& note : clip->midiNotes) {
         double noteStart = note.startBeat;
-        double noteEnd = noteStart + note.lengthBeats;
-
-        // Skip notes completely outside the visible range
-        if (noteEnd <= visibleStart || noteStart >= visibleEnd) {
-            continue;
-        }
-
-        // Truncate notes at content boundary to prevent stuck notes
         double adjustedLength = note.lengthBeats;
-        if (noteStart >= contentLengthBeats)
-            continue;
-        if (noteEnd > contentLengthBeats)
-            adjustedLength = contentLengthBeats - noteStart;
+        double adjustedStart;
 
-        // Calculate position relative to clip start (subtract midiOffset for session clips only)
-        double adjustedStart = noteStart - effectiveOffset;
+        if (clip->loopEnabled && contentLengthBeats > 0.0 && effectiveOffset != 0.0) {
+            // Looped with phase offset: wrap note position within the loop
+            adjustedStart = wrapPhase(noteStart - effectiveOffset, contentLengthBeats);
+            // Truncate note at loop boundary to prevent stuck notes
+            if (adjustedStart + adjustedLength > contentLengthBeats)
+                adjustedLength = contentLengthBeats - adjustedStart;
+        } else {
+            // Non-looped or no offset: linear positioning
+            double noteEnd = noteStart + note.lengthBeats;
 
-        // Truncate note if it starts before the visible range
-        if (adjustedStart < 0.0) {
-            adjustedLength = noteEnd - visibleStart;
-            adjustedStart = 0.0;
-        }
+            // Skip notes completely outside the visible range
+            if (noteEnd <= visibleStart || noteStart >= visibleEnd)
+                continue;
 
-        // Truncate note if it extends past the content boundary
-        if (adjustedStart + adjustedLength > contentLengthBeats) {
-            adjustedLength = contentLengthBeats - adjustedStart;
+            // Truncate notes at content boundary
+            if (noteStart >= contentLengthBeats)
+                continue;
+            if (noteStart + adjustedLength > contentLengthBeats)
+                adjustedLength = contentLengthBeats - noteStart;
+
+            adjustedStart = noteStart - effectiveOffset;
+
+            // Truncate note if it starts before the visible range
+            if (adjustedStart < 0.0) {
+                adjustedLength = noteEnd - visibleStart;
+                adjustedStart = 0.0;
+            }
+
+            // Truncate note if it extends past the content boundary
+            if (adjustedStart + adjustedLength > contentLengthBeats)
+                adjustedLength = contentLengthBeats - adjustedStart;
         }
 
         // Add note to Tracktion (all positions are now non-negative)

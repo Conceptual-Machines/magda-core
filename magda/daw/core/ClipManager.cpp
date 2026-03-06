@@ -561,11 +561,11 @@ void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
 
 void ClipManager::setOffset(ClipId clipId, double offset) {
     if (auto* clip = getClip(clipId)) {
+        clip->offset = juce::jmax(0.0, offset);
         if (clip->type == ClipType::Audio) {
-            clip->offset = juce::jmax(0.0, offset);
             sanitizeAudioClip(*clip);
-            notifyClipPropertyChanged(clipId);
         }
+        notifyClipPropertyChanged(clipId);
     }
 }
 

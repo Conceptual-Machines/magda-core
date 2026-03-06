@@ -226,8 +226,7 @@ void MidiEditorContent::updateTimeRuler() {
 
     // Set loop region markers
     if (clip) {
-        timeRuler_->setLoopRegion(clip->offset - clip->loopStart, clip->loopLength,
-                                  clip->loopEnabled);
+        timeRuler_->setLoopRegion(0.0, clip->loopLength, clip->loopEnabled);
     } else {
         timeRuler_->setLoopRegion(0.0, 0.0, false);
     }

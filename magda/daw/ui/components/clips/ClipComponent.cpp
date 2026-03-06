@@ -436,8 +436,6 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     double beatsPerSecond = tempo / 60.0;
     double displayLength = (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip.length;
     double clipLengthInBeats = displayLength * beatsPerSecond;
-    double midiOffset = clip.midiOffset;
-
     // Draw MIDI notes if we have them
     if (!clip.midiNotes.empty() && noteArea.getHeight() > 5) {
         g.setColour(clip.colour.brighter(0.3f));
@@ -452,6 +450,30 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
             clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
         double loopLengthBeats =
             midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
+
+        // Compute display midiOffset for note positioning.
+        // For looped clips, derive from the loop phase (offset - loopStart).
+        // During left-resize drag, compute from snapshot + drag delta for smooth preview.
+        double midiOffset = 0.0;
+        if (clip.loopEnabled && midiSrcLength > 0.0) {
+            double phase;
+            if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
+                double expandDelta = previewLength_ - dragStartLength_;
+                double phaseDelta = expandDelta * clip.speedRatio;
+                double relOffset = dragStartClipSnapshot_.offset - dragStartClipSnapshot_.loopStart;
+                phase = wrapPhase(relOffset - phaseDelta, midiSrcLength);
+            } else {
+                phase = clip.offset - clip.loopStart;
+            }
+            midiOffset = phase * beatsPerSecond;
+        } else if (!clip.loopEnabled) {
+            if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
+                double expandDelta = previewLength_ - dragStartLength_;
+                midiOffset = dragStartClipSnapshot_.midiOffset - expandDelta * beatsPerSecond;
+            } else {
+                midiOffset = clip.midiOffset;
+            }
+        }
         if (clip.loopEnabled && loopLengthBeats > 0.0) {
             // Looping: draw notes repeating across the full clip length
             double loopStart = clip.loopStart * beatsPerSecond;
@@ -460,9 +482,11 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
 
             for (int rep = 0; rep < numRepetitions; ++rep) {
                 for (const auto& note : clip.midiNotes) {
-                    double noteBeat = note.startBeat - midiOffset;
+                    // Wrap note position within the loop region so notes
+                    // shifted past a boundary reappear at the other end.
+                    double noteBeat = loopStart + wrapPhase(note.startBeat - midiOffset - loopStart,
+                                                            loopLengthBeats);
 
-                    // Only draw notes within the loop region
                     if (noteBeat < loopStart || noteBeat >= loopEnd)
                         continue;
 
@@ -1241,29 +1265,20 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             previewStartTime_ = finalStartTime;
             previewLength_ = finalLength;
 
-            // Throttled update so waveform editor + TE stay in sync during drag
+            // Throttled update for TE sync during drag.
+            // For audio clips, notify listeners so the waveform editor stays in sync.
+            // For MIDI clips, skip notification to avoid piano roll flicker —
+            // the thumbnail uses preview state and the piano roll uses clipDragPreview.
             if (resizeThrottle_.check()) {
                 auto& cm = magda::ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    DBG("[RESIZE-LEFT-DRAG] BEFORE resizeFromLeft: startTime="
-                        << mutableClip->startTime << " length=" << mutableClip->length << " offset="
-                        << mutableClip->offset << " loopStart=" << mutableClip->loopStart
-                        << " loopLength=" << mutableClip->loopLength
-                        << " loopEnabled=" << (int)mutableClip->loopEnabled
-                        << " speedRatio=" << mutableClip->speedRatio
-                        << " getTeOffset()=" << mutableClip->getTeOffset(mutableClip->loopEnabled));
-                    ClipOperations::resizeContainerFromLeft(*mutableClip, finalLength);
-                    // Sync loopStart so getTeOffset() gives TE the correct value
+                    ClipOperations::resizeContainerFromLeft(*mutableClip, finalLength, tempoBPM);
                     if (!mutableClip->loopEnabled && mutableClip->type == magda::ClipType::Audio) {
                         mutableClip->loopStart = mutableClip->offset;
                     }
-                    DBG("[RESIZE-LEFT-DRAG] AFTER: startTime="
-                        << mutableClip->startTime << " length=" << mutableClip->length << " offset="
-                        << mutableClip->offset << " loopStart=" << mutableClip->loopStart
-                        << " loopLength=" << mutableClip->loopLength
-                        << " getTeOffset()=" << mutableClip->getTeOffset(mutableClip->loopEnabled)
-                        << " finalLength=" << finalLength << " finalStartTime=" << finalStartTime);
-                    cm.forceNotifyClipPropertyChanged(clipId_);
+                    if (mutableClip->type != magda::ClipType::MIDI) {
+                        cm.forceNotifyClipPropertyChanged(clipId_);
+                    }
                 }
             }
 
@@ -1646,6 +1661,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         c->length = dragStartLength_;
                         c->offset = dragStartClipSnapshot_.offset;
                         c->loopStart = dragStartClipSnapshot_.loopStart;
+                        c->midiOffset = dragStartClipSnapshot_.midiOffset;
                     }
                 }
 

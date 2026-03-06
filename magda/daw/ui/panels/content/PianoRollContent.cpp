@@ -713,9 +713,8 @@ void PianoRollContent::updateGridSize() {
             tempo = controller->getState().tempo.bpm;
         }
         double beatsPerSecond = tempo / 60.0;
-        double loopPhaseBeats = (clip->offset - clip->loopStart) * beatsPerSecond;
         double sourceLengthBeats = clip->loopLength * beatsPerSecond;
-        gridComponent_->setLoopRegion(loopPhaseBeats, sourceLengthBeats, clip->loopEnabled);
+        gridComponent_->setLoopRegion(0.0, sourceLengthBeats, clip->loopEnabled);
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);
     }
