@@ -265,7 +265,8 @@ struct ClipInfo {
         return offset - loopStart;
     }
 
-    /// TE offset in stretched time.
+    /// TE offset in timeline seconds (source / speedRatio).
+    /// TE expects offset in the same time domain as clip start (timeline seconds).
     /// Looped: phase within the loop region (offset - loopStart).
     /// Non-looped: raw trim point in the source file.
     /// For autoTempo clips, offsetBeats is authoritative and converted to
@@ -278,18 +279,18 @@ struct ClipInfo {
             return offsetBeats * 60.0 / projectBPM;
         }
         if (looped)
-            return (offset - loopStart) * speedRatio;
-        return offset * speedRatio;
+            return sourceToTimeline(offset - loopStart);
+        return sourceToTimeline(offset);
     }
 
-    /// TE loop start in stretched time
+    /// TE loop start in timeline seconds (source / speedRatio)
     double getTeLoopStart() const {
-        return loopStart * speedRatio;
+        return sourceToTimeline(loopStart);
     }
 
-    /// TE loop end in stretched time
+    /// TE loop end in timeline seconds (source / speedRatio)
     double getTeLoopEnd() const {
-        return (loopStart + getSourceLength()) * speedRatio;
+        return sourceToTimeline(loopStart + getSourceLength());
     }
 
     /// Sync loopStart to match offset (keeps loop region anchored to playback start)

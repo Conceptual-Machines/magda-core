@@ -237,6 +237,10 @@ class ClipOperations {
 
         clip.length = newLength;
         clip.speedRatio = newSpeedRatio;
+
+        // Keep loopLength in sync for non-looped clips
+        if (!clip.loopEnabled)
+            clip.loopLength = clip.timelineToSource(clip.length);
     }
 
     /**
@@ -262,6 +266,10 @@ class ClipOperations {
         clip.length = newLength;
         clip.startTime = rightEdge - newLength;
         clip.speedRatio = newSpeedRatio;
+
+        // Keep loopLength in sync for non-looped clips
+        if (!clip.loopEnabled)
+            clip.loopLength = clip.timelineToSource(clip.length);
     }
 
     // ========================================================================

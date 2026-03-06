@@ -686,8 +686,16 @@ void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
 void ClipManager::setSpeedRatio(ClipId clipId, double speedRatio) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
+            double oldSourceExtent = clip->timelineToSource(clip->length);
             clip->speedRatio = juce::jlimit(ClipOperations::MIN_SPEED_RATIO,
                                             ClipOperations::MAX_SPEED_RATIO, speedRatio);
+            double newSourceExtent = clip->timelineToSource(clip->length);
+
+            // Keep loopLength in sync when the loop covers the full source extent
+            // (non-looped clips, or looped clips where the loop wasn't user-shortened)
+            if (!clip->loopEnabled || std::abs(clip->loopLength - oldSourceExtent) < 0.001) {
+                clip->loopLength = newSourceExtent;
+            }
             notifyClipPropertyChanged(clipId);
         }
     }
