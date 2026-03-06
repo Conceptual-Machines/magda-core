@@ -451,14 +451,18 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
         double loopLengthBeats =
             midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
 
-        // During left-resize drag of looped clips, compute display midiOffset from
-        // snapshot + drag delta for smooth preview. Non-looped clips don't adjust midiOffset.
+        // During left-resize drag, compute display midiOffset from snapshot + drag delta
+        // for smooth preview. Outside drag, use the committed value directly.
         double midiOffset = clip.midiOffset;
-        if (isDragging_ && dragMode_ == DragMode::ResizeLeft && clip.loopEnabled &&
-            loopLengthBeats > 0.0) {
+        if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
             double expandDelta = previewLength_ - dragStartLength_;
             double deltaBeat = expandDelta * beatsPerSecond;
-            midiOffset = wrapPhase(dragStartClipSnapshot_.midiOffset - deltaBeat, loopLengthBeats);
+            if (clip.loopEnabled && loopLengthBeats > 0.0) {
+                midiOffset =
+                    wrapPhase(dragStartClipSnapshot_.midiOffset - deltaBeat, loopLengthBeats);
+            } else {
+                midiOffset = dragStartClipSnapshot_.midiOffset - deltaBeat;
+            }
         }
         if (clip.loopEnabled && loopLengthBeats > 0.0) {
             // Looping: draw notes repeating across the full clip length

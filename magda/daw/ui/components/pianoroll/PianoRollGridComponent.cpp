@@ -840,7 +840,6 @@ void PianoRollGridComponent::setLeftPadding(int padding) {
 void PianoRollGridComponent::setClipStartBeats(double startBeats) {
     if (clipStartBeats_ != startBeats) {
         clipStartBeats_ = startBeats;
-        updateNoteComponentBounds();
         repaint();
     }
 }
@@ -881,38 +880,36 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
     if (!note)
         return;
 
+    // midiOffset shifts note display for non-looped clips (startTime compensation)
+    // and session clips. For looped arrangement clips, notes stay at fixed loop positions.
+    ClipId clipId = note->getSourceClipId();
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    double noteOffset = 0.0;
+    if (clip) {
+        bool isLoopedArrangement = clip->loopEnabled && clip->view != ClipView::Session;
+        noteOffset = isLoopedArrangement ? 0.0 : clip->midiOffset;
+    }
+
     double displayBeat;
     if (relativeMode_) {
-        // For multi-clip, offset by the clip's distance from the earliest clip
-        if (clipIds_.size() > 1) {
-            ClipId clipId = note->getSourceClipId();
-            const auto* clip = ClipManager::getInstance().getClip(clipId);
-            if (clip) {
-                double tempo = 120.0;
-                if (auto* controller = TimelineController::getCurrent()) {
-                    tempo = controller->getState().tempo.bpm;
-                }
-                double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
-                displayBeat = clipOffsetBeats + beat;
-            } else {
-                displayBeat = beat;
+        if (clipIds_.size() > 1 && clip) {
+            double tempo = 120.0;
+            if (auto* controller = TimelineController::getCurrent()) {
+                tempo = controller->getState().tempo.bpm;
             }
+            double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
+            displayBeat = clipOffsetBeats + beat - noteOffset;
         } else {
-            displayBeat = beat;
+            displayBeat = beat - noteOffset;
         }
     } else {
-        // In ABS mode, use the note's own clip start position (not the grid-wide clipStartBeats_)
-        ClipId clipId = note->getSourceClipId();
-        const auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip) {
             double tempo = 120.0;
             if (auto* controller = TimelineController::getCurrent()) {
                 tempo = controller->getState().tempo.bpm;
             }
             double clipStartBeats = clip->startTime * (tempo / 60.0);
-            double offset =
-                (clip->view == ClipView::Session || clip->loopEnabled) ? clip->midiOffset : 0.0;
-            displayBeat = clipStartBeats + beat - offset;
+            displayBeat = clipStartBeats + beat - noteOffset;
         } else {
             displayBeat = clipStartBeats_ + beat;
         }
@@ -1505,30 +1502,28 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
 
         // Calculate display position
         double displayBeat;
+        // midiOffset shifts display for non-looped/session clips only
+        bool isLoopedArrangement = clip->loopEnabled && clip->view != ClipView::Session;
+        double noteOffset = isLoopedArrangement ? 0.0 : clip->midiOffset;
+
         if (relativeMode_) {
-            // Relative: note at its clip-relative position
-            // For multi-clip, offset by the clip's distance from the earliest clip
             if (clipIds_.size() > 1) {
                 double tempo = 120.0;
                 if (auto* controller = TimelineController::getCurrent()) {
                     tempo = controller->getState().tempo.bpm;
                 }
                 double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
-                displayBeat = clipOffsetBeats + note.startBeat;
+                displayBeat = clipOffsetBeats + note.startBeat - noteOffset;
             } else {
-                displayBeat = note.startBeat;
+                displayBeat = note.startBeat - noteOffset;
             }
         } else {
-            // Absolute: convert to timeline position
-            // Get tempo from TimelineController
             double tempo = 120.0;
             if (auto* controller = TimelineController::getCurrent()) {
                 tempo = controller->getState().tempo.bpm;
             }
             double clipStartBeats = clip->startTime * (tempo / 60.0);
-            double offset =
-                (clip->view == ClipView::Session || clip->loopEnabled) ? clip->midiOffset : 0.0;
-            displayBeat = clipStartBeats + note.startBeat - offset;
+            displayBeat = clipStartBeats + note.startBeat - noteOffset;
         }
 
         int x = beatToPixel(displayBeat);
