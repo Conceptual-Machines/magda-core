@@ -1230,8 +1230,8 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     double contentLengthBeats = (clip->loopEnabled && clip->loopLengthBeats > 0.0)
                                     ? clip->loopLengthBeats
                                     : clipLengthBeats;
-    // For non-looped clips, midiOffset shifts the visible window
-    double effectiveOffset = (clip->loopEnabled) ? 0.0 : clip->midiOffset;
+    // For non-looped clips, midiTrimOffset shifts the visible window (left-resize trim)
+    double effectiveOffset = (clip->loopEnabled) ? 0.0 : clip->midiTrimOffset;
     double visibleStart = effectiveOffset;
     double visibleEnd = effectiveOffset + contentLengthBeats;
 
