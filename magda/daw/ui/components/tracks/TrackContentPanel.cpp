@@ -1460,9 +1460,23 @@ void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
     }
 }
 
-void TrackContentPanel::clipSelectionChanged(ClipId /*clipId*/) {
+void TrackContentPanel::clipSelectionChanged(ClipId clipId) {
     // Grab keyboard focus to ensure shortcuts work after selection changes
     grabKeyboardFocus();
+
+    // Derive selected track from clip so edit cursor draws on the right lane
+    if (clipId != INVALID_CLIP_ID) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip) {
+            selectedTrackIndex = -1;
+            for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+                if (visibleTrackIds_[i] == clip->trackId) {
+                    selectedTrackIndex = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
+    }
 
     // Repaint to update selection visuals
     repaint();
