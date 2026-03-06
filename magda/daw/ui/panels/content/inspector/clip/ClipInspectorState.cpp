@@ -247,7 +247,13 @@ void ClipInspector::updateFromSelectedClip() {
             clipLoopPhaseLabel_.setVisible(true);
             clipLoopPhaseValue_->setVisible(true);
             clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
-            clipLoopPhaseValue_->setValue(clip->midiOffset, juce::dontSendNotification);
+            if (clip->type == magda::ClipType::MIDI) {
+                clipLoopPhaseValue_->setValue(clip->midiOffset, juce::dontSendNotification);
+            } else {
+                double phaseSeconds = clip->offset - clip->loopStart;
+                double phaseBeats = magda::TimelineUtils::secondsToBeats(phaseSeconds, bpm);
+                clipLoopPhaseValue_->setValue(phaseBeats, juce::dontSendNotification);
+            }
             clipLoopPhaseValue_->setEnabled(true);
             clipLoopPhaseValue_->setAlpha(1.0f);
             clipLoopPhaseLabel_.setAlpha(1.0f);

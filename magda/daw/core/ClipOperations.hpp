@@ -96,12 +96,11 @@ class ClipOperations {
             }
         } else if (clip.type == ClipType::MIDI) {
             // MIDI phase lives in midiOffset (beats). Do NOT touch clip.offset.
-            double beatsPerSecond = bpm / 60.0;
-            double deltaBeat = actualDelta * beatsPerSecond;
+            // Only looped clips need phase adjustment — non-looped just extends the boundary.
             if (clip.loopEnabled && clip.loopLengthBeats > 0.0) {
+                double beatsPerSecond = bpm / 60.0;
+                double deltaBeat = actualDelta * beatsPerSecond;
                 clip.midiOffset = wrapPhase(clip.midiOffset + deltaBeat, clip.loopLengthBeats);
-            } else {
-                clip.midiOffset += deltaBeat;
             }
         }
 
