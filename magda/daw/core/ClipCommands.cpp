@@ -8,6 +8,7 @@
 #include "../audio/MagdaSamplerPlugin.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
 #include "../project/ProjectManager.hpp"
+#include "ClipOperations.hpp"
 #include "Config.hpp"
 #include "TrackManager.hpp"
 
@@ -1680,6 +1681,38 @@ void BounceToNewTrackCommand::undo() {
     }
 
     success_ = false;
+}
+
+// ============================================================================
+// FlattenMidiClipCommand
+// ============================================================================
+
+FlattenMidiClipCommand::FlattenMidiClipCommand(ClipId clipId) : clipId_(clipId) {}
+
+void FlattenMidiClipCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    beforeSnapshot_ = *clip;
+    ClipOperations::flattenMidiClip(*clip);
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void FlattenMidiClipCommand::undo() {
+    if (!executed_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip)
+        return;
+
+    *clip = beforeSnapshot_;
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = false;
 }
 
 // ============================================================================

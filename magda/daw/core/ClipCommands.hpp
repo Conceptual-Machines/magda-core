@@ -577,6 +577,30 @@ class BounceToNewTrackCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for flattening a MIDI clip (expand loops/offsets into a flat note list)
+ *
+ * Looped: expands loop cycles across the clip length, applies midiOffset phase.
+ * Non-looped: applies midiTrimOffset, clips notes to boundaries.
+ * Result is a non-looped clip with all offsets reset to 0.
+ */
+class FlattenMidiClipCommand : public UndoableCommand {
+  public:
+    explicit FlattenMidiClipCommand(ClipId clipId);
+
+    juce::String getDescription() const override {
+        return "Flatten MIDI Clip";
+    }
+
+    void execute() override;
+    void undo() override;
+
+  private:
+    ClipId clipId_;
+    ClipInfo beforeSnapshot_;
+    bool executed_ = false;
+};
+
+/**
  * @brief Post-hoc command for undoing a session-to-arrangement recording pass.
  *
  * The SessionRecorder creates arrangement clips during recording. When it
