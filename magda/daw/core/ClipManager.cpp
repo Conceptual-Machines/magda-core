@@ -338,7 +338,9 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
         // In autoTempo/warp mode, speedRatio is 1.0 but actual stretch is projectBPM/sourceBPM.
         // Use the tempo ratio to convert timeline seconds to source seconds.
         if (clip->isBeatsAuthoritative() && clip->sourceBPM > 0.0 && tempo > 0.0) {
-            rightClip.offset += leftLength * tempo / clip->sourceBPM;
+            double deltaBeats = leftLength * tempo / 60.0;
+            rightClip.offsetBeats += deltaBeats;
+            rightClip.offset = rightClip.offsetBeats * 60.0 / clip->sourceBPM;
         } else {
             rightClip.offset += leftLength * clip->speedRatio;
         }
@@ -405,8 +407,13 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
             rightClip.loopLengthBeats = rightLenBeats;
             if (rightClip.type == ClipType::Audio) {
                 double srcBpm = rightClip.sourceBPM > 0.0 ? rightClip.sourceBPM : tempo;
-                rightClip.loopStart = rightClip.offset;
-                rightClip.loopStartBeats = rightClip.loopStart * srcBpm / 60.0;
+                if (rightClip.autoTempo && rightClip.sourceBPM > 0.0) {
+                    rightClip.loopStartBeats = rightClip.offsetBeats;
+                    rightClip.loopStart = rightClip.loopStartBeats * 60.0 / rightClip.sourceBPM;
+                } else {
+                    rightClip.loopStart = rightClip.offset;
+                    rightClip.loopStartBeats = rightClip.loopStart * srcBpm / 60.0;
+                }
                 rightClip.loopLength = rightClip.loopLengthBeats / srcBpm * 60.0;
             }
         }
@@ -422,11 +429,17 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
         // Right clip: loopStart must match offset so TE's loop range covers the
         // correct source region (otherwise offset falls outside the loop range,
         // causing TE to wrap and produce doubled transients at the split point)
-        rightClip.loopStart = rightClip.offset;
+        if (rightClip.autoTempo && rightClip.sourceBPM > 0.0) {
+            rightClip.loopStartBeats = rightClip.offsetBeats;
+            rightClip.loopStart = rightClip.loopStartBeats * 60.0 / rightClip.sourceBPM;
+        } else {
+            rightClip.loopStart = rightClip.offset;
+        }
         rightClip.loopLength = rightClip.timelineToSource(rightClip.length);
         if (rightClip.isBeatsAuthoritative() && tempo > 0.0) {
             double srcBpm = rightClip.sourceBPM > 0.0 ? rightClip.sourceBPM : tempo;
-            rightClip.loopStartBeats = rightClip.loopStart * srcBpm / 60.0;
+            if (!rightClip.autoTempo)
+                rightClip.loopStartBeats = rightClip.loopStart * srcBpm / 60.0;
             rightClip.loopLengthBeats = rightClip.loopLength * srcBpm / 60.0;
         }
     }
@@ -1491,7 +1504,12 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
             }
             // Sync loop fields for non-looped clips
             if (!trimmed.loopEnabled) {
-                trimmed.loopStart = trimmed.offset;
+                if (trimmed.autoTempo && trimmed.sourceBPM > 0.0) {
+                    trimmed.loopStartBeats = trimmed.offsetBeats;
+                    trimmed.loopStart = trimmed.loopStartBeats * 60.0 / trimmed.sourceBPM;
+                } else {
+                    trimmed.loopStart = trimmed.offset;
+                }
                 trimmed.loopLength = trimmed.timelineToSource(trimmed.length);
             }
         } else if (clip.type == ClipType::MIDI && !clip.midiNotes.empty()) {
