@@ -133,6 +133,7 @@ void MidiEditorContent::performAnchorPointZoom(double newZoom, double anchorTime
 
     if (newPixelsPerBeat != horizontalZoom_) {
         double anchorBeat = anchorTime / secondsPerBeat;
+        int savedScrollY = viewport_->getViewPositionY();
 
         horizontalZoom_ = newPixelsPerBeat;
         setGridPixelsPerBeat(horizontalZoom_);
@@ -146,7 +147,7 @@ void MidiEditorContent::performAnchorPointZoom(double newZoom, double anchorTime
         int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;
         int newScrollX = newAnchorX - anchorScreenX;
         newScrollX = juce::jmax(0, newScrollX);
-        viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
+        viewport_->setViewPosition(newScrollX, savedScrollY);
     }
 }
 
@@ -158,6 +159,8 @@ void MidiEditorContent::performWheelZoom(double zoomFactor, int mouseXInViewport
     newZoom = juce::jlimit(MIN_HORIZONTAL_ZOOM, MAX_HORIZONTAL_ZOOM, newZoom);
 
     if (newZoom != horizontalZoom_) {
+        int savedScrollY = viewport_->getViewPositionY();
+
         horizontalZoom_ = newZoom;
         setGridPixelsPerBeat(horizontalZoom_);
         updateGridResolution();
@@ -170,7 +173,7 @@ void MidiEditorContent::performWheelZoom(double zoomFactor, int mouseXInViewport
         int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;
         int newScrollX = newAnchorX - mouseXInViewport;
         newScrollX = juce::jmax(0, newScrollX);
-        viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
+        viewport_->setViewPosition(newScrollX, savedScrollY);
     }
 }
 
