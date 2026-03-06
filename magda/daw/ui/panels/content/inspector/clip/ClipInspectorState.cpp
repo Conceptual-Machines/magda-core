@@ -200,7 +200,9 @@ void ClipInspector::updateFromSelectedClip() {
             if (clip->type == magda::ClipType::MIDI) {
                 clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
             } else if (clip->type == magda::ClipType::Audio) {
-                double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->offset, bpm);
+                // Use sourceBPM for source-file positions when available
+                double displayBpm = clip->sourceBPM > 0.0 ? clip->sourceBPM : bpm;
+                double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->offset, displayBpm);
                 clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
             }
         }
@@ -221,7 +223,11 @@ void ClipInspector::updateFromSelectedClip() {
             clipLoopStartLabel_.setVisible(true);
             clipLoopStartValue_->setVisible(true);
             clipLoopStartValue_->setBeatsPerBar(beatsPerBar);
-            double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, bpm);
+            // For audio clips, loop start/end are source-file positions — use sourceBPM
+            double loopBpm = (clip->type == magda::ClipType::Audio && clip->sourceBPM > 0.0)
+                                 ? clip->sourceBPM
+                                 : bpm;
+            double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, loopBpm);
             clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
             clipLoopStartValue_->setEnabled(true);
             clipLoopStartValue_->setAlpha(1.0f);
@@ -234,7 +240,8 @@ void ClipInspector::updateFromSelectedClip() {
             } else {
                 double sourceLength =
                     clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
-                loopLengthDisplayBeats = magda::TimelineUtils::secondsToBeats(sourceLength, bpm);
+                loopLengthDisplayBeats =
+                    magda::TimelineUtils::secondsToBeats(sourceLength, loopBpm);
             }
             double loopEndBeats = loopStartBeats + loopLengthDisplayBeats;
             clipLoopEndLabel_.setVisible(true);
@@ -251,7 +258,7 @@ void ClipInspector::updateFromSelectedClip() {
                 clipLoopPhaseValue_->setValue(clip->midiOffset, juce::dontSendNotification);
             } else {
                 double phaseSeconds = clip->offset - clip->loopStart;
-                double phaseBeats = magda::TimelineUtils::secondsToBeats(phaseSeconds, bpm);
+                double phaseBeats = magda::TimelineUtils::secondsToBeats(phaseSeconds, loopBpm);
                 clipLoopPhaseValue_->setValue(phaseBeats, juce::dontSendNotification);
             }
             clipLoopPhaseValue_->setEnabled(true);

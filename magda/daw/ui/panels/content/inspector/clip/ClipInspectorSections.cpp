@@ -370,7 +370,7 @@ void ClipInspector::initClipPropertiesSection() {
                     .withButton("OK")
                     .withButton("Cancel"),
                 [this, clipId, applyAutoTempo](int result) {
-                    if (result == 1 && primaryClipId() == clipId) {
+                    if (result == 0 && primaryClipId() == clipId) {
                         applyAutoTempo(true);
                     }
                 });
@@ -456,9 +456,13 @@ void ClipInspector::initClipPropertiesSection() {
             bpm = timelineController_->getState().tempo.bpm;
         }
         // Preserve current phase when moving loop start
+        // Use sourceBPM for audio source-file positions
+        double loopBpm =
+            (clip->type == magda::ClipType::Audio && clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
         double currentPhase = clip->offset - clip->loopStart;
         double newLoopStartBeats = clipLoopStartValue_->getValue();
-        double newLoopStartSeconds = magda::TimelineUtils::beatsToSeconds(newLoopStartBeats, bpm);
+        double newLoopStartSeconds =
+            magda::TimelineUtils::beatsToSeconds(newLoopStartBeats, loopBpm);
         newLoopStartSeconds = std::max(0.0, newLoopStartSeconds);
         double newOffset = newLoopStartSeconds + currentPhase;
         magda::ClipManager::getInstance().setLoopStart(primaryClipId(), newLoopStartSeconds, bpm);
@@ -489,8 +493,11 @@ void ClipInspector::initClipPropertiesSection() {
         }
 
         // Compute new loop length from loop end - loop start
+        // Use sourceBPM for audio source-file positions
+        double loopBpm =
+            (clip->type == magda::ClipType::Audio && clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
         double newLoopEndBeats = clipLoopEndValue_->getValue();
-        double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, bpm);
+        double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, loopBpm);
         double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
         if (newLoopLengthBeats < 0.25)
             newLoopLengthBeats = 0.25;
@@ -499,8 +506,8 @@ void ClipInspector::initClipPropertiesSection() {
         if (clip->autoTempo && clip->sourceBPM > 0.0) {
             newLoopLengthSeconds = (newLoopLengthBeats * 60.0) / clip->sourceBPM;
         } else {
-            double timelineSeconds = magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, bpm);
-            newLoopLengthSeconds = timelineSeconds * clip->speedRatio;
+            newLoopLengthSeconds =
+                magda::TimelineUtils::beatsToSeconds(newLoopLengthBeats, loopBpm);
         }
 
         if (clip->view == magda::ClipView::Session) {
