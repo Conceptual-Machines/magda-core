@@ -142,6 +142,9 @@ void RackSyncManager::removeRack(RackId rackId) {
         edit_.getRackList().removeRackType(synced.rackType);
     }
 
+    // Clear LFO callbacks before destroying CurveSnapshotHolders
+    clearLFOCustomWaveCallbacks(synced.innerModifiers);
+
     DBG("RackSyncManager: Removed rack " << rackId);
 
     syncedRacks_.erase(it);
@@ -245,6 +248,8 @@ void RackSyncManager::clear() {
 
             macroList.removeMacroParameter(*macroParam);
         }
+        // Clear LFO callbacks before destroying CurveSnapshotHolders
+        clearLFOCustomWaveCallbacks(synced.innerModifiers);
     }
     syncedRacks_.clear();
 }
@@ -632,6 +637,9 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
     auto& modList = rackType->getModifierList();
 
     // Remove existing TE modifiers before recreating
+    // Clear LFO callbacks before destroying CurveSnapshotHolders
+    clearLFOCustomWaveCallbacks(synced.innerModifiers);
+
     for (auto& [modId, mod] : synced.innerModifiers) {
         if (!mod)
             continue;

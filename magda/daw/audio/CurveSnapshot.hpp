@@ -204,6 +204,8 @@ struct CurveSnapshotHolder {
      */
     static float evaluateCallback(float phase, void* userData) {
         auto* holder = static_cast<CurveSnapshotHolder*>(userData);
+        if (!holder)
+            return 0.0f;
         const CurveSnapshot* snap = holder->active.load(std::memory_order_acquire);
 
         if (snap->oneShot) {

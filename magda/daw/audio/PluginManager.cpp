@@ -144,6 +144,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         for (auto deviceId : toRemove) {
             auto it = syncedDevices_.find(deviceId);
             if (it != syncedDevices_.end()) {
+                // Clear LFO callbacks before destroying CurveSnapshotHolders
+                clearLFOCustomWaveCallbacks(it->second.modifiers);
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 syncedDevices_.erase(it);
@@ -398,6 +400,8 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
         for (auto deviceId : deviceIds) {
             auto it = syncedDevices_.find(deviceId);
             if (it != syncedDevices_.end()) {
+                // Clear LFO callbacks before destroying CurveSnapshotHolders
+                clearLFOCustomWaveCallbacks(it->second.modifiers);
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 syncedDevices_.erase(it);
@@ -963,6 +967,8 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
         // Remove existing TE modifiers for this device before recreating
         auto& existingMods = syncedDevices_[device.id].modifiers;
         if (!existingMods.empty()) {
+            // Clear LFO callbacks before destroying CurveSnapshotHolders
+            clearLFOCustomWaveCallbacks(existingMods);
             for (auto& mod : existingMods) {
                 if (!mod)
                     continue;
@@ -1925,6 +1931,8 @@ void PluginManager::purgeStaleEntries() {
         // syncedDevices_ (consolidates all per-device maps)
         for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
             if (validDeviceIds.find(it->first) == validDeviceIds.end()) {
+                // Clear LFO callbacks before destroying CurveSnapshotHolders
+                clearLFOCustomWaveCallbacks(it->second.modifiers);
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 if (it->second.midiReceivePlugin)
@@ -2029,6 +2037,9 @@ void PluginManager::validateMappingConsistency() {
 
 void PluginManager::clearAllMappings() {
     juce::ScopedLock lock(pluginLock_);
+    // Clear LFO callbacks before destroying CurveSnapshotHolders
+    for (auto& [deviceId, sd] : syncedDevices_)
+        clearLFOCustomWaveCallbacks(sd.modifiers);
     instrumentRackManager_.clear();
     rackSyncManager_.clear();
     syncedDevices_.clear();
