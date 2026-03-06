@@ -78,18 +78,24 @@ class ClipOperations {
         // be updated when the user explicitly changes it, not during tempo-driven resizes.
 
         if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty()) {
+            // For auto-tempo clips, speedRatio is 1.0 but the actual timeline-to-source
+            // conversion is projectBPM / sourceBPM (matching split/trim code paths).
+            double toSource = (clip.isBeatsAuthoritative() && clip.sourceBPM > 0.0 && bpm > 0.0)
+                                  ? bpm / clip.sourceBPM
+                                  : clip.speedRatio;
+
             if (!clip.loopEnabled) {
                 // Non-looped: adjust offset so content stays at timeline position
-                double sourceDelta = actualDelta * clip.speedRatio;
+                double sourceDelta = actualDelta * toSource;
                 clip.offset = juce::jmax(0.0, clip.offset + sourceDelta);
                 clip.loopStart = clip.offset;
             } else {
                 // Looped: adjust offset (wrapped within loop region) so content stays at timeline
                 // position.  loopStart is the user-defined loop anchor — it must NOT move.
                 double sourceLength =
-                    clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
+                    clip.loopLength > 0.0 ? clip.loopLength : clip.length * toSource;
                 if (sourceLength > 0.0) {
-                    double phaseDelta = actualDelta * clip.speedRatio;
+                    double phaseDelta = actualDelta * toSource;
                     double relOffset = clip.offset - clip.loopStart;
                     clip.offset = clip.loopStart + wrapPhase(relOffset + phaseDelta, sourceLength);
                 }

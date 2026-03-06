@@ -1652,6 +1652,8 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         c->offset = dragStartClipSnapshot_.offset;
                         c->loopStart = dragStartClipSnapshot_.loopStart;
                         c->midiOffset = dragStartClipSnapshot_.midiOffset;
+                        c->startBeats = dragStartClipSnapshot_.startBeats;
+                        c->lengthBeats = dragStartClipSnapshot_.lengthBeats;
                     }
                 }
 
