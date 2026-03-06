@@ -225,12 +225,11 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
             double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
             auto di = ClipDisplayInfo::from(clip, tempo);
 
-            // During left resize drag, compute display offset from the drag-start
-            // snapshot to avoid double-counting with throttled in-flight mutations.
+            // During left resize drag, use the preview clip's offset (computed via
+            // ClipOperations::resizeContainerFromLeft) to avoid duplicate formulas.
             double displayOffset = clip.offset;
             if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
-                double trimDelta = dragStartLength_ - previewLength_;
-                displayOffset = dragStartClipSnapshot_.offset + di.timelineToSource(trimDelta);
+                displayOffset = resizePreviewClip_.offset;
             }
 
             auto waveColour = clip.colour.brighter(0.2f);
@@ -324,15 +323,11 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                 // Phase offset: the first tile starts partway through the loop
                 double phaseSource = di.loopOffset;
 
-                // During left resize drag, compute loop phase from the drag-start
-                // snapshot to avoid double-counting with throttled in-flight mutations.
+                // During left resize drag, use the preview clip's offset (computed via
+                // ClipOperations::resizeContainerFromLeft) to avoid duplicate formulas.
                 if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
-                    double trimDelta = dragStartLength_ - previewLength_;
-                    double phaseDelta = di.timelineToSource(trimDelta);
-                    double originalPhase =
-                        wrapPhase(dragStartClipSnapshot_.offset - dragStartClipSnapshot_.loopStart,
-                                  di.sourceLength);
-                    phaseSource = wrapPhase(originalPhase + phaseDelta, di.sourceLength);
+                    phaseSource = wrapPhase(
+                        resizePreviewClip_.offset - resizePreviewClip_.loopStart, di.sourceLength);
                 }
 
                 double phaseTimeline = di.sourceToTimeline(phaseSource);
@@ -451,18 +446,13 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
         double loopLengthBeats =
             midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
 
-        // During left-resize drag, compute display midiOffset from snapshot + drag delta
-        // for smooth preview. Outside drag, use the committed value directly.
+        // During left-resize drag, use the preview clip's midiOffset for the
+        // arrange-view thumbnail. This is computed by ClipOperations (single
+        // source of truth) and NOT synced to the actual clip, so the piano
+        // roll notes stay put while only the thumbnail shifts.
         double midiOffset = clip.midiOffset;
         if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
-            double expandDelta = previewLength_ - dragStartLength_;
-            double deltaBeat = expandDelta * beatsPerSecond;
-            if (clip.loopEnabled && loopLengthBeats > 0.0) {
-                midiOffset =
-                    wrapPhase(dragStartClipSnapshot_.midiOffset - deltaBeat, loopLengthBeats);
-            } else {
-                midiOffset = dragStartClipSnapshot_.midiOffset - deltaBeat;
-            }
+            midiOffset = resizePreviewClip_.midiOffset;
         }
         if (clip.loopEnabled && loopLengthBeats > 0.0) {
             // Looping: draw notes repeating across the full clip length
@@ -1050,6 +1040,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         } else {
             dragMode_ = DragMode::ResizeLeft;
             dragStartClipSnapshot_ = *clip;
+            resizePreviewClip_ = *clip;
         }
     } else if (isOnRightEdge(e.x)) {
         if (e.mods.isShiftDown() &&
@@ -1255,18 +1246,28 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             previewStartTime_ = finalStartTime;
             previewLength_ = finalLength;
 
-            // Throttled update for TE sync during drag.
-            // For audio clips, notify listeners so the waveform editor stays in sync.
-            // For MIDI clips, skip notification to avoid piano roll flicker —
-            // the thumbnail uses preview state and the piano roll uses clipDragPreview.
+            // Compute preview clip from scratch (single source of truth)
+            resizePreviewClip_ = dragStartClipSnapshot_;
+            ClipOperations::resizeContainerFromLeft(resizePreviewClip_, finalLength, tempoBPM);
+            if (!resizePreviewClip_.loopEnabled && resizePreviewClip_.type == ClipType::Audio) {
+                resizePreviewClip_.loopStart = resizePreviewClip_.offset;
+            }
+
+            // Throttled: sync to TE for waveform/audio playback
             if (resizeThrottle_.check()) {
                 auto& cm = magda::ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    ClipOperations::resizeContainerFromLeft(*mutableClip, finalLength, tempoBPM);
-                    if (!mutableClip->loopEnabled && mutableClip->type == magda::ClipType::Audio) {
-                        mutableClip->loopStart = mutableClip->offset;
-                    }
+                    mutableClip->startTime = resizePreviewClip_.startTime;
+                    mutableClip->length = resizePreviewClip_.length;
+                    mutableClip->offset = resizePreviewClip_.offset;
+                    mutableClip->loopStart = resizePreviewClip_.loopStart;
+                    mutableClip->startBeats = resizePreviewClip_.startBeats;
+                    mutableClip->lengthBeats = resizePreviewClip_.lengthBeats;
+                    // Don't sync midiOffset for MIDI clips during drag —
+                    // it would shift notes in the piano roll editor.
+                    // The committed state (via command on mouseUp) handles it.
                     if (mutableClip->type != magda::ClipType::MIDI) {
+                        mutableClip->midiOffset = resizePreviewClip_.midiOffset;
                         cm.forceNotifyClipPropertyChanged(clipId_);
                     }
                 }

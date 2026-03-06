@@ -880,15 +880,11 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
     if (!note)
         return;
 
-    // midiOffset shifts note display for non-looped clips (startTime compensation)
-    // and session clips. For looped arrangement clips, notes stay at fixed loop positions.
+    // Notes always stay at their beat positions in the piano roll.
+    // midiOffset only affects the offset marker and playback start, not note display.
     ClipId clipId = note->getSourceClipId();
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     double noteOffset = 0.0;
-    if (clip) {
-        bool isLoopedArrangement = clip->loopEnabled && clip->view != ClipView::Session;
-        noteOffset = isLoopedArrangement ? 0.0 : clip->midiOffset;
-    }
 
     double displayBeat;
     if (relativeMode_) {
@@ -1502,9 +1498,9 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
 
         // Calculate display position
         double displayBeat;
-        // midiOffset shifts display for non-looped/session clips only
-        bool isLoopedArrangement = clip->loopEnabled && clip->view != ClipView::Session;
-        double noteOffset = isLoopedArrangement ? 0.0 : clip->midiOffset;
+        // Notes always stay at their beat positions in the piano roll.
+        // midiOffset only affects the offset marker and playback start, not note display.
+        double noteOffset = 0.0;
 
         if (relativeMode_) {
             if (clipIds_.size() > 1) {

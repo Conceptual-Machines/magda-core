@@ -8,12 +8,11 @@
  * Tests for MIDI clip left-resize operations
  *
  * These tests verify:
- * - Non-looped MIDI: midiOffset adjusts so notes stay at timeline position
+ * - Non-looped MIDI: midiOffset stays unchanged (boundary change only)
  * - Looped MIDI: midiOffset wraps within loop length (phase change)
  * - clip.offset is never touched for MIDI clips
  * - startTime and length update correctly
- * - Arrangement thumbnail preview midiOffset calculation
- * - Piano roll note display offset logic (isLoopedArrangement)
+ * - Piano roll note display: noteOffset is always 0 (notes never shift)
  */
 
 using namespace magda;
@@ -35,90 +34,86 @@ static ClipInfo makeMidiClip(double startTime, double length, bool looped = fals
 }
 
 // ============================================================================
-// Non-looped MIDI: midiOffset adjusts linearly
+// Non-looped MIDI: midiOffset stays unchanged (boundary change only)
 // ============================================================================
 
-TEST_CASE("MIDI left-resize non-looped - shrink adjusts midiOffset",
+TEST_CASE("MIDI left-resize non-looped - shrink does NOT adjust midiOffset",
           "[midi][resize][left][nonlooped]") {
-    // 120 BPM default
     double bpm = 120.0;
 
-    SECTION("Shrink by 1 second at 120 BPM adds 2 beats to midiOffset") {
+    SECTION("Shrink by 1 second at 120 BPM - midiOffset unchanged") {
         ClipInfo clip = makeMidiClip(0.0, 4.0);
 
         ClipOperations::resizeContainerFromLeft(clip, 3.0, bpm);
 
         REQUIRE(clip.startTime == Catch::Approx(1.0));
         REQUIRE(clip.length == Catch::Approx(3.0));
-        REQUIRE(clip.midiOffset == Catch::Approx(2.0));  // 1s * 120/60 = 2 beats
+        REQUIRE(clip.midiOffset == Catch::Approx(0.0));
     }
 
-    SECTION("Shrink by 2 seconds at 120 BPM adds 4 beats to midiOffset") {
+    SECTION("Shrink by 2 seconds at 120 BPM - midiOffset unchanged") {
         ClipInfo clip = makeMidiClip(0.0, 8.0);
 
         ClipOperations::resizeContainerFromLeft(clip, 6.0, bpm);
 
         REQUIRE(clip.startTime == Catch::Approx(2.0));
         REQUIRE(clip.length == Catch::Approx(6.0));
-        REQUIRE(clip.midiOffset == Catch::Approx(4.0));
+        REQUIRE(clip.midiOffset == Catch::Approx(0.0));
     }
 
-    SECTION("Shrink at 140 BPM") {
+    SECTION("Shrink at 140 BPM - midiOffset unchanged") {
         double bpm140 = 140.0;
         ClipInfo clip = makeMidiClip(0.0, 6.0);
 
         ClipOperations::resizeContainerFromLeft(clip, 3.0, bpm140);
 
-        // delta = 3s, deltaBeat = 3 * 140/60 = 7.0
-        REQUIRE(clip.midiOffset == Catch::Approx(7.0));
+        REQUIRE(clip.midiOffset == Catch::Approx(0.0));
     }
 }
 
-TEST_CASE("MIDI left-resize non-looped - expand reduces midiOffset",
+TEST_CASE("MIDI left-resize non-looped - expand does NOT adjust midiOffset",
           "[midi][resize][left][nonlooped]") {
     double bpm = 120.0;
 
-    SECTION("Expand from previously trimmed clip") {
+    SECTION("Expand from previously trimmed clip - midiOffset stays") {
         ClipInfo clip = makeMidiClip(2.0, 4.0);
-        clip.midiOffset = 4.0;  // Previously trimmed by 2s at 120 BPM
+        clip.midiOffset = 4.0;  // Set externally (e.g. user dragged offset marker)
 
         ClipOperations::resizeContainerFromLeft(clip, 6.0, bpm);
 
-        // Expanding by 2s: delta = -2s, deltaBeat = -4 beats
         REQUIRE(clip.startTime == Catch::Approx(0.0));
         REQUIRE(clip.length == Catch::Approx(6.0));
-        REQUIRE(clip.midiOffset == Catch::Approx(0.0));
+        REQUIRE(clip.midiOffset == Catch::Approx(4.0));  // Unchanged
     }
 
-    SECTION("Expand partially") {
+    SECTION("Expand partially - midiOffset stays") {
         ClipInfo clip = makeMidiClip(3.0, 4.0);
-        clip.midiOffset = 6.0;  // Previously trimmed by 3s
+        clip.midiOffset = 6.0;
 
         ClipOperations::resizeContainerFromLeft(clip, 5.0, bpm);
 
-        // Expanding by 1s: delta = -1s, deltaBeat = -2 beats
         REQUIRE(clip.startTime == Catch::Approx(2.0));
         REQUIRE(clip.length == Catch::Approx(5.0));
-        REQUIRE(clip.midiOffset == Catch::Approx(4.0));
+        REQUIRE(clip.midiOffset == Catch::Approx(6.0));  // Unchanged
     }
 }
 
-TEST_CASE("MIDI left-resize non-looped - sequential resizes accumulate",
+TEST_CASE("MIDI left-resize non-looped - sequential resizes don't change midiOffset",
           "[midi][resize][left][nonlooped][sequential]") {
     double bpm = 120.0;
     ClipInfo clip = makeMidiClip(0.0, 8.0);
 
     // Shrink by 1s
     ClipOperations::resizeContainerFromLeft(clip, 7.0, bpm);
-    REQUIRE(clip.midiOffset == Catch::Approx(2.0));
+    REQUIRE(clip.midiOffset == Catch::Approx(0.0));
 
     // Shrink by another 1s
     ClipOperations::resizeContainerFromLeft(clip, 6.0, bpm);
-    REQUIRE(clip.midiOffset == Catch::Approx(4.0));
+    REQUIRE(clip.midiOffset == Catch::Approx(0.0));
 
     // Expand back by 1s
     ClipOperations::resizeContainerFromLeft(clip, 7.0, bpm);
-    REQUIRE(clip.midiOffset == Catch::Approx(2.0));
+    REQUIRE(clip.midiOffset == Catch::Approx(0.0));
 
     // Expand back to original
     ClipOperations::resizeContainerFromLeft(clip, 8.0, bpm);
@@ -126,19 +121,17 @@ TEST_CASE("MIDI left-resize non-looped - sequential resizes accumulate",
     REQUIRE(clip.startTime == Catch::Approx(0.0));
 }
 
-TEST_CASE("MIDI left-resize non-looped - midiOffset can go negative",
+TEST_CASE("MIDI left-resize non-looped - midiOffset stays unchanged even past time 0",
           "[midi][resize][left][nonlooped]") {
     double bpm = 120.0;
 
-    SECTION("Expanding past original start allows negative midiOffset") {
-        // Clip starts at 2s with no prior offset — expanding left creates negative midiOffset
+    SECTION("Expanding past original start does NOT change midiOffset") {
         ClipInfo clip = makeMidiClip(2.0, 4.0);
         clip.midiOffset = 0.0;
 
         ClipOperations::resizeContainerFromLeft(clip, 6.0, bpm);
 
-        // delta = -2s, deltaBeat = -4
-        REQUIRE(clip.midiOffset == Catch::Approx(-4.0));
+        REQUIRE(clip.midiOffset == Catch::Approx(0.0));
         REQUIRE(clip.startTime == Catch::Approx(0.0));
     }
 }
@@ -256,163 +249,80 @@ TEST_CASE("MIDI left-resize - loopEnabled=false uses non-looped path even with l
 
     ClipOperations::resizeContainerFromLeft(clip, 6.0, bpm);
 
-    // Should use linear path, not wrapPhase
-    // delta = 2s, deltaBeat = 4.0
-    REQUIRE(clip.midiOffset == Catch::Approx(4.0));
+    // Non-looped: midiOffset stays unchanged regardless of loopLengthBeats
+    REQUIRE(clip.midiOffset == Catch::Approx(0.0));
 }
 
 // ============================================================================
-// Arrangement thumbnail preview: display midiOffset during drag
+// Piano roll note display: noteOffset is always 0
+// Notes stay at their beat positions regardless of midiOffset or resize.
+// midiOffset only affects the offset marker and playback start.
 // ============================================================================
 
-TEST_CASE("MIDI left-resize preview - non-looped display offset",
-          "[midi][resize][left][preview][nonlooped]") {
-    double bpm = 120.0;
-    double beatsPerSecond = bpm / 60.0;
+TEST_CASE("Piano roll note offset - always 0 regardless of clip type",
+          "[midi][resize][left][pianoroll]") {
+    SECTION("Non-looped arrangement clip: noteOffset is always 0") {
+        ClipInfo clip = makeMidiClip(0.0, 4.0);
+        clip.midiOffset = 3.0;  // User-set offset marker
 
-    SECTION("Shrink preview computes correct display offset") {
-        double snapshotMidiOffset = 0.0;
-        double dragStartLength = 4.0;
-        double previewLength = 3.0;  // Shrunk by 1s
+        // Piano roll always uses noteOffset = 0
+        double noteOffset = 0.0;
 
-        double expandDelta = previewLength - dragStartLength;   // -1.0
-        double deltaBeat = expandDelta * beatsPerSecond;        // -2.0
-        double displayOffset = snapshotMidiOffset - deltaBeat;  // 0 - (-2) = 2.0
-
-        REQUIRE(displayOffset == Catch::Approx(2.0));
+        REQUIRE(noteOffset == 0.0);
     }
 
-    SECTION("Expand preview computes correct display offset") {
-        double snapshotMidiOffset = 4.0;
-        double dragStartLength = 3.0;
-        double previewLength = 5.0;  // Expanded by 2s
-
-        double expandDelta = previewLength - dragStartLength;   // 2.0
-        double deltaBeat = expandDelta * beatsPerSecond;        // 4.0
-        double displayOffset = snapshotMidiOffset - deltaBeat;  // 4 - 4 = 0.0
-
-        REQUIRE(displayOffset == Catch::Approx(0.0));
-    }
-}
-
-TEST_CASE("MIDI left-resize preview - looped display offset wraps",
-          "[midi][resize][left][preview][looped]") {
-    double bpm = 120.0;
-    double beatsPerSecond = bpm / 60.0;
-    double loopLengthBeats = 4.0;
-
-    SECTION("Shrink preview wraps within loop") {
-        double snapshotMidiOffset = 3.0;
-        double dragStartLength = 4.0;
-        double previewLength = 3.0;  // Shrunk by 1s
-
-        double expandDelta = previewLength - dragStartLength;  // -1.0
-        double deltaBeat = expandDelta * beatsPerSecond;       // -2.0
-        double displayOffset = wrapPhase(snapshotMidiOffset - deltaBeat, loopLengthBeats);
-        // wrapPhase(3 - (-2), 4) = wrapPhase(5, 4) = 1.0
-
-        REQUIRE(displayOffset == Catch::Approx(1.0));
-    }
-
-    SECTION("Expand preview wraps within loop") {
-        double snapshotMidiOffset = 1.0;
-        double dragStartLength = 4.0;
-        double previewLength = 6.0;  // Expanded by 2s
-
-        double expandDelta = previewLength - dragStartLength;  // 2.0
-        double deltaBeat = expandDelta * beatsPerSecond;       // 4.0
-        double displayOffset = wrapPhase(snapshotMidiOffset - deltaBeat, loopLengthBeats);
-        // wrapPhase(1 - 4, 4) = wrapPhase(-3, 4) = 1.0
-
-        REQUIRE(displayOffset == Catch::Approx(1.0));
-    }
-}
-
-// ============================================================================
-// Piano roll note display offset logic (isLoopedArrangement)
-// ============================================================================
-
-TEST_CASE("Piano roll note offset - looped arrangement clips use 0",
-          "[midi][resize][left][pianoroll][looped]") {
-    SECTION("Looped arrangement clip: noteOffset is 0 regardless of midiOffset") {
+    SECTION("Looped arrangement clip: noteOffset is always 0") {
         ClipInfo clip = makeMidiClip(0.0, 8.0, true, 4.0);
         clip.midiOffset = 2.5;
 
-        bool isLoopedArrangement = clip.loopEnabled && clip.view != ClipView::Session;
-        double noteOffset = isLoopedArrangement ? 0.0 : clip.midiOffset;
-
-        REQUIRE(isLoopedArrangement == true);
-        REQUIRE(noteOffset == 0.0);
-    }
-
-    SECTION("Looped arrangement after resize: noteOffset still 0") {
-        ClipInfo clip = makeMidiClip(0.0, 8.0, true, 4.0);
-        ClipOperations::resizeContainerFromLeft(clip, 7.0, 120.0);  // Shrink by 1s = 2 beats
-
-        // midiOffset changed by resize (2 beats, not a multiple of 4)
-        REQUIRE(clip.midiOffset == Catch::Approx(2.0));
-
-        bool isLoopedArrangement = clip.loopEnabled && clip.view != ClipView::Session;
-        double noteOffset = isLoopedArrangement ? 0.0 : clip.midiOffset;
+        double noteOffset = 0.0;
 
         REQUIRE(noteOffset == 0.0);
     }
-}
 
-TEST_CASE("Piano roll note offset - non-looped clips use midiOffset",
-          "[midi][resize][left][pianoroll][nonlooped]") {
-    SECTION("Non-looped arrangement clip uses midiOffset for display") {
-        ClipInfo clip = makeMidiClip(0.0, 4.0);
-        clip.midiOffset = 3.0;
-
-        bool isLoopedArrangement = clip.loopEnabled && clip.view != ClipView::Session;
-        double noteOffset = isLoopedArrangement ? 0.0 : clip.midiOffset;
-
-        REQUIRE(isLoopedArrangement == false);
-        REQUIRE(noteOffset == 3.0);
-    }
-
-    SECTION("Non-looped after resize: display offset matches midiOffset") {
+    SECTION("After non-looped resize: noteOffset still 0, notes don't shift") {
         ClipInfo clip = makeMidiClip(0.0, 8.0);
 
         ClipOperations::resizeContainerFromLeft(clip, 6.0, 120.0);
 
-        bool isLoopedArrangement = clip.loopEnabled && clip.view != ClipView::Session;
-        double noteOffset = isLoopedArrangement ? 0.0 : clip.midiOffset;
-
-        REQUIRE(noteOffset == Catch::Approx(clip.midiOffset));
-        REQUIRE(noteOffset == Catch::Approx(4.0));
+        // midiOffset unchanged, noteOffset always 0
+        REQUIRE(clip.midiOffset == Catch::Approx(0.0));
+        double noteOffset = 0.0;
+        REQUIRE(noteOffset == 0.0);
     }
-}
 
-TEST_CASE("Piano roll note offset - session clips use midiOffset",
-          "[midi][resize][left][pianoroll][session]") {
-    SECTION("Session clip with loop uses midiOffset (not 0)") {
+    SECTION("After looped resize: noteOffset still 0") {
+        ClipInfo clip = makeMidiClip(0.0, 8.0, true, 4.0);
+        ClipOperations::resizeContainerFromLeft(clip, 7.0, 120.0);
+
+        // midiOffset changed (phase)
+        REQUIRE(clip.midiOffset == Catch::Approx(2.0));
+        // But noteOffset is still 0 — notes stay put in piano roll
+        double noteOffset = 0.0;
+        REQUIRE(noteOffset == 0.0);
+    }
+
+    SECTION("Session clip: noteOffset is also always 0") {
         ClipInfo clip = makeMidiClip(0.0, 4.0, true, 4.0);
         clip.view = ClipView::Session;
         clip.midiOffset = 2.0;
 
-        bool isLoopedArrangement = clip.loopEnabled && clip.view != ClipView::Session;
-        double noteOffset = isLoopedArrangement ? 0.0 : clip.midiOffset;
-
-        REQUIRE(isLoopedArrangement == false);
-        REQUIRE(noteOffset == 2.0);
+        double noteOffset = 0.0;
+        REQUIRE(noteOffset == 0.0);
     }
 }
 
 // ============================================================================
-// Notes stay at timeline position (the core invariant)
+// Notes stay at their beat positions (the core invariant)
 // ============================================================================
 
-TEST_CASE("MIDI left-resize non-looped - notes stay at timeline position",
+TEST_CASE("MIDI left-resize non-looped - notes keep beat positions in piano roll",
           "[midi][resize][left][nonlooped][invariant]") {
     double bpm = 120.0;
-    double beatsPerSecond = bpm / 60.0;
 
-    SECTION("Note display position unchanged after shrink") {
+    SECTION("midiOffset unchanged means note beat positions stay fixed") {
         ClipInfo clip = makeMidiClip(0.0, 4.0);
 
-        // Note at beat 3 in clip-local coordinates
         MidiNote note;
         note.startBeat = 3.0;
         note.lengthBeats = 1.0;
@@ -420,97 +330,33 @@ TEST_CASE("MIDI left-resize non-looped - notes stay at timeline position",
         note.velocity = 100;
         clip.midiNotes.push_back(note);
 
-        // Before resize: absolute display position
-        double clipStartBeats = clip.startTime * beatsPerSecond;
-        double displayBefore = clipStartBeats + note.startBeat - clip.midiOffset;
-        // 0 + 3 - 0 = 3.0
+        double midiOffsetBefore = clip.midiOffset;
 
-        // Resize: shrink by 1 second from left
         ClipOperations::resizeContainerFromLeft(clip, 3.0, bpm);
 
-        // After resize: absolute display position
-        clipStartBeats = clip.startTime * beatsPerSecond;
-        bool isLoopedArr = clip.loopEnabled && clip.view != ClipView::Session;
-        double noteOffset = isLoopedArr ? 0.0 : clip.midiOffset;
-        double displayAfter = clipStartBeats + note.startBeat - noteOffset;
-        // 2.0 + 3.0 - 2.0 = 3.0
-
-        REQUIRE(displayBefore == Catch::Approx(displayAfter));
+        // midiOffset stays the same — notes don't move in the piano roll
+        REQUIRE(clip.midiOffset == Catch::Approx(midiOffsetBefore));
     }
 
-    SECTION("Multiple notes maintain timeline position after resize") {
+    SECTION("Shrink then expand: midiOffset always 0") {
         ClipInfo clip = makeMidiClip(0.0, 8.0);
 
-        // Add notes at beats 0, 2, 4, 6
-        for (int i = 0; i < 4; ++i) {
-            MidiNote note;
-            note.startBeat = i * 2.0;
-            note.lengthBeats = 1.0;
-            note.noteNumber = 60 + i;
-            note.velocity = 100;
-            clip.midiNotes.push_back(note);
-        }
-
-        // Capture pre-resize display positions
-        std::vector<double> displayBefore;
-        double clipStartBeats = clip.startTime * beatsPerSecond;
-        for (const auto& n : clip.midiNotes) {
-            displayBefore.push_back(clipStartBeats + n.startBeat - clip.midiOffset);
-        }
-
-        // Resize: shrink by 2 seconds
-        ClipOperations::resizeContainerFromLeft(clip, 6.0, bpm);
-
-        // Capture post-resize display positions
-        clipStartBeats = clip.startTime * beatsPerSecond;
-        bool isLoopedArr = clip.loopEnabled && clip.view != ClipView::Session;
-        double noteOffset = isLoopedArr ? 0.0 : clip.midiOffset;
-
-        for (size_t i = 0; i < clip.midiNotes.size(); ++i) {
-            double displayAfter = clipStartBeats + clip.midiNotes[i].startBeat - noteOffset;
-            REQUIRE(displayBefore[i] == Catch::Approx(displayAfter));
-        }
-    }
-
-    SECTION("Note position stable through shrink then expand") {
-        ClipInfo clip = makeMidiClip(0.0, 8.0);
-
-        MidiNote note;
-        note.startBeat = 5.0;
-        note.lengthBeats = 1.0;
-        note.noteNumber = 60;
-        note.velocity = 100;
-        clip.midiNotes.push_back(note);
-
-        double clipStartBeats = clip.startTime * beatsPerSecond;
-        double displayOriginal = clipStartBeats + note.startBeat - clip.midiOffset;
-
-        // Shrink by 3s
         ClipOperations::resizeContainerFromLeft(clip, 5.0, bpm);
+        REQUIRE(clip.midiOffset == Catch::Approx(0.0));
 
-        clipStartBeats = clip.startTime * beatsPerSecond;
-        double noteOffset = clip.midiOffset;  // non-looped
-        double displayShrunk = clipStartBeats + note.startBeat - noteOffset;
-        REQUIRE(displayOriginal == Catch::Approx(displayShrunk));
-
-        // Expand back by 3s
         ClipOperations::resizeContainerFromLeft(clip, 8.0, bpm);
-
-        clipStartBeats = clip.startTime * beatsPerSecond;
-        noteOffset = clip.midiOffset;
-        double displayExpanded = clipStartBeats + note.startBeat - noteOffset;
-        REQUIRE(displayOriginal == Catch::Approx(displayExpanded));
+        REQUIRE(clip.midiOffset == Catch::Approx(0.0));
+        REQUIRE(clip.startTime == Catch::Approx(0.0));
     }
 }
 
 // ============================================================================
-// Looped MIDI: notes stay at loop-relative positions
+// Looped MIDI: notes stay at fixed loop positions
 // ============================================================================
 
 TEST_CASE("MIDI left-resize looped - notes stay at fixed loop positions",
           "[midi][resize][left][looped][invariant]") {
     double bpm = 120.0;
-    double beatsPerSecond = bpm / 60.0;
 
     SECTION("Note display position unchanged (noteOffset=0 for looped arrangement)") {
         ClipInfo clip = makeMidiClip(0.0, 8.0, true, 4.0);
@@ -522,19 +368,15 @@ TEST_CASE("MIDI left-resize looped - notes stay at fixed loop positions",
         note.velocity = 100;
         clip.midiNotes.push_back(note);
 
-        // For looped arrangement clips, noteOffset is always 0
-        bool isLoopedArr = clip.loopEnabled && clip.view != ClipView::Session;
-        REQUIRE(isLoopedArr == true);
-
-        // Note at beat 1 stays at beat 1 regardless of resize
+        // noteOffset is always 0 in piano roll
         double displayBefore = note.startBeat;
 
         ClipOperations::resizeContainerFromLeft(clip, 7.0, bpm);  // Shrink by 1s = 2 beats
 
-        // midiOffset changed (it's a phase now), but noteOffset stays 0
+        // midiOffset changed (it's a phase now)
         REQUIRE(clip.midiOffset == Catch::Approx(2.0));
-        double noteOffset = isLoopedArr ? 0.0 : clip.midiOffset;
-        double displayAfter = note.startBeat - noteOffset;
+        // But noteOffset stays 0, so display position unchanged
+        double displayAfter = note.startBeat;
 
         REQUIRE(displayBefore == Catch::Approx(displayAfter));
     }
@@ -622,8 +464,9 @@ TEST_CASE("wrapPhase helper", "[midi][resize][left][wrapPhase]") {
 // BPM sensitivity
 // ============================================================================
 
-TEST_CASE("MIDI left-resize - BPM affects midiOffset magnitude", "[midi][resize][left][bpm]") {
-    SECTION("Same resize at different BPMs produces proportional offsets") {
+TEST_CASE("MIDI left-resize - BPM does not affect non-looped midiOffset",
+          "[midi][resize][left][bpm]") {
+    SECTION("Same resize at different BPMs all leave midiOffset unchanged") {
         ClipInfo clip60 = makeMidiClip(0.0, 4.0);
         ClipInfo clip120 = makeMidiClip(0.0, 4.0);
         ClipInfo clip240 = makeMidiClip(0.0, 4.0);
@@ -633,10 +476,10 @@ TEST_CASE("MIDI left-resize - BPM affects midiOffset magnitude", "[midi][resize]
         ClipOperations::resizeContainerFromLeft(clip120, 3.0, 120.0);
         ClipOperations::resizeContainerFromLeft(clip240, 3.0, 240.0);
 
-        // 1s * 60/60 = 1 beat, 1s * 120/60 = 2 beats, 1s * 240/60 = 4 beats
-        REQUIRE(clip60.midiOffset == Catch::Approx(1.0));
-        REQUIRE(clip120.midiOffset == Catch::Approx(2.0));
-        REQUIRE(clip240.midiOffset == Catch::Approx(4.0));
+        // Non-looped: midiOffset unchanged at all tempos
+        REQUIRE(clip60.midiOffset == Catch::Approx(0.0));
+        REQUIRE(clip120.midiOffset == Catch::Approx(0.0));
+        REQUIRE(clip240.midiOffset == Catch::Approx(0.0));
     }
 }
 
@@ -653,7 +496,7 @@ TEST_CASE("MIDI left-resize - edge cases", "[midi][resize][left][edge]") {
         ClipOperations::resizeContainerFromLeft(clip, ClipOperations::MIN_CLIP_LENGTH, bpm);
 
         REQUIRE(clip.length >= ClipOperations::MIN_CLIP_LENGTH);
-        REQUIRE(clip.midiOffset > 0.0);
+        REQUIRE(clip.midiOffset == Catch::Approx(0.0));  // Non-looped: unchanged
     }
 
     SECTION("No-op resize (same length) leaves midiOffset unchanged") {

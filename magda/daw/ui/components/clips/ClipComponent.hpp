@@ -130,6 +130,7 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
     double dragStartAudioOffset_ = 0.0;
     double dragStartFileDuration_ = 0.0;
     ClipInfo dragStartClipSnapshot_;  // Full clip state at drag start (for undo)
+    ClipInfo resizePreviewClip_;      // Preview clip state during resize-left drag
     std::unordered_map<ClipId, double>
         dragStartSelectedLengths_;  // Original lengths of other selected clips
     double multiResizeMaxDelta_ =
