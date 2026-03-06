@@ -1235,14 +1235,6 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
     double visibleStart = effectiveOffset;
     double visibleEnd = effectiveOffset + contentLengthBeats;
 
-    DBG("MIDI SYNC clip " << clipId << ":");
-    DBG("  midiOffset=" << clip->midiOffset << ", clipLength=" << clipLengthBeats << " beats");
-    DBG("  loopEnabled=" << (int)clip->loopEnabled
-                         << ", loopLengthBeats=" << clip->loopLengthBeats);
-    DBG("  contentLengthBeats=" << contentLengthBeats);
-    DBG("  Visible range: [" << visibleStart << ", " << visibleEnd << ")");
-    DBG("  Total notes: " << clip->midiNotes.size());
-
     // Add notes to TE sequence — notes stay at original positions,
     // TE offset + looping handles phase wrapping natively
     int addedCount = 0;

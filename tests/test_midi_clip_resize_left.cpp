@@ -7,12 +7,12 @@
 /**
  * Tests for MIDI clip left-resize operations
  *
- * These tests verify:
- * - Non-looped MIDI: midiOffset stays unchanged (boundary change only)
- * - Looped MIDI: midiOffset wraps within loop length (phase change)
- * - clip.offset is never touched for MIDI clips
- * - startTime and length update correctly
- * - Piano roll note display: noteOffset is always 0 (notes never shift)
+ * Non-looped MIDI: only clip boundary (startTime/length) changes.
+ *   midiOffset stays unchanged — it's a user-controlled playback offset.
+ * Looped MIDI: midiOffset wraps within loopLengthBeats (phase change).
+ *
+ * Piano roll: noteOffset is always 0 (notes never shift in the editor).
+ * Arrangement thumbnail: uses midiOffset for content display positioning.
  */
 
 using namespace magda;
@@ -34,7 +34,7 @@ static ClipInfo makeMidiClip(double startTime, double length, bool looped = fals
 }
 
 // ============================================================================
-// Non-looped MIDI: midiOffset stays unchanged (boundary change only)
+// Non-looped MIDI: midiOffset unchanged (boundary change only)
 // ============================================================================
 
 TEST_CASE("MIDI left-resize non-looped - shrink does NOT adjust midiOffset",
@@ -238,7 +238,7 @@ TEST_CASE("MIDI left-resize looped - clip.offset unchanged",
 }
 
 // ============================================================================
-// Looped MIDI: loop disabled with loopLengthBeats > 0 (non-looped path)
+// Non-looped with loopLengthBeats > 0 (loopEnabled=false uses non-looped path)
 // ============================================================================
 
 TEST_CASE("MIDI left-resize - loopEnabled=false uses non-looped path even with loopLengthBeats",
@@ -249,25 +249,21 @@ TEST_CASE("MIDI left-resize - loopEnabled=false uses non-looped path even with l
 
     ClipOperations::resizeContainerFromLeft(clip, 6.0, bpm);
 
-    // Non-looped: midiOffset stays unchanged regardless of loopLengthBeats
+    // Non-looped: midiOffset unchanged regardless of loopLengthBeats
     REQUIRE(clip.midiOffset == Catch::Approx(0.0));
 }
 
 // ============================================================================
 // Piano roll note display: noteOffset is always 0
-// Notes stay at their beat positions regardless of midiOffset or resize.
-// midiOffset only affects the offset marker and playback start.
 // ============================================================================
 
 TEST_CASE("Piano roll note offset - always 0 regardless of clip type",
           "[midi][resize][left][pianoroll]") {
     SECTION("Non-looped arrangement clip: noteOffset is always 0") {
         ClipInfo clip = makeMidiClip(0.0, 4.0);
-        clip.midiOffset = 3.0;  // User-set offset marker
+        clip.midiOffset = 3.0;
 
-        // Piano roll always uses noteOffset = 0
         double noteOffset = 0.0;
-
         REQUIRE(noteOffset == 0.0);
     }
 
@@ -276,7 +272,6 @@ TEST_CASE("Piano roll note offset - always 0 regardless of clip type",
         clip.midiOffset = 2.5;
 
         double noteOffset = 0.0;
-
         REQUIRE(noteOffset == 0.0);
     }
 
@@ -285,7 +280,6 @@ TEST_CASE("Piano roll note offset - always 0 regardless of clip type",
 
         ClipOperations::resizeContainerFromLeft(clip, 6.0, 120.0);
 
-        // midiOffset unchanged, noteOffset always 0
         REQUIRE(clip.midiOffset == Catch::Approx(0.0));
         double noteOffset = 0.0;
         REQUIRE(noteOffset == 0.0);
@@ -295,9 +289,7 @@ TEST_CASE("Piano roll note offset - always 0 regardless of clip type",
         ClipInfo clip = makeMidiClip(0.0, 8.0, true, 4.0);
         ClipOperations::resizeContainerFromLeft(clip, 7.0, 120.0);
 
-        // midiOffset changed (phase)
         REQUIRE(clip.midiOffset == Catch::Approx(2.0));
-        // But noteOffset is still 0 — notes stay put in piano roll
         double noteOffset = 0.0;
         REQUIRE(noteOffset == 0.0);
     }
@@ -320,7 +312,7 @@ TEST_CASE("MIDI left-resize non-looped - notes keep beat positions in piano roll
           "[midi][resize][left][nonlooped][invariant]") {
     double bpm = 120.0;
 
-    SECTION("midiOffset unchanged means note beat positions stay fixed") {
+    SECTION("Note startBeat unchanged after resize") {
         ClipInfo clip = makeMidiClip(0.0, 4.0);
 
         MidiNote note;
@@ -336,6 +328,7 @@ TEST_CASE("MIDI left-resize non-looped - notes keep beat positions in piano roll
 
         // midiOffset stays the same — notes don't move in the piano roll
         REQUIRE(clip.midiOffset == Catch::Approx(midiOffsetBefore));
+        REQUIRE(clip.midiNotes[0].startBeat == 3.0);
     }
 
     SECTION("Shrink then expand: midiOffset always 0") {
@@ -368,16 +361,12 @@ TEST_CASE("MIDI left-resize looped - notes stay at fixed loop positions",
         note.velocity = 100;
         clip.midiNotes.push_back(note);
 
-        // noteOffset is always 0 in piano roll
         double displayBefore = note.startBeat;
 
-        ClipOperations::resizeContainerFromLeft(clip, 7.0, bpm);  // Shrink by 1s = 2 beats
+        ClipOperations::resizeContainerFromLeft(clip, 7.0, bpm);
 
-        // midiOffset changed (it's a phase now)
         REQUIRE(clip.midiOffset == Catch::Approx(2.0));
-        // But noteOffset stays 0, so display position unchanged
         double displayAfter = note.startBeat;
-
         REQUIRE(displayBefore == Catch::Approx(displayAfter));
     }
 }
@@ -496,7 +485,7 @@ TEST_CASE("MIDI left-resize - edge cases", "[midi][resize][left][edge]") {
         ClipOperations::resizeContainerFromLeft(clip, ClipOperations::MIN_CLIP_LENGTH, bpm);
 
         REQUIRE(clip.length >= ClipOperations::MIN_CLIP_LENGTH);
-        REQUIRE(clip.midiOffset == Catch::Approx(0.0));  // Non-looped: unchanged
+        REQUIRE(clip.midiOffset == Catch::Approx(0.0));
     }
 
     SECTION("No-op resize (same length) leaves midiOffset unchanged") {

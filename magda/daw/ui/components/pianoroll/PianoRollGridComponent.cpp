@@ -880,11 +880,11 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
     if (!note)
         return;
 
-    // Notes always stay at their beat positions in the piano roll.
-    // midiOffset only affects the offset marker and playback start, not note display.
+    // Relative mode: notes at content-relative beats.
+    // Absolute mode: midiTrimOffset compensates for startTime changes from
+    // left-resize so notes stay at their timeline positions.
     ClipId clipId = note->getSourceClipId();
     const auto* clip = ClipManager::getInstance().getClip(clipId);
-    double noteOffset = 0.0;
 
     double displayBeat;
     if (relativeMode_) {
@@ -894,9 +894,9 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
                 tempo = controller->getState().tempo.bpm;
             }
             double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
-            displayBeat = clipOffsetBeats + beat - noteOffset;
+            displayBeat = clipOffsetBeats + beat;
         } else {
-            displayBeat = beat - noteOffset;
+            displayBeat = beat;
         }
     } else {
         if (clip) {
@@ -905,7 +905,8 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
                 tempo = controller->getState().tempo.bpm;
             }
             double clipStartBeats = clip->startTime * (tempo / 60.0);
-            displayBeat = clipStartBeats + beat - noteOffset;
+            double trimCompensation = (clip->type == ClipType::MIDI) ? clip->midiTrimOffset : 0.0;
+            displayBeat = clipStartBeats + beat - trimCompensation;
         } else {
             displayBeat = clipStartBeats_ + beat;
         }
@@ -1496,11 +1497,9 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
 
         const auto& note = clip->midiNotes[noteIndex];
 
-        // Calculate display position
+        // Relative mode: notes at content-relative beats.
+        // Absolute mode: midiTrimOffset compensates for left-resize.
         double displayBeat;
-        // Notes always stay at their beat positions in the piano roll.
-        // midiOffset only affects the offset marker and playback start, not note display.
-        double noteOffset = 0.0;
 
         if (relativeMode_) {
             if (clipIds_.size() > 1) {
@@ -1509,9 +1508,9 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
                     tempo = controller->getState().tempo.bpm;
                 }
                 double clipOffsetBeats = clip->startTime * (tempo / 60.0) - clipStartBeats_;
-                displayBeat = clipOffsetBeats + note.startBeat - noteOffset;
+                displayBeat = clipOffsetBeats + note.startBeat;
             } else {
-                displayBeat = note.startBeat - noteOffset;
+                displayBeat = note.startBeat;
             }
         } else {
             double tempo = 120.0;
@@ -1519,7 +1518,8 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
                 tempo = controller->getState().tempo.bpm;
             }
             double clipStartBeats = clip->startTime * (tempo / 60.0);
-            displayBeat = clipStartBeats + note.startBeat - noteOffset;
+            double trimCompensation = (clip->type == ClipType::MIDI) ? clip->midiTrimOffset : 0.0;
+            displayBeat = clipStartBeats + note.startBeat - trimCompensation;
         }
 
         int x = beatToPixel(displayBeat);

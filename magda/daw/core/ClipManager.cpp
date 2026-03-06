@@ -509,6 +509,12 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
             sanitizeAudioClip(*clip);
         }
 
+        // When disabling loop on MIDI clips, reset midiOffset — the looped
+        // phase value has no meaning in non-looped mode.
+        if (!enabled && clip->type == ClipType::MIDI) {
+            clip->midiOffset = 0.0;
+        }
+
         // When disabling loop on audio clips, sync loopStart and clamp length to actual file
         // content
         if (!enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {

@@ -78,6 +78,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     // MIDI offset
     if (clip.midiOffset != 0.0)
         obj->setProperty("midiOffset", clip.midiOffset);
+    if (clip.midiTrimOffset != 0.0)
+        obj->setProperty("midiTrimOffset", clip.midiTrimOffset);
 
     // Audio properties (TE-aligned model)
     if (clip.audioFilePath.isNotEmpty()) {
@@ -206,6 +208,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
 
     // MIDI offset
     outClip.midiOffset = obj->getProperty("midiOffset");
+    outClip.midiTrimOffset = obj->getProperty("midiTrimOffset");
 
     // Audio properties
     auto audioFilePathVar = obj->getProperty("audioFilePath");

@@ -195,7 +195,8 @@ struct ClipInfo {
     std::vector<MidiNote> midiNotes;
     std::vector<MidiCCData> midiCCData;
     std::vector<MidiPitchBendData> midiPitchBendData;
-    double midiOffset = 0.0;  // Start offset in beats (for non-destructive trim)
+    double midiOffset = 0.0;  // User-controlled start offset in beats (playback / offset marker)
+    double midiTrimOffset = 0.0;  // Left-resize trim offset in beats (content origin on timeline)
 
     // Session view properties
     int sceneIndex = -1;  // -1 = not in session view (arrangement only)

@@ -102,13 +102,18 @@ class ClipOperations {
             }
         } else if (clip.type == ClipType::MIDI) {
             // MIDI phase lives in midiOffset (beats). Do NOT touch clip.offset.
-            // Only looped clips need phase adjustment — non-looped clips keep midiOffset
-            // unchanged because notes stay at their absolute beat positions and the
-            // offset marker is independent of clip boundaries.
+            double beatsPerSecond = bpm / 60.0;
+            double deltaBeat = actualDelta * beatsPerSecond;
             if (clip.loopEnabled && clip.loopLengthBeats > 0.0) {
-                double beatsPerSecond = bpm / 60.0;
-                double deltaBeat = actualDelta * beatsPerSecond;
+                // Looped: wrap midiOffset phase within loop for content alignment.
+                // Piano roll is forced to relative mode for looped clips, so
+                // midiTrimOffset is not needed.
                 clip.midiOffset = wrapPhase(clip.midiOffset + deltaBeat, clip.loopLengthBeats);
+            } else {
+                // Non-looped: midiOffset stays unchanged (user-controlled).
+                // midiTrimOffset tracks the cumulative left-resize delta so the
+                // piano roll (absolute mode) keeps notes at their timeline positions.
+                clip.midiTrimOffset += deltaBeat;
             }
         }
 

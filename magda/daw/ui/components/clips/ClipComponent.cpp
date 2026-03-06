@@ -446,13 +446,16 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
         double loopLengthBeats =
             midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
 
-        // During left-resize drag, use the preview clip's midiOffset for the
-        // arrange-view thumbnail. This is computed by ClipOperations (single
-        // source of truth) and NOT synced to the actual clip, so the piano
-        // roll notes stay put while only the thumbnail shifts.
-        double midiOffset = clip.midiOffset;
+        // Compute the effective content offset for the arrangement thumbnail.
+        // Looped clips use midiOffset (phase within loop).
+        // Non-looped clips use midiTrimOffset (cumulative left-resize trim).
+        // During left-resize drag, use the preview clip's values.
+        double midiOffset;
         if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
-            midiOffset = resizePreviewClip_.midiOffset;
+            midiOffset = clip.loopEnabled ? resizePreviewClip_.midiOffset
+                                          : resizePreviewClip_.midiTrimOffset;
+        } else {
+            midiOffset = clip.loopEnabled ? clip.midiOffset : clip.midiTrimOffset;
         }
         if (clip.loopEnabled && loopLengthBeats > 0.0) {
             // Looping: draw notes repeating across the full clip length
@@ -1653,6 +1656,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                         c->offset = dragStartClipSnapshot_.offset;
                         c->loopStart = dragStartClipSnapshot_.loopStart;
                         c->midiOffset = dragStartClipSnapshot_.midiOffset;
+                        c->midiTrimOffset = dragStartClipSnapshot_.midiTrimOffset;
                         c->startBeats = dragStartClipSnapshot_.startBeats;
                         c->lengthBeats = dragStartClipSnapshot_.lengthBeats;
                     }
