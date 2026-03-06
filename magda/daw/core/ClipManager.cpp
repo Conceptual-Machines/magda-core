@@ -572,6 +572,8 @@ void ClipManager::setOffset(ClipId clipId, double offset) {
             clip->midiOffset = juce::jmax(0.0, offset);
         } else {
             clip->offset = juce::jmax(0.0, offset);
+            if (clip->autoTempo && clip->sourceBPM > 0.0)
+                clip->offsetBeats = clip->offset * clip->sourceBPM / 60.0;
             sanitizeAudioClip(*clip);
         }
         notifyClipPropertyChanged(clipId);
@@ -582,6 +584,8 @@ void ClipManager::setLoopPhase(ClipId clipId, double phase) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio && clip->loopEnabled) {
             clip->offset = clip->loopStart + phase;
+            if (clip->autoTempo && clip->sourceBPM > 0.0)
+                clip->offsetBeats = clip->offset * clip->sourceBPM / 60.0;
             sanitizeAudioClip(*clip);
             notifyClipPropertyChanged(clipId);
         }
@@ -1474,8 +1478,10 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
             // Adjust offset for the trimmed start position
             double trimFromLeft = overlapStart - clip.startTime;
             if (clip.isBeatsAuthoritative() && clip.sourceBPM > 0.0 && tempoBPM > 0.0) {
-                // autoTempo: timeline seconds → source seconds via tempo ratio
-                trimmed.offset = clip.offset + trimFromLeft * tempoBPM / clip.sourceBPM;
+                // autoTempo: work in beats, derive seconds
+                double deltaBeats = trimFromLeft * tempoBPM / 60.0;
+                trimmed.offsetBeats = clip.offsetBeats + deltaBeats;
+                trimmed.offset = trimmed.offsetBeats * 60.0 / clip.sourceBPM;
             } else {
                 trimmed.offset = clip.offset + trimFromLeft * clip.speedRatio;
             }

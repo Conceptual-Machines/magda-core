@@ -68,6 +68,7 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("lengthBeats", clip.lengthBeats);
     obj->setProperty("loopStartBeats", clip.loopStartBeats);
     obj->setProperty("loopLengthBeats", clip.loopLengthBeats);
+    obj->setProperty("offsetBeats", clip.offsetBeats);
 
     // Source metadata
     if (clip.sourceNumBeats > 0.0)
@@ -201,6 +202,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.lengthBeats = obj->getProperty("lengthBeats");
     outClip.loopStartBeats = obj->getProperty("loopStartBeats");
     outClip.loopLengthBeats = obj->getProperty("loopLengthBeats");
+    outClip.offsetBeats = obj->getProperty("offsetBeats");
 
     // Source metadata
     outClip.sourceNumBeats = obj->getProperty("sourceNumBeats");

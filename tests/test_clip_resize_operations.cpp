@@ -838,13 +838,14 @@ TEST_CASE("ClipOperations::trimAudioFromLeft - loopStart tracks offset",
 
 TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM ratio",
           "[clip][resize][left][autotempo]") {
-    SECTION("Non-looped auto-tempo: offset uses projectBPM/sourceBPM") {
+    SECTION("Non-looped auto-tempo: offset uses beats as authoritative") {
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.type = ClipType::Audio;
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
+        clip.offsetBeats = 0.0;
         clip.speedRatio = 1.0;
         clip.autoTempo = true;
         clip.sourceBPM = 140.0;
@@ -852,20 +853,25 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         // Shrink by 1 second at 120 BPM
         ClipOperations::resizeContainerFromLeft(clip, 3.0, 120.0);
 
-        // actualDelta = 1.0s, toSource = 120/140 = 6/7
-        // sourceDelta = 1.0 * 6/7 = 6/7
+        // deltaBeats = 1.0 * 120/60 = 2.0 beats
+        // offsetBeats = 0 + 2.0 = 2.0
+        // offset (seconds) = 2.0 * 60/140 = 6/7
+        REQUIRE(clip.offsetBeats == Catch::Approx(2.0));
         REQUIRE(clip.offset == Catch::Approx(120.0 / 140.0));
     }
 
-    SECTION("Looped auto-tempo: offset wraps using BPM ratio") {
+    SECTION("Looped auto-tempo: offset wraps using beats") {
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;
         clip.type = ClipType::Audio;
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
+        clip.offsetBeats = 0.0;
         clip.loopStart = 0.0;
-        clip.loopLength = 2.0;  // 2 source seconds
+        clip.loopStartBeats = 0.0;
+        clip.loopLength = 2.0;                      // 2 source seconds
+        clip.loopLengthBeats = 2.0 * 140.0 / 60.0;  // source beats
         clip.loopEnabled = true;
         clip.speedRatio = 1.0;
         clip.autoTempo = true;
@@ -874,8 +880,10 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         // Shrink by 1 second at 120 BPM
         ClipOperations::resizeContainerFromLeft(clip, 7.0, 120.0);
 
-        // phaseDelta = 1.0 * 120/140 = 6/7
-        // wrapPhase(0 + 6/7, 2.0) = 6/7
+        // deltaBeats = 1.0 * 120/60 = 2.0 project beats
+        // wrapPhase(0 + 2.0, 4.667) = 2.0 beats
+        // offset (seconds) = 2.0 * 60/140 = 6/7
+        REQUIRE(clip.offsetBeats == Catch::Approx(2.0));
         REQUIRE(clip.offset == Catch::Approx(120.0 / 140.0));
     }
 

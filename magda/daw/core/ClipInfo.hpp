@@ -112,6 +112,10 @@ struct ClipInfo {
     // TE: Clip::offset (but TE stores in stretched time, we use source time)
     double offset = 0.0;  // Start position in source file (source-time seconds)
 
+    // Beat-based offset (authoritative for autoTempo clips)
+    // Source beats from file start. offset (seconds) is derived: offsetBeats * 60/sourceBPM
+    double offsetBeats = 0.0;
+
     // Looping - defines the region that loops
     // TE: AudioClipBase::loopStart, loopLength, isLooping()
     bool loopEnabled = false;  // Whether to loop the source region
@@ -264,7 +268,15 @@ struct ClipInfo {
     /// TE offset in stretched time.
     /// Looped: phase within the loop region (offset - loopStart).
     /// Non-looped: raw trim point in the source file.
-    double getTeOffset(bool looped) const {
+    /// For autoTempo clips, offsetBeats is authoritative and converted to
+    /// timeline seconds via projectBPM at the TE boundary.
+    double getTeOffset(bool looped, double projectBPM = 0.0) const {
+        if (autoTempo && projectBPM > 0.0) {
+            // Convert source beats to timeline seconds for TE
+            if (looped)
+                return (offsetBeats - loopStartBeats) * 60.0 / projectBPM;
+            return offsetBeats * 60.0 / projectBPM;
+        }
         if (looped)
             return (offset - loopStart) * speedRatio;
         return offset * speedRatio;

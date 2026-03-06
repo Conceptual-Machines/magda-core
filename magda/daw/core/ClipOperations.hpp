@@ -78,26 +78,38 @@ class ClipOperations {
         // be updated when the user explicitly changes it, not during tempo-driven resizes.
 
         if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty()) {
-            // For auto-tempo clips, speedRatio is 1.0 but the actual timeline-to-source
-            // conversion is projectBPM / sourceBPM (matching split/trim code paths).
-            double toSource = (clip.isBeatsAuthoritative() && clip.sourceBPM > 0.0 && bpm > 0.0)
-                                  ? bpm / clip.sourceBPM
-                                  : clip.speedRatio;
+            bool isAutoTempo = clip.isBeatsAuthoritative() && clip.sourceBPM > 0.0 && bpm > 0.0;
 
-            if (!clip.loopEnabled) {
-                // Non-looped: adjust offset so content stays at timeline position
-                double sourceDelta = actualDelta * toSource;
-                clip.offset = juce::jmax(0.0, clip.offset + sourceDelta);
-                clip.loopStart = clip.offset;
+            if (isAutoTempo) {
+                // Auto-tempo: work in beats (authoritative), derive seconds
+                double deltaBeats = actualDelta * bpm / 60.0;
+                if (!clip.loopEnabled) {
+                    clip.offsetBeats = juce::jmax(0.0, clip.offsetBeats + deltaBeats);
+                } else if (clip.loopLengthBeats > 0.0) {
+                    double relBeats = clip.offsetBeats - clip.loopStartBeats;
+                    clip.offsetBeats = clip.loopStartBeats +
+                                       wrapPhase(relBeats + deltaBeats, clip.loopLengthBeats);
+                }
+                // Derive source-time seconds for paint/display
+                clip.offset = clip.offsetBeats * 60.0 / clip.sourceBPM;
+                if (!clip.loopEnabled)
+                    clip.loopStart = clip.offset;
             } else {
-                // Looped: adjust offset (wrapped within loop region) so content stays at timeline
-                // position.  loopStart is the user-defined loop anchor — it must NOT move.
-                double sourceLength =
-                    clip.loopLength > 0.0 ? clip.loopLength : clip.length * toSource;
-                if (sourceLength > 0.0) {
-                    double phaseDelta = actualDelta * toSource;
-                    double relOffset = clip.offset - clip.loopStart;
-                    clip.offset = clip.loopStart + wrapPhase(relOffset + phaseDelta, sourceLength);
+                // Manual stretch: work in source-time seconds
+                double toSource = clip.speedRatio;
+                if (!clip.loopEnabled) {
+                    double sourceDelta = actualDelta * toSource;
+                    clip.offset = juce::jmax(0.0, clip.offset + sourceDelta);
+                    clip.loopStart = clip.offset;
+                } else {
+                    double sourceLength =
+                        clip.loopLength > 0.0 ? clip.loopLength : clip.length * toSource;
+                    if (sourceLength > 0.0) {
+                        double phaseDelta = actualDelta * toSource;
+                        double relOffset = clip.offset - clip.loopStart;
+                        clip.offset =
+                            clip.loopStart + wrapPhase(relOffset + phaseDelta, sourceLength);
+                    }
                 }
             }
         } else if (clip.type == ClipType::MIDI) {
@@ -506,6 +518,10 @@ class ClipOperations {
 
         if (enabled) {
             clip.analogPitch = false;  // Analog pitch is incompatible with autoTempo
+
+            // Convert current offset to beats
+            if (clip.sourceBPM > 0.0)
+                clip.offsetBeats = clip.offset * clip.sourceBPM / 60.0;
 
             // Convert current timeline position to beats
             clip.startBeats = (clip.startTime * bpm) / 60.0;

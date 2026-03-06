@@ -155,9 +155,10 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
         return;
     }
     DBG("[CLIP-SYNC-PROP-CHANGED] clipId="
-        << clipId << " view=" << (int)clip->view << " startTime=" << clip->startTime << " length="
-        << clip->length << " offset=" << clip->offset << " loopStart=" << clip->loopStart
-        << " getTeOffset()=" << clip->getTeOffset(clip->loopEnabled));
+        << clipId << " view=" << (int)clip->view << " startTime=" << clip->startTime
+        << " length=" << clip->length << " offset=" << clip->offset
+        << " loopStart=" << clip->loopStart << " getTeOffset()="
+        << clip->getTeOffset(clip->loopEnabled, edit_.tempoSequence.getBpmAt(te::TimePosition())));
 
     if (clip->isBeatsAuthoritative()) {
         DBG("[CLIP-SYNCHRONIZER] clipPropertyChanged clip "
@@ -530,8 +531,11 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
             }
 
             // Set file offset (trim point) - relative to loop start, in stretched time
-            audioClipPtr->setOffset(
-                te::TimeDuration::fromSeconds(clip->getTeOffset(clip->loopEnabled)));
+            {
+                double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                audioClipPtr->setOffset(
+                    te::TimeDuration::fromSeconds(clip->getTeOffset(clip->loopEnabled, bpm)));
+            }
 
             // Set looping properties
             if (clip->loopEnabled && clip->getSourceLength() > 0.0) {
@@ -898,8 +902,10 @@ void ClipSynchronizer::configureSessionAutoTempo(te::WaveAudioClip* audioClip,
     if (!audioClip->getAutoTempo())
         audioClip->setAutoTempo(true);
 
-    // Set offset (with speedRatio=1.0, stretched time == source time)
-    audioClip->setOffset(te::TimeDuration::fromSeconds(clip->getTeOffset(clip->loopEnabled)));
+    // Set offset — for autoTempo, convert source seconds to timeline seconds
+    double bpmForOffset = edit_.tempoSequence.getBpmAt(te::TimePosition());
+    audioClip->setOffset(
+        te::TimeDuration::fromSeconds(clip->getTeOffset(clip->loopEnabled, bpmForOffset)));
 
     // Set beat-based loop range using the same helper as arrangement path
     if (clip->loopEnabled) {
@@ -1504,7 +1510,8 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     DBG("    speedRatio: " << clip->speedRatio);
     DBG("    sourceBPM: " << clip->sourceBPM);
     DBG("    sourceNumBeats: " << clip->sourceNumBeats);
-    DBG("    getTeOffset(): " << clip->getTeOffset(clip->loopEnabled));
+    DBG("    getTeOffset(): " << clip->getTeOffset(
+            clip->loopEnabled, edit_.tempoSequence.getBpmAt(te::TimePosition())));
     DBG("    loopStart+loopLength: " << (clip->loopStart + clip->loopLength));
     DBG("  TE STATE BEFORE:");
     DBG("    autoTempo: " << (int)audioClipPtr->getAutoTempo());
@@ -1686,7 +1693,8 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
     // 7. UPDATE audio offset (trim point in file)
     // Must come AFTER loop range — setLoopRangeBeats resets offset internally
     {
-        double teOffset = juce::jmax(0.0, clip->getTeOffset(clip->loopEnabled));
+        double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+        double teOffset = juce::jmax(0.0, clip->getTeOffset(clip->loopEnabled, projectBpm));
         auto currentOffset = audioClipPtr->getPosition().getOffset().inSeconds();
         DBG("  OFFSET SYNC: teOffset=" << teOffset << " (offset=" << clip->offset << " loopStart="
                                        << clip->loopStart << " speedRatio=" << clip->speedRatio

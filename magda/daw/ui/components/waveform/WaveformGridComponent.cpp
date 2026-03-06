@@ -1097,6 +1097,8 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             } else {
                 // Non-loop: only move offset (simple single-field, no invariant)
                 clip->offset = newOffset;
+                if (clip->autoTempo && clip->sourceBPM > 0.0)
+                    clip->offsetBeats = clip->offset * clip->sourceBPM / 60.0;
                 clip->clampLengthToSource(dragStartFileDuration_);
             }
             break;
