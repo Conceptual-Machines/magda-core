@@ -644,8 +644,8 @@ void DrumGridUI::resized() {
         rightBounds.removeFromRight(kGap);
     }
 
-    // 3. PADS — everything remaining
-    auto gridArea = rightBounds;
+    // 3. PADS — fixed width, left-aligned in remaining space
+    auto gridArea = rightBounds.removeFromLeft(juce::jmin(kPadGridWidth, rightBounds.getWidth()));
 
     // --- Chains panel layout (FlexBox column) ---
     if (chainsPanelVisible_) {

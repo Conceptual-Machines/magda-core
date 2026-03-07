@@ -7,6 +7,7 @@
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipCommands.hpp"
@@ -317,9 +318,9 @@ WaveformEditorContent::WaveformEditorContent() {
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Integer);
     gridNumeratorLabel_->setRange(1.0, 128.0, 1.0);
     gridNumeratorLabel_->setValue(static_cast<double>(gridNumerator_), juce::dontSendNotification);
-    gridNumeratorLabel_->setTextColour(DarkTheme::getSecondaryTextColour());
+    gridNumeratorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     gridNumeratorLabel_->setShowFillIndicator(false);
-    gridNumeratorLabel_->setFontSize(11.0f);
+    gridNumeratorLabel_->setFontSize(12.0f);
     gridNumeratorLabel_->setDoubleClickResetsValue(true);
     gridNumeratorLabel_->onValueChange = [this, applyGridBeats]() {
         gridNumerator_ = static_cast<int>(gridNumeratorLabel_->getValue());
@@ -338,9 +339,9 @@ WaveformEditorContent::WaveformEditorContent() {
     gridDenominatorLabel_->setRange(2.0, 32.0, 4.0);
     gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                     juce::dontSendNotification);
-    gridDenominatorLabel_->setTextColour(DarkTheme::getSecondaryTextColour());
+    gridDenominatorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     gridDenominatorLabel_->setShowFillIndicator(false);
-    gridDenominatorLabel_->setFontSize(11.0f);
+    gridDenominatorLabel_->setFontSize(12.0f);
     gridDenominatorLabel_->setDoubleClickResetsValue(true);
     gridDenominatorLabel_->onValueChange = [this, applyGridBeats]() {
         // Constrain to nearest allowed value (multiples of 2 and 3)
@@ -367,7 +368,17 @@ WaveformEditorContent::WaveformEditorContent() {
     snapButton_ = std::make_unique<juce::TextButton>("SNAP");
     snapButton_->setClickingTogglesState(true);
     snapButton_->setToggleState(false, juce::dontSendNotification);
-    snapButton_->setLookAndFeel(buttonLookAndFeel_.get());
+    snapButton_->setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+    snapButton_->setColour(juce::TextButton::buttonOnColourId,
+                           DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
+    snapButton_->setColour(juce::TextButton::textColourOffId,
+                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    snapButton_->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    snapButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                   juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    snapButton_->setWantsKeyboardFocus(false);
+    snapButton_->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
     snapButton_->onClick = [this]() {
         gridComponent_->setSnapEnabled(snapButton_->getToggleState());
     };
@@ -377,7 +388,17 @@ WaveformEditorContent::WaveformEditorContent() {
     gridButton_ = std::make_unique<juce::TextButton>("GRID");
     gridButton_->setClickingTogglesState(true);
     gridButton_->setToggleState(gridVisible_, juce::dontSendNotification);
-    gridButton_->setLookAndFeel(buttonLookAndFeel_.get());
+    gridButton_->setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
+    gridButton_->setColour(juce::TextButton::buttonOnColourId,
+                           DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
+    gridButton_->setColour(juce::TextButton::textColourOffId,
+                           DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    gridButton_->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+    gridButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+                                   juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    gridButton_->setWantsKeyboardFocus(false);
+    gridButton_->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
     gridButton_->onClick = [this]() {
         gridVisible_ = gridButton_->getToggleState();
         if (gridVisible_ && gridNumerator_ > 0) {
@@ -583,15 +604,25 @@ void WaveformEditorContent::resized() {
 
     // Toolbar at top
     auto toolbarArea = bounds.removeFromTop(TOOLBAR_HEIGHT);
+    int vPad = 4;
+    int y = toolbarArea.getY();
+    int h = toolbarArea.getHeight();
+
+    // Left: time mode
     timeModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
-    toolbarArea.removeFromLeft(4);
-    gridNumeratorLabel_->setBounds(toolbarArea.removeFromLeft(28).reduced(2));
-    gridSlashLabel_->setBounds(toolbarArea.removeFromLeft(10).reduced(0, 2));
-    gridDenominatorLabel_->setBounds(toolbarArea.removeFromLeft(28).reduced(2));
-    toolbarArea.removeFromLeft(4);
-    snapButton_->setBounds(toolbarArea.removeFromLeft(44).reduced(2));
-    toolbarArea.removeFromLeft(4);
-    gridButton_->setBounds(toolbarArea.removeFromLeft(44).reduced(2));
+
+    // Right-aligned: SNAP, GRID, denominator, slash, numerator
+    snapButton_->setBounds(
+        toolbarArea.removeFromRight(36).withY(y + vPad).withHeight(h - vPad * 2));
+    toolbarArea.removeFromRight(4);
+    gridButton_->setBounds(
+        toolbarArea.removeFromRight(36).withY(y + vPad).withHeight(h - vPad * 2));
+    toolbarArea.removeFromRight(4);
+    gridDenominatorLabel_->setBounds(
+        toolbarArea.removeFromRight(24).withY(y + vPad).withHeight(h - vPad * 2));
+    gridSlashLabel_->setBounds(toolbarArea.removeFromRight(8).withY(y).withHeight(h));
+    gridNumeratorLabel_->setBounds(
+        toolbarArea.removeFromRight(24).withY(y + vPad).withHeight(h - vPad * 2));
 
     // Time ruler below toolbar
     auto rulerArea = bounds.removeFromTop(TIME_RULER_HEIGHT);
