@@ -1871,8 +1871,32 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // Delete/Backspace: Delete selected clips
+    // Delete/Backspace: time-selection delete takes priority, then selected clips
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {
+        if (timelineController && timelineController->getState().selection.isVisuallyActive()) {
+            const auto& state = timelineController->getState();
+            const auto& sel = state.selection;
+
+            // Resolve track IDs from selection indices
+            std::vector<TrackId> trackIds;
+            if (sel.trackIndices.empty()) {
+                trackIds = visibleTrackIds_;
+            } else {
+                for (int idx : sel.trackIndices) {
+                    if (idx >= 0 && idx < static_cast<int>(visibleTrackIds_.size()))
+                        trackIds.push_back(visibleTrackIds_[idx]);
+                }
+            }
+
+            auto cmd = std::make_unique<DeleteTimeSelectionCommand>(sel.startTime, sel.endTime,
+                                                                    trackIds, state.tempo.bpm);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+
+            timelineController->dispatch(SetEditCursorEvent{sel.startTime});
+            timelineController->dispatch(ClearTimeSelectionEvent{});
+            return true;
+        }
+
         const auto& selectedClips = selectionManager.getSelectedClips();
         if (!selectedClips.empty()) {
             // Copy to vector since we're modifying during iteration

@@ -1104,12 +1104,12 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
     bool endsAfterSel = clipEnd > selEnd;
 
     if (startsBeforeSel && endsAfterSel) {
-        // Spans both: reduce length by duration, shift phase for removed middle
-        liveClip->length -= duration;
-        // No phase adjustment needed — loop continues from same position
-        if (ripple) {
-            // Clips after will be shifted by the caller
+        if (!ripple) {
+            // Non-ripple: need two clips with a gap — fall through to normal split logic
+            return false;
         }
+        // Ripple: reduce length by duration, gap gets closed
+        liveClip->length -= duration;
     } else if (startsBeforeSel) {
         // Spans left boundary: trim right edge
         liveClip->length = selStart - clip.startTime;
@@ -1147,8 +1147,8 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
 // ============================================================================
 
 RippleDeleteTimeSelectionCommand::RippleDeleteTimeSelectionCommand(
-    double startTime, double endTime, const std::vector<TrackId>& trackIds)
-    : startTime_(startTime), endTime_(endTime), trackIds_(trackIds) {}
+    double startTime, double endTime, const std::vector<TrackId>& trackIds, double tempo)
+    : startTime_(startTime), endTime_(endTime), trackIds_(trackIds), tempo_(tempo) {}
 
 void RippleDeleteTimeSelectionCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
@@ -1193,10 +1193,10 @@ void RippleDeleteTimeSelectionCommand::execute() {
         if (startsBeforeSel && endsAfterSel) {
             // Clip spans both boundaries: split at startTime_, split again at endTime_,
             // delete the middle piece. This preserves both the left and right portions.
-            ClipId rightId = clipManager.splitClip(clip.id, startTime_);
+            ClipId rightId = clipManager.splitClip(clip.id, startTime_, tempo_);
             if (rightId != INVALID_CLIP_ID) {
                 // Split the right portion at endTime_ to isolate the middle
-                ClipId tailId = clipManager.splitClip(rightId, endTime_);
+                ClipId tailId = clipManager.splitClip(rightId, endTime_, tempo_);
                 // Delete the middle piece (between startTime_ and endTime_)
                 clipsToDelete.push_back(rightId);
                 // The tail (after endTime_) needs to be shifted left by duration
@@ -1214,7 +1214,7 @@ void RippleDeleteTimeSelectionCommand::execute() {
                 liveClip->length = newLength;
         } else if (endsAfterSel) {
             // Clip spans right boundary only: split at endTime_, shift right portion left
-            ClipId tailId = clipManager.splitClip(clip.id, endTime_);
+            ClipId tailId = clipManager.splitClip(clip.id, endTime_, tempo_);
             // Delete the left portion (starts inside selection)
             clipsToDelete.push_back(clip.id);
             // Shift the tail left to fill the gap
@@ -1276,8 +1276,9 @@ void RippleDeleteTimeSelectionCommand::undo() {
 // ============================================================================
 
 DeleteTimeSelectionCommand::DeleteTimeSelectionCommand(double startTime, double endTime,
-                                                       const std::vector<TrackId>& trackIds)
-    : startTime_(startTime), endTime_(endTime), trackIds_(trackIds) {}
+                                                       const std::vector<TrackId>& trackIds,
+                                                       double tempo)
+    : startTime_(startTime), endTime_(endTime), trackIds_(trackIds), tempo_(tempo) {}
 
 void DeleteTimeSelectionCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
@@ -1318,9 +1319,9 @@ void DeleteTimeSelectionCommand::execute() {
         if (startsBeforeSel && endsAfterSel) {
             // Clip spans both boundaries: split at startTime_, split again at endTime_,
             // delete the middle piece. Preserves both left and right portions.
-            ClipId rightId = clipManager.splitClip(clip.id, startTime_);
+            ClipId rightId = clipManager.splitClip(clip.id, startTime_, tempo_);
             if (rightId != INVALID_CLIP_ID) {
-                ClipId tailId = clipManager.splitClip(rightId, endTime_);
+                ClipId tailId = clipManager.splitClip(rightId, endTime_, tempo_);
                 clipsToDelete.push_back(rightId);
                 // tailId stays at endTime_ (no shift — non-ripple)
                 juce::ignoreUnused(tailId);
@@ -1333,7 +1334,7 @@ void DeleteTimeSelectionCommand::execute() {
                 liveClip->length = newLength;
         } else if (endsAfterSel) {
             // Clip spans right boundary: split at endTime_, delete left portion
-            ClipId tailId = clipManager.splitClip(clip.id, endTime_);
+            ClipId tailId = clipManager.splitClip(clip.id, endTime_, tempo_);
             clipsToDelete.push_back(clip.id);
             // tailId stays at endTime_ (no shift — non-ripple)
             juce::ignoreUnused(tailId);

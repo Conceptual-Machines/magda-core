@@ -496,10 +496,11 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             }
             // Time selection delete (no ripple — clips after selection stay in place)
             if (hasActiveTimeSelection()) {
-                const auto& sel = mainView->getTimelineController().getState().selection;
+                const auto& state = mainView->getTimelineController().getState();
+                const auto& sel = state.selection;
                 auto trackIds = resolveTimeSelectionTrackIds();
                 auto cmd = std::make_unique<DeleteTimeSelectionCommand>(sel.startTime, sel.endTime,
-                                                                        trackIds);
+                                                                        trackIds, state.tempo.bpm);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
 
                 // Move edit cursor to deletion point and clear selection

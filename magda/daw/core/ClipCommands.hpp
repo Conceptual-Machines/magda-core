@@ -464,7 +464,7 @@ class RenderTimeSelectionCommand : public UndoableCommand {
 class RippleDeleteTimeSelectionCommand : public UndoableCommand {
   public:
     RippleDeleteTimeSelectionCommand(double startTime, double endTime,
-                                     const std::vector<TrackId>& trackIds);
+                                     const std::vector<TrackId>& trackIds, double tempo = 120.0);
 
     juce::String getDescription() const override {
         return "Ripple Delete Time Selection";
@@ -477,6 +477,7 @@ class RippleDeleteTimeSelectionCommand : public UndoableCommand {
     double startTime_;
     double endTime_;
     std::vector<TrackId> trackIds_;
+    double tempo_;
     std::vector<ClipInfo> snapshot_;  // Full arrangement clips snapshot for undo
     bool executed_ = false;
 };
@@ -490,7 +491,7 @@ class RippleDeleteTimeSelectionCommand : public UndoableCommand {
 class DeleteTimeSelectionCommand : public UndoableCommand {
   public:
     DeleteTimeSelectionCommand(double startTime, double endTime,
-                               const std::vector<TrackId>& trackIds);
+                               const std::vector<TrackId>& trackIds, double tempo = 120.0);
 
     juce::String getDescription() const override {
         return "Delete Time Selection";
@@ -503,6 +504,7 @@ class DeleteTimeSelectionCommand : public UndoableCommand {
     double startTime_;
     double endTime_;
     std::vector<TrackId> trackIds_;
+    double tempo_;
     std::vector<ClipInfo> snapshot_;
     bool executed_ = false;
 };
