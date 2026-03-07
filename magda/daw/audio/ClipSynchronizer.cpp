@@ -1509,6 +1509,21 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         if (clip->warpEnabled != audioClipPtr->getWarpTime()) {
             audioClipPtr->setWarpTime(clip->warpEnabled);
         }
+
+        // Restore saved warp markers if warp is enabled and TE has no markers yet
+        if (clip->warpEnabled && !clip->warpMarkers.empty()) {
+            auto& warpManager = audioClipPtr->getWarpTimeManager();
+            auto existingMarkers = warpManager.getMarkers();
+            // TE creates 2 default boundary markers; if only those exist, restore saved
+            if (existingMarkers.size() <= 2) {
+                warpManager.removeAllMarkers();
+                for (const auto& wm : clip->warpMarkers) {
+                    warpManager.insertMarker(
+                        te::WarpMarker(te::TimePosition::fromSeconds(wm.sourceTime),
+                                       te::TimePosition::fromSeconds(wm.warpTime)));
+                }
+            }
+        }
     }
 
     // 6. UPDATE loop properties (BEFORE offset — setLoopRangeBeats can reset offset)

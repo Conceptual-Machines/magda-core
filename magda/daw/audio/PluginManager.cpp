@@ -2101,6 +2101,16 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             juce::ValueTree ps(te::IDs::PLUGIN);
             ps.setProperty(te::IDs::type, daw::audio::DrumGridPlugin::xmlTypeName, nullptr);
             plugin = edit_.getPluginCache().createNewPlugin(ps);
+
+            // Restore DrumGridPlugin chain state from saved XML
+            if (plugin && device.pluginState.isNotEmpty()) {
+                if (auto xml = juce::XmlDocument::parse(device.pluginState)) {
+                    auto savedState = juce::ValueTree::fromXml(*xml);
+                    if (savedState.isValid()) {
+                        plugin->restorePluginStateFromValueTree(savedState);
+                    }
+                }
+            }
         }
     } else {
         // External plugin — same lookup logic as loadDeviceAsPlugin but without track insertion
@@ -2279,6 +2289,15 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                                     nullptr);
             plugin = edit_.getPluginCache().createNewPlugin(pluginState);
             if (plugin) {
+                // Restore DrumGridPlugin chain state from saved XML
+                if (device.pluginState.isNotEmpty()) {
+                    if (auto xml = juce::XmlDocument::parse(device.pluginState)) {
+                        auto savedState = juce::ValueTree::fromXml(*xml);
+                        if (savedState.isValid()) {
+                            plugin->restorePluginStateFromValueTree(savedState);
+                        }
+                    }
+                }
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<DrumGridProcessor>(device.id, plugin);
             }

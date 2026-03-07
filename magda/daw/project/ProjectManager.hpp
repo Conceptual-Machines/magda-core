@@ -136,6 +136,13 @@ class ProjectManager {
     }
 
     /**
+     * @brief Get mutable project info (for capturing live state before save)
+     */
+    ProjectInfo& getMutableProjectInfo() {
+        return currentProject_;
+    }
+
+    /**
      * @brief Check if a project is currently open
      */
     bool hasOpenProject() const {
@@ -180,6 +187,11 @@ class ProjectManager {
      * Set by AudioBridge or TracktionEngineWrapper at initialization.
      */
     std::function<void()> onBeforeSave;
+
+    /**
+     * @brief Callback invoked after loading a project to restore UI state (zoom, view mode)
+     */
+    std::function<void(const ProjectInfo&)> onAfterLoad;
 
     /**
      * @brief Get last error message from failed operation

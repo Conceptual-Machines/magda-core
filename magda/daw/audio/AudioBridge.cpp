@@ -528,6 +528,22 @@ void AudioBridge::captureAllPluginStates() {
     pluginManager_.captureAllPluginStates();
 }
 
+void AudioBridge::captureWarpMarkerStates() {
+    auto& cm = ClipManager::getInstance();
+    for (auto& clip : cm.getArrangementClips()) {
+        if (clip.type == ClipType::Audio && clip.warpEnabled) {
+            auto markers = clipSynchronizer_.getWarpMarkers(clip.id);
+            auto* mutableClip = cm.getClip(clip.id);
+            if (mutableClip) {
+                mutableClip->warpMarkers.clear();
+                for (const auto& m : markers) {
+                    mutableClip->warpMarkers.push_back({m.sourceTime, m.warpTime});
+                }
+            }
+        }
+    }
+}
+
 te::Plugin::Ptr AudioBridge::loadBuiltInPlugin(const TrackId trackId, const juce::String& type) {
     return pluginManager_.loadBuiltInPlugin(trackId, type);
 }

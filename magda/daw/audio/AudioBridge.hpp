@@ -215,6 +215,11 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     void captureAllPluginStates();
 
+    /**
+     * @brief Capture warp marker positions from TE into ClipInfo for all warped clips.
+     */
+    void captureWarpMarkerStates();
+
     // =========================================================================
     // Plugin Loading
     // =========================================================================

@@ -220,6 +220,21 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     loopObj->setProperty("endBeats", info.loopEndBeats);
     projectObj->setProperty("loop", juce::var(loopObj));
 
+    // Zoom/scroll state
+    if (info.horizontalZoom > 0.0) {
+        auto* zoomObj = new juce::DynamicObject();
+        zoomObj->setProperty("horizontalZoom", info.horizontalZoom);
+        zoomObj->setProperty("verticalZoom", info.verticalZoom);
+        zoomObj->setProperty("scrollX", info.scrollX);
+        zoomObj->setProperty("scrollY", info.scrollY);
+        projectObj->setProperty("zoom", juce::var(zoomObj));
+    }
+
+    // Active view mode
+    if (info.activeView != 1) {  // Only save if not default (Arrange)
+        projectObj->setProperty("activeView", info.activeView);
+    }
+
     obj->setProperty("project", juce::var(projectObj));
 
     // Serialize tracks, clips, and automation
@@ -292,6 +307,21 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         outInfo.loopEnabled = loopObj->getProperty("enabled");
         outInfo.loopStartBeats = loopObj->getProperty("startBeats");
         outInfo.loopEndBeats = loopObj->getProperty("endBeats");
+    }
+
+    // Zoom/scroll state
+    auto zoomVar = projectObj->getProperty("zoom");
+    if (zoomVar.isObject()) {
+        auto* zoomObj = zoomVar.getDynamicObject();
+        outInfo.horizontalZoom = zoomObj->getProperty("horizontalZoom");
+        outInfo.verticalZoom = zoomObj->getProperty("verticalZoom");
+        outInfo.scrollX = zoomObj->getProperty("scrollX");
+        outInfo.scrollY = zoomObj->getProperty("scrollY");
+    }
+
+    // Active view mode
+    if (projectObj->hasProperty("activeView")) {
+        outInfo.activeView = static_cast<int>(projectObj->getProperty("activeView"));
     }
 
     // ATOMIC DESERIALIZATION: Validate and stage ALL components before modifying any state.

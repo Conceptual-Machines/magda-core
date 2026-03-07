@@ -191,6 +191,9 @@ bool ProjectManager::loadProject(const juce::File& file,
     clearDirty();
     notifyProjectOpened();
 
+    if (onAfterLoad)
+        onAfterLoad(currentProject_);
+
     return true;
 }
 
@@ -245,6 +248,9 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
 
                     clearDirty();
                     notifyProjectOpened();
+
+                    if (onAfterLoad)
+                        onAfterLoad(currentProject_);
                 }
 
                 if (onComplete)

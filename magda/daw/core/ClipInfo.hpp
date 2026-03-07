@@ -134,6 +134,13 @@ struct ClipInfo {
     bool warpEnabled = false;  // Whether warp markers are active on this clip
     int timeStretchMode = 0;   // TimeStretcher::Mode (0 = default/auto)
 
+    // Warp marker positions (only populated when warpEnabled == true)
+    struct WarpMarker {
+        double sourceTime;
+        double warpTime;
+    };
+    std::vector<WarpMarker> warpMarkers;
+
     // =========================================================================
     // Auto-tempo / Musical mode (beat-based length)
     // =========================================================================

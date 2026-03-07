@@ -89,6 +89,18 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         obj->setProperty("speedRatio", clip.speedRatio);
         if (clip.warpEnabled) {
             obj->setProperty("warpEnabled", clip.warpEnabled);
+
+            // Serialize warp markers
+            if (!clip.warpMarkers.empty()) {
+                juce::Array<juce::var> warpArray;
+                for (const auto& wm : clip.warpMarkers) {
+                    auto* wmObj = new juce::DynamicObject();
+                    wmObj->setProperty("sourceTime", wm.sourceTime);
+                    wmObj->setProperty("warpTime", wm.warpTime);
+                    warpArray.add(juce::var(wmObj));
+                }
+                obj->setProperty("warpMarkers", warpArray);
+            }
         }
         if (clip.analogPitch) {
             obj->setProperty("analogPitch", clip.analogPitch);
@@ -223,6 +235,20 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         outClip.warpEnabled = static_cast<bool>(obj->getProperty("warpEnabled"));
         outClip.analogPitch = static_cast<bool>(obj->getProperty("analogPitch"));
         outClip.timeStretchMode = obj->getProperty("timeStretchMode");
+
+        // Warp markers
+        auto warpMarkersVar = obj->getProperty("warpMarkers");
+        if (warpMarkersVar.isArray()) {
+            auto* arr = warpMarkersVar.getArray();
+            for (const auto& wmVar : *arr) {
+                if (auto* wmObj = wmVar.getDynamicObject()) {
+                    ClipInfo::WarpMarker wm;
+                    wm.sourceTime = wmObj->getProperty("sourceTime");
+                    wm.warpTime = wmObj->getProperty("warpTime");
+                    outClip.warpMarkers.push_back(wm);
+                }
+            }
+        }
     }
 
     // MIDI notes

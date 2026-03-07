@@ -30,6 +30,15 @@ struct ProjectInfo {
     double loopStartBeats = 0.0;
     double loopEndBeats = 0.0;
 
+    // Zoom/scroll state
+    double horizontalZoom = -1.0;  // Pixels per beat (-1 = use default)
+    double verticalZoom = 1.0;     // Track height multiplier
+    int scrollX = 0;               // Horizontal scroll position
+    int scrollY = 0;               // Vertical scroll position
+
+    // Active view (0=Live/Session, 1=Arrange, 2=Mix, 3=Master)
+    int activeView = 1;  // Default to Arrange
+
     // Version tracking
     juce::String version = "1.0.0";  // Magda version
     juce::Time lastModified;
