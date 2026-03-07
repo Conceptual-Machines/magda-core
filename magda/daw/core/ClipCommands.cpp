@@ -8,6 +8,7 @@
 #include "../audio/MagdaSamplerPlugin.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
 #include "../project/ProjectManager.hpp"
+#include "../ui/state/TimelineController.hpp"
 #include "ClipOperations.hpp"
 #include "Config.hpp"
 #include "TrackManager.hpp"
@@ -1084,6 +1085,64 @@ void RenderTimeSelectionCommand::undo() {
 }
 
 // ============================================================================
+// Helper: trim a looped clip's boundaries without splitting/deleting notes.
+// For looped clips, time selection operations just adjust the container
+// (startTime, length, midiOffset) — the notes repeat and don't need modification.
+// Returns true if the clip was handled as a looped clip.
+static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, double selStart,
+                           double selEnd, bool ripple, double duration,
+                           std::vector<ClipId>& clipsToDelete) {
+    if (!clip.loopEnabled)
+        return false;
+
+    auto* liveClip = clipManager.getClip(clip.id);
+    if (!liveClip)
+        return false;
+
+    double clipEnd = clip.startTime + clip.length;
+    bool startsBeforeSel = clip.startTime < selStart;
+    bool endsAfterSel = clipEnd > selEnd;
+
+    if (startsBeforeSel && endsAfterSel) {
+        // Spans both: reduce length by duration, shift phase for removed middle
+        liveClip->length -= duration;
+        // No phase adjustment needed — loop continues from same position
+        if (ripple) {
+            // Clips after will be shifted by the caller
+        }
+    } else if (startsBeforeSel) {
+        // Spans left boundary: trim right edge
+        liveClip->length = selStart - clip.startTime;
+    } else if (endsAfterSel) {
+        // Spans right boundary: trim left edge, adjust phase
+        double trimAmount = selEnd - clip.startTime;
+        liveClip->startTime = ripple ? selStart : selEnd;
+        liveClip->length -= trimAmount;
+
+        // Adjust midiOffset (phase) for the trimmed portion
+        if (clip.type == ClipType::MIDI && clip.loopLength > 0.0) {
+            double bpm = 120.0;
+            if (auto* controller = magda::TimelineController::getCurrent()) {
+                bpm = controller->getState().tempo.bpm;
+            }
+            double trimBeats = trimAmount * bpm / 60.0;
+            double loopLengthBeats = clip.loopLength * bpm / 60.0;
+            if (loopLengthBeats > 0.0) {
+                double newPhase = std::fmod(clip.midiOffset + trimBeats, loopLengthBeats);
+                if (newPhase < 0.0)
+                    newPhase += loopLengthBeats;
+                liveClip->midiOffset = newPhase;
+            }
+        }
+    } else {
+        // Fully inside: delete
+        clipsToDelete.push_back(clip.id);
+    }
+
+    return true;
+}
+
+// ============================================================================
 // RippleDeleteTimeSelectionCommand
 // ============================================================================
 
@@ -1122,6 +1181,10 @@ void RippleDeleteTimeSelectionCommand::execute() {
 
         // No overlap
         if (clip.startTime >= endTime_ || clipEnd <= startTime_)
+            continue;
+
+        // Looped clips: just adjust boundaries, don't split/delete notes
+        if (trimLoopedClip(clipManager, clip, startTime_, endTime_, true, duration, clipsToDelete))
             continue;
 
         bool startsBeforeSel = clip.startTime < startTime_;
@@ -1243,6 +1306,10 @@ void DeleteTimeSelectionCommand::execute() {
 
         // No overlap
         if (clip.startTime >= endTime_ || clipEnd <= startTime_)
+            continue;
+
+        // Looped clips: just adjust boundaries, don't split/delete notes
+        if (trimLoopedClip(clipManager, clip, startTime_, endTime_, false, duration, clipsToDelete))
             continue;
 
         bool startsBeforeSel = clip.startTime < startTime_;
