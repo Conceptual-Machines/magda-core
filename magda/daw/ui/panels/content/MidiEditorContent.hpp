@@ -172,7 +172,9 @@ class MidiEditorContent : public PanelContent,
         return velocityDrawerOpen_ ? drawerHeight_ : 0;
     }
 
-    // --- Edit cursor blink state ---
+    // --- Edit cursor (local to MIDI editor, independent from arrangement) ---
+    void setLocalEditCursor(double positionSeconds);
+    double localEditCursorPosition_ = -1.0;  // seconds, -1 = hidden
     bool editCursorBlinkVisible_ = true;
 
     // Inner timer for edit cursor blink (avoids juce::Timer diamond with subclasses)

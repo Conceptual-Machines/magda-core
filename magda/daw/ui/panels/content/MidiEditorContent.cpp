@@ -44,12 +44,8 @@ MidiEditorContent::MidiEditorContent() {
         viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
     };
 
-    // TimeRuler click callback — set edit cursor position
-    timeRuler_->onPositionClicked = [](double time) {
-        if (auto* controller = magda::TimelineController::getCurrent()) {
-            controller->dispatch(magda::SetEditCursorEvent{time});
-        }
-    };
+    // TimeRuler click callback — set local edit cursor (independent from arrangement)
+    timeRuler_->onPositionClicked = [this](double time) { setLocalEditCursor(time); };
 
     // TimeRuler loop region drag callback
     timeRuler_->onLoopRegionChanged = [this](double displayStart, double displayEnd) {
@@ -92,17 +88,14 @@ MidiEditorContent::MidiEditorContent() {
         magda::ClipManager::getInstance().setClipMidiOffset(editingClipId_, phaseBeats);
     };
 
-    // Edit cursor blink timer
+    // Edit cursor blink timer (uses local cursor, not global)
     blinkTimer_.callback = [this]() {
         editCursorBlinkVisible_ = !editCursorBlinkVisible_;
 
-        if (auto* controller = magda::TimelineController::getCurrent()) {
-            double editPos = controller->getState().editCursorPosition;
-            bool visible = editPos >= 0.0;
-            setGridEditCursorPosition(editPos, visible && editCursorBlinkVisible_);
-            if (timeRuler_) {
-                timeRuler_->setEditCursorPosition(editPos, editCursorBlinkVisible_);
-            }
+        bool visible = localEditCursorPosition_ >= 0.0;
+        setGridEditCursorPosition(localEditCursorPosition_, visible && editCursorBlinkVisible_);
+        if (timeRuler_) {
+            timeRuler_->setEditCursorPosition(localEditCursorPosition_, editCursorBlinkVisible_);
         }
     };
 
@@ -195,6 +188,20 @@ void MidiEditorContent::performWheelZoom(double zoomFactor, int mouseXInViewport
 // ============================================================================
 // TimeRuler
 // ============================================================================
+
+void MidiEditorContent::setLocalEditCursor(double positionSeconds) {
+    localEditCursorPosition_ = positionSeconds;
+    editCursorBlinkVisible_ = true;
+
+    if (!blinkTimer_.isTimerRunning()) {
+        blinkTimer_.startTimerHz(2);
+    }
+
+    setGridEditCursorPosition(positionSeconds, true);
+    if (timeRuler_) {
+        timeRuler_->setEditCursorPosition(positionSeconds, true);
+    }
+}
 
 void MidiEditorContent::updateTimeRuler() {
     if (!timeRuler_)
@@ -311,10 +318,14 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
     if (magda::hasFlag(changes, magda::ChangeFlags::Playhead)) {
         double playPos = state.playhead.playbackPosition;
 
-        // Auto-hide edit cursor when playback starts
-        if (state.playhead.isPlaying && state.editCursorPosition >= 0.0) {
-            if (auto* controller = magda::TimelineController::getCurrent()) {
-                controller->dispatch(magda::SetEditCursorEvent{-1.0});
+        // Auto-hide local edit cursor when playback starts
+        if (state.playhead.isPlaying && localEditCursorPosition_ >= 0.0) {
+            localEditCursorPosition_ = -1.0;
+            blinkTimer_.stopTimer();
+            editCursorBlinkVisible_ = true;
+            setGridEditCursorPosition(-1.0, false);
+            if (timeRuler_) {
+                timeRuler_->setEditCursorPosition(-1.0, false);
             }
         }
 
@@ -355,25 +366,8 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
         }
     }
 
-    // Edit cursor changes (SetEditCursorEvent returns Selection flag)
-    if (magda::hasFlag(changes, magda::ChangeFlags::Selection)) {
-        double editPos = state.editCursorPosition;
-        bool visible = editPos >= 0.0;
-
-        // Start/stop blink timer
-        if (visible && !blinkTimer_.isTimerRunning()) {
-            editCursorBlinkVisible_ = true;
-            blinkTimer_.startTimerHz(2);  // ~500ms blink
-        } else if (!visible && blinkTimer_.isTimerRunning()) {
-            blinkTimer_.stopTimer();
-            editCursorBlinkVisible_ = true;
-        }
-
-        setGridEditCursorPosition(editPos, visible && editCursorBlinkVisible_);
-        if (timeRuler_) {
-            timeRuler_->setEditCursorPosition(editPos, editCursorBlinkVisible_);
-        }
-    }
+    // Edit cursor: MIDI editor uses its own local cursor, not the global one.
+    // No reaction to global Selection changes here.
 
     // Tempo or timeline length changes — update ruler and grid
     // Note: do NOT respond to arrangement Zoom changes here;

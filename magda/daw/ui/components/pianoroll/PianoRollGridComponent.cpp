@@ -445,8 +445,8 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
         }
         double positionSeconds = absoluteBeat * (60.0 / tempo);
 
-        if (auto* controller = TimelineController::getCurrent()) {
-            controller->dispatch(SetEditCursorEvent{positionSeconds});
+        if (onEditCursorSet) {
+            onEditCursorSet(positionSeconds);
         }
         return;
     }

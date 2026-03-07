@@ -147,6 +147,7 @@ class DrumGridClipGrid : public juce::Component,
     std::function<void(magda::ClipId)> onPasteNotes;
     std::function<void(magda::ClipId, std::vector<size_t>)> onDuplicateNotes;
     std::function<void(magda::ClipId, std::vector<size_t>)> onDeleteNotes;
+    std::function<void(double)> onEditCursorSet;
 
     // Refresh note components from clip data
     void refreshNotes() {
@@ -693,8 +694,8 @@ class DrumGridClipGrid : public juce::Component,
             }
             double positionSeconds = gridBeat * (60.0 / tempo);
 
-            if (auto* controller = magda::TimelineController::getCurrent()) {
-                controller->dispatch(magda::SetEditCursorEvent{positionSeconds});
+            if (onEditCursorSet) {
+                onEditCursorSet(positionSeconds);
             }
             return;
         }
@@ -1435,6 +1436,11 @@ DrumGridClipContent::DrumGridClipContent() {
             std::make_unique<magda::DeleteMultipleMidiNotesCommand>(clipId, std::move(noteIndices));
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
         magda::SelectionManager::getInstance().clearNoteSelection();
+    };
+
+    // Edit cursor set from grid (Alt+click on grid line) — local to MIDI editor
+    gridComponent_->onEditCursorSet = [this](double positionSeconds) {
+        setLocalEditCursor(positionSeconds);
     };
 
     viewport_->setViewedComponent(gridComponent_.get(), false);

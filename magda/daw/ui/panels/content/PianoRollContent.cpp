@@ -413,6 +413,11 @@ void PianoRollContent::setupGridCallbacks() {
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
         magda::SelectionManager::getInstance().clearNoteSelection();
     };
+
+    // Edit cursor set from grid (Alt+click on grid line) — local to MIDI editor
+    gridComponent_->onEditCursorSet = [this](double positionSeconds) {
+        setLocalEditCursor(positionSeconds);
+    };
 }
 
 // ============================================================================

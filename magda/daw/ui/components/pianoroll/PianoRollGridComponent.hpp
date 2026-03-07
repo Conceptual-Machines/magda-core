@@ -200,6 +200,9 @@ class PianoRollGridComponent : public juce::Component,
     std::function<void(ClipId, std::vector<size_t>)> onDuplicateNotes;
     std::function<void(ClipId, std::vector<size_t>)> onDeleteNotes;
 
+    // Edit cursor click on grid (Alt+click) — position in seconds
+    std::function<void(double)> onEditCursorSet;
+
   private:
     ClipId clipId_ = INVALID_CLIP_ID;      // Primary selected clip (for backward compatibility)
     std::vector<ClipId> selectedClipIds_;  // All selected clips (editable)
