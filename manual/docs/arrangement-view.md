@@ -76,6 +76,9 @@ Drag audio files from the [Media Explorer](panels/browsers.md) directly onto a t
 
 The playhead shows the current playback position. Click on the timeline ruler to reposition it. Press ++home++ to return to the start.
 
+!!! note "Edit Cursor"
+    The **edit cursor** is a white blinking line separate from the playhead. Place it with ++alt+"click"++ on the timeline ruler or inside a clip. It marks the position for operations like **Split** (++cmd+e++). Press ++escape++ to hide it. The MIDI editor has its own independent edit cursor — placing one in the piano roll or drum grid does not affect the arrangement cursor.
+
 ## Editing Modes
 
 MAGDA supports two editing modes depending on context:
