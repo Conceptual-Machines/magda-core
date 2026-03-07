@@ -120,6 +120,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     std::function<void(double, double, int)> onZoomChanged;   // newZoom, anchorTime, anchorScreenX
     std::function<void(int)> onScrollRequested;               // deltaX scroll amount
     std::function<void(double, double)> onLoopRegionChanged;  // Loop start/end changed via drag
+    std::function<void(double)> onPhaseMarkerChanged;  // Phase position changed via drag (seconds)
 
   private:
     // Display state
@@ -186,7 +187,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     void initLoopInteraction();
 
     // Drag state (zoom or scroll)
-    enum class DragMode { None, Zooming, Scrolling };
+    enum class DragMode { None, Zooming, Scrolling, PhaseDrag };
     DragMode dragMode = DragMode::None;
     int mouseDownX = 0;
     int mouseDownY = 0;

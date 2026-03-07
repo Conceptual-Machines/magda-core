@@ -69,6 +69,29 @@ MidiEditorContent::MidiEditorContent() {
         magda::ClipManager::getInstance().setLoopLength(editingClipId_, newLoopLength, bpm);
     };
 
+    // TimeRuler phase marker drag callback
+    timeRuler_->onPhaseMarkerChanged = [this](double phaseSeconds) {
+        if (editingClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (!clip || !clip->loopEnabled)
+            return;
+
+        auto* controller = magda::TimelineController::getCurrent();
+        double bpm = controller ? controller->getState().tempo.bpm : 120.0;
+        double phaseBeats = phaseSeconds * bpm / 60.0;
+
+        // Wrap within loop length
+        double loopLengthBeats = clip->loopLength * bpm / 60.0;
+        if (loopLengthBeats > 0.0) {
+            phaseBeats = std::fmod(phaseBeats, loopLengthBeats);
+            if (phaseBeats < 0.0)
+                phaseBeats += loopLengthBeats;
+        }
+
+        magda::ClipManager::getInstance().setClipMidiOffset(editingClipId_, phaseBeats);
+    };
+
     // Edit cursor blink timer
     blinkTimer_.callback = [this]() {
         editCursorBlinkVisible_ = !editCursorBlinkVisible_;

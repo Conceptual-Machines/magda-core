@@ -181,6 +181,17 @@ int TimeRuler::getPreferredHeight() const {
 }
 
 void TimeRuler::mouseDown(const juce::MouseEvent& event) {
+    // Alt+click near phase marker → start phase drag
+    if (event.mods.isAltDown() && loopEnabled && (loopPhaseVisible || loopPhaseHoverOnly)) {
+        double phaseTime = relativeMode ? loopPhasePosition : (timeOffset + loopPhasePosition);
+        int phaseX = timeToPixel(phaseTime);
+        if (std::abs(event.x - phaseX) <= 8) {
+            dragMode = DragMode::PhaseDrag;
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            return;
+        }
+    }
+
     // Try loop marker interaction first
     if (loopInteraction_.mouseDown(event.x, event.y))
         return;
@@ -197,6 +208,24 @@ void TimeRuler::mouseDown(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
+    // Phase marker drag
+    if (dragMode == DragMode::PhaseDrag) {
+        double newPhaseTime = pixelToTime(event.x);
+        // Convert to relative time if needed
+        if (!relativeMode) {
+            newPhaseTime -= timeOffset;
+        }
+        newPhaseTime = juce::jmax(0.0, newPhaseTime);
+        // Clamp to loop length
+        if (loopLength > 0.0) {
+            newPhaseTime = juce::jmin(newPhaseTime, loopOffset + loopLength);
+        }
+        if (onPhaseMarkerChanged) {
+            onPhaseMarkerChanged(newPhaseTime);
+        }
+        return;
+    }
+
     // Try loop marker interaction first
     if (loopInteraction_.mouseDrag(event.x, event.y))
         return;
@@ -245,6 +274,12 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseUp(const juce::MouseEvent& event) {
+    if (dragMode == DragMode::PhaseDrag) {
+        dragMode = DragMode::None;
+        setMouseCursor(CursorManager::getInstance().getZoomCursor());
+        return;
+    }
+
     // Complete loop marker interaction
     if (loopInteraction_.mouseUp(event.x, event.y))
         return;
@@ -269,11 +304,26 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseMove(const juce::MouseEvent& event) {
-    auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
-    if (loopCursor != juce::MouseCursor::NormalCursor) {
-        setMouseCursor(loopCursor);
+    // Alt+hover near phase marker shows resize cursor
+    if (event.mods.isAltDown() && loopEnabled && (loopPhaseVisible || loopPhaseHoverOnly)) {
+        double phaseTime = relativeMode ? loopPhasePosition : (timeOffset + loopPhasePosition);
+        int phaseX = timeToPixel(phaseTime);
+        if (std::abs(event.x - phaseX) <= 8) {
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            // Still update hover state below
+        } else {
+            auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
+            setMouseCursor(loopCursor != juce::MouseCursor::NormalCursor
+                               ? loopCursor
+                               : CursorManager::getInstance().getZoomCursor());
+        }
     } else {
-        setMouseCursor(CursorManager::getInstance().getZoomCursor());
+        auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
+        if (loopCursor != juce::MouseCursor::NormalCursor) {
+            setMouseCursor(loopCursor);
+        } else {
+            setMouseCursor(CursorManager::getInstance().getZoomCursor());
+        }
     }
 
     // Check proximity to phase marker for hover display
