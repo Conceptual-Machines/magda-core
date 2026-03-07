@@ -1928,6 +1928,14 @@ void PluginManager::syncMasterPlugins() {
         // Create processor so UI parameter changes reach the TE plugin
         registerRackPluginProcessor(device.id, plugin, device);
 
+        // Update capability flags on the DeviceInfo
+        if (auto* devInfo = TrackManager::getInstance().getDevice(MASTER_TRACK_ID, device.id)) {
+            if (plugin->canSidechain())
+                devInfo->canSidechain = true;
+            if (plugin->takesMidiInput() && !device.isInstrument)
+                devInfo->canReceiveMidi = true;
+        }
+
         // Handle async loading for external plugins
         if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
             if (extPlugin->isInitialisingAsync()) {
