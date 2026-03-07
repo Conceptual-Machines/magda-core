@@ -441,6 +441,14 @@ void TrackManager::setDeviceLevel(const ChainNodePath& devicePath, float level) 
 
 void TrackManager::updateDeviceParameters(DeviceId deviceId,
                                           const std::vector<ParameterInfo>& params) {
+    // Check master track first
+    for (auto& element : masterTrack_.chainElements) {
+        if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
+            magda::getDevice(element).parameters = params;
+            return;
+        }
+    }
+
     // Search all tracks for the device and update its parameters
     for (auto& track : tracks_) {
         for (auto& element : track.chainElements) {
@@ -465,6 +473,14 @@ void TrackManager::updateDeviceParameters(DeviceId deviceId,
 
 void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
                                               const std::vector<int>& visibleParams) {
+    // Check master track first
+    for (auto& element : masterTrack_.chainElements) {
+        if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
+            magda::getDevice(element).visibleParameters = visibleParams;
+            return;
+        }
+    }
+
     // Search all tracks for the device and update visible parameters
     for (auto& track : tracks_) {
         for (auto& element : track.chainElements) {

@@ -1908,32 +1908,42 @@ void PluginManager::syncMasterPlugins() {
         if (!isDevice(element))
             continue;
         const auto& device = getDevice(element);
-        juce::ScopedLock lock(pluginLock_);
-        if (syncedDevices_.find(device.id) != syncedDevices_.end())
-            continue;
+        {
+            juce::ScopedLock lock(pluginLock_);
+            if (syncedDevices_.find(device.id) != syncedDevices_.end())
+                continue;
+        }
 
         auto plugin = createPluginOnly(MASTER_TRACK_ID, device);
-        if (plugin) {
-            masterList.insertPlugin(plugin, -1, nullptr);
+        if (!plugin)
+            continue;
+
+        masterList.insertPlugin(plugin, -1, nullptr);
+        {
+            juce::ScopedLock lock(pluginLock_);
             syncedDevices_[device.id].plugin = plugin;
             pluginToDevice_[plugin.get()] = device.id;
+        }
 
-            // Handle async loading for external plugins
-            if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
-                if (extPlugin->isInitialisingAsync()) {
-                    syncedDevices_[device.id].isPendingLoad = true;
-                    if (auto* devInfo =
-                            TrackManager::getInstance().getDevice(MASTER_TRACK_ID, device.id)) {
-                        devInfo->loadState = DeviceLoadState::Loading;
-                    }
-                    TrackManager::getInstance().notifyTrackDevicesChanged(MASTER_TRACK_ID);
-                    pollAsyncPluginLoad(MASTER_TRACK_ID, device.id, plugin);
+        // Create processor so UI parameter changes reach the TE plugin
+        registerRackPluginProcessor(device.id, plugin, device);
+
+        // Handle async loading for external plugins
+        if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+            if (extPlugin->isInitialisingAsync()) {
+                juce::ScopedLock lock(pluginLock_);
+                syncedDevices_[device.id].isPendingLoad = true;
+                if (auto* devInfo =
+                        TrackManager::getInstance().getDevice(MASTER_TRACK_ID, device.id)) {
+                    devInfo->loadState = DeviceLoadState::Loading;
                 }
+                TrackManager::getInstance().notifyTrackDevicesChanged(MASTER_TRACK_ID);
+                pollAsyncPluginLoad(MASTER_TRACK_ID, device.id, plugin);
             }
         }
     }
 
-    DBG("PluginManager::syncMasterPlugins: synced " << magdaDevices.size() << " devices");
+    DBG("syncMasterPlugins: synced " << magdaDevices.size() << " devices on master");
 }
 
 // =============================================================================
@@ -2335,6 +2345,12 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
     if (processor) {
         // Restore parameter values from DeviceInfo onto the newly created plugin
         processor->syncFromDeviceInfo(device);
+
+        // Populate parameters back to TrackManager so the DeviceInfo has parameter metadata
+        // (needed for UI controls to function — setDeviceParameterValue checks params.size())
+        DeviceInfo tempInfo;
+        processor->populateParameters(tempInfo);
+        TrackManager::getInstance().updateDeviceParameters(deviceId, tempInfo.parameters);
 
         juce::ScopedLock lock(pluginLock_);
         syncedDevices_[deviceId].processor = std::move(processor);
