@@ -711,6 +711,7 @@ void DrumGridPlugin::notifyGraphRebuildNeeded() {
 
 //==============================================================================
 void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
+    // Copy top-level properties
     for (int i = 0; i < v.getNumProperties(); ++i) {
         auto propName = v.getPropertyName(i);
         state.setProperty(propName, v.getProperty(propName), nullptr);
@@ -718,6 +719,7 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
 
     mixerExpanded_.forceUpdateOfCachedValue();
 
+    // Copy CHAIN children into state ValueTree, then create Chain objects
     for (int i = 0; i < v.getNumChildren(); ++i) {
         auto childTree = v.getChild(i);
         if (!childTree.hasType(chainTreeId))
@@ -727,17 +729,31 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
         if (chainIdx < 0)
             continue;
 
-        auto* chain = getChainByIndexMutable(chainIdx);
-        if (!chain)
-            continue;
+        // Add the CHAIN child to the plugin's state ValueTree
+        // (the constructor reads from state, but we're called after construction)
+        auto chainCopy = childTree.createCopy();
+        state.addChild(chainCopy, -1, nullptr);
 
-        chain->level.forceUpdateOfCachedValue();
-        chain->pan.forceUpdateOfCachedValue();
-        chain->mute.forceUpdateOfCachedValue();
-        chain->solo.forceUpdateOfCachedValue();
+        // Create the Chain object (same as constructor logic)
+        auto chain = std::make_unique<Chain>();
+        chain->index = chainCopy.getProperty(chainIndexId, 0);
+        chain->lowNote = chainCopy.getProperty(lowNoteId, 60);
+        chain->highNote = chainCopy.getProperty(highNoteId, 60);
+        chain->rootNote = chainCopy.getProperty(rootNoteId, 60);
+        chain->name = chainCopy.getProperty(chainNameId, "").toString();
 
-        for (int p = 0; p < childTree.getNumChildren(); ++p) {
-            auto pluginState = childTree.getChild(p);
+        auto um = getUndoManager();
+        chain->level.referTo(chainCopy, padLevelId, um, 0.0f);
+        chain->pan.referTo(chainCopy, padPanId, um, 0.0f);
+        chain->mute.referTo(chainCopy, padMuteId, um, false);
+        chain->solo.referTo(chainCopy, padSoloId, um, false);
+
+        if (chain->index >= nextChainIndex_)
+            nextChainIndex_ = chain->index + 1;
+
+        // Restore plugins from CHAIN children
+        for (int p = 0; p < chainCopy.getNumChildren(); ++p) {
+            auto pluginState = chainCopy.getChild(p);
             if (!pluginState.hasType(te::IDs::PLUGIN))
                 continue;
             auto plugin = edit.getPluginCache().getOrCreatePluginFor(pluginState);
@@ -753,6 +769,8 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
                 }
             }
         }
+
+        chains_.push_back(std::move(chain));
     }
 }
 
