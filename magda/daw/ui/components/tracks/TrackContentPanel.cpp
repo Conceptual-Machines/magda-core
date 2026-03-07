@@ -569,7 +569,30 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
 }
 
 void TrackContentPanel::paintEditCursor(juce::Graphics& g) {
-    if (!timelineController || selectedTrackIndex < 0) {
+    if (!timelineController) {
+        return;
+    }
+
+    // Determine which track to draw the cursor on
+    int cursorTrackIndex = selectedTrackIndex;
+
+    // If no track is selected, fall back to the selected clip's track
+    if (cursorTrackIndex < 0) {
+        auto selectedClipId = magda::SelectionManager::getInstance().getSelectedClip();
+        if (selectedClipId != magda::INVALID_CLIP_ID) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(selectedClipId);
+            if (clip) {
+                for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+                    if (visibleTrackIds_[i] == clip->trackId) {
+                        cursorTrackIndex = static_cast<int>(i);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (cursorTrackIndex < 0) {
         return;
     }
 
@@ -590,7 +613,7 @@ void TrackContentPanel::paintEditCursor(juce::Graphics& g) {
     int cursorX = timeToPixel(editCursorPos);
 
     // Only draw on selected track(s)
-    auto trackArea = getTrackLaneArea(selectedTrackIndex);
+    auto trackArea = getTrackLaneArea(cursorTrackIndex);
     if (trackArea.isEmpty()) {
         return;
     }

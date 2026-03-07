@@ -366,8 +366,19 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
         }
     }
 
-    // Edit cursor: MIDI editor uses its own local cursor, not the global one.
-    // No reaction to global Selection changes here.
+    // Edit cursor: MIDI editor uses its own local cursor, but clears it
+    // when the global cursor is explicitly hidden (e.g. Escape key).
+    if (magda::hasFlag(changes, magda::ChangeFlags::Selection)) {
+        if (state.editCursorPosition < 0.0 && localEditCursorPosition_ >= 0.0) {
+            localEditCursorPosition_ = -1.0;
+            blinkTimer_.stopTimer();
+            editCursorBlinkVisible_ = true;
+            setGridEditCursorPosition(-1.0, false);
+            if (timeRuler_) {
+                timeRuler_->setEditCursorPosition(-1.0, false);
+            }
+        }
+    }
 
     // Tempo or timeline length changes — update ruler and grid
     // Note: do NOT respond to arrangement Zoom changes here;
