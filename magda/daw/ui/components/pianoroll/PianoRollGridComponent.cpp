@@ -103,30 +103,34 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
                        bounds.getHeight());
         }
 
-        // Clip end boundary
-        int clipEndX = beatToPixel(clipStartBeats_ + clipLengthBeats_);
-        if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
-            g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-            g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
-        }
+        // Clip end boundary and dimming (only for non-looped clips)
+        if (!loopEnabled_) {
+            int clipEndX = beatToPixel(clipStartBeats_ + clipLengthBeats_);
+            if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
+                g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+                g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+            }
 
-        // Dim area after clip end
-        if (clipEndX < bounds.getRight()) {
-            g.setColour(juce::Colour(0x60000000));
-            g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX, bounds.getHeight());
+            if (clipEndX < bounds.getRight()) {
+                g.setColour(juce::Colour(0x60000000));
+                g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX,
+                           bounds.getHeight());
+            }
         }
     } else if (clipLengthBeats_ > 0) {
-        // In relative mode, just show end boundary at clip length
-        int clipEndX = beatToPixel(clipLengthBeats_);
-        if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
-            g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-            g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
-        }
+        // In relative mode, just show end boundary at clip length (non-looped only)
+        if (!loopEnabled_) {
+            int clipEndX = beatToPixel(clipLengthBeats_);
+            if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
+                g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+                g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
+            }
 
-        // Dim area after clip end
-        if (clipEndX < bounds.getRight()) {
-            g.setColour(juce::Colour(0x60000000));
-            g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX, bounds.getHeight());
+            if (clipEndX < bounds.getRight()) {
+                g.setColour(juce::Colour(0x60000000));
+                g.fillRect(clipEndX, bounds.getY(), bounds.getRight() - clipEndX,
+                           bounds.getHeight());
+            }
         }
     }
 
