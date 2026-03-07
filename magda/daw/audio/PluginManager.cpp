@@ -80,6 +80,12 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         return;
     }
 
+    // Master track uses the Edit's master plugin list
+    if (trackId == MASTER_TRACK_ID) {
+        syncMasterPlugins();
+        return;
+    }
+
     auto* teTrack = trackController_.getAudioTrack(trackId);
     if (!teTrack) {
         teTrack = trackController_.createAudioTrack(trackId, trackInfo->name);
@@ -1840,8 +1846,95 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
         << trackId << " sourceDevice=" << link.sourceDeviceId << " pair=" << link.outputPairIndex);
 }
 
-// Utilities
 // =============================================================================
+// Master Channel Plugin Sync
+// =============================================================================
+
+void PluginManager::syncMasterPlugins() {
+    auto* trackInfo = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
+    if (!trackInfo)
+        return;
+
+    auto& masterList = edit_.getMasterPluginList();
+
+    // Collect current MAGDA device IDs on master
+    std::vector<DeviceId> magdaDevices;
+    for (const auto& element : trackInfo->chainElements) {
+        if (isDevice(element))
+            magdaDevices.push_back(getDevice(element).id);
+    }
+
+    // Remove synced plugins that are no longer in MAGDA's master chain
+    std::vector<DeviceId> toRemove;
+    std::vector<te::Plugin::Ptr> pluginsToDelete;
+    {
+        juce::ScopedLock lock(pluginLock_);
+        for (const auto& [deviceId, sd] : syncedDevices_) {
+            if (!sd.plugin)
+                continue;
+            // Check if plugin belongs to master plugin list
+            bool belongsToMaster = false;
+            for (int i = 0; i < masterList.size(); ++i) {
+                if (masterList[i] == sd.plugin.get()) {
+                    belongsToMaster = true;
+                    break;
+                }
+            }
+            if (belongsToMaster) {
+                bool found = std::find(magdaDevices.begin(), magdaDevices.end(), deviceId) !=
+                             magdaDevices.end();
+                if (!found) {
+                    toRemove.push_back(deviceId);
+                    pluginsToDelete.push_back(sd.plugin);
+                }
+            }
+        }
+        for (auto deviceId : toRemove) {
+            auto it = syncedDevices_.find(deviceId);
+            if (it != syncedDevices_.end()) {
+                clearLFOCustomWaveCallbacks(it->second.modifiers);
+                if (it->second.plugin)
+                    pluginToDevice_.erase(it->second.plugin.get());
+                syncedDevices_.erase(it);
+            }
+        }
+    }
+    for (auto& plugin : pluginsToDelete) {
+        plugin->deleteFromParent();
+    }
+
+    // Add new plugins for MAGDA devices not yet synced
+    for (const auto& element : trackInfo->chainElements) {
+        if (!isDevice(element))
+            continue;
+        const auto& device = getDevice(element);
+        juce::ScopedLock lock(pluginLock_);
+        if (syncedDevices_.find(device.id) != syncedDevices_.end())
+            continue;
+
+        auto plugin = createPluginOnly(MASTER_TRACK_ID, device);
+        if (plugin) {
+            masterList.insertPlugin(plugin, -1, nullptr);
+            syncedDevices_[device.id].plugin = plugin;
+            pluginToDevice_[plugin.get()] = device.id;
+
+            // Handle async loading for external plugins
+            if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+                if (extPlugin->isInitialisingAsync()) {
+                    syncedDevices_[device.id].isPendingLoad = true;
+                    if (auto* devInfo =
+                            TrackManager::getInstance().getDevice(MASTER_TRACK_ID, device.id)) {
+                        devInfo->loadState = DeviceLoadState::Loading;
+                    }
+                    TrackManager::getInstance().notifyTrackDevicesChanged(MASTER_TRACK_ID);
+                    pollAsyncPluginLoad(MASTER_TRACK_ID, device.id, plugin);
+                }
+            }
+        }
+    }
+
+    DBG("PluginManager::syncMasterPlugins: synced " << magdaDevices.size() << " devices");
+}
 
 // =============================================================================
 // Plugin State Capture/Restore

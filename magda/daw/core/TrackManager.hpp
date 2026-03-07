@@ -560,6 +560,7 @@ class TrackManager {
     int nextChainId_ = 1;
     int nextAuxBusIndex_ = 0;
     MasterChannelState masterChannel_;
+    TrackInfo masterTrack_;  // Dedicated TrackInfo for master channel (id=MASTER_TRACK_ID)
     TrackId selectedTrackId_ = INVALID_TRACK_ID;
     std::unordered_set<TrackId> selectedTrackIds_;
     TrackId selectedChainTrackId_ = INVALID_TRACK_ID;

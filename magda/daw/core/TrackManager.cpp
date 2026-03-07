@@ -18,8 +18,11 @@ TrackManager& TrackManager::getInstance() {
 }
 
 TrackManager::TrackManager() {
-    // Start with empty project - no default tracks
-    // User can create tracks manually or load from project file
+    // Initialize master track info
+    masterTrack_.id = MASTER_TRACK_ID;
+    masterTrack_.type = TrackType::Master;
+    masterTrack_.name = "Master";
+    masterTrack_.colour = juce::Colours::grey;
 }
 
 // ============================================================================
@@ -485,12 +488,16 @@ std::vector<TrackId> TrackManager::getAllDescendants(TrackId trackId) const {
 // ============================================================================
 
 TrackInfo* TrackManager::getTrack(TrackId trackId) {
+    if (trackId == MASTER_TRACK_ID)
+        return &masterTrack_;
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [trackId](const TrackInfo& t) { return t.id == trackId; });
     return (it != tracks_.end()) ? &(*it) : nullptr;
 }
 
 const TrackInfo* TrackManager::getTrack(TrackId trackId) const {
+    if (trackId == MASTER_TRACK_ID)
+        return &masterTrack_;
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [trackId](const TrackInfo& t) { return t.id == trackId; });
     return (it != tracks_.end()) ? &(*it) : nullptr;
@@ -883,10 +890,10 @@ void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
 
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
-        if ((track->type == TrackType::Aux || track->type == TrackType::Group) &&
+        if ((track->type == TrackType::Aux || track->type == TrackType::Group ||
+             track->type == TrackType::Master) &&
             device.isInstrument) {
-            DBG("Cannot add instrument plugin to "
-                << (track->type == TrackType::Aux ? "aux" : "group") << " track");
+            DBG("Cannot add instrument plugin to non-instrument track");
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = device;
@@ -903,10 +910,10 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device,
                                         int insertIndex) {
     if (auto* track = getTrack(trackId)) {
-        if ((track->type == TrackType::Aux || track->type == TrackType::Group) &&
+        if ((track->type == TrackType::Aux || track->type == TrackType::Group ||
+             track->type == TrackType::Master) &&
             device.isInstrument) {
-            DBG("Cannot add instrument plugin to "
-                << (track->type == TrackType::Aux ? "aux" : "group") << " track");
+            DBG("Cannot add instrument plugin to non-instrument track");
             return INVALID_DEVICE_ID;
         }
         DeviceInfo newDevice = device;
@@ -1480,6 +1487,7 @@ void TrackManager::createDefaultTracks(int count) {
 
 void TrackManager::clearAllTracks() {
     tracks_.clear();
+    masterTrack_.chainElements.clear();
     nextTrackId_ = 1;
     nextDeviceId_ = 1;
     nextRackId_ = 1;

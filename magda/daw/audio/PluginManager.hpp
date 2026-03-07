@@ -209,6 +209,11 @@ class PluginManager {
     void syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInfo);
 
     /**
+     * @brief Sync master channel plugins to TE's master plugin list
+     */
+    void syncMasterPlugins();
+
+    /**
      * @brief Get the InstrumentRackManager for multi-output access
      */
     InstrumentRackManager& getInstrumentRackManager() {
