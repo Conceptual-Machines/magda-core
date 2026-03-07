@@ -1012,11 +1012,25 @@ void FourOscUI::LFOTab::setupLabel(juce::Label& label, const juce::String& text)
 
 // LookAndFeel override so FX toggle buttons use the theme font
 struct FXToggleLookAndFeel : juce::LookAndFeel_V4 {
+    void drawTickBox(juce::Graphics& g, juce::Component& component, float x, float y, float w,
+                     float h, bool ticked, bool isEnabled, bool /*shouldDrawButtonAsHighlighted*/,
+                     bool /*shouldDrawButtonAsDown*/) override {
+        auto boxBounds = juce::Rectangle<float>(x, y, w, h);
+        g.setColour(component.findColour(juce::ToggleButton::tickDisabledColourId));
+        g.drawRoundedRectangle(boxBounds, 2.0f, 1.0f);
+        if (ticked) {
+            g.setColour(isEnabled ? component.findColour(juce::ToggleButton::tickColourId)
+                                  : component.findColour(juce::ToggleButton::tickDisabledColourId));
+            auto tick = boxBounds.reduced(3.0f);
+            g.fillRoundedRectangle(tick, 1.0f);
+        }
+    }
+
     void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
                           bool shouldDrawButtonAsHighlighted,
                           bool shouldDrawButtonAsDown) override {
         float fontSize = juce::jmin(11.0f, static_cast<float>(button.getHeight()) * 0.6f);
-        float tickWidth = fontSize * 1.0f;
+        float tickWidth = fontSize * 1.4f;
 
         drawTickBox(g, button, 4.0f, (static_cast<float>(button.getHeight()) - tickWidth) * 0.5f,
                     tickWidth, tickWidth, button.getToggleState(), button.isEnabled(),
