@@ -262,14 +262,6 @@ class MainView : public juce::Component,
     // Separator line position between corner toolbar rows (set during resized())
     juce::Rectangle<int> cornerSeparatorLine;
 
-    // Grid/snap controls (overlaid on timeline area, right-aligned)
-    std::unique_ptr<DraggableValueLabel> gridNumeratorLabel_;
-    std::unique_ptr<juce::Label> gridSlashLabel_;
-    std::unique_ptr<DraggableValueLabel> gridDenominatorLabel_;
-    std::unique_ptr<juce::TextButton> snapButton_;
-    std::unique_ptr<juce::TextButton> autoGridButton_;
-    void setupGridSnapControls();
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainView)
 };
 

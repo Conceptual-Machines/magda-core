@@ -8,7 +8,6 @@
 #include "../components/common/SideColumn.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
-#include "../themes/SmallButtonLookAndFeel.hpp"
 #include "Config.hpp"
 #include "audio/AudioBridge.hpp"
 #include "core/ClipCommands.hpp"
@@ -338,9 +337,6 @@ void MainView::setupComponents() {
     vAxisIcon->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.5f));
     vAxisIcon->setBorderThickness(0.0f);
 
-    // Set up grid/snap controls (overlaid on timeline area)
-    setupGridSnapControls();
-
     // Set up scroll synchronization
     trackContentViewport->getHorizontalScrollBar().addListener(this);
     trackContentViewport->getVerticalScrollBar().addListener(this);
@@ -350,118 +346,6 @@ void MainView::setupComponents() {
 
     // Set initial timeline length from config (bars → seconds at default 120 BPM)
     setTimelineLength(magda::Config::getInstance().getDefaultTimelineLengthBars() * 2.0);
-}
-
-void MainView::setupGridSnapControls() {
-    auto& smallLF = daw::ui::SmallButtonLookAndFeel::getInstance();
-
-    auto setupToggleButton = [&](std::unique_ptr<juce::TextButton>& btn, const juce::String& text) {
-        btn = std::make_unique<juce::TextButton>(text);
-        btn->setColour(juce::TextButton::buttonColourId,
-                       DarkTheme::getColour(DarkTheme::SURFACE).darker(0.2f));
-        btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).darker(0.3f));
-        btn->setColour(juce::TextButton::textColourOffId,
-                       DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        btn->setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
-        btn->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                               juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        btn->setWantsKeyboardFocus(false);
-        btn->setClickingTogglesState(true);
-        btn->setLookAndFeel(&smallLF);
-        addAndMakeVisible(*btn);
-    };
-
-    // Grid numerator
-    gridNumeratorLabel_ =
-        std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Integer);
-    gridNumeratorLabel_->setRange(1.0, 128.0, 1.0);
-    gridNumeratorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    gridNumeratorLabel_->setShowFillIndicator(false);
-    gridNumeratorLabel_->setFontSize(12.0f);
-    gridNumeratorLabel_->setDoubleClickResetsValue(true);
-    gridNumeratorLabel_->setDrawBorder(false);
-    gridNumeratorLabel_->onValueChange = [this]() {
-        int num = static_cast<int>(std::round(gridNumeratorLabel_->getValue()));
-        int den = static_cast<int>(std::round(gridDenominatorLabel_->getValue()));
-        bool autoG = autoGridButton_->getToggleState();
-        timelineController->dispatch(SetGridQuantizeEvent{autoG, num, den});
-    };
-    addAndMakeVisible(*gridNumeratorLabel_);
-
-    // Slash
-    gridSlashLabel_ = std::make_unique<juce::Label>("", "/");
-    gridSlashLabel_->setFont(FontManager::getInstance().getUIFontBold(10.0f));
-    gridSlashLabel_->setColour(juce::Label::textColourId,
-                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    gridSlashLabel_->setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(*gridSlashLabel_);
-
-    // Grid denominator
-    gridDenominatorLabel_ =
-        std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Integer);
-    gridDenominatorLabel_->setRange(2.0, 32.0, 4.0);
-    gridDenominatorLabel_->setTextColour(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    gridDenominatorLabel_->setShowFillIndicator(false);
-    gridDenominatorLabel_->setFontSize(12.0f);
-    gridDenominatorLabel_->setDoubleClickResetsValue(true);
-    gridDenominatorLabel_->setDrawBorder(false);
-    gridDenominatorLabel_->onValueChange = [this]() {
-        int raw = static_cast<int>(std::round(gridDenominatorLabel_->getValue()));
-        // Snap to nearest power of 2
-        int best = 2;
-        int minDist = std::abs(raw - 2);
-        for (int p : {4, 8, 16, 32}) {
-            int d = std::abs(raw - p);
-            if (d < minDist) {
-                minDist = d;
-                best = p;
-            }
-        }
-        gridDenominatorLabel_->setValue(static_cast<double>(best), juce::dontSendNotification);
-        int num = static_cast<int>(std::round(gridNumeratorLabel_->getValue()));
-        bool autoG = autoGridButton_->getToggleState();
-        timelineController->dispatch(SetGridQuantizeEvent{autoG, num, best});
-    };
-    addAndMakeVisible(*gridDenominatorLabel_);
-
-    // SNAP button
-    setupToggleButton(snapButton_, "SNAP");
-    {
-        const auto& state = timelineController->getState();
-        snapButton_->setToggleState(state.display.snapEnabled, juce::dontSendNotification);
-    }
-    snapButton_->onClick = [this]() {
-        timelineController->dispatch(SetSnapEnabledEvent{snapButton_->getToggleState()});
-    };
-
-    // AUTO/GRID button
-    setupToggleButton(autoGridButton_, "GRID");
-    {
-        const auto& state = timelineController->getState();
-        autoGridButton_->setToggleState(state.display.gridQuantize.autoGrid,
-                                        juce::dontSendNotification);
-        gridNumeratorLabel_->setValue(static_cast<double>(state.display.gridQuantize.numerator),
-                                      juce::dontSendNotification);
-        gridDenominatorLabel_->setValue(static_cast<double>(state.display.gridQuantize.denominator),
-                                        juce::dontSendNotification);
-        gridNumeratorLabel_->setEnabled(!state.display.gridQuantize.autoGrid);
-        gridDenominatorLabel_->setEnabled(!state.display.gridQuantize.autoGrid);
-        gridNumeratorLabel_->setAlpha(state.display.gridQuantize.autoGrid ? 0.6f : 1.0f);
-        gridDenominatorLabel_->setAlpha(state.display.gridQuantize.autoGrid ? 0.6f : 1.0f);
-        gridSlashLabel_->setAlpha(state.display.gridQuantize.autoGrid ? 0.6f : 1.0f);
-    }
-    autoGridButton_->onClick = [this]() {
-        bool autoG = autoGridButton_->getToggleState();
-        gridNumeratorLabel_->setEnabled(!autoG);
-        gridDenominatorLabel_->setEnabled(!autoG);
-        gridNumeratorLabel_->setAlpha(autoG ? 0.6f : 1.0f);
-        gridDenominatorLabel_->setAlpha(autoG ? 0.6f : 1.0f);
-        gridSlashLabel_->setAlpha(autoG ? 0.6f : 1.0f);
-        int num = static_cast<int>(std::round(gridNumeratorLabel_->getValue()));
-        int den = static_cast<int>(std::round(gridDenominatorLabel_->getValue()));
-        timelineController->dispatch(SetGridQuantizeEvent{autoG, num, den});
-    };
 }
 
 void MainView::setupCallbacks() {
@@ -497,12 +381,6 @@ void MainView::setupCallbacks() {
 }
 
 MainView::~MainView() {
-    // Clear LookAndFeel before destruction
-    if (snapButton_)
-        snapButton_->setLookAndFeel(nullptr);
-    if (autoGridButton_)
-        autoGridButton_->setLookAndFeel(nullptr);
-
     // Stop metering timer
     stopTimer();
 
@@ -646,23 +524,8 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
     if (hasFlag(changes, ChangeFlags::Display)) {
         updateGridDivisionDisplay();
 
-        // Sync grid/snap overlay controls
-        const auto& gq = state.display.gridQuantize;
-        snapButton_->setToggleState(state.display.snapEnabled, juce::dontSendNotification);
-        autoGridButton_->setToggleState(gq.autoGrid, juce::dontSendNotification);
-        if (!gridNumeratorLabel_->isDragging())
-            gridNumeratorLabel_->setValue(static_cast<double>(gq.numerator),
-                                          juce::dontSendNotification);
-        if (!gridDenominatorLabel_->isDragging())
-            gridDenominatorLabel_->setValue(static_cast<double>(gq.denominator),
-                                            juce::dontSendNotification);
-        gridNumeratorLabel_->setEnabled(!gq.autoGrid);
-        gridDenominatorLabel_->setEnabled(!gq.autoGrid);
-        gridNumeratorLabel_->setAlpha(gq.autoGrid ? 0.6f : 1.0f);
-        gridDenominatorLabel_->setAlpha(gq.autoGrid ? 0.6f : 1.0f);
-        gridSlashLabel_->setAlpha(gq.autoGrid ? 0.6f : 1.0f);
-
         if (onGridQuantizeChanged) {
+            const auto& gq = state.display.gridQuantize;
             onGridQuantizeChanged(gq.autoGrid, gq.numerator, gq.denominator, false);
         }
     }
@@ -871,35 +734,6 @@ void MainView::resized() {
 
     // Timeline takes the remaining width
     timelineViewport->setBounds(timelineArea);
-
-    // Grid/snap controls — overlaid on the right side of the timeline area
-    {
-        int ctrlH = timelineArea.getHeight();
-        int vPad = 4;
-        int x = timelineArea.getRight();
-
-        // SNAP
-        x -= 36;
-        snapButton_->setBounds(x, timelineArea.getY() + vPad, 36, ctrlH - vPad * 2);
-        x -= 4;
-
-        // GRID (auto toggle)
-        x -= 36;
-        autoGridButton_->setBounds(x, timelineArea.getY() + vPad, 36, ctrlH - vPad * 2);
-        x -= 4;
-
-        // Denominator
-        x -= 24;
-        gridDenominatorLabel_->setBounds(x, timelineArea.getY() + vPad, 24, ctrlH - vPad * 2);
-
-        // Slash
-        x -= 8;
-        gridSlashLabel_->setBounds(x, timelineArea.getY(), 8, ctrlH);
-
-        // Numerator
-        x -= 24;
-        gridNumeratorLabel_->setBounds(x, timelineArea.getY() + vPad, 24, ctrlH - vPad * 2);
-    }
 
     // Track headers viewport in the header column
     auto trackHeadersArea = headerColumn.removeFrom(bounds, trackHeaderWidth);
