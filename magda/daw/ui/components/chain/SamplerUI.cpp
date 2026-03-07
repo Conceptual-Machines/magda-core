@@ -409,11 +409,11 @@ void SamplerUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*
 // =============================================================================
 
 juce::Rectangle<int> SamplerUI::getWaveformBounds() const {
-    auto area = getLocalBounds().reduced(8);
-    area.removeFromTop(26);  // Skip sample name row (22 + 4 gap)
-    // Controls below: header(14) + gap(2) + 2 rows of label(12)+slider(20)+gap(2) = 84
-    static constexpr int kControlsHeight = 48;
-    int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight);
+    auto area = getLocalBounds().reduced(4);
+    area.removeFromTop(22);  // Skip sample name row (20 + 2 gap)
+    // Controls below: label(12) + slider(18) = 30
+    static constexpr int kControlsHeight = 30;
+    int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight - 2);
     return area.removeFromTop(waveHeight);
 }
 
@@ -824,26 +824,16 @@ void SamplerUI::paint(juce::Graphics& g) {
         g.drawText("Drop sample or click Load", waveformArea, juce::Justification::centred);
     }
 
-    // --- Column headers and separators below waveform ---
-    auto ctrlArea = getLocalBounds().reduced(8);
-    ctrlArea.removeFromTop(26);  // sample name row
+    // --- Vertical separators between control columns ---
+    auto ctrlArea = getLocalBounds().reduced(4);
+    ctrlArea.removeFromTop(22);  // sample name row
     auto waveBounds = getWaveformBounds();
-    ctrlArea.removeFromTop(waveBounds.getHeight() + 4);  // waveform + gap
+    ctrlArea.removeFromTop(waveBounds.getHeight() + 2);  // waveform + gap
 
-    auto headerArea = ctrlArea.removeFromTop(14);
-    int totalW = headerArea.getWidth();
+    int totalW = ctrlArea.getWidth();
     int col1W = totalW * 3 / 8;
     int col2W = totalW * 2 / 8;
 
-    // Header text
-    g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.setColour(DarkTheme::getSecondaryTextColour().brighter(0.3f));
-    g.drawText("START / END / LOOP", headerArea.removeFromLeft(col1W),
-               juce::Justification::centred);
-    g.drawText("PITCH", headerArea.removeFromLeft(col2W), juce::Justification::centred);
-    g.drawText("AMP", headerArea, juce::Justification::centred);
-
-    // Vertical separators
     int sep1X = ctrlArea.getX() + col1W;
     int sep2X = ctrlArea.getX() + col1W + col2W;
     int sepTop = ctrlArea.getY() + 2;
@@ -858,11 +848,11 @@ void SamplerUI::paint(juce::Graphics& g) {
 // =============================================================================
 
 void SamplerUI::resized() {
-    auto area = getLocalBounds().reduced(8);
+    auto area = getLocalBounds().reduced(4);
 
     // Row 1: Sample name + Root note + Load button
-    auto sampleRow = area.removeFromTop(22);
-    loadButton_->setBounds(sampleRow.removeFromRight(22));
+    auto sampleRow = area.removeFromTop(20);
+    loadButton_->setBounds(sampleRow.removeFromRight(20));
     sampleRow.removeFromRight(4);
     // Root note: label + slider on the right side of the header
     auto rootArea = sampleRow.removeFromRight(70);
@@ -870,20 +860,16 @@ void SamplerUI::resized() {
     rootNoteSlider_.setBounds(rootArea);
     sampleRow.removeFromRight(4);
     sampleNameLabel_.setBounds(sampleRow);
-    area.removeFromTop(4);
+    area.removeFromTop(2);
 
-    // Row 2: Waveform display (painted, not a component) — absorbs remaining space
-    // Controls below: header(14) + gap(2) + 2 rows of label(12)+slider(20)+gap(2) = 84
-    static constexpr int kControlsHeight = 48;
-    int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight);
+    // Waveform display — absorbs remaining space above controls
+    // Controls: label(12) + slider(18) = 30
+    static constexpr int kControlsHeight = 30;
+    int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight - 2);
     area.removeFromTop(waveHeight);
-    area.removeFromTop(4);
+    area.removeFromTop(2);
 
-    // --- Three-column control layout ---
-    // Column headers are painted in paint(), reserve space here
     auto controlsArea = area;
-    controlsArea.removeFromTop(14);  // header height
-    controlsArea.removeFromTop(2);   // gap
 
     // Split into 3 columns: Start/Loop (3/8) | Pitch (2/8) | Amp (3/8)
     int totalW = controlsArea.getWidth();
@@ -908,7 +894,7 @@ void SamplerUI::resized() {
     loopEndLabel_.setBounds(c1LabelRow);
 
     // Sliders: [start] | [end] | [icon][lstart] | [lend]
-    auto c1Row = col1.removeFromTop(20);
+    auto c1Row = col1.removeFromTop(18);
     startSlider_.setBounds(c1Row.removeFromLeft(quarterC1).reduced(1, 0));
     endSlider_.setBounds(c1Row.removeFromLeft(quarterC1).reduced(1, 0));
     loopButton_->setBounds(c1Row.removeFromLeft(iconW));
@@ -923,7 +909,7 @@ void SamplerUI::resized() {
     fineLabel_.setBounds(c2LabelRow);
 
     // Sliders: [pitch] | [fine]
-    auto c2Row = col2.removeFromTop(20);
+    auto c2Row = col2.removeFromTop(18);
     pitchSlider_.setBounds(c2Row.removeFromLeft(halfCol2).reduced(1, 0));
     fineSlider_.setBounds(c2Row.reduced(1, 0));
 
@@ -939,7 +925,7 @@ void SamplerUI::resized() {
     velAmountLabel_.setBounds(c3LabelRow);
 
     // Sliders: [atk] | [dec] | [sus] | [rel] | [level] | [vel]
-    auto c3Row = col3.removeFromTop(20);
+    auto c3Row = col3.removeFromTop(18);
     attackSlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
     decaySlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));
     sustainSlider_.setBounds(c3Row.removeFromLeft(sixthCol3).reduced(1, 0));

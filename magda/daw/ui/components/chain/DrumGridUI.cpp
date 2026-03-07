@@ -10,6 +10,7 @@
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace te = tracktion::engine;
 
@@ -343,6 +344,7 @@ DrumGridUI::DrumGridUI() {
         btn.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
         btn.setClickingTogglesState(true);
         btn.setRadioGroupId(1001);
+        btn.setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
         addAndMakeVisible(btn);
     };
     setupTabButton(mixTabButton_);
@@ -368,6 +370,8 @@ DrumGridUI::DrumGridUI() {
 
 DrumGridUI::~DrumGridUI() {
     stopTimer();
+    mixTabButton_.setLookAndFeel(nullptr);
+    rangeTabButton_.setLookAndFeel(nullptr);
 }
 
 void DrumGridUI::setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin) {
@@ -657,22 +661,22 @@ void DrumGridUI::resized() {
         mixTabButton_.setVisible(true);
         rangeTabButton_.setVisible(true);
 
-        // Layout header label above tabs
-        auto chainsHeader = chainsArea.removeFromTop(20);
-        chainsLabel_.setBounds(chainsHeader);
+        chainsLabel_.setVisible(false);
 
-        // Tab buttons row
+        // Reserve tab row space, but position tabs after we know the viewport content width
         auto tabRow = chainsArea.removeFromTop(20);
-        int tabW = tabRow.getWidth() / 2;
-        mixTabButton_.setBounds(tabRow.removeFromLeft(tabW));
-        rangeTabButton_.setBounds(tabRow);
-
         chainsArea.removeFromTop(2);  // small gap below tabs
 
         chainsViewport_.setBounds(chainsArea);
 
         int scrollbarWidth = chainsViewport_.getScrollBarThickness();
         int containerWidth = chainsViewport_.getWidth() - scrollbarWidth;
+
+        // Tab buttons — match the container width (excluding scrollbar)
+        auto tabArea = tabRow.withWidth(containerWidth);
+        int tabW = tabArea.getWidth() / 2;
+        mixTabButton_.setBounds(tabArea.removeFromLeft(tabW));
+        rangeTabButton_.setBounds(tabArea.withWidth(tabArea.getWidth()));
 
         // Add only the visible rows to the container
         chainsContainer_.removeAllChildren();
