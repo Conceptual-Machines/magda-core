@@ -2,6 +2,9 @@
 
 #include <BinaryData.h>
 
+#include <cmath>
+
+#include "ui/themes/CursorManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -428,6 +431,17 @@ void SamplerUI::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    // Cmd+click => zoom drag (drag up = zoom in, drag down = zoom out)
+    if (e.mods.isCommandDown()) {
+        currentDrag_ = DragTarget::Zoom;
+        zoomDragStartY_ = e.getPosition().y;
+        zoomDragStartPPS_ = pixelsPerSecond_;
+        zoomDragAnchorTime_ = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
+        zoomDragAnchorPixelOffset_ = e.getPosition().x - waveArea.getX();
+        setMouseCursor(CursorManager::getInstance().getZoomCursor());
+        return;
+    }
+
     // Try hit-testing existing markers/loop bar first
     currentDrag_ = markerHitTest(e, waveArea);
 
@@ -441,8 +455,6 @@ void SamplerUI::mouseDown(const juce::MouseEvent& e) {
     if (currentDrag_ == DragTarget::None) {
         if (e.mods.isShiftDown()) {
             currentDrag_ = DragTarget::LoopStart;
-        } else if (e.mods.isCommandDown()) {
-            currentDrag_ = DragTarget::LoopEnd;
         } else {
             currentDrag_ = DragTarget::SampleStart;
         }
@@ -482,6 +494,48 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
         double visibleDuration = static_cast<double>(waveArea.getWidth()) / pixelsPerSecond_;
         double maxScroll = juce::jmax(0.0, sampleLength_ - visibleDuration);
         scrollOffsetSeconds_ = juce::jlimit(0.0, maxScroll, scrollDragStartOffset_ - timeDelta);
+
+        if (waveformBuffer_ != nullptr)
+            buildWaveformPath(waveformBuffer_, waveArea.getWidth(), waveArea.getHeight() - 4);
+        repaint();
+        return;
+    }
+
+    if (currentDrag_ == DragTarget::Zoom) {
+        int deltaY = zoomDragStartY_ - e.getPosition().y;  // drag up = positive = zoom in
+
+        // Update cursor based on zoom direction
+        if (deltaY > 0)
+            setMouseCursor(CursorManager::getInstance().getZoomInCursor());
+        else if (deltaY < 0)
+            setMouseCursor(CursorManager::getInstance().getZoomOutCursor());
+        else
+            setMouseCursor(CursorManager::getInstance().getZoomCursor());
+
+        // Minimum zoom: entire sample fits in view
+        double minPPS = static_cast<double>(waveArea.getWidth()) / sampleLength_;
+
+        // Log-scale zoom with adaptive sensitivity
+        double zoomRange = std::log(kMaxPixelsPerSecond) - std::log(minPPS);
+        double zoomPosition = (std::log(zoomDragStartPPS_) - std::log(minPPS)) / zoomRange;
+        double sensitivity = 20.0 + zoomPosition * 10.0;
+        double absDeltaY = std::abs(static_cast<double>(deltaY));
+        if (absDeltaY > 80.0)
+            sensitivity /= 1.0 + (absDeltaY - 80.0) / 150.0;
+
+        double exponent = static_cast<double>(deltaY) / sensitivity;
+        double newPPS = zoomDragStartPPS_ * std::pow(2.0, exponent);
+        newPPS = juce::jlimit(minPPS, kMaxPixelsPerSecond, newPPS);
+        pixelsPerSecond_ = newPPS;
+
+        // Keep anchor time under the same pixel
+        scrollOffsetSeconds_ = zoomDragAnchorTime_ -
+                               static_cast<double>(zoomDragAnchorPixelOffset_) / pixelsPerSecond_;
+
+        // Clamp scroll
+        double visibleDuration = static_cast<double>(waveArea.getWidth()) / pixelsPerSecond_;
+        double maxScroll = juce::jmax(0.0, sampleLength_ - visibleDuration);
+        scrollOffsetSeconds_ = juce::jlimit(0.0, maxScroll, scrollOffsetSeconds_);
 
         if (waveformBuffer_ != nullptr)
             buildWaveformPath(waveformBuffer_, waveArea.getWidth(), waveArea.getHeight() - 4);
@@ -538,6 +592,11 @@ void SamplerUI::mouseMove(const juce::MouseEvent& e) {
     auto waveArea = getWaveformBounds();
     if (!waveArea.contains(e.getPosition()) || !hasWaveform_) {
         setMouseCursor(juce::MouseCursor::NormalCursor);
+        return;
+    }
+
+    if (e.mods.isCommandDown()) {
+        setMouseCursor(CursorManager::getInstance().getZoomCursor());
         return;
     }
 

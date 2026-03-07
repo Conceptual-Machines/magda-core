@@ -295,9 +295,36 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
     // Restore sample from saved state
     juce::String savedPath = samplePathValue.get();
     if (savedPath.isNotEmpty()) {
+        // Save parameter values before loadSample resets them
+        float savedStart = sampleStartValue.get();
+        float savedEnd = sampleEndValue.get();
+        float savedLoopStart = loopStartValue.get();
+        float savedLoopEnd = loopEndValue.get();
+
         juce::File savedFile(savedPath);
         if (savedFile.existsAsFile())
             loadSample(savedFile);
+
+        // Re-apply saved values if they were set (non-zero end means user had set it)
+        double lenSec = getSampleLengthSeconds();
+        float maxLen = static_cast<float>(lenSec);
+
+        if (savedStart > 0.001f && savedStart < maxLen) {
+            sampleStartParam->setParameter(savedStart, juce::dontSendNotification);
+            sampleStartValue = savedStart;
+        }
+        if (savedEnd > 0.001f && savedEnd < maxLen) {
+            sampleEndParam->setParameter(savedEnd, juce::dontSendNotification);
+            sampleEndValue = savedEnd;
+        }
+        if (savedLoopStart > 0.001f && savedLoopStart < maxLen) {
+            loopStartParam->setParameter(savedLoopStart, juce::dontSendNotification);
+            loopStartValue = savedLoopStart;
+        }
+        if (savedLoopEnd > 0.001f && savedLoopEnd < maxLen) {
+            loopEndParam->setParameter(savedLoopEnd, juce::dontSendNotification);
+            loopEndValue = savedLoopEnd;
+        }
     }
 }
 
@@ -359,12 +386,11 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     samplePathValue = file.getFullPathName();
     rootNoteValue = detectedRootNote;
 
-    // Reset sample start and update loop end to sample length
+    // Reset markers to defaults for new sample loads, preserve on restore
     double lengthSeconds = static_cast<double>(newSound->audioData.getNumSamples()) / sourceSR;
-    float loopEndClamped =
-        juce::jmin(static_cast<float>(lengthSeconds), loopEndParam->getValueRange().getEnd());
-    float endClamped =
-        juce::jmin(static_cast<float>(lengthSeconds), sampleEndParam->getValueRange().getEnd());
+    float maxLen = static_cast<float>(lengthSeconds);
+    float endClamped = juce::jmin(maxLen, sampleEndParam->getValueRange().getEnd());
+    float loopEndClamped = juce::jmin(maxLen, loopEndParam->getValueRange().getEnd());
     sampleStartParam->setParameter(0.0f, juce::dontSendNotification);
     sampleStartValue = 0.0f;
     sampleEndParam->setParameter(endClamped, juce::dontSendNotification);

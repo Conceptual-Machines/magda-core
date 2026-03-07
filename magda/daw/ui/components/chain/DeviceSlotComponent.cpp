@@ -2264,6 +2264,11 @@ void DeviceSlotComponent::updateCustomUI() {
                     if (file.existsAsFile())
                         sampleName = file.getFileNameWithoutExtension();
                     loopEnabled = sampler->loopEnabledValue.get();
+                    // Read marker values from plugin (DeviceInfo may be stale)
+                    sampleStart = sampler->sampleStartValue.get();
+                    sampleEnd = sampler->sampleEndValue.get();
+                    loopStart = sampler->loopStartValue.get();
+                    loopEnd = sampler->loopEndValue.get();
                     samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
                                                 sampler->getSampleLengthSeconds());
                 }

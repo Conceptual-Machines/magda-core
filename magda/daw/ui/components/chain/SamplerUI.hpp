@@ -154,11 +154,26 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     float waveformGain_ = 1.0f;
 
     // Dragging state
-    enum class DragTarget { None, SampleStart, SampleEnd, LoopStart, LoopEnd, LoopRegion, Scroll };
+    enum class DragTarget {
+        None,
+        SampleStart,
+        SampleEnd,
+        LoopStart,
+        LoopEnd,
+        LoopRegion,
+        Scroll,
+        Zoom
+    };
     DragTarget currentDrag_ = DragTarget::None;
     double scrollDragStartOffset_ = 0.0;
     double loopDragStartL_ = 0.0;
     double loopDragStartR_ = 0.0;
+
+    // Zoom drag state
+    int zoomDragStartY_ = 0;
+    double zoomDragStartPPS_ = 0.0;
+    double zoomDragAnchorTime_ = 0.0;
+    int zoomDragAnchorPixelOffset_ = 0;
 
     // Hit-testing helpers
     static constexpr int kMarkerHitPixels = 5;
