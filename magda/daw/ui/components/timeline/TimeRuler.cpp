@@ -133,13 +133,16 @@ void TimeRuler::setLoopRegion(double offsetSeconds, double lengthSeconds, bool e
     loopActive = active;
 
     // Sync loop interaction helper with absolute pixel coordinates
-    if (enabled && lengthSeconds > 0.0) {
-        double loopStartTime = relativeMode ? loopOffset : (timeOffset + loopOffset);
-        double loopEndTime = loopStartTime + loopLength;
-        loopInteraction_.setLoopRegion(loopStartTime, loopEndTime, true);
-        initLoopInteraction();
-    } else {
-        loopInteraction_.setLoopRegion(-1.0, -1.0, false);
+    // Don't reset during an active drag — it causes feedback loops
+    if (!loopInteraction_.isDragging()) {
+        if (enabled && lengthSeconds > 0.0) {
+            double loopStartTime = relativeMode ? loopOffset : (timeOffset + loopOffset);
+            double loopEndTime = loopStartTime + loopLength;
+            loopInteraction_.setLoopRegion(loopStartTime, loopEndTime, true);
+            initLoopInteraction();
+        } else {
+            loopInteraction_.setLoopRegion(-1.0, -1.0, false);
+        }
     }
 
     repaint();
@@ -148,6 +151,7 @@ void TimeRuler::setLoopRegion(double offsetSeconds, double lengthSeconds, bool e
 void TimeRuler::setLoopPhaseMarker(double positionSeconds, bool visible) {
     loopPhasePosition = positionSeconds;
     loopPhaseVisible = visible;
+    loopPhaseHoverOnly = !visible && loopEnabled && positionSeconds == 0.0;
     repaint();
 }
 
@@ -268,13 +272,28 @@ void TimeRuler::mouseMove(const juce::MouseEvent& event) {
     auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
     if (loopCursor != juce::MouseCursor::NormalCursor) {
         setMouseCursor(loopCursor);
-        return;
+    } else {
+        setMouseCursor(CursorManager::getInstance().getZoomCursor());
     }
-    setMouseCursor(CursorManager::getInstance().getZoomCursor());
+
+    // Check proximity to phase marker for hover display
+    if (loopPhaseHoverOnly) {
+        double phaseTime = relativeMode ? loopPhasePosition : (timeOffset + loopPhasePosition);
+        int phaseX = timeToPixel(phaseTime);
+        bool wasHovered = loopPhaseHovered;
+        loopPhaseHovered = std::abs(event.x - phaseX) <= 8;
+        if (loopPhaseHovered != wasHovered) {
+            repaint();
+        }
+    }
 }
 
 void TimeRuler::mouseExit(const juce::MouseEvent& /*event*/) {
     setMouseCursor(juce::MouseCursor::NormalCursor);
+    if (loopPhaseHovered) {
+        loopPhaseHovered = false;
+        repaint();
+    }
 }
 
 void TimeRuler::mouseWheelMove(const juce::MouseEvent& /*event*/,
@@ -634,12 +653,13 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     }
 
     // Draw loop phase marker (yellow)
-    if (loopPhaseVisible && loopEnabled) {
+    if ((loopPhaseVisible || loopPhaseHovered) && loopEnabled) {
         double phaseTime = relativeMode ? loopPhasePosition : (timeOffset + loopPhasePosition);
         int phaseX = timeToPixel(phaseTime);
         if (phaseX >= 0 && phaseX <= width) {
             auto col = juce::Colour(0xFFCCAA44);  // OFFSET_MARKER yellow
-            g.setColour(col);
+            float alpha = loopPhaseVisible ? 1.0f : 0.4f;
+            g.setColour(col.withAlpha(alpha));
             g.fillRect(phaseX - 1, 0, 2, height);
             // Downward triangle at top
             juce::Path flag;

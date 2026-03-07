@@ -3,6 +3,7 @@
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
 #include "../../themes/DarkTheme.hpp"
+#include "PhaseMarker.hpp"
 #include "core/ClipManager.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
@@ -14,6 +15,7 @@ namespace magda {
 PianoRollGridComponent::PianoRollGridComponent() {
     setName("PianoRollGrid");
     setWantsKeyboardFocus(true);
+    setRepaintsOnMouseActivity(true);
     ClipManager::getInstance().addListener(this);
 }
 
@@ -156,16 +158,15 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         }
     }
 
-    // Draw content offset marker (yellow vertical line)
+    // Draw loop phase marker (yellow vertical line)
     if (clipIds_.size() <= 1 && clipId_ != INVALID_CLIP_ID) {
-        const auto* offsetClip = ClipManager::getInstance().getClip(clipId_);
-        if (offsetClip && offsetClip->midiOffset > 0.0) {
-            double offsetBeat =
-                relativeMode_ ? offsetClip->midiOffset : (clipStartBeats_ + offsetClip->midiOffset);
-            int offsetX = beatToPixel(offsetBeat);
-            if (offsetX >= 0 && offsetX <= bounds.getRight()) {
-                g.setColour(DarkTheme::getColour(DarkTheme::OFFSET_MARKER));
-                g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
+        const auto* phaseClip = ClipManager::getInstance().getClip(clipId_);
+        if (phaseClip && phaseClip->loopEnabled) {
+            double phaseBeat =
+                relativeMode_ ? phaseClip->midiOffset : (clipStartBeats_ + phaseClip->midiOffset);
+            int phaseX = beatToPixel(phaseBeat);
+            if (phaseX >= 0 && phaseX <= bounds.getRight()) {
+                paintPhaseMarker(g, phaseClip, phaseX, bounds.getHeight(), nearPhaseMarker_);
             }
         }
     }
@@ -501,15 +502,37 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
 }
 
 void PianoRollGridComponent::mouseMove(const juce::MouseEvent& e) {
-    if (e.mods.isAltDown() && isNearGridLine(e.x)) {
+    // Get mouse position relative to this component (important for child-forwarded events)
+    auto localPos = e.getEventRelativeTo(this).getPosition();
+
+    if (e.mods.isAltDown() && isNearGridLine(localPos.x)) {
         setMouseCursor(juce::MouseCursor::IBeamCursor);
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
+
+    // Check proximity to phase marker for hover display
+    bool wasNear = nearPhaseMarker_;
+    nearPhaseMarker_ = false;
+
+    if (clipIds_.size() <= 1 && clipId_ != INVALID_CLIP_ID) {
+        const auto* clip = ClipManager::getInstance().getClip(clipId_);
+        double phaseBeat = relativeMode_ ? 0.0 : clipStartBeats_;
+        int phaseX = beatToPixel(phaseBeat);
+        nearPhaseMarker_ = isNearPhaseMarker(localPos.x, phaseX, clip);
+    }
+
+    if (nearPhaseMarker_ != wasNear) {
+        repaint();
     }
 }
 
 void PianoRollGridComponent::mouseExit(const juce::MouseEvent& /*e*/) {
     setMouseCursor(juce::MouseCursor::NormalCursor);
+    if (nearPhaseMarker_) {
+        nearPhaseMarker_ = false;
+        repaint();
+    }
 }
 
 void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {

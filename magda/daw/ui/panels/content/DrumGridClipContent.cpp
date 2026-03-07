@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <set>
 
+#include "../../components/pianoroll/PhaseMarker.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "AudioBridge.hpp"
@@ -470,12 +471,12 @@ class DrumGridClipGrid : public juce::Component,
         // Draw content offset marker (yellow vertical line)
         if (clipId_ != magda::INVALID_CLIP_ID) {
             const auto* offsetClip = magda::ClipManager::getInstance().getClip(clipId_);
-            if (offsetClip && offsetClip->midiOffset > 0.0) {
+            if (offsetClip && offsetClip->loopEnabled) {
                 int offsetX =
                     static_cast<int>(offsetClip->midiOffset * pixelsPerBeat_) + GRID_LEFT_PADDING;
                 if (offsetX >= 0 && offsetX <= bounds.getWidth()) {
-                    g.setColour(DarkTheme::getColour(DarkTheme::OFFSET_MARKER));
-                    g.fillRect(offsetX - 1, 0, 2, numRows * rowHeight_);
+                    magda::paintPhaseMarker(g, offsetClip, offsetX, numRows * rowHeight_,
+                                            nearPhaseMarker_);
                 }
             }
         }
@@ -566,10 +567,27 @@ class DrumGridClipGrid : public juce::Component,
         } else {
             setMouseCursor(juce::MouseCursor::NormalCursor);
         }
+
+        // Check proximity to phase marker for hover display
+        bool wasNear = nearPhaseMarker_;
+        nearPhaseMarker_ = false;
+
+        if (clipId_ != magda::INVALID_CLIP_ID) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+            nearPhaseMarker_ = magda::isNearPhaseMarker(e.x, GRID_LEFT_PADDING, clip);
+        }
+
+        if (nearPhaseMarker_ != wasNear) {
+            repaint();
+        }
     }
 
     void mouseExit(const juce::MouseEvent& /*e*/) override {
         setMouseCursor(juce::MouseCursor::NormalCursor);
+        if (nearPhaseMarker_) {
+            nearPhaseMarker_ = false;
+            repaint();
+        }
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
@@ -840,6 +858,7 @@ class DrumGridClipGrid : public juce::Component,
     double loopOffsetBeats_ = 0.0;
     double loopLengthBeats_ = 0.0;
     bool loopEnabled_ = false;
+    bool nearPhaseMarker_ = false;
 
     // Note components
     std::vector<std::unique_ptr<magda::NoteComponent>> noteComponents_;
@@ -1729,8 +1748,9 @@ void DrumGridClipContent::updateGridSize() {
     // Pass loop region data to grid
     if (clip) {
         double beatsPerSecond = tempo / 60.0;
+        double loopStartBeats = clip->loopStart * beatsPerSecond;
         double sourceLengthBeats = clip->loopLength * beatsPerSecond;
-        gridComponent_->setLoopRegion(0.0, sourceLengthBeats, clip->loopEnabled);
+        gridComponent_->setLoopRegion(loopStartBeats, sourceLengthBeats, clip->loopEnabled);
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);
     }

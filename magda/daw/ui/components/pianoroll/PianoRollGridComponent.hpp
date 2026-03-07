@@ -240,6 +240,7 @@ class PianoRollGridComponent : public juce::Component,
     double loopOffsetBeats_ = 0.0;
     double loopLengthBeats_ = 0.0;
     bool loopEnabled_ = false;
+    bool nearPhaseMarker_ = false;  // Mouse is near the phase/offset marker position
 
     // Note components
     std::vector<std::unique_ptr<NoteComponent>> noteComponents_;

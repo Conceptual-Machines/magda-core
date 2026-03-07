@@ -154,8 +154,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
     bool loopActive = false;   // whether loop is actually enabled (green vs grey)
 
     // Loop phase marker
-    double loopPhasePosition = 0.0;  // phase marker position in timeline seconds
-    bool loopPhaseVisible = false;
+    double loopPhasePosition = 0.0;   // phase marker position in timeline seconds
+    bool loopPhaseVisible = false;    // always visible (phase > 0)
+    bool loopPhaseHoverOnly = false;  // show only on hover (phase == 0)
+    bool loopPhaseHovered = false;    // mouse is near the phase marker
 
     // Layout
     int leftPadding = LayoutConfig::TIMELINE_LEFT_PADDING;

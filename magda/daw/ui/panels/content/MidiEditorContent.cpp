@@ -59,12 +59,8 @@ MidiEditorContent::MidiEditorContent() {
         if (!clip || !clip->loopEnabled)
             return;
 
+        double newLoopStart = relativeTimeMode_ ? displayStart : (displayStart - clip->startTime);
         double newLoopLength = displayEnd - displayStart;
-        // Reverse the display transform: displayOffset = clip->offset - clip->loopStart
-        // In relative mode: displayStart = loopOffset
-        // In absolute mode: displayStart = timeOffset + loopOffset
-        double loopOffset = relativeTimeMode_ ? displayStart : (displayStart - clip->startTime);
-        double newLoopStart = clip->offset - loopOffset;
 
         auto* controller = magda::TimelineController::getCurrent();
         double bpm = controller ? controller->getState().tempo.bpm : 120.0;
@@ -225,11 +221,11 @@ void MidiEditorContent::updateTimeRuler() {
 
     // Set loop region markers and phase marker
     if (clip) {
-        timeRuler_->setLoopRegion(0.0, clip->loopLength, clip->loopEnabled);
-        // Show yellow phase marker when looped and midiOffset > 0
-        if (clip->loopEnabled && clip->midiOffset > 0.0) {
+        timeRuler_->setLoopRegion(clip->loopStart, clip->loopLength, clip->loopEnabled);
+        // Show yellow phase marker when looped
+        if (clip->loopEnabled) {
             double phaseSeconds = clip->midiOffset * 60.0 / tempo;
-            timeRuler_->setLoopPhaseMarker(phaseSeconds, true);
+            timeRuler_->setLoopPhaseMarker(phaseSeconds, clip->midiOffset > 0.0);
         } else {
             timeRuler_->setLoopPhaseMarker(0.0, false);
         }
