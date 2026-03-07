@@ -170,6 +170,19 @@ class ProjectManager {
     void setLoopSettings(bool enabled, double startBeats, double endBeats);
 
     /**
+     * @brief Check if the project has unsaved changes
+     */
+    bool isDirty() const {
+        return isDirty_;
+    }
+
+    /**
+     * @brief Show unsaved changes dialog and ask whether to proceed
+     * @return true if the user chooses to proceed, false if cancelled
+     */
+    bool showUnsavedChangesDialog();
+
+    /**
      * @brief Mark project as dirty (unsaved changes)
      * Called by managers when data changes
      */
@@ -268,13 +281,6 @@ class ProjectManager {
      * @brief Migrate media files from old directory to new, updating clip paths
      */
     void migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir);
-
-    /**
-     * @brief Show unsaved changes dialog and ask whether to proceed
-     * @return true if the user chooses to proceed despite unsaved changes, false if the user
-     * cancels the operation
-     */
-    bool showUnsavedChangesDialog();
 };
 
 }  // namespace magda

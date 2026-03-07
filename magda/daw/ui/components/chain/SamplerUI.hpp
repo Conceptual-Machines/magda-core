@@ -80,6 +80,10 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     void setWaveformData(const juce::AudioBuffer<float>* buffer, double sampleRate,
                          double sampleLengthSeconds);
 
+    bool hasWaveform() const {
+        return hasWaveform_;
+    }
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 

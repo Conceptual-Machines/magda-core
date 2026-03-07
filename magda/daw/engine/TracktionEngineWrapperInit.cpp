@@ -332,10 +332,6 @@ void TracktionEngineWrapper::createEditAndBridges() {
             proj.verticalZoom = zoom.verticalZoom;
             proj.scrollX = zoom.scrollX;
             proj.scrollY = zoom.scrollY;
-            DBG("ZOOM SAVE: captured hz=" << proj.horizontalZoom << " scrollX=" << proj.scrollX
-                                          << " scrollY=" << proj.scrollY);
-        } else {
-            DBG("ZOOM SAVE: TimelineController::getCurrent() returned null!");
         }
 
         // Capture active view mode
@@ -351,8 +347,6 @@ void TracktionEngineWrapper::createEditAndBridges() {
         ViewModeController::getInstance().setViewMode(viewMode);
 
         // Restore zoom/scroll state
-        DBG("ZOOM onAfterLoad: hz=" << info.horizontalZoom << " scrollX=" << info.scrollX
-                                    << " scrollY=" << info.scrollY);
         if (info.horizontalZoom > 0.0) {
             double hz = info.horizontalZoom;
             int sx = info.scrollX;
@@ -361,18 +355,12 @@ void TracktionEngineWrapper::createEditAndBridges() {
             if (auto* tc = TimelineController::getCurrent()) {
                 tc->dispatch(SetZoomEvent{hz});
                 tc->dispatch(SetScrollPositionEvent{sx, sy});
-                DBG("ZOOM onAfterLoad: dispatched immediately");
-            } else {
-                DBG("ZOOM onAfterLoad: no TimelineController, deferring");
             }
             // Also defer to catch cases where UI isn't ready yet
             juce::MessageManager::callAsync([hz, sx, sy]() {
                 if (auto* tc = TimelineController::getCurrent()) {
                     tc->dispatch(SetZoomEvent{hz});
                     tc->dispatch(SetScrollPositionEvent{sx, sy});
-                    DBG("ZOOM onAfterLoad async: dispatched hz=" << hz);
-                } else {
-                    DBG("ZOOM onAfterLoad async: still no TimelineController!");
                 }
             });
         }

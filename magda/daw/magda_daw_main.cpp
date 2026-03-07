@@ -147,6 +147,11 @@ class MagdaDAWApplication : public JUCEApplication {
     }
 
     void systemRequestedQuit() override {
+        auto& pm = magda::ProjectManager::getInstance();
+        if (pm.isDirty()) {
+            if (!pm.showUnsavedChangesDialog())
+                return;  // User cancelled
+        }
         quit();
     }
 };

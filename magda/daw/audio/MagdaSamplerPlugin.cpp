@@ -100,16 +100,30 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
             return;
         }
 
+        // Loop wrap before reading — ensure position is valid
+        if (loopEnabled && loopEndSample > loopStartSample) {
+            if (sourceSamplePosition >= loopEndSample) {
+                double loopLen = loopEndSample - loopStartSample;
+                sourceSamplePosition =
+                    loopStartSample + std::fmod(sourceSamplePosition - loopStartSample, loopLen);
+            }
+        }
+
         int pos0 = static_cast<int>(sourceSamplePosition);
         float frac = static_cast<float>(sourceSamplePosition - pos0);
 
-        // Stop at sample end (if set) or end of file
-        int endLimit =
-            (sampleEndSample > 0.0) ? static_cast<int>(sampleEndSample) : totalSamples - 1;
-        if (pos0 >= endLimit) {
-            clearCurrentNote();
-            return;
+        // Stop at sample end (if set) or end of file — skip when looping
+        if (!(loopEnabled && loopEndSample > loopStartSample)) {
+            int endLimit =
+                (sampleEndSample > 0.0) ? static_cast<int>(sampleEndSample) : totalSamples - 1;
+            if (pos0 >= endLimit) {
+                clearCurrentNote();
+                return;
+            }
         }
+
+        // Bounds safety
+        pos0 = juce::jlimit(0, totalSamples - 1, pos0);
 
         float gain = envLevel * velocityGain;
 
@@ -132,14 +146,6 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
         }
 
         sourceSamplePosition += pitchRatio;
-
-        if (loopEnabled && loopEndSample > loopStartSample) {
-            if (sourceSamplePosition >= loopEndSample) {
-                double loopLen = loopEndSample - loopStartSample;
-                sourceSamplePosition =
-                    loopStartSample + std::fmod(sourceSamplePosition - loopEndSample, loopLen);
-            }
-        }
     }
 
     if (!adsr.isActive())
