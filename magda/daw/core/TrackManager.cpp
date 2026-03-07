@@ -1348,7 +1348,7 @@ void TrackManager::setTrackLocked(TrackId trackId, ViewMode mode, bool locked) {
     }
 }
 
-void TrackManager::setTrackCollapsed(TrackId trackId, ViewMode /*mode*/, bool collapsed) {
+void TrackManager::setTrackCollapsed(TrackId trackId, bool collapsed) {
     if (auto* track = getTrack(trackId)) {
         // Apply to all view modes so collapsed state is consistent across views
         for (auto m : {ViewMode::Live, ViewMode::Arrange, ViewMode::Mix, ViewMode::Master}) {

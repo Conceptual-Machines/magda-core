@@ -123,8 +123,9 @@ class ClipOperations {
                 clip.midiOffset = wrapPhase(clip.midiOffset + deltaBeat, clip.loopLengthBeats);
             } else {
                 // Non-looped: midiOffset stays unchanged (user-controlled).
-                // midiTrimOffset tracks the cumulative left-resize delta so the
+                // midiTrimOffset tracks the cumulative left-resize delta (in beats) so the
                 // piano roll (absolute mode) keeps notes at their timeline positions.
+                // Positive = clip start moved right (shrunk), negative = moved left (expanded).
                 clip.midiTrimOffset += deltaBeat;
             }
         }

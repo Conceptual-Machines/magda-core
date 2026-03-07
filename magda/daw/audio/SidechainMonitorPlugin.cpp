@@ -65,7 +65,7 @@ void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                 pluginManager_->gateSidechainLFOs(sourceTrackId_);
         }
 
-        // Pass 2: noteOns + broadcast all messages
+        // Pass 2: broadcast all messages (including noteOffs) and process noteOns for held-count
         for (auto& msg : *fc.bufferForMidiMessages) {
             bus.addMessage(sourceTrackId_, msg);
             if (msg.isNoteOn()) {

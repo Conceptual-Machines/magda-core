@@ -209,7 +209,7 @@ class TrackManager {
     // View settings
     void setTrackVisible(TrackId trackId, ViewMode mode, bool visible);
     void setTrackLocked(TrackId trackId, ViewMode mode, bool locked);
-    void setTrackCollapsed(TrackId trackId, ViewMode mode, bool collapsed);
+    void setTrackCollapsed(TrackId trackId, bool collapsed);
     void setTrackHeight(TrackId trackId, ViewMode mode, int height);
 
     // Signal chain management (unified list of devices and racks)

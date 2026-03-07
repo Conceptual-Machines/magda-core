@@ -1744,8 +1744,7 @@ void SessionView::rebuildTracks() {
             const auto* t = TrackManager::getInstance().getTrack(trackId);
             if (t && t->isGroup()) {
                 bool collapsed = t->isCollapsedIn(currentViewMode_);
-                TrackManager::getInstance().setTrackCollapsed(trackId, currentViewMode_,
-                                                              !collapsed);
+                TrackManager::getInstance().setTrackCollapsed(trackId, !collapsed);
             }
         };
 

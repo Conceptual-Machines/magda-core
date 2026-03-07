@@ -1976,7 +1976,7 @@ void TrackHeadersPanel::handleCollapseToggle(TrackId trackId) {
     const auto* track = trackManager.getTrack(trackId);
     if (track && (track->isGroup() || track->hasChildren())) {
         bool currentlyCollapsed = track->isCollapsedIn(currentViewMode_);
-        trackManager.setTrackCollapsed(trackId, currentViewMode_, !currentlyCollapsed);
+        trackManager.setTrackCollapsed(trackId, !currentlyCollapsed);
     }
 }
 
