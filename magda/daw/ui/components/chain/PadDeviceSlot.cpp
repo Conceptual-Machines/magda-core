@@ -147,6 +147,8 @@ void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
         sampler->loopEnabledValue = enabled;
     };
 
+    samplerUI_->onRootNoteChanged = [sampler](int note) { sampler->setRootNote(note); };
+
     samplerUI_->getPlaybackPosition = [sampler]() -> double {
         return sampler->getPlaybackPosition();
     };
@@ -172,7 +174,7 @@ void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
         sampler->releaseValue.get(), sampler->pitchValue.get(), sampler->fineValue.get(),
         sampler->levelValue.get(), sampler->sampleStartValue.get(), sampler->sampleEndValue.get(),
         sampler->loopEnabledValue.get(), sampler->loopStartValue.get(), sampler->loopEndValue.get(),
-        sampler->velAmountValue.get(), sampleName);
+        sampler->velAmountValue.get(), sampleName, sampler->getRootNote());
 
     samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
                                 sampler->getSampleLengthSeconds());

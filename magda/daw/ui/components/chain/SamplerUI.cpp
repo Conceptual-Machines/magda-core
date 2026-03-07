@@ -27,6 +27,60 @@ SamplerUI::SamplerUI() {
     };
     addAndMakeVisible(*loadButton_);
 
+    // Root note slider (MIDI note 0-127, displayed as note name)
+    rootNoteSlider_.setRange(0, 127, 1);
+    rootNoteSlider_.setValue(60, juce::dontSendNotification);
+    rootNoteSlider_.setValueFormatter([](double v) {
+        static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                          "F#", "G",  "G#", "A",  "A#", "B"};
+        int note = juce::roundToInt(v);
+        int octave = (note / 12) - 2;  // C3 = 60
+        return juce::String(noteNames[note % 12]) + juce::String(octave);
+    });
+    rootNoteSlider_.setValueParser([](const juce::String& text) {
+        // Parse note names like "C3", "F#4", "Bb2"
+        juce::String t = text.trim().toUpperCase();
+        if (t.isEmpty())
+            return 60.0;
+        static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                          "F#", "G",  "G#", "A",  "A#", "B"};
+        // Try sharp notation first
+        int semitone = -1;
+        int nameLen = 0;
+        for (int i = 0; i < 12; ++i) {
+            juce::String nn(noteNames[i]);
+            if (t.startsWith(nn) && nn.length() > nameLen) {
+                semitone = i;
+                nameLen = nn.length();
+            }
+        }
+        // Handle flat (b) as alias for sharp of note below
+        if (t.length() >= 2 && t[1] == 'B' && t[0] >= 'A' && t[0] <= 'G') {
+            // e.g., "Bb" = A#
+            for (int i = 0; i < 12; ++i) {
+                juce::String nn(noteNames[i]);
+                if (nn.length() == 1 && nn[0] == t[0]) {
+                    semitone = (i + 11) % 12;  // one semitone below
+                    nameLen = 2;
+                    break;
+                }
+            }
+        }
+        if (semitone < 0)
+            return 60.0;
+        juce::String octStr = t.substring(nameLen).trim();
+        int octave = octStr.isEmpty() ? 3 : octStr.getIntValue();
+        return juce::jlimit(0.0, 127.0, static_cast<double>((octave + 2) * 12 + semitone));
+    });
+    rootNoteSlider_.onValueChanged = [this](double value) {
+        if (onRootNoteChanged)
+            onRootNoteChanged(juce::roundToInt(value));
+    };
+    addAndMakeVisible(rootNoteSlider_);
+
+    setupLabel(rootNoteLabel_, "ROOT");
+    addAndMakeVisible(rootNoteLabel_);
+
     // --- Time slider setup helper ---
     auto setupTimeSlider = [this](LinkableTextSlider& slider, int paramIndex, double min,
                                   double max, double defaultVal) {
@@ -200,7 +254,7 @@ void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
 void SamplerUI::updateParameters(float attack, float decay, float sustain, float release,
                                  float pitch, float fine, float level, float sampleStart,
                                  float sampleEnd, bool loopEnabled, float loopStart, float loopEnd,
-                                 float velAmount, const juce::String& sampleName) {
+                                 float velAmount, const juce::String& sampleName, int rootNote) {
     attackSlider_.setValue(attack, juce::dontSendNotification);
     decaySlider_.setValue(decay, juce::dontSendNotification);
     sustainSlider_.setValue(sustain, juce::dontSendNotification);
@@ -210,6 +264,8 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     levelSlider_.setValue(level, juce::dontSendNotification);
     waveformGain_ = juce::Decibels::decibelsToGain(level);
     velAmountSlider_.setValue(velAmount, juce::dontSendNotification);
+
+    rootNoteSlider_.setValue(rootNote, juce::dontSendNotification);
 
     startSlider_.setValue(sampleStart, juce::dontSendNotification);
     endSlider_.setValue(sampleEnd, juce::dontSendNotification);
@@ -804,9 +860,14 @@ void SamplerUI::paint(juce::Graphics& g) {
 void SamplerUI::resized() {
     auto area = getLocalBounds().reduced(8);
 
-    // Row 1: Sample name + Load button
+    // Row 1: Sample name + Root note + Load button
     auto sampleRow = area.removeFromTop(22);
     loadButton_->setBounds(sampleRow.removeFromRight(22));
+    sampleRow.removeFromRight(4);
+    // Root note: label + slider on the right side of the header
+    auto rootArea = sampleRow.removeFromRight(70);
+    rootNoteLabel_.setBounds(rootArea.removeFromLeft(30));
+    rootNoteSlider_.setBounds(rootArea);
     sampleRow.removeFromRight(4);
     sampleNameLabel_.setBounds(sampleRow);
     area.removeFromTop(4);

@@ -1619,6 +1619,19 @@ void DeviceSlotComponent::createCustomUI() {
             }
         };
 
+        samplerUI_->onRootNoteChanged = [this](int note) {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return;
+            auto* bridge = audioEngine->getAudioBridge();
+            if (!bridge)
+                return;
+            auto plugin = bridge->getPlugin(device_.id);
+            if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                sampler->setRootNote(note);
+            }
+        };
+
         // Playhead position callback
         samplerUI_->getPlaybackPosition = [this]() -> double {
             auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
@@ -2233,6 +2246,7 @@ void DeviceSlotComponent::updateCustomUI() {
         float loopStart = 0.0f, loopEnd = 0.0f;
         float velAmount = 1.0f;
         bool loopEnabled = false;
+        int rootNote = 60;
         juce::String sampleName;
 
         if (device_.parameters.size() >= 7) {
@@ -2270,6 +2284,7 @@ void DeviceSlotComponent::updateCustomUI() {
                     sampleEnd = sampler->sampleEndParam->getCurrentValue();
                     loopStart = sampler->loopStartParam->getCurrentValue();
                     loopEnd = sampler->loopEndParam->getCurrentValue();
+                    rootNote = sampler->getRootNote();
                     // Only set waveform data if not already loaded (avoids resetting zoom/scroll)
                     if (!samplerUI_->hasWaveform())
                         samplerUI_->setWaveformData(sampler->getWaveform(),
@@ -2281,7 +2296,7 @@ void DeviceSlotComponent::updateCustomUI() {
 
         samplerUI_->updateParameters(attack, decay, sustain, release, pitch, fine, level,
                                      sampleStart, sampleEnd, loopEnabled, loopStart, loopEnd,
-                                     velAmount, sampleName);
+                                     velAmount, sampleName, rootNote);
     }
 
     if (drumGridUI_ &&

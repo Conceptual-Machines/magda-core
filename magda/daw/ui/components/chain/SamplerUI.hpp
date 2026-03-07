@@ -44,7 +44,7 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     void updateParameters(float attack, float decay, float sustain, float release, float pitch,
                           float fine, float level, float sampleStart, float sampleEnd,
                           bool loopEnabled, float loopStart, float loopEnd, float velAmount,
-                          const juce::String& sampleName);
+                          const juce::String& sampleName, int rootNote = 60);
 
     /**
      * @brief Callback when a parameter changes (paramIndex, actualValue)
@@ -68,6 +68,11 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
      * @brief Callback when loop enabled state changes
      */
     std::function<void(bool)> onLoopEnabledChanged;
+
+    /**
+     * @brief Callback when root note changes (MIDI note 0-127)
+     */
+    std::function<void(int)> onRootNoteChanged;
 
     /**
      * @brief Callback to read current playback position from plugin
@@ -110,6 +115,8 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     // Sample info
     juce::Label sampleNameLabel_;
     std::unique_ptr<magda::SvgButton> loadButton_;
+    TextSlider rootNoteSlider_{TextSlider::Format::Decimal};
+    juce::Label rootNoteLabel_;
 
     // Waveform thumbnail
     juce::Path waveformPath_;

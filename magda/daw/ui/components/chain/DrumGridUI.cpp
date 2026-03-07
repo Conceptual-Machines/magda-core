@@ -626,12 +626,14 @@ void DrumGridUI::resized() {
     // Right side allocation
     auto rightBounds = area;
 
-    // 1. DETAIL — from the right
+    // 1. DETAIL — from the right (reserve space for grid + chains)
     juce::Rectangle<int> detailArea;
     if (showDetailPanel) {
+        int reservedWidth = kPadGridWidth + kGap;
+        if (chainsPanelVisible_)
+            reservedWidth += kChainsPanelWidth + kGap;
         int preferredDetailWidth = padChainPanel_.getContentWidth();
-        int detailWidth =
-            juce::jmin(preferredDetailWidth, rightBounds.getWidth() - kPadGridWidth - kGap);
+        int detailWidth = juce::jmin(preferredDetailWidth, rightBounds.getWidth() - reservedWidth);
         detailArea = rightBounds.removeFromRight(juce::jmax(detailWidth, 0));
         rightBounds.removeFromRight(kGap);
     }
@@ -703,9 +705,10 @@ void DrumGridUI::resized() {
 
     constexpr int padGap = 3;
     constexpr int minPadSize = 40;
+    constexpr int maxPadSize = 65;
     int padSize = juce::jmin((gridArea.getWidth() - padGap * (kGridCols - 1)) / kGridCols,
                              (gridArea.getHeight() - padGap * (kGridRows - 1)) / kGridRows);
-    padSize = juce::jmax(padSize, minPadSize);
+    padSize = juce::jlimit(minPadSize, maxPadSize, padSize);
 
     for (int i = 0; i < kPadsPerPage; ++i) {
         int row = i / kGridCols;
