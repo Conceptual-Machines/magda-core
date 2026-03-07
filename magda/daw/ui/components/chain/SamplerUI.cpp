@@ -364,8 +364,10 @@ juce::Rectangle<int> SamplerUI::getWaveformBounds() const {
 float SamplerUI::secondsToPixelX(double seconds, juce::Rectangle<int> waveArea) const {
     if (sampleLength_ <= 0.0)
         return static_cast<float>(waveArea.getX());
-    return static_cast<float>(waveArea.getX() +
-                              (seconds - scrollOffsetSeconds_) * pixelsPerSecond_);
+    float x =
+        static_cast<float>(waveArea.getX() + (seconds - scrollOffsetSeconds_) * pixelsPerSecond_);
+    // Clamp so rightmost markers remain visible within the clip region
+    return juce::jmin(x, static_cast<float>(waveArea.getRight() - 1));
 }
 
 double SamplerUI::pixelXToSeconds(float pixelX, juce::Rectangle<int> waveArea) const {
