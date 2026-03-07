@@ -117,7 +117,6 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::TextButton analogPitchToggle_;
     juce::ComboBox autoPitchModeCombo_;
     std::unique_ptr<magda::DraggableValueLabel> pitchChangeValue_;
-    std::unique_ptr<magda::DraggableValueLabel> transposeValue_;
 
     // Beat detection section
     juce::Label beatDetectionSectionLabel_;
@@ -174,7 +173,6 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     struct ClipRange {
         bool valid = false;  // True if at least one clip was processed
         float minPitchChange = 0.0f, maxPitchChange = 0.0f;
-        int minTranspose = 0, maxTranspose = 0;
         float minVolumeDB = 0.0f, maxVolumeDB = 0.0f;
         float minPan = 0.0f, maxPan = 0.0f;
         float minGainDB = 0.0f, maxGainDB = 0.0f;
@@ -192,7 +190,6 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
 
     // Drag-start tracking for multi-selection delta edits
     double multiPitchChangeDragStart_ = 0.0;
-    double multiTransposeDragStart_ = 0.0;
     double multiVolumeDragStart_ = 0.0;
     double multiPanDragStart_ = 0.0;
     double multiGainDragStart_ = 0.0;

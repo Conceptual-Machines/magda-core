@@ -760,7 +760,7 @@ void ClipInspector::initPitchSection() {
     pitchChangeValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     pitchChangeValue_->setRange(-48.0, 48.0, 0.0);
     pitchChangeValue_->setSuffix(" st");
-    pitchChangeValue_->setDecimalPlaces(1);
+    pitchChangeValue_->setDecimalPlaces(2);
     pitchChangeValue_->onValueChange = [this]() {
         if (selectedClipIds_.empty())
             return;
@@ -780,29 +780,6 @@ void ClipInspector::initPitchSection() {
         refreshClipRangeDisplay();
     };
     clipPropsContainer_.addChildComponent(*pitchChangeValue_);
-
-    transposeValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Integer);
-    transposeValue_->setRange(-24.0, 24.0, 0.0);
-    transposeValue_->setSuffix(" st");
-    transposeValue_->onValueChange = [this]() {
-        if (selectedClipIds_.empty())
-            return;
-        double currentValue = transposeValue_->getValue();
-        int delta = static_cast<int>(std::round(currentValue - multiTransposeDragStart_));
-        if (delta == 0)
-            return;
-        for (auto cid : selectedClipIds_) {
-            const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio) {
-                int newVal = juce::jlimit(-24, 24, c->transpose + delta);
-                magda::ClipManager::getInstance().setTranspose(cid, newVal);
-            }
-        }
-        multiTransposeDragStart_ = currentValue;
-        computeClipRange();
-        refreshClipRangeDisplay();
-    };
-    clipPropsContainer_.addChildComponent(*transposeValue_);
 }
 
 // ========================================================================

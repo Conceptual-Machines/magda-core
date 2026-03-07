@@ -221,10 +221,7 @@ void ClipInspector::resized() {
         addSpace(4);
         {
             auto row = addRow(22);
-            int halfWidth = (containerWidth - 8) / 2;
-            pitchChangeValue_->setBounds(row.removeFromLeft(halfWidth));
-            row.removeFromLeft(8);
-            transposeValue_->setBounds(row.removeFromLeft(halfWidth));
+            pitchChangeValue_->setBounds(row);
         }
     }
 

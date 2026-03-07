@@ -35,7 +35,6 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
                        (clipStretchValue_ && clipStretchValue_->isDragging()) ||
                        (clipBeatsLengthValue_ && clipBeatsLengthValue_->isDragging()) ||
                        (pitchChangeValue_ && pitchChangeValue_->isDragging()) ||
-                       (transposeValue_ && transposeValue_->isDragging()) ||
                        (clipVolumeValue_ && clipVolumeValue_->isDragging()) ||
                        (clipPanValue_ && clipPanValue_->isDragging()) ||
                        (clipGainValue_ && clipGainValue_->isDragging()) ||
