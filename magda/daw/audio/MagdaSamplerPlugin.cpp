@@ -302,6 +302,7 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
     juce::String savedPath = samplePathValue.get();
     if (savedPath.isNotEmpty()) {
         // Save parameter values before loadSample resets them
+        int savedRootNote = rootNoteValue.get();
         float savedStart = sampleStartValue.get();
         float savedEnd = sampleEndValue.get();
         float savedLoopStart = loopStartValue.get();
@@ -310,6 +311,9 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
         juce::File savedFile(savedPath);
         if (savedFile.existsAsFile())
             loadSample(savedFile);
+
+        // Restore root note (loadSample overwrites with detected metadata)
+        setRootNote(savedRootNote);
 
         // Re-apply saved values if they were set (non-zero end means user had set it)
         double lenSec = getSampleLengthSeconds();
@@ -602,9 +606,12 @@ void MagdaSamplerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& 
     // Reload sample if path is set
     juce::String path = samplePathValue.get();
     if (path.isNotEmpty()) {
+        int savedRootNote = rootNoteValue.get();
         juce::File file(path);
         if (file.existsAsFile())
             loadSample(file);
+        // Restore root note (loadSample overwrites with detected metadata)
+        setRootNote(savedRootNote);
     }
 }
 

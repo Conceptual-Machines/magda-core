@@ -2406,15 +2406,9 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                                     nullptr);
             plugin = edit_.getPluginCache().createNewPlugin(pluginState);
             if (plugin) {
-                // Restore DrumGridPlugin chain state from saved XML
-                if (device.pluginState.isNotEmpty()) {
-                    if (auto xml = juce::XmlDocument::parse(device.pluginState)) {
-                        auto savedState = juce::ValueTree::fromXml(*xml);
-                        if (savedState.isValid()) {
-                            plugin->restorePluginStateFromValueTree(savedState);
-                        }
-                    }
-                }
+                // Don't restore state here — defer until after rack wrapping.
+                // Restoring adds PLUGIN children (samplers) to DrumGrid's state,
+                // which can confuse TE's rack graph builder.
                 track->pluginList.insertPlugin(plugin, -1, nullptr);
                 processor = std::make_unique<DrumGridProcessor>(device.id, plugin);
             }
@@ -2749,6 +2743,30 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
 
                 DBG("Loaded instrument device " << device.id << " (" << device.name
                                                 << ") wrapped in rack");
+
+                // Deferred restore: restore DrumGrid chain state AFTER wrapping,
+                // so nested PLUGIN children don't confuse TE's rack graph builder.
+                if (device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName) &&
+                    device.pluginState.isNotEmpty()) {
+                    if (auto xml = juce::XmlDocument::parse(device.pluginState)) {
+                        auto savedState = juce::ValueTree::fromXml(*xml);
+                        if (savedState.isValid()) {
+                            plugin->restorePluginStateFromValueTree(savedState);
+                        }
+                    }
+                }
+
+                // Also restore standalone sampler state after wrapping
+                if (device.pluginId.containsIgnoreCase(
+                        daw::audio::MagdaSamplerPlugin::xmlTypeName) &&
+                    device.pluginState.isNotEmpty()) {
+                    if (auto xml = juce::XmlDocument::parse(device.pluginState)) {
+                        auto savedState = juce::ValueTree::fromXml(*xml);
+                        if (savedState.isValid()) {
+                            plugin->restorePluginStateFromValueTree(savedState);
+                        }
+                    }
+                }
 
                 // Return the INNER plugin (not the rack) so that syncedDevices_
                 // maps to the actual synth for parameter access and window opening
