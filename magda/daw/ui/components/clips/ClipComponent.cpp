@@ -1266,13 +1266,8 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                     mutableClip->loopStart = resizePreviewClip_.loopStart;
                     mutableClip->startBeats = resizePreviewClip_.startBeats;
                     mutableClip->lengthBeats = resizePreviewClip_.lengthBeats;
-                    // Don't sync midiOffset for MIDI clips during drag —
-                    // it would shift notes in the piano roll editor.
-                    // The committed state (via command on mouseUp) handles it.
-                    if (mutableClip->type != magda::ClipType::MIDI) {
-                        mutableClip->midiOffset = resizePreviewClip_.midiOffset;
-                        cm.forceNotifyClipPropertyChanged(clipId_);
-                    }
+                    mutableClip->midiOffset = resizePreviewClip_.midiOffset;
+                    cm.forceNotifyClipPropertyChanged(clipId_);
                 }
             }
 

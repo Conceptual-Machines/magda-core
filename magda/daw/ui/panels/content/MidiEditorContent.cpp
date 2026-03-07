@@ -223,11 +223,19 @@ void MidiEditorContent::updateTimeRuler() {
     // Update relative mode
     timeRuler_->setRelativeMode(relativeTimeMode_);
 
-    // Set loop region markers
+    // Set loop region markers and phase marker
     if (clip) {
         timeRuler_->setLoopRegion(0.0, clip->loopLength, clip->loopEnabled);
+        // Show yellow phase marker when looped and midiOffset > 0
+        if (clip->loopEnabled && clip->midiOffset > 0.0) {
+            double phaseSeconds = clip->midiOffset * 60.0 / tempo;
+            timeRuler_->setLoopPhaseMarker(phaseSeconds, true);
+        } else {
+            timeRuler_->setLoopPhaseMarker(0.0, false);
+        }
     } else {
         timeRuler_->setLoopRegion(0.0, 0.0, false);
+        timeRuler_->setLoopPhaseMarker(0.0, false);
     }
 }
 
