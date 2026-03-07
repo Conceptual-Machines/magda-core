@@ -1505,13 +1505,20 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             audioClipPtr->setSpeedRatio(teSpeedRatio);
         }
 
-        // Sync warp state to engine
+        // Sync warp state to engine (time-based warp — rare, but handle it)
         if (clip->warpEnabled != audioClipPtr->getWarpTime()) {
             audioClipPtr->setWarpTime(clip->warpEnabled);
         }
+    }
 
-        // Restore saved warp markers if warp is enabled and TE has no markers yet
-        if (clip->warpEnabled && !clip->warpMarkers.empty()) {
+    // 5b. WARP — sync warp state and restore markers (applies to both code paths)
+    if (clip->warpEnabled) {
+        if (!audioClipPtr->getWarpTime()) {
+            audioClipPtr->setWarpTime(true);
+        }
+
+        // Restore saved warp markers if TE has no user markers yet
+        if (!clip->warpMarkers.empty()) {
             auto& warpManager = audioClipPtr->getWarpTimeManager();
             auto existingMarkers = warpManager.getMarkers();
             // TE creates 2 default boundary markers; if only those exist, restore saved
@@ -1522,6 +1529,8 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
                         te::WarpMarker(te::TimePosition::fromSeconds(wm.sourceTime),
                                        te::TimePosition::fromSeconds(wm.warpTime)));
                 }
+                DBG("ClipSynchronizer: Restored " << clip->warpMarkers.size()
+                                                  << " warp markers for clip " << clipId);
             }
         }
     }

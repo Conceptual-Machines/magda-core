@@ -157,6 +157,26 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             outData.info.loopEndBeats = loopObj->getProperty("endBeats");
         }
 
+        // Zoom/scroll state
+        auto zoomVar = projectObj->getProperty("zoom");
+        if (zoomVar.isObject()) {
+            auto* zoomObj = zoomVar.getDynamicObject();
+            outData.info.horizontalZoom = zoomObj->getProperty("horizontalZoom");
+            outData.info.verticalZoom = zoomObj->getProperty("verticalZoom");
+            outData.info.scrollX = zoomObj->getProperty("scrollX");
+            outData.info.scrollY = zoomObj->getProperty("scrollY");
+            DBG("ZOOM DESERIALIZE (loadAndStage): hz=" << outData.info.horizontalZoom
+                                                       << " scrollX=" << outData.info.scrollX
+                                                       << " scrollY=" << outData.info.scrollY);
+        } else {
+            DBG("ZOOM DESERIALIZE (loadAndStage): no zoom object in project JSON");
+        }
+
+        // Active view mode
+        if (projectObj->hasProperty("activeView")) {
+            outData.info.activeView = static_cast<int>(projectObj->getProperty("activeView"));
+        }
+
         // Stage tracks, clips, and automation
         if (!deserializeTracksToStaging(obj->getProperty("tracks"), outData.tracks)) {
             return false;
@@ -221,6 +241,8 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     projectObj->setProperty("loop", juce::var(loopObj));
 
     // Zoom/scroll state
+    DBG("ZOOM SERIALIZE: info.horizontalZoom=" << info.horizontalZoom << " scrollX=" << info.scrollX
+                                               << " scrollY=" << info.scrollY);
     if (info.horizontalZoom > 0.0) {
         auto* zoomObj = new juce::DynamicObject();
         zoomObj->setProperty("horizontalZoom", info.horizontalZoom);
@@ -228,6 +250,9 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
         zoomObj->setProperty("scrollX", info.scrollX);
         zoomObj->setProperty("scrollY", info.scrollY);
         projectObj->setProperty("zoom", juce::var(zoomObj));
+        DBG("ZOOM SERIALIZE: wrote zoom object to JSON");
+    } else {
+        DBG("ZOOM SERIALIZE: skipped (horizontalZoom <= 0)");
     }
 
     // Active view mode
@@ -317,6 +342,10 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         outInfo.verticalZoom = zoomObj->getProperty("verticalZoom");
         outInfo.scrollX = zoomObj->getProperty("scrollX");
         outInfo.scrollY = zoomObj->getProperty("scrollY");
+        DBG("ZOOM DESERIALIZE: hz=" << outInfo.horizontalZoom << " scrollX=" << outInfo.scrollX
+                                    << " scrollY=" << outInfo.scrollY);
+    } else {
+        DBG("ZOOM DESERIALIZE: no zoom object in project JSON");
     }
 
     // Active view mode
