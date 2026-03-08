@@ -340,6 +340,21 @@ class Config {
         previewOutputChannel = channel;
     }
 
+    // Auto-save Configuration
+    bool getAutoSaveEnabled() const {
+        return autoSaveEnabled;
+    }
+    void setAutoSaveEnabled(bool enabled) {
+        autoSaveEnabled = enabled;
+    }
+
+    int getAutoSaveIntervalSeconds() const {
+        return autoSaveIntervalSeconds;
+    }
+    void setAutoSaveIntervalSeconds(int seconds) {
+        autoSaveIntervalSeconds = std::max(10, seconds);
+    }
+
     // Save/load to platform-appropriate location:
     //   macOS  ~/Library/Application Support/MAGDA/config.json
     //   Windows  %APPDATA%\MAGDA\config.json
@@ -391,6 +406,10 @@ class Config {
 
     // Auto-monitor settings
     bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track
+
+    // Auto-save settings
+    bool autoSaveEnabled = true;       // Auto-save enabled by default
+    int autoSaveIntervalSeconds = 60;  // Save every 60 seconds
 
     // Preview output channel (stereo pair offset: 0 = outputs 1-2, 2 = outputs 3-4, etc.)
     int previewOutputChannel = 0;

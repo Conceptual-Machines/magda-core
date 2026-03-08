@@ -1,5 +1,6 @@
 #include "PreferencesDialog.hpp"
 
+#include "../../project/ProjectManager.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
@@ -97,6 +98,11 @@ class GeneralPage : public juce::Component {
                     1.0, " bars");
         setupSlider(*this, viewDurationSlider, viewDurationLabel, "Default View", 4.0, 128.0, 1.0,
                     " bars");
+
+        setupSectionHeader(*this, autoSaveHeader, "Auto-Save");
+        setupToggle(*this, autoSaveToggle, "Enable auto-save");
+        setupSlider(*this, autoSaveIntervalSlider, autoSaveIntervalLabel, "Interval", 10.0, 300.0,
+                    10.0, " sec");
     }
 
     void resized() override {
@@ -123,6 +129,15 @@ class GeneralPage : public juce::Component {
         layoutSliderRow(bounds, timelineLengthLabel, timelineLengthSlider, rowH, labelW, sliderH);
         bounds.removeFromTop(4);
         layoutSliderRow(bounds, viewDurationLabel, viewDurationSlider, rowH, labelW, sliderH);
+        bounds.removeFromTop(secGap);
+
+        // Auto-Save
+        autoSaveHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        autoSaveToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        layoutSliderRow(bounds, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, labelW,
+                        sliderH);
     }
 
     void loadSettings(Config& config) {
@@ -134,6 +149,9 @@ class GeneralPage : public juce::Component {
         timelineLengthSlider.setValue(config.getDefaultTimelineLengthBars(),
                                       juce::dontSendNotification);
         viewDurationSlider.setValue(config.getDefaultZoomViewBars(), juce::dontSendNotification);
+        autoSaveToggle.setToggleState(config.getAutoSaveEnabled(), juce::dontSendNotification);
+        autoSaveIntervalSlider.setValue(config.getAutoSaveIntervalSeconds(),
+                                        juce::dontSendNotification);
     }
 
     void applySettings(Config& config) {
@@ -143,6 +161,8 @@ class GeneralPage : public juce::Component {
         config.setZoomOutSensitivityShift(zoomShiftSensitivitySlider.getValue());
         config.setDefaultTimelineLengthBars(static_cast<int>(timelineLengthSlider.getValue()));
         config.setDefaultZoomViewBars(static_cast<int>(viewDurationSlider.getValue()));
+        config.setAutoSaveEnabled(autoSaveToggle.getToggleState());
+        config.setAutoSaveIntervalSeconds(static_cast<int>(autoSaveIntervalSlider.getValue()));
     }
 
   private:
@@ -153,11 +173,14 @@ class GeneralPage : public juce::Component {
         slider.setBounds(row.reduced(0, (rowH - sliderH) / 2));
     }
 
-    juce::Label zoomHeader, timelineHeader;
+    juce::Label zoomHeader, timelineHeader, autoSaveHeader;
     juce::Slider zoomInSensitivitySlider, zoomOutSensitivitySlider, zoomShiftSensitivitySlider;
     juce::Label zoomInLabel, zoomOutLabel, zoomShiftLabel;
     juce::Slider timelineLengthSlider, viewDurationSlider;
     juce::Label timelineLengthLabel, viewDurationLabel;
+    juce::ToggleButton autoSaveToggle;
+    juce::Slider autoSaveIntervalSlider;
+    juce::Label autoSaveIntervalLabel;
 };
 
 // ---- UI tab: Panels, Behavior (incl. showTooltips), Layout ----------------
@@ -781,6 +804,10 @@ void PreferencesDialog::applySettings() {
     aiPage->applySettings(config);
     shortcutsPage->applySettings(config);
     config.save();
+
+    // Apply auto-save settings
+    ProjectManager::getInstance().setAutoSaveEnabled(config.getAutoSaveEnabled(),
+                                                     config.getAutoSaveIntervalSeconds());
 
     // Apply timeline length to live session
     if (auto* tc = TimelineController::getCurrent()) {

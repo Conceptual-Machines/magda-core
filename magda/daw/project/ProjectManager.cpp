@@ -19,6 +19,8 @@ static const char* const kBouncesDir = "bounces";
 static const char* const kTempRootDir = "MAGDA";
 static const char* const kTempPrefix = "UnsavedProject_";
 static constexpr int kStaleTempDays = 7;
+static const char* const kAutosaveExtension = ".autosave";
+static constexpr int kDefaultAutoSaveIntervalMs = 60000;
 
 ProjectManager& ProjectManager::getInstance() {
     static ProjectManager instance;
@@ -34,9 +36,13 @@ ProjectManager::ProjectManager() {
     // the user explicitly creates or saves a project.
     createTempMediaDirectory();
     ensureMediaSubdirectories(mediaDirectory_);
+
+    // Start auto-save timer
+    startTimer(kDefaultAutoSaveIntervalMs);
 }
 
 ProjectManager::~ProjectManager() {
+    stopTimer();
     joinBackgroundThread();
 }
 
@@ -139,6 +145,7 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     }
 
     clearDirty();
+    deleteAutosaveFile();
 
     if (!wasOpen) {
         notifyProjectOpened();
@@ -162,9 +169,20 @@ bool ProjectManager::loadProject(const juce::File& file,
         return false;
     }
 
+    // Check for autosave recovery
+    auto fileToLoad = file;
+    auto autosaveFile = getAutosaveFile(file);
+    if (autosaveFile.existsAsFile()) {
+        if (promptAutosaveRecovery(file)) {
+            fileToLoad = autosaveFile;
+        } else {
+            autosaveFile.deleteFile();
+        }
+    }
+
     // Stage first (file I/O + parse + validate)
     StagedProjectData staged;
-    if (!ProjectSerializer::loadAndStage(file, staged)) {
+    if (!ProjectSerializer::loadAndStage(fileToLoad, staged)) {
         lastError_ = "Failed to load project: " + ProjectSerializer::getLastError();
         return false;
     }
@@ -177,7 +195,7 @@ bool ProjectManager::loadProject(const juce::File& file,
     // Commit staged data to singleton managers
     ProjectSerializer::commitStaged(staged);
 
-    // Update state
+    // Update state — always use the original file as the canonical project file
     currentProject_ = staged.info;
     currentProject_.filePath = file.getFullPathName();
     currentFile_ = file;
@@ -188,7 +206,16 @@ bool ProjectManager::loadProject(const juce::File& file,
     mediaDirectory_ = file.getParentDirectory().getChildFile(mediaDirName);
     ensureMediaSubdirectories(mediaDirectory_);
 
-    clearDirty();
+    // If we recovered from autosave, mark dirty so the user can save properly
+    if (fileToLoad != file) {
+        isDirty_ = true;
+        notifyDirtyStateChanged();
+        autosaveFile.deleteFile();
+    } else {
+        clearDirty();
+    }
+
+    deleteAutosaveFile();
     notifyProjectOpened();
 
     if (onAfterLoad)
@@ -213,49 +240,72 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
         return;
     }
 
+    // Check for autosave recovery (modal dialog on message thread)
+    auto fileToLoad = file;
+    auto autosaveFile = getAutosaveFile(file);
+    bool recoveredFromAutosave = false;
+    if (autosaveFile.existsAsFile()) {
+        if (promptAutosaveRecovery(file)) {
+            fileToLoad = autosaveFile;
+            recoveredFromAutosave = true;
+        } else {
+            autosaveFile.deleteFile();
+        }
+    }
+
     // Capture file path for the background thread
-    auto fileCopy = file;
+    auto fileCopy = fileToLoad;
 
     // Join any previous background load before starting a new one
     joinBackgroundThread();
 
+    auto originalFile = file;
+
     // Launch background thread for I/O + parse + staging
-    loadThread_ = std::thread([fileCopy, onBeforeCommit, onComplete, this]() {
+    loadThread_ = std::thread([fileCopy, originalFile, recoveredFromAutosave, onBeforeCommit,
+                               onComplete, this]() {
         auto staged = std::make_shared<StagedProjectData>();
         bool ok = ProjectSerializer::loadAndStage(fileCopy, *staged);
         juce::String error =
             ok ? juce::String() : ("Failed to load project: " + ProjectSerializer::getLastError());
 
         // Bounce back to the message thread for commit + notification
-        juce::MessageManager::callAsync(
-            [this, staged, ok, error, fileCopy, onBeforeCommit, onComplete]() {
-                if (ok) {
-                    // Set tempo/time sig/loop BEFORE committing tracks & clips,
-                    // so that audio engine clip sync uses the correct BPM.
-                    if (onBeforeCommit)
-                        onBeforeCommit(staged->info);
+        juce::MessageManager::callAsync([this, staged, ok, error, originalFile,
+                                         recoveredFromAutosave, onBeforeCommit, onComplete]() {
+            if (ok) {
+                // Set tempo/time sig/loop BEFORE committing tracks & clips,
+                // so that audio engine clip sync uses the correct BPM.
+                if (onBeforeCommit)
+                    onBeforeCommit(staged->info);
 
-                    ProjectSerializer::commitStaged(*staged);
-                    currentProject_ = staged->info;
-                    currentProject_.filePath = fileCopy.getFullPathName();
-                    currentFile_ = fileCopy;
-                    isProjectOpen_ = true;
+                ProjectSerializer::commitStaged(*staged);
+                currentProject_ = staged->info;
+                currentProject_.filePath = originalFile.getFullPathName();
+                currentFile_ = originalFile;
+                isProjectOpen_ = true;
 
-                    // Set media directory beside project file
-                    juce::String mediaDirName = fileCopy.getFileNameWithoutExtension() + "_Media";
-                    mediaDirectory_ = fileCopy.getParentDirectory().getChildFile(mediaDirName);
-                    ensureMediaSubdirectories(mediaDirectory_);
+                // Set media directory beside project file
+                juce::String mediaDirName = originalFile.getFileNameWithoutExtension() + "_Media";
+                mediaDirectory_ = originalFile.getParentDirectory().getChildFile(mediaDirName);
+                ensureMediaSubdirectories(mediaDirectory_);
 
+                if (recoveredFromAutosave) {
+                    isDirty_ = true;
+                    notifyDirtyStateChanged();
+                    deleteAutosaveFile();
+                } else {
                     clearDirty();
-                    notifyProjectOpened();
-
-                    if (onAfterLoad)
-                        onAfterLoad(currentProject_);
                 }
 
-                if (onComplete)
-                    onComplete(ok, error);
-            });
+                notifyProjectOpened();
+
+                if (onAfterLoad)
+                    onAfterLoad(currentProject_);
+            }
+
+            if (onComplete)
+                onComplete(ok, error);
+        });
     });
 }
 
@@ -264,6 +314,8 @@ bool ProjectManager::closeProject() {
     if (isDirty_ && !showUnsavedChangesDialog()) {
         return false;
     }
+
+    deleteAutosaveFile();
 
     // Clear all project content from singleton managers
     TrackManager::getInstance().clearAllTracks();
@@ -476,6 +528,87 @@ void ProjectManager::cleanupStaleTempDirectories() {
             }
         }
     }
+}
+
+// ============================================================================
+// Auto-Save
+// ============================================================================
+
+void ProjectManager::setAutoSaveEnabled(bool enabled, int intervalSeconds) {
+    autoSaveEnabled_ = enabled;
+    if (enabled) {
+        startTimer(intervalSeconds * 1000);
+    } else {
+        stopTimer();
+    }
+}
+
+void ProjectManager::timerCallback() {
+    if (autoSaveEnabled_ && isDirty_ && isProjectOpen_) {
+        performAutosave();
+    }
+}
+
+void ProjectManager::performAutosave() {
+    // Only autosave if we have a saved project file
+    if (currentFile_.getFullPathName().isEmpty())
+        return;
+
+    // Capture live plugin state before serializing
+    if (onBeforeSave)
+        onBeforeSave();
+
+    auto autosaveFile = currentFile_.getParentDirectory().getChildFile(currentFile_.getFileName() +
+                                                                       kAutosaveExtension);
+
+    ProjectInfo autosaveInfo = currentProject_;
+    autosaveInfo.touch();
+
+    ProjectSerializer::saveToFile(autosaveFile, autosaveInfo);
+}
+
+void ProjectManager::deleteAutosaveFile() {
+    if (currentFile_.getFullPathName().isEmpty())
+        return;
+
+    auto autosaveFile = getAutosaveFile(currentFile_);
+    if (autosaveFile.existsAsFile())
+        autosaveFile.deleteFile();
+}
+
+juce::File ProjectManager::getAutosaveFile(const juce::File& projectFile) {
+    auto f = projectFile.getParentDirectory().getChildFile(projectFile.getFileName() +
+                                                           kAutosaveExtension);
+    return f.existsAsFile() ? f : juce::File();
+}
+
+bool ProjectManager::promptAutosaveRecovery(const juce::File& projectFile) {
+    auto autosaveFile = projectFile.getParentDirectory().getChildFile(projectFile.getFileName() +
+                                                                      kAutosaveExtension);
+
+    if (!autosaveFile.existsAsFile())
+        return false;
+
+    auto autosaveTime = autosaveFile.getLastModificationTime();
+    auto projectTime = projectFile.getLastModificationTime();
+
+    // Only offer recovery if the autosave is newer
+    if (autosaveTime <= projectTime)
+        return false;
+
+    int result = juce::AlertWindow::showYesNoCancelBox(
+        juce::AlertWindow::QuestionIcon, "Recover Autosaved Changes",
+        "An autosave file was found that is newer than the project file.\n\n"
+        "Project saved: " +
+            projectTime.toString(true, true) +
+            "\n"
+            "Autosave saved: " +
+            autosaveTime.toString(true, true) +
+            "\n\n"
+            "Would you like to recover the autosaved version?",
+        "Recover", "Discard", "Cancel");
+
+    return result == 1;
 }
 
 bool ProjectManager::showUnsavedChangesDialog() {

@@ -19,6 +19,7 @@
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -70,6 +71,10 @@ MainView::MainView(AudioEngine* audioEngine)
     DBG("CONFIG: Timeline length=" << config.getDefaultTimelineLengthBars() << " bars ("
                                    << timelineLength << " seconds at 120 BPM)");
     DBG("CONFIG: Default zoom view=" << config.getDefaultZoomViewBars() << " bars");
+
+    // Apply auto-save settings from config
+    magda::ProjectManager::getInstance().setAutoSaveEnabled(config.getAutoSaveEnabled(),
+                                                            config.getAutoSaveIntervalSeconds());
 
     // Make this component focusable to receive keyboard events
     setWantsKeyboardFocus(true);
