@@ -189,7 +189,7 @@ void PadChainPanel::itemDropped(const SourceDetails& details) {
 
 void PadChainPanel::paint(juce::Graphics& g) {
     // Background
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
     g.fillRect(getLocalBounds());
 
     // "+" stripe background

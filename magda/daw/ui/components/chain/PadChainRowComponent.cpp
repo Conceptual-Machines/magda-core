@@ -140,14 +140,13 @@ void PadChainRowComponent::resized() {
     nameLabel_.setBounds(bounds.removeFromLeft(50));
     bounds.removeFromLeft(4);
 
-    // Remaining space for level and pan sliders
-    int remainingWidth = bounds.getWidth();
-    int sliderWidth = (remainingWidth - 8) / 2;
+    // Remaining space split equally for level and pan sliders
+    int sliderWidth = (bounds.getWidth() - 4) / 2;
 
     levelSlider_.setBounds(bounds.removeFromLeft(sliderWidth));
-    bounds.removeFromLeft(8);
+    bounds.removeFromLeft(4);
 
-    panSlider_.setBounds(bounds.removeFromLeft(sliderWidth));
+    panSlider_.setBounds(bounds);
 }
 
 void PadChainRowComponent::mouseDown(const juce::MouseEvent& e) {

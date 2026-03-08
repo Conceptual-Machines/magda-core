@@ -227,15 +227,8 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
 }
 
 void PadDeviceSlot::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds();
-
-    // Background
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-    g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
-
-    // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawRoundedRectangle(bounds.toFloat(), 3.0f, 0.5f);
+    g.fillRect(getLocalBounds());
 }
 
 void PadDeviceSlot::resized() {
