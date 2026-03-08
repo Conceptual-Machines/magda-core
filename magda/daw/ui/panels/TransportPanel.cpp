@@ -22,8 +22,8 @@ TransportPanel::TransportPanel() {
 
     cpuValueLabel = std::make_unique<juce::Label>("cpuValue", "0%");
     cpuValueLabel->setColour(juce::Label::textColourId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    cpuValueLabel->setFont(FontManager::getInstance().getUIFont(14.0f));
+                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    cpuValueLabel->setFont(FontManager::getInstance().getUIFont(11.0f));
     cpuValueLabel->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(*cpuValueLabel);
 }
@@ -92,12 +92,36 @@ void TransportPanel::paint(juce::Graphics& g) {
         auto frameBounds = cpuArea.toFloat();
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRoundedRectangle(frameBounds, 3.0f);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawRoundedRectangle(frameBounds.reduced(0.5f), 3.0f, 1.0f);
 
         // Separator line between header and value
         int headerHeight = juce::roundToInt(cpuArea.getHeight() * 0.25f);
         float sepY = cpuArea.getY() + headerHeight;
+
+        // CPU usage fill bar in value area
+        if (currentCpuUsage > 0.0f) {
+            auto valueArea =
+                juce::Rectangle<float>(frameBounds.getX() + 1, sepY + 1, frameBounds.getWidth() - 2,
+                                       frameBounds.getBottom() - sepY - 2);
+            float fillHeight = valueArea.getHeight() * currentCpuUsage;
+            auto fillArea = valueArea.withTop(valueArea.getBottom() - fillHeight);
+
+            juce::Colour fillColour;
+            if (currentCpuUsage < 0.5f)
+                fillColour = juce::Colour(0xFF55AA55).withAlpha(0.3f);
+            else if (currentCpuUsage < 0.8f)
+                fillColour = juce::Colour(0xFFAAAA55).withAlpha(0.3f);
+            else
+                fillColour = juce::Colour(0xFFAA5555).withAlpha(0.3f);
+
+            g.setColour(fillColour);
+            g.fillRect(fillArea);
+        }
+
+        // Frame border
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRoundedRectangle(frameBounds.reduced(0.5f), 3.0f, 1.0f);
+
+        // Separator line
         g.drawHorizontalLine(static_cast<int>(sepY), frameBounds.getX() + 1,
                              frameBounds.getRight() - 1);
     }
@@ -917,11 +941,14 @@ void TransportPanel::updatePunchLabelColors() {
 }
 
 void TransportPanel::setCpuUsage(float usage) {
-    currentCpuUsage = juce::jlimit(0.0f, 1.0f, usage);
+    float clamped = juce::jlimit(0.0f, 1.0f, usage);
+    // Exponential moving average for stable display
+    currentCpuUsage = currentCpuUsage * 0.7f + clamped * 0.3f;
     if (cpuValueLabel) {
         int percent = juce::roundToInt(currentCpuUsage * 100.0f);
         cpuValueLabel->setText(juce::String(percent) + "%", juce::dontSendNotification);
     }
+    repaint(getCpuArea());
 }
 
 }  // namespace magda
