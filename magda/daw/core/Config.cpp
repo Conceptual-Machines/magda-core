@@ -97,6 +97,8 @@ void Config::save() {
     root->setProperty("renderSampleRate", renderSampleRate);
     root->setProperty("renderBitDepth", renderBitDepth);
     root->setProperty("renderFilePattern", toJuceString(renderFilePattern));
+    root->setProperty("bounceFilePattern", toJuceString(bounceFilePattern));
+    root->setProperty("bounceBitDepth", bounceBitDepth);
 
     // Audio devices
     root->setProperty("preferredAudioDevice", toJuceString(preferredAudioDevice));
@@ -245,6 +247,8 @@ void Config::load() {
     renderSampleRate = getDouble("renderSampleRate", renderSampleRate);
     renderBitDepth = getInt("renderBitDepth", renderBitDepth);
     renderFilePattern = getString("renderFilePattern", renderFilePattern);
+    bounceFilePattern = getString("bounceFilePattern", bounceFilePattern);
+    bounceBitDepth = getInt("bounceBitDepth", bounceBitDepth);
 
     preferredAudioDevice = getString("preferredAudioDevice", preferredAudioDevice);
     preferredInputDevice = getString("preferredInputDevice", preferredInputDevice);

@@ -275,6 +275,20 @@ class Config {
         renderFilePattern = pattern;
     }
 
+    std::string getBounceFilePattern() const {
+        return bounceFilePattern;
+    }
+    void setBounceFilePattern(const std::string& pattern) {
+        bounceFilePattern = pattern;
+    }
+
+    int getBounceBitDepth() const {
+        return bounceBitDepth;
+    }
+    void setBounceBitDepth(int depth) {
+        bounceBitDepth = depth;
+    }
+
     // AI Configuration
     std::string getOpenAIApiKey() const {
         return openaiApiKey;
@@ -404,6 +418,8 @@ class Config {
     int renderBitDepth = 24;            // 16, 24, 32
     // File naming pattern tokens: <project-name>, <clip-name>, <track-name>, <date-time>
     std::string renderFilePattern = "<project-name>_<date-time>";
+    std::string bounceFilePattern = "<clip-name>_<date-time>";
+    int bounceBitDepth = 32;  // 16, 24, 32 — default 32-bit for internal bounces
 
     // Audio device settings
     std::string preferredAudioDevice = "";   // Preferred audio interface (empty = system default)

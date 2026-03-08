@@ -302,17 +302,24 @@ class RenderingPage : public juce::Component {
         styleCombo(sampleRateCombo);
         addAndMakeVisible(sampleRateCombo);
 
-        setupComboLabel(bitDepthLabel, "Bit Depth");
+        setupComboLabel(bitDepthLabel, "Export Bit Depth");
         bitDepthCombo.addItem("16-bit", 1);
         bitDepthCombo.addItem("24-bit", 2);
         bitDepthCombo.addItem("32-bit float", 3);
         styleCombo(bitDepthCombo);
         addAndMakeVisible(bitDepthCombo);
 
+        setupComboLabel(bounceBitDepthLabel, "Bounce Bit Depth");
+        bounceBitDepthCombo.addItem("16-bit", 1);
+        bounceBitDepthCombo.addItem("24-bit", 2);
+        bounceBitDepthCombo.addItem("32-bit float", 3);
+        styleCombo(bounceBitDepthCombo);
+        addAndMakeVisible(bounceBitDepthCombo);
+
         // --- File Naming ---
         setupSectionHeader(*this, namingHeader, "File Naming");
 
-        setupComboLabel(patternLabel, "Pattern");
+        setupComboLabel(patternLabel, "Export Pattern");
         patternEditor.setFont(FontManager::getInstance().getUIFont(12.0f));
         patternEditor.setColour(juce::TextEditor::backgroundColourId,
                                 DarkTheme::getColour(DarkTheme::SURFACE));
@@ -321,6 +328,16 @@ class RenderingPage : public juce::Component {
         patternEditor.setColour(juce::TextEditor::outlineColourId,
                                 DarkTheme::getColour(DarkTheme::BORDER));
         addAndMakeVisible(patternEditor);
+
+        setupComboLabel(bouncePatternLabel, "Bounce Pattern");
+        bouncePatternEditor.setFont(FontManager::getInstance().getUIFont(12.0f));
+        bouncePatternEditor.setColour(juce::TextEditor::backgroundColourId,
+                                      DarkTheme::getColour(DarkTheme::SURFACE));
+        bouncePatternEditor.setColour(juce::TextEditor::textColourId,
+                                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        bouncePatternEditor.setColour(juce::TextEditor::outlineColourId,
+                                      DarkTheme::getColour(DarkTheme::BORDER));
+        addAndMakeVisible(bouncePatternEditor);
 
         patternHint.setText("Tokens: <clip-name> <track-name> <project-name> <date-time>",
                             juce::dontSendNotification);
@@ -358,6 +375,8 @@ class RenderingPage : public juce::Component {
         layoutComboRow(bounds, sampleRateLabel, sampleRateCombo, rowH, labelW);
         bounds.removeFromTop(4);
         layoutComboRow(bounds, bitDepthLabel, bitDepthCombo, rowH, labelW);
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, bounceBitDepthLabel, bounceBitDepthCombo, rowH, labelW);
         bounds.removeFromTop(secGap);
 
         // File naming
@@ -367,6 +386,12 @@ class RenderingPage : public juce::Component {
             auto row = bounds.removeFromTop(rowH);
             patternLabel.setBounds(row.removeFromLeft(labelW));
             patternEditor.setBounds(row.reduced(0, 4));
+        }
+        bounds.removeFromTop(4);
+        {
+            auto row = bounds.removeFromTop(rowH);
+            bouncePatternLabel.setBounds(row.removeFromLeft(labelW));
+            bouncePatternEditor.setBounds(row.reduced(0, 4));
         }
         bounds.removeFromTop(2);
         patternHint.setBounds(bounds.removeFromTop(18).withTrimmedLeft(labelW));
@@ -401,9 +426,20 @@ class RenderingPage : public juce::Component {
         else
             bitDepthCombo.setSelectedId(1, juce::dontSendNotification);
 
-        // File pattern
+        // Bounce bit depth
+        int bbd = config.getBounceBitDepth();
+        if (bbd >= 32)
+            bounceBitDepthCombo.setSelectedId(3, juce::dontSendNotification);
+        else if (bbd >= 24)
+            bounceBitDepthCombo.setSelectedId(2, juce::dontSendNotification);
+        else
+            bounceBitDepthCombo.setSelectedId(1, juce::dontSendNotification);
+
+        // File patterns
         patternEditor.setText(juce::String(config.getRenderFilePattern()),
                               juce::dontSendNotification);
+        bouncePatternEditor.setText(juce::String(config.getBounceFilePattern()),
+                                    juce::dontSendNotification);
     }
 
     void applySettings(Config& config) {
@@ -423,6 +459,15 @@ class RenderingPage : public juce::Component {
         if (pattern.empty())
             pattern = "<project-name>_<date-time>";
         config.setRenderFilePattern(pattern);
+
+        auto bouncePattern = bouncePatternEditor.getText().toStdString();
+        if (bouncePattern.empty())
+            bouncePattern = "<clip-name>_<date-time>";
+        config.setBounceFilePattern(bouncePattern);
+
+        int bbdIdx = bounceBitDepthCombo.getSelectedId() - 1;
+        if (bbdIdx >= 0 && bbdIdx < 3)
+            config.setBounceBitDepth(bitDepths[bbdIdx]);
     }
 
   private:
@@ -456,11 +501,11 @@ class RenderingPage : public juce::Component {
     juce::TextButton renderFolderClearButton;
     std::string renderFolderPath_;
 
-    juce::Label sampleRateLabel, bitDepthLabel;
-    juce::ComboBox sampleRateCombo, bitDepthCombo;
+    juce::Label sampleRateLabel, bitDepthLabel, bounceBitDepthLabel;
+    juce::ComboBox sampleRateCombo, bitDepthCombo, bounceBitDepthCombo;
 
-    juce::Label patternLabel, patternHint;
-    juce::TextEditor patternEditor;
+    juce::Label patternLabel, bouncePatternLabel, patternHint;
+    juce::TextEditor patternEditor, bouncePatternEditor;
 
     std::unique_ptr<juce::FileChooser> fileChooser_;
 };
@@ -684,7 +729,7 @@ PreferencesDialog::PreferencesDialog() {
     addAndMakeVisible(applyButton);
 
     loadCurrentSettings();
-    setSize(500, 580);
+    setSize(500, 650);
 }
 
 PreferencesDialog::~PreferencesDialog() {

@@ -19,14 +19,10 @@ namespace te = tracktion;
 
 namespace {
 
-/// Expand render file naming pattern.
+/// Expand a file naming pattern with token substitution.
 /// Tokens: <clip-name>, <track-name>, <project-name>, <date-time>
-juce::String expandRenderPattern(const juce::String& clipName, const juce::String& trackName) {
-    auto& config = Config::getInstance();
-    juce::String pattern(config.getRenderFilePattern());
-    if (pattern.isEmpty())
-        pattern = "<project-name>_<date-time>";
-
+juce::String expandPattern(juce::String pattern, const juce::String& clipName,
+                           const juce::String& trackName) {
     juce::String safeClip =
         clipName.isNotEmpty() ? clipName.replaceCharacters(" /\\:", "____") : "clip";
     juce::String safeTrack =
@@ -39,18 +35,28 @@ juce::String expandRenderPattern(const juce::String& clipName, const juce::Strin
 
     juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
 
-    DBG("expandRenderPattern: pattern=" << pattern << " clipName=" << safeClip
-                                        << " trackName=" << safeTrack << " projName=" << projName);
-
     pattern = pattern.replace("<clip-name>", safeClip);
     pattern = pattern.replace("<track-name>", safeTrack);
     pattern = pattern.replace("<project-name>", projName);
     pattern = pattern.replace("<date-time>", timestamp);
 
-    DBG("expandRenderPattern: result=" << pattern);
-
-    // Sanitise any remaining unsafe chars
     return pattern.replaceCharacters("/\\:", "___");
+}
+
+/// Expand the render/export file naming pattern (default: <project-name>_<date-time>).
+juce::String expandRenderPattern(const juce::String& clipName, const juce::String& trackName) {
+    juce::String pattern(Config::getInstance().getRenderFilePattern());
+    if (pattern.isEmpty())
+        pattern = "<project-name>_<date-time>";
+    return expandPattern(pattern, clipName, trackName);
+}
+
+/// Expand the bounce file naming pattern (default: <clip-name>_<date-time>).
+juce::String expandBouncePattern(const juce::String& clipName, const juce::String& trackName) {
+    juce::String pattern(Config::getInstance().getBounceFilePattern());
+    if (pattern.isEmpty())
+        pattern = "<clip-name>_<date-time>";
+    return expandPattern(pattern, clipName, trackName);
 }
 
 /**
@@ -1029,8 +1035,8 @@ void RenderTimeSelectionCommand::execute() {
 
         auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
         params.audioFormat = formatManager.getWavFormat();
-        params.bitDepth = 24;
-        params.sampleRateForAudio = edit->engine.getDeviceManager().getSampleRate();
+        params.bitDepth = Config::getInstance().getRenderBitDepth();
+        params.sampleRateForAudio = Config::getInstance().getRenderSampleRate();
         params.blockSizeForAudio = 512;
         params.usePlugins = false;
         params.useMasterPlugins = false;
@@ -1465,7 +1471,7 @@ void BounceInPlaceCommand::execute() {
         auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
         juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
-        renderedFile_ = bouncesDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
+        renderedFile_ = bouncesDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
     }
 
     // Stop transport and free playback context
@@ -1529,7 +1535,7 @@ void BounceInPlaceCommand::execute() {
     params.destFile = renderedFile_;
     auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
     params.audioFormat = formatManager.getWavFormat();
-    params.bitDepth = Config::getInstance().getRenderBitDepth();
+    params.bitDepth = Config::getInstance().getBounceBitDepth();
     params.sampleRateForAudio = Config::getInstance().getRenderSampleRate();
     params.blockSizeForAudio = 512;
     params.usePlugins = true;  // Synth is active, FX are bypassed
@@ -1657,7 +1663,7 @@ void BounceToNewTrackCommand::execute() {
         auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
         juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
-        renderedFile_ = bouncesDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
+        renderedFile_ = bouncesDir.getChildFile(expandBouncePattern(clipName, trackName) + ".wav");
     }
 
     // Stop transport and free playback context
@@ -1702,7 +1708,7 @@ void BounceToNewTrackCommand::execute() {
     params.destFile = renderedFile_;
     auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
     params.audioFormat = formatManager.getWavFormat();
-    params.bitDepth = Config::getInstance().getRenderBitDepth();
+    params.bitDepth = Config::getInstance().getBounceBitDepth();
     params.sampleRateForAudio = Config::getInstance().getRenderSampleRate();
     params.blockSizeForAudio = 512;
     params.usePlugins = true;  // Full signal chain
