@@ -152,7 +152,7 @@ class MainView : public juce::Component,
     class MasterContentPanel;
     std::unique_ptr<MasterHeaderPanel> masterHeaderPanel;
     std::unique_ptr<MasterContentPanel> masterContentPanel;
-    int masterStripHeight = 60;
+    int masterStripHeight = 46;
     ViewMode currentViewMode_ = ViewMode::Arrange;
     bool masterVisible_ = true;
 
@@ -332,21 +332,16 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
 
     // Meter level updates (for audio engine integration)
     void setPeakLevels(float leftPeak, float rightPeak);
-    void setVuLevels(float leftVu, float rightVu);
 
   private:
     std::unique_ptr<juce::Label> nameLabel;
     std::unique_ptr<juce::DrawableButton> speakerButton;  // Speaker on/off toggle
     std::unique_ptr<DraggableValueLabel> volumeLabel;     // Volume as draggable dB label
 
-    // Horizontal stereo meter component (used for both peak and VU)
+    // Horizontal stereo meter component
     class HorizontalStereoMeter;
-    std::unique_ptr<HorizontalStereoMeter> peakMeter;  // Fast peak meter
-    std::unique_ptr<HorizontalStereoMeter> vuMeter;    // Slow VU meter
-    std::unique_ptr<juce::Label> peakLabel;            // "Peak" label
-    std::unique_ptr<juce::Label> vuLabel;              // "VU" label
-    std::unique_ptr<juce::Label> peakValueLabel;       // Peak dB value
-    std::unique_ptr<juce::Label> vuValueLabel;         // VU dB value
+    std::unique_ptr<HorizontalStereoMeter> peakMeter;
+    std::unique_ptr<juce::Label> peakValueLabel;  // Peak dB value
 
     void setupControls();
 

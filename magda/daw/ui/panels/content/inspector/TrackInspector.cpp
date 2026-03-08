@@ -76,9 +76,10 @@ TrackInspector::TrackInspector() {
     speakerButton_->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
     speakerButton_->setClickingTogglesState(true);
     speakerButton_->setColour(juce::DrawableButton::backgroundColourId,
-                              juce::Colours::transparentBlack);
+                              DarkTheme::getColour(DarkTheme::SURFACE));
     speakerButton_->setColour(juce::DrawableButton::backgroundOnColourId,
                               DarkTheme::getColour(DarkTheme::STATUS_ERROR).withAlpha(0.3f));
+    speakerButton_->setEdgeIndent(2);
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetMasterMuteCommand>(speakerButton_->getToggleState()));
