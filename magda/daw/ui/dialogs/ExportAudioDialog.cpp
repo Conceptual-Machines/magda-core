@@ -19,18 +19,16 @@ ExportAudioDialog::ExportAudioDialog() {
     formatComboBox_.addItem("WAV 24-bit", 2);
     formatComboBox_.addItem("WAV 32-bit Float", 3);
     formatComboBox_.addItem("FLAC", 4);
-    // Restore saved format preference
+    // Initialise format from render bit depth preference
     auto& config = Config::getInstance();
-    auto savedFormat = config.getExportFormat();
+    int bd = config.getRenderBitDepth();
     int formatId = 2;  // Default WAV 24-bit
-    if (savedFormat == "WAV16")
-        formatId = 1;
-    else if (savedFormat == "WAV24")
-        formatId = 2;
-    else if (savedFormat == "WAV32")
+    if (bd >= 32)
         formatId = 3;
-    else if (savedFormat == "FLAC")
-        formatId = 4;
+    else if (bd >= 24)
+        formatId = 2;
+    else
+        formatId = 1;
     formatComboBox_.setSelectedId(formatId, juce::dontSendNotification);
     formatComboBox_.onChange = [this]() { onFormatChanged(); };
     addAndMakeVisible(formatComboBox_);
@@ -44,17 +42,15 @@ ExportAudioDialog::ExportAudioDialog() {
     sampleRateComboBox_.addItem("48 kHz", 2);
     sampleRateComboBox_.addItem("96 kHz", 3);
     sampleRateComboBox_.addItem("192 kHz", 4);
-    // Restore saved sample rate preference
-    double savedRate = config.getExportSampleRate();
-    int rateId = 2;  // Default 48kHz
-    if (savedRate == 44100.0)
-        rateId = 1;
-    else if (savedRate == 48000.0)
-        rateId = 2;
-    else if (savedRate == 96000.0)
-        rateId = 3;
-    else if (savedRate == 192000.0)
+    // Initialise sample rate from render preference
+    double savedRate = config.getRenderSampleRate();
+    int rateId = 1;  // Default 44.1kHz
+    if (savedRate >= 192000.0)
         rateId = 4;
+    else if (savedRate >= 96000.0)
+        rateId = 3;
+    else if (savedRate >= 48000.0)
+        rateId = 2;
     sampleRateComboBox_.setSelectedId(rateId, juce::dontSendNotification);
     addAndMakeVisible(sampleRateComboBox_);
 
@@ -113,10 +109,15 @@ ExportAudioDialog::ExportAudioDialog() {
     exportButton_.onClick = [this]() {
         if (onExport) {
             auto settings = getSettings();
-            // Persist format and sample rate preferences
+            // Persist render preferences
             auto& cfg = Config::getInstance();
-            cfg.setExportFormat(settings.format.toStdString());
-            cfg.setExportSampleRate(settings.sampleRate);
+            int bitDepth = 24;
+            if (settings.format == "WAV16")
+                bitDepth = 16;
+            else if (settings.format == "WAV32")
+                bitDepth = 32;
+            cfg.setRenderBitDepth(bitDepth);
+            cfg.setRenderSampleRate(settings.sampleRate);
             cfg.save();
             onExport(settings);
         }

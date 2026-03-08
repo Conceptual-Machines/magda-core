@@ -254,6 +254,27 @@ class Config {
         renderFolder = folder;
     }
 
+    double getRenderSampleRate() const {
+        return renderSampleRate;
+    }
+    void setRenderSampleRate(double rate) {
+        renderSampleRate = rate;
+    }
+
+    int getRenderBitDepth() const {
+        return renderBitDepth;
+    }
+    void setRenderBitDepth(int depth) {
+        renderBitDepth = depth;
+    }
+
+    std::string getRenderFilePattern() const {
+        return renderFilePattern;
+    }
+    void setRenderFilePattern(const std::string& pattern) {
+        renderFilePattern = pattern;
+    }
+
     // AI Configuration
     std::string getOpenAIApiKey() const {
         return openaiApiKey;
@@ -379,6 +400,10 @@ class Config {
 
     // Render settings
     std::string renderFolder = "";  // Custom render output folder (empty = renders/ beside source)
+    double renderSampleRate = 44100.0;  // 44100, 48000, 96000, 192000
+    int renderBitDepth = 24;            // 16, 24, 32
+    // File naming pattern tokens: <project-name>, <clip-name>, <track-name>, <date-time>
+    std::string renderFilePattern = "<project-name>_<date-time>";
 
     // Audio device settings
     std::string preferredAudioDevice = "";   // Preferred audio interface (empty = system default)

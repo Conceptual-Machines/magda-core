@@ -1,7 +1,9 @@
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "MainWindow.hpp"
 #include "audio/AudioBridge.hpp"
+#include "core/Config.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -200,10 +202,37 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
     // Determine file extension
     juce::String extension = getFileExtensionForFormat(settings.format);
 
+    // Build default output path from render preferences
+    auto& config = Config::getInstance();
+    juce::File defaultDir;
+    auto renderFolder = config.getRenderFolder();
+    if (!renderFolder.empty())
+        defaultDir = juce::File(renderFolder);
+    else
+        defaultDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+
+    // Expand file naming pattern for default filename
+    juce::String pattern(config.getRenderFilePattern());
+    if (pattern.isEmpty())
+        pattern = "<project-name>_<date-time>";
+
+    juce::String projName = ProjectManager::getInstance().getProjectName();
+    if (projName.isEmpty())
+        projName = "untitled";
+    projName = projName.replaceCharacters(" /\\:", "____");
+    juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
+
+    pattern = pattern.replace("<project-name>", projName);
+    pattern = pattern.replace("<date-time>", timestamp);
+    pattern = pattern.replace("<clip-name>", projName);   // no clip context in export
+    pattern = pattern.replace("<track-name>", "master");  // export is full mix
+    pattern = pattern.replaceCharacters("/\\:", "___");
+
+    juce::File defaultFile = defaultDir.getChildFile(pattern + extension);
+
     // Launch file chooser
-    fileChooser_ = std::make_unique<juce::FileChooser>(
-        "Export Audio", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
-        "*" + extension, true);
+    fileChooser_ =
+        std::make_unique<juce::FileChooser>("Export Audio", defaultFile, "*" + extension, true);
 
     auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
                  juce::FileBrowserComponent::warnAboutOverwriting;

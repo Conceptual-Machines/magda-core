@@ -94,6 +94,9 @@ void Config::save() {
 
     // Render
     root->setProperty("renderFolder", toJuceString(renderFolder));
+    root->setProperty("renderSampleRate", renderSampleRate);
+    root->setProperty("renderBitDepth", renderBitDepth);
+    root->setProperty("renderFilePattern", toJuceString(renderFilePattern));
 
     // Audio devices
     root->setProperty("preferredAudioDevice", toJuceString(preferredAudioDevice));
@@ -239,6 +242,9 @@ void Config::load() {
     exportSampleRate = getDouble("exportSampleRate", exportSampleRate);
 
     renderFolder = getString("renderFolder", renderFolder);
+    renderSampleRate = getDouble("renderSampleRate", renderSampleRate);
+    renderBitDepth = getInt("renderBitDepth", renderBitDepth);
+    renderFilePattern = getString("renderFilePattern", renderFilePattern);
 
     preferredAudioDevice = getString("preferredAudioDevice", preferredAudioDevice);
     preferredInputDevice = getString("preferredInputDevice", preferredInputDevice);

@@ -19,6 +19,40 @@ namespace te = tracktion;
 
 namespace {
 
+/// Expand render file naming pattern.
+/// Tokens: <clip-name>, <track-name>, <project-name>, <date-time>
+juce::String expandRenderPattern(const juce::String& clipName, const juce::String& trackName) {
+    auto& config = Config::getInstance();
+    juce::String pattern(config.getRenderFilePattern());
+    if (pattern.isEmpty())
+        pattern = "<project-name>_<date-time>";
+
+    juce::String safeClip =
+        clipName.isNotEmpty() ? clipName.replaceCharacters(" /\\:", "____") : "clip";
+    juce::String safeTrack =
+        trackName.isNotEmpty() ? trackName.replaceCharacters(" /\\:", "____") : "track";
+
+    juce::String projName = ProjectManager::getInstance().getProjectName();
+    if (projName.isEmpty())
+        projName = "untitled";
+    projName = projName.replaceCharacters(" /\\:", "____");
+
+    juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
+
+    DBG("expandRenderPattern: pattern=" << pattern << " clipName=" << safeClip
+                                        << " trackName=" << safeTrack << " projName=" << projName);
+
+    pattern = pattern.replace("<clip-name>", safeClip);
+    pattern = pattern.replace("<track-name>", safeTrack);
+    pattern = pattern.replace("<project-name>", projName);
+    pattern = pattern.replace("<date-time>", timestamp);
+
+    DBG("expandRenderPattern: result=" << pattern);
+
+    // Sanitise any remaining unsafe chars
+    return pattern.replaceCharacters("/\\:", "___");
+}
+
 /**
  * Progress window for offline rendering that runs on a background thread
  * while pumping the message loop (via runThread()) so the UI stays responsive.
@@ -747,6 +781,7 @@ void RenderClipCommand::execute() {
     // Determine output file path
     juce::File sourceFile(clip->audioFilePath);
     auto configFolder = Config::getInstance().getRenderFolder();
+    DBG("RenderClipCommand: configFolder='" << configFolder << "'");
     juce::File rendersDir;
     if (!configFolder.empty()) {
         rendersDir = juce::File(configFolder);
@@ -758,11 +793,12 @@ void RenderClipCommand::execute() {
     }
     rendersDir.createDirectory();
 
-    juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
-    juce::String safeName =
+    auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
+    juce::String trackName = trackInfo ? trackInfo->name : "Track";
+    juce::String clipName =
         clip->name.isNotEmpty() ? clip->name : sourceFile.getFileNameWithoutExtension();
-    safeName = safeName.replaceCharacters(" /\\:", "____");
-    renderedFile_ = rendersDir.getChildFile(safeName + "_rendered_" + timestamp + ".wav");
+    renderedFile_ = rendersDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
+    DBG("RenderClipCommand: output=" << renderedFile_.getFullPathName());
 
     // Stop transport and free playback context for offline rendering
     auto& transport = edit->getTransport();
@@ -806,8 +842,8 @@ void RenderClipCommand::execute() {
 
     auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
     params.audioFormat = formatManager.getWavFormat();
-    params.bitDepth = 24;
-    params.sampleRateForAudio = edit->engine.getDeviceManager().getSampleRate();
+    params.bitDepth = Config::getInstance().getRenderBitDepth();
+    params.sampleRateForAudio = Config::getInstance().getRenderSampleRate();
     params.blockSizeForAudio = 512;
     params.usePlugins = false;
     params.useMasterPlugins = false;
@@ -851,7 +887,7 @@ void RenderClipCommand::execute() {
     // Copy over visual properties to the new clip
     if (auto* newClip = clipManager.getClip(newClipId_)) {
         newClip->colour = colour;
-        newClip->name = name.isNotEmpty() ? name : safeName;
+        newClip->name = name.isNotEmpty() ? name : renderedFile_.getFileNameWithoutExtension();
         clipManager.forceNotifyClipsChanged();
     }
 
@@ -915,7 +951,6 @@ void RenderTimeSelectionCommand::execute() {
     te::freePlaybackContextIfNotRecording(transport);
 
     auto allTracks = te::getAllTracks(*edit);
-    juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
 
     trackStates_.clear();
     newClipIds_.clear();
@@ -966,9 +1001,10 @@ void RenderTimeSelectionCommand::execute() {
 
         auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
         juce::String trackName = trackInfo ? trackInfo->name : "Track";
-        trackName = trackName.replaceCharacters(" /\\:", "____");
+        auto* firstClipInfo = clipManager.getClip(overlappingIds[0]);
+        juce::String clipName = firstClipInfo ? firstClipInfo->name : trackName;
         trackState.renderedFile =
-            rendersDir.getChildFile(trackName + "_rendered_" + timestamp + ".wav");
+            rendersDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
 
         // Resolve TE track index
         auto* teTrack = bridge->getAudioTrack(trackId);
@@ -1425,10 +1461,12 @@ void BounceInPlaceCommand::execute() {
     }
     bouncesDir.createDirectory();
 
-    juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
-    juce::String safeName = clip->name.isNotEmpty() ? clip->name : "clip";
-    safeName = safeName.replaceCharacters(" /\\:", "____");
-    renderedFile_ = bouncesDir.getChildFile(safeName + "_bounced_" + timestamp + ".wav");
+    {
+        auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
+        juce::String trackName = trackInfo ? trackInfo->name : "Track";
+        juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
+        renderedFile_ = bouncesDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
+    }
 
     // Stop transport and free playback context
     auto& transport = edit->getTransport();
@@ -1491,8 +1529,8 @@ void BounceInPlaceCommand::execute() {
     params.destFile = renderedFile_;
     auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
     params.audioFormat = formatManager.getWavFormat();
-    params.bitDepth = 24;
-    params.sampleRateForAudio = edit->engine.getDeviceManager().getSampleRate();
+    params.bitDepth = Config::getInstance().getRenderBitDepth();
+    params.sampleRateForAudio = Config::getInstance().getRenderSampleRate();
     params.blockSizeForAudio = 512;
     params.usePlugins = true;  // Synth is active, FX are bypassed
     params.useMasterPlugins = false;
@@ -1542,7 +1580,7 @@ void BounceInPlaceCommand::execute() {
 
     if (auto* newClip = clipManager.getClip(newClipId_)) {
         newClip->colour = colour;
-        newClip->name = name.isNotEmpty() ? name : safeName;
+        newClip->name = name.isNotEmpty() ? name : renderedFile_.getFileNameWithoutExtension();
         clipManager.forceNotifyClipsChanged();
     }
 
@@ -1615,10 +1653,12 @@ void BounceToNewTrackCommand::execute() {
     }
     bouncesDir.createDirectory();
 
-    juce::String timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
-    juce::String safeName = clip->name.isNotEmpty() ? clip->name : "clip";
-    safeName = safeName.replaceCharacters(" /\\:", "____");
-    renderedFile_ = bouncesDir.getChildFile(safeName + "_bounce_" + timestamp + ".wav");
+    {
+        auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
+        juce::String trackName = trackInfo ? trackInfo->name : "Track";
+        juce::String clipName = clip->name.isNotEmpty() ? clip->name : "clip";
+        renderedFile_ = bouncesDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
+    }
 
     // Stop transport and free playback context
     auto& transport = edit->getTransport();
@@ -1662,8 +1702,8 @@ void BounceToNewTrackCommand::execute() {
     params.destFile = renderedFile_;
     auto& formatManager = engine_->getEngine()->getAudioFileFormatManager();
     params.audioFormat = formatManager.getWavFormat();
-    params.bitDepth = 24;
-    params.sampleRateForAudio = edit->engine.getDeviceManager().getSampleRate();
+    params.bitDepth = Config::getInstance().getRenderBitDepth();
+    params.sampleRateForAudio = Config::getInstance().getRenderSampleRate();
     params.blockSizeForAudio = 512;
     params.usePlugins = true;  // Full signal chain
     params.useMasterPlugins = false;
@@ -1717,7 +1757,8 @@ void BounceToNewTrackCommand::execute() {
 
     if (auto* newClip = clipManager.getClip(newClipId_)) {
         newClip->colour = clipColour;
-        newClip->name = clipName.isNotEmpty() ? clipName : safeName;
+        newClip->name =
+            clipName.isNotEmpty() ? clipName : renderedFile_.getFileNameWithoutExtension();
         clipManager.forceNotifyClipsChanged();
     }
 
