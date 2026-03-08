@@ -66,14 +66,14 @@ Remove-Item actions-runner.zip
 
 ### 3. Get the registration token
 
-1. Go to: https://github.com/organizations/Conceptual-Machines/settings/actions/runners/new
+1. Go to: https://github.com/Conceptual-Machines/magda-core/settings/actions/runners/new
 2. Select **Windows** as the operating system
 3. Copy the token shown in the configure step
 
 ### 4. Configure the runner
 
 ```powershell
-.\config.cmd --url https://github.com/Conceptual-Machines --token YOUR_TOKEN_HERE --labels Windows --name Windows-Runner
+.\config.cmd --url https://github.com/Conceptual-Machines/magda-core --token YOUR_TOKEN_HERE --labels self-hosted,Windows --name Windows-Runner
 ```
 
 When prompted:
