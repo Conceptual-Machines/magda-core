@@ -338,7 +338,6 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
     std::unique_ptr<juce::Label> nameLabel;
     std::unique_ptr<juce::DrawableButton> speakerButton;  // Speaker on/off toggle
     std::unique_ptr<DraggableValueLabel> volumeLabel;     // Volume as draggable dB label
-    std::unique_ptr<DraggableValueLabel> panLabel;        // Pan as draggable L/C/R label
 
     // Horizontal stereo meter component (used for both peak and VU)
     class HorizontalStereoMeter;

@@ -256,6 +256,7 @@ void MasterChannelStrip::setupControls() {
     // Title label
     titleLabel = std::make_unique<juce::Label>("Master", "Master");
     titleLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    titleLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
     titleLabel->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(*titleLabel);
 

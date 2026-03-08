@@ -1931,16 +1931,6 @@ void MainView::MasterHeaderPanel::setupControls() {
     };
     addAndMakeVisible(*volumeLabel);
 
-    // Pan as draggable L/C/R label
-    panLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Pan);
-    panLabel->setRange(-1.0, 1.0, 0.0);  // Full left to full right, default center
-    panLabel->setDoubleClickResetsValue(true);
-    panLabel->onValueChange = [this]() {
-        UndoManager::getInstance().executeCommand(
-            std::make_unique<SetMasterPanCommand>(static_cast<float>(panLabel->getValue())));
-    };
-    addAndMakeVisible(*panLabel);
-
     // Peak meter with label
     peakLabel = std::make_unique<juce::Label>("peak", "Peak");
     peakLabel->setColour(juce::Label::textColourId,
@@ -2000,8 +1990,6 @@ void MainView::MasterHeaderPanel::resized() {
     speakerButton->setBounds(topRow.removeFromLeft(18).withSizeKeepingCentre(16, 16));
     topRow.removeFromLeft(4);
     volumeLabel->setBounds(topRow.removeFromLeft(44));
-    topRow.removeFromLeft(4);
-    panLabel->setBounds(topRow.removeFromLeft(36));
 
     contentArea.removeFromTop(2);  // Spacing
 
@@ -2039,9 +2027,6 @@ void MainView::MasterHeaderPanel::masterChannelChanged() {
     // Convert linear gain to dB for volume label
     float db = gainToDb(master.volume);
     volumeLabel->setValue(db, juce::dontSendNotification);
-
-    // Pan value
-    panLabel->setValue(master.pan, juce::dontSendNotification);
 
     repaint();
 }

@@ -74,6 +74,7 @@ class TrackInspector : public BaseInspector,
     juce::Label trackNameLabel_;
     juce::Label trackNameValue_;
     juce::TextButton muteButton_;
+    std::unique_ptr<juce::DrawableButton> speakerButton_;  // Speaker icon for master mute
     juce::TextButton soloButton_;
     juce::TextButton recordButton_;
     juce::TextButton monitorButton_;

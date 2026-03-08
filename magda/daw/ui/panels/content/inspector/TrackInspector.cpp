@@ -66,6 +66,25 @@ TrackInspector::TrackInspector() {
     };
     addAndMakeVisible(muteButton_);
 
+    // Speaker icon button (used for master mute instead of "M" text)
+    auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
+                                                             BinaryData::volume_up_svgSize);
+    auto speakerOffIcon = juce::Drawable::createFromImageData(BinaryData::volume_off_svg,
+                                                              BinaryData::volume_off_svgSize);
+    speakerButton_ =
+        std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
+    speakerButton_->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
+    speakerButton_->setClickingTogglesState(true);
+    speakerButton_->setColour(juce::DrawableButton::backgroundColourId,
+                              juce::Colours::transparentBlack);
+    speakerButton_->setColour(juce::DrawableButton::backgroundOnColourId,
+                              DarkTheme::getColour(DarkTheme::STATUS_ERROR).withAlpha(0.3f));
+    speakerButton_->onClick = [this]() {
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetMasterMuteCommand>(speakerButton_->getToggleState()));
+    };
+    addChildComponent(*speakerButton_);  // Hidden by default
+
     // Solo button (TCP style)
     soloButton_.setButtonText("S");
     soloButton_.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
@@ -372,14 +391,14 @@ void TrackInspector::resized() {
     const int availableWidth = bounds.getWidth();
     const int stackThreshold = 100;
     const int buttonGap = 2;
-    const int numButtons = 4;
     const int controlRowHeight = 24;
     const int wideThreshold = 160;
 
     bool showPan = panLabel_->isVisible();
+    bool showSpeaker = speakerButton_->isVisible();
     // Count visible buttons for layout
     int visibleButtons = 0;
-    if (muteButton_.isVisible())
+    if (muteButton_.isVisible() || showSpeaker)
         visibleButtons++;
     if (soloButton_.isVisible())
         visibleButtons++;
@@ -388,23 +407,15 @@ void TrackInspector::resized() {
     if (monitorButton_.isVisible())
         visibleButtons++;
 
-    if (availableWidth >= wideThreshold) {
-        // Wide: Vol [Pan] buttons — all on one row
-        auto row = bounds.removeFromTop(controlRowHeight);
-        const int gap = 2;
-        const int mixPortion = row.getWidth() * 60 / 100;
-        const int btnPortion = row.getWidth() - mixPortion - gap;
-        if (showPan) {
-            const int volWidth = (mixPortion - gap) * 80 / 100;
-            gainLabel_->setBounds(row.removeFromLeft(volWidth));
-            row.removeFromLeft(gap);
-            panLabel_->setBounds(row.removeFromLeft(mixPortion - volWidth - gap));
+    // Helper lambda to lay out the button row
+    auto layoutButtons = [&](juce::Rectangle<int>& row, int gap) {
+        if (visibleButtons <= 0)
+            return;
+        if (showSpeaker) {
+            // Speaker icon: fixed square size
+            speakerButton_->setBounds(row.removeFromLeft(controlRowHeight));
         } else {
-            gainLabel_->setBounds(row.removeFromLeft(mixPortion));
-        }
-        row.removeFromLeft(gap);
-        if (visibleButtons > 0) {
-            const int btnWidth = (btnPortion - (visibleButtons - 1) * gap) / visibleButtons;
+            const int btnWidth = (row.getWidth() - (visibleButtons - 1) * gap) / visibleButtons;
             muteButton_.setBounds(row.removeFromLeft(btnWidth));
             if (soloButton_.isVisible()) {
                 row.removeFromLeft(gap);
@@ -419,64 +430,72 @@ void TrackInspector::resized() {
                 monitorButton_.setBounds(row);
             }
         }
+    };
+
+    if (availableWidth >= wideThreshold) {
+        // Wide: Vol [Pan] buttons — all on one row
+        auto row = bounds.removeFromTop(controlRowHeight);
+        const int gap = 2;
+        if (showSpeaker) {
+            // Master: volume takes most space, speaker icon is fixed size at end
+            auto speakerArea = row.removeFromRight(controlRowHeight);
+            row.removeFromRight(gap);
+            gainLabel_->setBounds(row);
+            speakerButton_->setBounds(speakerArea);
+        } else {
+            const int mixPortion = row.getWidth() * 60 / 100;
+            if (showPan) {
+                const int volWidth = (mixPortion - gap) * 80 / 100;
+                gainLabel_->setBounds(row.removeFromLeft(volWidth));
+                row.removeFromLeft(gap);
+                panLabel_->setBounds(row.removeFromLeft(mixPortion - volWidth - gap));
+            } else {
+                gainLabel_->setBounds(row.removeFromLeft(mixPortion));
+            }
+            row.removeFromLeft(gap);
+            layoutButtons(row, gap);
+        }
     } else if (availableWidth >= stackThreshold) {
         // Medium: Vol [Pan] on one row, buttons on second row
         auto mixRow = bounds.removeFromTop(controlRowHeight);
-        if (showPan) {
-            const int mixGap = 4;
-            const int volWidth = (mixRow.getWidth() - mixGap) * 80 / 100;
-            gainLabel_->setBounds(mixRow.removeFromLeft(volWidth));
-            mixRow.removeFromLeft(mixGap);
-            panLabel_->setBounds(mixRow);
-        } else {
+        if (showSpeaker) {
+            auto speakerArea = mixRow.removeFromRight(controlRowHeight);
+            mixRow.removeFromRight(buttonGap);
             gainLabel_->setBounds(mixRow);
-        }
-        bounds.removeFromTop(4);
+            speakerButton_->setBounds(speakerArea);
+        } else {
+            if (showPan) {
+                const int mixGap = 4;
+                const int volWidth = (mixRow.getWidth() - mixGap) * 80 / 100;
+                gainLabel_->setBounds(mixRow.removeFromLeft(volWidth));
+                mixRow.removeFromLeft(mixGap);
+                panLabel_->setBounds(mixRow);
+            } else {
+                gainLabel_->setBounds(mixRow);
+            }
+            bounds.removeFromTop(4);
 
-        if (visibleButtons > 0) {
             auto buttonRow = bounds.removeFromTop(controlRowHeight);
-            const int btnWidth =
-                (buttonRow.getWidth() - (visibleButtons - 1) * buttonGap) / visibleButtons;
-            muteButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-            if (soloButton_.isVisible()) {
-                buttonRow.removeFromLeft(buttonGap);
-                soloButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-            }
-            if (recordButton_.isVisible()) {
-                buttonRow.removeFromLeft(buttonGap);
-                recordButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-            }
-            if (monitorButton_.isVisible()) {
-                buttonRow.removeFromLeft(buttonGap);
-                monitorButton_.setBounds(buttonRow);
-            }
+            layoutButtons(buttonRow, buttonGap);
         }
     } else {
         // Narrow: Volume, [Pan], and buttons all stacked
-        gainLabel_->setBounds(bounds.removeFromTop(controlRowHeight));
-        if (showPan) {
-            bounds.removeFromTop(2);
-            panLabel_->setBounds(bounds.removeFromTop(controlRowHeight));
-        }
-        bounds.removeFromTop(4);
+        auto volRow = bounds.removeFromTop(controlRowHeight);
+        if (showSpeaker) {
+            auto speakerArea = volRow.removeFromRight(controlRowHeight);
+            volRow.removeFromRight(buttonGap);
+            gainLabel_->setBounds(volRow);
+            speakerButton_->setBounds(speakerArea);
+        } else {
+            gainLabel_->setBounds(volRow);
+            if (showPan) {
+                bounds.removeFromTop(2);
+                panLabel_->setBounds(bounds.removeFromTop(controlRowHeight));
+            }
+            bounds.removeFromTop(4);
 
-        if (visibleButtons > 0) {
             auto buttonRow = bounds.removeFromTop(controlRowHeight);
-            const int btnWidth =
-                (buttonRow.getWidth() - (visibleButtons - 1) * buttonGap) / visibleButtons;
-            muteButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-            if (soloButton_.isVisible()) {
-                buttonRow.removeFromLeft(buttonGap);
-                soloButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-            }
-            if (recordButton_.isVisible()) {
-                buttonRow.removeFromLeft(buttonGap);
-                recordButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-            }
-            if (monitorButton_.isVisible()) {
-                buttonRow.removeFromLeft(buttonGap);
-                monitorButton_.setBounds(buttonRow);
-            }
+            layoutButtons(buttonRow, buttonGap);
         }
     }
     bounds.removeFromTop(separatorPadding);
@@ -714,7 +733,7 @@ void TrackInspector::trackSelectionChanged(magda::TrackId trackId) {
 
 void TrackInspector::masterChannelChanged() {
     if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
-        if (gainLabel_->isDragging() || panLabel_->isDragging())
+        if (gainLabel_->isDragging())
             return;
         updateFromSelectedTrack();
     }
@@ -742,13 +761,12 @@ void TrackInspector::updateFromSelectedTrack() {
     if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
         const auto& master = magda::TrackManager::getInstance().getMasterChannel();
         trackNameValue_.setText("Master", juce::dontSendNotification);
-        muteButton_.setToggleState(master.muted, juce::dontSendNotification);
+        speakerButton_->setToggleState(master.muted, juce::dontSendNotification);
         soloButton_.setToggleState(false, juce::dontSendNotification);
         recordButton_.setToggleState(false, juce::dontSendNotification);
 
         float gainDb = (master.volume <= 0.0f) ? -60.0f : 20.0f * std::log10(master.volume);
         gainLabel_->setValue(gainDb, juce::dontSendNotification);
-        panLabel_->setValue(master.pan, juce::dontSendNotification);
 
         clipCountLabel_.setText("0 clips", juce::dontSendNotification);
 
@@ -1001,6 +1019,7 @@ void TrackInspector::updateFromMultiTrackSelection() {
     trackNameLabel_.setVisible(true);
     trackNameValue_.setVisible(true);
     muteButton_.setVisible(true);
+    speakerButton_->setVisible(false);
     soloButton_.setVisible(true);
     recordButton_.setVisible(true);
     monitorButton_.setVisible(true);
@@ -1050,7 +1069,8 @@ void TrackInspector::showTrackControls(bool show) {
 
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
-    muteButton_.setVisible(show);
+    muteButton_.setVisible(show && !isMaster);
+    speakerButton_->setVisible(isMaster);
     soloButton_.setVisible(show && !isMaster);
     recordButton_.setVisible(show && !isMaster && !isAux && !isMultiOut);
     monitorButton_.setVisible(show && !isMaster && !isAux && !isMultiOut);
