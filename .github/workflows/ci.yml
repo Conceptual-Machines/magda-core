@@ -289,7 +289,7 @@ jobs:
         echo "- ✅ Binary file verification" >> $GITHUB_STEP_SUMMARY
 
   build-and-test-macos:
-    runs-on: self-hosted
+    runs-on: [self-hosted, macOS]
     if: |
       github.event_name != 'workflow_dispatch' ||
       github.event.inputs.skip-cpp-build != 'true'
