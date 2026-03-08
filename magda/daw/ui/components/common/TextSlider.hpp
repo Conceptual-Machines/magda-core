@@ -233,6 +233,26 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
                                   meterPeakR_);
             }
 
+            // Pan fill indicator (draw from center outward)
+            if (format_ == Format::Pan) {
+                float w = static_cast<float>(bounds.getWidth());
+                float centerX = bounds.getX() + w * 0.5f;
+                float panValue = static_cast<float>(value_);
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+                if (std::abs(panValue) < 0.01f) {
+                    g.fillRect(centerX - 1.0f, static_cast<float>(bounds.getY()), 2.0f,
+                               static_cast<float>(bounds.getHeight()));
+                } else if (panValue < 0) {
+                    float fillW = (w * 0.5f) * (-panValue);
+                    g.fillRect(centerX - fillW, static_cast<float>(bounds.getY()), fillW,
+                               static_cast<float>(bounds.getHeight()));
+                } else {
+                    float fillW = (w * 0.5f) * panValue;
+                    g.fillRect(centerX, static_cast<float>(bounds.getY()), fillW,
+                               static_cast<float>(bounds.getHeight()));
+                }
+            }
+
             // 0dB tick mark (always visible when format is dB)
             if (format_ == Format::Decibels) {
                 float w = static_cast<float>(bounds.getWidth());

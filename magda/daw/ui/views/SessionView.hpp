@@ -180,6 +180,7 @@ class SessionView : public juce::Component,
     int sendSectionHeight_ = 54;
     int dragStartSendHeight_ = 54;
 
+    bool recordMonitorVisible_ = true;
     void showMixerContextMenu();
 
     // Fader row at bottom of each track column - MiniChannelStrip per track

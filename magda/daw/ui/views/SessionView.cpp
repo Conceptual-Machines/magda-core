@@ -1213,6 +1213,18 @@ class SessionView::MiniChannelStrip : public juce::Component {
         addAndMakeVisible(*monitorButton_);
         updateMonitorVisual(track.inputMonitor);
 
+        // Pan slider (horizontal, compact)
+        panSlider_ = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Pan);
+        panSlider_->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
+        panSlider_->setRange(-1.0, 1.0, 0.01);
+        panSlider_->setFont(FontManager::getInstance().getUIFont(8.0f));
+        panSlider_->setValue(track.pan, juce::dontSendNotification);
+        panSlider_->onValueChanged = [this](double newValue) {
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackPanCommand>(trackId_, static_cast<float>(newValue)));
+        };
+        addAndMakeVisible(*panSlider_);
+
         // Listen for mouse events on all children so we can intercept right-clicks
         volumeSlider_->addMouseListener(this, false);
         dbScale_->addMouseListener(this, false);
@@ -1221,6 +1233,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
         soloButton_->addMouseListener(this, false);
         recordButton_->addMouseListener(this, false);
         monitorButton_->addMouseListener(this, false);
+        panSlider_->addMouseListener(this, false);
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
@@ -1238,20 +1251,31 @@ class SessionView::MiniChannelStrip : public juce::Component {
         g.fillRect(bounds.removeFromTop(3));
     }
 
+    void setShowRecordMonitor(bool show) {
+        recordButton_->setVisible(show);
+        monitorButton_->setVisible(show);
+        resized();
+    }
+
     void resized() override {
         auto bounds = getLocalBounds();
         bounds.removeFromTop(3);  // colour bar
 
-        // Button rows at bottom: R/Mon (18px) then M/S (18px)
+        // Button rows at bottom
         auto msRow = bounds.removeFromBottom(18);
         int halfW = msRow.getWidth() / 2;
         muteButton_->setBounds(msRow.removeFromLeft(halfW));
         soloButton_->setBounds(msRow);
 
-        auto rmRow = bounds.removeFromBottom(18);
-        halfW = rmRow.getWidth() / 2;
-        recordButton_->setBounds(rmRow.removeFromLeft(halfW));
-        monitorButton_->setBounds(rmRow);
+        if (recordButton_->isVisible()) {
+            auto rmRow = bounds.removeFromBottom(18);
+            halfW = rmRow.getWidth() / 2;
+            recordButton_->setBounds(rmRow.removeFromLeft(halfW));
+            monitorButton_->setBounds(rmRow);
+        }
+
+        auto panRow = bounds.removeFromBottom(14);
+        panSlider_->setBounds(panRow);
 
         // Layout: fader | dbScale | meter
         int meterW = juce::jmax(8, bounds.getWidth() * 30 / 100);
@@ -1278,6 +1302,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
     void updateFromTrack(const TrackInfo& track) {
         float db = gainToDb(track.volume);
         volumeSlider_->setValue(db, juce::dontSendNotification);
+        panSlider_->setValue(track.pan, juce::dontSendNotification);
         muteButton_->setToggleState(track.muted, juce::dontSendNotification);
         soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
         recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
@@ -1294,6 +1319,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
     TrackId trackId_;
     juce::Colour trackColour_;
     std::unique_ptr<daw::ui::TextSlider> volumeSlider_;
+    std::unique_ptr<daw::ui::TextSlider> panSlider_;
     std::unique_ptr<MiniDbScale> dbScale_;
     std::unique_ptr<LevelMeter> levelMeter_;
     std::unique_ptr<juce::TextButton> muteButton_;
@@ -1788,6 +1814,7 @@ void SessionView::rebuildTracks() {
 
         auto strip = std::make_unique<MiniChannelStrip>(trackId, *track);
         strip->onContextMenu = [this]() { showMixerContextMenu(); };
+        strip->setShowRecordMonitor(recordMonitorVisible_);
         faderContainer->addAndMakeVisible(*strip);
         trackMiniStrips_.push_back(std::move(strip));
     }
@@ -2508,6 +2535,7 @@ void SessionView::showMixerContextMenu() {
     juce::PopupMenu menu;
     menu.addItem(1, "Show I/O", true, ioRowVisible_);
     menu.addItem(2, "Show Sends", true, sendRowVisible_);
+    menu.addItem(3, "Show Record/Monitor", true, recordMonitorVisible_);
 
     auto safeThis = juce::Component::SafePointer<SessionView>(this);
     menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
@@ -2519,6 +2547,10 @@ void SessionView::showMixerContextMenu() {
         } else if (result == 2) {
             safeThis->sendRowVisible_ = !safeThis->sendRowVisible_;
             safeThis->resized();
+        } else if (result == 3) {
+            safeThis->recordMonitorVisible_ = !safeThis->recordMonitorVisible_;
+            for (auto& strip : safeThis->trackMiniStrips_)
+                strip->setShowRecordMonitor(safeThis->recordMonitorVisible_);
         }
     });
 }
