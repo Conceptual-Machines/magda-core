@@ -625,7 +625,7 @@ void DrumGridUI::resized() {
 
     // Left column: toggle button (always present)
     auto toggleCol = area.removeFromLeft(kToggleColWidth);
-    chainsToggleButton_->setBounds(toggleCol.removeFromTop(18).withSizeKeepingCentre(16, 16));
+    chainsToggleButton_->setBounds(toggleCol.removeFromTop(20).withSizeKeepingCentre(20, 20));
 
     // Right side allocation
     auto rightBounds = area;
