@@ -764,6 +764,7 @@ void TrackHeadersPanel::tracksChanged() {
         header->depth = depth;
         header->isGroup = track->isGroup() || track->hasChildren();
         header->isMultiOut = (track->type == TrackType::MultiOut);
+        header->isMaster = (track->type == TrackType::Master);
         header->isCollapsed = track->isCollapsedIn(currentViewMode_);
         header->muted = track->muted;
         header->solo = track->soloed;
@@ -1519,6 +1520,25 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
     const int gap = 2;
     const int rh = 16;  // rowHeight
     const int areaWidth = area.getWidth();
+
+    // Master track: volume + mute only (no solo, pan, record, monitor)
+    if (header.isMaster) {
+        auto row = area.removeFromTop(rh);
+        const int rowWidth = std::min(areaWidth, areaWidth >= 260 ? areaWidth : 120);
+        auto content = inner.removeFrom(row, rowWidth);
+        const int btnW = 20;
+        header.volumeLabel->setBounds(content.removeFromLeft(content.getWidth() - btnW - gap));
+        header.volumeLabel->setVisible(true);
+        content.removeFromLeft(gap);
+        header.muteButton->setBounds(content);
+        header.soloButton->setVisible(false);
+        header.panLabel->setVisible(false);
+        header.recordButton->setVisible(false);
+        header.monitorButton->setVisible(false);
+        header.automationButton->setVisible(false);
+        return;
+    }
+
     const int numBtns = header.isMultiOut ? 3 : 5;
 
     if (areaWidth >= 260) {

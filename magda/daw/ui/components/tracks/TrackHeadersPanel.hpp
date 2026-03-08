@@ -126,6 +126,7 @@ class TrackHeadersPanel : public juce::Component,
         int depth = 0;             // Hierarchy depth for indentation
         bool isGroup = false;      // Is this a group track?
         bool isMultiOut = false;   // Is this a multi-out child track?
+        bool isMaster = false;     // Is this the master track?
         bool isCollapsed = false;  // Is group collapsed?
         bool selected = false;
         bool muted = false;

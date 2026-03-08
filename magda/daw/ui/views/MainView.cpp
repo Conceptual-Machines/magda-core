@@ -1892,13 +1892,6 @@ MainView::MasterHeaderPanel::~MasterHeaderPanel() {
 }
 
 void MainView::MasterHeaderPanel::setupControls() {
-    // Name label
-    nameLabel = std::make_unique<juce::Label>("masterName", "Master");
-    nameLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    nameLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    nameLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
-    addAndMakeVisible(*nameLabel);
-
     // Speaker on/off button (toggles master mute)
     auto speakerOnIcon = juce::Drawable::createFromImageData(BinaryData::volume_up_svg,
                                                              BinaryData::volume_up_svgSize);
@@ -1910,9 +1903,10 @@ void MainView::MasterHeaderPanel::setupControls() {
     speakerButton->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
     speakerButton->setClickingTogglesState(true);
     speakerButton->setColour(juce::DrawableButton::backgroundColourId,
-                             juce::Colours::transparentBlack);
+                             DarkTheme::getColour(DarkTheme::SURFACE));
     speakerButton->setColour(juce::DrawableButton::backgroundOnColourId,
                              DarkTheme::getColour(DarkTheme::STATUS_ERROR).withAlpha(0.3f));
+    speakerButton->setEdgeIndent(2);
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
@@ -1957,19 +1951,17 @@ void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& /*event*/) {
 }
 
 void MainView::MasterHeaderPanel::resized() {
-    auto contentArea = getLocalBounds().reduced(4);
+    auto contentArea = getLocalBounds().reduced(2);
+    contentArea.removeFromLeft(4);  // Extra left padding
 
-    // Left column: Master label, vertically centred
-    auto leftCol = contentArea.removeFromLeft(44);
-    nameLabel->setBounds(leftCol);
-    nameLabel->setJustificationType(juce::Justification::centredLeft);
+    // Use 80% width, left-aligned
+    int usableWidth = contentArea.getWidth() * 80 / 100;
+    contentArea.setWidth(usableWidth);
 
-    contentArea.removeFromLeft(2);  // Gap
-
-    // Right column: volume + speaker on top row, peak meter on bottom row
     // Both rows use same right-side width so volume and meter align
     int rightColWidth = 22;  // speaker(18) + gap(4), or valueLabel(20) + gap(2)
 
+    // Top row: volume + speaker
     auto topRow = contentArea.removeFromTop(18);
     speakerButton->setBounds(topRow.removeFromRight(18).withSizeKeepingCentre(16, 16));
     topRow.removeFromRight(4);
@@ -1977,6 +1969,7 @@ void MainView::MasterHeaderPanel::resized() {
 
     contentArea.removeFromTop(2);  // Spacing
 
+    // Bottom row: peak meter + value
     auto peakRow = contentArea.removeFromTop(18);
     peakValueLabel->setBounds(peakRow.removeFromRight(rightColWidth));
     peakMeter->setBounds(peakRow);

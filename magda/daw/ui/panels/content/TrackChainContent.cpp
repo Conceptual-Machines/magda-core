@@ -815,17 +815,30 @@ void TrackChainContent::resized() {
         headerArea.removeFromLeft(16);
 
         // RIGHT SIDE - Track info (from right to left)
+        const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        bool isMaster = selTrack && selTrack->type == magda::TrackType::Master;
+
         chainBypassButton_->setBounds(headerArea.removeFromRight(17));
         headerArea.removeFromRight(4);
-        panSlider_.setBounds(headerArea.removeFromRight(40));
-        headerArea.removeFromRight(4);
+        if (!isMaster) {
+            panSlider_.setBounds(headerArea.removeFromRight(40));
+            headerArea.removeFromRight(4);
+        }
         volumeSlider_.setBounds(headerArea.removeFromRight(50));
         headerArea.removeFromRight(4);
-        soloButton_.setBounds(headerArea.removeFromRight(18));
-        headerArea.removeFromRight(2);
+        if (!isMaster) {
+            soloButton_.setBounds(headerArea.removeFromRight(18));
+            headerArea.removeFromRight(2);
+        }
         muteButton_.setBounds(headerArea.removeFromRight(18));
         headerArea.removeFromRight(8);
         trackNameLabel_.setBounds(headerArea);  // Name takes remaining space
+
+        // Hide solo/pan for master
+        if (isMaster) {
+            soloButton_.setVisible(false);
+            panSlider_.setVisible(false);
+        }
 
         // Link mode label - centered in header, overlays track name when visible
         if (linkModeLabel_.isVisible()) {
@@ -994,6 +1007,13 @@ void TrackChainContent::updateFromSelectedTrack() {
             chainBypassButton_->setActive(true);
 
             showHeader(true);
+
+            // Hide solo and pan for master track
+            if (track->type == magda::TrackType::Master) {
+                soloButton_.setVisible(false);
+                panSlider_.setVisible(false);
+            }
+
             noSelectionLabel_.setVisible(false);
             rebuildNodeComponents();
         } else {

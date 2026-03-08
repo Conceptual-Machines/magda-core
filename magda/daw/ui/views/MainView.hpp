@@ -334,7 +334,6 @@ class MainView::MasterHeaderPanel : public juce::Component, public TrackManagerL
     void setPeakLevels(float leftPeak, float rightPeak);
 
   private:
-    std::unique_ptr<juce::Label> nameLabel;
     std::unique_ptr<juce::DrawableButton> speakerButton;  // Speaker on/off toggle
     std::unique_ptr<DraggableValueLabel> volumeLabel;     // Volume as draggable dB label
 
