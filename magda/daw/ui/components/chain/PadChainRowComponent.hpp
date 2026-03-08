@@ -24,6 +24,7 @@ class PadChainRowComponent : public juce::Component {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
 
     void updateFromPad(const juce::String& name, float level, float pan, bool mute, bool solo);
@@ -44,6 +45,7 @@ class PadChainRowComponent : public juce::Component {
     std::function<void(int padIndex, bool)> onMuteChanged;
     std::function<void(int padIndex, bool)> onSoloChanged;
     std::function<void(int padIndex)> onDeleteClicked;
+    std::function<void(int padIndex, juce::Point<int>)> onRightClicked;
 
   private:
     int padIndex_;

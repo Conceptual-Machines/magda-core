@@ -181,6 +181,7 @@ class DrumGridUI : public juce::Component,
 
         std::function<void(int)> onClicked;
         std::function<void(int, bool)> onNotePreview;  // (padIndex, isNoteOn)
+        std::function<void(int, juce::Point<int>)> onRightClicked;
 
         void paint(juce::Graphics& g) override;
         void resized() override;
@@ -276,6 +277,8 @@ class DrumGridUI : public juce::Component,
 
     void setupLabel(juce::Label& label, const juce::String& text, float fontSize);
     void setupButton(juce::TextButton& button);
+    void showPadContextMenu(int padIndex, juce::Point<int> screenPos);
+    void showChainContextMenu(int padIndex, juce::Point<int> screenPos);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumGridUI)
 };

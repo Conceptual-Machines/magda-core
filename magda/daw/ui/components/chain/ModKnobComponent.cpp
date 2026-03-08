@@ -246,7 +246,7 @@ void ModKnobComponent::showContextMenu() {
     menu.addSeparator();
 
     // Remove option (Delete key works when selected)
-    menu.addItem(2, "Remove (Delete)");
+    menu.addItem(2, "Remove");
 
     // Show menu and handle selection
     auto safeThis = juce::Component::SafePointer<ModKnobComponent>(this);

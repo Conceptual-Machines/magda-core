@@ -157,6 +157,12 @@ void DrumGridUI::PadButton::paint(juce::Graphics& g) {
 }
 
 void DrumGridUI::PadButton::mouseDown(const juce::MouseEvent& e) {
+    if (e.mods.isPopupMenu()) {
+        if (onRightClicked)
+            onRightClicked(padIndex_, e.getScreenPosition());
+        return;
+    }
+
     // Check if click is on the play button area
     if (playButton_ && playButton_->isVisible() &&
         playButton_->getBounds().contains(e.getPosition())) {
@@ -206,6 +212,10 @@ DrumGridUI::DrumGridUI() {
         padButtons_[static_cast<size_t>(i)].onNotePreview = [this](int padIndex, bool isNoteOn) {
             if (onNotePreview)
                 onNotePreview(padIndex, isNoteOn);
+        };
+        padButtons_[static_cast<size_t>(i)].onRightClicked = [this](int padIndex,
+                                                                    juce::Point<int> screenPos) {
+            showPadContextMenu(padIndex, screenPos);
         };
         addAndMakeVisible(padButtons_[static_cast<size_t>(i)]);
     }
@@ -523,6 +533,23 @@ void DrumGridUI::setSelectedPad(int padIndex) {
         int rowPad = row->getPadIndex();
         int rowChainIdx = padInfos_[static_cast<size_t>(rowPad)].chainIndex;
         row->setSelected(rowChainIdx >= 0 && rowChainIdx == selectedChainIdx);
+    }
+
+    // Scroll chains viewport to show the selected row
+    if (currentChainsTab_ == ChainsTab::Mix) {
+        for (auto& row : chainRows_) {
+            if (row->isSelected()) {
+                chainsViewport_.setViewPosition(0, row->getY());
+                break;
+            }
+        }
+    } else {
+        for (auto& row : rangeRows_) {
+            if (row->isSelected()) {
+                chainsViewport_.setViewPosition(0, row->getY());
+                break;
+            }
+        }
     }
 
     resized();
@@ -871,6 +898,9 @@ void DrumGridUI::rebuildChainRows() {
             else if (onClearRequested)
                 onClearRequested(padIndex);
         };
+        row->onRightClicked = [this](int padIndex, juce::Point<int> screenPos) {
+            showChainContextMenu(padIndex, screenPos);
+        };
 
         row->setSelected(i == selectedPad_);
         chainRows_.push_back(std::move(row));
@@ -903,6 +933,38 @@ void DrumGridUI::rebuildChainRows() {
     repaint();
     if (onLayoutChanged)
         onLayoutChanged();
+}
+
+void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
+    setSelectedPad(padIndex);
+
+    auto& info = padInfos_[static_cast<size_t>(padIndex)];
+    if (info.sampleName.isEmpty())
+        return;
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "Delete");
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                           juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+                       [this, padIndex](int result) {
+                           if (result == 1 && onClearRequested)
+                               onClearRequested(padIndex);
+                       });
+}
+
+void DrumGridUI::showChainContextMenu(int padIndex, juce::Point<int> screenPos) {
+    setSelectedPad(padIndex);
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "Delete");
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                           juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+                       [this, padIndex](int result) {
+                           if (result == 1 && onClearRequested)
+                               onClearRequested(padIndex);
+                       });
 }
 
 int DrumGridUI::getPreferredContentWidth() const {

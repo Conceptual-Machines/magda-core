@@ -150,6 +150,13 @@ void PadChainRowComponent::resized() {
     panSlider_.setBounds(bounds.removeFromLeft(sliderWidth));
 }
 
+void PadChainRowComponent::mouseDown(const juce::MouseEvent& e) {
+    if (e.mods.isPopupMenu()) {
+        if (onRightClicked)
+            onRightClicked(padIndex_, e.getScreenPosition());
+    }
+}
+
 void PadChainRowComponent::mouseUp(const juce::MouseEvent& e) {
     if (!contains(e.getPosition()))
         return;
