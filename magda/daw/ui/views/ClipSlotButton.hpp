@@ -256,4 +256,93 @@ class ClipSlotButton : public juce::TextButton {
     }
 };
 
+/// Track header button with right-click context menu and drag support for SessionView.
+class TrackHeaderButton : public juce::TextButton {
+  public:
+    std::function<void()> onDeleteTrack;
+    std::function<void(const juce::MouseEvent&)> onHeaderMouseDown;
+    std::function<void(const juce::MouseEvent&)> onHeaderMouseDrag;
+    std::function<void(const juce::MouseEvent&)> onHeaderMouseUp;
+
+    void mouseDown(const juce::MouseEvent& event) override {
+        if (event.mods.isPopupMenu()) {
+            juce::PopupMenu menu;
+            menu.addItem(1, "Delete Track");
+            auto safeThis = juce::Component::SafePointer<TrackHeaderButton>(this);
+            menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
+                if (!safeThis)
+                    return;
+                if (result == 1 && safeThis->onDeleteTrack)
+                    safeThis->onDeleteTrack();
+            });
+            return;
+        }
+        if (onHeaderMouseDown)
+            onHeaderMouseDown(event);
+        juce::TextButton::mouseDown(event);
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override {
+        if (onHeaderMouseDrag)
+            onHeaderMouseDrag(event);
+    }
+
+    void mouseUp(const juce::MouseEvent& event) override {
+        if (onHeaderMouseUp)
+            onHeaderMouseUp(event);
+        juce::TextButton::mouseUp(event);
+    }
+};
+
+/// Compact dB scale labels for session view mini strips.
+/// Uses linear-in-dB mapping to match the TextSlider's range (-60..+6).
+class MiniDbScale : public juce::Component {
+  public:
+    MiniDbScale() {
+        setInterceptsMouseClicks(false, false);
+    }
+
+    void paint(juce::Graphics& g) override {
+        auto bounds = getLocalBounds();
+        if (bounds.isEmpty())
+            return;
+
+        static constexpr float dbValues[] = {6.0f, 0.0f, -6.0f, -12.0f, -24.0f, -48.0f};
+        static constexpr float DB_MIN = -60.0f;
+        static constexpr float DB_MAX = 6.0f;
+
+        static constexpr float PADDING = 4.0f;
+        float height = static_cast<float>(bounds.getHeight()) - 2.0f * PADDING;
+        float width = static_cast<float>(bounds.getWidth());
+
+        if (height <= 0.0f)
+            return;
+
+        g.setFont(FontManager::getInstance().getUIFont(8.0f));
+
+        constexpr float labelH = 9.0f;
+        float lastDrawnY = -1000.0f;
+
+        for (float db : dbValues) {
+            float norm = (db - DB_MIN) / (DB_MAX - DB_MIN);
+            float y = PADDING + height * (1.0f - norm);
+
+            if (std::abs(y - lastDrawnY) < labelH + 1.0f)
+                continue;
+            lastDrawnY = y;
+
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.fillRect(0.0f, y - 0.5f, 2.0f, 1.0f);
+            g.fillRect(width - 2.0f, y - 0.5f, 2.0f, 1.0f);
+
+            int dbInt = static_cast<int>(db);
+            juce::String text = juce::String(std::abs(dbInt));
+
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+            g.drawText(text, 0, static_cast<int>(y - labelH / 2.0f), static_cast<int>(width),
+                       static_cast<int>(labelH), juce::Justification::centred, false);
+        }
+    }
+};
+
 }  // namespace magda

@@ -234,6 +234,20 @@ class SessionView : public juce::Component,
     void clearDragGhost();
     bool isAudioFile(const juce::String& filename) const;
 
+    // Track header drag-and-drop (reorder / drop into group)
+    enum class HeaderDropType { None, BetweenTracks, OntoGroup };
+    int headerDragIndex_ = -1;
+    int headerDragStartX_ = 0;
+    bool headerIsDragging_ = false;
+    HeaderDropType headerDropType_ = HeaderDropType::None;
+    int headerDropIndex_ = -1;
+    static constexpr int HEADER_DRAG_THRESHOLD = 5;
+    void calculateHeaderDropTarget(int mouseX);
+    bool canDropIntoGroup(int draggedIndex, int targetIndex) const;
+    void executeHeaderDrop();
+    void resetHeaderDragState();
+    void paintHeaderDragFeedback(juce::Graphics& g);
+
     // Session playhead position (looped, seconds). -1.0 = inactive.
     double sessionPlayheadPos_ = -1.0;
 

@@ -33,8 +33,6 @@ namespace magda {
 // dB conversion helpers for faders
 namespace {
 constexpr float MIN_DB = -60.0f;
-constexpr float MAX_DB = 6.0f;
-constexpr float METER_CURVE_EXPONENT = 2.0f;
 
 float gainToDb(float gain) {
     if (gain <= 0.0f)
@@ -47,47 +45,7 @@ float dbToGain(float db) {
         return 0.0f;
     return std::pow(10.0f, db / 20.0f);
 }
-
-float dbToMeterPos(float db) {
-    if (db <= MIN_DB)
-        return 0.0f;
-    if (db >= MAX_DB)
-        return 1.0f;
-    float normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
-    return std::pow(normalized, METER_CURVE_EXPONENT);
-}
-
-float meterPosToDb(float pos) {
-    if (pos <= 0.0f)
-        return MIN_DB;
-    if (pos >= 1.0f)
-        return MAX_DB;
-    float normalized = std::pow(pos, 1.0f / METER_CURVE_EXPONENT);
-    return MIN_DB + normalized * (MAX_DB - MIN_DB);
-}
 }  // namespace
-
-// Track header button with right-click context menu
-class TrackHeaderButton : public juce::TextButton {
-  public:
-    std::function<void()> onDeleteTrack;
-
-    void mouseDown(const juce::MouseEvent& event) override {
-        if (event.mods.isPopupMenu()) {
-            juce::PopupMenu menu;
-            menu.addItem(1, "Delete Track");
-            auto safeThis = juce::Component::SafePointer<TrackHeaderButton>(this);
-            menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
-                if (!safeThis)
-                    return;
-                if (result == 1 && safeThis->onDeleteTrack)
-                    safeThis->onDeleteTrack();
-            });
-            return;
-        }
-        juce::TextButton::mouseDown(event);
-    }
-};
 
 // Custom grid content that draws track separators and empty cells
 class SessionView::GridContent : public juce::Component {
@@ -246,6 +204,8 @@ class SessionView::HeaderContainer : public juce::Component {
         repaint();
     }
 
+    std::function<void(juce::Graphics&)> onPaintOverChildren;
+
     void paint(juce::Graphics& g) override {
         g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
 
@@ -257,6 +217,11 @@ class SessionView::HeaderContainer : public juce::Component {
             g.fillRect(x - scrollOffset_, 0, separatorWidth_, getHeight());
             x += separatorWidth_;
         }
+    }
+
+    void paintOverChildren(juce::Graphics& g) override {
+        if (onPaintOverChildren)
+            onPaintOverChildren(g);
     }
 
   private:
@@ -825,60 +790,7 @@ class SessionView::MiniIOStrip : public juce::Component {
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniIOStrip)
 };
 
-// Compact dB scale labels for mini strips.
-// Uses linear-in-dB mapping to match the TextSlider's range (-60..+6).
-class MiniDbScale : public juce::Component {
-  public:
-    MiniDbScale() {
-        setInterceptsMouseClicks(false, false);
-    }
-
-    void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds();
-        if (bounds.isEmpty())
-            return;
-
-        static constexpr float dbValues[] = {6.0f, 0.0f, -6.0f, -12.0f, -24.0f, -48.0f};
-        static constexpr float DB_MIN = -60.0f;
-        static constexpr float DB_MAX = 6.0f;
-
-        // Inset to keep top/bottom labels from clipping
-        static constexpr float PADDING = 4.0f;
-        float height = static_cast<float>(bounds.getHeight()) - 2.0f * PADDING;
-        float width = static_cast<float>(bounds.getWidth());
-
-        if (height <= 0.0f)
-            return;
-
-        g.setFont(FontManager::getInstance().getUIFont(8.0f));
-
-        constexpr float labelH = 9.0f;
-        float lastDrawnY = -1000.0f;
-
-        for (float db : dbValues) {
-            // Linear mapping matching TextSlider::getNormalizedValue()
-            float norm = (db - DB_MIN) / (DB_MAX - DB_MIN);
-            float y = PADDING + height * (1.0f - norm);
-
-            if (std::abs(y - lastDrawnY) < labelH + 1.0f)
-                continue;
-            lastDrawnY = y;
-
-            // Tick marks
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.fillRect(0.0f, y - 0.5f, 2.0f, 1.0f);
-            g.fillRect(width - 2.0f, y - 0.5f, 2.0f, 1.0f);
-
-            // Label
-            int dbInt = static_cast<int>(db);
-            juce::String text = juce::String(std::abs(dbInt));
-
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            g.drawText(text, 0, static_cast<int>(y - labelH / 2.0f), static_cast<int>(width),
-                       static_cast<int>(labelH), juce::Justification::centred, false);
-        }
-    }
-};
+// MiniDbScale defined in ClipSlotButton.hpp
 
 // Mini channel strip for session view fader row
 class SessionView::MiniChannelStrip : public juce::Component {
@@ -1229,6 +1141,9 @@ SessionView::SessionView() {
 
     // Create header container for clipping
     headerContainer = std::make_unique<HeaderContainer>();
+    headerContainer->onPaintOverChildren = [this](juce::Graphics& g) {
+        paintHeaderDragFeedback(g);
+    };
     addAndMakeVisible(*headerContainer);
 
     // Create scene container for clipping
@@ -1570,6 +1485,29 @@ void SessionView::rebuildTracks() {
         header->onDeleteTrack = [trackId]() {
             UndoManager::getInstance().executeCommand(
                 std::make_unique<DeleteTrackCommand>(trackId));
+        };
+
+        int headerIdx = i;
+        header->onHeaderMouseDown = [this, headerIdx](const juce::MouseEvent&) {
+            headerDragIndex_ = headerIdx;
+            headerDragStartX_ = getTrackX(headerIdx) + trackColumnWidths_[headerIdx] / 2;
+        };
+        header->onHeaderMouseDrag = [this](const juce::MouseEvent& e) {
+            if (headerDragIndex_ < 0)
+                return;
+            auto localE = e.getEventRelativeTo(headerContainer.get());
+            int dx = std::abs(localE.x - (headerDragStartX_ - trackHeaderScrollOffset));
+            if (!headerIsDragging_ && dx > HEADER_DRAG_THRESHOLD)
+                headerIsDragging_ = true;
+            if (headerIsDragging_) {
+                calculateHeaderDropTarget(localE.x + trackHeaderScrollOffset);
+                headerContainer->repaint();
+            }
+        };
+        header->onHeaderMouseUp = [this](const juce::MouseEvent&) {
+            if (headerIsDragging_)
+                executeHeaderDrop();
+            resetHeaderDragState();
         };
 
         headerContainer->addAndMakeVisible(*header);
@@ -2339,6 +2277,130 @@ void SessionView::onCreateMidiClipClicked(int trackIndex, int sceneIndex) {
 void SessionView::trackSelectionChanged(TrackId trackId) {
     juce::ignoreUnused(trackId);
     updateHeaderSelectionVisuals();
+}
+
+// =============================================================================
+// Track Header Drag-and-Drop (reorder / drop into group)
+// =============================================================================
+
+void SessionView::calculateHeaderDropTarget(int mouseX) {
+    headerDropType_ = HeaderDropType::None;
+    headerDropIndex_ = -1;
+    int numTracks = static_cast<int>(visibleTrackIds_.size());
+    for (int i = 0; i < numTracks; ++i) {
+        if (i == headerDragIndex_)
+            continue;
+        int x = getTrackX(i);
+        int w = trackColumnWidths_[i];
+        if (mouseX >= x && mouseX < x + w + TRACK_SEPARATOR_WIDTH) {
+            int quarter = w / 4;
+            if (mouseX < x + quarter) {
+                headerDropType_ = HeaderDropType::BetweenTracks;
+                headerDropIndex_ = i;
+            } else if (mouseX > x + w - quarter) {
+                headerDropType_ = HeaderDropType::BetweenTracks;
+                headerDropIndex_ = i + 1;
+            } else if (canDropIntoGroup(headerDragIndex_, i)) {
+                headerDropType_ = HeaderDropType::OntoGroup;
+                headerDropIndex_ = i;
+            }
+            return;
+        }
+    }
+    if (mouseX > getTotalTracksWidth()) {
+        headerDropType_ = HeaderDropType::BetweenTracks;
+        headerDropIndex_ = numTracks;
+    }
+}
+
+bool SessionView::canDropIntoGroup(int draggedIndex, int targetIndex) const {
+    if (draggedIndex < 0 || targetIndex < 0 ||
+        draggedIndex >= static_cast<int>(visibleTrackIds_.size()) ||
+        targetIndex >= static_cast<int>(visibleTrackIds_.size()))
+        return false;
+    if (draggedIndex == targetIndex)
+        return false;
+    auto& tm = TrackManager::getInstance();
+    const auto* target = tm.getTrack(visibleTrackIds_[targetIndex]);
+    if (!target || !target->isGroup())
+        return false;
+    const auto* dragged = tm.getTrack(visibleTrackIds_[draggedIndex]);
+    if (dragged && dragged->isGroup()) {
+        auto desc = tm.getAllDescendants(dragged->id);
+        if (std::find(desc.begin(), desc.end(), target->id) != desc.end())
+            return false;
+    }
+    return true;
+}
+
+void SessionView::executeHeaderDrop() {
+    if (headerDragIndex_ < 0 || headerDropType_ == HeaderDropType::None)
+        return;
+    auto& tm = TrackManager::getInstance();
+    TrackId draggedId = visibleTrackIds_[headerDragIndex_];
+    if (headerDropType_ == HeaderDropType::OntoGroup && headerDropIndex_ >= 0) {
+        TrackId groupId = visibleTrackIds_[headerDropIndex_];
+        tm.addTrackToGroup(draggedId, groupId);
+    } else if (headerDropType_ == HeaderDropType::BetweenTracks && headerDropIndex_ >= 0) {
+        TrackId targetParent = INVALID_TRACK_ID;
+        if (headerDropIndex_ < static_cast<int>(visibleTrackIds_.size())) {
+            const auto* t = tm.getTrack(visibleTrackIds_[headerDropIndex_]);
+            if (t)
+                targetParent = t->parentId;
+        } else if (!visibleTrackIds_.empty()) {
+            const auto* t = tm.getTrack(visibleTrackIds_.back());
+            if (t)
+                targetParent = t->parentId;
+        }
+        const auto* dragged = tm.getTrack(draggedId);
+        if (dragged && dragged->parentId != targetParent) {
+            tm.removeTrackFromGroup(draggedId);
+            if (targetParent != INVALID_TRACK_ID)
+                tm.addTrackToGroup(draggedId, targetParent);
+        }
+        int targetIdx = headerDropIndex_ < static_cast<int>(visibleTrackIds_.size())
+                            ? tm.getTrackIndex(visibleTrackIds_[headerDropIndex_])
+                            : tm.getNumTracks();
+        int currentIdx = tm.getTrackIndex(draggedId);
+        if (currentIdx < targetIdx)
+            targetIdx--;
+        tm.moveTrack(draggedId, targetIdx);
+    }
+}
+
+void SessionView::resetHeaderDragState() {
+    headerIsDragging_ = false;
+    headerDragIndex_ = -1;
+    headerDropType_ = HeaderDropType::None;
+    headerDropIndex_ = -1;
+    headerContainer->repaint();
+}
+
+void SessionView::paintHeaderDragFeedback(juce::Graphics& g) {
+    if (!headerIsDragging_ || headerDragIndex_ < 0)
+        return;
+    // Highlight dragged header
+    int dx = getTrackX(headerDragIndex_) - trackHeaderScrollOffset;
+    int dw = trackColumnWidths_[headerDragIndex_];
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+    g.fillRect(dx, 0, dw, headerContainer->getHeight());
+
+    if (headerDropType_ == HeaderDropType::BetweenTracks && headerDropIndex_ >= 0) {
+        int lineX;
+        if (headerDropIndex_ >= static_cast<int>(visibleTrackIds_.size()))
+            lineX = getTotalTracksWidth() - trackHeaderScrollOffset;
+        else
+            lineX = getTrackX(headerDropIndex_) - trackHeaderScrollOffset;
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.fillRect(lineX - 2, 0, 4, headerContainer->getHeight());
+    } else if (headerDropType_ == HeaderDropType::OntoGroup && headerDropIndex_ >= 0) {
+        int gx = getTrackX(headerDropIndex_) - trackHeaderScrollOffset;
+        int gw = trackColumnWidths_[headerDropIndex_];
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+        g.drawRect(gx, 0, gw, headerContainer->getHeight(), 3);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.15f));
+        g.fillRect(gx, 0, gw, headerContainer->getHeight());
+    }
 }
 
 void SessionView::selectTrack(TrackId trackId) {
