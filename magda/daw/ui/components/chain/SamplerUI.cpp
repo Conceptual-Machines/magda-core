@@ -411,8 +411,8 @@ void SamplerUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*
 juce::Rectangle<int> SamplerUI::getWaveformBounds() const {
     auto area = getLocalBounds().reduced(4);
     area.removeFromTop(22);  // Skip sample name row (20 + 2 gap)
-    // Controls below: label(12) + slider(18) = 30
-    static constexpr int kControlsHeight = 30;
+    // Controls below: label(12) + slider(18) + margin = 38
+    static constexpr int kControlsHeight = 38;
     int waveHeight = juce::jmax(30, area.getHeight() - kControlsHeight - 2);
     return area.removeFromTop(waveHeight);
 }
@@ -875,8 +875,6 @@ void SamplerUI::resized() {
     int totalW = controlsArea.getWidth();
     int col1W = totalW * 3 / 8;
     int col2W = totalW * 2 / 8;
-    int col3W = totalW - col1W - col2W;
-
     auto col1 = controlsArea.removeFromLeft(col1W).reduced(2, 0);
     auto col2 = controlsArea.removeFromLeft(col2W).reduced(2, 0);
     auto col3 = controlsArea.reduced(2, 0);

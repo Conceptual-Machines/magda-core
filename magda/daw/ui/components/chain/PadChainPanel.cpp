@@ -229,10 +229,14 @@ void PadChainPanel::resized() {
     int height = area.getHeight() - 8;
 
     int x = 4;
+    int viewportWidth = area.getWidth();
     for (size_t i = 0; i < slots_.size(); ++i) {
         if (i > 0)
             x += ARROW_WIDTH;
         int slotWidth = slots_[i]->getPreferredWidth();
+        // Single slot: fill the viewport width exactly (no scrolling)
+        if (slots_.size() == 1)
+            slotWidth = viewportWidth - 8;  // 4px padding each side
         slots_[i]->setBounds(x, 4, slotWidth, height);
         x += slotWidth;
     }

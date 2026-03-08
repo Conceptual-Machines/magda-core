@@ -636,8 +636,7 @@ void DrumGridUI::resized() {
         int reservedWidth = kPadGridWidth + kGap;
         if (chainsPanelVisible_)
             reservedWidth += kChainsPanelWidth + kGap;
-        int preferredDetailWidth = padChainPanel_.getContentWidth();
-        int detailWidth = juce::jmin(preferredDetailWidth, rightBounds.getWidth() - reservedWidth);
+        int detailWidth = rightBounds.getWidth() - reservedWidth;
         detailArea = rightBounds.removeFromRight(juce::jmax(detailWidth, 0));
         rightBounds.removeFromRight(kGap);
     }
