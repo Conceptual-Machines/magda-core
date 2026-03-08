@@ -67,7 +67,6 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
     tracktion::Plugin::Ptr createCustomPlugin(tracktion::PluginCreationInfo info) override {
         auto type = info.state[tracktion::IDs::type].toString();
         if (type == daw::audio::MagdaSamplerPlugin::xmlTypeName) {
-            DBG("MagdaEngineBehaviour::createCustomPlugin - creating MagdaSamplerPlugin");
             return new daw::audio::MagdaSamplerPlugin(info);
         }
         if (type == daw::audio::DrumGridPlugin::xmlTypeName) {
