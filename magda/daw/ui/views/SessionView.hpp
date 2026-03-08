@@ -204,6 +204,7 @@ class SessionView : public juce::Component,
     void onPlayButtonClicked(int trackIndex, int sceneIndex);
     void onSceneLaunched(int sceneIndex);
     void onStopAllClicked();
+    void triggerGroupScene(TrackId groupId, int sceneIndex);
     void openClipEditor(int trackIndex, int sceneIndex);
     void onCreateMidiClipClicked(int trackIndex, int sceneIndex);
 

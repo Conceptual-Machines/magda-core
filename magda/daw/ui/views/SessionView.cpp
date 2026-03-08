@@ -19,6 +19,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
+#include "ClipSlotButton.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/SelectionManager.hpp"
@@ -65,214 +66,6 @@ float meterPosToDb(float pos) {
     return MIN_DB + normalized * (MAX_DB - MIN_DB);
 }
 }  // namespace
-
-// Custom clip slot button that handles clicks, double-clicks, and play button area
-class ClipSlotButton : public juce::TextButton {
-  public:
-    static constexpr int PLAY_BUTTON_WIDTH = 22;
-
-    std::function<void()> onSingleClick;
-    std::function<void()> onDoubleClick;
-    std::function<void()> onPlayButtonClick;
-    std::function<void()> onCreateMidiClip;
-    std::function<void()> onDeleteClip;
-    std::function<void()> onCopyClip;
-    std::function<void()> onCutClip;
-    std::function<void()> onPasteClip;
-    std::function<void()> onDuplicateClip;
-    std::function<void()> onAddScene;
-    std::function<void()> onRemoveScene;
-
-    bool hasClip = false;
-    bool clipIsPlaying = false;
-    bool clipIsQueued = false;
-    bool blinkOn = false;  // Toggled by SessionView timer for queued blink
-    bool isSelected = false;
-    bool isMidiClip = false;
-    double clipLength = 0.0;           // Clip duration in seconds (for progress bar)
-    double sessionPlayheadPos = -1.0;  // Looped playhead position in seconds
-
-    // Clip slot identity (for drag-and-drop)
-    ClipId clipId = INVALID_CLIP_ID;
-    TrackId trackId = INVALID_TRACK_ID;
-    int sceneIndex = -1;
-
-    void mouseDrag(const juce::MouseEvent& event) override {
-        if (!hasClip || clipId == INVALID_CLIP_ID)
-            return;
-
-        if (event.getDistanceFromDragStart() < 5)
-            return;
-
-        auto* dragContainer = juce::DragAndDropContainer::findParentDragContainerFor(this);
-        if (!dragContainer)
-            return;
-
-        // Build drag description
-        auto* desc = new juce::DynamicObject();
-        desc->setProperty("type", "sessionClip");
-        desc->setProperty("clipId", static_cast<int>(clipId));
-        desc->setProperty("trackId", static_cast<int>(trackId));
-        desc->setProperty("sceneIndex", sceneIndex);
-
-        // Create a snapshot image of this slot as drag ghost
-        auto snapshot = createComponentSnapshot(getLocalBounds(), true, 1.0f);
-
-        dragContainer->startDragging(juce::var(desc), this, juce::ScaledImage(snapshot), true);
-    }
-
-    void mouseDown(const juce::MouseEvent& event) override {
-        if (event.mods.isPopupMenu()) {
-            juce::PopupMenu menu;
-            if (!hasClip)
-                menu.addItem(1, "Create MIDI Clip");
-            if (hasClip) {
-                menu.addItem(5, "Copy");
-                menu.addItem(6, "Cut");
-                menu.addItem(8, "Duplicate");
-            }
-            bool hasClipboard = ClipManager::getInstance().hasClipsInClipboard();
-            menu.addItem(7, "Paste", hasClipboard);
-            menu.addSeparator();
-            if (hasClip)
-                menu.addItem(4, "Delete Clip");
-            menu.addSeparator();
-            menu.addItem(2, "Add Scene");
-            menu.addItem(3, "Remove Scene");
-            auto safeThis = juce::Component::SafePointer<ClipSlotButton>(this);
-            menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
-                if (!safeThis)
-                    return;
-                if (result == 1 && safeThis->onCreateMidiClip)
-                    safeThis->onCreateMidiClip();
-                else if (result == 2 && safeThis->onAddScene)
-                    safeThis->onAddScene();
-                else if (result == 3 && safeThis->onRemoveScene)
-                    safeThis->onRemoveScene();
-                else if (result == 4 && safeThis->onDeleteClip)
-                    safeThis->onDeleteClip();
-                else if (result == 5 && safeThis->onCopyClip)
-                    safeThis->onCopyClip();
-                else if (result == 6 && safeThis->onCutClip)
-                    safeThis->onCutClip();
-                else if (result == 7 && safeThis->onPasteClip)
-                    safeThis->onPasteClip();
-                else if (result == 8 && safeThis->onDuplicateClip)
-                    safeThis->onDuplicateClip();
-            });
-            return;
-        }
-        juce::TextButton::mouseDown(event);
-    }
-
-    void mouseUp(const juce::MouseEvent& event) override {
-        if (!event.mouseWasClicked())
-            return;
-
-        const int clicks = event.getNumberOfClicks();
-        const bool inPlayArea = hasClip && event.getPosition().getX() < PLAY_BUTTON_WIDTH;
-
-        if (clicks >= 2) {
-            if (!inPlayArea && onDoubleClick) {
-                onDoubleClick();
-            }
-            return;
-        }
-
-        if (inPlayArea) {
-            if (onPlayButtonClick) {
-                onPlayButtonClick();
-            }
-        } else {
-            if (onSingleClick) {
-                onSingleClick();
-            }
-        }
-    }
-
-    void clicked() override {
-        // Handled by mouseUp instead
-    }
-
-    void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
-                     bool shouldDrawButtonAsDown) override {
-        // Draw base button (background, border via LookAndFeel)
-        // Temporarily clear text so base class doesn't draw it centered
-        auto savedText = getButtonText();
-        if (hasClip)
-            setButtonText("");
-        juce::TextButton::paintButton(g, shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
-        if (hasClip)
-            setButtonText(savedText);
-
-        // Draw selection highlight border
-        if (isSelected) {
-            g.setColour(juce::Colours::white.withAlpha(0.8f));
-            g.drawRect(getLocalBounds(), 2);
-        }
-
-        if (hasClip) {
-            // Draw play/stop icon in the left area
-            auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
-            auto centre = playArea.getCentre().toFloat();
-
-            if (clipIsPlaying) {
-                // Draw stop square when playing
-                float size = 5.0f;
-                g.setColour(juce::Colours::white.withAlpha(0.9f));
-                g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
-                                                  size * 2.0f, size * 2.0f));
-            } else {
-                // Draw play triangle — blink when queued
-                juce::Path triangle;
-                float size = 6.0f;
-                triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
-                                     centre.getX() - size * 0.7f, centre.getY() + size,
-                                     centre.getX() + size, centre.getY());
-                float alpha = (clipIsQueued && !blinkOn) ? 0.15f : 0.7f;
-                g.setColour(juce::Colours::white.withAlpha(alpha));
-                g.fillPath(triangle);
-            }
-
-            // Content area (right of play button)
-            auto contentArea = getLocalBounds();
-            contentArea.removeFromLeft(PLAY_BUTTON_WIDTH);
-
-            // Draw progress bar for playing clips
-            if (clipIsPlaying && clipLength > 0.0 && sessionPlayheadPos >= 0.0) {
-                float progress = static_cast<float>(sessionPlayheadPos / clipLength);
-                progress = juce::jlimit(0.0f, 1.0f, progress);
-
-                auto progressBar = contentArea.toFloat();
-                progressBar.setWidth(progressBar.getWidth() * progress);
-                g.setColour(juce::Colours::white.withAlpha(0.15f));
-                g.fillRect(progressBar);
-
-                // Draw playhead line at current position
-                float lineX = contentArea.getX() + contentArea.getWidth() * progress;
-                g.setColour(juce::Colours::white.withAlpha(0.6f));
-                g.drawVerticalLine(static_cast<int>(lineX), static_cast<float>(contentArea.getY()),
-                                   static_cast<float>(contentArea.getBottom()));
-            }
-
-            // Draw clip name in content area, left-justified
-            auto textArea = contentArea.reduced(2, 0);
-            if (isMidiClip)
-                textArea.removeFromRight(16);  // Reserve space for M badge
-            g.setColour(findColour(juce::TextButton::textColourOffId));
-            g.setFont(FontManager::getInstance().getUIFont(9.0f));
-            g.drawText(getButtonText(), textArea, juce::Justification::centredLeft, true);
-
-            // Draw "M" badge for MIDI clips
-            if (isMidiClip) {
-                auto badgeArea = getLocalBounds().removeFromRight(16).removeFromTop(14);
-                g.setColour(juce::Colours::white.withAlpha(0.8f));
-                g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-                g.drawText("M", badgeArea, juce::Justification::centred, false);
-            }
-        }
-    }
-};
 
 // Track header button with right-click context menu
 class TrackHeaderButton : public juce::TextButton {
@@ -1786,11 +1579,15 @@ void SessionView::rebuildTracks() {
     // Create clip slots for each visible track
     for (int track = 0; track < numTracks; ++track) {
         std::vector<std::unique_ptr<juce::TextButton>> trackSlots;
+        TrackId slotTrackId = visibleTrackIds_[track];
+        const auto* slotTrack = trackManager.getTrack(slotTrackId);
+        bool isGroup = slotTrack && slotTrack->isGroup();
 
         for (int scene = 0; scene < numScenes_; ++scene) {
             auto slot = std::make_unique<ClipSlotButton>();
 
             slot->setButtonText("");
+            slot->isGroupSlot = isGroup;
             slot->setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
             slot->setColour(juce::TextButton::textColourOffId,
@@ -2302,6 +2099,17 @@ void SessionView::removeSceneAsync(int sceneIndex) {
 }
 
 void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, int sceneIndex) {
+    if (slot.isGroupSlot) {
+        // Group slots: play button triggers/stops all descendant clips in this scene
+        slot.onPlayButtonClick = [this, trackIndex, sceneIndex]() {
+            TrackId groupId = visibleTrackIds_[trackIndex];
+            triggerGroupScene(groupId, sceneIndex);
+        };
+        slot.onAddScene = [this]() { addScene(); };
+        slot.onRemoveScene = [this]() { removeScene(); };
+        return;
+    }
+
     slot.onSingleClick = [this, trackIndex, sceneIndex]() {
         onClipSlotClicked(trackIndex, sceneIndex);
     };
@@ -2420,6 +2228,47 @@ void SessionView::onSceneLaunched(int sceneIndex) {
 
 void SessionView::onStopAllClicked() {
     ClipManager::getInstance().stopAllClips();
+}
+
+void SessionView::triggerGroupScene(TrackId groupId, int sceneIndex) {
+    // Collect all descendant track IDs recursively
+    std::vector<TrackId> descendants;
+    std::function<void(TrackId)> collectDescendants = [&](TrackId tid) {
+        const auto* t = TrackManager::getInstance().getTrack(tid);
+        if (!t)
+            return;
+        if (t->isGroup()) {
+            for (auto childId : t->childIds)
+                collectDescendants(childId);
+        } else {
+            descendants.push_back(tid);
+        }
+    };
+    collectDescendants(groupId);
+
+    // Check if any descendant clip in this scene is playing — if so, stop all; else trigger all
+    auto& cm = ClipManager::getInstance();
+    bool anyPlaying = false;
+    for (auto tid : descendants) {
+        ClipId cid = cm.getClipInSlot(tid, sceneIndex);
+        if (cid != INVALID_CLIP_ID && audioEngine_) {
+            auto state = audioEngine_->getSessionClipPlayState(cid);
+            if (state == SessionClipPlayState::Playing || state == SessionClipPlayState::Queued) {
+                anyPlaying = true;
+                break;
+            }
+        }
+    }
+
+    for (auto tid : descendants) {
+        ClipId cid = cm.getClipInSlot(tid, sceneIndex);
+        if (cid != INVALID_CLIP_ID) {
+            if (anyPlaying)
+                cm.stopClip(cid);
+            else
+                cm.triggerClip(cid);
+        }
+    }
 }
 
 void SessionView::openClipEditor(int trackIndex, int sceneIndex) {
@@ -2587,6 +2436,17 @@ void SessionView::clipPropertyChanged(ClipId clipId) {
     if (trackIndex >= 0) {
         updateClipSlotAppearance(trackIndex, clip->sceneIndex);
     }
+
+    // Also update parent group slot
+    const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
+    if (track && track->hasParent()) {
+        for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+            if (visibleTrackIds_[i] == track->parentId) {
+                updateClipSlotAppearance(static_cast<int>(i), clip->sceneIndex);
+                break;
+            }
+        }
+    }
 }
 
 void SessionView::clipSelectionChanged(ClipId /*clipId*/) {
@@ -2612,6 +2472,17 @@ void SessionView::clipPlaybackStateChanged(ClipId clipId) {
     if (trackIndex >= 0) {
         updateClipSlotAppearance(trackIndex, clip->sceneIndex);
     }
+
+    // Also update parent group slot if this track has a parent
+    const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
+    if (track && track->hasParent()) {
+        for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+            if (visibleTrackIds_[i] == track->parentId) {
+                updateClipSlotAppearance(static_cast<int>(i), clip->sceneIndex);
+                break;
+            }
+        }
+    }
 }
 
 void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
@@ -2627,12 +2498,49 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         return;
 
     TrackId trackId = visibleTrackIds_[trackIndex];
-    ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
-    ClipId selectedClipId = ClipManager::getInstance().getSelectedClip();
 
     // Always set slot identity for drag-and-drop
     slot->trackId = trackId;
     slot->sceneIndex = sceneIndex;
+
+    // Group slot: check if any descendant has a clip in this scene
+    if (slot->isGroupSlot) {
+        bool anyClips = false;
+        bool anyPlaying = false;
+
+        std::function<void(TrackId)> checkDescendants = [&](TrackId tid) {
+            const auto* t = TrackManager::getInstance().getTrack(tid);
+            if (!t)
+                return;
+            if (t->isGroup()) {
+                for (auto childId : t->childIds)
+                    checkDescendants(childId);
+            } else {
+                ClipId cid = ClipManager::getInstance().getClipInSlot(tid, sceneIndex);
+                if (cid != INVALID_CLIP_ID) {
+                    anyClips = true;
+                    if (audioEngine_) {
+                        auto state = audioEngine_->getSessionClipPlayState(cid);
+                        if (state == SessionClipPlayState::Playing ||
+                            state == SessionClipPlayState::Queued)
+                            anyPlaying = true;
+                    }
+                }
+            }
+        };
+        checkDescendants(trackId);
+
+        slot->hasChildClips = anyClips;
+        slot->childClipIsPlaying = anyPlaying;
+        slot->hasClip = false;
+        slot->setButtonText("");
+        slot->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        slot->repaint();
+        return;
+    }
+
+    ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
+    ClipId selectedClipId = ClipManager::getInstance().getSelectedClip();
 
     if (clipId != INVALID_CLIP_ID) {
         const auto* clip = ClipManager::getInstance().getClip(clipId);

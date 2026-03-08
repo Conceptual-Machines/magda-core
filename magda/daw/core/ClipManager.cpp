@@ -1591,21 +1591,36 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     newClip->midiPitchBendData = clipData.midiPitchBendData;
                 }
 
-                // Copy audio properties (TE-aligned)
-                if (clipData.type == ClipType::Audio) {
+                // Copy audio properties — but NOT when pasting arrangement→session,
+                // because createAudioClip already set correct session defaults
+                // (autoTempo, beat values, offset=0, loopStart=0).
+                bool crossViewToSession =
+                    (targetView == ClipView::Session && clipData.view == ClipView::Arrangement);
+
+                if (clipData.type == ClipType::Audio && !crossViewToSession) {
                     newClip->offset = clipData.offset;
                     newClip->loopStart = clipData.loopStart;
                     newClip->loopLength = clipData.loopLength;
                 }
 
-                // Audio playback
-                newClip->autoTempo = clipData.autoTempo;
-                newClip->loopStartBeats = clipData.loopStartBeats;
-                newClip->loopLengthBeats = clipData.loopLengthBeats;
-                newClip->lengthBeats = clipData.lengthBeats;
-                newClip->startBeats = clipData.startBeats;
-                newClip->warpEnabled = clipData.warpEnabled;
-                newClip->timeStretchMode = clipData.timeStretchMode;
+                // Audio playback — preserve session defaults for cross-view paste
+                if (!crossViewToSession) {
+                    newClip->autoTempo = clipData.autoTempo;
+                    newClip->loopStartBeats = clipData.loopStartBeats;
+                    newClip->loopLengthBeats = clipData.loopLengthBeats;
+                    newClip->lengthBeats = clipData.lengthBeats;
+                    newClip->startBeats = clipData.startBeats;
+                }
+                if (!crossViewToSession) {
+                    newClip->warpEnabled = clipData.warpEnabled;
+                    newClip->timeStretchMode = clipData.timeStretchMode;
+                }
+
+                // Source file metadata (always copy — these describe the file itself)
+                if (clipData.sourceBPM > 0.0)
+                    newClip->sourceBPM = clipData.sourceBPM;
+                if (clipData.sourceNumBeats > 0.0)
+                    newClip->sourceNumBeats = clipData.sourceNumBeats;
 
                 // Pitch
                 newClip->autoPitch = clipData.autoPitch;
@@ -1620,7 +1635,8 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
 
                 // Playback
                 newClip->isReversed = clipData.isReversed;
-                newClip->speedRatio = clipData.speedRatio;
+                if (!crossViewToSession)
+                    newClip->speedRatio = clipData.speedRatio;
 
                 // Channels
                 newClip->leftChannelActive = clipData.leftChannelActive;
@@ -1648,21 +1664,25 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     newClip->launchMode = clipData.launchMode;
                     newClip->launchQuantize = clipData.launchQuantize;
 
-                    // Reset extended loops to base loop length for session clips
-                    if (clipData.loopEnabled && clipData.loopLengthBeats > 0.0 &&
-                        clipData.lengthBeats > clipData.loopLengthBeats) {
-                        newClip->lengthBeats = clipData.loopLengthBeats;
-                        newClip->loopLengthBeats = clipData.loopLengthBeats;
-                        // Derive time-length from beat ratio
-                        if (clipData.lengthBeats > 0.0) {
-                            double ratio = clipData.loopLengthBeats / clipData.lengthBeats;
-                            newClip->length = clipData.length * ratio;
-                            newClip->loopLength = newClip->length;
+                    if (!crossViewToSession) {
+                        // Reset extended loops to base loop length for
+                        // session→session pastes
+                        if (clipData.loopEnabled && clipData.loopLengthBeats > 0.0 &&
+                            clipData.lengthBeats > clipData.loopLengthBeats) {
+                            newClip->lengthBeats = clipData.loopLengthBeats;
+                            newClip->loopLengthBeats = clipData.loopLengthBeats;
+                            // Derive time-length from beat ratio
+                            if (clipData.lengthBeats > 0.0) {
+                                double ratio = clipData.loopLengthBeats / clipData.lengthBeats;
+                                newClip->length = clipData.length * ratio;
+                                newClip->loopLength = newClip->length;
+                            }
+                        } else if (clipData.loopEnabled && clipData.loopLength > 0.0 &&
+                                   clipData.length >
+                                       clipData.sourceToTimeline(clipData.loopLength)) {
+                            newClip->length = clipData.sourceToTimeline(clipData.loopLength);
+                            newClip->loopLength = clipData.loopLength;
                         }
-                    } else if (clipData.loopEnabled && clipData.loopLength > 0.0 &&
-                               clipData.length > clipData.sourceToTimeline(clipData.loopLength)) {
-                        newClip->length = clipData.sourceToTimeline(clipData.loopLength);
-                        newClip->loopLength = clipData.loopLength;
                     }
                 }
 
