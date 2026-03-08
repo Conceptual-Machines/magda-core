@@ -168,8 +168,17 @@ TrackInspector::TrackInspector() {
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Pan);
     panLabel_->setRange(-1.0, 1.0, 0.0);  // -1 (L) to +1 (R), default center
     panLabel_->onValueChange = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            float pan = static_cast<float>(panLabel_->getValue());
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+            return;
+        float pan = static_cast<float>(panLabel_->getValue());
+        if (panLabel_->isDragging()) {
+            // Apply directly during drag (no undo command per pixel)
+            if (selectedTrackId_ == magda::MASTER_TRACK_ID)
+                magda::TrackManager::getInstance().setMasterPan(pan);
+            else
+                magda::TrackManager::getInstance().setTrackPan(selectedTrackId_, pan);
+        } else {
+            // Non-drag changes (keyboard edit, double-click reset)
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetMasterPanCommand>(pan));
@@ -177,6 +186,18 @@ TrackInspector::TrackInspector() {
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_, pan));
         }
+    };
+    panLabel_->onDragEnd = [this](double startValue) {
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+            return;
+        float oldPan = static_cast<float>(startValue);
+        float newPan = static_cast<float>(panLabel_->getValue());
+        if (selectedTrackId_ == magda::MASTER_TRACK_ID)
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetMasterPanCommand>(oldPan, newPan));
+        else
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_, oldPan, newPan));
     };
     addAndMakeVisible(*panLabel_);
 
@@ -531,8 +552,15 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
 
         panLabel_->clearTextOverride();
         panLabel_->onValueChange = [this]() {
-            if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-                float pan = static_cast<float>(panLabel_->getValue());
+            if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+                return;
+            float pan = static_cast<float>(panLabel_->getValue());
+            if (panLabel_->isDragging()) {
+                if (selectedTrackId_ == magda::MASTER_TRACK_ID)
+                    magda::TrackManager::getInstance().setMasterPan(pan);
+                else
+                    magda::TrackManager::getInstance().setTrackPan(selectedTrackId_, pan);
+            } else {
                 if (selectedTrackId_ == magda::MASTER_TRACK_ID)
                     magda::UndoManager::getInstance().executeCommand(
                         std::make_unique<magda::SetMasterPanCommand>(pan));
@@ -540,6 +568,18 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
                     magda::UndoManager::getInstance().executeCommand(
                         std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_, pan));
             }
+        };
+        panLabel_->onDragEnd = [this](double startValue) {
+            if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+                return;
+            float oldPan = static_cast<float>(startValue);
+            float newPan = static_cast<float>(panLabel_->getValue());
+            if (selectedTrackId_ == magda::MASTER_TRACK_ID)
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetMasterPanCommand>(oldPan, newPan));
+            else
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_, oldPan, newPan));
         };
 
         recordButton_.onClick = [this]() {
@@ -601,6 +641,8 @@ void TrackInspector::trackPropertyChanged(int trackId) {
         return;
     }
     if (static_cast<magda::TrackId>(trackId) == selectedTrackId_) {
+        if (gainLabel_->isDragging() || panLabel_->isDragging())
+            return;
         updateFromSelectedTrack();
     }
 }
@@ -618,6 +660,8 @@ void TrackInspector::trackSelectionChanged(magda::TrackId trackId) {
 
 void TrackInspector::masterChannelChanged() {
     if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
+        if (gainLabel_->isDragging() || panLabel_->isDragging())
+            return;
         updateFromSelectedTrack();
     }
 }
@@ -882,12 +926,21 @@ void TrackInspector::updateFromMultiTrackSelection() {
         double delta = panLabel_->getValue() - multiTrackDragStartPan_;
         for (auto& [tid, basePan] : multiTrackBasePans_) {
             float newPan = juce::jlimit(-1.0f, 1.0f, static_cast<float>(basePan + delta));
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetTrackPanCommand>(tid, newPan));
+            magda::TrackManager::getInstance().setTrackPan(tid, newPan);
         }
         panLabel_->clearTextOverride();
         if (!panLabel_->isDragging())
             multiTrackBasePans_.clear();
+    };
+    panLabel_->onDragEnd = [this](double /*startValue*/) {
+        // Create undo commands for all tracks using pre-drag base values
+        for (auto& [tid, basePan] : multiTrackBasePans_) {
+            auto* track = magda::TrackManager::getInstance().getTrack(tid);
+            if (track)
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetTrackPanCommand>(tid, basePan, track->pan));
+        }
+        multiTrackBasePans_.clear();
     };
 
     // Show name + buttons + volume/pan; hide routing/sends/clips

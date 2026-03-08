@@ -125,8 +125,12 @@ class DraggableValueLabel : public juce::Component {
         repaint();
     }
 
-    // Callback when value changes
+    // Callback when value changes (fires on every drag pixel, wheel tick, or edit commit)
     std::function<void()> onValueChange;
+
+    // Callback when a drag gesture ends (fired from mouseUp after dragging)
+    // Parameter is the value before the drag started.
+    std::function<void(double startValue)> onDragEnd;
 
     // Callback for right-click (e.g. context menu)
     std::function<void()> onRightClick;

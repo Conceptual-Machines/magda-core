@@ -51,6 +51,8 @@ class SetTrackPanCommand : public UndoableCommand {
         if (track)
             oldPan_ = track->pan;
     }
+    SetTrackPanCommand(TrackId trackId, float oldPan, float newPan)
+        : trackId_(trackId), oldPan_(oldPan), newPan_(newPan) {}
 
     void execute() override {
         TrackManager::getInstance().setTrackPan(trackId_, newPan_);
@@ -264,6 +266,7 @@ class SetMasterPanCommand : public UndoableCommand {
     explicit SetMasterPanCommand(float newPan) : newPan_(newPan) {
         oldPan_ = TrackManager::getInstance().getMasterChannel().pan;
     }
+    SetMasterPanCommand(float oldPan, float newPan) : oldPan_(oldPan), newPan_(newPan) {}
 
     void execute() override {
         TrackManager::getInstance().setMasterPan(newPan_);

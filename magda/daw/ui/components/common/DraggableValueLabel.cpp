@@ -344,8 +344,11 @@ void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void DraggableValueLabel::mouseUp(const juce::MouseEvent& /*e*/) {
+    bool wasDragging = isDragging_;
     isDragging_ = false;
     repaint();
+    if (wasDragging && onDragEnd)
+        onDragEnd(dragStartValue_);
 }
 
 void DraggableValueLabel::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
