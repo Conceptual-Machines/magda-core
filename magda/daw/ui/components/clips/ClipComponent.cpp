@@ -105,12 +105,12 @@ void ClipComponent::paint(juce::Graphics& g) {
             float bx = static_cast<float>(clipBounds.getX()) +
                        static_cast<float>(boundaryBeat / beatRange) * clipBounds.getWidth();
 
-            // Shadow gradient on right side of boundary (subtle fold effect)
+            // Shadow gradient on right side of boundary (fold effect)
             float shadeWidth = juce::jmin(6.0f, loopPixelWidth * 0.15f);
             if (shadeWidth >= 1.0f) {
                 float top = static_cast<float>(clipBounds.getY());
                 float bot = static_cast<float>(clipBounds.getBottom());
-                juce::ColourGradient shade(juce::Colours::black.withAlpha(0.25f), bx, 0.0f,
+                juce::ColourGradient shade(juce::Colours::black.withAlpha(0.45f), bx, 0.0f,
                                            juce::Colours::transparentBlack, bx + shadeWidth, 0.0f,
                                            false);
                 g.setGradientFill(shade);
@@ -118,7 +118,7 @@ void ClipComponent::paint(juce::Graphics& g) {
             }
 
             // Vertical line at loop boundary
-            g.setColour(markerColour.withAlpha(0.45f));
+            g.setColour(markerColour.withAlpha(0.7f));
             g.drawVerticalLine(static_cast<int>(bx), static_cast<float>(clipBounds.getY()),
                                static_cast<float>(clipBounds.getBottom()));
 
@@ -134,7 +134,7 @@ void ClipComponent::paint(juce::Graphics& g) {
             cut.addTriangle(bx - cutSize, top, bx, top, bx, top + cutSize);
             // Right triangle
             cut.addTriangle(bx, top, bx + cutSize, top, bx, top + cutSize);
-            g.setColour(markerColour.withAlpha(0.6f));
+            g.setColour(markerColour.withAlpha(0.8f));
             g.fillPath(cut);
         }
     }

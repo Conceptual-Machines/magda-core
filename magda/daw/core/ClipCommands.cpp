@@ -787,7 +787,6 @@ void RenderClipCommand::execute() {
     // Determine output file path
     juce::File sourceFile(clip->audioFilePath);
     auto configFolder = Config::getInstance().getRenderFolder();
-    DBG("RenderClipCommand: configFolder='" << configFolder << "'");
     juce::File rendersDir;
     if (!configFolder.empty()) {
         rendersDir = juce::File(configFolder);
@@ -804,7 +803,6 @@ void RenderClipCommand::execute() {
     juce::String clipName =
         clip->name.isNotEmpty() ? clip->name : sourceFile.getFileNameWithoutExtension();
     renderedFile_ = rendersDir.getChildFile(expandRenderPattern(clipName, trackName) + ".wav");
-    DBG("RenderClipCommand: output=" << renderedFile_.getFullPathName());
 
     // Stop transport and free playback context for offline rendering
     auto& transport = edit->getTransport();
