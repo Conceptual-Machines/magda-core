@@ -614,7 +614,7 @@ void DrumGridUI::paintOverChildren(juce::Graphics& g) {
 // =============================================================================
 
 void DrumGridUI::resized() {
-    auto area = getLocalBounds().reduced(6);
+    auto area = getLocalBounds().reduced(4);
 
     bool selectedPadHasContent =
         padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
@@ -703,7 +703,7 @@ void DrumGridUI::resized() {
     }
 
     // --- Pad Grid layout ---
-    auto paginationRow = gridArea.removeFromBottom(22);
+    auto paginationRow = gridArea.removeFromBottom(18);
     gridArea.removeFromBottom(2);
 
     constexpr int padGap = 3;

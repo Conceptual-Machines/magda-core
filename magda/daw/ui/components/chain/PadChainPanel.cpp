@@ -226,9 +226,9 @@ void PadChainPanel::resized() {
     // Viewport fills the rest
     viewport_.setBounds(area);
 
-    int height = area.getHeight() - 8;
+    int height = area.getHeight() - 4;
 
-    int x = 4;
+    int x = 2;
     int viewportWidth = area.getWidth();
     for (size_t i = 0; i < slots_.size(); ++i) {
         if (i > 0)
@@ -236,13 +236,13 @@ void PadChainPanel::resized() {
         int slotWidth = slots_[i]->getPreferredWidth();
         // Single slot: fill the viewport width exactly (no scrolling)
         if (slots_.size() == 1)
-            slotWidth = viewportWidth - 8;  // 4px padding each side
-        slots_[i]->setBounds(x, 4, slotWidth, height);
+            slotWidth = viewportWidth - 4;  // 2px padding each side
+        slots_[i]->setBounds(x, 2, slotWidth, height);
         x += slotWidth;
     }
 
-    x += 4;
-    container_.setSize(juce::jmax(x, area.getWidth()), height + 8);
+    x += 2;
+    container_.setSize(juce::jmax(x, area.getWidth()), height + 4);
 }
 
 int PadChainPanel::calculateInsertIndex(int mouseX) const {

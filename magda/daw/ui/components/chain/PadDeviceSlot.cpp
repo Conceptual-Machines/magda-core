@@ -239,7 +239,7 @@ void PadDeviceSlot::paint(juce::Graphics& g) {
 }
 
 void PadDeviceSlot::resized() {
-    auto area = getLocalBounds().reduced(2);
+    auto area = getLocalBounds().reduced(2, 1);
     DBG("PadDeviceSlot::resized - width=" + juce::String(getWidth()) +
         " preferredWidth=" + juce::String(preferredWidth_));
 

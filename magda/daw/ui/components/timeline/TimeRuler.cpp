@@ -251,7 +251,7 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
         double newZoom = zoomStartValue * std::pow(2.0, exponent);
 
         // Clamp zoom to reasonable limits (pixels per beat)
-        newZoom = juce::jlimit(1.0, 2000.0, newZoom);
+        newZoom = juce::jlimit(1.0, 50000.0, newZoom);
 
         if (yDelta > 0) {
             setMouseCursor(CursorManager::getInstance().getZoomInCursor());
