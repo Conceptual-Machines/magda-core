@@ -32,6 +32,9 @@ class PlaybackPositionTimer : private juce::Timer {
         Only called when session clips are active. -1.0 means no session clips. */
     std::function<void(double)> onSessionPlayheadUpdate;
 
+    /** Callback fired periodically with CPU usage (0.0 to 1.0). */
+    std::function<void(float)> onCpuUsageUpdate;
+
   private:
     void timerCallback() override;
 
@@ -40,8 +43,10 @@ class PlaybackPositionTimer : private juce::Timer {
 
     bool wasPlaying_ = false;    // Track engine playing state for change detection
     bool wasRecording_ = false;  // Track engine recording state for change detection
+    int cpuUpdateCounter_ = 0;   // Throttle CPU updates
 
     static constexpr int UPDATE_INTERVAL_MS = 30;  // ~33fps for smooth playhead
+    static constexpr int CPU_UPDATE_TICKS = 15;    // Every ~500ms
 };
 
 }  // namespace magda

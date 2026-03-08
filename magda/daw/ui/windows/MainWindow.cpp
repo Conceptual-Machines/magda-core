@@ -626,6 +626,10 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         if (sessionView)
             sessionView->setSessionPlayheadPosition(sessionPos);
     };
+    positionTimer_->onCpuUsageUpdate = [this](float cpu) {
+        if (transportPanel)
+            transportPanel->setCpuUsage(cpu);
+    };
     positionTimer_->start();  // Start once and keep running
 
     // Wire transport callbacks - just dispatch events, TimelineController notifies audio engine

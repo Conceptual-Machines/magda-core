@@ -63,6 +63,9 @@ class TransportPanel : public juce::Component {
     // Update arrangement button state based on whether any track is in session mode
     void setAnyTrackInSessionMode(bool anyInSession);
 
+    // CPU usage display (0.0 to 1.0)
+    void setCpuUsage(float usage);
+
   private:
     // Transport controls (left section)
     std::unique_ptr<SvgButton> playButton;
@@ -122,6 +125,7 @@ class TransportPanel : public juce::Component {
     juce::Rectangle<int> getMetronomeBpmArea() const;
     juce::Rectangle<int> getTimeDisplayArea() const;
     juce::Rectangle<int> getTempoQuantizeArea() const;
+    juce::Rectangle<int> getCpuArea() const;
 
     // Button styling
     void styleTransportButton(SvgButton& button, juce::Colour accentColor);
@@ -161,6 +165,11 @@ class TransportPanel : public juce::Component {
     double cachedPunchEnd = -1.0;
     bool cachedPunchInEnabled = false;
     bool cachedPunchOutEnabled = false;
+
+    // CPU usage display (right side)
+    std::unique_ptr<juce::Label> cpuTitleLabel;
+    std::unique_ptr<juce::Label> cpuValueLabel;
+    float currentCpuUsage = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportPanel)
 };

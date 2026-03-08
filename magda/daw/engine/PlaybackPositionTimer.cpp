@@ -1,5 +1,7 @@
 #include "PlaybackPositionTimer.hpp"
 
+#include <juce_audio_devices/juce_audio_devices.h>
+
 #include "AudioEngine.hpp"
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineEvents.hpp"
@@ -56,6 +58,14 @@ void PlaybackPositionTimer::timerCallback() {
         if (onSessionPlayheadUpdate) {
             onSessionPlayheadUpdate(sessionPos);
         }
+    }
+
+    // CPU usage update (throttled)
+    if (onCpuUsageUpdate && ++cpuUpdateCounter_ >= CPU_UPDATE_TICKS) {
+        cpuUpdateCounter_ = 0;
+        auto* dm = engine_.getDeviceManager();
+        if (dm)
+            onCpuUsageUpdate(static_cast<float>(dm->getCpuUsage()));
     }
 }
 

@@ -11,6 +11,21 @@ TransportPanel::TransportPanel() {
     setupTransportButtons();
     setupTimeDisplayBoxes();
     setupTempoAndQuantize();
+
+    // CPU usage — title label + value label stacked
+    cpuTitleLabel = std::make_unique<juce::Label>("cpuTitle", "CPU");
+    cpuTitleLabel->setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    cpuTitleLabel->setFont(FontManager::getInstance().getUIFont(8.0f));
+    cpuTitleLabel->setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(*cpuTitleLabel);
+
+    cpuValueLabel = std::make_unique<juce::Label>("cpuValue", "0%");
+    cpuValueLabel->setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    cpuValueLabel->setFont(FontManager::getInstance().getUIFont(14.0f));
+    cpuValueLabel->setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(*cpuValueLabel);
 }
 
 TransportPanel::~TransportPanel() {
@@ -70,6 +85,22 @@ void TransportPanel::paint(juce::Graphics& g) {
                      "", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     drawGroupWrapper(autoGridButton->getBounds().getUnion(snapButton->getBounds()), "",
                      DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+
+    // CPU frame — rounded rectangle matching transport group wrapper style
+    {
+        auto cpuArea = getCpuArea().reduced(4, 3);
+        auto frameBounds = cpuArea.toFloat();
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRoundedRectangle(frameBounds, 3.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRoundedRectangle(frameBounds.reduced(0.5f), 3.0f, 1.0f);
+
+        // Separator line between header and value
+        int headerHeight = juce::roundToInt(cpuArea.getHeight() * 0.25f);
+        float sepY = cpuArea.getY() + headerHeight;
+        g.drawHorizontalLine(static_cast<int>(sepY), frameBounds.getX() + 1,
+                             frameBounds.getRight() - 1);
+    }
 
     // Bottom border for visual separation from content below
     g.setColour(DarkTheme::getBorderColour());
@@ -192,6 +223,12 @@ void TransportPanel::resized() {
     // Hide slash label (no longer needed in this layout)
     gridSlashLabel->setBounds(0, 0, 0, 0);
     gridSlashLabel->setVisible(false);
+
+    // CPU usage — rounded frame with "CPU [icon]" header (20%) + value (80%)
+    auto cpuArea = getCpuArea().reduced(4, 3);
+    int headerHeight = juce::roundToInt(cpuArea.getHeight() * 0.25f);
+    cpuTitleLabel->setBounds(cpuArea.removeFromTop(headerHeight));
+    cpuValueLabel->setBounds(cpuArea);
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
@@ -218,7 +255,12 @@ juce::Rectangle<int> TransportPanel::getTimeDisplayArea() const {
 juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
     auto bounds = getLocalBounds();
     bounds.removeFromLeft(getTransportControlsArea().getWidth() + 106 + 440);
+    bounds.removeFromRight(getCpuArea().getWidth());
     return bounds;
+}
+
+juce::Rectangle<int> TransportPanel::getCpuArea() const {
+    return getLocalBounds().removeFromRight(60);
 }
 
 void TransportPanel::setupTransportButtons() {
@@ -872,6 +914,14 @@ void TransportPanel::updatePunchLabelColors() {
     // Punch end label color matches punch out button state
     punchEndLabel->setTextColour(isPunchOutEnabled ? activeColor : inactiveColor);
     punchEndLabel->setAlpha(isPunchOutEnabled ? 1.0f : 0.5f);
+}
+
+void TransportPanel::setCpuUsage(float usage) {
+    currentCpuUsage = juce::jlimit(0.0f, 1.0f, usage);
+    if (cpuValueLabel) {
+        int percent = juce::roundToInt(currentCpuUsage * 100.0f);
+        cpuValueLabel->setText(juce::String(percent) + "%", juce::dontSendNotification);
+    }
 }
 
 }  // namespace magda
