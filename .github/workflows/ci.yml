@@ -287,3 +287,121 @@ jobs:
         echo "- ✅ Secret pattern scan" >> $GITHUB_STEP_SUMMARY
         echo "- ✅ Dangerous pattern scan" >> $GITHUB_STEP_SUMMARY
         echo "- ✅ Binary file verification" >> $GITHUB_STEP_SUMMARY
+
+  build-and-test-macos:
+    runs-on: self-hosted
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.skip-cpp-build != 'true'
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Configure CMake (Debug)
+      run: |
+        cmake -B build-debug -G Ninja \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+          -DMAGDA_BUILD_TESTS=ON
+
+    - name: Build (Debug)
+      run: cmake --build build-debug --config Debug
+
+    - name: Run tests
+      run: |
+        if [ -f build-debug/tests/magda_tests ]; then
+          cd build-debug && ./tests/magda_tests
+        else
+          echo "❌ Tests executable not found"
+          exit 1
+        fi
+
+    - name: Configure CMake (Release)
+      run: |
+        cmake -B build-release -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMAGDA_BUILD_TESTS=OFF
+
+    - name: Build (Release)
+      run: cmake --build build-release --config Release
+
+    - name: Verify app bundle
+      run: |
+        APP_PATH="build-release/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
+        if [ -d "$APP_PATH" ]; then
+          echo "✅ MAGDA.app built successfully"
+          ls -la "$APP_PATH/Contents/MacOS/"
+        else
+          echo "❌ MAGDA.app not found"
+          exit 1
+        fi
+
+    - name: Clean up build directories
+      if: always()
+      run: rm -rf build-debug build-release
+
+    - name: Build summary
+      if: success()
+      run: echo "✅ macOS build and tests completed successfully"
+
+  build-and-test-windows:
+    runs-on: [self-hosted, Windows]
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.skip-cpp-build != 'true'
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Configure CMake (Debug)
+      run: |
+        cmake -B build-debug -G Ninja `
+          -DCMAKE_BUILD_TYPE=Debug `
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON `
+          -DMAGDA_BUILD_TESTS=ON
+
+    - name: Build (Debug)
+      run: cmake --build build-debug --config Debug
+
+    - name: Run tests
+      run: |
+        $testExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_tests.exe" | Select-Object -First 1
+        if ($testExe) {
+          & $testExe.FullName
+        } else {
+          Write-Error "Tests executable not found"
+          exit 1
+        }
+
+    - name: Configure CMake (Release)
+      run: |
+        cmake -B build-release -G Ninja `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DMAGDA_BUILD_TESTS=OFF
+
+    - name: Build (Release)
+      run: cmake --build build-release --config Release
+
+    - name: Verify executable
+      run: |
+        $exe = Get-ChildItem -Path build-release -Recurse -Filter "MAGDA.exe" | Select-Object -First 1
+        if ($exe) {
+          Write-Output "✅ MAGDA.exe built successfully at $($exe.FullName)"
+        } else {
+          Write-Error "MAGDA.exe not found"
+          exit 1
+        }
+
+    - name: Clean up build directories
+      if: always()
+      run: |
+        Remove-Item -Recurse -Force build-debug -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force build-release -ErrorAction SilentlyContinue
+
+    - name: Build summary
+      if: success()
+      run: Write-Output "✅ Windows build and tests completed successfully"
