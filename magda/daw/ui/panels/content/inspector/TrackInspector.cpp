@@ -376,134 +376,188 @@ void TrackInspector::resized() {
     const int controlRowHeight = 24;
     const int wideThreshold = 160;
 
+    bool showPan = panLabel_->isVisible();
+    // Count visible buttons for layout
+    int visibleButtons = 0;
+    if (muteButton_.isVisible())
+        visibleButtons++;
+    if (soloButton_.isVisible())
+        visibleButtons++;
+    if (recordButton_.isVisible())
+        visibleButtons++;
+    if (monitorButton_.isVisible())
+        visibleButtons++;
+
     if (availableWidth >= wideThreshold) {
-        // Wide: Vol Pan M S R Mon — all on one row
+        // Wide: Vol [Pan] buttons — all on one row
         auto row = bounds.removeFromTop(controlRowHeight);
         const int gap = 2;
         const int mixPortion = row.getWidth() * 60 / 100;
         const int btnPortion = row.getWidth() - mixPortion - gap;
-        const int volWidth = (mixPortion - gap) * 80 / 100;
-        gainLabel_->setBounds(row.removeFromLeft(volWidth));
+        if (showPan) {
+            const int volWidth = (mixPortion - gap) * 80 / 100;
+            gainLabel_->setBounds(row.removeFromLeft(volWidth));
+            row.removeFromLeft(gap);
+            panLabel_->setBounds(row.removeFromLeft(mixPortion - volWidth - gap));
+        } else {
+            gainLabel_->setBounds(row.removeFromLeft(mixPortion));
+        }
         row.removeFromLeft(gap);
-        panLabel_->setBounds(row.removeFromLeft(mixPortion - volWidth - gap));
-        row.removeFromLeft(gap);
-        const int btnWidth = (btnPortion - (numButtons - 1) * gap) / numButtons;
-        muteButton_.setBounds(row.removeFromLeft(btnWidth));
-        row.removeFromLeft(gap);
-        soloButton_.setBounds(row.removeFromLeft(btnWidth));
-        row.removeFromLeft(gap);
-        recordButton_.setBounds(row.removeFromLeft(btnWidth));
-        row.removeFromLeft(gap);
-        monitorButton_.setBounds(row);
+        if (visibleButtons > 0) {
+            const int btnWidth = (btnPortion - (visibleButtons - 1) * gap) / visibleButtons;
+            muteButton_.setBounds(row.removeFromLeft(btnWidth));
+            if (soloButton_.isVisible()) {
+                row.removeFromLeft(gap);
+                soloButton_.setBounds(row.removeFromLeft(btnWidth));
+            }
+            if (recordButton_.isVisible()) {
+                row.removeFromLeft(gap);
+                recordButton_.setBounds(row.removeFromLeft(btnWidth));
+            }
+            if (monitorButton_.isVisible()) {
+                row.removeFromLeft(gap);
+                monitorButton_.setBounds(row);
+            }
+        }
     } else if (availableWidth >= stackThreshold) {
-        // Medium: Vol(80%) Pan(20%) on one row, buttons on second row
+        // Medium: Vol [Pan] on one row, buttons on second row
         auto mixRow = bounds.removeFromTop(controlRowHeight);
-        const int mixGap = 4;
-        const int volWidth = (mixRow.getWidth() - mixGap) * 80 / 100;
-        gainLabel_->setBounds(mixRow.removeFromLeft(volWidth));
-        mixRow.removeFromLeft(mixGap);
-        panLabel_->setBounds(mixRow);
+        if (showPan) {
+            const int mixGap = 4;
+            const int volWidth = (mixRow.getWidth() - mixGap) * 80 / 100;
+            gainLabel_->setBounds(mixRow.removeFromLeft(volWidth));
+            mixRow.removeFromLeft(mixGap);
+            panLabel_->setBounds(mixRow);
+        } else {
+            gainLabel_->setBounds(mixRow);
+        }
         bounds.removeFromTop(4);
 
-        auto buttonRow = bounds.removeFromTop(controlRowHeight);
-        const int btnWidth = (buttonRow.getWidth() - (numButtons - 1) * buttonGap) / numButtons;
-        muteButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-        buttonRow.removeFromLeft(buttonGap);
-        soloButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-        buttonRow.removeFromLeft(buttonGap);
-        recordButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-        buttonRow.removeFromLeft(buttonGap);
-        monitorButton_.setBounds(buttonRow);
+        if (visibleButtons > 0) {
+            auto buttonRow = bounds.removeFromTop(controlRowHeight);
+            const int btnWidth =
+                (buttonRow.getWidth() - (visibleButtons - 1) * buttonGap) / visibleButtons;
+            muteButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+            if (soloButton_.isVisible()) {
+                buttonRow.removeFromLeft(buttonGap);
+                soloButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+            }
+            if (recordButton_.isVisible()) {
+                buttonRow.removeFromLeft(buttonGap);
+                recordButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+            }
+            if (monitorButton_.isVisible()) {
+                buttonRow.removeFromLeft(buttonGap);
+                monitorButton_.setBounds(buttonRow);
+            }
+        }
     } else {
-        // Narrow: Volume, Pan, and buttons all stacked
+        // Narrow: Volume, [Pan], and buttons all stacked
         gainLabel_->setBounds(bounds.removeFromTop(controlRowHeight));
-        bounds.removeFromTop(2);
-        panLabel_->setBounds(bounds.removeFromTop(controlRowHeight));
-        bounds.removeFromTop(4);
-
-        auto buttonRow = bounds.removeFromTop(controlRowHeight);
-        const int btnWidth = (buttonRow.getWidth() - (numButtons - 1) * buttonGap) / numButtons;
-        muteButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-        buttonRow.removeFromLeft(buttonGap);
-        soloButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-        buttonRow.removeFromLeft(buttonGap);
-        recordButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
-        buttonRow.removeFromLeft(buttonGap);
-        monitorButton_.setBounds(buttonRow);
-    }
-    bounds.removeFromTop(separatorPadding);
-    sectionSeparatorYs_.push_back(bounds.getY());
-    bounds.removeFromTop(separatorPadding);
-
-    // Routing section — dropdowns fill available width
-    const int selectorHeight = 18;
-    const int columnHeaderHeight = 14;
-    const int iconSize = 16;
-    const int dropdownGap = selectorGap;
-    const int dropdownWidth = (bounds.getWidth() - dropdownGap - dropdownGap - iconSize) / 2;
-
-    // Column headers: [Audio] [MIDI]
-    if (audioInputSelector_->isVisible()) {
-        auto headerRow = bounds.removeFromTop(columnHeaderHeight);
-        audioColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
-        headerRow.removeFromLeft(dropdownGap);
-        midiColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
-        bounds.removeFromTop(2);
-    }
-
-    // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out child tracks
-    if (audioInputSelector_->isVisible()) {
-        auto inputRow = bounds.removeFromTop(selectorHeight);
-        audioInputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
-        inputRow.removeFromLeft(dropdownGap);
-        inputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
-        inputRow.removeFromLeft(dropdownGap);
-        inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
-        bounds.removeFromTop(4);
-    }
-
-    // Output row: [Audio Out] [MIDI Out] [outputIcon]
-    auto outputRow = bounds.removeFromTop(selectorHeight);
-    outputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
-    outputRow.removeFromLeft(dropdownGap);
-    midiOutputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
-    outputRow.removeFromLeft(dropdownGap);
-    outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
-    bounds.removeFromTop(separatorPadding);
-    sectionSeparatorYs_.push_back(bounds.getY());
-    bounds.removeFromTop(separatorPadding);
-
-    // Send/Receive section
-    auto sendHeaderRow = bounds.removeFromTop(16);
-    sendReceiveSectionLabel_.setBounds(sendHeaderRow.removeFromLeft(100));
-    addSendButton_.setBounds(sendHeaderRow.removeFromRight(50).withHeight(16));
-    bounds.removeFromTop(4);
-
-    if (sendDestLabels_.empty()) {
-        noSendsLabel_.setBounds(bounds.removeFromTop(16));
-        noSendsLabel_.setVisible(true);
-    } else {
-        noSendsLabel_.setVisible(false);
-        for (size_t i = 0; i < sendDestLabels_.size(); ++i) {
-            auto sendRow = bounds.removeFromTop(18);
-            sendDestLabels_[i]->setBounds(sendRow.removeFromLeft(60));
-            sendRow.removeFromLeft(4);
-            sendLevelLabels_[i]->setBounds(sendRow.removeFromLeft(50));
-            sendRow.removeFromLeft(4);
-            sendDeleteButtons_[i]->setBounds(sendRow.removeFromLeft(18));
+        if (showPan) {
             bounds.removeFromTop(2);
+            panLabel_->setBounds(bounds.removeFromTop(controlRowHeight));
+        }
+        bounds.removeFromTop(4);
+
+        if (visibleButtons > 0) {
+            auto buttonRow = bounds.removeFromTop(controlRowHeight);
+            const int btnWidth =
+                (buttonRow.getWidth() - (visibleButtons - 1) * buttonGap) / visibleButtons;
+            muteButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+            if (soloButton_.isVisible()) {
+                buttonRow.removeFromLeft(buttonGap);
+                soloButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+            }
+            if (recordButton_.isVisible()) {
+                buttonRow.removeFromLeft(buttonGap);
+                recordButton_.setBounds(buttonRow.removeFromLeft(btnWidth));
+            }
+            if (monitorButton_.isVisible()) {
+                buttonRow.removeFromLeft(buttonGap);
+                monitorButton_.setBounds(buttonRow);
+            }
         }
     }
-
-    receivesLabel_.setBounds(bounds.removeFromTop(16));
     bounds.removeFromTop(separatorPadding);
     sectionSeparatorYs_.push_back(bounds.getY());
     bounds.removeFromTop(separatorPadding);
 
-    // Clips section
-    clipsSectionLabel_.setBounds(bounds.removeFromTop(16));
-    bounds.removeFromTop(4);
-    clipCountLabel_.setBounds(bounds.removeFromTop(20));
+    // Routing section — only lay out if visible
+    if (outputSelector_->isVisible()) {
+        const int selectorHeight = 18;
+        const int columnHeaderHeight = 14;
+        const int iconSize = 16;
+        const int dropdownGap = selectorGap;
+        const int dropdownWidth = (bounds.getWidth() - dropdownGap - dropdownGap - iconSize) / 2;
+
+        // Column headers: [Audio] [MIDI]
+        if (audioInputSelector_->isVisible()) {
+            auto headerRow = bounds.removeFromTop(columnHeaderHeight);
+            audioColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
+            headerRow.removeFromLeft(dropdownGap);
+            midiColumnLabel_.setBounds(headerRow.removeFromLeft(dropdownWidth));
+            bounds.removeFromTop(2);
+        }
+
+        // Input row: [Audio In] [MIDI In] [inputIcon] — hidden for multi-out child tracks
+        if (audioInputSelector_->isVisible()) {
+            auto inputRow = bounds.removeFromTop(selectorHeight);
+            audioInputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
+            inputRow.removeFromLeft(dropdownGap);
+            inputSelector_->setBounds(inputRow.removeFromLeft(dropdownWidth));
+            inputRow.removeFromLeft(dropdownGap);
+            inputIcon_->setBounds(inputRow.removeFromLeft(iconSize));
+            bounds.removeFromTop(4);
+        }
+
+        // Output row: [Audio Out] [MIDI Out] [outputIcon]
+        auto outputRow = bounds.removeFromTop(selectorHeight);
+        outputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
+        outputRow.removeFromLeft(dropdownGap);
+        midiOutputSelector_->setBounds(outputRow.removeFromLeft(dropdownWidth));
+        outputRow.removeFromLeft(dropdownGap);
+        outputIcon_->setBounds(outputRow.removeFromLeft(iconSize));
+        bounds.removeFromTop(separatorPadding);
+        sectionSeparatorYs_.push_back(bounds.getY());
+        bounds.removeFromTop(separatorPadding);
+    }
+
+    // Send/Receive section — only lay out if visible
+    if (sendReceiveSectionLabel_.isVisible()) {
+        auto sendHeaderRow = bounds.removeFromTop(16);
+        sendReceiveSectionLabel_.setBounds(sendHeaderRow.removeFromLeft(100));
+        addSendButton_.setBounds(sendHeaderRow.removeFromRight(50).withHeight(16));
+        bounds.removeFromTop(4);
+
+        if (sendDestLabels_.empty()) {
+            noSendsLabel_.setBounds(bounds.removeFromTop(16));
+            noSendsLabel_.setVisible(true);
+        } else {
+            noSendsLabel_.setVisible(false);
+            for (size_t i = 0; i < sendDestLabels_.size(); ++i) {
+                auto sendRow = bounds.removeFromTop(18);
+                sendDestLabels_[i]->setBounds(sendRow.removeFromLeft(60));
+                sendRow.removeFromLeft(4);
+                sendLevelLabels_[i]->setBounds(sendRow.removeFromLeft(50));
+                sendRow.removeFromLeft(4);
+                sendDeleteButtons_[i]->setBounds(sendRow.removeFromLeft(18));
+                bounds.removeFromTop(2);
+            }
+        }
+
+        receivesLabel_.setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(separatorPadding);
+        sectionSeparatorYs_.push_back(bounds.getY());
+        bounds.removeFromTop(separatorPadding);
+    }
+
+    // Clips section — only lay out if visible
+    if (clipsSectionLabel_.isVisible()) {
+        clipsSectionLabel_.setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(4);
+        clipCountLabel_.setBounds(bounds.removeFromTop(20));
+    }
 }
 
 void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
@@ -1001,7 +1055,7 @@ void TrackInspector::showTrackControls(bool show) {
     recordButton_.setVisible(show && !isMaster && !isAux && !isMultiOut);
     monitorButton_.setVisible(show && !isMaster && !isAux && !isMultiOut);
     gainLabel_->setVisible(show);
-    panLabel_->setVisible(show);
+    panLabel_->setVisible(show && !isMaster);
 
     // Routing section — hidden for master and aux; input selectors hidden for multi-out
     bool showRouting = show && !isMaster && !isAux;

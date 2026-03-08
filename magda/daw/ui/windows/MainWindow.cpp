@@ -511,6 +511,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         }
     }
 #endif
+
+    // Select master channel by default so the inspector isn't empty on startup
+    SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
 }
 
 void MainWindow::MainComponent::setupResizeHandles() {

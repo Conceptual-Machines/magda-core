@@ -52,6 +52,8 @@ void MainWindow::setupMenuCallbacks() {
                                        defaults.timeSignatureDenominator, defaults.loopEnabled,
                                        defaults.loopStartBeats, defaults.loopEndBeats);
             }
+            // Select master channel by default
+            SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
         }
     };
 
