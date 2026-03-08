@@ -438,7 +438,7 @@ void TrackInspector::resized() {
         const int gap = 2;
         if (showSpeaker) {
             // Master: volume takes most space, speaker icon is fixed size at end
-            auto speakerArea = row.removeFromRight(controlRowHeight);
+            auto speakerArea = row.removeFromRight(36);
             row.removeFromRight(gap);
             gainLabel_->setBounds(row);
             speakerButton_->setBounds(speakerArea);
@@ -459,7 +459,7 @@ void TrackInspector::resized() {
         // Medium: Vol [Pan] on one row, buttons on second row
         auto mixRow = bounds.removeFromTop(controlRowHeight);
         if (showSpeaker) {
-            auto speakerArea = mixRow.removeFromRight(controlRowHeight);
+            auto speakerArea = mixRow.removeFromRight(36);
             mixRow.removeFromRight(buttonGap);
             gainLabel_->setBounds(mixRow);
             speakerButton_->setBounds(speakerArea);
@@ -482,7 +482,7 @@ void TrackInspector::resized() {
         // Narrow: Volume, [Pan], and buttons all stacked
         auto volRow = bounds.removeFromTop(controlRowHeight);
         if (showSpeaker) {
-            auto speakerArea = volRow.removeFromRight(controlRowHeight);
+            auto speakerArea = volRow.removeFromRight(36);
             volRow.removeFromRight(buttonGap);
             gainLabel_->setBounds(volRow);
             speakerButton_->setBounds(speakerArea);

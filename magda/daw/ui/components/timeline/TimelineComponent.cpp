@@ -1296,16 +1296,16 @@ double TimelineComponent::getSnapInterval() const {
         return 1.0;  // Default to 1 second
     } else {
         // Bars/beats mode - find first power-of-2 beat fraction that fits
+        // zoom is in pixels per beat
         double secondsPerBeat = 60.0 / tempoBPM;
-        double ppb = zoom * secondsPerBeat;  // Convert pixels/sec to pixels/beat
 
-        double frac = GridConstants::findBeatSubdivision(ppb, minPixelSpacing);
+        double frac = GridConstants::findBeatSubdivision(zoom, minPixelSpacing);
         if (frac > 0) {
             return secondsPerBeat * frac;
         }
 
         // Fall back to bar multiples
-        int mult = GridConstants::findBarMultiple(ppb, timeSignatureNumerator, minPixelSpacing);
+        int mult = GridConstants::findBarMultiple(zoom, timeSignatureNumerator, minPixelSpacing);
         return secondsPerBeat * timeSignatureNumerator * mult;
     }
 }

@@ -140,7 +140,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // These are updated via TimelineStateListener callbacks
     double timelineLength = 300.0;  // 5 minutes
     double playheadPosition = 0.0;
-    double zoom = 1.0;         // pixels per second
+    double zoom = 1.0;         // pixels per beat
     int viewportWidth = 1500;  // Default viewport width for minimum zoom calculation
 
     // Time display mode and tempo

@@ -900,12 +900,21 @@ void MixerView::ChannelStrip::resized() {
     bool isMultiOut = trackType_ == TrackType::MultiOut;
     auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
 
-    if (isMultiOut || isMaster_ || !recordButton) {
+    if (isMaster_) {
+        // Master: M only
+        muteButton->setBounds(buttonArea);
+        soloButton->setVisible(false);
+        if (recordButton)
+            recordButton->setVisible(false);
+        if (monitorButton)
+            monitorButton->setVisible(false);
+    } else if (isMultiOut || !recordButton) {
         // M/S only
         int buttonWidth = (buttonArea.getWidth() - 2) / 2;
         muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
         buttonArea.removeFromLeft(2);
         soloButton->setBounds(buttonArea);
+        soloButton->setVisible(true);
         if (recordButton)
             recordButton->setVisible(false);
         if (monitorButton)
@@ -971,10 +980,15 @@ void MixerView::ChannelStrip::resized() {
         }
     }
 
-    // Pan slider — now below fader region, above routing
-    bounds.removeFromBottom(2);
-    panSlider->setBounds(bounds.removeFromBottom(20));
-    bounds.removeFromBottom(2);
+    // Pan slider — now below fader region, above routing (hidden for master)
+    if (isMaster_) {
+        panSlider->setVisible(false);
+    } else {
+        panSlider->setVisible(true);
+        bounds.removeFromBottom(2);
+        panSlider->setBounds(bounds.removeFromBottom(20));
+        bounds.removeFromBottom(2);
+    }
 
     // Small gap before fader region
     bounds.removeFromTop(2);

@@ -1983,13 +1983,13 @@ void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& /*event*/) {
 void MainView::MasterHeaderPanel::resized() {
     auto contentArea = getLocalBounds().reduced(4);
 
-    // Top row: Name label, speaker button, volume label, pan label
+    // Top row: Name label, volume label, speaker button
     auto topRow = contentArea.removeFromTop(18);
     nameLabel->setBounds(topRow.removeFromLeft(44));
     topRow.removeFromLeft(2);
-    speakerButton->setBounds(topRow.removeFromLeft(18).withSizeKeepingCentre(16, 16));
-    topRow.removeFromLeft(4);
-    volumeLabel->setBounds(topRow.removeFromLeft(44));
+    speakerButton->setBounds(topRow.removeFromRight(18).withSizeKeepingCentre(16, 16));
+    topRow.removeFromRight(4);
+    volumeLabel->setBounds(topRow);
 
     contentArea.removeFromTop(2);  // Spacing
 
