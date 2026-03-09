@@ -25,21 +25,23 @@ bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& in
         // Use temporary file for atomic/crash-safe writing
         // Write to temp file first, then atomically replace destination
         juce::TemporaryFile tempFile(file);
-        auto tempFileHandle = tempFile.getFile();
 
-        // Write with gzip compression to temp file
-        juce::FileOutputStream outputStream(tempFileHandle);
-        if (!outputStream.openedOk()) {
-            lastError_ =
-                "Failed to open temporary file for writing: " + tempFileHandle.getFullPathName();
-            return false;
+        // Scope the output streams so file handles are closed before the rename.
+        // Windows does not allow moving/renaming a file with an open handle.
+        {
+            juce::FileOutputStream outputStream(tempFile.getFile());
+            if (!outputStream.openedOk()) {
+                lastError_ =
+                    "Failed to open temporary file for writing: " + tempFile.getFile().getFullPathName();
+                return false;
+            }
+
+            juce::GZIPCompressorOutputStream gzipStream(outputStream, 9);  // Max compression
+            // Write plain UTF-8 JSON text (no JUCE binary length prefix)
+            gzipStream.writeText(jsonString, false, false, nullptr);
+            gzipStream.flush();
+            outputStream.flush();
         }
-
-        juce::GZIPCompressorOutputStream gzipStream(outputStream, 9);  // Max compression
-        // Write plain UTF-8 JSON text (no JUCE binary length prefix)
-        gzipStream.writeText(jsonString, false, false, nullptr);
-        gzipStream.flush();
-        outputStream.flush();
 
         // Atomically replace destination with temp file
         // This ensures the original file is only replaced if write succeeds completely
