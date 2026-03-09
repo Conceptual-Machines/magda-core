@@ -28,8 +28,13 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Compiler flags
-set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+if(MSVC)
+    set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /W3")
+    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
+else()
+    set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+endif()
 
 # Options
 option(MAGDA_BUILD_TESTS "Build tests" ON)
