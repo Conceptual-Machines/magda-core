@@ -596,8 +596,14 @@ void MagdaSamplerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 void MagdaSamplerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     te::copyPropertiesToCachedValues(v, attackValue, decayValue, sustainValue, releaseValue,
                                      pitchValue, fineValue, levelValue, sampleStartValue,
-                                     sampleEndValue, loopStartValue, loopEndValue, samplePathValue,
-                                     rootNoteValue, loopEnabledValue, velAmountValue);
+                                     sampleEndValue, loopStartValue, loopEndValue);
+    // Handle non-float CachedValues separately to avoid MSVC C2440 ambiguity
+    // with var -> String conversion in TE's copyPropertiesToCachedValues
+    if (auto p = v.getPropertyPointer(samplePathValue.getPropertyID()))
+        samplePathValue = p->toString();
+    else
+        samplePathValue.resetToDefault();
+    te::copyPropertiesToCachedValues(v, rootNoteValue, loopEnabledValue, velAmountValue);
     loopEnabledAtomic.store(loopEnabledValue.get(), std::memory_order_relaxed);
 
     for (auto p : getAutomatableParameters())
