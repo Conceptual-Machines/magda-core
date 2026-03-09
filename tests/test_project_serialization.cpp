@@ -87,6 +87,8 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
 
         // Save empty project
         bool saved = projectManager.saveProjectAs(tempFile);
+        INFO("saveProjectAs error: " << projectManager.getLastError());
+        INFO("tempFile: " << tempFile.getFullPathName());
         REQUIRE(saved == true);
         REQUIRE(actualFile.existsAsFile() == true);
 

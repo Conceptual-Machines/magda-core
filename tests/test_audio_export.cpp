@@ -41,13 +41,15 @@ TEST_CASE("ExportAudioDialog::Settings - Custom values", "[export][dialog]") {
     settings.sampleRate = 48000.0;
     settings.normalize = true;
     settings.exportRange = ExportAudioDialog::ExportRange::LoopRegion;
-    settings.outputFile = juce::File("/tmp/test.wav");
+    auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
+    auto testFile = tempDir.getChildFile("test.wav");
+    settings.outputFile = testFile;
 
     REQUIRE(settings.format == "WAV24");
     REQUIRE(settings.sampleRate == Catch::Approx(48000.0));
     REQUIRE(settings.normalize == true);
     REQUIRE(settings.exportRange == ExportAudioDialog::ExportRange::LoopRegion);
-    REQUIRE(settings.outputFile.getFullPathName() == "/tmp/test.wav");
+    REQUIRE(settings.outputFile.getFullPathName() == testFile.getFullPathName());
 }
 
 // ============================================================================
