@@ -728,6 +728,12 @@ void PianoRollContent::updateGridSize() {
 
 // Loop region is now handled by MidiEditorContent::updateTimeRuler()
 
+void PianoRollContent::updateGridLoopRegion() {
+    if (draggingLoopRegion_) {
+        gridComponent_->setLoopRegion(previewLoopStartBeats_, previewLoopLengthBeats_, true);
+    }
+}
+
 // ============================================================================
 // Relative time mode (PianoRoll-specific multi-clip handling)
 // ============================================================================

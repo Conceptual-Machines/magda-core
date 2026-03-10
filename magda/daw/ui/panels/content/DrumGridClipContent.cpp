@@ -1754,6 +1754,12 @@ void DrumGridClipContent::updateGridSize() {
     }
 }
 
+void DrumGridClipContent::updateGridLoopRegion() {
+    if (draggingLoopRegion_) {
+        gridComponent_->setLoopRegion(previewLoopStartBeats_, previewLoopLengthBeats_, true);
+    }
+}
+
 // ============================================================================
 // Drawing helpers
 // ============================================================================

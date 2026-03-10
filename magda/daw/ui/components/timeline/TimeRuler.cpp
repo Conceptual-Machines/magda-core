@@ -281,8 +281,11 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
     }
 
     // Complete loop marker interaction
-    if (loopInteraction_.mouseUp(event.x, event.y))
+    if (loopInteraction_.mouseUp(event.x, event.y)) {
+        if (onLoopDragEnded)
+            onLoopDragEnded(loopInteraction_.getStartTime(), loopInteraction_.getEndTime());
         return;
+    }
 
     // If it was a click (not a drag), handle playhead positioning
     if (dragMode == DragMode::None) {

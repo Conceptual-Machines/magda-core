@@ -55,8 +55,36 @@ MidiEditorContent::MidiEditorContent() {
         zoomToTimeRange(startTime, endTime);
     };
 
-    // TimeRuler loop region drag callback
+    // TimeRuler loop region drag callback — visual preview only (no ClipManager commit)
     timeRuler_->onLoopRegionChanged = [this](double displayStart, double displayEnd) {
+        if (editingClipId_ == magda::INVALID_CLIP_ID)
+            return;
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (!clip || !clip->loopEnabled)
+            return;
+
+        double newLoopStart = relativeTimeMode_ ? displayStart : (displayStart - clip->startTime);
+        double newLoopLength = displayEnd - displayStart;
+
+        // Update TimeRuler's loop state so the background tint follows the drag
+        timeRuler_->setLoopRegion(newLoopStart, newLoopLength, true);
+
+        // Update grid loop region visually (lightweight — no note rebuild)
+        auto* controller = magda::TimelineController::getCurrent();
+        double bpm = controller ? controller->getState().tempo.bpm : 120.0;
+        double beatsPerSecond = bpm / 60.0;
+
+        previewLoopStartBeats_ = newLoopStart * beatsPerSecond;
+        previewLoopLengthBeats_ = newLoopLength * beatsPerSecond;
+        draggingLoopRegion_ = true;
+
+        updateGridLoopRegion();
+    };
+
+    // TimeRuler loop drag ended — commit to ClipManager
+    timeRuler_->onLoopDragEnded = [this](double displayStart, double displayEnd) {
+        draggingLoopRegion_ = false;
+
         if (editingClipId_ == magda::INVALID_CLIP_ID)
             return;
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);

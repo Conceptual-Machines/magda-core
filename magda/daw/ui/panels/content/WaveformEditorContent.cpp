@@ -267,8 +267,14 @@ WaveformEditorContent::WaveformEditorContent() {
         zoomToTimeRange(startTime, endTime);
     };
 
-    // Wire up ruler loop region drag callback
-    timeRuler_->onLoopRegionChanged = [this](double displayStart, double displayEnd) {
+    // Wire up ruler loop region drag callback — visual preview only during drag
+    timeRuler_->onLoopRegionChanged = [](double /*displayStart*/, double /*displayEnd*/) {
+        // Visual feedback is handled by LoopMarkerInteraction/TimeRuler repaint.
+        // No ClipManager commit during drag to avoid flickering rebuilds.
+    };
+
+    // Commit loop region change on drag end
+    timeRuler_->onLoopDragEnded = [this](double displayStart, double displayEnd) {
         if (editingClipId_ == magda::INVALID_CLIP_ID)
             return;
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);

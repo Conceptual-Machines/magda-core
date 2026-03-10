@@ -78,6 +78,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     void setGridEditCursorPosition(double positionSeconds, bool visible) override;
     void onScrollPositionChanged(int scrollX, int scrollY) override;
     void onGridResolutionChanged() override;
+    void updateGridLoopRegion() override;
 
     // Override velocity lane methods
     void updateVelocityLane() override;

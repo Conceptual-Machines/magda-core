@@ -141,6 +141,11 @@ class MidiEditorContent : public PanelContent,
         return velocityDrawerOpen_;
     }
 
+    // --- Loop drag state (visual preview during drag, commit on mouseUp) ---
+    bool draggingLoopRegion_ = false;
+    double previewLoopStartBeats_ = 0.0;
+    double previewLoopLengthBeats_ = 0.0;
+
     // --- Shared zoom methods ---
     void performAnchorPointZoom(double newZoom, double anchorTime, int anchorScreenX);
     void performWheelZoom(double zoomFactor, int mouseXInViewport);
@@ -161,6 +166,7 @@ class MidiEditorContent : public PanelContent,
     // --- Optional virtual hooks ---
     virtual void onScrollPositionChanged(int /*scrollX*/, int /*scrollY*/) {}
     virtual void onGridResolutionChanged() {}
+    virtual void updateGridLoopRegion() {}
 
     // --- Velocity lane methods (legacy, used by velocity-only path) ---
     void setupVelocityLane();
