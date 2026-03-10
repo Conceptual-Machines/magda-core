@@ -185,7 +185,7 @@ jobs:
         cat "${DMG_NAME}.sha256"
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: macos-release
         path: |
@@ -274,7 +274,7 @@ jobs:
         Get-Content "$installer.sha256"
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: windows-release
         path: |
@@ -413,7 +413,7 @@ jobs:
         cat "${APPIMAGE}.sha256"
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: linux-release
         path: |
