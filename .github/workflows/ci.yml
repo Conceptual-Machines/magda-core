@@ -296,7 +296,7 @@ jobs:
       github.event.inputs.skip-cpp-build != 'true'
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Init submodules
       run: git submodule update --init --recursive
