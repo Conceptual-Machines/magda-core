@@ -641,6 +641,27 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
     }
 }
 
+void ClipManager::setLoopStartAndLength(ClipId clipId, double loopStart, double loopLength,
+                                        double bpm) {
+    if (auto* clip = getClip(clipId)) {
+        clip->loopStart = juce::jmax(0.0, loopStart);
+        clip->loopLength = juce::jmax(0.0, loopLength);
+
+        if (clip->type == ClipType::Audio) {
+            if (clip->autoTempo) {
+                double convBpm = (clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
+                clip->loopStartBeats = (clip->loopStart * convBpm) / 60.0;
+                clip->loopLengthBeats = (clip->loopLength * convBpm) / 60.0;
+            }
+            sanitizeAudioClip(*clip);
+        } else if (clip->type == ClipType::MIDI) {
+            clip->loopLengthBeats = (clip->loopLength * juce::jmax(1.0, bpm)) / 60.0;
+        }
+
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
 void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio && clip->autoTempo && bpm > 0.0) {

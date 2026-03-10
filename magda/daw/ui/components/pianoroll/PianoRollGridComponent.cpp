@@ -806,9 +806,6 @@ void PianoRollGridComponent::setClips(TrackId trackId, const std::vector<ClipId>
     clipId_ = selectedClipIds.empty() ? INVALID_CLIP_ID : selectedClipIds[0];  // Primary selection
     clipIds_ = allClipIds;  // All clips to display
 
-    DBG("PianoRollGrid::setClips - Selected: " << selectedClipIds.size()
-                                               << ", All: " << allClipIds.size());
-
     if (needsRefresh) {
         refreshNotes();
     }

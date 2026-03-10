@@ -291,8 +291,8 @@ WaveformEditorContent::WaveformEditorContent() {
         double newLoopStart = timelineToSrc(displayStart);
         double newLoopLength = timelineToSrc(displayEnd - displayStart);
 
-        magda::ClipManager::getInstance().setLoopStart(editingClipId_, newLoopStart, bpm);
-        magda::ClipManager::getInstance().setLoopLength(editingClipId_, newLoopLength, bpm);
+        magda::ClipManager::getInstance().setLoopStartAndLength(editingClipId_, newLoopStart,
+                                                                newLoopLength, bpm);
     };
 
     addAndMakeVisible(timeRuler_.get());

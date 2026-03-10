@@ -69,8 +69,8 @@ MidiEditorContent::MidiEditorContent() {
         auto* controller = magda::TimelineController::getCurrent();
         double bpm = controller ? controller->getState().tempo.bpm : 120.0;
 
-        magda::ClipManager::getInstance().setLoopStart(editingClipId_, newLoopStart, bpm);
-        magda::ClipManager::getInstance().setLoopLength(editingClipId_, newLoopLength, bpm);
+        magda::ClipManager::getInstance().setLoopStartAndLength(editingClipId_, newLoopStart,
+                                                                newLoopLength, bpm);
     };
 
     // TimeRuler phase marker drag callback
