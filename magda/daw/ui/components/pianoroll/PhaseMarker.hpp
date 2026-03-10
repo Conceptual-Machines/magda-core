@@ -14,12 +14,12 @@ static constexpr int PHASE_HIT_TOLERANCE = 8;
 /** Paint the loop phase marker (yellow vertical line) on a MIDI grid.
  *  Returns true if something was drawn. */
 inline bool paintPhaseMarker(juce::Graphics& g, const ClipInfo* clip, int phaseX, int height,
-                             bool nearPhaseMarker) {
+                             bool nearPhaseMarker, bool forceVisible = false) {
     if (!clip || !clip->loopEnabled) {
         return false;
     }
 
-    if (clip->midiOffset > 0.0) {
+    if (forceVisible || clip->midiOffset > 0.0) {
         g.setColour(DarkTheme::getColour(DarkTheme::OFFSET_MARKER));
         g.fillRect(phaseX - 1, 0, 2, height);
         return true;

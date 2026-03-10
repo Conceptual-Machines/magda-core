@@ -103,12 +103,19 @@ MidiEditorContent::MidiEditorContent() {
 
     // TimeRuler phase marker drag callback — visual preview only
     timeRuler_->onPhaseMarkerChanged = [this](double phaseSeconds) {
-        // Update ruler phase marker visually during drag (no ClipManager commit)
+        // Update ruler phase marker visually during drag
         timeRuler_->setLoopPhaseMarker(phaseSeconds, true);
+
+        // Update grid phase marker preview
+        auto* controller = magda::TimelineController::getCurrent();
+        double bpm = controller ? controller->getState().tempo.bpm : 120.0;
+        setGridPhasePreview(phaseSeconds * bpm / 60.0, true);
     };
 
     // Phase marker drag ended — commit to ClipManager
     timeRuler_->onPhaseDragEnded = [this](double phaseSeconds) {
+        setGridPhasePreview(0.0, false);
+
         if (editingClipId_ == magda::INVALID_CLIP_ID)
             return;
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);

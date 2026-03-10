@@ -162,11 +162,12 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     if (clipIds_.size() <= 1 && clipId_ != INVALID_CLIP_ID) {
         const auto* phaseClip = ClipManager::getInstance().getClip(clipId_);
         if (phaseClip && phaseClip->loopEnabled) {
-            double phaseBeat =
-                relativeMode_ ? phaseClip->midiOffset : (clipStartBeats_ + phaseClip->midiOffset);
+            double offset = phasePreviewActive_ ? phasePreviewBeats_ : phaseClip->midiOffset;
+            double phaseBeat = relativeMode_ ? offset : (clipStartBeats_ + offset);
             int phaseX = beatToPixel(phaseBeat);
             if (phaseX >= 0 && phaseX <= bounds.getRight()) {
-                paintPhaseMarker(g, phaseClip, phaseX, bounds.getHeight(), nearPhaseMarker_);
+                paintPhaseMarker(g, phaseClip, phaseX, bounds.getHeight(), nearPhaseMarker_,
+                                 phasePreviewActive_);
             }
         }
     }
@@ -1595,6 +1596,12 @@ void PianoRollGridComponent::setLoopRegion(double offsetBeats, double lengthBeat
     loopOffsetBeats_ = offsetBeats;
     loopLengthBeats_ = lengthBeats;
     loopEnabled_ = enabled;
+    repaint();
+}
+
+void PianoRollGridComponent::setPhasePreview(double beats, bool active) {
+    phasePreviewBeats_ = beats;
+    phasePreviewActive_ = active;
     repaint();
 }
 

@@ -734,6 +734,10 @@ void PianoRollContent::updateGridLoopRegion() {
     }
 }
 
+void PianoRollContent::setGridPhasePreview(double beats, bool active) {
+    gridComponent_->setPhasePreview(beats, active);
+}
+
 // ============================================================================
 // Relative time mode (PianoRoll-specific multi-clip handling)
 // ============================================================================

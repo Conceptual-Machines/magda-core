@@ -128,6 +128,11 @@ class DrumGridClipGrid : public juce::Component,
         loopEnabled_ = enabled;
         repaint();
     }
+    void setPhasePreview(double beats, bool active) {
+        phasePreviewBeats_ = beats;
+        phasePreviewActive_ = active;
+        repaint();
+    }
     void setEditCursorPosition(double positionSeconds, bool blinkVisible) {
         editCursorPosition_ = positionSeconds;
         editCursorVisible_ = blinkVisible;
@@ -473,11 +478,11 @@ class DrumGridClipGrid : public juce::Component,
         if (clipId_ != magda::INVALID_CLIP_ID) {
             const auto* offsetClip = magda::ClipManager::getInstance().getClip(clipId_);
             if (offsetClip && offsetClip->loopEnabled) {
-                int offsetX =
-                    static_cast<int>(offsetClip->midiOffset * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                double offset = phasePreviewActive_ ? phasePreviewBeats_ : offsetClip->midiOffset;
+                int offsetX = static_cast<int>(offset * pixelsPerBeat_) + GRID_LEFT_PADDING;
                 if (offsetX >= 0 && offsetX <= bounds.getWidth()) {
                     magda::paintPhaseMarker(g, offsetClip, offsetX, numRows * rowHeight_,
-                                            nearPhaseMarker_);
+                                            nearPhaseMarker_, phasePreviewActive_);
                 }
             }
         }
@@ -860,6 +865,10 @@ class DrumGridClipGrid : public juce::Component,
     double loopLengthBeats_ = 0.0;
     bool loopEnabled_ = false;
     bool nearPhaseMarker_ = false;
+
+    // Phase preview during drag
+    double phasePreviewBeats_ = 0.0;
+    bool phasePreviewActive_ = false;
 
     // Note components
     std::vector<std::unique_ptr<magda::NoteComponent>> noteComponents_;
@@ -1758,6 +1767,10 @@ void DrumGridClipContent::updateGridLoopRegion() {
     if (draggingLoopRegion_) {
         gridComponent_->setLoopRegion(previewLoopStartBeats_, previewLoopLengthBeats_, true);
     }
+}
+
+void DrumGridClipContent::setGridPhasePreview(double beats, bool active) {
+    gridComponent_->setPhasePreview(beats, active);
 }
 
 // ============================================================================

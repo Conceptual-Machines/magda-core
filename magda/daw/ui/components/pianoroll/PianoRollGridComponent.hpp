@@ -116,6 +116,9 @@ class PianoRollGridComponent : public juce::Component,
         return loopEnabled_;
     }
 
+    // Phase marker preview (overrides clip->midiOffset during drag)
+    void setPhasePreview(double beats, bool active);
+
     // Playhead position (for drawing playhead line during playback)
     void setPlayheadPosition(double positionSeconds);
     double getPlayheadPosition() const {
@@ -244,6 +247,10 @@ class PianoRollGridComponent : public juce::Component,
     double loopLengthBeats_ = 0.0;
     bool loopEnabled_ = false;
     bool nearPhaseMarker_ = false;  // Mouse is near the phase/offset marker position
+
+    // Phase preview during drag (overrides clip->midiOffset)
+    double phasePreviewBeats_ = 0.0;
+    bool phasePreviewActive_ = false;
 
     // Note components
     std::vector<std::unique_ptr<NoteComponent>> noteComponents_;

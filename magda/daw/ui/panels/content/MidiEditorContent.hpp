@@ -167,6 +167,7 @@ class MidiEditorContent : public PanelContent,
     virtual void onScrollPositionChanged(int /*scrollX*/, int /*scrollY*/) {}
     virtual void onGridResolutionChanged() {}
     virtual void updateGridLoopRegion() {}
+    virtual void setGridPhasePreview(double /*beats*/, bool /*active*/) {}
 
     // --- Velocity lane methods (legacy, used by velocity-only path) ---
     void setupVelocityLane();
