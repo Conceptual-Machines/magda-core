@@ -693,10 +693,13 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             int tickAreaTop = height - TICK_HEIGHT_MAJOR;
             int stripTop = tickAreaTop - LOOP_STRIP_HEIGHT;
 
-            // Fill the loop strip region (above tick area)
+            // Fill the loop strip region with vertical gradient (above tick area)
             auto flagFill = loopActive ? DarkTheme::getColour(DarkTheme::LOOP_MARKER)
                                        : juce::Colour(0xFF808080);
-            g.setColour(flagFill.withAlpha(0.3f));
+            g.setGradientFill(
+                juce::ColourGradient(flagFill.withAlpha(0.45f), 0.0f, static_cast<float>(stripTop),
+                                     flagFill.withAlpha(0.1f), 0.0f,
+                                     static_cast<float>(stripTop + LOOP_STRIP_HEIGHT), false));
             g.fillRect(loopStartX, stripTop, loopEndX - loopStartX, LOOP_STRIP_HEIGHT);
 
             // Connecting lines at top and bottom of strip
