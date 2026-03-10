@@ -1501,8 +1501,13 @@ void DeviceSlotComponent::showMultiOutMenu() {
     auto& tm = magda::TrackManager::getInstance();
     auto trackId = nodePath_.trackId;
 
-    for (size_t i = 0; i < device_.multiOut.outputPairs.size(); ++i) {
-        const auto& pair = device_.multiOut.outputPairs[i];
+    // Read fresh device info from TrackManager (device_ may be stale)
+    auto* freshDevice = tm.getDevice(trackId, device_.id);
+    if (!freshDevice || !freshDevice->multiOut.isMultiOut)
+        return;
+
+    for (size_t i = 0; i < freshDevice->multiOut.outputPairs.size(); ++i) {
+        const auto& pair = freshDevice->multiOut.outputPairs[i];
 
         // Skip the main pair (0) - it's always active on the main track
         if (pair.outputIndex == 0)

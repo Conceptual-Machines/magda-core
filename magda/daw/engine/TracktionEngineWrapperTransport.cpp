@@ -318,11 +318,9 @@ bool TracktionEngineWrapper::isMetronomeEnabled() const {
 // These methods are called by TimelineController when UI state changes
 
 void TracktionEngineWrapper::onTransportPlay(double position) {
-    auto viewMode = ViewModeController::getInstance().getViewMode();
-
-    if (viewMode == ViewMode::Live) {
-        // Session mode: relaunch the last triggered session clip.
-        // The SessionClipScheduler will start the transport automatically.
+    // If any track is in session mode, relaunch the last triggered session
+    // clip regardless of which view is currently active.
+    if (TrackManager::getInstance().isAnyTrackInSessionMode()) {
         auto& cm = ClipManager::getInstance();
         ClipId lastClip = cm.getLastTriggeredSessionClip();
         if (lastClip != INVALID_CLIP_ID) {

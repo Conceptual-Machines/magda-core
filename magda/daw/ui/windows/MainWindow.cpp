@@ -1011,15 +1011,9 @@ void MainWindow::MainComponent::selectionTypeChanged(SelectionType newType) {
 }
 
 void MainWindow::MainComponent::trackPropertyChanged(int /*trackId*/) {
-    bool anySession = false;
-    for (const auto& track : TrackManager::getInstance().getTracks()) {
-        if (track.playbackMode == TrackPlaybackMode::Session) {
-            anySession = true;
-            break;
-        }
-    }
     if (transportPanel)
-        transportPanel->setAnyTrackInSessionMode(anySession);
+        transportPanel->setAnyTrackInSessionMode(
+            TrackManager::getInstance().isAnyTrackInSessionMode());
 }
 
 void MainWindow::MainComponent::switchToView(ViewMode mode) {

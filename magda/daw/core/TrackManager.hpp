@@ -193,6 +193,7 @@ class TrackManager {
     void setTrackFrozen(TrackId trackId, bool frozen);
     void setTrackPlaybackMode(TrackId trackId, TrackPlaybackMode mode);
     void setAllTracksPlaybackMode(TrackPlaybackMode mode);
+    bool isAnyTrackInSessionMode() const;
     void setTrackType(TrackId trackId, TrackType type);
 
     // Track routing setters (notify listeners and forward to bridges)

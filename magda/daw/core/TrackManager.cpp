@@ -595,6 +595,14 @@ void TrackManager::setAllTracksPlaybackMode(TrackPlaybackMode mode) {
     }
 }
 
+bool TrackManager::isAnyTrackInSessionMode() const {
+    for (const auto& track : tracks_) {
+        if (track.playbackMode == TrackPlaybackMode::Session)
+            return true;
+    }
+    return false;
+}
+
 void TrackManager::setTrackType(TrackId trackId, TrackType type) {
     if (auto* track = getTrack(trackId)) {
         // Don't allow changing type if track has children (group tracks)
