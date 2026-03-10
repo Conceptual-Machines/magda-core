@@ -144,6 +144,7 @@ class MidiEditorContent : public PanelContent,
     // --- Shared zoom methods ---
     void performAnchorPointZoom(double newZoom, double anchorTime, int anchorScreenX);
     void performWheelZoom(double zoomFactor, int mouseXInViewport);
+    void zoomToTimeRange(double startTime, double endTime);
 
     // --- Shared TimeRuler method (virtual for subclass extension) ---
     virtual void updateTimeRuler();

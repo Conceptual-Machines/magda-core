@@ -50,6 +50,11 @@ MidiEditorContent::MidiEditorContent() {
     // TimeRuler click callback — set local edit cursor (independent from arrangement)
     timeRuler_->onPositionClicked = [this](double time) { setLocalEditCursor(time); };
 
+    // TimeRuler double-click on loop strip → zoom to loop region
+    timeRuler_->onZoomToLoopRequested = [this](double startTime, double endTime) {
+        zoomToTimeRange(startTime, endTime);
+    };
+
     // TimeRuler loop region drag callback
     timeRuler_->onLoopRegionChanged = [this](double displayStart, double displayEnd) {
         if (editingClipId_ == magda::INVALID_CLIP_ID)
@@ -190,6 +195,42 @@ void MidiEditorContent::performWheelZoom(double zoomFactor, int mouseXInViewport
         newScrollX = juce::jmax(0, newScrollX);
         viewport_->setViewPosition(newScrollX, savedScrollY);
     }
+}
+
+// ============================================================================
+// Zoom to time range
+// ============================================================================
+
+void MidiEditorContent::zoomToTimeRange(double startTime, double endTime) {
+    if (endTime <= startTime || !viewport_)
+        return;
+
+    double tempo = 120.0;
+    if (auto* controller = magda::TimelineController::getCurrent()) {
+        tempo = controller->getState().tempo.bpm;
+    }
+    double secondsPerBeat = 60.0 / tempo;
+
+    double startBeats = startTime / secondsPerBeat;
+    double endBeats = endTime / secondsPerBeat;
+    double durationBeats = endBeats - startBeats;
+    double padding = durationBeats * 0.05;
+
+    int viewWidth = viewport_->getWidth();
+    double newZoom = static_cast<double>(viewWidth) / (durationBeats + padding * 2.0);
+    newZoom = juce::jlimit(MIN_HORIZONTAL_ZOOM, MAX_HORIZONTAL_ZOOM, newZoom);
+
+    horizontalZoom_ = newZoom;
+    setGridPixelsPerBeat(horizontalZoom_);
+    updateGridResolution();
+    updateGridSize();
+    updateTimeRuler();
+    updateMidiDrawer();
+    updateVelocityLane();
+
+    int scrollX = static_cast<int>((startBeats - padding) * horizontalZoom_) + GRID_LEFT_PADDING;
+    scrollX = juce::jmax(0, scrollX);
+    viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
 }
 
 // ============================================================================

@@ -303,6 +303,31 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
     setMouseCursor(CursorManager::getInstance().getZoomCursor());
 }
 
+void TimeRuler::mouseDoubleClick(const juce::MouseEvent& event) {
+    // Double-click on loop strip → zoom to loop region
+    if (loopEnabled && loopLength > 0.0 && onZoomToLoopRequested) {
+        double loopStartTime = relativeMode ? loopOffset : (timeOffset + loopOffset);
+        double loopEndTime = loopStartTime + loopLength;
+
+        int loopStartX = timeToPixel(loopStartTime);
+        int loopEndX = timeToPixel(loopEndTime);
+
+        // Hit-test: click is within the loop flag strip at the top or the tick region
+        if (event.x >= loopStartX && event.x <= loopEndX) {
+            onZoomToLoopRequested(loopStartTime, loopEndTime);
+            return;
+        }
+    }
+
+    // Fall through: treat as click for playhead positioning
+    if (onPositionClicked) {
+        double time = pixelToTime(event.x);
+        if (time >= 0.0 && time <= timelineLength) {
+            onPositionClicked(time);
+        }
+    }
+}
+
 void TimeRuler::mouseMove(const juce::MouseEvent& event) {
     // Alt+hover near phase marker shows resize cursor
     if (event.mods.isAltDown() && loopEnabled && (loopPhaseVisible || loopPhaseHoverOnly)) {

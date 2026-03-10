@@ -143,6 +143,7 @@ class WaveformEditorContent : public PanelContent,
 
     // Anchor-point zoom
     void performAnchorPointZoom(double zoomFactor, int anchorX);
+    void zoomToTimeRange(double startTime, double endTime);
 
     // Update the grid's loop boundary from clip info
     void updateDisplayInfo(const magda::ClipInfo& clip);

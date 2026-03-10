@@ -111,6 +111,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override;
@@ -121,6 +122,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     std::function<void(int)> onScrollRequested;               // deltaX scroll amount
     std::function<void(double, double)> onLoopRegionChanged;  // Loop start/end changed via drag
     std::function<void(double)> onPhaseMarkerChanged;  // Phase position changed via drag (seconds)
+    std::function<void(double, double)> onZoomToLoopRequested;  // Loop start/end (seconds)
 
   private:
     // Display state
