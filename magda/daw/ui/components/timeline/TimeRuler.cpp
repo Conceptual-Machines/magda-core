@@ -275,6 +275,15 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
 
 void TimeRuler::mouseUp(const juce::MouseEvent& event) {
     if (dragMode == DragMode::PhaseDrag) {
+        if (onPhaseDragEnded) {
+            double finalPhaseTime = pixelToTime(event.x);
+            if (!relativeMode)
+                finalPhaseTime -= timeOffset;
+            finalPhaseTime = juce::jmax(0.0, finalPhaseTime);
+            if (loopLength > 0.0)
+                finalPhaseTime = juce::jmin(finalPhaseTime, loopOffset + loopLength);
+            onPhaseDragEnded(finalPhaseTime);
+        }
         dragMode = DragMode::None;
         setMouseCursor(CursorManager::getInstance().getZoomCursor());
         return;

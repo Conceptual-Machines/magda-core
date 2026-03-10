@@ -122,7 +122,8 @@ class TimeRuler : public juce::Component, private juce::Timer {
     std::function<void(int)> onScrollRequested;               // deltaX scroll amount
     std::function<void(double, double)> onLoopRegionChanged;  // Loop start/end preview during drag
     std::function<void(double, double)> onLoopDragEnded;      // Loop start/end committed on mouseUp
-    std::function<void(double)> onPhaseMarkerChanged;  // Phase position changed via drag (seconds)
+    std::function<void(double)> onPhaseMarkerChanged;         // Phase preview during drag (seconds)
+    std::function<void(double)> onPhaseDragEnded;  // Phase committed on mouseUp (seconds)
     std::function<void(double, double)> onZoomToLoopRequested;  // Loop start/end (seconds)
 
   private:
