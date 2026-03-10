@@ -1230,8 +1230,6 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
 
     // Add notes to TE sequence — notes stay at original positions,
     // TE offset + looping handles phase wrapping natively
-    int addedCount = 0;
-
     for (const auto& note : clip->midiNotes) {
         double noteStart = note.startBeat;
         double noteEnd = noteStart + note.lengthBeats;
@@ -1265,7 +1263,6 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
             sequence.addNote(note.noteNumber, te::BeatPosition::fromBeats(adjustedStart),
                              te::BeatDuration::fromBeats(adjustedLength), note.velocity, 0,
                              nullptr);
-            addedCount++;
         }
     }
 

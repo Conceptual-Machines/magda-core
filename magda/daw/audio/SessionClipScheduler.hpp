@@ -100,6 +100,9 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
     // Cache last-notified state per clip so we only fire notifications on actual transitions
     std::unordered_map<ClipId, SessionClipPlayState> lastNotifiedState_;
 
+    // Track last transport position to detect arrangement loop wraps
+    double lastTransportPos_ = 0.0;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionClipScheduler)
 };
 

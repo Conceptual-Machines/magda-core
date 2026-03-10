@@ -454,7 +454,6 @@ void TransportPanel::setupTimeDisplayBoxes() {
     };
 
     auto accentBlue = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
-    auto accentGreen = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
     auto accentOrange = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
 
     // Selection start/end
@@ -474,17 +473,32 @@ void TransportPanel::setupTimeDisplayBoxes() {
             onTimeSelectionEdit(cachedSelectionStart, endSeconds);
     };
 
-    // Loop start/end
-    setupBBTLabel(loopStartLabel, "S", accentGreen);
-    loopStartLabel->onValueChange = [this]() {
+    // Loop start/end — always enabled so interaction auto-enables looping
+    auto enableLoopIfNeeded = [this]() {
+        if (!isLooping) {
+            isLooping = true;
+            loopButton->setActive(true);
+            auto green = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+            loopStartLabel->setTextColour(green);
+            loopEndLabel->setTextColour(green);
+            if (onLoop)
+                onLoop(true);
+        }
+    };
+
+    auto dimColour = DarkTheme::getColour(DarkTheme::TEXT_DIM);
+    setupBBTLabel(loopStartLabel, "S", dimColour);
+    loopStartLabel->onValueChange = [this, enableLoopIfNeeded]() {
+        enableLoopIfNeeded();
         double startBeats = loopStartLabel->getValue();
         double startSeconds = (startBeats * 60.0) / currentTempo;
         if (onLoopRegionEdit)
             onLoopRegionEdit(startSeconds, cachedLoopEnd);
     };
 
-    setupBBTLabel(loopEndLabel, "E", accentGreen);
-    loopEndLabel->onValueChange = [this]() {
+    setupBBTLabel(loopEndLabel, "E", dimColour);
+    loopEndLabel->onValueChange = [this, enableLoopIfNeeded]() {
+        enableLoopIfNeeded();
         double endBeats = loopEndLabel->getValue();
         double endSeconds = (endBeats * 60.0) / currentTempo;
         if (onLoopRegionEdit)
@@ -802,12 +816,12 @@ void TransportPanel::setLoopRegion(double startTime, double endTime, bool loopEn
         loopEndLabel->setValue(0.0, juce::dontSendNotification);
     }
 
-    // Update enabled appearance
-    loopStartLabel->setEnabled(loopEnabled);
-    loopEndLabel->setEnabled(loopEnabled);
-    float alpha = loopEnabled ? 1.0f : 0.5f;
-    loopStartLabel->setAlpha(alpha);
-    loopEndLabel->setAlpha(alpha);
+    // Grey out when no valid loop region, green when active
+    bool hasValidLoop = loopEnabled && hasLoop;
+    auto colour = hasValidLoop ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN)
+                               : DarkTheme::getColour(DarkTheme::TEXT_DIM);
+    loopStartLabel->setTextColour(colour);
+    loopEndLabel->setTextColour(colour);
 }
 
 void TransportPanel::setPunchRegion(double startTime, double endTime, bool punchInEnabled,

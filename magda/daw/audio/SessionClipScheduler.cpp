@@ -214,6 +214,7 @@ void SessionClipScheduler::timerCallback() {
             lastNotifiedState_.clear();
             pendingPlayheadClip_ = INVALID_CLIP_ID;
             playheadClipId_ = INVALID_CLIP_ID;
+            lastTransportPos_ = 0.0;
             for (auto clipId : copy)
                 cm.notifyClipPlaybackStateChanged(clipId);
             // Keep tracks in Session mode — user must press "Back to Arrangement"
@@ -234,6 +235,19 @@ void SessionClipScheduler::timerCallback() {
             pendingPlayheadClip_ = INVALID_CLIP_ID;
         }
     }
+
+    // Detect arrangement loop wrap: transport position jumped backwards.
+    // When this happens, TE sends all-notes-off to every node (including session
+    // slot nodes), silencing session clips. Re-launch them to restore playback.
+    double transportPos = transport.getPosition().inSeconds();
+    if (transportPos < lastTransportPos_ - 0.1 && transport.looping) {
+        DBG("SessionScheduler: transport loop wrap, re-launching " << activeClips_.size()
+                                                                   << " session clips");
+        for (auto clipId : activeClips_) {
+            audioBridge_.launchSessionClip(clipId, /*forceImmediate=*/true);
+        }
+    }
+    lastTransportPos_ = transportPos;
 
     // Check for clips whose LaunchHandle has transitioned to stopped
     // (one-shot clip ended naturally, or TE finished a queued stop).

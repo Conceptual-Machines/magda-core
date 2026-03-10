@@ -152,6 +152,8 @@ void MidiEditorContent::performAnchorPointZoom(double newZoom, double anchorTime
         updateGridResolution();
         updateGridSize();
         updateTimeRuler();
+        updateMidiDrawer();
+        updateVelocityLane();
 
         // Adjust scroll to keep anchor position under mouse
         int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;
@@ -176,6 +178,8 @@ void MidiEditorContent::performWheelZoom(double zoomFactor, int mouseXInViewport
         updateGridResolution();
         updateGridSize();
         updateTimeRuler();
+        updateMidiDrawer();
+        updateVelocityLane();
 
         // Adjust scroll position to keep anchor point under mouse
         int newAnchorX = static_cast<int>(anchorBeat * horizontalZoom_) + GRID_LEFT_PADDING;

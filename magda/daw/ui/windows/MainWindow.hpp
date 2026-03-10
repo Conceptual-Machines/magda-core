@@ -12,6 +12,7 @@
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 #include "core/ViewModeState.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -28,12 +29,18 @@ class FooterBar;
 class AudioEngine;
 class PlaybackPositionTimer;
 
-class MainWindow : public juce::DocumentWindow {
+class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
   public:
     MainWindow(AudioEngine* audioEngine = nullptr);
     ~MainWindow() override;
 
     void closeButtonPressed() override;
+
+    // ProjectManagerListener
+    void projectOpened(const ProjectInfo& info) override;
+    void projectSaved(const ProjectInfo& info) override;
+    void projectClosed() override;
+    void projectDirtyStateChanged(bool isDirty) override;
 
     /** Re-read panel visibility from Config and apply immediately. */
     void applyPanelVisibilityFromConfig();
@@ -42,6 +49,7 @@ class MainWindow : public juce::DocumentWindow {
     void applyLayoutFromConfig();
 
   private:
+    void updateWindowTitle();
     class MainComponent;
     MainComponent* mainComponent = nullptr;       // Raw pointer - owned by DocumentWindow
     AudioEngine* externalAudioEngine_ = nullptr;  // Non-owning pointer to external engine
