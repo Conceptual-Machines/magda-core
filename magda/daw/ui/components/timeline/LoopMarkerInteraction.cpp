@@ -19,7 +19,7 @@ bool LoopMarkerInteraction::mouseDown(int x, int y) {
         return false;
 
     bool isStart = false;
-    if (isOnMarker(x, isStart)) {
+    if (isOnMarker(x, y, isStart)) {
         draggingStart_ = isStart;
         draggingEnd_ = !isStart;
         return true;
@@ -93,7 +93,7 @@ juce::MouseCursor LoopMarkerInteraction::getCursor(int x, int y) const {
         return {};
 
     bool isStart = false;
-    if (isOnMarker(x, isStart))
+    if (isOnMarker(x, y, isStart))
         return juce::MouseCursor::LeftRightResizeCursor;
 
     if (isOnTopBorder(x, y))
@@ -107,7 +107,15 @@ bool LoopMarkerInteraction::isDragging() const {
 }
 
 bool LoopMarkerInteraction::isOnMarker(int x, bool& isStart) const {
+    return isOnMarker(x, -1, isStart);
+}
+
+bool LoopMarkerInteraction::isOnMarker(int x, int y, bool& isStart) const {
     if (!host_.timeToPixel)
+        return false;
+
+    // Only respond within the strip and tick area (from topBorderY downward)
+    if (y >= 0 && y < host_.topBorderY)
         return false;
 
     int startX = host_.timeToPixel(startTime_);

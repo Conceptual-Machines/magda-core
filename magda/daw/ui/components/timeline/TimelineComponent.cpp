@@ -1381,19 +1381,19 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
         return;
     }
 
-    // Get ruler top (below chord row and arrangement bar) to match loop region
+    // Selection only in content area (below the ruler)
     auto& layout = LayoutConfig::getInstance();
-    int rulerTop = layout.chordRowHeight + layout.arrangementBarHeight;
+    int rulerBottom = layout.chordRowHeight + layout.arrangementBarHeight + layout.timeRulerHeight;
 
-    // Draw selection highlight covering ruler area (not arrangement bar)
+    // Draw selection highlight covering content area only
     g.setColour(DarkTheme::getColour(DarkTheme::TIME_SELECTION));
-    g.fillRect(startX, rulerTop, endX - startX, getHeight() - rulerTop);
+    g.fillRect(startX, rulerBottom, endX - startX, getHeight() - rulerBottom);
 
-    // Draw selection edges (use drawLine for consistency with grid)
+    // Draw selection edges
     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.6f));
-    g.drawLine(static_cast<float>(startX), static_cast<float>(rulerTop), static_cast<float>(startX),
-               static_cast<float>(getHeight()), 1.0f);
-    g.drawLine(static_cast<float>(endX), static_cast<float>(rulerTop), static_cast<float>(endX),
+    g.drawLine(static_cast<float>(startX), static_cast<float>(rulerBottom),
+               static_cast<float>(startX), static_cast<float>(getHeight()), 1.0f);
+    g.drawLine(static_cast<float>(endX), static_cast<float>(rulerBottom), static_cast<float>(endX),
                static_cast<float>(getHeight()), 1.0f);
 }
 

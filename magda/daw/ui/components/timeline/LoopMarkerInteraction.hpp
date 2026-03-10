@@ -61,6 +61,7 @@ class LoopMarkerInteraction {
     static constexpr int REGION_HORIZONTAL_MARGIN = 10;
 
     bool isOnMarker(int x, bool& isStart) const;
+    bool isOnMarker(int x, int y, bool& isStart) const;
     bool isOnTopBorder(int x, int y) const;
 
     double applySnap(double time) const;
