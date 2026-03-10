@@ -121,29 +121,34 @@ size_t VelocityLaneComponent::findNoteAtX(int x) const {
         return SIZE_MAX;
     }
 
-    double clickBeat = pixelToBeat(x);
+    // Find the note whose velocity bar start is closest to the click.
+    // The velocity dot is drawn at the note start position, so snap to
+    // the nearest start rather than checking which duration range contains
+    // the click (which causes off-by-one when clicking right above a dot).
+    constexpr double maxSnapPixels = 10.0;
+    double maxSnapBeats = maxSnapPixels / pixelsPerBeat_;
 
-    // Collect all notes at this beat position
-    size_t firstHit = SIZE_MAX;
+    size_t bestIndex = SIZE_MAX;
+    double bestDist = maxSnapBeats;
+
     for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
         const auto& note = clip->midiNotes[i];
-
         double noteStart = relativeMode_ ? note.startBeat : (clipStartBeats_ + note.startBeat);
-        double noteEnd = noteStart + note.lengthBeats;
+        double dist = std::abs(pixelToBeat(x) - noteStart);
 
-        if (clickBeat >= noteStart && clickBeat < noteEnd) {
-            // Prefer selected notes when multiple overlap
+        if (dist < bestDist) {
+            bestDist = dist;
+            bestIndex = i;
+        } else if (dist == bestDist && bestIndex != SIZE_MAX) {
+            // Prefer selected notes when equidistant
             if (std::find(selectedNoteIndices_.begin(), selectedNoteIndices_.end(), i) !=
                 selectedNoteIndices_.end()) {
-                return i;
-            }
-            if (firstHit == SIZE_MAX) {
-                firstHit = i;
+                bestIndex = i;
             }
         }
     }
 
-    return firstHit;
+    return bestIndex;
 }
 
 juce::Colour VelocityLaneComponent::getClipColour() const {
