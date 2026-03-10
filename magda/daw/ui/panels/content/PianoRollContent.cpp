@@ -800,14 +800,7 @@ void PianoRollContent::setChordRowVisible(bool visible) {
     }
 }
 
-void PianoRollContent::setVelocityDrawerVisible(bool visible) {
-    if (velocityDrawerOpen_ != visible) {
-        velocityDrawerOpen_ = visible;
-        updateVelocityLane();
-        resized();
-        repaint();
-    }
-}
+// setVelocityDrawerVisible is now in the base class MidiEditorContent
 
 // ============================================================================
 // Activation

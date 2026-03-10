@@ -100,7 +100,6 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     void findDrumGrid();
     void centerOnNotes();
     void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
-    void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
     juce::String resolvePadName(int padIndex) const;
     void timerCallback() override;
 

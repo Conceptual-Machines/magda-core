@@ -134,8 +134,12 @@ class MidiEditorContent : public PanelContent,
     std::unique_ptr<magda::VelocityLaneComponent> velocityLane_;
     std::unique_ptr<magda::MidiDrawerComponent> midiDrawer_;
 
-    // --- Velocity lane state ---
-    bool velocityDrawerOpen_ = false;
+    // --- Velocity lane state (static so it persists across editor switches) ---
+    static bool velocityDrawerOpen_;
+    void setVelocityDrawerVisible(bool visible);
+    bool isVelocityDrawerVisible() const {
+        return velocityDrawerOpen_;
+    }
 
     // --- Shared zoom methods ---
     void performAnchorPointZoom(double newZoom, double anchorTime, int anchorScreenX);

@@ -11,6 +11,9 @@
 
 namespace magda::daw::ui {
 
+// Static member — persists drawer open/closed state across editor switches
+bool MidiEditorContent::velocityDrawerOpen_ = false;
+
 MidiEditorContent::MidiEditorContent() {
     // Create time ruler
     timeRuler_ = std::make_unique<magda::TimeRuler>();
@@ -587,6 +590,15 @@ void MidiEditorContent::setupMidiDrawer() {
     };
 
     addChildComponent(midiDrawer_.get());
+}
+
+void MidiEditorContent::setVelocityDrawerVisible(bool visible) {
+    if (velocityDrawerOpen_ != visible) {
+        velocityDrawerOpen_ = visible;
+        updateVelocityLane();
+        resized();
+        repaint();
+    }
 }
 
 void MidiEditorContent::updateMidiDrawer() {
