@@ -437,9 +437,10 @@ jobs:
       with:
         tag_name: v${{ needs.build-macos.outputs.version }}
         name: MAGDA v${{ needs.build-macos.outputs.version }}
-        draft: true
+        draft: false
         prerelease: ${{ contains(needs.build-macos.outputs.version, '-') }}
         generate_release_notes: true
+        fail_on_unmatched_files: true
         files: |
           macos-release/*
           windows-release/*
