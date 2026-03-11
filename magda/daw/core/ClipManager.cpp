@@ -346,30 +346,36 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
         }
     }
 
-    // Handle MIDI clip splitting - DESTRUCTIVE (each clip owns its notes)
+    // Handle MIDI clip splitting
     if (rightClip.type == ClipType::MIDI && !rightClip.midiNotes.empty()) {
-        const double beatsPerSecond = tempo / 60.0;
-        double splitBeat = leftLength * beatsPerSecond;
+        if (clip->loopEnabled && clip->loopLengthBeats > 0.0) {
+            // Looped MIDI: both halves keep the same notes — they loop the same pattern.
+            // Adjust the right clip's phase so it starts at the correct point in the loop.
+            const double beatsPerSecond = tempo / 60.0;
+            double splitBeat = leftLength * beatsPerSecond;
+            double loopLen = clip->loopLengthBeats;
+            rightClip.midiOffset = std::fmod(clip->midiOffset + splitBeat, loopLen);
+        } else {
+            // Non-looped MIDI: partition notes by split position
+            const double beatsPerSecond = tempo / 60.0;
+            double splitBeat = leftLength * beatsPerSecond;
 
-        // Partition notes between left and right clips
-        std::vector<MidiNote> leftNotes;
-        std::vector<MidiNote> rightNotes;
+            std::vector<MidiNote> leftNotes;
+            std::vector<MidiNote> rightNotes;
 
-        for (const auto& note : clip->midiNotes) {
-            if (note.startBeat < splitBeat) {
-                // Note belongs to left clip
-                leftNotes.push_back(note);
-            } else {
-                // Note belongs to right clip - adjust position relative to right clip start
-                MidiNote adjustedNote = note;
-                adjustedNote.startBeat -= splitBeat;
-                rightNotes.push_back(adjustedNote);
+            for (const auto& note : clip->midiNotes) {
+                if (note.startBeat < splitBeat) {
+                    leftNotes.push_back(note);
+                } else {
+                    MidiNote adjustedNote = note;
+                    adjustedNote.startBeat -= splitBeat;
+                    rightNotes.push_back(adjustedNote);
+                }
             }
-        }
 
-        // Update both clips with their respective notes
-        clip->midiNotes = leftNotes;
-        rightClip.midiNotes = rightNotes;
+            clip->midiNotes = leftNotes;
+            rightClip.midiNotes = rightNotes;
+        }
     }
 
     // Resize original clip to be left half
