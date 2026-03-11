@@ -175,9 +175,17 @@ jobs:
           --wait 2>&1) || true
         echo "$SUBMIT_OUTPUT"
 
-        # Extract submission ID and check status
-        SUBMISSION_ID=$(echo "$SUBMIT_OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
-        STATUS=$(echo "$SUBMIT_OUTPUT" | grep "status:" | tail -1 | awk '{print $2}')
+        # Extract submission ID and check status (disable pipefail for grep)
+        set +o pipefail
+        SUBMISSION_ID=$(echo "$SUBMIT_OUTPUT" | grep "id:" | head -1 | awk '{print $2}') || true
+        STATUS=$(echo "$SUBMIT_OUTPUT" | grep "status:" | tail -1 | awk '{print $2}') || true
+        set -o pipefail
+
+        if [ -z "$SUBMISSION_ID" ] || [ -z "$STATUS" ]; then
+          echo "Failed to parse notarization output:"
+          echo "$SUBMIT_OUTPUT"
+          exit 1
+        fi
 
         if [ "$STATUS" != "Accepted" ]; then
           echo "Notarization failed with status: $STATUS"
