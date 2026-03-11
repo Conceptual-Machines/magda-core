@@ -4,20 +4,20 @@ The transport bar sits at the top of the window and is available in all views.
 
 ![Transport Bar](assets/images/transport/transport-bar.png)
 
-## Navigation & Playback
-
-From left to right, the transport buttons are:
+## Playback Controls
 
 | Button | Action | Shortcut |
 |--------|--------|----------|
-| **Home** | Return to the beginning | ++home++ |
-| **Previous** | Jump to previous marker | |
-| **Next** | Jump to next marker | |
-| **Play** | Start/stop playback | ++space++ |
-| **Stop** | Stop and reset | ++space++ |
+| **Play** | Start playback | ++space++ |
+| **Stop** | Stop playback | ++space++ |
+| **Pause** | Pause playback | |
 | **Record** | Start/stop recording | ++r++ |
-| **Loop** | Toggle loop playback | |
-| **Back to Arrangement** | Return from session clip playback to the arrangement position | |
+| **Home** | Return to the beginning | ++home++ |
+
+## Navigation
+
+- **Previous / Next** — Jump between markers
+- **Back to Arrangement** — Return from session clip playback to the arrangement position
 
 ## Loop
 

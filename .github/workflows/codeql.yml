@@ -1,7 +1,11 @@
 name: "CodeQL Security Scan"
 
 on:
-  # CodeQL takes ~1 hour to run - only run on schedule and manual triggers
+  push:
+    branches: [ main, develop ]
+  # CodeQL takes ~1 hour to run - only run on schedule and manual triggers to avoid blocking PRs
+  # pull_request:
+  #   branches: [ main, develop ]
   schedule:
     # Run at 2:00 AM UTC every Monday
     - cron: '0 2 * * 1'
