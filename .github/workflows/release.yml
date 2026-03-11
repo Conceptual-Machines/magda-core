@@ -40,10 +40,12 @@ jobs:
       run: |
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
-          -DMAGDA_BUILD_TESTS=OFF
+          -DMAGDA_BUILD_TESTS=OFF \
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
     - name: Build
-      run: cmake --build build --config Release
+      run: cmake --build build --config Release -j $(sysctl -n hw.ncpu)
 
     - name: Verify app bundle
       run: |
@@ -235,16 +237,38 @@ jobs:
         echo "version=$version" >> $env:GITHUB_OUTPUT
         Write-Output "Version: $version"
 
+    - name: Install sccache
+      shell: powershell
+      run: |
+        if (-not (Get-Command sccache -ErrorAction SilentlyContinue)) {
+          Write-Output "Installing sccache..."
+          Invoke-WebRequest -Uri "https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-x86_64-pc-windows-msvc.zip" -OutFile "$env:TEMP\sccache.zip"
+          Expand-Archive "$env:TEMP\sccache.zip" -DestinationPath "$env:TEMP\sccache"
+          Copy-Item "$env:TEMP\sccache\sccache-v0.8.1-x86_64-pc-windows-msvc\sccache.exe" "C:\Windows\System32\"
+        }
+        sccache --version
+
     - name: Configure CMake
       shell: powershell
       run: |
         cmake -B build -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
-          -DMAGDA_BUILD_TESTS=OFF
+          -DMAGDA_BUILD_TESTS=OFF `
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
     - name: Build
       shell: powershell
-      run: cmake --build build --config Release
+      env:
+        SCCACHE_DIR: ${{ github.workspace }}/.sccache
+      run: |
+        $nproc = (Get-CimInstance Win32_Processor).NumberOfLogicalProcessors
+        Write-Output "Building with $nproc parallel jobs"
+        cmake --build build --config Release -j $nproc
+
+    - name: Print sccache stats
+      shell: powershell
+      run: sccache --show-stats
 
     - name: Locate MAGDA.exe
       id: locate
@@ -351,15 +375,27 @@ jobs:
         wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
         chmod +x linuxdeploy-x86_64.AppImage
 
+    - name: Install sccache
+      run: |
+        if ! command -v sccache &>/dev/null; then
+          echo "Installing sccache..."
+          wget -q https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-x86_64-unknown-linux-musl.tar.gz
+          tar xzf sccache-v0.8.1-x86_64-unknown-linux-musl.tar.gz
+          sudo mv sccache-v0.8.1-x86_64-unknown-linux-musl/sccache /usr/local/bin/
+        fi
+        sccache --version
+
     - name: Configure CMake
       run: |
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=/usr \
-          -DMAGDA_BUILD_TESTS=OFF
+          -DMAGDA_BUILD_TESTS=OFF \
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
     - name: Build
-      run: cmake --build build --config Release
+      run: cmake --build build --config Release -j $(nproc)
 
     - name: Prepare AppDir
       env:
