@@ -2,6 +2,21 @@ cmake_minimum_required(VERSION 3.24)
 
 project(Magda VERSION 0.1.0 LANGUAGES C CXX)
 
+# Derive display version from git tags (e.g. "0.1.0-rc2" or "0.1.0-rc2-15-g1391223")
+execute_process(
+    COMMAND git describe --tags --always
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE MAGDA_GIT_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE GIT_DESCRIBE_RESULT
+)
+if(GIT_DESCRIBE_RESULT EQUAL 0 AND MAGDA_GIT_VERSION MATCHES "^v?(.+)$")
+    set(MAGDA_FULL_VERSION "${CMAKE_MATCH_1}")
+else()
+    set(MAGDA_FULL_VERSION "${PROJECT_VERSION}")
+endif()
+
 # ccache disabled - causes unnecessary rebuilds with Ninja
 # The interaction between ccache, Ninja, and JUCE's glob verification
 # causes all 258+ targets to rebuild on every invocation.

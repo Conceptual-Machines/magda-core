@@ -1,0 +1,4 @@
+#pragma once
+
+// Auto-generated from CMakeLists.txt project version — do not edit
+constexpr const char* MAGDA_VERSION = "@MAGDA_FULL_VERSION@";

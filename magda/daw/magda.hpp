@@ -21,10 +21,8 @@ namespace magda {
 class TracktionEngineWrapper;
 }
 
-/**
- * @brief Current version of MAGDA
- */
-constexpr const char* MAGDA_VERSION = "0.1.0";
+// Version is generated from the CMake project version
+#include "version.hpp"
 
 /**
  * @brief Initialize MAGDA

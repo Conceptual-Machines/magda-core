@@ -1,6 +1,9 @@
 # DAW Domain - Digital Audio Workstation Core + UI
 # Simple version focusing on Tracktion Engine integration
 
+# Generate version header from project version
+configure_file(version.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp" @ONLY)
+
 # Create binary data for fonts and icons
 juce_add_binary_data(MagdaAssets
     SOURCES
@@ -675,6 +678,7 @@ target_include_directories(magda_daw
     ${CMAKE_CURRENT_SOURCE_DIR}/engine
     ${CMAKE_CURRENT_SOURCE_DIR}/project
     ${CMAKE_CURRENT_SOURCE_DIR}/profiling
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
     PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
