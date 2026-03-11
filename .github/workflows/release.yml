@@ -138,14 +138,25 @@ jobs:
         APP_PATH="build/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
         DMG_NAME="MAGDA-${VERSION}-macOS.dmg"
 
+        # create-dmg may exit non-zero if AppleScript Finder styling fails
+        # (common on CI). The DMG is still valid in that case.
+        set +e
         create-dmg \
           --volname "MAGDA" \
-          --sandbox-safe \
+          --window-pos 200 120 \
+          --window-size 600 400 \
           --icon-size 100 \
           --icon "MAGDA.app" 150 190 \
           --app-drop-link 450 190 \
           "$DMG_NAME" \
           "$APP_PATH"
+        CREATE_DMG_EXIT=$?
+        set -e
+
+        if [ ! -f "$DMG_NAME" ]; then
+          echo "create-dmg failed and no DMG was produced (exit code $CREATE_DMG_EXIT)"
+          exit 1
+        fi
 
         echo "DMG created: $DMG_NAME"
         ls -lh "$DMG_NAME"
@@ -248,13 +259,16 @@ jobs:
     - name: Install sccache
       shell: powershell
       run: |
-        if (-not (Get-Command sccache -ErrorAction SilentlyContinue)) {
+        $sccacheDir = "$env:USERPROFILE\.sccache\bin"
+        if (-not (Test-Path "$sccacheDir\sccache.exe")) {
           Write-Output "Installing sccache..."
+          New-Item -ItemType Directory -Force -Path $sccacheDir | Out-Null
           Invoke-WebRequest -Uri "https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-x86_64-pc-windows-msvc.zip" -OutFile "$env:TEMP\sccache.zip"
-          Expand-Archive "$env:TEMP\sccache.zip" -DestinationPath "$env:TEMP\sccache"
-          Copy-Item "$env:TEMP\sccache\sccache-v0.8.1-x86_64-pc-windows-msvc\sccache.exe" "C:\Windows\System32\"
+          Expand-Archive "$env:TEMP\sccache.zip" -DestinationPath "$env:TEMP\sccache" -Force
+          Copy-Item "$env:TEMP\sccache\sccache-v0.8.1-x86_64-pc-windows-msvc\sccache.exe" "$sccacheDir\"
         }
-        sccache --version
+        echo "$sccacheDir" >> $env:GITHUB_PATH
+        & "$sccacheDir\sccache.exe" --version
 
     - name: Configure CMake
       shell: powershell
@@ -267,8 +281,6 @@ jobs:
 
     - name: Build
       shell: powershell
-      env:
-        SCCACHE_DIR: ${{ github.workspace }}/.sccache
       run: |
         $nproc = (Get-CimInstance Win32_Processor).NumberOfLogicalProcessors
         Write-Output "Building with $nproc parallel jobs"
