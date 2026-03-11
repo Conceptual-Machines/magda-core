@@ -166,11 +166,26 @@ jobs:
         DMG_NAME="MAGDA-${VERSION}-macOS.dmg"
 
         echo "Submitting for notarization..."
-        xcrun notarytool submit "$DMG_NAME" \
+        SUBMIT_OUTPUT=$(xcrun notarytool submit "$DMG_NAME" \
           --apple-id "$NOTARIZATION_APPLE_ID" \
           --password "$NOTARIZATION_PASSWORD" \
           --team-id "VH54FX3Z7U" \
-          --wait
+          --wait 2>&1) || true
+        echo "$SUBMIT_OUTPUT"
+
+        # Extract submission ID and check status
+        SUBMISSION_ID=$(echo "$SUBMIT_OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
+        STATUS=$(echo "$SUBMIT_OUTPUT" | grep "status:" | tail -1 | awk '{print $2}')
+
+        if [ "$STATUS" != "Accepted" ]; then
+          echo "Notarization failed with status: $STATUS"
+          echo "Fetching notarization log..."
+          xcrun notarytool log "$SUBMISSION_ID" \
+            --apple-id "$NOTARIZATION_APPLE_ID" \
+            --password "$NOTARIZATION_PASSWORD" \
+            --team-id "VH54FX3Z7U"
+          exit 1
+        fi
 
         echo "Stapling notarization ticket..."
         xcrun stapler staple "$DMG_NAME"
