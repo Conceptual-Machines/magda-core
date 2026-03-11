@@ -304,9 +304,15 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
     bool inTimeRulerArea = event.y > arrangementBottom && event.y <= timeRulerEnd;
     bool inTimeSelectionZone = event.y >= rulerMidpoint && event.y <= timeRulerEnd;
 
-    // Check for loop marker dragging first - works in both arrangement and ruler areas
-    if (loopInteraction_.mouseDown(event.x, event.y))
-        return;
+    // Check for loop marker dragging — only within the loop strip
+    int rulerBottom = arrangementBottom + timeRulerHeight;
+    int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
+    static constexpr int LOOP_STRIP_H = 12;
+    int loopStripTop = tickAreaTop - LOOP_STRIP_H;
+    if (event.y >= loopStripTop && event.y < tickAreaTop) {
+        if (loopInteraction_.mouseDown(event.x, event.y))
+            return;
+    }
 
     // Zone 1a: Lower ruler area (near tick labels) - start time selection
     if (inTimeSelectionZone) {
@@ -363,12 +369,10 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
     int arrangementHeight = layout.arrangementBarHeight;
     int arrangementBottom = chordHeight + arrangementHeight;
 
-    // Check for loop markers first - they span both arrangement and ruler areas
-    auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
-    if (loopCursor != juce::MouseCursor::NormalCursor) {
-        setMouseCursor(loopCursor);
-        return;
-    }
+    int rulerBottom = chordHeight + arrangementHeight + layout.timeRulerHeight;
+    int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
+    static constexpr int LOOP_STRIP_H = 12;
+    int loopStripTop = tickAreaTop - LOOP_STRIP_H;
 
     if (event.y >= chordHeight && event.y <= arrangementBottom) {
         // In arrangement area - check for section edges if not locked
@@ -384,15 +388,21 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
         }
         setMouseCursor(juce::MouseCursor::NormalCursor);
     } else {
-        // In time ruler area - split into two zones
+        // In time ruler area — check loop markers only within the loop strip
+        if (event.y >= loopStripTop && event.y < tickAreaTop) {
+            auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
+            if (loopCursor != juce::MouseCursor::NormalCursor) {
+                setMouseCursor(loopCursor);
+                return;
+            }
+        }
+
         // Upper half: zoom (crosshair), Lower half: time selection (I-beam)
         int rulerMidpoint = layout.getRulerZoneSplitY();
 
         if (event.y < rulerMidpoint) {
-            // Upper ruler area - zoom cursor (magnifying glass)
             setMouseCursor(CursorManager::getInstance().getZoomCursor());
         } else {
-            // Lower ruler area (near tick labels) - time selection cursor
             setMouseCursor(juce::MouseCursor::IBeamCursor);
         }
     }
