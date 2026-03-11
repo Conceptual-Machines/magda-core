@@ -138,8 +138,7 @@ jobs:
 
         create-dmg \
           --volname "MAGDA" \
-          --window-pos 200 120 \
-          --window-size 600 400 \
+          --sandbox-safe \
           --icon-size 100 \
           --icon "MAGDA.app" 150 190 \
           --app-drop-link 450 190 \
