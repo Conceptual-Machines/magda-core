@@ -1,0 +1,54 @@
+name: Crash Report
+description: Report a crash with a log file
+labels: ["bug", "crash"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What were you doing when it crashed?
+      description: Describe what you were doing right before the crash.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: MAGDA version
+      description: Found in Help > About MAGDA
+      placeholder: "0.1.0-rc2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: textarea
+    id: crash-log
+    attributes:
+      label: Crash log
+      description: |
+        Paste the contents of your crash log here.
+
+        **macOS:** Open Finder → Go → Go to Folder → `~/Library/Logs/DiagnosticReports/`. Look for a file starting with `Magda` (`.ips` or `.crash`). Open it in a text editor and paste the contents.
+
+        **Windows:** Open Event Viewer (Win+R → `eventvwr.msc`) → Windows Logs → Application. Look for recent "Error" entries from MAGDA. Alternatively, check `%LOCALAPPDATA%\CrashDumps\` for `.dmp` files.
+
+        **Linux:** Check `journalctl --user -e` or `dmesg` for recent crash entries. If a core dump was generated, run `coredumpctl info` for details.
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: reproducible
+    attributes:
+      label: Reproducibility
+      options:
+        - label: I can reproduce this crash consistently
