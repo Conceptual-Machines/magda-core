@@ -73,6 +73,15 @@ nav:
       - File Formats: reference/file-formats.md
       - Troubleshooting: reference/troubleshooting.md
 
+extra:
+  homepage: https://magda.land
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Conceptual-Machines/magda-core
+    - icon: fontawesome/solid/globe
+      link: https://magda.land
+      name: MAGDA Website
+
 extra_css:
   - stylesheets/extra.css
 

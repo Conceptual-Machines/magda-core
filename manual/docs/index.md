@@ -33,6 +33,8 @@ A channel-strip mixer for balancing levels, panning, routing, and adding effects
 - **[Modulation](modulation/overview.md)** — LFOs, bezier curve shapes, and macros for dynamic parameter control
 - **[Interface Layout](interface/overview.md)** — Collapsible panels, context-sensitive editors, and plugin/media browsers
 
+Visit [magda.land](https://magda.land) for downloads and more information.
+
 ## Getting Started
 
 New to MAGDA? Start here:
