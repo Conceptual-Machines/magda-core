@@ -131,10 +131,12 @@ size_t VelocityLaneComponent::findNoteAtX(int x) const {
     size_t bestIndex = SIZE_MAX;
     double bestDist = maxSnapBeats;
 
+    const double clickBeat = pixelToBeat(x);
+
     for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
         const auto& note = clip->midiNotes[i];
         double noteStart = relativeMode_ ? note.startBeat : (clipStartBeats_ + note.startBeat);
-        double dist = std::abs(pixelToBeat(x) - noteStart);
+        double dist = std::abs(clickBeat - noteStart);
 
         if (dist < bestDist) {
             bestDist = dist;

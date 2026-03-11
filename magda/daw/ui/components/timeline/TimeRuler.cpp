@@ -326,8 +326,13 @@ void TimeRuler::mouseDoubleClick(const juce::MouseEvent& event) {
         int loopStartX = timeToPixel(loopStartTime);
         int loopEndX = timeToPixel(loopEndTime);
 
-        // Hit-test: click is within the loop flag strip at the top or the tick region
-        if (event.x >= loopStartX && event.x <= loopEndX) {
+        // Hit-test: click is within the loop strip area only (both X and Y)
+        const int height = getHeight();
+        const int loopStripTop = height - TICK_HEIGHT_MAJOR - LOOP_STRIP_HEIGHT;
+        const int loopStripBottom = height - TICK_HEIGHT_MAJOR;
+
+        if (event.x >= loopStartX && event.x <= loopEndX && event.y >= loopStripTop &&
+            event.y <= loopStripBottom) {
             onZoomToLoopRequested(loopStartTime, loopEndTime);
             return;
         }
