@@ -17,8 +17,9 @@ struct LayoutConfig {
     int timeRulerHeight = 52;       // Increased to accommodate labels
 
     // Time ruler details
-    int rulerMajorTickHeight = 14;  // Shortened to avoid overlap with loop markers
-    int rulerMinorTickHeight = 6;   // Shortened to avoid overlap with loop markers
+    int rulerMajorTickHeight = 14;              // Shortened to avoid overlap with loop markers
+    int rulerMinorTickHeight = 6;               // Shortened to avoid overlap with loop markers
+    static constexpr int loopStripHeight = 12;  // Loop region strip above tick area
     int rulerLabelFontSize = 11;
     int rulerLabelTopMargin = 10;  // Space between separator line and time labels
 

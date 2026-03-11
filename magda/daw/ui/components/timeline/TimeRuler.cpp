@@ -348,35 +348,31 @@ void TimeRuler::mouseDoubleClick(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseMove(const juce::MouseEvent& event) {
+    // Determine the desired cursor
+    int loopStripTop = getHeight() - TICK_HEIGHT_MAJOR - LOOP_STRIP_HEIGHT;
+    int loopStripBottom = getHeight() - TICK_HEIGHT_MAJOR;
+    bool inLoopStrip = event.y >= loopStripTop && event.y < loopStripBottom;
+
+    juce::MouseCursor desiredCursor = CursorManager::getInstance().getZoomCursor();
+
     // Alt+hover near phase marker shows resize cursor
     if (event.mods.isAltDown() && loopEnabled && (loopPhaseVisible || loopPhaseHoverOnly)) {
         double phaseTime = relativeMode ? loopPhasePosition : (timeOffset + loopPhasePosition);
         int phaseX = timeToPixel(phaseTime);
         if (std::abs(event.x - phaseX) <= 8) {
-            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-            // Still update hover state below
-        } else {
-            int stripTop = getHeight() - TICK_HEIGHT_MAJOR - LOOP_STRIP_HEIGHT;
-            if (event.y >= stripTop) {
-                auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
-                if (loopCursor != juce::MouseCursor::NormalCursor) {
-                    setMouseCursor(loopCursor);
-                    return;
-                }
-            }
-            setMouseCursor(CursorManager::getInstance().getZoomCursor());
-        }
-    } else {
-        int loopStripTop = getHeight() - TICK_HEIGHT_MAJOR - LOOP_STRIP_HEIGHT;
-        if (event.y >= loopStripTop) {
+            desiredCursor = juce::MouseCursor::LeftRightResizeCursor;
+        } else if (inLoopStrip) {
             auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
-            if (loopCursor != juce::MouseCursor::NormalCursor) {
-                setMouseCursor(loopCursor);
-                return;
-            }
+            if (loopCursor != juce::MouseCursor::NormalCursor)
+                desiredCursor = loopCursor;
         }
-        setMouseCursor(CursorManager::getInstance().getZoomCursor());
+    } else if (inLoopStrip) {
+        auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
+        if (loopCursor != juce::MouseCursor::NormalCursor)
+            desiredCursor = loopCursor;
     }
+
+    setMouseCursor(desiredCursor);
 
     // Check proximity to phase marker for hover display
     if (loopPhaseHoverOnly) {

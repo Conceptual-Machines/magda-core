@@ -307,8 +307,7 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
     // Check for loop marker dragging — only within the loop strip
     int rulerBottom = arrangementBottom + timeRulerHeight;
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
-    static constexpr int LOOP_STRIP_H = 12;
-    int loopStripTop = tickAreaTop - LOOP_STRIP_H;
+    int loopStripTop = tickAreaTop - LayoutConfig::loopStripHeight;
     if (event.y >= loopStripTop && event.y < tickAreaTop) {
         if (loopInteraction_.mouseDown(event.x, event.y))
             return;
@@ -371,8 +370,7 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
 
     int rulerBottom = chordHeight + arrangementHeight + layout.timeRulerHeight;
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
-    static constexpr int LOOP_STRIP_H = 12;
-    int loopStripTop = tickAreaTop - LOOP_STRIP_H;
+    int loopStripTop = tickAreaTop - LayoutConfig::loopStripHeight;
 
     if (event.y >= chordHeight && event.y <= arrangementBottom) {
         // In arrangement area - check for section edges if not locked
@@ -1188,7 +1186,7 @@ void TimelineComponent::drawLoopMarkers(juce::Graphics& g) {
     auto& layout = LayoutConfig::getInstance();
     int rulerBottom = layout.chordRowHeight + layout.arrangementBarHeight + layout.timeRulerHeight;
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
-    static constexpr int LOOP_STRIP_HEIGHT = 12;
+    static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
     int stripTop = tickAreaTop - LOOP_STRIP_HEIGHT;
 
     int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
@@ -1231,7 +1229,7 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     auto& layout = LayoutConfig::getInstance();
     int rulerBottom = layout.chordRowHeight + layout.arrangementBarHeight + layout.timeRulerHeight;
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
-    static constexpr int LOOP_STRIP_HEIGHT = 12;
+    static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
     int stripTop = tickAreaTop - LOOP_STRIP_HEIGHT;
 
     int startX = timeToPixel(loopStartTime) + LayoutConfig::TIMELINE_LEFT_PADDING;
@@ -1310,7 +1308,7 @@ void TimelineComponent::initLoopInteraction() {
     host.maxTime = timelineLength;
     int rulerBottom = layout.chordRowHeight + layout.arrangementBarHeight + layout.timeRulerHeight;
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
-    host.topBorderY = tickAreaTop - 12;  // Strip sits above tick area
+    host.topBorderY = tickAreaTop - LayoutConfig::loopStripHeight;
     host.topBorderThreshold = 12;
     loopInteraction_.setHost(std::move(host));
 }

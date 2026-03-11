@@ -170,7 +170,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     static constexpr int TICK_HEIGHT_MAJOR = 12;
     static constexpr int TICK_HEIGHT_MINOR = 6;
     static constexpr int LABEL_MARGIN = 4;
-    static constexpr int LOOP_STRIP_HEIGHT = 12;
+    static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
 
     // Drawing helpers
     void drawSecondsMode(juce::Graphics& g);
