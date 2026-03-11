@@ -136,7 +136,7 @@ void TransportPanel::resized() {
     auto timeArea = getTimeDisplayArea();
     auto tempoArea = getTempoQuantizeArea();
 
-    // Transport controls layout — order: Home, Prev, Play, Stop, Rec, Loop, Next
+    // Transport controls layout — order: Home, Prev, Next, Play, Stop, Rec, Loop, BackToArr
     auto buttonMargin = 3;
     auto buttonSize = transportArea.getHeight() - buttonMargin * 2;
     auto buttonY = buttonMargin;
@@ -148,6 +148,9 @@ void TransportPanel::resized() {
     x += buttonSize + buttonSpacing;
 
     prevButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
+
+    nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing;
 
     playButton->setBounds(x, buttonY, buttonSize, buttonSize);
@@ -163,9 +166,6 @@ void TransportPanel::resized() {
     x += buttonSize + buttonSpacing;
 
     backToArrangementButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
-
-    nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing + 3;  // extra gap before punch group
 
     // Stacked row metrics (shared by punch group and time display groups)
