@@ -409,6 +409,7 @@ void PluginSettingsDialog::resized() {
 
 void PluginSettingsDialog::applySettings() {
     Config::getInstance().setCustomPluginPaths(customPaths_);
+    Config::getInstance().save();
 
     if (engine_) {
         auto* coordinator = engine_->getPluginScanCoordinator();
