@@ -149,9 +149,6 @@ void TrackController::setTrackAudioOutput(TrackId trackId, const juce::String& d
         return;
     }
 
-    DBG("TrackController::setTrackAudioOutput - trackId=" << trackId << " destination='"
-                                                          << destination << "'");
-
     if (destination.isEmpty()) {
         // Disable output by routing to nothing
         if (!track->getOutput().getOutputDevice(false))

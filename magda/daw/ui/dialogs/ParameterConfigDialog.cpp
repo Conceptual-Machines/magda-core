@@ -680,10 +680,7 @@ void ParameterConfigDialog::loadParameterConfiguration() {
 
     auto configFile = configDir.getChildFile(pluginUniqueId_.replace(":", "_") + ".xml");
 
-    DBG("Looking for config at: " << configFile.getFullPathName());
-
     if (!configFile.existsAsFile()) {
-        DBG("No saved config for " << pluginUniqueId_);
         return;
     }
 
@@ -734,10 +731,7 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
 
     auto configFile = configDir.getChildFile(uniqueId.replace(":", "_") + ".xml");
 
-    DBG("applyConfigToDevice: Looking for " << configFile.getFullPathName());
-
     if (!configFile.existsAsFile()) {
-        DBG("No saved config for " << uniqueId << " - using all parameters");
         return false;
     }
 

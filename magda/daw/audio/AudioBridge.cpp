@@ -211,21 +211,10 @@ void AudioBridge::trackPropertyChanged(int trackId) {
                     bool isMidi =
                         dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner) != nullptr;
                     auto targets = inputDeviceInstance->getTargets();
-                    DBG("  recordArm sync: device='"
-                        << inputDeviceInstance->owner.getName()
-                        << "' type=" << (isMidi ? "MIDI" : "audio")
-                        << " enabled=" << (inputDeviceInstance->owner.isEnabled() ? "Y" : "N")
-                        << " targets=" << targets.size()
-                        << " destinations=" << (int)inputDeviceInstance->destinations.size());
                     for (auto targetID : targets) {
                         if (targetID == track->itemID) {
                             inputDeviceInstance->setRecordingEnabled(track->itemID,
                                                                      trackInfo->recordArmed);
-                            DBG("  -> Synced recordArmed=" << (trackInfo->recordArmed ? 1 : 0)
-                                                           << " to " << (isMidi ? "MIDI" : "audio")
-                                                           << " input '"
-                                                           << inputDeviceInstance->owner.getName()
-                                                           << "' for track " << trackId);
                             foundAnyDest = true;
                             break;
                         }
