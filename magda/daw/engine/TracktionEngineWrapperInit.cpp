@@ -385,6 +385,9 @@ bool TracktionEngineWrapper::initialize() {
         engine_ = std::make_unique<tracktion::Engine>("MAGDA", std::move(uiBehaviour),
                                                       std::move(engineBehaviour));
 
+        // Load config early so preferred device settings are available
+        magda::Config::getInstance().load();
+
         // Initialize plugin formats and load plugin list
         initializePluginFormats();
 
