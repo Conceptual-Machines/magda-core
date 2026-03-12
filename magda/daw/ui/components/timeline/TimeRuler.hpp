@@ -167,10 +167,16 @@ class TimeRuler : public juce::Component, private juce::Timer {
     // Layout
     int leftPadding = LayoutConfig::TIMELINE_LEFT_PADDING;
     juce::Viewport* linkedViewport = nullptr;  // For real-time scroll sync
-    static constexpr int TICK_HEIGHT_MAJOR = 12;
-    static constexpr int TICK_HEIGHT_MINOR = 6;
     static constexpr int LABEL_MARGIN = 4;
     static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
+
+    // Tick heights sourced from LayoutConfig for consistency with TimelineComponent
+    int tickHeightMajor() const {
+        return LayoutConfig::getInstance().rulerMajorTickHeight;
+    }
+    int tickHeightMinor() const {
+        return LayoutConfig::getInstance().rulerMinorTickHeight;
+    }
 
     // Drawing helpers
     void drawSecondsMode(juce::Graphics& g);

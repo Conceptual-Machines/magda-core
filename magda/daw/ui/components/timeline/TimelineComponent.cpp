@@ -1309,7 +1309,7 @@ void TimelineComponent::initLoopInteraction() {
     int rulerBottom = layout.chordRowHeight + layout.arrangementBarHeight + layout.timeRulerHeight;
     int tickAreaTop = rulerBottom - layout.rulerMajorTickHeight;
     host.topBorderY = tickAreaTop - LayoutConfig::loopStripHeight;
-    host.topBorderThreshold = 12;
+    host.topBorderThreshold = LayoutConfig::loopStripHeight;
     loopInteraction_.setHost(std::move(host));
 }
 
