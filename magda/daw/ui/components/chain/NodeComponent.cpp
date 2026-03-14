@@ -1226,8 +1226,18 @@ void NodeComponent::updateModulatorEditor() {
         return;
 
     if (selectedModIndex_ < static_cast<int>(mods->size())) {
-        // Pass pointer to live mod for animated waveform display
-        modulatorEditorPanel_->setModInfo((*mods)[selectedModIndex_], &(*mods)[selectedModIndex_]);
+        // Pass pointer to live mod for animated waveform display,
+        // plus a getter lambda that safely re-fetches the pointer each time
+        // (guards against vector reallocation invalidating raw pointers).
+        int modIdx = selectedModIndex_;
+        auto getter = [this, modIdx]() -> const magda::ModInfo* {
+            const auto* m = getModsData();
+            if (m && modIdx < static_cast<int>(m->size()))
+                return &(*m)[modIdx];
+            return nullptr;
+        };
+        modulatorEditorPanel_->setModInfo((*mods)[selectedModIndex_], &(*mods)[selectedModIndex_],
+                                          std::move(getter));
         modulatorEditorPanel_->setSelectedModIndex(selectedModIndex_);
     }
 }

@@ -186,8 +186,10 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     ModulatorEditorPanel();
     ~ModulatorEditorPanel() override;
 
-    // Set the mod to edit
-    void setModInfo(const magda::ModInfo& mod, const magda::ModInfo* liveMod = nullptr);
+    // Set the mod to edit. liveModGetter provides a safe way to fetch the live mod
+    // pointer on demand (avoids dangling pointers when the mod vector reallocates).
+    void setModInfo(const magda::ModInfo& mod, const magda::ModInfo* liveMod = nullptr,
+                    std::function<const magda::ModInfo*()> liveModGetter = nullptr);
 
     // Set a resolver for getting parameter names from device/param IDs
     void setParamNameResolver(std::function<juce::String(magda::DeviceId, int)> resolver) {
@@ -227,6 +229,7 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     int selectedModIndex_ = -1;
     magda::ModInfo currentMod_;
     const magda::ModInfo* liveModPtr_ = nullptr;  // Pointer to live mod for waveform animation
+    std::function<const magda::ModInfo*()> liveModGetter_;  // Safe getter for timer callback
 
     // UI Components
     juce::Label nameLabel_;

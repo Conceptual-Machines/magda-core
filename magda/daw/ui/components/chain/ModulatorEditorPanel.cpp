@@ -491,9 +491,11 @@ ModulatorEditorPanel::~ModulatorEditorPanel() {
     stopTimer();
 }
 
-void ModulatorEditorPanel::setModInfo(const magda::ModInfo& mod, const magda::ModInfo* liveMod) {
+void ModulatorEditorPanel::setModInfo(const magda::ModInfo& mod, const magda::ModInfo* liveMod,
+                                      std::function<const magda::ModInfo*()> liveModGetter) {
     currentMod_ = mod;
     liveModPtr_ = liveMod;
+    liveModGetter_ = std::move(liveModGetter);
     // Use live mod pointer if available (for animation), otherwise use local copy
     waveformDisplay_.setModInfo(liveMod ? liveMod : &currentMod_);
     updateFromMod();
@@ -790,9 +792,12 @@ void ModulatorEditorPanel::updateModMatrix() {
 
 void ModulatorEditorPanel::timerCallback() {
     // Sync mod matrix amounts from live data (handles slider→matrix updates)
-    if (liveModPtr_ && !modMatrixContent_.isDragging()) {
+    // Use the getter to fetch a fresh pointer — the raw liveModPtr_ can dangle
+    // when the mod vector reallocates (mods added/removed).
+    const auto* liveMod = liveModGetter_ ? liveModGetter_() : liveModPtr_;
+    if (liveMod && !modMatrixContent_.isDragging()) {
         bool changed = false;
-        for (const auto& liveLink : liveModPtr_->links) {
+        for (const auto& liveLink : liveMod->links) {
             if (!liveLink.isValid())
                 continue;
             if (modMatrixContent_.updateLinkAmount(liveLink.target, liveLink.amount,
