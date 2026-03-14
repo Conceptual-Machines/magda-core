@@ -610,6 +610,19 @@ juce_add_gui_app(magda_daw_app
     PRODUCT_NAME "MAGDA"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/app_icon.png"
     ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/app_icon.png"
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "MAGDA needs microphone access to record audio."
+    PLIST_TO_MERGE
+    "<plist version=\"1.0\"><dict>
+        <key>NSDocumentsFolderUsageDescription</key>
+        <string>MAGDA needs access to your Documents folder to load and save projects.</string>
+        <key>NSDesktopFolderUsageDescription</key>
+        <string>MAGDA needs access to your Desktop to load and save projects.</string>
+        <key>NSDownloadsFolderUsageDescription</key>
+        <string>MAGDA needs access to your Downloads folder to import audio files.</string>
+        <key>NSRemovableVolumesUsageDescription</key>
+        <string>MAGDA needs access to external drives to load and save projects and audio files.</string>
+    </dict></plist>"
 )
 
 # Add UI sources to the JUCE app target
