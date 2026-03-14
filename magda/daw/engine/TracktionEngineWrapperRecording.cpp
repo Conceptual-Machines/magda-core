@@ -1,6 +1,7 @@
 #include "../audio/AudioBridge.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
+#include "../project/ProjectManager.hpp"
 #include "TracktionEngineWrapper.hpp"
 
 namespace magda {
@@ -88,6 +89,16 @@ void TracktionEngineWrapper::recordingFinished(
             auto& clipManager = ClipManager::getInstance();
             ClipId clipId = clipManager.createAudioClip(trackId, startSeconds, lengthSeconds,
                                                         audioFilePath, ClipView::Arrangement);
+
+            // Set sourceBPM to the project tempo — we know the exact BPM the clip was
+            // recorded at, so skip unreliable auto-detection in syncClipToEngine.
+            if (auto* newClip = clipManager.getClip(clipId)) {
+                double projectBPM = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+                if (projectBPM > 0.0) {
+                    newClip->sourceBPM = projectBPM;
+                    newClip->sourceNumBeats = lengthSeconds * projectBPM / 60.0;
+                }
+            }
 
             if (audioBridge_)
                 audioBridge_->syncClipToEngine(clipId);
