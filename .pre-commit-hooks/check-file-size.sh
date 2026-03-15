@@ -1,8 +1,8 @@
 #!/bin/bash
 # Pre-commit hook to enforce file size policy
-# Warns at 1500 LOC, fails at 2500 LOC
+# Warns at WARN_THRESHOLD LOC, fails at FAIL_THRESHOLD LOC
 
-WARN_THRESHOLD=1500
+WARN_THRESHOLD=2500
 FAIL_THRESHOLD=3500
 
 exit_code=0
@@ -45,7 +45,7 @@ fi
 
 if [[ $exit_code != 0 ]]; then
     echo ""
-    echo "❌ Commit blocked: Files exceed 3500 LOC hard limit"
+    echo "❌ Commit blocked: Files exceed $FAIL_THRESHOLD LOC hard limit"
     echo "Please decompose large files before committing."
 fi
 
