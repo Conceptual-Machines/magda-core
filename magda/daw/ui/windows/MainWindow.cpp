@@ -656,10 +656,11 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         if (transportPanel)
             transportPanel->setPlaybackState(playing);
     };
-    positionTimer_->onSessionPlayheadUpdate = [this](double sessionPos) {
-        if (sessionView)
-            sessionView->setSessionPlayheadPosition(sessionPos);
-    };
+    positionTimer_->onSessionPlayheadUpdate =
+        [this](const std::unordered_map<ClipId, double>& clipPositions) {
+            if (sessionView)
+                sessionView->setSessionPlayheadPositions(clipPositions);
+        };
     positionTimer_->onCpuUsageUpdate = [this](float cpu) {
         if (transportPanel)
             transportPanel->setCpuUsage(cpu);

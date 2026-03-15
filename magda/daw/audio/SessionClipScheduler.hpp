@@ -51,7 +51,7 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
     }
 
     /** Returns the looped session playhead position (seconds), or -1.0 if no session clips active.
-     */
+        This tracks the most recently launched clip (used by clip editors). */
     double getSessionPlayheadPosition() const;
 
     /** Returns the clip ID that the session playhead currently tracks, or INVALID_CLIP_ID. */
@@ -59,14 +59,28 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
         return playheadClipId_;
     }
 
+    /** Returns per-clip playhead positions for all active clips. */
+    std::unordered_map<ClipId, double> getActiveClipPlayheadPositions() const;
+
   private:
     void timerCallback() override;
 
-    /** Cache wall-clock durations for playhead tracking from clip state. */
-    void updateLaunchTimings(const ClipInfo* clip);
+    /** Cache wall-clock durations for playhead tracking from clip state into per-clip data. */
+    void updateLaunchTimings(ClipId clipId, const ClipInfo* clip);
 
     /** Query the LaunchHandle state for a clip. Returns Stopped if clip/handle not found. */
     SessionClipPlayState queryLaunchHandleState(ClipId clipId) const;
+
+    // Per-clip launch timing data for independent playhead tracking
+    struct ClipLaunchData {
+        double launchTransportPos = 0.0;
+        double loopLength = 0.0;
+        double clipLength = 0.0;
+        bool looping = false;
+    };
+
+    /** Compute the playhead position for a single clip given its launch data. */
+    double computeClipPlayheadPosition(const ClipLaunchData& data) const;
 
     AudioBridge& audioBridge_;
     te::Edit& edit_;
@@ -75,14 +89,10 @@ class SessionClipScheduler : public ClipManagerListener, private juce::Timer {
     // Actual Queued/Playing/Stopped state is derived from the LaunchHandle.
     std::unordered_set<ClipId> activeClips_;
 
-    // Transport position at which the first session clip was launched
-    double launchTransportPos_ = 0.0;
-    // Loop length in seconds (for playhead wrapping when looping)
-    double launchLoopLength_ = 0.0;
-    // Full clip duration in seconds (for playhead when not looping)
-    double launchClipLength_ = 0.0;
-    // Whether the primary launched clip is looping
-    bool launchClipLooping_ = false;
+    std::unordered_map<ClipId, ClipLaunchData> clipLaunchData_;
+
+    // The "primary" playhead clip — used by getSessionPlayheadPosition()
+    // for the clip editor (which shows one clip at a time).
     // Clip awaiting Playing transition — used to correct launchTransportPos_
     // for quantized launches (playhead starts from actual play moment, not click)
     ClipId pendingPlayheadClip_ = INVALID_CLIP_ID;

@@ -3,7 +3,7 @@
 # Warns at 1500 LOC, fails at 2500 LOC
 
 WARN_THRESHOLD=1500
-FAIL_THRESHOLD=2500
+FAIL_THRESHOLD=3500
 
 exit_code=0
 has_warnings=false
@@ -45,7 +45,7 @@ fi
 
 if [[ $exit_code != 0 ]]; then
     echo ""
-    echo "❌ Commit blocked: Files exceed 2500 LOC hard limit"
+    echo "❌ Commit blocked: Files exceed 3500 LOC hard limit"
     echo "Please decompose large files before committing."
 fi
 

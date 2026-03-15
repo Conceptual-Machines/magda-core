@@ -3,6 +3,9 @@
 #include <juce_events/juce_events.h>
 
 #include <functional>
+#include <unordered_map>
+
+#include "../core/ClipTypes.hpp"
 
 namespace magda {
 
@@ -28,9 +31,9 @@ class PlaybackPositionTimer : private juce::Timer {
     /** Callback fired on the message thread when play state changes. */
     std::function<void(bool)> onPlayStateChanged;
 
-    /** Callback fired each tick with the looped clip-local position (seconds).
-        Only called when session clips are active. -1.0 means no session clips. */
-    std::function<void(double)> onSessionPlayheadUpdate;
+    /** Callback fired each tick with per-clip playhead positions (clip ID → seconds).
+        Only called when session clips are active. Empty map means no session clips. */
+    std::function<void(const std::unordered_map<ClipId, double>&)> onSessionPlayheadUpdate;
 
     /** Callback fired periodically with CPU usage (0.0 to 1.0). */
     std::function<void(float)> onCpuUsageUpdate;

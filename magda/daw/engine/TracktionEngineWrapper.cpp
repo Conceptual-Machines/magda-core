@@ -58,6 +58,12 @@ ClipId TracktionEngineWrapper::getSessionPlayheadClipId() const {
     return INVALID_CLIP_ID;
 }
 
+std::unordered_map<ClipId, double> TracktionEngineWrapper::getActiveClipPlayheadPositions() const {
+    if (sessionScheduler_)
+        return sessionScheduler_->getActiveClipPlayheadPositions();
+    return {};
+}
+
 SessionClipPlayState TracktionEngineWrapper::getSessionClipPlayState(ClipId clipId) const {
     if (sessionScheduler_)
         return sessionScheduler_->getClipPlayState(clipId);

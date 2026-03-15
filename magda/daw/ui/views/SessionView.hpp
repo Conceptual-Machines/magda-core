@@ -78,7 +78,7 @@ class SessionView : public juce::Component,
 
     /** Set the session clip playhead position (looped, in seconds).
         -1.0 means no session clips are playing. */
-    void setSessionPlayheadPosition(double position);
+    void setSessionPlayheadPositions(const std::unordered_map<ClipId, double>& positions);
 
     /** Set the timeline controller for tempo access. */
     void setTimelineController(TimelineController* controller) {
@@ -249,7 +249,7 @@ class SessionView : public juce::Component,
     void paintHeaderDragFeedback(juce::Graphics& g);
 
     // Session playhead position (looped, seconds). -1.0 = inactive.
-    double sessionPlayheadPos_ = -1.0;
+    std::unordered_map<ClipId, double> clipPlayheadPositions_;
 
     // Timeline controller for tempo access (not owned)
     TimelineController* timelineController_ = nullptr;

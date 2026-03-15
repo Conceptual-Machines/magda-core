@@ -69,6 +69,7 @@ class TracktionEngineWrapper : public AudioEngine,
     bool isRecording() const override;
     double getSessionPlayheadPosition() const override;
     ClipId getSessionPlayheadClipId() const override;
+    std::unordered_map<ClipId, double> getActiveClipPlayheadPositions() const override;
     SessionClipPlayState getSessionClipPlayState(ClipId clipId) const override;
     void setTempo(double bpm) override;
     double getTempo() const override;

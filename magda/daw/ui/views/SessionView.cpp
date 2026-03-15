@@ -2619,7 +2619,12 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             slot->isSelected = (clipId == selectedClipId);
             slot->isMidiClip = (clip->type == ClipType::MIDI);
             slot->clipLength = clip->length;
-            slot->sessionPlayheadPos = slot->clipIsPlaying ? sessionPlayheadPos_ : -1.0;
+            {
+                auto posIt = clipPlayheadPositions_.find(clipId);
+                slot->sessionPlayheadPos =
+                    (slot->clipIsPlaying && posIt != clipPlayheadPositions_.end()) ? posIt->second
+                                                                                   : -1.0;
+            }
 
             slot->setButtonText(clip->name);
 
@@ -2660,15 +2665,16 @@ void SessionView::updateAllClipSlots() {
 // Session Playhead
 // ============================================================================
 
-void SessionView::setSessionPlayheadPosition(double position) {
-    sessionPlayheadPos_ = position;
+void SessionView::setSessionPlayheadPositions(const std::unordered_map<ClipId, double>& positions) {
+    clipPlayheadPositions_ = positions;
 
-    // Update all playing clip slot buttons with the new position
+    // Update all playing clip slot buttons with their per-clip position
     for (auto& trackSlots : clipSlots) {
         for (auto& slotBtn : trackSlots) {
             auto* slot = dynamic_cast<ClipSlotButton*>(slotBtn.get());
             if (slot && slot->clipIsPlaying) {
-                slot->sessionPlayheadPos = position;
+                auto it = positions.find(slot->clipId);
+                slot->sessionPlayheadPos = (it != positions.end()) ? it->second : -1.0;
                 slot->repaint();
             }
         }

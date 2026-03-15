@@ -31,11 +31,13 @@ void SessionClipScheduler::clipsChanged() {
     for (auto clipId : toRemove) {
         audioBridge_.stopSessionClip(clipId);
         activeClips_.erase(clipId);
+        clipLaunchData_.erase(clipId);
         stoppedCounters_.erase(clipId);
         lastNotifiedState_.erase(clipId);
     }
 
     if (activeClips_.empty()) {
+        clipLaunchData_.clear();
         stoppedCounters_.clear();
         lastNotifiedState_.clear();
         stopTimer();
@@ -50,7 +52,7 @@ void SessionClipScheduler::clipPropertyChanged(ClipId clipId) {
     if (!clip)
         return;
 
-    updateLaunchTimings(clip);
+    updateLaunchTimings(clipId, clip);
 }
 
 void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) {
@@ -89,13 +91,16 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         }
 
         // Record launch position and clip properties for playhead.
-        // Only update immediately if no clips are currently playing —
-        // otherwise the pendingPlayheadClip_ timer mechanism will update
-        // launchTransportPos_ when the new clip actually starts playing,
-        // avoiding a premature playhead during the queued period.
+        // Store per-clip launch data immediately if no other clips are active.
+        // For quantized launches with other clips already playing, the
+        // pendingPlayheadClip_ timer mechanism will correct the launch
+        // transport pos when the clip actually starts playing.
+        {
+            auto& data = clipLaunchData_[clipId];
+            data.launchTransportPos = transport.getPosition().inSeconds();
+            updateLaunchTimings(clipId, clip);
+        }
         if (activeClips_.empty()) {
-            launchTransportPos_ = transport.getPosition().inSeconds();
-            updateLaunchTimings(clip);
             playheadClipId_ = clipId;
         }
         pendingPlayheadClip_ = clipId;
@@ -124,6 +129,7 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         if (wasActive) {
             audioBridge_.stopSessionClip(clipId);
             activeClips_.erase(clipId);
+            clipLaunchData_.erase(clipId);
             lastNotifiedState_.erase(clipId);
         }
         cm.notifyClipPlaybackStateChanged(clipId);
@@ -174,8 +180,9 @@ SessionClipPlayState SessionClipScheduler::queryLaunchHandleState(ClipId clipId)
 // Launch Timing Helper
 // =============================================================================
 
-void SessionClipScheduler::updateLaunchTimings(const ClipInfo* clip) {
-    launchClipLooping_ = clip->loopEnabled;
+void SessionClipScheduler::updateLaunchTimings(ClipId clipId, const ClipInfo* clip) {
+    auto& data = clipLaunchData_[clipId];
+    data.looping = clip->loopEnabled;
 
     if (clip->type == ClipType::Audio && clip->autoTempo) {
         // AutoTempo: cache wall-clock durations for playhead tracking,
@@ -183,15 +190,15 @@ void SessionClipScheduler::updateLaunchTimings(const ClipInfo* clip) {
         double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
         if (bpm <= 0.0)
             bpm = 120.0;
-        launchClipLength_ = clip->lengthBeats * 60.0 / bpm;
-        launchLoopLength_ =
-            (clip->loopLengthBeats > 0.0) ? clip->loopLengthBeats * 60.0 / bpm : launchClipLength_;
+        data.clipLength = clip->lengthBeats * 60.0 / bpm;
+        data.loopLength =
+            (clip->loopLengthBeats > 0.0) ? clip->loopLengthBeats * 60.0 / bpm : data.clipLength;
     } else {
-        launchClipLength_ = clip->length;
+        data.clipLength = clip->length;
         // Source length is in seconds, convert to stretched time
         double srcLength =
             clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
-        launchLoopLength_ = srcLength / clip->speedRatio;
+        data.loopLength = srcLength / clip->speedRatio;
     }
 }
 
@@ -210,6 +217,7 @@ void SessionClipScheduler::timerCallback() {
         if (!activeClips_.empty()) {
             auto copy = activeClips_;
             activeClips_.clear();
+            clipLaunchData_.clear();
             stoppedCounters_.clear();
             lastNotifiedState_.clear();
             pendingPlayheadClip_ = INVALID_CLIP_ID;
@@ -224,13 +232,16 @@ void SessionClipScheduler::timerCallback() {
     }
 
     // If a clip was just launched (possibly quantized), detect when it
-    // actually starts playing and update playhead timings at that moment.
+    // actually starts playing and correct its launch transport pos.
     if (pendingPlayheadClip_ != INVALID_CLIP_ID) {
         if (queryLaunchHandleState(pendingPlayheadClip_) == SessionClipPlayState::Playing) {
-            launchTransportPos_ = transport.getPosition().inSeconds();
+            auto it = clipLaunchData_.find(pendingPlayheadClip_);
+            if (it != clipLaunchData_.end()) {
+                it->second.launchTransportPos = transport.getPosition().inSeconds();
+            }
             const auto* pendingClip = cm.getClip(pendingPlayheadClip_);
             if (pendingClip)
-                updateLaunchTimings(pendingClip);
+                updateLaunchTimings(pendingPlayheadClip_, pendingClip);
             playheadClipId_ = pendingPlayheadClip_;
             pendingPlayheadClip_ = INVALID_CLIP_ID;
         }
@@ -278,6 +289,7 @@ void SessionClipScheduler::timerCallback() {
 
     for (auto clipId : toRemove) {
         activeClips_.erase(clipId);
+        clipLaunchData_.erase(clipId);
         stoppedCounters_.erase(clipId);
         lastNotifiedState_.erase(clipId);
         cm.notifyClipPlaybackStateChanged(clipId);
@@ -319,6 +331,7 @@ void SessionClipScheduler::deactivateAllSessionClips() {
 
     auto copy = activeClips_;
     activeClips_.clear();
+    clipLaunchData_.clear();
     stoppedCounters_.clear();
     lastNotifiedState_.clear();
     pendingPlayheadClip_ = INVALID_CLIP_ID;
@@ -333,40 +346,65 @@ void SessionClipScheduler::deactivateAllSessionClips() {
     TrackManager::getInstance().setAllTracksPlaybackMode(TrackPlaybackMode::Arrangement);
 }
 
-double SessionClipScheduler::getSessionPlayheadPosition() const {
-    if (activeClips_.empty() || launchClipLength_ <= 0.0)
-        return -1.0;
-
-    // Only return a position if at least one clip is actually playing.
-    // Looping clips that are still in activeClips_ count as playing even if
-    // the LaunchHandle briefly reports Stopped between loop cycles.
-    bool anyPlaying = false;
-    auto& cm = ClipManager::getInstance();
-    for (auto clipId : activeClips_) {
-        if (queryLaunchHandleState(clipId) == SessionClipPlayState::Playing) {
-            anyPlaying = true;
-            break;
-        }
-        const auto* clip = cm.getClip(clipId);
-        if (clip && clip->loopEnabled) {
-            anyPlaying = true;
-            break;
-        }
-    }
-    if (!anyPlaying)
-        return -1.0;
-
+double SessionClipScheduler::computeClipPlayheadPosition(const ClipLaunchData& data) const {
     auto& transport = edit_.getTransport();
     double currentPos = transport.getPosition().inSeconds();
-    double elapsed = currentPos - launchTransportPos_;
+    double elapsed = currentPos - data.launchTransportPos;
     if (elapsed < 0.0)
         elapsed = 0.0;
 
-    if (launchClipLooping_ && launchLoopLength_ > 0.0) {
-        return std::fmod(elapsed, launchLoopLength_);
+    if (data.looping && data.loopLength > 0.0) {
+        return std::fmod(elapsed, data.loopLength);
     }
 
-    return std::min(elapsed, launchClipLength_);
+    return std::min(elapsed, data.clipLength);
+}
+
+double SessionClipScheduler::getSessionPlayheadPosition() const {
+    if (playheadClipId_ == INVALID_CLIP_ID)
+        return -1.0;
+
+    auto it = clipLaunchData_.find(playheadClipId_);
+    if (it == clipLaunchData_.end() || it->second.clipLength <= 0.0)
+        return -1.0;
+
+    // Check that the tracked clip is actually playing (or looping)
+    auto state = queryLaunchHandleState(playheadClipId_);
+    if (state != SessionClipPlayState::Playing) {
+        const auto* clip = ClipManager::getInstance().getClip(playheadClipId_);
+        if (!clip || !clip->loopEnabled)
+            return -1.0;
+    }
+
+    return computeClipPlayheadPosition(it->second);
+}
+
+std::unordered_map<ClipId, double> SessionClipScheduler::getActiveClipPlayheadPositions() const {
+    std::unordered_map<ClipId, double> positions;
+
+    if (activeClips_.empty())
+        return positions;
+
+    auto& cm = ClipManager::getInstance();
+
+    for (auto clipId : activeClips_) {
+        auto it = clipLaunchData_.find(clipId);
+        if (it == clipLaunchData_.end() || it->second.clipLength <= 0.0)
+            continue;
+
+        // Check that the clip is actually playing (or looping between cycles)
+        auto state = queryLaunchHandleState(clipId);
+        if (state == SessionClipPlayState::Playing) {
+            positions[clipId] = computeClipPlayheadPosition(it->second);
+        } else {
+            const auto* clip = cm.getClip(clipId);
+            if (clip && clip->loopEnabled) {
+                positions[clipId] = computeClipPlayheadPosition(it->second);
+            }
+        }
+    }
+
+    return positions;
 }
 
 }  // namespace magda
