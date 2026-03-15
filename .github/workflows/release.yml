@@ -16,14 +16,21 @@ concurrency:
 
 jobs:
   build-macos:
-    runs-on: [self-hosted, macOS]
+    runs-on: macos-14  # Apple Silicon, can build universal binaries
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
-    - name: Init submodules
-      run: git submodule update --init --recursive
+    - name: Install dependencies
+      run: |
+        brew install ninja create-dmg
+        # Install sccache if not present
+        if ! command -v sccache &>/dev/null; then
+          brew install sccache
+        fi
 
     - name: Extract version
       id: version
@@ -36,10 +43,12 @@ jobs:
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Version: $VERSION"
 
-    - name: Configure CMake
+    - name: Configure CMake (Universal Binary)
       run: |
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0" \
           -DMAGDA_BUILD_TESTS=OFF \
           -DCMAKE_C_COMPILER_LAUNCHER=sccache \
           -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
@@ -136,7 +145,7 @@ jobs:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
         APP_PATH="build/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
-        DMG_NAME="MAGDA-${VERSION}-macOS.dmg"
+        DMG_NAME="MAGDA-${VERSION}-macOS-Universal.dmg"
 
         # create-dmg may exit non-zero if AppleScript Finder styling fails
         # (common on CI). The DMG is still valid in that case.
@@ -165,7 +174,7 @@ jobs:
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
-        DMG_NAME="MAGDA-${VERSION}-macOS.dmg"
+        DMG_NAME="MAGDA-${VERSION}-macOS-Universal.dmg"
         codesign --force --sign "Developer ID Application: Luca Romagnoli (VH54FX3Z7U)" "$DMG_NAME"
         codesign --verify --verbose "$DMG_NAME"
 
@@ -176,7 +185,7 @@ jobs:
         NOTARIZATION_APPLE_ID: ${{ secrets.NOTARIZATION_APPLE_ID }}
         NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
       run: |
-        DMG_NAME="MAGDA-${VERSION}-macOS.dmg"
+        DMG_NAME="MAGDA-${VERSION}-macOS-Universal.dmg"
 
         echo "Submitting for notarization..."
         SUBMIT_OUTPUT=$(xcrun notarytool submit "$DMG_NAME" \
@@ -215,7 +224,7 @@ jobs:
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
-        DMG_NAME="MAGDA-${VERSION}-macOS.dmg"
+        DMG_NAME="MAGDA-${VERSION}-macOS-Universal.dmg"
         shasum -a 256 "$DMG_NAME" > "${DMG_NAME}.sha256"
         cat "${DMG_NAME}.sha256"
 
@@ -224,8 +233,8 @@ jobs:
       with:
         name: macos-release
         path: |
-          MAGDA-*.dmg
-          MAGDA-*.dmg.sha256
+          MAGDA-*-macOS-Universal.dmg
+          MAGDA-*-macOS-Universal.dmg.sha256
 
     - name: Clean up
       if: always()
@@ -238,9 +247,18 @@ jobs:
         rm -rf build
 
   build-windows:
-    runs-on: [self-hosted, Windows]
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+            label: x86_64
+          - arch: arm64
+            cmake_arch: ARM64
+            label: arm64
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
 
@@ -255,6 +273,15 @@ jobs:
         }
         echo "version=$version" >> $env:GITHUB_OUTPUT
         Write-Output "Version: $version"
+
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: ${{ matrix.arch }}
+
+    - name: Install Ninja
+      shell: powershell
+      run: choco install ninja -y
 
     - name: Install sccache
       shell: powershell
@@ -275,6 +302,7 @@ jobs:
       run: |
         cmake -B build -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.cmake_arch }} `
           -DMAGDA_BUILD_TESTS=OFF `
           -DCMAKE_C_COMPILER_LAUNCHER=sccache `
           -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
@@ -308,25 +336,23 @@ jobs:
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
-        # Copy exe to staging directory alongside NSIS script
         $stagingDir = "packaging\windows"
         Copy-Item "${{ steps.locate.outputs.exe_path }}" "$stagingDir\MAGDA.exe"
 
-        # Build installer
         makensis /DVERSION=$env:VERSION "$stagingDir\magda-installer.nsi"
 
-        # Move installer to workspace root
-        Move-Item "$stagingDir\MAGDA-$env:VERSION-Windows-Setup.exe" "."
+        $installerName = "MAGDA-$env:VERSION-Windows-${{ matrix.label }}-Setup.exe"
+        Move-Item "$stagingDir\MAGDA-$env:VERSION-Windows-Setup.exe" $installerName
 
-        Write-Output "Installer created: MAGDA-$env:VERSION-Windows-Setup.exe"
-        Get-ChildItem "MAGDA-*-Windows-Setup.exe"
+        Write-Output "Installer created: $installerName"
+        Get-ChildItem $installerName
 
     - name: Generate checksum
       shell: powershell
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
-        $installer = "MAGDA-$env:VERSION-Windows-Setup.exe"
+        $installer = "MAGDA-$env:VERSION-Windows-${{ matrix.label }}-Setup.exe"
         $hash = Get-FileHash -Algorithm SHA256 $installer
         "$($hash.Hash)  $installer" | Out-File -Encoding utf8 "$installer.sha256"
         Get-Content "$installer.sha256"
@@ -334,10 +360,10 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v7
       with:
-        name: windows-release
+        name: windows-${{ matrix.label }}-release
         path: |
-          MAGDA-*-Windows-Setup.exe
-          MAGDA-*-Windows-Setup.exe.sha256
+          MAGDA-*-Windows-${{ matrix.label }}-Setup.exe
+          MAGDA-*-Windows-${{ matrix.label }}-Setup.exe.sha256
 
     - name: Clean up
       if: always()
@@ -513,5 +539,6 @@ jobs:
         fail_on_unmatched_files: true
         files: |
           macos-release/*
-          windows-release/*
+          windows-x86_64-release/*
+          windows-arm64-release/*
           linux-release/*

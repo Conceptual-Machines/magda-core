@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.24)
 
+# macOS: support back to Big Sur (first Apple Silicon release)
+if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+endif()
+
 project(Magda VERSION 0.1.0 LANGUAGES C CXX)
 
 # Derive display version from git tags (e.g. "0.1.0-rc2" or "0.1.0-rc2-15-g1391223")
