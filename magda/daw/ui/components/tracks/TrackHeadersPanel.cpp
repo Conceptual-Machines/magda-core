@@ -842,6 +842,13 @@ void TrackHeadersPanel::tracksChanged() {
         addTrackRecursive(trackId, 0);
     }
 
+    // Sync routing selectors to match each track's saved input/output state
+    for (size_t i = 0; i < trackHeaders.size(); ++i) {
+        const auto* trk = trackManager.getTrack(visibleTrackIds_[i]);
+        if (trk)
+            updateRoutingSelectorFromTrack(*trackHeaders[i], trk);
+    }
+
     // Sync automation lane visibility from AutomationManager
     syncAutomationLaneVisibility();
 
