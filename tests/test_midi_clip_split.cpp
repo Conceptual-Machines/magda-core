@@ -416,11 +416,12 @@ TEST_CASE("Looped MIDI clip split - both halves keep notes", "[midi][clip][split
         REQUIRE(rightClip->midiNotes[3].startBeat == Catch::Approx(3.0));
     }
 
-    SECTION("Split at non-loop-boundary adjusts right clip phase") {
+    SECTION("Split at non-loop-boundary adjusts right clip midiOffset") {
         // Looped clip: 8 seconds, loop = 4 beats, no initial offset
         ClipId clipId = createLoopedMidiClip(trackId, 0.0, 8.0, 4.0, {0.0, 1.0, 2.0, 3.0});
 
-        // Split at 3 seconds (6 beats). Phase into loop = 6 % 4 = 2 beats
+        // Split at 3 seconds (6 beats at 120 BPM). Phase = 6 % 4 = 2 beats.
+        // Right clip starts playing from beat 2 within the loop pattern.
         SplitClipCommand splitCmd(clipId, 3.0);
         splitCmd.execute();
 
@@ -465,6 +466,49 @@ TEST_CASE("Looped MIDI clip split - both halves keep notes", "[midi][clip][split
 
         REQUIRE(rightClip->midiOffset == Catch::Approx(0.0));
         REQUIRE(rightClip->midiNotes.size() == 2);
+    }
+
+    SECTION("Split 2-bar loop mid-loop adjusts midiOffset correctly") {
+        // Loop from bar 1 to bar 3 (8 beats at 120 BPM = 4 seconds).
+        // Clip extended to 16 seconds (32 beats = 4 loop repetitions).
+        // Notes at beats 0, 2, 4, 6 within the 8-beat loop.
+        ClipId clipId = createLoopedMidiClip(trackId, 0.0, 16.0, 8.0, {0.0, 2.0, 4.0, 6.0});
+
+        // Split at bar 2 (= 2 seconds = 4 beats into the clip).
+        // Phase within loop = fmod(4, 8) = 4 beats (half way through loop).
+        SplitClipCommand splitCmd(clipId, 2.0);
+        splitCmd.execute();
+
+        auto* leftClip = clipManager.getClip(clipId);
+        auto* rightClip = clipManager.getClip(splitCmd.getRightClipId());
+
+        REQUIRE(leftClip != nullptr);
+        REQUIRE(rightClip != nullptr);
+
+        // Left clip keeps original midiOffset (0)
+        REQUIRE(leftClip->midiOffset == Catch::Approx(0.0));
+        // Right clip starts from beat 4 within the 8-beat loop
+        REQUIRE(rightClip->midiOffset == Catch::Approx(4.0));
+
+        // Both keep all 4 notes
+        REQUIRE(leftClip->midiNotes.size() == 4);
+        REQUIRE(rightClip->midiNotes.size() == 4);
+
+        // Notes unchanged (same pattern, different phase)
+        REQUIRE(rightClip->midiNotes[0].startBeat == Catch::Approx(0.0));
+        REQUIRE(rightClip->midiNotes[1].startBeat == Catch::Approx(2.0));
+        REQUIRE(rightClip->midiNotes[2].startBeat == Catch::Approx(4.0));
+        REQUIRE(rightClip->midiNotes[3].startBeat == Catch::Approx(6.0));
+
+        // Loop region: truncated to clip length when clip is shorter than one cycle
+        REQUIRE(leftClip->loopLengthBeats == Catch::Approx(4.0));   // 2s = 4 beats
+        REQUIRE(rightClip->loopLengthBeats == Catch::Approx(8.0));  // 14s = 28 beats > 8
+        REQUIRE(leftClip->loopEnabled == true);
+        REQUIRE(rightClip->loopEnabled == true);
+
+        // Container lengths are correct
+        REQUIRE(leftClip->length == Catch::Approx(2.0));
+        REQUIRE(rightClip->length == Catch::Approx(14.0));
     }
 
     SECTION("Sequential splits of looped clip all keep notes") {

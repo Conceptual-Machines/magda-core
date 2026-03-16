@@ -349,12 +349,17 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     // Handle MIDI clip splitting
     if (rightClip.type == ClipType::MIDI && !rightClip.midiNotes.empty()) {
         if (clip->loopEnabled && clip->loopLengthBeats > 0.0) {
-            // Looped MIDI: both halves keep the same notes — they loop the same pattern.
-            // Adjust the right clip's phase so it starts at the correct point in the loop.
+            // Looped MIDI: both halves keep the same notes.
+            // If the split falls mid-loop, adjust the right clip's midiOffset
+            // so it starts playing from the correct phase within the loop.
+            // If the split lands on a loop boundary, midiOffset stays unchanged.
             const double beatsPerSecond = tempo / 60.0;
             double splitBeat = leftLength * beatsPerSecond;
             double loopLen = clip->loopLengthBeats;
-            rightClip.midiOffset = std::fmod(clip->midiOffset + splitBeat, loopLen);
+            double phase = std::fmod(splitBeat, loopLen);
+            if (phase > 0.0001) {
+                rightClip.midiOffset = std::fmod(clip->midiOffset + phase, loopLen);
+            }
         } else {
             // Non-looped MIDI: partition notes by split position
             const double beatsPerSecond = tempo / 60.0;

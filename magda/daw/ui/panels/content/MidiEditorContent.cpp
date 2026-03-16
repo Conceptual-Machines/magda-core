@@ -321,9 +321,11 @@ void MidiEditorContent::updateTimeRuler() {
     timeRuler_->setZoom(horizontalZoom_);
     timeRuler_->setGridResolution(gridResolutionBeats_);
 
-    // Set clip info for boundary drawing
+    // Set clip info for boundary drawing.
+    // Looped clips show the loop region starting from bar 1 — the editor
+    // displays the loop content, not the timeline position.
     if (clip) {
-        if (clip->view == magda::ClipView::Session) {
+        if (clip->loopEnabled || clip->view == magda::ClipView::Session) {
             timeRuler_->setTimeOffset(0.0);
             timeRuler_->setClipLength(clip->length);
         } else {

@@ -1738,7 +1738,11 @@ void DrumGridClipContent::updateGridSize() {
     double clipStartBeats = 0.0;
     double clipLengthBeats = 0.0;
     if (clip) {
-        clipStartBeats = clip->startTime / secondsPerBeat;
+        if (clip->loopEnabled || clip->view == magda::ClipView::Session) {
+            clipStartBeats = 0.0;
+        } else {
+            clipStartBeats = clip->startTime / secondsPerBeat;
+        }
         clipLengthBeats = clip->length / secondsPerBeat;
     }
 
@@ -1756,7 +1760,9 @@ void DrumGridClipContent::updateGridSize() {
     if (clip) {
         double beatsPerSecond = tempo / 60.0;
         double loopOffsetBeats = clip->loopStart * beatsPerSecond;
-        double sourceLengthBeats = clip->loopLength * beatsPerSecond;
+        // MIDI clips use loopLengthBeats directly; audio clips derive from loopLength (seconds)
+        double sourceLengthBeats =
+            clip->loopLengthBeats > 0.0 ? clip->loopLengthBeats : clip->loopLength * beatsPerSecond;
         gridComponent_->setLoopRegion(loopOffsetBeats, sourceLengthBeats, clip->loopEnabled);
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);

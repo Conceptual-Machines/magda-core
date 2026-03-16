@@ -690,7 +690,8 @@ void PianoRollContent::updateGridSize() {
         clipStartBeats = earliestStart / secondsPerBeat;
         clipLengthBeats = (latestEnd - earliestStart) / secondsPerBeat;
     } else if (clip) {
-        if (clip->view == magda::ClipView::Session) {
+        if (clip->loopEnabled || clip->view == magda::ClipView::Session) {
+            // Looped clips and session clips: show content from bar 1
             clipStartBeats = 0.0;
             clipLengthBeats = clip->length / secondsPerBeat;
         } else {
@@ -711,7 +712,6 @@ void PianoRollContent::updateGridSize() {
     gridComponent_->setTimelineLengthBeats(displayLengthBeats);
 
     // Pass loop region data to grid
-    // Note: Grid expects beats, so convert from seconds
     if (clip && selectedClipIds.size() <= 1) {
         double tempo = 120.0;
         if (auto* controller = magda::TimelineController::getCurrent()) {
@@ -719,7 +719,9 @@ void PianoRollContent::updateGridSize() {
         }
         double beatsPerSecond = tempo / 60.0;
         double loopOffsetBeats = clip->loopStart * beatsPerSecond;
-        double sourceLengthBeats = clip->loopLength * beatsPerSecond;
+        // MIDI clips use loopLengthBeats directly; audio clips derive from loopLength (seconds)
+        double sourceLengthBeats =
+            clip->loopLengthBeats > 0.0 ? clip->loopLengthBeats : clip->loopLength * beatsPerSecond;
         gridComponent_->setLoopRegion(loopOffsetBeats, sourceLengthBeats, clip->loopEnabled);
     } else {
         gridComponent_->setLoopRegion(0.0, 0.0, false);
