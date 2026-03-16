@@ -94,16 +94,26 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     if (!teTrack)
         return;
 
-    // Get current MAGDA devices and racks from chain elements
+    // Get current MAGDA devices and racks from chain elements (recursive).
+    // Devices inside racks must be included so that wrapping a device in a
+    // rack doesn't cause the sync logic to delete and recreate the TE plugin
+    // (which resets all plugin state).
     std::vector<DeviceId> magdaDevices;
     std::vector<RackId> magdaRacks;
-    for (const auto& element : trackInfo->chainElements) {
-        if (isDevice(element)) {
-            magdaDevices.push_back(getDevice(element).id);
-        } else if (isRack(element)) {
-            magdaRacks.push_back(getRack(element).id);
-        }
-    }
+    std::function<void(const std::vector<ChainElement>&)> collectElements =
+        [&](const std::vector<ChainElement>& elements) {
+            for (const auto& element : elements) {
+                if (isDevice(element)) {
+                    magdaDevices.push_back(getDevice(element).id);
+                } else if (isRack(element)) {
+                    magdaRacks.push_back(getRack(element).id);
+                    for (const auto& chain : getRack(element).chains) {
+                        collectElements(chain.elements);
+                    }
+                }
+            }
+        };
+    collectElements(trackInfo->chainElements);
 
     // Remove TE plugins that no longer exist in MAGDA
     // Collect plugins to remove under lock, then delete outside lock to avoid blocking
