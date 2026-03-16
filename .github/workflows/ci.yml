@@ -355,9 +355,14 @@ jobs:
       github.event.inputs.skip-cpp-build != 'true'
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
+
+    - name: Setup MSVC x64
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
 
     - name: Configure CMake (Debug)
       run: |
