@@ -865,6 +865,11 @@ void PianoRollGridComponent::setLeftPadding(int padding) {
 void PianoRollGridComponent::setClipStartBeats(double startBeats) {
     if (clipStartBeats_ != startBeats) {
         clipStartBeats_ = startBeats;
+        // In absolute mode, note positions depend on clipStartBeats_
+        // so we need to update their bounds (e.g. during clip drag preview)
+        if (!relativeMode_) {
+            updateNoteComponentBounds();
+        }
         repaint();
     }
 }
@@ -1538,13 +1543,21 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
                 displayBeat = note.startBeat;
             }
         } else {
-            double tempo = 120.0;
-            if (auto* controller = TimelineController::getCurrent()) {
-                tempo = controller->getState().tempo.bpm;
+            // Absolute mode: use clipStartBeats_ which reflects the drag
+            // preview position during clip moves, falling back to the clip's
+            // actual timeline position otherwise.
+            double clipOffsetBeats;
+            if (clipIds_.size() > 1) {
+                double tempo = 120.0;
+                if (auto* controller = TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                clipOffsetBeats = clip->startTime * (tempo / 60.0);
+            } else {
+                clipOffsetBeats = clipStartBeats_;
             }
-            double clipStartBeats = clip->startTime * (tempo / 60.0);
             double trimCompensation = (clip->type == ClipType::MIDI) ? clip->midiTrimOffset : 0.0;
-            displayBeat = clipStartBeats + note.startBeat - trimCompensation;
+            displayBeat = clipOffsetBeats + note.startBeat - trimCompensation;
         }
 
         int x = beatToPixel(displayBeat);
