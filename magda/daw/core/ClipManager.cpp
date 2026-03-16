@@ -357,7 +357,10 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
             double splitBeat = leftLength * beatsPerSecond;
             double loopLen = clip->loopLengthBeats;
             double phase = std::fmod(splitBeat, loopLen);
-            if (phase > 0.0001) {
+            // Treat near-zero and near-loopLen as boundary (floating-point tolerance)
+            constexpr double kEpsilon = 0.0001;
+            bool onBoundary = phase < kEpsilon || (loopLen - phase) < kEpsilon;
+            if (!onBoundary) {
                 rightClip.midiOffset = std::fmod(clip->midiOffset + phase, loopLen);
             }
         } else {

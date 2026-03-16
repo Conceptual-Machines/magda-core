@@ -1058,8 +1058,8 @@ void WaveformEditorContent::updateGridSize() {
                 totalTime = info.fullSourceExtentSeconds;
                 // When bar origin is negative (shifted to match arrangement position),
                 // the ruler needs extra length so bar numbers extend to the file end.
-                // drawBarsBeatsMode iterates for totalTimelineBeats starting from barOriginBeats,
-                // so timelineLength must cover from barOrigin to file end.
+                // The ruler draws from barOrigin (seconds) for timelineLength (seconds),
+                // so we extend totalTime to cover from barOrigin to the file end.
                 double barOrigin = timeRuler_->getBarOrigin();
                 if (barOrigin < 0.0)
                     totalTime -= barOrigin;

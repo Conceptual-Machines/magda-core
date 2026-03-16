@@ -32,7 +32,7 @@ class PlaybackPositionTimer : private juce::Timer {
     std::function<void(bool)> onPlayStateChanged;
 
     /** Callback fired each tick with per-clip playhead positions (clip ID → seconds).
-        Only called when session clips are active. Empty map means no session clips. */
+        Only called when at least one session clip has an active playhead. */
     std::function<void(const std::unordered_map<ClipId, double>&)> onSessionPlayheadUpdate;
 
     /** Callback fired periodically with CPU usage (0.0 to 1.0). */

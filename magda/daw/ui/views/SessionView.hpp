@@ -4,6 +4,7 @@
 
 #include <array>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "core/ClipManager.hpp"
