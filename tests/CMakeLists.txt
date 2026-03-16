@@ -12,6 +12,7 @@ set(TEST_SOURCES
     test_midi_clip_sync.cpp
     test_midi_clip_split.cpp
     test_midi_offset.cpp
+    test_pianoroll_note_position.cpp
     test_nested_racks.cpp
     test_rack_audio.cpp
     test_modulation.cpp
