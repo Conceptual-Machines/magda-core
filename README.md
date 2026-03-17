@@ -11,15 +11,37 @@
 </p>
 
 <p align="center">
-  Multi-Agent Generative Digital Audio
+  Multi-Agent Digital Audio
 </p>
-<p align="center"><img src="assets/treaktion-engine-logo.png" alt="Powered by Traktion Engine" width="250" height="80"></p>
+<p align="center"><img src="assets/treaktion-engine-logo.png" alt="Powered by Tracktion Engine" width="250" height="80"></p>
 
 ---
 
+MAGDA is a free, open-source DAW with AI integrated from the ground up. Built on C++20, JUCE, and Tracktion Engine.
+
+### Features
+
+- **Hybrid tracks**: every track hosts both audio and MIDI clips
+- **Three views**: Arrangement, Session, and Mix
+- **AI chat**: natural language commands that generate and execute a custom DSL directly in the app (BYOAK, Bring Your Own API Keys)
+- **Modulation system**: 16 LFOs (with bezier curve editor) and 16 macro knobs per device and rack
+- **Racks**: parallel processing chains with volume, pan, mute, solo per chain, fully nestable
+- **Piano roll** with pitchbend and MIDI CC lanes
+- **Drum grid** device
+- **Session view** with clip launching
+- **Mixer** with faders, pan, mute, solo, sends, and I/O routing
+- **Collapsible, resizable panels**: Inspector + AI Chat (left), Plugin Browser + Sample Browser (right), context-sensitive editor (bottom)
+
+### Links
+
+- **Website**: [magda.land](https://magda.land/)
+- **YouTube**: [Introduction Video](https://www.youtube.com/watch?v=momhIo5vOSc)
+- **KVR**: [Product Page](https://www.kvraudio.com/product/magda-by-conceptual-machines)
+- **Issues**: [Bug Reports & Feature Requests](https://github.com/Conceptual-Machines/magda-core/issues)
+
 ## Status
 
-Early research and prototyping. Not yet ready for production use.
+v0.1.0 released. See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known bugs and planned features.
 
 ## Building
 
