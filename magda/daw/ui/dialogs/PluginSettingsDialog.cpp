@@ -323,6 +323,13 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
 }
 
 PluginSettingsDialog::~PluginSettingsDialog() {
+    // Abort any in-progress scan so worker processes don't linger
+    if (engine_) {
+        auto* coordinator = engine_->getPluginScanCoordinator();
+        if (coordinator && coordinator->isScanning())
+            coordinator->abortScan();
+    }
+
     setLookAndFeel(nullptr);
     systemDirsList_.setModel(nullptr);
     directoriesList_.setModel(nullptr);
