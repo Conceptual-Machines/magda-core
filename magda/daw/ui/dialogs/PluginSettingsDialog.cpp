@@ -189,7 +189,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
         // Apply settings first so custom paths are used during scan
         applySettings();
 
-        scanButton_.setEnabled(false);
+        setScanningUIEnabled(false);
         scanProgress_ = 0.0;
         scanStatusLabel_.setText("Starting scan...", juce::dontSendNotification);
         scanProgressBar_.setVisible(true);
@@ -213,7 +213,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
             juce::MessageManager::callAsync([safeThis, numPlugins, failedPlugins]() {
                 if (safeThis == nullptr)
                     return;
-                safeThis->scanButton_.setEnabled(true);
+                safeThis->setScanningUIEnabled(true);
                 safeThis->scanProgress_ = -1.0;
                 safeThis->scanProgressBar_.setVisible(false);
                 safeThis->scanStatusLabel_.setText(
@@ -409,6 +409,17 @@ void PluginSettingsDialog::resized() {
         btnArea.removeFromRight(4);
         cancelButton_.setBounds(btnArea.removeFromRight(buttonWidth));
     }
+}
+
+void PluginSettingsDialog::setScanningUIEnabled(bool enabled) {
+    addDirButton_.setEnabled(enabled);
+    removeDirButton_.setEnabled(enabled);
+    scanButton_.setEnabled(enabled);
+    viewReportButton_.setEnabled(enabled);
+    removeSelectedButton_.setEnabled(enabled);
+    resetAllButton_.setEnabled(enabled);
+    okButton_.setEnabled(enabled);
+    cancelButton_.setEnabled(enabled);
 }
 
 void PluginSettingsDialog::applySettings() {

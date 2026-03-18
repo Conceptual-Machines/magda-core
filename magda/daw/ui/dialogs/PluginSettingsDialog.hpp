@@ -29,6 +29,7 @@ class PluginSettingsDialog : public juce::Component {
 
   private:
     void applySettings();
+    void setScanningUIEnabled(bool enabled);
 
     // Inner model for custom directories ListBox
     class DirectoryListModel : public juce::ListBoxModel {
