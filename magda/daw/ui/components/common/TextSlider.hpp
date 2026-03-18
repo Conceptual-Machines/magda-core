@@ -311,15 +311,17 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
                 onShiftDrag(newValue);
             } else {
                 // Normal drag: change the slider value with modifier-based sensitivity
-                // Normal: 200 pixels = full range
-                // Shift: 2000 pixels = full range (10x finer)
-                // Ctrl/Cmd: 20000 pixels = full range (100x finer)
-                double pixelRange = 200.0;
+                // Vertical: component height = full range (fader tracks mouse 1:1)
+                // Horizontal: 200 pixels = full range
+                // Shift: 10x finer, Ctrl/Cmd: 100x finer
+                double pixelRange = (orientation_ == Orientation::Vertical)
+                                        ? static_cast<double>(getHeight())
+                                        : 200.0;
 
                 if (e.mods.isShiftDown()) {
-                    pixelRange = 2000.0;  // Fine control
+                    pixelRange *= 10.0;  // Fine control
                 } else if (e.mods.isCommandDown() || e.mods.isCtrlDown()) {
-                    pixelRange = 20000.0;  // Very fine control
+                    pixelRange *= 100.0;  // Very fine control
                 }
 
                 double pixelDelta;
