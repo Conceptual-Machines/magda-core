@@ -306,16 +306,20 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     // OK / Cancel
     okButton_.setButtonText("OK");
     okButton_.onClick = [this]() {
+        if (isScanRunning())
+            return;
         applySettings();
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            dw->exitModalState(1);
+            dw->setVisible(false);
     };
     addAndMakeVisible(okButton_);
 
     cancelButton_.setButtonText("Cancel");
     cancelButton_.onClick = [this]() {
+        if (isScanRunning())
+            return;
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            dw->exitModalState(0);
+            dw->setVisible(false);
     };
     addAndMakeVisible(cancelButton_);
 
@@ -323,13 +327,6 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
 }
 
 PluginSettingsDialog::~PluginSettingsDialog() {
-    // Abort any in-progress scan so worker processes don't linger
-    if (engine_) {
-        auto* coordinator = engine_->getPluginScanCoordinator();
-        if (coordinator && coordinator->isScanning())
-            coordinator->abortScan();
-    }
-
     setLookAndFeel(nullptr);
     systemDirsList_.setModel(nullptr);
     directoriesList_.setModel(nullptr);
@@ -428,18 +425,40 @@ void PluginSettingsDialog::applySettings() {
     }
 }
 
+bool PluginSettingsDialog::isScanRunning() const {
+    if (!engine_)
+        return false;
+    auto* coordinator = engine_->getPluginScanCoordinator();
+    return coordinator && coordinator->isScanning();
+}
+
+// DialogWindow subclass that prevents closing while a scan is in progress
+class PluginSettingsDialogWindow : public juce::DialogWindow {
+  public:
+    PluginSettingsDialogWindow(const juce::String& title, juce::Colour bg, bool escapeCloses,
+                               PluginSettingsDialog* content)
+        : juce::DialogWindow(title, bg, escapeCloses, true), content_(content) {}
+
+    void closeButtonPressed() override {
+        if (content_ && content_->isScanRunning())
+            return;  // Block close while scanning
+        setVisible(false);
+    }
+
+  private:
+    PluginSettingsDialog* content_;
+};
+
 void PluginSettingsDialog::showDialog(TracktionEngineWrapper* engine, juce::Component* /*parent*/) {
     auto* dialog = new PluginSettingsDialog(engine);
+    auto bg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
 
-    juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = "Plugin Settings";
-    options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
-    options.content.setOwned(dialog);
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = false;
-
-    options.launchAsync();
+    auto* window = new PluginSettingsDialogWindow("Plugin Settings", bg, false, dialog);
+    window->setContentOwned(dialog, true);
+    window->setUsingNativeTitleBar(true);
+    window->setResizable(false, false);
+    window->centreWithSize(dialog->getWidth(), dialog->getHeight());
+    window->setVisible(true);
 }
 
 void PluginSettingsDialog::setupSectionHeader(juce::Label& header, const juce::String& text) {
