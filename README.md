@@ -126,7 +126,6 @@ docs/           # Documentation
 - [Tracktion Engine](https://github.com/Tracktion/tracktion_engine) - Audio engine
 - [JUCE](https://juce.com/) - GUI framework
 - [Catch2](https://github.com/catchorg/Catch2) - Testing (fetched via CMake)
-- [nlohmann/json](https://github.com/nlohmann/json) - JSON library (fetched via CMake)
 
 ## Issues
 
