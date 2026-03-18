@@ -67,7 +67,7 @@ class IconSelector : public juce::Component, public juce::SettableTooltipClient 
     int hoveredIndex_ = -1;
 
     juce::Rectangle<int> getOptionBounds(int index) const;
-    int hitTest(juce::Point<int> pos) const;
+    int hitTestOption(juce::Point<int> pos) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(IconSelector)
 };

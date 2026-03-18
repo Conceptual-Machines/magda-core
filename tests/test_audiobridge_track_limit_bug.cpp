@@ -105,7 +105,6 @@ TEST_CASE("AudioBridge - Track limit bug: Real-world scenario", "[audiobridge][b
         // This is a realistic workflow for a power user working on a large project
 
         int initialTracks = 100;                     // Track IDs 1-100
-        int deletedTracks = 90;                      // Delete 90 tracks
         int newTracks = 50;                          // Track IDs 101-150
         int maxTrackId = initialTracks + newTracks;  // 150
 

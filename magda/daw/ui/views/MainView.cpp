@@ -59,10 +59,10 @@ float dbToMeterPos(float db) {
 }  // namespace
 
 MainView::MainView(AudioEngine* audioEngine)
-    : audioEngine_(audioEngine),
+    : horizontalZoom(10.0),
       playheadPosition(0.0),
-      horizontalZoom(10.0),
-      initialZoomSet(false) {
+      initialZoomSet(false),
+      audioEngine_(audioEngine) {
     // Load configuration
     auto& config = magda::Config::getInstance();
     config.load();
@@ -286,7 +286,7 @@ void MainView::setupComponents() {
     zoomLoopButton->setTooltip("Zoom to loop region");
 
     setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
-    addTrackButton->onClick = [this]() {
+    addTrackButton->onClick = []() {
         auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio);
         UndoManager::getInstance().executeCommand(std::move(cmd));
     };
@@ -375,7 +375,7 @@ void MainView::setupCallbacks() {
         if (start < 0 || end < 0) {
             timelineController->dispatch(ClearTimeSelectionEvent{});
         } else {
-            timelineController->dispatch(SetTimeSelectionEvent{start, end});
+            timelineController->dispatch(SetTimeSelectionEvent{start, end, {}});
             // Move playhead to follow the left side of selection
             timelineController->dispatch(SetPlayheadPositionEvent{start});
         }
@@ -935,7 +935,6 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
 
     // ===== Clip Shortcuts =====
 
-    auto& clipManager = ClipManager::getInstance();
     auto& selectionManager = SelectionManager::getInstance();
 
     // Delete/Backspace: Delete selected clips
@@ -1095,7 +1094,6 @@ void MainView::updateHorizontalZoomScrollBar() {
 
     // Calculate visible range as fraction of total timeline
     // horizontalZoom is ppb, convert through beats
-    double totalBeats = st.secondsToBeats(timelineLength);
     double visibleBeats =
         (horizontalZoom > 0) ? static_cast<double>(viewportWidth) / horizontalZoom : 0;
     double scrollBeats = (horizontalZoom > 0) ? static_cast<double>(scrollX) / horizontalZoom : 0;
@@ -1440,7 +1438,6 @@ void MainView::paintResizeHandle(juce::Graphics& g) {
     // Draw a subtle highlight line when hovered or resizing
     if (isHovered || isResizingHeaders) {
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.4f));
-        int centerY = handleArea.getCentreY();
         g.fillRect(centerX, handleArea.getY() + 4, 1, handleArea.getHeight() - 8);
     }
 }

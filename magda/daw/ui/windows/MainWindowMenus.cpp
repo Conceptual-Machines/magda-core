@@ -409,7 +409,7 @@ void MainWindow::setupMenuCallbacks() {
 
     callbacks.onRedo = []() { UndoManager::getInstance().redo(); };
 
-    callbacks.onCut = [this]() {
+    callbacks.onCut = []() {
         auto& clipManager = ClipManager::getInstance();
         auto& selectionManager = SelectionManager::getInstance();
         auto selectedClips = selectionManager.getSelectedClips();
@@ -714,7 +714,7 @@ void MainWindow::setupMenuCallbacks() {
     // Window menu callbacks
     callbacks.onMinimize = [this]() { setMinimised(true); };
 
-    callbacks.onZoom = [this]() {
+    callbacks.onZoom = []() {
         // TODO: Implement window zoom functionality
         // Note: JUCE DocumentWindow doesn't have simple maximize methods on all platforms
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Zoom",
@@ -724,7 +724,7 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onBringAllToFront = [this]() { toFront(true); };
 
     // Help menu callbacks
-    callbacks.onShowHelp = [this]() {
+    callbacks.onShowHelp = []() {
         // TODO: Implement help
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Help",
                                                "Help functionality not yet implemented.");
@@ -734,7 +734,7 @@ void MainWindow::setupMenuCallbacks() {
         juce::URL("https://Conceptual-Machines.github.io/magda-core/").launchInDefaultBrowser();
     };
 
-    callbacks.onAbout = [this]() { AboutDialog::show(); };
+    callbacks.onAbout = []() { AboutDialog::show(); };
 
     // Settings menu callbacks
     callbacks.onPluginSettings = [this]() {

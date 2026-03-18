@@ -464,7 +464,7 @@ WaveformEditorContent::WaveformEditorContent() {
     }
 
     // Callback when waveform is edited
-    gridComponent_->onWaveformChanged = [this]() {
+    gridComponent_->onWaveformChanged = []() {
         // Could add logic here if needed
     };
 

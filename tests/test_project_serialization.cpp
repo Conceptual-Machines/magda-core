@@ -137,8 +137,8 @@ TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
         auto& projectManager = ProjectManager::getInstance();
 
         // Create a couple tracks
-        auto track1 = trackManager.createTrack("Audio 1", TrackType::Audio);
-        auto track2 = trackManager.createTrack("MIDI 1", TrackType::MIDI);
+        trackManager.createTrack("Audio 1", TrackType::Audio);
+        trackManager.createTrack("MIDI 1", TrackType::MIDI);
 
         REQUIRE(trackManager.getTracks().size() == 2);
 

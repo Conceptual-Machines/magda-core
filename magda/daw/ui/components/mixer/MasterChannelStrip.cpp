@@ -299,7 +299,7 @@ void MasterChannelStrip::setupControls() {
         return static_cast<double>(dbToMeterPos(db));
     });
 
-    volumeSlider->onValueChanged = [this](double pos) {
+    volumeSlider->onValueChanged = [](double pos) {
         float db = meterPosToDb(static_cast<float>(pos));
         float gain = dbToGain(db);
         UndoManager::getInstance().executeCommand(std::make_unique<SetMasterVolumeCommand>(gain));

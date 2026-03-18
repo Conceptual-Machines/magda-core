@@ -649,7 +649,7 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
         }
     };
 
-    header.inputSelector->onSelectionChanged = [this, trackId, midiBridge](int selectedId) {
+    header.inputSelector->onSelectionChanged = [trackId, midiBridge](int selectedId) {
         if (selectedId == 2) {
             TrackManager::getInstance().setTrackMidiInput(trackId, "");
         } else if (selectedId == 1) {
@@ -664,7 +664,7 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
     };
 
     // Output selector callbacks
-    header.outputSelector->onEnabledChanged = [this, trackId](bool enabled) {
+    header.outputSelector->onEnabledChanged = [trackId](bool enabled) {
         if (enabled) {
             TrackManager::getInstance().setTrackAudioOutput(trackId, "master");
         } else {
@@ -674,7 +674,7 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
 
     // Capture outputTrackMapping_ by value so each header has its own snapshot
     // (the shared member is rebuilt per-header in populateAudioOutputOptions)
-    header.outputSelector->onSelectionChanged = [this, trackId,
+    header.outputSelector->onSelectionChanged = [trackId,
                                                  mapping = outputTrackMapping_](int selectedId) {
         if (selectedId == 1) {
             // Master
@@ -697,7 +697,7 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
     };
 
     // MIDI output selector callbacks
-    header.midiOutputSelector->onEnabledChanged = [this, trackId, midiBridge](bool enabled) {
+    header.midiOutputSelector->onEnabledChanged = [trackId](bool enabled) {
         if (!enabled) {
             TrackManager::getInstance().setTrackMidiOutput(trackId, "");
         }
@@ -1067,7 +1067,7 @@ int TrackHeadersPanel::getNumTracks() const {
 }
 
 void TrackHeadersPanel::setTrackHeight(int trackIndex, int height) {
-    if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
         height = juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, height);
         trackHeaders[trackIndex]->height = height;
 
@@ -1085,7 +1085,7 @@ void TrackHeadersPanel::setTrackHeight(int trackIndex, int height) {
 }
 
 int TrackHeadersPanel::getTrackHeight(int trackIndex) const {
-    if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
         return trackHeaders[trackIndex]->height;
     }
     return DEFAULT_TRACK_HEIGHT;
@@ -1183,7 +1183,7 @@ void TrackHeadersPanel::setVerticalZoom(double zoom) {
 void TrackHeadersPanel::setupTrackHeader(TrackHeader& header, int trackIndex) {
     // Name label callback
     header.nameLabel->onTextChange = [this, trackIndex]() {
-        if (trackIndex < trackHeaders.size()) {
+        if (trackIndex < static_cast<int>(trackHeaders.size())) {
             auto& header = *trackHeaders[trackIndex];
             header.name = header.nameLabel->getText();
 
@@ -1195,7 +1195,7 @@ void TrackHeadersPanel::setupTrackHeader(TrackHeader& header, int trackIndex) {
 
     // Mute button callback
     header.muteButton->onClick = [this, trackIndex]() {
-        if (trackIndex < trackHeaders.size()) {
+        if (trackIndex < static_cast<int>(trackHeaders.size())) {
             auto& header = *trackHeaders[trackIndex];
             header.muted = header.muteButton->getToggleState();
 
@@ -1207,7 +1207,7 @@ void TrackHeadersPanel::setupTrackHeader(TrackHeader& header, int trackIndex) {
 
     // Solo button callback
     header.soloButton->onClick = [this, trackIndex]() {
-        if (trackIndex < trackHeaders.size()) {
+        if (trackIndex < static_cast<int>(trackHeaders.size())) {
             auto& header = *trackHeaders[trackIndex];
             header.solo = header.soloButton->getToggleState();
 
@@ -1219,7 +1219,7 @@ void TrackHeadersPanel::setupTrackHeader(TrackHeader& header, int trackIndex) {
 
     // Volume label callback
     header.volumeLabel->onValueChange = [this, trackIndex]() {
-        if (trackIndex < trackHeaders.size()) {
+        if (trackIndex < static_cast<int>(trackHeaders.size())) {
             auto& header = *trackHeaders[trackIndex];
             // Convert dB to linear gain
             header.volume = dbToGain(static_cast<float>(header.volumeLabel->getValue()));
@@ -1232,7 +1232,7 @@ void TrackHeadersPanel::setupTrackHeader(TrackHeader& header, int trackIndex) {
 
     // Pan label callback
     header.panLabel->onValueChange = [this, trackIndex]() {
-        if (trackIndex < trackHeaders.size()) {
+        if (trackIndex < static_cast<int>(trackHeaders.size())) {
             auto& header = *trackHeaders[trackIndex];
             header.pan = static_cast<float>(header.panLabel->getValue());
 
@@ -1314,7 +1314,7 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
     };
 
     // Monitor button callback - cycles Off → In → Auto → Off
-    header.monitorButton->onClick = [this, trackId]() {
+    header.monitorButton->onClick = [trackId]() {
         auto* track = TrackManager::getInstance().getTrack(trackId);
         if (!track)
             return;
@@ -1369,7 +1369,7 @@ void TrackHeadersPanel::rebuildSendLabels(TrackHeader& header, TrackId trackId) 
         label->setValue(levelDb, juce::dontSendNotification);
 
         int busIndex = send.busIndex;
-        label->onValueChange = [this, trackId, busIndex, &header]() {
+        label->onValueChange = [trackId, busIndex, &header]() {
             // Find the label index by matching bus index
             const auto* track = TrackManager::getInstance().getTrack(trackId);
             if (!track)
@@ -1455,7 +1455,7 @@ void TrackHeadersPanel::paintResizeHandle(juce::Graphics& g, juce::Rectangle<int
 }
 
 juce::Rectangle<int> TrackHeadersPanel::getTrackHeaderArea(int trackIndex) const {
-    if (trackIndex < 0 || trackIndex >= trackHeaders.size()) {
+    if (trackIndex < 0 || trackIndex >= static_cast<int>(trackHeaders.size())) {
         return {};
     }
 
@@ -1466,7 +1466,7 @@ juce::Rectangle<int> TrackHeadersPanel::getTrackHeaderArea(int trackIndex) const
 }
 
 juce::Rectangle<int> TrackHeadersPanel::getResizeHandleArea(int trackIndex) const {
-    if (trackIndex < 0 || trackIndex >= trackHeaders.size()) {
+    if (trackIndex < 0 || trackIndex >= static_cast<int>(trackHeaders.size())) {
         return {};
     }
 
@@ -1478,7 +1478,7 @@ juce::Rectangle<int> TrackHeadersPanel::getResizeHandleArea(int trackIndex) cons
 }
 
 bool TrackHeadersPanel::isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const {
-    for (int i = 0; i < trackHeaders.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
         if (getResizeHandleArea(i).contains(point)) {
             trackIndex = i;
             return true;
@@ -1628,7 +1628,6 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
 void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
                                           const SideColumn& inner, int trackHeight) {
     const int nameRowHeight = 18;
-    const int rowHeight = 16;
     const int spacing = 2;
 
     // Top row: collapse button (if group) + name label
@@ -1947,28 +1946,28 @@ void TrackHeadersPanel::mouseMove(const juce::MouseEvent& event) {
 
 // Setter methods
 void TrackHeadersPanel::setTrackName(int trackIndex, const juce::String& name) {
-    if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
         trackHeaders[trackIndex]->name = name;
         trackHeaders[trackIndex]->nameLabel->setText(name, juce::dontSendNotification);
     }
 }
 
 void TrackHeadersPanel::setTrackMuted(int trackIndex, bool muted) {
-    if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
         trackHeaders[trackIndex]->muted = muted;
         trackHeaders[trackIndex]->muteButton->setToggleState(muted, juce::dontSendNotification);
     }
 }
 
 void TrackHeadersPanel::setTrackSolo(int trackIndex, bool solo) {
-    if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
         trackHeaders[trackIndex]->solo = solo;
         trackHeaders[trackIndex]->soloButton->setToggleState(solo, juce::dontSendNotification);
     }
 }
 
 void TrackHeadersPanel::setTrackVolume(int trackIndex, float volume) {
-    if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
         trackHeaders[trackIndex]->volume = volume;
         // Convert linear gain to dB
         trackHeaders[trackIndex]->volumeLabel->setValue(gainToDb(volume),
@@ -1977,7 +1976,7 @@ void TrackHeadersPanel::setTrackVolume(int trackIndex, float volume) {
 }
 
 void TrackHeadersPanel::setTrackPan(int trackIndex, float pan) {
-    if (trackIndex >= 0 && trackIndex < trackHeaders.size()) {
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
         trackHeaders[trackIndex]->pan = pan;
         trackHeaders[trackIndex]->panLabel->setValue(pan, juce::dontSendNotification);
     }

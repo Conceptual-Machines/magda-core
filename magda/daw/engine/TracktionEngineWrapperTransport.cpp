@@ -206,7 +206,7 @@ double TracktionEngineWrapper::getTempo() const {
     return 120.0;
 }
 
-void TracktionEngineWrapper::setTimeSignature(int numerator, int denominator) {
+void TracktionEngineWrapper::setTimeSignature(int /*numerator*/, int /*denominator*/) {
     if (currentEdit_) {
         // Time signature handling in Tracktion Engine - simplified for now
     }

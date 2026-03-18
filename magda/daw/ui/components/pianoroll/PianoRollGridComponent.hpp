@@ -167,7 +167,7 @@ class PianoRollGridComponent : public juce::Component,
     // ClipManagerListener
     void clipsChanged() override {}
     void clipPropertyChanged(ClipId clipId) override;
-    void clipSelectionChanged(ClipId clipId) override {}
+    void clipSelectionChanged(ClipId /*clipId*/) override {}
 
     // Callbacks for parent to handle undo/redo
     std::function<void(ClipId, double, int, int)>

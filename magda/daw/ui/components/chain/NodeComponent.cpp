@@ -802,7 +802,7 @@ void NodeComponent::chainNodeReselected(const magda::ChainNodePath& /*path*/) {
     // Not used - we handle collapse toggle directly in mouseUp
 }
 
-void NodeComponent::paramSelectionChanged(const magda::ParamSelection& selection) {}
+void NodeComponent::paramSelectionChanged(const magda::ParamSelection& /*selection*/) {}
 
 void NodeComponent::mouseDown(const juce::MouseEvent& e) {
     // Only handle left clicks for selection

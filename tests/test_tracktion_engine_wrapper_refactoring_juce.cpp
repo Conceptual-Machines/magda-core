@@ -119,7 +119,7 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
 
         // Test callback setting
         bool callbackCalled = false;
-        wrapper.onDevicesLoadingChanged = [&](bool loading, const juce::String& message) {
+        wrapper.onDevicesLoadingChanged = [&](bool /*loading*/, const juce::String& /*message*/) {
             callbackCalled = true;
         };
 
@@ -146,7 +146,7 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
 
         // Test trigger state detection for play start
         wrapper.updateTriggerState();
-        bool initialStarted = wrapper.justStarted();
+        wrapper.justStarted();
 
         wrapper.play();
         wrapper.updateTriggerState();
@@ -207,7 +207,7 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
 
         auto& wrapper = magda::test::getSharedEngine();
 
-        auto* dm = wrapper.getDeviceManager();
+        wrapper.getDeviceManager();
         expect(true, "DeviceManager access does not crash");
     }
 

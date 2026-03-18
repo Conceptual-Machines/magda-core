@@ -59,7 +59,6 @@ void ClipSynchronizer::syncPlaybackModeToEngine(TrackId trackId) {
     auto* audioTrack = trackController_.getAudioTrack(trackId);
     if (trackInfo && audioTrack) {
         bool newVal = (trackInfo->playbackMode == TrackPlaybackMode::Session);
-        bool oldVal = audioTrack->playSlotClips.get();
         audioTrack->playSlotClips = newVal;
     }
 }

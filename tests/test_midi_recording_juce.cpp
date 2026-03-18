@@ -371,9 +371,9 @@ class ClipInfoMidiDataTest final : public juce::UnitTest {
         beginTest("ClipInfo stores CC data");
 
         ClipInfo clip;
-        clip.midiCCData.push_back({1, 64, 0.0});
-        clip.midiCCData.push_back({74, 127, 2.5});
-        clip.midiCCData.push_back({11, 100, 4.0});
+        clip.midiCCData.push_back({1, 64, 0.0, {}, 0.0, {}, {}});
+        clip.midiCCData.push_back({74, 127, 2.5, {}, 0.0, {}, {}});
+        clip.midiCCData.push_back({11, 100, 4.0, {}, 0.0, {}, {}});
 
         expectEquals(static_cast<int>(clip.midiCCData.size()), 3);
         expectEquals(clip.midiCCData[0].controller, 1);
@@ -387,9 +387,9 @@ class ClipInfoMidiDataTest final : public juce::UnitTest {
         beginTest("ClipInfo stores pitch bend data");
 
         ClipInfo clip;
-        clip.midiPitchBendData.push_back({8192, 0.0});
-        clip.midiPitchBendData.push_back({16383, 1.0});
-        clip.midiPitchBendData.push_back({0, 2.0});
+        clip.midiPitchBendData.push_back({8192, 0.0, {}, 0.0, {}, {}});
+        clip.midiPitchBendData.push_back({16383, 1.0, {}, 0.0, {}, {}});
+        clip.midiPitchBendData.push_back({0, 2.0, {}, 0.0, {}, {}});
 
         expectEquals(static_cast<int>(clip.midiPitchBendData.size()), 3);
         expectEquals(clip.midiPitchBendData[0].value, 8192);
@@ -438,14 +438,14 @@ class ProjectSerializerMidiRoundtripTest final : public juce::UnitTest {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         expect(clip != nullptr, "Clip should exist");
 
-        clip->midiCCData.push_back({1, 64, 0.0});
-        clip->midiCCData.push_back({74, 100, 1.5});
-        clip->midiCCData.push_back({11, 0, 3.0});
+        clip->midiCCData.push_back({1, 64, 0.0, {}, 0.0, {}, {}});
+        clip->midiCCData.push_back({74, 100, 1.5, {}, 0.0, {}, {}});
+        clip->midiCCData.push_back({11, 0, 3.0, {}, 0.0, {}, {}});
 
-        clip->midiPitchBendData.push_back({8192, 0.0});
-        clip->midiPitchBendData.push_back({16383, 0.5});
-        clip->midiPitchBendData.push_back({0, 1.0});
-        clip->midiPitchBendData.push_back({8192, 1.5});
+        clip->midiPitchBendData.push_back({8192, 0.0, {}, 0.0, {}, {}});
+        clip->midiPitchBendData.push_back({16383, 0.5, {}, 0.0, {}, {}});
+        clip->midiPitchBendData.push_back({0, 1.0, {}, 0.0, {}, {}});
+        clip->midiPitchBendData.push_back({8192, 1.5, {}, 0.0, {}, {}});
 
         // Serialize via public API
         ProjectInfo info;

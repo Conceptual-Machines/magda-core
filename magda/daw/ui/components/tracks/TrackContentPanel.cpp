@@ -258,7 +258,7 @@ void TrackContentPanel::resized() {
 }
 
 void TrackContentPanel::selectTrack(int index) {
-    if (index >= 0 && index < trackLanes.size()) {
+    if (index >= 0 && index < static_cast<int>(trackLanes.size())) {
         selectedTrackIndex = index;
 
         if (onTrackSelected) {
@@ -291,7 +291,7 @@ int TrackContentPanel::getNumTracks() const {
 }
 
 void TrackContentPanel::setTrackHeight(int trackIndex, int height) {
-    if (trackIndex >= 0 && trackIndex < trackLanes.size()) {
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(trackLanes.size())) {
         height = juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, height);
         trackLanes[trackIndex]->height = height;
 
@@ -305,7 +305,7 @@ void TrackContentPanel::setTrackHeight(int trackIndex, int height) {
 }
 
 int TrackContentPanel::getTrackHeight(int trackIndex) const {
-    if (trackIndex >= 0 && trackIndex < trackLanes.size()) {
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(trackLanes.size())) {
         return trackLanes[trackIndex]->height;
     }
     return DEFAULT_TRACK_HEIGHT;
@@ -363,7 +363,7 @@ int TrackContentPanel::getTrackYPosition(int trackIndex) const {
     return yPosition;
 }
 
-void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& lane,
+void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lane*/,
                                        juce::Rectangle<int> area, bool isSelected, int trackIndex) {
     // Background (semi-transparent to let grid show through)
     auto bgColour = isSelected ? DarkTheme::getColour(DarkTheme::TRACK_SELECTED)
@@ -634,7 +634,7 @@ void TrackContentPanel::paintEditCursor(juce::Graphics& g) {
 }
 
 juce::Rectangle<int> TrackContentPanel::getTrackLaneArea(int trackIndex) const {
-    if (trackIndex < 0 || trackIndex >= trackLanes.size()) {
+    if (trackIndex < 0 || trackIndex >= static_cast<int>(trackLanes.size())) {
         return {};
     }
 
@@ -2278,7 +2278,7 @@ bool TrackContentPanel::isInterestedInFileDrag(const juce::StringArray& files) {
     return false;
 }
 
-void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int y) {
+void TrackContentPanel::fileDragEnter(const juce::StringArray& /*files*/, int x, int y) {
     dropInsertTime_ = juce::jmax(0.0, pixelToTime(x));
     if (snapTimeToGrid) {
         dropInsertTime_ = snapTimeToGrid(dropInsertTime_);
@@ -2288,7 +2288,7 @@ void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int
     repaint();
 }
 
-void TrackContentPanel::fileDragMove(const juce::StringArray& files, int x, int y) {
+void TrackContentPanel::fileDragMove(const juce::StringArray& /*files*/, int x, int y) {
     dropInsertTime_ = juce::jmax(0.0, pixelToTime(x));
     if (snapTimeToGrid) {
         dropInsertTime_ = snapTimeToGrid(dropInsertTime_);
@@ -2297,7 +2297,7 @@ void TrackContentPanel::fileDragMove(const juce::StringArray& files, int x, int 
     repaint();
 }
 
-void TrackContentPanel::fileDragExit(const juce::StringArray& files) {
+void TrackContentPanel::fileDragExit(const juce::StringArray& /*files*/) {
     showDropIndicator_ = false;
     repaint();
 }

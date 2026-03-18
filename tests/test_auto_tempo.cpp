@@ -24,8 +24,8 @@ using Catch::Approx;
 static constexpr double AMEN_DURATION = 1.513;
 static constexpr double AMEN_ORIGINAL_BPM = 158.6;
 static constexpr double AMEN_SOURCE_BEATS = 4.0;
-static constexpr double AMEN_FILE_DURATION =
-    AMEN_SOURCE_BEATS * 60.0 / AMEN_ORIGINAL_BPM;  // ~1.513s
+// static constexpr double AMEN_FILE_DURATION =
+//     AMEN_SOURCE_BEATS * 60.0 / AMEN_ORIGINAL_BPM;  // ~1.513s
 
 // Project tempo
 static constexpr double PROJECT_BPM = 69.0;

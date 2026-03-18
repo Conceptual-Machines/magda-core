@@ -135,7 +135,7 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
     repaint();
 }
 
-void NoteComponent::mouseDrag(const juce::MouseEvent& e) {
+void NoteComponent::mouseDrag(const juce::MouseEvent& /*e*/) {
     if (dragMode_ == DragMode::None || !parentGrid_) {
         return;
     }

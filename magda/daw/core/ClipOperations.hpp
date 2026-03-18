@@ -440,7 +440,7 @@ class ClipOperations {
      * @return Pair of (loopStartBeats, loopLengthBeats) in SOURCE beats
      */
     static inline std::pair<double, double> getAutoTempoBeatRange(const ClipInfo& clip,
-                                                                  double bpm) {
+                                                                  double /*bpm*/) {
         if (!clip.autoTempo && !clip.warpEnabled) {
             return {0.0, 0.0};
         }

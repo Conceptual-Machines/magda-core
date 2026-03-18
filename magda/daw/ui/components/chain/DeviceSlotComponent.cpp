@@ -737,9 +737,6 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
         juce::GlyphArrangement glyphs;
         juce::String part1 = "MDG2000";
         glyphs.addLineOfText(font, part1, 0.0f, 0.0f);
-        int part1Width = static_cast<int>(glyphs.getBoundingBox(0, -1, true).getWidth()) +
-                         2;  // Add small padding
-
         // Draw "MDG2000" in orange (left-aligned)
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
         g.drawText(part1, textStartX, textY, availableWidth, textHeight,
@@ -1740,8 +1737,8 @@ void DeviceSlotComponent::createCustomUI() {
         };
 
         // Sample drop callback
-        drumGridUI_->onSampleDropped = [this, getDrumGrid,
-                                        updatePadFromChain](int padIndex, const juce::File& file) {
+        drumGridUI_->onSampleDropped = [getDrumGrid, updatePadFromChain](int padIndex,
+                                                                         const juce::File& file) {
             if (auto* dg = getDrumGrid()) {
                 dg->loadSampleToPad(padIndex, file);
                 updatePadFromChain(dg, padIndex);
@@ -1812,7 +1809,7 @@ void DeviceSlotComponent::createCustomUI() {
 
         // Plugin drag & drop onto pads (instrument slot — replaces all plugins)
         drumGridUI_->onPluginDropped =
-            [this, getDrumGrid, updatePadFromChain](int padIndex, const juce::DynamicObject& obj) {
+            [getDrumGrid, updatePadFromChain](int padIndex, const juce::DynamicObject& obj) {
                 auto* dg = getDrumGrid();
                 if (!dg)
                     return;
@@ -1986,8 +1983,8 @@ void DeviceSlotComponent::createCustomUI() {
             };
 
         // Remove plugin from chain
-        padChain.onPluginRemoved = [this, getDrumGrid, updatePadFromChain](int padIndex,
-                                                                           int pluginIndex) {
+        padChain.onPluginRemoved = [getDrumGrid, updatePadFromChain](int padIndex,
+                                                                     int pluginIndex) {
             auto* dg = getDrumGrid();
             if (!dg)
                 return;
@@ -2002,8 +1999,8 @@ void DeviceSlotComponent::createCustomUI() {
         };
 
         // Forward sample operations from PadDeviceSlot -> DrumGrid
-        padChain.onSampleDropped = [this, getDrumGrid, updatePadFromChain](int padIndex,
-                                                                           const juce::File& file) {
+        padChain.onSampleDropped = [getDrumGrid, updatePadFromChain](int padIndex,
+                                                                     const juce::File& file) {
             if (auto* dg = getDrumGrid()) {
                 dg->loadSampleToPad(padIndex, file);
                 updatePadFromChain(dg, padIndex);

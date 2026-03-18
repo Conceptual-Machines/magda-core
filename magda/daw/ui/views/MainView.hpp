@@ -302,7 +302,7 @@ class MainView::SelectionOverlayComponent : public juce::Component {
     void paint(juce::Graphics& g) override;
 
     // Hit testing - transparent to mouse events
-    bool hitTest(int x, int y) override {
+    bool hitTest(int /*x*/, int /*y*/) override {
         return false;
     }
 

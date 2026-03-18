@@ -74,13 +74,13 @@ void IconSelector::paint(juce::Graphics& g) {
 }
 
 void IconSelector::mouseDown(const juce::MouseEvent& e) {
-    int idx = hitTest(e.getPosition());
+    int idx = hitTestOption(e.getPosition());
     if (idx >= 0)
         setSelectedIndex(idx);
 }
 
 void IconSelector::mouseMove(const juce::MouseEvent& e) {
-    int idx = hitTest(e.getPosition());
+    int idx = hitTestOption(e.getPosition());
     if (idx != hoveredIndex_) {
         hoveredIndex_ = idx;
         repaint();
@@ -109,7 +109,7 @@ juce::Rectangle<int> IconSelector::getOptionBounds(int index) const {
     return {index * cellW, 0, cellW, h};
 }
 
-int IconSelector::hitTest(juce::Point<int> pos) const {
+int IconSelector::hitTestOption(juce::Point<int> pos) const {
     for (int i = 0; i < static_cast<int>(options_.size()); ++i) {
         if (getOptionBounds(i).contains(pos))
             return i;

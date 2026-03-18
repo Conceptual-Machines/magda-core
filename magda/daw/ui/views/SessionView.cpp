@@ -2798,7 +2798,6 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
     clearDragGhost();
 
     // Convert screen coordinates to grid viewport coordinates
-    auto gridBounds = gridViewport->getBounds();
     auto gridLocalPoint = gridViewport->getLocalPoint(this, juce::Point<int>(x, y));
 
     // Add viewport scroll offset

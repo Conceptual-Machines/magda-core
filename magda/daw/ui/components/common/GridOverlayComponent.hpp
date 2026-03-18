@@ -29,7 +29,7 @@ class GridOverlayComponent : public juce::Component, public TimelineStateListene
     void paint(juce::Graphics& g) override;
 
     // Transparent to mouse events - clicks pass through
-    bool hitTest(int x, int y) override {
+    bool hitTest(int /*x*/, int /*y*/) override {
         return false;
     }
 

@@ -208,8 +208,6 @@ void AudioBridge::trackPropertyChanged(int trackId) {
                 bool foundAnyDest = false;
                 // Find any input device instances (MIDI or audio) routed to this track
                 for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-                    bool isMidi =
-                        dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner) != nullptr;
                     auto targets = inputDeviceInstance->getTargets();
                     for (auto targetID : targets) {
                         if (targetID == track->itemID) {
@@ -243,8 +241,6 @@ void AudioBridge::trackSelectionChanged(TrackId newTrackId) {
 void AudioBridge::updateMidiRoutingForSelection() {
     auto& tm = TrackManager::getInstance();
     const auto& tracks = tm.getTracks();
-
-    bool anyChanged = false;
 
     // Determine which track should receive MIDI: the selected track,
     // or the track owning the selected clip (clip selection clears track selection)
@@ -313,10 +309,8 @@ void AudioBridge::updateMidiRoutingForSelection() {
 
         if (shouldReceiveMidi && !currentlyRouted) {
             setTrackMidiInput(track.id, "all");
-            anyChanged = true;
         } else if (!shouldReceiveMidi && currentlyRouted) {
             setTrackMidiInput(track.id, "");
-            anyChanged = true;
         }
     }
 

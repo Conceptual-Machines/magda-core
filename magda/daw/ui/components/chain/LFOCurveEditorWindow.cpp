@@ -171,7 +171,7 @@ void LFOCurveEditorContent::setupControls() {
                                                            BinaryData::save_svgSize);
     savePresetButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     savePresetButton_->setHoverColor(DarkTheme::getTextColour());
-    savePresetButton_->onClick = [this]() {
+    savePresetButton_->onClick = []() {
         // TODO: Show save preset dialog
     };
     addAndMakeVisible(savePresetButton_.get());
