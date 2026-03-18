@@ -291,6 +291,8 @@ void PluginScanCoordinator::abortScan() {
     for (auto& worker : workers_)
         worker->abort();
     workers_.clear();
+
+    killOrphanScannerProcesses();
 }
 
 void PluginScanCoordinator::finishScan(bool success) {
@@ -299,6 +301,8 @@ void PluginScanCoordinator::finishScan(bool success) {
     isScanning_ = false;
     stopTimer();
     workers_.clear();
+
+    killOrphanScannerProcesses();
 
     writeScanReport();
 
@@ -310,6 +314,21 @@ void PluginScanCoordinator::finishScan(bool success) {
 
     if (callback)
         callback(success, foundPlugins_, failedPlugins_);
+}
+
+void PluginScanCoordinator::killOrphanScannerProcesses() {
+#if JUCE_MAC || JUCE_LINUX
+    juce::ChildProcess killProc;
+    if (killProc.start("pkill -f magda_plugin_scanner")) {
+        killProc.waitForProcessToFinish(3000);
+    }
+#elif JUCE_WINDOWS
+    juce::ChildProcess killProc;
+    if (killProc.start("taskkill /F /IM magda_plugin_scanner.exe")) {
+        killProc.waitForProcessToFinish(3000);
+    }
+#endif
+    DBG("[ScanCoordinator] Cleaned up orphan scanner processes");
 }
 
 // Exclusion management

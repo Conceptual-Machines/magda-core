@@ -86,6 +86,9 @@ class PluginScanCoordinator : private juce::Timer {
     // Find the scanner executable
     juce::File getScannerExecutable() const;
 
+    // Orphan process cleanup
+    void killOrphanScannerProcesses();
+
     // Exclusion management
     juce::File getExclusionFile() const;
     void loadExclusions();
