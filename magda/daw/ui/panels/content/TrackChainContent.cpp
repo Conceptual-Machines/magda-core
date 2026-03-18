@@ -846,8 +846,6 @@ void TrackChainContent::resized() {
             linkModeLabel_.setBounds(linkLabelBounds);
         }
 
-        showHeader(true);
-
         // === MODS PANEL (left side, if visible) ===
         if (globalModsVisible_) {
             bounds.removeFromLeft(MODS_PANEL_WIDTH);
