@@ -878,34 +878,28 @@ void AudioBridge::timerCallback() {
     // Update per-device metering
     deviceMetering_.updateAllClients();
 
-    // Feed track-level meter data to inner rack devices (they share the rack's output)
+    // Feed track-level meter data to inner rack devices and rack volume sliders.
+    // NOTE: We use the track's output levels for all racks/devices on that track.
+    // This means multiple racks on the same track will show identical meters.
+    // Per-rack metering would require intercepting audio inside each RackType,
+    // which TE doesn't expose without custom graph nodes.
     {
-        auto& rackSync = pluginManager_.getRackSyncManager();
-        trackController_.withTrackMapping([&](const auto& trackMapping) {
-            for (const auto& [trackId, track] : trackMapping) {
-                if (!track)
-                    continue;
+        auto meteringMap = pluginManager_.getRackSyncManager().getMeteringMap();
+        for (const auto& [trackId, info] : meteringMap) {
+            MeterData trackMeter;
+            if (!meteringBuffer_.peekLatest(trackId, trackMeter))
+                continue;
 
-                // Get track-level peaks from the metering buffer
-                MeterData trackMeter;
-                if (!meteringBuffer_.peekLatest(trackId, trackMeter))
-                    continue;
-
-                // Feed to all inner rack devices on this track
-                auto deviceIds = rackSync.getInnerDeviceIdsForTrack(trackId);
-                for (auto devId : deviceIds) {
-                    deviceMetering_.ensureEntry(devId);
-                    deviceMetering_.setDirectLevels(devId, trackMeter.peakL, trackMeter.peakR);
-                }
-
-                // Feed to rack-level metering entries
-                auto rackIds = rackSync.getSyncedRackIdsForTrack(trackId);
-                for (auto rackId : rackIds) {
-                    deviceMetering_.ensureRackEntry(rackId);
-                    deviceMetering_.setRackDirectLevels(rackId, trackMeter.peakL, trackMeter.peakR);
-                }
+            for (auto devId : info.deviceIds) {
+                deviceMetering_.ensureEntry(devId);
+                deviceMetering_.setDirectLevels(devId, trackMeter.peakL, trackMeter.peakR);
             }
-        });
+
+            for (auto rackId : info.rackIds) {
+                deviceMetering_.ensureRackEntry(rackId);
+                deviceMetering_.setRackDirectLevels(rackId, trackMeter.peakL, trackMeter.peakR);
+            }
+        }
     }
 
     // Register master meter client with playback context if not done yet

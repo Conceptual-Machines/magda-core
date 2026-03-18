@@ -251,8 +251,10 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
             // We need a mutable RackInfo to write captured state into the DeviceInfo
             // that createPluginOnly will read.
             auto* mutableRack = TrackManager::getInstance().getRack(trackId, rackInfo.id);
-            for (auto& chain : mutableRack ? mutableRack->chains
-                                           : const_cast<std::vector<ChainInfo>&>(rackInfo.chains)) {
+            jassert(mutableRack != nullptr);
+            if (!mutableRack)
+                continue;
+            for (auto& chain : mutableRack->chains) {
                 for (auto& chainElement : chain.elements) {
                     if (isDevice(chainElement)) {
                         auto& devInfo = getDevice(chainElement);
@@ -2256,15 +2258,10 @@ void PluginManager::updateTransportSyncedProcessors(bool isPlaying) {
 // =============================================================================
 
 te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInfo& device) {
-    DBG("createPluginOnly: device='" << device.name << "' format=" << device.getFormatString());
-
     te::Plugin::Ptr plugin;
 
     if (device.format == PluginFormat::Internal) {
         const auto& ps = device.pluginState;
-        DBG("createPluginOnly: Internal plugin '" << device.name << "' pluginId=" << device.pluginId
-                                                  << " pluginState.len=" << ps.length()
-                                                  << " first100=" << ps.substring(0, 100));
         if (device.pluginId.containsIgnoreCase("delay")) {
             plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("reverb")) {

@@ -213,6 +213,19 @@ std::vector<DeviceId> RackSyncManager::getInnerDeviceIdsForTrack(TrackId trackId
     return ids;
 }
 
+std::unordered_map<TrackId, RackSyncManager::TrackMeteringInfo> RackSyncManager::getMeteringMap()
+    const {
+    std::unordered_map<TrackId, TrackMeteringInfo> map;
+    for (const auto& [rackId, synced] : syncedRacks_) {
+        auto& info = map[synced.trackId];
+        info.rackIds.push_back(rackId);
+        for (const auto& [deviceId, plugin] : synced.innerPlugins) {
+            info.deviceIds.push_back(deviceId);
+        }
+    }
+    return map;
+}
+
 te::Plugin* RackSyncManager::getInnerPlugin(DeviceId deviceId) const {
     for (const auto& [rackId, synced] : syncedRacks_) {
         auto it = synced.innerPlugins.find(deviceId);
@@ -258,23 +271,13 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
             stateStr = ext->state.getProperty(te::IDs::state).toString();
         } else {
             auto stateCopy = plugin->state.createCopy();
-            DBG("capturePluginStates: internal plugin deviceId="
-                << deviceId << " hasIdProp=" << (int)stateCopy.hasProperty(te::IDs::id)
-                << " id=" << stateCopy.getProperty(te::IDs::id).toString().toRawUTF8()
-                << " type=" << stateCopy.getType().toString().toRawUTF8());
             stateCopy.removeProperty(te::IDs::id, nullptr);
             if (auto xml = stateCopy.createXml())
                 stateStr = xml->toString();
         }
 
-        DBG("capturePluginStates: deviceId=" << deviceId << " stateLen=" << stateStr.length()
-                                             << " first100=" << stateStr.substring(0, 100));
-
         if (auto* devInfo = trackManager.getDevice(synced.trackId, deviceId)) {
             devInfo->pluginState = stateStr;
-            DBG("capturePluginStates: stored state for deviceId=" << deviceId);
-        } else {
-            DBG("capturePluginStates: WARNING - no devInfo for deviceId=" << deviceId);
         }
     }
 }

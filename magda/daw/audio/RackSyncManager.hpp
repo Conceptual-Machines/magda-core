@@ -105,6 +105,18 @@ class RackSyncManager {
     std::vector<DeviceId> getInnerDeviceIdsForTrack(TrackId trackId) const;
 
     /**
+     * @brief Pre-grouped metering info: per-track rack IDs and inner device IDs
+     *
+     * Built in a single pass over syncedRacks_. Used by AudioBridge's timer
+     * to avoid O(tracks × racks) per tick.
+     */
+    struct TrackMeteringInfo {
+        std::vector<RackId> rackIds;
+        std::vector<DeviceId> deviceIds;
+    };
+    std::unordered_map<TrackId, TrackMeteringInfo> getMeteringMap() const;
+
+    /**
      * @brief Clear all synced rack state (for shutdown)
      */
     void clear();
