@@ -523,6 +523,32 @@ jobs:
     permissions:
       contents: write
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Generate changelog from commits
+      id: changelog
+      run: |
+        # Find previous tag
+        CURRENT_TAG="v${{ needs.build-macos.outputs.version }}"
+        PREV_TAG=$(git tag --sort=-v:refname | grep -v "$CURRENT_TAG" | head -1)
+        if [ -z "$PREV_TAG" ]; then
+          # No previous tag — list all commits
+          RANGE="HEAD"
+        else
+          RANGE="${PREV_TAG}..HEAD"
+        fi
+        # Build commit log
+        {
+          echo 'body<<CHANGELOG_EOF'
+          echo '## Commits'
+          echo ''
+          git log --format='- %s (%h)' "$RANGE"
+          echo 'CHANGELOG_EOF'
+        } >> "$GITHUB_OUTPUT"
+
     - name: Download all artifacts
       uses: actions/download-artifact@v4
 
@@ -534,6 +560,7 @@ jobs:
       with:
         tag_name: v${{ needs.build-macos.outputs.version }}
         name: MAGDA v${{ needs.build-macos.outputs.version }}
+        body: ${{ steps.changelog.outputs.body }}
         draft: false
         prerelease: ${{ contains(needs.build-macos.outputs.version, '-') }}
         generate_release_notes: true
