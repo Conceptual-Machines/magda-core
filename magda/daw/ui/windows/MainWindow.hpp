@@ -54,9 +54,6 @@ class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
     MainComponent* mainComponent = nullptr;       // Raw pointer - owned by DocumentWindow
     AudioEngine* externalAudioEngine_ = nullptr;  // Non-owning pointer to external engine
 
-    // Menu bar
-    std::unique_ptr<juce::MenuBarComponent> menuBar;
-
     // File chooser for async file import
     std::unique_ptr<juce::FileChooser> fileChooser_;
 

@@ -208,8 +208,10 @@ MainWindow::~MainWindow() {
 
 #if JUCE_MAC
     DBG("  [5b] Clearing macOS menu bar...");
-    // Clear the macOS menu bar
     juce::MenuBarModel::setMacMainMenu(nullptr);
+#else
+    DBG("  [5b] Clearing menu bar...");
+    setMenuBar(nullptr);
 #endif
 
     DBG("  [5c] MainWindow::~MainWindow - about to destroy content");
@@ -1097,9 +1099,7 @@ void MainWindow::setupMenuBar() {
     juce::MenuBarModel::setMacMainMenu(MenuManager::getInstance().getMenuBarModel());
 #else
     // On other platforms, show menu bar in window
-    menuBar =
-        std::make_unique<juce::MenuBarComponent>(MenuManager::getInstance().getMenuBarModel());
-    addAndMakeVisible(menuBar.get());
+    setMenuBar(MenuManager::getInstance().getMenuBarModel());
 #endif
 }
 
