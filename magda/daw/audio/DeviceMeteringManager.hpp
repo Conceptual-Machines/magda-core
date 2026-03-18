@@ -96,6 +96,34 @@ class DeviceMeteringManager {
     std::atomic<float>* getGainAtomic(DeviceId deviceId);
 
     /**
+     * @brief Directly set peak levels for a device (bypasses LevelMeasurer)
+     *
+     * Used when the device is inside a MAGDA rack where we can't intercept
+     * per-plugin audio buffers.  Feed the rack's output levels instead.
+     */
+    void setDirectLevels(DeviceId deviceId, float peakL, float peakR);
+
+    /**
+     * @brief Ensure an entry exists for a device (creates if missing)
+     */
+    void ensureEntry(DeviceId deviceId);
+
+    /**
+     * @brief Directly set peak levels for a rack (bypasses LevelMeasurer)
+     */
+    void setRackDirectLevels(RackId rackId, float peakL, float peakR);
+
+    /**
+     * @brief Ensure a rack metering entry exists (creates if missing)
+     */
+    void ensureRackEntry(RackId rackId);
+
+    /**
+     * @brief Read latest level for a rack (called from UI thread)
+     */
+    bool getRackLatestLevels(RackId rackId, DeviceMeterData& out) const;
+
+    /**
      * @brief Clear all measurers (called during shutdown)
      */
     void clear();
@@ -115,7 +143,13 @@ class DeviceMeteringManager {
         bool clientRegistered = false;
     };
 
+    struct SimpleEntry {
+        std::atomic<float> peakL{0.f};
+        std::atomic<float> peakR{0.f};
+    };
+
     std::map<DeviceId, std::unique_ptr<Entry>> entries_;
+    std::map<RackId, std::unique_ptr<SimpleEntry>> rackEntries_;
     juce::CriticalSection lock_;
     PluginManager* pluginManager_ = nullptr;
 

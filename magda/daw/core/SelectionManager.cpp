@@ -636,7 +636,14 @@ void SelectionManager::addListener(SelectionManagerListener* listener) {
 }
 
 void SelectionManager::removeListener(SelectionManagerListener* listener) {
-    listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), listener), listeners_.end());
+    if (notifyDepth_ > 0) {
+        // During notification: null out instead of erasing to keep iterators valid
+        std::replace(listeners_.begin(), listeners_.end(), listener,
+                     static_cast<SelectionManagerListener*>(nullptr));
+    } else {
+        listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), listener),
+                         listeners_.end());
+    }
 }
 
 // ============================================================================
@@ -644,6 +651,7 @@ void SelectionManager::removeListener(SelectionManagerListener* listener) {
 // ============================================================================
 
 void SelectionManager::notifySelectionTypeChanged(SelectionType type) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->selectionTypeChanged(type);
@@ -651,6 +659,7 @@ void SelectionManager::notifySelectionTypeChanged(SelectionType type) {
 }
 
 void SelectionManager::notifyTrackSelectionChanged(TrackId trackId) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->trackSelectionChanged(trackId);
@@ -659,6 +668,7 @@ void SelectionManager::notifyTrackSelectionChanged(TrackId trackId) {
 
 void SelectionManager::notifyMultiTrackSelectionChanged(
     const std::unordered_set<TrackId>& trackIds) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->multiTrackSelectionChanged(trackIds);
@@ -666,6 +676,7 @@ void SelectionManager::notifyMultiTrackSelectionChanged(
 }
 
 void SelectionManager::notifyClipSelectionChanged(ClipId clipId) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->clipSelectionChanged(clipId);
@@ -673,6 +684,7 @@ void SelectionManager::notifyClipSelectionChanged(ClipId clipId) {
 }
 
 void SelectionManager::notifyMultiClipSelectionChanged(const std::unordered_set<ClipId>& clipIds) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->multiClipSelectionChanged(clipIds);
@@ -680,6 +692,7 @@ void SelectionManager::notifyMultiClipSelectionChanged(const std::unordered_set<
 }
 
 void SelectionManager::notifyTimeRangeSelectionChanged(const TimeRangeSelection& selection) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->timeRangeSelectionChanged(selection);
@@ -687,6 +700,7 @@ void SelectionManager::notifyTimeRangeSelectionChanged(const TimeRangeSelection&
 }
 
 void SelectionManager::notifyNoteSelectionChanged(const NoteSelection& selection) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->noteSelectionChanged(selection);
@@ -694,6 +708,7 @@ void SelectionManager::notifyNoteSelectionChanged(const NoteSelection& selection
 }
 
 void SelectionManager::notifyDeviceSelectionChanged(const DeviceSelection& selection) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->deviceSelectionChanged(selection);
@@ -747,6 +762,7 @@ void SelectionManager::clearChainNodeSelection() {
 }
 
 void SelectionManager::notifyChainNodeSelectionChanged(const ChainNodePath& path) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr) {
             listener->chainNodeSelectionChanged(path);
@@ -755,6 +771,7 @@ void SelectionManager::notifyChainNodeSelectionChanged(const ChainNodePath& path
 }
 
 void SelectionManager::notifyChainNodeReselected(const ChainNodePath& path) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->chainNodeReselected(path);
@@ -819,6 +836,7 @@ void SelectionManager::clearModSelection() {
 }
 
 void SelectionManager::notifyModSelectionChanged(const ModSelection& selection) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->modSelectionChanged(selection);
@@ -883,6 +901,7 @@ void SelectionManager::clearMacroSelection() {
 }
 
 void SelectionManager::notifyMacroSelectionChanged(const MacroSelection& selection) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->macroSelectionChanged(selection);
@@ -953,6 +972,7 @@ void SelectionManager::clearParamSelection() {
 }
 
 void SelectionManager::notifyParamSelectionChanged(const ParamSelection& selection) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->paramSelectionChanged(selection);
@@ -1015,6 +1035,7 @@ void SelectionManager::clearModsPanelSelection() {
 }
 
 void SelectionManager::notifyModsPanelSelectionChanged(const ModsPanelSelection& selection) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->modsPanelSelectionChanged(selection);
@@ -1077,6 +1098,7 @@ void SelectionManager::clearMacrosPanelSelection() {
 }
 
 void SelectionManager::notifyMacrosPanelSelectionChanged(const MacrosPanelSelection& selection) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->macrosPanelSelectionChanged(selection);
@@ -1143,6 +1165,7 @@ void SelectionManager::clearAutomationLaneSelection() {
 
 void SelectionManager::notifyAutomationLaneSelectionChanged(
     const AutomationLaneSelection& selection) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->automationLaneSelectionChanged(selection);
@@ -1211,6 +1234,7 @@ void SelectionManager::clearAutomationClipSelection() {
 
 void SelectionManager::notifyAutomationClipSelectionChanged(
     const AutomationClipSelection& selection) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->automationClipSelectionChanged(selection);
@@ -1379,6 +1403,7 @@ bool SelectionManager::isAutomationPointSelected(AutomationPointId pointId) cons
 
 void SelectionManager::notifyAutomationPointSelectionChanged(
     const AutomationPointSelection& selection) {
+    NotifyGuard guard(*this);
     for (auto* listener : listeners_) {
         if (listener != nullptr)
             listener->automationPointSelectionChanged(selection);

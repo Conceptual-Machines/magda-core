@@ -1168,6 +1168,23 @@ class SelectionManager {
     AutomationPointSelection automationPointSelection_;
 
     std::vector<SelectionManagerListener*> listeners_;
+    int notifyDepth_ = 0;  // >0 while iterating listeners (reentrant-safe)
+
+    /** RAII guard for safe listener iteration. Nulls are skipped during iteration;
+     *  removeListener sets entries to nullptr instead of erasing while depth > 0. */
+    struct NotifyGuard {
+        SelectionManager& sm;
+        NotifyGuard(SelectionManager& s) : sm(s) {
+            ++sm.notifyDepth_;
+        }
+        ~NotifyGuard() {
+            if (--sm.notifyDepth_ == 0) {
+                sm.listeners_.erase(
+                    std::remove(sm.listeners_.begin(), sm.listeners_.end(), nullptr),
+                    sm.listeners_.end());
+            }
+        }
+    };
 
     void notifySelectionTypeChanged(SelectionType type);
     void notifyTrackSelectionChanged(TrackId trackId);

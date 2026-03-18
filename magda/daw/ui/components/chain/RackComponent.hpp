@@ -25,7 +25,7 @@ class ChainPanel;
  * Works recursively - can be nested inside ChainPanel at any depth.
  * Uses ChainNodePath to track its location in the hierarchy.
  */
-class RackComponent : public NodeComponent {
+class RackComponent : public NodeComponent, public juce::Timer {
   public:
     // Constructor for top-level rack (in track)
     RackComponent(magda::TrackId trackId, const magda::RackInfo& rack);
@@ -63,6 +63,7 @@ class RackComponent : public NodeComponent {
 
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
+    void timerCallback() override;
 
     // SelectionManagerListener override
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;

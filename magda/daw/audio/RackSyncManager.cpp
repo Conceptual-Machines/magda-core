@@ -15,10 +15,16 @@ RackSyncManager::RackSyncManager(te::Edit& edit, PluginManager& pluginManager)
 // =============================================================================
 
 te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackInfo) {
+    DBG("syncRack: rackId=" << rackInfo.id << " trackId=" << trackId
+                            << " chains=" << (int)rackInfo.chains.size() << " alreadySynced="
+                            << (int)(syncedRacks_.find(rackInfo.id) != syncedRacks_.end()));
+
     // Check if already synced
     auto it = syncedRacks_.find(rackInfo.id);
     if (it != syncedRacks_.end()) {
-        if (structureChanged(it->second, rackInfo)) {
+        bool changed = structureChanged(it->second, rackInfo);
+        DBG("syncRack: existing rack, structureChanged=" << (int)changed);
+        if (changed) {
             resyncRack(trackId, rackInfo);
         } else {
             updateProperties(it->second, rackInfo);
@@ -88,6 +94,9 @@ void RackSyncManager::resyncRack(TrackId trackId, const RackInfo& rackInfo) {
     if (!rackType)
         return;
 
+    // Capture current plugin states before teardown so they survive recreation
+    capturePluginStates(synced);
+
     // Remove all existing connections (collect first to avoid iterator invalidation)
     {
         auto connections = rackType->getConnections();
@@ -132,6 +141,19 @@ void RackSyncManager::removeRack(RackId rackId) {
 
     auto& synced = it->second;
 
+    // Clear saved plugin state so re-adding the same device gets fresh defaults
+    auto& trackManager = TrackManager::getInstance();
+    for (auto& [deviceId, plugin] : synced.innerPlugins) {
+        if (auto* devInfo = trackManager.getDevice(synced.trackId, deviceId)) {
+            DBG("removeRack: clearing pluginState for deviceId="
+                << deviceId
+                << " stateWas=" << (devInfo->pluginState.isNotEmpty() ? "non-empty" : "empty"));
+            devInfo->pluginState.clear();
+        } else {
+            DBG("removeRack: no devInfo for deviceId=" << deviceId << " (already removed?)");
+        }
+    }
+
     // Remove the RackInstance from its parent track
     if (synced.rackInstance) {
         synced.rackInstance->deleteFromParent();
@@ -170,6 +192,27 @@ std::vector<RackId> RackSyncManager::getSyncedRackIds() const {
     return ids;
 }
 
+std::vector<RackId> RackSyncManager::getSyncedRackIdsForTrack(TrackId trackId) const {
+    std::vector<RackId> ids;
+    for (const auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId == trackId)
+            ids.push_back(rackId);
+    }
+    return ids;
+}
+
+std::vector<DeviceId> RackSyncManager::getInnerDeviceIdsForTrack(TrackId trackId) const {
+    std::vector<DeviceId> ids;
+    for (const auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId != trackId)
+            continue;
+        for (const auto& [deviceId, plugin] : synced.innerPlugins) {
+            ids.push_back(deviceId);
+        }
+    }
+    return ids;
+}
+
 te::Plugin* RackSyncManager::getInnerPlugin(DeviceId deviceId) const {
     for (const auto& [rackId, synced] : syncedRacks_) {
         auto it = synced.innerPlugins.find(deviceId);
@@ -204,26 +247,41 @@ RackId RackSyncManager::getRackIdForInstance(te::Plugin* plugin) const {
     return INVALID_RACK_ID;
 }
 
-void RackSyncManager::captureAllPluginStates() {
+void RackSyncManager::capturePluginStates(SyncedRack& synced) {
     auto& trackManager = TrackManager::getInstance();
 
-    for (auto& [rackId, synced] : syncedRacks_) {
-        for (auto& [deviceId, plugin] : synced.innerPlugins) {
-            juce::String stateStr;
+    for (auto& [deviceId, plugin] : synced.innerPlugins) {
+        juce::String stateStr;
 
-            if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
-                ext->flushPluginStateToValueTree();
-                stateStr = ext->state.getProperty(te::IDs::state).toString();
-            } else {
-                if (auto xml = plugin->state.createXml())
-                    stateStr = xml->toString();
-            }
-
-            // Always overwrite pluginState (even if empty) to avoid stale state
-            if (auto* devInfo = trackManager.getDevice(synced.trackId, deviceId)) {
-                devInfo->pluginState = stateStr;
-            }
+        if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+            ext->flushPluginStateToValueTree();
+            stateStr = ext->state.getProperty(te::IDs::state).toString();
+        } else {
+            auto stateCopy = plugin->state.createCopy();
+            DBG("capturePluginStates: internal plugin deviceId="
+                << deviceId << " hasIdProp=" << (int)stateCopy.hasProperty(te::IDs::id)
+                << " id=" << stateCopy.getProperty(te::IDs::id).toString().toRawUTF8()
+                << " type=" << stateCopy.getType().toString().toRawUTF8());
+            stateCopy.removeProperty(te::IDs::id, nullptr);
+            if (auto xml = stateCopy.createXml())
+                stateStr = xml->toString();
         }
+
+        DBG("capturePluginStates: deviceId=" << deviceId << " stateLen=" << stateStr.length()
+                                             << " first100=" << stateStr.substring(0, 100));
+
+        if (auto* devInfo = trackManager.getDevice(synced.trackId, deviceId)) {
+            devInfo->pluginState = stateStr;
+            DBG("capturePluginStates: stored state for deviceId=" << deviceId);
+        } else {
+            DBG("capturePluginStates: WARNING - no devInfo for deviceId=" << deviceId);
+        }
+    }
+}
+
+void RackSyncManager::captureAllPluginStates() {
+    for (auto& [rackId, synced] : syncedRacks_) {
+        capturePluginStates(synced);
     }
 }
 
@@ -385,9 +443,9 @@ void RackSyncManager::loadChainPlugins(SyncedRack& synced, TrackId trackId,
                         // Apply bypass state
                         plugin->setEnabled(!device.bypassed);
 
-                        DBG("RackSyncManager: Added plugin '" << device.name << "' (device "
-                                                              << device.id << ") to rack "
-                                                              << synced.rackId);
+                        DBG("RackSyncManager: Added plugin '"
+                            << device.name << "' (device " << device.id << ") to rack "
+                            << synced.rackId << " itemID=" << plugin->itemID.getRawID());
                     } else {
                         DBG("RackSyncManager: Failed to add plugin '" << device.name
                                                                       << "' to rack");
@@ -463,6 +521,25 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
         // Wire serial connections: rack input → first plugin → ... → last plugin → rack output
         auto firstPlugin = chainPluginIds.front();
         auto lastPlugin = chainPluginIds.back();
+
+        DBG("buildConnections: chain " << chain.id << " has " << chainPluginIds.size()
+                                       << " plugins, first=" << firstPlugin.getRawID()
+                                       << " last=" << lastPlugin.getRawID()
+                                       << " chainActive=" << (int)chainActive);
+
+        // Verify all plugin IDs are recognized by the rack
+        for (size_t idx = 0; idx < chainPluginIds.size(); ++idx) {
+            auto pid = chainPluginIds[idx];
+            bool found = false;
+            for (auto* p : rackType->getPlugins()) {
+                if (p->itemID == pid) {
+                    found = true;
+                    break;
+                }
+            }
+            DBG("buildConnections:   plugin[" << idx << "] id=" << pid.getRawID()
+                                              << " foundInRack=" << (int)found);
+        }
 
         // Connect rack audio input to first plugin (L/R)
         rackType->addConnection(rackIOId, 1, firstPlugin, 1);

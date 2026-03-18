@@ -318,6 +318,7 @@ void AudioBridge::updateMidiRoutingForSelection() {
 }
 
 void AudioBridge::trackDevicesChanged(TrackId trackId) {
+    DBG("AudioBridge::trackDevicesChanged: trackId=" << trackId);
     // Devices on a track changed - resync that track's plugins
     syncTrackPlugins(trackId);
 }
@@ -876,6 +877,36 @@ void AudioBridge::timerCallback() {
 
     // Update per-device metering
     deviceMetering_.updateAllClients();
+
+    // Feed track-level meter data to inner rack devices (they share the rack's output)
+    {
+        auto& rackSync = pluginManager_.getRackSyncManager();
+        trackController_.withTrackMapping([&](const auto& trackMapping) {
+            for (const auto& [trackId, track] : trackMapping) {
+                if (!track)
+                    continue;
+
+                // Get track-level peaks from the metering buffer
+                MeterData trackMeter;
+                if (!meteringBuffer_.peekLatest(trackId, trackMeter))
+                    continue;
+
+                // Feed to all inner rack devices on this track
+                auto deviceIds = rackSync.getInnerDeviceIdsForTrack(trackId);
+                for (auto devId : deviceIds) {
+                    deviceMetering_.ensureEntry(devId);
+                    deviceMetering_.setDirectLevels(devId, trackMeter.peakL, trackMeter.peakR);
+                }
+
+                // Feed to rack-level metering entries
+                auto rackIds = rackSync.getSyncedRackIdsForTrack(trackId);
+                for (auto rackId : rackIds) {
+                    deviceMetering_.ensureRackEntry(rackId);
+                    deviceMetering_.setRackDirectLevels(rackId, trackMeter.peakL, trackMeter.peakR);
+                }
+            }
+        });
+    }
 
     // Register master meter client with playback context if not done yet
     if (!masterMeterRegistered_) {

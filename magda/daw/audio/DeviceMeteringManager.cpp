@@ -82,6 +82,48 @@ std::atomic<float>* DeviceMeteringManager::getGainAtomic(DeviceId deviceId) {
     return nullptr;
 }
 
+void DeviceMeteringManager::setDirectLevels(DeviceId deviceId, float peakL, float peakR) {
+    juce::ScopedLock sl(lock_);
+    auto it = entries_.find(deviceId);
+    if (it != entries_.end()) {
+        it->second->peakL.store(peakL, std::memory_order_relaxed);
+        it->second->peakR.store(peakR, std::memory_order_relaxed);
+    }
+}
+
+void DeviceMeteringManager::ensureEntry(DeviceId deviceId) {
+    juce::ScopedLock sl(lock_);
+    if (entries_.find(deviceId) == entries_.end()) {
+        entries_[deviceId] = std::make_unique<Entry>();
+    }
+}
+
+void DeviceMeteringManager::setRackDirectLevels(RackId rackId, float peakL, float peakR) {
+    juce::ScopedLock sl(lock_);
+    auto it = rackEntries_.find(rackId);
+    if (it != rackEntries_.end()) {
+        it->second->peakL.store(peakL, std::memory_order_relaxed);
+        it->second->peakR.store(peakR, std::memory_order_relaxed);
+    }
+}
+
+void DeviceMeteringManager::ensureRackEntry(RackId rackId) {
+    juce::ScopedLock sl(lock_);
+    if (rackEntries_.find(rackId) == rackEntries_.end())
+        rackEntries_[rackId] = std::make_unique<SimpleEntry>();
+}
+
+bool DeviceMeteringManager::getRackLatestLevels(RackId rackId, DeviceMeterData& out) const {
+    juce::ScopedLock sl(lock_);
+    auto it = rackEntries_.find(rackId);
+    if (it == rackEntries_.end())
+        return false;
+
+    out.peakL = it->second->peakL.load(std::memory_order_relaxed);
+    out.peakR = it->second->peakR.load(std::memory_order_relaxed);
+    return true;
+}
+
 void DeviceMeteringManager::clear() {
     juce::ScopedLock sl(lock_);
     for (auto& [deviceId, entry] : entries_) {
@@ -89,6 +131,7 @@ void DeviceMeteringManager::clear() {
             entry->measurer.removeClient(entry->client);
     }
     entries_.clear();
+    rackEntries_.clear();
 }
 
 DeviceMeteringManager* DeviceMeteringManager::getInstanceForEdit(te::Edit& edit) {

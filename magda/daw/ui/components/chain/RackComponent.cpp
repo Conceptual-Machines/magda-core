@@ -4,6 +4,8 @@
 
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
+#include "audio/AudioBridge.hpp"
+#include "engine/AudioEngine.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -162,9 +164,28 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
 
     // Build chain rows
     updateFromRack(rack);
+
+    // Start meter polling timer (~30 FPS)
+    startTimerHz(30);
 }
 
-RackComponent::~RackComponent() = default;
+RackComponent::~RackComponent() {
+    stopTimer();
+}
+
+void RackComponent::timerCallback() {
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return;
+
+    magda::DeviceMeteringManager::DeviceMeterData data;
+    if (bridge->getDeviceMetering().getRackLatestLevels(rackId_, data)) {
+        volumeSlider_.setMeterLevels(data.peakL, data.peakR);
+    }
+}
 
 void RackComponent::mouseDown(const juce::MouseEvent& e) {
     // Let the base class handle selection - it will call selectChainNode in mouseUp

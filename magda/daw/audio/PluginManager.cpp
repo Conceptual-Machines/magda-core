@@ -234,6 +234,61 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
             }
         } else if (isRack(element)) {
             const auto& rackInfo = getRack(element);
+            DBG("syncTrackPlugins: found rack id=" << rackInfo.id
+                                                   << " chains=" << (int)rackInfo.chains.size()
+                                                   << " totalDevices=" << [&]() {
+                                                          int n = 0;
+                                                          for (auto& c : rackInfo.chains)
+                                                              for (auto& e : c.elements)
+                                                                  if (isDevice(e))
+                                                                      n++;
+                                                          return n;
+                                                      }());
+
+            // Unwrap any InstrumentRackManager wrappers for devices that moved
+            // into this MAGDA rack.  The standalone wrapper must be removed before
+            // RackSyncManager creates its own rack containing the same device.
+            // We need a mutable RackInfo to write captured state into the DeviceInfo
+            // that createPluginOnly will read.
+            auto* mutableRack = TrackManager::getInstance().getRack(trackId, rackInfo.id);
+            for (auto& chain : mutableRack ? mutableRack->chains
+                                           : const_cast<std::vector<ChainInfo>&>(rackInfo.chains)) {
+                for (auto& chainElement : chain.elements) {
+                    if (isDevice(chainElement)) {
+                        auto& devInfo = getDevice(chainElement);
+                        auto devId = devInfo.id;
+                        if (auto* innerPlugin = instrumentRackManager_.getInnerPlugin(devId)) {
+                            // Capture the plugin's current state before unwrapping
+                            // so RackSyncManager can restore it in the new rack plugin
+                            if (auto* ext = dynamic_cast<te::ExternalPlugin*>(innerPlugin)) {
+                                ext->flushPluginStateToValueTree();
+                                devInfo.pluginState =
+                                    ext->state.getProperty(te::IDs::state).toString();
+                            } else {
+                                auto stateCopy = innerPlugin->state.createCopy();
+                                stateCopy.removeProperty(te::IDs::id, nullptr);
+                                if (auto xml = stateCopy.createXml())
+                                    devInfo.pluginState = xml->toString();
+                            }
+                            DBG("syncTrackPlugins: captured state for device "
+                                << devId << " len=" << devInfo.pluginState.length());
+
+                            DBG("syncTrackPlugins: unwrapping InstrumentRack for device "
+                                << devId << " (moved into MAGDA rack " << rackInfo.id << ")");
+                            instrumentRackManager_.unwrap(devId);
+
+                            // Also remove from syncedDevices_ so it doesn't conflict
+                            juce::ScopedLock lock(pluginLock_);
+                            auto sdIt = syncedDevices_.find(devId);
+                            if (sdIt != syncedDevices_.end()) {
+                                if (sdIt->second.plugin)
+                                    pluginToDevice_.erase(sdIt->second.plugin.get());
+                                syncedDevices_.erase(sdIt);
+                            }
+                        }
+                    }
+                }
+            }
 
             // Sync rack (creates or updates TE RackType + RackInstance)
             auto rackInstance = rackSyncManager_.syncRack(trackId, rackInfo);
@@ -367,6 +422,18 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
     // Ensure LevelMeter is at the end of the plugin chain for metering
     addLevelMeterToTrack(trackId);
+
+    // Debug: dump final plugin list
+    {
+        auto& plugins = teTrack->pluginList;
+        DBG("syncTrackPlugins: FINAL plugin list for track " << trackId << " (" << plugins.size()
+                                                             << " plugins):");
+        for (int i = 0; i < plugins.size(); ++i) {
+            DBG("  [" << i << "] " << plugins[i]->getName().toRawUTF8()
+                      << " enabled=" << (int)plugins[i]->isEnabled()
+                      << " itemID=" << (juce::int64)plugins[i]->itemID.getRawID());
+        }
+    }
 
     // Rebuild sidechain LFO cache so audio/MIDI threads see current state
     rebuildSidechainLFOCache();
@@ -686,7 +753,11 @@ te::Plugin::Ptr PluginManager::addLevelMeterToTrack(TrackId trackId) {
     if (plugin) {
         if (auto* levelMeter = dynamic_cast<te::LevelMeterPlugin*>(plugin.get())) {
             trackController_.addMeterClient(trackId, levelMeter);
+            DBG("addLevelMeterToTrack: registered meter client for track "
+                << trackId << " itemID=" << (juce::int64)plugin->itemID.getRawID());
         }
+    } else {
+        DBG("addLevelMeterToTrack: WARNING - failed to create LevelMeter for track " << trackId);
     }
 
     return plugin;
@@ -2191,6 +2262,9 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
 
     if (device.format == PluginFormat::Internal) {
         const auto& ps = device.pluginState;
+        DBG("createPluginOnly: Internal plugin '" << device.name << "' pluginId=" << device.pluginId
+                                                  << " pluginState.len=" << ps.length()
+                                                  << " first100=" << ps.substring(0, 100));
         if (device.pluginId.containsIgnoreCase("delay")) {
             plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("reverb")) {
@@ -2867,14 +2941,36 @@ te::Plugin::Ptr PluginManager::createFourOscSynth(te::AudioTrack* track) {
 
 te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeName,
                                                     const juce::String& savedPluginState) {
+    DBG("createInternalPlugin: type=" << xmlTypeName.toRawUTF8()
+                                      << " hasState=" << (int)savedPluginState.isNotEmpty()
+                                      << " stateLen=" << savedPluginState.length());
+
     if (savedPluginState.isNotEmpty()) {
         if (auto xml = juce::parseXML(savedPluginState)) {
             auto savedState = juce::ValueTree::fromXml(*xml);
-            if (savedState.isValid())
-                return edit_.getPluginCache().createNewPlugin(savedState);
+            DBG("createInternalPlugin: parsed XML ok, VT type="
+                << savedState.getType().toString().toRawUTF8()
+                << " hasId=" << (int)savedState.hasProperty(te::IDs::id)
+                << " id=" << savedState.getProperty(te::IDs::id).toString().toRawUTF8()
+                << " numProps=" << savedState.getNumProperties()
+                << " numChildren=" << savedState.getNumChildren());
+            if (savedState.isValid()) {
+                auto plugin = edit_.getPluginCache().createNewPlugin(savedState);
+                DBG("createInternalPlugin: from saved state -> plugin="
+                    << (plugin ? plugin->getName().toRawUTF8() : "NULL")
+                    << " itemID=" << (plugin ? (juce::int64)plugin->itemID.getRawID() : -1));
+                return plugin;
+            }
+        } else {
+            DBG("createInternalPlugin: WARNING - failed to parse XML from saved state");
         }
     }
-    return edit_.getPluginCache().createNewPlugin(xmlTypeName, {});
+
+    auto plugin = edit_.getPluginCache().createNewPlugin(xmlTypeName, {});
+    DBG("createInternalPlugin: fresh plugin -> "
+        << (plugin ? plugin->getName().toRawUTF8() : "NULL")
+        << " itemID=" << (plugin ? (juce::int64)plugin->itemID.getRawID() : -1));
+    return plugin;
 }
 
 }  // namespace magda
