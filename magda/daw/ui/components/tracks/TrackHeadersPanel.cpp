@@ -464,19 +464,25 @@ void TrackHeadersPanel::timerCallback() {
         if (counter != header->lastMidiCounter) {
             header->lastMidiCounter = counter;
 
-            // Only show activity when monitoring is active
+            // Only show activity when monitoring is active AND the track
+            // is actually receiving MIDI (selected or record-armed)
             bool showActivity = false;
             if (auto* trackInfo = TrackManager::getInstance().getTrack(header->trackId)) {
-                switch (trackInfo->inputMonitor) {
-                    case InputMonitorMode::In:
-                        showActivity = true;
-                        break;
-                    case InputMonitorMode::Auto:
-                        showActivity = !bridge->isTransportPlaying();
-                        break;
-                    case InputMonitorMode::Off:
-                        showActivity = false;
-                        break;
+                bool receivingMidi =
+                    trackInfo->recordArmed ||
+                    SelectionManager::getInstance().getSelectedTrack() == header->trackId;
+                if (receivingMidi) {
+                    switch (trackInfo->inputMonitor) {
+                        case InputMonitorMode::In:
+                            showActivity = true;
+                            break;
+                        case InputMonitorMode::Auto:
+                            showActivity = !bridge->isTransportPlaying();
+                            break;
+                        case InputMonitorMode::Off:
+                            showActivity = false;
+                            break;
+                    }
                 }
             }
             if (showActivity) {

@@ -349,9 +349,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Restore persisted panel sizes (0 = use defaults already set above)
     // Clamp against layout constraints to handle stale config values
     if (config.getLeftPanelWidth() > 0)
-        leftPanelWidth = juce::jmax(layout.panelCollapseThreshold, config.getLeftPanelWidth());
+        leftPanelWidth = juce::jmax(layout.minPanelWidth, config.getLeftPanelWidth());
     if (config.getRightPanelWidth() > 0)
-        rightPanelWidth = juce::jmax(layout.panelCollapseThreshold, config.getRightPanelWidth());
+        rightPanelWidth = juce::jmax(layout.minPanelWidth, config.getRightPanelWidth());
     if (config.getBottomPanelHeight() > 0)
         bottomPanelHeight = juce::jmax(layout.minBottomPanelHeight, config.getBottomPanelHeight());
 
@@ -588,7 +588,7 @@ void MainWindow::MainComponent::setupResizeHandles() {
                 leftPanel->setCollapsed(false);
             }
             int maxWidth = static_cast<int>(getWidth() * layout.maxLeftPanelRatio);
-            leftPanelWidth = juce::jlimit(layout.panelCollapseThreshold, maxWidth, newWidth);
+            leftPanelWidth = juce::jlimit(layout.minPanelWidth, maxWidth, newWidth);
         }
         resized();
     };
@@ -607,7 +607,7 @@ void MainWindow::MainComponent::setupResizeHandles() {
                 rightPanel->setCollapsed(false);
             }
             int maxWidth = static_cast<int>(getWidth() * layout.maxRightPanelRatio);
-            rightPanelWidth = juce::jlimit(layout.panelCollapseThreshold, maxWidth, newWidth);
+            rightPanelWidth = juce::jlimit(layout.minPanelWidth, maxWidth, newWidth);
         }
         resized();
     };
@@ -911,8 +911,8 @@ void MainWindow::MainComponent::resized() {
     const int maxBottomHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
 
     // Enforce both minimum and maximum so non-collapsed panels stay within valid range
-    const int minLeftWidth = leftPanelCollapsed ? 0 : layout.panelCollapseThreshold;
-    const int minRightWidth = rightPanelCollapsed ? 0 : layout.panelCollapseThreshold;
+    const int minLeftWidth = leftPanelCollapsed ? 0 : layout.minPanelWidth;
+    const int minRightWidth = rightPanelCollapsed ? 0 : layout.minPanelWidth;
     const int minBottomHeight = bottomPanelCollapsed ? 0 : layout.minBottomPanelHeight;
 
     leftPanelWidth =
