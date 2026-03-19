@@ -502,7 +502,7 @@ TrackChainContent::TrackChainContent()
     // Viewport for horizontal scrolling of chain content
     DBG("TrackChainContent::ctor - Setting up ZoomableViewport for chain content");
     chainViewport_->setViewedComponent(chainContainer_.get(), false);
-    chainViewport_->setScrollBarsShown(false, true);  // Horizontal only
+    chainViewport_->setScrollBarsShown(true, true);  // Vertical and horizontal
     addAndMakeVisible(*chainViewport_);
 
     // No selection label
@@ -866,15 +866,18 @@ void TrackChainContent::resized() {
 
 void TrackChainContent::layoutChainContent() {
     auto viewportBounds = chainViewport_->getLocalBounds();
-    int chainHeight = viewportBounds.getHeight();
+    int viewportHeight = viewportBounds.getHeight();
     int availableWidth = viewportBounds.getWidth();
+
+    // Enforce minimum content height — viewport scrolls vertically if panel is too short
+    int chainHeight = juce::jmax(MIN_CHAIN_HEIGHT, viewportHeight);
 
     // Calculate total content width (with zoom applied)
     int totalWidth = calculateTotalContentWidth();
 
     // Account for scrollbar if needed
     if (totalWidth > availableWidth) {
-        chainHeight -= 8;  // Space for scrollbar
+        chainHeight = juce::jmax(MIN_CHAIN_HEIGHT, chainHeight - 8);  // Space for scrollbar
     }
 
     // Set container size

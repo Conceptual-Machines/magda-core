@@ -137,6 +137,7 @@ class TrackChainContent : public PanelContent,
 
     static constexpr int HEADER_HEIGHT = 28;
     static constexpr int MODS_PANEL_WIDTH = 160;
+    static constexpr int MIN_CHAIN_HEIGHT = 280;  // Minimum content height before scrolling
 
     // Horizontal zoom
     float zoomLevel_ = 1.0f;

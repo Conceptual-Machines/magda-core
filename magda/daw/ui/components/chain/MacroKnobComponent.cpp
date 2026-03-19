@@ -155,8 +155,10 @@ void MacroKnobComponent::resized() {
     // Skip knob area (drawn in paint())
     bounds.removeFromTop(KNOB_SIZE);
 
-    // Position link button at the very bottom
-    linkButton_->setBounds(bounds.removeFromBottom(LINK_BUTTON_HEIGHT));
+    // Position link button at the very bottom, horizontally centered to match mod knob sizing
+    auto linkArea = bounds.removeFromBottom(LINK_BUTTON_HEIGHT);
+    int linkWidth = juce::jmin(linkArea.getWidth(), LINK_BUTTON_HEIGHT * 3);
+    linkButton_->setBounds(linkArea.withSizeKeepingCentre(linkWidth, LINK_BUTTON_HEIGHT));
 
     // Value slider right above link button
     valueSlider_.setBounds(bounds.removeFromBottom(VALUE_SLIDER_HEIGHT));

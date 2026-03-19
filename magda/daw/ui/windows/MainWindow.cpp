@@ -329,13 +329,16 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Scale side panel defaults based on screen width
     auto displayArea = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()->userArea;
     int screenWidth = displayArea.getWidth();
-    if (screenWidth >= 2560)  // Large display (1440p+)
+    if (screenWidth >= 2560) {  // Large display (1440p+)
         leftPanelWidth = rightPanelWidth = 400;
-    else if (screenWidth >= 1920)  // Full HD
+        bottomPanelHeight = 380;
+    } else if (screenWidth >= 1920) {  // Full HD
         leftPanelWidth = rightPanelWidth = 350;
-    else
+        bottomPanelHeight = 350;
+    } else {
         leftPanelWidth = rightPanelWidth = layout.defaultLeftPanelWidth;  // 300 for small screens
-    bottomPanelHeight = daw::ui::DebugSettings::getInstance().getBottomPanelHeight();
+        bottomPanelHeight = layout.defaultBottomPanelHeight;              // 330
+    }
 
     // Listen for debug settings changes
     daw::ui::DebugSettings::getInstance().addListener([this]() {
