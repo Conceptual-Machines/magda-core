@@ -661,9 +661,13 @@ TrackChainContent::TrackChainContent()
     chainBypassButton_->onClick = [this]() {
         bool active = chainBypassButton_->getToggleState();
         chainBypassButton_->setActive(active);
-        // TODO: Actually bypass all devices in the track chain
-        DBG("Track chain bypass: " << (active ? "ACTIVE" : "BYPASSED"));
-        repaint();
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().setChainBypassed(selectedTrackId_, !active);
+        }
+        // Update all node components to reflect bypass state
+        for (auto& node : nodeComponents_) {
+            node->setBypassed(!active);
+        }
     };
     addChildComponent(*chainBypassButton_);
 
@@ -1003,9 +1007,21 @@ void TrackChainContent::updateFromSelectedTrack() {
             // Update pan slider
             panSlider_.setValue(track->pan, juce::dontSendNotification);
 
-            // Reset chain bypass button state (active = not bypassed)
-            chainBypassButton_->setToggleState(true, juce::dontSendNotification);
-            chainBypassButton_->setActive(true);
+            // Check if any device in the chain is not bypassed
+            bool anyActive = false;
+            for (const auto& element :
+                 magda::TrackManager::getInstance().getChainElements(selectedTrackId_)) {
+                if (magda::isDevice(element) && !magda::getDevice(element).bypassed) {
+                    anyActive = true;
+                    break;
+                }
+                if (magda::isRack(element) && !magda::getRack(element).bypassed) {
+                    anyActive = true;
+                    break;
+                }
+            }
+            chainBypassButton_->setToggleState(anyActive, juce::dontSendNotification);
+            chainBypassButton_->setActive(anyActive);
 
             showHeader(true);
 

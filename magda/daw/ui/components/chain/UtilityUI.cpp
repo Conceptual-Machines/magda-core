@@ -2,6 +2,7 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "BinaryData.h"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -68,23 +69,21 @@ UtilityUI::UtilityUI() {
             onParameterChanged(1, static_cast<float>(value));
     };
 
-    // Phase Invert: ON/OFF toggle button (param index 2)
+    // Phase Invert: toggle button with polarity icon (param index 2)
     setupLabelStatic(phaseLabel_, "PHASE", this);
-    phaseButton_.setButtonText("OFF");
-    phaseButton_.setClickingTogglesState(true);
-    phaseButton_.setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    phaseButton_.setColour(juce::TextButton::buttonOnColourId,
-                           DarkTheme::getAccentColour().withAlpha(0.6f));
-    phaseButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    phaseButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
-    phaseButton_.onClick = [this]() {
-        bool on = phaseButton_.getToggleState();
-        phaseButton_.setButtonText(on ? "ON" : "OFF");
+    phaseButton_ = std::make_unique<magda::SvgButton>("Phase", BinaryData::phase_invert_svg,
+                                                      BinaryData::phase_invert_svgSize);
+    phaseButton_->setClickingTogglesState(true);
+    phaseButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    phaseButton_->setActiveColor(DarkTheme::getAccentColour());
+    phaseButton_->setActiveBackgroundColor(DarkTheme::getAccentColour().withAlpha(0.2f));
+    phaseButton_->onClick = [this]() {
+        bool on = phaseButton_->getToggleState();
+        phaseButton_->setActive(on);
         if (onParameterChanged)
             onParameterChanged(2, on ? 1.0f : 0.0f);
     };
-    addAndMakeVisible(phaseButton_);
+    addAndMakeVisible(*phaseButton_);
 }
 
 void UtilityUI::setupSlider(SliderWithLabel& s, const juce::String& labelText) {
@@ -99,8 +98,8 @@ void UtilityUI::updateFromParameters(const std::vector<magda::ParameterInfo>& pa
         pan_.slider.setValue(params[1].currentValue, juce::dontSendNotification);
     if (params.size() > 2) {
         bool on = params[2].currentValue >= 0.5f;
-        phaseButton_.setToggleState(on, juce::dontSendNotification);
-        phaseButton_.setButtonText(on ? "ON" : "OFF");
+        phaseButton_->setToggleState(on, juce::dontSendNotification);
+        phaseButton_->setActive(on);
     }
 }
 
@@ -129,7 +128,9 @@ void UtilityUI::resized() {
     // Phase button in the third column
     auto col = row.removeFromLeft(colWidth).reduced(2, 0);
     phaseLabel_.setBounds(col.removeFromTop(labelHeight));
-    phaseButton_.setBounds(col.removeFromTop(sliderHeight));
+    auto phaseArea = col.removeFromTop(sliderHeight);
+    int phaseSize = juce::jmin(phaseArea.getWidth(), phaseArea.getHeight());
+    phaseButton_->setBounds(phaseArea.withSizeKeepingCentre(phaseSize, phaseSize));
 }
 
 std::vector<LinkableTextSlider*> UtilityUI::getLinkableSliders() {

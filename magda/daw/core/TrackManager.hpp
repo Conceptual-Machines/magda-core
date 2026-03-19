@@ -222,6 +222,7 @@ class TrackManager {
     DeviceId addDeviceToTrack(TrackId trackId, const DeviceInfo& device, int insertIndex);
     void removeDeviceFromTrack(TrackId trackId, DeviceId deviceId);
     void setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool bypassed);
+    void setChainBypassed(TrackId trackId, bool bypassed);
     DeviceInfo* getDevice(TrackId trackId, DeviceId deviceId);
 
     // Wrap a device in a new rack (device moves into the rack's first chain)

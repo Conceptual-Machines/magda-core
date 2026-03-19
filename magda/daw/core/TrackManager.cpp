@@ -964,6 +964,34 @@ void TrackManager::setDeviceBypassed(TrackId trackId, DeviceId deviceId, bool by
     }
 }
 
+void TrackManager::setChainBypassed(TrackId trackId, bool bypassed) {
+    if (auto* track = getTrack(trackId)) {
+        std::vector<DeviceId> affectedDevices;
+        for (auto& element : track->chainElements) {
+            if (magda::isDevice(element)) {
+                auto& device = magda::getDevice(element);
+                device.bypassed = bypassed;
+                affectedDevices.push_back(device.id);
+            } else if (magda::isRack(element)) {
+                auto& rack = magda::getRack(element);
+                rack.bypassed = bypassed;
+                for (auto& chain : rack.chains) {
+                    for (auto& chainElement : chain.elements) {
+                        if (magda::isDevice(chainElement)) {
+                            auto& device = magda::getDevice(chainElement);
+                            device.bypassed = bypassed;
+                            affectedDevices.push_back(device.id);
+                        }
+                    }
+                }
+            }
+        }
+        for (auto deviceId : affectedDevices) {
+            notifyDevicePropertyChanged(deviceId);
+        }
+    }
+}
+
 DeviceInfo* TrackManager::getDevice(TrackId trackId, DeviceId deviceId) {
     if (auto* track = getTrack(trackId)) {
         for (auto& element : track->chainElements) {

@@ -2,8 +2,11 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <memory>
+
 #include "core/ParameterInfo.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
 
@@ -39,7 +42,7 @@ class UtilityUI : public juce::Component {
     SliderWithLabel pan_;
 
     juce::Label phaseLabel_;
-    juce::TextButton phaseButton_;
+    std::unique_ptr<magda::SvgButton> phaseButton_;
 
     void setupSlider(SliderWithLabel& s, const juce::String& labelText);
 
