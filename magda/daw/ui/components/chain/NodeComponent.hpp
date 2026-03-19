@@ -213,8 +213,8 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     magda::ChainNodePath nodePath_;
 
     // Layout constants
-    static constexpr int HEADER_HEIGHT = 20;
-    static constexpr int BUTTON_SIZE = 16;
+    static constexpr int HEADER_HEIGHT = 24;
+    static constexpr int BUTTON_SIZE = 18;
     static constexpr int DEFAULT_PANEL_WIDTH = 150;  // Width for 2-column panels (params, macros)
     static constexpr int SINGLE_COLUMN_PANEL_WIDTH = 70;  // Width for 1-column panels (mods)
     static constexpr int GAIN_PANEL_WIDTH = 32;           // Width for gain panel (right side)

@@ -977,11 +977,11 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
             int row = i / paramsPerRow;
             int col = i % paramsPerRow;
-            int x = contentArea.getX() + col * cellWidth;
-            int y = contentArea.getY() + row * cellHeight;
+            int x = contentArea.getX() + col * cellWidth + 2;
+            int y = contentArea.getY() + row * cellHeight + 2;
 
             paramSlots_[i]->setFonts(labelFont, valueFont);
-            paramSlots_[i]->setBounds(x, y, cellWidth - 2, cellHeight);
+            paramSlots_[i]->setBounds(x, y, cellWidth - 4, cellHeight - 4);
             paramSlots_[i]->setVisible(true);
         }
     }
@@ -1032,7 +1032,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     // Add device-specific buttons vertically when collapsed
     // Order: X (from base), ON, UI, Macro, Mod - matches panel order
-    int buttonSize = juce::jmin(16, area.getWidth() - 4);
+    int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);
 
     // On/power button (right after X)
     onButton_->setBounds(

@@ -52,7 +52,7 @@ class DeviceSlotComponent : public NodeComponent,
     static constexpr int NUM_PARAMS_PER_PAGE = 32;
     static constexpr int PARAMS_PER_ROW = 8;  // Maximum columns
     static constexpr int PARAM_CELL_WIDTH = 48;
-    static constexpr int PARAM_CELL_HEIGHT = 28;
+    static constexpr int PARAM_CELL_HEIGHT = 24;
     static constexpr int PAGINATION_HEIGHT = 18;
     static constexpr int CONTENT_HEADER_HEIGHT = 18;
     DeviceSlotComponent(const magda::DeviceInfo& device);
