@@ -322,11 +322,19 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         daw::ui::DebugDialog::setMidiBridge(externalEngine->getMidiBridge());
     }
 
-    // Initialize panel sizes from LayoutConfig
+    // Initialize panel sizes from LayoutConfig, scaled to display size
     auto& layout = LayoutConfig::getInstance();
     transportHeight = layout.defaultTransportHeight;
-    leftPanelWidth = layout.defaultLeftPanelWidth;
-    rightPanelWidth = layout.defaultRightPanelWidth;
+
+    // Scale side panel defaults based on screen width
+    auto displayArea = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()->userArea;
+    int screenWidth = displayArea.getWidth();
+    if (screenWidth >= 2560)  // Large display (1440p+)
+        leftPanelWidth = rightPanelWidth = 400;
+    else if (screenWidth >= 1920)  // Full HD
+        leftPanelWidth = rightPanelWidth = 350;
+    else
+        leftPanelWidth = rightPanelWidth = layout.defaultLeftPanelWidth;  // 300 for small screens
     bottomPanelHeight = daw::ui::DebugSettings::getInstance().getBottomPanelHeight();
 
     // Listen for debug settings changes
@@ -1027,6 +1035,15 @@ void MainWindow::MainComponent::viewModeChanged(ViewMode mode,
 }
 
 void MainWindow::MainComponent::selectionTypeChanged(SelectionType newType) {
+    // Auto-expand bottom panel when something is selected
+    if (bottomPanelCollapsed && newType != SelectionType::None) {
+        bottomPanelCollapsed = false;
+        bottomPanel->setCollapsed(false);
+        if (footerBar)
+            footerBar->setBottomPanelCollapsed(false);
+        resized();
+    }
+
     // Update menu state based on selection
     auto& selectionManager = SelectionManager::getInstance();
     bool hasSelection = ((newType == SelectionType::Clip || newType == SelectionType::MultiClip) &&
