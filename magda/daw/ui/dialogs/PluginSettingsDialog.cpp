@@ -208,20 +208,26 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
             });
         });
 
-        engine_->onPluginScanComplete = [safeThis](bool /*success*/, int numPlugins,
+        engine_->onPluginScanComplete = [safeThis](bool success, int numPlugins,
                                                    const juce::StringArray& failedPlugins) {
-            juce::MessageManager::callAsync([safeThis, numPlugins, failedPlugins]() {
+            juce::MessageManager::callAsync([safeThis, success, numPlugins, failedPlugins]() {
                 if (safeThis == nullptr)
                     return;
                 safeThis->setScanningUIEnabled(true);
                 safeThis->scanProgress_ = -1.0;
                 safeThis->scanProgressBar_.setVisible(false);
-                safeThis->scanStatusLabel_.setText(
-                    "Found " + juce::String(numPlugins) + " plugins" +
-                        (failedPlugins.size() > 0
-                             ? ", " + juce::String(failedPlugins.size()) + " failed"
-                             : ""),
-                    juce::dontSendNotification);
+                if (!success && numPlugins == 0) {
+                    safeThis->scanStatusLabel_.setText(
+                        "Scan failed: plugin scanner executable not found",
+                        juce::dontSendNotification);
+                } else {
+                    safeThis->scanStatusLabel_.setText(
+                        "Found " + juce::String(numPlugins) + " plugins" +
+                            (failedPlugins.size() > 0
+                                 ? ", " + juce::String(failedPlugins.size()) + " failed"
+                                 : ""),
+                        juce::dontSendNotification);
+                }
 
                 // Refresh excluded plugins list
                 if (safeThis->engine_) {

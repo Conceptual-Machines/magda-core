@@ -22,7 +22,9 @@ static std::string g_logFilePath;
 static void initLog() {
     // Use a unique temp file per instance (random suffix)
     auto suffix = juce::String(juce::Random::getSystemRandom().nextInt64());
-    g_logFilePath = "/tmp/magda_scanner_" + suffix.toStdString() + ".log";
+    auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
+    g_logFilePath =
+        tempDir.getChildFile("magda_scanner_" + suffix + ".log").getFullPathName().toStdString();
     g_logFile.open(g_logFilePath, std::ios::out | std::ios::trunc);
 }
 
