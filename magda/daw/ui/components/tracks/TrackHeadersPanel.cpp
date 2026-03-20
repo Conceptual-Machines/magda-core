@@ -778,6 +778,9 @@ void TrackHeadersPanel::tracksChanged() {
         header->volume = track->volume;
         header->pan = track->pan;
 
+        // Set track colour on swatch
+        header->trackColour = track->colour;
+
         // Inherit global I/O routing visibility
         header->showIORouting = showIORouting_;
 
@@ -913,6 +916,9 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
             header.monitorButton->setToggleState(track->inputMonitor != InputMonitorMode::Off,
                                                  juce::dontSendNotification);
         }
+
+        // Update track colour
+        header.trackColour = track->colour;
 
         // Update session mode button
         if (header.sessionModeButton) {
@@ -1444,6 +1450,13 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
         g.fillRect(stripX, bgArea.getY(), 3, bgArea.getHeight());
     }
 
+    // Track colour tinted name row (top 22px of header)
+    if (!header.isMaster && header.trackColour != juce::Colour(0xFF444444)) {
+        auto nameRowArea = bgArea.withHeight(22);
+        g.setColour(header.trackColour.withAlpha(0.25f));
+        g.fillRect(nameRowArea);
+    }
+
     // Frozen overlay — dim the track header
     if (header.frozen) {
         g.setColour(juce::Colours::black.withAlpha(0.3f));
@@ -1655,7 +1668,6 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
     }
 
     // Top row: collapse button (if group) + name label
-    // Name fills remaining width so no anchoring needed — just place collapse from left
     auto topRow = tcpArea.removeFromTop(nameRowHeight);
 
     if (header.isGroup) {

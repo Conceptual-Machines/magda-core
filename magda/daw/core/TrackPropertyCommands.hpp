@@ -311,4 +311,31 @@ class SetMasterMuteCommand : public UndoableCommand {
   private:
     bool oldMuted_ = false, newMuted_;
 };
+/**
+ * @brief Command for setting track colour
+ */
+class SetTrackColourCommand : public UndoableCommand {
+  public:
+    SetTrackColourCommand(TrackId trackId, juce::Colour newColour)
+        : trackId_(trackId), newColour_(newColour) {
+        auto* track = TrackManager::getInstance().getTrack(trackId);
+        if (track)
+            oldColour_ = track->colour;
+    }
+
+    void execute() override {
+        TrackManager::getInstance().setTrackColour(trackId_, newColour_);
+    }
+    void undo() override {
+        TrackManager::getInstance().setTrackColour(trackId_, oldColour_);
+    }
+    juce::String getDescription() const override {
+        return "Set Track Colour";
+    }
+
+  private:
+    TrackId trackId_;
+    juce::Colour oldColour_, newColour_;
+};
+
 }  // namespace magda

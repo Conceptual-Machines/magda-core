@@ -9,6 +9,7 @@
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../engine/AudioEngine.hpp"
+#include "../../components/common/ColourSwatch.hpp"
 #include "../../components/mixer/RoutingSyncHelper.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -40,6 +41,40 @@ TrackInspector::TrackInspector() {
         }
     };
     addAndMakeVisible(trackNameValue_);
+
+    // Colour swatch
+    colourSwatch_ = std::make_unique<magda::ColourSwatch>();
+    auto* swatch = static_cast<magda::ColourSwatch*>(colourSwatch_.get());
+    swatch->onColourClicked = [this, swatch]() {
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+            return;
+
+        auto menu = juce::PopupMenu();
+        menu.addItem(1, "None");
+        menu.addSeparator();
+        const char* colourNames[] = {"Blue",   "Teal", "Green",  "Yellow",
+                                     "Orange", "Red",  "Purple", "Indigo"};
+        for (size_t i = 0; i < magda::TrackInfo::defaultColors.size(); ++i) {
+            menu.addItem(static_cast<int>(i + 2), colourNames[i]);
+        }
+
+        menu.showMenuAsync(
+            juce::PopupMenu::Options().withTargetComponent(swatch), [this, swatch](int result) {
+                if (result == 1) {
+                    // "None" — use a neutral dark colour
+                    auto colour = juce::Colour(0xFF444444);
+                    swatch->clearColour();
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetTrackColourCommand>(selectedTrackId_, colour));
+                } else if (result >= 2 && result <= 9) {
+                    auto colour = magda::TrackInfo::getDefaultColor(result - 2);
+                    swatch->setColour(colour);
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetTrackColourCommand>(selectedTrackId_, colour));
+                }
+            });
+    };
+    addAndMakeVisible(*colourSwatch_);
 
     // Mute button (TCP style)
     muteButton_.setButtonText("M");
@@ -382,7 +417,10 @@ void TrackInspector::resized() {
 
     // Track properties layout (TCP style)
     trackNameLabel_.setBounds(bounds.removeFromTop(16));
-    trackNameValue_.setBounds(bounds.removeFromTop(24));
+    auto nameRow = bounds.removeFromTop(24);
+    colourSwatch_->setBounds(nameRow.removeFromRight(24));
+    nameRow.removeFromRight(4);
+    trackNameValue_.setBounds(nameRow);
     bounds.removeFromTop(separatorPadding);
     sectionSeparatorYs_.push_back(bounds.getY());
     bounds.removeFromTop(separatorPadding);
@@ -779,6 +817,13 @@ void TrackInspector::updateFromSelectedTrack() {
 
     const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
     if (track) {
+        // Update colour swatch
+        auto* swatch = static_cast<magda::ColourSwatch*>(colourSwatch_.get());
+        if (track->colour == juce::Colour(0xFF444444))
+            swatch->clearColour();
+        else
+            swatch->setColour(track->colour);
+
         trackNameValue_.setText(track->name, juce::dontSendNotification);
         muteButton_.setToggleState(track->muted, juce::dontSendNotification);
         soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
@@ -1070,6 +1115,7 @@ void TrackInspector::showTrackControls(bool show) {
 
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
+    colourSwatch_->setVisible(show && !isMaster);
     muteButton_.setVisible(show && !isMaster);
     speakerButton_->setVisible(isMaster);
     soloButton_.setVisible(show && !isMaster);
