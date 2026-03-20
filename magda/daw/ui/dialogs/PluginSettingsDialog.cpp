@@ -216,10 +216,13 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                 safeThis->setScanningUIEnabled(true);
                 safeThis->scanProgress_ = -1.0;
                 safeThis->scanProgressBar_.setVisible(false);
-                if (!success && numPlugins == 0) {
-                    safeThis->scanStatusLabel_.setText(
-                        "Scan failed: plugin scanner executable not found",
-                        juce::dontSendNotification);
+                if (!success) {
+                    juce::String message = "Plugin scan failed";
+                    if (numPlugins > 0)
+                        message += " (" + juce::String(numPlugins) + " found before error)";
+                    if (failedPlugins.size() > 0)
+                        message += ", " + juce::String(failedPlugins.size()) + " plugin(s) failed";
+                    safeThis->scanStatusLabel_.setText(message, juce::dontSendNotification);
                 } else {
                     safeThis->scanStatusLabel_.setText(
                         "Found " + juce::String(numPlugins) + " plugins" +

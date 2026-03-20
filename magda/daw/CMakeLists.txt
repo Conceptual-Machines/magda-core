@@ -703,10 +703,16 @@ target_compile_definitions(magda_daw_app
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )
 
-# Add ASIO SDK include path when available
+# Add ASIO SDK include paths when available
 if(JUCE_ASIO_ENABLED)
-    target_include_directories(magda_daw PUBLIC "${ASIO_SDK_DIR}/common")
-    target_include_directories(magda_daw_app PRIVATE "${ASIO_SDK_DIR}/common")
+    target_include_directories(magda_daw PRIVATE
+        "${ASIO_SDK_DIR}/common"
+        "${ASIO_SDK_DIR}/host"
+    )
+    target_include_directories(magda_daw_app PRIVATE
+        "${ASIO_SDK_DIR}/common"
+        "${ASIO_SDK_DIR}/host"
+    )
 endif()
 
 # Include directories for DAW library
