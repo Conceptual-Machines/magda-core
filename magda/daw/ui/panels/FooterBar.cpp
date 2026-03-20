@@ -65,7 +65,7 @@ void FooterBar::setupButtons() {
     const std::array<IconData, NUM_MODES> icons = {{
         {BinaryData::Session_svg, BinaryData::Session_svgSize, ViewMode::Live, "Session"},
         {BinaryData::Arrangement_svg, BinaryData::Arrangement_svgSize, ViewMode::Arrange,
-         "Arrange"},
+         "Arrangement"},
         {BinaryData::Mix_svg, BinaryData::Mix_svgSize, ViewMode::Mix, "Mix"},
     }};
 
