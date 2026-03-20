@@ -25,6 +25,8 @@ void ClipInspector::resized() {
         clipTypeIcon_->setBounds(
             headerRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
         headerRow.removeFromLeft(gap);
+        colourSwatch_->setBounds(headerRow.removeFromRight(24));
+        headerRow.removeFromRight(4);
         clipNameValue_.setBounds(headerRow);
     }
     bounds.removeFromTop(8);

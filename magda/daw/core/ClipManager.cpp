@@ -6,6 +6,7 @@
 
 #include "../project/ProjectManager.hpp"
 #include "ClipOperations.hpp"
+#include "Config.hpp"
 #include "TrackManager.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 
@@ -33,8 +34,14 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     } else {
         clip.name = generateClipName(ClipType::Audio);
     }
-    clip.colour = ClipInfo::getDefaultColor(
-        static_cast<int>(arrangementClips_.size() + sessionClips_.size()));
+    if (Config::getInstance().getClipColourMode() == 0) {
+        // Inherit from parent track
+        const auto* track = TrackManager::getInstance().getTrack(trackId);
+        clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));
+    } else {
+        clip.colour = juce::Colour(Config::getDefaultColour(
+            static_cast<int>(arrangementClips_.size() + sessionClips_.size())));
+    }
     clip.startTime = startTime;
     clip.length = length;
     clip.audioFilePath = audioFilePath;
@@ -82,8 +89,13 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
     clip.type = ClipType::MIDI;
     clip.view = view;
     clip.name = generateClipName(ClipType::MIDI);
-    clip.colour = ClipInfo::getDefaultColor(
-        static_cast<int>(arrangementClips_.size() + sessionClips_.size()));
+    if (Config::getInstance().getClipColourMode() == 0) {
+        const auto* track = TrackManager::getInstance().getTrack(trackId);
+        clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));
+    } else {
+        clip.colour = juce::Colour(Config::getDefaultColour(
+            static_cast<int>(arrangementClips_.size() + sessionClips_.size())));
+    }
     clip.startTime = startTime;
     clip.length = length;
 

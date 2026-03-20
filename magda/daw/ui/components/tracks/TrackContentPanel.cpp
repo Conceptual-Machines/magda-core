@@ -468,8 +468,8 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         juce::Rectangle<int> bounds(clipX, trackY, clipW, trackH);
 
         // Use the same colour the final clip will get (based on current clip count)
-        juce::Colour baseColour = ClipInfo::getDefaultColor(
-            static_cast<int>(ClipManager::getInstance().getArrangementClips().size()));
+        juce::Colour baseColour = juce::Colour(Config::getDefaultColour(
+            static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
 
         if (paintCount % 60 == 1) {
             DBG("RecPreview::paint: track=" << trackId << " bounds=" << bounds.toString()

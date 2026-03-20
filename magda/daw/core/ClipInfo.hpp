@@ -380,22 +380,6 @@ struct ClipInfo {
         double lenB = (length * bpm) / 60.0;
         return startB + lenB;
     }
-
-    // Default clip colors (different palette from tracks)
-    static inline const std::array<juce::uint32, 8> defaultColors = {
-        0xFF6688CC,  // Light Blue
-        0xFF66CCAA,  // Teal
-        0xFFAACC66,  // Lime
-        0xFFCCCC66,  // Yellow
-        0xFFCCAA66,  // Orange
-        0xFFCC6666,  // Red
-        0xFFCC66CC,  // Pink
-        0xFF8866CC,  // Purple
-    };
-
-    static juce::Colour getDefaultColor(int index) {
-        return juce::Colour(defaultColors[index % defaultColors.size()]);
-    }
 };
 
 }  // namespace magda

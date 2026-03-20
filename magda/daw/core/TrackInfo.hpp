@@ -149,22 +149,6 @@ struct TrackInfo {
         return *this;
     }
 
-    // Default track colors
-    static inline const std::array<juce::uint32, 8> defaultColors = {
-        0xFF5588AA,  // Blue
-        0xFF55AA88,  // Teal
-        0xFF88AA55,  // Green
-        0xFFAAAA55,  // Yellow
-        0xFFAA8855,  // Orange
-        0xFFAA5555,  // Red
-        0xFFAA55AA,  // Purple
-        0xFF5555AA,  // Indigo
-    };
-
-    static juce::Colour getDefaultColor(int index) {
-        return juce::Colour(defaultColors[index % defaultColors.size()]);
-    }
-
     // Check if this track has an instrument device in its chain
     bool hasInstrument() const {
         for (const auto& element : chainElements) {

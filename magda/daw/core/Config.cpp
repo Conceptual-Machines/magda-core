@@ -135,6 +135,9 @@ void Config::save() {
         pluginPathArray.add(toJuceString(p));
     root->setProperty("customPluginPaths", pluginPathArray);
 
+    // Clip colour mode
+    root->setProperty("clipColourMode", clipColourMode);
+
     // Track colour palette (stored as array of {colour, name} objects)
     juce::Array<juce::var> paletteArray;
     for (const auto& entry : trackColourPalette) {
@@ -282,6 +285,8 @@ void Config::load() {
     browserFavorites = getStringArray("browserFavorites");
     recentProjects = getStringArray("recentProjects");
     customPluginPaths = getStringArray("customPluginPaths");
+
+    clipColourMode = getInt("clipColourMode", clipColourMode);
 
     // Track colour palette
     if (obj->hasProperty("trackColourPalette")) {

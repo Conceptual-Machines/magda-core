@@ -1,6 +1,7 @@
 #include <cmath>
 
 #include "../../../../../audio/AudioThumbnailManager.hpp"
+#include "../../../../components/common/ColourSwatch.hpp"
 #include "../../../../state/TimelineController.hpp"
 #include "../../../../utils/TimelineUtils.hpp"
 #include "../ClipInspector.hpp"
@@ -89,6 +90,13 @@ void ClipInspector::updateFromSelectedClip() {
     const auto* clip = magda::ClipManager::getInstance().getClip(pid);
     if (clip) {
         clipNameValue_.setText(clip->name, juce::dontSendNotification);
+
+        // Update colour swatch
+        auto* swatch = static_cast<magda::ColourSwatch*>(colourSwatch_.get());
+        if (clip->colour == juce::Colour(0xFF444444))
+            swatch->clearColour();
+        else
+            swatch->setColour(clip->colour);
 
         // File path label: show audio filename for arrangement audio clips only.
         if (clip->type == magda::ClipType::Audio && clip->audioFilePath.isNotEmpty() &&
@@ -475,6 +483,7 @@ void ClipInspector::updateFromSelectedClip() {
 
 void ClipInspector::showClipControls(bool show) {
     clipNameValue_.setVisible(show);
+    colourSwatch_->setVisible(show);
     clipFilePathLabel_.setVisible(show);
     clipTypeIcon_->setVisible(show);
     clipViewIcon_->setVisible(show);

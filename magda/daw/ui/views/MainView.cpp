@@ -1797,8 +1797,8 @@ void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g)
 
         if (drawHeight > 0) {
             // Use the same style as a MIDI clip: darker fill of the default clip color
-            auto clipColour = ClipInfo::getDefaultColor(
-                static_cast<int>(ClipManager::getInstance().getArrangementClips().size()));
+            auto clipColour = juce::Colour(Config::getDefaultColour(
+                static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
             g.setColour(clipColour.darker(0.3f));
             g.fillRoundedRectangle(startX, drawY, endX - startX, drawHeight, 3.0f);
 

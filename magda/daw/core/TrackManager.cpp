@@ -6,6 +6,7 @@
 #include "../audio/MidiBridge.hpp"
 #include "../audio/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "Config.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
 #include "SelectionManager.hpp"
@@ -86,7 +87,7 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     track.id = nextTrackId_++;
     track.type = type;
     track.name = name.isEmpty() ? generateTrackName() : name;
-    track.colour = TrackInfo::getDefaultColor(static_cast<int>(tracks_.size()));
+    track.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(tracks_.size())));
 
     // Set default routing
     track.audioOutputDevice = "master";  // Audio always routes to master

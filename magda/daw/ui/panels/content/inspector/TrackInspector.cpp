@@ -66,16 +66,15 @@ TrackInspector::TrackInspector() {
         };
 
         // Default colours (always available)
-        const char* defaultNames[] = {"Blue",   "Teal", "Green",  "Yellow",
-                                      "Orange", "Red",  "Purple", "Indigo"};
-        for (size_t i = 0; i < magda::TrackInfo::defaultColors.size(); ++i) {
-            auto colour = juce::Colour(magda::TrackInfo::defaultColors[i]);
-            menu.addItem(static_cast<int>(i + 2), defaultNames[i], true, false, makeChip(colour));
+        for (size_t i = 0; i < magda::Config::defaultColourPalette.size(); ++i) {
+            auto colour = juce::Colour(magda::Config::defaultColourPalette[i].colour);
+            menu.addItem(static_cast<int>(i + 2), magda::Config::defaultColourPalette[i].name, true,
+                         false, makeChip(colour));
         }
 
         // Custom colours from Config (user-defined)
         const auto customPalette = magda::Config::getInstance().getTrackColourPalette();
-        const int customOffset = static_cast<int>(magda::TrackInfo::defaultColors.size()) + 2;
+        const int customOffset = static_cast<int>(magda::Config::defaultColourPalette.size()) + 2;
         if (!customPalette.empty()) {
             menu.addSeparator();
             for (size_t i = 0; i < customPalette.size(); ++i) {
@@ -90,7 +89,7 @@ TrackInspector::TrackInspector() {
                                                                                        int result) {
             if (result == 0)
                 return;
-            const int customOff = static_cast<int>(magda::TrackInfo::defaultColors.size()) + 2;
+            const int customOff = static_cast<int>(magda::Config::defaultColourPalette.size()) + 2;
             if (result == 1) {
                 // "None"
                 swatch->clearColour();
@@ -99,7 +98,7 @@ TrackInspector::TrackInspector() {
                                                                    juce::Colour(0xFF444444)));
             } else if (result >= 2 && result < customOff) {
                 // Default colour
-                auto colour = magda::TrackInfo::getDefaultColor(result - 2);
+                auto colour = juce::Colour(magda::Config::getDefaultColour(result - 2));
                 swatch->setColour(colour);
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetTrackColourCommand>(selectedTrackId_, colour));

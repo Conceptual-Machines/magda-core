@@ -1,6 +1,7 @@
 #include <cmath>
 
 #include "../../../../../audio/AudioThumbnailManager.hpp"
+#include "../../../../components/common/ColourSwatch.hpp"
 #include "../../../../state/TimelineController.hpp"
 #include "../../../../themes/DarkTheme.hpp"
 #include "../../../../themes/FontManager.hpp"
@@ -12,6 +13,7 @@
 #include "audio/AudioBridge.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
+#include "core/Config.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -40,6 +42,95 @@ void ClipInspector::initClipPropertiesSection() {
         }
     };
     addChildComponent(clipNameValue_);
+
+    // Colour swatch
+    colourSwatch_ = std::make_unique<magda::ColourSwatch>();
+    auto* swatch = static_cast<magda::ColourSwatch*>(colourSwatch_.get());
+    swatch->onColourClicked = [this, swatch]() {
+        auto pid = primaryClipId();
+        if (pid == magda::INVALID_CLIP_ID)
+            return;
+
+        auto menu = juce::PopupMenu();
+        menu.addItem(1, "None");
+        menu.addSeparator();
+
+        auto makeChip = [](juce::Colour colour) {
+            juce::Image chip(juce::Image::ARGB, 14, 14, true);
+            juce::Graphics cg(chip);
+            cg.setColour(colour);
+            cg.fillRoundedRectangle(0.0f, 0.0f, 14.0f, 14.0f, 2.0f);
+            auto drawable = std::make_unique<juce::DrawableImage>();
+            drawable->setImage(chip);
+            return drawable;
+        };
+
+        // Inherit from track option
+        menu.addItem(2, "Inherit from Track");
+        menu.addSeparator();
+
+        // Default colours
+        for (size_t i = 0; i < magda::Config::defaultColourPalette.size(); ++i) {
+            auto colour = juce::Colour(magda::Config::defaultColourPalette[i].colour);
+            menu.addItem(static_cast<int>(i + 3), magda::Config::defaultColourPalette[i].name, true,
+                         false, makeChip(colour));
+        }
+
+        // Custom colours from Config
+        const auto customPalette = magda::Config::getInstance().getTrackColourPalette();
+        const int customOffset = static_cast<int>(magda::Config::defaultColourPalette.size()) + 3;
+        if (!customPalette.empty()) {
+            menu.addSeparator();
+            for (size_t i = 0; i < customPalette.size(); ++i) {
+                auto colour = juce::Colour(customPalette[i].colour);
+                menu.addItem(customOffset + static_cast<int>(i),
+                             juce::String(customPalette[i].name), true, false, makeChip(colour));
+            }
+        }
+
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(swatch), [this, swatch,
+                                                                                    customPalette](
+                                                                                       int result) {
+            if (result == 0)
+                return;
+            auto pid = primaryClipId();
+            if (pid == magda::INVALID_CLIP_ID)
+                return;
+            const int customOff = static_cast<int>(magda::Config::defaultColourPalette.size()) + 3;
+
+            if (result == 1) {
+                // "None"
+                swatch->clearColour();
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipColourCommand>(pid, juce::Colour(0xFF444444)));
+            } else if (result == 2) {
+                // Inherit from track
+                const auto* clip = magda::ClipManager::getInstance().getClip(pid);
+                if (clip) {
+                    const auto* track = magda::TrackManager::getInstance().getTrack(clip->trackId);
+                    if (track) {
+                        swatch->setColour(track->colour);
+                        magda::UndoManager::getInstance().executeCommand(
+                            std::make_unique<magda::SetClipColourCommand>(pid, track->colour));
+                    }
+                }
+            } else if (result >= 3 && result < customOff) {
+                auto colour = juce::Colour(magda::Config::getDefaultColour(result - 3));
+                swatch->setColour(colour);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipColourCommand>(pid, colour));
+            } else {
+                auto idx = static_cast<size_t>(result - customOff);
+                if (idx < customPalette.size()) {
+                    auto colour = juce::Colour(customPalette[idx].colour);
+                    swatch->setColour(colour);
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetClipColourCommand>(pid, colour));
+                }
+            }
+        });
+    };
+    addChildComponent(*colourSwatch_);
 
     // Clip file path (read-only, inside viewport)
     clipFilePathLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));

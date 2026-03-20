@@ -73,9 +73,10 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     // Multi-selection count label
     juce::Label clipCountLabel_;
 
-    // Clip name and file info
+    // Clip name, colour swatch, and file info
     juce::Label clipNameLabel_;
     juce::Label clipNameValue_;
+    std::unique_ptr<juce::Component> colourSwatch_;
     juce::Label clipFilePathLabel_;
     std::unique_ptr<magda::SvgButton> clipTypeIcon_;
     std::unique_ptr<magda::SvgButton> clipViewIcon_;

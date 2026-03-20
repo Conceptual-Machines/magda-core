@@ -512,4 +512,31 @@ class SetClipFadeOutBehaviourCommand : public UndoableCommand {
     int oldBehaviour_ = 0, newBehaviour_;
 };
 
+/**
+ * @brief Command for setting clip colour
+ */
+class SetClipColourCommand : public UndoableCommand {
+  public:
+    SetClipColourCommand(ClipId clipId, juce::Colour newColour)
+        : clipId_(clipId), newColour_(newColour) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldColour_ = clip->colour;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setClipColour(clipId_, newColour_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setClipColour(clipId_, oldColour_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Colour";
+    }
+
+  private:
+    ClipId clipId_;
+    juce::Colour oldColour_, newColour_;
+};
+
 }  // namespace magda

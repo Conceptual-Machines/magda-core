@@ -298,6 +298,26 @@ class ColoursPage : public juce::Component {
         addColourButton.setButtonText("+ Add Colour");
         addColourButton.onClick = [this]() { addColourRow(0xFF808080, "New"); };
         addAndMakeVisible(addColourButton);
+
+        // Clip colour mode
+        setupSectionHeader(*this, clipColourHeader, "Clip Colours");
+
+        clipColourModeLabel.setText("New clip colour", juce::dontSendNotification);
+        clipColourModeLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
+        clipColourModeLabel.setColour(juce::Label::textColourId,
+                                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        clipColourModeLabel.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(clipColourModeLabel);
+
+        clipColourModeCombo.addItem("Inherit from track", 1);
+        clipColourModeCombo.addItem("Cycle through palette", 2);
+        clipColourModeCombo.setColour(juce::ComboBox::backgroundColourId,
+                                      DarkTheme::getColour(DarkTheme::SURFACE));
+        clipColourModeCombo.setColour(juce::ComboBox::textColourId,
+                                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        clipColourModeCombo.setColour(juce::ComboBox::outlineColourId,
+                                      DarkTheme::getColour(DarkTheme::BORDER));
+        addAndMakeVisible(clipColourModeCombo);
     }
 
     void resized() override {
@@ -340,6 +360,16 @@ class ColoursPage : public juce::Component {
         } else {
             addColourButton.setVisible(false);
         }
+
+        // Clip colour mode
+        bounds.removeFromTop(16);
+        clipColourHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        {
+            auto row = bounds.removeFromTop(32);
+            clipColourModeLabel.setBounds(row.removeFromLeft(140));
+            clipColourModeCombo.setBounds(row.reduced(0, 4));
+        }
     }
 
     void loadSettings(Config& config) {
@@ -347,6 +377,9 @@ class ColoursPage : public juce::Component {
         const auto& palette = config.getTrackColourPalette();
         for (const auto& entry : palette)
             addColourRow(entry.colour, entry.name);
+
+        clipColourModeCombo.setSelectedId(config.getClipColourMode() + 1,
+                                          juce::dontSendNotification);
     }
 
     void applySettings(Config& config) {
@@ -361,6 +394,7 @@ class ColoursPage : public juce::Component {
             palette.push_back(entry);
         }
         config.setTrackColourPalette(palette);
+        config.setClipColourMode(clipColourModeCombo.getSelectedId() - 1);
     }
 
   private:
@@ -483,6 +517,11 @@ class ColoursPage : public juce::Component {
     std::vector<std::unique_ptr<juce::TextEditor>> nameEditors_;
     std::vector<std::unique_ptr<juce::TextButton>> deleteButtons_;
     juce::TextButton addColourButton;
+
+    // Clip colour mode
+    juce::Label clipColourHeader;
+    juce::Label clipColourModeLabel;
+    juce::ComboBox clipColourModeCombo;
 };
 
 // ---- Rendering tab --------------------------------------------------------
