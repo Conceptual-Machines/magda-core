@@ -63,7 +63,7 @@ void FooterBar::setupButtons() {
     };
 
     const std::array<IconData, NUM_MODES> icons = {{
-        {BinaryData::Session_svg, BinaryData::Session_svgSize, ViewMode::Live, "Live"},
+        {BinaryData::Session_svg, BinaryData::Session_svgSize, ViewMode::Live, "Session"},
         {BinaryData::Arrangement_svg, BinaryData::Arrangement_svgSize, ViewMode::Arrange,
          "Arrange"},
         {BinaryData::Mix_svg, BinaryData::Mix_svgSize, ViewMode::Mix, "Mix"},
@@ -74,6 +74,7 @@ void FooterBar::setupButtons() {
         modeButtons[i] = magda::ManagedChild<SvgButton>::create(icons[i].name, icons[i].data,
                                                                 static_cast<size_t>(icons[i].size));
 
+        modeButtons[i]->setTooltip(icons[i].name);
         modeButtons[i]->setClickingTogglesState(false);
         modeButtons[i]->onClick = [mode = icons[i].mode]() {
             ViewModeController::getInstance().setViewMode(mode);
