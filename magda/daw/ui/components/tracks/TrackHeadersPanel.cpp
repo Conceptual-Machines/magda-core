@@ -1453,7 +1453,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     // Track colour tinted name row (top 22px of header)
     if (!header.isMaster && header.trackColour != juce::Colour(0xFF444444)) {
         auto nameRowArea = bgArea.withHeight(22);
-        g.setColour(header.trackColour.withAlpha(0.25f));
+        g.setColour(header.trackColour.withAlpha(0.5f));
         g.fillRect(nameRowArea);
     }
 
