@@ -16,6 +16,7 @@
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "core/ClipManager.hpp"
+#include "core/Config.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 
@@ -52,27 +53,67 @@ TrackInspector::TrackInspector() {
         auto menu = juce::PopupMenu();
         menu.addItem(1, "None");
         menu.addSeparator();
-        const char* colourNames[] = {"Blue",   "Teal", "Green",  "Yellow",
-                                     "Orange", "Red",  "Purple", "Indigo"};
+
+        // Helper to create a colour chip icon for menu items
+        auto makeChip = [](juce::Colour colour) {
+            juce::Image chip(juce::Image::ARGB, 14, 14, true);
+            juce::Graphics cg(chip);
+            cg.setColour(colour);
+            cg.fillRoundedRectangle(0.0f, 0.0f, 14.0f, 14.0f, 2.0f);
+            auto drawable = std::make_unique<juce::DrawableImage>();
+            drawable->setImage(chip);
+            return drawable;
+        };
+
+        // Default colours (always available)
+        const char* defaultNames[] = {"Blue",   "Teal", "Green",  "Yellow",
+                                      "Orange", "Red",  "Purple", "Indigo"};
         for (size_t i = 0; i < magda::TrackInfo::defaultColors.size(); ++i) {
-            menu.addItem(static_cast<int>(i + 2), colourNames[i]);
+            auto colour = juce::Colour(magda::TrackInfo::defaultColors[i]);
+            menu.addItem(static_cast<int>(i + 2), defaultNames[i], true, false, makeChip(colour));
         }
 
-        menu.showMenuAsync(
-            juce::PopupMenu::Options().withTargetComponent(swatch), [this, swatch](int result) {
-                if (result == 1) {
-                    // "None" — use a neutral dark colour
-                    auto colour = juce::Colour(0xFF444444);
-                    swatch->clearColour();
-                    magda::UndoManager::getInstance().executeCommand(
-                        std::make_unique<magda::SetTrackColourCommand>(selectedTrackId_, colour));
-                } else if (result >= 2 && result <= 9) {
-                    auto colour = magda::TrackInfo::getDefaultColor(result - 2);
+        // Custom colours from Config (user-defined)
+        const auto customPalette = magda::Config::getInstance().getTrackColourPalette();
+        const int customOffset = static_cast<int>(magda::TrackInfo::defaultColors.size()) + 2;
+        if (!customPalette.empty()) {
+            menu.addSeparator();
+            for (size_t i = 0; i < customPalette.size(); ++i) {
+                auto colour = juce::Colour(customPalette[i].colour);
+                menu.addItem(customOffset + static_cast<int>(i),
+                             juce::String(customPalette[i].name), true, false, makeChip(colour));
+            }
+        }
+
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(swatch), [this, swatch,
+                                                                                    customPalette](
+                                                                                       int result) {
+            if (result == 0)
+                return;
+            const int customOff = static_cast<int>(magda::TrackInfo::defaultColors.size()) + 2;
+            if (result == 1) {
+                // "None"
+                swatch->clearColour();
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetTrackColourCommand>(selectedTrackId_,
+                                                                   juce::Colour(0xFF444444)));
+            } else if (result >= 2 && result < customOff) {
+                // Default colour
+                auto colour = magda::TrackInfo::getDefaultColor(result - 2);
+                swatch->setColour(colour);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetTrackColourCommand>(selectedTrackId_, colour));
+            } else {
+                // Custom colour
+                auto idx = static_cast<size_t>(result - customOff);
+                if (idx < customPalette.size()) {
+                    auto colour = juce::Colour(customPalette[idx].colour);
                     swatch->setColour(colour);
                     magda::UndoManager::getInstance().executeCommand(
                         std::make_unique<magda::SetTrackColourCommand>(selectedTrackId_, colour));
                 }
-            });
+            }
+        });
     };
     addAndMakeVisible(*colourSwatch_);
 

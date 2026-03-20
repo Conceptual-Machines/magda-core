@@ -135,6 +135,18 @@ void Config::save() {
         pluginPathArray.add(toJuceString(p));
     root->setProperty("customPluginPaths", pluginPathArray);
 
+    // Track colour palette (stored as array of {colour, name} objects)
+    juce::Array<juce::var> paletteArray;
+    for (const auto& entry : trackColourPalette) {
+        auto entryObj = juce::DynamicObject::Ptr(new juce::DynamicObject());
+        entryObj->setProperty("colour", juce::String::toHexString(static_cast<int>(entry.colour))
+                                            .paddedLeft('0', 8)
+                                            .toUpperCase());
+        entryObj->setProperty("name", toJuceString(entry.name));
+        paletteArray.add(juce::var(entryObj.get()));
+    }
+    root->setProperty("trackColourPalette", paletteArray);
+
     // Write to disk
     auto configFile = getConfigFile();
     configFile.getParentDirectory().createDirectory();
@@ -270,6 +282,23 @@ void Config::load() {
     browserFavorites = getStringArray("browserFavorites");
     recentProjects = getStringArray("recentProjects");
     customPluginPaths = getStringArray("customPluginPaths");
+
+    // Track colour palette
+    if (obj->hasProperty("trackColourPalette")) {
+        const auto& v = obj->getProperty("trackColourPalette");
+        if (v.isArray()) {
+            trackColourPalette.clear();
+            for (const auto& item : *v.getArray()) {
+                if (auto* entryObj = item.getDynamicObject()) {
+                    TrackColourEntry entry;
+                    entry.colour = static_cast<uint32_t>(
+                        entryObj->getProperty("colour").toString().getHexValue64());
+                    entry.name = entryObj->getProperty("name").toString().toStdString();
+                    trackColourPalette.push_back(entry);
+                }
+            }
+        }
+    }
 
     DBG("Config::load - " + configFile.getFullPathName());
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <memory>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -304,6 +304,19 @@ class Config {
         openaiModel = model;
     }
 
+    // Track Colour Palette
+    struct TrackColourEntry {
+        uint32_t colour;
+        std::string name;
+    };
+
+    std::vector<TrackColourEntry> getTrackColourPalette() const {
+        return trackColourPalette;
+    }
+    void setTrackColourPalette(const std::vector<TrackColourEntry>& palette) {
+        trackColourPalette = palette;
+    }
+
     // Track Deletion Configuration
     bool getConfirmTrackDelete() const {
         return confirmTrackDelete;
@@ -413,6 +426,11 @@ class Config {
 
     // Preview output channel (stereo pair offset: 0 = outputs 1-2, 2 = outputs 3-4, etc.)
     int previewOutputChannel = 0;
+
+    // Custom track colour palette (ARGB hex + display name, user-defined via Preferences)
+    // Default colours from TrackInfo::defaultColors are always available;
+    // this list holds additional custom colours only.
+    std::vector<TrackColourEntry> trackColourPalette;
 
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default

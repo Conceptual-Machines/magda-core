@@ -268,6 +268,223 @@ class UIPage : public juce::Component {
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, showTooltipsToggle;
 };
 
+// ---- Colours tab: Track colour palette ------------------------------------
+
+class ColoursPage : public juce::Component {
+  public:
+    static constexpr int MAX_PALETTE_SIZE = 16;
+
+    ColoursPage() {
+        setupSectionHeader(*this, coloursHeader, "Track Colour Palette");
+
+        colourHeaderLabel.setText("Colour", juce::dontSendNotification);
+        colourHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
+        colourHeaderLabel.setColour(juce::Label::textColourId,
+                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        addAndMakeVisible(colourHeaderLabel);
+
+        hexHeaderLabel.setText("Hex (RGB)", juce::dontSendNotification);
+        hexHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
+        hexHeaderLabel.setColour(juce::Label::textColourId,
+                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        addAndMakeVisible(hexHeaderLabel);
+
+        nameHeaderLabel.setText("Name", juce::dontSendNotification);
+        nameHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
+        nameHeaderLabel.setColour(juce::Label::textColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        addAndMakeVisible(nameHeaderLabel);
+
+        addColourButton.setButtonText("+ Add Colour");
+        addColourButton.onClick = [this]() { addColourRow(0xFF808080, "New"); };
+        addAndMakeVisible(addColourButton);
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(16);
+        const int headerH = 28;
+
+        coloursHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+
+        // Column headers
+        {
+            auto headerRow = bounds.removeFromTop(18);
+            colourHeaderLabel.setBounds(headerRow.removeFromLeft(28));
+            headerRow.removeFromLeft(8);
+            hexHeaderLabel.setBounds(headerRow.removeFromLeft(80));
+            headerRow.removeFromLeft(8);
+            nameHeaderLabel.setBounds(headerRow.removeFromLeft(140));
+        }
+        bounds.removeFromTop(4);
+
+        // Palette rows
+        const int colourRowH = 26;
+        for (size_t i = 0; i < colourSwatches_.size(); ++i) {
+            auto row = bounds.removeFromTop(colourRowH);
+            colourSwatches_[i]->setBounds(row.removeFromLeft(24).reduced(0, 2));
+            row.removeFromLeft(12);
+            hexEditors_[i]->setBounds(row.removeFromLeft(80).reduced(0, 2));
+            row.removeFromLeft(8);
+            nameEditors_[i]->setBounds(row.removeFromLeft(140).reduced(0, 2));
+            row.removeFromLeft(8);
+            deleteButtons_[i]->setBounds(row.removeFromLeft(20).reduced(0, 2));
+            bounds.removeFromTop(2);
+        }
+
+        // Add button
+        if (static_cast<int>(colourSwatches_.size()) < MAX_PALETTE_SIZE) {
+            addColourButton.setVisible(true);
+            bounds.removeFromTop(4);
+            addColourButton.setBounds(bounds.removeFromTop(24).removeFromLeft(100));
+        } else {
+            addColourButton.setVisible(false);
+        }
+    }
+
+    void loadSettings(Config& config) {
+        clearColourRows();
+        const auto& palette = config.getTrackColourPalette();
+        for (const auto& entry : palette)
+            addColourRow(entry.colour, entry.name);
+    }
+
+    void applySettings(Config& config) {
+        std::vector<Config::TrackColourEntry> palette;
+        for (size_t i = 0; i < hexEditors_.size(); ++i) {
+            Config::TrackColourEntry entry;
+            entry.colour =
+                static_cast<uint32_t>(hexEditors_[i]->getText().getHexValue64() | 0xFF000000ULL);
+            entry.name = nameEditors_[i]->getText().toStdString();
+            if (entry.name.empty())
+                entry.name = "Colour " + std::to_string(i + 1);
+            palette.push_back(entry);
+        }
+        config.setTrackColourPalette(palette);
+    }
+
+  private:
+    void addColourRow(uint32_t colour, const std::string& name) {
+        if (static_cast<int>(colourSwatches_.size()) >= MAX_PALETTE_SIZE)
+            return;
+
+        auto idx = colourSwatches_.size();
+
+        // Swatch (colour preview — painted in our paint() override)
+        auto swatch = std::make_unique<juce::Component>();
+        swatch->setPaintingIsUnclipped(true);
+        addAndMakeVisible(*swatch);
+        colourSwatches_.push_back(std::move(swatch));
+        swatchColours_.push_back(juce::Colour(colour));
+
+        // Hex editor (RGB only, no alpha — we force 0xFF)
+        auto hex = std::make_unique<juce::TextEditor>();
+        hex->setFont(FontManager::getInstance().getUIFont(12.0f));
+        hex->setColour(juce::TextEditor::backgroundColourId,
+                       DarkTheme::getColour(DarkTheme::SURFACE));
+        hex->setColour(juce::TextEditor::textColourId,
+                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        hex->setColour(juce::TextEditor::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+        hex->setInputRestrictions(6, "0123456789ABCDEFabcdef");
+        hex->setText(juce::String::toHexString(static_cast<int>(colour & 0x00FFFFFF))
+                         .paddedLeft('0', 6)
+                         .toUpperCase(),
+                     juce::dontSendNotification);
+        hex->onTextChange = [this, idx]() { updateSwatchColour(idx); };
+        addAndMakeVisible(*hex);
+        hexEditors_.push_back(std::move(hex));
+
+        // Name editor
+        auto nameEd = std::make_unique<juce::TextEditor>();
+        nameEd->setFont(FontManager::getInstance().getUIFont(12.0f));
+        nameEd->setColour(juce::TextEditor::backgroundColourId,
+                          DarkTheme::getColour(DarkTheme::SURFACE));
+        nameEd->setColour(juce::TextEditor::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        nameEd->setColour(juce::TextEditor::outlineColourId,
+                          DarkTheme::getColour(DarkTheme::BORDER));
+        nameEd->setText(juce::String(name), juce::dontSendNotification);
+        addAndMakeVisible(*nameEd);
+        nameEditors_.push_back(std::move(nameEd));
+
+        // Delete button
+        auto del = std::make_unique<juce::TextButton>("x");
+        del->onClick = [this, idx]() { removeColourRow(idx); };
+        addAndMakeVisible(*del);
+        deleteButtons_.push_back(std::move(del));
+
+        resized();
+        repaint();
+    }
+
+    void removeColourRow(size_t idx) {
+        if (idx >= colourSwatches_.size())
+            return;
+        removeChildComponent(colourSwatches_[idx].get());
+        removeChildComponent(hexEditors_[idx].get());
+        removeChildComponent(nameEditors_[idx].get());
+        removeChildComponent(deleteButtons_[idx].get());
+
+        colourSwatches_.erase(colourSwatches_.begin() + static_cast<ptrdiff_t>(idx));
+        swatchColours_.erase(swatchColours_.begin() + static_cast<ptrdiff_t>(idx));
+        hexEditors_.erase(hexEditors_.begin() + static_cast<ptrdiff_t>(idx));
+        nameEditors_.erase(nameEditors_.begin() + static_cast<ptrdiff_t>(idx));
+        deleteButtons_.erase(deleteButtons_.begin() + static_cast<ptrdiff_t>(idx));
+
+        // Rebind callbacks with correct indices
+        for (size_t i = 0; i < deleteButtons_.size(); ++i)
+            deleteButtons_[i]->onClick = [this, i]() { removeColourRow(i); };
+        for (size_t i = 0; i < hexEditors_.size(); ++i)
+            hexEditors_[i]->onTextChange = [this, i]() { updateSwatchColour(i); };
+
+        resized();
+        repaint();
+    }
+
+    void clearColourRows() {
+        for (auto& s : colourSwatches_)
+            removeChildComponent(s.get());
+        for (auto& h : hexEditors_)
+            removeChildComponent(h.get());
+        for (auto& n : nameEditors_)
+            removeChildComponent(n.get());
+        for (auto& d : deleteButtons_)
+            removeChildComponent(d.get());
+        colourSwatches_.clear();
+        swatchColours_.clear();
+        hexEditors_.clear();
+        nameEditors_.clear();
+        deleteButtons_.clear();
+    }
+
+    void updateSwatchColour(size_t idx) {
+        if (idx >= hexEditors_.size())
+            return;
+        auto hexVal = hexEditors_[idx]->getText().getHexValue64();
+        swatchColours_[idx] = juce::Colour(static_cast<uint32_t>(hexVal | 0xFF000000ULL));
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        for (size_t i = 0; i < colourSwatches_.size(); ++i) {
+            auto area = colourSwatches_[i]->getBounds().toFloat().reduced(1.0f);
+            g.setColour(swatchColours_[i]);
+            g.fillRoundedRectangle(area, 3.0f);
+            g.setColour(swatchColours_[i].brighter(0.3f));
+            g.drawRoundedRectangle(area, 3.0f, 1.0f);
+        }
+    }
+
+    juce::Label coloursHeader;
+    juce::Label colourHeaderLabel, hexHeaderLabel, nameHeaderLabel;
+    std::vector<std::unique_ptr<juce::Component>> colourSwatches_;
+    std::vector<juce::Colour> swatchColours_;
+    std::vector<std::unique_ptr<juce::TextEditor>> hexEditors_;
+    std::vector<std::unique_ptr<juce::TextEditor>> nameEditors_;
+    std::vector<std::unique_ptr<juce::TextButton>> deleteButtons_;
+    juce::TextButton addColourButton;
+};
+
 // ---- Rendering tab --------------------------------------------------------
 
 class RenderingPage : public juce::Component {
@@ -720,6 +937,7 @@ PreferencesDialog::PreferencesDialog() {
 
     generalPage = std::make_unique<GeneralPage>();
     uiPage = std::make_unique<UIPage>();
+    coloursPage = std::make_unique<ColoursPage>();
     renderingPage = std::make_unique<RenderingPage>();
     aiPage = std::make_unique<AIPage>();
     shortcutsPage = std::make_unique<ShortcutsPage>();
@@ -727,6 +945,7 @@ PreferencesDialog::PreferencesDialog() {
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     tabbedComponent.addTab("General", tabBg, generalPage.get(), false);
     tabbedComponent.addTab("UI", tabBg, uiPage.get(), false);
+    tabbedComponent.addTab("Colours", tabBg, coloursPage.get(), false);
     tabbedComponent.addTab("Rendering", tabBg, renderingPage.get(), false);
     tabbedComponent.addTab("AI", tabBg, aiPage.get(), false);
     tabbedComponent.addTab("Shortcuts", tabBg, shortcutsPage.get(), false);
@@ -791,6 +1010,7 @@ void PreferencesDialog::loadCurrentSettings() {
     auto& config = Config::getInstance();
     generalPage->loadSettings(config);
     uiPage->loadSettings(config);
+    coloursPage->loadSettings(config);
     renderingPage->loadSettings(config);
     aiPage->loadSettings(config);
     shortcutsPage->loadSettings(config);
@@ -800,6 +1020,7 @@ void PreferencesDialog::applySettings() {
     auto& config = Config::getInstance();
     generalPage->applySettings(config);
     uiPage->applySettings(config);
+    coloursPage->applySettings(config);
     renderingPage->applySettings(config);
     aiPage->applySettings(config);
     shortcutsPage->applySettings(config);

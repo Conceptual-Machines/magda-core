@@ -221,9 +221,10 @@ MixerView::ChannelStrip::~ChannelStrip() = default;
 void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
     bool wasChild = isChildTrack_;
     isChildTrack_ = track.hasParent();
+    bool colourChanged = trackColour_ != track.colour;
     trackColour_ = track.colour;
     trackName_ = track.name;
-    if (isChildTrack_ != wasChild)
+    if (isChildTrack_ != wasChild || colourChanged)
         repaint();
 
     if (trackLabel) {
