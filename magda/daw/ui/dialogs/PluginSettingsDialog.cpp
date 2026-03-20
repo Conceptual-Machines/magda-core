@@ -477,6 +477,7 @@ void PluginSettingsDialog::showDialog(TracktionEngineWrapper* engine, juce::Comp
     window->setContentOwned(dialog, true);
     window->setUsingNativeTitleBar(true);
     window->setResizable(false, false);
+    window->setAlwaysOnTop(true);
     window->centreWithSize(dialog->getWidth(), dialog->getHeight());
     window->setVisible(true);
 }
