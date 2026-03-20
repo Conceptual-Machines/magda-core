@@ -94,8 +94,9 @@ class GeneralPage : public juce::Component {
                     1.0, 50.0, 0.5);
 
         setupSectionHeader(*this, timelineHeader, "Timeline");
-        setupSlider(*this, timelineLengthSlider, timelineLengthLabel, "Default Length", 16.0, 512.0,
-                    1.0, " bars");
+        setupSlider(*this, timelineLengthSlider, timelineLengthLabel, "Default Length", 16.0,
+                    4096.0, 1.0, " bars");
+        timelineLengthSlider.setSkewFactorFromMidPoint(256.0);
         setupSlider(*this, viewDurationSlider, viewDurationLabel, "Default View", 4.0, 128.0, 1.0,
                     " bars");
 
