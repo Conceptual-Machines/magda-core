@@ -649,12 +649,33 @@ target_link_libraries(magda_daw
 
 # Enable plugin hosting for external VST3/AU plugins
 # Enable SoundTouch time stretching for audio clip time/pitch manipulation
+# Auto-detect Steinberg ASIO SDK for Windows ASIO support
+if(WIN32)
+    find_path(ASIO_SDK_DIR
+        NAMES "common/iasiodrv.h"
+        PATHS
+            "${CMAKE_SOURCE_DIR}/third_party/asiosdk"
+            "${CMAKE_SOURCE_DIR}/third_party/asio_sdk"
+            "$ENV{ASIO_SDK_DIR}"
+        DOC "Path to Steinberg ASIO SDK"
+    )
+    if(ASIO_SDK_DIR)
+        message(STATUS "ASIO SDK found: ${ASIO_SDK_DIR}")
+        set(JUCE_ASIO_ENABLED 1)
+    else()
+        message(STATUS "ASIO SDK not found - ASIO support disabled. "
+            "Download from https://www.steinberg.net/asiosdk and place in third_party/asiosdk/")
+        set(JUCE_ASIO_ENABLED 0)
+    endif()
+endif()
+
 target_compile_definitions(magda_daw
     PUBLIC
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     JUCE_MODAL_LOOPS_PERMITTED=1
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
+    $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )
 
 # Link required libraries for DAW application
@@ -681,7 +702,20 @@ target_compile_definitions(magda_daw_app
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
+    $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )
+
+# Add ASIO SDK include paths when available
+if(JUCE_ASIO_ENABLED)
+    target_include_directories(magda_daw PUBLIC
+        "${ASIO_SDK_DIR}/common"
+        "${ASIO_SDK_DIR}/host"
+    )
+    target_include_directories(magda_daw_app PRIVATE
+        "${ASIO_SDK_DIR}/common"
+        "${ASIO_SDK_DIR}/host"
+    )
+endif()
 
 # Include directories for DAW library
 target_include_directories(magda_daw
@@ -778,12 +812,27 @@ target_include_directories(magda_plugin_scanner
     ${CMAKE_CURRENT_SOURCE_DIR}/engine
 )
 
-# Copy scanner to app bundle on Mac
+# Copy scanner executable alongside the main app
 if(APPLE)
     add_custom_command(TARGET magda_daw_app POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
             "$<TARGET_FILE:magda_plugin_scanner>"
             "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/MacOS/magda_plugin_scanner"
         COMMENT "Copying plugin scanner to app bundle"
+    )
+elseif(WIN32)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "$<TARGET_FILE:magda_plugin_scanner>"
+            "$<TARGET_FILE_DIR:magda_daw_app>/magda_plugin_scanner.exe"
+        COMMENT "Copying plugin scanner alongside app executable"
+    )
+else()
+    # Linux: copy scanner next to the main executable
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "$<TARGET_FILE:magda_plugin_scanner>"
+            "$<TARGET_FILE_DIR:magda_daw_app>/magda_plugin_scanner"
+        COMMENT "Copying plugin scanner alongside app executable"
     )
 endif()

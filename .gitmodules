@@ -2,3 +2,6 @@
 	path = third_party/tracktion_engine
 	url = https://github.com/Conceptual-Machines/tracktion_engine.git
 	branch = magda_minimal
+[submodule "third_party/asiosdk"]
+	path = third_party/asiosdk
+	url = https://github.com/audiosdk/asio.git

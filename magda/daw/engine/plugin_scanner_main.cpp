@@ -12,31 +12,31 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
 
-#include <fstream>
 #include <iostream>
 
 // Global log file for debugging - scanner stdout isn't visible when run as child process
-static std::ofstream g_logFile;
-static std::string g_logFilePath;
+// Uses juce::FileOutputStream for Unicode-safe paths on Windows
+static std::unique_ptr<juce::FileOutputStream> g_logStream;
+static juce::File g_logFile;
 
 static void initLog() {
     // Use a unique temp file per instance (random suffix)
     auto suffix = juce::String(juce::Random::getSystemRandom().nextInt64());
-    g_logFilePath = "/tmp/magda_scanner_" + suffix.toStdString() + ".log";
-    g_logFile.open(g_logFilePath, std::ios::out | std::ios::trunc);
+    auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
+    g_logFile = tempDir.getChildFile("magda_scanner_" + suffix + ".log");
+    g_logStream = g_logFile.createOutputStream();
 }
 
 static void cleanupLog() {
-    if (g_logFile.is_open())
-        g_logFile.close();
-    if (!g_logFilePath.empty())
-        juce::File(g_logFilePath).deleteFile();
+    g_logStream.reset();
+    if (g_logFile.existsAsFile())
+        g_logFile.deleteFile();
 }
 
 static void log(const std::string& msg) {
-    if (g_logFile.is_open()) {
-        g_logFile << msg << std::endl;
-        g_logFile.flush();
+    if (g_logStream) {
+        g_logStream->writeText(msg + "\n", false, false, nullptr);
+        g_logStream->flush();
     }
     std::cout << msg << std::endl;
     std::cout.flush();

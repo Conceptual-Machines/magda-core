@@ -208,20 +208,29 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
             });
         });
 
-        engine_->onPluginScanComplete = [safeThis](bool /*success*/, int numPlugins,
+        engine_->onPluginScanComplete = [safeThis](bool success, int numPlugins,
                                                    const juce::StringArray& failedPlugins) {
-            juce::MessageManager::callAsync([safeThis, numPlugins, failedPlugins]() {
+            juce::MessageManager::callAsync([safeThis, success, numPlugins, failedPlugins]() {
                 if (safeThis == nullptr)
                     return;
                 safeThis->setScanningUIEnabled(true);
                 safeThis->scanProgress_ = -1.0;
                 safeThis->scanProgressBar_.setVisible(false);
-                safeThis->scanStatusLabel_.setText(
-                    "Found " + juce::String(numPlugins) + " plugins" +
-                        (failedPlugins.size() > 0
-                             ? ", " + juce::String(failedPlugins.size()) + " failed"
-                             : ""),
-                    juce::dontSendNotification);
+                if (!success) {
+                    juce::String message = "Plugin scan failed";
+                    if (numPlugins > 0)
+                        message += " (" + juce::String(numPlugins) + " found before error)";
+                    if (failedPlugins.size() > 0)
+                        message += ", " + juce::String(failedPlugins.size()) + " plugin(s) failed";
+                    safeThis->scanStatusLabel_.setText(message, juce::dontSendNotification);
+                } else {
+                    safeThis->scanStatusLabel_.setText(
+                        "Found " + juce::String(numPlugins) + " plugins" +
+                            (failedPlugins.size() > 0
+                                 ? ", " + juce::String(failedPlugins.size()) + " failed"
+                                 : ""),
+                        juce::dontSendNotification);
+                }
 
                 // Refresh excluded plugins list
                 if (safeThis->engine_) {
@@ -468,6 +477,7 @@ void PluginSettingsDialog::showDialog(TracktionEngineWrapper* engine, juce::Comp
     window->setContentOwned(dialog, true);
     window->setUsingNativeTitleBar(true);
     window->setResizable(false, false);
+    window->setAlwaysOnTop(true);
     window->centreWithSize(dialog->getWidth(), dialog->getHeight());
     window->setVisible(true);
 }
