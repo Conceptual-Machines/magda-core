@@ -184,11 +184,12 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         }
     }
 
-    // Remove stale racks (racks no longer in MAGDA chain elements)
+    // Remove stale racks on THIS track (racks no longer in MAGDA chain elements).
+    // Only check racks belonging to this track — not racks on other tracks.
     // RackInstances are tracked by RackSyncManager, not in syncedDevices_,
     // so we query the synced rack IDs directly.
     {
-        auto syncedIds = rackSyncManager_.getSyncedRackIds();
+        auto syncedIds = rackSyncManager_.getSyncedRackIdsForTrack(trackId);
         for (auto rackId : syncedIds) {
             if (std::find(magdaRacks.begin(), magdaRacks.end(), rackId) == magdaRacks.end()) {
                 rackSyncManager_.removeRack(rackId);
