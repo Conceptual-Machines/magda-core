@@ -13,6 +13,14 @@
 
 namespace magda {
 
+void ClipSynchronizer::reallocateAndNotify() {
+    if (auto* ctx = edit_.getCurrentPlaybackContext()) {
+        ctx->reallocate();
+        if (onGraphReallocated)
+            onGraphReallocated();
+    }
+}
+
 // Map our LaunchQuantize enum to Tracktion Engine's LaunchQType
 static te::LaunchQType toTELaunchQType(LaunchQuantize q) {
     switch (q) {
@@ -140,9 +148,7 @@ void ClipSynchronizer::clipsChanged() {
                                                                  TrackPlaybackMode::Arrangement);
         }
 
-        if (auto* ctx = edit_.getCurrentPlaybackContext()) {
-            ctx->reallocate();
-        }
+        reallocateAndNotify();
     }
 }
 
@@ -163,6 +169,8 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                 // New clip synced — rebuild graph so SlotControlNode is created
                 if (auto* ctx = edit_.getCurrentPlaybackContext()) {
                     ctx->reallocate();
+                    if (onGraphReallocated)
+                        onGraphReallocated();
                 }
             } else {
                 // Clip already synced — propagate property changes to TE clip.
@@ -1414,8 +1422,11 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         // Check if the reversed proxy file is ready
         auto playbackFile = audioClipPtr->getPlaybackFile();
         if (playbackFile.getFile().existsAsFile()) {
-            if (auto* ctx = edit_.getCurrentPlaybackContext())
+            if (auto* ctx = edit_.getCurrentPlaybackContext()) {
                 ctx->reallocate();
+                if (onGraphReallocated)
+                    onGraphReallocated();
+            }
         } else {
             pendingReverseClipId_ = clipId;
         }
