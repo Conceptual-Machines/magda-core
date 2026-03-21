@@ -1456,12 +1456,8 @@ void SessionView::rebuildTracks() {
             headerText = (collapsed ? juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6 "))   // ▶
                                     : juce::String(juce::CharPointer_UTF8("\xe2\x96\xbc ")))  // ▼
                          + track->name;
-            header->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.3f));
-        } else {
-            header->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
         }
+        header->setColour(juce::TextButton::buttonColourId, track->colour.withAlpha(0.5f));
 
         header->setButtonText(headerText);
         header->setColour(juce::TextButton::textColourOffId,
@@ -2420,21 +2416,12 @@ void SessionView::updateHeaderSelectionVisuals() {
             continue;
 
         if (isSelected) {
-            // Selected: blue accent background
-            header->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-            header->setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getColour(DarkTheme::BACKGROUND));
-        } else if (track->isGroup()) {
-            // Unselected group: orange tint
-            header->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.3f));
-            header->setColour(juce::TextButton::textColourOffId,
-                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            // Selected: white text on black background
+            header->setColour(juce::TextButton::buttonColourId, juce::Colours::black);
+            header->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         } else {
-            // Unselected regular track
-            header->setColour(juce::TextButton::buttonColourId,
-                              DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+            // Unselected: track colour background
+            header->setColour(juce::TextButton::buttonColourId, track->colour.withAlpha(0.5f));
             header->setColour(juce::TextButton::textColourOffId,
                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         }
