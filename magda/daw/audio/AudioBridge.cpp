@@ -666,10 +666,11 @@ void AudioBridge::syncAll() {
         ensureTrackMapping(track.id);
     }
 
-    // Second pass: sync plugins, routing, and state
-    for (const auto& track : tracks) {
-        syncTrackPlugins(track.id);
+    // Diff-based plugin sync: global orphan cleanup + per-track additive sync
+    pluginManager_.syncAllPlugins();
 
+    // Post-sync: routing, volume, and state (needs TE tracks + plugins to exist)
+    for (const auto& track : tracks) {
         if (auto* teTrack = getAudioTrack(track.id)) {
             // Sync mute/solo state to TE (essential on project load)
             teTrack->setMute(track.muted);
@@ -692,9 +693,6 @@ void AudioBridge::syncAll() {
 
     // Sync master channel volume/pan to Tracktion Engine
     masterChannelChanged();
-
-    // Safety net: purge any stale entries that slipped through per-track cleanup
-    pluginManager_.purgeStaleEntries();
 
 #if JUCE_DEBUG
     pluginManager_.validateMappingConsistency();

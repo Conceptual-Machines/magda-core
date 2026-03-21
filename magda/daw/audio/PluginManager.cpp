@@ -69,6 +69,103 @@ DeviceId PluginManager::getDeviceIdForPlugin(te::Plugin* plugin) const {
 // Plugin Synchronization
 // =============================================================================
 
+void PluginManager::syncAllPlugins() {
+    auto& tm = TrackManager::getInstance();
+    const auto& tracks = tm.getTracks();
+
+    // ── Step 1: Collect all valid device/rack IDs across ALL tracks ──────
+    std::set<DeviceId> validDeviceIds;
+    std::set<RackId> validRackIds;
+
+    for (const auto& track : tracks) {
+        std::function<void(const std::vector<ChainElement>&)> collectIds;
+        collectIds = [&](const std::vector<ChainElement>& elements) {
+            for (const auto& element : elements) {
+                if (isDevice(element)) {
+                    validDeviceIds.insert(getDevice(element).id);
+                } else if (isRack(element)) {
+                    const auto& rack = getRack(element);
+                    validRackIds.insert(rack.id);
+                    for (const auto& chain : rack.chains)
+                        collectIds(chain.elements);
+                }
+            }
+        };
+        collectIds(track.chainElements);
+    }
+
+    // ── Step 2: Remove orphan devices (globally) ────────────────────────
+    {
+        std::vector<DeviceId> orphanDevices;
+        std::vector<te::Plugin::Ptr> pluginsToDelete;
+        {
+            juce::ScopedLock lock(pluginLock_);
+            for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
+                if (validDeviceIds.find(it->first) == validDeviceIds.end()) {
+                    clearLFOCustomWaveCallbacks(it->second.modifiers);
+                    if (it->second.plugin)
+                        pluginToDevice_.erase(it->second.plugin.get());
+                    if (it->second.midiReceivePlugin)
+                        pluginsToDelete.push_back(it->second.midiReceivePlugin);
+                    orphanDevices.push_back(it->first);
+                    if (it->second.plugin)
+                        pluginsToDelete.push_back(it->second.plugin);
+                    it = syncedDevices_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+
+            // Also purge stale sidechain monitors
+            for (auto it = sidechainMonitors_.begin(); it != sidechainMonitors_.end();) {
+                auto trackExists = std::any_of(tracks.begin(), tracks.end(),
+                                               [&](const auto& t) { return t.id == it->first; });
+                if (!trackExists) {
+                    if (it->second)
+                        pluginsToDelete.push_back(it->second);
+                    it = sidechainMonitors_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+
+        // Close windows and delete plugins outside lock
+        for (auto deviceId : orphanDevices) {
+            pluginWindowBridge_.closeWindowsForDevice(deviceId);
+            if (instrumentRackManager_.getInnerPlugin(deviceId) != nullptr)
+                instrumentRackManager_.unwrap(deviceId);
+        }
+        for (auto& plugin : pluginsToDelete)
+            plugin->deleteFromParent();
+
+        if (!orphanDevices.empty())
+            DBG("syncAllPlugins: removed " << (int)orphanDevices.size() << " orphan devices");
+    }
+
+    // ── Step 3: Remove orphan racks (globally) ──────────────────────────
+    {
+        auto syncedRackIds = rackSyncManager_.getSyncedRackIds();
+        int removedRacks = 0;
+        for (auto rackId : syncedRackIds) {
+            if (validRackIds.find(rackId) == validRackIds.end()) {
+                rackSyncManager_.removeRack(rackId);
+                ++removedRacks;
+            }
+        }
+        if (removedRacks > 0)
+            DBG("syncAllPlugins: removed " << removedRacks << " orphan racks");
+    }
+
+    // ── Step 4: Per-track additive sync ─────────────────────────────────
+    for (const auto& track : tracks) {
+        syncTrackPlugins(track.id);
+    }
+
+    // ── Step 5: Rebuild sidechain LFO cache once at the end ─────────────
+    rebuildSidechainLFOCache();
+}
+
 void PluginManager::syncTrackPlugins(TrackId trackId) {
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
     if (!trackInfo)
@@ -115,44 +212,21 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         };
     collectElements(trackInfo->chainElements);
 
-    // Remove TE plugins that no longer exist in MAGDA
-    // Collect plugins to remove under lock, then delete outside lock to avoid blocking
+    // Remove TE plugins that no longer exist in MAGDA for THIS track.
+    // Uses the stored trackId for ownership — no TE owner-track heuristic needed.
     std::vector<DeviceId> toRemove;
     std::vector<te::Plugin::Ptr> pluginsToDelete;
     {
         juce::ScopedLock lock(pluginLock_);
         for (const auto& [deviceId, sd] : syncedDevices_) {
-            if (!sd.plugin)
+            if (!sd.plugin || sd.trackId != trackId)
                 continue;
 
-            // Check if this plugin belongs to this track.
-            // For regular plugins: check ownerTrack directly
-            // For wrapped instruments: the inner plugin lives inside a rack,
-            // so we check if the wrapper rack instance is on this track
-            bool belongsToTrack = false;
-            auto* owner = sd.plugin->getOwnerTrack();
-
-            if (owner == teTrack) {
-                belongsToTrack = true;
-            } else if (instrumentRackManager_.getInnerPlugin(deviceId) == sd.plugin.get()) {
-                for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-                    if (instrumentRackManager_.isWrapperRack(teTrack->pluginList[i])) {
-                        if (instrumentRackManager_.getDeviceIdForRack(teTrack->pluginList[i]) ==
-                            deviceId) {
-                            belongsToTrack = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (belongsToTrack) {
-                bool found = std::find(magdaDevices.begin(), magdaDevices.end(), deviceId) !=
-                             magdaDevices.end();
-                if (!found) {
-                    toRemove.push_back(deviceId);
-                    pluginsToDelete.push_back(sd.plugin);
-                }
+            bool found =
+                std::find(magdaDevices.begin(), magdaDevices.end(), deviceId) != magdaDevices.end();
+            if (!found) {
+                toRemove.push_back(deviceId);
+                pluginsToDelete.push_back(sd.plugin);
             }
         }
 
@@ -209,6 +283,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 // the heavy VST/AU load happens on a background thread.
                 auto plugin = loadDeviceAsPlugin(trackId, device);
                 if (plugin) {
+                    syncedDevices_[device.id].trackId = trackId;
                     syncedDevices_[device.id].plugin = plugin;
                     pluginToDevice_[plugin.get()] = device.id;
 
@@ -317,6 +392,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                             auto* innerPlugin = rackSyncManager_.getInnerPlugin(device.id);
                             if (innerPlugin) {
                                 juce::ScopedLock lock(pluginLock_);
+                                syncedDevices_[device.id].trackId = trackId;
                                 syncedDevices_[device.id].plugin = innerPlugin;
                                 pluginToDevice_[innerPlugin] = device.id;
                             }
@@ -447,39 +523,17 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 // =============================================================================
 
 void PluginManager::cleanupTrackPlugins(TrackId trackId) {
-    auto* teTrack = trackController_.getAudioTrack(trackId);
-
-    // 1. Collect DeviceIds belonging to this track from syncedDevices_
+    // 1. Collect DeviceIds belonging to this track using stored trackId
     std::vector<DeviceId> deviceIds;
     std::vector<te::Plugin::Ptr> pluginsToDelete;
     {
         juce::ScopedLock lock(pluginLock_);
         for (const auto& [deviceId, sd] : syncedDevices_) {
-            if (!sd.plugin)
+            if (!sd.plugin || sd.trackId != trackId)
                 continue;
 
-            bool belongsToTrack = false;
-
-            if (teTrack) {
-                auto* owner = sd.plugin->getOwnerTrack();
-                if (owner == teTrack) {
-                    belongsToTrack = true;
-                } else if (instrumentRackManager_.getInnerPlugin(deviceId) == sd.plugin.get()) {
-                    for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-                        if (instrumentRackManager_.isWrapperRack(teTrack->pluginList[i]) &&
-                            instrumentRackManager_.getDeviceIdForRack(teTrack->pluginList[i]) ==
-                                deviceId) {
-                            belongsToTrack = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (belongsToTrack) {
-                deviceIds.push_back(deviceId);
-                pluginsToDelete.push_back(sd.plugin);
-            }
+            deviceIds.push_back(deviceId);
+            pluginsToDelete.push_back(sd.plugin);
         }
 
         // 2. Erase map entries for collected DeviceIds
@@ -1915,6 +1969,7 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
             if (syncedDevices_.find(device.id) == syncedDevices_.end()) {
                 auto plugin = loadDeviceAsPlugin(trackId, device);
                 if (plugin) {
+                    syncedDevices_[device.id].trackId = trackId;
                     syncedDevices_[device.id].plugin = plugin;
                     pluginToDevice_[plugin.get()] = device.id;
                 }
@@ -2005,6 +2060,7 @@ void PluginManager::syncMasterPlugins() {
         masterList.insertPlugin(plugin, -1, nullptr);
         {
             juce::ScopedLock lock(pluginLock_);
+            syncedDevices_[device.id].trackId = MASTER_TRACK_ID;
             syncedDevices_[device.id].plugin = plugin;
             pluginToDevice_[plugin.get()] = device.id;
         }
