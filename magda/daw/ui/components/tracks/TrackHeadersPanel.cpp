@@ -51,7 +51,6 @@ float dbToMeterPos(float db) {
     float normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
 
     // Apply power curve: y = x^3
-    // -12 dB → ~38%, 0 dB → ~75%, +6 dB → 100%
     return std::pow(normalized, 3.0f);
 }
 
@@ -89,11 +88,25 @@ class TrackMeter : public juce::Component {
         // Draw level fills
         drawMeterBar(g, leftBar, levelL_);
         drawMeterBar(g, rightBar, levelR_);
+
+        // Separator line at name row boundary (aligned with full-header line painted behind)
+        if (nameRowY_ >= 0) {
+            float localY = static_cast<float>(nameRowY_ - getY());
+            if (localY > 0 && localY < bounds.getBottom()) {
+                g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+                g.drawHorizontalLine(static_cast<int>(localY), bounds.getX(), bounds.getRight());
+            }
+        }
+    }
+
+    void setNameRowY(int y) {
+        nameRowY_ = y;
     }
 
   private:
     float levelL_ = 0.0f;
     float levelR_ = 0.0f;
+    int nameRowY_ = -1;  // Absolute Y of name row bottom (for separator line)
 
     void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level) {
         if (level <= 0.0f)
@@ -1455,6 +1468,11 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
         g.fillRect(nameRowArea);
     }
 
+    // Separator line at bottom of name row (extends across full header including meter)
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.drawHorizontalLine(bgArea.getY() + 22, static_cast<float>(bgArea.getX()),
+                         static_cast<float>(bgArea.getRight()));
+
     // Frozen overlay — dim the track header
     if (header.frozen) {
         g.setColour(juce::Colours::black.withAlpha(0.3f));
@@ -1520,6 +1538,7 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
     // Audio meter spans full track height
     header.meterComponent->setBounds(meterArea);
     header.meterComponent->setVisible(true);
+    static_cast<TrackMeter*>(header.meterComponent.get())->setNameRowY(header.nameRowBottomY);
 
     // MIDI indicator in top portion, session mode button in bottom portion
     const int sessionBtnSize = 14;
@@ -1812,6 +1831,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
         if (!headerArea.isEmpty()) {
             const int trackHeight = headerArea.getHeight();
 
+            header.nameRowBottomY = headerArea.getY() + 22;
             auto workArea = headerArea.reduced(4);
             layoutMeterColumn(header, workArea, outer);
 

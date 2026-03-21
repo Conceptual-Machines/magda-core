@@ -137,4 +137,20 @@ template <typename ModMap> inline void clearLFOCustomWaveCallbacks(const ModMap&
     }
 }
 
+/**
+ * @brief Move CurveSnapshotHolders to a deferred-deletion list before destroying their owner.
+ *
+ * After clearing LFO callback pointers (clearLFOCustomWaveCallbacks), the audio thread
+ * may still be mid-call inside evaluateCallback with a pointer loaded before the null
+ * store was visible. Deferring destruction ensures the holder memory stays valid until
+ * the next sync cycle, by which time the audio thread has moved on.
+ */
+inline void deferCurveSnapshots(std::map<ModId, std::unique_ptr<CurveSnapshotHolder>>& snapshots,
+                                std::vector<std::unique_ptr<CurveSnapshotHolder>>& deferred) {
+    for (auto& [id, holder] : snapshots) {
+        if (holder)
+            deferred.push_back(std::move(holder));
+    }
+}
+
 }  // namespace magda

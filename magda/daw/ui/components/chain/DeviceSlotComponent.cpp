@@ -540,7 +540,8 @@ int DeviceSlotComponent::getPreferredWidth() const {
     constexpr int meterExtra = METER_STRIP_WIDTH + 4;
 
     if (collapsed_) {
-        return getLeftPanelsWidth() + COLLAPSED_WIDTH + getRightPanelsWidth();
+        return getLeftPanelsWidth() + COLLAPSED_WIDTH + METER_STRIP_WIDTH + 2 +
+               getRightPanelsWidth();
     }
     if (fourOscUI_) {
         return getTotalWidth(500) + meterExtra;
@@ -823,11 +824,12 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // Position the level meter on the right edge of the content area
-    {
+    // (when collapsed, meter is positioned by resizedCollapsed instead)
+    if (!collapsed_) {
         auto meterBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
         contentArea.removeFromRight(4);  // Padding between content and meter
         levelMeter_.setBounds(meterBounds);
-        levelMeter_.setVisible(!collapsed_);
+        levelMeter_.setVisible(true);
     }
 
     // Bottom padding
@@ -1071,6 +1073,12 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 }
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
+    // Position level meter on the right side of collapsed strip
+    auto meterBounds = area.removeFromRight(METER_STRIP_WIDTH).reduced(0, 2);
+    area.removeFromRight(2);
+    levelMeter_.setBounds(meterBounds);
+    levelMeter_.setVisible(true);
+
     // Add device-specific buttons vertically when collapsed
     // Order: X (from base), ON, UI, Macro, Mod - matches panel order
     int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);

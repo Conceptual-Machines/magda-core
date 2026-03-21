@@ -507,6 +507,11 @@ class PluginManager {
     // When true, skip zeroing MIDI-triggered LFO assignments (during offline render)
     bool renderingActive_ = false;
 
+    // Deferred CurveSnapshotHolder deletion to prevent audio-thread use-after-free.
+    // Holders are moved here after clearing LFO callbacks, then drained at the
+    // start of the next sync operation (by which time the audio thread has moved on).
+    std::vector<std::unique_ptr<CurveSnapshotHolder>> deferredHolders_;
+
     // Thread safety
     mutable juce::CriticalSection pluginLock_;
 

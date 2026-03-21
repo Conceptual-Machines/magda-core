@@ -247,6 +247,9 @@ class RackSyncManager {
 
     std::map<RackId, SyncedRack> syncedRacks_;
 
+    // Deferred CurveSnapshotHolder deletion to prevent audio-thread use-after-free.
+    std::vector<std::unique_ptr<CurveSnapshotHolder>> deferredHolders_;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RackSyncManager)
 };
 

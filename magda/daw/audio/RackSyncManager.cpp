@@ -15,6 +15,8 @@ RackSyncManager::RackSyncManager(te::Edit& edit, PluginManager& pluginManager)
 // =============================================================================
 
 te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackInfo) {
+    deferredHolders_.clear();  // Drain previous cycle's deferred holders
+
     DBG("syncRack: rackId=" << rackInfo.id << " trackId=" << trackId
                             << " chains=" << (int)rackInfo.chains.size() << " alreadySynced="
                             << (int)(syncedRacks_.find(rackInfo.id) != syncedRacks_.end()));
@@ -164,8 +166,9 @@ void RackSyncManager::removeRack(RackId rackId) {
         edit_.getRackList().removeRackType(synced.rackType);
     }
 
-    // Clear LFO callbacks before destroying CurveSnapshotHolders
+    // Clear LFO callbacks and defer holder destruction
     clearLFOCustomWaveCallbacks(synced.innerModifiers);
+    deferCurveSnapshots(synced.curveSnapshots, deferredHolders_);
 
     DBG("RackSyncManager: Removed rack " << rackId);
 
@@ -309,10 +312,14 @@ void RackSyncManager::clear() {
 
             macroList.removeMacroParameter(*macroParam);
         }
-        // Clear LFO callbacks before destroying CurveSnapshotHolders
+        // Clear LFO callbacks and defer holder destruction
         clearLFOCustomWaveCallbacks(synced.innerModifiers);
+        deferCurveSnapshots(synced.curveSnapshots, deferredHolders_);
     }
     syncedRacks_.clear();
+    // Note: deferredHolders_ are NOT drained here — this is typically called from
+    // PluginManager::clearAllMappings() which drains its own deferred holders after.
+    // These will be cleaned up when RackSyncManager is destroyed.
 }
 
 void RackSyncManager::setMacroValue(RackId rackId, int macroIndex, float value) {

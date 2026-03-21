@@ -10,6 +10,7 @@
 #include "core/TrackManager.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
+#include "ui/components/mixer/LevelMeter.hpp"
 
 namespace magda::daw::ui {
 
@@ -97,6 +98,10 @@ class RackComponent : public NodeComponent, public juce::Timer {
     std::unique_ptr<magda::SvgButton> macroButton_;          // Macros toggle
     TextSlider volumeSlider_{TextSlider::Format::Decibels};  // Rack volume (dB)
     juce::TextButton addChainButton_;
+
+    // Level meter (right side of content area, like DeviceSlotComponent)
+    static constexpr int METER_STRIP_WIDTH = 10;
+    magda::LevelMeter levelMeter_;
 
     // Content area
     juce::Label chainsLabel_;  // "Chains:" label

@@ -168,6 +168,9 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<juce::Component> midiIndicator;                // MIDI activity indicator
         std::unique_ptr<juce::Component> sessionModeButton;  // Back-to-arrangement indicator
 
+        // Layout cache
+        int nameRowBottomY = 0;  // Absolute Y of name row bottom (for meter separator line)
+
         // Meter levels
         float meterLevelL = 0.0f;
         float meterLevelR = 0.0f;

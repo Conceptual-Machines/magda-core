@@ -106,9 +106,11 @@ void PluginManager::syncAllPlugins() {
         std::vector<te::Plugin::Ptr> pluginsToDelete;
         {
             juce::ScopedLock lock(pluginLock_);
+            deferredHolders_.clear();  // Drain previous cycle's deferred holders
             for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
                 if (validDeviceIds.find(it->first) == validDeviceIds.end()) {
                     clearLFOCustomWaveCallbacks(it->second.modifiers);
+                    deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
                     if (it->second.plugin)
                         pluginToDevice_.erase(it->second.plugin.get());
                     if (it->second.midiReceivePlugin)
@@ -238,11 +240,13 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
         }
 
         // Remove from mappings while under lock
+        deferredHolders_.clear();  // Drain previous cycle's deferred holders
         for (auto deviceId : toRemove) {
             auto it = syncedDevices_.find(deviceId);
             if (it != syncedDevices_.end()) {
                 // Clear LFO callbacks before destroying CurveSnapshotHolders
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
+                deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 syncedDevices_.erase(it);
@@ -547,11 +551,13 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
         }
 
         // 2. Erase map entries for collected DeviceIds
+        deferredHolders_.clear();  // Drain previous cycle's deferred holders
         for (auto deviceId : deviceIds) {
             auto it = syncedDevices_.find(deviceId);
             if (it != syncedDevices_.end()) {
                 // Clear LFO callbacks before destroying CurveSnapshotHolders
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
+                deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 syncedDevices_.erase(it);
@@ -2039,10 +2045,12 @@ void PluginManager::syncMasterPlugins() {
                 }
             }
         }
+        deferredHolders_.clear();  // Drain previous cycle's deferred holders
         for (auto deviceId : toRemove) {
             auto it = syncedDevices_.find(deviceId);
             if (it != syncedDevices_.end()) {
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
+                deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 syncedDevices_.erase(it);
@@ -2191,10 +2199,12 @@ void PluginManager::purgeStaleEntries() {
         juce::ScopedLock lock(pluginLock_);
 
         // syncedDevices_ (consolidates all per-device maps)
+        deferredHolders_.clear();  // Drain previous cycle's deferred holders
         for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
             if (validDeviceIds.find(it->first) == validDeviceIds.end()) {
                 // Clear LFO callbacks before destroying CurveSnapshotHolders
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
+                deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 if (it->second.midiReceivePlugin)
@@ -2299,14 +2309,19 @@ void PluginManager::validateMappingConsistency() {
 
 void PluginManager::clearAllMappings() {
     juce::ScopedLock lock(pluginLock_);
-    // Clear LFO callbacks before destroying CurveSnapshotHolders
-    for (auto& [deviceId, sd] : syncedDevices_)
+    // Clear LFO callbacks and defer holder destruction
+    for (auto& [deviceId, sd] : syncedDevices_) {
         clearLFOCustomWaveCallbacks(sd.modifiers);
+        deferCurveSnapshots(sd.curveSnapshots, deferredHolders_);
+    }
     instrumentRackManager_.clear();
     rackSyncManager_.clear();
     syncedDevices_.clear();
     pluginToDevice_.clear();
     sidechainMonitors_.clear();
+    // Drain deferred holders after all state is cleared (shutdown path —
+    // audio engine is stopped so no in-flight callbacks remain)
+    deferredHolders_.clear();
 }
 
 void PluginManager::updateTransportSyncedProcessors(bool isPlaying) {

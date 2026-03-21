@@ -115,6 +115,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
         DBG("Rack volume changed to " << db << " dB");
     };
     addAndMakeVisible(volumeSlider_);
+    addAndMakeVisible(levelMeter_);
 
     // === CONTENT AREA SETUP ===
 
@@ -183,7 +184,7 @@ void RackComponent::timerCallback() {
 
     magda::DeviceMeteringManager::DeviceMeterData data;
     if (bridge->getDeviceMetering().getRackLatestLevels(rackId_, data)) {
-        volumeSlider_.setMeterLevels(data.peakL, data.peakR);
+        levelMeter_.setLevels(data.peakL, data.peakR);
     }
 }
 
@@ -208,11 +209,15 @@ void RackComponent::mouseWheelMove(const juce::MouseEvent& e,
 }
 
 void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
-    // Chains label separator (below "Chains:" label)
+    if (collapsed_)
+        return;
+
+    // Chains label separator (below "Chains:" label), stopping before the meter strip
     int chainsSeparatorY = contentArea.getY() + CHAINS_LABEL_HEIGHT;
+    int lineRight = contentArea.getRight() - METER_STRIP_WIDTH - 4 - 2;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawHorizontalLine(chainsSeparatorY, static_cast<float>(contentArea.getX() + 2),
-                         static_cast<float>(contentArea.getRight() - 2));
+                         static_cast<float>(lineRight));
 }
 
 void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
@@ -221,11 +226,14 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     if (collapsed_) {
         chainsLabel_.setVisible(false);
         addChainButton_.setVisible(false);
+        addChainButton_.setBounds(0, 0, 0, 0);  // Clear stale bounds
         chainViewport_.setVisible(false);
+        chainViewport_.setBounds(0, 0, 0, 0);  // Clear stale bounds
         if (chainPanel_) {
             chainPanel_->setVisible(false);
         }
         volumeSlider_.setVisible(false);
+        // levelMeter_ visibility handled by resizedCollapsed
         return;
     }
 
@@ -236,6 +244,14 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     modButton_->setVisible(true);
     macroButton_->setVisible(true);
     volumeSlider_.setVisible(true);
+    levelMeter_.setVisible(true);
+
+    // Position the level meter on the right edge of the content area
+    {
+        auto meterBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
+        contentArea.removeFromRight(4);  // Padding between content and meter
+        levelMeter_.setBounds(meterBounds);
+    }
 
     // Calculate chain panel positioning
     juce::Rectangle<int> chainPanelArea;
@@ -303,12 +319,18 @@ void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     modButton_->setBounds(headerArea.removeFromLeft(20));
     headerArea.removeFromLeft(4);
 
-    // Volume slider on the right side of header
-    volumeSlider_.setBounds(headerArea.removeFromRight(45));
+    // Volume slider on the right side of header (same width as device slots)
+    volumeSlider_.setBounds(headerArea.removeFromRight(70));
     headerArea.removeFromRight(4);
 }
 
 void RackComponent::resizedCollapsed(juce::Rectangle<int>& area) {
+    // Position level meter on the right side of collapsed strip
+    auto meterBounds = area.removeFromRight(METER_STRIP_WIDTH).reduced(0, 2);
+    area.removeFromRight(2);
+    levelMeter_.setBounds(meterBounds);
+    levelMeter_.setVisible(true);
+
     // Add macro and mod buttons vertically when collapsed - matches panel order
     int buttonSize = juce::jmin(16, area.getWidth() - 4);
 
@@ -330,9 +352,10 @@ int RackComponent::getPreferredHeight() const {
 }
 
 int RackComponent::getPreferredWidth() const {
-    // When collapsed, return collapsed strip width + any visible side panels
+    // When collapsed, return collapsed strip width + meter + any visible side panels
     if (collapsed_) {
-        return getLeftPanelsWidth() + NodeComponent::COLLAPSED_WIDTH + getRightPanelsWidth();
+        return getLeftPanelsWidth() + NodeComponent::COLLAPSED_WIDTH + METER_STRIP_WIDTH + 2 +
+               getRightPanelsWidth();
     }
 
     int baseWidth = getMinimumWidth();
@@ -360,8 +383,9 @@ int RackComponent::getPreferredWidth() const {
 }
 
 int RackComponent::getMinimumWidth() const {
-    // Base width without chain panel
-    return BASE_CHAINS_LIST_WIDTH + getLeftPanelsWidth() + getRightPanelsWidth();
+    // Base width without chain panel (includes meter strip space)
+    return BASE_CHAINS_LIST_WIDTH + METER_STRIP_WIDTH + 4 + getLeftPanelsWidth() +
+           getRightPanelsWidth();
 }
 
 void RackComponent::setAvailableWidth(int width) {

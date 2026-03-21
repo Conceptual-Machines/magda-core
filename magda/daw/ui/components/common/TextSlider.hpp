@@ -202,10 +202,10 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
                 auto gainToWidth = [w](float gain) -> float {
                     float db = juce::Decibels::gainToDecibels(gain, -60.0f);
                     float norm = juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 66.0f);
-                    return w * norm;
+                    return w * std::pow(norm, 3.0f);
                 };
 
-                constexpr float zeroDbNorm = 60.0f / 66.0f;
+                constexpr float zeroDbNorm = (60.0f / 66.0f) * (60.0f / 66.0f) * (60.0f / 66.0f);
 
                 auto drawHorizontalBar = [&](int y, int barH, float gain) {
                     int barW = static_cast<int>(gainToWidth(gain));

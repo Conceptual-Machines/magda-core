@@ -50,7 +50,7 @@ class LevelMeter : public juce::Component {
         // 0dB tick mark
         float zeroDbPos = dbToMeterPos(0.0f);
         float tickY = effectiveBounds.getBottom() - effectiveBounds.getHeight() * zeroDbPos;
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.2f));
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
         g.drawHorizontalLine(static_cast<int>(tickY), effectiveBounds.getX(),
                              effectiveBounds.getRight());
     }
@@ -62,7 +62,7 @@ class LevelMeter : public juce::Component {
     // dB conversion helpers (self-contained for the meter display)
     static constexpr float MIN_DB = -60.0f;
     static constexpr float MAX_DB = 6.0f;
-    static constexpr float METER_CURVE_EXPONENT = 2.0f;
+    static constexpr float METER_CURVE_EXPONENT = 3.0f;
 
     static float gainToDb(float gain) {
         if (gain <= 0.0f)

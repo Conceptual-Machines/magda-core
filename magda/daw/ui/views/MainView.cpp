@@ -52,7 +52,6 @@ float dbToMeterPos(float db) {
     float normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
 
     // Apply power curve: y = x^3
-    // -12 dB → ~38%, 0 dB → ~75%, +6 dB → 100%
     return std::pow(normalized, 3.0f);
 }
 

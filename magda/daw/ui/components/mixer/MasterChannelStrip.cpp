@@ -29,7 +29,7 @@ float dbToGain(float db) {
 }
 
 // Exponent for power curve scaling - lower values spread out the bottom labels more
-constexpr float METER_CURVE_EXPONENT = 2.0f;
+constexpr float METER_CURVE_EXPONENT = 3.0f;
 
 // Convert dB to normalized meter position (0-1) with power curve
 float dbToMeterPos(float db) {
