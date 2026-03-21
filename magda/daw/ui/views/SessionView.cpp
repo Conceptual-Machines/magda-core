@@ -1086,6 +1086,8 @@ class SessionView::MiniMasterStrip : public juce::Component {
     void mouseDown(const juce::MouseEvent& e) override {
         if (e.mods.isPopupMenu() && onContextMenu)
             onContextMenu();
+        else
+            SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
     }
 
     std::function<void()> onContextMenu;
@@ -1238,7 +1240,9 @@ SessionView::SessionView() {
     masterLabel_->setColour(juce::TextButton::textColourOffId,
                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     masterLabel_->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
-    masterLabel_->setInterceptsMouseClicks(false, false);
+    masterLabel_->onClick = [this]() {
+        SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
+    };
     addAndMakeVisible(*masterLabel_);
 
     // Create master strip in the fader row (scene column area)
