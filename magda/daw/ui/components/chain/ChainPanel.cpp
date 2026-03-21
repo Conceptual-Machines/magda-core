@@ -3,9 +3,12 @@
 #include "DeviceSlotComponent.hpp"
 #include "NodeComponent.hpp"
 #include "RackComponent.hpp"
+#include "audio/DrumGridPlugin.hpp"
+#include "audio/MagdaSamplerPlugin.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
+#include "engine/TracktionEngineWrapper.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -660,62 +663,126 @@ void ChainPanel::onAddDeviceClicked() {
 
     juce::PopupMenu menu;
 
-    // Devices submenu
-    juce::PopupMenu devicesMenu;
-    devicesMenu.addItem(1, "Pro-Q 3");
-    devicesMenu.addItem(2, "Pro-C 2");
-    devicesMenu.addItem(3, "Saturn 2");
-    devicesMenu.addItem(4, "Valhalla Room");
-    devicesMenu.addItem(5, "Serum");
-    menu.addSubMenu("Add Device", devicesMenu);
+    // --- Internal (built-in) plugins ---
+    juce::PopupMenu internalMenu;
+    struct InternalEntry {
+        juce::String name;
+        juce::String pluginId;
+        bool isInstrument;
+    };
+    const InternalEntry internals[] = {
+        {"4OSC Synth", "4osc", true},
+        {"Sampler", magda::daw::audio::MagdaSamplerPlugin::xmlTypeName, true},
+        {"Drum Grid", magda::daw::audio::DrumGridPlugin::xmlTypeName, true},
+        {"Test Tone", "tone", false},
+        {"Equaliser", "eq", false},
+        {"Compressor", "compressor", false},
+        {"Reverb", "reverb", false},
+        {"Delay", "delay", false},
+        {"Chorus", "chorus", false},
+        {"Phaser", "phaser", false},
+        {"Filter", "lowpass", false},
+        {"Pitch Shift", "pitchshift", false},
+        {"IR Reverb", "impulseresponse", false},
+        {"Utility", "utility", false},
+    };
+
+    // Item IDs: 1..N for internals, 1000+ for externals, 10000 for rack
+    int itemId = 1;
+    for (const auto& entry : internals) {
+        internalMenu.addItem(itemId++, entry.name);
+    }
+    menu.addSubMenu("Internal", internalMenu);
+
+    // --- External plugins from KnownPluginList ---
+    juce::Array<juce::PluginDescription> externalPlugins;
+    if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
+            magda::TrackManager::getInstance().getAudioEngine())) {
+        auto& knownPlugins = engine->getKnownPluginList();
+        externalPlugins = knownPlugins.getTypes();
+    }
+
+    if (!externalPlugins.isEmpty()) {
+        // Group by manufacturer
+        std::map<juce::String, juce::PopupMenu> byManufacturer;
+        for (int i = 0; i < externalPlugins.size(); ++i) {
+            const auto& desc = externalPlugins[i];
+            auto manufacturer = desc.manufacturerName.isEmpty() ? "Unknown" : desc.manufacturerName;
+            byManufacturer[manufacturer].addItem(1000 + static_cast<int>(i), desc.name);
+        }
+        for (auto& [manufacturer, subMenu] : byManufacturer) {
+            menu.addSubMenu(manufacturer, subMenu);
+        }
+    }
 
     menu.addSeparator();
-    menu.addItem(100, "Create Rack");
+    menu.addItem(10000, "Create Rack");
 
     // Use SafePointer to handle case where this component is destroyed before callback
     auto safeThis = juce::Component::SafePointer<ChainPanel>(this);
     auto chainPath = chainPath_;  // Capture by value for async safety
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, chainPath](int result) {
-        if (result == 100) {
-            // Create nested rack using path-based method for proper nesting support
+    // Capture external plugins for the async callback
+    auto capturedPlugins =
+        std::make_shared<juce::Array<juce::PluginDescription>>(std::move(externalPlugins));
+    // Capture internals array as a vector
+    auto capturedInternals =
+        std::make_shared<std::vector<InternalEntry>>(std::begin(internals), std::end(internals));
+
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, chainPath, capturedPlugins,
+                                                    capturedInternals](int result) {
+        if (result == 0)
+            return;
+
+        if (result == 10000) {
             magda::TrackManager::getInstance().addRackToChainByPath(chainPath);
             if (safeThis != nullptr) {
                 safeThis->rebuildElementSlots();
                 safeThis->resized();
                 safeThis->repaint();
             }
-        } else if (result > 0 && result < 100) {
-            magda::DeviceInfo device;
-            switch (result) {
-                case 1:
-                    device.name = "Pro-Q 3";
-                    device.manufacturer = "FabFilter";
-                    break;
-                case 2:
-                    device.name = "Pro-C 2";
-                    device.manufacturer = "FabFilter";
-                    break;
-                case 3:
-                    device.name = "Saturn 2";
-                    device.manufacturer = "FabFilter";
-                    break;
-                case 4:
-                    device.name = "Valhalla Room";
-                    device.manufacturer = "Valhalla DSP";
-                    break;
-                case 5:
-                    device.name = "Serum";
-                    device.manufacturer = "Xfer Records";
-                    break;
-            }
-            device.format = magda::PluginFormat::VST3;
-            magda::TrackManager::getInstance().addDeviceToChainByPath(chainPath, device);
-            if (safeThis != nullptr) {
-                safeThis->rebuildElementSlots();
-                safeThis->resized();
-                safeThis->repaint();
-            }
+            return;
+        }
+
+        magda::DeviceInfo device;
+
+        if (result >= 1 && result <= static_cast<int>(capturedInternals->size())) {
+            // Internal plugin
+            const auto& entry = (*capturedInternals)[result - 1];
+            device.name = entry.name;
+            device.manufacturer = "MAGDA";
+            device.pluginId = entry.pluginId;
+            device.isInstrument = entry.isInstrument;
+            device.format = magda::PluginFormat::Internal;
+        } else if (result >= 1000) {
+            // External plugin
+            int idx = result - 1000;
+            if (idx < 0 || idx >= static_cast<int>(capturedPlugins->size()))
+                return;
+            const auto& desc = (*capturedPlugins)[idx];
+            device.name = desc.name;
+            device.manufacturer = desc.manufacturerName;
+            device.pluginId = desc.createIdentifierString();
+            device.isInstrument = desc.isInstrument;
+            device.uniqueId = desc.createIdentifierString();
+            device.fileOrIdentifier = desc.fileOrIdentifier;
+            if (desc.pluginFormatName == "VST3")
+                device.format = magda::PluginFormat::VST3;
+            else if (desc.pluginFormatName == "AU" || desc.pluginFormatName == "AudioUnit")
+                device.format = magda::PluginFormat::AU;
+            else if (desc.pluginFormatName == "VST")
+                device.format = magda::PluginFormat::VST;
+            else
+                device.format = magda::PluginFormat::Internal;
+        } else {
+            return;
+        }
+
+        magda::TrackManager::getInstance().addDeviceToChainByPath(chainPath, device);
+        if (safeThis != nullptr) {
+            safeThis->rebuildElementSlots();
+            safeThis->resized();
+            safeThis->repaint();
         }
     });
 }
