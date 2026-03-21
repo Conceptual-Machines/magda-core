@@ -39,6 +39,18 @@ const DeviceInfo* findDeviceRecursive(const std::vector<ChainElement>& elements,
     return nullptr;
 }
 
+te::InputDevice::MonitorMode toTeMonitorMode(InputMonitorMode mode) {
+    switch (mode) {
+        case InputMonitorMode::In:
+            return te::InputDevice::MonitorMode::on;
+        case InputMonitorMode::Auto:
+            return te::InputDevice::MonitorMode::automatic;
+        case InputMonitorMode::Off:
+        default:
+            return te::InputDevice::MonitorMode::off;
+    }
+}
+
 }  // namespace
 
 AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
@@ -50,6 +62,12 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     // Wire up async plugin load completion callback to notify UI
     pluginManager_.onAsyncPluginLoaded = [](TrackId trackId) {
         TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+    };
+
+    // Re-establish MIDI routing and input monitor state after graph reallocate
+    clipSynchronizer_.onGraphReallocated = [this]() {
+        updateMidiRoutingForSelection();
+        resyncAllInputMonitors();
     };
 
     // Register as TrackManager listener
@@ -168,18 +186,7 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             {
                 auto* playbackContext = edit_.getCurrentPlaybackContext();
                 if (playbackContext) {
-                    auto teMode = te::InputDevice::MonitorMode::off;
-                    switch (trackInfo->inputMonitor) {
-                        case InputMonitorMode::Off:
-                            teMode = te::InputDevice::MonitorMode::off;
-                            break;
-                        case InputMonitorMode::In:
-                            teMode = te::InputDevice::MonitorMode::on;
-                            break;
-                        case InputMonitorMode::Auto:
-                            teMode = te::InputDevice::MonitorMode::automatic;
-                            break;
-                    }
+                    auto teMode = toTeMonitorMode(trackInfo->inputMonitor);
                     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
                         auto targets = inputDeviceInstance->getTargets();
                         for (auto targetID : targets) {
@@ -315,6 +322,52 @@ void AudioBridge::updateMidiRoutingForSelection() {
     }
 
     // setTrackMidiInput already handles reallocate() internally
+}
+
+void AudioBridge::resyncAllInputMonitors() {
+    auto* playbackContext = edit_.getCurrentPlaybackContext();
+    if (!playbackContext)
+        return;
+
+    auto& tm = TrackManager::getInstance();
+
+    // For each input device, determine the desired monitor mode by aggregating
+    // across all of its target tracks:
+    // - on        if any target track is In
+    // - automatic if any target track is Auto (and none are In)
+    // - off       otherwise
+    for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+        bool anyIn = false;
+        bool anyAuto = false;
+
+        for (auto targetID : inputDeviceInstance->getTargets()) {
+            for (const auto& trackInfo : tm.getTracks()) {
+                auto* track = trackController_.getAudioTrack(trackInfo.id);
+                if (!track || targetID != track->itemID)
+                    continue;
+
+                switch (trackInfo.inputMonitor) {
+                    case InputMonitorMode::In:
+                        anyIn = true;
+                        break;
+                    case InputMonitorMode::Auto:
+                        anyAuto = true;
+                        break;
+                    case InputMonitorMode::Off:
+                        break;
+                }
+                break;  // Found the matching track for this targetID
+            }
+        }
+
+        auto teMode = te::InputDevice::MonitorMode::off;
+        if (anyIn)
+            teMode = te::InputDevice::MonitorMode::on;
+        else if (anyAuto)
+            teMode = te::InputDevice::MonitorMode::automatic;
+
+        inputDeviceInstance->owner.setMonitorMode(teMode);
+    }
 }
 
 void AudioBridge::trackDevicesChanged(TrackId trackId) {
@@ -625,10 +678,11 @@ void AudioBridge::syncAll() {
         ensureTrackMapping(track.id);
     }
 
-    // Second pass: sync plugins, routing, and state
-    for (const auto& track : tracks) {
-        syncTrackPlugins(track.id);
+    // Diff-based plugin sync: global orphan cleanup + per-track additive sync
+    pluginManager_.syncAllPlugins();
 
+    // Post-sync: routing, volume, and state (needs TE tracks + plugins to exist)
+    for (const auto& track : tracks) {
         if (auto* teTrack = getAudioTrack(track.id)) {
             // Sync mute/solo state to TE (essential on project load)
             teTrack->setMute(track.muted);
@@ -651,9 +705,6 @@ void AudioBridge::syncAll() {
 
     // Sync master channel volume/pan to Tracktion Engine
     masterChannelChanged();
-
-    // Safety net: purge any stale entries that slipped through per-track cleanup
-    pluginManager_.purgeStaleEntries();
 
 #if JUCE_DEBUG
     pluginManager_.validateMappingConsistency();
@@ -814,8 +865,11 @@ void AudioBridge::timerCallback() {
                                 DBG("REVERSE TIMER: proxy ready — reallocating ("
                                     << proxyFile.getFullPathName() << ")");
                                 clipSynchronizer_.clearPendingReverseClipId();
-                                if (auto* ctx = edit_.getCurrentPlaybackContext())
+                                if (auto* ctx = edit_.getCurrentPlaybackContext()) {
                                     ctx->reallocate();
+                                    if (clipSynchronizer_.onGraphReallocated)
+                                        clipSynchronizer_.onGraphReallocated();
+                                }
                             }
                         }
                         break;
@@ -1083,17 +1137,7 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
         // Determine TE monitor mode from track's inputMonitor setting
         auto teMonitorMode = te::InputDevice::MonitorMode::on;  // default for backward compat
         if (auto* trackInfo = TrackManager::getInstance().getTrack(trackId)) {
-            switch (trackInfo->inputMonitor) {
-                case InputMonitorMode::Off:
-                    teMonitorMode = te::InputDevice::MonitorMode::off;
-                    break;
-                case InputMonitorMode::In:
-                    teMonitorMode = te::InputDevice::MonitorMode::on;
-                    break;
-                case InputMonitorMode::Auto:
-                    teMonitorMode = te::InputDevice::MonitorMode::automatic;
-                    break;
-            }
+            teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
         }
 
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
@@ -1191,17 +1235,7 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
             // Set monitor mode based on track's inputMonitor setting
             auto teMonitorModeSpecific = te::InputDevice::MonitorMode::on;  // default
             if (auto* trackInfo2 = TrackManager::getInstance().getTrack(trackId)) {
-                switch (trackInfo2->inputMonitor) {
-                    case InputMonitorMode::Off:
-                        teMonitorModeSpecific = te::InputDevice::MonitorMode::off;
-                        break;
-                    case InputMonitorMode::In:
-                        teMonitorModeSpecific = te::InputDevice::MonitorMode::on;
-                        break;
-                    case InputMonitorMode::Auto:
-                        teMonitorModeSpecific = te::InputDevice::MonitorMode::automatic;
-                        break;
-                }
+                teMonitorModeSpecific = toTeMonitorMode(trackInfo2->inputMonitor);
             }
             midiDevice->setMonitorMode(teMonitorModeSpecific);
 

@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <functional>
 #include <map>
 #include <string>
 #include <unordered_map>
@@ -226,6 +227,12 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     // =========================================================================
 
     /**
+     * @brief Callback fired after the playback graph is reallocated.
+     * Used by AudioBridge to re-establish MIDI routing and input monitor state.
+     */
+    std::function<void()> onGraphReallocated;
+
+    /**
      * @brief Check if a reverse proxy operation is pending
      * @return ClipId of pending clip, or INVALID_CLIP_ID
      *
@@ -261,6 +268,9 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     // =========================================================================
     // Private Sync Helpers
     // =========================================================================
+
+    /** Reallocate playback graph and fire onGraphReallocated callback. */
+    void reallocateAndNotify();
 
     /**
      * @brief Sync MIDI clip properties to Tracktion Engine

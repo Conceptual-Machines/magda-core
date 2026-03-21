@@ -104,12 +104,27 @@ class PluginManager {
     // =========================================================================
 
     /**
-     * @brief Sync a track's plugins from TrackManager to Tracktion Engine
+     * @brief Sync all tracks' plugins using diff-based global cleanup.
+     *
+     * Collects all valid device/rack IDs across ALL tracks from TrackManager,
+     * diffs against syncedDevices_ and syncedRacks_, removes global orphans,
+     * then runs per-track additive sync for each track.
+     *
+     * Use this when multiple tracks may have changed (e.g. tracksChanged,
+     * project load). For single-track device changes, use syncTrackPlugins().
+     */
+    void syncAllPlugins();
+
+    /**
+     * @brief Sync a single track's plugins from TrackManager to Tracktion Engine
      * @param trackId The MAGDA track ID
      *
-     * - Removes TE plugins that no longer exist in TrackManager
+     * - Removes TE plugins owned by this track that no longer exist in TrackManager
      * - Adds new plugins for MAGDA devices without TE counterparts
      * - Ensures VolumeAndPan and LevelMeter are positioned correctly
+     *
+     * Safe for single-track calls: uses stored trackId for ownership scoping,
+     * never touches devices on other tracks.
      */
     void syncTrackPlugins(TrackId trackId);
 
@@ -459,6 +474,7 @@ class PluginManager {
     // Per-device consolidated state. All device-scoped data lives here,
     // keyed by DeviceId. Cleanup is a single erase().
     struct SyncedDevice {
+        TrackId trackId = INVALID_TRACK_ID;          // MAGDA track that owns this device
         te::Plugin::Ptr plugin;                      // Always set on creation
         std::unique_ptr<DeviceProcessor> processor;  // nullptr until async load completes
         std::vector<te::Modifier::Ptr> modifiers;    // Can be empty

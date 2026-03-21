@@ -406,6 +406,20 @@ void RackComponent::updateFromRack(const magda::RackInfo& rack) {
             hideChainPanel();
         }
     }
+
+    // Auto-expand: if no chain panel is showing and the rack has exactly one chain
+    // with at least one device, show it automatically so the user sees the chain content.
+    // Defer via MessageManager to avoid recursion during initialization (resized not yet valid).
+    if (selectedChainId_ == magda::INVALID_CHAIN_ID && rack.chains.size() == 1) {
+        if (!rack.chains[0].elements.empty()) {
+            auto chainId = rack.chains[0].id;
+            auto safeThis = juce::Component::SafePointer<RackComponent>(this);
+            juce::MessageManager::callAsync([safeThis, chainId]() {
+                if (safeThis != nullptr && safeThis->selectedChainId_ == magda::INVALID_CHAIN_ID)
+                    safeThis->showChainPanel(chainId);
+            });
+        }
+    }
 }
 
 void RackComponent::rebuildChainRows() {
