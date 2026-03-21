@@ -406,6 +406,14 @@ void RackComponent::updateFromRack(const magda::RackInfo& rack) {
             hideChainPanel();
         }
     }
+
+    // Auto-expand: if no chain panel is showing and the rack has exactly one chain
+    // with at least one device, show it automatically so the user sees the chain content.
+    if (selectedChainId_ == magda::INVALID_CHAIN_ID && rack.chains.size() == 1) {
+        if (!rack.chains[0].elements.empty()) {
+            showChainPanel(rack.chains[0].id);
+        }
+    }
 }
 
 void RackComponent::rebuildChainRows() {
