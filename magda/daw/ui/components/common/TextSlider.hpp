@@ -253,16 +253,7 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
                 }
             }
 
-            // 0dB tick mark (always visible when format is dB)
-            if (format_ == Format::Decibels) {
-                float w = static_cast<float>(bounds.getWidth());
-                float h = static_cast<float>(bounds.getHeight());
-                constexpr float zeroDbNorm = 60.0f / 66.0f;
-                int zeroDbX = bounds.getX() + static_cast<int>(w * zeroDbNorm);
-                g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-                g.drawVerticalLine(zeroDbX, static_cast<float>(bounds.getY()),
-                                   static_cast<float>(bounds.getY()) + h);
-            }
+            // 0dB tick mark removed - shown on level meters instead
         }
     }
 

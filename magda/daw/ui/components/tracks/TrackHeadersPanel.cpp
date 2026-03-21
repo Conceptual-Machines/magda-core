@@ -99,31 +99,29 @@ class TrackMeter : public juce::Component {
         if (level <= 0.0f)
             return;
 
-        // Convert gain to dB, then to meter position (linear dB scaling)
-        float db = gainToDb(level);
-        float meterPos = dbToMeterPos(db);
-        float fillHeight = bounds.getHeight() * meterPos;
-        auto fillBounds = bounds.removeFromBottom(fillHeight);
+        float meterPos = dbToMeterPos(gainToDb(level));
+        float meterHeight = bounds.getHeight() * meterPos;
+        auto fillBounds = bounds;
+        auto fullBounds = bounds;  // Save full bounds for gradient
+        fillBounds = fillBounds.removeFromBottom(meterHeight);
 
-        // Color gradient based on dB: green -> yellow -> red
-        // Green: < -12 dB, Yellow: -12 to 0 dB, Red: 0 to +12 dB
-        juce::Colour color;
-        if (db < -12.0f) {
-            color = juce::Colour(0xFF55AA55);  // Green (safe zone)
-        } else if (db < 0.0f) {
-            // Transition from green to yellow
-            float t = (db + 12.0f) / 12.0f;
-            color = juce::Colour(0xFF55AA55).interpolatedWith(juce::Colour(0xFFAAAA55), t);
-        } else if (db < 6.0f) {
-            // Transition from yellow/orange to red
-            float t = db / 6.0f;
-            color = juce::Colour(0xFFAAAA55).interpolatedWith(juce::Colour(0xFFAA5555), t);
-        } else {
-            color = juce::Colour(0xFFAA5555);  // Red (clipping zone above +6 dB)
-        }
+        const juce::Colour green(0xFF55AA55);
+        const juce::Colour yellow(0xFFAAAA55);
+        const juce::Colour red(0xFFAA5555);
 
-        g.setColour(color);
-        g.fillRoundedRectangle(fillBounds, 1.0f);
+        float yellowPos = dbToMeterPos(-12.0f);
+        float redPos = dbToMeterPos(0.0f);
+        constexpr float fade = 0.03f;
+
+        juce::ColourGradient grad(green, 0.0f, fullBounds.getBottom(), red, 0.0f, fullBounds.getY(),
+                                  false);
+        grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
+        grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
+        grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
+        grad.addColour(std::min(1.0, (double)redPos + fade), red);
+
+        g.setGradientFill(grad);
+        g.fillRect(fillBounds);
     }
 };
 

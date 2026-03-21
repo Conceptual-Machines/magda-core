@@ -105,7 +105,8 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     magda::DeviceId selectedDeviceId_ = magda::INVALID_DEVICE_ID;
     void onDeviceSlotSelected(magda::DeviceId deviceId);
 
-    static constexpr int ARROW_WIDTH = 16;
+    static constexpr int ARROW_WIDTH =
+        4;  // Small gap between device slots (meters act as separators)
     static constexpr int DRAG_LEFT_PADDING = 12;  // Padding during drag for drop indicator
 
     // Drag-to-reorder state

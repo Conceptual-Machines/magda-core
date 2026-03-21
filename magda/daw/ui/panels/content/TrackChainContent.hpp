@@ -123,7 +123,7 @@ class TrackChainContent : public PanelContent,
     // All node components in signal flow order (devices and racks unified)
     std::vector<std::unique_ptr<NodeComponent>> nodeComponents_;
 
-    static constexpr int ARROW_WIDTH = 20;
+    static constexpr int ARROW_WIDTH = 4;  // Small gap between device slots
     static constexpr int SLOT_SPACING = 8;
     static constexpr int DRAG_LEFT_PADDING = 12;  // Padding during drag for drop indicator
 

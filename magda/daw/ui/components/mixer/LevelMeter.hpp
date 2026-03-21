@@ -46,6 +46,13 @@ class LevelMeter : public juce::Component {
 
         drawMeterBar(g, leftBounds, leftLevel_);
         drawMeterBar(g, rightBounds, rightLevel_);
+
+        // 0dB tick mark
+        float zeroDbPos = dbToMeterPos(0.0f);
+        float tickY = effectiveBounds.getBottom() - effectiveBounds.getHeight() * zeroDbPos;
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).brighter(0.2f));
+        g.drawHorizontalLine(static_cast<int>(tickY), effectiveBounds.getX(),
+                             effectiveBounds.getRight());
     }
 
   private:
@@ -78,30 +85,36 @@ class LevelMeter : public juce::Component {
 
         float displayLevel = dbToMeterPos(gainToDb(level));
         float meterHeight = bounds.getHeight() * displayLevel;
+        if (meterHeight < 1.0f)
+            return;
+
         auto fillBounds = bounds;
         fillBounds = fillBounds.removeFromBottom(meterHeight);
 
-        g.setColour(getMeterColour(level));
+        g.setGradientFill(createMeterGradient(bounds));
         g.fillRoundedRectangle(fillBounds, 1.0f);
     }
 
-    static juce::Colour getMeterColour(float level) {
-        float dbLevel = gainToDb(level);
-        juce::Colour green(0xFF55AA55);
-        juce::Colour yellow(0xFFAAAA55);
-        juce::Colour red(0xFFAA5555);
+    // Vertical gradient: green at bottom, yellow at -12dB, red at 0dB, with short fades
+    static juce::ColourGradient createMeterGradient(juce::Rectangle<float> bounds) {
+        const juce::Colour green(0xFF55AA55);
+        const juce::Colour yellow(0xFFAAAA55);
+        const juce::Colour red(0xFFAA5555);
 
-        if (dbLevel < -12.0f) {
-            return green;
-        } else if (dbLevel < 0.0f) {
-            float t = (dbLevel + 12.0f) / 12.0f;
-            return green.interpolatedWith(yellow, t);
-        } else if (dbLevel < 3.0f) {
-            float t = dbLevel / 3.0f;
-            return yellow.interpolatedWith(red, t);
-        } else {
-            return red;
-        }
+        // Normalized positions along the gradient (0 = bottom, 1 = top)
+        float yellowPos = dbToMeterPos(-12.0f);
+        float redPos = dbToMeterPos(0.0f);
+        constexpr float fade = 0.03f;
+
+        // Gradient runs bottom to top
+        juce::ColourGradient grad(green, 0.0f, bounds.getBottom(), red, 0.0f, bounds.getY(), false);
+        // Green solid, then short fade to yellow around -12dB
+        grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
+        grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
+        // Yellow solid, then short fade to red around 0dB
+        grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
+        grad.addColour(std::min(1.0, (double)redPos + fade), red);
+        return grad;
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LevelMeter)

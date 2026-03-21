@@ -208,33 +208,32 @@ class MasterChannelStrip::LevelMeter : public juce::Component {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRoundedRectangle(bounds, 1.0f);
 
-        float db = gainToDb(level);
-        float displayLevel = dbToMeterPos(db);
+        float displayLevel = dbToMeterPos(gainToDb(level));
         float meterHeight = bounds.getHeight() * displayLevel;
+        if (meterHeight < 1.0f)
+            return;
+
+        auto fullBounds = bounds;
         auto fillBounds = bounds;
         fillBounds = fillBounds.removeFromBottom(meterHeight);
 
-        g.setColour(getMeterColour(level));
+        const juce::Colour green(0xFF55AA55);
+        const juce::Colour yellow(0xFFAAAA55);
+        const juce::Colour red(0xFFAA5555);
+
+        float yellowPos = dbToMeterPos(-12.0f);
+        float redPos = dbToMeterPos(0.0f);
+        constexpr float fade = 0.03f;
+
+        juce::ColourGradient grad(green, 0.0f, fullBounds.getBottom(), red, 0.0f, fullBounds.getY(),
+                                  false);
+        grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
+        grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
+        grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
+        grad.addColour(std::min(1.0, (double)redPos + fade), red);
+
+        g.setGradientFill(grad);
         g.fillRoundedRectangle(fillBounds, 1.0f);
-    }
-
-    static juce::Colour getMeterColour(float level) {
-        float dbLevel = gainToDb(level);
-        juce::Colour green(0xFF55AA55);
-        juce::Colour yellow(0xFFAAAA55);
-        juce::Colour red(0xFFAA5555);
-
-        if (dbLevel < -12.0f) {
-            return green;
-        } else if (dbLevel < 0.0f) {
-            float t = (dbLevel + 12.0f) / 12.0f;
-            return green.interpolatedWith(yellow, t);
-        } else if (dbLevel < 3.0f) {
-            float t = dbLevel / 3.0f;
-            return yellow.interpolatedWith(red, t);
-        } else {
-            return red;
-        }
     }
 };
 

@@ -51,6 +51,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Hide built-in bypass button - we'll add our own in the header
     setBypassButtonVisible(false);
 
+    // Add level meter as child (positioned in resized via getMeterWidth)
+    addAndMakeVisible(levelMeter_);
+
     // Set up NodeComponent callbacks
     onDeleteClicked = [this]() {
         // IMPORTANT: Defer deletion to avoid crash - removeDeviceFromChainByPath will
@@ -466,10 +469,10 @@ void DeviceSlotComponent::timerCallback() {
         }
     }
 
-    // Poll device peak levels and feed to gain slider meter
+    // Poll device peak levels for right-side meter strip
     magda::DeviceMeteringManager::DeviceMeterData data;
     if (bridge->getDeviceMetering().getLatestLevels(device_.id, data)) {
-        gainSlider_.setMeterLevels(data.peakL, data.peakR);
+        levelMeter_.setLevels(data.peakL, data.peakR);
     }
 }
 
@@ -532,49 +535,53 @@ void DeviceSlotComponent::setCustomUITabIndex(int index) {
 }
 
 int DeviceSlotComponent::getPreferredWidth() const {
+    // Meter strip + padding is added to content width (not via getMeterWidth since meter is
+    // content-area only)
+    constexpr int meterExtra = METER_STRIP_WIDTH + 4;
+
     if (collapsed_) {
         return getLeftPanelsWidth() + COLLAPSED_WIDTH + getRightPanelsWidth();
     }
     if (fourOscUI_) {
-        return getTotalWidth(500);
+        return getTotalWidth(500) + meterExtra;
     }
     if (eqUI_) {
-        return getTotalWidth(400);
+        return getTotalWidth(400) + meterExtra;
     }
     if (compressorUI_) {
-        return getTotalWidth(350);
+        return getTotalWidth(350) + meterExtra;
     }
     if (reverbUI_) {
-        return getTotalWidth(350);
+        return getTotalWidth(350) + meterExtra;
     }
     if (delayUI_) {
-        return getTotalWidth(300);
+        return getTotalWidth(300) + meterExtra;
     }
     if (chorusUI_) {
-        return getTotalWidth(350);
+        return getTotalWidth(350) + meterExtra;
     }
     if (phaserUI_) {
-        return getTotalWidth(300);
+        return getTotalWidth(300) + meterExtra;
     }
     if (filterUI_) {
-        return getTotalWidth(250);
+        return getTotalWidth(250) + meterExtra;
     }
     if (pitchShiftUI_) {
-        return getTotalWidth(200);
+        return getTotalWidth(200) + meterExtra;
     }
     if (impulseResponseUI_) {
-        return getTotalWidth(350);
+        return getTotalWidth(350) + meterExtra;
     }
     if (utilityUI_) {
-        return getTotalWidth(300);
+        return getTotalWidth(300) + meterExtra;
     }
     if (samplerUI_) {
-        return getTotalWidth(BASE_SLOT_WIDTH * 2);
+        return getTotalWidth(BASE_SLOT_WIDTH * 2) + meterExtra;
     }
     if (drumGridUI_) {
-        return getTotalWidth(drumGridUI_->getPreferredContentWidth());
+        return getTotalWidth(drumGridUI_->getPreferredContentWidth()) + meterExtra;
     }
-    return getTotalWidth(getDynamicSlotWidth());
+    return getTotalWidth(getDynamicSlotWidth()) + meterExtra;
 }
 
 void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
@@ -745,6 +752,28 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
 }
 
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
+    // Draw separator line to the left of the meter strip
+    if (!collapsed_) {
+        int lineX = contentArea.getRight() - METER_STRIP_WIDTH - 4;
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawVerticalLine(lineX, static_cast<float>(contentArea.getY() + 2),
+                           static_cast<float>(contentArea.getBottom() - 2));
+
+        // Horizontal lines above and below the pagination row (for external plugin param grid)
+        if (!isInternalDevice() ||
+            !(toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ ||
+              compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
+              pitchShiftUI_ || impulseResponseUI_ || utilityUI_)) {
+            float left = static_cast<float>(contentArea.getX() + 2);
+            float right = static_cast<float>(lineX);
+            int paginationTop = contentArea.getY() + CONTENT_HEADER_HEIGHT;
+            int paginationBottom = paginationTop + PAGINATION_HEIGHT + 4;
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.drawHorizontalLine(paginationTop, left, right);
+            g.drawHorizontalLine(paginationBottom, left, right);
+        }
+    }
+
     // Loading state overlay: show "Loading..." and skip normal content
     if (device_.loadState == magda::DeviceLoadState::Loading) {
         g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.6f));
@@ -793,6 +822,17 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
+    // Position the level meter on the right edge of the content area
+    {
+        auto meterBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
+        contentArea.removeFromRight(4);  // Padding between content and meter
+        levelMeter_.setBounds(meterBounds);
+        levelMeter_.setVisible(!collapsed_);
+    }
+
+    // Bottom padding
+    contentArea.removeFromBottom(2);
+
     // When collapsed or still loading, hide all content controls
     if (collapsed_ || device_.loadState != magda::DeviceLoadState::Loaded) {
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -947,7 +987,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             utilityUI_->setVisible(false);
 
         // Pagination area
+        contentArea.removeFromTop(2);
         auto paginationArea = contentArea.removeFromTop(PAGINATION_HEIGHT);
+        contentArea.removeFromTop(2);
         int buttonWidth = 18;
         prevPageButton_->setBounds(paginationArea.removeFromLeft(buttonWidth));
         nextPageButton_->setBounds(paginationArea.removeFromRight(buttonWidth));
@@ -1002,25 +1044,24 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 
     // Sidechain button (only if plugin supports it)
     if ((device_.canSidechain || device_.canReceiveMidi) && scButton_) {
-        scButton_->setBounds(headerArea.removeFromRight(20));
+        scButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
         scButton_->setVisible(true);
-        headerArea.removeFromRight(2);
+        headerArea.removeFromRight(4);
     } else if (scButton_) {
         scButton_->setVisible(false);
     }
 
-    // Multi-output button (only if plugin is multi-out)
+    // Gain slider
+    gainSlider_.setBounds(headerArea.removeFromRight(70));
+    headerArea.removeFromRight(4);
+
+    // Multi-output button (to the left of gain slider)
     if (device_.multiOut.isMultiOut && multiOutButton_) {
         multiOutButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
         headerArea.removeFromRight(4);
     }
 
-    // Gain slider takes some space on the right
-    gainSlider_.setBounds(headerArea.removeFromRight(70));
-    headerArea.removeFromRight(4);
-
-    // Name label gets the remaining left portion (handled by NodeComponent)
-    // UI button sits just to the right of the name
+    // UI button (only for external plugins)
     if (uiButton_->isVisible()) {
         uiButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
         headerArea.removeFromRight(4);

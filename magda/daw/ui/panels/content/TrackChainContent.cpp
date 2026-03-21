@@ -301,18 +301,6 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
     }
 
     void paint(juce::Graphics& g) override {
-        // Draw arrows between elements
-        int arrowY = getHeight() / 2;
-        g.setColour(DarkTheme::getSecondaryTextColour());
-
-        // Draw arrows after each node (except the last one)
-        if (nodeComponents_) {
-            for (size_t i = 0; i + 1 < nodeComponents_->size(); ++i) {
-                int x = (*nodeComponents_)[i]->getRight();
-                drawArrow(g, x, arrowY);
-            }
-        }
-
         // Draw insertion indicator during drag (reorder or drop)
         if (owner_.dragInsertIndex_ >= 0 || owner_.dropInsertIndex_ >= 0) {
             int indicatorIndex =
@@ -416,18 +404,6 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
                 }
             }
         }
-    }
-
-    void drawArrow(juce::Graphics& g, int x, int y) {
-        int arrowStart = x + 4;
-        int arrowEnd = x + 16;
-        g.drawLine(static_cast<float>(arrowStart), static_cast<float>(y),
-                   static_cast<float>(arrowEnd), static_cast<float>(y), 1.5f);
-        // Arrow head
-        g.drawLine(static_cast<float>(arrowEnd - 4), static_cast<float>(y - 3),
-                   static_cast<float>(arrowEnd), static_cast<float>(y), 1.5f);
-        g.drawLine(static_cast<float>(arrowEnd - 4), static_cast<float>(y + 3),
-                   static_cast<float>(arrowEnd), static_cast<float>(y), 1.5f);
     }
 
     TrackChainContent& owner_;

@@ -23,6 +23,7 @@
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
+#include "ui/components/mixer/LevelMeter.hpp"
 
 namespace magda::daw::ui {
 
@@ -93,7 +94,7 @@ class DeviceSlotComponent : public NodeComponent,
     }
 
     int getMeterWidth() const override {
-        return 0;
+        return 0;  // Meter is positioned in content area only, not the full height
     }
 
     // Mod/macro data providers
@@ -198,6 +199,9 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<PitchShiftUI> pitchShiftUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
     std::unique_ptr<UtilityUI> utilityUI_;
+
+    static constexpr int METER_STRIP_WIDTH = 10;
+    magda::LevelMeter levelMeter_;
 
     void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params

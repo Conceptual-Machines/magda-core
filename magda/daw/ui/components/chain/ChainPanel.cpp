@@ -87,26 +87,6 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         if (!elementSlots_)
             return;
 
-        // Draw arrows between elements
-        int arrowY = getHeight() / 2;
-
-        for (size_t i = 0; i < elementSlots_->size(); ++i) {
-            auto& slot = (*elementSlots_)[i];
-            int x = slot->getRight();  // Arrow starts after the slot
-
-            // Draw arrow after each element
-            g.setColour(DarkTheme::getSecondaryTextColour());
-            int arrowStart = x + 4;
-            int arrowEnd = x + 12;
-            g.drawLine(static_cast<float>(arrowStart), static_cast<float>(arrowY),
-                       static_cast<float>(arrowEnd), static_cast<float>(arrowY), 1.5f);
-            // Arrow head
-            g.drawLine(static_cast<float>(arrowEnd - 4), static_cast<float>(arrowY - 3),
-                       static_cast<float>(arrowEnd), static_cast<float>(arrowY), 1.5f);
-            g.drawLine(static_cast<float>(arrowEnd - 4), static_cast<float>(arrowY + 3),
-                       static_cast<float>(arrowEnd), static_cast<float>(arrowY), 1.5f);
-        }
-
         // Draw insertion indicator during drag (reorder or drop)
         if (owner_.dragInsertIndex_ >= 0 || owner_.dropInsertIndex_ >= 0) {
             int indicatorIndex =
