@@ -77,21 +77,27 @@ void PluginManager::syncAllPlugins() {
     std::set<DeviceId> validDeviceIds;
     std::set<RackId> validRackIds;
 
-    for (const auto& track : tracks) {
-        std::function<void(const std::vector<ChainElement>&)> collectIds;
-        collectIds = [&](const std::vector<ChainElement>& elements) {
-            for (const auto& element : elements) {
-                if (isDevice(element)) {
-                    validDeviceIds.insert(getDevice(element).id);
-                } else if (isRack(element)) {
-                    const auto& rack = getRack(element);
-                    validRackIds.insert(rack.id);
-                    for (const auto& chain : rack.chains)
-                        collectIds(chain.elements);
-                }
+    std::function<void(const std::vector<ChainElement>&)> collectIds;
+    collectIds = [&](const std::vector<ChainElement>& elements) {
+        for (const auto& element : elements) {
+            if (isDevice(element)) {
+                validDeviceIds.insert(getDevice(element).id);
+            } else if (isRack(element)) {
+                const auto& rack = getRack(element);
+                validRackIds.insert(rack.id);
+                for (const auto& chain : rack.chains)
+                    collectIds(chain.elements);
             }
-        };
+        }
+    };
+
+    for (const auto& track : tracks) {
         collectIds(track.chainElements);
+    }
+
+    // Include master track (not in getTracks())
+    if (auto* masterTrack = tm.getTrack(MASTER_TRACK_ID)) {
+        collectIds(masterTrack->chainElements);
     }
 
     // ── Step 2: Remove orphan devices (globally) ────────────────────────
@@ -157,10 +163,11 @@ void PluginManager::syncAllPlugins() {
             DBG("syncAllPlugins: removed " << removedRacks << " orphan racks");
     }
 
-    // ── Step 4: Per-track additive sync ─────────────────────────────────
+    // ── Step 4: Per-track additive sync (including master) ─────────────
     for (const auto& track : tracks) {
         syncTrackPlugins(track.id);
     }
+    syncTrackPlugins(MASTER_TRACK_ID);
 
     // ── Step 5: Rebuild sidechain LFO cache once at the end ─────────────
     rebuildSidechainLFOCache();
@@ -529,11 +536,14 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
     {
         juce::ScopedLock lock(pluginLock_);
         for (const auto& [deviceId, sd] : syncedDevices_) {
-            if (!sd.plugin || sd.trackId != trackId)
+            if (sd.trackId != trackId)
                 continue;
 
             deviceIds.push_back(deviceId);
-            pluginsToDelete.push_back(sd.plugin);
+            if (sd.plugin)
+                pluginsToDelete.push_back(sd.plugin);
+            if (sd.midiReceivePlugin)
+                pluginsToDelete.push_back(sd.midiReceivePlugin);
         }
 
         // 2. Erase map entries for collected DeviceIds
@@ -1894,6 +1904,7 @@ void PluginManager::ensureMidiReceive(TrackId trackId, DeviceId deviceId, TrackI
         }
 
         teTrack->pluginList.insertPlugin(plugin, insertPos, nullptr);
+        syncedDevices_[deviceId].trackId = trackId;
         syncedDevices_[deviceId].midiReceivePlugin = plugin;
         DBG("PluginManager::ensureMidiReceive - inserted MidiReceivePlugin for device "
             << deviceId << " source=" << sourceTrackId << " at pos=" << insertPos);
