@@ -269,6 +269,9 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     // Private Sync Helpers
     // =========================================================================
 
+    /** Reallocate playback graph and fire onGraphReallocated callback. */
+    void reallocateAndNotify();
+
     /**
      * @brief Sync MIDI clip properties to Tracktion Engine
      * @param clipId The MAGDA clip ID
