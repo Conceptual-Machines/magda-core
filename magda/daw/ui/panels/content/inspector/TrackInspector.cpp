@@ -397,6 +397,16 @@ TrackInspector::TrackInspector() {
     clipCountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     clipCountLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     addAndMakeVisible(clipCountLabel_);
+
+    // Latency display
+    latencyLabel_.setText("Latency", juce::dontSendNotification);
+    latencyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    latencyLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addAndMakeVisible(latencyLabel_);
+
+    latencyValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    latencyValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    addAndMakeVisible(latencyValue_);
 }
 
 TrackInspector::~TrackInspector() {
@@ -409,19 +419,18 @@ void TrackInspector::timerCallback() {
         return;
 
     auto* midiBridge = audioEngine_->getMidiBridge();
-    if (!midiBridge)
-        return;
+    if (midiBridge) {
+        size_t inputCount = midiBridge->getAvailableMidiInputs().size();
+        size_t outputCount = midiBridge->getAvailableMidiOutputs().size();
 
-    size_t inputCount = midiBridge->getAvailableMidiInputs().size();
-    size_t outputCount = midiBridge->getAvailableMidiOutputs().size();
-
-    if (inputCount != lastMidiInputCount_ || outputCount != lastMidiOutputCount_) {
-        lastMidiInputCount_ = inputCount;
-        lastMidiOutputCount_ = outputCount;
-        populateMidiInputOptions();
-        populateMidiOutputOptions();
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            updateRoutingSelectorsFromTrack();
+        if (inputCount != lastMidiInputCount_ || outputCount != lastMidiOutputCount_) {
+            lastMidiInputCount_ = inputCount;
+            lastMidiOutputCount_ = outputCount;
+            populateMidiInputOptions();
+            populateMidiOutputOptions();
+            if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+                updateRoutingSelectorsFromTrack();
+        }
     }
 }
 
@@ -656,6 +665,16 @@ void TrackInspector::resized() {
         bounds.removeFromTop(4);
         clipCountLabel_.setBounds(bounds.removeFromTop(20));
     }
+
+    // Latency — only lay out if visible
+    if (latencyLabel_.isVisible()) {
+        bounds.removeFromTop(separatorPadding);
+        sectionSeparatorYs_.push_back(bounds.getY());
+        bounds.removeFromTop(separatorPadding);
+        latencyLabel_.setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(4);
+        latencyValue_.setBounds(bounds.removeFromTop(20));
+    }
 }
 
 void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
@@ -802,6 +821,16 @@ void TrackInspector::trackPropertyChanged(int trackId) {
 void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
     if (trackId == selectedTrackId_) {
         rebuildSendsUI();
+
+        // Refresh latency (devices added/removed/loaded)
+        if (latencyLabel_.isVisible()) {
+            double latency =
+                magda::TrackManager::getInstance().getTrackLatencySeconds(selectedTrackId_);
+            auto latencyMs = latency * 1000.0;
+            latencyValue_.setText((latency > 0.0) ? juce::String(latencyMs, 1) + " ms" : "0 ms",
+                                  juce::dontSendNotification);
+            latencyValue_.repaint();
+        }
     }
 }
 
@@ -894,6 +923,16 @@ void TrackInspector::updateFromSelectedTrack() {
         int clipCount = static_cast<int>(clips.size());
         juce::String clipText = juce::String(clipCount) + (clipCount == 1 ? " clip" : " clips");
         clipCountLabel_.setText(clipText, juce::dontSendNotification);
+
+        // Update track latency
+        double latency =
+            magda::TrackManager::getInstance().getTrackLatencySeconds(selectedTrackId_);
+        if (latency > 0.0) {
+            auto latencyMs = latency * 1000.0;
+            latencyValue_.setText(juce::String(latencyMs, 1) + " ms", juce::dontSendNotification);
+        } else {
+            latencyValue_.setText("0 ms", juce::dontSendNotification);
+        }
 
         // Update routing selectors to match track state
         updateRoutingSelectorsFromTrack();
@@ -1135,6 +1174,8 @@ void TrackInspector::updateFromMultiTrackSelection() {
 
     clipsSectionLabel_.setVisible(false);
     clipCountLabel_.setVisible(false);
+    latencyLabel_.setVisible(false);
+    latencyValue_.setVisible(false);
 
     resized();
     repaint();
@@ -1192,6 +1233,10 @@ void TrackInspector::showTrackControls(bool show) {
     // Clips section — hidden for master
     clipsSectionLabel_.setVisible(show && !isMaster);
     clipCountLabel_.setVisible(show && !isMaster);
+
+    // Latency — shown for all tracks (including master)
+    latencyLabel_.setVisible(show);
+    latencyValue_.setVisible(show);
 }
 
 void TrackInspector::rebuildSendsUI() {

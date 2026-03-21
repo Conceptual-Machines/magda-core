@@ -107,6 +107,10 @@ class TrackInspector : public BaseInspector,
     juce::Label clipsSectionLabel_;
     juce::Label clipCountLabel_;
 
+    // Latency display
+    juce::Label latencyLabel_;
+    juce::Label latencyValue_;
+
     // Section separator Y positions (computed in resized, drawn in paint)
     std::vector<int> sectionSeparatorYs_;
 

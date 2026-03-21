@@ -312,6 +312,13 @@ class TrackManager {
      */
     double getDeviceLatencySeconds(const ChainNodePath& devicePath);
 
+    /**
+     * @brief Get total plugin latency for a track (sum of all devices in chain)
+     * @param trackId Track to query
+     * @return Total latency in seconds, or 0 if not found
+     */
+    double getTrackLatencySeconds(TrackId trackId);
+
     // Nested rack management within chains
     RackId addRackToChain(TrackId trackId, RackId parentRackId, ChainId chainId,
                           const juce::String& name = "Rack");
