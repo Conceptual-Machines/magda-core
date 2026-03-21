@@ -13,6 +13,7 @@ class SplashScreen : public juce::DocumentWindow {
     void closeButtonPressed() override {}
 
     void dismiss();
+    void setStatus(const juce::String& text);
 
     static std::unique_ptr<SplashScreen> create();
 

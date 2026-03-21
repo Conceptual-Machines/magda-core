@@ -27,6 +27,11 @@ struct PluginScanResult {
 
 class PluginScanCoordinator : private juce::Timer {
   public:
+    struct PluginToScan {
+        juce::String formatName;
+        juce::String pluginPath;
+    };
+
     PluginScanCoordinator();
     ~PluginScanCoordinator() override;
 
@@ -39,6 +44,12 @@ class PluginScanCoordinator : private juce::Timer {
     void startScan(juce::AudioPluginFormatManager& formatManager,
                    const ProgressCallback& progressCallback,
                    const CompletionCallback& completionCallback);
+
+    /** Scan only specific plugins (for incremental/diff scanning). */
+    void startIncrementalScan(juce::AudioPluginFormatManager& formatManager,
+                              const std::vector<PluginToScan>& plugins,
+                              const ProgressCallback& progressCallback,
+                              const CompletionCallback& completionCallback);
 
     void abortScan();
 
@@ -55,6 +66,9 @@ class PluginScanCoordinator : private juce::Timer {
     void clearExclusions();
 
     void excludePlugin(const juce::String& pluginPath, const juce::String& reason = "unknown");
+
+    /** Discover all plugin files on disk (respecting exclusions), without scanning them. */
+    std::vector<PluginToScan> discoverPluginFiles(juce::AudioPluginFormatManager& formatManager);
 
     void setPluginTimeoutMs(int timeoutMs) {
         pluginTimeoutMs_ = timeoutMs;
@@ -104,10 +118,6 @@ class PluginScanCoordinator : private juce::Timer {
     std::vector<std::unique_ptr<ScanWorker>> workers_;
 
     // Plugin queue
-    struct PluginToScan {
-        juce::String formatName;
-        juce::String pluginPath;
-    };
     std::vector<PluginToScan> pluginsToScan_;
     int nextPluginIndex_ = 0;
     int completedCount_ = 0;

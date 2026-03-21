@@ -14,7 +14,7 @@ namespace magda {
 class SplashScreen::ContentComponent : public juce::Component {
   public:
     ContentComponent() {
-        setSize(450, 390);
+        setSize(450, 420);
 
         // Load the SVG logo
         if (auto xml = juce::XmlDocument::parse(
@@ -72,8 +72,14 @@ class SplashScreen::ContentComponent : public juce::Component {
         g.drawText(juce::String("Version ") + MAGDA_VERSION, bounds.removeFromTop(20),
                    juce::Justification::centred);
 
+        // Status text
+        bounds.removeFromTop(4);
+        g.setFont(fm.getUIFont(11.0f));
+        g.setColour(juce::Colour(DarkTheme::ACCENT_BLUE));
+        g.drawText(statusText_, bounds.removeFromTop(18), juce::Justification::centred);
+
         // "powered by" + Tracktion Engine logo
-        bounds.removeFromTop(10);
+        bounds.removeFromTop(6);
         auto poweredRow = bounds.removeFromTop(24);
         g.setFont(fm.getUIFont(10.0f));
         g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
@@ -92,9 +98,15 @@ class SplashScreen::ContentComponent : public juce::Component {
         }
     }
 
+    void setStatus(const juce::String& text) {
+        statusText_ = text;
+        repaint();
+    }
+
   private:
     std::unique_ptr<juce::Drawable> logo_;
     std::unique_ptr<juce::Drawable> teLogo_;
+    juce::String statusText_;
 };
 
 // =============================================================================
@@ -107,12 +119,21 @@ SplashScreen::SplashScreen() : DocumentWindow("", juce::Colour(DarkTheme::PANEL_
     setTitleBarHeight(0);
     setResizable(false, false);
     setDropShadowEnabled(true);
-    centreWithSize(450, 390);
+    centreWithSize(450, 420);
     setAlwaysOnTop(true);
 }
 
 void SplashScreen::dismiss() {
     setVisible(false);
+}
+
+void SplashScreen::setStatus(const juce::String& text) {
+    if (auto* content = dynamic_cast<ContentComponent*>(getContentComponent())) {
+        content->setStatus(text);
+        // Pump the message loop so the repaint is processed immediately,
+        // since callers typically block the message thread during init.
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+    }
 }
 
 std::unique_ptr<SplashScreen> SplashScreen::create() {

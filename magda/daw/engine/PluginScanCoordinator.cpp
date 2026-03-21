@@ -102,6 +102,95 @@ void PluginScanCoordinator::startScan(juce::AudioPluginFormatManager& formatMana
     startTimer(1000);
 }
 
+void PluginScanCoordinator::startIncrementalScan(juce::AudioPluginFormatManager& formatManager,
+                                                 const std::vector<PluginToScan>& plugins,
+                                                 const ProgressCallback& progressCallback,
+                                                 const CompletionCallback& completionCallback) {
+    if (isScanning_) {
+        DBG("[ScanCoordinator] Scan already in progress");
+        return;
+    }
+
+    formatManager_ = &formatManager;
+    progressCallback_ = progressCallback;
+    completionCallback_ = completionCallback;
+    foundPlugins_.clear();
+    failedPlugins_.clear();
+    pluginsToScan_.clear();
+    nextPluginIndex_ = 0;
+    completedCount_ = 0;
+    workers_.clear();
+    workerStartTimes_.fill(0);
+    workerCurrentPlugin_.fill({});
+    workerCurrentFormat_.fill({});
+    scanStartTime_ = juce::Time::currentTimeMillis();
+    scanResults_.clear();
+
+    // Use the provided plugin list directly (no discovery)
+    pluginsToScan_ = plugins;
+
+    if (pluginsToScan_.empty()) {
+        DBG("[ScanCoordinator] No plugins to scan");
+        if (completionCallback)
+            completionCallback(true, foundPlugins_, failedPlugins_);
+        return;
+    }
+
+    DBG("[ScanCoordinator] Incremental scan: " << pluginsToScan_.size() << " plugins");
+
+    auto scannerExe = getScannerExecutable();
+    if (!scannerExe.existsAsFile()) {
+        DBG("[ScanCoordinator] Plugin scanner executable not found");
+        if (completionCallback)
+            completionCallback(false, foundPlugins_, failedPlugins_);
+        return;
+    }
+
+    isScanning_ = true;
+
+    int numWorkers = std::min(NUM_WORKERS, static_cast<int>(pluginsToScan_.size()));
+    for (int i = 0; i < numWorkers; ++i) {
+        workers_.push_back(std::make_unique<ScanWorker>(
+            i, scannerExe, [this](int workerIndex, const ScanWorker::Result& result) {
+                onWorkerResult(workerIndex, result);
+            }));
+    }
+
+    for (int i = 0; i < numWorkers; ++i)
+        assignNextPlugin(i);
+
+    startTimer(1000);
+}
+
+std::vector<PluginScanCoordinator::PluginToScan> PluginScanCoordinator::discoverPluginFiles(
+    juce::AudioPluginFormatManager& formatManager) {
+    std::vector<PluginToScan> result;
+    for (int i = 0; i < formatManager.getNumFormats(); ++i) {
+        auto* format = formatManager.getFormat(i);
+        if (!format)
+            continue;
+        juce::String formatName = format->getName();
+        if (!formatName.containsIgnoreCase("VST3") && !formatName.containsIgnoreCase("AudioUnit"))
+            continue;
+
+        auto searchPath = format->getDefaultLocationsToSearch();
+        for (const auto& p : Config::getInstance().getCustomPluginPaths())
+            searchPath.add(juce::File(p));
+
+        auto files = format->searchPathsForPlugins(searchPath, true, false);
+
+        juce::StringArray excludedPaths;
+        for (const auto& entry : excludedPlugins_)
+            excludedPaths.add(entry.path);
+
+        for (const auto& file : files) {
+            if (!excludedPaths.contains(file))
+                result.push_back({formatName, file});
+        }
+    }
+    return result;
+}
+
 void PluginScanCoordinator::discoverPlugins() {
     if (!formatManager_)
         return;

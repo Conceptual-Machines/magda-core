@@ -74,6 +74,16 @@ class MagdaDAWApplication : public JUCEApplication {
     void finishInitialisation() {
         // 3. Initialize audio engine
         daw_engine_ = std::make_unique<magda::TracktionEngineWrapper>();
+
+        // Show plugin scan status on splash screen
+        daw_engine_->onPluginScanStatus = [this](const juce::String& status) {
+            if (splashScreen_)
+                splashScreen_->setStatus(status);
+        };
+
+        if (splashScreen_)
+            splashScreen_->setStatus("Initializing audio engine...");
+
         if (!daw_engine_->initialize()) {
             DBG("ERROR: Failed to initialize Tracktion Engine");
             quit();

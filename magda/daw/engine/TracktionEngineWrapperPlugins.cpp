@@ -234,4 +234,107 @@ void TracktionEngineWrapper::clearPluginList() {
     DBG("Plugin list cleared. Use 'Scan' to rediscover plugins.");
 }
 
+void TracktionEngineWrapper::detectNewPlugins(
+    std::function<void(const juce::String&)> statusCallback) {
+    if (!engine_) {
+        DBG("[AutoDetect] Engine not initialized");
+        return;
+    }
+
+    auto reportStatus = [&](const juce::String& msg) {
+        DBG("[AutoDetect] " << msg);
+        if (statusCallback)
+            statusCallback(msg);
+    };
+
+    reportStatus("Checking for new plugins...");
+
+    auto& pluginManager = engine_->getPluginManager();
+    auto& knownPlugins = pluginManager.knownPluginList;
+    auto& formatManager = pluginManager.pluginFormatManager;
+
+    // Build set of file paths already known
+    juce::StringArray knownPaths;
+    for (int i = 0; i < knownPlugins.getNumTypes(); ++i) {
+        auto* desc = knownPlugins.getType(i);
+        if (desc)
+            knownPaths.add(desc->fileOrIdentifier);
+    }
+
+    // Discover all plugin files on disk
+    if (!pluginScanCoordinator_)
+        pluginScanCoordinator_ = std::make_unique<PluginScanCoordinator>();
+
+    auto allPlugins = pluginScanCoordinator_->discoverPluginFiles(formatManager);
+
+    // Find new plugins not in the known list
+    std::vector<PluginScanCoordinator::PluginToScan> newPlugins;
+    for (const auto& plugin : allPlugins) {
+        if (!knownPaths.contains(plugin.pluginPath))
+            newPlugins.push_back(plugin);
+    }
+
+    // Also detect removed plugins — clean stale entries from the known list
+    juce::StringArray diskPaths;
+    for (const auto& plugin : allPlugins)
+        diskPaths.add(plugin.pluginPath);
+
+    juce::Array<juce::PluginDescription> stalePlugins;
+    for (int i = 0; i < knownPlugins.getNumTypes(); ++i) {
+        auto* desc = knownPlugins.getType(i);
+        if (desc && !diskPaths.contains(desc->fileOrIdentifier)) {
+            juce::File pluginFile(desc->fileOrIdentifier);
+            if (pluginFile.getFullPathName().isNotEmpty() && !pluginFile.exists()) {
+                DBG("[AutoDetect] Removing stale plugin: " << desc->name << " ("
+                                                           << desc->fileOrIdentifier << ")");
+                stalePlugins.add(*desc);
+            }
+        }
+    }
+    for (const auto& desc : stalePlugins)
+        knownPlugins.removeType(desc);
+
+    if (newPlugins.empty() && stalePlugins.isEmpty()) {
+        reportStatus("Plugins up to date (" + juce::String(knownPlugins.getNumTypes()) +
+                     " loaded)");
+        return;
+    }
+
+    if (!stalePlugins.isEmpty()) {
+        reportStatus("Removed " + juce::String(stalePlugins.size()) + " stale plugin(s)");
+        savePluginList();
+    }
+
+    if (newPlugins.empty())
+        return;
+
+    reportStatus("Scanning " + juce::String(static_cast<int>(newPlugins.size())) +
+                 " new plugin(s)...");
+
+    isScanning_ = true;
+
+    pluginScanCoordinator_->startIncrementalScan(
+        formatManager, newPlugins,
+        // Progress callback — update splash status with current plugin name
+        [statusCallback](float progress, const juce::String& currentPlugin) {
+            if (statusCallback) {
+                auto name = juce::File(currentPlugin).getFileNameWithoutExtension();
+                statusCallback("Scanning: " + name + "...");
+            }
+        },
+        // Completion
+        [this, &knownPlugins](bool /*success*/, const juce::Array<juce::PluginDescription>& plugins,
+                              const juce::StringArray& failedPlugins) {
+            for (const auto& desc : plugins)
+                knownPlugins.addType(desc);
+
+            DBG("[AutoDetect] Incremental scan complete: "
+                << plugins.size() << " new plugin(s) added"
+                << (failedPlugins.size() > 0 ? ", " + juce::String(failedPlugins.size()) + " failed"
+                                             : ""));
+            savePluginList();
+            isScanning_ = false;
+        });
+}
+
 }  // namespace magda

@@ -310,6 +310,14 @@ class TracktionEngineWrapper : public AudioEngine,
     void loadPluginList();
 
     /**
+     * @brief Detect and scan newly installed plugins on startup
+     * Compares plugin directories against the cached list and incrementally
+     * scans any new files not already known.
+     * @param statusCallback Optional callback for progress updates (e.g. splash screen)
+     */
+    void detectNewPlugins(std::function<void(const juce::String&)> statusCallback = nullptr);
+
+    /**
      * @brief Clear the plugin list and delete the saved file
      * Use this before a fresh rescan
      */
@@ -344,6 +352,9 @@ class TracktionEngineWrapper : public AudioEngine,
      * Called with (success, number of plugins found, failed plugins)
      */
     std::function<void(bool, int, const juce::StringArray&)> onPluginScanComplete;
+
+    /** Callback for startup plugin detection status (shown on splash screen). */
+    std::function<void(const juce::String&)> onPluginScanStatus;
 
     // =========================================================================
     // TransportControl::Listener implementation

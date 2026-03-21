@@ -33,6 +33,9 @@ void TracktionEngineWrapper::initializePluginFormats() {
     // Load saved plugin list from persistent storage
     loadPluginList();
 
+    // Auto-detect newly installed (or removed) plugins
+    detectNewPlugins(onPluginScanStatus);
+
     // Log registered plugin formats
     auto& formatManager = pluginManager.pluginFormatManager;
     DBG("Plugin formats registered by Tracktion Engine: " << formatManager.getNumFormats());
