@@ -532,6 +532,20 @@ void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& device
     }
 }
 
+double TrackManager::getDeviceLatencySeconds(const ChainNodePath& devicePath) {
+    auto* device = getDeviceInChainByPath(devicePath);
+    if (!device || !audioEngine_)
+        return 0.0;
+
+    if (auto* bridge = audioEngine_->getAudioBridge()) {
+        if (auto* processor = bridge->getPluginManager().getDeviceProcessor(device->id)) {
+            if (auto plugin = processor->getPlugin())
+                return plugin->getLatencySeconds();
+        }
+    }
+    return 0.0;
+}
+
 // ============================================================================
 // Wrap Device in Rack
 // ============================================================================

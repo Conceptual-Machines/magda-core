@@ -8,13 +8,10 @@ namespace magda::daw::ui {
 /**
  * @brief Inspector for device/plugin properties
  *
- * Displays and edits properties of selected chain nodes (devices/plugins):
- * - Node type (Device, Group, etc.)
+ * Displays properties of selected chain nodes (devices/plugins):
+ * - Node type (e.g. "VST3 Effect", "AU Instrument")
  * - Node name
- * - Device parameters (dynamically created controls)
- *
- * Parameters are displayed in a scrollable viewport and updated
- * based on the selected device's parameter count and types.
+ * - Plugin latency
  */
 class DeviceInspector : public BaseInspector {
   public:
@@ -42,15 +39,13 @@ class DeviceInspector : public BaseInspector {
     juce::Label chainNodeNameLabel_;
     juce::Label chainNodeNameValue_;
 
-    // Device parameters section
-    juce::Label deviceParamsLabel_;
-    juce::Viewport deviceParamsViewport_;
-    juce::Component deviceParamsContainer_;
+    // Latency display
+    juce::Label latencyLabel_;
+    juce::Label latencyValue_;
 
     // Update methods
     void updateFromSelectedChainNode();
     void showDeviceControls(bool show);
-    void rebuildParameterControls();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DeviceInspector)
 };

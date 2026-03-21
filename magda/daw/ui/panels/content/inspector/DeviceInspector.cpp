@@ -2,14 +2,12 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "core/RackInfo.hpp"
+#include "core/TrackManager.hpp"
 
 namespace magda::daw::ui {
 
 DeviceInspector::DeviceInspector() {
-    // ========================================================================
-    // Chain node properties section
-    // ========================================================================
-
     chainNodeTypeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     chainNodeTypeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addChildComponent(chainNodeTypeLabel_);
@@ -23,18 +21,14 @@ DeviceInspector::DeviceInspector() {
     chainNodeNameValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     addChildComponent(chainNodeNameValue_);
 
-    // ========================================================================
-    // Device parameters section
-    // ========================================================================
+    latencyLabel_.setText("Latency", juce::dontSendNotification);
+    latencyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    latencyLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    addChildComponent(latencyLabel_);
 
-    deviceParamsLabel_.setText("Parameters", juce::dontSendNotification);
-    deviceParamsLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    deviceParamsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(deviceParamsLabel_);
-
-    deviceParamsViewport_.setViewedComponent(&deviceParamsContainer_, false);
-    deviceParamsViewport_.setScrollBarsShown(true, false);
-    addChildComponent(deviceParamsViewport_);
+    latencyValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    latencyValue_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    addChildComponent(latencyValue_);
 }
 
 DeviceInspector::~DeviceInspector() = default;
@@ -67,13 +61,10 @@ void DeviceInspector::resized() {
     chainNodeNameValue_.setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(16);
 
-    // Device parameters section (if visible)
-    if (deviceParamsLabel_.isVisible()) {
-        deviceParamsLabel_.setBounds(bounds.removeFromTop(16));
-        bounds.removeFromTop(4);
-
-        // Viewport takes remaining space
-        deviceParamsViewport_.setBounds(bounds);
+    // Latency (if visible)
+    if (latencyLabel_.isVisible()) {
+        latencyLabel_.setBounds(bounds.removeFromTop(16));
+        latencyValue_.setBounds(bounds.removeFromTop(24));
     }
 }
 
@@ -91,11 +82,59 @@ void DeviceInspector::updateFromSelectedChainNode() {
         return;
     }
 
-    // TODO: Extract from InspectorContent::updateFromSelectedChainNode()
-    // - Get chain node info from SelectionManager/DeviceManager
-    // - Update chainNodeTypeLabel_ with node type
-    // - Update chainNodeNameValue_ with node name
-    // - Call rebuildParameterControls() if device has parameters
+    auto& tm = magda::TrackManager::getInstance();
+    auto type = selectedChainNode_.getType();
+
+    juce::String typeStr;
+    juce::String nameStr;
+    double latency = 0.0;
+    bool showLatency = false;
+
+    switch (type) {
+        case magda::ChainNodeType::Device:
+        case magda::ChainNodeType::TopLevelDevice: {
+            auto* device = tm.getDeviceInChainByPath(selectedChainNode_);
+            if (device) {
+                typeStr =
+                    device->getFormatString() + (device->isInstrument ? " Instrument" : " Effect");
+                nameStr = device->name;
+                latency = tm.getDeviceLatencySeconds(selectedChainNode_);
+                showLatency = true;
+            }
+            break;
+        }
+        case magda::ChainNodeType::Rack: {
+            auto* rack = tm.getRackByPath(selectedChainNode_);
+            if (rack) {
+                typeStr = "Rack";
+                nameStr = rack->name;
+            }
+            break;
+        }
+        case magda::ChainNodeType::Chain: {
+            typeStr = "Chain";
+            nameStr = "Chain";
+            break;
+        }
+        default:
+            break;
+    }
+
+    chainNodeTypeLabel_.setText(typeStr, juce::dontSendNotification);
+    chainNodeNameValue_.setText(nameStr, juce::dontSendNotification);
+
+    if (showLatency && latency > 0.0) {
+        auto latencyMs = latency * 1000.0;
+        latencyValue_.setText(juce::String(latencyMs, 1) + " ms", juce::dontSendNotification);
+        latencyLabel_.setVisible(true);
+        latencyValue_.setVisible(true);
+    } else {
+        latencyLabel_.setVisible(showLatency);
+        latencyValue_.setVisible(showLatency);
+        if (showLatency) {
+            latencyValue_.setText("0 ms", juce::dontSendNotification);
+        }
+    }
 
     resized();
 }
@@ -104,17 +143,8 @@ void DeviceInspector::showDeviceControls(bool show) {
     chainNodeTypeLabel_.setVisible(show);
     chainNodeNameLabel_.setVisible(show);
     chainNodeNameValue_.setVisible(show);
-    deviceParamsLabel_.setVisible(show);
-    deviceParamsViewport_.setVisible(show);
-}
-
-void DeviceInspector::rebuildParameterControls() {
-    // TODO: Extract from InspectorContent
-    // - Clear deviceParamsContainer_
-    // - Get device parameters from DeviceManager
-    // - Create parameter controls (sliders, buttons, etc.)
-    // - Add to deviceParamsContainer_
-    // - Update container size for scrolling
+    latencyLabel_.setVisible(false);
+    latencyValue_.setVisible(false);
 }
 
 }  // namespace magda::daw::ui

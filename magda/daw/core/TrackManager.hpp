@@ -305,6 +305,13 @@ class TrackManager {
     void setDeviceParameterValueFromPlugin(const ChainNodePath& devicePath, int paramIndex,
                                            float value);
 
+    /**
+     * @brief Get plugin latency for a device by querying the audio engine
+     * @param devicePath Path to the device in the chain
+     * @return Latency in seconds, or 0 if not found
+     */
+    double getDeviceLatencySeconds(const ChainNodePath& devicePath);
+
     // Nested rack management within chains
     RackId addRackToChain(TrackId trackId, RackId parentRackId, ChainId chainId,
                           const juce::String& name = "Rack");
