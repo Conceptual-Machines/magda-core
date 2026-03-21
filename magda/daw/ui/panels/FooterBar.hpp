@@ -35,7 +35,7 @@ class FooterBar : public juce::Component, public ViewModeListener {
 
   private:
     static constexpr int NUM_MODES = 3;
-    static constexpr int BUTTON_SIZE = 28;
+    static constexpr int BUTTON_SIZE = 32;
     static constexpr int BUTTON_SPACING = 16;
 
     std::array<magda::ManagedChild<SvgButton>, NUM_MODES> modeButtons;
