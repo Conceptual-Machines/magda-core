@@ -52,6 +52,12 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
         TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
     };
 
+    // Re-establish MIDI routing and input monitor state after graph reallocate
+    clipSynchronizer_.onGraphReallocated = [this]() {
+        updateMidiRoutingForSelection();
+        resyncAllInputMonitors();
+    };
+
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
@@ -315,6 +321,41 @@ void AudioBridge::updateMidiRoutingForSelection() {
     }
 
     // setTrackMidiInput already handles reallocate() internally
+}
+
+void AudioBridge::resyncAllInputMonitors() {
+    auto* playbackContext = edit_.getCurrentPlaybackContext();
+    if (!playbackContext)
+        return;
+
+    auto& tm = TrackManager::getInstance();
+    for (const auto& trackInfo : tm.getTracks()) {
+        auto* track = trackController_.getAudioTrack(trackInfo.id);
+        if (!track)
+            continue;
+
+        auto teMode = te::InputDevice::MonitorMode::off;
+        switch (trackInfo.inputMonitor) {
+            case InputMonitorMode::Off:
+                teMode = te::InputDevice::MonitorMode::off;
+                break;
+            case InputMonitorMode::In:
+                teMode = te::InputDevice::MonitorMode::on;
+                break;
+            case InputMonitorMode::Auto:
+                teMode = te::InputDevice::MonitorMode::automatic;
+                break;
+        }
+        for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+            auto targets = inputDeviceInstance->getTargets();
+            for (auto targetID : targets) {
+                if (targetID == track->itemID) {
+                    inputDeviceInstance->owner.setMonitorMode(teMode);
+                    break;
+                }
+            }
+        }
+    }
 }
 
 void AudioBridge::trackDevicesChanged(TrackId trackId) {
@@ -814,8 +855,11 @@ void AudioBridge::timerCallback() {
                                 DBG("REVERSE TIMER: proxy ready — reallocating ("
                                     << proxyFile.getFullPathName() << ")");
                                 clipSynchronizer_.clearPendingReverseClipId();
-                                if (auto* ctx = edit_.getCurrentPlaybackContext())
+                                if (auto* ctx = edit_.getCurrentPlaybackContext()) {
                                     ctx->reallocate();
+                                    if (clipSynchronizer_.onGraphReallocated)
+                                        clipSynchronizer_.onGraphReallocated();
+                                }
                             }
                         }
                         break;

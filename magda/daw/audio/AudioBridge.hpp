@@ -737,6 +737,7 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Selection-based MIDI routing
     TrackId lastSelectedTrack_ = INVALID_TRACK_ID;
     void updateMidiRoutingForSelection();
+    void resyncAllInputMonitors();
 
     // Pending MIDI routes (applied when playback context becomes available)
     std::vector<std::pair<TrackId, juce::String>> pendingMidiRoutes_;
