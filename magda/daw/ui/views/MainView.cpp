@@ -1835,6 +1835,13 @@ class MainView::MasterHeaderPanel::HorizontalStereoMeter : public juce::Componen
         // Right channel (bottom bar)
         auto rightBounds = bounds.removeFromTop(barHeight);
         drawMeterBar(g, rightBounds, rightLevel_);
+
+        // 0dB tick mark (vertical line)
+        auto fullBounds = getLocalBounds().toFloat();
+        float zeroDbPos = dbToMeterPos(0.0f);
+        float tickX = fullBounds.getX() + fullBounds.getWidth() * zeroDbPos;
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.drawVerticalLine(static_cast<int>(tickX), fullBounds.getY(), fullBounds.getBottom());
     }
 
   private:
@@ -1942,6 +1949,12 @@ void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
     // Border
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
+
+    // "Master" label at top
+    auto labelArea = getLocalBounds().reduced(6, 2).removeFromTop(14);
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    g.setFont(FontManager::getInstance().getUIFont(11.0f));
+    g.drawText("Master", labelArea, juce::Justification::centredLeft);
 }
 
 void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& /*event*/) {
@@ -1951,6 +1964,7 @@ void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& /*event*/) {
 void MainView::MasterHeaderPanel::resized() {
     auto contentArea = getLocalBounds().reduced(2);
     contentArea.removeFromLeft(4);  // Extra left padding
+    contentArea.removeFromTop(14);  // Space for "Master" label
 
     // Use 80% width, left-aligned
     int usableWidth = contentArea.getWidth() * 80 / 100;

@@ -89,6 +89,12 @@ class TrackMeter : public juce::Component {
         drawMeterBar(g, leftBar, levelL_);
         drawMeterBar(g, rightBar, levelR_);
 
+        // 0dB tick mark
+        float zeroDbPos = dbToMeterPos(0.0f);
+        float tickY = bounds.getBottom() - bounds.getHeight() * zeroDbPos;
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+        g.drawHorizontalLine(static_cast<int>(tickY), bounds.getX(), bounds.getRight());
+
         // Separator line at name row boundary (aligned with full-header line painted behind)
         if (nameRowY_ >= 0) {
             float localY = static_cast<float>(nameRowY_ - getY());
@@ -1666,7 +1672,7 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
     const int nameRowHeight = 18;
     const int spacing = 2;
 
-    // Master track: skip name row to give all space to volume + mute
+    // Master track: skip name row space (painted "Master" label), then volume + mute
     if (header.isMaster) {
         header.nameLabel->setVisible(false);
         header.collapseButton->setVisible(false);
@@ -1680,6 +1686,7 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
         header.outputIcon->setVisible(false);
         for (auto& sendLabel : header.sendLabels)
             sendLabel->setVisible(false);
+        tcpArea.removeFromTop(nameRowHeight + spacing);
         layoutVolPanAndButtons(header, tcpArea, inner);
         return;
     }

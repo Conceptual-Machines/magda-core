@@ -152,7 +152,7 @@ class MainView : public juce::Component,
     class MasterContentPanel;
     std::unique_ptr<MasterHeaderPanel> masterHeaderPanel;
     std::unique_ptr<MasterContentPanel> masterContentPanel;
-    int masterStripHeight = 46;
+    int masterStripHeight = 60;
     ViewMode currentViewMode_ = ViewMode::Arrange;
     bool masterVisible_ = true;
 
