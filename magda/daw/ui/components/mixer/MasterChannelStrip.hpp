@@ -26,6 +26,7 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& event) override;
 
     // TrackManagerListener
     void tracksChanged() override {}
@@ -34,10 +35,13 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     // Set meter levels (for audio engine integration)
     void setPeakLevels(float leftPeak, float rightPeak);
 
+    void setSelected(bool shouldBeSelected);
+
     // Called when the send area resize handle is dragged
     std::function<void()> onSendAreaResized;
 
   private:
+    bool selected_ = false;
     Orientation orientation_;
 
     // UI Components

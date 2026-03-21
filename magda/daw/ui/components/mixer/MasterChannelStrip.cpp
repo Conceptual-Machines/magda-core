@@ -6,6 +6,7 @@
 #include "../../themes/FontManager.hpp"
 #include "../../themes/MixerMetrics.hpp"
 #include "BinaryData.h"
+#include "core/SelectionManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 
@@ -257,6 +258,7 @@ void MasterChannelStrip::setupControls() {
     titleLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     titleLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
     titleLabel->setJustificationType(juce::Justification::centredLeft);
+    titleLabel->setInterceptsMouseClicks(false, false);
     addAndMakeVisible(*titleLabel);
 
     // Peak meter
@@ -284,6 +286,8 @@ void MasterChannelStrip::setupControls() {
         float db = meterPosToDb(static_cast<float>(pos));
         if (db <= MIN_DB)
             return "-inf";
+        if (std::abs(db) < 0.05f)
+            db = 0.0f;
         return juce::String(db, 1);
     });
 
@@ -313,9 +317,12 @@ void MasterChannelStrip::setupControls() {
     resizeHandle_ = std::make_unique<ResizeHandle>();
     resizeHandle_->onResize = [this](int deltaY) {
         auto& metrics = MixerMetrics::getInstance();
-        int newHeight =
-            juce::jlimit(MixerMetrics::minSendAreaHeight, MixerMetrics::maxSendAreaHeight,
-                         metrics.sendAreaHeight + deltaY);
+        // Clamp max to available space minus fixed elements
+        int fixedHeight = 38 + metrics.controlSpacing + 120 + 24 + metrics.buttonSize +
+                          metrics.channelPadding * 2;
+        int maxHeight = juce::jmax(0, getHeight() - fixedHeight);
+        int newHeight = juce::jlimit(MixerMetrics::minSendAreaHeight, maxHeight,
+                                     metrics.sendAreaHeight + deltaY);
         if (metrics.sendAreaHeight != newHeight) {
             metrics.sendAreaHeight = newHeight;
             if (onSendAreaResized)
@@ -347,6 +354,8 @@ void MasterChannelStrip::setupControls() {
         float db = meterPosToDb(static_cast<float>(pos));
         if (db <= MIN_DB)
             return "-inf";
+        if (std::abs(db) < 0.05f)
+            db = 0.0f;
         return juce::String(db, 1);
     });
 
@@ -392,11 +401,47 @@ void MasterChannelStrip::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRect(getLocalBounds(), 1);
 
+    auto ownBounds = getLocalBounds();
+    int tintHeight = 34;
+    if (selected_) {
+        // Selected: black header with white text
+        g.setColour(juce::Colours::black);
+        g.fillRect(1, 1, ownBounds.getWidth() - 2, 4 + tintHeight);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(1, 4 + tintHeight, ownBounds.getWidth() - 2, 1);
+    } else {
+        // Accent blue colour bar at top
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        g.fillRect(1, 1, ownBounds.getWidth() - 2, 4);
+
+        // Accent blue tint behind name area
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+        g.fillRect(1, 4, ownBounds.getWidth() - 2, tintHeight);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.fillRect(1, 4 + tintHeight, ownBounds.getWidth() - 2, 1);
+    }
+
     // Draw fader region border (top and bottom lines)
     if (!faderRegion_.isEmpty()) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.fillRect(faderRegion_.getX(), faderRegion_.getY(), faderRegion_.getWidth(), 1);
         g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
+    }
+}
+
+void MasterChannelStrip::setSelected(bool shouldBeSelected) {
+    if (selected_ != shouldBeSelected) {
+        selected_ = shouldBeSelected;
+        titleLabel->setColour(juce::Label::textColourId,
+                              selected_ ? juce::Colours::white
+                                        : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        repaint();
+    }
+}
+
+void MasterChannelStrip::mouseDown(const juce::MouseEvent& event) {
+    if (!event.mods.isPopupMenu()) {
+        SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
     }
 }
 
@@ -417,16 +462,13 @@ void MasterChannelStrip::resized() {
         bounds.removeFromTop(metrics.controlSpacing);
 
         // Send area space — reserve same height as channel strips for alignment
-        const int sendAreaHeight = metrics.sendAreaHeight;
-        bounds.removeFromTop(2);  // Gap between header and sends/handle
+        bounds.removeFromTop(2);
+        int sendAreaHeight = juce::jmax(metrics.sendAreaHeight, 0);
         bounds.removeFromTop(sendAreaHeight);
 
-        // Resize handle overlapping the bottom of the send area space
+        // Resize handle
         if (resizeHandle_) {
-            int handleH = 8;
-            int handleOverlap = 6;
-            resizeHandle_->setBounds(bounds.getX(), bounds.getY() - handleH - handleOverlap,
-                                     bounds.getWidth(), handleH);
+            resizeHandle_->setBounds(bounds.removeFromTop(6));
             resizeHandle_->setAlwaysOnTop(true);
         }
 
@@ -438,8 +480,9 @@ void MasterChannelStrip::resized() {
         cueVolumeSlider_->setBounds(cueRow);
         bounds.removeFromBottom(2);  // Gap between cue row and fader region
 
-        // Small gap before fader region
-        bounds.removeFromTop(2);
+        // Peak value label above fader region
+        const int labelHeight = 12;
+        peakValueLabel->setBounds(bounds.removeFromTop(labelHeight));
 
         // Calculate proportional widths like channel strips
         int availWidth = bounds.getWidth();
@@ -450,13 +493,6 @@ void MasterChannelStrip::resized() {
 
         // Store the entire fader region for border drawing
         faderRegion_ = bounds;
-
-        // Position peak label above the fader region top border
-        const int labelHeight = 12;
-        auto valueLabelArea =
-            juce::Rectangle<int>(faderRegion_.getX(), faderRegion_.getY() - labelHeight,
-                                 faderRegion_.getWidth(), labelHeight);
-        peakValueLabel->setBounds(valueLabelArea);
 
         // Add vertical padding inside the border
         bounds.removeFromTop(6);
@@ -538,6 +574,8 @@ void MasterChannelStrip::setPeakLevels(float leftPeak, float rightPeak) {
         peakValue_ = maxPeak;
         if (peakValueLabel) {
             float db = gainToDb(peakValue_);
+            if (std::abs(db) < 0.05f)
+                db = 0.0f;
             juce::String peakText;
             if (db <= MIN_DB) {
                 peakText = "-inf";

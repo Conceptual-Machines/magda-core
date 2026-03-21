@@ -310,9 +310,9 @@ void MixerView::ChannelStrip::setupControls() {
     trackLabel->setText(isMaster_ ? "Master" : trackName_, juce::dontSendNotification);
     trackLabel->setJustificationType(juce::Justification::centred);
     trackLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    trackLabel->setColour(juce::Label::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    trackLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     trackLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
+    trackLabel->setInterceptsMouseClicks(false, false);
     addAndMakeVisible(*trackLabel);
 
     // Pan slider (horizontal TextSlider)
@@ -355,6 +355,8 @@ void MixerView::ChannelStrip::setupControls() {
         float db = meterPosToDb(static_cast<float>(pos));
         if (db <= MIN_DB)
             return "-inf";
+        if (std::abs(db) < 0.05f)
+            db = 0.0f;
         return juce::String(db, 1);
     });
     // Parse typed dB input
@@ -480,9 +482,23 @@ void MixerView::ChannelStrip::setupControls() {
         sendResizeHandle_ = std::make_unique<SendResizeHandle>();
         sendResizeHandle_->onResize = [this](int deltaY) {
             auto& metrics = MixerMetrics::getInstance();
-            int newHeight =
-                juce::jlimit(MixerMetrics::minSendAreaHeight, MixerMetrics::maxSendAreaHeight,
-                             metrics.sendAreaHeight + deltaY);
+            // Min height = actual content height (can't shrink below sends)
+            int contentHeight = 0;
+            for (size_t i = 0; i < sendSlots_.size(); ++i)
+                contentHeight += 18 + 1;  // sendSlotHeight + gap
+            int minHeight = juce::jmax(MixerMetrics::minSendAreaHeight, contentHeight);
+            // Max height: total height minus fixed UI elements
+            int fixedHeight = 38                                // colour bar + label
+                              + metrics.controlSpacing          // spacing after label
+                              + 2                               // gap before sends
+                              + 6                               // resize handle
+                              + 120                             // minimum fader region
+                              + 24                              // pan + gaps
+                              + metrics.buttonSize              // M/S/R buttons
+                              + (metrics.showRouting ? 40 : 0)  // routing rows
+                              + metrics.channelPadding * 2;     // top+bottom padding
+            int maxHeight = juce::jmax(minHeight, getHeight() - fixedHeight);
+            int newHeight = juce::jlimit(minHeight, maxHeight, metrics.sendAreaHeight + deltaY);
             if (metrics.sendAreaHeight != newHeight) {
                 metrics.sendAreaHeight = newHeight;
                 if (onSendAreaResized)
@@ -743,16 +759,31 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
 
     // Channel color indicator at top — skip for children nested in group (envelope provides this)
-    // When selected, use accent blue as top border instead of track colour
     if (!isNestedInGroup) {
+        int tintHeight = 34;
         if (selected) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        } else if (!isMaster_) {
-            g.setColour(trackColour_);
+            // Selected: black header with white text
+            g.setColour(juce::Colours::black);
+            g.fillRect(0, 0, ownBounds.getWidth() - 1, 4 + tintHeight);
+            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+            g.fillRect(0, 4 + tintHeight, ownBounds.getWidth() - 1, 1);
         } else {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            // Colour bar
+            if (!isMaster_) {
+                g.setColour(trackColour_);
+            } else {
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+            }
+            g.fillRect(0, 0, ownBounds.getWidth() - 1, 4);
+
+            // Tinted name area
+            if (!isMaster_) {
+                g.setColour(trackColour_.withAlpha(0.5f));
+                g.fillRect(0, 4, ownBounds.getWidth() - 1, tintHeight);
+                g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+                g.fillRect(0, 4 + tintHeight, ownBounds.getWidth() - 1, 1);
+            }
         }
-        g.fillRect(0, 0, ownBounds.getWidth() - 1, 4);
     }
 
     // Draw fader region border (top and bottom lines)
@@ -868,8 +899,6 @@ void MixerView::ChannelStrip::resized() {
     // Sends area (scrollable viewport) — between track label and fader
     if (!isMaster_ && sendViewport_) {
         const int sendSlotHeight = 18;
-        const int sendAreaHeight = metrics.sendAreaHeight;
-
         // Layout send slots inside the container
         int containerWidth = bounds.getWidth();
         int totalContentHeight = 0;
@@ -884,15 +913,16 @@ void MixerView::ChannelStrip::resized() {
 
         sendContainer_->setBounds(0, 0, containerWidth, totalContentHeight);
         bounds.removeFromTop(2);  // Gap between track header and sends/handle
-        sendViewport_->setBounds(bounds.removeFromTop(sendAreaHeight));
-        sendViewport_->setVisible(sendAreaHeight > 0);
 
-        // Resize handle overlapping the bottom of the sends viewport
+        // Clamp send area height: never smaller than actual content
+        int sendAreaHeight = juce::jmax(metrics.sendAreaHeight, totalContentHeight);
+        sendViewport_->setBounds(bounds.removeFromTop(sendAreaHeight));
+        sendViewport_->setVisible(totalContentHeight > 0);
+
+        // Send resize handle — always visible
         if (sendResizeHandle_) {
-            int handleH = 8;
-            int handleOverlap = 6;
-            sendResizeHandle_->setBounds(bounds.getX(), bounds.getY() - handleH - handleOverlap,
-                                         bounds.getWidth(), handleH);
+            sendResizeHandle_->setVisible(true);
+            sendResizeHandle_->setBounds(bounds.removeFromTop(6));
             sendResizeHandle_->setAlwaysOnTop(true);
         }
     }
@@ -991,6 +1021,11 @@ void MixerView::ChannelStrip::resized() {
         bounds.removeFromBottom(2);
     }
 
+    // Peak value label above fader region
+    const int labelHeight = 12;
+    bounds.removeFromTop(2);
+    peakLabel->setBounds(bounds.removeFromTop(labelHeight));
+
     // Small gap before fader region
     bounds.removeFromTop(2);
 
@@ -1003,13 +1038,6 @@ void MixerView::ChannelStrip::resized() {
 
     // Store the entire fader region for border drawing
     faderRegion_ = bounds;
-
-    // Position peak label right above the fader region top border
-    const int labelHeight = 12;
-    auto valueLabelArea =
-        juce::Rectangle<int>(faderRegion_.getX(), faderRegion_.getY() - labelHeight,
-                             faderRegion_.getWidth(), labelHeight);
-    peakLabel->setBounds(valueLabelArea);
 
     // Add vertical padding inside the border
     bounds.removeFromTop(6);
@@ -1051,6 +1079,8 @@ void MixerView::ChannelStrip::setMeterLevels(float leftLevel, float rightLevel) 
         peakValue_ = maxLevel;
         if (peakLabel) {
             float db = gainToDb(peakValue_);
+            if (std::abs(db) < 0.05f)
+                db = 0.0f;
             juce::String peakText;
             if (db <= MIN_DB) {
                 peakText = "-inf";
@@ -1065,6 +1095,9 @@ void MixerView::ChannelStrip::setMeterLevels(float leftLevel, float rightLevel) 
 void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     if (selected != shouldBeSelected) {
         selected = shouldBeSelected;
+        trackLabel->setColour(juce::Label::textColourId,
+                              selected ? juce::Colours::white
+                                       : DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         repaint();
     }
 }
@@ -1192,6 +1225,8 @@ void MixerView::DrumSubChannelStrip::setupControls() {
         float db = meterPosToDb(static_cast<float>(pos));
         if (db <= MIN_DB)
             return "-inf";
+        if (std::abs(db) < 0.05f)
+            db = 0.0f;
         return juce::String(db, 1);
     });
     volumeSlider->setValueParser([](const juce::String& text) -> double {
@@ -1277,6 +1312,8 @@ void MixerView::DrumSubChannelStrip::setMeterLevels(float l, float r) {
         peakValue_ = maxLevel;
         if (peakLabel) {
             float db = gainToDb(peakValue_);
+            if (std::abs(db) < 0.05f)
+                db = 0.0f;
             juce::String peakText;
             if (db <= MIN_DB)
                 peakText = "-inf";
@@ -2201,6 +2238,8 @@ void MixerView::trackSelectionChanged(TrackId trackId) {
     for (auto& strip : auxChannelStrips) {
         strip->setSelected(false);
     }
+    if (masterStrip)
+        masterStrip->setSelected(false);
     selectedIsMaster = false;
     selectedChannelIndex = -1;
 
@@ -2212,6 +2251,8 @@ void MixerView::trackSelectionChanged(TrackId trackId) {
     if (trackId == MASTER_TRACK_ID) {
         selectedIsMaster = true;
         selectedChannelIndex = -1;
+        if (masterStrip)
+            masterStrip->setSelected(true);
         if (onChannelSelected) {
             onChannelSelected(selectedChannelIndex, selectedIsMaster);
         }
