@@ -278,12 +278,47 @@ AIChatConsoleContent::AIChatConsoleContent() {
     sendButton_.setColour(juce::DrawableButton::backgroundOnColourId,
                           juce::Colours::transparentBlack);
     sendButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    sendButton_.setAlpha(0.35f);
     sendButton_.onClick = [this]() {
         auto text = inputBox_.getText().trim();
         if (text.isNotEmpty() && !processing_)
             sendMessage(text);
     };
     addAndMakeVisible(sendButton_);
+
+    // Clear chat button
+    auto deleteSvg =
+        juce::Drawable::createFromImageData(BinaryData::delete_svg, BinaryData::delete_svgSize);
+    clearButton_.setImages(deleteSvg.get());
+    clearButton_.setEdgeIndent(4);
+    clearButton_.setColour(juce::DrawableButton::backgroundColourId,
+                           juce::Colours::transparentBlack);
+    clearButton_.setColour(juce::DrawableButton::backgroundOnColourId,
+                           juce::Colours::transparentBlack);
+    clearButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    clearButton_.setTooltip("Clear chat");
+    clearButton_.setAlpha(0.35f);
+    clearButton_.onClick = [this]() {
+        chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
+    };
+    addAndMakeVisible(clearButton_);
+
+    // Copy chat button
+    auto copySvg = juce::Drawable::createFromImageData(BinaryData::copycontent_svg,
+                                                       BinaryData::copycontent_svgSize);
+    copyButton_.setImages(copySvg.get());
+    copyButton_.setEdgeIndent(4);
+    copyButton_.setColour(juce::DrawableButton::backgroundColourId,
+                          juce::Colours::transparentBlack);
+    copyButton_.setColour(juce::DrawableButton::backgroundOnColourId,
+                          juce::Colours::transparentBlack);
+    copyButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    copyButton_.setTooltip("Copy chat to clipboard");
+    copyButton_.setAlpha(0.35f);
+    copyButton_.onClick = [this]() {
+        juce::SystemClipboard::copyTextToClipboard(chatHistory_.getText());
+    };
+    addAndMakeVisible(copyButton_);
 
     // Register for selection changes
     magda::SelectionManager::getInstance().addListener(this);
@@ -440,11 +475,22 @@ void AIChatConsoleContent::resized() {
     contextLabel_.setBounds(bottomBar);
 
     // Input box directly above bottom bar (no gap — unified shape)
-    auto inputArea = bounds.removeFromBottom(60);
+    auto inputArea = bounds.removeFromBottom(80);
     inputBox_.setBounds(inputArea);
 
     bounds.removeFromBottom(8);  // Spacing
     chatHistory_.setBounds(bounds);
+
+    // Clear + copy buttons inside chat panel, top-right corner
+    auto chatBounds = chatHistory_.getBounds();
+    int btnSize = 20;
+    int margin = 4;
+    copyButton_.setBounds(chatBounds.getRight() - btnSize - margin, chatBounds.getY() + margin,
+                          btnSize, btnSize);
+    clearButton_.setBounds(chatBounds.getRight() - 2 * btnSize - margin - 2,
+                           chatBounds.getY() + margin, btnSize, btnSize);
+    clearButton_.toFront(false);
+    copyButton_.toFront(false);
 }
 
 void AIChatConsoleContent::onActivated() {

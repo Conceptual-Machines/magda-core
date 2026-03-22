@@ -80,6 +80,8 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<juce::Drawable> clipIconDrawable_;
     juce::Label contextLabel_;
     juce::DrawableButton sendButton_{"send", juce::DrawableButton::ImageFitted};
+    juce::DrawableButton clearButton_{"clear", juce::DrawableButton::ImageFitted};
+    juce::DrawableButton copyButton_{"copy", juce::DrawableButton::ImageFitted};
     juce::Rectangle<int> bottomBarBounds_;
     juce::Rectangle<int> contextIconBounds_;
     juce::String contextText_;
