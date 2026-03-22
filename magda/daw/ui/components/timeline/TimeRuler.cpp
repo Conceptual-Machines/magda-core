@@ -531,6 +531,9 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
     double totalTimelineBeats = timelineLength * tempo / 60.0;
 
+    // Track last label X to prevent overlap
+    int lastLabelRight = -1000;
+
     // Pass 1: Draw grid ticks
     for (long long step = startStep;; ++step) {
         double beat = barOriginBeats + step * intervalBeats;
@@ -574,7 +577,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
                                    static_cast<float>(tickBottom));
             }
 
-            // Label drawing
+            // Label drawing — skip if would overlap previous label
             double subdivInBeat = std::fmod(beatsInBar, 1.0);
             int subdivsPerBeat = std::max(1, static_cast<int>(std::round(1.0 / intervalBeats)));
             int subdivIndex = static_cast<int>(std::round(subdivInBeat * subdivsPerBeat)) + 1;
@@ -586,17 +589,21 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
                 g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
                 g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
                            juce::Justification::centred);
-            } else if (isBeatStart && !isBarStart && pixelsPerBeat >= 30) {
+                lastLabelRight = x + 35;
+            } else if (isBeatStart && !isBarStart && pixelsPerBeat >= 20 &&
+                       x - 25 > lastLabelRight) {
                 g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
                 g.setFont(FontManager::getInstance().getUIFont(10.0f));
                 g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY, 50,
                            labelHeight, juce::Justification::centred);
-            } else if (isSubdivisionNotBeat && pixelsPerSubdiv >= 18) {
+                lastLabelRight = x + 25;
+            } else if (isSubdivisionNotBeat && pixelsPerSubdiv >= 18 && x - 30 > lastLabelRight) {
                 g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
                 g.setFont(FontManager::getInstance().getUIFont(8.0f));
                 g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
                                juce::String(subdivIndex),
                            x - 30, labelY, 60, labelHeight, juce::Justification::centred);
+                lastLabelRight = x + 30;
             }
         } else {
             // Grid doesn't align — draw minor ticks only
@@ -608,6 +615,8 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
     // Pass 2: For non-aligned grids, draw bar/beat reference ticks and labels on top
     if (!gridAligned) {
+        lastLabelRight = -1000;
+
         // Find first visible beat boundary
         long long startBeatStep =
             static_cast<long long>(std::floor((firstVisibleBeat - barOriginBeats)));
@@ -640,48 +649,18 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
                     g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
                     g.drawText(juce::String(bar), x - 35, labelY, 70, labelHeight,
                                juce::Justification::centred);
+                    lastLabelRight = x + 35;
                 }
             } else {
                 g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.7f));
                 g.drawVerticalLine(x, static_cast<float>(tickBottom - mediumTickHeight),
                                    static_cast<float>(tickBottom));
-                if (pixelsPerBeat >= 30) {
+                if (pixelsPerBeat >= 20 && x - 25 > lastLabelRight) {
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
                     g.setFont(FontManager::getInstance().getUIFont(10.0f));
                     g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY,
                                50, labelHeight, juce::Justification::centred);
-                }
-            }
-        }
-    }
-
-    // Draw clip boundary markers (shifted by content offset in source file)
-    // In loop mode, hide clip boundary markers (arrangement length is irrelevant in source editor)
-    if (clipLength > 0) {
-        if (!loopActive) {
-            if (!relativeMode) {
-                int clipStartX = timeToPixel(timeOffset + clipContentOffset);
-                if (clipStartX >= 0 && clipStartX <= width) {
-                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
-                    g.fillRect(clipStartX - 1, 0, 2, height);
-                }
-
-                int clipEndX = timeToPixel(timeOffset + clipContentOffset + clipLength);
-                if (clipEndX >= 0 && clipEndX <= width) {
-                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-                    g.fillRect(clipEndX - 1, 0, 3, height);
-                }
-            } else {
-                int clipStartX = timeToPixel(clipContentOffset);
-                if (clipStartX >= 0 && clipStartX <= width) {
-                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
-                    g.fillRect(clipStartX - 1, 0, 2, height);
-                }
-
-                int clipEndX = timeToPixel(clipContentOffset + clipLength);
-                if (clipEndX >= 0 && clipEndX <= width) {
-                    g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
-                    g.fillRect(clipEndX - 1, 0, 3, height);
+                    lastLabelRight = x + 25;
                 }
             }
         }

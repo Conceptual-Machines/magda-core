@@ -362,6 +362,12 @@ void AudioThumbnailManager::clearCache() {
 }
 
 void AudioThumbnailManager::shutdown() {
+    // Clear the cache first — this cancels any pending background thumbnail jobs
+    // in the internal thread pool before we destroy the AudioThumbnail objects.
+    if (thumbnailCache_)
+        thumbnailCache_->clear();
+
+    // Now safe to destroy thumbnails (no background jobs reference them)
     thumbnails_.clear();
     thumbnailCache_.reset();
     bpmCache_.clear();

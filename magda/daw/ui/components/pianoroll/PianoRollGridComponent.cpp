@@ -94,7 +94,12 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         // Clip start boundary
         int clipStartX = beatToPixel(clipStartBeats_);
         if (clipStartX >= 0 && clipStartX <= bounds.getRight()) {
-            g.setColour(DarkTheme::getAccentColour().withAlpha(0.6f));
+            juce::ColourGradient grad(juce::Colour(0xFFAAAAAA), clipStartX - 1.0f, 0.0f,
+                                      juce::Colour(0xFFAAAAAA).withAlpha(0.0f), clipStartX - 6.0f,
+                                      0.0f, false);
+            g.setGradientFill(grad);
+            g.fillRect(clipStartX - 6, 0, 6, bounds.getHeight());
+            g.setColour(juce::Colour(0xFFAAAAAA));
             g.fillRect(clipStartX - 1, 0, 2, bounds.getHeight());
         }
 
@@ -109,7 +114,12 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (!loopEnabled_) {
             int clipEndX = beatToPixel(clipStartBeats_ + clipLengthBeats_);
             if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
-                g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+                juce::ColourGradient grad(juce::Colour(0xFFAAAAAA), clipEndX + 1.0f, 0.0f,
+                                          juce::Colour(0xFFAAAAAA).withAlpha(0.0f), clipEndX + 6.0f,
+                                          0.0f, false);
+                g.setGradientFill(grad);
+                g.fillRect(clipEndX + 1, 0, 6, bounds.getHeight());
+                g.setColour(juce::Colour(0xFFAAAAAA));
                 g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
             }
 
@@ -124,7 +134,12 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (!loopEnabled_) {
             int clipEndX = beatToPixel(clipLengthBeats_);
             if (clipEndX >= 0 && clipEndX <= bounds.getRight()) {
-                g.setColour(DarkTheme::getAccentColour().withAlpha(0.8f));
+                juce::ColourGradient grad(juce::Colour(0xFFAAAAAA), clipEndX + 1.0f, 0.0f,
+                                          juce::Colour(0xFFAAAAAA).withAlpha(0.0f), clipEndX + 6.0f,
+                                          0.0f, false);
+                g.setGradientFill(grad);
+                g.fillRect(clipEndX + 1, 0, 6, bounds.getHeight());
+                g.setColour(juce::Colour(0xFFAAAAAA));
                 g.fillRect(clipEndX - 1, 0, 3, bounds.getHeight());
             }
 

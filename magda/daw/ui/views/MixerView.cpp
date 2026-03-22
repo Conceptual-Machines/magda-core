@@ -151,10 +151,11 @@ class MixerView::ChannelStrip::DbScale : public juce::Component {
         const float dbValues[] = {6.0f,   3.0f,   0.0f,   -3.0f,  -6.0f,
                                   -12.0f, -18.0f, -24.0f, -36.0f, -48.0f};
 
-        // The component has extra padding at top/bottom for label overflow.
-        // The fader-aligned area starts at paddingTop and has faderHeight.
-        float paddingTop = metrics.labelTextHeight / 2.0f + 1.0f;
-        float paddingBottom = metrics.labelTextHeight / 2.0f;
+        // The component extends above/below the fader area by thumbRadius.
+        // JUCE's slider thumb travels within [bounds.Y + thumbRad, bounds.Bottom - thumbRad],
+        // so from this component's top, the travel area starts at 2*thumbRad.
+        float paddingTop = 2.0f * metrics.thumbRadius();
+        float paddingBottom = 2.0f * metrics.thumbRadius();
         float top = paddingTop;
         float height = static_cast<float>(bounds.getHeight()) - paddingTop - paddingBottom;
         float totalWidth = static_cast<float>(bounds.getWidth());
@@ -1084,11 +1085,11 @@ void MixerView::ChannelStrip::resized() {
 
     // dB scale component — extends above/below fader area for label overflow
     if (dbScale_) {
-        int labelPad = static_cast<int>(metrics.labelTextHeight / 2.0f + 1.0f);
+        int thumbRad = static_cast<int>(metrics.thumbRadius());
         int scaleLeft = faderArea_.getRight() + gap;
         int scaleRight = meterArea_.getX() - metrics.tickToMeterGap;
-        dbScale_->setBounds(scaleLeft, layoutArea.getY() - labelPad, scaleRight - scaleLeft,
-                            layoutArea.getHeight() + labelPad * 2);
+        dbScale_->setBounds(scaleLeft, layoutArea.getY() - thumbRad, scaleRight - scaleLeft,
+                            layoutArea.getHeight() + thumbRad * 2);
     }
 }
 
