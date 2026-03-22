@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <memory>
+#include <vector>
 
 #include "../../../core/SelectionManager.hpp"
 #include "../../../project/ProjectManager.hpp"
@@ -21,6 +22,7 @@ namespace magda::daw::ui {
  */
 class AIChatConsoleContent : public PanelContent,
                              private juce::Timer,
+                             private juce::KeyListener,
                              public magda::SelectionManagerListener,
                              public magda::ProjectManagerListener {
   public:
@@ -85,12 +87,31 @@ class AIChatConsoleContent : public PanelContent,
 
     void mouseUp(const juce::MouseEvent& event) override;
 
+    // KeyListener — intercept arrow keys for autocomplete navigation
+    using juce::Component::keyPressed;  // unhide 1-param overload
+    bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
+
     std::unique_ptr<magda::DAWAgent> agent_;
     std::unique_ptr<RequestThread> requestThread_;
     std::atomic<bool> shouldStop_{false};
     std::atomic<bool> processing_{false};
     juce::String pendingMessage_;
     int dotCount_{0};
+
+    // Plugin alias autocomplete
+    struct AliasEntry {
+        juce::String alias;       // e.g. "serum_2"
+        juce::String pluginName;  // e.g. "Serum 2"
+    };
+
+    class AutocompletePopup;
+    std::unique_ptr<AutocompletePopup> autocompletePopup_;
+    std::vector<AliasEntry> allAliases_;
+
+    void buildAliasList();
+    void showAutocomplete(const juce::String& filter);
+    void hideAutocomplete();
+    void insertAlias(const juce::String& alias);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AIChatConsoleContent)
 };

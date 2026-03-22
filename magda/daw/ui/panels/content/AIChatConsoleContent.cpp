@@ -7,8 +7,116 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
+#include "PluginBrowserContent.hpp"
+#include "audio/DrumGridPlugin.hpp"
+#include "audio/MagdaSamplerPlugin.hpp"
+#include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
+
+// ============================================================================
+// AutocompletePopup
+// ============================================================================
+
+class AIChatConsoleContent::AutocompletePopup : public juce::Component, public juce::ListBoxModel {
+  public:
+    AutocompletePopup(AIChatConsoleContent& owner) : owner_(owner) {
+        listBox_.setModel(this);
+        listBox_.setRowHeight(22);
+        listBox_.setColour(juce::ListBox::backgroundColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+        listBox_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+        addAndMakeVisible(listBox_);
+    }
+
+    void updateFilter(const juce::String& filter) {
+        filter_ = filter.toLowerCase();
+        filtered_.clear();
+
+        for (const auto& entry : owner_.allAliases_) {
+            if (filter_.isEmpty() || entry.alias.toLowerCase().contains(filter_) ||
+                entry.pluginName.toLowerCase().contains(filter_)) {
+                filtered_.push_back(&entry);
+            }
+        }
+
+        listBox_.updateContent();
+        if (!filtered_.empty())
+            listBox_.selectRow(0);
+
+        // Size to fit content (max 8 rows)
+        int rows = juce::jmin(static_cast<int>(filtered_.size()), 8);
+        setSize(getWidth(), rows * 22 + 2);
+    }
+
+    bool isEmpty() const {
+        return filtered_.empty();
+    }
+
+    const AliasEntry* getSelectedEntry() const {
+        int row = listBox_.getSelectedRow();
+        if (row >= 0 && row < static_cast<int>(filtered_.size()))
+            return filtered_[static_cast<size_t>(row)];
+        return nullptr;
+    }
+
+    void selectNext() {
+        int current = listBox_.getSelectedRow();
+        if (current < getNumRows() - 1)
+            listBox_.selectRow(current + 1);
+    }
+
+    void selectPrevious() {
+        int current = listBox_.getSelectedRow();
+        if (current > 0)
+            listBox_.selectRow(current - 1);
+    }
+
+    // ListBoxModel
+    int getNumRows() override {
+        return static_cast<int>(filtered_.size());
+    }
+
+    void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height,
+                          bool rowIsSelected) override {
+        if (rowNumber < 0 || rowNumber >= static_cast<int>(filtered_.size()))
+            return;
+
+        if (rowIsSelected) {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+            g.fillRect(0, 0, width, height);
+        }
+
+        const auto& entry = *filtered_[static_cast<size_t>(rowNumber)];
+
+        // Alias
+        g.setColour(DarkTheme::getAccentColour());
+        g.setFont(FontManager::getInstance().getMonoFont(11.0f));
+        g.drawText("@" + entry.alias, 6, 0, width / 2, height, juce::Justification::centredLeft);
+
+        // Plugin name (dimmed, right side)
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.drawText(entry.pluginName, width / 2, 0, width / 2 - 6, height,
+                   juce::Justification::centredRight);
+    }
+
+    void listBoxItemDoubleClicked(int row, const juce::MouseEvent&) override {
+        if (row >= 0 && row < static_cast<int>(filtered_.size())) {
+            owner_.insertAlias(filtered_[static_cast<size_t>(row)]->alias);
+        }
+    }
+
+    void resized() override {
+        listBox_.setBounds(getLocalBounds());
+    }
+
+  private:
+    AIChatConsoleContent& owner_;
+    juce::ListBox listBox_;
+    juce::String filter_;
+    std::vector<const AliasEntry*> filtered_;
+};
 
 // ============================================================================
 // RequestThread
@@ -100,11 +208,49 @@ AIChatConsoleContent::AIChatConsoleContent() {
     inputBox_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     inputBox_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     inputBox_.onReturnKey = [this]() {
+        // If autocomplete is showing, insert the selected alias instead of sending
+        if (autocompletePopup_ && autocompletePopup_->isVisible()) {
+            if (auto* entry = autocompletePopup_->getSelectedEntry()) {
+                insertAlias(entry->alias);
+                return;
+            }
+        }
         auto text = inputBox_.getText().trim();
         if (text.isNotEmpty() && !processing_)
             sendMessage(text);
     };
+    inputBox_.onTextChange = [this]() {
+        auto text = inputBox_.getText();
+        int caretPos = inputBox_.getCaretPosition();
+
+        // Find the @ token before the caret
+        int atPos = -1;
+        for (int i = caretPos - 1; i >= 0; --i) {
+            auto ch = text[i];
+            if (ch == '@') {
+                atPos = i;
+                break;
+            }
+            if (ch == ' ' || ch == '\n')
+                break;
+        }
+
+        if (atPos >= 0) {
+            auto filter = text.substring(atPos + 1, caretPos);
+            showAutocomplete(filter);
+        } else {
+            hideAutocomplete();
+        }
+    };
+    inputBox_.onEscapeKey = [this]() {
+        if (autocompletePopup_ && autocompletePopup_->isVisible()) {
+            hideAutocomplete();
+        }
+    };
     addAndMakeVisible(inputBox_);
+
+    // Register key listener on input box for autocomplete navigation
+    inputBox_.addKeyListener(this);
 
     // Load context icons
     trackIconDrawable_ =
@@ -151,6 +297,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
+    inputBox_.removeKeyListener(this);
+    autocompletePopup_.reset();
     magda::ProjectManager::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
     stopTimer();
@@ -300,6 +448,7 @@ void AIChatConsoleContent::resized() {
 }
 
 void AIChatConsoleContent::onActivated() {
+    buildAliasList();
     if (isShowing())
         inputBox_.grabKeyboardFocus();
 }
@@ -393,6 +542,165 @@ void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
         contextEnabled_ = !contextEnabled_;
         updateContextBar();
     }
+}
+
+// ============================================================================
+// Plugin alias autocomplete
+// ============================================================================
+
+void AIChatConsoleContent::buildAliasList() {
+    allAliases_.clear();
+
+    // Internal plugins
+    auto addInternal = [this](const juce::String& name) {
+        allAliases_.push_back({PluginBrowserInfo::generateAlias(name), name});
+    };
+    addInternal("Test Tone");
+    addInternal("4OSC Synth");
+    addInternal("Equaliser");
+    addInternal("Compressor");
+    addInternal("Reverb");
+    addInternal("Delay");
+    addInternal("Chorus");
+    addInternal("Phaser");
+    addInternal("Filter");
+    addInternal("Pitch Shift");
+    addInternal("IR Reverb");
+    addInternal("Utility");
+    addInternal(juce::String(audio::MagdaSamplerPlugin::getPluginName()));
+    addInternal(juce::String(audio::DrumGridPlugin::getPluginName()));
+
+    // External plugins from KnownPluginList
+    if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
+            magda::TrackManager::getInstance().getAudioEngine())) {
+        auto& knownPlugins = engine->getKnownPluginList();
+        auto types = knownPlugins.getTypes();
+        DBG("AIChatConsole: buildAliasList - KnownPluginList has " << types.size() << " plugins");
+        for (const auto& desc : types) {
+            auto alias = PluginBrowserInfo::generateAlias(desc.name);
+            allAliases_.push_back({alias, desc.name});
+        }
+    } else {
+        DBG("AIChatConsole: buildAliasList - engine not available via TrackManager");
+    }
+
+    // Load custom alias overrides
+    auto aliasFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                         .getChildFile("MAGDA")
+                         .getChildFile("plugin_aliases.xml");
+
+    if (aliasFile.existsAsFile()) {
+        if (auto xml = juce::parseXML(aliasFile)) {
+            for (auto* elem : xml->getChildIterator()) {
+                auto key = elem->getStringAttribute("key");
+                auto alias = elem->getStringAttribute("alias");
+                // Find and update the matching entry
+                for (auto& entry : allAliases_) {
+                    // Match by uniqueId or by plugin name
+                    if (entry.pluginName == key ||
+                        PluginBrowserInfo::generateAlias(entry.pluginName) ==
+                            PluginBrowserInfo::generateAlias(key)) {
+                        entry.alias = alias;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort by alias
+    std::sort(allAliases_.begin(), allAliases_.end(),
+              [](const AliasEntry& a, const AliasEntry& b) { return a.alias < b.alias; });
+}
+
+void AIChatConsoleContent::showAutocomplete(const juce::String& filter) {
+    if (allAliases_.empty())
+        buildAliasList();
+
+    DBG("AIChatConsole: showAutocomplete filter=\"" << filter
+                                                    << "\", total aliases=" << allAliases_.size());
+
+    if (!autocompletePopup_) {
+        autocompletePopup_ = std::make_unique<AutocompletePopup>(*this);
+        addAndMakeVisible(*autocompletePopup_);
+    }
+
+    auto inputBounds = inputBox_.getBounds();
+    int popupWidth = inputBounds.getWidth();
+    autocompletePopup_->setSize(popupWidth, 8 * 22 + 2);  // Initial size, updateFilter adjusts
+    autocompletePopup_->updateFilter(filter);
+
+    if (autocompletePopup_->isEmpty()) {
+        hideAutocomplete();
+        return;
+    }
+
+    // Position above the input box
+    int popupHeight = autocompletePopup_->getHeight();
+    autocompletePopup_->setBounds(inputBounds.getX(), inputBounds.getY() - popupHeight, popupWidth,
+                                  popupHeight);
+    autocompletePopup_->setVisible(true);
+    autocompletePopup_->toFront(false);
+}
+
+void AIChatConsoleContent::hideAutocomplete() {
+    if (autocompletePopup_)
+        autocompletePopup_->setVisible(false);
+}
+
+void AIChatConsoleContent::insertAlias(const juce::String& alias) {
+    auto text = inputBox_.getText();
+    int caretPos = inputBox_.getCaretPosition();
+
+    // Find the @ that started this completion
+    int atPos = -1;
+    for (int i = caretPos - 1; i >= 0; --i) {
+        auto ch = text[i];
+        if (ch == '@') {
+            atPos = i;
+            break;
+        }
+        if (ch == ' ' || ch == '\n')
+            break;
+    }
+
+    if (atPos >= 0) {
+        // Replace @partial with @full_alias
+        auto before = text.substring(0, atPos);
+        auto after = text.substring(caretPos);
+        auto newText = before + "@" + alias + " " + after;
+        inputBox_.setText(newText, false);
+        inputBox_.setCaretPosition(atPos + 1 + alias.length() + 1);
+    }
+
+    hideAutocomplete();
+    inputBox_.grabKeyboardFocus();
+}
+
+bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component*) {
+    if (!autocompletePopup_ || !autocompletePopup_->isVisible())
+        return false;
+
+    if (key == juce::KeyPress::upKey) {
+        autocompletePopup_->selectPrevious();
+        return true;
+    }
+    if (key == juce::KeyPress::downKey) {
+        autocompletePopup_->selectNext();
+        return true;
+    }
+    if (key == juce::KeyPress::tabKey) {
+        if (auto* entry = autocompletePopup_->getSelectedEntry()) {
+            insertAlias(entry->alias);
+            return true;
+        }
+    }
+    if (key == juce::KeyPress::escapeKey) {
+        hideAutocomplete();
+        return true;
+    }
+
+    return false;
 }
 
 }  // namespace magda::daw::ui
