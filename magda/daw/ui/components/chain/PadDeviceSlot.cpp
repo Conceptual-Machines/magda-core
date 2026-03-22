@@ -295,6 +295,7 @@ void PadDeviceSlot::resized() {
         int btnSize = juce::jmin(20, area.getWidth());
         int btnGap = 2;
 
+        area.removeFromTop(4);  // Push buttons down from top edge
         auto btnRow = area.removeFromTop(btnSize);
         deleteButton_.setBounds(btnRow.withSizeKeepingCentre(btnSize, btnSize));
         area.removeFromTop(btnGap);

@@ -309,8 +309,8 @@ int ChainPanel::calculateTotalContentWidth() const {
 }
 
 int ChainPanel::getContentWidth() const {
-    // Return the total content width (devices + arrows + add button)
-    return calculateTotalContentWidth();
+    // Content width + NodeComponent's reduced(2,1) padding (4px horizontal)
+    return calculateTotalContentWidth() + 4;
 }
 
 void ChainPanel::setMaxWidth(int maxWidth) {

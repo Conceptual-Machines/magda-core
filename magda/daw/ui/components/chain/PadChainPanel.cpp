@@ -91,7 +91,8 @@ void PadChainPanel::rebuildSlots() {
         };
 
         slot->onLayoutChanged = [this]() {
-            resized();
+            // Don't call resized() here — our bounds are stale.
+            // Propagate up so parent resizes us with correct bounds.
             viewport_.setViewPosition(0, 0);
             repaint();
             if (onLayoutChanged)
