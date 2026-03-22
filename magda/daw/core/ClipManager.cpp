@@ -607,6 +607,24 @@ void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
     }
 }
 
+void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            ClipOperations::setAutoTempo(*clip, enabled, bpm);
+
+            // Ensure time-stretching is enabled when beat mode is on
+            if (enabled && clip->timeStretchMode == 0)
+                clip->timeStretchMode = 4;  // soundtouchBetter
+
+            double newLength = (enabled && clip->lengthBeats > 0.0 && bpm > 0.0)
+                                   ? (clip->lengthBeats * 60.0 / bpm)
+                                   : clip->length;
+            resizeClip(clipId, newLength, false, bpm);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
 void ClipManager::setOffset(ClipId clipId, double offset) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::MIDI) {

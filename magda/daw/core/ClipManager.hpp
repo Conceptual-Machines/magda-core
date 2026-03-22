@@ -192,6 +192,8 @@ class ClipManager {
                                double bpm = 120.0);
     /** @brief Set the clip timeline length in beats (autoTempo mode only) */
     void setLengthBeats(ClipId clipId, double beats, double bpm);
+    /** @brief Enable/disable auto-tempo (beat-locked) mode for an audio clip */
+    void setAutoTempo(ClipId clipId, bool enabled, double bpm);
     /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:
      * Clip::speedRatio */
     void setSpeedRatio(ClipId clipId, double speedRatio);

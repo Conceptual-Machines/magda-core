@@ -8,6 +8,7 @@
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
+#include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
 
@@ -70,11 +71,29 @@ class AudioClipPropertiesContent : public PanelContent, public magda::ClipManage
     std::unique_ptr<juce::ComboBox> stretchModeCombo_;
     std::unique_ptr<juce::Label> bpmLabel_;
     std::unique_ptr<DraggableValueLabel> bpmValue_;
+    std::unique_ptr<juce::Label> beatsLabel_;
+    std::unique_ptr<DraggableValueLabel> beatsValue_;
 
     // Pitch section
     std::unique_ptr<juce::Label> pitchLabel_;
     std::unique_ptr<DraggableValueLabel> pitchValue_;
-    std::unique_ptr<juce::TextButton> autoPitchToggle_;
+    std::unique_ptr<juce::TextButton> analogPitchToggle_;
+
+    // Fades section
+    std::unique_ptr<juce::Label> fadesSectionLabel_;
+    std::unique_ptr<juce::Label> fadeInLabel_;
+    std::unique_ptr<DraggableValueLabel> fadeInValue_;
+    std::unique_ptr<juce::Label> fadeOutLabel_;
+    std::unique_ptr<DraggableValueLabel> fadeOutValue_;
+    std::unique_ptr<magda::SvgButton> fadeInTypeButtons_[4];
+    std::unique_ptr<magda::SvgButton> fadeOutTypeButtons_[4];
+    std::unique_ptr<magda::SvgButton> fadeInBehaviourButtons_[2];
+    std::unique_ptr<magda::SvgButton> fadeOutBehaviourButtons_[2];
+
+    // Transient Detection section
+    std::unique_ptr<juce::Label> transientSectionLabel_;
+    std::unique_ptr<juce::Label> transientSensLabel_;
+    std::unique_ptr<DraggableValueLabel> transientSensValue_;
 
     // Mix section
     std::unique_ptr<juce::Label> volLabel_;

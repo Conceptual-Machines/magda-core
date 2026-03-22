@@ -113,6 +113,23 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     audioPropsPanel_ = std::make_unique<daw::ui::AudioClipPropertiesContent>();
     addChildComponent(audioPropsPanel_.get());
 
+    // Properties panel collapse button
+    propsCollapseButton_ = std::make_unique<SvgButton>("PropsCollapse", BinaryData::right_close_svg,
+                                                       BinaryData::right_close_svgSize);
+    propsCollapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
+    propsCollapseButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    propsCollapseButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    propsCollapseButton_->setTooltip("Toggle properties panel");
+    propsCollapseButton_->onClick = [this]() {
+        propsPanelCollapsed_ = !propsPanelCollapsed_;
+        propsCollapseButton_->updateSvgData(propsPanelCollapsed_ ? BinaryData::right_open_svg
+                                                                 : BinaryData::right_close_svg,
+                                            propsPanelCollapsed_ ? BinaryData::right_open_svgSize
+                                                                 : BinaryData::right_close_svgSize);
+        resized();
+    };
+    addChildComponent(propsCollapseButton_.get());
+
     // Resize handle between waveform and properties panel
     propsResizer_ = std::make_unique<PropsResizeHandle>();
     propsResizer_->onResize = [this](int delta) {
@@ -368,7 +385,13 @@ void BottomPanel::paint(juce::Graphics& g) {
         }
     }
 
-    // The resize handle provides visual separation — no extra divider needed
+    // Vertical border on the left of the collapsed props strip
+    if (showPropsPanel_ && propsPanelCollapsed_) {
+        g.setColour(DarkTheme::getBorderColour());
+        int stripX = getWidth() - 28;
+        int top = hasHeader ? EDITOR_TAB_HEIGHT : 0;
+        g.fillRect(stripX, top, 1, getHeight() - top);
+    }
 }
 
 void BottomPanel::resized() {
@@ -378,6 +401,7 @@ void BottomPanel::resized() {
         drumGridTab_->setVisible(false);
         audioPropsPanel_->setVisible(false);
         propsResizer_->setVisible(false);
+        propsCollapseButton_->setVisible(false);
         timeModeButton_->setVisible(false);
         gridNumeratorLabel_->setVisible(false);
         gridSlashLabel_->setVisible(false);
@@ -393,9 +417,17 @@ void BottomPanel::resized() {
     if (hasHeader) {
         auto headerBounds = getLocalBounds().removeFromTop(EDITOR_TAB_HEIGHT);
 
+        // Ensure header controls are visible after un-collapse
+        timeModeButton_->setVisible(true);
+        gridNumeratorLabel_->setVisible(true);
+        gridSlashLabel_->setVisible(true);
+        gridDenominatorLabel_->setVisible(true);
+        autoGridButton_->setVisible(true);
+        snapButton_->setVisible(true);
+
         // Grid controls on the right (shared by MIDI and audio editors)
         auto controlsArea = headerBounds;
-        controlsArea.removeFromRight(30);  // Space for collapse button
+        controlsArea.removeFromRight(30);
 
         int x = controlsArea.getRight();
         int y = controlsArea.getY();
@@ -448,9 +480,33 @@ void BottomPanel::resized() {
         auto propsArea = fullContent.removeFromRight(propsPanelWidth_);
         audioPropsPanel_->setBounds(propsArea);
         audioPropsPanel_->setVisible(true);
+
+        // Collapse button at bottom-left of properties panel
+        constexpr int collapseBtnSize = 20;
+        constexpr int collapsePad = 4;
+        propsCollapseButton_->setBounds(propsArea.getX() + collapsePad,
+                                        propsArea.getBottom() - collapseBtnSize - collapsePad,
+                                        collapseBtnSize, collapseBtnSize);
+        propsCollapseButton_->setVisible(true);
+        propsCollapseButton_->toFront(false);
+    } else if (showPropsPanel_ && propsPanelCollapsed_) {
+        // Collapsed: hide panel and resizer, but show button in a small strip
+        audioPropsPanel_->setVisible(false);
+        propsResizer_->setVisible(false);
+
+        constexpr int collapseBtnSize = 20;
+        constexpr int stripWidth = 28;
+        auto fullContent = getLocalBounds();
+        if (hasHeader)
+            fullContent.removeFromTop(EDITOR_TAB_HEIGHT);
+        propsCollapseButton_->setBounds(fullContent.getRight() - stripWidth + 4,
+                                        fullContent.getBottom() - collapseBtnSize - 4,
+                                        collapseBtnSize, collapseBtnSize);
+        propsCollapseButton_->setVisible(true);
     } else {
         audioPropsPanel_->setVisible(false);
         propsResizer_->setVisible(false);
+        propsCollapseButton_->setVisible(false);
     }
 }
 
@@ -631,9 +687,12 @@ juce::Rectangle<int> BottomPanel::getContentBounds() {
     if (showEditorTabs_ || showPropsPanel_) {
         bounds.removeFromTop(EDITOR_TAB_HEIGHT);
     }
-    // Reserve space for properties side panel + resize handle when expanded
+    // Reserve space for properties side panel + resize handle when expanded,
+    // or a small strip for the collapse button when collapsed
     if (showPropsPanel_ && !propsPanelCollapsed_) {
         bounds.removeFromRight(propsPanelWidth_ + RESIZE_HANDLE_SIZE);
+    } else if (showPropsPanel_ && propsPanelCollapsed_) {
+        bounds.removeFromRight(28);
     }
     return bounds;
 }

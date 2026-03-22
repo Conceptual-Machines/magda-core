@@ -108,15 +108,16 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<daw::ui::AudioClipPropertiesContent> audioPropsPanel_;
     bool showPropsPanel_ = false;
     bool propsPanelCollapsed_ = false;
-    int propsPanelWidth_ = 250;
-    static constexpr int PROPS_MIN_WIDTH = 150;
+    int propsPanelWidth_ = 350;
+    static constexpr int PROPS_MIN_WIDTH = 300;
     static constexpr int PROPS_MAX_WIDTH = 500;
     static constexpr int PROPS_COLLAPSE_THRESHOLD = 60;
     static constexpr int RESIZE_HANDLE_SIZE = 3;
 
-    // Resize handle between waveform and properties
+    // Resize handle and collapse button for properties panel
     class PropsResizeHandle;
     std::unique_ptr<PropsResizeHandle> propsResizer_;
+    std::unique_ptr<magda::SvgButton> propsCollapseButton_;
 
     void setupHeaderControls();
     void applyTimeModeToContent();

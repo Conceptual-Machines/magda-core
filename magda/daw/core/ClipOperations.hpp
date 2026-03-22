@@ -530,6 +530,10 @@ class ClipOperations {
         if (enabled) {
             clip.analogPitch = false;  // Analog pitch is incompatible with autoTempo
 
+            // Auto-tempo requires time-stretching — enable SoundTouch if disabled
+            if (clip.timeStretchMode == 0 || clip.timeStretchMode == 3)
+                clip.timeStretchMode = 4;  // soundtouchBetter
+
             // Convert current offset to beats
             if (clip.sourceBPM > 0.0)
                 clip.offsetBeats = clip.offset * clip.sourceBPM / 60.0;

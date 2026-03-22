@@ -235,16 +235,17 @@ double DraggableValueLabel::parseValue(const juce::String& text) const {
 
 void DraggableValueLabel::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
+    float alpha = isEnabled() ? 1.0f : 0.4f;
 
     // Background
     if (drawBackground_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withMultipliedAlpha(alpha));
         g.fillRoundedRectangle(bounds, 2.0f);
     }
 
     // Fill indicator
     if (showFillIndicator_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f * alpha));
 
         if (format_ == Format::Pan) {
             // Pan: draw from center outward
@@ -278,14 +279,16 @@ void DraggableValueLabel::paint(juce::Graphics& g) {
 
     // Border
     if (drawBorder_) {
-        g.setColour(isDragging_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
-                                : DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour((isDragging_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
+                                 : DarkTheme::getColour(DarkTheme::BORDER))
+                        .withMultipliedAlpha(alpha));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
     }
 
     // Text
     if (!isEditing_) {
-        g.setColour(customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY)));
+        g.setColour(customTextColour_.value_or(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY))
+                        .withMultipliedAlpha(alpha));
         g.setFont(FontManager::getInstance().getUIFont(fontSize_));
         auto displayText = textOverride_.isNotEmpty() ? textOverride_ : formatValue(value_);
         g.drawText(displayText, bounds.reduced(2, 0), juce::Justification::centred, false);

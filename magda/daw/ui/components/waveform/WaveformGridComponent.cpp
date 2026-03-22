@@ -2,6 +2,8 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <cmath>
+
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -61,14 +63,13 @@ WaveformGridComponent::WaveformLayout WaveformGridComponent::computeWaveformLayo
 
     double displayLength = displayInfo_.effectiveSourceExtentSeconds;
 
-    int widthPixels = static_cast<int>(displayLength * horizontalZoom_);
+    int clipEndPixel = timeToPixel(displayStartTime + displayLength);
+    int widthPixels = clipEndPixel - positionPixels;
     if (widthPixels <= 0)
         return {};
 
     auto rect =
         juce::Rectangle<int>(positionPixels, bounds.getY(), widthPixels, bounds.getHeight());
-
-    int clipEndPixel = timeToPixel(displayStartTime + displayLength);
 
     return {rect, clipEndPixel};
 }
@@ -141,8 +142,8 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
             if (fileDuration > 0.0 && displayEnd > fileDuration)
                 displayEnd = fileDuration;
 
-            int audioWidthPixels =
-                static_cast<int>(displayInfo_.effectiveSourceExtentSeconds * horizontalZoom_);
+            int audioWidthPixels = static_cast<int>(
+                std::ceil(displayInfo_.effectiveSourceExtentSeconds * horizontalZoom_));
             auto audioRect = juce::Rectangle<int>(
                 waveformRect.getX(), waveformRect.getY(),
                 juce::jmin(audioWidthPixels, waveformRect.getWidth()), waveformRect.getHeight());
