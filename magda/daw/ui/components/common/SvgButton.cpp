@@ -113,19 +113,20 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     // Check active state (only when enabled)
     bool isActive = isEnabled() && (active || (getToggleState() && isToggleable()));
 
-    // Draw background
+    // Draw background (reduced by 0.5f to match SmallButtonLookAndFeel sizing)
+    auto bgBounds = getLocalBounds().toFloat().reduced(0.5f);
     if (isActive && hasActiveBackgroundColor) {
         g.setColour(activeBackgroundColor);
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), cornerRadius);
+        g.fillRoundedRectangle(bgBounds, cornerRadius);
     } else if (shouldDrawButtonAsDown) {
         g.setColour(iconColor.withAlpha(0.2f));
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), cornerRadius);
+        g.fillRoundedRectangle(bgBounds, cornerRadius);
     } else if (shouldDrawButtonAsHighlighted) {
         g.setColour(iconColor.withAlpha(0.1f));
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), cornerRadius);
+        g.fillRoundedRectangle(bgBounds, cornerRadius);
     } else if (hasNormalBackgroundColor) {
         g.setColour(normalBackgroundColor);
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), cornerRadius);
+        g.fillRoundedRectangle(bgBounds, cornerRadius);
     }
 
     // Draw border if set
