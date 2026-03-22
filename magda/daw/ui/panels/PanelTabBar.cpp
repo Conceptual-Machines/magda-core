@@ -182,6 +182,7 @@ void PanelTabBar::setupButton(size_t index, PanelContentType type) {
     btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    btn->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.15f));
 
     // Click handler
     btn->onClick = [this, index]() {
