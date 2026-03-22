@@ -975,12 +975,14 @@ int DrumGridUI::getPreferredContentWidth() const {
     int width = kToggleColWidth + kPadGridWidth;
     if (chainsPanelVisible_)
         width += kGap + kChainsPanelWidth;
-    if (showDetailPanel)
-        width += kGap + padChainPanel_.getContentWidth();
-
-    // Cap at screen width so PadChainPanel's viewport scrolls instead of expanding forever
-    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
-        width = juce::jmin(width, display->userArea.getWidth());
+    if (showDetailPanel) {
+        // Cap chain panel width so it doesn't expand indefinitely
+        static constexpr int kMaxChainPanelWidth = 800;
+        static constexpr int kMinChainPanelWidth = 200;
+        int chainWidth = juce::jlimit(kMinChainPanelWidth, kMaxChainPanelWidth,
+                                      padChainPanel_.getContentWidth());
+        width += kGap + chainWidth;
+    }
 
     return width;
 }

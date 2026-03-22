@@ -31,7 +31,7 @@ class SmallButtonLookAndFeel : public juce::LookAndFeel_V4 {
         g.setColour(baseColour);
         g.fillRoundedRectangle(bounds, cornerRadius);
 
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.setColour(baseColour.darker(0.15f));
         g.drawRoundedRectangle(bounds, cornerRadius, 1.0f);
     }
 

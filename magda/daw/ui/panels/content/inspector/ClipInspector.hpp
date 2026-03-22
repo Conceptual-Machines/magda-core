@@ -143,9 +143,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     std::unique_ptr<magda::DraggableValueLabel> clipPanValue_;
     std::unique_ptr<magda::DraggableValueLabel> clipGainValue_;
 
-    // Fades section (collapsible)
-    bool fadesCollapsed_ = false;
-    juce::TextButton fadesCollapseToggle_;
+    // Fades section
     juce::Label fadesSectionLabel_;
     std::unique_ptr<magda::DraggableValueLabel> fadeInValue_;
     std::unique_ptr<magda::DraggableValueLabel> fadeOutValue_;

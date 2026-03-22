@@ -2081,6 +2081,15 @@ void DeviceSlotComponent::createCustomUI() {
                 onDeviceLayoutChanged();
         };
 
+        padChain.onDeviceClicked = [this]() {
+            DBG("DeviceSlotComponent: padChain.onDeviceClicked fired, nodePath valid=" +
+                juce::String(nodePath_.isValid() ? "true" : "false"));
+            if (nodePath_.isValid()) {
+                DBG("  -> calling selectChainNode");
+                magda::SelectionManager::getInstance().selectChainNode(nodePath_);
+            }
+        };
+
         addAndMakeVisible(*drumGridUI_);
         updateCustomUI();
     } else if (device_.pluginId.containsIgnoreCase("4osc")) {

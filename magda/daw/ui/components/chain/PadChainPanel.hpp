@@ -59,6 +59,9 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
     std::function<void(int padIndex, const juce::File&)> onSampleDropped;
     std::function<void(int padIndex)> onLoadSampleRequested;
 
+    // Called when a device slot is clicked (for inspector selection)
+    std::function<void()> onDeviceClicked;
+
     // DragAndDropTarget
     bool isInterestedInDragSource(const SourceDetails& details) override;
     void itemDragEnter(const SourceDetails& details) override;
@@ -72,6 +75,7 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
   private:
     static constexpr int SLOT_GAP = 6;
     static constexpr int ADD_BUTTON_WIDTH = 28;
+    static constexpr int DROP_ZONE_WIDTH = 8;
     static constexpr int ARROW_WIDTH = 16;
 
     int currentPadIndex_ = -1;

@@ -17,14 +17,15 @@ PadDeviceSlot::PadDeviceSlot() {
     nameLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     nameLabel_.setJustificationType(juce::Justification::centredLeft);
+    nameLabel_.setInterceptsMouseClicks(true, false);
+    nameLabel_.addMouseListener(this, false);
     addAndMakeVisible(nameLabel_);
 
     deleteButton_.setButtonText(juce::CharPointer_UTF8("\xc3\x97"));  // multiplication sign
-    deleteButton_.setColour(
-        juce::TextButton::buttonColourId,
-        DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
-            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
-            .darker(0.2f));
+    auto deleteColour = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+                            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+                            .darker(0.2f);
+    deleteButton_.setColour(juce::TextButton::buttonColourId, deleteColour);
     deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     deleteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     deleteButton_.onClick = [this]() {
@@ -66,6 +67,7 @@ PadDeviceSlot::PadDeviceSlot() {
 }
 
 PadDeviceSlot::~PadDeviceSlot() {
+    nameLabel_.removeMouseListener(this);
     deleteButton_.setLookAndFeel(nullptr);
 }
 
@@ -113,7 +115,19 @@ void PadDeviceSlot::clear() {
 }
 
 int PadDeviceSlot::getPreferredWidth() const {
+    if (collapsed_)
+        return COLLAPSED_WIDTH;
     return preferredWidth_;
+}
+
+void PadDeviceSlot::setCollapsed(bool collapsed) {
+    if (collapsed_ != collapsed) {
+        collapsed_ = collapsed;
+        resized();
+        repaint();
+        if (onLayoutChanged)
+            onLayoutChanged();
+    }
 }
 
 void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
@@ -202,7 +216,6 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
 
     // Populate param slots
     auto params = plugin->getAutomatableParameters();
-    int visibleParamCount = 0;
     for (int i = 0; i < PLUGIN_PARAM_SLOTS; ++i) {
         auto& slot = paramSlots_[static_cast<size_t>(i)];
         if (i < params.size()) {
@@ -213,15 +226,13 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
                 param->setParameter(static_cast<float>(value), juce::sendNotificationSync);
             };
             slot->setVisible(true);
-            visibleParamCount++;
         } else {
             slot->setVisible(false);
         }
     }
 
-    // Calculate dynamic width based on parameter count (like DeviceSlotComponent)
-    // 4 columns for <= 16 params, 8 columns for 17-32 params
-    int paramsPerRow = (visibleParamCount <= 16) ? 4 : 8;
+    // 8 columns × 4 rows, matching DeviceSlotComponent layout
+    constexpr int paramsPerRow = 8;
     constexpr int PARAM_CELL_WIDTH = 48;
     preferredWidth_ = PARAM_CELL_WIDTH * paramsPerRow;
 }
@@ -229,10 +240,98 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
 void PadDeviceSlot::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
     g.fillRect(getLocalBounds());
+
+    // Draw rotated name when collapsed
+    if (collapsed_) {
+        // Text area = nameLabel_ bounds (below buttons)
+        auto textArea = nameLabel_.getBounds();
+        if (textArea.getHeight() > 20) {
+            g.setColour(DarkTheme::getTextColour());
+            g.setFont(FontManager::getInstance().getUIFont(9.0f));
+
+            g.saveState();
+            g.addTransform(juce::AffineTransform::rotation(
+                -juce::MathConstants<float>::halfPi, static_cast<float>(textArea.getCentreX()),
+                static_cast<float>(textArea.getCentreY())));
+            g.drawText(nameLabel_.getText(), textArea.getCentreX() - textArea.getHeight() / 2,
+                       textArea.getCentreY() - textArea.getWidth() / 2, textArea.getHeight(),
+                       textArea.getWidth(), juce::Justification::centred, true);
+            g.restoreState();
+        }
+    }
+}
+
+void PadDeviceSlot::mouseDown(const juce::MouseEvent& e) {
+    DBG("PadDeviceSlot::mouseDown - originalComponent=" +
+        juce::String(e.originalComponent == &nameLabel_ ? "nameLabel" : "other") +
+        " collapsed=" + juce::String(collapsed_ ? "true" : "false") +
+        " onClicked=" + juce::String(onClicked ? "SET" : "NULL") +
+        " plugin=" + juce::String(plugin_ ? plugin_->getName() : "null"));
+
+    // Click name label to collapse, or click collapsed body to expand
+    if (e.originalComponent == &nameLabel_ || (collapsed_ && e.originalComponent == this)) {
+        DBG("  -> toggling collapse and firing onClicked");
+        if (onClicked)
+            onClicked();
+        setCollapsed(!collapsed_);
+        return;
+    }
+    juce::Component::mouseDown(e);
 }
 
 void PadDeviceSlot::resized() {
     auto area = getLocalBounds().reduced(2, 1);
+
+    if (collapsed_) {
+        // Collapsed: stack buttons vertically at top, rotated name below
+        int btnSize = juce::jmin(20, area.getWidth());
+        int btnGap = 2;
+
+        auto btnRow = area.removeFromTop(btnSize);
+        deleteButton_.setBounds(btnRow.withSizeKeepingCentre(btnSize, btnSize));
+        area.removeFromTop(btnGap);
+
+        btnRow = area.removeFromTop(btnSize);
+        onButton_->setBounds(btnRow.withSizeKeepingCentre(btnSize, btnSize));
+        area.removeFromTop(btnGap);
+
+        if (uiButton_->isVisible()) {
+            btnRow = area.removeFromTop(btnSize);
+            uiButton_->setBounds(btnRow.withSizeKeepingCentre(btnSize, btnSize));
+            area.removeFromTop(btnGap);
+        }
+
+        // Rotated name label area — visible but transparent for click handling
+        // (paint() draws the rotated text)
+        nameLabel_.setBounds(area);
+        nameLabel_.setVisible(true);
+        nameLabel_.setColour(juce::Label::textColourId, juce::Colours::transparentBlack);
+
+        // Hide content
+        if (samplerUI_)
+            samplerUI_->setVisible(false);
+        for (auto& slot : paramSlots_)
+            if (slot)
+                slot->setVisible(false);
+        return;
+    }
+
+    // Expanded: restore visibility and text colour
+    nameLabel_.setVisible(true);
+    nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+    if (plugin_) {
+        bool isSampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin_) != nullptr;
+        if (samplerUI_)
+            samplerUI_->setVisible(isSampler);
+        if (!isSampler) {
+            // Restore param slot visibility for external plugins
+            auto params = plugin_->getAutomatableParameters();
+            for (int i = 0; i < PLUGIN_PARAM_SLOTS; ++i) {
+                if (paramSlots_[static_cast<size_t>(i)])
+                    paramSlots_[static_cast<size_t>(i)]->setVisible(i < params.size());
+            }
+        }
+    }
 
     // Header
     auto headerRow = area.removeFromTop(HEADER_HEIGHT);
@@ -258,7 +357,7 @@ void PadDeviceSlot::resized() {
         samplerUI_->setBounds(area);
     } else if (paramSlots_[0] && paramSlots_[0]->isVisible()) {
         auto contentArea = area.reduced(2, 0);
-        constexpr int paramCols = 4;
+        constexpr int paramCols = 8;
         constexpr int paramRows = 4;
         int cellWidth = contentArea.getWidth() / paramCols;
         int cellHeight = contentArea.getHeight() / paramRows;

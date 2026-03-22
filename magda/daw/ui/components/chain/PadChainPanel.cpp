@@ -10,12 +10,7 @@
 namespace magda::daw::ui {
 
 PadChainPanel::PadChainPanel() {
-    addButton_.setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    addButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    addButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addButton_.setTooltip("Drop a plugin here to add FX");
-    addAndMakeVisible(addButton_);
+    addButton_.setVisible(false);
 
     viewport_.setScrollBarsShown(false, true);
     viewport_.setViewedComponent(&container_, false);
@@ -25,9 +20,7 @@ PadChainPanel::PadChainPanel() {
     container_.setInterceptsMouseClicks(false, true);
 }
 
-PadChainPanel::~PadChainPanel() {
-    addButton_.setLookAndFeel(nullptr);
-}
+PadChainPanel::~PadChainPanel() {}
 
 void PadChainPanel::showPadChain(int padIndex) {
     DBG("PadChainPanel::showPadChain - setting currentPadIndex=" + juce::String(padIndex));
@@ -55,8 +48,7 @@ int PadChainPanel::getContentWidth() const {
             width += ARROW_WIDTH;
         width += slot->getPreferredWidth();
     }
-    // Add stripe width (button + margin) + padding
-    width += ADD_BUTTON_WIDTH + 4 + 12;
+    width += DROP_ZONE_WIDTH;
     return width;
 }
 
@@ -99,8 +91,18 @@ void PadChainPanel::rebuildSlots() {
         };
 
         slot->onLayoutChanged = [this]() {
+            resized();
+            viewport_.setViewPosition(0, 0);
+            repaint();
             if (onLayoutChanged)
                 onLayoutChanged();
+        };
+
+        slot->onClicked = [this]() {
+            DBG("PadChainPanel: slot onClicked fired, onDeviceClicked=" +
+                juce::String(onDeviceClicked ? "SET" : "NULL"));
+            if (onDeviceClicked)
+                onDeviceClicked();
         };
 
         // Set plugin content
@@ -135,14 +137,23 @@ void PadChainPanel::rebuildSlots() {
 // =============================================================================
 
 bool PadChainPanel::isInterestedInDragSource(const SourceDetails& details) {
-    if (currentPadIndex_ < 0)
+    if (currentPadIndex_ < 0) {
+        DBG("PadChainPanel::isInterestedInDragSource - NO (currentPadIndex_ < 0)");
         return false;
-    if (auto* obj = details.description.getDynamicObject())
-        return obj->getProperty("type").toString() == "plugin";
+    }
+    if (auto* obj = details.description.getDynamicObject()) {
+        bool interested = obj->getProperty("type").toString() == "plugin";
+        DBG("PadChainPanel::isInterestedInDragSource - " + juce::String(interested ? "YES" : "NO") +
+            " type=" + obj->getProperty("type").toString() +
+            " padIndex=" + juce::String(currentPadIndex_));
+        return interested;
+    }
+    DBG("PadChainPanel::isInterestedInDragSource - NO (no DynamicObject)");
     return false;
 }
 
 void PadChainPanel::itemDragEnter(const SourceDetails& details) {
+    DBG("PadChainPanel::itemDragEnter - x=" + juce::String(details.localPosition.getX()));
     dropInsertIndex_ = calculateInsertIndex(details.localPosition.getX());
     repaint();
 }
@@ -156,6 +167,7 @@ void PadChainPanel::itemDragMove(const SourceDetails& details) {
 }
 
 void PadChainPanel::itemDragExit(const SourceDetails&) {
+    DBG("PadChainPanel::itemDragExit");
     dropInsertIndex_ = -1;
     repaint();
 }
@@ -165,7 +177,9 @@ void PadChainPanel::itemDropped(const SourceDetails& details) {
     dropInsertIndex_ = -1;
 
     DBG("PadChainPanel::itemDropped - padIndex=" + juce::String(currentPadIndex_) +
-        " insertIdx=" + juce::String(insertIdx));
+        " insertIdx=" + juce::String(insertIdx) +
+        " onPluginDropped=" + juce::String(onPluginDropped ? "SET" : "NULL") +
+        " numSlotsBefore=" + juce::String(static_cast<int>(slots_.size())));
 
     if (currentPadIndex_ < 0) {
         DBG("  Invalid pad index, ignoring drop");
@@ -175,11 +189,18 @@ void PadChainPanel::itemDropped(const SourceDetails& details) {
 
     if (auto* obj = details.description.getDynamicObject()) {
         DBG("  Plugin drop: type=" + obj->getProperty("type").toString() +
-            " fileOrId=" + obj->getProperty("fileOrIdentifier").toString());
+            " fileOrId=" + obj->getProperty("fileOrIdentifier").toString() +
+            " isExternal=" + obj->getProperty("isExternal").toString() +
+            " uniqueId=" + obj->getProperty("uniqueId").toString());
         if (onPluginDropped)
             onPluginDropped(currentPadIndex_, *obj, insertIdx);
+        else
+            DBG("  WARNING: onPluginDropped callback is not set!");
+    } else {
+        DBG("  WARNING: dropped item has no DynamicObject");
     }
 
+    DBG("  numSlotsAfter=" + juce::String(static_cast<int>(slots_.size())));
     repaint();
 }
 
@@ -191,11 +212,6 @@ void PadChainPanel::paint(juce::Graphics& g) {
     // Background
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
     g.fillRect(getLocalBounds());
-
-    // "+" stripe background
-    auto stripeArea = getLocalBounds().removeFromRight(ADD_BUTTON_WIDTH + 4);
-    g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).darker(0.05f));
-    g.fillRect(stripeArea);
 
     // Draw drop insertion indicator
     if (dropInsertIndex_ >= 0) {
@@ -219,14 +235,24 @@ void PadChainPanel::paint(juce::Graphics& g) {
 void PadChainPanel::resized() {
     auto area = getLocalBounds();
 
-    // Fixed "+" stripe on the right
-    auto addStripe = area.removeFromRight(ADD_BUTTON_WIDTH + 4);
-    addButton_.setBounds(addStripe.withSizeKeepingCentre(ADD_BUTTON_WIDTH, ADD_BUTTON_WIDTH));
+    // Small drop zone on the right (visible target for plugin drops)
+    area.removeFromRight(DROP_ZONE_WIDTH);
 
     // Viewport fills the rest
     viewport_.setBounds(area);
 
-    int height = area.getHeight() - 4;
+    // Calculate total content width to determine if scrollbar is needed
+    int totalContentWidth = 2;
+    for (size_t i = 0; i < slots_.size(); ++i) {
+        if (i > 0)
+            totalContentWidth += ARROW_WIDTH;
+        totalContentWidth += slots_[i]->getPreferredWidth();
+    }
+    totalContentWidth += 2;
+
+    bool needsScrollbar = totalContentWidth > area.getWidth();
+    int scrollbarHeight = needsScrollbar ? viewport_.getScrollBarThickness() : 0;
+    int height = area.getHeight() - scrollbarHeight;
 
     int x = 2;
     int viewportWidth = area.getWidth();
@@ -234,15 +260,15 @@ void PadChainPanel::resized() {
         if (i > 0)
             x += ARROW_WIDTH;
         int slotWidth = slots_[i]->getPreferredWidth();
-        // Single slot: fill the viewport width exactly (no scrolling)
-        if (slots_.size() == 1)
-            slotWidth = viewportWidth - 4;  // 2px padding each side
-        slots_[i]->setBounds(x, 2, slotWidth, height);
+        // Single slot (not collapsed): fill the viewport width exactly (no scrolling)
+        if (slots_.size() == 1 && !slots_[i]->isCollapsed())
+            slotWidth = juce::jmax(slotWidth, viewportWidth - 4);
+        slots_[i]->setBounds(x, 0, slotWidth, height);
         x += slotWidth;
     }
 
     x += 2;
-    container_.setSize(juce::jmax(x, area.getWidth()), height + 4);
+    container_.setSize(juce::jmax(x, area.getWidth()), height);
 }
 
 int PadChainPanel::calculateInsertIndex(int mouseX) const {

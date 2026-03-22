@@ -408,20 +408,18 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Fades section (arrangement audio clips only, hidden for session, collapsible)
         bool showFades = showAudioProps && !isSessionClip;
-        bool showFadeControls = showFades && !fadesCollapsed_;
         fadesSectionLabel_.setVisible(showFades);
-        fadesCollapseToggle_.setVisible(showFades);
-        fadeInValue_->setVisible(showFadeControls);
-        fadeOutValue_->setVisible(showFadeControls);
+        fadeInValue_->setVisible(showFades);
+        fadeOutValue_->setVisible(showFades);
         for (int i = 0; i < 4; ++i) {
-            fadeInTypeButtons_[i]->setVisible(showFadeControls);
-            fadeOutTypeButtons_[i]->setVisible(showFadeControls);
+            fadeInTypeButtons_[i]->setVisible(showFades);
+            fadeOutTypeButtons_[i]->setVisible(showFades);
         }
         for (int i = 0; i < 2; ++i) {
-            fadeInBehaviourButtons_[i]->setVisible(showFadeControls);
-            fadeOutBehaviourButtons_[i]->setVisible(showFadeControls);
+            fadeInBehaviourButtons_[i]->setVisible(showFades);
+            fadeOutBehaviourButtons_[i]->setVisible(showFades);
         }
-        autoCrossfadeToggle_.setVisible(showFadeControls);
+        autoCrossfadeToggle_.setVisible(showFades);
         if (showFades) {
             fadeInValue_->setValue(clip->fadeIn, juce::dontSendNotification);
             fadeOutValue_->setValue(clip->fadeOut, juce::dontSendNotification);
@@ -559,7 +557,6 @@ void ClipInspector::showClipControls(bool show) {
             if (btn)
                 btn->setVisible(false);
         autoCrossfadeToggle_.setVisible(false);
-        fadesCollapseToggle_.setVisible(false);
         channelsSectionLabel_.setVisible(false);
         leftChannelToggle_.setVisible(false);
         rightChannelToggle_.setVisible(false);

@@ -1260,27 +1260,6 @@ void ClipInspector::initFadesSection() {
         }
     };
     clipPropsContainer_.addChildComponent(autoCrossfadeToggle_);
-
-    // Fades collapse toggle (triangle button)
-    fadesCollapseToggle_.setButtonText(juce::String::charToString(0x25BC));  // ▼ expanded
-    fadesCollapseToggle_.setColour(juce::TextButton::buttonColourId,
-                                   juce::Colours::transparentBlack);
-    fadesCollapseToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                   juce::Colours::transparentBlack);
-    fadesCollapseToggle_.setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getSecondaryTextColour());
-    fadesCollapseToggle_.setColour(juce::TextButton::textColourOnId,
-                                   DarkTheme::getSecondaryTextColour());
-    fadesCollapseToggle_.setConnectedEdges(
-        juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-        juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-    fadesCollapseToggle_.onClick = [this]() {
-        fadesCollapsed_ = !fadesCollapsed_;
-        fadesCollapseToggle_.setButtonText(
-            juce::String::charToString(fadesCollapsed_ ? 0x25B6 : 0x25BC));  // ▶ or ▼
-        resized();
-    };
-    clipPropsContainer_.addChildComponent(fadesCollapseToggle_);
 }
 
 // ========================================================================

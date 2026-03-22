@@ -272,80 +272,74 @@ void ClipInspector::resized() {
     if (fadesSectionLabel_.isVisible())
         addSeparator();
 
-    // Fades section (arrangement clips only, collapsible)
+    // Fades section (arrangement audio clips only)
     if (fadesSectionLabel_.isVisible()) {
+        fadesSectionLabel_.setBounds(addRow(16));
+        addSpace(4);
+        const int colGap = 8;
+        int halfWidth = (containerWidth - colGap) / 2;
+
+        // Row 1: [fade in] | [fade out]
         {
-            auto headerRow = addRow(16);
-            fadesCollapseToggle_.setBounds(headerRow.removeFromLeft(16));
-            fadesSectionLabel_.setBounds(headerRow);
+            auto row = addRow(22);
+            fadeInValue_->setBounds(row.removeFromLeft(halfWidth));
+            row.removeFromLeft(colGap);
+            fadeOutValue_->setBounds(row.removeFromLeft(halfWidth));
         }
-        if (!fadesCollapsed_) {
-            addSpace(4);
-            const int colGap = 8;
-            int halfWidth = (containerWidth - colGap) / 2;
+        addSpace(4);
 
-            // Row 1: [fade in] | [fade out]
-            {
-                auto row = addRow(22);
-                fadeInValue_->setBounds(row.removeFromLeft(halfWidth));
-                row.removeFromLeft(colGap);
-                fadeOutValue_->setBounds(row.removeFromLeft(halfWidth));
-            }
-            addSpace(4);
+        // Row 2: fade type buttons (4 icons each side)
+        {
+            auto row = addRow(24);
+            auto left = row.removeFromLeft(halfWidth);
+            row.removeFromLeft(colGap);
+            auto right = row;
 
-            // Row 2: fade type buttons (4 icons each side)
-            {
-                auto row = addRow(24);
-                auto left = row.removeFromLeft(halfWidth);
-                row.removeFromLeft(colGap);
-                auto right = row;
-
-                const int btnSize = 24;
-                const int btnGap = 2;
-                for (int i = 0; i < 4; ++i) {
-                    if (fadeInTypeButtons_[i]) {
-                        fadeInTypeButtons_[i]->setBounds(left.removeFromLeft(btnSize));
-                        if (i < 3)
-                            left.removeFromLeft(btnGap);
-                    }
-                    if (fadeOutTypeButtons_[i]) {
-                        fadeOutTypeButtons_[i]->setBounds(right.removeFromLeft(btnSize));
-                        if (i < 3)
-                            right.removeFromLeft(btnGap);
-                    }
+            const int btnSize = 24;
+            const int btnGap = 2;
+            for (int i = 0; i < 4; ++i) {
+                if (fadeInTypeButtons_[i]) {
+                    fadeInTypeButtons_[i]->setBounds(left.removeFromLeft(btnSize));
+                    if (i < 3)
+                        left.removeFromLeft(btnGap);
+                }
+                if (fadeOutTypeButtons_[i]) {
+                    fadeOutTypeButtons_[i]->setBounds(right.removeFromLeft(btnSize));
+                    if (i < 3)
+                        right.removeFromLeft(btnGap);
                 }
             }
-            addSpace(4);
+        }
+        addSpace(4);
 
-            // Row 3: fade behavior buttons (2 icons each side)
-            {
-                auto row = addRow(24);
-                auto left = row.removeFromLeft(halfWidth);
-                row.removeFromLeft(colGap);
-                auto right = row;
+        // Row 3: fade behavior buttons (2 icons each side)
+        {
+            auto row = addRow(24);
+            auto left = row.removeFromLeft(halfWidth);
+            row.removeFromLeft(colGap);
+            auto right = row;
 
-                const int btnSize = 24;
-                const int btnGap = 2;
-                for (int i = 0; i < 2; ++i) {
-                    if (fadeInBehaviourButtons_[i]) {
-                        fadeInBehaviourButtons_[i]->setBounds(left.removeFromLeft(btnSize));
-                        if (i < 1)
-                            left.removeFromLeft(btnGap);
-                    }
-                    if (fadeOutBehaviourButtons_[i]) {
-                        fadeOutBehaviourButtons_[i]->setBounds(right.removeFromLeft(btnSize));
-                        if (i < 1)
-                            right.removeFromLeft(btnGap);
-                    }
+            const int btnSize = 24;
+            const int btnGap = 2;
+            for (int i = 0; i < 2; ++i) {
+                if (fadeInBehaviourButtons_[i]) {
+                    fadeInBehaviourButtons_[i]->setBounds(left.removeFromLeft(btnSize));
+                    if (i < 1)
+                        left.removeFromLeft(btnGap);
+                }
+                if (fadeOutBehaviourButtons_[i]) {
+                    fadeOutBehaviourButtons_[i]->setBounds(right.removeFromLeft(btnSize));
+                    if (i < 1)
+                        right.removeFromLeft(btnGap);
                 }
             }
-            addSpace(4);
+        }
+        addSpace(4);
 
-            // Row 4: auto-crossfade toggle
-            {
-                auto row = addRow(22);
-                autoCrossfadeToggle_.setBounds(row.reduced(0, 1));
-            }
+        // Row 4: auto-crossfade toggle
+        {
+            auto row = addRow(22);
+            autoCrossfadeToggle_.setBounds(row.reduced(0, 1));
         }
     }
 

@@ -44,9 +44,15 @@ class PadDeviceSlot : public juce::Component {
         preferredWidth_ = width;
     }
 
+    bool isCollapsed() const {
+        return collapsed_;
+    }
+    void setCollapsed(bool collapsed);
+
     // Callbacks
     std::function<void()> onDeleteClicked;
     std::function<void()> onLayoutChanged;
+    std::function<void()> onClicked;
 
     // Provide sampler pointer for SamplerUI wiring
     std::function<daw::audio::MagdaSamplerPlugin*()> getSampler;
@@ -57,15 +63,18 @@ class PadDeviceSlot : public juce::Component {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& e) override;
 
   private:
     static constexpr int HEADER_HEIGHT = 16;
-    static constexpr int SLOT_WIDTH = 200;  // 4 cols × 48px PARAM_CELL_WIDTH + padding
+    static constexpr int SLOT_WIDTH = 384;  // 8 cols × 48px PARAM_CELL_WIDTH
     static constexpr int SAMPLER_SLOT_WIDTH = 650;
-    static constexpr int PLUGIN_PARAM_SLOTS = 16;
+    static constexpr int COLLAPSED_WIDTH = 48;
+    static constexpr int PLUGIN_PARAM_SLOTS = 32;
 
     tracktion::engine::Plugin* plugin_ = nullptr;
     int preferredWidth_ = SLOT_WIDTH;
+    bool collapsed_ = false;
 
     // Header
     juce::Label nameLabel_;
