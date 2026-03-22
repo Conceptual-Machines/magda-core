@@ -26,6 +26,7 @@ PluginBrowserInfo PluginBrowserInfo::fromPluginDescription(const juce::PluginDes
     info.isExternal = true;
     info.uniqueId = desc.createIdentifierString();
     info.fileOrIdentifier = desc.fileOrIdentifier;
+    info.alias = generateAlias(desc.name);
     return info;
 }
 
@@ -44,7 +45,51 @@ PluginBrowserInfo PluginBrowserInfo::createInternal(const juce::String& name,
     info.isExternal = false;
     info.uniqueId = pluginId;
     info.fileOrIdentifier = pluginId;
+    info.alias = generateAlias(name);
     return info;
+}
+
+juce::String PluginBrowserInfo::generateAlias(const juce::String& pluginName) {
+    juce::String result;
+
+    for (int i = 0; i < pluginName.length(); ++i) {
+        auto ch = pluginName[i];
+
+        // Skip non-alphanumeric characters
+        if (!juce::CharacterFunctions::isLetterOrDigit(ch))
+            continue;
+
+        // Insert underscore before uppercase letter if preceded by lowercase or digit
+        if (result.isNotEmpty() && juce::CharacterFunctions::isUpperCase(ch)) {
+            auto prev = pluginName[i - 1];
+            if (juce::CharacterFunctions::isLowerCase(prev) ||
+                juce::CharacterFunctions::isDigit(prev)) {
+                result += '_';
+            }
+        }
+
+        // Insert underscore between letter and digit transitions
+        if (result.isNotEmpty() && juce::CharacterFunctions::isDigit(ch)) {
+            auto lastChar = result[result.length() - 1];
+            if (juce::CharacterFunctions::isLetter(lastChar) && lastChar != '_') {
+                result += '_';
+            }
+        }
+
+        result += juce::CharacterFunctions::toLowerCase(ch);
+    }
+
+    // Collapse multiple underscores
+    while (result.contains("__"))
+        result = result.replace("__", "_");
+
+    // Trim leading/trailing underscores
+    while (result.startsWith("_"))
+        result = result.substring(1);
+    while (result.endsWith("_"))
+        result = result.dropLastCharacters(1);
+
+    return result;
 }
 
 //==============================================================================
@@ -89,13 +134,26 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         }
         bounds.removeFromLeft(2);
 
+        // Format badge on the right (reserve space before drawing name)
+        auto formatBounds = bounds.removeFromRight(40);
+
         // Plugin name
         g.setColour(DarkTheme::getTextColour());
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
-        g.drawText(plugin_.name, bounds.reduced(4, 0), juce::Justification::centredLeft);
+        auto nameBounds = bounds.reduced(4, 0);
+        juce::GlyphArrangement glyphs;
+        glyphs.addLineOfText(FontManager::getInstance().getUIFont(12.0f), plugin_.name, 0.0f, 0.0f);
+        auto nameWidth =
+            static_cast<int>(std::ceil(glyphs.getBoundingBox(0, -1, false).getWidth()));
+        g.drawText(plugin_.name, nameBounds, juce::Justification::centredLeft);
 
-        // Format badge on the right
-        auto formatBounds = bounds.removeFromRight(40);
+        // Alias after the name (dimmed)
+        if (plugin_.alias.isNotEmpty()) {
+            auto aliasBounds = nameBounds.withLeft(nameBounds.getX() + nameWidth + 6);
+            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+            g.setFont(FontManager::getInstance().getUIFont(10.0f));
+            g.drawText("@" + plugin_.alias, aliasBounds, juce::Justification::centredLeft);
+        }
         g.setColour(DarkTheme::getSecondaryTextColour());
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
         g.drawText(plugin_.format, formatBounds, juce::Justification::centredRight);
@@ -364,6 +422,7 @@ void PluginBrowserContent::refreshPluginList() {
     buildInternalPluginList();
     loadExternalPlugins();
     loadFavorites();
+    loadAliases();
     rebuildTree();
 }
 
@@ -488,6 +547,7 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     }
 
     menu.addItem(3, "Configure Parameters...");
+    menu.addItem(7, "Edit Alias...");
     menu.addSeparator();
     menu.addItem(5, plugin.isFavorite ? "Remove from Favorites" : "Add to Favorites");
     menu.addSeparator();
@@ -558,11 +618,13 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     if (pluginFile.exists()) {
                         pluginFile.revealToUser();
                     } else {
-                        // fileOrIdentifier might be an identifier string, not a path
                         DBG("Cannot reveal plugin - not a file path: " + plugin.fileOrIdentifier);
                     }
                     break;
                 }
+                case 7:
+                    showEditAliasDialog(plugin);
+                    break;
             }
         });
 }
@@ -636,6 +698,106 @@ void PluginBrowserContent::loadFavorites() {
         juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
         p.isFavorite = favoriteKeys.contains(key);
     }
+}
+
+juce::File PluginBrowserContent::getAliasesFile() const {
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("MAGDA")
+        .getChildFile("plugin_aliases.xml");
+}
+
+void PluginBrowserContent::saveAliases() {
+    juce::XmlElement root("PluginAliases");
+
+    for (const auto& p : plugins_) {
+        if (p.alias.isEmpty())
+            continue;
+
+        // Only save if alias differs from auto-generated default
+        auto defaultAlias = PluginBrowserInfo::generateAlias(p.name);
+        if (p.alias == defaultAlias)
+            continue;
+
+        auto* elem = root.createNewChildElement("Alias");
+        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
+        elem->setAttribute("key", key);
+        elem->setAttribute("alias", p.alias);
+    }
+
+    auto file = getAliasesFile();
+    file.getParentDirectory().createDirectory();
+    root.writeTo(file);
+}
+
+void PluginBrowserContent::loadAliases() {
+    auto file = getAliasesFile();
+    if (!file.existsAsFile())
+        return;
+
+    auto xml = juce::parseXML(file);
+    if (!xml)
+        return;
+
+    // Build a map of key -> alias
+    std::map<juce::String, juce::String> aliasMap;
+    for (auto* elem : xml->getChildIterator()) {
+        aliasMap[elem->getStringAttribute("key")] = elem->getStringAttribute("alias");
+    }
+
+    // Apply custom aliases over auto-generated ones
+    for (auto& p : plugins_) {
+        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
+        auto it = aliasMap.find(key);
+        if (it != aliasMap.end()) {
+            p.alias = it->second;
+        }
+    }
+}
+
+void PluginBrowserContent::showEditAliasDialog(const PluginBrowserInfo& plugin) {
+    auto* alertWindow =
+        new juce::AlertWindow("Edit Plugin Alias", "Set a custom alias for " + plugin.name + ":",
+                              juce::MessageBoxIconType::NoIcon);
+    alertWindow->addTextEditor("alias", plugin.alias, "Alias:");
+    alertWindow->addButton("OK", 1);
+    alertWindow->addButton("Cancel", 0);
+    alertWindow->addButton("Reset", 2);
+
+    juce::String pluginKey = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+    juce::String pluginName = plugin.name;
+
+    alertWindow->enterModalState(
+        true,
+        juce::ModalCallbackFunction::create([this, alertWindow, pluginKey, pluginName](int result) {
+            if (result == 1) {
+                // OK — apply custom alias
+                auto newAlias = alertWindow->getTextEditorContents("alias").trim();
+                if (newAlias.isNotEmpty()) {
+                    for (auto& p : plugins_) {
+                        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
+                        if (key == pluginKey) {
+                            p.alias = newAlias;
+                            break;
+                        }
+                    }
+                    saveAliases();
+                    rebuildTree();
+                }
+            } else if (result == 2) {
+                // Reset to auto-generated
+                for (auto& p : plugins_) {
+                    juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
+                    if (key == pluginKey) {
+                        p.alias = PluginBrowserInfo::generateAlias(pluginName);
+                        break;
+                    }
+                }
+                saveAliases();
+                rebuildTree();
+            }
+            delete alertWindow;
+        }),
+        true);
 }
 
 }  // namespace magda::daw::ui

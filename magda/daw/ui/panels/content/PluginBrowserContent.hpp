@@ -21,6 +21,7 @@ struct PluginBrowserInfo {
     juce::String category;     // Instrument, Effect, etc.
     juce::String format;       // VST3, AU, etc.
     juce::String subcategory;  // EQ, Compressor, Synth, etc.
+    juce::String alias;        // @alias for DSL/AI (e.g. "serum_2", "pro_q3")
     bool isFavorite = false;
     bool isExternal = false;  // true for VST3/AU, false for internal
 
@@ -35,6 +36,9 @@ struct PluginBrowserInfo {
     static PluginBrowserInfo createInternal(const juce::String& name, const juce::String& pluginId,
                                             bool isInstrument,
                                             const juce::String& subcategory = "");
+
+    // Generate a default alias from plugin name (lowercase, underscore-separated)
+    static juce::String generateAlias(const juce::String& pluginName);
 };
 
 /**
@@ -116,6 +120,12 @@ class PluginBrowserContent : public PanelContent,
     void saveFavorites();
     void loadFavorites();
     juce::File getFavoritesFile() const;
+
+    // Aliases
+    void showEditAliasDialog(const PluginBrowserInfo& plugin);
+    void saveAliases();
+    void loadAliases();
+    juce::File getAliasesFile() const;
 
     class PluginTreeItem;
     class CategoryTreeItem;
