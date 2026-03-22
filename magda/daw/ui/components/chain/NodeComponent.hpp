@@ -140,6 +140,11 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     // Override to add extra header buttons (between name and delete)
     virtual void resizedHeaderExtra(juce::Rectangle<int>& headerArea);
 
+    // Override to provide a name for the collapsed rotated label
+    virtual juce::String getCollapsedName() const {
+        return nameLabel_.getText();
+    }
+
     // Override to customize side panel content (mods/params are to the left of node)
     virtual void paintModPanel(juce::Graphics& g, juce::Rectangle<int> panelArea);
     virtual void paintExtraLeftPanel(juce::Graphics& g,
@@ -201,6 +206,7 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
 
     // Collapsed state (show header only)
     bool collapsed_ = false;
+    juce::Rectangle<int> collapsedTextArea_;  // Area for rotated name when collapsed
 
     // Drag-to-reorder state
     bool draggable_ = true;

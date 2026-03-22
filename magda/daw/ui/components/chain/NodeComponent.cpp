@@ -182,7 +182,7 @@ void NodeComponent::paint(juce::Graphics& g) {
         juce::Rectangle<int> textBounds(static_cast<int>(center.x - bounds.getHeight() / 2),
                                         static_cast<int>(center.y - bounds.getWidth() / 2),
                                         bounds.getHeight(), bounds.getWidth());
-        g.drawText(getNodeName(), textBounds, juce::Justification::centred);
+        g.drawText(getCollapsedName(), textBounds, juce::Justification::centred);
         g.restoreState();
 
         // Dim/selection drawn in paintOverChildren
@@ -356,6 +356,9 @@ void NodeComponent::resized() {
 
         // Let subclass add extra collapsed buttons
         resizedCollapsed(area);
+
+        // Store remaining area for rotated name text
+        collapsedTextArea_ = area;
 
         // Call resizedContent with empty area so subclasses can hide their content
         resizedContent(juce::Rectangle<int>());

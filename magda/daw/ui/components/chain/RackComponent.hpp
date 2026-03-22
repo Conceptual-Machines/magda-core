@@ -74,6 +74,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
     void resizedCollapsed(juce::Rectangle<int>& area) override;
+    juce::String getCollapsedName() const override;
 
     // Get the full path to this rack (for nested context)
     const magda::ChainNodePath& getRackPath() const {

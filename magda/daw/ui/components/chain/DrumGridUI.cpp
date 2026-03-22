@@ -978,7 +978,7 @@ int DrumGridUI::getPreferredContentWidth() const {
     if (showDetailPanel) {
         // Cap chain panel width so it doesn't expand indefinitely
         static constexpr int kMaxChainPanelWidth = 800;
-        static constexpr int kMinChainPanelWidth = 200;
+        static constexpr int kMinChainPanelWidth = 80;
         int chainWidth = juce::jlimit(kMinChainPanelWidth, kMaxChainPanelWidth,
                                       padChainPanel_.getContentWidth());
         width += kGap + chainWidth;

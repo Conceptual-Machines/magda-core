@@ -241,10 +241,10 @@ void PadDeviceSlot::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
     g.fillRect(getLocalBounds());
 
-    // Selection border
+    // Selection border (matches NodeComponent style)
     if (selected_) {
         g.setColour(juce::Colour(0xff888888));
-        g.drawRect(getLocalBounds(), 1);
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f, 2.0f);
     }
 
     // Draw rotated name when collapsed

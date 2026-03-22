@@ -324,6 +324,14 @@ void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     headerArea.removeFromRight(4);
 }
 
+juce::String RackComponent::getCollapsedName() const {
+    auto name = getNodeName();
+    // Strip "Instrument Wrapper: " prefix for cleaner collapsed display
+    if (name.startsWith("Instrument Wrapper: "))
+        return name.substring(20);
+    return name;
+}
+
 void RackComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     // Position level meter on the right side of collapsed strip
     auto meterBounds = area.removeFromRight(METER_STRIP_WIDTH).reduced(0, 2);

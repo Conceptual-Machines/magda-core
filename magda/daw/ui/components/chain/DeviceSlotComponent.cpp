@@ -1073,6 +1073,31 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 }
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
+    if (drumGridUI_) {
+        // DrumGrid collapsed: only delete (already placed by base), power, then label + meter
+        macroButton_->setVisible(false);
+        modButton_->setVisible(false);
+        uiButton_->setVisible(false);
+        if (multiOutButton_)
+            multiOutButton_->setVisible(false);
+
+        int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);
+
+        // Power button centered in full width (same reference as delete above)
+        onButton_->setBounds(
+            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+        onButton_->setVisible(true);
+        area.removeFromTop(4);
+
+        // Below buttons: meter on the right, label area on the left
+        auto meterBounds = area.removeFromRight(METER_STRIP_WIDTH).reduced(0, 2);
+        levelMeter_.setBounds(meterBounds);
+        levelMeter_.setVisible(true);
+
+        // Remaining area is for the rotated label (stored by base class as collapsedTextArea_)
+        return;
+    }
+
     // Position level meter on the right side of collapsed strip
     auto meterBounds = area.removeFromRight(METER_STRIP_WIDTH).reduced(0, 2);
     area.removeFromRight(2);
@@ -1110,6 +1135,12 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
             area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
         multiOutButton_->setVisible(true);
     }
+}
+
+juce::String DeviceSlotComponent::getCollapsedName() const {
+    if (isDrumGrid_)
+        return device_.name;
+    return NodeComponent::getCollapsedName();
 }
 
 int DeviceSlotComponent::getModPanelWidth() const {

@@ -85,6 +85,7 @@ class DeviceSlotComponent : public NodeComponent,
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
     void resizedCollapsed(juce::Rectangle<int>& area) override;
+    juce::String getCollapsedName() const override;
 
     // Side panel widths
     int getModPanelWidth() const override;
