@@ -337,8 +337,16 @@ void NodeComponent::resized() {
         // === COLLAPSED MAIN STRIP (remaining bounds) ===
         nameLabel_.setVisible(false);
 
-        // Arrange buttons vertically at top of collapsed strip
+        // Reserve meter strip on the right (subclasses override getCollapsedMeterWidth)
         auto area = bounds.reduced(4);
+        int collapsedMeter = getCollapsedMeterWidth();
+        collapsedMeterArea_ = {};
+        if (collapsedMeter > 0) {
+            collapsedMeterArea_ = area.removeFromRight(collapsedMeter).reduced(0, 2);
+            area.removeFromRight(2);
+        }
+
+        // Arrange buttons vertically at top of collapsed strip
         int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);
 
         // Delete button at top (always visible)

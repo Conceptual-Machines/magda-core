@@ -97,6 +97,9 @@ class DeviceSlotComponent : public NodeComponent,
     int getMeterWidth() const override {
         return 0;  // Meter is positioned in content area only, not the full height
     }
+    int getCollapsedMeterWidth() const override {
+        return METER_STRIP_WIDTH;
+    }
 
     // Mod/macro data providers
     const magda::ModArray* getModsData() const override;

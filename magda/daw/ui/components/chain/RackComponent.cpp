@@ -333,13 +333,11 @@ juce::String RackComponent::getCollapsedName() const {
 }
 
 void RackComponent::resizedCollapsed(juce::Rectangle<int>& area) {
-    // Position level meter on the right side of collapsed strip
-    auto meterBounds = area.removeFromRight(METER_STRIP_WIDTH).reduced(0, 2);
-    area.removeFromRight(2);
-    levelMeter_.setBounds(meterBounds);
+    // Meter is positioned by base class via getCollapsedMeterWidth() -> collapsedMeterArea_
+    levelMeter_.setBounds(collapsedMeterArea_);
     levelMeter_.setVisible(true);
 
-    // Add macro and mod buttons vertically when collapsed - matches panel order
+    // Add macro and mod buttons vertically when collapsed
     int buttonSize = juce::jmin(16, area.getWidth() - 4);
 
     macroButton_->setBounds(

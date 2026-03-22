@@ -185,8 +185,14 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
         return HEADER_HEIGHT;
     }
 
-    // Override to reserve space for a meter strip on the right edge
+    // Override to reserve space for a meter strip on the right edge (expanded mode)
     virtual int getMeterWidth() const {
+        return 0;
+    }
+
+    // Override to reserve space for a meter strip when collapsed (right side of strip)
+    // Base class removes this from the right of the collapsed strip before placing buttons
+    virtual int getCollapsedMeterWidth() const {
         return 0;
     }
 
@@ -206,7 +212,8 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
 
     // Collapsed state (show header only)
     bool collapsed_ = false;
-    juce::Rectangle<int> collapsedTextArea_;  // Area for rotated name when collapsed
+    juce::Rectangle<int> collapsedTextArea_;   // Area for rotated name when collapsed
+    juce::Rectangle<int> collapsedMeterArea_;  // Area for meter strip when collapsed
 
     // Drag-to-reorder state
     bool draggable_ = true;

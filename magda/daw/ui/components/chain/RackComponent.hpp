@@ -157,6 +157,9 @@ class RackComponent : public NodeComponent, public juce::Timer {
     // Override panel widths for rack-specific sizing
     int getParamPanelWidth() const override;
     int getModPanelWidth() const override;
+    int getCollapsedMeterWidth() const override {
+        return METER_STRIP_WIDTH;
+    }
 
     static constexpr int CHAINS_LABEL_HEIGHT = 18;
     static constexpr int MIN_CONTENT_HEIGHT = 30;
