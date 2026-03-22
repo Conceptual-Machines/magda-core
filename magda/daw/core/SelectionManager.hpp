@@ -830,6 +830,13 @@ class SelectionManager {
     void selectChainNode(const ChainNodePath& path);
 
     /**
+     * @brief Select a chain node with display name/type overrides
+     * Used for nodes not in TrackManager's model (e.g., drum pad chain plugins)
+     */
+    void selectChainNode(const ChainNodePath& path, const juce::String& displayName,
+                         const juce::String& displayType);
+
+    /**
      * @brief Clear chain node selection
      */
     void clearChainNodeSelection();
@@ -839,6 +846,20 @@ class SelectionManager {
      */
     const ChainNodePath& getSelectedChainNode() const {
         return selectedChainNode_;
+    }
+
+    /**
+     * @brief Get display name override for the selected chain node (empty if none)
+     */
+    const juce::String& getChainNodeDisplayName() const {
+        return chainNodeDisplayName_;
+    }
+
+    /**
+     * @brief Get display type override for the selected chain node (empty if none)
+     */
+    const juce::String& getChainNodeDisplayType() const {
+        return chainNodeDisplayType_;
     }
 
     /**
@@ -1158,7 +1179,9 @@ class SelectionManager {
     TimeRangeSelection timeRangeSelection_;
     NoteSelection noteSelection_;
     DeviceSelection deviceSelection_;
-    ChainNodePath selectedChainNode_;  // For exclusive chain node selection
+    ChainNodePath selectedChainNode_;    // For exclusive chain node selection
+    juce::String chainNodeDisplayName_;  // Optional display override (e.g., pad chain plugin name)
+    juce::String chainNodeDisplayType_;  // Optional display override (e.g., pad chain plugin type)
     ModSelection modSelection_;
     MacroSelection macroSelection_;
     ModsPanelSelection modsPanelSelection_;

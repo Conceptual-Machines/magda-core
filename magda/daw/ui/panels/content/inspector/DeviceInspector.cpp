@@ -3,6 +3,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/RackInfo.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda::daw::ui {
@@ -90,35 +91,45 @@ void DeviceInspector::updateFromSelectedChainNode() {
     double latency = 0.0;
     bool showLatency = false;
 
-    switch (type) {
-        case magda::ChainNodeType::Device:
-        case magda::ChainNodeType::TopLevelDevice: {
-            auto* device = tm.getDeviceInChainByPath(selectedChainNode_);
-            if (device) {
-                typeStr =
-                    device->getFormatString() + (device->isInstrument ? " Instrument" : " Effect");
-                nameStr = device->name;
-                latency = tm.getDeviceLatencySeconds(selectedChainNode_);
-                showLatency = true;
+    // Check for display overrides (e.g., pad chain plugin info)
+    auto& sm = magda::SelectionManager::getInstance();
+    auto displayName = sm.getChainNodeDisplayName();
+    auto displayType = sm.getChainNodeDisplayType();
+
+    if (displayName.isNotEmpty()) {
+        // Use override info (pad chain plugin)
+        typeStr = displayType;
+        nameStr = displayName;
+    } else
+        switch (type) {
+            case magda::ChainNodeType::Device:
+            case magda::ChainNodeType::TopLevelDevice: {
+                auto* device = tm.getDeviceInChainByPath(selectedChainNode_);
+                if (device) {
+                    typeStr = device->getFormatString() +
+                              (device->isInstrument ? " Instrument" : " Effect");
+                    nameStr = device->name;
+                    latency = tm.getDeviceLatencySeconds(selectedChainNode_);
+                    showLatency = true;
+                }
+                break;
             }
-            break;
-        }
-        case magda::ChainNodeType::Rack: {
-            auto* rack = tm.getRackByPath(selectedChainNode_);
-            if (rack) {
-                typeStr = "Rack";
-                nameStr = rack->name;
+            case magda::ChainNodeType::Rack: {
+                auto* rack = tm.getRackByPath(selectedChainNode_);
+                if (rack) {
+                    typeStr = "Rack";
+                    nameStr = rack->name;
+                }
+                break;
             }
-            break;
+            case magda::ChainNodeType::Chain: {
+                typeStr = "Chain";
+                nameStr = "Chain";
+                break;
+            }
+            default:
+                break;
         }
-        case magda::ChainNodeType::Chain: {
-            typeStr = "Chain";
-            nameStr = "Chain";
-            break;
-        }
-        default:
-            break;
-    }
 
     chainNodeTypeLabel_.setText(typeStr, juce::dontSendNotification);
     chainNodeNameValue_.setText(nameStr, juce::dontSendNotification);

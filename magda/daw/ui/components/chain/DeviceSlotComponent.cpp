@@ -2081,12 +2081,13 @@ void DeviceSlotComponent::createCustomUI() {
                 onDeviceLayoutChanged();
         };
 
-        padChain.onDeviceClicked = [this]() {
-            DBG("DeviceSlotComponent: padChain.onDeviceClicked fired, nodePath valid=" +
-                juce::String(nodePath_.isValid() ? "true" : "false"));
+        padChain.onDeviceClicked = [this](const juce::String& pluginName,
+                                          const juce::String& pluginType) {
+            DBG("DeviceSlotComponent: padChain.onDeviceClicked fired, plugin=" + pluginName +
+                " type=" + pluginType);
             if (nodePath_.isValid()) {
-                DBG("  -> calling selectChainNode");
-                magda::SelectionManager::getInstance().selectChainNode(nodePath_);
+                magda::SelectionManager::getInstance().selectChainNode(nodePath_, pluginName,
+                                                                       pluginType);
             }
         };
 

@@ -720,6 +720,11 @@ void SelectionManager::notifyDeviceSelectionChanged(const DeviceSelection& selec
 // ============================================================================
 
 void SelectionManager::selectChainNode(const ChainNodePath& path) {
+    selectChainNode(path, {}, {});
+}
+
+void SelectionManager::selectChainNode(const ChainNodePath& path, const juce::String& displayName,
+                                       const juce::String& displayType) {
     bool typeChanged = selectionType_ != SelectionType::ChainNode;
 
     // Clear other selection types (but keep track selection for context)
@@ -731,6 +736,8 @@ void SelectionManager::selectChainNode(const ChainNodePath& path) {
 
     selectionType_ = SelectionType::ChainNode;
     selectedChainNode_ = path;
+    chainNodeDisplayName_ = displayName;
+    chainNodeDisplayType_ = displayType;
 
     // Sync with managers
     ClipManager::getInstance().clearClipSelection();

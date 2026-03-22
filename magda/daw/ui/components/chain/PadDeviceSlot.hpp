@@ -48,6 +48,10 @@ class PadDeviceSlot : public juce::Component {
         return collapsed_;
     }
     void setCollapsed(bool collapsed);
+    void setSelected(bool selected) {
+        selected_ = selected;
+        repaint();
+    }
 
     // Callbacks
     std::function<void()> onDeleteClicked;
@@ -75,6 +79,7 @@ class PadDeviceSlot : public juce::Component {
     tracktion::engine::Plugin* plugin_ = nullptr;
     int preferredWidth_ = SLOT_WIDTH;
     bool collapsed_ = false;
+    bool selected_ = false;
 
     // Header
     juce::Label nameLabel_;

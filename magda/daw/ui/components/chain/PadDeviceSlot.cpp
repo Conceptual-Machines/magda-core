@@ -241,6 +241,12 @@ void PadDeviceSlot::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
     g.fillRect(getLocalBounds());
 
+    // Selection border
+    if (selected_) {
+        g.setColour(juce::Colour(0xff888888));
+        g.drawRect(getLocalBounds(), 1);
+    }
+
     // Draw rotated name when collapsed
     if (collapsed_) {
         // Text area = nameLabel_ bounds (below buttons)
@@ -262,18 +268,20 @@ void PadDeviceSlot::paint(juce::Graphics& g) {
 }
 
 void PadDeviceSlot::mouseDown(const juce::MouseEvent& e) {
-    DBG("PadDeviceSlot::mouseDown - originalComponent=" +
-        juce::String(e.originalComponent == &nameLabel_ ? "nameLabel" : "other") +
-        " collapsed=" + juce::String(collapsed_ ? "true" : "false") +
-        " onClicked=" + juce::String(onClicked ? "SET" : "NULL") +
-        " plugin=" + juce::String(plugin_ ? plugin_->getName() : "null"));
-
-    // Click name label to collapse, or click collapsed body to expand
+    // Click name label or collapsed body
     if (e.originalComponent == &nameLabel_ || (collapsed_ && e.originalComponent == this)) {
-        DBG("  -> toggling collapse and firing onClicked");
+        bool wasSelected = selected_;
+
+        // Always select (fires inspector update)
         if (onClicked)
             onClicked();
-        setCollapsed(!collapsed_);
+        selected_ = true;
+
+        // If already selected, toggle collapse
+        if (wasSelected)
+            setCollapsed(!collapsed_);
+
+        repaint();
         return;
     }
     juce::Component::mouseDown(e);

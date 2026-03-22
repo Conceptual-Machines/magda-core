@@ -98,11 +98,32 @@ void PadChainPanel::rebuildSlots() {
                 onLayoutChanged();
         };
 
-        slot->onClicked = [this]() {
-            DBG("PadChainPanel: slot onClicked fired, onDeviceClicked=" +
-                juce::String(onDeviceClicked ? "SET" : "NULL"));
-            if (onDeviceClicked)
-                onDeviceClicked();
+        slot->onClicked = [this, pluginIndex]() {
+            // Deselect other slots
+            for (size_t j = 0; j < slots_.size(); ++j) {
+                if (static_cast<int>(j) != pluginIndex)
+                    slots_[j]->setSelected(false);
+            }
+            if (onDeviceClicked) {
+                // Get plugin info for this slot
+                juce::String name, type;
+                if (pluginIndex < static_cast<int>(slots_.size())) {
+                    auto slotInfos = getPluginSlots ? getPluginSlots(currentPadIndex_)
+                                                    : std::vector<PluginSlotInfo>{};
+                    if (pluginIndex < static_cast<int>(slotInfos.size())) {
+                        auto* plugin = slotInfos[static_cast<size_t>(pluginIndex)].plugin;
+                        if (plugin) {
+                            name = plugin->getName();
+                            if (auto* ext =
+                                    dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin))
+                                type = ext->desc.pluginFormatName + " Plugin";
+                            else
+                                type = "Internal Plugin";
+                        }
+                    }
+                }
+                onDeviceClicked(name, type);
+            }
         };
 
         // Set plugin content

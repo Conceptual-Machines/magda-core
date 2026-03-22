@@ -60,7 +60,9 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
     std::function<void(int padIndex)> onLoadSampleRequested;
 
     // Called when a device slot is clicked (for inspector selection)
-    std::function<void()> onDeviceClicked;
+    // Passes plugin name and format string for display in the inspector
+    std::function<void(const juce::String& pluginName, const juce::String& pluginType)>
+        onDeviceClicked;
 
     // DragAndDropTarget
     bool isInterestedInDragSource(const SourceDetails& details) override;
