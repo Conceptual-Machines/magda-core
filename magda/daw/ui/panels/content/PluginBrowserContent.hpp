@@ -111,6 +111,12 @@ class PluginBrowserContent : public PanelContent,
     void showPluginContextMenu(const PluginBrowserInfo& plugin, juce::Point<int> position);
     void showParameterConfigDialog(const PluginBrowserInfo& plugin);
 
+    // Favorites
+    void toggleFavorite(const PluginBrowserInfo& plugin);
+    void saveFavorites();
+    void loadFavorites();
+    juce::File getFavoritesFile() const;
+
     class PluginTreeItem;
     class CategoryTreeItem;
 

@@ -363,6 +363,7 @@ void PluginBrowserContent::refreshPluginList() {
     plugins_.clear();
     buildInternalPluginList();
     loadExternalPlugins();
+    loadFavorites();
     rebuildTree();
 }
 
@@ -487,11 +488,10 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     }
 
     menu.addItem(3, "Configure Parameters...");
-    menu.addItem(4, "Set Gain Stage Parameter...");
     menu.addSeparator();
     menu.addItem(5, plugin.isFavorite ? "Remove from Favorites" : "Add to Favorites");
     menu.addSeparator();
-    menu.addItem(6, "Show in Finder");
+    menu.addItem(6, "Show in Finder", !plugin.fileOrIdentifier.isEmpty());
 
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetScreenArea({position.x, position.y, 1, 1}),
@@ -550,15 +550,19 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                 case 3:
                     showParameterConfigDialog(plugin);
                     break;
-                case 4:
-                    DBG("Set gain stage for: " + plugin.name);
-                    break;
                 case 5:
-                    DBG("Toggle favorite: " + plugin.name);
+                    toggleFavorite(plugin);
                     break;
-                case 6:
-                    DBG("Show in finder: " + plugin.name);
+                case 6: {
+                    juce::File pluginFile(plugin.fileOrIdentifier);
+                    if (pluginFile.exists()) {
+                        pluginFile.revealToUser();
+                    } else {
+                        // fileOrIdentifier might be an identifier string, not a path
+                        DBG("Cannot reveal plugin - not a file path: " + plugin.fileOrIdentifier);
+                    }
                     break;
+                }
             }
         });
 }
@@ -570,6 +574,67 @@ void PluginBrowserContent::showParameterConfigDialog(const PluginBrowserInfo& pl
     } else {
         // Fall back to mock data for internal plugins or plugins without IDs
         ParameterConfigDialog::show(plugin.name, this);
+    }
+}
+
+void PluginBrowserContent::toggleFavorite(const PluginBrowserInfo& plugin) {
+    // Find matching plugin in our list and toggle
+    juce::String key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+
+    for (auto& p : plugins_) {
+        juce::String pKey = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
+        if (pKey == key) {
+            p.isFavorite = !p.isFavorite;
+            DBG("Toggled favorite: " + p.name + " -> " + (p.isFavorite ? "true" : "false"));
+            break;
+        }
+    }
+
+    saveFavorites();
+    rebuildTree();
+}
+
+juce::File PluginBrowserContent::getFavoritesFile() const {
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("MAGDA")
+        .getChildFile("plugin_favorites.xml");
+}
+
+void PluginBrowserContent::saveFavorites() {
+    juce::XmlElement root("PluginFavorites");
+
+    for (const auto& p : plugins_) {
+        if (p.isFavorite) {
+            auto* elem = root.createNewChildElement("Plugin");
+            elem->setAttribute("key", p.uniqueId.isNotEmpty() ? p.uniqueId : p.name);
+            elem->setAttribute("name", p.name);
+        }
+    }
+
+    auto file = getFavoritesFile();
+    file.getParentDirectory().createDirectory();
+    root.writeTo(file);
+}
+
+void PluginBrowserContent::loadFavorites() {
+    auto file = getFavoritesFile();
+    if (!file.existsAsFile())
+        return;
+
+    auto xml = juce::parseXML(file);
+    if (!xml)
+        return;
+
+    // Collect favorite keys
+    juce::StringArray favoriteKeys;
+    for (auto* elem : xml->getChildIterator()) {
+        favoriteKeys.add(elem->getStringAttribute("key"));
+    }
+
+    // Apply to plugins
+    for (auto& p : plugins_) {
+        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
+        p.isFavorite = favoriteKeys.contains(key);
     }
 }
 

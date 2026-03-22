@@ -536,18 +536,21 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
         return;
     }
 
-    // Find the plugin description in the known plugin list
+    // Find the plugin description in the known plugin list (copy by value —
+    // createPluginInstance can modify the list, invalidating pointers into it)
     auto& knownPlugins = tracktionEngine->getKnownPluginList();
-    const juce::PluginDescription* pluginDesc = nullptr;
+    juce::PluginDescription pluginDesc;
+    bool found = false;
 
     for (const auto& desc : knownPlugins.getTypes()) {
         if (desc.createIdentifierString() == uniqueId) {
-            pluginDesc = &desc;
+            pluginDesc = desc;
+            found = true;
             break;
         }
     }
 
-    if (!pluginDesc) {
+    if (!found) {
         DBG("Plugin description not found for " << uniqueId);
         buildMockParameters();
         return;
@@ -557,7 +560,7 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
     juce::String errorMessage;
     auto& formatManager = tracktionEngine->getEdit()->engine.getPluginManager().pluginFormatManager;
 
-    auto instance = formatManager.createPluginInstance(*pluginDesc, 44100.0, 512, errorMessage);
+    auto instance = formatManager.createPluginInstance(pluginDesc, 44100.0, 512, errorMessage);
 
     if (!instance) {
         DBG("Failed to instantiate plugin: " << errorMessage);
@@ -635,7 +638,8 @@ void ParameterConfigDialog::saveParameterConfiguration() {
     }
 
     // Create config file for this plugin
-    auto configFile = configDir.getChildFile(pluginUniqueId_.replace(":", "_") + ".xml");
+    auto configFile =
+        configDir.getChildFile(pluginUniqueId_.replaceCharacters(":/\\,; ", "______") + ".xml");
 
     juce::XmlElement root("ParameterConfig");
     root.setAttribute("pluginId", pluginUniqueId_);
@@ -678,7 +682,8 @@ void ParameterConfigDialog::loadParameterConfiguration() {
                          .getChildFile("MAGDA")
                          .getChildFile("PluginConfigs");
 
-    auto configFile = configDir.getChildFile(pluginUniqueId_.replace(":", "_") + ".xml");
+    auto configFile =
+        configDir.getChildFile(pluginUniqueId_.replaceCharacters(":/\\,; ", "______") + ".xml");
 
     if (!configFile.existsAsFile()) {
         return;
@@ -729,7 +734,8 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
                          .getChildFile("MAGDA")
                          .getChildFile("PluginConfigs");
 
-    auto configFile = configDir.getChildFile(uniqueId.replace(":", "_") + ".xml");
+    auto configFile =
+        configDir.getChildFile(uniqueId.replaceCharacters(":/\\,; ", "______") + ".xml");
 
     if (!configFile.existsAsFile()) {
         return false;
