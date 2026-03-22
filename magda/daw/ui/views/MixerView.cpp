@@ -896,7 +896,51 @@ void MixerView::ChannelStrip::resized() {
     }
     bounds.removeFromTop(metrics.controlSpacing);
 
-    // Sends area (scrollable viewport) — between track label and fader
+    // M/S/R/Mon buttons — below track label
+    bool isMultiOut = trackType_ == TrackType::MultiOut;
+    {
+        auto buttonArea = bounds.removeFromTop(metrics.buttonSize);
+
+        if (isMaster_) {
+            // Master: M only
+            muteButton->setBounds(buttonArea);
+            soloButton->setVisible(false);
+            if (recordButton)
+                recordButton->setVisible(false);
+            if (monitorButton)
+                monitorButton->setVisible(false);
+        } else if (isMultiOut || !recordButton) {
+            // M/S only
+            int buttonWidth = (buttonArea.getWidth() - 2) / 2;
+            muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+            buttonArea.removeFromLeft(2);
+            soloButton->setBounds(buttonArea);
+            soloButton->setVisible(true);
+            if (recordButton)
+                recordButton->setVisible(false);
+            if (monitorButton)
+                monitorButton->setVisible(false);
+        } else {
+            int numButtons = monitorButton ? 4 : 3;
+            int buttonWidth = (buttonArea.getWidth() - (numButtons - 1) * 2) / numButtons;
+            muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+            buttonArea.removeFromLeft(2);
+            soloButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+            buttonArea.removeFromLeft(2);
+            recordButton->setVisible(true);
+            if (!monitorButton) {
+                recordButton->setBounds(buttonArea);
+            } else {
+                monitorButton->setVisible(true);
+                recordButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
+                buttonArea.removeFromLeft(2);
+                monitorButton->setBounds(buttonArea);
+            }
+        }
+        bounds.removeFromTop(2);
+    }
+
+    // Sends area (scrollable viewport) — between buttons and fader
     if (!isMaster_ && sendViewport_) {
         const int sendSlotHeight = 18;
         // Layout send slots inside the container
@@ -927,49 +971,7 @@ void MixerView::ChannelStrip::resized() {
         }
     }
 
-    // M/S/R/Mon buttons at bottom — multi-out children only show M/S
-    bool isMultiOut = trackType_ == TrackType::MultiOut;
-    auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
-
-    if (isMaster_) {
-        // Master: M only
-        muteButton->setBounds(buttonArea);
-        soloButton->setVisible(false);
-        if (recordButton)
-            recordButton->setVisible(false);
-        if (monitorButton)
-            monitorButton->setVisible(false);
-    } else if (isMultiOut || !recordButton) {
-        // M/S only
-        int buttonWidth = (buttonArea.getWidth() - 2) / 2;
-        muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-        buttonArea.removeFromLeft(2);
-        soloButton->setBounds(buttonArea);
-        soloButton->setVisible(true);
-        if (recordButton)
-            recordButton->setVisible(false);
-        if (monitorButton)
-            monitorButton->setVisible(false);
-    } else {
-        int numButtons = monitorButton ? 4 : 3;
-        int buttonWidth = (buttonArea.getWidth() - (numButtons - 1) * 2) / numButtons;
-        muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-        buttonArea.removeFromLeft(2);
-        soloButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-        buttonArea.removeFromLeft(2);
-        recordButton->setVisible(true);
-        if (!monitorButton) {
-            recordButton->setBounds(buttonArea);
-        } else {
-            monitorButton->setVisible(true);
-            recordButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-            buttonArea.removeFromLeft(2);
-            monitorButton->setBounds(buttonArea);
-        }
-    }
-
-    // Routing selectors above M/S/R
-    // Multi-out children: show audio out only (no input, no MIDI)
+    // Routing selectors at bottom
     if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
         if (metrics.showRouting) {
             bool showInputs = !isMultiOut;

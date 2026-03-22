@@ -380,13 +380,13 @@ void MasterChannelStrip::setupControls() {
                                                               BinaryData::volume_off_svgSize);
 
     speakerButton =
-        std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
+        std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageRaw);
     speakerButton->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
     speakerButton->setClickingTogglesState(true);
     speakerButton->setColour(juce::DrawableButton::backgroundColourId,
                              juce::Colours::transparentBlack);
     speakerButton->setColour(juce::DrawableButton::backgroundOnColourId,
-                             DarkTheme::getColour(DarkTheme::STATUS_ERROR).withAlpha(0.3f));
+                             juce::Colours::transparentBlack);
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterMuteCommand>(speakerButton->getToggleState()));
