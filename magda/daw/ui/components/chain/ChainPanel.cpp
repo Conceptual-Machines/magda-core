@@ -310,7 +310,7 @@ int ChainPanel::calculateTotalContentWidth() const {
 
 int ChainPanel::getContentWidth() const {
     // Return the total content width (devices + arrows + add button)
-    return juce::jmax(300, calculateTotalContentWidth());  // Minimum 300px
+    return calculateTotalContentWidth();
 }
 
 void ChainPanel::setMaxWidth(int maxWidth) {

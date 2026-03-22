@@ -262,7 +262,7 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
         // Constrain if we have an available width limit
         if (availableWidth_ > 0) {
             int baseWidth = getMinimumWidth();
-            int maxChainPanelWidth = juce::jmax(300, availableWidth_ - baseWidth);
+            int maxChainPanelWidth = juce::jmax(0, availableWidth_ - baseWidth);
             chainPanelWidth = juce::jmin(contentWidth, maxChainPanelWidth);
         }
 
@@ -369,19 +369,13 @@ int RackComponent::getPreferredWidth() const {
     // Add chain panel width if visible
     if (chainPanel_ && chainPanel_->isVisible()) {
         int contentWidth = chainPanel_->getContentWidth();
-        DBG("RackComponent::getPreferredWidth - rackId="
-            << rackId_ << " baseWidth=" << baseWidth << " chainPanelContentWidth=" << contentWidth
-            << " availableWidth=" << availableWidth_);
-
         if (availableWidth_ > 0) {
             // Constrain to available width
             int maxChainPanelWidth = availableWidth_ - baseWidth;
-            int chainPanelWidth = juce::jmin(contentWidth, juce::jmax(300, maxChainPanelWidth));
-            DBG("  -> returning " << (baseWidth + chainPanelWidth) << " (constrained)");
+            int chainPanelWidth = juce::jmin(contentWidth, juce::jmax(0, maxChainPanelWidth));
             return baseWidth + chainPanelWidth;
         } else {
             // No limit - expand to fit content
-            DBG("  -> returning " << (baseWidth + contentWidth) << " (unconstrained)");
             return baseWidth + contentWidth;
         }
     }
@@ -400,7 +394,7 @@ void RackComponent::setAvailableWidth(int width) {
     // Pass remaining width to chain panel after accounting for base rack width
     if (chainPanel_ && chainPanel_->isVisible()) {
         int baseWidth = getMinimumWidth();
-        int maxChainPanelWidth = juce::jmax(300, width - baseWidth);
+        int maxChainPanelWidth = juce::jmax(0, width - baseWidth);
         chainPanel_->setMaxWidth(maxChainPanelWidth);
     }
 }
@@ -519,7 +513,6 @@ void RackComponent::rebuildChainRows() {
 void RackComponent::childLayoutChanged() {
     resized();
     repaint();
-    // Notify parent via callback (for TrackChainContent to relayout)
     if (onLayoutChanged) {
         onLayoutChanged();
     }

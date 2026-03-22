@@ -875,7 +875,7 @@ void TrackChainContent::layoutChainContent() {
         // Check if it's a RackComponent to set available width
         if (auto* rack = dynamic_cast<RackComponent*>(node.get())) {
             int remainingWidth =
-                juce::jmax(300, availableWidth - x - scaledArrowWidth - scaledSlotSpacing);
+                juce::jmax(0, availableWidth - x - scaledArrowWidth - scaledSlotSpacing);
             rack->setAvailableWidth(remainingWidth);
         }
 
