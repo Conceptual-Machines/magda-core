@@ -423,7 +423,7 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
 
     // MIDI note representation area
-    auto noteArea = bounds.reduced(2, HEADER_HEIGHT + 2);
+    auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
 
     // Calculate clip length in beats using actual tempo
     // During resize drag, use preview length so notes stay fixed
@@ -435,9 +435,17 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
     if (!clip.midiNotes.empty() && noteArea.getHeight() > 5) {
         g.setColour(clip.colour.brighter(0.3f));
 
-        // Use absolute MIDI range (0-127) for consistent vertical positioning across all clips
-        const int MIDI_MAX = 127;
-        const int MIDI_RANGE = 127;
+        // Calculate actual note range for proportional vertical scaling (like Ableton)
+        int minNote = 127, maxNote = 0;
+        for (const auto& note : clip.midiNotes) {
+            minNote = juce::jmin(minNote, note.noteNumber);
+            maxNote = juce::jmax(maxNote, note.noteNumber);
+        }
+        // Add padding so notes aren't flush against edges
+        int padding = juce::jmax(2, (maxNote - minNote) / 4);
+        minNote = juce::jmax(0, minNote - padding);
+        maxNote = juce::jmin(127, maxNote + padding);
+        int noteRange = juce::jmax(1, maxNote - minNote);
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
 
         // For MIDI clips, convert source region to beats
@@ -489,10 +497,10 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
                     double visibleEnd = juce::jmin(clipLengthInBeats, displayEnd);
                     double visibleLength = visibleEnd - visibleStart;
 
-                    float noteY = noteArea.getY() + (MIDI_MAX - note.noteNumber) *
-                                                        noteArea.getHeight() / (MIDI_RANGE + 1);
-                    float noteHeight = juce::jmax(1.5f, static_cast<float>(noteArea.getHeight()) /
-                                                            (MIDI_RANGE + 1));
+                    float noteY = noteArea.getY() + static_cast<float>(maxNote - note.noteNumber) /
+                                                        (noteRange + 1) * noteArea.getHeight();
+                    float noteHeight = juce::jmax(2.0f, static_cast<float>(noteArea.getHeight()) /
+                                                            (noteRange + 1));
                     float noteX = noteArea.getX() + static_cast<float>(visibleStart / beatRange) *
                                                         noteArea.getWidth();
                     float noteWidth = juce::jmax(
@@ -514,10 +522,10 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
                 double visibleEnd = juce::jmin(clipLengthInBeats, displayEnd);
                 double visibleLength = visibleEnd - visibleStart;
 
-                float noteY = noteArea.getY() + (MIDI_MAX - note.noteNumber) *
-                                                    noteArea.getHeight() / (MIDI_RANGE + 1);
+                float noteY = noteArea.getY() + static_cast<float>(maxNote - note.noteNumber) /
+                                                    (noteRange + 1) * noteArea.getHeight();
                 float noteHeight =
-                    juce::jmax(1.5f, static_cast<float>(noteArea.getHeight()) / (MIDI_RANGE + 1));
+                    juce::jmax(2.0f, static_cast<float>(noteArea.getHeight()) / (noteRange + 1));
                 float noteX = noteArea.getX() +
                               static_cast<float>(visibleStart / beatRange) * noteArea.getWidth();
                 float noteWidth = juce::jmax(2.0f, static_cast<float>(visibleLength / beatRange) *

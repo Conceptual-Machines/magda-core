@@ -380,7 +380,7 @@ void MasterChannelStrip::setupControls() {
                                                               BinaryData::volume_off_svgSize);
 
     speakerButton =
-        std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageRaw);
+        std::make_unique<juce::DrawableButton>("Speaker", juce::DrawableButton::ImageFitted);
     speakerButton->setImages(speakerOnIcon.get(), nullptr, nullptr, nullptr, speakerOffIcon.get());
     speakerButton->setClickingTogglesState(true);
     speakerButton->setColour(juce::DrawableButton::backgroundColourId,
