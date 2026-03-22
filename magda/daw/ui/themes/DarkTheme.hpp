@@ -40,12 +40,13 @@ class DarkTheme {
     // ==========================================================================
     // Accent colors (SideFX palette)
     // ==========================================================================
-    static constexpr auto ACCENT_BLUE = 0xFF5588AA;        // Primary accent (muted blue)
-    static constexpr auto ACCENT_BLUE_LIGHT = 0xFF88AACC;  // Light blue
-    static constexpr auto ACCENT_CYAN = 0xFF66AAFF;        // Cyan (selection, highlight)
-    static constexpr auto ACCENT_GREEN = 0xFF33E680;       // Bright green (curve, enabled)
-    static constexpr auto ACCENT_ORANGE = 0xFFFF8822;      // Orange (nodes, playhead)
-    static constexpr auto ACCENT_PURPLE = 0xFF7777DD;      // Purple accent
+    static constexpr auto ACCENT_BLUE = 0xFF5588AA;          // Primary accent (muted blue)
+    static constexpr auto ACCENT_BLUE_LIGHT = 0xFF88AACC;    // Light blue
+    static constexpr auto ACCENT_CYAN = 0xFF66AAFF;          // Cyan (selection, highlight)
+    static constexpr auto ACCENT_GREEN = 0xFF33E680;         // Bright green (curve, enabled)
+    static constexpr auto ACCENT_ORANGE = 0xFFFF8822;        // Orange (nodes, playhead)
+    static constexpr auto ACCENT_PURPLE = 0xFF7777DD;        // Purple accent
+    static constexpr auto MASTER_TRACK_COLOUR = 0xFF6655AA;  // Master track (muted purple)
 
     // ==========================================================================
     // Status colors

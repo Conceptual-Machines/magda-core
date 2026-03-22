@@ -1943,15 +1943,16 @@ void MainView::MasterHeaderPanel::setupControls() {
 }
 
 void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
-    // Background - slightly different from regular tracks to distinguish
+    // Background
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
 
     // Border
+    auto bounds = getLocalBounds();
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawRect(getLocalBounds(), 1);
+    g.drawRect(bounds, 1);
 
     // "Master" label at top
-    auto labelArea = getLocalBounds().reduced(6, 2).removeFromTop(14);
+    auto labelArea = bounds.reduced(6, 2).removeFromTop(14);
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
     g.drawText("Master", labelArea, juce::Justification::centredLeft);

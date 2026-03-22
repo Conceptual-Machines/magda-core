@@ -65,6 +65,7 @@ struct MixerMetrics {
 
     // === Visibility ===
     bool showRouting = true;  // Show/hide I/O routing selectors on channel strips
+    bool showMonitor = true;  // Show/hide R/Monitor row on channel strips
 
     // === Spacing ===
     int controlSpacing = 4;

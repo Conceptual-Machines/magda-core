@@ -488,15 +488,16 @@ void MixerView::ChannelStrip::setupControls() {
                 contentHeight += 18 + 1;  // sendSlotHeight + gap
             int minHeight = juce::jmax(MixerMetrics::minSendAreaHeight, contentHeight);
             // Max height: total height minus fixed UI elements
-            int fixedHeight = 38                                // colour bar + label
-                              + metrics.controlSpacing          // spacing after label
-                              + 2                               // gap before sends
-                              + 6                               // resize handle
-                              + 120                             // minimum fader region
-                              + 24                              // pan + gaps
-                              + metrics.buttonSize              // M/S/R buttons
-                              + (metrics.showRouting ? 40 : 0)  // routing rows
-                              + metrics.channelPadding * 2;     // top+bottom padding
+            int fixedHeight = 38                        // colour bar + label
+                              + metrics.controlSpacing  // spacing after label
+                              + 2                       // gap before sends
+                              + 6                       // resize handle
+                              + 120                     // minimum fader region
+                              + 24                      // pan + gaps
+                              + metrics.buttonSize      // M/S row
+                              + (metrics.showMonitor ? metrics.buttonSize + 2 : 0)  // R/Mon row
+                              + (metrics.showRouting ? 40 : 0)                      // routing rows
+                              + metrics.channelPadding * 2;  // top+bottom padding
             int maxHeight = juce::jmax(minHeight, getHeight() - fixedHeight);
             int newHeight = juce::jlimit(minHeight, maxHeight, metrics.sendAreaHeight + deltaY);
             if (metrics.sendAreaHeight != newHeight) {
@@ -769,15 +770,11 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
             g.fillRect(0, 4 + tintHeight, ownBounds.getWidth() - 1, 1);
         } else {
             // Colour bar
-            if (!isMaster_) {
-                g.setColour(trackColour_);
-            } else {
-                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-            }
+            g.setColour(trackColour_);
             g.fillRect(0, 0, ownBounds.getWidth() - 1, 4);
 
             // Tinted name area
-            if (!isMaster_) {
+            {
                 g.setColour(trackColour_.withAlpha(0.5f));
                 g.fillRect(0, 4, ownBounds.getWidth() - 1, tintHeight);
                 g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
@@ -896,51 +893,9 @@ void MixerView::ChannelStrip::resized() {
     }
     bounds.removeFromTop(metrics.controlSpacing);
 
-    // M/S/R/Mon buttons — below track label
     bool isMultiOut = trackType_ == TrackType::MultiOut;
-    {
-        auto buttonArea = bounds.removeFromTop(metrics.buttonSize);
 
-        if (isMaster_) {
-            // Master: M only
-            muteButton->setBounds(buttonArea);
-            soloButton->setVisible(false);
-            if (recordButton)
-                recordButton->setVisible(false);
-            if (monitorButton)
-                monitorButton->setVisible(false);
-        } else if (isMultiOut || !recordButton) {
-            // M/S only
-            int buttonWidth = (buttonArea.getWidth() - 2) / 2;
-            muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-            buttonArea.removeFromLeft(2);
-            soloButton->setBounds(buttonArea);
-            soloButton->setVisible(true);
-            if (recordButton)
-                recordButton->setVisible(false);
-            if (monitorButton)
-                monitorButton->setVisible(false);
-        } else {
-            int numButtons = monitorButton ? 4 : 3;
-            int buttonWidth = (buttonArea.getWidth() - (numButtons - 1) * 2) / numButtons;
-            muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-            buttonArea.removeFromLeft(2);
-            soloButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-            buttonArea.removeFromLeft(2);
-            recordButton->setVisible(true);
-            if (!monitorButton) {
-                recordButton->setBounds(buttonArea);
-            } else {
-                monitorButton->setVisible(true);
-                recordButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-                buttonArea.removeFromLeft(2);
-                monitorButton->setBounds(buttonArea);
-            }
-        }
-        bounds.removeFromTop(2);
-    }
-
-    // Sends area (scrollable viewport) — between buttons and fader
+    // Sends area (scrollable viewport)
     if (!isMaster_ && sendViewport_) {
         const int sendSlotHeight = 18;
         // Layout send slots inside the container
@@ -971,7 +926,13 @@ void MixerView::ChannelStrip::resized() {
         }
     }
 
-    // Routing selectors at bottom
+    // Bottom section (removeFromBottom, so bottommost first):
+    // Omidi | Oaudio
+    // Imidi | Iaudio
+    // R     | M
+    // M     | S
+
+    // Routing selectors (bottommost)
     if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
         if (metrics.showRouting) {
             bool showInputs = !isMultiOut;
@@ -982,28 +943,32 @@ void MixerView::ChannelStrip::resized() {
             midiInSelector->setVisible(showMidi);
             midiOutSelector->setVisible(showMidi);
 
-            bounds.removeFromBottom(2);  // Small gap
+            bounds.removeFromBottom(2);
 
+            // Output row: Omidi | Oaudio
+            auto outRow = bounds.removeFromBottom(16);
             if (showMidi) {
-                // MIDI row (Mi/Mo)
-                auto midiRow = bounds.removeFromBottom(16);
-                int halfWidth = (midiRow.getWidth() - 2) / 2;
-                midiInSelector->setBounds(midiRow.removeFromLeft(halfWidth));
-                midiRow.removeFromLeft(2);
-                midiOutSelector->setBounds(midiRow);
-
-                bounds.removeFromBottom(2);  // Small gap
+                int halfWidth = (outRow.getWidth() - 2) / 2;
+                midiOutSelector->setBounds(outRow.removeFromLeft(halfWidth));
+                outRow.removeFromLeft(2);
+                audioOutSelector->setBounds(outRow);
+            } else {
+                audioOutSelector->setBounds(outRow);
             }
 
-            // Audio row (Ai/Ao or just Ao for multi-out)
-            auto audioRow = bounds.removeFromBottom(16);
-            if (showInputs) {
-                int halfWidth = (audioRow.getWidth() - 2) / 2;
-                audioInSelector->setBounds(audioRow.removeFromLeft(halfWidth));
-                audioRow.removeFromLeft(2);
-                audioOutSelector->setBounds(audioRow);
+            bounds.removeFromBottom(2);
+
+            // Input row: Imidi | Iaudio
+            auto inRow = bounds.removeFromBottom(16);
+            if (showInputs && showMidi) {
+                int halfWidth = (inRow.getWidth() - 2) / 2;
+                midiInSelector->setBounds(inRow.removeFromLeft(halfWidth));
+                inRow.removeFromLeft(2);
+                audioInSelector->setBounds(inRow);
+            } else if (showInputs) {
+                audioInSelector->setBounds(inRow);
             } else {
-                audioOutSelector->setBounds(audioRow);
+                // Multi-out: no inputs
             }
         } else {
             audioInSelector->setVisible(false);
@@ -1013,7 +978,69 @@ void MixerView::ChannelStrip::resized() {
         }
     }
 
-    // Pan slider — now below fader region, above routing (hidden for master)
+    // M/S/R/M buttons — two rows of two above routing
+    {
+        bounds.removeFromBottom(2);
+
+        if (isMaster_) {
+            auto row = bounds.removeFromBottom(metrics.buttonSize);
+            muteButton->setBounds(row);
+            soloButton->setVisible(false);
+            if (recordButton)
+                recordButton->setVisible(false);
+            if (monitorButton)
+                monitorButton->setVisible(false);
+        } else if (isMultiOut || !recordButton) {
+            // M/S only — single row
+            auto row = bounds.removeFromBottom(metrics.buttonSize);
+            int halfWidth = (row.getWidth() - 2) / 2;
+            muteButton->setBounds(row.removeFromLeft(halfWidth));
+            row.removeFromLeft(2);
+            soloButton->setBounds(row);
+            soloButton->setVisible(true);
+            if (recordButton)
+                recordButton->setVisible(false);
+            if (monitorButton)
+                monitorButton->setVisible(false);
+        } else {
+            if (metrics.showMonitor) {
+                // Bottom row: R | M(onitor)
+                auto row2 = bounds.removeFromBottom(metrics.buttonSize);
+                int halfWidth = (row2.getWidth() - 2) / 2;
+                recordButton->setBounds(row2.removeFromLeft(halfWidth));
+                recordButton->setVisible(true);
+                row2.removeFromLeft(2);
+                if (monitorButton) {
+                    monitorButton->setBounds(row2);
+                    monitorButton->setVisible(true);
+                }
+
+                bounds.removeFromBottom(2);
+
+                // Top row: M | S
+                auto row1 = bounds.removeFromBottom(metrics.buttonSize);
+                halfWidth = (row1.getWidth() - 2) / 2;
+                muteButton->setBounds(row1.removeFromLeft(halfWidth));
+                row1.removeFromLeft(2);
+                soloButton->setBounds(row1);
+                soloButton->setVisible(true);
+            } else {
+                // Single row: M | S (R and monitor hidden)
+                auto row = bounds.removeFromBottom(metrics.buttonSize);
+                int halfWidth = (row.getWidth() - 2) / 2;
+                muteButton->setBounds(row.removeFromLeft(halfWidth));
+                row.removeFromLeft(2);
+                soloButton->setBounds(row);
+                soloButton->setVisible(true);
+                if (recordButton)
+                    recordButton->setVisible(false);
+                if (monitorButton)
+                    monitorButton->setVisible(false);
+            }
+        }
+    }
+
+    // Pan slider — above M/S/R/M (hidden for master)
     if (isMaster_) {
         panSlider->setVisible(false);
     } else {
@@ -1134,7 +1161,9 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
         auto& metrics = MixerMetrics::getInstance();
         const int toggleRoutingId = -100;
         const int deleteTrackId = -101;
+        const int toggleMonitorId = -102;
         menu.addItem(toggleRoutingId, "Show I/O Routing", true, metrics.showRouting);
+        menu.addItem(toggleMonitorId, "Show Monitor", true, metrics.showMonitor);
 
         if (!isMaster_) {
             menu.addSeparator();
@@ -1146,7 +1175,12 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
                 auto& m = MixerMetrics::getInstance();
                 m.showRouting = !m.showRouting;
                 if (onSendAreaResized)
-                    onSendAreaResized();  // Triggers relayout of all strips
+                    onSendAreaResized();
+            } else if (result == -102) {
+                auto& m = MixerMetrics::getInstance();
+                m.showMonitor = !m.showMonitor;
+                if (onSendAreaResized)
+                    onSendAreaResized();
             } else if (result == -101) {
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<DeleteTrackCommand>(trackId_));

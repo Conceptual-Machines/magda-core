@@ -2430,6 +2430,20 @@ void SessionView::updateHeaderSelectionVisuals() {
                               DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         }
     }
+    // Master label selection
+    if (masterLabel_) {
+        bool masterSelected = selectedId == MASTER_TRACK_ID;
+        if (masterSelected) {
+            masterLabel_->setColour(juce::TextButton::buttonColourId, juce::Colours::black);
+            masterLabel_->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        } else {
+            masterLabel_->setColour(juce::TextButton::buttonColourId,
+                                    DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+            masterLabel_->setColour(juce::TextButton::textColourOffId,
+                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        }
+    }
+
     repaint();
 }
 

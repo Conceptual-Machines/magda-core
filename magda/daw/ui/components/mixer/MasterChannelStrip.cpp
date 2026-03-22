@@ -410,13 +410,7 @@ void MasterChannelStrip::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.fillRect(1, 4 + tintHeight, ownBounds.getWidth() - 2, 1);
     } else {
-        // Accent blue colour bar at top
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        g.fillRect(1, 1, ownBounds.getWidth() - 2, 4);
-
-        // Accent blue tint behind name area
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
-        g.fillRect(1, 4, ownBounds.getWidth() - 2, tintHeight);
+        // No colour bar/tint for master — clean look
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.fillRect(1, 4 + tintHeight, ownBounds.getWidth() - 2, 1);
     }

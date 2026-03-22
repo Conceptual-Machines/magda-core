@@ -89,13 +89,7 @@ class TrackMeter : public juce::Component {
         drawMeterBar(g, leftBar, levelL_);
         drawMeterBar(g, rightBar, levelR_);
 
-        // 0dB tick mark
-        float zeroDbPos = dbToMeterPos(0.0f);
-        float tickY = bounds.getBottom() - bounds.getHeight() * zeroDbPos;
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
-        g.drawHorizontalLine(static_cast<int>(tickY), bounds.getX(), bounds.getRight());
-
-        // Separator line at name row boundary (aligned with full-header line painted behind)
+        // 0dB tick mark (aligned with header separator)
         if (nameRowY_ >= 0) {
             float localY = static_cast<float>(nameRowY_ - getY());
             if (localY > 0 && localY < bounds.getBottom()) {
@@ -1467,16 +1461,18 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
         g.fillRect(stripX, bgArea.getY(), 3, bgArea.getHeight());
     }
 
-    // Track colour tinted name row (top 22px of header)
+    // Track colour tinted name row — stretches to 0dB mark
+    float zeroDbFrac = 1.0f - dbToMeterPos(0.0f);
+    int nameRowHeight = juce::jmax(22, static_cast<int>(bgArea.getHeight() * zeroDbFrac));
     if (!header.isMaster && header.trackColour != juce::Colour(0xFF444444)) {
-        auto nameRowArea = bgArea.withHeight(22);
+        auto nameRowArea = bgArea.withHeight(nameRowHeight);
         g.setColour(header.trackColour.withAlpha(0.5f));
         g.fillRect(nameRowArea);
     }
 
-    // Separator line at bottom of name row (extends across full header including meter)
+    // Separator line at 0dB boundary
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
-    g.drawHorizontalLine(bgArea.getY() + 22, static_cast<float>(bgArea.getX()),
+    g.drawHorizontalLine(bgArea.getY() + nameRowHeight, static_cast<float>(bgArea.getX()),
                          static_cast<float>(bgArea.getRight()));
 
     // Frozen overlay — dim the track header
@@ -1669,7 +1665,6 @@ void TrackHeadersPanel::layoutVolPanAndButtons(TrackHeader& header, juce::Rectan
 
 void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
                                           const SideColumn& inner, int trackHeight) {
-    const int nameRowHeight = 18;
     const int spacing = 2;
 
     // Master track: skip name row space (painted "Master" label), then volume + mute
@@ -1686,32 +1681,11 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
         header.outputIcon->setVisible(false);
         for (auto& sendLabel : header.sendLabels)
             sendLabel->setVisible(false);
-        tcpArea.removeFromTop(nameRowHeight + spacing);
         layoutVolPanAndButtons(header, tcpArea, inner);
         return;
     }
 
-    // Top row: collapse button (if group) + name label
-    auto topRow = tcpArea.removeFromTop(nameRowHeight);
-
-    if (header.isGroup) {
-        auto btnArea = topRow.removeFromLeft(COLLAPSE_BUTTON_SIZE);
-        int btnY = btnArea.getCentreY() - COLLAPSE_BUTTON_SIZE / 2;
-        header.collapseButton->setBounds(btnArea.getX(), btnY, COLLAPSE_BUTTON_SIZE,
-                                         COLLAPSE_BUTTON_SIZE);
-        topRow.removeFromLeft(2);
-        header.collapseButton->setVisible(true);
-    } else {
-        header.collapseButton->setVisible(false);
-    }
-
-    // Leave some breathing room so the label doesn't span the full header width
-    auto nameArea = topRow.withTrimmedRight(topRow.getWidth() / 4);
-    header.nameLabel->setBounds(nameArea);
-    header.nameLabel->setVisible(true);
-    header.nameLabel->setJustificationType(headersOnRight_ ? juce::Justification::centredRight
-                                                           : juce::Justification::centredLeft);
-    tcpArea.removeFromTop(3);
+    // Name row is laid out by the parent (in the coloured top area)
 
     // Helper to hide all routing selectors and sends
     auto hideAllRouting = [&]() {
@@ -1838,7 +1812,11 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
         if (!headerArea.isEmpty()) {
             const int trackHeight = headerArea.getHeight();
 
-            header.nameRowBottomY = headerArea.getY() + 22;
+            // Split at 0dB: top = name/header area, bottom = controls
+            float zeroDbFrac = 1.0f - dbToMeterPos(0.0f);
+            int nameRowHeight = juce::jmax(22, static_cast<int>(trackHeight * zeroDbFrac));
+            header.nameRowBottomY = headerArea.getY() + nameRowHeight;
+
             auto workArea = headerArea.reduced(4);
             layoutMeterColumn(header, workArea, outer);
 
@@ -1846,6 +1824,31 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             int indent = header.depth * INDENT_WIDTH;
             auto tcpArea = inner.trimmed(workArea, indent);
 
+            // Name label in the top (coloured) area
+            auto topArea = tcpArea.removeFromTop(nameRowHeight - 4);  // -4 for reduced() padding
+            {
+                const int nameRowH = 18;
+                auto nameRow = topArea.removeFromTop(nameRowH);
+                if (header.isGroup) {
+                    auto btnArea = nameRow.removeFromLeft(COLLAPSE_BUTTON_SIZE);
+                    int btnY = btnArea.getCentreY() - COLLAPSE_BUTTON_SIZE / 2;
+                    header.collapseButton->setBounds(btnArea.getX(), btnY, COLLAPSE_BUTTON_SIZE,
+                                                     COLLAPSE_BUTTON_SIZE);
+                    nameRow.removeFromLeft(2);
+                    header.collapseButton->setVisible(true);
+                } else {
+                    header.collapseButton->setVisible(false);
+                }
+                auto nameArea = nameRow.withTrimmedRight(nameRow.getWidth() / 4);
+                header.nameLabel->setBounds(nameArea);
+                header.nameLabel->setVisible(true);
+                header.nameLabel->setJustificationType(headersOnRight_
+                                                           ? juce::Justification::centredRight
+                                                           : juce::Justification::centredLeft);
+            }
+
+            // Controls in the bottom area (below 0dB line)
+            tcpArea.removeFromTop(3);
             layoutControlArea(header, tcpArea, inner, trackHeight);
         }
     }
