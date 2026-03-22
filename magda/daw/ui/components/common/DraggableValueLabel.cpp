@@ -234,6 +234,9 @@ double DraggableValueLabel::parseValue(const juce::String& text) const {
 }
 
 void DraggableValueLabel::paint(juce::Graphics& g) {
+    if (getWidth() < 1 || getHeight() < 1)
+        return;
+
     auto bounds = getLocalBounds().toFloat();
     float alpha = isEnabled() ? 1.0f : 0.4f;
 

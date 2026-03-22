@@ -111,6 +111,10 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Update type icon based on clip type
         bool isAudioClip = (clip->type == magda::ClipType::Audio);
+        bool showAudioProps = isAudioClip && !audioPropsCollapsed_;
+        audioPropsCollapseToggle_.setVisible(isAudioClip);
+        audioPropsLabel_.setVisible(isAudioClip);
+
         if (isAudioClip) {
             clipTypeIcon_->updateSvgData(BinaryData::sinewave_svg, BinaryData::sinewave_svgSize);
             clipTypeIcon_->setTooltip("Audio clip");
@@ -131,7 +135,7 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Show BPM for audio clips (at bottom with WARP)
         // Prefer clip's sourceBPM (may be user-edited), fall back to detected BPM
-        if (isAudioClip && !isMulti) {
+        if (showAudioProps && !isMulti) {
             double displayBPM = clip->sourceBPM;
             double projectBPM =
                 timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
@@ -154,7 +158,7 @@ void ClipInspector::updateFromSelectedClip() {
         }
 
         // Show length in beats for audio clips with auto-tempo enabled (read-only display)
-        if (isAudioClip && clip->autoTempo && !isMulti) {
+        if (showAudioProps && clip->autoTempo && !isMulti) {
             clipBeatsLengthValue_->setVisible(true);
             clipBeatsLengthValue_->setEnabled(true);
             clipBeatsLengthValue_->setAlpha(1.0f);
@@ -285,14 +289,14 @@ void ClipInspector::updateFromSelectedClip() {
             clipLoopPhaseValue_->setVisible(false);
         }
 
-        // Warp toggle (always visible for audio clips)
-        clipWarpToggle_.setVisible(isAudioClip);
+        // Warp toggle (visible when audio props expanded)
+        clipWarpToggle_.setVisible(showAudioProps);
         if (isAudioClip) {
             clipWarpToggle_.setToggleState(clip->warpEnabled, juce::dontSendNotification);
         }
 
-        // Auto-tempo toggle (always visible for audio clips)
-        clipAutoTempoToggle_.setVisible(isAudioClip);
+        // Auto-tempo toggle
+        clipAutoTempoToggle_.setVisible(showAudioProps);
         if (isAudioClip) {
             clipAutoTempoToggle_.setToggleState(clip->autoTempo, juce::dontSendNotification);
             // Disable stretch control when auto-tempo is enabled (speedRatio must be 1.0)
@@ -302,8 +306,8 @@ void ClipInspector::updateFromSelectedClip() {
             }
         }
 
-        clipStretchValue_->setVisible(isAudioClip && !clip->autoTempo);
-        stretchModeCombo_.setVisible(isAudioClip);
+        clipStretchValue_->setVisible(showAudioProps && !clip->autoTempo);
+        stretchModeCombo_.setVisible(showAudioProps);
         if (isAudioClip) {
             clipStretchValue_->setValue(clip->speedRatio, juce::dontSendNotification);
             // Show effective stretch mode (auto-upgraded when autoTempo/warp is active,
@@ -343,16 +347,16 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Pitch/Transpose section (audio + MIDI clips)
         bool isMidiClip = (clip->type == magda::ClipType::MIDI);
-        pitchSectionLabel_.setVisible(isAudioClip);
+        pitchSectionLabel_.setVisible(showAudioProps);
         autoPitchToggle_.setVisible(false);     // hidden for now
         autoPitchModeCombo_.setVisible(false);  // hidden for now
-        pitchChangeValue_->setVisible(isAudioClip);
+        pitchChangeValue_->setVisible(showAudioProps);
         midiTransposeUpBtn_.setVisible(isMidiClip);
         midiTransposeDownBtn_.setVisible(isMidiClip);
         midiTransposeLabel_.setVisible(isMidiClip);
 
         // Analog pitch toggle: visible for audio clips when not in autoTempo/warp mode
-        bool canAnalog = isAudioClip && !clip->autoTempo && !clip->warpEnabled;
+        bool canAnalog = showAudioProps && !clip->autoTempo && !clip->warpEnabled;
         analogPitchToggle_.setVisible(canAnalog);
         if (canAnalog) {
             analogPitchToggle_.setToggleState(clip->analogPitch, juce::dontSendNotification);
@@ -378,11 +382,11 @@ void ClipInspector::updateFromSelectedClip() {
         }
 
         // Mix section (audio clips only) — includes Volume/Pan/Gain + Reverse/L/R
-        clipMixSectionLabel_.setVisible(isAudioClip);
-        clipVolumeValue_->setVisible(isAudioClip);
-        clipPanValue_->setVisible(isAudioClip);
-        clipGainValue_->setVisible(isAudioClip);
-        reverseToggle_.setVisible(isAudioClip);
+        clipMixSectionLabel_.setVisible(showAudioProps);
+        clipVolumeValue_->setVisible(showAudioProps);
+        clipPanValue_->setVisible(showAudioProps);
+        clipGainValue_->setVisible(showAudioProps);
+        reverseToggle_.setVisible(showAudioProps);
         leftChannelToggle_.setVisible(false);
         rightChannelToggle_.setVisible(false);
         if (isAudioClip) {
@@ -398,12 +402,12 @@ void ClipInspector::updateFromSelectedClip() {
         beatSensitivityValue_->setVisible(false);
 
         // Transient sensitivity (audio clips only, single-clip only)
-        transientSectionLabel_.setVisible(isAudioClip && !isMulti);
-        transientSensitivityLabel_.setVisible(isAudioClip && !isMulti);
-        transientSensitivityValue_->setVisible(isAudioClip && !isMulti);
+        transientSectionLabel_.setVisible(showAudioProps && !isMulti);
+        transientSensitivityLabel_.setVisible(showAudioProps && !isMulti);
+        transientSensitivityValue_->setVisible(showAudioProps && !isMulti);
 
         // Fades section (arrangement audio clips only, hidden for session, collapsible)
-        bool showFades = isAudioClip && !isSessionClip;
+        bool showFades = showAudioProps && !isSessionClip;
         bool showFadeControls = showFades && !fadesCollapsed_;
         fadesSectionLabel_.setVisible(showFades);
         fadesCollapseToggle_.setVisible(showFades);
@@ -491,6 +495,8 @@ void ClipInspector::showClipControls(bool show) {
 
     if (!show) {
         // Hide everything managed by viewport container
+        audioPropsCollapseToggle_.setVisible(false);
+        audioPropsLabel_.setVisible(false);
         clipBpmValue_.setVisible(false);
         clipBeatsLengthValue_->setVisible(false);
         clipPositionIcon_->setVisible(false);

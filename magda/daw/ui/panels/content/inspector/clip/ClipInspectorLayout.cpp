@@ -4,7 +4,12 @@
 namespace magda::daw::ui {
 
 void ClipInspector::resized() {
+    if (getWidth() < 1 || getHeight() < 1)
+        return;
+
     auto bounds = getLocalBounds().reduced(10);
+    if (bounds.getWidth() < 1 || bounds.getHeight() < 1)
+        return;
 
     // Multi-clip count label (above header when multiple clips selected)
     if (clipCountLabel_.isVisible()) {
@@ -35,11 +40,11 @@ void ClipInspector::resized() {
     clipPropsViewport_.setBounds(bounds);
 
     // Layout all clip properties inside the container
-    const int containerWidth = bounds.getWidth() - 12;  // Account for scrollbar
+    const int containerWidth = juce::jmax(1, bounds.getWidth() - 12);  // Account for scrollbar
     auto cb = juce::Rectangle<int>(0, 0, containerWidth, 0);
     auto addRow = [&](int height) -> juce::Rectangle<int> {
-        auto row = juce::Rectangle<int>(0, cb.getHeight(), containerWidth, height);
-        cb.setHeight(cb.getHeight() + height);
+        auto row = juce::Rectangle<int>(0, cb.getHeight(), containerWidth, juce::jmax(1, height));
+        cb.setHeight(cb.getHeight() + row.getHeight());
         return row;
     };
     auto addSpace = [&](int height) { cb.setHeight(cb.getHeight() + height); };
@@ -56,7 +61,7 @@ void ClipInspector::resized() {
     const int gap = 3;
     const int labelHeight = 14;
     const int valueHeight = 22;
-    int fieldWidth = (containerWidth - iconSize - gap * 3) / 3;
+    int fieldWidth = juce::jmax(1, (containerWidth - iconSize - gap * 3) / 3);
 
     // Position row: position icon — start, end, offset (arrangement clips only)
     if (clipPositionIcon_->isVisible()) {
@@ -118,6 +123,14 @@ void ClipInspector::resized() {
         }
     }
     addSeparator();
+
+    // Audio properties collapse toggle header
+    if (audioPropsCollapseToggle_.isVisible()) {
+        auto headerRow = addRow(16);
+        audioPropsCollapseToggle_.setBounds(headerRow.removeFromLeft(16));
+        audioPropsLabel_.setBounds(headerRow);
+        addSpace(4);
+    }
 
     // 2-column grid: warp toggles | combo  /  BPM | speed/beats
     {

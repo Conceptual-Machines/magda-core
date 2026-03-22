@@ -101,6 +101,11 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::Label clipLoopPhaseLabel_;
     std::unique_ptr<magda::BarsBeatsTicksLabel> clipLoopPhaseValue_;
 
+    // Audio clip properties toggle (collapsible)
+    bool audioPropsCollapsed_ = false;
+    juce::TextButton audioPropsCollapseToggle_;
+    juce::Label audioPropsLabel_;
+
     // Warp/tempo section
     juce::TextButton clipWarpToggle_;
     juce::TextButton clipAutoTempoToggle_;

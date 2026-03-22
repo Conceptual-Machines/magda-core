@@ -135,6 +135,9 @@ void BarsBeatsTicksLabel::updateSegmentTexts() {
 }
 
 void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
+    if (getWidth() < 1 || getHeight() < 1)
+        return;
+
     auto bounds = getLocalBounds().toFloat();
 
     if (drawBackground_) {

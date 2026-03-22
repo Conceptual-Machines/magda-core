@@ -366,6 +366,34 @@ void ClipInspector::initClipPropertiesSection() {
     };
     clipPropsContainer_.addChildComponent(*clipLoopToggle_);
 
+    // Audio clip properties collapse toggle
+    audioPropsCollapseToggle_.setButtonText(juce::String::charToString(
+        audioPropsCollapsed_ ? (juce::juce_wchar)0x25B6 : (juce::juce_wchar)0x25BC));
+    audioPropsCollapseToggle_.setColour(juce::TextButton::buttonColourId,
+                                        juce::Colours::transparentBlack);
+    audioPropsCollapseToggle_.setColour(juce::TextButton::buttonOnColourId,
+                                        juce::Colours::transparentBlack);
+    audioPropsCollapseToggle_.setColour(juce::TextButton::textColourOffId,
+                                        DarkTheme::getSecondaryTextColour());
+    audioPropsCollapseToggle_.setColour(juce::TextButton::textColourOnId,
+                                        DarkTheme::getSecondaryTextColour());
+    audioPropsCollapseToggle_.setConnectedEdges(
+        juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
+        juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
+    audioPropsCollapseToggle_.onClick = [this]() {
+        audioPropsCollapsed_ = !audioPropsCollapsed_;
+        audioPropsCollapseToggle_.setButtonText(juce::String::charToString(
+            audioPropsCollapsed_ ? (juce::juce_wchar)0x25B6 : (juce::juce_wchar)0x25BC));
+        updateFromSelectedClip();
+    };
+    clipPropsContainer_.addChildComponent(audioPropsCollapseToggle_);
+
+    audioPropsLabel_.setText("Audio Properties", juce::dontSendNotification);
+    audioPropsLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    audioPropsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    audioPropsLabel_.setJustificationType(juce::Justification::centredLeft);
+    clipPropsContainer_.addChildComponent(audioPropsLabel_);
+
     // Warp toggle (pin icon)
     clipWarpToggle_.setButtonText("WARP");
     clipWarpToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());

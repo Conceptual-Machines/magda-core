@@ -56,6 +56,9 @@ ClipComponent::~ClipComponent() {
 }
 
 void ClipComponent::paint(juce::Graphics& g) {
+    if (getWidth() < 1 || getHeight() < 1)
+        return;
+
     const auto* clip = getClipInfo();
     if (!clip) {
         return;
@@ -559,7 +562,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     }
 
     // Musical mode indicator (auto-tempo)
-    if (clip.autoTempo && clip.type == ClipType::Audio) {
+    if (clip.autoTempo && clip.type == ClipType::Audio && headerArea.getWidth() > 16) {
         auto musicalArea = headerArea.removeFromRight(14).reduced(2);
         g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
@@ -568,19 +571,22 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     }
 
     // Loop indicator (infinito/infinity icon)
-    if (clip.loopEnabled) {
+    if (clip.loopEnabled && headerArea.getWidth() > 16) {
         headerArea.removeFromRight(2);  // right padding
         auto loopArea = headerArea.removeFromRight(14).reduced(1);
-        static auto loopIcon = [] {
-            auto icon = juce::Drawable::createFromImageData(BinaryData::infinito_svg,
-                                                            BinaryData::infinito_svgSize);
-            if (icon)
-                icon->replaceColour(juce::Colour(0xFFB3B3B3),
-                                    DarkTheme::getColour(DarkTheme::BACKGROUND));
-            return icon;
-        }();
-        if (loopIcon)
-            loopIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        if (loopArea.getWidth() > 0 && loopArea.getHeight() > 0) {
+            static auto loopIcon = [] {
+                auto icon = juce::Drawable::createFromImageData(BinaryData::infinito_svg,
+                                                                BinaryData::infinito_svgSize);
+                if (icon)
+                    icon->replaceColour(juce::Colour(0xFFB3B3B3),
+                                        DarkTheme::getColour(DarkTheme::BACKGROUND));
+                return icon;
+            }();
+            if (loopIcon)
+                loopIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred,
+                                     1.0f);
+        }
     }
 }
 

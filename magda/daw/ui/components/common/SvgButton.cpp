@@ -47,6 +47,9 @@ void SvgButton::updateSvgData(const char* svgData, size_t svgDataSize) {
 
 void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
                             bool shouldDrawButtonAsDown) {
+    if (getWidth() < 1 || getHeight() < 1)
+        return;
+
     if (dualIconMode) {
         // Dual-icon mode: use pre-baked off/on images
         auto* iconToDraw = (active || shouldDrawButtonAsDown) ? svgIconOn.get() : svgIconOff.get();
@@ -73,7 +76,8 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
             opacity = 0.85f;
         }
 
-        iconToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, opacity);
+        if (!bounds.isEmpty())
+            iconToDraw->drawWithin(g, bounds, juce::RectanglePlacement::centred, opacity);
         return;
     }
 
@@ -148,7 +152,8 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
 
     // Draw the icon (dimmed when disabled)
     float opacity = isEnabled() ? 1.0f : 0.25f;
-    iconCopy->drawWithin(g, bounds.toFloat(), juce::RectanglePlacement::centred, opacity);
+    if (!bounds.isEmpty())
+        iconCopy->drawWithin(g, bounds.toFloat(), juce::RectanglePlacement::centred, opacity);
 }
 
 }  // namespace magda
