@@ -65,6 +65,7 @@ class TransportPanel : public juce::Component {
 
     // CPU usage display (0.0 to 1.0)
     void setCpuUsage(float usage);
+    void setXrunCount(int count);
 
   private:
     // Transport controls (left section)
@@ -169,7 +170,11 @@ class TransportPanel : public juce::Component {
     // CPU usage display (right side)
     std::unique_ptr<juce::Label> cpuTitleLabel;
     std::unique_ptr<juce::Label> cpuValueLabel;
+    std::unique_ptr<juce::Label> xrunLabel;
     float currentCpuUsage = 0.0f;
+    float peakCpuUsage = 0.0f;
+    int peakDecayCounter_ = 0;
+    int currentXrunCount_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportPanel)
 };

@@ -63,12 +63,12 @@ void PlaybackPositionTimer::timerCallback() {
         }
     }
 
-    // CPU usage update (throttled)
+    // CPU usage + xrun update (throttled)
     if (onCpuUsageUpdate && ++cpuUpdateCounter_ >= CPU_UPDATE_TICKS) {
         cpuUpdateCounter_ = 0;
         auto* dm = engine_.getDeviceManager();
         if (dm)
-            onCpuUsageUpdate(static_cast<float>(dm->getCpuUsage()));
+            onCpuUsageUpdate(static_cast<float>(dm->getCpuUsage()), dm->getXRunCount());
     }
 }
 

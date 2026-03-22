@@ -23,9 +23,16 @@ TransportPanel::TransportPanel() {
     cpuValueLabel = std::make_unique<juce::Label>("cpuValue", "0%");
     cpuValueLabel->setColour(juce::Label::textColourId,
                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    cpuValueLabel->setFont(FontManager::getInstance().getUIFont(11.0f));
+    cpuValueLabel->setFont(FontManager::getInstance().getMonoFont(11.0f));
     cpuValueLabel->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(*cpuValueLabel);
+
+    xrunLabel = std::make_unique<juce::Label>("xruns", "");
+    xrunLabel->setColour(juce::Label::textColourId,
+                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    xrunLabel->setFont(FontManager::getInstance().getMonoFont(8.0f));
+    xrunLabel->setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(*xrunLabel);
 }
 
 TransportPanel::~TransportPanel() {
@@ -248,10 +255,12 @@ void TransportPanel::resized() {
     gridSlashLabel->setBounds(0, 0, 0, 0);
     gridSlashLabel->setVisible(false);
 
-    // CPU usage — rounded frame with "CPU [icon]" header (20%) + value (80%)
+    // CPU usage — rounded frame: header (20%) + value + xrun row
     auto cpuArea = getCpuArea().reduced(4, 3);
-    int headerHeight = juce::roundToInt(cpuArea.getHeight() * 0.25f);
+    int headerHeight = juce::roundToInt(cpuArea.getHeight() * 0.20f);
+    int xrunHeight = 12;
     cpuTitleLabel->setBounds(cpuArea.removeFromTop(headerHeight));
+    xrunLabel->setBounds(cpuArea.removeFromBottom(xrunHeight));
     cpuValueLabel->setBounds(cpuArea);
 }
 
@@ -284,7 +293,7 @@ juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
 }
 
 juce::Rectangle<int> TransportPanel::getCpuArea() const {
-    return getLocalBounds().removeFromRight(60);
+    return getLocalBounds().removeFromRight(70);
 }
 
 void TransportPanel::setupTransportButtons() {
@@ -958,11 +967,39 @@ void TransportPanel::setCpuUsage(float usage) {
     float clamped = juce::jlimit(0.0f, 1.0f, usage);
     // Exponential moving average for stable display
     currentCpuUsage = currentCpuUsage * 0.7f + clamped * 0.3f;
+
+    // Track peak with slow decay (resets after ~5 seconds of lower values)
+    if (currentCpuUsage >= peakCpuUsage) {
+        peakCpuUsage = currentCpuUsage;
+        peakDecayCounter_ = 0;
+    } else if (++peakDecayCounter_ > 10) {
+        // ~5s at 500ms update interval
+        peakCpuUsage = currentCpuUsage;
+        peakDecayCounter_ = 0;
+    }
+
     if (cpuValueLabel) {
-        int percent = juce::roundToInt(currentCpuUsage * 100.0f);
-        cpuValueLabel->setText(juce::String(percent) + "%", juce::dontSendNotification);
+        int avgPct = juce::roundToInt(currentCpuUsage * 100.0f);
+        int peakPct = juce::roundToInt(peakCpuUsage * 100.0f);
+        if (peakPct > avgPct + 2)
+            cpuValueLabel->setText(juce::String(avgPct) + "/" + juce::String(peakPct) + "%",
+                                   juce::dontSendNotification);
+        else
+            cpuValueLabel->setText(juce::String(avgPct) + "%", juce::dontSendNotification);
     }
     repaint(getCpuArea());
+}
+
+void TransportPanel::setXrunCount(int count) {
+    currentXrunCount_ = count;
+    if (xrunLabel) {
+        if (count > 0) {
+            xrunLabel->setText("xruns:" + juce::String(count), juce::dontSendNotification);
+            xrunLabel->setColour(juce::Label::textColourId, juce::Colour(0xFFAA5555));
+        } else {
+            xrunLabel->setText("", juce::dontSendNotification);
+        }
+    }
 }
 
 }  // namespace magda
