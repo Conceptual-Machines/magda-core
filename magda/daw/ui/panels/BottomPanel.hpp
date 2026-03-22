@@ -14,6 +14,10 @@ namespace magda {
 class DraggableValueLabel;
 class SvgButton;
 
+namespace daw::ui {
+class AudioClipPropertiesContent;
+}
+
 /**
  * @brief Bottom panel with automatic content switching based on selection
  *
@@ -67,6 +71,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // Editor tab icons for switching between Piano Roll and Drum Grid
     std::unique_ptr<SvgButton> pianoRollTab_;
     std::unique_ptr<SvgButton> drumGridTab_;
+
     bool showEditorTabs_ = false;
     bool updatingTabs_ = false;  // Guard against re-entrancy
     static constexpr int EDITOR_TAB_HEIGHT = 28;
@@ -98,6 +103,20 @@ class BottomPanel : public daw::ui::TabbedPanel,
     ScopedListener<TimelineController, TimelineStateListener> timelineListenerGuard_{this};
 
     bool showPluginDropOverlay_ = false;
+
+    // Audio clip properties side panel (right side, resizable)
+    std::unique_ptr<daw::ui::AudioClipPropertiesContent> audioPropsPanel_;
+    bool showPropsPanel_ = false;
+    bool propsPanelCollapsed_ = false;
+    int propsPanelWidth_ = 250;
+    static constexpr int PROPS_MIN_WIDTH = 150;
+    static constexpr int PROPS_MAX_WIDTH = 500;
+    static constexpr int PROPS_COLLAPSE_THRESHOLD = 60;
+    static constexpr int RESIZE_HANDLE_SIZE = 3;
+
+    // Resize handle between waveform and properties
+    class PropsResizeHandle;
+    std::unique_ptr<PropsResizeHandle> propsResizer_;
 
     void setupHeaderControls();
     void applyTimeModeToContent();

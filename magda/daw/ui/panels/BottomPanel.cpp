@@ -11,6 +11,7 @@
 #include "AudioEngine.hpp"
 #include "BinaryData.h"
 #include "audio/DrumGridPlugin.hpp"
+#include "content/AudioClipPropertiesContent.hpp"
 #include "content/DrumGridClipContent.hpp"
 #include "content/MidiEditorContent.hpp"
 #include "content/PianoRollContent.hpp"
@@ -50,6 +51,40 @@ bool trackHasDrumGrid(TrackId trackId) {
 }
 }  // namespace
 
+// Resize handle between waveform editor and properties panel
+class BottomPanel::PropsResizeHandle : public juce::Component {
+  public:
+    PropsResizeHandle() {
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.setColour(DarkTheme::getColour(DarkTheme::RESIZE_HANDLE));
+        g.fillAll();
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override {
+        startDragX_ = event.x;
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override {
+        if (onResize)
+            onResize(event.x - startDragX_);
+    }
+
+    void mouseDoubleClick(const juce::MouseEvent&) override {
+        if (onDoubleClick)
+            onDoubleClick();
+    }
+
+    std::function<void(int)> onResize;
+    std::function<void()> onDoubleClick;
+
+  private:
+    int startDragX_ = 0;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PropsResizeHandle)
+};
+
 BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     setName("Bottom Panel");
 
@@ -73,6 +108,28 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
             onEditorTabChanged(1);
     };
     addChildComponent(drumGridTab_.get());
+
+    // Create audio clip properties side panel (hidden by default)
+    audioPropsPanel_ = std::make_unique<daw::ui::AudioClipPropertiesContent>();
+    addChildComponent(audioPropsPanel_.get());
+
+    // Resize handle between waveform and properties panel
+    propsResizer_ = std::make_unique<PropsResizeHandle>();
+    propsResizer_->onResize = [this](int delta) {
+        int newWidth = propsPanelWidth_ - delta;
+        if (newWidth < PROPS_COLLAPSE_THRESHOLD) {
+            propsPanelCollapsed_ = true;
+        } else {
+            propsPanelCollapsed_ = false;
+            propsPanelWidth_ = juce::jlimit(PROPS_MIN_WIDTH, PROPS_MAX_WIDTH, newWidth);
+        }
+        resized();
+    };
+    propsResizer_->onDoubleClick = [this]() {
+        propsPanelCollapsed_ = !propsPanelCollapsed_;
+        resized();
+    };
+    addChildComponent(propsResizer_.get());
 
     // Create header controls
     setupHeaderControls();
@@ -111,6 +168,8 @@ BottomPanel::~BottomPanel() {
     // Explicitly destroy before base class teardown to avoid repaint during partial destruction
     pianoRollTab_.reset();
     drumGridTab_.reset();
+    propsResizer_.reset();
+    audioPropsPanel_.reset();
 }
 
 void BottomPanel::setupHeaderControls() {
@@ -296,14 +355,20 @@ void BottomPanel::paint(juce::Graphics& g) {
         g.fillRect(getLocalBounds());
     }
 
-    // Draw bottom border below the editor tab header and column dividers for tab icons
-    if (showEditorTabs_) {
+    bool hasHeader = showEditorTabs_ || showPropsPanel_;
+
+    // Draw bottom border below the header and column dividers
+    if (hasHeader) {
         g.setColour(DarkTheme::getBorderColour());
         g.fillRect(0, EDITOR_TAB_HEIGHT - 1, getWidth(), 1);
 
-        // Sidebar column divider
-        g.fillRect(SIDEBAR_WIDTH, 0, 1, EDITOR_TAB_HEIGHT - 1);
+        // Sidebar column divider (for MIDI editor tab icons)
+        if (showEditorTabs_) {
+            g.fillRect(SIDEBAR_WIDTH, 0, 1, EDITOR_TAB_HEIGHT - 1);
+        }
     }
+
+    // The resize handle provides visual separation — no extra divider needed
 }
 
 void BottomPanel::resized() {
@@ -311,6 +376,8 @@ void BottomPanel::resized() {
     if (isCollapsed()) {
         pianoRollTab_->setVisible(false);
         drumGridTab_->setVisible(false);
+        audioPropsPanel_->setVisible(false);
+        propsResizer_->setVisible(false);
         timeModeButton_->setVisible(false);
         gridNumeratorLabel_->setVisible(false);
         gridSlashLabel_->setVisible(false);
@@ -321,58 +388,70 @@ void BottomPanel::resized() {
         return;
     }
 
-    // Position editor tab icons and header controls at the top of the panel area
-    if (showEditorTabs_) {
+    bool hasHeader = showEditorTabs_ || showPropsPanel_;
+
+    if (hasHeader) {
         auto headerBounds = getLocalBounds().removeFromTop(EDITOR_TAB_HEIGHT);
 
-        // Controls right-aligned, leaving space for collapse button
+        // Grid controls on the right (shared by MIDI and audio editors)
         auto controlsArea = headerBounds;
         controlsArea.removeFromRight(30);  // Space for collapse button
 
-        // Layout controls from right to left
         int x = controlsArea.getRight();
         int y = controlsArea.getY();
         int h = controlsArea.getHeight();
         int vPad = 4;
 
-        // SNAP
         x -= 36;
         snapButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
         x -= 4;
-
-        // AUTO
         x -= 36;
         autoGridButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
         x -= 4;
-
-        // Denominator
         x -= 24;
         gridDenominatorLabel_->setBounds(x, y + vPad, 24, h - vPad * 2);
-
-        // Slash
         x -= 8;
         gridSlashLabel_->setBounds(x, y, 8, h);
-
-        // Numerator
         x -= 24;
         gridNumeratorLabel_->setBounds(x, y + vPad, 24, h - vPad * 2);
         x -= 4;
-
-        // ABS/REL
         x -= 36;
         timeModeButton_->setBounds(x, y + vPad, 36, h - vPad * 2);
 
-        // Tab icon buttons after the sidebar column
-        int iconSize = h - 8;
-        int tabY = y + (h - iconSize) / 2;
-        int tabX = headerBounds.getX() + SIDEBAR_WIDTH + 4;
-        pianoRollTab_->setBounds(tabX, tabY, iconSize, iconSize);
-        tabX += iconSize + 4;
-        drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
+        if (showEditorTabs_) {
+            // MIDI editor: tab icons on left
+            int iconSize = h - 8;
+            int tabY = y + (h - iconSize) / 2;
+            int tabX = headerBounds.getX() + SIDEBAR_WIDTH + 4;
+            pianoRollTab_->setBounds(tabX, tabY, iconSize, iconSize);
+            tabX += iconSize + 4;
+            drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
+        }
     }
 
-    // TabbedPanel::resized() uses getContentBounds() which accounts for the tab bar
+    // TabbedPanel::resized() uses getContentBounds() which accounts for the header and side panel
     TabbedPanel::resized();
+
+    // Position resize handle and properties side panel
+    if (showPropsPanel_ && !propsPanelCollapsed_) {
+        auto fullContent = getLocalBounds();
+        if (hasHeader)
+            fullContent.removeFromTop(EDITOR_TAB_HEIGHT);
+
+        // Resize handle
+        int resizerX = fullContent.getRight() - propsPanelWidth_ - RESIZE_HANDLE_SIZE;
+        propsResizer_->setBounds(resizerX, fullContent.getY(), RESIZE_HANDLE_SIZE,
+                                 fullContent.getHeight());
+        propsResizer_->setVisible(true);
+
+        // Properties panel
+        auto propsArea = fullContent.removeFromRight(propsPanelWidth_);
+        audioPropsPanel_->setBounds(propsArea);
+        audioPropsPanel_->setVisible(true);
+    } else {
+        audioPropsPanel_->setVisible(false);
+        propsResizer_->setVisible(false);
+    }
 }
 
 void BottomPanel::clipsChanged() {
@@ -483,8 +562,9 @@ void BottomPanel::updateContentBasedOnSelection() {
 
     // Update tab icons and controls visibility
     showEditorTabs_ = needsTabs;
+    showPropsPanel_ = (targetContent == daw::ui::PanelContentType::WaveformEditor);
 
-    // Update tab icon active states
+    // Update MIDI tab icon active states
     if (showEditorTabs_) {
         updatingTabs_ = true;
         pianoRollTab_->setActive(lastEditorTabChoice_ == 0);
@@ -496,13 +576,21 @@ void BottomPanel::updateContentBasedOnSelection() {
     pianoRollTab_->setVisible(showEditorTabs_);
     drumGridTab_->setVisible(showEditorTabs_);
 
-    // Show/hide header controls
-    timeModeButton_->setVisible(showEditorTabs_);
-    gridNumeratorLabel_->setVisible(showEditorTabs_);
-    gridSlashLabel_->setVisible(showEditorTabs_);
-    gridDenominatorLabel_->setVisible(showEditorTabs_);
-    autoGridButton_->setVisible(showEditorTabs_);
-    snapButton_->setVisible(showEditorTabs_);
+    // Show/hide header controls (for MIDI and audio editors)
+    bool showHeaderControls = showEditorTabs_ || showPropsPanel_;
+    timeModeButton_->setVisible(showHeaderControls);
+    gridNumeratorLabel_->setVisible(showHeaderControls);
+    gridSlashLabel_->setVisible(showHeaderControls);
+    gridDenominatorLabel_->setVisible(showHeaderControls);
+    autoGridButton_->setVisible(showHeaderControls);
+    snapButton_->setVisible(showHeaderControls);
+
+    // Activate/deactivate audio clip properties side panel
+    if (showPropsPanel_) {
+        audioPropsPanel_->onActivated();
+    } else {
+        audioPropsPanel_->onDeactivated();
+    }
 
     resized();
 
@@ -539,8 +627,13 @@ juce::Rectangle<int> BottomPanel::getTabBarBounds() {
 
 juce::Rectangle<int> BottomPanel::getContentBounds() {
     auto bounds = getLocalBounds();
-    if (showEditorTabs_) {
+    // Reserve header space
+    if (showEditorTabs_ || showPropsPanel_) {
         bounds.removeFromTop(EDITOR_TAB_HEIGHT);
+    }
+    // Reserve space for properties side panel + resize handle when expanded
+    if (showPropsPanel_ && !propsPanelCollapsed_) {
+        bounds.removeFromRight(propsPanelWidth_ + RESIZE_HANDLE_SIZE);
     }
     return bounds;
 }

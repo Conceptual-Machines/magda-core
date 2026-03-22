@@ -597,15 +597,9 @@ void WaveformEditorContent::resized() {
     auto bounds = getLocalBounds();
 
     // Guard against too-small bounds (panel being resized very small)
-    int minHeight = TOOLBAR_HEIGHT + TIME_RULER_HEIGHT + 1;
+    int minHeight = TIME_RULER_HEIGHT + 1;
     if (bounds.getHeight() < minHeight || bounds.getWidth() <= 0) {
         // Hide everything when too small to avoid zero-sized paint
-        timeModeButton_->setBounds(0, 0, 0, 0);
-        gridNumeratorLabel_->setBounds(0, 0, 0, 0);
-        gridSlashLabel_->setBounds(0, 0, 0, 0);
-        gridDenominatorLabel_->setBounds(0, 0, 0, 0);
-        snapButton_->setBounds(0, 0, 0, 0);
-        gridButton_->setBounds(0, 0, 0, 0);
         timeRuler_->setBounds(0, 0, 0, 0);
         viewport_->setBounds(0, 0, 0, 0);
         if (playheadOverlay_)
@@ -613,29 +607,15 @@ void WaveformEditorContent::resized() {
         return;
     }
 
-    // Toolbar at top
-    auto toolbarArea = bounds.removeFromTop(TOOLBAR_HEIGHT);
-    int vPad = 4;
-    int y = toolbarArea.getY();
-    int h = toolbarArea.getHeight();
+    // Toolbar controls are managed by BottomPanel header — hide them here
+    timeModeButton_->setVisible(false);
+    gridNumeratorLabel_->setVisible(false);
+    gridSlashLabel_->setVisible(false);
+    gridDenominatorLabel_->setVisible(false);
+    snapButton_->setVisible(false);
+    gridButton_->setVisible(false);
 
-    // Left: time mode
-    timeModeButton_->setBounds(toolbarArea.removeFromLeft(60).reduced(2));
-
-    // Right-aligned: SNAP, GRID, denominator, slash, numerator
-    snapButton_->setBounds(
-        toolbarArea.removeFromRight(36).withY(y + vPad).withHeight(h - vPad * 2));
-    toolbarArea.removeFromRight(4);
-    gridButton_->setBounds(
-        toolbarArea.removeFromRight(36).withY(y + vPad).withHeight(h - vPad * 2));
-    toolbarArea.removeFromRight(4);
-    gridDenominatorLabel_->setBounds(
-        toolbarArea.removeFromRight(24).withY(y + vPad).withHeight(h - vPad * 2));
-    gridSlashLabel_->setBounds(toolbarArea.removeFromRight(8).withY(y).withHeight(h));
-    gridNumeratorLabel_->setBounds(
-        toolbarArea.removeFromRight(24).withY(y + vPad).withHeight(h - vPad * 2));
-
-    // Time ruler below toolbar
+    // Time ruler at top
     auto rulerArea = bounds.removeFromTop(TIME_RULER_HEIGHT);
     timeRuler_->setBounds(rulerArea);
 
