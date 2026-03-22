@@ -441,11 +441,12 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
             minNote = juce::jmin(minNote, note.noteNumber);
             maxNote = juce::jmax(maxNote, note.noteNumber);
         }
-        // Add padding so notes aren't flush against edges
-        int padding = juce::jmax(2, (maxNote - minNote) / 4);
+        // Add padding so notes aren't flush against edges, minimum 12 semitones range
+        int rawRange = maxNote - minNote;
+        int padding = juce::jmax(6, rawRange / 4);
         minNote = juce::jmax(0, minNote - padding);
         maxNote = juce::jmin(127, maxNote + padding);
-        int noteRange = juce::jmax(1, maxNote - minNote);
+        int noteRange = juce::jmax(12, maxNote - minNote);
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
 
         // For MIDI clips, convert source region to beats
