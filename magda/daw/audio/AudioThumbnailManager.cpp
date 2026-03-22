@@ -162,23 +162,36 @@ void AudioThumbnailManager::clearCachedTransients(const juce::String& filePath) 
 
 juce::AudioFormatReader* AudioThumbnailManager::getOrCreateReader(
     const juce::String& audioFilePath) {
-    auto it = readerCache_.find(audioFilePath);
-    if (it != readerCache_.end()) {
-        return it->second.get();
+    auto key = audioFilePath.toStdString();
+    auto it = readerIndex_.find(key);
+
+    if (it != readerIndex_.end()) {
+        // Move to front (most recently used)
+        readerLru_.splice(readerLru_.begin(), readerLru_, it->second);
+        return it->second->reader.get();
     }
 
     juce::File audioFile(audioFilePath);
-    if (!audioFile.existsAsFile()) {
+    if (!audioFile.existsAsFile())
         return nullptr;
-    }
 
     std::unique_ptr<juce::AudioFormatReader> reader(formatManager_.createReaderFor(audioFile));
-    if (!reader) {
+    if (!reader)
         return nullptr;
-    }
 
     auto* ptr = reader.get();
-    readerCache_[audioFilePath] = std::move(reader);
+
+    // Insert at front
+    readerLru_.push_front({audioFilePath, std::move(reader)});
+    readerIndex_[key] = readerLru_.begin();
+
+    // Evict LRU entries if over limit
+    while (readerLru_.size() > MAX_CACHED_READERS) {
+        auto& back = readerLru_.back();
+        readerIndex_.erase(back.path.toStdString());
+        readerLru_.pop_back();
+    }
+
     return ptr;
 }
 
@@ -357,7 +370,8 @@ void AudioThumbnailManager::clearCache() {
     thumbnailCache_->clear();
     bpmCache_.clear();
     transientCache_.clear();
-    readerCache_.clear();
+    readerIndex_.clear();
+    readerLru_.clear();
     DBG("AudioThumbnailManager: Cache cleared");
 }
 
@@ -372,7 +386,8 @@ void AudioThumbnailManager::shutdown() {
     thumbnailCache_.reset();
     bpmCache_.clear();
     transientCache_.clear();
-    readerCache_.clear();
+    readerIndex_.clear();
+    readerLru_.clear();
 }
 
 }  // namespace magda

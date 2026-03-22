@@ -4,9 +4,11 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <list>
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 namespace magda {
 
@@ -101,8 +103,19 @@ class AudioThumbnailManager {
     // Transient detection cache (file path -> transient times in source-file seconds)
     std::map<juce::String, juce::Array<double>> transientCache_;
 
-    // Cached AudioFormatReaders for raw-sample waveform rendering
-    std::map<juce::String, std::unique_ptr<juce::AudioFormatReader>> readerCache_;
+    // LRU cache for AudioFormatReaders (raw-sample waveform rendering)
+    static constexpr size_t MAX_CACHED_READERS = 16;
+
+    struct ReaderEntry {
+        juce::String path;
+        std::unique_ptr<juce::AudioFormatReader> reader;
+    };
+
+    // LRU list: front = most recently used, back = least recently used
+    std::list<ReaderEntry> readerLru_;
+    // Map path -> iterator into readerLru_ for O(1) lookup
+    std::unordered_map<std::string, std::list<ReaderEntry>::iterator> readerIndex_;
+
     juce::AudioFormatReader* getOrCreateReader(const juce::String& audioFilePath);
 
     // Draw waveform directly from raw samples (used when zoomed in)
