@@ -327,17 +327,21 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     transportHeight = layout.defaultTransportHeight;
 
     // Scale side panel defaults based on screen width
-    auto displayArea = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()->userArea;
-    int screenWidth = displayArea.getWidth();
-    if (screenWidth >= 2560) {  // Large display (1440p+)
-        leftPanelWidth = rightPanelWidth = 400;
-        bottomPanelHeight = 380;
-    } else if (screenWidth >= 1920) {  // Full HD
-        leftPanelWidth = rightPanelWidth = 350;
-        bottomPanelHeight = 350;
+    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
+        int screenWidth = display->userArea.getWidth();
+        if (screenWidth >= 2560) {  // Large display (1440p+)
+            leftPanelWidth = rightPanelWidth = 400;
+            bottomPanelHeight = 380;
+        } else if (screenWidth >= 1920) {  // Full HD
+            leftPanelWidth = rightPanelWidth = 350;
+            bottomPanelHeight = 350;
+        } else {
+            leftPanelWidth = rightPanelWidth = layout.defaultLeftPanelWidth;
+            bottomPanelHeight = layout.defaultBottomPanelHeight;
+        }
     } else {
-        leftPanelWidth = rightPanelWidth = layout.defaultLeftPanelWidth;  // 300 for small screens
-        bottomPanelHeight = layout.defaultBottomPanelHeight;              // 330
+        leftPanelWidth = rightPanelWidth = layout.defaultLeftPanelWidth;
+        bottomPanelHeight = layout.defaultBottomPanelHeight;
     }
 
     // Listen for debug settings changes

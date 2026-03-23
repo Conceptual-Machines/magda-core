@@ -89,9 +89,6 @@ void InspectorContainer::setAudioEngine(magda::AudioEngine* engine) {
 }
 
 void InspectorContainer::selectionTypeChanged(magda::SelectionType newType) {
-    DBG("InspectorContainer::selectionTypeChanged - newType=" +
-        juce::String(static_cast<int>(newType)) +
-        " currentType=" + juce::String(static_cast<int>(currentSelectionType_)));
     if (newType != currentSelectionType_) {
         switchToInspector(newType);
     }
@@ -135,11 +132,6 @@ void InspectorContainer::multiTrackSelectionChanged(
 }
 
 void InspectorContainer::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
-    DBG("InspectorContainer::chainNodeSelectionChanged - path valid=" +
-        juce::String(path.isValid() ? "true" : "false") +
-        " type=" + juce::String(static_cast<int>(path.getType())) + " currentInspector=" +
-        juce::String(currentInspector_ ? "exists" : "null") + " isDeviceInspector=" +
-        juce::String(dynamic_cast<DeviceInspector*>(currentInspector_.get()) ? "yes" : "no"));
     auto* deviceInspector = dynamic_cast<DeviceInspector*>(currentInspector_.get());
     if (deviceInspector) {
         deviceInspector->setSelectedChainNode(path);
