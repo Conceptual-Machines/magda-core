@@ -1606,26 +1606,6 @@ void MixerView::rebuildChannelStrips() {
             }
         }
 
-        // Skip collapsed multi-out children
-        if (track.type == TrackType::MultiOut && track.multiOutLink) {
-            if (auto* parent =
-                    TrackManager::getInstance().getTrack(track.multiOutLink->sourceTrackId)) {
-                bool skipTrack = false;
-                for (const auto& elem : parent->chainElements) {
-                    if (isDevice(elem)) {
-                        const auto& dev = getDevice(elem);
-                        if (dev.id == track.multiOutLink->sourceDeviceId &&
-                            dev.multiOut.isMultiOut && dev.multiOut.mixerChildrenCollapsed) {
-                            skipTrack = true;
-                            break;
-                        }
-                    }
-                }
-                if (skipTrack)
-                    continue;
-            }
-        }
-
         auto strip = std::make_unique<ChannelStrip>(track, audioEngine_, false);
         strip->onClicked = [this](int trackId, bool isMaster) {
             // Find the index of this track in the visible strips
@@ -1688,54 +1668,6 @@ void MixerView::rebuildChannelStrips() {
             strip->addAndMakeVisible(*strip->expandToggle_);
         }
 
-        // Check if this track has active multi-out children (and no DrumGrid toggle already)
-        if (!drumGrid && !track.isGroup()) {
-            bool hasActiveMultiOut = false;
-            bool isCollapsed = false;
-            TrackId trackId = track.id;
-            DeviceId multiOutDeviceId = INVALID_DEVICE_ID;
-            for (const auto& elem : track.chainElements) {
-                if (isDevice(elem)) {
-                    const auto& dev = getDevice(elem);
-                    if (dev.multiOut.isMultiOut) {
-                        for (const auto& pair : dev.multiOut.outputPairs) {
-                            if (pair.active) {
-                                hasActiveMultiOut = true;
-                                break;
-                            }
-                        }
-                        if (hasActiveMultiOut) {
-                            multiOutDeviceId = dev.id;
-                            isCollapsed = dev.multiOut.mixerChildrenCollapsed;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (hasActiveMultiOut) {
-                strip->expandToggle_ = std::make_unique<juce::TextButton>(
-                    isCollapsed ? juce::String::charToString(0x25B6)    // ▶
-                                : juce::String::charToString(0x25BC));  // ▼
-                strip->expandToggle_->setConnectedEdges(
-                    juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-                strip->expandToggle_->setColour(juce::TextButton::buttonColourId,
-                                                DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-                strip->expandToggle_->setColour(juce::TextButton::textColourOffId,
-                                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-                strip->expandToggle_->onClick = [this, trackId, multiOutDeviceId]() {
-                    auto* dev = TrackManager::getInstance().getDevice(trackId, multiOutDeviceId);
-                    if (dev && dev->multiOut.isMultiOut) {
-                        dev->multiOut.mixerChildrenCollapsed =
-                            !dev->multiOut.mixerChildrenCollapsed;
-                    }
-                    rebuildChannelStrips();
-                };
-                strip->addAndMakeVisible(*strip->expandToggle_);
-            }
-        }
-
         channelStrips.push_back(std::move(strip));
 
         // If DrumGrid is expanded, create sub-strips for non-empty chains
@@ -1793,16 +1725,6 @@ void MixerView::rebuildChannelStrips() {
                         continue;
                     }
                 }
-            }
-        }
-
-        // --- Nest multi-out children inside their source parent ---
-        if (trackInfo->type == TrackType::MultiOut && trackInfo->multiOutLink) {
-            auto it = stripByTrackId.find(trackInfo->multiOutLink->sourceTrackId);
-            if (it != stripByTrackId.end()) {
-                it->second->addChildComponent(*strip);
-                it->second->groupChildren_.push_back(strip.get());
-                continue;
             }
         }
 

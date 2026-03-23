@@ -209,21 +209,30 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
     newTrack.type = TrackType::MultiOut;
     newTrack.name = device->name + ": " + pair.name;
     newTrack.colour = parentTrack->colour;
-    newTrack.parentId = parentTrackId;
     newTrack.audioOutputDevice = "master";
 
-    // Set the multi-out link
+    // Set the multi-out link (keeps routing reference, no parent-child hierarchy)
     newTrack.multiOutLink = MultiOutTrackLink{parentTrackId, deviceId, pairIndex};
 
-    tracks_.push_back(std::move(newTrack));
+    // Insert after the parent track (and any existing multi-out siblings) for adjacency
+    auto parentIt =
+        std::find_if(tracks_.begin(), tracks_.end(),
+                     [parentTrackId](const TrackInfo& t) { return t.id == parentTrackId; });
+    if (parentIt != tracks_.end()) {
+        // Find last consecutive multi-out track for this device after the parent
+        auto insertIt = parentIt + 1;
+        while (insertIt != tracks_.end() && insertIt->type == TrackType::MultiOut &&
+               insertIt->multiOutLink && insertIt->multiOutLink->sourceTrackId == parentTrackId) {
+            ++insertIt;
+        }
+        tracks_.insert(insertIt, std::move(newTrack));
+    } else {
+        tracks_.push_back(std::move(newTrack));
+    }
 
-    // Re-fetch pointers after push_back (vector reallocation invalidates them)
-    parentTrack = getTrack(parentTrackId);
+    // Re-fetch pointers after insert (vector reallocation invalidates them)
     device = getDevice(parentTrackId, deviceId);
     auto& pairRef = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
-
-    // Add to parent's children
-    parentTrack->childIds.push_back(newTrackId);
 
     // Update the output pair state
     pairRef.active = true;
@@ -253,10 +262,6 @@ void TrackManager::deactivateMultiOutPair(TrackId parentTrackId, DeviceId device
         return;
 
     TrackId trackToRemove = pair.trackId;
-
-    // Remove from parent's children
-    auto& children = parentTrack->childIds;
-    children.erase(std::remove(children.begin(), children.end(), trackToRemove), children.end());
 
     // Remove the track
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
@@ -403,10 +408,7 @@ void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     group->childIds.push_back(trackId);
 
     // Auto-route child's audio output to the group track
-    // (but skip MultiOut tracks — they always route to master)
-    if (track->type != TrackType::MultiOut) {
-        track->audioOutputDevice = "track:" + juce::String(groupId);
-    }
+    track->audioOutputDevice = "track:" + juce::String(groupId);
     notifyTrackPropertyChanged(trackId);
 
     notifyTracksChanged();

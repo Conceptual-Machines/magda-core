@@ -2087,15 +2087,6 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     menu.addSectionHeader(track->name);
     menu.addSeparator();
 
-    // MultiOut tracks have limited context menu (can't delete/move independently)
-    if (track->type == TrackType::MultiOut) {
-        menu.addItem(0, "Output track (managed by parent instrument)", false, false);
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(localAreaToGlobal(
-                               juce::Rectangle<int>(position.x, position.y, 1, 1))),
-                           nullptr);
-        return;
-    }
-
     // Group operations
     if (track->isGroup()) {
         // Collapse/expand

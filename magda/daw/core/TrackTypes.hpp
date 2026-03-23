@@ -42,7 +42,7 @@ inline const char* getTrackTypeName(TrackType type) {
  * @brief Check if track type can have children
  */
 inline bool canHaveChildren(TrackType type) {
-    return type == TrackType::Group || type == TrackType::Instrument;
+    return type == TrackType::Group;
 }
 
 }  // namespace magda

@@ -937,23 +937,6 @@ void TrackInspector::updateFromSelectedTrack() {
         // Update routing selectors to match track state
         updateRoutingSelectorsFromTrack();
 
-        // MultiOut children: show where audio actually goes (parent's output destination)
-        if (track->type == magda::TrackType::MultiOut && track->hasParent()) {
-            juce::String outputName = "Master";
-            if (auto* parent = magda::TrackManager::getInstance().getTrack(track->parentId)) {
-                if (parent->hasParent()) {
-                    if (auto* group =
-                            magda::TrackManager::getInstance().getTrack(parent->parentId)) {
-                        if (group->isGroup())
-                            outputName = group->name;
-                    }
-                }
-            }
-            outputSelector_->setOptions({{1, outputName}});
-            outputSelector_->setSelectedId(1);
-            outputSelector_->setEnabled(false);
-        }
-
         // Update send level values in-place (don't rebuild — that destroys mid-drag labels)
         const auto& sends = track->sends;
         if (sends.size() == sendLevelLabels_.size()) {

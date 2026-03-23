@@ -290,7 +290,6 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
         auto* multiOutObj = new juce::DynamicObject();
         multiOutObj->setProperty("isMultiOut", true);
         multiOutObj->setProperty("totalOutputChannels", device.multiOut.totalOutputChannels);
-        multiOutObj->setProperty("mixerChildrenCollapsed", device.multiOut.mixerChildrenCollapsed);
 
         juce::Array<juce::var> pairsArray;
         for (const auto& pair : device.multiOut.outputPairs) {
@@ -416,9 +415,6 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         auto* moObj = multiOutVar.getDynamicObject();
         outDevice.multiOut.isMultiOut = moObj->getProperty("isMultiOut");
         outDevice.multiOut.totalOutputChannels = moObj->getProperty("totalOutputChannels");
-        if (moObj->hasProperty("mixerChildrenCollapsed"))
-            outDevice.multiOut.mixerChildrenCollapsed =
-                moObj->getProperty("mixerChildrenCollapsed");
 
         auto pairsVar = moObj->getProperty("outputPairs");
         if (pairsVar.isArray()) {

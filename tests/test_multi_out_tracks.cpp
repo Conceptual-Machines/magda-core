@@ -137,57 +137,6 @@ TEST_CASE("addTrackToGroup skips MultiOut track routing", "[multi_out][group]") 
 }
 
 // ============================================================================
-// Mixer Collapse State
-// ============================================================================
-
-TEST_CASE("MultiOutConfig mixerChildrenCollapsed flag", "[multi_out][mixer]") {
-    MultiOutTestFixture fixture;
-
-    auto [trackId, deviceId] = fixture.createMultiOutTrack();
-
-    SECTION("defaults to not collapsed") {
-        auto* device = fixture.tm().getDevice(trackId, deviceId);
-        REQUIRE(device != nullptr);
-        REQUIRE(device->multiOut.mixerChildrenCollapsed == false);
-    }
-
-    SECTION("can be toggled") {
-        auto* device = fixture.tm().getDevice(trackId, deviceId);
-        REQUIRE(device != nullptr);
-
-        device->multiOut.mixerChildrenCollapsed = true;
-        REQUIRE(device->multiOut.mixerChildrenCollapsed == true);
-
-        device->multiOut.mixerChildrenCollapsed = false;
-        REQUIRE(device->multiOut.mixerChildrenCollapsed == false);
-    }
-
-    SECTION("collapse state is per-device") {
-        // Add a second multi-out device (unusual but valid)
-        DeviceInfo instrument2;
-        instrument2.name = "SecondSynth";
-        instrument2.format = PluginFormat::Internal;
-        instrument2.pluginId = "multisynth2";
-        instrument2.isInstrument = true;
-        instrument2.multiOut.isMultiOut = true;
-        instrument2.multiOut.totalOutputChannels = 4;
-        instrument2.multiOut.outputPairs = {
-            {0, "Main 1-2", false, INVALID_TRACK_ID, 1, 2},
-            {1, "Out 3-4", false, INVALID_TRACK_ID, 3, 2},
-        };
-
-        auto trackId2 = fixture.tm().createTrack("Inst2", TrackType::Instrument);
-        auto deviceId2 = fixture.tm().addDeviceToTrack(trackId2, instrument2);
-
-        auto* dev1 = fixture.tm().getDevice(trackId, deviceId);
-        auto* dev2 = fixture.tm().getDevice(trackId2, deviceId2);
-
-        dev1->multiOut.mixerChildrenCollapsed = true;
-        REQUIRE(dev1->multiOut.mixerChildrenCollapsed == true);
-        REQUIRE(dev2->multiOut.mixerChildrenCollapsed == false);
-    }
-}
-
 // ============================================================================
 // Multi-Out Pair Activation / Deactivation
 // ============================================================================
@@ -197,18 +146,22 @@ TEST_CASE("Multi-out pair activation and deactivation", "[multi_out][lifecycle]"
 
     auto [trackId, deviceId] = fixture.createMultiOutTrack();
 
-    SECTION("activating a pair marks it active and creates child track") {
-        auto childId = fixture.tm().activateMultiOutPair(trackId, deviceId, 1);
-        REQUIRE(childId != INVALID_TRACK_ID);
+    SECTION("activating a pair marks it active and creates sibling track") {
+        auto siblingId = fixture.tm().activateMultiOutPair(trackId, deviceId, 1);
+        REQUIRE(siblingId != INVALID_TRACK_ID);
 
         auto* device = fixture.tm().getDevice(trackId, deviceId);
         REQUIRE(device->multiOut.outputPairs[1].active == true);
-        REQUIRE(device->multiOut.outputPairs[1].trackId == childId);
+        REQUIRE(device->multiOut.outputPairs[1].trackId == siblingId);
 
-        // Parent should list child
+        // Multi-out track should be a top-level sibling, not a child
+        auto* sibling = fixture.tm().getTrack(siblingId);
+        REQUIRE(sibling != nullptr);
+        REQUIRE(sibling->parentId == INVALID_TRACK_ID);
+
+        // Parent should NOT list it as a child
         auto* parent = fixture.tm().getTrack(trackId);
-        auto& children = parent->childIds;
-        REQUIRE(std::find(children.begin(), children.end(), childId) != children.end());
+        REQUIRE(parent->childIds.empty());
     }
 
     SECTION("activating same pair twice returns existing track") {
