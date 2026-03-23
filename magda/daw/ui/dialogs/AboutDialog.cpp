@@ -52,7 +52,7 @@ class AboutDialog::ContentComponent : public juce::Component {
                               juce::Colour(DarkTheme::TEXT_PRIMARY));
         addAndMakeVisible(*titleLink_);
 
-        setSize(400, 410);
+        setSize(500, 440);
     }
 
     void paint(juce::Graphics& g) override {
@@ -84,44 +84,57 @@ class AboutDialog::ContentComponent : public juce::Component {
         g.drawText(juce::String("Version ") + MAGDA_VERSION, bounds.removeFromTop(20),
                    juce::Justification::centred);
 
-        // "powered by [TE logo] Tracktion Engine · made with [JUCE logo] JUCE"
+        // Credits line
         bounds.removeFromTop(10);
-        auto creditsRow = bounds.removeFromTop(24);
-        g.setFont(fm.getUIFont(10.0f));
+        auto creditsArea = bounds.reduced(10, 0);
+        auto font = fm.getUIFont(10.0f);
+        g.setFont(font);
+        int logoSize = 16;
+        int gap = 4;
+        int dotGap = 4;
+
+        g.setColour(juce::Colour(DarkTheme::BORDER));
+        g.drawHorizontalLine(creditsArea.getY(), (float)creditsArea.getX(),
+                             (float)creditsArea.getRight());
+        creditsArea.removeFromTop(6);
+
+        auto row = creditsArea.removeFromTop(20);
         g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
 
-        int logoSize = 16;
-        int gap = 3;
-        auto font = fm.getUIFont(10.0f);
-        auto textWidth = [&font](const juce::String& text) {
-            juce::GlyphArrangement ga;
+        juce::GlyphArrangement ga;
+        auto measure = [&](const juce::String& text) {
+            ga = {};
             ga.addLineOfText(font, text, 0, 0);
-            return juce::roundToInt(ga.getBoundingBox(0, -1, false).getWidth());
+            return juce::roundToInt(ga.getBoundingBox(0, -1, false).getWidth()) + 1;
         };
-        int pwdByW = textWidth("powered by");
-        int teW = textWidth("Tracktion Engine");
-        int dotW = textWidth(" \xc2\xb7 ");
-        int madeW = textWidth("made with");
-        int juceW = textWidth("JUCE");
-        int totalW =
-            pwdByW + gap + logoSize + gap + teW + dotW + madeW + gap + logoSize + gap + juceW;
-        auto row = creditsRow.withSizeKeepingCentre(totalW, 24);
 
-        g.drawText("powered by", row.removeFromLeft(pwdByW), juce::Justification::centred);
-        row.removeFromLeft(gap);
+        int powW = measure("powered by");
+        int teW = measure("Tracktion Engine");
+        int dotW = measure("|");
+        int madeW = measure("made with");
+        int juceW = measure("JUCE");
+
+        int totalW = powW + gap + teW + gap + logoSize + dotGap + dotW + dotGap + madeW + gap +
+                     juceW + gap + logoSize;
+        auto centred = row.withSizeKeepingCentre(totalW, 20);
+
+        g.drawText("powered by", centred.removeFromLeft(powW), juce::Justification::centred);
+        centred.removeFromLeft(gap);
+        g.drawText("Tracktion Engine", centred.removeFromLeft(teW), juce::Justification::centred);
+        centred.removeFromLeft(gap);
         if (teLogo_)
-            teLogo_->drawWithin(g, row.removeFromLeft(logoSize).toFloat(),
+            teLogo_->drawWithin(g, centred.removeFromLeft(logoSize).toFloat(),
                                 juce::RectanglePlacement::centred, 1.0f);
-        row.removeFromLeft(gap);
-        g.drawText("Tracktion Engine", row.removeFromLeft(teW), juce::Justification::centred);
-        g.drawText(" \xc2\xb7 ", row.removeFromLeft(dotW), juce::Justification::centred);
-        g.drawText("made with", row.removeFromLeft(madeW), juce::Justification::centred);
-        row.removeFromLeft(gap);
+        centred.removeFromLeft(dotGap);
+        g.drawText("|", centred.removeFromLeft(dotW), juce::Justification::centred);
+        centred.removeFromLeft(dotGap);
+        g.drawText("made with", centred.removeFromLeft(madeW), juce::Justification::centred);
+        centred.removeFromLeft(gap);
+        g.drawText("JUCE", centred.removeFromLeft(juceW), juce::Justification::centred);
+        centred.removeFromLeft(gap);
         if (juceLogo_)
-            juceLogo_->drawWithin(g, row.removeFromLeft(logoSize).toFloat(),
+            juceLogo_->drawWithin(g, centred.removeFromLeft(logoSize).toFloat(),
                                   juce::RectanglePlacement::centred, 1.0f);
-        row.removeFromLeft(gap);
-        g.drawText("JUCE", row.removeFromLeft(juceW), juce::Justification::centred);
     }
 
     void resized() override {
