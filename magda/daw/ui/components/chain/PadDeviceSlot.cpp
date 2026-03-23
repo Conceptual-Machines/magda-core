@@ -85,6 +85,11 @@ void PadDeviceSlot::setPlugin(te::Plugin* plugin) {
         setupForExternalPlugin(plugin);
     }
 
+    // Restore collapsed state from plugin's ValueTree
+    bool wasCollapsed = plugin->state.getProperty("uiCollapsed", false);
+    if (wasCollapsed)
+        collapsed_ = true;
+
     // Update on button state
     onButton_->setToggleState(plugin->isEnabled(), juce::dontSendNotification);
     onButton_->setActive(plugin->isEnabled());
@@ -123,6 +128,9 @@ int PadDeviceSlot::getPreferredWidth() const {
 void PadDeviceSlot::setCollapsed(bool collapsed) {
     if (collapsed_ != collapsed) {
         collapsed_ = collapsed;
+        // Persist to plugin's ValueTree so it survives save/reload
+        if (plugin_)
+            plugin_->state.setProperty("uiCollapsed", collapsed, nullptr);
         resized();
         repaint();
         if (onLayoutChanged)

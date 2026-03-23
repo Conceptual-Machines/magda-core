@@ -108,6 +108,8 @@ class DrumGridPlugin : public te::Plugin {
     // FX chain management on chains
     void addPluginToChain(int chainIndex, const juce::PluginDescription& desc,
                           int insertIndex = -1);
+    void addInternalPluginToChain(int chainIndex, const juce::String& pluginId,
+                                  int insertIndex = -1);
     void removePluginFromChain(int chainIndex, int pluginIndex);
     void movePluginInChain(int chainIndex, int fromIndex, int toIndex);
     int getChainPluginCount(int chainIndex) const;

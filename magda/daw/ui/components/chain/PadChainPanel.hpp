@@ -70,6 +70,9 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
     std::function<void(const juce::String& pluginName, const juce::String& pluginType)>
         onDeviceClicked;
 
+    // Called when the "+" button is clicked to add a plugin to the chain
+    std::function<void(int padIndex)> onAddDeviceClicked;
+
     // DragAndDropTarget
     bool isInterestedInDragSource(const SourceDetails& details) override;
     void itemDragEnter(const SourceDetails& details) override;

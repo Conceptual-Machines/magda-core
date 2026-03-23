@@ -2127,6 +2127,93 @@ void DeviceSlotComponent::createCustomUI() {
             }
         };
 
+        // "+" button — show plugin picker popup (same as ChainPanel)
+        padChain.onAddDeviceClicked = [this, getDrumGrid](int padIndex) {
+            auto* dg = getDrumGrid();
+            if (!dg)
+                return;
+
+            juce::PopupMenu menu;
+
+            // Internal FX plugins (no instruments — pad already has a sampler)
+            juce::PopupMenu internalMenu;
+            struct InternalEntry {
+                juce::String name;
+                juce::String pluginId;
+            };
+            const InternalEntry internals[] = {
+                {"Equaliser", "eq"},
+                {"Compressor", "compressor"},
+                {"Reverb", "reverb"},
+                {"Delay", "delay"},
+                {"Chorus", "chorus"},
+                {"Phaser", "phaser"},
+                {"Filter", "lowpass"},
+                {"Pitch Shift", "pitchshift"},
+                {"IR Reverb", "impulseresponse"},
+                {"Utility", "utility"},
+            };
+            int itemId = 1;
+            for (const auto& entry : internals)
+                internalMenu.addItem(itemId++, entry.name);
+            menu.addSubMenu("Internal", internalMenu);
+
+            // External plugins from KnownPluginList
+            juce::Array<juce::PluginDescription> externalPlugins;
+            if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
+                    magda::TrackManager::getInstance().getAudioEngine())) {
+                auto& knownPlugins = engine->getKnownPluginList();
+                externalPlugins = knownPlugins.getTypes();
+            }
+
+            if (!externalPlugins.isEmpty()) {
+                std::map<juce::String, juce::PopupMenu> byManufacturer;
+                for (int i = 0; i < externalPlugins.size(); ++i) {
+                    const auto& desc = externalPlugins[i];
+                    // Skip instruments — only show FX
+                    if (desc.isInstrument)
+                        continue;
+                    auto manufacturer =
+                        desc.manufacturerName.isEmpty() ? "Unknown" : desc.manufacturerName;
+                    byManufacturer[manufacturer].addItem(1000 + i, desc.name);
+                }
+                for (auto& [manufacturer, subMenu] : byManufacturer)
+                    menu.addSubMenu(manufacturer, subMenu);
+            }
+
+            auto safeThis = juce::Component::SafePointer<DeviceSlotComponent>(this);
+            auto capturedPlugins =
+                std::make_shared<juce::Array<juce::PluginDescription>>(std::move(externalPlugins));
+            auto capturedInternals = std::make_shared<std::vector<InternalEntry>>(
+                std::begin(internals), std::end(internals));
+
+            menu.showMenuAsync(
+                juce::PopupMenu::Options(),
+                [safeThis, padIndex, getDrumGrid, capturedPlugins, capturedInternals](int result) {
+                    if (result == 0 || !safeThis)
+                        return;
+
+                    auto* dg2 = getDrumGrid();
+                    if (!dg2)
+                        return;
+
+                    if (result >= 1 && result <= static_cast<int>(capturedInternals->size())) {
+                        auto& entry = (*capturedInternals)[static_cast<size_t>(result - 1)];
+                        // Internal TE plugin — create directly via plugin cache
+                        int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
+                        if (auto* chain = dg2->getChainForNote(midiNote))
+                            dg2->addInternalPluginToChain(chain->index, entry.pluginId);
+                        safeThis->drumGridUI_->getPadChainPanel().refresh();
+                    } else if (result >= 1000) {
+                        int pluginIdx = result - 1000;
+                        if (pluginIdx < capturedPlugins->size()) {
+                            dg2->addPluginToPad(padIndex, (*capturedPlugins)[pluginIdx]);
+                            safeThis->drumGridUI_->getPadChainPanel().refresh();
+                        }
+                    }
+                });
+        };
+
         addAndMakeVisible(*drumGridUI_);
         updateCustomUI();
     } else if (device_.pluginId.containsIgnoreCase("4osc")) {

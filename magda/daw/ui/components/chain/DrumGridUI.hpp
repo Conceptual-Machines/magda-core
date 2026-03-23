@@ -55,7 +55,7 @@ class DrumGridUI : public juce::Component,
     // Fixed panel widths
     static constexpr int kToggleColWidth = 20;
     static constexpr int kPadGridWidth = 250;
-    static constexpr int kChainsPanelWidth = 220;
+    static constexpr int kChainsPanelWidth = 260;
     static constexpr int kDetailPanelWidth =
         800;  // Accommodate sampler (750px), FX scroll in viewport
     static constexpr int kGap = 6;

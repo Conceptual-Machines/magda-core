@@ -10,7 +10,15 @@
 namespace magda::daw::ui {
 
 PadChainPanel::PadChainPanel() {
-    addButton_.setVisible(false);
+    addButton_.setColour(juce::TextButton::buttonColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+    addButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    addButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    addButton_.onClick = [this]() {
+        if (onAddDeviceClicked && currentPadIndex_ >= 0)
+            onAddDeviceClicked(currentPadIndex_);
+    };
+    container_.addAndMakeVisible(addButton_);
 
     viewport_.setScrollBarsShown(false, true);
     viewport_.setViewedComponent(&container_, false);
@@ -20,7 +28,9 @@ PadChainPanel::PadChainPanel() {
     container_.setInterceptsMouseClicks(false, true);
 }
 
-PadChainPanel::~PadChainPanel() {}
+PadChainPanel::~PadChainPanel() {
+    addButton_.setLookAndFeel(nullptr);
+}
 
 void PadChainPanel::showPadChain(int padIndex) {
     DBG("PadChainPanel::showPadChain - setting currentPadIndex=" + juce::String(padIndex));
@@ -80,7 +90,7 @@ int PadChainPanel::getContentWidth() const {
             width += ARROW_WIDTH;
         width += slot->getPreferredWidth();
     }
-    width += 2;
+    width += 4 + 20 + 2;  // gap + addButton + padding
     width += DROP_ZONE_WIDTH;
     return width;
 }
@@ -95,6 +105,7 @@ void PadChainPanel::rebuildSlots() {
 
     slots_.clear();
     container_.removeAllChildren();
+    container_.addAndMakeVisible(addButton_);
 
     if (currentPadIndex_ < 0 || !getPluginSlots)
         return;
@@ -347,7 +358,10 @@ void PadChainPanel::resized() {
         x += slotWidth;
     }
 
-    x += 2;
+    // "+" button after the last slot
+    addButton_.setBounds(x + 4, (height - 20) / 2, 20, 20);
+
+    x += 4 + 20 + 2;
     DBG("  containerWidth=" + juce::String(juce::jmax(x, area.getWidth())) +
         " x=" + juce::String(x));
     container_.setSize(juce::jmax(x, area.getWidth()), height);

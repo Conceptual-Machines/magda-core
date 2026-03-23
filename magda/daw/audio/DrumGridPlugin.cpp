@@ -568,6 +568,36 @@ void DrumGridPlugin::addPluginToChain(int chainIndex, const juce::PluginDescript
     notifyGraphRebuildNeeded();
 }
 
+void DrumGridPlugin::addInternalPluginToChain(int chainIndex, const juce::String& pluginId,
+                                              int insertIndex) {
+    auto* chain = getChainByIndexMutable(chainIndex);
+    if (!chain)
+        return;
+
+    auto plugin = edit.getPluginCache().createNewPlugin(pluginId, {});
+    if (!plugin)
+        return;
+
+    if (insertIndex < 0 || insertIndex >= static_cast<int>(chain->plugins.size()))
+        chain->plugins.push_back(plugin);
+    else
+        chain->plugins.insert(chain->plugins.begin() + insertIndex, plugin);
+
+    if (sampleRate_ > 0.0) {
+        te::PluginInitialisationInfo initInfo;
+        initInfo.startTime = tracktion::TimePosition();
+        initInfo.sampleRate = sampleRate_;
+        initInfo.blockSizeSamples = blockSize_;
+        plugin->baseClassInitialise(initInfo);
+    }
+
+    auto chainTree = findChainTree(chainIndex);
+    if (chainTree.isValid())
+        chainTree.addChild(plugin->state, -1, nullptr);
+
+    notifyGraphRebuildNeeded();
+}
+
 void DrumGridPlugin::removePluginFromChain(int chainIndex, int pluginIndex) {
     auto* chain = getChainByIndexMutable(chainIndex);
     if (!chain)
