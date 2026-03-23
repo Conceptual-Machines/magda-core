@@ -987,6 +987,7 @@ void TransportPanel::setCpuUsage(float usage) {
         else
             cpuValueLabel->setText(juce::String(avgPct) + "%", juce::dontSendNotification);
     }
+    updateCpuTooltip();
     repaint(getCpuArea());
 }
 
@@ -1000,6 +1001,48 @@ void TransportPanel::setXrunCount(int count) {
             xrunLabel->setText("", juce::dontSendNotification);
         }
     }
+    updateCpuTooltip();
+}
+
+void TransportPanel::setAudioDeviceInfo(const juce::String& deviceName, double sampleRate,
+                                        int bufferSize, int numInputs, int numOutputs) {
+    audioDeviceName_ = deviceName;
+    audioSampleRate_ = sampleRate;
+    audioBufferSize_ = bufferSize;
+    audioNumInputs_ = numInputs;
+    audioNumOutputs_ = numOutputs;
+    updateCpuTooltip();
+}
+
+void TransportPanel::updateCpuTooltip() {
+    juce::String tip;
+    if (audioDeviceName_.isNotEmpty())
+        tip << "Device: " << audioDeviceName_ << "\n";
+    if (audioSampleRate_ > 0)
+        tip << "Sample rate: " << juce::String(audioSampleRate_ / 1000.0, 1) << " kHz\n";
+    if (audioBufferSize_ > 0) {
+        double latencyMs =
+            (audioSampleRate_ > 0) ? (audioBufferSize_ / audioSampleRate_) * 1000.0 : 0.0;
+        tip << "Buffer: " << audioBufferSize_ << " samples";
+        if (latencyMs > 0)
+            tip << " (" << juce::String(latencyMs, 1) << " ms)";
+        tip << "\n";
+    }
+    if (audioNumInputs_ > 0 || audioNumOutputs_ > 0)
+        tip << "I/O: " << audioNumInputs_ << " in / " << audioNumOutputs_ << " out\n";
+    tip << "CPU: " << juce::String(juce::roundToInt(currentCpuUsage * 100.0f)) << "%";
+    if (peakCpuUsage > currentCpuUsage + 0.02f)
+        tip << " (peak " << juce::String(juce::roundToInt(peakCpuUsage * 100.0f)) << "%)";
+    if (currentXrunCount_ > 0)
+        tip << "\nXruns: " << currentXrunCount_;
+    tip = tip.trimEnd();
+
+    if (cpuTitleLabel)
+        cpuTitleLabel->setTooltip(tip);
+    if (cpuValueLabel)
+        cpuValueLabel->setTooltip(tip);
+    if (xrunLabel)
+        xrunLabel->setTooltip(tip);
 }
 
 }  // namespace magda

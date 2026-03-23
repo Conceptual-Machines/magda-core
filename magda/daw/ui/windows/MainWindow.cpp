@@ -693,6 +693,19 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         if (transportPanel) {
             transportPanel->setCpuUsage(cpu);
             transportPanel->setXrunCount(xruns);
+
+            // Update device info for tooltip (cheap to query, changes rarely)
+            if (auto* ae = getAudioEngine()) {
+                if (auto* dm = ae->getDeviceManager()) {
+                    if (auto* device = dm->getCurrentAudioDevice()) {
+                        transportPanel->setAudioDeviceInfo(
+                            device->getName(), device->getCurrentSampleRate(),
+                            device->getCurrentBufferSizeSamples(),
+                            device->getActiveInputChannels().countNumberOfSetBits(),
+                            device->getActiveOutputChannels().countNumberOfSetBits());
+                    }
+                }
+            }
         }
     };
     positionTimer_->start();  // Start once and keep running
