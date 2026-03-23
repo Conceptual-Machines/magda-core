@@ -31,7 +31,7 @@ class MultiOutTestFixture {
     };
 
     MultiOutSetup createMultiOutTrack(const juce::String& name = "Inst") {
-        auto trackId = tm().createTrack(name, TrackType::Instrument);
+        auto trackId = tm().createTrack(name, TrackType::Audio);
 
         DeviceInfo instrument;
         instrument.name = "MultiOutSynth";

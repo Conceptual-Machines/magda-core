@@ -2000,7 +2000,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     auto& trackManager = TrackManager::getInstance();
     juce::String clipName =
         clip.name.isNotEmpty() ? clip.name : audioFile.getFileNameWithoutExtension();
-    TrackId newTrackId = trackManager.createTrack("Drum Grid - " + clipName, TrackType::Instrument);
+    TrackId newTrackId = trackManager.createTrack("Drum Grid - " + clipName, TrackType::Audio);
     if (newTrackId == INVALID_TRACK_ID)
         return;
 

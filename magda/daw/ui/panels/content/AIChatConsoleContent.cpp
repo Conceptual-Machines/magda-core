@@ -355,6 +355,19 @@ AIChatConsoleContent::~AIChatConsoleContent() {
         agent_->stop();
 }
 
+juce::String AIChatConsoleContent::resolveAliases(const juce::String& text) {
+    if (allAliases_.empty())
+        buildAliasList();
+
+    auto resolved = text;
+    for (const auto& entry : allAliases_) {
+        auto token = "@" + entry.alias;
+        if (resolved.contains(token))
+            resolved = resolved.replace(token, entry.pluginName);
+    }
+    return resolved;
+}
+
 void AIChatConsoleContent::sendMessage(const juce::String& text) {
     // If a previous request thread is still around, stop it before starting a new one
     if (requestThread_ && requestThread_->isThreadRunning()) {
@@ -364,6 +377,10 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
             DBG("AIChatConsole: Warning - previous request thread did not stop within timeout");
         requestThread_.reset();
     }
+
+    // Resolve @alias mentions to real plugin names before sending to the LLM
+    auto resolvedText = resolveAliases(text);
+    DBG("AIChatConsole: resolved message: " + resolvedText);
 
     processing_ = true;
     inputBox_.clear();
@@ -377,7 +394,7 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
     shouldStop_ = false;
     agent_->resetCancel();
 
-    pendingMessage_ = text;
+    pendingMessage_ = resolvedText;
 
     dotCount_ = 0;
     startTimer(400);  // Animate dots every 400ms

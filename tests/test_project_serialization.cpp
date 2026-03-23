@@ -138,7 +138,7 @@ TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
 
         // Create a couple tracks
         trackManager.createTrack("Audio 1", TrackType::Audio);
-        trackManager.createTrack("MIDI 1", TrackType::MIDI);
+        trackManager.createTrack("MIDI 1", TrackType::Audio);
 
         REQUIRE(trackManager.getTracks().size() == 2);
 
@@ -164,7 +164,7 @@ TEST_CASE("Project with Tracks", "[project][serialization][tracks]") {
         REQUIRE(tracks[0].name == "Audio 1");
         REQUIRE(tracks[0].type == TrackType::Audio);
         REQUIRE(tracks[1].name == "MIDI 1");
-        REQUIRE(tracks[1].type == TrackType::MIDI);
+        REQUIRE(tracks[1].type == TrackType::Audio);
 
         // Cleanup
         trackManager.clearAllTracks();
@@ -308,7 +308,7 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         auto& clipManager = ClipManager::getInstance();
 
         // Create a track
-        auto trackId = trackManager.createTrack("Test MIDI Track", TrackType::MIDI);
+        auto trackId = trackManager.createTrack("Test MIDI Track", TrackType::Audio);
         auto* track = trackManager.getTrack(trackId);
         REQUIRE(track != nullptr);
 
@@ -365,7 +365,7 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         // Verify the track was restored
         const auto& tracks = trackManager.getTracks();
         REQUIRE(tracks.size() == 1);
-        REQUIRE(tracks[0].type == TrackType::MIDI);
+        REQUIRE(tracks[0].type == TrackType::Audio);
 
         // Verify the device was restored
         REQUIRE(tracks[0].chainElements.size() == 1);
@@ -481,7 +481,7 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
     SECTION("pluginState is serialized and deserialized") {
         auto& trackManager = TrackManager::getInstance();
 
-        auto trackId = trackManager.createTrack("Plugin State Track", TrackType::MIDI);
+        auto trackId = trackManager.createTrack("Plugin State Track", TrackType::Audio);
 
         DeviceInfo device;
         device.id = 1;
@@ -517,7 +517,7 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
         auto& trackManager = TrackManager::getInstance();
         auto& projectManager = ProjectManager::getInstance();
 
-        auto trackId = trackManager.createTrack("No State Track", TrackType::MIDI);
+        auto trackId = trackManager.createTrack("No State Track", TrackType::Audio);
 
         DeviceInfo device;
         device.id = 1;

@@ -100,7 +100,6 @@ TRACK OPERATIONS:
 - track() - Create new track
 - track(name="Bass") - Create or reference track by name (creates if no track with that name exists, otherwise references the existing one)
 - track(name="Bass", new=true) - Always create a new track, even if one with the same name exists
-- track(name="Bass", type="audio") - Create track with type (audio, midi)
 - track(id=1) - Reference existing track (1-based index)
 
 IMPORTANT: When the user says "create a track", always use new=true to ensure a fresh track is created.
@@ -128,15 +127,16 @@ FILTER OPERATIONS (bulk):
 - filter(tracks, track.name == "X").for_each(.fx.add(name="reverb").track.set(mute=true)) - Chain multiple operations per track
 
 EXAMPLES:
-- "create a bass track" -> track(name="Bass", type="audio")
-- "create a drums track and mute it" -> track(name="Drums", type="audio").track.set(mute=true)
+- "create a bass track" -> track(name="Bass")
+- "create a drums track and mute it" -> track(name="Drums").track.set(mute=true)
 - "delete track 1" -> track(id=1).delete()
 - "mute all tracks named Drums" -> filter(tracks, track.name == "Drums").track.set(mute=true)
-- "create a midi track called Lead and add a 4 bar clip at bar 1" ->
-  track(name="Lead", type="midi").clip.new(bar=1, length_bars=4)
+- "create a track called Lead and add a 4 bar clip at bar 1" ->
+  track(name="Lead").clip.new(bar=1, length_bars=4)
 - "set volume of track 2 to -6 dB" -> track(id=2).track.set(volume_db=-6)
 - "add an EQ to the Bass track" -> track(name="Bass").fx.add(name="eq")
 - "add Pro-Q 3 to track 1" -> track(id=1).fx.add(name="Pro-Q 3")
+- "create a track with Surge XT" -> track(name="Surge XT", new=true).fx.add(name="Surge XT")
 - "add reverb and delay to the Vocals track" ->
   track(name="Vocals").fx.add(name="reverb")
   track(name="Vocals").fx.add(name="delay")

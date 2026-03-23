@@ -54,7 +54,7 @@ TEST_CASE("MIDI clip split - basic operation", "[midi][clip][split]") {
     // Setup
     clipManager.clearAllClips();
     trackManager.clearAllTracks();
-    TrackId trackId = trackManager.createTrack("Test Track", TrackType::MIDI);
+    TrackId trackId = trackManager.createTrack("Test Track", TrackType::Audio);
 
     SECTION("Split clip with notes at different positions") {
         // Create clip: 0-4 seconds (8 beats at 120 BPM)
@@ -107,7 +107,7 @@ TEST_CASE("MIDI clip split - note position adjustment", "[midi][clip][split][not
     // Setup
     clipManager.clearAllClips();
     trackManager.clearAllTracks();
-    TrackId trackId = trackManager.createTrack("Test Track", TrackType::MIDI);
+    TrackId trackId = trackManager.createTrack("Test Track", TrackType::Audio);
 
     SECTION("Right clip notes adjusted relative to split point") {
         // Create clip with notes at beats: 1, 3, 5, 7
@@ -164,7 +164,7 @@ TEST_CASE("MIDI clip split - sequential operations", "[midi][clip][split][sequen
     // Setup
     clipManager.clearAllClips();
     trackManager.clearAllTracks();
-    TrackId trackId = trackManager.createTrack("Test Track", TrackType::MIDI);
+    TrackId trackId = trackManager.createTrack("Test Track", TrackType::Audio);
 
     SECTION("Multiple splits maintain correct note positions") {
         // Create clip: 0-8 seconds (16 beats)
@@ -241,7 +241,7 @@ TEST_CASE("MIDI clip split - edge cases", "[midi][clip][split][edge]") {
     // Setup
     clipManager.clearAllClips();
     trackManager.clearAllTracks();
-    TrackId trackId = trackManager.createTrack("Test Track", TrackType::MIDI);
+    TrackId trackId = trackManager.createTrack("Test Track", TrackType::Audio);
 
     SECTION("Split with existing midiOffset") {
         ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 4.0, {2.0, 4.0, 6.0});
@@ -311,7 +311,7 @@ TEST_CASE("MIDI clip split - undo/redo", "[midi][clip][split][undo]") {
     // Setup
     clipManager.clearAllClips();
     trackManager.clearAllTracks();
-    TrackId trackId = trackManager.createTrack("Test Track", TrackType::MIDI);
+    TrackId trackId = trackManager.createTrack("Test Track", TrackType::Audio);
 
     SECTION("Undo restores original clip state") {
         ClipId clipId = createMidiClipWithNotes(trackId, 0.0, 4.0, {0.0, 2.0, 4.0, 6.0});
@@ -382,7 +382,7 @@ TEST_CASE("Looped MIDI clip split - both halves keep notes", "[midi][clip][split
 
     clipManager.clearAllClips();
     trackManager.clearAllTracks();
-    TrackId trackId = trackManager.createTrack("Test Track", TrackType::MIDI);
+    TrackId trackId = trackManager.createTrack("Test Track", TrackType::Audio);
 
     SECTION("Split in middle preserves notes on both sides") {
         // Looped clip: 8 seconds (16 beats at 120 BPM), loop = 4 beats

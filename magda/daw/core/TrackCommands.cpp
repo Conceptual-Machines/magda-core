@@ -52,9 +52,7 @@ void CreateTrackCommand::undo() {
 juce::String CreateTrackCommand::getDescription() const {
     switch (type_) {
         case TrackType::Audio:
-            return "Create Audio Track";
-        case TrackType::MIDI:
-            return "Create MIDI Track";
+            return "Create Track";
         case TrackType::Group:
             return "Create Group Track";
         case TrackType::Aux:

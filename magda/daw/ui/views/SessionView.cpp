@@ -3121,7 +3121,7 @@ void SessionView::itemDropped(const SourceDetails& details) {
             TrackManager::getInstance().addDeviceToTrack(trackId, device);
         } else {
             // Drop past last track — create new track with plugin
-            TrackType trackType = device.isInstrument ? TrackType::Instrument : TrackType::Audio;
+            TrackType trackType = TrackType::Audio;
             juce::String pluginName = obj->getProperty("name").toString();
             auto cmd =
                 std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);

@@ -90,7 +90,7 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     auto* obj = json.getDynamicObject();
 
     outTrack.id = obj->getProperty("id");
-    outTrack.type = static_cast<TrackType>(static_cast<int>(obj->getProperty("type")));
+    outTrack.type = trackTypeFromInt(static_cast<int>(obj->getProperty("type")));
     outTrack.name = obj->getProperty("name").toString();
     outTrack.colour = stringToColour(obj->getProperty("colour").toString());
 

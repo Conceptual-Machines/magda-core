@@ -106,8 +106,8 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
                 continue;
             if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
                 continue;
-            if (t.type == TrackType::Audio || t.type == TrackType::Instrument ||
-                t.type == TrackType::Group || t.type == TrackType::Aux) {
+            if (t.type == TrackType::Audio || t.type == TrackType::Group ||
+                t.type == TrackType::Aux) {
                 trackOptions.push_back({id, t.name});
                 if (outInputTrackMapping)
                     (*outInputTrackMapping)[id] = t.id;
@@ -183,8 +183,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         std::vector<RoutingSelector::RoutingOption> trackOptions;
         int id = 400;
         for (const auto& t : allTracks) {
-            if ((t.type == TrackType::Audio || t.type == TrackType::Instrument) &&
-                t.id != currentTrackId) {
+            if (t.type == TrackType::Audio && t.id != currentTrackId) {
                 if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
                     continue;
                 trackOptions.push_back({id++, t.name});
@@ -255,8 +254,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         }
         id = 400;
         for (const auto& t : allTracks) {
-            if ((t.type == TrackType::Audio || t.type == TrackType::Instrument) &&
-                t.id != currentTrackId) {
+            if (t.type == TrackType::Audio && t.id != currentTrackId) {
                 if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
                     continue;
                 outTrackMapping[id++] = t.id;

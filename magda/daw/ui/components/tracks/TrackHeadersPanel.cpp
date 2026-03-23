@@ -2166,7 +2166,6 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         addSendTargets(TrackType::Aux);
         addSendTargets(TrackType::Group);
         addSendTargets(TrackType::Audio);
-        addSendTargets(TrackType::Instrument);
 
         if (hasOptions) {
             menu.addSubMenu("Add Send", sendMenu);
@@ -2184,8 +2183,8 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         }
     }
 
-    // Freeze/Unfreeze (for Audio and Instrument tracks only)
-    if (track->type == TrackType::Audio || track->type == TrackType::Instrument) {
+    // Freeze/Unfreeze (for regular tracks only)
+    if (track->type == TrackType::Audio) {
         menu.addSeparator();
         menu.addItem(7, track->frozen ? "Unfreeze Track" : "Freeze Track");
     }
@@ -2788,7 +2787,7 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
                                                << trackId);
     } else {
         // Dropped on empty area → create new track with plugin
-        TrackType trackType = device.isInstrument ? TrackType::Instrument : TrackType::Audio;
+        TrackType trackType = TrackType::Audio;
         juce::String pluginName = obj->getProperty("name").toString();
         auto cmd = std::make_unique<CreateTrackWithDeviceCommand>(pluginName, trackType, device);
         UndoManager::getInstance().executeCommand(std::move(cmd));

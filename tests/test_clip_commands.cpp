@@ -25,7 +25,7 @@ static void resetState() {
     TrackManager::getInstance().clearAllTracks();
 }
 
-static TrackId createTrack(const char* name = "Track", TrackType type = TrackType::MIDI) {
+static TrackId createTrack(const char* name = "Track", TrackType type = TrackType::Audio) {
     return TrackManager::getInstance().createTrack(name, type);
 }
 

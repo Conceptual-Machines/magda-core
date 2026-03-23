@@ -59,7 +59,7 @@ TrackId TrackManager::createTrackWithPlugin(const juce::DynamicObject& pluginObj
     DeviceInfo device = deviceInfoFromPluginObject(pluginObj);
 
     // Determine track type
-    TrackType trackType = device.isInstrument ? TrackType::Instrument : TrackType::Audio;
+    TrackType trackType = TrackType::Audio;
 
     // Create the track named after the plugin
     juce::String pluginName = pluginObj.getProperty("name").toString();

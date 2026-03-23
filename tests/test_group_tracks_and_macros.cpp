@@ -186,7 +186,7 @@ TEST_CASE("Audio and Instrument tracks accept instruments", "[group_track][instr
     }
 
     SECTION("Instrument track accepts instrument") {
-        auto trackId = fixture.tm().createTrack("Inst", TrackType::Instrument);
+        auto trackId = fixture.tm().createTrack("Inst", TrackType::Audio);
         auto id = fixture.tm().addDeviceToTrack(trackId, instrument);
         REQUIRE(id != INVALID_DEVICE_ID);
     }
