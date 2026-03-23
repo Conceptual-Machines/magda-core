@@ -689,21 +689,12 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             if (sessionView)
                 sessionView->setSessionPlayheadPositions(clipPositions);
         };
-    positionTimer_->onCpuUsageUpdate = [this](float cpu, int xruns) {
+    positionTimer_->onCpuUsageUpdate = [this](float cpu, int xruns, const juce::String& deviceName,
+                                              double sampleRate, int bufferSize) {
         if (transportPanel) {
             transportPanel->setCpuUsage(cpu);
             transportPanel->setXrunCount(xruns);
-
-            // Update device info for tooltip (cheap to query, changes rarely)
-            if (auto* ae = getAudioEngine()) {
-                if (auto* dm = ae->getDeviceManager()) {
-                    if (auto* device = dm->getCurrentAudioDevice()) {
-                        transportPanel->setAudioDeviceInfo(device->getName(),
-                                                           device->getCurrentSampleRate(),
-                                                           device->getCurrentBufferSizeSamples());
-                    }
-                }
-            }
+            transportPanel->setAudioDeviceInfo(deviceName, sampleRate, bufferSize);
         }
     };
     positionTimer_->start();  // Start once and keep running

@@ -67,8 +67,18 @@ void PlaybackPositionTimer::timerCallback() {
     if (onCpuUsageUpdate && ++cpuUpdateCounter_ >= CPU_UPDATE_TICKS) {
         cpuUpdateCounter_ = 0;
         auto* dm = engine_.getDeviceManager();
-        if (dm)
-            onCpuUsageUpdate(static_cast<float>(dm->getCpuUsage()), dm->getXRunCount());
+        if (dm) {
+            juce::String deviceName;
+            double sampleRate = 0.0;
+            int bufferSize = 0;
+            if (auto* device = dm->getCurrentAudioDevice()) {
+                deviceName = device->getName();
+                sampleRate = device->getCurrentSampleRate();
+                bufferSize = device->getCurrentBufferSizeSamples();
+            }
+            onCpuUsageUpdate(static_cast<float>(dm->getCpuUsage()), dm->getXRunCount(), deviceName,
+                             sampleRate, bufferSize);
+        }
     }
 }
 

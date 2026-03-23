@@ -47,7 +47,7 @@ TrackInspector::TrackInspector() {
     colourSwatch_ = std::make_unique<magda::ColourSwatch>();
     auto* swatch = static_cast<magda::ColourSwatch*>(colourSwatch_.get());
     swatch->onColourClicked = [this, swatch]() {
-        if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+        if (selectedTrackId_ == magda::INVALID_TRACK_ID && selectedTrackIds_.empty())
             return;
 
         auto menu = juce::PopupMenu();
@@ -90,26 +90,35 @@ TrackInspector::TrackInspector() {
             if (result == 0)
                 return;
             const int customOff = static_cast<int>(magda::Config::defaultColourPalette.size()) + 2;
+            auto trackIds = selectedTrackIds_.empty()
+                                ? std::unordered_set<magda::TrackId>{selectedTrackId_}
+                                : selectedTrackIds_;
             if (result == 1) {
                 // "None"
                 swatch->clearColour();
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetTrackColourCommand>(selectedTrackId_,
-                                                                   juce::Colour(0xFF444444)));
+                for (auto tid : trackIds) {
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetTrackColourCommand>(tid,
+                                                                       juce::Colour(0xFF444444)));
+                }
             } else if (result >= 2 && result < customOff) {
                 // Default colour
                 auto colour = juce::Colour(magda::Config::getDefaultColour(result - 2));
                 swatch->setColour(colour);
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetTrackColourCommand>(selectedTrackId_, colour));
+                for (auto tid : trackIds) {
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetTrackColourCommand>(tid, colour));
+                }
             } else {
                 // Custom colour
                 auto idx = static_cast<size_t>(result - customOff);
                 if (idx < customPalette.size()) {
                     auto colour = juce::Colour(customPalette[idx].colour);
                     swatch->setColour(colour);
-                    magda::UndoManager::getInstance().executeCommand(
-                        std::make_unique<magda::SetTrackColourCommand>(selectedTrackId_, colour));
+                    for (auto tid : trackIds) {
+                        magda::UndoManager::getInstance().executeCommand(
+                            std::make_unique<magda::SetTrackColourCommand>(tid, colour));
+                    }
                 }
             }
         });
@@ -1126,6 +1135,7 @@ void TrackInspector::updateFromMultiTrackSelection() {
     // Show name + buttons + volume/pan; hide routing/sends/clips
     trackNameLabel_.setVisible(true);
     trackNameValue_.setVisible(true);
+    colourSwatch_->setVisible(true);
     muteButton_.setVisible(true);
     speakerButton_->setVisible(false);
     soloButton_.setVisible(true);

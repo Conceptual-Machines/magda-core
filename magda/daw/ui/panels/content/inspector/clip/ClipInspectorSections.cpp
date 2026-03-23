@@ -101,31 +101,42 @@ void ClipInspector::initClipPropertiesSection() {
             if (result == 1) {
                 // "None"
                 swatch->clearColour();
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipColourCommand>(pid, juce::Colour(0xFF444444)));
+                for (auto cid : selectedClipIds_) {
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetClipColourCommand>(cid,
+                                                                      juce::Colour(0xFF444444)));
+                }
             } else if (result == 2) {
                 // Inherit from track
-                const auto* clip = magda::ClipManager::getInstance().getClip(pid);
-                if (clip) {
-                    const auto* track = magda::TrackManager::getInstance().getTrack(clip->trackId);
-                    if (track) {
-                        swatch->setColour(track->colour);
-                        magda::UndoManager::getInstance().executeCommand(
-                            std::make_unique<magda::SetClipColourCommand>(pid, track->colour));
+                for (auto cid : selectedClipIds_) {
+                    const auto* clip = magda::ClipManager::getInstance().getClip(cid);
+                    if (clip) {
+                        const auto* track =
+                            magda::TrackManager::getInstance().getTrack(clip->trackId);
+                        if (track) {
+                            if (cid == pid)
+                                swatch->setColour(track->colour);
+                            magda::UndoManager::getInstance().executeCommand(
+                                std::make_unique<magda::SetClipColourCommand>(cid, track->colour));
+                        }
                     }
                 }
             } else if (result >= 3 && result < customOff) {
                 auto colour = juce::Colour(magda::Config::getDefaultColour(result - 3));
                 swatch->setColour(colour);
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipColourCommand>(pid, colour));
+                for (auto cid : selectedClipIds_) {
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetClipColourCommand>(cid, colour));
+                }
             } else {
                 auto idx = static_cast<size_t>(result - customOff);
                 if (idx < customPalette.size()) {
                     auto colour = juce::Colour(customPalette[idx].colour);
                     swatch->setColour(colour);
-                    magda::UndoManager::getInstance().executeCommand(
-                        std::make_unique<magda::SetClipColourCommand>(pid, colour));
+                    for (auto cid : selectedClipIds_) {
+                        magda::UndoManager::getInstance().executeCommand(
+                            std::make_unique<magda::SetClipColourCommand>(cid, colour));
+                    }
                 }
             }
         });

@@ -35,8 +35,8 @@ class PlaybackPositionTimer : private juce::Timer {
         Only called when at least one session clip has an active playhead. */
     std::function<void(const std::unordered_map<ClipId, double>&)> onSessionPlayheadUpdate;
 
-    /** Callback fired periodically with CPU usage (0.0 to 1.0) and xrun count. */
-    std::function<void(float, int)> onCpuUsageUpdate;
+    /** Callback fired periodically with CPU usage (0.0 to 1.0), xrun count, and device info. */
+    std::function<void(float, int, const juce::String&, double, int)> onCpuUsageUpdate;
 
   private:
     void timerCallback() override;

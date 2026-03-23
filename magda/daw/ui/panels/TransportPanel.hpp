@@ -179,6 +179,7 @@ class TransportPanel : public juce::Component {
     juce::String audioDeviceName_;
     double audioSampleRate_ = 0.0;
     int audioBufferSize_ = 0;
+    juce::String lastTooltip_;
     void updateCpuTooltip();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportPanel)

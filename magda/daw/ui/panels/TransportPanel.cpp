@@ -1033,6 +1033,10 @@ void TransportPanel::updateCpuTooltip() {
         tip << "\nXruns: " << currentXrunCount_;
     tip = tip.trimEnd();
 
+    if (tip == lastTooltip_)
+        return;
+    lastTooltip_ = tip;
+
     if (cpuTitleLabel)
         cpuTitleLabel->setTooltip(tip);
     if (cpuValueLabel)
