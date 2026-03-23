@@ -946,19 +946,21 @@ void PluginManager::ensureVolumePluginPosition(te::AudioTrack* track) const {
 
     // Find the track's fader VolumeAndPanPlugin, excluding any Utility instances
     // (which are also VolumeAndPanPlugins but are tracked in syncedDevices_).
-    // The fader is the VolumeAndPanPlugin that is NOT a synced device.
+    // Snapshot synced plugin pointers under the lock to avoid racing with mutations.
+    std::unordered_set<te::Plugin*> syncedPlugins;
+    {
+        juce::ScopedLock lock(pluginLock_);
+        for (const auto& [devId, syncInfo] : syncedDevices_) {
+            if (syncInfo.plugin)
+                syncedPlugins.insert(syncInfo.plugin.get());
+        }
+    }
+
     te::VolumeAndPanPlugin* volPanRaw = nullptr;
     int volPanIndex = -1;
     for (int i = 0; i < plugins.size(); ++i) {
         if (auto* vp = dynamic_cast<te::VolumeAndPanPlugin*>(plugins[i])) {
-            bool isSyncedDevice = false;
-            for (const auto& [devId, syncInfo] : syncedDevices_) {
-                if (syncInfo.plugin.get() == vp) {
-                    isSyncedDevice = true;
-                    break;
-                }
-            }
-            if (!isSyncedDevice) {
+            if (syncedPlugins.find(vp) == syncedPlugins.end()) {
                 volPanRaw = vp;
                 volPanIndex = i;
             }
