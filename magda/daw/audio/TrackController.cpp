@@ -89,13 +89,38 @@ te::AudioTrack* TrackController::ensureTrackMapping(TrackId trackId, const juce:
 // Mixer Controls
 // =============================================================================
 
+// Find the track's fader VolumeAndPanPlugin (not a Utility instance).
+// The fader is the VolumeAndPanPlugin whose only successors are LevelMeterPlugins.
+// This distinguishes it from Utility plugins which are also VolumeAndPanPlugins.
+static te::VolumeAndPanPlugin* getFaderPlugin(te::AudioTrack* track) {
+    if (!track)
+        return nullptr;
+    auto& plugins = track->pluginList;
+    // Search from end — the fader should be the last VolumeAndPan before LevelMeter(s)
+    for (int i = plugins.size() - 1; i >= 0; --i) {
+        if (auto* vp = dynamic_cast<te::VolumeAndPanPlugin*>(plugins[i])) {
+            // Check that everything after this is a LevelMeterPlugin
+            bool onlyMetersAfter = true;
+            for (int j = i + 1; j < plugins.size(); ++j) {
+                if (!dynamic_cast<te::LevelMeterPlugin*>(plugins[j])) {
+                    onlyMetersAfter = false;
+                    break;
+                }
+            }
+            if (onlyMetersAfter)
+                return vp;
+        }
+    }
+    // Fallback to TE's default
+    return track->getVolumePlugin();
+}
+
 void TrackController::setTrackVolume(TrackId trackId, float volume) {
     auto* track = getAudioTrack(trackId);
     if (!track)
         return;
 
-    // Use the track's volume plugin (positioned at end of chain before LevelMeter)
-    if (auto* volPan = track->getVolumePlugin()) {
+    if (auto* volPan = getFaderPlugin(track)) {
         float db = volume > 0.0f ? juce::Decibels::gainToDecibels(volume) : -100.0f;
         volPan->setVolumeDb(db);
     }
@@ -103,38 +128,30 @@ void TrackController::setTrackVolume(TrackId trackId, float volume) {
 
 float TrackController::getTrackVolume(TrackId trackId) const {
     auto* track = getAudioTrack(trackId);
-    if (!track) {
+    if (!track)
         return 1.0f;
-    }
 
-    if (auto* volPan = track->getVolumePlugin()) {
+    if (auto* volPan = getFaderPlugin(track))
         return juce::Decibels::decibelsToGain(volPan->getVolumeDb());
-    }
     return 1.0f;
 }
 
 void TrackController::setTrackPan(TrackId trackId, float pan) {
     auto* track = getAudioTrack(trackId);
-    if (!track) {
-        DBG("TrackController::setTrackPan - track not found: " << trackId);
+    if (!track)
         return;
-    }
 
-    // Use the track's built-in volume plugin
-    if (auto* volPan = track->getVolumePlugin()) {
+    if (auto* volPan = getFaderPlugin(track))
         volPan->setPan(pan);
-    }
 }
 
 float TrackController::getTrackPan(TrackId trackId) const {
     auto* track = getAudioTrack(trackId);
-    if (!track) {
+    if (!track)
         return 0.0f;
-    }
 
-    if (auto* volPan = track->getVolumePlugin()) {
+    if (auto* volPan = getFaderPlugin(track))
         return volPan->getPan();
-    }
     return 0.0f;
 }
 
