@@ -69,7 +69,23 @@ void TabbedPanel::paint(juce::Graphics& g) {
 }
 
 void TabbedPanel::paintBackground(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getPanelBackgroundColour());
+    auto bg = DarkTheme::getPanelBackgroundColour();
+    g.fillAll(bg);
+
+    // Subtle gradient on collapsed side panels for depth
+    if (collapsed_ && (location_ == PanelLocation::Left || location_ == PanelLocation::Right)) {
+        auto bounds = getLocalBounds().toFloat();
+        auto brighter = bg.brighter(0.06f);
+
+        if (location_ == PanelLocation::Left) {
+            g.setGradientFill(juce::ColourGradient(brighter, bounds.getRight(), 0.0f, bg,
+                                                   bounds.getX(), 0.0f, false));
+        } else {
+            g.setGradientFill(juce::ColourGradient(brighter, bounds.getX(), 0.0f, bg,
+                                                   bounds.getRight(), 0.0f, false));
+        }
+        g.fillRect(bounds);
+    }
 }
 
 void TabbedPanel::paintBorder(juce::Graphics& g) {
