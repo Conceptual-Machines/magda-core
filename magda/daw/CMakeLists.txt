@@ -145,6 +145,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/fontaudio/fad-filter-notch.svg
     # Fontaudio logo icons
     ../../assets/icons/fontaudio/fad-logo-tracktion.svg
+    ../../assets/icons/fontaudio/fad-logo-juce.svg
     # App logo
     ../../assets/magda-lisa.svg
 )

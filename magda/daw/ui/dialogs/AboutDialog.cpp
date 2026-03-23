@@ -34,6 +34,16 @@ class AboutDialog::ContentComponent : public juce::Component {
             }
         }
 
+        // Load JUCE logo
+        if (auto xml = juce::XmlDocument::parse(juce::String::fromUTF8(
+                BinaryData::fadlogojuce_svg, BinaryData::fadlogojuce_svgSize))) {
+            juceLogo_ = juce::Drawable::createFromSVG(*xml);
+            if (juceLogo_) {
+                juceLogo_->replaceColour(juce::Colour(0xFF000000),
+                                         juce::Colour(DarkTheme::TEXT_DIM));
+            }
+        }
+
         // Title as clickable link to website
         titleLink_ =
             std::make_unique<juce::HyperlinkButton>("MAGDA", juce::URL("https://magda.land"));
@@ -42,7 +52,7 @@ class AboutDialog::ContentComponent : public juce::Component {
                               juce::Colour(DarkTheme::TEXT_PRIMARY));
         addAndMakeVisible(*titleLink_);
 
-        setSize(400, 410);
+        setSize(400, 436);
     }
 
     void paint(juce::Graphics& g) override {
@@ -80,17 +90,39 @@ class AboutDialog::ContentComponent : public juce::Component {
         g.setFont(fm.getUIFont(10.0f));
         g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
 
-        int textWidth = 62;
-        int logoWidth = 24;
-        int totalWidth = textWidth + logoWidth + 4;
-        auto centred = poweredRow.withSizeKeepingCentre(totalWidth, 24);
+        {
+            int textWidth = 62;
+            int logoWidth = 24;
+            int totalWidth = textWidth + logoWidth + 4;
+            auto centred = poweredRow.withSizeKeepingCentre(totalWidth, 24);
 
-        g.drawText("powered by", centred.removeFromLeft(textWidth),
-                   juce::Justification::centredRight);
-        if (teLogo_) {
-            centred.removeFromLeft(4);
-            teLogo_->drawWithin(g, centred.removeFromLeft(logoWidth).toFloat(),
-                                juce::RectanglePlacement::centred, 1.0f);
+            g.drawText("powered by", centred.removeFromLeft(textWidth),
+                       juce::Justification::centredRight);
+            if (teLogo_) {
+                centred.removeFromLeft(4);
+                teLogo_->drawWithin(g, centred.removeFromLeft(logoWidth).toFloat(),
+                                    juce::RectanglePlacement::centred, 1.0f);
+            }
+        }
+
+        // "made with" + JUCE logo
+        bounds.removeFromTop(2);
+        auto juceRow = bounds.removeFromTop(24);
+        g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
+
+        {
+            int textWidth = 54;
+            int logoWidth = 24;
+            int totalWidth = textWidth + logoWidth + 4;
+            auto centred = juceRow.withSizeKeepingCentre(totalWidth, 24);
+
+            g.drawText("made with", centred.removeFromLeft(textWidth),
+                       juce::Justification::centredRight);
+            if (juceLogo_) {
+                centred.removeFromLeft(4);
+                juceLogo_->drawWithin(g, centred.removeFromLeft(logoWidth).toFloat(),
+                                      juce::RectanglePlacement::centred, 1.0f);
+            }
         }
     }
 
@@ -119,6 +151,7 @@ class AboutDialog::ContentComponent : public juce::Component {
   private:
     std::unique_ptr<juce::Drawable> logo_;
     std::unique_ptr<juce::Drawable> teLogo_;
+    std::unique_ptr<juce::Drawable> juceLogo_;
     std::unique_ptr<juce::HyperlinkButton> titleLink_;
 };
 

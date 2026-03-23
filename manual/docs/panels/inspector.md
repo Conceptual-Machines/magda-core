@@ -9,7 +9,7 @@ The Inspector panel is on the right side of the window. It displays context-sens
 Displayed when a track is selected. Shows:
 
 - **Track name** — Click to rename
-- **Track color** — Automatically assigned
+- **Track color** — Click the color swatch to choose a custom color, or leave as auto-assigned
 - **Volume and pan** — Numeric readouts and controls
 - **Input routing** — Select audio/MIDI input source
 - **Output routing** — Select audio/MIDI output destination
@@ -19,12 +19,22 @@ Displayed when a track is selected. Shows:
 
 Displayed when a clip is selected. Shows:
 
-- **Position** — Start time and length on the timeline
+- **Clip name** — Click to rename
+- **Clip color** — Click the color swatch to choose a custom color
+- **Position** — Start time, end time, and phase offset on the timeline
 - **Loop settings** — Loop on/off, loop start, loop length
-- **Warp** — Time-stretch mode and settings (audio clips)
-- **Pitch** — Transpose and fine-tune (audio clips)
-- **Fades** — Fade-in and fade-out length and curve
-- **Session launch properties** — Trigger mode, quantize, follow action (Session View clips)
+
+### Audio Properties
+
+For audio clips, the inspector shows additional controls:
+
+- **Warp / Beat** — Toggle time-stretch mode; select algorithm (e.g. SoundTouch HQ)
+- **Tempo** — Source BPM and beat length detection
+- **Transient Detection** — Sensitivity slider for transient markers
+- **Pitch** — Transpose in semitones
+- **Mix** — Volume, pan, and gain controls
+- **Reverse** — Reverse the clip audio
+- **Launch Quantize** — Quantize setting for Session View clip launching
 
 ## Note Inspector
 

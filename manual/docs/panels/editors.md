@@ -46,12 +46,15 @@ See [Drum Grid](../devices/drum-grid.md) for details on the DrumGrid device.
 
 ## Waveform Editor
 
+![Waveform Editor with Clip Properties](../assets/images/panels/audio-editor-properties.png)
+
 Displayed when an audio clip is selected. Shows the audio waveform with:
 
 - **Zoom and scroll** within the clip
 - **Fade handles** at clip edges for fade-in/fade-out
 - **Warp markers** for time-stretching (when warp is enabled)
 - **Selection** for cutting, copying, or rendering portions
+- **Clip properties panel** (right side) — Inline access to audio properties without switching to the Inspector
 
 !!! note "Header controls"
     - **ABS / REL** — Toggle between absolute (timeline) and relative (clip) time mode
