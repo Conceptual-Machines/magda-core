@@ -19,8 +19,6 @@ void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
         return;
     }
 
-    DBG("📝 UNDO: Executing command: " << command->getDescription());
-
     // Execute the command
     command->execute();
 
@@ -43,8 +41,6 @@ void UndoManager::executeCommand(std::unique_ptr<UndoableCommand> command) {
     redoStack_.clear();
 
     notifyListeners();
-
-    DBG("📝 UNDO: Executed command, stack size: " << undoStack_.size());
 }
 
 bool UndoManager::undo() {

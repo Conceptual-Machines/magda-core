@@ -441,12 +441,10 @@ void TrackManager::setDeviceLevel(const ChainNodePath& devicePath, float level) 
 
 void TrackManager::updateDeviceParameters(DeviceId deviceId,
                                           const std::vector<ParameterInfo>& params) {
-    DBG("updateDeviceParameters: deviceId=" << deviceId << " params.size=" << params.size());
     // Check master track first
     for (auto& element : masterTrack_.chainElements) {
         if (magda::isDevice(element) && magda::getDevice(element).id == deviceId) {
             magda::getDevice(element).parameters = params;
-            DBG("  -> found on master track");
             return;
         }
     }
@@ -512,15 +510,10 @@ void TrackManager::setDeviceVisibleParameters(DeviceId deviceId,
 void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex,
                                            float value) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
-        DBG("setDeviceParameterValue: device=" << device->name << " paramIndex=" << paramIndex
-                                               << " value=" << value
-                                               << " paramCount=" << device->parameters.size());
         if (paramIndex >= 0 && paramIndex < static_cast<int>(device->parameters.size())) {
             device->parameters[static_cast<size_t>(paramIndex)].currentValue = value;
             // Use granular notification - only sync this one parameter, not all 543
             notifyDeviceParameterChanged(device->id, paramIndex, value);
-        } else {
-            DBG("  -> DROPPED: paramIndex out of range!");
         }
     }
 }

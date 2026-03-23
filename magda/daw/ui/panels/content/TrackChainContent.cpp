@@ -257,7 +257,6 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
     }
 
     void mouseEnter(const juce::MouseEvent&) override {
-        DBG("ChainContainer::mouseEnter");
         // Check if drop state is stale (drag was cancelled while outside)
         checkAndResetStaleDropState();
     }

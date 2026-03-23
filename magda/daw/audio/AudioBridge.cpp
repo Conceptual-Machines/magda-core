@@ -230,9 +230,6 @@ void AudioBridge::trackPropertyChanged(int trackId) {
                         << trackId << " - recordArmed=" << (trackInfo->recordArmed ? 1 : 0)
                         << " will NOT be synced to TE!");
                 }
-            } else {
-                DBG("  WARNING: No playback context when syncing recordArmed for track "
-                    << trackId);
             }
         }
     }

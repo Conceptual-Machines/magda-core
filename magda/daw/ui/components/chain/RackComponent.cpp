@@ -24,14 +24,7 @@ RackComponent::RackComponent(magda::TrackId trackId, const magda::RackInfo& rack
 // Constructor for nested rack (in chain) - with full path context
 RackComponent::RackComponent(const magda::ChainNodePath& rackPath, const magda::RackInfo& rack)
     : rackPath_(rackPath), trackId_(rackPath.trackId), rackId_(rack.id) {
-    DBG("RackComponent (nested) created with rackPath steps="
-        << rackPath_.steps.size() << ", trackId=" << rackPath_.trackId << ", rackId=" << rack.id);
-    for (size_t i = 0; i < rackPath_.steps.size(); ++i) {
-        DBG("  step[" << i << "]: type=" << static_cast<int>(rackPath_.steps[i].type)
-                      << ", id=" << rackPath_.steps[i].id);
-    }
     onDeleteClicked = [this]() {
-        DBG("RackComponent::onDeleteClicked (nested) - using path-based removal");
         magda::TrackManager::getInstance().removeRackFromChainByPath(rackPath_);
     };
     initializeCommon(rack);
@@ -450,7 +443,6 @@ void RackComponent::rebuildChainRows() {
     // Use path-based lookup to support nested racks at any depth
     const auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath_);
     if (!rack) {
-        DBG("RackComponent::rebuildChainRows - rack not found via path!");
         unfocusAllComponents();
         chainRows_.clear();
         resized();
@@ -559,76 +551,35 @@ void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) 
 
     magda::ChainId chainId = path.steps.back().id;
 
-    DBG("RackComponent::chainNodeSelectionChanged - rackId="
-        << rackId_ << " chainId=" << chainId << " isNested=" << (isNested() ? "yes" : "no"));
-
     // Show chain panel within this rack
     showChainPanel(chainId);
 
     // Notify parent (for clearing selections in other racks)
     if (onChainSelected) {
-        DBG("  -> calling onChainSelected callback");
         onChainSelected(trackId_, rackId_, chainId);
     }
 }
 
 void RackComponent::onAddChainClicked() {
-    DBG("RackComponent::onAddChainClicked - START");
-    DBG("  rackPath_.trackId=" << rackPath_.trackId);
-    DBG("  rackPath_.steps.size()=" << rackPath_.steps.size());
-
-    // Sanity check for memory corruption
-    if (rackPath_.steps.size() > 100) {
-        DBG("ERROR: rackPath_.steps.size() is suspiciously large: " << rackPath_.steps.size());
-        DBG("  This suggests memory corruption. Aborting chain creation.");
-        return;
-    }
-
-    for (size_t i = 0; i < rackPath_.steps.size(); ++i) {
-        DBG("  step[" << i << "]: type=" << static_cast<int>(rackPath_.steps[i].type)
-                      << ", id=" << rackPath_.steps[i].id);
-    }
-
-    DBG("  Calling TrackManager::addChainToRack...");
     auto newChainId = magda::TrackManager::getInstance().addChainToRack(rackPath_);
-    DBG("  newChainId=" << newChainId);
 
     // Auto-select the newly created chain
     if (newChainId != magda::INVALID_CHAIN_ID) {
-        DBG("  About to call rackPath_.withChain(" << newChainId << ")...");
-        DBG("  rackPath_.steps.size() before withChain=" << rackPath_.steps.size());
-
-        // Extra paranoid check right before the crash point
-        try {
-            auto newChainPath = rackPath_.withChain(newChainId);
-            DBG("  withChain succeeded, calling selectChainNode...");
-            magda::SelectionManager::getInstance().selectChainNode(newChainPath);
-            DBG("  selectChainNode succeeded");
-        } catch (...) {
-            DBG("EXCEPTION caught in onAddChainClicked during withChain/selectChainNode");
-        }
+        auto newChainPath = rackPath_.withChain(newChainId);
+        magda::SelectionManager::getInstance().selectChainNode(newChainPath);
     }
-    DBG("RackComponent::onAddChainClicked - END");
 }
 
 void RackComponent::showChainPanel(magda::ChainId chainId) {
     selectedChainId_ = chainId;
     if (chainPanel_) {
         auto chainPath = rackPath_.withChain(chainId);
-        DBG("RackComponent::showChainPanel - rackId=" << rackId_ << " chainId=" << chainId);
-        DBG("  chainPath has " << chainPath.steps.size() << " steps");
-        for (size_t i = 0; i < chainPath.steps.size(); ++i) {
-            DBG("  step[" << i << "]: type=" << static_cast<int>(chainPath.steps[i].type)
-                          << ", id=" << chainPath.steps[i].id);
-        }
         chainPanel_->showChain(chainPath);
         childLayoutChanged();
     }
 }
 
 void RackComponent::hideChainPanel() {
-    DBG("RackComponent::hideChainPanel called - rackId=" << rackId_ << " isNested="
-                                                         << (isNested() ? "yes" : "no"));
     selectedChainId_ = magda::INVALID_CHAIN_ID;
     // Don't call clearChainSelection() - let SelectionManager control visual selection
     // This allows collapsing the chain panel while keeping the chain selected

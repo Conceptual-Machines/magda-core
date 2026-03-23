@@ -80,7 +80,6 @@ UtilityUI::UtilityUI() {
         DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.35f));
     phaseButton_->onClick = [this]() {
         bool on = phaseButton_->getToggleState();
-        DBG("UtilityUI: phase clicked, toggleState=" << (on ? "ON" : "OFF"));
         phaseButton_->setActive(on);
         if (onParameterChanged)
             onParameterChanged(2, on ? 1.0f : 0.0f);
