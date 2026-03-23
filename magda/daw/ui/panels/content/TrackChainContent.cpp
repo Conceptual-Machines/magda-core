@@ -1364,6 +1364,7 @@ void TrackChainContent::saveNodeStates() {
     savedExpandedChains_.clear();
     savedParamPanelStates_.clear();
     savedCustomUITabStates_.clear();
+    savedDrumPadCollapsedPlugins_.clear();
 
     for (const auto& node : nodeComponents_) {
         const auto& path = node->getNodePath();
@@ -1379,6 +1380,11 @@ void TrackChainContent::saveNodeStates() {
                 int tabIndex = device->getCustomUITabIndex();
                 if (tabIndex > 0)
                     savedCustomUITabStates_[path.toString()] = tabIndex;
+
+                // Save DrumGrid pad chain collapsed plugins
+                auto collapsed = device->getDrumPadCollapsedPlugins();
+                if (!collapsed.empty())
+                    savedDrumPadCollapsedPlugins_[path.toString()] = std::move(collapsed);
             }
 
             // Save expanded chain for racks
@@ -1412,6 +1418,12 @@ void TrackChainContent::restoreNodeStates() {
                 auto tabIt = savedCustomUITabStates_.find(path.toString());
                 if (tabIt != savedCustomUITabStates_.end()) {
                     device->setCustomUITabIndex(tabIt->second);
+                }
+
+                // Restore DrumGrid pad chain collapsed plugins
+                auto collapsedIt = savedDrumPadCollapsedPlugins_.find(path.toString());
+                if (collapsedIt != savedDrumPadCollapsedPlugins_.end()) {
+                    device->setDrumPadCollapsedPlugins(collapsedIt->second);
                 }
             }
 

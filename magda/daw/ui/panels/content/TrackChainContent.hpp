@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <vector>
 
 #include "../../../core/LinkModeManager.hpp"
 #include "../../themes/MixerLookAndFeel.hpp"
@@ -10,6 +11,12 @@
 #include "core/TrackManager.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
+
+namespace tracktion {
+inline namespace engine {
+class Plugin;
+}
+}  // namespace tracktion
 
 namespace magda::daw::ui {
 
@@ -167,6 +174,8 @@ class TrackChainContent : public PanelContent,
     std::map<juce::String, magda::ChainId> savedExpandedChains_;  // rackPath -> expanded chainId
     std::map<juce::String, bool> savedParamPanelStates_;          // path -> paramPanelVisible
     std::map<juce::String, int> savedCustomUITabStates_;          // path -> custom UI tab index
+    std::map<juce::String, std::vector<tracktion::engine::Plugin*>>
+        savedDrumPadCollapsedPlugins_;  // path -> collapsed plugin ptrs
     void saveNodeStates();
     void restoreNodeStates();
 

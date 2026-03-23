@@ -74,6 +74,10 @@ class DeviceSlotComponent : public NodeComponent,
     int getCustomUITabIndex() const;
     void setCustomUITabIndex(int index);
 
+    // DrumGrid pad chain collapsed plugins (for saving/restoring across rebuilds)
+    std::vector<tracktion::engine::Plugin*> getDrumPadCollapsedPlugins() const;
+    void setDrumPadCollapsedPlugins(const std::vector<tracktion::engine::Plugin*>& plugins);
+
     // Callbacks for owner-specific behavior
     std::function<void()> onDeviceDeleted;
     std::function<void()> onDeviceLayoutChanged;

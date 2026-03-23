@@ -316,6 +316,12 @@ DrumGridUI::DrumGridUI() {
 
     // Per-pad FX chain panel
     addAndMakeVisible(padChainPanel_);
+    padChainPanel_.onLayoutChanged = [this]() {
+        resized();
+        repaint();
+        if (onLayoutChanged)
+            onLayoutChanged();
+    };
 
     // Chains panel
     chainsLabel_.setText("Chains:", juce::dontSendNotification);
@@ -972,7 +978,12 @@ int DrumGridUI::getPreferredContentWidth() const {
         padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
     bool showDetailPanel = selectedPadHasContent;
 
-    int width = kToggleColWidth + kPadGridWidth;
+    // Account for layout overhead from parent components:
+    //   NodeComponent::resized() reduced(2,1) = 4px
+    //   DeviceSlotComponent contentArea.reduced(4,2) = 8px
+    //   DrumGridUI::resized() reduced(4) = 8px
+    // Total: 20px horizontal consumed before content layout
+    int width = 20 + kToggleColWidth + kPadGridWidth;
     if (chainsPanelVisible_)
         width += kGap + kChainsPanelWidth;
     if (showDetailPanel) {

@@ -130,6 +130,9 @@ class DrumGridUI : public juce::Component,
     PadChainPanel& getPadChainPanel() {
         return padChainPanel_;
     }
+    const PadChainPanel& getPadChainPanel() const {
+        return padChainPanel_;
+    }
 
     /** Rebuild visible chain rows from padInfos_. */
     void rebuildChainRows();

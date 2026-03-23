@@ -44,6 +44,9 @@ class PadDeviceSlot : public juce::Component {
         preferredWidth_ = width;
     }
 
+    tracktion::engine::Plugin* getPlugin() const {
+        return plugin_;
+    }
     bool isCollapsed() const {
         return collapsed_;
     }

@@ -41,18 +41,58 @@ void PadChainPanel::refresh() {
         rebuildSlots();
 }
 
-int PadChainPanel::getContentWidth() const {
-    int width = 0;
+std::vector<tracktion::engine::Plugin*> PadChainPanel::getCollapsedPlugins() const {
+    std::vector<tracktion::engine::Plugin*> result;
     for (auto& slot : slots_) {
-        if (width > 0)
+        if (slot->isCollapsed() && slot->getPlugin())
+            result.push_back(slot->getPlugin());
+    }
+    return result;
+}
+
+void PadChainPanel::setCollapsedPlugins(const std::vector<tracktion::engine::Plugin*>& plugins) {
+    if (plugins.empty())
+        return;
+    for (auto& slot : slots_) {
+        if (slot->getPlugin() &&
+            std::find(plugins.begin(), plugins.end(), slot->getPlugin()) != plugins.end()) {
+            if (!slot->isCollapsed()) {
+                // Temporarily detach callback to avoid per-slot layout cascade
+                auto saved = std::move(slot->onLayoutChanged);
+                slot->setCollapsed(true);
+                slot->onLayoutChanged = std::move(saved);
+            }
+        }
+    }
+    // Single layout update after all collapses
+    resized();
+    repaint();
+    if (onLayoutChanged)
+        onLayoutChanged();
+}
+
+int PadChainPanel::getContentWidth() const {
+    // Must match resized() calculation: 2px left padding + slots + arrows + 2px right padding
+    // plus DROP_ZONE_WIDTH (reserved outside the viewport)
+    int width = 2;
+    for (auto& slot : slots_) {
+        if (width > 2)
             width += ARROW_WIDTH;
         width += slot->getPreferredWidth();
     }
+    width += 2;
     width += DROP_ZONE_WIDTH;
     return width;
 }
 
 void PadChainPanel::rebuildSlots() {
+    // Preserve collapsed state across rebuild (keyed by plugin pointer)
+    std::vector<tracktion::engine::Plugin*> collapsedPlugins;
+    for (auto& slot : slots_) {
+        if (slot->isCollapsed() && slot->getPlugin())
+            collapsedPlugins.push_back(slot->getPlugin());
+    }
+
     slots_.clear();
     container_.removeAllChildren();
 
@@ -61,7 +101,8 @@ void PadChainPanel::rebuildSlots() {
 
     auto slotInfos = getPluginSlots(currentPadIndex_);
     DBG("PadChainPanel::rebuildSlots - pad " + juce::String(currentPadIndex_) + " has " +
-        juce::String((int)slotInfos.size()) + " plugins");
+        juce::String((int)slotInfos.size()) +
+        " plugins, collapsedPlugins=" + juce::String((int)collapsedPlugins.size()));
 
     for (size_t i = 0; i < slotInfos.size(); ++i) {
         auto& info = slotInfos[i];
@@ -91,8 +132,8 @@ void PadChainPanel::rebuildSlots() {
         };
 
         slot->onLayoutChanged = [this]() {
-            // Don't call resized() here — our bounds are stale.
-            // Propagate up so parent resizes us with correct bounds.
+            // Recalculate container size for the new slot widths
+            resized();
             viewport_.setViewPosition(0, 0);
             repaint();
             if (onLayoutChanged)
@@ -134,6 +175,13 @@ void PadChainPanel::rebuildSlots() {
         } else if (info.plugin) {
             DBG("    Setting up as external plugin");
             slot->setPlugin(info.plugin);
+        }
+
+        // Restore collapsed state from before rebuild
+        if (info.plugin && std::find(collapsedPlugins.begin(), collapsedPlugins.end(),
+                                     info.plugin) != collapsedPlugins.end()) {
+            DBG("    Restoring collapsed state for " + info.name);
+            slot->setCollapsed(true);
         }
 
         container_.addAndMakeVisible(*slot);
@@ -276,6 +324,16 @@ void PadChainPanel::resized() {
     int scrollbarHeight = needsScrollbar ? viewport_.getScrollBarThickness() : 0;
     int height = area.getHeight() - scrollbarHeight;
 
+    DBG("PadChainPanel::resized - bounds=" + getBounds().toString() + " area.w=" +
+        juce::String(area.getWidth()) + " totalContentWidth=" + juce::String(totalContentWidth) +
+        " needsScrollbar=" + juce::String(needsScrollbar ? "YES" : "NO") +
+        " numSlots=" + juce::String((int)slots_.size()));
+    for (size_t i = 0; i < slots_.size(); ++i) {
+        DBG("  slot[" + juce::String((int)i) +
+            "] preferredWidth=" + juce::String(slots_[i]->getPreferredWidth()) +
+            " collapsed=" + juce::String(slots_[i]->isCollapsed() ? "YES" : "NO"));
+    }
+
     int x = 2;
     int viewportWidth = area.getWidth();
     for (size_t i = 0; i < slots_.size(); ++i) {
@@ -290,6 +348,8 @@ void PadChainPanel::resized() {
     }
 
     x += 2;
+    DBG("  containerWidth=" + juce::String(juce::jmax(x, area.getWidth())) +
+        " x=" + juce::String(x));
     container_.setSize(juce::jmax(x, area.getWidth()), height);
 }
 

@@ -534,6 +534,18 @@ void DeviceSlotComponent::setCustomUITabIndex(int index) {
     }
 }
 
+std::vector<tracktion::engine::Plugin*> DeviceSlotComponent::getDrumPadCollapsedPlugins() const {
+    if (drumGridUI_)
+        return drumGridUI_->getPadChainPanel().getCollapsedPlugins();
+    return {};
+}
+
+void DeviceSlotComponent::setDrumPadCollapsedPlugins(
+    const std::vector<tracktion::engine::Plugin*>& plugins) {
+    if (drumGridUI_)
+        drumGridUI_->getPadChainPanel().setCollapsedPlugins(plugins);
+}
+
 int DeviceSlotComponent::getPreferredWidth() const {
     // Meter strip + padding is added to content width (not via getMeterWidth since meter is
     // content-area only)

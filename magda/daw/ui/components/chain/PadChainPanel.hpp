@@ -48,6 +48,12 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
     void refresh();
     int getContentWidth() const;
 
+    /** Get list of currently collapsed plugins (for state preservation). */
+    std::vector<tracktion::engine::Plugin*> getCollapsedPlugins() const;
+
+    /** Collapse slots matching the given plugins (call after rebuildSlots). */
+    void setCollapsedPlugins(const std::vector<tracktion::engine::Plugin*>& plugins);
+
     // Callbacks (wired by DrumGridUI / DeviceSlotComponent)
     std::function<std::vector<PluginSlotInfo>(int padIndex)> getPluginSlots;
     std::function<void(int padIndex, const juce::DynamicObject&, int insertIndex)> onPluginDropped;
