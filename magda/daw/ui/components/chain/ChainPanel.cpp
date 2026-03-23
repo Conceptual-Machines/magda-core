@@ -404,7 +404,7 @@ void ChainPanel::showChain(const magda::ChainNodePath& chainPath) {
                             << " resolved.chain=" << (resolved.chain ? "found" : "nullptr"));
     if (resolved.valid && resolved.chain) {
         setNodeName(resolved.chain->name);
-        setBypassed(false);  // Chains don't have bypass yet
+        setBypassed(resolved.chain->bypassed);
     }
 
     rebuildElementSlots();

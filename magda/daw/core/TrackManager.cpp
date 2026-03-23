@@ -992,6 +992,7 @@ void TrackManager::setChainBypassed(TrackId trackId, bool bypassed) {
         for (auto deviceId : affectedDevices) {
             notifyDevicePropertyChanged(deviceId);
         }
+        notifyTrackDevicesChanged(trackId);
     }
 }
 
@@ -1247,6 +1248,14 @@ void TrackManager::setChainOutput(TrackId trackId, RackId rackId, ChainId chainI
 void TrackManager::setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted) {
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         chain->muted = muted;
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::setChainBypassed(TrackId trackId, RackId rackId, ChainId chainId,
+                                    bool bypassed) {
+    if (auto* chain = getChain(trackId, rackId, chainId)) {
+        chain->bypassed = bypassed;
         notifyTrackDevicesChanged(trackId);
     }
 }

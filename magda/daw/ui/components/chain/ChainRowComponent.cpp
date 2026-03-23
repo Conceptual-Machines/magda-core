@@ -80,11 +80,11 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
                                                    BinaryData::power_on_svgSize);
     onButton_->setClickingTogglesState(true);
-    onButton_->setToggleState(!chain.muted, juce::dontSendNotification);  // On = not bypassed
+    onButton_->setToggleState(!chain.bypassed, juce::dontSendNotification);  // On = not bypassed
     onButton_->setNormalColor(DarkTheme::getColour(DarkTheme::STATUS_ERROR));
     onButton_->setActiveColor(juce::Colours::white);
     onButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
-    onButton_->setActive(!chain.muted);
+    onButton_->setActive(!chain.bypassed);
     onButton_->onClick = [this]() {
         onButton_->setActive(onButton_->getToggleState());
         onBypassClicked();
@@ -102,6 +102,16 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     deleteButton_.onClick = [this]() { onDeleteClicked(); };
     deleteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addAndMakeVisible(deleteButton_);
+
+    // Dim controls if chain starts bypassed
+    if (chain.bypassed) {
+        float alpha = 0.35f;
+        nameLabel_.setAlpha(alpha);
+        muteButton_.setAlpha(alpha);
+        soloButton_.setAlpha(alpha);
+        gainSlider_.setAlpha(alpha);
+        panSlider_.setAlpha(alpha);
+    }
 }
 
 ChainRowComponent::~ChainRowComponent() {
@@ -226,8 +236,16 @@ void ChainRowComponent::updateFromChain(const magda::ChainInfo& chain) {
     soloButton_.setToggleState(chain.solo, juce::dontSendNotification);
     gainSlider_.setValue(chain.volume, juce::dontSendNotification);
     panSlider_.setValue(chain.pan, juce::dontSendNotification);
-    onButton_->setToggleState(!chain.muted, juce::dontSendNotification);
-    onButton_->setActive(!chain.muted);
+    onButton_->setToggleState(!chain.bypassed, juce::dontSendNotification);
+    onButton_->setActive(!chain.bypassed);
+
+    // Dim controls when chain is bypassed
+    float alpha = chain.bypassed ? 0.35f : 1.0f;
+    nameLabel_.setAlpha(alpha);
+    muteButton_.setAlpha(alpha);
+    soloButton_.setAlpha(alpha);
+    gainSlider_.setAlpha(alpha);
+    panSlider_.setAlpha(alpha);
 }
 
 void ChainRowComponent::onMuteClicked() {
@@ -241,9 +259,8 @@ void ChainRowComponent::onSoloClicked() {
 }
 
 void ChainRowComponent::onBypassClicked() {
-    // "On" button: when ON, chain is not bypassed; when OFF, chain is bypassed
-    // This is the inverse of mute, but could be a separate bypass flag
-    // For now, we'll treat it as a visual indicator (could link to a bypass field)
+    bool active = onButton_->getToggleState();
+    magda::TrackManager::getInstance().setChainBypassed(trackId_, rackId_, chainId_, !active);
 }
 
 void ChainRowComponent::onDeleteClicked() {

@@ -581,6 +581,7 @@ juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
     obj->setProperty("outputIndex", chain.outputIndex);
     obj->setProperty("muted", chain.muted);
     obj->setProperty("solo", chain.solo);
+    obj->setProperty("bypassed", chain.bypassed);
     obj->setProperty("volume", chain.volume);
     obj->setProperty("pan", chain.pan);
     obj->setProperty("expanded", chain.expanded);
@@ -608,6 +609,7 @@ bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& o
     outChain.outputIndex = obj->getProperty("outputIndex");
     outChain.muted = obj->getProperty("muted");
     outChain.solo = obj->getProperty("solo");
+    outChain.bypassed = obj->getProperty("bypassed");
     outChain.volume = obj->getProperty("volume");
     outChain.pan = obj->getProperty("pan");
     outChain.expanded = obj->getProperty("expanded");

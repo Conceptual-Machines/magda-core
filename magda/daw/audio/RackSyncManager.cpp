@@ -506,6 +506,14 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
         if (anySoloed && !chain.solo)
             chainActive = false;
 
+        // Bypassed chain: pass audio straight through to output, skip all plugins
+        if (chain.bypassed && chainActive) {
+            rackType->addConnection(rackIOId, 1, rackIOId, 1);  // Left passthrough
+            rackType->addConnection(rackIOId, 2, rackIOId, 2);  // Right passthrough
+            anyChainConnectedToOutput = true;
+            continue;
+        }
+
         // Collect device plugins in this chain (in order)
         std::vector<te::EditItemID> chainPluginIds;
         for (const auto& element : chain.elements) {
@@ -575,9 +583,9 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
         }
     }
 
-    // If no chain connected to output (all empty, muted, or no chains),
-    // pass audio straight through so the rack is transparent
-    if (!anyChainConnectedToOutput) {
+    // If no chains exist at all, pass audio straight through so the rack is transparent.
+    // When chains exist but are all muted/inactive, leave output disconnected for silence.
+    if (!anyChainConnectedToOutput && rackInfo.chains.empty()) {
         rackType->addConnection(rackIOId, 1, rackIOId, 1);
         rackType->addConnection(rackIOId, 2, rackIOId, 2);
     }

@@ -251,6 +251,7 @@ class TrackManager {
     const ChainInfo* getChain(TrackId trackId, RackId rackId, ChainId chainId) const;
     void setChainOutput(TrackId trackId, RackId rackId, ChainId chainId, int outputIndex);
     void setChainMuted(TrackId trackId, RackId rackId, ChainId chainId, bool muted);
+    void setChainBypassed(TrackId trackId, RackId rackId, ChainId chainId, bool bypassed);
     void setChainSolo(TrackId trackId, RackId rackId, ChainId chainId, bool solo);
     void setChainVolume(TrackId trackId, RackId rackId, ChainId chainId, float volume);
     void setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan);

@@ -66,6 +66,7 @@ struct ChainInfo {
     int outputIndex = 0;                 // Output routing (0 = main, 1-N = aux)
     bool muted = false;
     bool solo = false;
+    bool bypassed = false;
     float volume = 0.0f;  // Chain volume in dB (0 = unity)
     float pan = 0.0f;     // Chain pan (-1 to 1)
 
@@ -86,6 +87,7 @@ struct ChainInfo {
           outputIndex(other.outputIndex),
           muted(other.muted),
           solo(other.solo),
+          bypassed(other.bypassed),
           volume(other.volume),
           pan(other.pan),
           expanded(other.expanded) {
@@ -103,6 +105,7 @@ struct ChainInfo {
             outputIndex = other.outputIndex;
             muted = other.muted;
             solo = other.solo;
+            bypassed = other.bypassed;
             volume = other.volume;
             pan = other.pan;
             expanded = other.expanded;
