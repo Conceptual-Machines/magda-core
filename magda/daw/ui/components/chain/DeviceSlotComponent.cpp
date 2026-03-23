@@ -1807,7 +1807,7 @@ void DeviceSlotComponent::createCustomUI() {
             if (auto* chain = dg->getChainForNote(midiNote)) {
                 drumGridUI_->updatePadInfo(padIndex, getChainDisplayName(*chain), chain->mute.get(),
                                            chain->solo.get(), chain->level.get(), chain->pan.get(),
-                                           chain->index);
+                                           chain->index, chain->bypassed.get());
             } else {
                 drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
             }
@@ -1881,6 +1881,14 @@ void DeviceSlotComponent::createCustomUI() {
                 int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
                 if (auto* chain = dg->getChainForNote(midiNote))
                     const_cast<daw::audio::DrumGridPlugin::Chain*>(chain)->solo = soloed;
+            }
+        };
+
+        drumGridUI_->onPadBypassChanged = [getDrumGrid](int padIndex, bool bypassed) {
+            if (auto* dg = getDrumGrid()) {
+                int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
+                if (auto* chain = dg->getChainForNote(midiNote))
+                    const_cast<daw::audio::DrumGridPlugin::Chain*>(chain)->bypassed = bypassed;
             }
         };
 
@@ -2417,7 +2425,8 @@ void DeviceSlotComponent::updateCustomUI() {
                             if (padIdx >= 0 && padIdx < daw::audio::DrumGridPlugin::maxPads) {
                                 drumGridUI_->updatePadInfo(padIdx, displayName, chain->mute.get(),
                                                            chain->solo.get(), chain->level.get(),
-                                                           chain->pan.get(), chain->index);
+                                                           chain->pan.get(), chain->index,
+                                                           chain->bypassed.get());
                             }
                         }
                     }

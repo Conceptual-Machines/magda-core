@@ -75,7 +75,18 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     onButton_->setActiveColor(juce::Colours::white);
     onButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).darker(0.3f));
     onButton_->setActive(true);
-    onButton_->onClick = [this]() { onButton_->setActive(onButton_->getToggleState()); };
+    onButton_->onClick = [this]() {
+        bool active = onButton_->getToggleState();
+        onButton_->setActive(active);
+        float alpha = active ? 1.0f : 0.35f;
+        nameLabel_.setAlpha(alpha);
+        muteButton_.setAlpha(alpha);
+        soloButton_.setAlpha(alpha);
+        levelSlider_.setAlpha(alpha);
+        panSlider_.setAlpha(alpha);
+        if (onBypassChanged)
+            onBypassChanged(padIndex_, !active);
+    };
     addAndMakeVisible(*onButton_);
 
     // Delete button (reddish-purple background)
@@ -165,12 +176,22 @@ void PadChainRowComponent::mouseUp(const juce::MouseEvent& e) {
 }
 
 void PadChainRowComponent::updateFromPad(const juce::String& name, float level, float pan,
-                                         bool mute, bool solo) {
+                                         bool mute, bool solo, bool bypassed) {
     nameLabel_.setText(name, juce::dontSendNotification);
     levelSlider_.setValue(level, juce::dontSendNotification);
     panSlider_.setValue(pan, juce::dontSendNotification);
     muteButton_.setToggleState(mute, juce::dontSendNotification);
     soloButton_.setToggleState(solo, juce::dontSendNotification);
+    onButton_->setToggleState(!bypassed, juce::dontSendNotification);
+    onButton_->setActive(!bypassed);
+
+    // Dim controls when bypassed
+    float alpha = bypassed ? 0.35f : 1.0f;
+    nameLabel_.setAlpha(alpha);
+    muteButton_.setAlpha(alpha);
+    soloButton_.setAlpha(alpha);
+    levelSlider_.setAlpha(alpha);
+    panSlider_.setAlpha(alpha);
 }
 
 void PadChainRowComponent::setSelected(bool selected) {

@@ -27,7 +27,8 @@ class PadChainRowComponent : public juce::Component {
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
 
-    void updateFromPad(const juce::String& name, float level, float pan, bool mute, bool solo);
+    void updateFromPad(const juce::String& name, float level, float pan, bool mute, bool solo,
+                       bool bypassed = false);
     void setSelected(bool selected);
     bool isSelected() const {
         return selected_;
@@ -45,6 +46,7 @@ class PadChainRowComponent : public juce::Component {
     std::function<void(int padIndex, bool)> onMuteChanged;
     std::function<void(int padIndex, bool)> onSoloChanged;
     std::function<void(int padIndex)> onDeleteClicked;
+    std::function<void(int padIndex, bool)> onBypassChanged;
     std::function<void(int padIndex, juce::Point<int>)> onRightClicked;
 
   private:

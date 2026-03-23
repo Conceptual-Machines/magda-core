@@ -68,7 +68,7 @@ class DrumGridUI : public juce::Component,
 
     /** Update cached info for a single pad. Called from DeviceSlotComponent::updateCustomUI. */
     void updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                       float levelDb, float pan, int chainIndex = -1);
+                       float levelDb, float pan, int chainIndex = -1, bool bypassed = false);
 
     /** Set which pad is selected and populate the detail panel. */
     void setSelectedPad(int padIndex);
@@ -101,6 +101,9 @@ class DrumGridUI : public juce::Component,
 
     /** Called when pad solo changes. (padIndex, soloed) */
     std::function<void(int, bool)> onPadSoloChanged;
+
+    /** Called when pad bypass changes. (padIndex, bypassed) */
+    std::function<void(int, bool)> onPadBypassChanged;
 
     /** Called when a plugin is dropped onto a pad. (padIndex, DynamicObject with plugin info) */
     std::function<void(int, const juce::DynamicObject&)> onPluginDropped;
@@ -213,6 +216,7 @@ class DrumGridUI : public juce::Component,
         juce::String sampleName;
         bool mute = false;
         bool solo = false;
+        bool bypassed = false;
         float level = 0.0f;
         float pan = 0.0f;
         int chainIndex = -1;  // Index of the chain covering this pad, or -1 if empty

@@ -473,7 +473,7 @@ void DrumGridUI::timerCallback() {
 }
 
 void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                               float levelDb, float pan, int chainIndex) {
+                               float levelDb, float pan, int chainIndex, bool bypassed) {
     if (padIndex < 0 || padIndex >= kTotalPads)
         return;
 
@@ -481,6 +481,7 @@ void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, boo
     info.sampleName = sampleName;
     info.mute = mute;
     info.solo = solo;
+    info.bypassed = bypassed;
     info.level = levelDb;
     info.pan = pan;
     info.chainIndex = chainIndex;
@@ -777,6 +778,9 @@ void DrumGridUI::resized() {
     if (showDetailPanel) {
         padChainPanel_.setBounds(detailArea);
         padChainPanel_.setVisible(true);
+        // Dim pad chain panel when the selected pad is bypassed
+        bool selectedBypassed = padInfos_[static_cast<size_t>(selectedPad_)].bypassed;
+        padChainPanel_.setAlpha(selectedBypassed ? 0.35f : 1.0f);
     } else {
         padChainPanel_.setVisible(false);
     }
@@ -876,7 +880,7 @@ void DrumGridUI::rebuildChainRows() {
         // --- Mix row ---
         auto row = std::make_unique<PadChainRowComponent>(i);
         juce::String displayName = getNoteName(i) + " " + info.sampleName;
-        row->updateFromPad(displayName, info.level, info.pan, info.mute, info.solo);
+        row->updateFromPad(displayName, info.level, info.pan, info.mute, info.solo, info.bypassed);
 
         row->onClicked = [this](int padIndex) { setSelectedPad(padIndex); };
         row->onLevelChanged = [this](int padIndex, float val) {
@@ -898,6 +902,14 @@ void DrumGridUI::rebuildChainRows() {
             if (onPadSoloChanged)
                 onPadSoloChanged(padIndex, val);
             refreshPadButtons();
+        };
+        row->onBypassChanged = [this](int padIndex, bool val) {
+            padInfos_[static_cast<size_t>(padIndex)].bypassed = val;
+            if (onPadBypassChanged)
+                onPadBypassChanged(padIndex, val);
+            // Update detail panel dimming if this is the selected pad
+            if (padIndex == selectedPad_)
+                padChainPanel_.setAlpha(val ? 0.35f : 1.0f);
         };
         row->onDeleteClicked = [this](int padIndex) {
             if (onPadDeleteRequested)

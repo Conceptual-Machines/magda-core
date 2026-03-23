@@ -56,6 +56,7 @@ class DrumGridPlugin : public te::Plugin {
         juce::CachedValue<float> pan;
         juce::CachedValue<bool> mute;
         juce::CachedValue<bool> solo;
+        juce::CachedValue<bool> bypassed;
     };
 
     //==============================================================================
@@ -175,6 +176,7 @@ class DrumGridPlugin : public te::Plugin {
     static const juce::Identifier padPanId;
     static const juce::Identifier padMuteId;
     static const juce::Identifier padSoloId;
+    static const juce::Identifier padBypassedId;
     static const juce::Identifier mixerExpandedId;
 
     Chain* findChainForNote(int midiNote);
