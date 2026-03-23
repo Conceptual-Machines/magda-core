@@ -75,10 +75,12 @@ UtilityUI::UtilityUI() {
                                                       BinaryData::phase_invert_svgSize);
     phaseButton_->setClickingTogglesState(true);
     phaseButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    phaseButton_->setActiveColor(DarkTheme::getAccentColour());
-    phaseButton_->setActiveBackgroundColor(DarkTheme::getAccentColour().withAlpha(0.2f));
+    phaseButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    phaseButton_->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.35f));
     phaseButton_->onClick = [this]() {
         bool on = phaseButton_->getToggleState();
+        DBG("UtilityUI: phase clicked, toggleState=" << (on ? "ON" : "OFF"));
         phaseButton_->setActive(on);
         if (onParameterChanged)
             onParameterChanged(2, on ? 1.0f : 0.0f);
@@ -112,23 +114,29 @@ void UtilityUI::paint(juce::Graphics& g) {
 
 void UtilityUI::resized() {
     auto area = getLocalBounds().reduced(6);
-    int colWidth = area.getWidth() / 3;
     int labelHeight = 14;
     int sliderHeight = 18;
-
-    SliderWithLabel* sliders[] = {&gain_, &pan_};
+    int totalWidth = area.getWidth();
+    int gainColWidth = totalWidth * 50 / 100;
+    int panColWidth = totalWidth * 35 / 100;
+    int phaseColWidth = totalWidth - gainColWidth - panColWidth;
 
     auto row = area;
-    for (auto* s : sliders) {
-        auto col = row.removeFromLeft(colWidth).reduced(2, 0);
-        s->label.setBounds(col.removeFromTop(labelHeight));
-        s->slider.setBounds(col.removeFromTop(sliderHeight));
-    }
 
-    // Phase button in the third column
-    auto col = row.removeFromLeft(colWidth).reduced(2, 0);
-    phaseLabel_.setBounds(col.removeFromTop(labelHeight));
-    auto phaseArea = col.removeFromTop(sliderHeight);
+    // Gain slider
+    auto gainCol = row.removeFromLeft(gainColWidth).reduced(2, 0);
+    gain_.label.setBounds(gainCol.removeFromTop(labelHeight));
+    gain_.slider.setBounds(gainCol.removeFromTop(sliderHeight));
+
+    // Pan slider
+    auto panCol = row.removeFromLeft(panColWidth).reduced(2, 0);
+    pan_.label.setBounds(panCol.removeFromTop(labelHeight));
+    pan_.slider.setBounds(panCol.removeFromTop(sliderHeight));
+
+    // Phase button — compact column
+    auto phaseCol = row.reduced(2, 0);
+    phaseLabel_.setBounds(phaseCol.removeFromTop(labelHeight));
+    auto phaseArea = phaseCol.removeFromTop(sliderHeight);
     int phaseSize = juce::jmin(phaseArea.getWidth(), phaseArea.getHeight());
     phaseButton_->setBounds(phaseArea.withSizeKeepingCentre(phaseSize, phaseSize));
 }

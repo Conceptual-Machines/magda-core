@@ -2385,6 +2385,10 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             plugin = createInternalPlugin(te::ToneGeneratorPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("4osc")) {
             plugin = createInternalPlugin(te::FourOscPlugin::xmlTypeName, ps);
+        } else if (device.pluginId.containsIgnoreCase("utility") ||
+                   device.pluginId.containsIgnoreCase("volume")) {
+            plugin =
+                edit_.getPluginCache().createNewPlugin(te::VolumeAndPanPlugin::xmlTypeName, {});
         } else if (device.pluginId.containsIgnoreCase(
                        daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
             juce::ValueTree ps(te::IDs::PLUGIN);
