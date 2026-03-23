@@ -169,19 +169,19 @@ void NodeComponent::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawRoundedRectangle(bounds.toFloat(), 4.0f, 1.0f);
 
-        // Draw name vertically (rotated 90 degrees)
+        // Draw name vertically (rotated 90 degrees) in the text area below buttons
         g.saveState();
         g.setColour(DarkTheme::getTextColour());
         g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
 
-        // Rotate around center and draw text
-        auto center = bounds.getCentre().toFloat();
+        auto center = collapsedTextArea_.getCentre().toFloat();
         g.addTransform(juce::AffineTransform::rotation(-juce::MathConstants<float>::halfPi,
                                                        center.x, center.y));
-        // Draw text centered (swapped width/height due to rotation)
-        juce::Rectangle<int> textBounds(static_cast<int>(center.x - bounds.getHeight() / 2),
-                                        static_cast<int>(center.y - bounds.getWidth() / 2),
-                                        bounds.getHeight(), bounds.getWidth());
+        // Swapped width/height due to rotation
+        juce::Rectangle<int> textBounds(
+            static_cast<int>(center.x - collapsedTextArea_.getHeight() / 2),
+            static_cast<int>(center.y - collapsedTextArea_.getWidth() / 2),
+            collapsedTextArea_.getHeight(), collapsedTextArea_.getWidth());
         g.drawText(getCollapsedName(), textBounds, juce::Justification::centred);
         g.restoreState();
 
