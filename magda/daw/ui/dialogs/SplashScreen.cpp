@@ -14,7 +14,7 @@ namespace magda {
 class SplashScreen::ContentComponent : public juce::Component {
   public:
     ContentComponent() {
-        setSize(450, 446);
+        setSize(450, 420);
 
         // Load the SVG logo
         if (auto xml = juce::XmlDocument::parse(
@@ -88,46 +88,44 @@ class SplashScreen::ContentComponent : public juce::Component {
         g.setColour(juce::Colour(DarkTheme::ACCENT_BLUE));
         g.drawText(statusText_, bounds.removeFromTop(18), juce::Justification::centred);
 
-        // "powered by" + Tracktion Engine logo
+        // "powered by [TE logo] Tracktion Engine · made with [JUCE logo] JUCE"
         bounds.removeFromTop(6);
-        auto poweredRow = bounds.removeFromTop(24);
+        auto creditsRow = bounds.removeFromTop(24);
         g.setFont(fm.getUIFont(10.0f));
         g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
 
-        {
-            int textWidth = 62;
-            int logoWidth = 24;
-            int totalWidth = textWidth + logoWidth + 4;
-            auto centred = poweredRow.withSizeKeepingCentre(totalWidth, 24);
+        int logoSize = 16;
+        int gap = 3;
+        auto font = fm.getUIFont(10.0f);
+        auto textWidth = [&font](const juce::String& text) {
+            juce::GlyphArrangement ga;
+            ga.addLineOfText(font, text, 0, 0);
+            return juce::roundToInt(ga.getBoundingBox(0, -1, false).getWidth());
+        };
+        int pwdByW = textWidth("powered by");
+        int teW = textWidth("Tracktion Engine");
+        int dotW = textWidth(" \xc2\xb7 ");
+        int madeW = textWidth("made with");
+        int juceW = textWidth("JUCE");
+        int totalW =
+            pwdByW + gap + logoSize + gap + teW + dotW + madeW + gap + logoSize + gap + juceW;
+        auto row = creditsRow.withSizeKeepingCentre(totalW, 24);
 
-            g.drawText("powered by", centred.removeFromLeft(textWidth),
-                       juce::Justification::centredRight);
-            if (teLogo_) {
-                centred.removeFromLeft(4);
-                teLogo_->drawWithin(g, centred.removeFromLeft(logoWidth).toFloat(),
-                                    juce::RectanglePlacement::centred, 1.0f);
-            }
-        }
-
-        // "made with" + JUCE logo
-        bounds.removeFromTop(2);
-        auto juceRow = bounds.removeFromTop(24);
-        g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
-
-        {
-            int textWidth = 54;
-            int logoWidth = 24;
-            int totalWidth = textWidth + logoWidth + 4;
-            auto centred = juceRow.withSizeKeepingCentre(totalWidth, 24);
-
-            g.drawText("made with", centred.removeFromLeft(textWidth),
-                       juce::Justification::centredRight);
-            if (juceLogo_) {
-                centred.removeFromLeft(4);
-                juceLogo_->drawWithin(g, centred.removeFromLeft(logoWidth).toFloat(),
-                                      juce::RectanglePlacement::centred, 1.0f);
-            }
-        }
+        g.drawText("powered by", row.removeFromLeft(pwdByW), juce::Justification::centred);
+        row.removeFromLeft(gap);
+        if (teLogo_)
+            teLogo_->drawWithin(g, row.removeFromLeft(logoSize).toFloat(),
+                                juce::RectanglePlacement::centred, 1.0f);
+        row.removeFromLeft(gap);
+        g.drawText("Tracktion Engine", row.removeFromLeft(teW), juce::Justification::centred);
+        g.drawText(" \xc2\xb7 ", row.removeFromLeft(dotW), juce::Justification::centred);
+        g.drawText("made with", row.removeFromLeft(madeW), juce::Justification::centred);
+        row.removeFromLeft(gap);
+        if (juceLogo_)
+            juceLogo_->drawWithin(g, row.removeFromLeft(logoSize).toFloat(),
+                                  juce::RectanglePlacement::centred, 1.0f);
+        row.removeFromLeft(gap);
+        g.drawText("JUCE", row.removeFromLeft(juceW), juce::Justification::centred);
     }
 
     void setStatus(const juce::String& text) {
