@@ -171,21 +171,38 @@ class MasterChannelStrip::DbScale : public juce::Component {
     }
 };
 
-// Stereo level meter component (L/R bars)
-class MasterChannelStrip::LevelMeter : public juce::Component {
+// Stereo level meter component (L/R bars) with smooth ballistics and peak hold
+class MasterChannelStrip::LevelMeter : public juce::Component, private juce::Timer {
   public:
+    ~LevelMeter() override {
+        stopTimer();
+    }
+
     void setLevel(float newLevel) {
         setLevels(newLevel, newLevel);
     }
 
     void setLevels(float left, float right) {
-        leftLevel_ = juce::jlimit(0.0f, 2.0f, left);
-        rightLevel_ = juce::jlimit(0.0f, 2.0f, right);
-        repaint();
+        targetL_ = juce::jlimit(0.0f, 2.0f, left);
+        targetR_ = juce::jlimit(0.0f, 2.0f, right);
+
+        float leftDb = gainToDb(targetL_);
+        float rightDb = gainToDb(targetR_);
+        if (leftDb > peakLeftDb_) {
+            peakLeftDb_ = leftDb;
+            peakLeftHold_ = PEAK_HOLD_MS;
+        }
+        if (rightDb > peakRightDb_) {
+            peakRightDb_ = rightDb;
+            peakRightHold_ = PEAK_HOLD_MS;
+        }
+
+        if (!isTimerRunning())
+            startTimerHz(60);
     }
 
     float getLevel() const {
-        return std::max(leftLevel_, rightLevel_);
+        return std::max(displayL_, displayR_);
     }
 
     void paint(juce::Graphics& g) override {
@@ -197,44 +214,98 @@ class MasterChannelStrip::LevelMeter : public juce::Component {
         auto leftBounds = bounds.withWidth(barWidth);
         auto rightBounds = bounds.withWidth(barWidth).withX(bounds.getX() + barWidth + gap);
 
-        drawMeterBar(g, leftBounds, leftLevel_);
-        drawMeterBar(g, rightBounds, rightLevel_);
+        drawMeterBar(g, leftBounds, displayL_, peakLeftDb_);
+        drawMeterBar(g, rightBounds, displayR_, peakRightDb_);
     }
 
   private:
-    float leftLevel_ = 0.0f;
-    float rightLevel_ = 0.0f;
+    float targetL_ = 0.0f, targetR_ = 0.0f;
+    float displayL_ = 0.0f, displayR_ = 0.0f;
+    float peakLeftDb_ = -60.0f, peakRightDb_ = -60.0f;
+    float peakLeftHold_ = 0.0f, peakRightHold_ = 0.0f;
 
-    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level) {
+    static constexpr float ATTACK_COEFF = 0.9f;
+    static constexpr float RELEASE_COEFF = 0.05f;
+    static constexpr float PEAK_HOLD_MS = 1500.0f;
+    static constexpr float PEAK_DECAY_DB_PER_FRAME = 0.8f;
+
+    void timerCallback() override {
+        bool changed = false;
+        changed |= updateLevel(displayL_, targetL_);
+        changed |= updateLevel(displayR_, targetR_);
+        changed |= updatePeak(peakLeftDb_, peakLeftHold_, gainToDb(targetL_));
+        changed |= updatePeak(peakRightDb_, peakRightHold_, gainToDb(targetR_));
+        if (changed)
+            repaint();
+        else if (displayL_ < 0.001f && displayR_ < 0.001f && peakLeftDb_ <= -60.0f &&
+                 peakRightDb_ <= -60.0f)
+            stopTimer();
+    }
+
+    static bool updateLevel(float& display, float target) {
+        float prev = display;
+        display += (target - display) * (target > display ? ATTACK_COEFF : RELEASE_COEFF);
+        if (display < 0.001f)
+            display = 0.0f;
+        return std::abs(display - prev) > 0.0001f;
+    }
+
+    static bool updatePeak(float& peakDb, float& holdTime, float currentDb) {
+        float prev = peakDb;
+        if (currentDb > peakDb) {
+            peakDb = currentDb;
+            holdTime = PEAK_HOLD_MS;
+        } else if (holdTime > 0.0f) {
+            holdTime -= 1000.0f / 60.0f;
+        } else {
+            peakDb -= PEAK_DECAY_DB_PER_FRAME;
+            if (peakDb < -60.0f)
+                peakDb = -60.0f;
+        }
+        return std::abs(peakDb - prev) > 0.01f;
+    }
+
+    void drawMeterBar(juce::Graphics& g, juce::Rectangle<float> bounds, float level, float peakDb) {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRoundedRectangle(bounds, 1.0f);
 
         float displayLevel = dbToMeterPos(gainToDb(level));
         float meterHeight = bounds.getHeight() * displayLevel;
-        if (meterHeight < 1.0f)
-            return;
 
-        auto fullBounds = bounds;
-        auto fillBounds = bounds;
-        fillBounds = fillBounds.removeFromBottom(meterHeight);
+        if (meterHeight >= 1.0f) {
+            auto fullBounds = bounds;
+            auto fillBounds = bounds;
+            fillBounds = fillBounds.removeFromBottom(meterHeight);
 
-        const juce::Colour green(0xFF55AA55);
-        const juce::Colour yellow(0xFFAAAA55);
-        const juce::Colour red(0xFFAA5555);
+            const juce::Colour green(0xFF55AA55);
+            const juce::Colour yellow(0xFFAAAA55);
+            const juce::Colour red(0xFFAA5555);
 
-        float yellowPos = dbToMeterPos(-12.0f);
-        float redPos = dbToMeterPos(0.0f);
-        constexpr float fade = 0.03f;
+            float yellowPos = dbToMeterPos(-12.0f);
+            float redPos = dbToMeterPos(0.0f);
+            constexpr float fade = 0.03f;
 
-        juce::ColourGradient grad(green, 0.0f, fullBounds.getBottom(), red, 0.0f, fullBounds.getY(),
-                                  false);
-        grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
-        grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
-        grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
-        grad.addColour(std::min(1.0, (double)redPos + fade), red);
+            juce::ColourGradient grad(green, 0.0f, fullBounds.getBottom(), red, 0.0f,
+                                      fullBounds.getY(), false);
+            grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
+            grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
+            grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
+            grad.addColour(std::min(1.0, (double)redPos + fade), red);
 
-        g.setGradientFill(grad);
-        g.fillRoundedRectangle(fillBounds, 1.0f);
+            g.setGradientFill(grad);
+            g.fillRoundedRectangle(fillBounds, 1.0f);
+        }
+
+        // Peak hold indicator
+        float peakPos = dbToMeterPos(peakDb);
+        if (peakPos > 0.01f) {
+            float peakY = bounds.getBottom() - bounds.getHeight() * peakPos;
+            auto peakColour = peakDb >= 0.0f     ? juce::Colour(0xFFAA5555)
+                              : peakDb >= -12.0f ? juce::Colour(0xFFAAAA55)
+                                                 : juce::Colour(0xFF55AA55);
+            g.setColour(peakColour.withAlpha(0.9f));
+            g.fillRect(bounds.getX(), peakY, bounds.getWidth(), 1.5f);
+        }
     }
 };
 
