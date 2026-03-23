@@ -246,13 +246,16 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
 }
 
 void PadDeviceSlot::paint(juce::Graphics& g) {
+    auto bounds = getLocalBounds().toFloat();
+    float cornerRadius = collapsed_ ? 4.0f : 0.0f;
+
     g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
-    g.fillRect(getLocalBounds());
+    g.fillRoundedRectangle(bounds, cornerRadius);
 
     // Selection border (matches NodeComponent style)
     if (selected_) {
         g.setColour(juce::Colour(0xff888888));
-        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f, 2.0f);
+        g.drawRoundedRectangle(bounds.reduced(1.0f), 4.0f, 2.0f);
     }
 
     // Draw rotated name when collapsed

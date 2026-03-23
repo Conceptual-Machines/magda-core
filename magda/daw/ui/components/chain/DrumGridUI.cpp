@@ -207,7 +207,12 @@ DrumGridUI::DrumGridUI() {
     // Setup pad buttons
     for (int i = 0; i < kPadsPerPage; ++i) {
         padButtons_[static_cast<size_t>(i)].onClicked = [this](int padIndex) {
-            setSelectedPad(padIndex);
+            if (padIndex == selectedPad_) {
+                setDetailCollapsed(!detailCollapsed_);
+            } else {
+                setDetailCollapsed(false);
+                setSelectedPad(padIndex);
+            }
         };
         padButtons_[static_cast<size_t>(i)].onNotePreview = [this](int padIndex, bool isNoteOn) {
             if (onNotePreview)
@@ -392,8 +397,11 @@ DrumGridUI::~DrumGridUI() {
 
 void DrumGridUI::setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin) {
     drumGridPlugin_ = plugin;
-    if (drumGridPlugin_)
+    if (drumGridPlugin_) {
         startTimer(50);  // 20fps polling
+        // Restore detail collapsed state
+        detailCollapsed_ = drumGridPlugin_->state.getProperty("uiDetailCollapsed", false);
+    }
 }
 
 void DrumGridUI::timerCallback() {
@@ -652,7 +660,7 @@ void DrumGridUI::resized() {
 
     bool selectedPadHasContent =
         padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
-    bool showDetailPanel = selectedPadHasContent;
+    bool showDetailPanel = selectedPadHasContent && !detailCollapsed_;
 
     // --- Layout (right-to-left): [Pads] | [Chains] | [Detail] ---
     // Allocate from the right: detail → chains → toggle+pads get remainder
@@ -882,7 +890,18 @@ void DrumGridUI::rebuildChainRows() {
         juce::String displayName = getNoteName(i) + " " + info.sampleName;
         row->updateFromPad(displayName, info.level, info.pan, info.mute, info.solo, info.bypassed);
 
-        row->onClicked = [this](int padIndex) { setSelectedPad(padIndex); };
+        row->onClicked = [this](int padIndex) {
+            bool wasSelected = (padIndex == selectedPad_) ||
+                               (padInfos_[static_cast<size_t>(padIndex)].chainIndex >= 0 &&
+                                padInfos_[static_cast<size_t>(padIndex)].chainIndex ==
+                                    padInfos_[static_cast<size_t>(selectedPad_)].chainIndex);
+            if (wasSelected) {
+                setDetailCollapsed(!detailCollapsed_);
+            } else {
+                setDetailCollapsed(false);
+                setSelectedPad(padIndex);
+            }
+        };
         row->onLevelChanged = [this](int padIndex, float val) {
             if (onPadLevelChanged)
                 onPadLevelChanged(padIndex, val);
@@ -989,7 +1008,7 @@ void DrumGridUI::showChainContextMenu(int padIndex, juce::Point<int> screenPos) 
 int DrumGridUI::getPreferredContentWidth() const {
     bool selectedPadHasContent =
         padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
-    bool showDetailPanel = selectedPadHasContent;
+    bool showDetailPanel = selectedPadHasContent && !detailCollapsed_;
 
     // Account for layout overhead from parent components:
     //   NodeComponent::resized() reduced(2,1) = 4px
@@ -1024,6 +1043,18 @@ void DrumGridUI::setChainsPanelVisible(bool visible) {
 // =============================================================================
 // Internal helpers
 // =============================================================================
+
+void DrumGridUI::setDetailCollapsed(bool collapsed) {
+    if (detailCollapsed_ == collapsed)
+        return;
+    detailCollapsed_ = collapsed;
+    if (drumGridPlugin_)
+        drumGridPlugin_->state.setProperty("uiDetailCollapsed", collapsed, nullptr);
+    resized();
+    repaint();
+    if (onLayoutChanged)
+        onLayoutChanged();
+}
 
 void DrumGridUI::refreshPadButtons() {
     int pageStart = currentPage_ * kPadsPerPage;

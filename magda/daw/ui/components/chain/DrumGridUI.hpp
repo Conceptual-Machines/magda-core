@@ -248,6 +248,7 @@ class DrumGridUI : public juce::Component,
 
     // Per-pad FX chain panel (replaces old SamplerUI + param grid)
     PadChainPanel padChainPanel_;
+    bool detailCollapsed_ = false;
 
     // Chains panel
     bool chainsPanelVisible_ = true;
@@ -271,6 +272,7 @@ class DrumGridUI : public juce::Component,
     daw::audio::DrumGridPlugin* drumGridPlugin_ = nullptr;
 
     //==============================================================================
+    void setDetailCollapsed(bool collapsed);
     void refreshPadButtons();
     void refreshDetailPanel();
     void goToPrevPage();
