@@ -698,11 +698,9 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             if (auto* ae = getAudioEngine()) {
                 if (auto* dm = ae->getDeviceManager()) {
                     if (auto* device = dm->getCurrentAudioDevice()) {
-                        transportPanel->setAudioDeviceInfo(
-                            device->getName(), device->getCurrentSampleRate(),
-                            device->getCurrentBufferSizeSamples(),
-                            device->getActiveInputChannels().countNumberOfSetBits(),
-                            device->getActiveOutputChannels().countNumberOfSetBits());
+                        transportPanel->setAudioDeviceInfo(device->getName(),
+                                                           device->getCurrentSampleRate(),
+                                                           device->getCurrentBufferSizeSamples());
                     }
                 }
             }

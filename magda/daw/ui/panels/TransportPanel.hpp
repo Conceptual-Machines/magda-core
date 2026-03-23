@@ -66,8 +66,7 @@ class TransportPanel : public juce::Component {
     // CPU usage display (0.0 to 1.0)
     void setCpuUsage(float usage);
     void setXrunCount(int count);
-    void setAudioDeviceInfo(const juce::String& deviceName, double sampleRate, int bufferSize,
-                            int numInputs, int numOutputs);
+    void setAudioDeviceInfo(const juce::String& deviceName, double sampleRate, int bufferSize);
 
   private:
     // Transport controls (left section)
@@ -180,8 +179,6 @@ class TransportPanel : public juce::Component {
     juce::String audioDeviceName_;
     double audioSampleRate_ = 0.0;
     int audioBufferSize_ = 0;
-    int audioNumInputs_ = 0;
-    int audioNumOutputs_ = 0;
     void updateCpuTooltip();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TransportPanel)

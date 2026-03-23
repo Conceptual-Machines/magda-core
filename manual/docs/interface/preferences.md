@@ -1,18 +1,28 @@
 # Preferences
 
-Open the Preferences dialog from **Settings > Preferences**. The dialog has five tabs.
+Open the Preferences dialog from **Settings > Preferences**. The dialog has six tabs.
 
 ![Preferences](../assets/images/interface/preferences.png)
 
 ## General
 
-- **Default zoom level** — Initial horizontal zoom when opening a project
-- **Timeline units** — Choose between bars/beats and time (minutes:seconds)
+- **Zoom In Sensitivity** — Controls how fast the timeline zooms in
+- **Zoom Out Sensitivity** — Controls how fast the timeline zooms out
+- **Shift+Zoom Sensitivity** — Controls zoom speed when holding Shift
+- **Default Length** — Default timeline length for new projects (in bars)
+- **Default View** — Default visible range when opening a project (in bars)
+- **Auto-Save** — Enable or disable automatic saving, and set the interval
 
 ## UI
 
 - **Panel visibility defaults** — Choose which panels are shown on startup
 - **Behavior settings** — Configure UI interaction preferences
+
+## Colours
+
+- **Custom colour palette** — Define a custom set of colours for tracks and clips
+- **Track colours** — Right-click any track header to assign a colour; the colour tints headers in the arrangement, session view, and mixer strips
+- **Clip colours** — Clips can have their own colour or follow the track colour
 
 ## Rendering
 

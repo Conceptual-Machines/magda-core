@@ -1005,12 +1005,10 @@ void TransportPanel::setXrunCount(int count) {
 }
 
 void TransportPanel::setAudioDeviceInfo(const juce::String& deviceName, double sampleRate,
-                                        int bufferSize, int numInputs, int numOutputs) {
+                                        int bufferSize) {
     audioDeviceName_ = deviceName;
     audioSampleRate_ = sampleRate;
     audioBufferSize_ = bufferSize;
-    audioNumInputs_ = numInputs;
-    audioNumOutputs_ = numOutputs;
     updateCpuTooltip();
 }
 
@@ -1028,8 +1026,6 @@ void TransportPanel::updateCpuTooltip() {
             tip << " (" << juce::String(latencyMs, 1) << " ms)";
         tip << "\n";
     }
-    if (audioNumInputs_ > 0 || audioNumOutputs_ > 0)
-        tip << "I/O: " << audioNumInputs_ << " in / " << audioNumOutputs_ << " out\n";
     tip << "CPU: " << juce::String(juce::roundToInt(currentCpuUsage * 100.0f)) << "%";
     if (peakCpuUsage > currentCpuUsage + 0.02f)
         tip << " (peak " << juce::String(juce::roundToInt(peakCpuUsage * 100.0f)) << "%)";
