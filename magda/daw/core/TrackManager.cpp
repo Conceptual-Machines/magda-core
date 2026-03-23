@@ -408,7 +408,9 @@ void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
     group->childIds.push_back(trackId);
 
     // Auto-route child's audio output to the group track
-    track->audioOutputDevice = "track:" + juce::String(groupId);
+    // Multi-out tracks keep their routing to the source track's output
+    if (track->type != TrackType::MultiOut)
+        track->audioOutputDevice = "track:" + juce::String(groupId);
     notifyTrackPropertyChanged(trackId);
 
     notifyTracksChanged();
