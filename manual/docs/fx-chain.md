@@ -58,3 +58,7 @@ Click the **+** button next to "Chains" to add a new parallel chain.
 - **Volume** — Master output level for the entire rack
 - **Mod / Macro buttons** — Access the rack's own modulation and macro panels
 - **Collapse/Expand** — Click the rack header to toggle between collapsed and expanded views
+
+### Collapsible Devices
+
+Individual devices inside a rack can be collapsed to save space. Click the collapse button on a device to shrink it to a compact header. The rack resizes dynamically as devices are collapsed or expanded. Collapsed states are preserved when the chain rebuilds (e.g. when adding or removing devices).

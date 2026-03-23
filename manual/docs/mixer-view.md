@@ -80,6 +80,10 @@ Each channel strip has a send section for routing audio to auxiliary buses.
 
 The send section is resizable — drag the resize handle to show more or fewer send slots.
 
+## Multi-Output Plugins
+
+When an instrument has multiple output pairs activated, each output appears as its own channel strip in the mixer — just like any other track. You can route these strips to groups or aux sends independently. See [Multi-Output Plugins](tracks.md#multi-output-plugins) for setup details.
+
 ## DrumGrid Sub-Channels
 
 When a track contains a DrumGrid device with multiple outputs, the mixer can expand to show individual sub-channel strips for each drum voice, giving you independent level and pan control per pad output. See [Drum Grid](devices/drum-grid.md) for details.

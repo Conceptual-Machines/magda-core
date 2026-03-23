@@ -134,6 +134,18 @@ class DrumGridPlugin : public te::Plugin {
     // Trigger graph rebuild when chain configuration changes
     void notifyGraphRebuildNeeded();
 
+    // Listener for chain add/remove events (used by MixerView)
+    struct Listener {
+        virtual ~Listener() = default;
+        virtual void drumGridChainsChanged(DrumGridPlugin* plugin) = 0;
+    };
+    void addListener(Listener* l) {
+        listeners_.add(l);
+    }
+    void removeListener(Listener* l) {
+        listeners_.remove(l);
+    }
+
     // Legacy pad-level FX API (delegates to chain-based methods)
     void addPluginToPad(int padIndex, const juce::PluginDescription& desc, int insertIndex = -1);
     void removePluginFromPad(int padIndex, int pluginIndex);
@@ -169,6 +181,9 @@ class DrumGridPlugin : public te::Plugin {
     Chain* findOrCreateChainForPad(int padIndex);
     void removeChainFromState(int chainIndex);
     juce::ValueTree findChainTree(int chainIndex) const;
+    void notifyChainsChanged();
+
+    juce::ListenerList<Listener> listeners_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumGridPlugin)
 };

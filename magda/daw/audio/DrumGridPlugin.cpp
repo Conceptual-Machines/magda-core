@@ -231,6 +231,7 @@ int DrumGridPlugin::addChain(int lowNote, int highNote, int rootNote, const juce
     chains_.push_back(std::move(chain));
 
     notifyGraphRebuildNeeded();
+    notifyChainsChanged();
     return idx;
 }
 
@@ -248,6 +249,7 @@ void DrumGridPlugin::removeChain(int chainIndex) {
     }
     removeChainFromState(chainIndex);
     notifyGraphRebuildNeeded();
+    notifyChainsChanged();
 }
 
 const std::vector<std::unique_ptr<DrumGridPlugin::Chain>>& DrumGridPlugin::getChains() const {
@@ -707,6 +709,10 @@ std::pair<float, float> DrumGridPlugin::consumeChainPeak(int chainIndex) {
 
 void DrumGridPlugin::notifyGraphRebuildNeeded() {
     edit.restartPlayback();
+}
+
+void DrumGridPlugin::notifyChainsChanged() {
+    listeners_.call([this](Listener& l) { l.drumGridChainsChanged(this); });
 }
 
 //==============================================================================

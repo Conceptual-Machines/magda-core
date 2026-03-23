@@ -13,12 +13,9 @@
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
+#include "audio/DrumGridPlugin.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
-
-namespace magda::daw::audio {
-class DrumGridPlugin;
-}
 
 namespace magda {
 
@@ -37,7 +34,8 @@ class MixerView : public juce::Component,
                   public juce::DragAndDropTarget,
                   public juce::Timer,
                   public TrackManagerListener,
-                  public ViewModeListener {
+                  public ViewModeListener,
+                  public magda::daw::audio::DrumGridPlugin::Listener {
   public:
     explicit MixerView(AudioEngine* audioEngine = nullptr);
     ~MixerView() override;
@@ -66,6 +64,9 @@ class MixerView : public juce::Component,
 
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
+
+    // DrumGridPlugin::Listener
+    void drumGridChainsChanged(magda::daw::audio::DrumGridPlugin* plugin) override;
 
     // DragAndDropTarget
     bool isInterestedInDragSource(const SourceDetails& details) override;
@@ -258,6 +259,8 @@ class MixerView : public juce::Component,
     std::vector<std::unique_ptr<ChannelStrip>> channelStrips;
     std::vector<std::unique_ptr<ChannelStrip>> auxChannelStrips;
     std::vector<std::unique_ptr<DrumSubChannelStrip>> drumSubStrips_;
+    std::vector<magda::daw::audio::DrumGridPlugin*>
+        listenedDrumGrids_;                        // tracked for listener cleanup
     std::vector<juce::Component*> orderedStrips_;  // flat layout order for channel container
     std::unique_ptr<MasterChannelStrip> masterStrip;
 

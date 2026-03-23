@@ -5,7 +5,7 @@
 namespace magda {
 
 // Column IDs
-enum ColumnIds { TrackName = 1, LiveCol, ArrangeCol, MixCol, MasterCol };
+enum ColumnIds { TrackName = 1, LiveCol, ArrangeCol, MixCol };
 
 // ============================================================================
 // Content Component with TableListBox
@@ -30,7 +30,6 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
         header.addColumn("Arrange", ArrangeCol, 60, 50, 80,
                          juce::TableHeaderComponent::defaultFlags);
         header.addColumn("Mix", MixCol, 60, 50, 80, juce::TableHeaderComponent::defaultFlags);
-        header.addColumn("Master", MasterCol, 60, 50, 80, juce::TableHeaderComponent::defaultFlags);
 
         // Style the header
         header.setColour(juce::TableHeaderComponent::backgroundColourId,
@@ -245,8 +244,6 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
                 return ViewMode::Arrange;
             case MixCol:
                 return ViewMode::Mix;
-            case MasterCol:
-                return ViewMode::Master;
             default:
                 return ViewMode::Arrange;
         }

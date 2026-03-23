@@ -31,6 +31,45 @@ Every track provides the following controls (visible in track headers and channe
 - **Input monitor** — Monitor the live input signal through the track
 - **Automation** — Toggle automation read/write for the track
 
+## Multi-Output Plugins
+
+When an instrument plugin has more than two output channels (e.g. Kontakt, Battery, Drum Machine Designer), MAGDA can create separate output tracks for each stereo pair.
+
+- Open the multi-out menu on the device (the ![output](assets/images/icons/output.svg){ width="16" } button) and activate the output pairs you need
+- Each activated pair creates an **independent track** placed directly after the instrument track
+- Output tracks behave like any other track — you can rename, reorder, route to groups, and apply FX
+- To organize them, select the output tracks and move them into a [Group](#track-types) using the right-click menu
+
+!!! note
+    Multi-out tracks receive audio from the parent instrument's rack — their input routing is fixed. Output routing (to master, groups, or aux sends) works normally.
+
+## Track View Manager
+
+Each of the three views — Session, Arrangement, and Mixer — maintains its own independent track visibility and layout. This means you can show a different set of tracks in each view.
+
+![Track Manager](assets/images/tracks/track-manager.png){ width="300" }
+
+Open the Track Manager from the **View** menu to configure track visibility per view. Each column (Live, Arrange, Mix) has independent checkboxes — toggle them to control which tracks appear in each view.
+
+Per-view track settings include:
+
+- **Visible** — Whether the track appears in this view
+- **Locked** — Prevent editing the track in this view
+- **Collapsed** — For group tracks: collapse or expand children
+- **Height** — Track row height (Arrangement View)
+
+### Example: Multi-Output Workflow
+
+A common use case is keeping the Arrangement View clean while having full control in the Mixer. With a multi-output instrument like Addictive Drums, you can hide the individual output tracks from the Arrangement and show only the MIDI track you compose on:
+
+**Arrangement View** — Only the group and the instrument's MIDI track are visible, keeping the timeline uncluttered:
+
+![Arrangement View](assets/images/tracks/arrange-view-manager.png)
+
+**Mixer View** — All output tracks are visible for independent level, pan, and effects control per drum voice:
+
+![Mixer View](assets/images/tracks/mixer-view-manager.png)
+
 ## Adding and Managing Tracks
 
 - Press ++ctrl+t++ (++cmd+t++ on macOS) to add a new track

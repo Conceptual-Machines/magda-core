@@ -549,10 +549,15 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     // Musical subdivision names: "+" for upbeats (1/2), "e" "+" "a" for 1/4 subdivisions
     // For finer subdivisions, use numeric index within the subdivision level.
 
-    // Compute beat label interval to avoid overlap with bar labels
+    // Compute beat label interval: use power-of-2 steps so labels are evenly spaced
+    // (e.g. show every beat, every 2nd beat, every 4th beat)
     int beatLabelInterval = 1;
     if (pixelsPerBeat >= 20 && pixelsPerBeat < 60) {
-        beatLabelInterval = std::max(1, static_cast<int>(std::ceil(55.0 / pixelsPerBeat)));
+        int raw = std::max(1, static_cast<int>(std::ceil(55.0 / pixelsPerBeat)));
+        // Round up to next power of 2 for even spacing
+        beatLabelInterval = 1;
+        while (beatLabelInterval < raw)
+            beatLabelInterval *= 2;
     }
 
     // Pass 1: Draw grid ticks only (no labels)
@@ -655,14 +660,14 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             int bar = static_cast<int>(beatsFromOrigin / barLengthBeats) + 1;
             int beatInBar = static_cast<int>(barRemainder) + 1;
 
-            // Uniform interval: show every Nth beat within each bar
-            if ((beatInBar - 2) % beatLabelInterval != 0)
+            // Uniform interval: show every Nth beat within each bar (0-based index)
+            if ((beatInBar - 1) % beatLabelInterval != 0)
                 continue;
 
             // Check overlap with nearest bar label
             double barBeat = barOriginBeats + static_cast<double>(bar - 1) * barLengthBeats;
             int barX = static_cast<int>(barBeat * zoom) - currentScrollOffset + leftPadding;
-            if (std::abs(x - barX) < 60)
+            if (std::abs(x - barX) < 40)
                 continue;
 
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));

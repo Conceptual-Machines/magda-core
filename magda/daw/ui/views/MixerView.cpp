@@ -761,7 +761,8 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
 
     // Channel color indicator at top — skip for children nested in group (envelope provides this)
-    if (!isNestedInGroup) {
+    // Also skip for group parents with children (group header provides colouring)
+    if (!isNestedInGroup && !hasGroupChildren) {
         int tintHeight = 34;
         if (selected) {
             // Selected: black header with white text
@@ -797,16 +798,16 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     if (hasGroupChildren) {
         const int groupHeaderHeight = 4 + 4 + 24 + MixerMetrics::getInstance().controlSpacing;
 
-        // Fill the header banner area across full width
-        g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+        // Fill the header banner with track colour (darkened to keep hue consistent)
+        g.setColour(trackColour_.darker(0.4f));
         g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
 
         // Colour bar across entire top
         g.setColour(trackColour_);
         g.fillRect(2, 2, fullBounds.getWidth() - 4, 4);
 
-        // Horizontal separator below header (drawn in paint, before children)
-        g.setColour(trackColour_.withAlpha(0.4f));
+        // Horizontal separator below header
+        g.setColour(trackColour_.withAlpha(0.5f));
         g.fillRect(0, groupHeaderHeight, fullBounds.getWidth(), 1);
     }
 }
@@ -849,10 +850,10 @@ void MixerView::ChannelStrip::resized() {
     // across the full width, then position children below it
     if (hasGroupChildren) {
         int channelWidth = metrics.channelWidth;
-        int childTop = groupHeaderHeight;
-        int childHeight = getHeight() - childTop;
-
         const int borderWidth = 2;
+        int childTop = groupHeaderHeight + 1;                    // below separator line
+        int childHeight = getHeight() - childTop - borderWidth;  // above bottom border
+
         for (size_t i = 0; i < groupChildren_.size(); ++i) {
             bool isLast = (i == groupChildren_.size() - 1);
             int w = isLast ? channelWidth - borderWidth : channelWidth;
@@ -871,17 +872,19 @@ void MixerView::ChannelStrip::resized() {
         juce::Rectangle<int>(0, ownTop, ownWidth, ownHeight).reduced(metrics.channelPadding);
 
     if (hasGroupChildren) {
-        // Group: label is part of the shared header banner (already positioned above)
-        // Position label in the header area spanning full width
-        auto headerBounds = juce::Rectangle<int>(0, 0, getWidth(), groupHeaderHeight)
+        // Group: label in the header, left-aligned next to expand toggle
+        auto headerBounds = juce::Rectangle<int>(0, 0, metrics.channelWidth, groupHeaderHeight)
                                 .reduced(metrics.channelPadding);
         headerBounds.removeFromTop(6);  // colour bar space
         auto titleRow = headerBounds.removeFromTop(24);
         if (expandToggle_) {
             expandToggle_->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
             titleRow.removeFromLeft(2);
+            expandToggle_->toFront(false);
         }
+        trackLabel->setJustificationType(juce::Justification::centredLeft);
         trackLabel->setBounds(titleRow);
+        trackLabel->toFront(false);
     } else {
         // Non-group: colour bar space + label at top of own bounds
         bounds.removeFromTop(6);
@@ -1368,13 +1371,11 @@ void MixerView::DrumSubChannelStrip::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND).darker(0.15f));
     g.fillRect(bounds);
 
-    // Border on right side (separator)
+    // Border on right side (separator) — start below the name area
     g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-    g.fillRect(bounds.getRight() - 1, 0, 1, bounds.getHeight());
-
-    // Indented color bar at top matching parent track colour
-    g.setColour(parentColour_.withAlpha(0.6f));
-    g.fillRect(4, 0, getWidth() - 5, 3);
+    int separatorTop =
+        5 + 24 + MixerMetrics::getInstance().channelPadding;  // below color bar + label
+    g.fillRect(bounds.getRight() - 1, separatorTop, 1, bounds.getHeight() - separatorTop);
 
     // Draw fader region border
     if (!faderRegion_.isEmpty()) {
@@ -1565,6 +1566,9 @@ MixerView::~MixerView() {
     // mixerLookAndFeel_ is destroyed (member destruction happens in reverse order)
     for (auto& strip : channelStrips)
         strip->groupChildren_.clear();
+    for (auto* dg : listenedDrumGrids_)
+        dg->removeListener(this);
+    listenedDrumGrids_.clear();
     drumSubStrips_.clear();
     orderedStrips_.clear();
     channelStrips.clear();
@@ -1578,6 +1582,11 @@ MixerView::~MixerView() {
 }
 
 void MixerView::rebuildChannelStrips() {
+    // Unregister from previously listened DrumGridPlugins
+    for (auto* dg : listenedDrumGrids_)
+        dg->removeListener(this);
+    listenedDrumGrids_.clear();
+
     // Clear group children references before destroying strips
     for (auto& strip : channelStrips)
         strip->groupChildren_.clear();
@@ -1624,6 +1633,12 @@ void MixerView::rebuildChannelStrips() {
         auto* drumGrid = findDrumGridForTrack(track, audioEngine_);
         if (drumGrid) {
             strip->drumGrid_ = drumGrid;
+            // Register for chain add/remove notifications
+            if (std::find(listenedDrumGrids_.begin(), listenedDrumGrids_.end(), drumGrid) ==
+                listenedDrumGrids_.end()) {
+                drumGrid->addListener(this);
+                listenedDrumGrids_.push_back(drumGrid);
+            }
 
             // Create expand toggle button
             strip->expandToggle_ = std::make_unique<juce::TextButton>(
@@ -1826,6 +1841,15 @@ void MixerView::trackDevicesChanged(TrackId trackId) {
 void MixerView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
     currentViewMode_ = mode;
     rebuildChannelStrips();
+}
+
+void MixerView::drumGridChainsChanged(magda::daw::audio::DrumGridPlugin* /*plugin*/) {
+    // Rebuild asynchronously — this callback fires during addChain/removeChain
+    // and we must not re-enter the strip rebuild from within that call
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)]() {
+        if (safeThis)
+            safeThis->rebuildChannelStrips();
+    });
 }
 
 void MixerView::masterChannelChanged() {
