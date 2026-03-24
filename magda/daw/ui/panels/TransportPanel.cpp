@@ -28,11 +28,7 @@ TransportPanel::TransportPanel() {
     addAndMakeVisible(*cpuValueLabel);
 
     xrunLabel = std::make_unique<juce::Label>("xruns", "");
-    xrunLabel->setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    xrunLabel->setFont(FontManager::getInstance().getMonoFont(8.0f));
-    xrunLabel->setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(*xrunLabel);
+    xrunLabel->setVisible(false);
 }
 
 TransportPanel::~TransportPanel() {
@@ -255,12 +251,10 @@ void TransportPanel::resized() {
     gridSlashLabel->setBounds(0, 0, 0, 0);
     gridSlashLabel->setVisible(false);
 
-    // CPU usage — rounded frame: header (20%) + value + xrun row
+    // CPU usage — rounded frame: header (20%) + value
     auto cpuArea = getCpuArea().reduced(4, 3);
     int headerHeight = juce::roundToInt(cpuArea.getHeight() * 0.20f);
-    int xrunHeight = 12;
     cpuTitleLabel->setBounds(cpuArea.removeFromTop(headerHeight));
-    xrunLabel->setBounds(cpuArea.removeFromBottom(xrunHeight));
     cpuValueLabel->setBounds(cpuArea);
 }
 
@@ -993,14 +987,6 @@ void TransportPanel::setCpuUsage(float usage) {
 
 void TransportPanel::setXrunCount(int count) {
     currentXrunCount_ = count;
-    if (xrunLabel) {
-        if (count > 0) {
-            xrunLabel->setText("xruns:" + juce::String(count), juce::dontSendNotification);
-            xrunLabel->setColour(juce::Label::textColourId, juce::Colour(0xFFAA5555));
-        } else {
-            xrunLabel->setText("", juce::dontSendNotification);
-        }
-    }
     updateCpuTooltip();
 }
 
