@@ -1,6 +1,7 @@
 #pragma once
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "../audio/ChordAnalysisPlugin.hpp"
 #include "../audio/DrumGridPlugin.hpp"
 #include "../audio/MagdaSamplerPlugin.hpp"
 #include "../audio/MidiReceivePlugin.hpp"
@@ -80,6 +81,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == MidiReceivePlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");
             return new MidiReceivePlugin(info);
+        }
+        if (type == daw::audio::ChordAnalysisPlugin::xmlTypeName) {
+            return new daw::audio::ChordAnalysisPlugin(info);
         }
         DBG("MagdaEngineBehaviour::createCustomPlugin - unknown type: " << type);
         return {};
