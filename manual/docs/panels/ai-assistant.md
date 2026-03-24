@@ -24,11 +24,12 @@ The assistant is **context-aware** — it knows which tracks, clips, and devices
 
 ## Setup
 
-To enable the AI Assistant:
+The AI Assistant uses the OpenAI API. You'll need an API key to get started.
 
 1. Go to **Settings > Preferences > AI**
-2. Enter your API key
-3. Select a model
+2. Enter your OpenAI API key
+
+If you don't have an API key, you can generate one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
 
 ## Usage Tips
 
