@@ -560,13 +560,14 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
             // Find where it should go: after the previous desired plugin's VT child
             if (i == 0) {
-                // First user plugin: move to index 0 (or after AuxReturn if present)
+                // First user plugin: move after any fixed front-of-chain plugins
+                // (SidechainMonitorPlugin, AuxReturn) that must stay at the start.
                 int targetVtIdx = 0;
                 for (int c = 0; c < listState.getNumChildren(); ++c) {
                     auto child = listState.getChild(c);
                     if (child.hasType(te::IDs::PLUGIN)) {
                         auto type = child.getProperty(te::IDs::type).toString();
-                        if (type == "auxreturn")
+                        if (type == "auxreturn" || type == SidechainMonitorPlugin::xmlTypeName)
                             targetVtIdx = c + 1;
                     }
                 }
@@ -2110,12 +2111,24 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
                 continue;
 
             if (i == 0) {
-                // First user plugin: move after the multi-out rack instance
+                // First user plugin: move after the multi-out rack instance and
+                // any fixed front-of-chain plugins (SidechainMonitorPlugin, AuxReturn).
                 int targetVtIdx = 0;
                 if (rackInstance) {
                     int rackVtIdx = listState.indexOf(rackInstance->state);
                     if (rackVtIdx >= 0)
                         targetVtIdx = rackVtIdx + 1;
+                }
+                // Also skip past any fixed front-of-chain plugins
+                for (int c = targetVtIdx; c < listState.getNumChildren(); ++c) {
+                    auto child = listState.getChild(c);
+                    if (child.hasType(te::IDs::PLUGIN)) {
+                        auto type = child.getProperty(te::IDs::type).toString();
+                        if (type == "auxreturn" || type == SidechainMonitorPlugin::xmlTypeName)
+                            targetVtIdx = c + 1;
+                        else
+                            break;
+                    }
                 }
                 if (vtChildIdx != targetVtIdx)
                     listState.moveChild(vtChildIdx, targetVtIdx, nullptr);
