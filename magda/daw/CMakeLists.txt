@@ -220,6 +220,9 @@ set(DAW_CORE_SOURCES
     project/ProjectManager.cpp
     # Preset management
     core/PresetManager.cpp
+    # Music theory (chord detection, suggestion, scales)
+    music/ChordEngine.cpp
+    music/ChordSuggestionEngine.cpp
     # UI components needed by tests
     ui/components/timeline/LoopMarkerInteraction.cpp
     ui/components/timeline/TimelineComponent.cpp
