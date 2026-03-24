@@ -212,7 +212,7 @@ set(DAW_CORE_SOURCES
     audio/MidiReceivePlugin.cpp
     audio/MagdaSamplerPlugin.cpp
     audio/DrumGridPlugin.cpp
-    audio/ChordAnalysisPlugin.cpp
+    audio/MidiChordEnginePlugin.cpp
     # Project serialization
     project/serialization/ProjectSerializer.cpp
     project/serialization/TrackSerializer.cpp
@@ -504,7 +504,7 @@ set(DAW_HEADERS
     audio/MidiReceivePlugin.hpp
     audio/MagdaSamplerPlugin.hpp
     audio/DrumGridPlugin.hpp
-    audio/ChordAnalysisPlugin.hpp
+    audio/MidiChordEnginePlugin.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp

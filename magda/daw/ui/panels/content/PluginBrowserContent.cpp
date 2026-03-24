@@ -6,6 +6,7 @@
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
+#include "audio/MidiChordEnginePlugin.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
 #include "core/TrackManager.hpp"
@@ -318,6 +319,11 @@ void PluginBrowserContent::buildInternalPluginList() {
         audio::MagdaSamplerPlugin::getPluginName(), audio::MagdaSamplerPlugin::xmlTypeName, true));
     plugins_.push_back(PluginBrowserInfo::createInternal(audio::DrumGridPlugin::getPluginName(),
                                                          audio::DrumGridPlugin::xmlTypeName, true));
+
+    // MIDI analysis
+    plugins_.push_back(PluginBrowserInfo::createInternal(
+        audio::MidiChordEnginePlugin::getPluginName(), audio::MidiChordEnginePlugin::xmlTypeName,
+        false, "MIDI"));
 
     // Built-in FX (TE plugins)
     plugins_.push_back(PluginBrowserInfo::createInternal("Equaliser", "eq", false, "EQ"));

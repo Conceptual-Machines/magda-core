@@ -9,6 +9,7 @@
 #include "CurveSnapshot.hpp"
 #include "DrumGridPlugin.hpp"
 #include "MagdaSamplerPlugin.hpp"
+#include "MidiChordEnginePlugin.hpp"
 #include "MidiReceivePlugin.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginWindowBridge.hpp"
@@ -746,6 +747,13 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
     } else if (type.equalsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName)) {
         juce::ValueTree pluginState(te::IDs::PLUGIN);
         pluginState.setProperty(te::IDs::type, daw::audio::DrumGridPlugin::xmlTypeName, nullptr);
+        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+        if (plugin)
+            track->pluginList.insertPlugin(plugin, -1, nullptr);
+    } else if (type.equalsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
+        juce::ValueTree pluginState(te::IDs::PLUGIN);
+        pluginState.setProperty(te::IDs::type, daw::audio::MidiChordEnginePlugin::xmlTypeName,
+                                nullptr);
         plugin = edit_.getPluginCache().createNewPlugin(pluginState);
         if (plugin)
             track->pluginList.insertPlugin(plugin, -1, nullptr);
@@ -2550,6 +2558,11 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
                     }
                 }
             }
+        } else if (device.pluginId.containsIgnoreCase(
+                       daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
+            juce::ValueTree ps(te::IDs::PLUGIN);
+            ps.setProperty(te::IDs::type, daw::audio::MidiChordEnginePlugin::xmlTypeName, nullptr);
+            plugin = edit_.getPluginCache().createNewPlugin(ps);
         }
     } else {
         // External plugin — same lookup logic as loadDeviceAsPlugin but without track insertion

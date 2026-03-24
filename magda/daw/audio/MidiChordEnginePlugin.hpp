@@ -24,13 +24,13 @@ namespace te = tracktion::engine;
  * - Inline/window: real-time chord display, key indicator, suggestion grid
  * - Editor panel chord row: timeline overlay + drag-and-drop from suggestions
  */
-class ChordAnalysisPlugin : public te::Plugin, private juce::Timer {
+class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
   public:
-    ChordAnalysisPlugin(const te::PluginCreationInfo& info);
-    ~ChordAnalysisPlugin() override;
+    MidiChordEnginePlugin(const te::PluginCreationInfo& info);
+    ~MidiChordEnginePlugin() override;
 
     static const char* getPluginName() {
-        return "Chord Analysis";
+        return "MIDI Chord Engine";
     }
     static const char* xmlTypeName;
 
@@ -103,9 +103,9 @@ class ChordAnalysisPlugin : public te::Plugin, private juce::Timer {
     // --- Listener for UI updates ---
     struct Listener {
         virtual ~Listener() = default;
-        virtual void chordChanged(ChordAnalysisPlugin*) {}
-        virtual void keyModeChanged(ChordAnalysisPlugin*) {}
-        virtual void suggestionsChanged(ChordAnalysisPlugin*) {}
+        virtual void chordChanged(MidiChordEnginePlugin*) {}
+        virtual void keyModeChanged(MidiChordEnginePlugin*) {}
+        virtual void suggestionsChanged(MidiChordEnginePlugin*) {}
     };
 
     void addListener(Listener* l) {
@@ -160,7 +160,7 @@ class ChordAnalysisPlugin : public te::Plugin, private juce::Timer {
     // Run chord detection on current held notes
     void runDetection();
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordAnalysisPlugin)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiChordEnginePlugin)
 };
 
 }  // namespace magda::daw::audio

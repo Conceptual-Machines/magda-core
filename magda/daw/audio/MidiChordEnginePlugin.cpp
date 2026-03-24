@@ -1,29 +1,30 @@
-#include "ChordAnalysisPlugin.hpp"
+#include "MidiChordEnginePlugin.hpp"
 
 namespace magda::daw::audio {
 
-const char* ChordAnalysisPlugin::xmlTypeName = "chordanalysis";
+const char* MidiChordEnginePlugin::xmlTypeName = "midichordengine";
 
-ChordAnalysisPlugin::ChordAnalysisPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) {
+MidiChordEnginePlugin::MidiChordEnginePlugin(const te::PluginCreationInfo& info)
+    : te::Plugin(info) {
     for (auto& n : heldNotes_)
         n.store(0, std::memory_order_relaxed);
 }
 
-ChordAnalysisPlugin::~ChordAnalysisPlugin() {
+MidiChordEnginePlugin::~MidiChordEnginePlugin() {
     stopTimer();
     notifyListenersOfDeletion();
 }
 
-void ChordAnalysisPlugin::initialise(const te::PluginInitialisationInfo& info) {
+void MidiChordEnginePlugin::initialise(const te::PluginInitialisationInfo& info) {
     sampleRate_ = info.sampleRate;
     startTimerHz(30);  // ~33ms polling interval
 }
 
-void ChordAnalysisPlugin::deinitialise() {
+void MidiChordEnginePlugin::deinitialise() {
     stopTimer();
 }
 
-void ChordAnalysisPlugin::reset() {
+void MidiChordEnginePlugin::reset() {
     heldNoteCount_.store(0, std::memory_order_relaxed);
     noteFifo_.reset();
 }
@@ -32,7 +33,7 @@ void ChordAnalysisPlugin::reset() {
 // Audio thread
 // =============================================================================
 
-void ChordAnalysisPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
+void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // Transparent passthrough — don't modify audio or MIDI
 
     if (!fc.bufferForMidiMessages)
@@ -94,12 +95,12 @@ void ChordAnalysisPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 // Message thread
 // =============================================================================
 
-void ChordAnalysisPlugin::timerCallback() {
+void MidiChordEnginePlugin::timerCallback() {
     processNoteEvents();
     runDetection();
 }
 
-void ChordAnalysisPlugin::processNoteEvents() {
+void MidiChordEnginePlugin::processNoteEvents() {
     int start1, size1, start2, size2;
     noteFifo_.prepareToRead(noteFifo_.getNumReady(), start1, size1, start2, size2);
 
@@ -118,7 +119,7 @@ void ChordAnalysisPlugin::processNoteEvents() {
     noteFifo_.finishedRead(size1 + size2);
 }
 
-void ChordAnalysisPlugin::runDetection() {
+void MidiChordEnginePlugin::runDetection() {
     // Snapshot held notes from atomic array
     int count = heldNoteCount_.load(std::memory_order_acquire);
     std::vector<magda::music::ChordNote> heldNotes;
@@ -187,33 +188,34 @@ void ChordAnalysisPlugin::runDetection() {
 // Public accessors (UI thread)
 // =============================================================================
 
-juce::String ChordAnalysisPlugin::getCurrentChordName() const {
+juce::String MidiChordEnginePlugin::getCurrentChordName() const {
     std::lock_guard<std::mutex> lock(stateMutex_);
     return currentChord_.displayName;
 }
 
-magda::music::Chord ChordAnalysisPlugin::getCurrentChord() const {
+magda::music::Chord MidiChordEnginePlugin::getCurrentChord() const {
     std::lock_guard<std::mutex> lock(stateMutex_);
     return currentChord_;
 }
 
-std::vector<magda::music::Chord> ChordAnalysisPlugin::getRecentChords() const {
+std::vector<magda::music::Chord> MidiChordEnginePlugin::getRecentChords() const {
     std::lock_guard<std::mutex> lock(stateMutex_);
     return chordHistory_;
 }
 
-std::optional<std::pair<juce::String, juce::String>> ChordAnalysisPlugin::getDetectedKeyMode()
+std::optional<std::pair<juce::String, juce::String>> MidiChordEnginePlugin::getDetectedKeyMode()
     const {
     std::lock_guard<std::mutex> lock(stateMutex_);
     return cachedKeyMode_;
 }
 
-std::vector<magda::music::ChordEngine::SuggestionItem> ChordAnalysisPlugin::getSuggestions() const {
+std::vector<magda::music::ChordEngine::SuggestionItem> MidiChordEnginePlugin::getSuggestions()
+    const {
     std::lock_guard<std::mutex> lock(stateMutex_);
     return cachedSuggestions_;
 }
 
-void ChordAnalysisPlugin::clearHistory() {
+void MidiChordEnginePlugin::clearHistory() {
     std::lock_guard<std::mutex> lock(stateMutex_);
     chordHistory_.clear();
     currentChord_ = {};
@@ -226,7 +228,7 @@ void ChordAnalysisPlugin::clearHistory() {
     listeners_.call(&Listener::suggestionsChanged, this);
 }
 
-void ChordAnalysisPlugin::restorePluginStateFromValueTree(const juce::ValueTree&) {
+void MidiChordEnginePlugin::restorePluginStateFromValueTree(const juce::ValueTree&) {
     // No persistent parameters yet — suggestion params could be saved here later
 }
 
