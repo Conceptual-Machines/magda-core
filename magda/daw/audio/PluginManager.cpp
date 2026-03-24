@@ -730,6 +730,7 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
 
     te::Plugin::Ptr plugin;
 
+    // Special cases: custom plugins that need ValueTree state, or helper creators
     if (type.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
         juce::ValueTree pluginState(te::IDs::PLUGIN);
         pluginState.setProperty(te::IDs::type, daw::audio::MagdaSamplerPlugin::xmlTypeName,
@@ -745,50 +746,30 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
             track->pluginList.insertPlugin(plugin, -1, nullptr);
     } else if (type.equalsIgnoreCase("tone") || type.equalsIgnoreCase("tonegenerator")) {
         plugin = createToneGenerator(track);
-        // Note: "volume" is NOT a device type - track volume is separate infrastructure
-        // managed by ensureVolumePluginPosition() and controlled via TrackManager
     } else if (type.equalsIgnoreCase("meter") || type.equalsIgnoreCase("levelmeter")) {
         plugin = createLevelMeter(track);
-    } else if (type.equalsIgnoreCase("delay")) {
-        plugin = edit_.getPluginCache().createNewPlugin(te::DelayPlugin::xmlTypeName, {});
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase("reverb")) {
-        plugin = edit_.getPluginCache().createNewPlugin(te::ReverbPlugin::xmlTypeName, {});
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase("eq") || type.equalsIgnoreCase("equaliser")) {
-        plugin = edit_.getPluginCache().createNewPlugin(te::EqualiserPlugin::xmlTypeName, {});
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase("compressor")) {
-        plugin = edit_.getPluginCache().createNewPlugin(te::CompressorPlugin::xmlTypeName, {});
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase("chorus")) {
-        plugin = edit_.getPluginCache().createNewPlugin(te::ChorusPlugin::xmlTypeName, {});
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase("phaser")) {
-        plugin = edit_.getPluginCache().createNewPlugin(te::PhaserPlugin::xmlTypeName, {});
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase("lowpass")) {
-        plugin = edit_.getPluginCache().createNewPlugin(te::LowPassPlugin::xmlTypeName, {});
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase("pitchshift")) {
-        plugin = edit_.getPluginCache().createNewPlugin(te::PitchShiftPlugin::xmlTypeName, {});
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase("impulseresponse")) {
-        plugin = edit_.getPluginCache().createNewPlugin(te::ImpulseResponsePlugin::xmlTypeName, {});
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (type.equalsIgnoreCase("utility")) {
-        plugin = edit_.getPluginCache().createNewPlugin(te::VolumeAndPanPlugin::xmlTypeName, {});
-        if (plugin)
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
+    } else {
+        // Standard TE built-in plugins: look up xmlTypeName from user-facing name
+        static const std::unordered_map<juce::String, juce::String> builtInPluginTypes = {
+            {"delay", te::DelayPlugin::xmlTypeName},
+            {"reverb", te::ReverbPlugin::xmlTypeName},
+            {"eq", te::EqualiserPlugin::xmlTypeName},
+            {"equaliser", te::EqualiserPlugin::xmlTypeName},
+            {"compressor", te::CompressorPlugin::xmlTypeName},
+            {"chorus", te::ChorusPlugin::xmlTypeName},
+            {"phaser", te::PhaserPlugin::xmlTypeName},
+            {"lowpass", te::LowPassPlugin::xmlTypeName},
+            {"pitchshift", te::PitchShiftPlugin::xmlTypeName},
+            {"impulseresponse", te::ImpulseResponsePlugin::xmlTypeName},
+            {"utility", te::VolumeAndPanPlugin::xmlTypeName},
+        };
+
+        auto it = builtInPluginTypes.find(type.toLowerCase());
+        if (it != builtInPluginTypes.end()) {
+            plugin = edit_.getPluginCache().createNewPlugin(it->second, {});
+            if (plugin)
+                track->pluginList.insertPlugin(plugin, -1, nullptr);
+        }
     }
 
     if (!plugin) {
