@@ -1,5 +1,7 @@
 #include "AIChatConsoleContent.hpp"
 
+#include <algorithm>
+
 #include "../../../../agents/daw_agent.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/SelectionManager.hpp"
@@ -359,8 +361,14 @@ juce::String AIChatConsoleContent::resolveAliases(const juce::String& text) {
     if (allAliases_.empty())
         buildAliasList();
 
+    // Sort by alias length descending to avoid prefix collisions
+    // (e.g. @pro matching inside @pro_q_3)
+    auto sorted = allAliases_;
+    std::sort(sorted.begin(), sorted.end(),
+              [](const auto& a, const auto& b) { return a.alias.length() > b.alias.length(); });
+
     auto resolved = text;
-    for (const auto& entry : allAliases_) {
+    for (const auto& entry : sorted) {
         auto token = "@" + entry.alias;
         if (resolved.contains(token))
             resolved = resolved.replace(token, entry.pluginName);
@@ -380,7 +388,6 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
     // Resolve @alias mentions to real plugin names before sending to the LLM
     auto resolvedText = resolveAliases(text);
-    DBG("AIChatConsole: resolved message: " + resolvedText);
 
     processing_ = true;
     inputBox_.clear();

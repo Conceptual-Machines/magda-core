@@ -7,6 +7,7 @@
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "core/DeviceInfo.hpp"
+#include "core/PluginAlias.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
@@ -50,46 +51,7 @@ PluginBrowserInfo PluginBrowserInfo::createInternal(const juce::String& name,
 }
 
 juce::String PluginBrowserInfo::generateAlias(const juce::String& pluginName) {
-    juce::String result;
-
-    for (int i = 0; i < pluginName.length(); ++i) {
-        auto ch = pluginName[i];
-
-        // Skip non-alphanumeric characters
-        if (!juce::CharacterFunctions::isLetterOrDigit(ch))
-            continue;
-
-        // Insert underscore before uppercase letter if preceded by lowercase or digit
-        if (result.isNotEmpty() && juce::CharacterFunctions::isUpperCase(ch)) {
-            auto prev = pluginName[i - 1];
-            if (juce::CharacterFunctions::isLowerCase(prev) ||
-                juce::CharacterFunctions::isDigit(prev)) {
-                result += '_';
-            }
-        }
-
-        // Insert underscore between letter and digit transitions
-        if (result.isNotEmpty() && juce::CharacterFunctions::isDigit(ch)) {
-            auto lastChar = result[result.length() - 1];
-            if (juce::CharacterFunctions::isLetter(lastChar) && lastChar != '_') {
-                result += '_';
-            }
-        }
-
-        result += juce::CharacterFunctions::toLowerCase(ch);
-    }
-
-    // Collapse multiple underscores
-    while (result.contains("__"))
-        result = result.replace("__", "_");
-
-    // Trim leading/trailing underscores
-    while (result.startsWith("_"))
-        result = result.substring(1);
-    while (result.endsWith("_"))
-        result = result.dropLastCharacters(1);
-
-    return result;
+    return magda::pluginNameToAlias(pluginName);
 }
 
 //==============================================================================

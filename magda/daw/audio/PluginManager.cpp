@@ -1,5 +1,6 @@
 #include "PluginManager.hpp"
 
+#include <unordered_set>
 #include <vector>
 
 #include "../core/RackInfo.hpp"
@@ -2387,8 +2388,7 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             plugin = createInternalPlugin(te::FourOscPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase("utility") ||
                    device.pluginId.containsIgnoreCase("volume")) {
-            plugin =
-                edit_.getPluginCache().createNewPlugin(te::VolumeAndPanPlugin::xmlTypeName, {});
+            plugin = createInternalPlugin(te::VolumeAndPanPlugin::xmlTypeName, ps);
         } else if (device.pluginId.containsIgnoreCase(
                        daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
             juce::ValueTree ps(te::IDs::PLUGIN);

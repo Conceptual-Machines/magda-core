@@ -8,6 +8,7 @@
 #include "../daw/core/ClipManager.hpp"
 #include "../daw/core/DeviceInfo.hpp"
 #include "../daw/core/MidiNoteCommands.hpp"
+#include "../daw/core/PluginAlias.hpp"
 #include "../daw/core/SelectionManager.hpp"
 #include "../daw/core/TrackManager.hpp"
 #include "../daw/core/UndoManager.hpp"
@@ -15,36 +16,6 @@
 #include "../daw/engine/TracktionEngineWrapper.hpp"
 
 namespace magda::dsl {
-
-// Generate a snake_case alias from a plugin name (e.g. "Pro-Q 3" → "pro_q_3").
-// Must match the algorithm in PluginBrowserContent::generateAlias().
-static juce::String pluginNameToAlias(const juce::String& pluginName) {
-    juce::String result;
-    for (int i = 0; i < pluginName.length(); ++i) {
-        auto ch = pluginName[i];
-        if (!juce::CharacterFunctions::isLetterOrDigit(ch))
-            continue;
-        if (result.isNotEmpty() && juce::CharacterFunctions::isUpperCase(ch)) {
-            auto prev = pluginName[i - 1];
-            if (juce::CharacterFunctions::isLowerCase(prev) ||
-                juce::CharacterFunctions::isDigit(prev))
-                result += '_';
-        }
-        if (result.isNotEmpty() && juce::CharacterFunctions::isDigit(ch)) {
-            auto lastChar = result[result.length() - 1];
-            if (juce::CharacterFunctions::isLetter(lastChar) && lastChar != '_')
-                result += '_';
-        }
-        result += juce::CharacterFunctions::toLowerCase(ch);
-    }
-    while (result.contains("__"))
-        result = result.replace("__", "_");
-    while (result.startsWith("_"))
-        result = result.substring(1);
-    while (result.endsWith("_"))
-        result = result.dropLastCharacters(1);
-    return result;
-}
 
 // ============================================================================
 // Tokenizer Implementation
@@ -993,7 +964,7 @@ bool Interpreter::executeAddFx(const Params& params) {
     DBG("DSL executeAddFx: looking for plugin fxName=\"" + fxName + "\"");
     for (const auto& desc : knownPlugins.getTypes()) {
         // Match by exact plugin name or generated alias (e.g. "pro_q_3" matches "Pro-Q 3")
-        auto alias = pluginNameToAlias(desc.name);
+        auto alias = magda::pluginNameToAlias(desc.name);
         bool nameMatch = desc.name.equalsIgnoreCase(fxName) || alias.equalsIgnoreCase(fxName);
         DBG("  comparing: desc.name=\"" + desc.name + "\" alias=\"" + alias +
             "\" match=" + juce::String(nameMatch ? "YES" : "no"));
