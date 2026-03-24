@@ -301,7 +301,11 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                         auto nextId = getDevice(trackInfo->chainElements[j]).id;
                         auto it = syncedDevices_.find(nextId);
                         if (it != syncedDevices_.end() && it->second.plugin) {
-                            int idx = teTrackForIdx->pluginList.indexOf(it->second.plugin.get());
+                            // For wrapped instruments, the actual plugin on the track
+                            // is the RackInstance, not the inner plugin.
+                            auto* rackInst = instrumentRackManager_.getRackInstance(nextId);
+                            auto* pluginOnTrack = rackInst ? rackInst : it->second.plugin.get();
+                            int idx = teTrackForIdx->pluginList.indexOf(pluginOnTrack);
                             if (idx >= 0) {
                                 teInsertIndex = idx;
                                 break;
@@ -2077,7 +2081,9 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
                         auto nextId = getDevice(trackInfo.chainElements[j]).id;
                         auto it = syncedDevices_.find(nextId);
                         if (it != syncedDevices_.end() && it->second.plugin) {
-                            int idx = teTrack->pluginList.indexOf(it->second.plugin.get());
+                            auto* rackInst = instrumentRackManager_.getRackInstance(nextId);
+                            auto* pluginOnTrack = rackInst ? rackInst : it->second.plugin.get();
+                            int idx = teTrack->pluginList.indexOf(pluginOnTrack);
                             if (idx >= 0) {
                                 teInsertIndex = idx;
                                 break;
@@ -3065,10 +3071,6 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                             << devInfo->multiOut.outputPairs.size() << " stereo pairs)");
                     }
                 }
-
-                // Insert the rack instance on the track
-                // The raw plugin is already inside the rack (added by wrapInstrument)
-                track->pluginList.insertPlugin(rackPlugin, -1, nullptr);
 
                 DBG("Loaded instrument device " << device.id << " (" << device.name
                                                 << ") wrapped in rack");
