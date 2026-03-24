@@ -239,6 +239,14 @@ te::Plugin* RackSyncManager::getInnerPlugin(DeviceId deviceId) const {
     return nullptr;
 }
 
+te::Plugin* RackSyncManager::getRackInstance(RackId rackId) const {
+    auto it = syncedRacks_.find(rackId);
+    if (it != syncedRacks_.end()) {
+        return it->second.rackInstance.get();
+    }
+    return nullptr;
+}
+
 bool RackSyncManager::isRackInstance(te::Plugin* plugin) const {
     if (!plugin)
         return false;

@@ -524,6 +524,64 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     else
         removeSidechainMonitor(trackId);
 
+    // Reorder TE plugins to match the MAGDA chain element order.
+    // This handles moveNode (drag-and-drop reorder) where the MAGDA chain changed
+    // but existing TE plugins haven't moved.
+    {
+        // Build the desired order of TE plugin indices from the MAGDA chain
+        std::vector<te::Plugin*> desiredOrder;
+        for (const auto& element : trackInfo->chainElements) {
+            if (isDevice(element)) {
+                juce::ScopedLock lock(pluginLock_);
+                auto it = syncedDevices_.find(getDevice(element).id);
+                if (it != syncedDevices_.end() && it->second.plugin) {
+                    // For instrument-rack-wrapped plugins, find the rack instance on the track
+                    auto* wrapped = instrumentRackManager_.getRackInstance(it->first);
+                    auto* pluginToFind = wrapped ? wrapped : it->second.plugin.get();
+                    if (teTrack->pluginList.indexOf(pluginToFind) >= 0)
+                        desiredOrder.push_back(pluginToFind);
+                }
+            } else if (isRack(element)) {
+                auto* rackInstance = rackSyncManager_.getRackInstance(getRack(element).id);
+                if (rackInstance && teTrack->pluginList.indexOf(rackInstance) >= 0)
+                    desiredOrder.push_back(rackInstance);
+            }
+        }
+
+        // Walk the desired order and move each plugin to its correct position
+        // using ValueTree::moveChild on the plugin list's state.
+        auto& listState = teTrack->pluginList.state;
+        for (size_t i = 0; i < desiredOrder.size(); ++i) {
+            int currentIdx = teTrack->pluginList.indexOf(desiredOrder[i]);
+            // Find the ValueTree child index for this plugin
+            int vtChildIdx = listState.indexOf(desiredOrder[i]->state);
+            if (vtChildIdx < 0 || currentIdx < 0)
+                continue;
+
+            // Find where it should go: after the previous desired plugin's VT child
+            if (i == 0) {
+                // First user plugin: move to index 0 (or after AuxReturn if present)
+                int targetVtIdx = 0;
+                for (int c = 0; c < listState.getNumChildren(); ++c) {
+                    auto child = listState.getChild(c);
+                    if (child.hasType(te::IDs::PLUGIN)) {
+                        auto type = child.getProperty(te::IDs::type).toString();
+                        if (type == "auxreturn")
+                            targetVtIdx = c + 1;
+                    }
+                }
+                if (vtChildIdx != targetVtIdx)
+                    listState.moveChild(vtChildIdx, targetVtIdx, nullptr);
+            } else {
+                // Move after the previous desired plugin
+                int prevVtIdx = listState.indexOf(desiredOrder[i - 1]->state);
+                int curVtIdx = listState.indexOf(desiredOrder[i]->state);
+                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != prevVtIdx + 1)
+                    listState.moveChild(curVtIdx, prevVtIdx + 1, nullptr);
+            }
+        }
+    }
+
     // Ensure VolumeAndPan is near the end of the chain (before LevelMeter)
     // This is the track's fader control - it should come AFTER audio sources
     ensureVolumePluginPosition(teTrack);
@@ -2044,6 +2102,47 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
                     syncedDevices_[device.id].plugin = plugin;
                     pluginToDevice_[plugin.get()] = device.id;
                 }
+            }
+        }
+    }
+
+    // Reorder TE plugins to match the MAGDA chain element order (same as syncTrackPlugins)
+    {
+        std::vector<te::Plugin*> desiredOrder;
+        for (const auto& element : trackInfo.chainElements) {
+            if (isDevice(element)) {
+                juce::ScopedLock lock(pluginLock_);
+                auto it = syncedDevices_.find(getDevice(element).id);
+                if (it != syncedDevices_.end() && it->second.plugin) {
+                    auto* wrapped = instrumentRackManager_.getRackInstance(it->first);
+                    auto* pluginToFind = wrapped ? wrapped : it->second.plugin.get();
+                    if (teTrack->pluginList.indexOf(pluginToFind) >= 0)
+                        desiredOrder.push_back(pluginToFind);
+                }
+            }
+        }
+
+        auto& listState = teTrack->pluginList.state;
+        for (size_t i = 0; i < desiredOrder.size(); ++i) {
+            int vtChildIdx = listState.indexOf(desiredOrder[i]->state);
+            if (vtChildIdx < 0)
+                continue;
+
+            if (i == 0) {
+                // First user plugin: move after the multi-out rack instance
+                int targetVtIdx = 0;
+                if (rackInstance) {
+                    int rackVtIdx = listState.indexOf(rackInstance->state);
+                    if (rackVtIdx >= 0)
+                        targetVtIdx = rackVtIdx + 1;
+                }
+                if (vtChildIdx != targetVtIdx)
+                    listState.moveChild(vtChildIdx, targetVtIdx, nullptr);
+            } else {
+                int prevVtIdx = listState.indexOf(desiredOrder[i - 1]->state);
+                int curVtIdx = listState.indexOf(desiredOrder[i]->state);
+                if (curVtIdx >= 0 && prevVtIdx >= 0 && curVtIdx != prevVtIdx + 1)
+                    listState.moveChild(curVtIdx, prevVtIdx + 1, nullptr);
             }
         }
     }

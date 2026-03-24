@@ -65,6 +65,13 @@ class RackSyncManager {
     te::Plugin* getInnerPlugin(DeviceId deviceId) const;
 
     /**
+     * @brief Get the RackInstance plugin on the TE track for a synced rack
+     * @param rackId The MAGDA rack ID
+     * @return The RackInstance plugin, or nullptr if not found
+     */
+    te::Plugin* getRackInstance(RackId rackId) const;
+
+    /**
      * @brief Check if a TE plugin is one of our RackInstances
      * @param plugin The TE plugin to check
      * @return true if this is a RackInstance managed by us

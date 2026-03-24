@@ -245,6 +245,14 @@ te::Plugin* InstrumentRackManager::getInnerPlugin(DeviceId deviceId) const {
     return nullptr;
 }
 
+te::Plugin* InstrumentRackManager::getRackInstance(DeviceId deviceId) const {
+    auto it = wrapped_.find(deviceId);
+    if (it != wrapped_.end()) {
+        return it->second.rackInstance.get();
+    }
+    return nullptr;
+}
+
 bool InstrumentRackManager::isWrapperRack(te::Plugin* plugin) const {
     if (!plugin) {
         return false;
