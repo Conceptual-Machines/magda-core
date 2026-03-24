@@ -26,9 +26,6 @@ TransportPanel::TransportPanel() {
     cpuValueLabel->setFont(FontManager::getInstance().getMonoFont(11.0f));
     cpuValueLabel->setJustificationType(juce::Justification::centred);
     addAndMakeVisible(*cpuValueLabel);
-
-    xrunLabel = std::make_unique<juce::Label>("xruns", "");
-    xrunLabel->setVisible(false);
 }
 
 TransportPanel::~TransportPanel() {
@@ -1027,8 +1024,6 @@ void TransportPanel::updateCpuTooltip() {
         cpuTitleLabel->setTooltip(tip);
     if (cpuValueLabel)
         cpuValueLabel->setTooltip(tip);
-    if (xrunLabel)
-        xrunLabel->setTooltip(tip);
 }
 
 }  // namespace magda

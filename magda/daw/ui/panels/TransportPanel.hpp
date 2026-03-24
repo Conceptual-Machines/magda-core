@@ -171,7 +171,6 @@ class TransportPanel : public juce::Component {
     // CPU usage display (right side)
     std::unique_ptr<juce::Label> cpuTitleLabel;
     std::unique_ptr<juce::Label> cpuValueLabel;
-    std::unique_ptr<juce::Label> xrunLabel;
     float currentCpuUsage = 0.0f;
     float peakCpuUsage = 0.0f;
     int peakDecayCounter_ = 0;
