@@ -972,6 +972,10 @@ void PluginManager::pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId,
                 if (devInfo->isInstrument) {
                     int numOutputChannels = ext->getNumOutputs();
 
+                    // Remember the plugin's position before wrapping removes it
+                    auto* track = self.trackController_.getAudioTrack(trackId);
+                    int pluginIdx = track ? track->pluginList.indexOf(plugin.get()) : -1;
+
                     te::Plugin::Ptr rackPlugin;
                     if (numOutputChannels > 2) {
                         rackPlugin = self.instrumentRackManager_.wrapMultiOutInstrument(
@@ -981,6 +985,10 @@ void PluginManager::pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId,
                     }
 
                     if (rackPlugin) {
+                        // Insert the rack instance back at the original position
+                        if (track)
+                            track->pluginList.insertPlugin(rackPlugin, pluginIdx, nullptr);
+
                         auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
                         te::RackType::Ptr rackType = rackInstance ? rackInstance->type : nullptr;
                         self.instrumentRackManager_.recordWrapping(
@@ -2973,6 +2981,9 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 numOutputChannels = extPlugin->getNumOutputs();
             }
 
+            // Remember the plugin's position before wrapping removes it from the track
+            int pluginIdx = track->pluginList.indexOf(plugin.get());
+
             te::Plugin::Ptr rackPlugin;
             if (numOutputChannels > 2) {
                 rackPlugin =
@@ -2982,6 +2993,9 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             }
 
             if (rackPlugin) {
+                // Insert the rack instance back on the track at the original position
+                track->pluginList.insertPlugin(rackPlugin, pluginIdx, nullptr);
+
                 // Record the wrapping so we can look up the inner plugin later
                 auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
                 te::RackType::Ptr rackType = rackInstance ? rackInstance->type : nullptr;
