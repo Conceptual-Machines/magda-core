@@ -741,7 +741,6 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
 void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     auto fullBounds = getLocalBounds();
     bool hasGroupChildren = !groupChildren_.empty();
-    bool isNestedInGroup = dynamic_cast<ChannelStrip*>(getParentComponent()) != nullptr;
 
     // The group's own controls column (leftmost channelWidth when group has children)
     auto ownBounds = hasGroupChildren
@@ -760,9 +759,9 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
     g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
 
-    // Channel color indicator at top — skip for children nested in group (envelope provides this)
-    // Also skip for group parents with children (group header provides colouring)
-    if (!isNestedInGroup && !hasGroupChildren) {
+    // Channel color indicator at top — skip for group parents with children (group header provides
+    // colouring)
+    if (!hasGroupChildren) {
         int tintHeight = 34;
         if (selected) {
             // Selected: black header with white text
@@ -798,16 +797,23 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     if (hasGroupChildren) {
         const int groupHeaderHeight = 4 + 4 + 24 + MixerMetrics::getInstance().controlSpacing;
 
-        // Fill the header banner with track colour (darkened to keep hue consistent)
-        g.setColour(trackColour_.darker(0.4f));
-        g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
+        if (selected) {
+            // Selected: black header like regular channels
+            g.setColour(juce::Colours::black);
+            g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
+        } else {
+            // Fill the header banner with track colour (darkened to keep hue consistent)
+            g.setColour(trackColour_.darker(0.4f));
+            g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
 
-        // Colour bar across entire top
-        g.setColour(trackColour_);
-        g.fillRect(2, 2, fullBounds.getWidth() - 4, 4);
+            // Colour bar across entire top
+            g.setColour(trackColour_);
+            g.fillRect(2, 2, fullBounds.getWidth() - 4, 4);
+        }
 
         // Horizontal separator below header
-        g.setColour(trackColour_.withAlpha(0.5f));
+        g.setColour(selected ? DarkTheme::getColour(DarkTheme::BORDER)
+                             : trackColour_.withAlpha(0.5f));
         g.fillRect(0, groupHeaderHeight, fullBounds.getWidth(), 1);
     }
 }
