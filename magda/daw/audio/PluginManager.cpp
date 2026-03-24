@@ -284,16 +284,33 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     }
 
     // Add new plugins for MAGDA devices that don't have TE counterparts
-    for (const auto& element : trackInfo->chainElements) {
+    for (size_t elemIdx = 0; elemIdx < trackInfo->chainElements.size(); ++elemIdx) {
+        const auto& element = trackInfo->chainElements[elemIdx];
         if (isDevice(element)) {
             const auto& device = getDevice(element);
 
             juce::ScopedLock lock(pluginLock_);
             if (syncedDevices_.find(device.id) == syncedDevices_.end()) {
-                // Load the device as a plugin. For external plugins, TE now uses
-                // async instantiation so createNewPlugin returns immediately while
-                // the heavy VST/AU load happens on a background thread.
-                auto plugin = loadDeviceAsPlugin(trackId, device);
+                // Compute TE insertion index: find the first subsequent chain element
+                // that already has a synced plugin, and insert before it.
+                int teInsertIndex = -1;  // -1 = append (before VolumeAndPan/LevelMeter)
+                auto* teTrackForIdx = trackController_.getAudioTrack(trackId);
+                for (size_t j = elemIdx + 1; teTrackForIdx && j < trackInfo->chainElements.size();
+                     ++j) {
+                    if (isDevice(trackInfo->chainElements[j])) {
+                        auto nextId = getDevice(trackInfo->chainElements[j]).id;
+                        auto it = syncedDevices_.find(nextId);
+                        if (it != syncedDevices_.end() && it->second.plugin) {
+                            int idx = teTrackForIdx->pluginList.indexOf(it->second.plugin.get());
+                            if (idx >= 0) {
+                                teInsertIndex = idx;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                auto plugin = loadDeviceAsPlugin(trackId, device, teInsertIndex);
                 if (plugin) {
                     syncedDevices_[device.id].trackId = trackId;
                     syncedDevices_[device.id].plugin = plugin;
@@ -724,7 +741,8 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
 }
 
 PluginLoadResult PluginManager::loadExternalPlugin(TrackId trackId,
-                                                   const juce::PluginDescription& description) {
+                                                   const juce::PluginDescription& description,
+                                                   int insertIndex) {
     MAGDA_MONITOR_SCOPE("PluginLoad");
 
     auto* track = trackController_.getAudioTrack(trackId);
@@ -784,7 +802,7 @@ PluginLoadResult PluginManager::loadExternalPlugin(TrackId trackId,
                 }
             }
 
-            track->pluginList.insertPlugin(plugin, -1, nullptr);
+            track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
             DBG("Loaded external plugin: " << description.name << " on track " << trackId);
             return PluginLoadResult::Success(plugin);
         } else {
@@ -1997,13 +2015,30 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     }
 
     // Sync user-added FX devices from chainElements (same as normal track path)
-    for (const auto& element : trackInfo.chainElements) {
+    for (size_t elemIdx = 0; elemIdx < trackInfo.chainElements.size(); ++elemIdx) {
+        const auto& element = trackInfo.chainElements[elemIdx];
         if (isDevice(element)) {
             const auto& device = getDevice(element);
 
             juce::ScopedLock lock(pluginLock_);
             if (syncedDevices_.find(device.id) == syncedDevices_.end()) {
-                auto plugin = loadDeviceAsPlugin(trackId, device);
+                // Compute TE insertion index from subsequent synced devices
+                int teInsertIndex = -1;
+                for (size_t j = elemIdx + 1; j < trackInfo.chainElements.size(); ++j) {
+                    if (isDevice(trackInfo.chainElements[j])) {
+                        auto nextId = getDevice(trackInfo.chainElements[j]).id;
+                        auto it = syncedDevices_.find(nextId);
+                        if (it != syncedDevices_.end() && it->second.plugin) {
+                            int idx = teTrack->pluginList.indexOf(it->second.plugin.get());
+                            if (idx >= 0) {
+                                teInsertIndex = idx;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                auto plugin = loadDeviceAsPlugin(trackId, device, teInsertIndex);
                 if (plugin) {
                     syncedDevices_[device.id].trackId = trackId;
                     syncedDevices_[device.id].plugin = plugin;
@@ -2557,7 +2592,8 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
 // Internal Implementation
 // =============================================================================
 
-te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device) {
+te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device,
+                                                  int insertIndex) {
     auto* track = trackController_.getAudioTrack(trackId);
     if (!track)
         return nullptr;
@@ -2583,7 +2619,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                                     nullptr);
             plugin = edit_.getPluginCache().createNewPlugin(pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<MagdaSamplerProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName)) {
@@ -2595,13 +2631,13 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 // Don't restore state here — defer until after rack wrapping.
                 // Restoring adds PLUGIN children (samplers) to DrumGrid's state,
                 // which can confuse TE's rack graph builder.
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<DrumGridProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("4osc")) {
             plugin = createInternalPlugin(te::FourOscPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<FourOscProcessor>(device.id, plugin);
             }
             // Note: "volume" devices are NOT created here - track volume is separate infrastructure
@@ -2613,62 +2649,62 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
         } else if (device.pluginId.containsIgnoreCase("delay")) {
             plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<DelayProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("reverb")) {
             plugin = createInternalPlugin(te::ReverbPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<ReverbProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("eq")) {
             plugin = createInternalPlugin(te::EqualiserPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<EqualiserProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("compressor")) {
             plugin = createInternalPlugin(te::CompressorPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<CompressorProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("chorus")) {
             plugin = createInternalPlugin(te::ChorusPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<ChorusProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("phaser")) {
             plugin = createInternalPlugin(te::PhaserPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<PhaserProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("lowpass")) {
             plugin = createInternalPlugin(te::LowPassPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<FilterProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("pitchshift")) {
             plugin = createInternalPlugin(te::PitchShiftPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<PitchShiftProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("impulseresponse")) {
             plugin =
                 createInternalPlugin(te::ImpulseResponsePlugin::xmlTypeName, device.pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<ImpulseResponseProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("utility")) {
             plugin = createInternalPlugin(te::VolumeAndPanPlugin::xmlTypeName, device.pluginState);
             if (plugin) {
-                track->pluginList.insertPlugin(plugin, -1, nullptr);
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<UtilityProcessor>(device.id, plugin);
             }
         }
@@ -2762,7 +2798,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 DBG("  -> NO MATCH FOUND in KnownPluginList!");
             }
 
-            auto result = loadExternalPlugin(trackId, desc);
+            auto result = loadExternalPlugin(trackId, desc, insertIndex);
             if (result.success && result.plugin) {
                 plugin = result.plugin;
 

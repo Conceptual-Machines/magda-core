@@ -156,8 +156,8 @@ class PluginManager {
      * @param description Plugin description from plugin scan
      * @return PluginLoadResult with success status, error message, and plugin pointer
      */
-    PluginLoadResult loadExternalPlugin(TrackId trackId,
-                                        const juce::PluginDescription& description);
+    PluginLoadResult loadExternalPlugin(TrackId trackId, const juce::PluginDescription& description,
+                                        int insertIndex = -1);
 
     /**
      * @brief Add a level meter plugin to a track for metering
@@ -432,7 +432,8 @@ class PluginManager {
 
   private:
     // Internal device → plugin conversion (used by syncTrackPlugins)
-    te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device);
+    te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device,
+                                       int insertIndex = -1);
 
     // Poll for async plugin load completion (TE's background thread instantiation)
     void pollAsyncPluginLoad(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin);
