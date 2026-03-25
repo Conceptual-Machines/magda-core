@@ -15,7 +15,8 @@
 
 namespace magda {
 class DraggableValueLabel;
-}
+class SvgButton;
+}  // namespace magda
 
 namespace magda::daw::ui {
 
@@ -30,7 +31,6 @@ class ScaleBlockComponent : public juce::Component {
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
-    void mouseDoubleClick(const juce::MouseEvent& e) override;
     void mouseEnter(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
 
@@ -128,7 +128,9 @@ class ChordPanelContent : public juce::Component, private juce::Timer {
     std::unique_ptr<juce::TextButton> add7thsBtn_;
     std::unique_ptr<juce::TextButton> add9thsBtn_;
     std::unique_ptr<juce::TextButton> addAltBtn_;
-    std::unique_ptr<juce::TextButton> scaleFilterBtn_;
+    std::unique_ptr<juce::TextButton> add11thsBtn_;
+    std::unique_ptr<juce::TextButton> add13thsBtn_;
+    std::unique_ptr<magda::SvgButton> scaleFilterBtn_;
     std::unique_ptr<juce::TextButton> explorerBtn_;
 
     // Column areas (computed in resized, used in paint for headers)

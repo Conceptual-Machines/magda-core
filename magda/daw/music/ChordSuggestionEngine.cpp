@@ -303,7 +303,8 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
     // Generate diatonic and non-diatonic candidates with octave context and recent chords for voice
     // leading
     auto diatonicCandidatesRaw = generateDiatonicCandidates(
-        key, mode, params.add7ths, params.add9ths, targetOctave, effectiveInversions, recentChords);
+        key, mode, params.add7ths, params.add9ths, params.add11ths, params.add13ths, targetOctave,
+        effectiveInversions, recentChords);
     auto nonDiatonicCandidatesRaw =
         generateNonDiatonicCandidates(key, mode, params.addAlterations, params.addSlashChords,
                                       targetOctave, effectiveInversions, recentChords);
@@ -390,10 +391,17 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         using Q = ChordQuality;
         return q == Q::Major7 || q == Q::Minor7 || q == Q::Dominant7 || q == Q::Diminished7;
     };
-    auto isExtensionQuality = [](ChordQuality q) {
+    auto is9thQuality = [](ChordQuality q) {
         using Q = ChordQuality;
-        return q == Q::Major9 || q == Q::Minor9 || q == Q::Dominant9 || q == Q::Diminished9 ||
-               q == Q::Dominant11 || q == Q::Minor11 || q == Q::Dominant13 || q == Q::Minor13;
+        return q == Q::Major9 || q == Q::Minor9 || q == Q::Dominant9 || q == Q::Diminished9;
+    };
+    auto is11thQuality = [](ChordQuality q) {
+        using Q = ChordQuality;
+        return q == Q::Dominant11 || q == Q::Minor11;
+    };
+    auto is13thQuality = [](ChordQuality q) {
+        using Q = ChordQuality;
+        return q == Q::Dominant13 || q == Q::Minor13;
     };
     auto isSlashName = [](const juce::String& name) { return name.contains(" / "); };
 
@@ -405,8 +413,11 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         // add7ths=false => exclude seventh qualities
         if (!params.add7ths && isSeventhQuality(c.chord.quality))
             return false;
-        // add9ths=false => exclude 9/11/13 families
-        if (!params.add9ths && isExtensionQuality(c.chord.quality))
+        if (!params.add9ths && is9thQuality(c.chord.quality))
+            return false;
+        if (!params.add11ths && is11thQuality(c.chord.quality))
+            return false;
+        if (!params.add13ths && is13thQuality(c.chord.quality))
             return false;
         // addSlashChords=false => exclude slash names
         if (!params.addSlashChords && isSlashName(c.chord.getName()))
@@ -505,7 +516,8 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
 
 std::vector<ChordSuggestionEngine::SuggestionItem>
 ChordSuggestionEngine::generateDiatonicCandidates(const juce::String& key, const juce::String& mode,
-                                                  bool add7ths, bool add9ths, int targetOctave,
+                                                  bool add7ths, bool add9ths, bool add11ths,
+                                                  bool add13ths, int targetOctave,
                                                   float inversionStrength,
                                                   const std::vector<Chord>& recentChords) const {
     std::vector<SuggestionItem> candidates;
@@ -628,6 +640,38 @@ ChordSuggestionEngine::generateDiatonicCandidates(const juce::String& key, const
             candidates.push_back({chord9th,
                                   2.0f,  // Highest priority for 9ths
                                   degrees[i] + "9", "diatonic"});
+        }
+
+        // Add 11th chords if enabled
+        if (add11ths && (degrees[i] == "I" || degrees[i] == "V" || degrees[i] == "IV")) {
+            juce::String quality11th;
+            if (qualities[i] == "maj") {
+                quality11th = "11";  // Dominant11
+            } else if (qualities[i] == "min") {
+                quality11th = "min11";
+            } else {
+                continue;
+            }
+
+            Chord chord11th = buildChordObject(noteAtStep, quality11th, targetOctave,
+                                               inversionStrength, recentChords);
+            candidates.push_back({chord11th, 2.5f, degrees[i] + "11", "diatonic"});
+        }
+
+        // Add 13th chords if enabled
+        if (add13ths && (degrees[i] == "I" || degrees[i] == "V")) {
+            juce::String quality13th;
+            if (qualities[i] == "maj") {
+                quality13th = "13";  // Dominant13
+            } else if (qualities[i] == "min") {
+                quality13th = "min13";
+            } else {
+                continue;
+            }
+
+            Chord chord13th = buildChordObject(noteAtStep, quality13th, targetOctave,
+                                               inversionStrength, recentChords);
+            candidates.push_back({chord13th, 3.0f, degrees[i] + "13", "diatonic"});
         }
     }
 

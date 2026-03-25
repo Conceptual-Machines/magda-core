@@ -917,6 +917,21 @@ void TrackHeadersPanel::tracksChanged() {
         header->volumeLabel->setValue(gainToDb(track->volume), juce::dontSendNotification);
         header->panLabel->setValue(track->pan, juce::dontSendNotification);
 
+        // Sync monitor button state
+        switch (track->inputMonitor) {
+            case InputMonitorMode::Off:
+                header->monitorButton->setButtonText("-");
+                break;
+            case InputMonitorMode::In:
+                header->monitorButton->setButtonText("I");
+                break;
+            case InputMonitorMode::Auto:
+                header->monitorButton->setButtonText("A");
+                break;
+        }
+        header->monitorButton->setToggleState(track->inputMonitor != InputMonitorMode::Off,
+                                              juce::dontSendNotification);
+
         trackHeaders.push_back(std::move(header));
 
         // Add children if group/instrument is not collapsed

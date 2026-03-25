@@ -30,6 +30,8 @@ class ChordEngine {
         float novelty = 0.3f;
         bool add7ths = true;
         bool add9ths = false;
+        bool add11ths = false;
+        bool add13ths = false;
         bool addAlterations = false;
         bool addSlashChords = false;
         int topK = 18;

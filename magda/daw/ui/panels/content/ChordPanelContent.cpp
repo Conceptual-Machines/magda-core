@@ -1,7 +1,10 @@
 #include "ChordPanelContent.hpp"
 
+#include "BinaryData.h"
 #include "ui/components/chord/ChordBlockComponent.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
+#include "ui/components/common/SvgButton.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -42,16 +45,16 @@ void ScaleBlockComponent::paint(juce::Graphics& g) {
                juce::Justification::centred);
 }
 
-void ScaleBlockComponent::mouseDown(const juce::MouseEvent& /*e*/) {
-    // Single click opens diatonic chord popup
-    if (auto* parent = dynamic_cast<ChordPanelContent*>(getParentComponent()))
-        parent->showScalePopup(scale_, this);
-}
-
-void ScaleBlockComponent::mouseDoubleClick(const juce::MouseEvent& /*e*/) {
-    // Double-click toggles selection for filtering
-    if (auto* parent = dynamic_cast<ChordPanelContent*>(getParentComponent()))
-        parent->toggleScaleSelection(this);
+void ScaleBlockComponent::mouseDown(const juce::MouseEvent& e) {
+    if (e.mods.isShiftDown()) {
+        // Shift-click toggles selection for filtering
+        if (auto* parent = dynamic_cast<ChordPanelContent*>(getParentComponent()))
+            parent->toggleScaleSelection(this);
+    } else {
+        // Click opens diatonic chord popup
+        if (auto* parent = dynamic_cast<ChordPanelContent*>(getParentComponent()))
+            parent->showScalePopup(scale_, this);
+    }
 }
 
 void ScaleBlockComponent::mouseEnter(const juce::MouseEvent& /*e*/) {
@@ -424,15 +427,17 @@ void ChordPanelContent::setupFooterControls() {
     };
     addAndMakeVisible(noveltyLabel_.get());
 
-    // Toggle button helper
+    // Toggle button helper — uses project-wide SmallButtonLookAndFeel
     auto makeToggle = [this](const juce::String& text) {
         auto btn = std::make_unique<juce::TextButton>(text);
+        btn->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
         btn->setClickingTogglesState(true);
-        btn->setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        btn->setColour(juce::TextButton::buttonOnColourId,
-                       DarkTheme::getAccentColour().withAlpha(0.25f));
-        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-        btn->setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        btn->setColour(juce::TextButton::buttonOnColourId, DarkTheme::getAccentColour());
+        btn->setColour(juce::TextButton::textColourOffId,
+                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->setColour(juce::TextButton::textColourOnId,
+                       DarkTheme::getColour(DarkTheme::BACKGROUND));
         addAndMakeVisible(btn.get());
         return btn;
     };
@@ -450,25 +455,47 @@ void ChordPanelContent::setupFooterControls() {
             chordPlugin_->getSuggestionParams().add9ths = add9thsBtn_->getToggleState();
     };
 
+    add11thsBtn_ = makeToggle("11th");
+    add11thsBtn_->onClick = [this]() {
+        if (chordPlugin_)
+            chordPlugin_->getSuggestionParams().add11ths = add11thsBtn_->getToggleState();
+    };
+
+    add13thsBtn_ = makeToggle("13th");
+    add13thsBtn_->onClick = [this]() {
+        if (chordPlugin_)
+            chordPlugin_->getSuggestionParams().add13ths = add13thsBtn_->getToggleState();
+    };
+
     addAltBtn_ = makeToggle("Alt");
     addAltBtn_->onClick = [this]() {
         if (chordPlugin_)
             chordPlugin_->getSuggestionParams().addAlterations = addAltBtn_->getToggleState();
     };
 
-    scaleFilterBtn_ = makeToggle("Scale");
+    scaleFilterBtn_ = std::make_unique<magda::SvgButton>("ScaleFilter", BinaryData::funnel_svg,
+                                                         BinaryData::funnel_svgSize);
+    scaleFilterBtn_->setClickingTogglesState(true);
     scaleFilterBtn_->setToggleState(true, juce::dontSendNotification);
+    scaleFilterBtn_->setActive(true);
+    scaleFilterBtn_->setActiveColor(DarkTheme::getAccentColour());
+    scaleFilterBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    scaleFilterBtn_->setTooltip("Scale filtering");
     scaleFilterBtn_->onClick = [this]() {
+        bool on = scaleFilterBtn_->getToggleState();
+        scaleFilterBtn_->setActive(on);
         if (chordPlugin_)
-            chordPlugin_->getSuggestionParams().useScaleFiltering =
-                scaleFilterBtn_->getToggleState();
+            chordPlugin_->getSuggestionParams().useScaleFiltering = on;
     };
+    addAndMakeVisible(scaleFilterBtn_.get());
 
     explorerBtn_ = std::make_unique<juce::TextButton>("Browse");
-    explorerBtn_->setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    explorerBtn_->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    explorerBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    explorerBtn_->setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    explorerBtn_->setColour(juce::TextButton::textColourOffId,
+                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     addAndMakeVisible(explorerBtn_.get());
-    // Explorer click handler — TODO: open chord/scale browser
 }
 
 void ChordPanelContent::syncFooterFromParams() {
@@ -481,8 +508,11 @@ void ChordPanelContent::syncFooterFromParams() {
     noveltyLabel_->setTextOverride("Nov " + juce::String(pct) + "%");
     add7thsBtn_->setToggleState(params.add7ths, juce::dontSendNotification);
     add9thsBtn_->setToggleState(params.add9ths, juce::dontSendNotification);
+    add11thsBtn_->setToggleState(params.add11ths, juce::dontSendNotification);
+    add13thsBtn_->setToggleState(params.add13ths, juce::dontSendNotification);
     addAltBtn_->setToggleState(params.addAlterations, juce::dontSendNotification);
     scaleFilterBtn_->setToggleState(params.useScaleFiltering, juce::dontSendNotification);
+    scaleFilterBtn_->setActive(params.useScaleFiltering);
 }
 
 void ChordPanelContent::paint(juce::Graphics& g) {
@@ -623,30 +653,6 @@ void ChordPanelContent::resized() {
     // Reserve footer area
     auto footerArea = bounds.removeFromBottom(FOOTER_HEIGHT);
 
-    // Layout footer controls
-    {
-        auto footer = footerArea.reduced(PADDING, 0);
-        footer.removeFromTop(1);  // separator line
-
-        // Left: space for collapse button (managed by BottomPanel)
-        footer.removeFromLeft(24);
-
-        // Right: explorer button
-        explorerBtn_->setBounds(footer.removeFromRight(50).reduced(0, 2));
-        footer.removeFromRight(4);
-
-        // Middle: novelty + toggle buttons
-        noveltyLabel_->setBounds(footer.removeFromLeft(52).reduced(0, 2));
-        footer.removeFromLeft(4);
-        add7thsBtn_->setBounds(footer.removeFromLeft(32).reduced(0, 2));
-        footer.removeFromLeft(2);
-        add9thsBtn_->setBounds(footer.removeFromLeft(32).reduced(0, 2));
-        footer.removeFromLeft(2);
-        addAltBtn_->setBounds(footer.removeFromLeft(32).reduced(0, 2));
-        footer.removeFromLeft(2);
-        scaleFilterBtn_->setBounds(footer.removeFromLeft(42).reduced(0, 2));
-    }
-
     // 3-column split: detection (28%) | suggestions (50%) | key/scale (22%)
     auto totalWidth = bounds.getWidth();
     int detectionWidth = static_cast<int>(totalWidth * 0.28f);
@@ -657,6 +663,33 @@ void ChordPanelContent::resized() {
     keyScaleCol_ = bounds.removeFromRight(keyScaleWidth);
     bounds.removeFromRight(COLUMN_GAP);
     suggestionsCol_ = bounds;
+
+    // Layout footer controls aligned to the 3 columns
+    {
+        auto footer = footerArea;
+        footer.removeFromTop(1);  // separator line
+
+        // Split footer into same 3 columns
+        footer.removeFromLeft(detectionWidth);
+        footer.removeFromLeft(COLUMN_GAP);
+        footer.removeFromRight(keyScaleWidth);
+        footer.removeFromRight(COLUMN_GAP);
+        auto footerMiddle = footer;  // suggestions column
+
+        // Middle column: suggestion param controls
+        auto mid = footerMiddle.reduced(PADDING, 0);
+        noveltyLabel_->setBounds(mid.removeFromLeft(52).reduced(0, 2));
+        mid.removeFromLeft(4);
+        add7thsBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
+        mid.removeFromLeft(2);
+        add9thsBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
+        mid.removeFromLeft(2);
+        add11thsBtn_->setBounds(mid.removeFromLeft(34).reduced(0, 2));
+        mid.removeFromLeft(2);
+        add13thsBtn_->setBounds(mid.removeFromLeft(34).reduced(0, 2));
+        mid.removeFromLeft(2);
+        addAltBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
+    }
 
     // Position history blocks in detection column
     {
@@ -736,6 +769,15 @@ void ChordPanelContent::resized() {
                 area.removeFromTop(BLOCK_GAP);
             }
         }
+
+        // Filter + Browse controls below scale blocks
+        area.removeFromTop(4);
+        constexpr int iconSize = 16;
+        auto controlRow = area.removeFromTop(20);
+        scaleFilterBtn_->setBounds(
+            controlRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+        controlRow.removeFromLeft(4);
+        explorerBtn_->setBounds(controlRow.removeFromLeft(50).reduced(0, 1));
     }
 }
 

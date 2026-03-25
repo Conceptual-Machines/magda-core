@@ -91,7 +91,8 @@ class ChordSuggestionEngine {
 
     std::vector<SuggestionItem> generateDiatonicCandidates(
         const juce::String& key, const juce::String& mode, bool add7ths, bool add9ths,
-        int targetOctave, float inversionStrength, const std::vector<Chord>& recentChords) const;
+        bool add11ths, bool add13ths, int targetOctave, float inversionStrength,
+        const std::vector<Chord>& recentChords) const;
 
     std::vector<SuggestionItem> generateNonDiatonicCandidates(
         const juce::String& key, const juce::String& mode, bool addAlterations, bool addSlashChords,
