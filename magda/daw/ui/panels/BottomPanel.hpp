@@ -16,7 +16,8 @@ class SvgButton;
 
 namespace daw::ui {
 class AudioClipPropertiesContent;
-}
+class ChordPanelContent;
+}  // namespace daw::ui
 
 /**
  * @brief Bottom panel with automatic content switching based on selection
@@ -119,6 +120,18 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<PropsResizeHandle> propsResizer_;
     std::unique_ptr<magda::SvgButton> propsCollapseButton_;
 
+    // Chord analysis side panel (right side, for MIDI device tracks)
+    std::unique_ptr<daw::ui::ChordPanelContent> chordPanel_;
+    bool showChordPanel_ = false;
+    bool chordPanelCollapsed_ = false;
+    int chordPanelWidth_ = 250;
+    static constexpr int CHORD_MIN_WIDTH = 200;
+    static constexpr int CHORD_MAX_WIDTH = 400;
+
+    std::unique_ptr<PropsResizeHandle> chordResizer_;
+    std::unique_ptr<magda::SvgButton> chordCollapseButton_;
+
+    void ensureChordPanelCreated();
     void setupHeaderControls();
     void applyTimeModeToContent();
     void syncGridStateFromTimeline();

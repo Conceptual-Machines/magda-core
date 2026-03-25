@@ -361,6 +361,10 @@ class TrackChainContent::ChainContainer : public juce::Component, public juce::D
                                                     : obj->getProperty("name").toString() + "_" +
                                                           obj->getProperty("format").toString();
             device.isInstrument = static_cast<bool>(obj->getProperty("isInstrument"));
+            if (obj->getProperty("subcategory").toString() == "MIDI")
+                device.deviceType = magda::DeviceType::MIDI;
+            else if (device.isInstrument)
+                device.deviceType = magda::DeviceType::Instrument;
             // External plugin identification - critical for loading
             device.uniqueId = obj->getProperty("uniqueId").toString();
             device.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();

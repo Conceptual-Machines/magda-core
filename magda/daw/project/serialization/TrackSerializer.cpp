@@ -242,6 +242,7 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("manufacturer", device.manufacturer);
     obj->setProperty("format", static_cast<int>(device.format));
     obj->setProperty("isInstrument", device.isInstrument);
+    obj->setProperty("deviceType", static_cast<int>(device.deviceType));
     obj->setProperty("uniqueId", device.uniqueId);
     obj->setProperty("fileOrIdentifier", device.fileOrIdentifier);
     obj->setProperty("bypassed", device.bypassed);
@@ -344,6 +345,11 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     outDevice.manufacturer = obj->getProperty("manufacturer").toString();
     outDevice.format = static_cast<PluginFormat>(static_cast<int>(obj->getProperty("format")));
     outDevice.isInstrument = obj->getProperty("isInstrument");
+    if (obj->hasProperty("deviceType"))
+        outDevice.deviceType =
+            static_cast<DeviceType>(static_cast<int>(obj->getProperty("deviceType")));
+    else
+        outDevice.deviceType = outDevice.isInstrument ? DeviceType::Instrument : DeviceType::Effect;
     outDevice.uniqueId = obj->getProperty("uniqueId").toString();
     outDevice.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
     outDevice.bypassed = obj->getProperty("bypassed");

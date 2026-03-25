@@ -534,6 +534,12 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                 device.pluginId = plugin.uniqueId.isEmpty() ? (plugin.name + "_" + plugin.format)
                                                             : plugin.uniqueId;
                 device.isInstrument = (plugin.category == "Instrument");
+                if (plugin.subcategory == "MIDI")
+                    device.deviceType = magda::DeviceType::MIDI;
+                else if (device.isInstrument)
+                    device.deviceType = magda::DeviceType::Instrument;
+                else
+                    device.deviceType = magda::DeviceType::Effect;
                 // External plugin identification
                 device.uniqueId = plugin.uniqueId;
                 device.fileOrIdentifier = plugin.fileOrIdentifier;

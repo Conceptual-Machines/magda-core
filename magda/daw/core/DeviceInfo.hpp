@@ -15,6 +15,14 @@ namespace magda {
 enum class PluginFormat { VST3, AU, VST, Internal };
 
 /**
+ * @brief Device type classification
+ *
+ * Instruments generate audio/MIDI, effects process audio,
+ * and MIDI devices process or analyse MIDI without audio I/O.
+ */
+enum class DeviceType { Instrument, Effect, MIDI };
+
+/**
  * @brief Describes a single stereo output pair from a multi-output plugin
  */
 struct MultiOutOutputPair {
@@ -66,6 +74,7 @@ struct DeviceInfo {
     juce::String manufacturer;  // Plugin vendor
     PluginFormat format = PluginFormat::VST3;
     bool isInstrument = false;  // true for instruments (synths, samplers), false for effects
+    DeviceType deviceType = DeviceType::Effect;  // Instrument, Effect, or MIDI
 
     // External plugin identification (for VST3/AU plugins)
     juce::String uniqueId;          // PluginDescription::createIdentifierString()

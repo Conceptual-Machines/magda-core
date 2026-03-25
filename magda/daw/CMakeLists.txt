@@ -296,6 +296,7 @@ set(DAW_UI_SOURCES
     ui/panels/content/DrumGridClipContent.cpp
     ui/panels/content/WaveformEditorContent.cpp
     ui/panels/content/AudioClipPropertiesContent.cpp
+    ui/panels/content/ChordPanelContent.cpp
     # Audio
     audio/AudioEngineOptimizer.cpp
     # Views

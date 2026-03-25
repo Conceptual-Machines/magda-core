@@ -5,6 +5,7 @@
 #include "RackComponent.hpp"
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
+#include "audio/MidiChordEnginePlugin.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
@@ -155,6 +156,10 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
                                                     : obj->getProperty("name").toString() + "_" +
                                                           obj->getProperty("format").toString();
             device.isInstrument = static_cast<bool>(obj->getProperty("isInstrument"));
+            if (obj->getProperty("subcategory").toString() == "MIDI")
+                device.deviceType = magda::DeviceType::MIDI;
+            else if (device.isInstrument)
+                device.deviceType = magda::DeviceType::Instrument;
             device.uniqueId = obj->getProperty("uniqueId").toString();
             device.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
 
@@ -649,11 +654,16 @@ void ChainPanel::onAddDeviceClicked() {
         juce::String name;
         juce::String pluginId;
         bool isInstrument;
+        magda::DeviceType deviceType = magda::DeviceType::Effect;
     };
     const InternalEntry internals[] = {
-        {"4OSC Synth", "4osc", true},
-        {"Sampler", magda::daw::audio::MagdaSamplerPlugin::xmlTypeName, true},
-        {"Drum Grid", magda::daw::audio::DrumGridPlugin::xmlTypeName, true},
+        {"4OSC Synth", "4osc", true, magda::DeviceType::Instrument},
+        {"Sampler", magda::daw::audio::MagdaSamplerPlugin::xmlTypeName, true,
+         magda::DeviceType::Instrument},
+        {"Drum Grid", magda::daw::audio::DrumGridPlugin::xmlTypeName, true,
+         magda::DeviceType::Instrument},
+        {"Chord Engine", magda::daw::audio::MidiChordEnginePlugin::xmlTypeName, false,
+         magda::DeviceType::MIDI},
         {"Test Tone", "tone", false},
         {"Equaliser", "eq", false},
         {"Compressor", "compressor", false},
@@ -733,6 +743,7 @@ void ChainPanel::onAddDeviceClicked() {
             device.manufacturer = "MAGDA";
             device.pluginId = entry.pluginId;
             device.isInstrument = entry.isInstrument;
+            device.deviceType = entry.deviceType;
             device.format = magda::PluginFormat::Internal;
         } else if (result >= 1000) {
             // External plugin

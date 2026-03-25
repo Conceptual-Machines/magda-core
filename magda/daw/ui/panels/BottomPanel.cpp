@@ -11,7 +11,9 @@
 #include "AudioEngine.hpp"
 #include "BinaryData.h"
 #include "audio/DrumGridPlugin.hpp"
+#include "audio/MidiChordEnginePlugin.hpp"
 #include "content/AudioClipPropertiesContent.hpp"
+#include "content/ChordPanelContent.hpp"
 #include "content/DrumGridClipContent.hpp"
 #include "content/MidiEditorContent.hpp"
 #include "content/PianoRollContent.hpp"
@@ -42,6 +44,55 @@ bool trackHasDrumGrid(TrackId trackId) {
             if (rackInstance->type != nullptr) {
                 for (auto* innerPlugin : rackInstance->type->getPlugins()) {
                     if (dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin))
+                        return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+/** Return the first MidiChordEnginePlugin on a track, or nullptr. */
+daw::audio::MidiChordEnginePlugin* findChordEngine(TrackId trackId) {
+    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return nullptr;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return nullptr;
+    auto* teTrack = bridge->getAudioTrack(trackId);
+    if (!teTrack)
+        return nullptr;
+
+    for (auto* plugin : teTrack->pluginList) {
+        if (auto* ce = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin))
+            return ce;
+        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
+            if (rackInstance->type != nullptr) {
+                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
+                    if (auto* ce = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(innerPlugin))
+                        return ce;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+/** Check if a track has any MIDI-type device (including inside racks). */
+bool trackHasMidiDevice(TrackId trackId) {
+    auto& trackManager = TrackManager::getInstance();
+    const auto* track = trackManager.getTrack(trackId);
+    if (!track)
+        return false;
+    for (const auto& elem : track->chainElements) {
+        if (isDevice(elem)) {
+            if (getDevice(elem).deviceType == DeviceType::MIDI)
+                return true;
+        } else if (isRack(elem)) {
+            const auto& rack = getRack(elem);
+            for (const auto& chain : rack.chains) {
+                for (const auto& ce : chain.elements) {
+                    if (isDevice(ce) && getDevice(ce).deviceType == DeviceType::MIDI)
                         return true;
                 }
             }
@@ -148,6 +199,10 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     };
     addChildComponent(propsResizer_.get());
 
+    // Chord panel created lazily in ensureChordPanelCreated() —
+    // creating it here during construction triggers AppKit notification
+    // crashes because JUCE geometry observers fire before the window is ready.
+
     // Create header controls
     setupHeaderControls();
 
@@ -187,6 +242,8 @@ BottomPanel::~BottomPanel() {
     drumGridTab_.reset();
     propsResizer_.reset();
     audioPropsPanel_.reset();
+    chordResizer_.reset();
+    chordPanel_.reset();
 }
 
 void BottomPanel::setupHeaderControls() {
@@ -372,7 +429,7 @@ void BottomPanel::paint(juce::Graphics& g) {
         g.fillRect(getLocalBounds());
     }
 
-    bool hasHeader = showEditorTabs_ || showPropsPanel_;
+    bool hasHeader = showEditorTabs_ || showPropsPanel_ || showChordPanel_;
 
     // Draw bottom border below the header and column dividers
     if (hasHeader) {
@@ -385,13 +442,17 @@ void BottomPanel::paint(juce::Graphics& g) {
         }
     }
 
-    // Vertical border on the left of the collapsed props strip
-    if (showPropsPanel_ && propsPanelCollapsed_) {
-        g.setColour(DarkTheme::getBorderColour());
-        int stripX = getWidth() - 28;
-        int top = hasHeader ? EDITOR_TAB_HEIGHT : 0;
-        g.fillRect(stripX, top, 1, getHeight() - top);
-    }
+    // Vertical border on the left of the collapsed side panel strip
+    auto drawCollapsedBorder = [&](bool show, bool collapsed) {
+        if (show && collapsed) {
+            g.setColour(DarkTheme::getBorderColour());
+            int stripX = getWidth() - 28;
+            int top = hasHeader ? EDITOR_TAB_HEIGHT : 0;
+            g.fillRect(stripX, top, 1, getHeight() - top);
+        }
+    };
+    drawCollapsedBorder(showPropsPanel_, propsPanelCollapsed_);
+    drawCollapsedBorder(showChordPanel_, chordPanelCollapsed_);
 }
 
 void BottomPanel::resized() {
@@ -402,6 +463,12 @@ void BottomPanel::resized() {
         audioPropsPanel_->setVisible(false);
         propsResizer_->setVisible(false);
         propsCollapseButton_->setVisible(false);
+        if (chordPanel_)
+            chordPanel_->setVisible(false);
+        if (chordResizer_)
+            chordResizer_->setVisible(false);
+        if (chordCollapseButton_)
+            chordCollapseButton_->setVisible(false);
         timeModeButton_->setVisible(false);
         gridNumeratorLabel_->setVisible(false);
         gridSlashLabel_->setVisible(false);
@@ -412,7 +479,7 @@ void BottomPanel::resized() {
         return;
     }
 
-    bool hasHeader = showEditorTabs_ || showPropsPanel_;
+    bool hasHeader = showEditorTabs_ || showPropsPanel_ || showChordPanel_;
 
     if (hasHeader) {
         auto headerBounds = getLocalBounds().removeFromTop(EDITOR_TAB_HEIGHT);
@@ -508,6 +575,49 @@ void BottomPanel::resized() {
         propsResizer_->setVisible(false);
         propsCollapseButton_->setVisible(false);
     }
+
+    // Position chord analysis side panel (same pattern as props panel)
+    if (chordPanel_) {
+        if (showChordPanel_ && !chordPanelCollapsed_) {
+            auto fullContent = getLocalBounds();
+            if (hasHeader)
+                fullContent.removeFromTop(EDITOR_TAB_HEIGHT);
+
+            int resizerX = fullContent.getRight() - chordPanelWidth_ - RESIZE_HANDLE_SIZE;
+            chordResizer_->setBounds(resizerX, fullContent.getY(), RESIZE_HANDLE_SIZE,
+                                     fullContent.getHeight());
+            chordResizer_->setVisible(true);
+
+            auto chordArea = fullContent.removeFromRight(chordPanelWidth_);
+            chordPanel_->setBounds(chordArea);
+            chordPanel_->setVisible(true);
+
+            constexpr int collapseBtnSize = 20;
+            constexpr int collapsePad = 4;
+            chordCollapseButton_->setBounds(chordArea.getX() + collapsePad,
+                                            chordArea.getBottom() - collapseBtnSize - collapsePad,
+                                            collapseBtnSize, collapseBtnSize);
+            chordCollapseButton_->setVisible(true);
+            chordCollapseButton_->toFront(false);
+        } else if (showChordPanel_ && chordPanelCollapsed_) {
+            chordPanel_->setVisible(false);
+            chordResizer_->setVisible(false);
+
+            constexpr int collapseBtnSize = 20;
+            constexpr int stripWidth = 28;
+            auto fullContent = getLocalBounds();
+            if (hasHeader)
+                fullContent.removeFromTop(EDITOR_TAB_HEIGHT);
+            chordCollapseButton_->setBounds(fullContent.getRight() - stripWidth + 4,
+                                            fullContent.getBottom() - collapseBtnSize - 4,
+                                            collapseBtnSize, collapseBtnSize);
+            chordCollapseButton_->setVisible(true);
+        } else {
+            chordPanel_->setVisible(false);
+            chordResizer_->setVisible(false);
+            chordCollapseButton_->setVisible(false);
+        }
+    }
 }
 
 void BottomPanel::clipsChanged() {
@@ -572,6 +682,47 @@ void BottomPanel::timelineStateChanged(const TimelineState& state, ChangeFlags c
     }
 }
 
+void BottomPanel::ensureChordPanelCreated() {
+    if (chordPanel_)
+        return;
+
+    chordPanel_ = std::make_unique<daw::ui::ChordPanelContent>();
+    addChildComponent(chordPanel_.get());
+
+    chordCollapseButton_ = std::make_unique<SvgButton>("ChordCollapse", BinaryData::right_close_svg,
+                                                       BinaryData::right_close_svgSize);
+    chordCollapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
+    chordCollapseButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    chordCollapseButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    chordCollapseButton_->setTooltip("Toggle chord panel");
+    chordCollapseButton_->onClick = [this]() {
+        chordPanelCollapsed_ = !chordPanelCollapsed_;
+        chordCollapseButton_->updateSvgData(chordPanelCollapsed_ ? BinaryData::right_open_svg
+                                                                 : BinaryData::right_close_svg,
+                                            chordPanelCollapsed_ ? BinaryData::right_open_svgSize
+                                                                 : BinaryData::right_close_svgSize);
+        resized();
+    };
+    addChildComponent(chordCollapseButton_.get());
+
+    chordResizer_ = std::make_unique<PropsResizeHandle>();
+    chordResizer_->onResize = [this](int delta) {
+        int newWidth = chordPanelWidth_ - delta;
+        if (newWidth < PROPS_COLLAPSE_THRESHOLD) {
+            chordPanelCollapsed_ = true;
+        } else {
+            chordPanelCollapsed_ = false;
+            chordPanelWidth_ = juce::jlimit(CHORD_MIN_WIDTH, CHORD_MAX_WIDTH, newWidth);
+        }
+        resized();
+    };
+    chordResizer_->onDoubleClick = [this]() {
+        chordPanelCollapsed_ = !chordPanelCollapsed_;
+        resized();
+    };
+    addChildComponent(chordResizer_.get());
+}
+
 void BottomPanel::updateContentBasedOnSelection() {
     // Lazy registration: BottomPanel may be constructed before TimelineController
     if (!timelineListenerGuard_.get()) {
@@ -592,6 +743,11 @@ void BottomPanel::updateContentBasedOnSelection() {
 
     if (selectedClip != INVALID_CLIP_ID) {
         const auto* clip = clipManager.getClip(selectedClip);
+        if (!clip) {
+            // Clip data temporarily unavailable (e.g. during track rebuild).
+            // Preserve current editor state to avoid transient tab flicker.
+            return;
+        }
         if (clip) {
             if (clip->type == ClipType::MIDI) {
                 needsTabs = true;
@@ -620,6 +776,29 @@ void BottomPanel::updateContentBasedOnSelection() {
     showEditorTabs_ = needsTabs;
     showPropsPanel_ = (targetContent == daw::ui::PanelContentType::WaveformEditor);
 
+    // Show chord panel when piano roll is active and track has MIDI device
+    {
+        bool wantChord = false;
+        TrackId midiTrackId = INVALID_TRACK_ID;
+        if (targetContent == daw::ui::PanelContentType::PianoRoll &&
+            selectedClip != INVALID_CLIP_ID) {
+            const auto* clip = clipManager.getClip(selectedClip);
+            if (clip)
+                midiTrackId = clip->trackId;
+        }
+        if (midiTrackId != INVALID_TRACK_ID)
+            wantChord = trackHasMidiDevice(midiTrackId);
+
+        showChordPanel_ = wantChord;
+        if (wantChord) {
+            ensureChordPanelCreated();
+            auto* ce = findChordEngine(midiTrackId);
+            chordPanel_->setChordEngine(ce);
+        } else if (chordPanel_) {
+            chordPanel_->setChordEngine(nullptr);
+        }
+    }
+
     // Update MIDI tab icon active states
     if (showEditorTabs_) {
         updatingTabs_ = true;
@@ -633,7 +812,7 @@ void BottomPanel::updateContentBasedOnSelection() {
     drumGridTab_->setVisible(showEditorTabs_);
 
     // Show/hide header controls (for MIDI and audio editors)
-    bool showHeaderControls = showEditorTabs_ || showPropsPanel_;
+    bool showHeaderControls = showEditorTabs_ || showPropsPanel_ || showChordPanel_;
     timeModeButton_->setVisible(showHeaderControls);
     gridNumeratorLabel_->setVisible(showHeaderControls);
     gridSlashLabel_->setVisible(showHeaderControls);
@@ -684,7 +863,7 @@ juce::Rectangle<int> BottomPanel::getTabBarBounds() {
 juce::Rectangle<int> BottomPanel::getContentBounds() {
     auto bounds = getLocalBounds();
     // Reserve header space
-    if (showEditorTabs_ || showPropsPanel_) {
+    if (showEditorTabs_ || showPropsPanel_ || showChordPanel_) {
         bounds.removeFromTop(EDITOR_TAB_HEIGHT);
     }
     // Reserve space for properties side panel + resize handle when expanded,
@@ -692,6 +871,12 @@ juce::Rectangle<int> BottomPanel::getContentBounds() {
     if (showPropsPanel_ && !propsPanelCollapsed_) {
         bounds.removeFromRight(propsPanelWidth_ + RESIZE_HANDLE_SIZE);
     } else if (showPropsPanel_ && propsPanelCollapsed_) {
+        bounds.removeFromRight(28);
+    }
+    // Reserve space for chord analysis side panel
+    if (showChordPanel_ && !chordPanelCollapsed_) {
+        bounds.removeFromRight(chordPanelWidth_ + RESIZE_HANDLE_SIZE);
+    } else if (showChordPanel_ && chordPanelCollapsed_) {
         bounds.removeFromRight(28);
     }
     return bounds;
