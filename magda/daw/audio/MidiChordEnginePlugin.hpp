@@ -104,6 +104,9 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     /** Clear chord history and reset detection state. */
     void clearHistory();
 
+    /** Re-generate suggestions from current context + params (call after param changes). */
+    void refreshSuggestions();
+
     // --- Listener for UI updates ---
     struct Listener {
         virtual ~Listener() = default;

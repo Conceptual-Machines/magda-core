@@ -132,6 +132,7 @@ class ChordPanelContent : public juce::Component, private juce::Timer {
     std::unique_ptr<juce::TextButton> add13thsBtn_;
     std::unique_ptr<magda::SvgButton> scaleFilterBtn_;
     std::unique_ptr<juce::TextButton> explorerBtn_;
+    std::unique_ptr<juce::TextButton> clearHistoryBtn_;
 
     // Column areas (computed in resized, used in paint for headers)
     juce::Rectangle<int> detectionCol_;

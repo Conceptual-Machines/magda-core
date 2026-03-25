@@ -133,14 +133,8 @@ void MidiChordEnginePlugin::runDetection() {
         heldNotes.push_back({noteNum, 100});
     }
 
-    if (heldNotes.empty()) {
-        std::lock_guard<std::mutex> lock(stateMutex_);
-        if (currentChord_.name.isNotEmpty()) {
-            currentChord_ = {};
-            listeners_.call(&Listener::chordChanged, this);
-        }
+    if (heldNotes.empty())
         return;
-    }
 
     auto& engine = magda::music::ChordEngine::getInstance();
     auto detected = engine.smartDetect(heldNotes);
@@ -188,8 +182,32 @@ void MidiChordEnginePlugin::runDetection() {
                     pitchClasses.insert(note.noteNumber % 12);
             }
             if (pitchClasses.size() >= 3) {
+                // Pass detected key root so scales rooted on it rank higher
+                int preferredRoot = -1;
+                if (cachedKeyMode_.has_value()) {
+                    auto keyRoot = cachedKeyMode_->first;
+                    static const juce::String noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                                             "F#", "G",  "G#", "A",  "A#", "B"};
+                    for (int i = 0; i < 12; ++i) {
+                        if (keyRoot == noteNames[i]) {
+                            preferredRoot = i;
+                            break;
+                        }
+                    }
+                    // Handle flats
+                    if (preferredRoot < 0) {
+                        static const juce::String flatNames[] = {"C",  "Db", "D",  "Eb", "E",  "F",
+                                                                 "Gb", "G",  "Ab", "A",  "Bb", "B"};
+                        for (int i = 0; i < 12; ++i) {
+                            if (keyRoot == flatNames[i]) {
+                                preferredRoot = i;
+                                break;
+                            }
+                        }
+                    }
+                }
                 auto scored = magda::music::detectScalesFromPitchClasses(
-                    pitchClasses, magda::music::getAllScalesWithChordsCached());
+                    pitchClasses, magda::music::getAllScalesWithChordsCached(), preferredRoot);
                 cachedScales_.clear();
                 int limit = std::min(static_cast<int>(scored.size()), 8);
                 for (int i = 0; i < limit; ++i)
@@ -254,6 +272,18 @@ void MidiChordEnginePlugin::clearHistory() {
     keyHistogram_.reset();
     listeners_.call(&Listener::chordChanged, this);
     listeners_.call(&Listener::keyModeChanged, this);
+    listeners_.call(&Listener::suggestionsChanged, this);
+}
+
+void MidiChordEnginePlugin::refreshSuggestions() {
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    auto recentChords = suggestionEngine_.getRecentChords();
+    if (cachedKeyMode_.has_value()) {
+        cachedSuggestions_ = suggestionEngine_.generateSuggestions(
+            recentChords, suggestionParams_, cachedKeyMode_->first, cachedKeyMode_->second);
+    } else {
+        cachedSuggestions_ = suggestionEngine_.generateSuggestions(recentChords, suggestionParams_);
+    }
     listeners_.call(&Listener::suggestionsChanged, this);
 }
 

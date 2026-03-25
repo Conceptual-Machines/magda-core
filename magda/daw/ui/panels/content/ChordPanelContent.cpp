@@ -387,6 +387,8 @@ void ChordPanelContent::updateScaleFilterPitchClasses() {
                 params.explicitScalePitchClasses.insert(pitch % 12);
         }
     }
+
+    chordPlugin_->refreshSuggestions();
 }
 
 void ChordPanelContent::showScalePopup(const magda::music::ScaleWithChords& scale,
@@ -417,12 +419,15 @@ void ChordPanelContent::setupFooterControls() {
     noveltyLabel_->setDrawBorder(false);
     noveltyLabel_->setShowFillIndicator(false);
     noveltyLabel_->setTextOverride("Nov 30%");
+    noveltyLabel_->setTooltip(
+        "Balance between safe diatonic (0%) and adventurous non-diatonic (100%) suggestions");
     noveltyLabel_->onValueChange = [this]() {
         if (chordPlugin_) {
             chordPlugin_->getSuggestionParams().novelty =
                 static_cast<float>(noveltyLabel_->getValue());
             int pct = static_cast<int>(noveltyLabel_->getValue() * 100.0);
-            noveltyLabel_->setTextOverride("Nov " + juce::String(pct) + "%");
+            noveltyLabel_->setTextOverride("Novelty " + juce::String(pct) + "%");
+            chordPlugin_->refreshSuggestions();
         }
     };
     addAndMakeVisible(noveltyLabel_.get());
@@ -444,33 +449,48 @@ void ChordPanelContent::setupFooterControls() {
 
     add7thsBtn_ = makeToggle("7th");
     add7thsBtn_->setToggleState(true, juce::dontSendNotification);
+    add7thsBtn_->setTooltip("Include 7th chords (Maj7, min7, dom7, dim7)");
     add7thsBtn_->onClick = [this]() {
-        if (chordPlugin_)
+        if (chordPlugin_) {
             chordPlugin_->getSuggestionParams().add7ths = add7thsBtn_->getToggleState();
+            chordPlugin_->refreshSuggestions();
+        }
     };
 
     add9thsBtn_ = makeToggle("9th");
+    add9thsBtn_->setTooltip("Include 9th chords (Maj9, min9, dom9)");
     add9thsBtn_->onClick = [this]() {
-        if (chordPlugin_)
+        if (chordPlugin_) {
             chordPlugin_->getSuggestionParams().add9ths = add9thsBtn_->getToggleState();
+            chordPlugin_->refreshSuggestions();
+        }
     };
 
     add11thsBtn_ = makeToggle("11th");
+    add11thsBtn_->setTooltip("Include 11th chords (dom11, min11)");
     add11thsBtn_->onClick = [this]() {
-        if (chordPlugin_)
+        if (chordPlugin_) {
             chordPlugin_->getSuggestionParams().add11ths = add11thsBtn_->getToggleState();
+            chordPlugin_->refreshSuggestions();
+        }
     };
 
     add13thsBtn_ = makeToggle("13th");
+    add13thsBtn_->setTooltip("Include 13th chords (dom13, min13)");
     add13thsBtn_->onClick = [this]() {
-        if (chordPlugin_)
+        if (chordPlugin_) {
             chordPlugin_->getSuggestionParams().add13ths = add13thsBtn_->getToggleState();
+            chordPlugin_->refreshSuggestions();
+        }
     };
 
     addAltBtn_ = makeToggle("Alt");
+    addAltBtn_->setTooltip("Include altered/non-diatonic chords (borrowed chords, tritone subs)");
     addAltBtn_->onClick = [this]() {
-        if (chordPlugin_)
+        if (chordPlugin_) {
             chordPlugin_->getSuggestionParams().addAlterations = addAltBtn_->getToggleState();
+            chordPlugin_->refreshSuggestions();
+        }
     };
 
     scaleFilterBtn_ = std::make_unique<magda::SvgButton>("ScaleFilter", BinaryData::funnel_svg,
@@ -480,12 +500,14 @@ void ChordPanelContent::setupFooterControls() {
     scaleFilterBtn_->setActive(true);
     scaleFilterBtn_->setActiveColor(DarkTheme::getAccentColour());
     scaleFilterBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    scaleFilterBtn_->setTooltip("Scale filtering");
+    scaleFilterBtn_->setTooltip("Filter suggestions by detected scales");
     scaleFilterBtn_->onClick = [this]() {
         bool on = scaleFilterBtn_->getToggleState();
         scaleFilterBtn_->setActive(on);
-        if (chordPlugin_)
+        if (chordPlugin_) {
             chordPlugin_->getSuggestionParams().useScaleFiltering = on;
+            chordPlugin_->refreshSuggestions();
+        }
     };
     addAndMakeVisible(scaleFilterBtn_.get());
 
@@ -496,6 +518,19 @@ void ChordPanelContent::setupFooterControls() {
     explorerBtn_->setColour(juce::TextButton::textColourOffId,
                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     addAndMakeVisible(explorerBtn_.get());
+
+    clearHistoryBtn_ = std::make_unique<juce::TextButton>("Clear");
+    clearHistoryBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    clearHistoryBtn_->setColour(juce::TextButton::buttonColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+    clearHistoryBtn_->setColour(juce::TextButton::textColourOffId,
+                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clearHistoryBtn_->setTooltip("Clear chord history and reset detection");
+    clearHistoryBtn_->onClick = [this]() {
+        if (chordPlugin_)
+            chordPlugin_->clearHistory();
+    };
+    addAndMakeVisible(clearHistoryBtn_.get());
 }
 
 void ChordPanelContent::syncFooterFromParams() {
@@ -505,7 +540,7 @@ void ChordPanelContent::syncFooterFromParams() {
     const auto& params = chordPlugin_->getSuggestionParams();
     noveltyLabel_->setValue(params.novelty, juce::dontSendNotification);
     int pct = static_cast<int>(params.novelty * 100.0f);
-    noveltyLabel_->setTextOverride("Nov " + juce::String(pct) + "%");
+    noveltyLabel_->setTextOverride("Novelty " + juce::String(pct) + "%");
     add7thsBtn_->setToggleState(params.add7ths, juce::dontSendNotification);
     add9thsBtn_->setToggleState(params.add9ths, juce::dontSendNotification);
     add11thsBtn_->setToggleState(params.add11ths, juce::dontSendNotification);
@@ -566,12 +601,12 @@ void ChordPanelContent::paint(juce::Graphics& g) {
 
         area.removeFromTop(8);
 
-        // "HISTORY" header
-        if (!historyBlocks_.empty()) {
+        // "HISTORY" header with clear button
+        {
+            auto histHeaderArea = area.removeFromTop(SECTION_HEADER_HEIGHT);
             g.setColour(DarkTheme::getSecondaryTextColour());
             g.setFont(headerFont);
-            g.drawText("HISTORY", area.removeFromTop(SECTION_HEADER_HEIGHT),
-                       juce::Justification::centredLeft);
+            g.drawText("HISTORY", histHeaderArea, juce::Justification::centredLeft);
         }
     }
 
@@ -664,21 +699,19 @@ void ChordPanelContent::resized() {
     bounds.removeFromRight(COLUMN_GAP);
     suggestionsCol_ = bounds;
 
-    // Layout footer controls aligned to the 3 columns
+    // Layout footer controls: skip left column, use merged middle+right
     {
         auto footer = footerArea;
         footer.removeFromTop(1);  // separator line
+        footer.removeFromLeft(detectionWidth + COLUMN_GAP);
 
-        // Split footer into same 3 columns
-        footer.removeFromLeft(detectionWidth);
-        footer.removeFromLeft(COLUMN_GAP);
-        footer.removeFromRight(keyScaleWidth);
-        footer.removeFromRight(COLUMN_GAP);
-        auto footerMiddle = footer;  // suggestions column
+        auto mid = footer.reduced(PADDING, 0);
 
-        // Middle column: suggestion param controls
-        auto mid = footerMiddle.reduced(PADDING, 0);
-        noveltyLabel_->setBounds(mid.removeFromLeft(52).reduced(0, 2));
+        // Funnel icon on the right
+        scaleFilterBtn_->setBounds(mid.removeFromRight(22).reduced(0, 2));
+        mid.removeFromRight(4);
+
+        noveltyLabel_->setBounds(mid.removeFromLeft(80).reduced(0, 2));
         mid.removeFromLeft(4);
         add7thsBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
         mid.removeFromLeft(2);
@@ -698,10 +731,11 @@ void ChordPanelContent::resized() {
         area.removeFromTop(44);                     // chord display box
         area.removeFromTop(8);                      // gap
 
-        if (!historyBlocks_.empty()) {
-            area.removeFromTop(SECTION_HEADER_HEIGHT);  // "HISTORY" header
-            area.removeFromTop(2);
+        auto histHeader = area.removeFromTop(SECTION_HEADER_HEIGHT);
+        clearHistoryBtn_->setBounds(histHeader.removeFromRight(34).reduced(0, 2));
+        area.removeFromTop(2);
 
+        if (!historyBlocks_.empty()) {
             int x = area.getX();
             int y = area.getY();
             int blockWidth = std::max(50, (area.getWidth() - BLOCK_GAP) / 2);
@@ -770,14 +804,10 @@ void ChordPanelContent::resized() {
             }
         }
 
-        // Filter + Browse controls below scale blocks
-        area.removeFromTop(4);
-        constexpr int iconSize = 16;
-        auto controlRow = area.removeFromTop(20);
-        scaleFilterBtn_->setBounds(
-            controlRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-        controlRow.removeFromLeft(4);
-        explorerBtn_->setBounds(controlRow.removeFromLeft(50).reduced(0, 1));
+        // Browse button pinned to bottom of key/scale column
+        auto browseArea = keyScaleCol_.reduced(PADDING, 0);
+        browseArea.removeFromBottom(6);  // bottom padding
+        explorerBtn_->setBounds(browseArea.removeFromBottom(22).reduced(0, 1));
     }
 }
 

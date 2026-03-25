@@ -78,8 +78,11 @@ struct NoteBasedMatchScore {
 };
 
 // Detect scales from a set of pitch classes (0-11)
+// preferredRootPitchClass: when >= 0, scales rooted on this pitch class get a significant boost
+// (use the detected key root so that e.g. C Minor Aeolian ranks above Eb Major Ionian)
 inline std::vector<std::pair<ScaleWithChords, NoteBasedMatchScore>> detectScalesFromPitchClasses(
-    const std::set<int>& pitchClasses, const std::vector<ScaleWithChords>& allScales) {
+    const std::set<int>& pitchClasses, const std::vector<ScaleWithChords>& allScales,
+    int preferredRootPitchClass = -1) {
     if (pitchClasses.empty())
         return {};
 
@@ -103,8 +106,17 @@ inline std::vector<std::pair<ScaleWithChords, NoteBasedMatchScore>> detectScales
         double precision = static_cast<double>(matchCount) / pitchClasses.size();
 
         int score = matchCount * 10;
-        score += static_cast<int>(coverage * 50);
-        score += static_cast<int>(precision * 30);
+        // Use F1 score (harmonic mean of coverage and precision) to avoid
+        // pentatonic scales scoring higher than 7-note scales due to coverage
+        double f1 = (coverage + precision > 0.0)
+                        ? 2.0 * coverage * precision / (coverage + precision)
+                        : 0.0;
+        score += static_cast<int>(f1 * 80);
+
+        // Prefer diatonic (7-note) scales over pentatonic (5-note) when both match
+        int scaleSize = static_cast<int>(scalePitches.size());
+        if (scaleSize >= 7)
+            score += 10;
 
         if (scale.name.find("Ionian") != std::string::npos ||
             scale.name.find("Major") != std::string::npos)
@@ -113,10 +125,14 @@ inline std::vector<std::pair<ScaleWithChords, NoteBasedMatchScore>> detectScales
                  scale.name.find("Minor") != std::string::npos)
             score += 12;
         else if (scale.name.find("Pentatonic") != std::string::npos)
-            score += 8;
+            score += 5;
 
         if (pitchClasses.count(scale.rootNote % 12) > 0)
             score += 10;
+
+        // Strong boost for scales matching the detected key root
+        if (preferredRootPitchClass >= 0 && (scale.rootNote % 12) == preferredRootPitchClass)
+            score += 20;
 
         NoteBasedMatchScore matchScore;
         matchScore.matchedNotes = matchedNotes;
@@ -129,6 +145,35 @@ inline std::vector<std::pair<ScaleWithChords, NoteBasedMatchScore>> detectScales
 
     std::sort(scored.begin(), scored.end(),
               [](const auto& a, const auto& b) { return a.second.score > b.second.score; });
+
+    // Second pass: if a scale is a strict subset of a same-root scale that ranks
+    // lower, promote the superset to sit directly above the subset.
+    // E.g. C Minor Pentatonic (5 notes) ⊂ C Minor Aeolian (7 notes) →
+    // move Aeolian to rank just above Pentatonic.
+    for (size_t i = 0; i < scored.size(); ++i) {
+        int rootI = scored[i].first.rootNote % 12;
+        std::set<int> pitchesI;
+        for (int p : scored[i].first.pitches)
+            pitchesI.insert(p % 12);
+
+        for (size_t j = i + 1; j < scored.size(); ++j) {
+            if (scored[j].first.rootNote % 12 != rootI)
+                continue;
+
+            std::set<int> pitchesJ;
+            for (int p : scored[j].first.pitches)
+                pitchesJ.insert(p % 12);
+
+            // If i is a strict subset of j, rotate j into position i (pushing i to i+1)
+            if (pitchesI.size() < pitchesJ.size() &&
+                std::includes(pitchesJ.begin(), pitchesJ.end(), pitchesI.begin(), pitchesI.end())) {
+                auto promoted = std::move(scored[j]);
+                scored.erase(scored.begin() + static_cast<std::ptrdiff_t>(j));
+                scored.insert(scored.begin() + static_cast<std::ptrdiff_t>(i), std::move(promoted));
+                break;  // re-check from i with the newly inserted element
+            }
+        }
+    }
 
     return scored;
 }
