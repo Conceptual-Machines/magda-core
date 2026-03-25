@@ -2,7 +2,6 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "ChordEngineUI.hpp"
 #include "ChorusUI.hpp"
 #include "CompressorUI.hpp"
 #include "DelayUI.hpp"
@@ -25,6 +24,7 @@
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
+#include "ui/panels/content/ChordPanelContent.hpp"  // relative to magda/daw/
 
 namespace magda::daw::ui {
 
@@ -209,7 +209,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<PitchShiftUI> pitchShiftUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
     std::unique_ptr<UtilityUI> utilityUI_;
-    std::unique_ptr<ChordEngineUI> chordEngineUI_;
+    std::unique_ptr<ChordPanelContent> chordEngineUI_;
 
     static constexpr int METER_STRIP_WIDTH = 10;
     magda::LevelMeter levelMeter_;

@@ -85,7 +85,8 @@ class ScaleChordsPopup : public juce::Component {
  *   Footer:  [collapse] | novelty / 7ths / 9ths / alt | [explorer]
  */
 class ChordPanelContent : public juce::Component,
-                          private magda::daw::audio::MidiChordEnginePlugin::Listener {
+                          private magda::daw::audio::MidiChordEnginePlugin::Listener,
+                          private juce::Timer {
   public:
     ChordPanelContent();
     ~ChordPanelContent() override;
@@ -104,6 +105,7 @@ class ChordPanelContent : public juce::Component,
     void suggestionsChanged(magda::daw::audio::MidiChordEnginePlugin*) override;
 
     void updateFromPlugin();
+    void timerCallback() override;  // delayed chord clear after note release
     void rebuildSuggestionBlocks();
     void rebuildHistoryBlocks();
     void rebuildScaleBlocks();

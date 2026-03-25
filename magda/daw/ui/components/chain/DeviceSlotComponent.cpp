@@ -477,14 +477,6 @@ void DeviceSlotComponent::timerCallback() {
     if (bridge->getDeviceMetering().getLatestLevels(device_.id, data)) {
         levelMeter_.setLevels(data.peakL, data.peakR);
     }
-
-    // Poll chord engine for current chord name
-    if (chordEngineUI_) {
-        auto plugin = bridge->getPlugin(device_.id);
-        if (auto* chordPlugin = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
-            chordEngineUI_->setChordName(chordPlugin->getCurrentChordName());
-        }
-    }
 }
 
 void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int paramIndex,
@@ -600,7 +592,7 @@ int DeviceSlotComponent::getPreferredWidth() const {
         return getTotalWidth(300) + meterExtra;
     }
     if (chordEngineUI_) {
-        return getTotalWidth(200) + meterExtra;
+        return getTotalWidth(BASE_SLOT_WIDTH * 2) + meterExtra;
     }
     if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2) + meterExtra;
@@ -2417,9 +2409,18 @@ void DeviceSlotComponent::createCustomUI() {
         updateCustomUI();
     } else if (device_.pluginId.containsIgnoreCase(
                    daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
-        chordEngineUI_ = std::make_unique<ChordEngineUI>();
+        chordEngineUI_ = std::make_unique<ChordPanelContent>();
         addAndMakeVisible(*chordEngineUI_);
-        updateCustomUI();
+        // Connect to the plugin instance
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                if (auto* chordPlugin =
+                        dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
+                    chordEngineUI_->setChordEngine(chordPlugin);
+                }
+            }
+        }
     }
 }
 

@@ -197,6 +197,7 @@ ChordPanelContent::ChordPanelContent() {
 }
 
 ChordPanelContent::~ChordPanelContent() {
+    stopTimer();
     if (chordPlugin_)
         chordPlugin_->removeListener(this);
 }
@@ -222,6 +223,7 @@ void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin*
     if (plugin) {
         plugin->addListener(this);
         syncFooterFromParams();
+        updateFromPlugin();  // sync existing state immediately
     }
 
     repaint();
@@ -247,6 +249,13 @@ void ChordPanelContent::suggestionsChanged(magda::daw::audio::MidiChordEnginePlu
         if (safeThis)
             safeThis->updateFromPlugin();
     });
+}
+
+void ChordPanelContent::timerCallback() {
+    // Delayed clear of chord display after note release
+    stopTimer();
+    currentChord_.clear();
+    repaint();
 }
 
 void ChordPanelContent::updateFromPlugin() {
@@ -278,11 +287,18 @@ void ChordPanelContent::updateFromPlugin() {
         needsLayout = true;
     }
 
-    // Current chord — use last entry from history (persists after note release)
-    auto chord = history.empty() ? juce::String() : history.back().getDisplayName();
+    // Current chord — live from detection (clears on note release)
+    auto chord = chordPlugin_->getCurrentChordName();
     if (chord != currentChord_) {
-        currentChord_ = chord;
-        needsRepaint = true;
+        if (chord.isNotEmpty()) {
+            // New chord detected — show it immediately, cancel any pending clear
+            stopTimer();
+            currentChord_ = chord;
+            needsRepaint = true;
+        } else if (currentChord_.isNotEmpty()) {
+            // Notes released — start 1-second delayed clear
+            startTimer(1000);
+        }
     }
 
     // Suggestions
