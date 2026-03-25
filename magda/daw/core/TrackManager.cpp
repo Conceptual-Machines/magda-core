@@ -903,7 +903,8 @@ void TrackManager::moveNode(TrackId trackId, int fromIndex, int toIndex) {
 
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
-        if ((track->type == TrackType::Aux || track->type == TrackType::Group) &&
+        if ((track->type == TrackType::Aux || track->type == TrackType::Group ||
+             track->type == TrackType::Master) &&
             device.isInstrument) {
             DBG("Cannot add instrument plugin to non-instrument track");
             return INVALID_DEVICE_ID;
@@ -922,7 +923,8 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device,
                                         int insertIndex) {
     if (auto* track = getTrack(trackId)) {
-        if ((track->type == TrackType::Aux || track->type == TrackType::Group) &&
+        if ((track->type == TrackType::Aux || track->type == TrackType::Group ||
+             track->type == TrackType::Master) &&
             device.isInstrument) {
             DBG("Cannot add instrument plugin to non-instrument track");
             return INVALID_DEVICE_ID;

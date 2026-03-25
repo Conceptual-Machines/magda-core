@@ -8,6 +8,9 @@ MidiChordEnginePlugin::MidiChordEnginePlugin(const te::PluginCreationInfo& info)
     : te::Plugin(info) {
     for (auto& n : heldNotes_)
         n.store(0, std::memory_order_relaxed);
+    // Start timer here as fallback — initialise() may not be called
+    // if the graph isn't rebuilt after plugin insertion.
+    startTimerHz(30);
 }
 
 MidiChordEnginePlugin::~MidiChordEnginePlugin() {
@@ -132,26 +135,26 @@ void MidiChordEnginePlugin::runDetection() {
 
     if (heldNotes.empty()) {
         std::lock_guard<std::mutex> lock(stateMutex_);
-        if (!currentChord_.displayName.isEmpty()) {
+        if (currentChord_.name.isNotEmpty()) {
             currentChord_ = {};
             listeners_.call(&Listener::chordChanged, this);
         }
         return;
     }
 
-    // Run detection
     auto& engine = magda::music::ChordEngine::getInstance();
     auto detected = engine.smartDetect(heldNotes);
 
-    if (detected.displayName.isEmpty())
+    if (detected.name.isEmpty() || detected.name == "none" || detected.name == "unknown")
         return;
 
     std::lock_guard<std::mutex> lock(stateMutex_);
 
-    bool chordChanged = detected.displayName != currentChord_.displayName;
+    bool chordChanged = detected.getDisplayName() != currentChord_.getDisplayName();
     currentChord_ = detected;
 
     if (chordChanged) {
+        DBG("MidiChordEngine: " << detected.getDisplayName());
         // Add to history
         chordHistory_.push_back(detected);
         if (chordHistory_.size() > MAX_CHORD_HISTORY)
@@ -190,7 +193,7 @@ void MidiChordEnginePlugin::runDetection() {
 
 juce::String MidiChordEnginePlugin::getCurrentChordName() const {
     std::lock_guard<std::mutex> lock(stateMutex_);
-    return currentChord_.displayName;
+    return currentChord_.getDisplayName();
 }
 
 magda::music::Chord MidiChordEnginePlugin::getCurrentChord() const {

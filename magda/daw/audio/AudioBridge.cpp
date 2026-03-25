@@ -1141,6 +1141,12 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
             // Check if this is a MIDI input device
             if (auto* midiDevice =
                     dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+                // Skip TE's virtual "All MIDI Ins" aggregate device — we're already
+                // routing each physical device individually, so including it would
+                // duplicate every MIDI message.
+                if (midiDevice->getName() == "All MIDI Ins")
+                    continue;
+
                 // Make sure the device is enabled
                 if (!midiDevice->isEnabled()) {
                     midiDevice->setEnabled(true);

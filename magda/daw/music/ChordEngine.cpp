@@ -246,11 +246,28 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
 }
 
 Chord ChordEngine::smartDetect(const std::vector<ChordNote>& notes) const {
-    if (notes.size() <= 3)
-        return detect(notes);
-    if (isPolychordCandidate(notes))
-        return detectPolychord(notes);
-    return detect(notes);
+    // Deduplicate by pitch class, keeping highest velocity for each
+    std::vector<ChordNote> unique;
+    for (const auto& n : notes) {
+        int pc = n.noteNumber % 12;
+        bool found = false;
+        for (auto& u : unique) {
+            if (u.noteNumber % 12 == pc) {
+                if (n.velocity > u.velocity)
+                    u = n;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            unique.push_back(n);
+    }
+
+    if (unique.size() <= 3)
+        return detect(unique);
+    if (isPolychordCandidate(unique))
+        return detectPolychord(unique);
+    return detect(unique);
 }
 
 Chord ChordEngine::detectPolychord(const std::vector<ChordNote>& notes) const {
