@@ -104,6 +104,11 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
         return suggestionParams_;
     }
 
+    /** Suppress detection (e.g. during chord preview playback). */
+    void setDetectionSuppressed(bool suppressed) {
+        detectionSuppressed_.store(suppressed, std::memory_order_relaxed);
+    }
+
     /** Clear chord history and reset detection state. */
     void clearHistory();
 
@@ -146,6 +151,9 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     // Debounce: wait for held-note count to stabilise before detecting
     int lastSnapshotNoteCount_ = 0;  // message thread only
     int debounceCountdown_ = 0;      // message thread only
+
+    // Suppress detection during preview playback
+    std::atomic<bool> detectionSuppressed_{false};
 
     // --- Message-thread state ---
     magda::music::ChordSuggestionEngine suggestionEngine_;

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "TypeIds.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
 #include "music/ChordEngine.hpp"
 #include "music/Scales.hpp"
@@ -94,7 +95,8 @@ class ChordPanelContent : public juce::Component,
     void paint(juce::Graphics& g) override;
     void resized() override;
 
-    void setChordEngine(magda::daw::audio::MidiChordEnginePlugin* plugin);
+    void setChordEngine(magda::daw::audio::MidiChordEnginePlugin* plugin,
+                        magda::TrackId trackId = magda::INVALID_TRACK_ID);
     void toggleScaleSelection(ScaleBlockComponent* block);
     void showScalePopup(const magda::music::ScaleWithChords& scale, juce::Component* source);
 
@@ -114,6 +116,10 @@ class ChordPanelContent : public juce::Component,
     void updateScaleFilterPitchClasses();
 
     magda::daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
+    magda::TrackId trackId_ = magda::INVALID_TRACK_ID;
+
+    void previewChord(const magda::music::Chord& chord);
+    void stopPreview();
 
     // Cached display state
     juce::String currentChord_;
@@ -141,6 +147,9 @@ class ChordPanelContent : public juce::Component,
     std::unique_ptr<magda::SvgButton> scaleFilterBtn_;
     std::unique_ptr<juce::TextButton> explorerBtn_;
     std::unique_ptr<juce::TextButton> clearHistoryBtn_;
+
+    // Preview state
+    std::vector<int> previewingNotes_;  // MIDI note numbers currently sounding
 
     // Column areas (computed in resized, used in paint for headers)
     juce::Rectangle<int> detectionCol_;

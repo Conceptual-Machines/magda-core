@@ -42,6 +42,10 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (!fc.bufferForMidiMessages)
         return;
 
+    // Skip recording during preview playback
+    if (detectionSuppressed_.load(std::memory_order_relaxed))
+        return;
+
     const double blockTimeSeconds = static_cast<double>(fc.bufferStartSample) / sampleRate_;
 
     for (const auto& msg : *fc.bufferForMidiMessages) {

@@ -793,7 +793,7 @@ void BottomPanel::updateContentBasedOnSelection() {
         if (wantChord) {
             ensureChordPanelCreated();
             auto* ce = findChordEngine(midiTrackId);
-            chordPanel_->setChordEngine(ce);
+            chordPanel_->setChordEngine(ce, midiTrackId);
         } else if (chordPanel_) {
             chordPanel_->setChordEngine(nullptr);
         }

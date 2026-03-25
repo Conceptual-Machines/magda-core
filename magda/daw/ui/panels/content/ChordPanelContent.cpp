@@ -1,6 +1,7 @@
 #include "ChordPanelContent.hpp"
 
 #include "BinaryData.h"
+#include "core/TrackManager.hpp"
 #include "ui/components/chord/ChordBlockComponent.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -198,18 +199,61 @@ ChordPanelContent::ChordPanelContent() {
 
 ChordPanelContent::~ChordPanelContent() {
     stopTimer();
+    stopPreview();
     if (chordPlugin_)
         chordPlugin_->removeListener(this);
 }
 
-void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin* plugin) {
+void ChordPanelContent::previewChord(const magda::music::Chord& chord) {
+    stopPreview();
+    if (trackId_ == magda::INVALID_TRACK_ID || chord.notes.empty())
+        return;
+
+    // Transpose to a reasonable range if notes are too low/high.
+    // Find the average MIDI note and shift so it's near middle C (60).
+    int sum = 0;
+    for (const auto& note : chord.notes)
+        sum += note.noteNumber;
+    int avg = sum / static_cast<int>(chord.notes.size());
+    int shift = 0;
+    if (avg < 48)
+        shift = ((60 - avg) / 12) * 12;  // shift up in octaves
+    else if (avg > 84)
+        shift = -((avg - 60) / 12) * 12;  // shift down in octaves
+
+    if (chordPlugin_)
+        chordPlugin_->setDetectionSuppressed(true);
+
+    for (const auto& note : chord.notes) {
+        int n = std::clamp(note.noteNumber + shift, 0, 127);
+        magda::TrackManager::getInstance().previewNote(trackId_, n, 100, true);
+        previewingNotes_.push_back(n);
+    }
+}
+
+void ChordPanelContent::stopPreview() {
+    if (previewingNotes_.empty() || trackId_ == magda::INVALID_TRACK_ID)
+        return;
+    for (int noteNum : previewingNotes_)
+        magda::TrackManager::getInstance().previewNote(trackId_, noteNum, 0, false);
+    previewingNotes_.clear();
+
+    if (chordPlugin_)
+        chordPlugin_->setDetectionSuppressed(false);
+}
+
+void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin* plugin,
+                                       magda::TrackId trackId) {
     if (chordPlugin_ == plugin)
         return;
+
+    stopPreview();
 
     if (chordPlugin_)
         chordPlugin_->removeListener(this);
 
     chordPlugin_ = plugin;
+    trackId_ = trackId;
     currentChord_.clear();
     detectedKey_.clear();
     recentChords_.clear();
@@ -352,6 +396,8 @@ void ChordPanelContent::rebuildSuggestionBlocks() {
     for (const auto& item : suggestions_) {
         auto block = std::make_unique<ChordBlockComponent>(item.chord);
         block->setDegreeLabel(item.degree);
+        block->onClicked = [this](const magda::music::Chord& c) { previewChord(c); };
+        block->onReleased = [this] { stopPreview(); };
         addAndMakeVisible(block.get());
         suggestionBlocks_.push_back(std::move(block));
     }
@@ -366,9 +412,11 @@ void ChordPanelContent::rebuildHistoryBlocks() {
         return;
 
     auto history = chordPlugin_->getRecentChords();
-    int start = std::max(0, static_cast<int>(history.size()) - 5);
+    int start = std::max(0, static_cast<int>(history.size()) - 8);
     for (int i = start; i < static_cast<int>(history.size()); ++i) {
         auto block = std::make_unique<ChordBlockComponent>(history[static_cast<size_t>(i)]);
+        block->onClicked = [this](const magda::music::Chord& c) { previewChord(c); };
+        block->onReleased = [this] { stopPreview(); };
         addAndMakeVisible(block.get());
         historyBlocks_.push_back(std::move(block));
     }

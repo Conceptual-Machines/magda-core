@@ -44,11 +44,21 @@ void ChordBlockComponent::paint(juce::Graphics& g) {
 
 void ChordBlockComponent::mouseDown(const juce::MouseEvent& /*e*/) {
     dragging_ = false;
+    if (onClicked)
+        onClicked(chord_);
+}
+
+void ChordBlockComponent::mouseUp(const juce::MouseEvent& /*e*/) {
+    if (!dragging_ && onReleased)
+        onReleased();
 }
 
 void ChordBlockComponent::mouseDrag(const juce::MouseEvent& e) {
     if (!dragging_ && e.getDistanceFromDragStart() > 4) {
         dragging_ = true;
+        // Stop preview when drag starts
+        if (onReleased)
+            onReleased();
 
         auto* container = juce::DragAndDropContainer::findParentDragContainerFor(this);
         if (!container)

@@ -1064,10 +1064,15 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // Header layout: [Macro] [M] [Name] [UI] [...] [gain slider] [SC] [MO] [on] [X]
     // Note: delete (X) is handled by NodeComponent on the right
 
-    macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-    headerArea.removeFromLeft(4);
-    modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
-    headerArea.removeFromLeft(4);
+    if (device_.deviceType != magda::DeviceType::MIDI) {
+        macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+        headerArea.removeFromLeft(4);
+        modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+        headerArea.removeFromLeft(4);
+    } else {
+        macroButton_->setVisible(false);
+        modButton_->setVisible(false);
+    }
 
     // Power button on the right (before delete which is handled by parent)
     onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
@@ -1134,13 +1139,14 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     uiButton_->setVisible(!isInternalDevice());
     area.removeFromTop(4);
 
+    bool showModMacro = device_.deviceType != magda::DeviceType::MIDI;
     macroButton_->setBounds(
         area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    macroButton_->setVisible(true);
+    macroButton_->setVisible(showModMacro);
     area.removeFromTop(4);
     modButton_->setBounds(
         area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    modButton_->setVisible(true);
+    modButton_->setVisible(showModMacro);
 
     // Multi-out button (only if plugin is multi-out)
     if (device_.multiOut.isMultiOut && multiOutButton_) {
@@ -2417,10 +2423,16 @@ void DeviceSlotComponent::createCustomUI() {
                 auto plugin = bridge->getPlugin(device_.id);
                 if (auto* chordPlugin =
                         dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
-                    chordEngineUI_->setChordEngine(chordPlugin);
+                    chordEngineUI_->setChordEngine(chordPlugin, nodePath_.trackId);
                 }
             }
         }
+    }
+
+    // MIDI-only plugins have no mappable parameters — hide mod/macro buttons
+    if (device_.deviceType == magda::DeviceType::MIDI) {
+        modButton_->setVisible(false);
+        macroButton_->setVisible(false);
     }
 }
 

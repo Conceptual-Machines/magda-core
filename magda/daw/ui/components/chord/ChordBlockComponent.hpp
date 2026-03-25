@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
+
 #include "music/ChordTypes.hpp"
 
 namespace magda::daw::ui {
@@ -22,7 +24,13 @@ class ChordBlockComponent : public juce::Component {
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
+
+    /** Called on click (not drag). */
+    std::function<void(const magda::music::Chord&)> onClicked;
+    /** Called on mouse release (for stopping preview). */
+    std::function<void()> onReleased;
 
     const magda::music::Chord& getChord() const {
         return chord_;
