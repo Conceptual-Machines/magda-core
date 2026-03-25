@@ -30,7 +30,7 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     ~MidiChordEnginePlugin() override;
 
     static const char* getPluginName() {
-        return "MIDI Chord Engine";
+        return "Chord Engine";
     }
     static const char* xmlTypeName;
 

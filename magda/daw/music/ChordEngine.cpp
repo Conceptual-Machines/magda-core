@@ -213,11 +213,36 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
                         }
                     }
 
-                    int baseScore = isExactMatch ? 10000 : static_cast<int>(similarity * 5000);
-                    int score = baseScore - (actualInversion * 100);
+                    // Weighted scoring: root=3, 3rd=2, 5th=2, extensions=1
+                    int weightedScore = 0;
+                    if (isExactMatch) {
+                        weightedScore = 10000;
+                    } else {
+                        for (size_t i = 0; i < intervals.size(); ++i) {
+                            int chordTone = (rootOffset + intervals[i]) % 12;
+                            bool found = std::find(pitchClasses.begin(), pitchClasses.end(),
+                                                   chordTone) != pitchClasses.end();
+                            if (found) {
+                                if (i == 0)
+                                    weightedScore += 300;  // root
+                                else if (i == 1)
+                                    weightedScore += 200;  // 3rd (or 2nd for sus)
+                                else if (i == 2)
+                                    weightedScore += 200;  // 5th
+                                else
+                                    weightedScore += 100;  // extensions
+                            }
+                        }
+                        // Penalize unmatched input notes (extra notes not in chord)
+                        int extraNotes = static_cast<int>(pitchClasses.size()) -
+                                         static_cast<int>(intersection.size());
+                        weightedScore -= extraNotes * 50;
+                    }
+                    // Prefer root position
+                    weightedScore -= actualInversion * 100;
 
                     candidates.push_back(
-                        {candidateRoot, quality, actualInversion, score, isExactMatch});
+                        {candidateRoot, quality, actualInversion, weightedScore, isExactMatch});
                 }
             }
         }
@@ -236,12 +261,7 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
 
     ChordCandidate best = candidates[0];
 
-    juce::String chordName =
-        ChordUtils::rootToString(best.root) + " " + ChordUtils::qualityToString(best.quality);
-    if (!best.isExactMatch)
-        chordName += "?";
-
-    Chord chord(chordName, heldNotes, actualBassNote, std::nullopt, best.inversion);
+    Chord chord(best.root, best.quality, heldNotes, actualBassNote, std::nullopt, best.inversion);
     return chord;
 }
 

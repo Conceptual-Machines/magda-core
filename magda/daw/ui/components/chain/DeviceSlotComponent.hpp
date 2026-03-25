@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "ChordEngineUI.hpp"
 #include "ChorusUI.hpp"
 #include "CompressorUI.hpp"
 #include "DelayUI.hpp"
@@ -167,7 +168,8 @@ class DeviceSlotComponent : public NodeComponent,
 
   private:
     magda::DeviceInfo device_;
-    bool isDrumGrid_ = false;  // Track if this is a drum grid for custom header painting
+    bool isDrumGrid_ = false;
+    bool isChordEngine_ = false;
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 
@@ -207,6 +209,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<PitchShiftUI> pitchShiftUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
     std::unique_ptr<UtilityUI> utilityUI_;
+    std::unique_ptr<ChordEngineUI> chordEngineUI_;
 
     static constexpr int METER_STRIP_WIDTH = 10;
     magda::LevelMeter levelMeter_;

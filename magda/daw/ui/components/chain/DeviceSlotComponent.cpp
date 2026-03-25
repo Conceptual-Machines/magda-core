@@ -8,6 +8,7 @@
 #include "audio/AudioBridge.hpp"
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
+#include "audio/MidiChordEnginePlugin.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
@@ -28,7 +29,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
     // Custom name and font for drum grid (MPC-style with Microgramma)
     isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
-    isTracktionDevice_ = isInternalDevice() && !isDrumGrid_;
+    isChordEngine_ =
+        device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName);
+    isTracktionDevice_ = isInternalDevice() && !isDrumGrid_ && !isChordEngine_;
     if (isTracktionDevice_) {
         tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
                                                              BinaryData::fadlogotracktion_svgSize);
@@ -474,6 +477,14 @@ void DeviceSlotComponent::timerCallback() {
     if (bridge->getDeviceMetering().getLatestLevels(device_.id, data)) {
         levelMeter_.setLevels(data.peakL, data.peakR);
     }
+
+    // Poll chord engine for current chord name
+    if (chordEngineUI_) {
+        auto plugin = bridge->getPlugin(device_.id);
+        if (auto* chordPlugin = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
+            chordEngineUI_->setChordName(chordPlugin->getCurrentChordName());
+        }
+    }
 }
 
 void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int paramIndex,
@@ -588,6 +599,9 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (utilityUI_) {
         return getTotalWidth(300) + meterExtra;
     }
+    if (chordEngineUI_) {
+        return getTotalWidth(200) + meterExtra;
+    }
     if (samplerUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2) + meterExtra;
     }
@@ -647,7 +661,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_ &&
         !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_ && !chorusUI_ && !phaserUI_ &&
-        !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_ && !utilityUI_) {
+        !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_ && !utilityUI_ && !chordEngineUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
@@ -655,7 +669,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Update custom UI if available
     if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
         reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-        impulseResponseUI_ || utilityUI_) {
+        impulseResponseUI_ || utilityUI_ || chordEngineUI_) {
         updateCustomUI();
     }
 
@@ -776,7 +790,7 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         if (!isInternalDevice() ||
             !(toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ ||
               compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
-              pitchShiftUI_ || impulseResponseUI_ || utilityUI_)) {
+              pitchShiftUI_ || impulseResponseUI_ || utilityUI_ || chordEngineUI_)) {
             float left = static_cast<float>(contentArea.getX() + 2);
             float right = static_cast<float>(lineX);
             int paginationTop = contentArea.getY() + CONTENT_HEADER_HEIGHT;
@@ -815,6 +829,9 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
             // Drum Grid: "MAGDA Drum Grid" in Microgramma
             g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
             g.drawText("MAGDA Drum Grid", textArea, juce::Justification::centredLeft);
+        } else if (isChordEngine_) {
+            g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
+            g.drawText("MAGDA Chord Engine", textArea, juce::Justification::centredLeft);
         } else if (isTracktionDevice_ && tracktionLogo_) {
             // Tracktion devices: TE logo inline + "Tracktion / {device name}"
             constexpr int logoSize = 14;
@@ -884,6 +901,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             impulseResponseUI_->setVisible(false);
         if (utilityUI_)
             utilityUI_->setVisible(false);
+        if (chordEngineUI_)
+            chordEngineUI_->setVisible(false);
         return;
     }
 
@@ -902,7 +921,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     if (isInternalDevice() &&
         (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
          reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-         impulseResponseUI_ || utilityUI_)) {
+         impulseResponseUI_ || utilityUI_ || chordEngineUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
             toneGeneratorUI_->setBounds(contentArea.reduced(4));
@@ -961,6 +980,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             utilityUI_->setBounds(contentArea.reduced(4));
             utilityUI_->setVisible(true);
         }
+        if (chordEngineUI_) {
+            chordEngineUI_->setBounds(contentArea.reduced(4));
+            chordEngineUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -999,6 +1022,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             impulseResponseUI_->setVisible(false);
         if (utilityUI_)
             utilityUI_->setVisible(false);
+        if (chordEngineUI_)
+            chordEngineUI_->setVisible(false);
 
         // Pagination area
         contentArea.removeFromTop(2);
@@ -2389,6 +2414,11 @@ void DeviceSlotComponent::createCustomUI() {
                                                                        value);
         };
         addAndMakeVisible(*utilityUI_);
+        updateCustomUI();
+    } else if (device_.pluginId.containsIgnoreCase(
+                   daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
+        chordEngineUI_ = std::make_unique<ChordEngineUI>();
+        addAndMakeVisible(*chordEngineUI_);
         updateCustomUI();
     }
 }
