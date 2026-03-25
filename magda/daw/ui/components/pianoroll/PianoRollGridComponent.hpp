@@ -25,6 +25,7 @@ namespace magda {
  * - Coordinate conversion (beat <-> pixel, noteNumber <-> y)
  */
 class PianoRollGridComponent : public juce::Component,
+                               public juce::DragAndDropTarget,
                                public ClipManagerListener,
                                public NoteGridHost {
   public:
@@ -205,6 +206,15 @@ class PianoRollGridComponent : public juce::Component,
 
     // Edit cursor click on grid (Alt+click) — position in seconds
     std::function<void(double)> onEditCursorSet;
+
+    // Chord block drop — clipId, beat position, notes (noteNumber + velocity pairs)
+    std::function<void(ClipId, double, std::vector<std::pair<int, int>>)> onChordDropped;
+
+    // DragAndDropTarget
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragEnter(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
   private:
     ClipId clipId_ = INVALID_CLIP_ID;      // Primary selected clip (for backward compatibility)

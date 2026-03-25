@@ -880,20 +880,24 @@ MainWindow::MainComponent::~MainComponent() {
     DBG("    [5h] Destroying loadingOverlay_...");
     loadingOverlay_.reset();
 
-    DBG("    [5i] Destroying mainView...");
+    // Destroy bottomPanel before mainView — BottomPanel has a ScopedListener
+    // on TimelineController (owned by MainView), so it must unregister first.
+    DBG("    [5i] Destroying bottomPanel...");
+    bottomPanel.reset();
+
+    DBG("    [5j] Destroying mainView...");
     mainView.reset();
 
-    DBG("    [5j] Destroying sessionView...");
+    DBG("    [5k] Destroying sessionView...");
     sessionView.reset();
 
-    DBG("    [5k] Destroying mixerView...");
+    DBG("    [5l] Destroying mixerView...");
     mixerView.reset();
 
-    DBG("    [5l] Destroying panels...");
+    DBG("    [5m] Destroying panels...");
     transportPanel.reset();
     leftPanel.reset();
     rightPanel.reset();
-    bottomPanel.reset();
     footerBar.reset();
 
     DBG("    [5m] Destroying resize handles...");

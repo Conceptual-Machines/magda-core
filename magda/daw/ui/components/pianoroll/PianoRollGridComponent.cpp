@@ -1646,4 +1646,59 @@ void PianoRollGridComponent::setEditCursorPosition(double positionSeconds, bool 
     repaint();
 }
 
+// ============================================================================
+// DragAndDropTarget — chord block drops
+// ============================================================================
+
+bool PianoRollGridComponent::isInterestedInDragSource(const SourceDetails& details) {
+    if (auto* obj = details.description.getDynamicObject())
+        return obj->getProperty("type").toString() == "chordBlock";
+    return false;
+}
+
+void PianoRollGridComponent::itemDragEnter(const SourceDetails& /*details*/) {
+    repaint();
+}
+
+void PianoRollGridComponent::itemDragExit(const SourceDetails& /*details*/) {
+    repaint();
+}
+
+void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
+    auto* obj = details.description.getDynamicObject();
+    if (!obj)
+        return;
+
+    if (selectedClipIds_.empty())
+        return;
+
+    // Convert drop position to beat and note
+    auto localPos = getLocalPoint(nullptr, details.localPosition);
+    double beat = pixelToBeat(localPos.x);
+    if (snapEnabled_)
+        beat = snapBeatToGrid(beat);
+
+    // Extract notes from drag data
+    auto* notesVar = obj->getProperties().getVarPointer("notes");
+    if (!notesVar || !notesVar->isArray())
+        return;
+
+    std::vector<std::pair<int, int>> notes;
+    for (int i = 0; i < notesVar->size(); ++i) {
+        auto& pair = (*notesVar)[i];
+        if (pair.isArray() && pair.size() >= 2)
+            notes.emplace_back(static_cast<int>(pair[0]), static_cast<int>(pair[1]));
+    }
+
+    if (notes.empty())
+        return;
+
+    ClipId targetClipId = clipId_;
+    if (targetClipId == INVALID_CLIP_ID && !selectedClipIds_.empty())
+        targetClipId = selectedClipIds_.front();
+
+    if (onChordDropped)
+        onChordDropped(targetClipId, beat, std::move(notes));
+}
+
 }  // namespace magda

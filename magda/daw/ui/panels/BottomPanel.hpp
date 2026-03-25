@@ -124,9 +124,9 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<daw::ui::ChordPanelContent> chordPanel_;
     bool showChordPanel_ = false;
     bool chordPanelCollapsed_ = false;
-    int chordPanelWidth_ = 250;
-    static constexpr int CHORD_MIN_WIDTH = 200;
-    static constexpr int CHORD_MAX_WIDTH = 400;
+    int chordPanelWidth_ = 450;
+    static constexpr int CHORD_MIN_WIDTH = 300;
+    static constexpr int CHORD_MAX_WIDTH = 600;
 
     std::unique_ptr<PropsResizeHandle> chordResizer_;
     std::unique_ptr<magda::SvgButton> chordCollapseButton_;

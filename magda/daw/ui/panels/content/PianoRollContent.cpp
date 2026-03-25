@@ -418,6 +418,24 @@ void PianoRollContent::setupGridCallbacks() {
     gridComponent_->onEditCursorSet = [this](double positionSeconds) {
         setLocalEditCursor(positionSeconds);
     };
+
+    // Handle chord block drops from the chord panel
+    gridComponent_->onChordDropped = [this](magda::ClipId clipId, double beat,
+                                            std::vector<std::pair<int, int>> notes) {
+        if (notes.empty())
+            return;
+
+        double noteLength = gridComponent_->getGridResolutionBeats();
+        std::vector<magda::MidiNote> midiNotes;
+        midiNotes.reserve(notes.size());
+        for (const auto& [noteNumber, velocity] : notes) {
+            midiNotes.push_back({noteNumber, velocity, beat, noteLength});
+        }
+
+        auto cmd = std::make_unique<magda::AddMultipleMidiNotesCommand>(
+            clipId, std::move(midiNotes), "Add chord");
+        magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+    };
 }
 
 // ============================================================================
