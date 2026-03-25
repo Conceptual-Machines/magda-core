@@ -53,7 +53,6 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                                                              std::memory_order_relaxed);
                 heldNoteCount_.store(count + 1, std::memory_order_release);
             }
-
             // Push to FIFO for message-thread processing
             int start1, size1, start2, size2;
             noteFifo_.prepareToWrite(1, start1, size1, start2, size2);
@@ -100,6 +99,20 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
 void MidiChordEnginePlugin::timerCallback() {
     processNoteEvents();
+
+    // Debounce: if held note count changed since last detection, wait
+    // for notes to settle before re-detecting (avoids partial chord snapshots)
+    int count = heldNoteCount_.load(std::memory_order_relaxed);
+    if (count != lastSnapshotNoteCount_) {
+        lastSnapshotNoteCount_ = count;
+        debounceCountdown_ = 2;  // skip 2 timer cycles (~66ms at 30Hz)
+        return;
+    }
+    if (debounceCountdown_ > 0) {
+        --debounceCountdown_;
+        return;
+    }
+
     runDetection();
 }
 
@@ -133,11 +146,18 @@ void MidiChordEnginePlugin::runDetection() {
         heldNotes.push_back({noteNum, 100});
     }
 
-    if (heldNotes.empty())
+    if (heldNotes.empty()) {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        if (currentChord_.name.isNotEmpty()) {
+            currentChord_ = {};
+            // Don't notify — UI uses lastDetectedChord_ for display
+        }
         return;
+    }
 
     auto& engine = magda::music::ChordEngine::getInstance();
     auto detected = engine.smartDetect(heldNotes);
+    magda::music::ChordEngine::finalizeChord(detected);
 
     if (detected.name.isEmpty() || detected.name == "none" || detected.name == "unknown")
         return;
@@ -146,6 +166,7 @@ void MidiChordEnginePlugin::runDetection() {
 
     bool chordChanged = detected.getDisplayName() != currentChord_.getDisplayName();
     currentChord_ = detected;
+    lastDetectedChordName_ = detected.getDisplayName();
 
     if (chordChanged) {
         DBG("MidiChordEngine: " << detected.getDisplayName());
@@ -231,6 +252,11 @@ juce::String MidiChordEnginePlugin::getCurrentChordName() const {
     return currentChord_.getDisplayName();
 }
 
+juce::String MidiChordEnginePlugin::getLastDetectedChordName() const {
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    return lastDetectedChordName_;
+}
+
 magda::music::Chord MidiChordEnginePlugin::getCurrentChord() const {
     std::lock_guard<std::mutex> lock(stateMutex_);
     return currentChord_;
@@ -265,6 +291,7 @@ void MidiChordEnginePlugin::clearHistory() {
     std::lock_guard<std::mutex> lock(stateMutex_);
     chordHistory_.clear();
     currentChord_ = {};
+    lastDetectedChordName_.clear();
     cachedKeyMode_ = std::nullopt;
     cachedSuggestions_.clear();
     cachedScales_.clear();

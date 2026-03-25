@@ -197,12 +197,16 @@ ChordPanelContent::ChordPanelContent() {
 }
 
 ChordPanelContent::~ChordPanelContent() {
-    stopTimer();
+    if (chordPlugin_)
+        chordPlugin_->removeListener(this);
 }
 
 void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin* plugin) {
     if (chordPlugin_ == plugin)
         return;
+
+    if (chordPlugin_)
+        chordPlugin_->removeListener(this);
 
     chordPlugin_ = plugin;
     currentChord_.clear();
@@ -216,28 +220,41 @@ void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin*
     scaleBlocks_.clear();
 
     if (plugin) {
-        startTimerHz(15);
+        plugin->addListener(this);
         syncFooterFromParams();
-    } else {
-        stopTimer();
     }
 
     repaint();
 }
 
-void ChordPanelContent::timerCallback() {
+void ChordPanelContent::chordChanged(magda::daw::audio::MidiChordEnginePlugin*) {
+    // Async because the caller holds stateMutex_ and updateFromPlugin() re-locks it
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
+        if (safeThis)
+            safeThis->updateFromPlugin();
+    });
+}
+
+void ChordPanelContent::keyModeChanged(magda::daw::audio::MidiChordEnginePlugin*) {
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
+        if (safeThis)
+            safeThis->updateFromPlugin();
+    });
+}
+
+void ChordPanelContent::suggestionsChanged(magda::daw::audio::MidiChordEnginePlugin*) {
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
+        if (safeThis)
+            safeThis->updateFromPlugin();
+    });
+}
+
+void ChordPanelContent::updateFromPlugin() {
     if (!chordPlugin_)
         return;
 
     bool needsRepaint = false;
     bool needsLayout = false;
-
-    // Current chord
-    auto chord = chordPlugin_->getCurrentChordName();
-    if (chord != currentChord_) {
-        currentChord_ = chord;
-        needsRepaint = true;
-    }
 
     // Key/mode
     auto keyMode = chordPlugin_->getDetectedKeyMode();
@@ -249,16 +266,23 @@ void ChordPanelContent::timerCallback() {
         needsRepaint = true;
     }
 
-    // Recent chords (last 5)
+    // Recent chords (last 8)
     auto history = chordPlugin_->getRecentChords();
     std::vector<juce::String> names;
-    int start = std::max(0, static_cast<int>(history.size()) - 5);
+    int start = std::max(0, static_cast<int>(history.size()) - 8);
     for (int i = start; i < static_cast<int>(history.size()); ++i)
         names.push_back(history[static_cast<size_t>(i)].getDisplayName());
     if (names != recentChords_) {
         recentChords_ = names;
         rebuildHistoryBlocks();
         needsLayout = true;
+    }
+
+    // Current chord — use last entry from history (persists after note release)
+    auto chord = history.empty() ? juce::String() : history.back().getDisplayName();
+    if (chord != currentChord_) {
+        currentChord_ = chord;
+        needsRepaint = true;
     }
 
     // Suggestions
@@ -296,10 +320,12 @@ void ChordPanelContent::timerCallback() {
         needsLayout = true;
     }
 
-    if (needsLayout)
+    if (needsLayout) {
         resized();
-    else if (needsRepaint)
         repaint();
+    } else if (needsRepaint) {
+        repaint();
+    }
 }
 
 void ChordPanelContent::rebuildSuggestionBlocks() {

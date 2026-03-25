@@ -84,7 +84,8 @@ class ScaleChordsPopup : public juce::Component {
  *   Columns: Chord Detection | Suggestions | Key / Scale
  *   Footer:  [collapse] | novelty / 7ths / 9ths / alt | [explorer]
  */
-class ChordPanelContent : public juce::Component, private juce::Timer {
+class ChordPanelContent : public juce::Component,
+                          private magda::daw::audio::MidiChordEnginePlugin::Listener {
   public:
     ChordPanelContent();
     ~ChordPanelContent() override;
@@ -97,7 +98,12 @@ class ChordPanelContent : public juce::Component, private juce::Timer {
     void showScalePopup(const magda::music::ScaleWithChords& scale, juce::Component* source);
 
   private:
-    void timerCallback() override;
+    // MidiChordEnginePlugin::Listener
+    void chordChanged(magda::daw::audio::MidiChordEnginePlugin*) override;
+    void keyModeChanged(magda::daw::audio::MidiChordEnginePlugin*) override;
+    void suggestionsChanged(magda::daw::audio::MidiChordEnginePlugin*) override;
+
+    void updateFromPlugin();
     void rebuildSuggestionBlocks();
     void rebuildHistoryBlocks();
     void rebuildScaleBlocks();

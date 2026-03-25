@@ -78,6 +78,9 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     /** Current detected chord display name (e.g. "Cmaj7", "Am"). Empty if no chord held. */
     juce::String getCurrentChordName() const;
 
+    /** Last detected chord name — persists after note release for UI display. */
+    juce::String getLastDetectedChordName() const;
+
     /** Current detected chord object. */
     magda::music::Chord getCurrentChord() const;
 
@@ -140,12 +143,17 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     std::atomic<int> heldNoteCount_{0};
     std::array<std::atomic<int>, MAX_HELD_NOTES> heldNotes_{};
 
+    // Debounce: wait for held-note count to stabilise before detecting
+    int lastSnapshotNoteCount_ = 0;  // message thread only
+    int debounceCountdown_ = 0;      // message thread only
+
     // --- Message-thread state ---
     magda::music::ChordSuggestionEngine suggestionEngine_;
     magda::music::KeyModeHistogram keyHistogram_;
     magda::music::ChordEngine::SuggestionParams suggestionParams_;
 
     magda::music::Chord currentChord_;
+    juce::String lastDetectedChordName_;  // persists after note release
     std::vector<magda::music::Chord> chordHistory_;
     static constexpr size_t MAX_CHORD_HISTORY = 64;
 
