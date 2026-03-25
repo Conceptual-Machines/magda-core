@@ -2766,6 +2766,16 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
         } else if (device.pluginId.containsIgnoreCase("meter")) {
             plugin = createLevelMeter(track);
             // No processor for meter - it's just for measurement
+        } else if (device.pluginId.containsIgnoreCase(
+                       daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
+            juce::ValueTree pluginState(te::IDs::PLUGIN);
+            pluginState.setProperty(te::IDs::type, daw::audio::MidiChordEnginePlugin::xmlTypeName,
+                                    nullptr);
+            plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+            if (plugin) {
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
+                // No processor — analysis-only plugin with transparent passthrough
+            }
         } else if (device.pluginId.containsIgnoreCase("delay")) {
             plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, device.pluginState);
             if (plugin) {

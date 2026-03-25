@@ -83,6 +83,7 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
             return new MidiReceivePlugin(info);
         }
         if (type == daw::audio::MidiChordEnginePlugin::xmlTypeName) {
+            DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiChordEnginePlugin");
             return new daw::audio::MidiChordEnginePlugin(info);
         }
         DBG("MagdaEngineBehaviour::createCustomPlugin - unknown type: " << type);
