@@ -8,6 +8,7 @@
 #include "TimelineEvents.hpp"
 #include "TimelineState.hpp"
 #include "TransportStateListener.hpp"
+#include "utils/ScopedListener.hpp"
 
 namespace magda {
 
@@ -75,6 +76,11 @@ class TimelineController {
   public:
     TimelineController();
     ~TimelineController();
+
+    /** Lifetime flag for safe ScopedListener usage across destruction orders. */
+    const LifetimeFlag& getLifetimeFlag() const {
+        return lifetimeFlag_;
+    }
 
     // ===== Global Access =====
 
@@ -216,6 +222,9 @@ class TimelineController {
 
     // Punch in armed: waiting for playhead to reach punch-in point before starting recording
     bool punchArmed_ = false;
+
+    // Lifetime tracking for ScopedListener safety
+    LifetimeFlag lifetimeFlag_;
 
     // Static instance for global access
     static inline TimelineController* currentInstance_ = nullptr;

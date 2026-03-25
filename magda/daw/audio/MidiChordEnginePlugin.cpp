@@ -180,6 +180,23 @@ void MidiChordEnginePlugin::runDetection() {
                 suggestionEngine_.generateSuggestions(recentChords, suggestionParams_);
         }
 
+        // Update cached scales from chord history pitch classes
+        {
+            std::set<int> pitchClasses;
+            for (const auto& chord : chordHistory_) {
+                for (const auto& note : chord.notes)
+                    pitchClasses.insert(note.noteNumber % 12);
+            }
+            if (pitchClasses.size() >= 3) {
+                auto scored = magda::music::detectScalesFromPitchClasses(
+                    pitchClasses, magda::music::getAllScalesWithChordsCached());
+                cachedScales_.clear();
+                int limit = std::min(static_cast<int>(scored.size()), 8);
+                for (int i = 0; i < limit; ++i)
+                    cachedScales_.push_back(scored[static_cast<size_t>(i)].first);
+            }
+        }
+
         listeners_.call(&Listener::chordChanged, this);
         if (keyChanged)
             listeners_.call(&Listener::keyModeChanged, this);
@@ -218,12 +235,21 @@ std::vector<magda::music::ChordEngine::SuggestionItem> MidiChordEnginePlugin::ge
     return cachedSuggestions_;
 }
 
+std::vector<magda::music::ScaleWithChords> MidiChordEnginePlugin::getDetectedScales(
+    int maxResults) const {
+    std::lock_guard<std::mutex> lock(stateMutex_);
+    if (static_cast<int>(cachedScales_.size()) <= maxResults)
+        return cachedScales_;
+    return {cachedScales_.begin(), cachedScales_.begin() + maxResults};
+}
+
 void MidiChordEnginePlugin::clearHistory() {
     std::lock_guard<std::mutex> lock(stateMutex_);
     chordHistory_.clear();
     currentChord_ = {};
     cachedKeyMode_ = std::nullopt;
     cachedSuggestions_.clear();
+    cachedScales_.clear();
     suggestionEngine_.reset();
     keyHistogram_.reset();
     listeners_.call(&Listener::chordChanged, this);

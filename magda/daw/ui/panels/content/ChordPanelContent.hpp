@@ -3,26 +3,86 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <set>
+#include <string>
 #include <vector>
 
 #include "audio/MidiChordEnginePlugin.hpp"
 #include "music/ChordEngine.hpp"
+#include "music/Scales.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+
+namespace magda {
+class DraggableValueLabel;
+}
 
 namespace magda::daw::ui {
 
 class ChordBlockComponent;
 
 /**
+ * @brief Toggleable scale block — click to select/deselect for suggestion filtering
+ */
+class ScaleBlockComponent : public juce::Component {
+  public:
+    explicit ScaleBlockComponent(const magda::music::ScaleWithChords& scale);
+
+    void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
+    void mouseEnter(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
+
+    const magda::music::ScaleWithChords& getScale() const {
+        return scale_;
+    }
+
+    void setSelected(bool selected) {
+        selected_ = selected;
+        repaint();
+    }
+    bool isSelected() const {
+        return selected_;
+    }
+
+  private:
+    magda::music::ScaleWithChords scale_;
+    bool selected_ = false;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScaleBlockComponent)
+};
+
+/**
+ * @brief Modal popup showing diatonic chord blocks from a scale
+ */
+class ScaleChordsPopup : public juce::Component {
+  public:
+    ScaleChordsPopup(const magda::music::ScaleWithChords& scale);
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    void mouseDown(const juce::MouseEvent& e) override;
+
+    void showAt(juce::Component* parent, juce::Rectangle<int> targetArea);
+    std::string getScaleName() const {
+        return scale_.name;
+    }
+
+  private:
+    magda::music::ScaleWithChords scale_;
+    std::vector<std::unique_ptr<ChordBlockComponent>> chordBlocks_;
+    void inputAttemptWhenModal() override;
+    void dismiss();
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScaleChordsPopup)
+};
+
+/**
  * @brief Chord analysis side panel for the bottom panel
  *
- * Three-column layout:
- *   1. Chord Detection — current chord (large), recent history (last 5)
- *   2. Suggestions — draggable chord blocks from the engine
- *   3. Key / Scale — detected key/mode display
- *
- * Chord blocks are draggable onto the piano roll to create MIDI notes.
+ * Three-column layout with footer toolbar:
+ *   Columns: Chord Detection | Suggestions | Key / Scale
+ *   Footer:  [collapse] | novelty / 7ths / 9ths / alt | [explorer]
  */
 class ChordPanelContent : public juce::Component, private juce::Timer {
   public:
@@ -32,13 +92,18 @@ class ChordPanelContent : public juce::Component, private juce::Timer {
     void paint(juce::Graphics& g) override;
     void resized() override;
 
-    /** Set the chord engine plugin to read state from. nullptr to disconnect. */
     void setChordEngine(magda::daw::audio::MidiChordEnginePlugin* plugin);
+    void toggleScaleSelection(ScaleBlockComponent* block);
+    void showScalePopup(const magda::music::ScaleWithChords& scale, juce::Component* source);
 
   private:
     void timerCallback() override;
     void rebuildSuggestionBlocks();
     void rebuildHistoryBlocks();
+    void rebuildScaleBlocks();
+    void setupFooterControls();
+    void syncFooterFromParams();
+    void updateScaleFilterPitchClasses();
 
     magda::daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
 
@@ -47,10 +112,24 @@ class ChordPanelContent : public juce::Component, private juce::Timer {
     juce::String detectedKey_;
     std::vector<juce::String> recentChords_;
     std::vector<magda::music::ChordEngine::SuggestionItem> suggestions_;
+    std::vector<magda::music::ScaleWithChords> detectedScales_;
+    std::set<std::string> selectedScaleNames_;  // persists across rebuilds
 
-    // Child components — chord blocks
+    // Child components — chord blocks and scale blocks
     std::vector<std::unique_ptr<ChordBlockComponent>> suggestionBlocks_;
     std::vector<std::unique_ptr<ChordBlockComponent>> historyBlocks_;
+    std::vector<std::unique_ptr<ScaleBlockComponent>> scaleBlocks_;
+
+    // Active popup
+    std::unique_ptr<ScaleChordsPopup> activePopup_;
+
+    // Footer controls
+    std::unique_ptr<magda::DraggableValueLabel> noveltyLabel_;
+    std::unique_ptr<juce::TextButton> add7thsBtn_;
+    std::unique_ptr<juce::TextButton> add9thsBtn_;
+    std::unique_ptr<juce::TextButton> addAltBtn_;
+    std::unique_ptr<juce::TextButton> scaleFilterBtn_;
+    std::unique_ptr<juce::TextButton> explorerBtn_;
 
     // Column areas (computed in resized, used in paint for headers)
     juce::Rectangle<int> detectionCol_;
@@ -63,6 +142,7 @@ class ChordPanelContent : public juce::Component, private juce::Timer {
     static constexpr int BLOCK_HEIGHT = 32;
     static constexpr int BLOCK_GAP = 4;
     static constexpr int PADDING = 8;
+    static constexpr int FOOTER_HEIGHT = 26;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordPanelContent)
 };

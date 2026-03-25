@@ -315,50 +315,48 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
     diatonicCandidates = filterRecentChords(diatonicCandidates, recentChords);
     nonDiatonicCandidates = filterRecentChords(nonDiatonicCandidates, recentChords);
 
-    // Filter candidates based on detected scales, respecting novelty parameter
+    // Filter candidates based on scales, respecting novelty parameter
     if (params.useScaleFiltering) {
-        auto detectedScales =
-            getTopDetectedScales(3, params.novelty);  // Get top 3 scales (novelty-aware)
-        if (!detectedScales.empty() && params.novelty < 0.8f) {
-            // Scale filtering strength decreases with novelty
-            // novelty=0.0: full filtering, novelty=0.8+: no filtering
+        // Use explicit pitch classes from UI selection, or auto-detect
+        std::set<int> allowedPitchClasses;
 
+        if (!params.explicitScalePitchClasses.empty()) {
+            allowedPitchClasses = params.explicitScalePitchClasses;
+        } else {
+            auto detectedScales =
+                getTopDetectedScales(3, params.novelty);  // Get top 3 scales (novelty-aware)
+            for (const auto& [scaleRoot, scaleName] : detectedScales) {
+                int scaleRootSemitone = noteToSemitone(scaleRoot);
+                if (scaleRootSemitone < 0)
+                    continue;
+
+                const auto& allScales = getAllScalesWithChordsCached();
+                for (const auto& scale : allScales) {
+                    if (juce::String(scale.name) == scaleName &&
+                        scale.rootNote % 12 == scaleRootSemitone) {
+                        for (int pitch : scale.pitches) {
+                            allowedPitchClasses.insert(pitch % 12);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!allowedPitchClasses.empty() && params.novelty < 0.8f) {
             float filterStrength =
                 1.0f - (params.novelty / 0.8f);  // 1.0 at novelty=0, 0.0 at novelty=0.8
 
-            if (filterStrength > 0.2f) {  // Apply filtering if strength > 20%
-                // Build set of scale pitch classes for filtering
-                // Collect all pitch classes from detected scales
-                std::set<int> allowedPitchClasses;
-                for (const auto& [scaleRoot, scaleName] : detectedScales) {
-                    int scaleRootSemitone = noteToSemitone(scaleRoot);
-                    if (scaleRootSemitone < 0)
-                        continue;
-
-                    // Try to find the scale in cached scales
-                    const auto& allScales = getAllScalesWithChordsCached();
-                    for (const auto& scale : allScales) {
-                        if (juce::String(scale.name) == scaleName &&
-                            scale.rootNote % 12 == scaleRootSemitone) {
-                            for (int pitch : scale.pitches) {
-                                allowedPitchClasses.insert(pitch % 12);
-                            }
-                            break;
-                        }
-                    }
-                }
-
+            if (filterStrength > 0.2f) {
                 auto filterByPitchClasses = [&](const std::vector<SuggestionItem>& candidates) {
                     if (allowedPitchClasses.empty())
                         return candidates;
                     std::vector<SuggestionItem> filtered;
                     for (const auto& candidate : candidates) {
-                        // Always keep polychords
                         if (candidate.source == "polychord") {
                             filtered.push_back(candidate);
                             continue;
                         }
-                        // Check if chord root belongs to scale
                         bool belongs = true;
                         for (const auto& note : candidate.chord.notes) {
                             int pc = note.noteNumber % 12;
@@ -374,15 +372,11 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
                     return filtered;
                 };
 
-                // Always filter diatonic candidates to maintain scale coherence
                 diatonicCandidates = filterByPitchClasses(diatonicCandidates);
 
-                // For non-diatonic candidates, apply progressively lighter filtering
-                if (filterStrength > 0.5f) {  // Strong filtering for low novelty (< 0.4)
+                if (filterStrength > 0.5f) {
                     nonDiatonicCandidates = filterByPitchClasses(nonDiatonicCandidates);
                 }
-                // At medium-high novelty (0.4-0.8), keep non-diatonic candidates unfiltered for
-                // creativity
             }
         }
     }

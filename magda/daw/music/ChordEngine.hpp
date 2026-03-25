@@ -8,6 +8,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -35,6 +36,9 @@ class ChordEngine {
         bool autoRefreshContext = true;
         bool useScaleFiltering = true;
         float inversions = 0.5f;
+        // When non-empty, filter suggestions to these pitch classes
+        // instead of auto-detecting scales. Set by UI scale selection.
+        std::set<int> explicitScalePitchClasses;
     };
 
     static ChordEngine& getInstance();

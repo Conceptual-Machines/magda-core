@@ -7,6 +7,7 @@
 #include "../music/ChordEngine.hpp"
 #include "../music/ChordSuggestionEngine.hpp"
 #include "../music/KeyModeHistogram.hpp"
+#include "../music/ScaleDetector.hpp"
 
 namespace magda::daw::audio {
 
@@ -89,6 +90,9 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     /** Generate chord suggestions based on current context. */
     std::vector<magda::music::ChordEngine::SuggestionItem> getSuggestions() const;
 
+    /** Detected scales sorted by match score (top N). Each entry has the scale and its chords. */
+    std::vector<magda::music::ScaleWithChords> getDetectedScales(int maxResults = 5) const;
+
     /** Suggestion parameters — UI can tweak these. */
     magda::music::ChordEngine::SuggestionParams& getSuggestionParams() {
         return suggestionParams_;
@@ -144,6 +148,7 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
 
     std::optional<std::pair<juce::String, juce::String>> cachedKeyMode_;
     std::vector<magda::music::ChordEngine::SuggestionItem> cachedSuggestions_;
+    std::vector<magda::music::ScaleWithChords> cachedScales_;
 
     mutable std::mutex stateMutex_;  // protects message-thread state reads from UI
 
