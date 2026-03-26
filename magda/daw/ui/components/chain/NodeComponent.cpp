@@ -478,6 +478,7 @@ juce::String NodeComponent::getNodeName() const {
 void NodeComponent::setBypassed(bool bypassed) {
     bypassButton_->setToggleState(!bypassed, juce::dontSendNotification);  // Active = not bypassed
     bypassButton_->setActive(!bypassed);
+    repaint();  // Redraw bypass overlay in paintOverChildren
 }
 
 bool NodeComponent::isBypassed() const {
