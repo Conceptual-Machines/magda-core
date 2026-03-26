@@ -21,6 +21,7 @@ ClipInspector::ClipInspector() {
     initClipPropertiesSection();
     initSessionLaunchSection();
     initPitchSection();
+    initGrooveSection();
     initMixSection();
     initPlaybackSection();
     initFadesSection();

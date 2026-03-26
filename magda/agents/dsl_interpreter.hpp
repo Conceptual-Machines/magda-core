@@ -200,6 +200,13 @@ class Interpreter {
     ClipId getSelectedClipId() const;
     bool ensureNoteSelection();
 
+    // Groove commands
+    bool parseGrooveStatement(Tokenizer& tok);
+    bool executeGrooveNew(const Params& params);
+    bool executeGrooveExtract(const Params& params);
+    bool executeGrooveSet(const Params& params);
+    bool executeGrooveList();
+
     // Parameter parsing
     bool parseParams(Tokenizer& tok, Params& outParams);
     bool parseValue(Tokenizer& tok, std::string& outValue);

@@ -240,8 +240,27 @@ void ClipInspector::resized() {
         }
     }
 
-    // Separator: between Pitch and Mix
-    if (clipMixSectionLabel_.isVisible())
+    // Separator: between Pitch/Groove and Mix
+    if (grooveSectionLabel_.isVisible())
+        addSeparator();
+
+    // Groove section (MIDI clips only)
+    if (grooveSectionLabel_.isVisible()) {
+        grooveSectionLabel_.setBounds(addRow(16));
+        addSpace(4);
+        {
+            auto row = addRow(22);
+            grooveTemplateCombo_.setBounds(row);
+        }
+        addSpace(4);
+        {
+            auto row = addRow(22);
+            grooveStrengthLabel_.setBounds(row.removeFromLeft(55));
+            grooveStrengthValue_->setBounds(row);
+        }
+    }
+
+    if (!grooveSectionLabel_.isVisible() && clipMixSectionLabel_.isVisible())
         addSeparator();
 
     // Mix section (audio clips only) — 3-column: volume/pan/gain, reverse

@@ -913,6 +913,71 @@ void ClipInspector::initPitchSection() {
 }
 
 // ========================================================================
+// Groove/Shuffle/Swing section (MIDI clips only)
+// ========================================================================
+
+void ClipInspector::initGrooveSection() {
+    grooveSectionLabel_.setText("Groove", juce::dontSendNotification);
+    grooveSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    grooveSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    clipPropsContainer_.addChildComponent(grooveSectionLabel_);
+
+    // Groove template combo box
+    grooveTemplateCombo_.setColour(juce::ComboBox::backgroundColourId,
+                                   DarkTheme::getColour(DarkTheme::SURFACE));
+    grooveTemplateCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    grooveTemplateCombo_.setColour(juce::ComboBox::outlineColourId,
+                                   DarkTheme::getColour(DarkTheme::SEPARATOR));
+    grooveTemplateCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
+
+    grooveTemplateCombo_.addItem("None", 1);
+    grooveTemplateCombo_.setSelectedId(1, juce::dontSendNotification);
+
+    grooveTemplateCombo_.onChange = [this]() {
+        if (selectedClipIds_.empty())
+            return;
+        juce::String templateName;
+        int id = grooveTemplateCombo_.getSelectedId();
+        if (id > 1)
+            templateName = grooveTemplateCombo_.getItemText(grooveTemplateCombo_.indexOfItemId(id));
+
+        for (auto cid : selectedClipIds_) {
+            const auto* c = magda::ClipManager::getInstance().getClip(cid);
+            if (c && c->type == magda::ClipType::MIDI) {
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipGrooveTemplateCommand>(cid, templateName));
+            }
+        }
+    };
+    clipPropsContainer_.addChildComponent(grooveTemplateCombo_);
+
+    // Groove strength slider
+    grooveStrengthLabel_.setText("Strength", juce::dontSendNotification);
+    grooveStrengthLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    grooveStrengthLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    grooveStrengthLabel_.setJustificationType(juce::Justification::centredLeft);
+    clipPropsContainer_.addChildComponent(grooveStrengthLabel_);
+
+    grooveStrengthValue_ =
+        std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Percentage);
+    grooveStrengthValue_->setRange(0.0, 1.0, 0.0);
+    grooveStrengthValue_->setDecimalPlaces(0);
+    grooveStrengthValue_->onValueChange = [this]() {
+        if (selectedClipIds_.empty())
+            return;
+        float newStrength = static_cast<float>(grooveStrengthValue_->getValue());
+        for (auto cid : selectedClipIds_) {
+            const auto* c = magda::ClipManager::getInstance().getClip(cid);
+            if (c && c->type == magda::ClipType::MIDI) {
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipGrooveStrengthCommand>(cid, newStrength));
+            }
+        }
+    };
+    clipPropsContainer_.addChildComponent(*grooveStrengthValue_);
+}
+
+// ========================================================================
 // Per-Clip Mix section
 // ========================================================================
 

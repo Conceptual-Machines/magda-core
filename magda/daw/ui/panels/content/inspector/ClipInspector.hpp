@@ -56,6 +56,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     void initClipPropertiesSection();
     void initSessionLaunchSection();
     void initPitchSection();
+    void initGrooveSection();
     void initMixSection();
     void initPlaybackSection();
     void initFadesSection();
@@ -133,6 +134,12 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::Label transientSectionLabel_;
     juce::Label transientSensitivityLabel_;
     std::unique_ptr<magda::DraggableValueLabel> transientSensitivityValue_;
+
+    // Groove/Shuffle/Swing (MIDI clips)
+    juce::Label grooveSectionLabel_;
+    juce::ComboBox grooveTemplateCombo_;
+    juce::Label grooveStrengthLabel_;
+    std::unique_ptr<magda::DraggableValueLabel> grooveStrengthValue_;
 
     // Playback
     juce::TextButton reverseToggle_;

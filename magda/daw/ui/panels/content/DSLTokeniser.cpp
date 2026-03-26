@@ -3,8 +3,8 @@
 namespace magda::daw::ui {
 
 bool DSLTokeniser::isKeyword(const juce::String& token) {
-    static const char* keywords[] = {"track", "filter", "tracks", "clip",  "clips", "notes",
-                                     "fx",    "note",   "true",   "false", nullptr};
+    static const char* keywords[] = {"track", "filter", "tracks", "clip",  "clips",  "notes",
+                                     "fx",    "note",   "true",   "false", "groove", nullptr};
     for (int i = 0; keywords[i]; ++i)
         if (token == keywords[i])
             return true;
@@ -12,10 +12,10 @@ bool DSLTokeniser::isKeyword(const juce::String& token) {
 }
 
 bool DSLTokeniser::isMethod(const juce::String& token) {
-    static const char* methods[] = {"new",          "set",       "add",       "delete",
-                                    "rename",       "select",    "for_each",  "add_chord",
-                                    "add_arpeggio", "transpose", "set_pitch", "set_velocity",
-                                    "quantize",     "resize",    nullptr};
+    static const char* methods[] = {
+        "new",      "set",       "add",          "delete",    "rename",    "select",
+        "for_each", "add_chord", "add_arpeggio", "transpose", "set_pitch", "set_velocity",
+        "quantize", "resize",    "extract",      "list",      nullptr};
     for (int i = 0; methods[i]; ++i)
         if (token == methods[i])
             return true;
@@ -24,10 +24,12 @@ bool DSLTokeniser::isMethod(const juce::String& token) {
 
 bool DSLTokeniser::isParam(const juce::String& token) {
     static const char* params[] = {
-        "name",     "id",        "bar",     "length_bars", "beat",      "length",      "pitch",
-        "velocity", "semitones", "value",   "grid",        "volume_db", "pan",         "mute",
-        "solo",     "root",      "quality", "inversion",   "step",      "note_length", "pattern",
-        "fill",     "beats",     "format",  "index",       nullptr};
+        "name",         "id",          "bar",        "length_bars", "beat",     "length",
+        "pitch",        "velocity",    "semitones",  "value",       "grid",     "volume_db",
+        "pan",          "mute",        "solo",       "root",        "quality",  "inversion",
+        "step",         "note_length", "pattern",    "fill",        "beats",    "format",
+        "index",        "shifts",      "resolution", "template",    "strength", "parameterized",
+        "notesPerBeat", nullptr};
     for (int i = 0; params[i]; ++i)
         if (token == params[i])
             return true;

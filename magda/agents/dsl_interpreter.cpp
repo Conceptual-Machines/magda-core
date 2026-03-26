@@ -5,7 +5,9 @@
 #include <cmath>
 #include <cstdlib>
 
+#include "../daw/audio/AudioThumbnailManager.hpp"
 #include "../daw/core/ClipManager.hpp"
+#include "../daw/core/ClipPropertyCommands.hpp"
 #include "../daw/core/DeviceInfo.hpp"
 #include "../daw/core/MidiNoteCommands.hpp"
 #include "../daw/core/PluginAlias.hpp"
@@ -390,6 +392,8 @@ bool Interpreter::parseStatement(Tokenizer& tok) {
         return parseTrackStatement(tok);
     else if (t.is("filter"))
         return parseFilterStatement(tok);
+    else if (t.is("groove"))
+        return parseGrooveStatement(tok);
     else if (t.type == TokenType::END_OF_INPUT) {
         return true;
     } else {
@@ -2040,6 +2044,316 @@ bool Interpreter::executeResizeNotes(const Params& params) {
 
     ctx_.addResult("Resized " + juce::String(static_cast<int>(noteSel.noteIndices.size())) +
                    " note(s) to " + juce::String(length, 2) + " beats");
+    return true;
+}
+
+// ============================================================================
+// Groove Commands
+// ============================================================================
+
+bool Interpreter::parseGrooveStatement(Tokenizer& tok) {
+    tok.next();  // consume 'groove'
+
+    if (!tok.peek().is(TokenType::DOT)) {
+        ctx_.setError("Expected '.' after 'groove'");
+        return false;
+    }
+    tok.next();  // consume '.'
+
+    Token method = tok.next();
+    if (method.type != TokenType::IDENTIFIER) {
+        ctx_.setError("Expected method name after 'groove.'");
+        return false;
+    }
+
+    // groove.list() — no params
+    if (method.value == "list") {
+        if (!tok.expect(TokenType::LPAREN) || !tok.expect(TokenType::RPAREN)) {
+            ctx_.setError("Expected '()' after 'groove.list'");
+            return false;
+        }
+        return executeGrooveList();
+    }
+
+    if (!tok.expect(TokenType::LPAREN)) {
+        ctx_.setError("Expected '(' after 'groove." + juce::String(method.value) + "'");
+        return false;
+    }
+
+    Params params;
+    if (!parseParams(tok, params))
+        return false;
+
+    if (!tok.expect(TokenType::RPAREN)) {
+        ctx_.setError("Expected ')' after groove parameters");
+        return false;
+    }
+
+    if (method.value == "new")
+        return executeGrooveNew(params);
+    else if (method.value == "extract")
+        return executeGrooveExtract(params);
+    else if (method.value == "set")
+        return executeGrooveSet(params);
+    else {
+        ctx_.setError("Unknown groove method: " + juce::String(method.value));
+        return false;
+    }
+}
+
+// groove.new(name="My Swing", notesPerBeat=4, shifts="0.0,0.15,-0.05,0.4", parameterized=true)
+bool Interpreter::executeGrooveNew(const Params& params) {
+    auto name = params.get("name");
+    if (name.empty()) {
+        ctx_.setError("groove.new requires 'name' parameter");
+        return false;
+    }
+
+    auto shiftsStr = params.get("shifts");
+    if (shiftsStr.empty()) {
+        ctx_.setError("groove.new requires 'shifts' parameter (comma-separated lateness values)");
+        return false;
+    }
+
+    int notesPerBeat = params.getInt("notesPerBeat", 2);
+    bool parameterized = params.getBool("parameterized", true);
+
+    // Parse shifts string: "0.0,0.15,-0.05,0.4"
+    juce::StringArray shiftTokens;
+    shiftTokens.addTokens(juce::String(shiftsStr), ",", "");
+
+    if (shiftTokens.isEmpty()) {
+        ctx_.setError("groove.new: 'shifts' must contain at least one value");
+        return false;
+    }
+
+    // Get TE engine
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
+    if (!teWrapper || !teWrapper->getEngine()) {
+        ctx_.setError("Audio engine not available");
+        return false;
+    }
+
+    // Build GrooveTemplate
+    tracktion::GrooveTemplate groove;
+    groove.setName(juce::String(name));
+    groove.setNumberOfNotes(shiftTokens.size());
+    groove.setNotesPerBeat(notesPerBeat);
+    groove.setParameterized(parameterized);
+
+    for (int i = 0; i < shiftTokens.size(); ++i) {
+        float lateness = shiftTokens[i].trim().getFloatValue();
+        groove.setLatenessProportion(i, lateness, 1.0f);
+    }
+
+    // Register with TE's GrooveTemplateManager
+    auto& gtm = teWrapper->getEngine()->getGrooveTemplateManager();
+    gtm.useParameterizedGrooves(true);
+
+    // Check if template with this name already exists and update it
+    int existingIndex = -1;
+    for (int i = 0; i < gtm.getNumTemplates(); ++i) {
+        if (gtm.getTemplateName(i) == juce::String(name)) {
+            existingIndex = i;
+            break;
+        }
+    }
+
+    if (existingIndex >= 0) {
+        gtm.updateTemplate(existingIndex, groove);
+        ctx_.addResult("Updated groove template: " + juce::String(name));
+    } else {
+        // Add as new template (use index -1 to append)
+        gtm.updateTemplate(-1, groove);
+        ctx_.addResult("Created groove template: " + juce::String(name) + " (" +
+                       juce::String(shiftTokens.size()) + " steps, " + juce::String(notesPerBeat) +
+                       " per beat)");
+    }
+
+    return true;
+}
+
+// groove.extract(clip=0, resolution=16, name="Extracted Groove")
+bool Interpreter::executeGrooveExtract(const Params& params) {
+    auto name = params.get("name", "Extracted Groove");
+    int resolution = params.getInt("resolution", 16);  // 8 or 16
+
+    // Get clip — use param or current selection
+    ClipId clipId;
+    if (params.has("clip")) {
+        int clipIndex = params.getInt("clip", 0);
+        // Find clip by index on current track
+        if (ctx_.currentTrackId < 0) {
+            ctx_.setError(
+                "groove.extract: no track in context. Use track(...).groove.extract(...)");
+            return false;
+        }
+        auto& cm = ClipManager::getInstance();
+        auto trackClips = cm.getClipsOnTrack(ctx_.currentTrackId);
+        if (clipIndex < 0 || clipIndex >= static_cast<int>(trackClips.size())) {
+            ctx_.setError("groove.extract: clip index " + juce::String(clipIndex) +
+                          " out of range");
+            return false;
+        }
+        clipId = trackClips[static_cast<size_t>(clipIndex)];
+    } else {
+        clipId = getSelectedClipId();
+    }
+
+    if (clipId == INVALID_CLIP_ID) {
+        ctx_.setError("groove.extract: no clip selected or specified");
+        return false;
+    }
+
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || clip->type != ClipType::Audio) {
+        ctx_.setError("groove.extract: clip must be an audio clip");
+        return false;
+    }
+
+    // Get cached transients
+    auto& thumbnailManager = AudioThumbnailManager::getInstance();
+    const auto* transients = thumbnailManager.getCachedTransients(clip->audioFilePath);
+    if (!transients || transients->isEmpty()) {
+        ctx_.setError("groove.extract: no transients detected for this clip. "
+                      "Enable warp or detect transients first.");
+        return false;
+    }
+
+    // Determine clip parameters
+    double clipBPM = clip->sourceBPM > 0.0 ? clip->sourceBPM : 120.0;
+    double beatDuration = 60.0 / clipBPM;  // seconds per beat
+    double clipStartSec = clip->offset;    // source offset
+
+    // notesPerBeat: 2 for 8th notes, 4 for 16th notes
+    int notesPerBeat = (resolution >= 16) ? 4 : 2;
+    double gridStepSec = beatDuration / notesPerBeat;
+
+    // Compute how many grid steps fit in the clip
+    double clipLengthSec = clip->lengthBeats * beatDuration;
+    int numSteps = static_cast<int>(std::round(clipLengthSec / gridStepSec));
+    if (numSteps < 2) {
+        ctx_.setError("groove.extract: clip too short for groove extraction");
+        return false;
+    }
+
+    // For each transient, find the nearest grid position and compute delta
+    std::vector<float> latenesses(static_cast<size_t>(numSteps), 0.0f);
+    std::vector<bool> hasTransient(static_cast<size_t>(numSteps), false);
+
+    for (int i = 0; i < transients->size(); ++i) {
+        double transientSec = (*transients)[i] - clipStartSec;
+        if (transientSec < 0.0 || transientSec >= clipLengthSec)
+            continue;
+
+        // Find nearest grid position
+        double gridIndex = transientSec / gridStepSec;
+        int nearestGrid = static_cast<int>(std::round(gridIndex));
+        if (nearestGrid < 0 || nearestGrid >= numSteps)
+            continue;
+
+        // Delta = how far the transient is from the grid, as proportion of grid step
+        double delta = (transientSec - nearestGrid * gridStepSec) / gridStepSec;
+        latenesses[static_cast<size_t>(nearestGrid)] = static_cast<float>(delta);
+        hasTransient[static_cast<size_t>(nearestGrid)] = true;
+    }
+
+    // Determine repeating pattern length (try to find the smallest cycle)
+    // Default: use all steps, but try 1 bar (notesPerBeat * beatsPerBar)
+    int beatsPerBar = 4;  // Assume 4/4
+    int stepsPerBar = notesPerBeat * beatsPerBar;
+    int patternLength = (numSteps >= stepsPerBar) ? stepsPerBar : numSteps;
+
+    // Build GrooveTemplate
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
+    if (!teWrapper || !teWrapper->getEngine()) {
+        ctx_.setError("Audio engine not available");
+        return false;
+    }
+
+    tracktion::GrooveTemplate groove;
+    groove.setName(juce::String(name));
+    groove.setNumberOfNotes(patternLength);
+    groove.setNotesPerBeat(notesPerBeat);
+    groove.setParameterized(true);
+
+    for (int i = 0; i < patternLength; ++i) {
+        groove.setLatenessProportion(i, latenesses[static_cast<size_t>(i)], 1.0f);
+    }
+
+    // Register
+    auto& gtm = teWrapper->getEngine()->getGrooveTemplateManager();
+    gtm.useParameterizedGrooves(true);
+    gtm.updateTemplate(-1, groove);
+
+    // Build result summary
+    int transientCount = 0;
+    for (size_t i = 0; i < static_cast<size_t>(patternLength); ++i)
+        if (hasTransient[i])
+            transientCount++;
+
+    ctx_.addResult("Extracted groove '" + juce::String(name) + "' from " +
+                   juce::String(transientCount) + " transients (" + juce::String(patternLength) +
+                   " steps, " + juce::String(notesPerBeat) + " per beat)");
+    return true;
+}
+
+// groove.set(template="Basic 8th Swing", strength=0.8)
+// Applies to current clip context, or clip=0 param
+bool Interpreter::executeGrooveSet(const Params& params) {
+    auto templateName = params.get("template");
+    // strength is optional — only set if provided
+
+    ClipId clipId = getSelectedClipId();
+    if (clipId == INVALID_CLIP_ID) {
+        ctx_.setError("groove.set: no clip in context");
+        return false;
+    }
+
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (!clip || clip->type != ClipType::MIDI) {
+        ctx_.setError("groove.set: clip must be a MIDI clip");
+        return false;
+    }
+
+    if (params.has("template")) {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetClipGrooveTemplateCommand>(clipId, juce::String(templateName)));
+    }
+
+    if (params.has("strength")) {
+        float strength = static_cast<float>(params.getFloat("strength", 0.5));
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetClipGrooveStrengthCommand>(clipId, strength));
+    }
+
+    ctx_.addResult(
+        "Set groove on clip: template=\"" + juce::String(templateName) +
+        "\", strength=" + juce::String(params.getFloat("strength", clip->grooveStrength), 2));
+    return true;
+}
+
+// groove.list() — show all available groove templates
+bool Interpreter::executeGrooveList() {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
+    if (!teWrapper || !teWrapper->getEngine()) {
+        ctx_.setError("Audio engine not available");
+        return false;
+    }
+
+    auto& gtm = teWrapper->getEngine()->getGrooveTemplateManager();
+    auto names = gtm.getTemplateNames();
+
+    if (names.isEmpty()) {
+        ctx_.addResult("No groove templates available");
+    } else {
+        ctx_.addResult("Available groove templates (" + juce::String(names.size()) + "):");
+        for (const auto& n : names)
+            ctx_.addResult("  " + n);
+    }
     return true;
 }
 

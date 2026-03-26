@@ -877,6 +877,28 @@ void ClipManager::setIsReversed(ClipId clipId, bool reversed) {
 }
 
 // ============================================================================
+// Groove/Shuffle/Swing
+// ============================================================================
+
+void ClipManager::setGrooveTemplate(ClipId clipId, const juce::String& templateName) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::MIDI) {
+            clip->grooveTemplate = templateName;
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setGrooveStrength(ClipId clipId, float strength) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::MIDI) {
+            clip->grooveStrength = juce::jlimit(0.0f, 1.0f, strength);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+// ============================================================================
 // Per-Clip Mix
 // ============================================================================
 

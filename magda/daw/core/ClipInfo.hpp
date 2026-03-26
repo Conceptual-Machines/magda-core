@@ -220,6 +220,10 @@ struct ClipInfo {
     double midiOffset = 0.0;   // User-controlled start offset in beats (playback / offset marker)
     double midiTrimOffset = 0.0;  // Left-resize trim offset in beats (content origin on timeline)
 
+    // Groove/Shuffle/Swing (MIDI clips)
+    juce::String grooveTemplate;  // TE groove template name (empty = none)
+    float grooveStrength = 0.0f;  // 0.0–1.0, amount of groove to apply
+
     // Session view properties
     int sceneIndex = -1;  // -1 = not in session view (arrangement only)
 

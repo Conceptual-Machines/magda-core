@@ -539,4 +539,67 @@ class SetClipColourCommand : public UndoableCommand {
     juce::Colour oldColour_, newColour_;
 };
 
+/**
+ * @brief Command for setting clip groove template (supports merging)
+ */
+class SetClipGrooveTemplateCommand : public UndoableCommand {
+  public:
+    SetClipGrooveTemplateCommand(ClipId clipId, const juce::String& newTemplate)
+        : clipId_(clipId), newTemplate_(newTemplate) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldTemplate_ = clip->grooveTemplate;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setGrooveTemplate(clipId_, newTemplate_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setGrooveTemplate(clipId_, oldTemplate_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Groove Template";
+    }
+
+  private:
+    ClipId clipId_;
+    juce::String oldTemplate_, newTemplate_;
+};
+
+/**
+ * @brief Command for setting clip groove strength (supports merging)
+ */
+class SetClipGrooveStrengthCommand : public UndoableCommand {
+  public:
+    SetClipGrooveStrengthCommand(ClipId clipId, float newStrength)
+        : clipId_(clipId), newStrength_(newStrength) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldStrength_ = clip->grooveStrength;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setGrooveStrength(clipId_, newStrength_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setGrooveStrength(clipId_, oldStrength_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Groove Strength";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetClipGrooveStrengthCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newStrength_ = static_cast<const SetClipGrooveStrengthCommand*>(other)->newStrength_;
+    }
+
+  private:
+    ClipId clipId_;
+    float oldStrength_ = 0.0f, newStrength_;
+};
+
 }  // namespace magda

@@ -82,6 +82,12 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     if (clip.midiTrimOffset != 0.0)
         obj->setProperty("midiTrimOffset", clip.midiTrimOffset);
 
+    // Groove/Shuffle/Swing
+    if (clip.grooveTemplate.isNotEmpty())
+        obj->setProperty("grooveTemplate", clip.grooveTemplate);
+    if (clip.grooveStrength > 0.0f)
+        obj->setProperty("grooveStrength", clip.grooveStrength);
+
     // Audio properties (TE-aligned model)
     if (clip.audioFilePath.isNotEmpty()) {
         obj->setProperty("audioFilePath", clip.audioFilePath);
@@ -240,6 +246,11 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     // MIDI offset
     outClip.midiOffset = obj->getProperty("midiOffset");
     outClip.midiTrimOffset = obj->getProperty("midiTrimOffset");
+
+    // Groove/Shuffle/Swing
+    outClip.grooveTemplate = obj->getProperty("grooveTemplate").toString();
+    outClip.grooveStrength =
+        static_cast<float>(static_cast<double>(obj->getProperty("grooveStrength")));
 
     // Audio properties
     auto audioFilePathVar = obj->getProperty("audioFilePath");

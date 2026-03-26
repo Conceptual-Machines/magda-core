@@ -1221,6 +1221,10 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
         midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
     }
 
+    // Groove/Shuffle/Swing
+    midiClipPtr->setGrooveTemplate(clip->grooveTemplate);
+    midiClipPtr->setGrooveStrength(clip->grooveStrength);
+
     // Clear existing notes and rebuild from ClipManager
     auto& sequence = midiClipPtr->getSequence();
     sequence.clear(nullptr);

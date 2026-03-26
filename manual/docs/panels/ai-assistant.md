@@ -142,6 +142,40 @@ Built-in effects: `eq`, `compressor`, `reverb`, `delay`, `chorus`, `phaser`, `fi
 
 Third-party plugins are referenced by name. Use `format="VST3"` or `format="AU"` to disambiguate if needed.
 
+### Groove/Shuffle/Swing
+
+```
+// Create a custom groove template
+groove.new(name="Funky 16ths", notesPerBeat=4,
+           shifts="0.0,0.15,-0.05,0.4,0.0,0.2,-0.1,0.35")
+
+// Extract groove from an audio clip's transients
+groove.extract(clip=0, resolution=16, name="Drum Loop Feel")
+
+// Apply groove to a MIDI clip
+groove.set(template="Basic 8th Swing", strength=0.8)
+
+// List all available groove templates
+groove.list()
+```
+
+| Command | Description |
+|---------|-------------|
+| `groove.new` | Create a custom groove template from lateness values |
+| `groove.extract` | Extract groove from audio clip transients |
+| `groove.set` | Set groove template and strength on current MIDI clip |
+| `groove.list` | Show all available groove templates |
+
+| Parameter | Description |
+|-----------|-------------|
+| `name` | Template name |
+| `notesPerBeat` | Grid resolution: `2` = 8th notes, `4` = 16th notes (default: `2`) |
+| `shifts` | Comma-separated lateness values (`-1.0` to `1.0`, where `0` = on grid) |
+| `parameterized` | `true` if strength slider should scale the groove (default: `true`) |
+| `resolution` | For extract: `8` or `16` (default: `16`) |
+| `template` | For set: groove template name |
+| `strength` | For set: groove amount `0.0`–`1.0` |
+
 ### Selection and Filtering
 
 ```
@@ -182,4 +216,7 @@ track(name="Lead", new=true)
 
 // Add reverb and set volume
 track(name="Lead").fx.add(name="reverb").track.set(volume_db=-6)
+
+// Add swing to the lead
+groove.set(template="Basic 8th Swing", strength=0.6)
 ```
