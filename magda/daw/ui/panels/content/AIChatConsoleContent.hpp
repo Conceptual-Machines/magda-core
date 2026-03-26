@@ -115,6 +115,7 @@ class AIChatConsoleContent : public PanelContent,
 
     void buildAliasList();
     juce::String resolveAliases(const juce::String& text);
+    juce::String rewriteSlashCommand(const juce::String& text);
     void showAutocomplete(const juce::String& filter);
     void hideAutocomplete();
     void insertAlias(const juce::String& alias);

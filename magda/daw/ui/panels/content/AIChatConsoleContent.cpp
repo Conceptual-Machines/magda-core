@@ -428,6 +428,23 @@ juce::String AIChatConsoleContent::resolveAliases(const juce::String& text) {
     return resolved;
 }
 
+juce::String AIChatConsoleContent::rewriteSlashCommand(const juce::String& text) {
+    auto trimmed = text.trimStart();
+
+    // /groove <request> — constrain LLM to groove/swing template operations only
+    if (trimmed.startsWithIgnoreCase("/groove ")) {
+        auto request = trimmed.substring(8).trim();
+        return "[COMMAND: GROOVE] The user wants to create or apply a SWING/GROOVE TEMPLATE "
+               "(timing feel that shifts note playback timing). "
+               "You MUST use ONLY groove.new(), groove.set(), groove.extract(), or groove.list() "
+               "commands. Do NOT create tracks, clips, or notes. "
+               "User request: " +
+               request;
+    }
+
+    return text;
+}
+
 void AIChatConsoleContent::sendMessage(const juce::String& text) {
     // Direct DSL execution — bypass AI agent entirely
     if (text.trimStart().startsWith("/dsl ")) {
@@ -462,6 +479,9 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
     // Resolve @alias mentions to real plugin names before sending to the LLM
     auto resolvedText = resolveAliases(text);
+
+    // Slash-command prefixes: rewrite user message with LLM context hints
+    resolvedText = rewriteSlashCommand(resolvedText);
 
     processing_ = true;
     inputBox_.clear();
