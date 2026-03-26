@@ -20,12 +20,21 @@ start: statement+
 
 statement: track_statement
          | filter_statement
+         | groove_statement
 
 // Track statements
 track_statement: "track" "(" params? ")" chain?
 
 // Filter statements (for bulk operations)
 filter_statement: "filter" "(" "tracks" "," condition ")" chain?
+
+// Groove statements (swing/shuffle templates)
+groove_statement: "groove" "." groove_method
+
+groove_method: "new" "(" params ")"
+             | "extract" "(" params ")"
+             | "set" "(" params ")"
+             | "list" "(" ")"
 
 condition: "track" "." IDENTIFIER "==" value
 
@@ -181,6 +190,21 @@ EXAMPLES (note operations):
   track(id=1).clip.new(length_bars=4).notes.add(pitch=E4, beat=0, length=0.5, velocity=100).notes.add(pitch=G4, beat=0.5, length=0.5, velocity=98).notes.add(pitch=B4, beat=1.0, length=1.0, velocity=102).notes.add(pitch=A4, beat=2.0, length=0.5, velocity=96).notes.add(pitch=G4, beat=2.5, length=0.5, velocity=95).notes.add(pitch=F#4, beat=3.0, length=0.5, velocity=94).notes.add(pitch=E4, beat=3.5, length=0.5, velocity=100)
 
 IMPORTANT: To add multiple notes to the SAME clip, chain .notes.add() calls on a SINGLE statement. Do NOT create a separate clip.new() for each note.
+
+GROOVE/SWING OPERATIONS (timing feel, NOT drum patterns):
+These commands control swing/shuffle timing applied at playback. They do NOT create notes or clips.
+- groove.new(name="My Swing", notesPerBeat=4, shifts="0.0,0.15,-0.05,0.4") - Create a custom groove template. shifts = comma-separated lateness values (-1.0 to 1.0, 0=on grid, positive=late/behind beat, negative=early/ahead). notesPerBeat: 2=8th notes, 4=16th notes.
+- groove.extract(clip=0, resolution=16, name="Loop Feel") - Extract groove from audio clip transients. clip=index on track, resolution=8 or 16.
+- groove.set(template="Basic 8th Swing", strength=0.7) - Apply groove template to current MIDI clip. strength=0.0-1.0.
+- groove.list() - List all available groove templates.
+
+EXAMPLES (groove):
+- "add swing to this clip" -> groove.set(template="Basic 8th Swing", strength=0.5)
+- "create a funky 16th groove" -> groove.new(name="Funky 16ths", notesPerBeat=4, shifts="0.0,0.2,-0.05,0.35,0.0,0.15,-0.1,0.3")
+- "extract the groove from this audio clip" -> groove.extract(clip=0, resolution=16, name="Extracted Feel")
+- "what grooves are available" -> groove.list()
+
+IMPORTANT: "groove" means TIMING/SWING, not a drum pattern. If the user asks for a "drum groove" or "beat", create notes with .notes.add(). If they ask to "add groove/swing/shuffle" to a clip, use groove.set().
 
 NOTE: The DAW state JSON includes "selected_track_id" when a track is selected, and "selected_clip_index" / "selected_clip_track_id" when a clip is selected.
 Use track(id=N) to reference any track. When the user says "this track" or implies the current selection, use the selected_track_id from the state.
