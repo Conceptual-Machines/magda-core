@@ -353,9 +353,6 @@ void ChainPanel::mouseEnter(const juce::MouseEvent&) {
 
 void ChainPanel::mouseWheelMove(const juce::MouseEvent& event,
                                 const juce::MouseWheelDetails& wheel) {
-    DBG("ChainPanel::mouseWheelMove - deltaY=" << wheel.deltaY << " isAltDown="
-                                               << (event.mods.isAltDown() ? "yes" : "no"));
-
     // Option/Alt + scroll wheel = zoom (Cmd+scroll is intercepted by macOS)
     if (event.mods.isAltDown()) {
         float delta = wheel.deltaY > 0 ? ZOOM_STEP : -ZOOM_STEP;

@@ -1,7 +1,10 @@
 #include "ChordPanelContent.hpp"
 
+#include "../../../../agents/openai_client.hpp"
 #include "BinaryData.h"
+#include "core/Config.hpp"
 #include "core/TrackManager.hpp"
+#include "music/ChordEngine.hpp"
 #include "ui/components/chord/ChordBlockComponent.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -189,6 +192,91 @@ void ScaleChordsPopup::showAt(juce::Component* parent, juce::Rectangle<int> targ
 }
 
 // ============================================================================
+// BrowseScaleRowComponent
+// ============================================================================
+
+BrowseScaleRowComponent::BrowseScaleRowComponent(const magda::music::ScaleWithChords& scale)
+    : scale_(scale) {
+    setName("BrowseScaleRow");
+    setRepaintsOnMouseActivity(true);
+}
+
+void BrowseScaleRowComponent::paint(juce::Graphics& g) {
+    auto bounds = getLocalBounds().toFloat();
+
+    float baseAlpha = 0.08f;
+    if (isMouseOver())
+        baseAlpha = 0.2f;
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(baseAlpha));
+    g.fillRoundedRectangle(bounds, 3.0f);
+
+    g.setColour(DarkTheme::getTextColour().withAlpha(0.8f));
+    g.setFont(FontManager::getInstance().getUIFont(10.0f));
+    g.drawText(juce::String(scale_.name), bounds.reduced(6, 0), juce::Justification::centredLeft);
+}
+
+void BrowseScaleRowComponent::resized() {}
+
+void BrowseScaleRowComponent::mouseDown(const juce::MouseEvent&) {
+    // Walk up to ChordPanelContent and show the scale chords popup
+    for (auto* comp = getParentComponent(); comp != nullptr; comp = comp->getParentComponent()) {
+        if (auto* panel = dynamic_cast<ChordPanelContent*>(comp)) {
+            panel->showScalePopup(scale_, this);
+            return;
+        }
+    }
+}
+
+void BrowseScaleRowComponent::mouseEnter(const juce::MouseEvent&) {
+    repaint();
+}
+void BrowseScaleRowComponent::mouseExit(const juce::MouseEvent&) {
+    repaint();
+}
+
+int BrowseScaleRowComponent::getRowHeight() const {
+    return ROW_HEIGHT;
+}
+
+// ============================================================================
+// AIContainerComponent — paints progression names/descriptions over chord blocks
+// ============================================================================
+
+namespace {
+
+// Paints progression names/descriptions; owner pointer + data set externally
+struct AIContainerPaintData {
+    struct Row {
+        juce::String name;
+        juce::String description;
+        juce::Rectangle<int> nameArea;
+        juce::Rectangle<int> descArea;
+    };
+    std::vector<Row> rows;
+};
+
+class AIContainerComponent : public juce::Component {
+  public:
+    AIContainerPaintData paintData;
+
+    void paint(juce::Graphics& g) override {
+        for (auto& row : paintData.rows) {
+            g.setColour(DarkTheme::getAccentColour());
+            g.setFont(FontManager::getInstance().getUIFont(11.0f).boldened());
+            g.drawText(row.name, row.nameArea, juce::Justification::centredLeft);
+
+            if (row.description.isNotEmpty() && !row.descArea.isEmpty()) {
+                g.setColour(DarkTheme::getSecondaryTextColour());
+                g.setFont(FontManager::getInstance().getUIFont(9.5f));
+                g.drawText(row.description, row.descArea, juce::Justification::centredLeft);
+            }
+        }
+    }
+};
+
+}  // anonymous namespace
+
+// ============================================================================
 // ChordPanelContent
 // ============================================================================
 
@@ -198,6 +286,10 @@ ChordPanelContent::ChordPanelContent() {
 }
 
 ChordPanelContent::~ChordPanelContent() {
+    if (aiThread_ && aiThread_->isThreadRunning()) {
+        aiCancelFlag_ = true;
+        aiThread_->stopThread(2000);
+    }
     stopTimer();
     stopPreview();
     if (chordPlugin_)
@@ -244,8 +336,11 @@ void ChordPanelContent::stopPreview() {
 
 void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin* plugin,
                                        magda::TrackId trackId) {
-    if (chordPlugin_ == plugin)
+    if (chordPlugin_ == plugin) {
+        // Plugin unchanged — just update trackId (may arrive late from setNodePath)
+        trackId_ = trackId;
         return;
+    }
 
     stopPreview();
 
@@ -498,6 +593,538 @@ void ChordPanelContent::showScalePopup(const magda::music::ScaleWithChords& scal
     popupPtr->showAt(this, source->getBounds());
 }
 
+// ============================================================================
+// Browse Mode
+// ============================================================================
+
+void ChordPanelContent::enterBrowseMode() {
+    browseMode_ = true;
+
+    // Hide suggestion blocks
+    for (auto& block : suggestionBlocks_)
+        block->setVisible(false);
+
+    // Create key filter buttons (C, C#, D, ... B)
+    if (browseKeyButtons_.empty()) {
+        static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                          "F#", "G",  "G#", "A",  "A#", "B"};
+        for (int i = 0; i < 12; ++i) {
+            auto btn = std::make_unique<juce::TextButton>(noteNames[i]);
+            btn->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+            btn->setClickingTogglesState(true);
+            btn->setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+            btn->setColour(juce::TextButton::buttonOnColourId, DarkTheme::getAccentColour());
+            btn->setColour(juce::TextButton::textColourOffId,
+                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            btn->setColour(juce::TextButton::textColourOnId,
+                           DarkTheme::getColour(DarkTheme::BACKGROUND));
+            btn->onClick = [this, i]() {
+                bool on = browseKeyButtons_[static_cast<size_t>(i)]->getToggleState();
+                // Exclusive toggle: deselect others
+                if (on) {
+                    for (int j = 0; j < 12; ++j) {
+                        if (j != i)
+                            browseKeyButtons_[static_cast<size_t>(j)]->setToggleState(
+                                false, juce::dontSendNotification);
+                    }
+                    browseKeyFilter_ = i;
+                } else {
+                    browseKeyFilter_ = -1;
+                }
+                rebuildBrowseRows();
+            };
+            addAndMakeVisible(btn.get());
+            browseKeyButtons_.push_back(std::move(btn));
+        }
+    } else {
+        for (auto& btn : browseKeyButtons_)
+            btn->setVisible(true);
+    }
+
+    // Create viewport for scrollable scale list
+    if (!browseViewport_) {
+        browseViewport_ = std::make_unique<juce::Viewport>();
+        browseContainer_ = std::make_unique<juce::Component>();
+        browseContainer_->setInterceptsMouseClicks(false, true);
+        browseViewport_->setViewedComponent(browseContainer_.get(), false);
+        browseViewport_->setScrollBarsShown(true, false);
+        addAndMakeVisible(browseViewport_.get());
+    } else {
+        browseViewport_->setVisible(true);
+    }
+
+    explorerBtn_->setButtonText("Back");
+    rebuildBrowseRows();
+    resized();
+    repaint();
+}
+
+void ChordPanelContent::exitBrowseMode() {
+    browseMode_ = false;
+
+    // Hide browse UI
+    for (auto& btn : browseKeyButtons_)
+        btn->setVisible(false);
+    if (browseViewport_)
+        browseViewport_->setVisible(false);
+    for (auto& row : browseRows_)
+        row->setVisible(false);
+
+    // Show suggestion blocks again
+    for (auto& block : suggestionBlocks_)
+        block->setVisible(true);
+
+    explorerBtn_->setButtonText("Browse");
+    resized();
+    repaint();
+}
+
+void ChordPanelContent::rebuildBrowseRows() {
+    // Remove old rows from container
+    for (auto& row : browseRows_)
+        browseContainer_->removeChildComponent(row.get());
+    browseRows_.clear();
+
+    const auto& allScales = magda::music::getAllScalesWithChordsCached();
+
+    for (const auto& scale : allScales) {
+        // Apply key filter
+        if (browseKeyFilter_ >= 0 && scale.rootNote != browseKeyFilter_)
+            continue;
+
+        auto row = std::make_unique<BrowseScaleRowComponent>(scale);
+        browseContainer_->addAndMakeVisible(row.get());
+        browseRows_.push_back(std::move(row));
+    }
+
+    layoutBrowseRows();
+}
+
+void ChordPanelContent::layoutBrowseRows() {
+    if (!browseContainer_)
+        return;
+
+    int containerWidth =
+        browseViewport_ ? browseViewport_->getWidth() - browseViewport_->getScrollBarThickness()
+                        : 200;
+    int y = 0;
+
+    for (auto& row : browseRows_) {
+        row->setBounds(0, y, containerWidth, row->getRowHeight());
+        y += row->getRowHeight() + 2;
+    }
+
+    browseContainer_->setSize(containerWidth, y);
+}
+
+// ============================================================================
+// AI Chord Suggestions
+// ============================================================================
+
+void ChordPanelContent::requestAISuggestions() {
+    // Build user prompt from text input, falling back to auto-context
+    juce::String userPrompt;
+    if (aiInputBox_ && aiInputBox_->getText().trim().isNotEmpty()) {
+        userPrompt = aiInputBox_->getText().trim();
+        aiInputBox_->clear();
+    }
+
+    if (userPrompt.isEmpty() && recentChords_.empty() && detectedKey_.isEmpty())
+        return;
+
+    // Cancel any running request
+    if (aiThread_ && aiThread_->isThreadRunning()) {
+        aiCancelFlag_ = true;
+        aiThread_->stopThread(2000);
+    }
+
+    aiCancelFlag_ = false;
+    aiLoading_ = true;
+    if (aiSendBtn_)
+        aiSendBtn_->setEnabled(false);
+    repaint();
+
+    aiThread_ = std::make_unique<AIRequestThread>(*this, userPrompt);
+    aiThread_->startThread();
+}
+
+void ChordPanelContent::switchToTab(SuggestionTab tab) {
+    if (suggestionTab_ == tab)
+        return;
+    suggestionTab_ = tab;
+
+    bool isKS = (tab == SuggestionTab::KS);
+
+    // Toggle K&S content visibility
+    for (auto& block : suggestionBlocks_)
+        block->setVisible(isKS && !browseMode_);
+    if (browseMode_ && isKS) {
+        for (auto& btn : browseKeyButtons_)
+            btn->setVisible(true);
+        if (browseViewport_)
+            browseViewport_->setVisible(true);
+    } else {
+        for (auto& btn : browseKeyButtons_)
+            btn->setVisible(false);
+        if (browseViewport_)
+            browseViewport_->setVisible(false);
+    }
+
+    // Toggle AI content visibility
+    if (aiViewport_)
+        aiViewport_->setVisible(!isKS);
+    if (aiInputBox_)
+        aiInputBox_->setVisible(!isKS);
+    if (aiSendBtn_)
+        aiSendBtn_->setVisible(!isKS);
+
+    // Toggle K&S footer controls
+    noveltyLabel_->setVisible(isKS);
+    add7thsBtn_->setVisible(isKS);
+    add9thsBtn_->setVisible(isKS);
+    add11thsBtn_->setVisible(isKS);
+    add13thsBtn_->setVisible(isKS);
+    addAltBtn_->setVisible(isKS);
+    scaleFilterBtn_->setVisible(isKS);
+
+    // Tab button state
+    ksTabBtn_->setToggleState(isKS, juce::dontSendNotification);
+    aiTabBtn_->setToggleState(!isKS, juce::dontSendNotification);
+
+    resized();
+    repaint();
+}
+
+void ChordPanelContent::rebuildAIProgressionRows() {
+    // Clear old rows from container
+    for (auto& row : aiRows_) {
+        for (auto& block : row->blocks)
+            aiContainer_->removeChildComponent(block.get());
+    }
+    aiRows_.clear();
+
+    for (const auto& prog : aiProgressions_) {
+        auto row = std::make_unique<AIProgressionRow>();
+
+        for (const auto& chord : prog.chords) {
+            auto block = std::make_unique<ChordBlockComponent>(chord);
+            block->onClicked = [this](const magda::music::Chord& c) { previewChord(c); };
+            block->onReleased = [this] { stopPreview(); };
+            aiContainer_->addAndMakeVisible(block.get());
+            row->blocks.push_back(std::move(block));
+        }
+
+        aiRows_.push_back(std::move(row));
+    }
+
+    layoutAIProgressionRows();
+}
+
+void ChordPanelContent::layoutAIProgressionRows() {
+    if (!aiContainer_ || !aiViewport_)
+        return;
+
+    int containerWidth = aiViewport_->getWidth() - aiViewport_->getScrollBarThickness();
+    int blockWidth = 70;
+    int blockHeight = 32;
+    int gap = 4;
+    int y = 4;
+
+    auto* container = dynamic_cast<AIContainerComponent*>(aiContainer_.get());
+    AIContainerPaintData paintData;
+
+    for (size_t i = 0; i < aiRows_.size() && i < aiProgressions_.size(); ++i) {
+        auto& row = aiRows_[i];
+        auto& prog = aiProgressions_[i];
+
+        AIContainerPaintData::Row paintRow;
+        paintRow.name = prog.name;
+        paintRow.description = prog.description;
+
+        // Name area
+        row->nameArea = juce::Rectangle<int>(4, y, containerWidth - 8, 16);
+        paintRow.nameArea = row->nameArea;
+        y += 16;
+
+        // Description area
+        if (prog.description.isNotEmpty()) {
+            row->descArea = juce::Rectangle<int>(4, y, containerWidth - 8, 14);
+            paintRow.descArea = row->descArea;
+            y += 16;
+        }
+
+        paintData.rows.push_back(std::move(paintRow));
+
+        // Chord blocks
+        y += 2;
+        int x = 4;
+        for (auto& block : row->blocks) {
+            if (x + blockWidth > containerWidth - 4) {
+                x = 4;
+                y += blockHeight + gap;
+            }
+            block->setBounds(x, y, blockWidth, blockHeight);
+            x += blockWidth + gap;
+        }
+        y += blockHeight + 8;
+
+        // Separator
+        y += 4;
+    }
+
+    if (container)
+        container->paintData = std::move(paintData);
+
+    aiContainer_->setSize(containerWidth, y);
+    aiContainer_->repaint();
+}
+
+void ChordPanelContent::AIRequestThread::run() {
+    // Build context from chord history and detected key
+    juce::String context;
+    if (owner_.detectedKey_.isNotEmpty())
+        context += "Detected key: " + owner_.detectedKey_ + "\n";
+
+    if (!owner_.recentChords_.empty()) {
+        context += "Recent chord history: ";
+        for (size_t i = 0; i < owner_.recentChords_.size(); ++i) {
+            if (i > 0)
+                context += ", ";
+            context += owner_.recentChords_[i];
+        }
+        context += "\n";
+    }
+
+    if (!owner_.detectedScales_.empty()) {
+        context += "Detected scales: ";
+        for (size_t i = 0; i < std::min(owner_.detectedScales_.size(), size_t(3)); ++i) {
+            if (i > 0)
+                context += ", ";
+            context += juce::String(owner_.detectedScales_[i].name);
+        }
+        context += "\n";
+    }
+
+    juce::String prompt;
+    if (userPrompt_.isNotEmpty()) {
+        prompt = userPrompt_ + "\n\n";
+        if (context.isNotEmpty())
+            prompt += "Musical context:\n" + context + "\n";
+    } else {
+        prompt = "Based on this musical context, suggest 3-4 chord progressions as "
+                 "continuations or variations.\n\n" +
+                 context + "\n";
+    }
+    prompt += "Generate DSL using the chord_progressions tool. Each progression() block should "
+              "have a name, a short description (under 60 chars), and 4-8 chords via "
+              ".add_chord() calls.\n"
+              "Use beat values starting at 0, incrementing by the chord length.\n"
+              "Use appropriate octaves (root around C3-C4). Use quality names like: major, "
+              "minor, dim, aug, dom7, maj7, min7, dim7, dom9, maj9, min9, sus2, sus4, add9, "
+              "madd9, 6, min6, power.";
+
+    // Chord progression grammar (Lark format) for grammar-constrained output
+    static const char* chordProgressionGrammar = R"GRAMMAR(
+start: progression+
+
+progression: "progression(" params ")" chord_chain
+
+chord_chain: chord+
+
+chord: ".add_chord(" params ")"
+
+params: param ("," param)*
+
+param: IDENTIFIER "=" value
+
+value: STRING
+     | NUMBER
+     | IDENTIFIER
+
+STRING: "\"" /[^"]*/ "\""
+NUMBER: /-?[0-9]+(\.[0-9]+)?/
+IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
+
+%import common.WS
+%ignore WS
+)GRAMMAR";
+
+    static const char* chordToolDescription =
+        "Generates chord progression suggestions using MAGDA DSL.\n\n"
+        "Format: progression(name=\"Name\", description=\"Why it works\") followed by "
+        ".add_chord(root=<note>, quality=<quality>, beat=<beat>, length=<beats>) chains.\n\n"
+        "Example:\n"
+        "progression(name=\"Classic Pop\", description=\"Timeless I-V-vi-IV cadence\")"
+        ".add_chord(root=C4, quality=major, beat=0, length=1)"
+        ".add_chord(root=G3, quality=major, beat=1, length=1)"
+        ".add_chord(root=A3, quality=minor, beat=2, length=1)"
+        ".add_chord(root=F3, quality=major, beat=3, length=1)\n"
+        "progression(name=\"Jazz ii-V-I\", description=\"Smooth jazz resolution\")"
+        ".add_chord(root=D3, quality=min7, beat=0, length=1)"
+        ".add_chord(root=G3, quality=dom7, beat=1, length=1)"
+        ".add_chord(root=C4, quality=maj7, beat=2, length=2)\n\n"
+        "Qualities: major, minor, dim, aug, dom7, maj7, min7, dim7, dom9, maj9, min9, "
+        "sus2, sus4, add9, madd9, 6, min6, power\n"
+        "Notes: C3-B5 range (e.g. C4, F#3, Bb4)";
+
+    // Use OpenAIClient with grammar-constrained output
+    magda::OpenAIClient client;
+    auto dsl = client.generateDSL(prompt, {}, juce::String(chordProgressionGrammar),
+                                  juce::String(chordToolDescription), &owner_.aiCancelFlag_);
+
+    if (threadShouldExit() || owner_.aiCancelFlag_)
+        return;
+
+    if (dsl.isEmpty()) {
+        DBG("AI Suggest: No DSL generated - " + client.getLastError());
+        auto safeThis = juce::Component::SafePointer<ChordPanelContent>(&owner_);
+        juce::MessageManager::callAsync([safeThis]() {
+            if (!safeThis)
+                return;
+            safeThis->aiLoading_ = false;
+            if (safeThis->aiSendBtn_)
+                safeThis->aiSendBtn_->setEnabled(true);
+            safeThis->repaint();
+        });
+        return;
+    }
+
+    DBG("AI Suggest DSL: " + dsl.substring(0, 500));
+
+    auto progressions = owner_.parseAIResponse(dsl);
+
+    // Post result back to UI thread — store and display inline
+    auto safeThis = juce::Component::SafePointer<ChordPanelContent>(&owner_);
+    juce::MessageManager::callAsync([safeThis, progressions = std::move(progressions)]() mutable {
+        if (!safeThis)
+            return;
+
+        safeThis->aiLoading_ = false;
+        if (safeThis->aiSendBtn_)
+            safeThis->aiSendBtn_->setEnabled(true);
+
+        if (!progressions.empty()) {
+            safeThis->aiProgressions_ = std::move(progressions);
+            safeThis->rebuildAIProgressionRows();
+        }
+
+        safeThis->resized();
+        safeThis->repaint();
+    });
+}
+
+std::vector<AIProgression> ChordPanelContent::parseAIResponse(const juce::String& dsl) {
+    std::vector<AIProgression> result;
+    if (dsl.isEmpty())
+        return result;
+
+    auto& engine = magda::music::ChordEngine::getInstance();
+
+    // Split DSL into progression blocks
+    // Format: progression(name="...", description="...").add_chord(root=C4, quality=major, ...)...
+    int pos = 0;
+    while (pos < dsl.length()) {
+        int progStart = dsl.indexOf(pos, "progression(");
+        if (progStart < 0)
+            break;
+
+        // Find the end of this progression (next "progression(" or end of string)
+        int nextProg = dsl.indexOf(progStart + 12, "progression(");
+        juce::String progBlock =
+            (nextProg >= 0) ? dsl.substring(progStart, nextProg) : dsl.substring(progStart);
+
+        AIProgression prog;
+
+        // Extract name="..." from progression params
+        int nameStart = progBlock.indexOf("name=\"");
+        if (nameStart >= 0) {
+            nameStart += 6;
+            int nameEnd = progBlock.indexOf(nameStart, "\"");
+            if (nameEnd >= 0)
+                prog.name = progBlock.substring(nameStart, nameEnd);
+        }
+
+        // Extract description="..." from progression params
+        int descStart = progBlock.indexOf("description=\"");
+        if (descStart >= 0) {
+            descStart += 13;
+            int descEnd = progBlock.indexOf(descStart, "\"");
+            if (descEnd >= 0)
+                prog.description = progBlock.substring(descStart, descEnd);
+        }
+
+        // Extract all .add_chord(...) calls
+        int chordPos = 0;
+        while (chordPos < progBlock.length()) {
+            int chordStart = progBlock.indexOf(chordPos, ".add_chord(");
+            if (chordStart < 0)
+                break;
+
+            int paramsStart = chordStart + 11;
+            int paramsEnd = progBlock.indexOf(paramsStart, ")");
+            if (paramsEnd < 0)
+                break;
+
+            auto paramsStr = progBlock.substring(paramsStart, paramsEnd);
+
+            // Parse root= and quality= from params
+            juce::String rootStr, qualityStr;
+            int octave = 4;
+
+            int rootIdx = paramsStr.indexOf("root=");
+            if (rootIdx >= 0) {
+                rootIdx += 5;
+                int rootEnd = paramsStr.indexOf(rootIdx, ",");
+                rootStr = (rootEnd >= 0) ? paramsStr.substring(rootIdx, rootEnd).trim()
+                                         : paramsStr.substring(rootIdx).trim();
+
+                // Extract octave from note name (e.g. "C4" -> octave=4)
+                if (rootStr.isNotEmpty()) {
+                    auto lastChar = rootStr[rootStr.length() - 1];
+                    if (lastChar >= '0' && lastChar <= '9')
+                        octave = lastChar - '0';
+                }
+            }
+
+            int qualIdx = paramsStr.indexOf("quality=");
+            if (qualIdx >= 0) {
+                qualIdx += 8;
+                int qualEnd = paramsStr.indexOf(qualIdx, ",");
+                qualityStr = (qualEnd >= 0) ? paramsStr.substring(qualIdx, qualEnd).trim()
+                                            : paramsStr.substring(qualIdx).trim();
+            }
+
+            // Build chord name for parseChordName (e.g. "C major" or "G# min7")
+            if (rootStr.isNotEmpty() && qualityStr.isNotEmpty()) {
+                // Strip octave digit from root for chord name
+                juce::String rootName = rootStr;
+                if (rootName.isNotEmpty()) {
+                    auto last = rootName[rootName.length() - 1];
+                    if (last >= '0' && last <= '9')
+                        rootName = rootName.dropLastCharacters(1);
+                }
+
+                auto chordName = rootName + " " + qualityStr;
+                auto spec = engine.parseChordName(chordName);
+                auto chord = engine.buildChordInRootPosition(spec.root, spec.quality, octave);
+                magda::music::ChordEngine::finalizeChord(chord);
+                if (!chord.notes.empty())
+                    prog.chords.push_back(chord);
+            }
+
+            chordPos = paramsEnd + 1;
+        }
+
+        if (!prog.chords.empty())
+            result.push_back(std::move(prog));
+
+        pos = (nextProg >= 0) ? nextProg : dsl.length();
+    }
+
+    return result;
+}
+
 void ChordPanelContent::setupFooterControls() {
     // Novelty slider (0-100%)
     noveltyLabel_ = std::make_unique<magda::DraggableValueLabel>(
@@ -588,7 +1215,9 @@ void ChordPanelContent::setupFooterControls() {
     scaleFilterBtn_->setClickingTogglesState(true);
     scaleFilterBtn_->setToggleState(true, juce::dontSendNotification);
     scaleFilterBtn_->setActive(true);
-    scaleFilterBtn_->setActiveColor(DarkTheme::getAccentColour());
+    scaleFilterBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG fill color
+    scaleFilterBtn_->setActiveColor(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    scaleFilterBtn_->setActiveBackgroundColor(DarkTheme::getAccentColour());
     scaleFilterBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     scaleFilterBtn_->setTooltip("Filter suggestions by detected scales");
     scaleFilterBtn_->onClick = [this]() {
@@ -607,6 +1236,12 @@ void ChordPanelContent::setupFooterControls() {
                             DarkTheme::getColour(DarkTheme::SURFACE));
     explorerBtn_->setColour(juce::TextButton::textColourOffId,
                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    explorerBtn_->onClick = [this]() {
+        if (browseMode_)
+            exitBrowseMode();
+        else
+            enterBrowseMode();
+    };
     addAndMakeVisible(explorerBtn_.get());
 
     clearHistoryBtn_ = std::make_unique<juce::TextButton>("Clear");
@@ -621,6 +1256,73 @@ void ChordPanelContent::setupFooterControls() {
             chordPlugin_->clearHistory();
     };
     addAndMakeVisible(clearHistoryBtn_.get());
+
+    // Suggestion column tab buttons
+    ksTabBtn_ = std::make_unique<juce::TextButton>("K&S");
+    ksTabBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    ksTabBtn_->setClickingTogglesState(true);
+    ksTabBtn_->setRadioGroupId(1001);
+    ksTabBtn_->setToggleState(true, juce::dontSendNotification);
+    ksTabBtn_->setColour(juce::TextButton::buttonColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+    ksTabBtn_->setColour(juce::TextButton::buttonOnColourId, DarkTheme::getAccentColour());
+    ksTabBtn_->setColour(juce::TextButton::textColourOffId,
+                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    ksTabBtn_->setColour(juce::TextButton::textColourOnId,
+                         DarkTheme::getColour(DarkTheme::BACKGROUND));
+    ksTabBtn_->setTooltip("Krumhansl-Schmuckler profile suggestions");
+    ksTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::KS); };
+    addAndMakeVisible(ksTabBtn_.get());
+
+    aiTabBtn_ = std::make_unique<juce::TextButton>("AI");
+    aiTabBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    aiTabBtn_->setClickingTogglesState(true);
+    aiTabBtn_->setRadioGroupId(1001);
+    aiTabBtn_->setColour(juce::TextButton::buttonColourId,
+                         DarkTheme::getColour(DarkTheme::SURFACE));
+    aiTabBtn_->setColour(juce::TextButton::buttonOnColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    aiTabBtn_->setColour(juce::TextButton::textColourOffId,
+                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    aiTabBtn_->setColour(juce::TextButton::textColourOnId,
+                         DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    aiTabBtn_->setTooltip("AI chord progression suggestions");
+    aiTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::AI); };
+    addAndMakeVisible(aiTabBtn_.get());
+
+    // AI tab viewport for scrollable progression display
+    aiViewport_ = std::make_unique<juce::Viewport>();
+    aiContainer_ = std::make_unique<AIContainerComponent>();
+    aiContainer_->setInterceptsMouseClicks(false, true);
+    aiViewport_->setViewedComponent(aiContainer_.get(), false);
+    aiViewport_->setScrollBarsShown(true, false);
+    aiViewport_->setVisible(false);
+    addAndMakeVisible(aiViewport_.get());
+
+    // AI text input
+    aiInputBox_ = std::make_unique<juce::TextEditor>();
+    aiInputBox_->setMultiLine(false);
+    aiInputBox_->setReturnKeyStartsNewLine(false);
+    aiInputBox_->setFont(FontManager::getInstance().getUIFont(11.0f));
+    aiInputBox_->setColour(juce::TextEditor::backgroundColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+    aiInputBox_->setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
+    aiInputBox_->setColour(juce::TextEditor::outlineColourId, DarkTheme::getBorderColour());
+    aiInputBox_->setTextToShowWhenEmpty("Describe a chord progression...",
+                                        DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+    aiInputBox_->onReturnKey = [this]() { requestAISuggestions(); };
+    aiInputBox_->setVisible(false);
+    addAndMakeVisible(aiInputBox_.get());
+
+    aiSendBtn_ = std::make_unique<juce::TextButton>("Send");
+    aiSendBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    aiSendBtn_->setColour(juce::TextButton::buttonColourId,
+                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    aiSendBtn_->setColour(juce::TextButton::textColourOffId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    aiSendBtn_->onClick = [this]() { requestAISuggestions(); };
+    aiSendBtn_->setVisible(false);
+    addAndMakeVisible(aiSendBtn_.get());
 }
 
 void ChordPanelContent::syncFooterFromParams() {
@@ -700,7 +1402,7 @@ void ChordPanelContent::paint(juce::Graphics& g) {
         }
     }
 
-    // --- Column 2: Suggestions header ---
+    // --- Column 2: Suggestions (tabbed: K&S / AI) ---
     if (suggestionsCol_.getWidth() > 0) {
         auto col = suggestionsCol_;
 
@@ -709,19 +1411,34 @@ void ChordPanelContent::paint(juce::Graphics& g) {
         g.fillRect(col.getX(), col.getY() + 4, 1, col.getHeight() - 8);
 
         auto area = col.reduced(PADDING, 0);
+        area.removeFromTop(SECTION_HEADER_HEIGHT);  // tab buttons positioned in resized()
 
-        g.setColour(DarkTheme::getSecondaryTextColour());
-        g.setFont(headerFont);
-        g.drawText("SUGGESTIONS", area.removeFromTop(SECTION_HEADER_HEIGHT),
-                   juce::Justification::centredLeft);
-
-        if (suggestionBlocks_.empty() && chordPlugin_) {
-            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
-            g.setFont(FontManager::getInstance().getUIFont(11.0f));
-            auto emptyArea = area;
-            emptyArea.removeFromTop(8);
-            g.drawText("Play to get suggestions", emptyArea.removeFromTop(20),
-                       juce::Justification::centredLeft);
+        if (suggestionTab_ == SuggestionTab::KS) {
+            if (browseMode_) {
+                // Browse mode label drawn below tabs
+            } else if (suggestionBlocks_.empty() && chordPlugin_) {
+                g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+                g.setFont(FontManager::getInstance().getUIFont(11.0f));
+                area.removeFromTop(8);
+                g.drawText("Play to get suggestions", area.removeFromTop(20),
+                           juce::Justification::centredLeft);
+            }
+        } else {
+            // AI tab content — draw progression names and descriptions
+            // (chord blocks are child components positioned in layoutAIProgressionRows)
+            if (aiLoading_) {
+                g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+                g.setFont(FontManager::getInstance().getUIFont(11.0f));
+                area.removeFromTop(8);
+                g.drawText("Generating...", area.removeFromTop(20),
+                           juce::Justification::centredLeft);
+            } else if (aiProgressions_.empty()) {
+                g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+                g.setFont(FontManager::getInstance().getUIFont(11.0f));
+                area.removeFromTop(8);
+                g.drawText("Type a prompt or press Send", area.removeFromTop(20),
+                           juce::Justification::centredLeft);
+            }
         }
     }
 
@@ -789,29 +1506,35 @@ void ChordPanelContent::resized() {
     bounds.removeFromRight(COLUMN_GAP);
     suggestionsCol_ = bounds;
 
-    // Layout footer controls: skip left column, use merged middle+right
+    // Layout footer — depends on active tab
     {
         auto footer = footerArea;
         footer.removeFromTop(1);  // separator line
         footer.removeFromLeft(detectionWidth + COLUMN_GAP);
 
-        auto mid = footer.reduced(PADDING, 0);
-
-        // Funnel icon on the right
-        scaleFilterBtn_->setBounds(mid.removeFromRight(22).reduced(0, 2));
-        mid.removeFromRight(4);
-
-        noveltyLabel_->setBounds(mid.removeFromLeft(80).reduced(0, 2));
-        mid.removeFromLeft(4);
-        add7thsBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
-        mid.removeFromLeft(2);
-        add9thsBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
-        mid.removeFromLeft(2);
-        add11thsBtn_->setBounds(mid.removeFromLeft(34).reduced(0, 2));
-        mid.removeFromLeft(2);
-        add13thsBtn_->setBounds(mid.removeFromLeft(34).reduced(0, 2));
-        mid.removeFromLeft(2);
-        addAltBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
+        if (suggestionTab_ == SuggestionTab::KS) {
+            // K&S footer: novelty / 7th / 9th / 11th / 13th / alt / funnel
+            auto mid = footer.reduced(PADDING, 0);
+            scaleFilterBtn_->setBounds(mid.removeFromRight(22).reduced(0, 2));
+            mid.removeFromRight(4);
+            noveltyLabel_->setBounds(mid.removeFromLeft(80).reduced(0, 2));
+            mid.removeFromLeft(4);
+            add7thsBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
+            mid.removeFromLeft(2);
+            add9thsBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
+            mid.removeFromLeft(2);
+            add11thsBtn_->setBounds(mid.removeFromLeft(34).reduced(0, 2));
+            mid.removeFromLeft(2);
+            add13thsBtn_->setBounds(mid.removeFromLeft(34).reduced(0, 2));
+            mid.removeFromLeft(2);
+            addAltBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
+        } else {
+            // AI footer: [text input] [Send]
+            auto mid = footer.reduced(PADDING, 0);
+            aiSendBtn_->setBounds(mid.removeFromRight(40).reduced(0, 2));
+            mid.removeFromRight(4);
+            aiInputBox_->setBounds(mid.reduced(0, 1));
+        }
     }
 
     // Position history blocks in detection column
@@ -829,40 +1552,96 @@ void ChordPanelContent::resized() {
             int x = area.getX();
             int y = area.getY();
             int blockWidth = std::max(50, (area.getWidth() - BLOCK_GAP) / 2);
+            bool overflow = false;
 
             for (auto& block : historyBlocks_) {
+                if (overflow) {
+                    block->setVisible(false);
+                    continue;
+                }
                 if (x + blockWidth > area.getRight()) {
                     x = area.getX();
                     y += BLOCK_HEIGHT + BLOCK_GAP;
                 }
-                if (y + BLOCK_HEIGHT > area.getBottom())
-                    break;
+                if (y + BLOCK_HEIGHT > area.getBottom()) {
+                    overflow = true;
+                    block->setVisible(false);
+                    continue;
+                }
                 block->setBounds(x, y, blockWidth, BLOCK_HEIGHT);
+                block->setVisible(true);
                 x += blockWidth + BLOCK_GAP;
             }
         }
     }
 
-    // Position suggestion blocks in suggestions column (grid flow)
+    // Suggestions column — tab buttons + content
     {
         auto area = suggestionsCol_.reduced(PADDING, 0);
-        area.removeFromTop(SECTION_HEADER_HEIGHT);  // "SUGGESTIONS" header
+
+        // Tab buttons in header row
+        auto tabRow = area.removeFromTop(SECTION_HEADER_HEIGHT);
+        ksTabBtn_->setBounds(tabRow.removeFromLeft(36).reduced(0, 2));
+        tabRow.removeFromLeft(2);
+        aiTabBtn_->setBounds(tabRow.removeFromLeft(30).reduced(0, 2));
+
         area.removeFromTop(2);
 
-        int numCols = area.getWidth() > 280 ? 3 : 2;
-        int blockWidth = (area.getWidth() - BLOCK_GAP * (numCols - 1)) / numCols;
-        int x = area.getX();
-        int y = area.getY();
+        if (suggestionTab_ == SuggestionTab::KS) {
+            // K&S tab content
+            if (browseMode_) {
+                // Key filter buttons — two rows of 6
+                int keyBtnWidth = (area.getWidth() - 5 * 2) / 6;
+                for (int row = 0; row < 2; ++row) {
+                    int x = area.getX();
+                    for (int col = 0; col < 6; ++col) {
+                        int idx = row * 6 + col;
+                        if (idx < static_cast<int>(browseKeyButtons_.size())) {
+                            browseKeyButtons_[static_cast<size_t>(idx)]->setBounds(x, area.getY(),
+                                                                                   keyBtnWidth, 18);
+                            x += keyBtnWidth + 2;
+                        }
+                    }
+                    area.removeFromTop(20);
+                }
+                area.removeFromTop(4);
 
-        for (auto& block : suggestionBlocks_) {
-            if (x + blockWidth > area.getRight() + 1) {
-                x = area.getX();
-                y += BLOCK_HEIGHT + BLOCK_GAP;
+                if (browseViewport_) {
+                    browseViewport_->setBounds(area);
+                    layoutBrowseRows();
+                }
+            } else {
+                int numCols = area.getWidth() > 280 ? 3 : 2;
+                int blockWidth = (area.getWidth() - BLOCK_GAP * (numCols - 1)) / numCols;
+                int x = area.getX();
+                int y = area.getY();
+                bool overflow = false;
+
+                for (auto& block : suggestionBlocks_) {
+                    if (overflow) {
+                        block->setVisible(false);
+                        continue;
+                    }
+                    if (x + blockWidth > area.getRight() + 1) {
+                        x = area.getX();
+                        y += BLOCK_HEIGHT + BLOCK_GAP;
+                    }
+                    if (y + BLOCK_HEIGHT > area.getBottom()) {
+                        overflow = true;
+                        block->setVisible(false);
+                        continue;
+                    }
+                    block->setBounds(x, y, blockWidth, BLOCK_HEIGHT);
+                    block->setVisible(true);
+                    x += blockWidth + BLOCK_GAP;
+                }
             }
-            if (y + BLOCK_HEIGHT > area.getBottom())
-                break;
-            block->setBounds(x, y, blockWidth, BLOCK_HEIGHT);
-            x += blockWidth + BLOCK_GAP;
+        } else {
+            // AI tab content — scrollable viewport
+            if (aiViewport_) {
+                aiViewport_->setBounds(area);
+                layoutAIProgressionRows();
+            }
         }
     }
 
@@ -886,10 +1665,19 @@ void ChordPanelContent::resized() {
             area.removeFromTop(2);
 
             int scaleBlockHeight = 26;
+            bool scaleOverflow = false;
             for (auto& block : scaleBlocks_) {
-                if (area.getHeight() < scaleBlockHeight)
-                    break;
+                if (scaleOverflow) {
+                    block->setVisible(false);
+                    continue;
+                }
+                if (area.getHeight() < scaleBlockHeight) {
+                    scaleOverflow = true;
+                    block->setVisible(false);
+                    continue;
+                }
                 block->setBounds(area.removeFromTop(scaleBlockHeight));
+                block->setVisible(true);
                 area.removeFromTop(BLOCK_GAP);
             }
         }

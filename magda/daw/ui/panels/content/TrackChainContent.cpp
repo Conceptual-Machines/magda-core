@@ -760,9 +760,6 @@ void TrackChainContent::mouseUp(const juce::MouseEvent&) {
 
 void TrackChainContent::mouseWheelMove(const juce::MouseEvent& e,
                                        const juce::MouseWheelDetails& wheel) {
-    DBG("TrackChainContent::mouseWheelMove - deltaY=" << wheel.deltaY << " isAltDown="
-                                                      << (e.mods.isAltDown() ? "yes" : "no"));
-
     // Alt/Option + scroll wheel = zoom
     if (e.mods.isAltDown()) {
         float delta = wheel.deltaY > 0 ? ZOOM_STEP : -ZOOM_STEP;

@@ -309,6 +309,14 @@ void MidiChordEnginePlugin::clearHistory() {
 void MidiChordEnginePlugin::refreshSuggestions() {
     std::lock_guard<std::mutex> lock(stateMutex_);
     auto recentChords = suggestionEngine_.getRecentChords();
+    if (recentChords.empty() && !cachedKeyMode_.has_value()) {
+        // No input yet — don't show default C major suggestions
+        if (!cachedSuggestions_.empty()) {
+            cachedSuggestions_.clear();
+            listeners_.call(&Listener::suggestionsChanged, this);
+        }
+        return;
+    }
     if (cachedKeyMode_.has_value()) {
         cachedSuggestions_ = suggestionEngine_.generateSuggestions(
             recentChords, suggestionParams_, cachedKeyMode_->first, cachedKeyMode_->second);

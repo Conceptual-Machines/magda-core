@@ -283,6 +283,8 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
     // Use rule-based suggestions (pure algorithmic approach)
     auto keyMode = inferKeyModeFromHistogram();
     if (!keyMode.has_value()) {
+        if (recentChords.empty())
+            return {};  // No input yet — don't fall back to C major
         // Final fallback to context method
         keyMode = inferKeyModeFromContext(recentChords);
     }

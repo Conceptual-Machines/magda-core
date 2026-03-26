@@ -79,6 +79,40 @@ class ScaleChordsPopup : public juce::Component {
 };
 
 /**
+ * @brief Represents a single AI-suggested chord progression
+ */
+struct AIProgression {
+    juce::String name;
+    juce::String description;
+    std::vector<magda::music::Chord> chords;
+};
+
+/**
+ * @brief Expandable scale row for the browse view — shows scale name, expands to chord blocks
+ */
+class BrowseScaleRowComponent : public juce::Component {
+  public:
+    explicit BrowseScaleRowComponent(const magda::music::ScaleWithChords& scale);
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseEnter(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
+
+    int getRowHeight() const;
+    const magda::music::ScaleWithChords& getScale() const {
+        return scale_;
+    }
+
+  private:
+    static constexpr int ROW_HEIGHT = 24;
+    magda::music::ScaleWithChords scale_;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BrowseScaleRowComponent)
+};
+
+/**
  * @brief Chord analysis side panel for the bottom panel
  *
  * Three-column layout with footer toolbar:
@@ -134,7 +168,7 @@ class ChordPanelContent : public juce::Component,
     std::vector<std::unique_ptr<ChordBlockComponent>> historyBlocks_;
     std::vector<std::unique_ptr<ScaleBlockComponent>> scaleBlocks_;
 
-    // Active popup
+    // Active popup (scale chords)
     std::unique_ptr<ScaleChordsPopup> activePopup_;
 
     // Footer controls
@@ -150,6 +184,60 @@ class ChordPanelContent : public juce::Component,
 
     // Preview state
     std::vector<int> previewingNotes_;  // MIDI note numbers currently sounding
+
+    // Suggestion tabs: K&S (Krumhansl-Schmuckler) vs AI
+    enum class SuggestionTab { KS, AI };
+    SuggestionTab suggestionTab_ = SuggestionTab::KS;
+    std::unique_ptr<juce::TextButton> ksTabBtn_;
+    std::unique_ptr<juce::TextButton> aiTabBtn_;
+
+    // AI tab — inline progression display + text input
+    std::vector<AIProgression> aiProgressions_;  // persisted results
+    std::unique_ptr<juce::Viewport> aiViewport_;
+    std::unique_ptr<juce::Component> aiContainer_;
+    struct AIProgressionRow {
+        juce::Rectangle<int> nameArea;
+        juce::Rectangle<int> descArea;
+        std::vector<std::unique_ptr<ChordBlockComponent>> blocks;
+    };
+    std::vector<std::unique_ptr<AIProgressionRow>> aiRows_;
+    std::unique_ptr<juce::TextEditor> aiInputBox_;
+    std::unique_ptr<juce::TextButton> aiSendBtn_;
+    bool aiLoading_ = false;
+
+    void switchToTab(SuggestionTab tab);
+    void rebuildAIProgressionRows();
+    void layoutAIProgressionRows();
+
+    // Browse mode state
+    bool browseMode_ = false;
+    int browseKeyFilter_ = -1;  // -1 = all keys, 0-11 = specific root
+    std::vector<std::unique_ptr<juce::TextButton>> browseKeyButtons_;
+    std::unique_ptr<juce::Viewport> browseViewport_;
+    std::unique_ptr<juce::Component> browseContainer_;
+    std::vector<std::unique_ptr<BrowseScaleRowComponent>> browseRows_;
+
+    void enterBrowseMode();
+    void exitBrowseMode();
+    void rebuildBrowseRows();
+    void layoutBrowseRows();
+
+    // AI chord suggestion
+    void requestAISuggestions();
+    std::vector<AIProgression> parseAIResponse(const juce::String& json);
+
+    class AIRequestThread : public juce::Thread {
+      public:
+        AIRequestThread(ChordPanelContent& owner, juce::String userPrompt)
+            : juce::Thread("AIChordSuggest"), owner_(owner), userPrompt_(std::move(userPrompt)) {}
+        void run() override;
+
+      private:
+        ChordPanelContent& owner_;
+        juce::String userPrompt_;
+    };
+    std::unique_ptr<AIRequestThread> aiThread_;
+    std::atomic<bool> aiCancelFlag_{false};
 
     // Column areas (computed in resized, used in paint for headers)
     juce::Rectangle<int> detectionCol_;

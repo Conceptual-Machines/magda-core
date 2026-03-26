@@ -521,6 +521,19 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
     // Now that nodePath_ is valid, update param slots with the device path
     updateParamModulation();
+
+    // Update chord engine UI with the now-valid trackId (createCustomUI runs before setNodePath)
+    if (chordEngineUI_ && nodePath_.trackId != magda::INVALID_TRACK_ID) {
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                if (auto* chordPlugin =
+                        dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
+                    chordEngineUI_->setChordEngine(chordPlugin, nodePath_.trackId);
+                }
+            }
+        }
+    }
 }
 
 int DeviceSlotComponent::getCustomUITabIndex() const {
