@@ -202,6 +202,30 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
                                static_cast<float>(gw), static_cast<float>(gh), 2.0f, 1.0f);
     }
 
+    // Draw chord drop preview (vertical line + span region)
+    if (chordDropActive_) {
+        int anchorX = beatToPixel(chordDropAnchorBeat_);
+        int currentX = beatToPixel(chordDropCurrentBeat_);
+        int startX = juce::jmin(anchorX, currentX);
+        int endX = juce::jmax(anchorX, currentX);
+
+        // Draw span region if dragging a range
+        if (endX - startX > 2) {
+            g.setColour(juce::Colour(0xFF5599FF).withAlpha(0.12f));
+            g.fillRect(startX, 0, endX - startX, bounds.getHeight());
+        }
+
+        // Draw vertical line at current position
+        g.setColour(juce::Colour(0xFF5599FF).withAlpha(0.8f));
+        g.drawLine(float(currentX), 0.f, float(currentX), float(bounds.getHeight()), 2.0f);
+
+        // Draw anchor line if range is being defined
+        if (endX - startX > 2) {
+            g.setColour(juce::Colour(0xFF5599FF).withAlpha(0.4f));
+            g.drawLine(float(anchorX), 0.f, float(anchorX), float(bounds.getHeight()), 1.0f);
+        }
+    }
+
     // Draw edit cursor line (blinking white)
     if (editCursorPosition_ >= 0.0 && editCursorVisible_) {
         double tempo = 120.0;
@@ -1656,27 +1680,50 @@ bool PianoRollGridComponent::isInterestedInDragSource(const SourceDetails& detai
     return false;
 }
 
-void PianoRollGridComponent::itemDragEnter(const SourceDetails& /*details*/) {
+void PianoRollGridComponent::itemDragEnter(const SourceDetails& details) {
+    double beat = pixelToBeat(details.localPosition.x);
+    if (snapEnabled_)
+        beat = snapBeatToGrid(beat);
+    chordDropActive_ = true;
+    chordDropAnchorBeat_ = beat;
+    chordDropCurrentBeat_ = beat;
+    repaint();
+}
+
+void PianoRollGridComponent::itemDragMove(const SourceDetails& details) {
+    double beat = pixelToBeat(details.localPosition.x);
+    if (snapEnabled_)
+        beat = snapBeatToGrid(beat);
+    chordDropCurrentBeat_ = beat;
     repaint();
 }
 
 void PianoRollGridComponent::itemDragExit(const SourceDetails& /*details*/) {
+    chordDropActive_ = false;
     repaint();
 }
 
 void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
+    chordDropActive_ = false;
+
     auto* obj = details.description.getDynamicObject();
     if (!obj)
         return;
 
-    if (selectedClipIds_.empty())
+    if (clipId_ == INVALID_CLIP_ID && selectedClipIds_.empty())
         return;
 
-    // Convert drop position to beat and note
-    auto localPos = getLocalPoint(nullptr, details.localPosition);
-    double beat = pixelToBeat(localPos.x);
+    // Compute start beat and length from drag range
+    double dropBeat = pixelToBeat(details.localPosition.x);
     if (snapEnabled_)
-        beat = snapBeatToGrid(beat);
+        dropBeat = snapBeatToGrid(dropBeat);
+
+    double startBeat = juce::jmin(chordDropAnchorBeat_, dropBeat);
+    double endBeat = juce::jmax(chordDropAnchorBeat_, dropBeat);
+    double dragLength = endBeat - startBeat;
+
+    // If drag was too short, fall back to grid resolution
+    double noteLength = (dragLength >= gridResolutionBeats_) ? dragLength : gridResolutionBeats_;
 
     // Extract notes from drag data
     auto* notesVar = obj->getProperties().getVarPointer("notes");
@@ -1700,7 +1747,9 @@ void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
         targetClipId = selectedClipIds_.front();
 
     if (onChordDropped)
-        onChordDropped(targetClipId, beat, std::move(notes), chordName);
+        onChordDropped(targetClipId, startBeat, noteLength, std::move(notes), chordName);
+
+    repaint();
 }
 
 }  // namespace magda

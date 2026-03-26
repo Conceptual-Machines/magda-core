@@ -143,10 +143,14 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
             caObj->setProperty("beatPosition", ca.beatPosition);
             caObj->setProperty("lengthBeats", ca.lengthBeats);
             caObj->setProperty("chordName", ca.chordName);
+            if (ca.chordGroup != 0)
+                caObj->setProperty("chordGroup", ca.chordGroup);
             chordArray.add(juce::var(caObj));
         }
         obj->setProperty("chordAnnotations", chordArray);
     }
+    if (clip.nextChordGroupId > 1)
+        obj->setProperty("nextChordGroupId", clip.nextChordGroupId);
 
     return juce::var(obj);
 }
@@ -311,10 +315,14 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
                 ca.beatPosition = caObj->getProperty("beatPosition");
                 ca.lengthBeats = caObj->getProperty("lengthBeats");
                 ca.chordName = caObj->getProperty("chordName").toString();
+                if (caObj->hasProperty("chordGroup"))
+                    ca.chordGroup = static_cast<int>(caObj->getProperty("chordGroup"));
                 outClip.chordAnnotations.push_back(ca);
             }
         }
     }
+    if (obj->hasProperty("nextChordGroupId"))
+        outClip.nextChordGroupId = static_cast<int>(obj->getProperty("nextChordGroupId"));
 
     // MIDI clips: ensure beats are populated (backward compat with old project files)
     if (outClip.type == ClipType::MIDI) {
@@ -335,6 +343,8 @@ juce::var ProjectSerializer::serializeMidiNote(const MidiNote& data) {
     SER(velocity);
     SER(startBeat);
     SER(lengthBeats);
+    if (data.chordGroup != 0)
+        SER(chordGroup);
     return juce::var(obj);
 }
 
@@ -348,6 +358,8 @@ bool ProjectSerializer::deserializeMidiNote(const juce::var& json, MidiNote& dat
     DESER(velocity);
     DESER(startBeat);
     DESER(lengthBeats);
+    if (obj->hasProperty("chordGroup"))
+        data.chordGroup = static_cast<int>(obj->getProperty("chordGroup"));
     return true;
 }
 

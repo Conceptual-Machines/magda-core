@@ -32,6 +32,7 @@ struct MidiNote {
     int velocity = 100;        // Note velocity (0-127)
     double startBeat = 0.0;    // Start position in beats within clip
     double lengthBeats = 1.0;  // Duration in beats
+    int chordGroup = 0;        // 0 = unlinked, >0 = linked to ChordAnnotation with same ID
 };
 
 /**
@@ -212,9 +213,11 @@ struct ClipInfo {
         double beatPosition = 0.0;  // Position within clip (beats)
         double lengthBeats = 4.0;   // Display width (beats)
         juce::String chordName;     // Display name, e.g. "Cmaj7", "Am/E"
+        int chordGroup = 0;         // 0 = unlinked, >0 = linked to notes with same ID
     };
     std::vector<ChordAnnotation> chordAnnotations;
-    double midiOffset = 0.0;  // User-controlled start offset in beats (playback / offset marker)
+    int nextChordGroupId = 1;  // Counter for generating unique chord group IDs
+    double midiOffset = 0.0;   // User-controlled start offset in beats (playback / offset marker)
     double midiTrimOffset = 0.0;  // Left-resize trim offset in beats (content origin on timeline)
 
     // Session view properties

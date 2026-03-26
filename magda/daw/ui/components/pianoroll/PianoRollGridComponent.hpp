@@ -207,13 +207,15 @@ class PianoRollGridComponent : public juce::Component,
     // Edit cursor click on grid (Alt+click) — position in seconds
     std::function<void(double)> onEditCursorSet;
 
-    // Chord block drop — clipId, beat position, notes (noteNumber + velocity pairs), chord name
-    std::function<void(ClipId, double, std::vector<std::pair<int, int>>, juce::String)>
+    // Chord block drop — clipId, beat position, notes (noteNumber + velocity pairs), chord name,
+    // length
+    std::function<void(ClipId, double, double, std::vector<std::pair<int, int>>, juce::String)>
         onChordDropped;
 
     // DragAndDropTarget
     bool isInterestedInDragSource(const SourceDetails& details) override;
     void itemDragEnter(const SourceDetails& details) override;
+    void itemDragMove(const SourceDetails& details) override;
     void itemDragExit(const SourceDetails& details) override;
     void itemDropped(const SourceDetails& details) override;
 
@@ -300,6 +302,11 @@ class PianoRollGridComponent : public juce::Component,
         juce::Colour colour;
     };
     std::vector<CopyDragGhost> copyDragGhosts_;
+
+    // Chord drop preview state
+    bool chordDropActive_ = false;
+    double chordDropAnchorBeat_ = 0.0;   // Where the user first entered / anchored
+    double chordDropCurrentBeat_ = 0.0;  // Current drag position
 
     // Painting helpers
     void paintGrid(juce::Graphics& g, juce::Rectangle<int> area);

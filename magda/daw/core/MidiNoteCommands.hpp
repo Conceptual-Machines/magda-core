@@ -688,4 +688,51 @@ class SetMidiPitchBendEventHandlesCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/**
+ * @brief Command for setting chordGroup IDs on multiple notes (used by chord detection)
+ */
+class SetNoteChordGroupsCommand : public UndoableCommand {
+  public:
+    SetNoteChordGroupsCommand(ClipId clipId, std::vector<std::pair<size_t, int>> noteGroups)
+        : clipId_(clipId), newGroups_(std::move(noteGroups)) {}
+
+    void execute() override {
+        auto* clip = ClipManager::getInstance().getClip(clipId_);
+        if (!clip)
+            return;
+
+        oldGroups_.clear();
+        oldGroups_.reserve(newGroups_.size());
+        for (const auto& [idx, group] : newGroups_) {
+            if (idx < clip->midiNotes.size()) {
+                oldGroups_.emplace_back(idx, clip->midiNotes[idx].chordGroup);
+                clip->midiNotes[idx].chordGroup = group;
+            }
+        }
+        ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+    }
+
+    void undo() override {
+        auto* clip = ClipManager::getInstance().getClip(clipId_);
+        if (!clip)
+            return;
+
+        for (const auto& [idx, group] : oldGroups_) {
+            if (idx < clip->midiNotes.size())
+                clip->midiNotes[idx].chordGroup = group;
+        }
+        ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+    }
+
+    juce::String getDescription() const override {
+        return "Set chord groups";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<std::pair<size_t, int>> newGroups_;  // {noteIndex, newChordGroup}
+    std::vector<std::pair<size_t, int>>
+        oldGroups_;  // {noteIndex, oldChordGroup} captured on execute
+};
+
 }  // namespace magda

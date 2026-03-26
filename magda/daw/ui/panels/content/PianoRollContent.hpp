@@ -103,6 +103,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
 
     // Chord row visibility
     bool showChordRow_ = false;
+    bool isSyncingChords_ = false;  // Re-entry guard for syncChordAnnotations
 
     // Initial centering flag
     bool needsInitialCentering_ = true;
@@ -120,6 +121,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
     void detectChordsFromNotes();
+    void syncChordAnnotations(magda::ClipId clipId);
 
     // Helper to get current header height based on chord row visibility
     int getHeaderHeight() const {
