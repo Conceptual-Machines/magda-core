@@ -78,14 +78,7 @@ class ScaleChordsPopup : public juce::Component {
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScaleChordsPopup)
 };
 
-/**
- * @brief Represents a single AI-suggested chord progression
- */
-struct AIProgression {
-    juce::String name;
-    juce::String description;
-    std::vector<magda::music::Chord> chords;
-};
+using AIProgression = magda::daw::audio::MidiChordEnginePlugin::AIProgression;
 
 /**
  * @brief Expandable scale row for the browse view — shows scale name, expands to chord blocks
@@ -192,7 +185,6 @@ class ChordPanelContent : public juce::Component,
     std::unique_ptr<juce::TextButton> aiTabBtn_;
 
     // AI tab — inline progression display + text input
-    std::vector<AIProgression> aiProgressions_;  // persisted results
     std::unique_ptr<juce::Viewport> aiViewport_;
     std::unique_ptr<juce::Component> aiContainer_;
     struct AIProgressionRow {

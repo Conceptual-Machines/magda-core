@@ -104,6 +104,20 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
         return suggestionParams_;
     }
 
+    // --- AI chord progression state (persisted across UI rebuilds) ---
+    struct AIProgression {
+        juce::String name;
+        juce::String description;
+        std::vector<magda::music::Chord> chords;
+    };
+
+    std::vector<AIProgression>& getAIProgressions() {
+        return aiProgressions_;
+    }
+    const std::vector<AIProgression>& getAIProgressions() const {
+        return aiProgressions_;
+    }
+
     /** Suppress detection (e.g. during chord preview playback). */
     void setDetectionSuppressed(bool suppressed) {
         detectionSuppressed_.store(suppressed, std::memory_order_relaxed);
@@ -170,6 +184,8 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     std::vector<magda::music::ScaleWithChords> cachedScales_;
 
     mutable std::mutex stateMutex_;  // protects message-thread state reads from UI
+
+    std::vector<AIProgression> aiProgressions_;
 
     double sampleRate_ = 44100.0;
 

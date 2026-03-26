@@ -363,6 +363,10 @@ void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin*
         plugin->addListener(this);
         syncFooterFromParams();
         updateFromPlugin();  // sync existing state immediately
+
+        // Restore AI progression display if plugin has persisted results
+        if (!plugin->getAIProgressions().empty())
+            rebuildAIProgressionRows();
     }
 
     repaint();
@@ -804,7 +808,9 @@ void ChordPanelContent::rebuildAIProgressionRows() {
     }
     aiRows_.clear();
 
-    for (const auto& prog : aiProgressions_) {
+    const auto& aiProgs =
+        chordPlugin_ ? chordPlugin_->getAIProgressions() : std::vector<AIProgression>{};
+    for (const auto& prog : aiProgs) {
         auto row = std::make_unique<AIProgressionRow>();
 
         for (const auto& chord : prog.chords) {
@@ -834,9 +840,11 @@ void ChordPanelContent::layoutAIProgressionRows() {
     auto* container = dynamic_cast<AIContainerComponent*>(aiContainer_.get());
     AIContainerPaintData paintData;
 
-    for (size_t i = 0; i < aiRows_.size() && i < aiProgressions_.size(); ++i) {
+    const auto& aiProgsLayout =
+        chordPlugin_ ? chordPlugin_->getAIProgressions() : std::vector<AIProgression>{};
+    for (size_t i = 0; i < aiRows_.size() && i < aiProgsLayout.size(); ++i) {
         auto& row = aiRows_[i];
-        auto& prog = aiProgressions_[i];
+        auto& prog = aiProgsLayout[i];
 
         AIContainerPaintData::Row paintRow;
         paintRow.name = prog.name;
@@ -1004,8 +1012,8 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
         if (safeThis->aiSendBtn_)
             safeThis->aiSendBtn_->setEnabled(true);
 
-        if (!progressions.empty()) {
-            safeThis->aiProgressions_ = std::move(progressions);
+        if (!progressions.empty() && safeThis->chordPlugin_) {
+            safeThis->chordPlugin_->getAIProgressions() = std::move(progressions);
             safeThis->rebuildAIProgressionRows();
         }
 
@@ -1432,7 +1440,7 @@ void ChordPanelContent::paint(juce::Graphics& g) {
                 area.removeFromTop(8);
                 g.drawText("Generating...", area.removeFromTop(20),
                            juce::Justification::centredLeft);
-            } else if (aiProgressions_.empty()) {
+            } else if (!chordPlugin_ || chordPlugin_->getAIProgressions().empty()) {
                 g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
                 g.setFont(FontManager::getInstance().getUIFont(11.0f));
                 area.removeFromTop(8);
