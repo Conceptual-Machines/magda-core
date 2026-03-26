@@ -23,6 +23,10 @@ Displayed when a MIDI clip is selected. Provides a grid for editing notes:
 !!! note "Footer controls"
     - ![bar chart](../assets/images/icons/bar_chart.svg){ width="16" } **Velocity** — Toggle the velocity/MIDI lane at the bottom of the editor
 
+### Chord Timeline
+
+When a [Chord Engine](../devices/chord-engine.md) is present on the track, a **chord row** appears above the note grid showing chord annotations. Chords can be placed by dragging from the Chord Engine's suggestion grid, or auto-detected from existing notes using the refresh button. Annotations are linked to their MIDI notes and update automatically when notes are moved, resized, or deleted. See [Chord Engine — Chord Timeline](../devices/chord-engine.md#chord-timeline) for details.
+
 ## Drum Grid Editor
 
 ![Drum Grid Editor](../assets/images/panels/drum-grid.png)

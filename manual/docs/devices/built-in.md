@@ -6,6 +6,7 @@ MAGDA includes its own custom devices as well as processors from the Tracktion E
 
 | Device | Description |
 |--------|-------------|
+| **Chord Engine** | Real-time chord detection, suggestion, and AI progression generator. See [Chord Engine](chord-engine.md). |
 | **Drum Grid** | Chain-based drum machine with per-pad FX. See [Drum Grid](drum-grid.md). |
 
 ## Tracktion Engine Devices
