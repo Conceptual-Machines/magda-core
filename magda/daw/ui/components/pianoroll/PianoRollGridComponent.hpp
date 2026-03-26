@@ -26,6 +26,7 @@ namespace magda {
  */
 class PianoRollGridComponent : public juce::Component,
                                public juce::DragAndDropTarget,
+                               public juce::Timer,
                                public ClipManagerListener,
                                public NoteGridHost {
   public:
@@ -35,6 +36,9 @@ class PianoRollGridComponent : public juce::Component,
     // Component overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
+
+    // Timer (for pending chord blink)
+    void timerCallback() override;
 
     // Mouse handling
     void mouseDown(const juce::MouseEvent& e) override;
@@ -303,10 +307,23 @@ class PianoRollGridComponent : public juce::Component,
     };
     std::vector<CopyDragGhost> copyDragGhosts_;
 
-    // Chord drop preview state
+    // Chord drop preview state (during DnD drag)
     bool chordDropActive_ = false;
-    double chordDropAnchorBeat_ = 0.0;   // Where the user first entered / anchored
-    double chordDropCurrentBeat_ = 0.0;  // Current drag position
+    double chordDropBeat_ = 0.0;  // Snapped beat position during drag
+
+    // Pending chord placement (two-step: drop sets position, click/Enter sets length)
+    struct PendingChordDrop {
+        ClipId clipId = INVALID_CLIP_ID;
+        double startBeat = 0.0;
+        double previewEndBeat = 0.0;  // Current mouse position for length preview
+        std::vector<std::pair<int, int>> notes;
+        juce::String chordName;
+        bool active = false;
+        bool blinkOn = true;  // Blink state for visual feedback
+    };
+    PendingChordDrop pendingChord_;
+    void confirmPendingChord(double endBeat);
+    void cancelPendingChord();
 
     // Painting helpers
     void paintGrid(juce::Graphics& g, juce::Rectangle<int> area);

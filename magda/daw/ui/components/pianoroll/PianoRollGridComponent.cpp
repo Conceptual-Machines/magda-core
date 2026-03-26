@@ -202,27 +202,33 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
                                static_cast<float>(gw), static_cast<float>(gh), 2.0f, 1.0f);
     }
 
-    // Draw chord drop preview (vertical line + span region)
+    // Draw chord drop preview (vertical line during DnD drag)
     if (chordDropActive_) {
-        int anchorX = beatToPixel(chordDropAnchorBeat_);
-        int currentX = beatToPixel(chordDropCurrentBeat_);
-        int startX = juce::jmin(anchorX, currentX);
-        int endX = juce::jmax(anchorX, currentX);
+        int lineX = beatToPixel(chordDropBeat_);
+        g.setColour(juce::Colour(0xFF5599FF).withAlpha(0.8f));
+        g.drawLine(float(lineX), 0.f, float(lineX), float(bounds.getHeight()), 2.0f);
+    }
 
-        // Draw span region if dragging a range
-        if (endX - startX > 2) {
+    // Draw pending chord placement preview (after drop, awaiting length confirmation)
+    if (pendingChord_.active) {
+        int startX = beatToPixel(pendingChord_.startBeat);
+        int endX = beatToPixel(pendingChord_.previewEndBeat);
+
+        // Draw the span region
+        if (endX > startX) {
             g.setColour(juce::Colour(0xFF5599FF).withAlpha(0.12f));
             g.fillRect(startX, 0, endX - startX, bounds.getHeight());
         }
 
-        // Draw vertical line at current position
-        g.setColour(juce::Colour(0xFF5599FF).withAlpha(0.8f));
-        g.drawLine(float(currentX), 0.f, float(currentX), float(bounds.getHeight()), 2.0f);
+        // Draw blinking start line
+        float alpha = pendingChord_.blinkOn ? 0.9f : 0.3f;
+        g.setColour(juce::Colour(0xFF5599FF).withAlpha(alpha));
+        g.drawLine(float(startX), 0.f, float(startX), float(bounds.getHeight()), 2.0f);
 
-        // Draw anchor line if range is being defined
-        if (endX - startX > 2) {
-            g.setColour(juce::Colour(0xFF5599FF).withAlpha(0.4f));
-            g.drawLine(float(anchorX), 0.f, float(anchorX), float(bounds.getHeight()), 1.0f);
+        // Draw end line at mouse position
+        if (endX > startX + 2) {
+            g.setColour(juce::Colour(0xFF5599FF).withAlpha(0.5f));
+            g.drawLine(float(endX), 0.f, float(endX), float(bounds.getHeight()), 1.0f);
         }
     }
 
@@ -390,6 +396,23 @@ void PianoRollGridComponent::resized() {
 }
 
 void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
+    // If pending chord is active, click confirms the length
+    if (pendingChord_.active) {
+        if (e.mods.isPopupMenu()) {
+            cancelPendingChord();
+            return;
+        }
+        double beat = pixelToBeat(e.x);
+        if (snapEnabled_)
+            beat = snapBeatToGrid(beat);
+        // Only accept clicks to the right of the start position
+        if (beat > pendingChord_.startBeat)
+            confirmPendingChord(beat);
+        else
+            cancelPendingChord();
+        return;
+    }
+
     isEditCursorClick_ = false;
 
     // Right-click context menu
@@ -542,6 +565,20 @@ void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
 }
 
 void PianoRollGridComponent::mouseMove(const juce::MouseEvent& e) {
+    // Update pending chord preview end position
+    if (pendingChord_.active) {
+        auto localPos = e.getEventRelativeTo(this).getPosition();
+        double beat = pixelToBeat(localPos.x);
+        if (snapEnabled_)
+            beat = snapBeatToGrid(beat);
+        if (beat > pendingChord_.startBeat)
+            pendingChord_.previewEndBeat = beat;
+        else
+            pendingChord_.previewEndBeat = pendingChord_.startBeat + gridResolutionBeats_;
+        repaint();
+        return;
+    }
+
     // Get mouse position relative to this component (important for child-forwarded events)
     auto localPos = e.getEventRelativeTo(this).getPosition();
 
@@ -682,6 +719,18 @@ void PianoRollGridComponent::mouseDoubleClick(const juce::MouseEvent& e) {
 }
 
 bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
+    // Handle pending chord confirmation/cancellation
+    if (pendingChord_.active) {
+        if (key.getKeyCode() == juce::KeyPress::returnKey) {
+            confirmPendingChord(pendingChord_.previewEndBeat);
+            return true;
+        }
+        if (key.getKeyCode() == juce::KeyPress::escapeKey) {
+            cancelPendingChord();
+            return true;
+        }
+    }
+
     // M5: Cmd+A — Select all notes
     if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'A') {
         if (clipId_ == INVALID_CLIP_ID)
@@ -1685,8 +1734,7 @@ void PianoRollGridComponent::itemDragEnter(const SourceDetails& details) {
     if (snapEnabled_)
         beat = snapBeatToGrid(beat);
     chordDropActive_ = true;
-    chordDropAnchorBeat_ = beat;
-    chordDropCurrentBeat_ = beat;
+    chordDropBeat_ = beat;
     repaint();
 }
 
@@ -1694,7 +1742,7 @@ void PianoRollGridComponent::itemDragMove(const SourceDetails& details) {
     double beat = pixelToBeat(details.localPosition.x);
     if (snapEnabled_)
         beat = snapBeatToGrid(beat);
-    chordDropCurrentBeat_ = beat;
+    chordDropBeat_ = beat;
     repaint();
 }
 
@@ -1713,17 +1761,9 @@ void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
     if (clipId_ == INVALID_CLIP_ID && selectedClipIds_.empty())
         return;
 
-    // Compute start beat and length from drag range
     double dropBeat = pixelToBeat(details.localPosition.x);
     if (snapEnabled_)
         dropBeat = snapBeatToGrid(dropBeat);
-
-    double startBeat = juce::jmin(chordDropAnchorBeat_, dropBeat);
-    double endBeat = juce::jmax(chordDropAnchorBeat_, dropBeat);
-    double dragLength = endBeat - startBeat;
-
-    // If drag was too short, fall back to grid resolution
-    double noteLength = (dragLength >= gridResolutionBeats_) ? dragLength : gridResolutionBeats_;
 
     // Extract notes from drag data
     auto* notesVar = obj->getProperties().getVarPointer("notes");
@@ -1746,9 +1786,48 @@ void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
     if (targetClipId == INVALID_CLIP_ID && !selectedClipIds_.empty())
         targetClipId = selectedClipIds_.front();
 
-    if (onChordDropped)
-        onChordDropped(targetClipId, startBeat, noteLength, std::move(notes), chordName);
+    // Enter pending chord state — user must click to set length or press Enter for default
+    pendingChord_.clipId = targetClipId;
+    pendingChord_.startBeat = dropBeat;
+    pendingChord_.previewEndBeat = dropBeat + gridResolutionBeats_;  // Default length preview
+    pendingChord_.notes = std::move(notes);
+    pendingChord_.chordName = chordName;
+    pendingChord_.active = true;
+    pendingChord_.blinkOn = true;
 
+    grabKeyboardFocus();
+    startTimerHz(3);  // Blink at ~3Hz
+    repaint();
+}
+
+void PianoRollGridComponent::timerCallback() {
+    if (!pendingChord_.active) {
+        stopTimer();
+        return;
+    }
+    pendingChord_.blinkOn = !pendingChord_.blinkOn;
+    repaint();
+}
+
+void PianoRollGridComponent::confirmPendingChord(double endBeat) {
+    if (!pendingChord_.active)
+        return;
+
+    double length = endBeat - pendingChord_.startBeat;
+    if (length < gridResolutionBeats_)
+        length = gridResolutionBeats_;
+
+    if (onChordDropped)
+        onChordDropped(pendingChord_.clipId, pendingChord_.startBeat, length,
+                       std::move(pendingChord_.notes), pendingChord_.chordName);
+
+    cancelPendingChord();
+}
+
+void PianoRollGridComponent::cancelPendingChord() {
+    pendingChord_.active = false;
+    pendingChord_.notes.clear();
+    stopTimer();
     repaint();
 }
 
