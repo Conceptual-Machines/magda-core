@@ -1221,9 +1221,12 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
         midiClipPtr->setOffset(te::TimeDuration::fromSeconds(0.0));
     }
 
-    // Groove/Shuffle/Swing
-    midiClipPtr->setGrooveTemplate(clip->grooveTemplate);
-    midiClipPtr->setGrooveStrength(clip->grooveStrength);
+    // Groove/Shuffle/Swing — only touch TE when values differ to avoid
+    // unnecessary clearCachedLoopSequence()/changed() side-effects
+    if (midiClipPtr->getGrooveTemplate() != clip->grooveTemplate)
+        midiClipPtr->setGrooveTemplate(clip->grooveTemplate);
+    if (midiClipPtr->getGrooveStrength() != clip->grooveStrength)
+        midiClipPtr->setGrooveStrength(clip->grooveStrength);
 
     // Clear existing notes and rebuild from ClipManager
     auto& sequence = midiClipPtr->getSequence();
