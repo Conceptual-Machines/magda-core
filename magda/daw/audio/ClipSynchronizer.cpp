@@ -491,9 +491,16 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         {
             auto& loopInfoRef = audioClipPtr->getLoopInfo();
             auto waveInfo = audioClipPtr->getWaveInfo();
-            if (auto* mutableClip = cm.getClip(clipId))
+            if (auto* mutableClip = cm.getClip(clipId)) {
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
+                // Auto-detect root note from file metadata if not already set
+                if (mutableClip->rootNote < 0) {
+                    int fileRootNote = loopInfoRef.getRootNote();
+                    if (fileRootNote >= 0)
+                        mutableClip->rootNote = fileRootNote;
+                }
+            }
         }
 
         if (clip->autoTempo) {
@@ -565,6 +572,11 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
             } else if (std::abs(clip->pitchChange) > 0.001f) {
                 audioClipPtr->setPitchChange(clip->pitchChange);
             }
+        }
+        if (clip->rootNote >= 0) {
+            auto& li = audioClipPtr->getLoopInfo();
+            if (li.getRootNote() != clip->rootNote)
+                li.setRootNote(clip->rootNote);
         }
         if (clip->transpose != 0)
             audioClipPtr->setTranspose(clip->transpose);
@@ -1386,9 +1398,15 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         {
             auto& loopInfoRef = audioClipPtr->getLoopInfo();
             auto waveInfo = audioClipPtr->getWaveInfo();
-            if (auto* mutableClip = ClipManager::getInstance().getClip(clipId))
+            if (auto* mutableClip = ClipManager::getInstance().getClip(clipId)) {
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
+                if (mutableClip->rootNote < 0) {
+                    int fileRootNote = loopInfoRef.getRootNote();
+                    if (fileRootNote >= 0)
+                        mutableClip->rootNote = fileRootNote;
+                }
+            }
         }
 
         // Store bidirectional mapping
@@ -1604,6 +1622,12 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
 
     // 8. PITCH
     {
+        // Root note (must be set before autoPitch — TE needs it for transpose calculation)
+        if (clip->rootNote >= 0) {
+            auto& li = audioClipPtr->getLoopInfo();
+            if (li.getRootNote() != clip->rootNote)
+                li.setRootNote(clip->rootNote);
+        }
         bool isAnalog = clip->isAnalogPitchActive();
         if (clip->autoPitch != audioClipPtr->getAutoPitch())
             audioClipPtr->setAutoPitch(isAnalog ? false : clip->autoPitch);

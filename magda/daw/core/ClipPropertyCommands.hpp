@@ -602,4 +602,31 @@ class SetClipGrooveStrengthCommand : public UndoableCommand {
     float oldStrength_ = 0.0f, newStrength_;
 };
 
+/**
+ * @brief Command for setting clip root note
+ */
+class SetClipRootNoteCommand : public UndoableCommand {
+  public:
+    SetClipRootNoteCommand(ClipId clipId, int newRootNote)
+        : clipId_(clipId), newRootNote_(newRootNote) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldRootNote_ = clip->rootNote;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setRootNote(clipId_, newRootNote_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setRootNote(clipId_, oldRootNote_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Root Note";
+    }
+
+  private:
+    ClipId clipId_;
+    int oldRootNote_ = -1, newRootNote_;
+};
+
 }  // namespace magda

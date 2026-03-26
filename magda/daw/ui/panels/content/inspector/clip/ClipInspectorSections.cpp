@@ -1018,6 +1018,35 @@ void ClipInspector::initPitchSection() {
     };
     clipPropsContainer_.addChildComponent(autoPitchModeCombo_);
 
+    // Root note picker (audio clips — required for transpose/autoPitch to work)
+    rootNoteCombo_.setColour(juce::ComboBox::backgroundColourId,
+                             DarkTheme::getColour(DarkTheme::SURFACE));
+    rootNoteCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    rootNoteCombo_.setColour(juce::ComboBox::outlineColourId,
+                             DarkTheme::getColour(DarkTheme::BORDER));
+    rootNoteCombo_.addItem("Not set", 1);  // ID 1 = rootNote -1
+    for (int note = 0; note < 128; ++note) {
+        auto name = juce::MidiMessage::getMidiNoteName(note, true, true, 3);
+        rootNoteCombo_.addItem(name, note + 2);  // ID = note + 2 (so ID 2 = note 0)
+    }
+    rootNoteCombo_.setSelectedId(1, juce::dontSendNotification);
+    rootNoteCombo_.setTooltip(
+        "Root note of the audio sample.\nRequired for transpose and auto-pitch to work.");
+    rootNoteCombo_.onChange = [this]() {
+        if (selectedClipIds_.empty())
+            return;
+        int selectedId = rootNoteCombo_.getSelectedId();
+        int rootNote = selectedId <= 1 ? -1 : selectedId - 2;
+        for (auto cid : selectedClipIds_) {
+            const auto* c = magda::ClipManager::getInstance().getClip(cid);
+            if (c && c->type == magda::ClipType::Audio) {
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipRootNoteCommand>(cid, rootNote));
+            }
+        }
+    };
+    clipPropsContainer_.addChildComponent(rootNoteCombo_);
+
     // MIDI transpose buttons (destructive: shift all notes up/down)
     auto transposeAction = [this](int direction, bool shift) {
         if (selectedClipIds_.empty())

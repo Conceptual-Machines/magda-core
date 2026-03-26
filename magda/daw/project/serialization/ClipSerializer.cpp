@@ -50,6 +50,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("transpose", clip.transpose);
     obj->setProperty("autoPitch", clip.autoPitch);
     obj->setProperty("autoPitchMode", clip.autoPitchMode);
+    if (clip.rootNote >= 0)
+        obj->setProperty("rootNote", clip.rootNote);
 
     // Playback
     obj->setProperty("isReversed", clip.isReversed);
@@ -218,6 +220,8 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.transpose = obj->getProperty("transpose");
     outClip.autoPitch = static_cast<bool>(obj->getProperty("autoPitch"));
     outClip.autoPitchMode = obj->getProperty("autoPitchMode");
+    if (obj->hasProperty("rootNote"))
+        outClip.rootNote = static_cast<int>(obj->getProperty("rootNote"));
 
     // Playback
     outClip.isReversed = static_cast<bool>(obj->getProperty("isReversed"));

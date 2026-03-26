@@ -123,6 +123,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::TextButton autoPitchToggle_;
     juce::TextButton analogPitchToggle_;
     juce::ComboBox autoPitchModeCombo_;
+    juce::ComboBox rootNoteCombo_;
     std::unique_ptr<magda::DraggableValueLabel> pitchChangeValue_;
 
     // Beat detection section

@@ -206,6 +206,7 @@ class ClipManager {
     void setAutoPitchMode(ClipId clipId, int mode);
     void setPitchChange(ClipId clipId, float semitones);
     void setTranspose(ClipId clipId, int semitones);
+    void setRootNote(ClipId clipId, int midiNote);
 
     // Beat Detection
     void setAutoDetectBeats(ClipId clipId, bool enabled);
