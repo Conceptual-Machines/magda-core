@@ -207,8 +207,9 @@ class PianoRollGridComponent : public juce::Component,
     // Edit cursor click on grid (Alt+click) — position in seconds
     std::function<void(double)> onEditCursorSet;
 
-    // Chord block drop — clipId, beat position, notes (noteNumber + velocity pairs)
-    std::function<void(ClipId, double, std::vector<std::pair<int, int>>)> onChordDropped;
+    // Chord block drop — clipId, beat position, notes (noteNumber + velocity pairs), chord name
+    std::function<void(ClipId, double, std::vector<std::pair<int, int>>, juce::String)>
+        onChordDropped;
 
     // DragAndDropTarget
     bool isInterestedInDragSource(const SourceDetails& details) override;

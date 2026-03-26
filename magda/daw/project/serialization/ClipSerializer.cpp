@@ -135,6 +135,19 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         obj->setProperty("midiPitchBendData", juce::var(pbArray));
     }
 
+    // Chord annotations
+    if (!clip.chordAnnotations.empty()) {
+        juce::Array<juce::var> chordArray;
+        for (const auto& ca : clip.chordAnnotations) {
+            auto* caObj = new juce::DynamicObject();
+            caObj->setProperty("beatPosition", ca.beatPosition);
+            caObj->setProperty("lengthBeats", ca.lengthBeats);
+            caObj->setProperty("chordName", ca.chordName);
+            chordArray.add(juce::var(caObj));
+        }
+        obj->setProperty("chordAnnotations", chordArray);
+    }
+
     return juce::var(obj);
 }
 
@@ -285,6 +298,21 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
             if (!deserializeMidiPitchBendData(pbVar, pb))
                 return false;
             outClip.midiPitchBendData.push_back(pb);
+        }
+    }
+
+    // Chord annotations
+    auto chordAnnotVar = obj->getProperty("chordAnnotations");
+    if (chordAnnotVar.isArray()) {
+        auto* arr = chordAnnotVar.getArray();
+        for (const auto& caVar : *arr) {
+            if (auto* caObj = caVar.getDynamicObject()) {
+                ClipInfo::ChordAnnotation ca;
+                ca.beatPosition = caObj->getProperty("beatPosition");
+                ca.lengthBeats = caObj->getProperty("lengthBeats");
+                ca.chordName = caObj->getProperty("chordName").toString();
+                outClip.chordAnnotations.push_back(ca);
+            }
         }
     }
 

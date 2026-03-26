@@ -1693,12 +1693,14 @@ void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
     if (notes.empty())
         return;
 
+    juce::String chordName = obj->getProperty("chordName").toString();
+
     ClipId targetClipId = clipId_;
     if (targetClipId == INVALID_CLIP_ID && !selectedClipIds_.empty())
         targetClipId = selectedClipIds_.front();
 
     if (onChordDropped)
-        onChordDropped(targetClipId, beat, std::move(notes));
+        onChordDropped(targetClipId, beat, std::move(notes), chordName);
 }
 
 }  // namespace magda

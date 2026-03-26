@@ -289,6 +289,11 @@ class ClipManager {
     void removeMidiNote(ClipId clipId, int noteIndex);
     void clearMidiNotes(ClipId clipId);
 
+    // Chord annotations
+    void addChordAnnotation(ClipId clipId, const ClipInfo::ChordAnnotation& annotation);
+    void removeChordAnnotation(ClipId clipId, size_t index);
+    void clearChordAnnotations(ClipId clipId);
+
     // ========================================================================
     // Access
     // ========================================================================

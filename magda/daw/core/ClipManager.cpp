@@ -1095,6 +1095,34 @@ void ClipManager::clearMidiNotes(ClipId clipId) {
     }
 }
 
+void ClipManager::addChordAnnotation(ClipId clipId, const ClipInfo::ChordAnnotation& annotation) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::MIDI) {
+            clip->chordAnnotations.push_back(annotation);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::removeChordAnnotation(ClipId clipId, size_t index) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::MIDI && index < clip->chordAnnotations.size()) {
+            clip->chordAnnotations.erase(clip->chordAnnotations.begin() +
+                                         static_cast<ptrdiff_t>(index));
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::clearChordAnnotations(ClipId clipId) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::MIDI) {
+            clip->chordAnnotations.clear();
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
 // ============================================================================
 // Access
 // ============================================================================

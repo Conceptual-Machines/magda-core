@@ -423,6 +423,7 @@ set(DAW_HEADERS
     core/TrackPropertyCommands.hpp
     core/AutomationCommands.hpp
     core/MidiNoteCommands.hpp
+    core/ChordAnnotationCommands.hpp
     engine/AudioEngine.hpp
     engine/TracktionEngineWrapper.hpp
     engine/MagdaUIBehaviour.hpp

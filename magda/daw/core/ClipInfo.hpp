@@ -206,6 +206,14 @@ struct ClipInfo {
     std::vector<MidiNote> midiNotes;
     std::vector<MidiCCData> midiCCData;
     std::vector<MidiPitchBendData> midiPitchBendData;
+
+    // Chord annotations (displayed in piano roll chord row)
+    struct ChordAnnotation {
+        double beatPosition = 0.0;  // Position within clip (beats)
+        double lengthBeats = 4.0;   // Display width (beats)
+        juce::String chordName;     // Display name, e.g. "Cmaj7", "Am/E"
+    };
+    std::vector<ChordAnnotation> chordAnnotations;
     double midiOffset = 0.0;  // User-controlled start offset in beats (playback / offset marker)
     double midiTrimOffset = 0.0;  // Left-resize trim offset in beats (content origin on timeline)
 

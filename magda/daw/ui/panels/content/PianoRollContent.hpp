@@ -111,6 +111,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     std::unique_ptr<magda::PianoRollGridComponent> gridComponent_;
     std::unique_ptr<magda::PianoRollKeyboard> keyboard_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
+    std::unique_ptr<magda::SvgButton> chordDetectBtn_;
     std::unique_ptr<magda::SvgButton> velocityToggle_;
 
     // Grid component management
@@ -118,6 +119,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
     void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
+    void detectChordsFromNotes();
 
     // Helper to get current header height based on chord row visibility
     int getHeaderHeight() const {
