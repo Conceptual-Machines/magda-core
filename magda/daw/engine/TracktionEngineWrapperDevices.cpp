@@ -39,13 +39,58 @@ void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::Device
                        static_cast<int>(dm.getWaveInputDevices().size()) +
                        static_cast<int>(dm.getWaveOutputDevices().size());
 
-    if (totalDevices > lastKnownDeviceCount_) {
+    // Detect if the actual audio hardware device changed (e.g. MacBook speakers → M4)
+    juce::String currentDeviceName;
+    if (auto* device = dm.deviceManager.getCurrentAudioDevice())
+        currentDeviceName = device->getName();
+
+    bool deviceChanged = (!currentDeviceName.isEmpty() && lastKnownAudioDeviceName_.isNotEmpty() &&
+                          currentDeviceName != lastKnownAudioDeviceName_);
+    bool devicesAdded = (totalDevices > lastKnownDeviceCount_);
+
+    if (deviceChanged) {
+        DBG("Audio device changed: " << lastKnownAudioDeviceName_ << " -> " << currentDeviceName);
+
+        // Reconfigure wave input/output devices for the new hardware channel layout.
+        // Enable all hardware channels at JUCE level, then sync TE wave devices.
+        if (auto* device = dm.deviceManager.getCurrentAudioDevice()) {
+            auto setup = dm.deviceManager.getAudioDeviceSetup();
+            setup.inputChannels.clear();
+            setup.inputChannels.setRange(0, device->getInputChannelNames().size(), true);
+            setup.outputChannels.clear();
+            setup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
+            setup.useDefaultInputChannels = false;
+            setup.useDefaultOutputChannels = false;
+            dm.deviceManager.setAudioDeviceSetup(setup, true);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
+
+            int numInputChannels = device->getInputChannelNames().size();
+            for (auto* dev : dm.getWaveInputDevices()) {
+                bool shouldEnable = false;
+                for (const auto& ch : dev->getChannels()) {
+                    if (ch.indexInDevice < numInputChannels) {
+                        shouldEnable = true;
+                        break;
+                    }
+                }
+                dev->setEnabled(shouldEnable);
+            }
+
+            DBG("Reconfigured wave devices for " << currentDeviceName << " (" << numInputChannels
+                                                 << " inputs)");
+        }
+    }
+
+    if (devicesAdded || deviceChanged) {
         ctx->reallocate();
         int inputsAfter = static_cast<int>(ctx->getAllInputs().size());
         DBG("Device change: Reallocated playback context (inputs: " << inputsBefore << " -> "
                                                                     << inputsAfter << ")");
     }
+
     lastKnownDeviceCount_ = totalDevices;
+    if (currentDeviceName.isNotEmpty())
+        lastKnownAudioDeviceName_ = currentDeviceName;
 }
 
 void TracktionEngineWrapper::notifyDeviceLoadingComplete(const juce::String& message) {

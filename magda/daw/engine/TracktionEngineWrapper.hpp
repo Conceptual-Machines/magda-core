@@ -412,6 +412,7 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Device change tracking
     int lastKnownDeviceCount_ = 0;
+    juce::String lastKnownAudioDeviceName_;
 
     // Helper methods
     tracktion::Track* findTrackById(const std::string& track_id) const;
