@@ -172,8 +172,9 @@ class ChordPanelContent : public juce::Component,
     std::unique_ptr<juce::TextButton> add11thsBtn_;
     std::unique_ptr<juce::TextButton> add13thsBtn_;
     std::unique_ptr<magda::SvgButton> scaleFilterBtn_;
-    std::unique_ptr<juce::TextButton> explorerBtn_;
-    std::unique_ptr<juce::TextButton> clearHistoryBtn_;
+    std::unique_ptr<magda::SvgButton> browseBtn_;
+    std::unique_ptr<magda::SvgButton> backBtn_;
+    std::unique_ptr<magda::SvgButton> clearHistoryBtn_;
 
     // Preview state
     std::vector<int> previewingNotes_;  // MIDI note numbers currently sounding
@@ -194,7 +195,7 @@ class ChordPanelContent : public juce::Component,
     };
     std::vector<std::unique_ptr<AIProgressionRow>> aiRows_;
     std::unique_ptr<juce::TextEditor> aiInputBox_;
-    std::unique_ptr<juce::TextButton> aiSendBtn_;
+    std::unique_ptr<magda::SvgButton> aiSendBtn_;
     bool aiLoading_ = false;
 
     void switchToTab(SuggestionTab tab);

@@ -604,9 +604,26 @@ void ChordPanelContent::showScalePopup(const magda::music::ScaleWithChords& scal
 void ChordPanelContent::enterBrowseMode() {
     browseMode_ = true;
 
-    // Hide suggestion blocks
+    // Hide tabs and all tab content — browse replaces the entire suggestions column
+    ksTabBtn_->setVisible(false);
+    aiTabBtn_->setVisible(false);
     for (auto& block : suggestionBlocks_)
         block->setVisible(false);
+    if (aiViewport_)
+        aiViewport_->setVisible(false);
+    if (aiInputBox_)
+        aiInputBox_->setVisible(false);
+    if (aiSendBtn_)
+        aiSendBtn_->setVisible(false);
+
+    // Hide tab-specific footer controls
+    noveltyLabel_->setVisible(false);
+    add7thsBtn_->setVisible(false);
+    add9thsBtn_->setVisible(false);
+    add11thsBtn_->setVisible(false);
+    add13thsBtn_->setVisible(false);
+    addAltBtn_->setVisible(false);
+    scaleFilterBtn_->setVisible(false);
 
     // Create key filter buttons (C, C#, D, ... B)
     if (browseKeyButtons_.empty()) {
@@ -658,7 +675,8 @@ void ChordPanelContent::enterBrowseMode() {
         browseViewport_->setVisible(true);
     }
 
-    explorerBtn_->setButtonText("Back");
+    browseBtn_->setVisible(false);
+    backBtn_->setVisible(true);
     rebuildBrowseRows();
     resized();
     repaint();
@@ -675,11 +693,13 @@ void ChordPanelContent::exitBrowseMode() {
     for (auto& row : browseRows_)
         row->setVisible(false);
 
-    // Show suggestion blocks again
-    for (auto& block : suggestionBlocks_)
-        block->setVisible(true);
+    // Restore tabs and current tab's content
+    ksTabBtn_->setVisible(true);
+    aiTabBtn_->setVisible(true);
+    switchToTab(suggestionTab_);  // restores correct tab content + footer
 
-    explorerBtn_->setButtonText("Browse");
+    browseBtn_->setVisible(true);
+    backBtn_->setVisible(false);
     resized();
     repaint();
 }
@@ -754,26 +774,13 @@ void ChordPanelContent::requestAISuggestions() {
 }
 
 void ChordPanelContent::switchToTab(SuggestionTab tab) {
-    if (suggestionTab_ == tab)
-        return;
     suggestionTab_ = tab;
 
     bool isKS = (tab == SuggestionTab::KS);
 
     // Toggle K&S content visibility
     for (auto& block : suggestionBlocks_)
-        block->setVisible(isKS && !browseMode_);
-    if (browseMode_ && isKS) {
-        for (auto& btn : browseKeyButtons_)
-            btn->setVisible(true);
-        if (browseViewport_)
-            browseViewport_->setVisible(true);
-    } else {
-        for (auto& btn : browseKeyButtons_)
-            btn->setVisible(false);
-        if (browseViewport_)
-            browseViewport_->setVisible(false);
-    }
+        block->setVisible(isKS);
 
     // Toggle AI content visibility
     if (aiViewport_)
@@ -928,9 +935,10 @@ void ChordPanelContent::AIRequestThread::run() {
               "have a name, a short description (under 60 chars), and 4-8 chords via "
               ".add_chord() calls.\n"
               "Use beat values starting at 0, incrementing by the chord length.\n"
-              "Use appropriate octaves (root around C3-C4). Use quality names like: major, "
-              "minor, dim, aug, dom7, maj7, min7, dim7, dom9, maj9, min9, sus2, sus4, add9, "
-              "madd9, 6, min6, power.";
+              "Use appropriate octaves (root around C3-C4). Use inversions (inversion=0/1/2) "
+              "to match the voicings in the chord history and create smooth voice leading.\n"
+              "Quality names: major, minor, dim, aug, dom7, maj7, min7, dim7, dom9, maj9, "
+              "min9, sus2, sus4, add9, madd9, 6, min6, power.";
 
     // Chord progression grammar (Lark format) for grammar-constrained output
     static const char* chordProgressionGrammar = R"GRAMMAR(
@@ -961,19 +969,22 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
     static const char* chordToolDescription =
         "Generates chord progression suggestions using MAGDA DSL.\n\n"
         "Format: progression(name=\"Name\", description=\"Why it works\") followed by "
-        ".add_chord(root=<note>, quality=<quality>, beat=<beat>, length=<beats>) chains.\n\n"
+        ".add_chord(root=<note>, quality=<quality>, beat=<beat>, length=<beats>, "
+        "inversion=<0|1|2>) chains.\n\n"
         "Example:\n"
         "progression(name=\"Classic Pop\", description=\"Timeless I-V-vi-IV cadence\")"
         ".add_chord(root=C4, quality=major, beat=0, length=1)"
-        ".add_chord(root=G3, quality=major, beat=1, length=1)"
+        ".add_chord(root=G3, quality=major, beat=1, length=1, inversion=1)"
         ".add_chord(root=A3, quality=minor, beat=2, length=1)"
-        ".add_chord(root=F3, quality=major, beat=3, length=1)\n"
+        ".add_chord(root=F3, quality=major, beat=3, length=1, inversion=2)\n"
         "progression(name=\"Jazz ii-V-I\", description=\"Smooth jazz resolution\")"
         ".add_chord(root=D3, quality=min7, beat=0, length=1)"
-        ".add_chord(root=G3, quality=dom7, beat=1, length=1)"
+        ".add_chord(root=G3, quality=dom7, beat=1, length=1, inversion=1)"
         ".add_chord(root=C4, quality=maj7, beat=2, length=2)\n\n"
         "Qualities: major, minor, dim, aug, dom7, maj7, min7, dim7, dom9, maj9, min9, "
         "sus2, sus4, add9, madd9, 6, min6, power\n"
+        "Inversion: 0=root position (default), 1=first inversion, 2=second inversion. "
+        "Use inversions to create smooth voice leading matching the played voicings.\n"
         "Notes: C3-B5 range (e.g. C4, F#3, Bb4)";
 
     // Use OpenAIClient with grammar-constrained output
@@ -1076,9 +1087,10 @@ std::vector<AIProgression> ChordPanelContent::parseAIResponse(const juce::String
 
             auto paramsStr = progBlock.substring(paramsStart, paramsEnd);
 
-            // Parse root= and quality= from params
+            // Parse root=, quality=, inversion= from params
             juce::String rootStr, qualityStr;
             int octave = 4;
+            int inversion = 0;
 
             int rootIdx = paramsStr.indexOf("root=");
             if (rootIdx >= 0) {
@@ -1103,7 +1115,16 @@ std::vector<AIProgression> ChordPanelContent::parseAIResponse(const juce::String
                                             : paramsStr.substring(qualIdx).trim();
             }
 
-            // Build chord name for parseChordName (e.g. "C major" or "G# min7")
+            int invIdx = paramsStr.indexOf("inversion=");
+            if (invIdx >= 0) {
+                invIdx += 10;
+                int invEnd = paramsStr.indexOf(invIdx, ",");
+                auto invStr = (invEnd >= 0) ? paramsStr.substring(invIdx, invEnd).trim()
+                                            : paramsStr.substring(invIdx).trim();
+                inversion = invStr.getIntValue();
+            }
+
+            // Build chord from parsed params
             if (rootStr.isNotEmpty() && qualityStr.isNotEmpty()) {
                 // Strip octave digit from root for chord name
                 juce::String rootName = rootStr;
@@ -1115,7 +1136,10 @@ std::vector<AIProgression> ChordPanelContent::parseAIResponse(const juce::String
 
                 auto chordName = rootName + " " + qualityStr;
                 auto spec = engine.parseChordName(chordName);
-                auto chord = engine.buildChordInRootPosition(spec.root, spec.quality, octave);
+                auto chord =
+                    (inversion > 0)
+                        ? engine.buildChordInversion(spec.root, spec.quality, inversion, octave)
+                        : engine.buildChordInRootPosition(spec.root, spec.quality, octave);
                 magda::music::ChordEngine::finalizeChord(chord);
                 if (!chord.notes.empty())
                     prog.chords.push_back(chord);
@@ -1238,26 +1262,27 @@ void ChordPanelContent::setupFooterControls() {
     };
     addAndMakeVisible(scaleFilterBtn_.get());
 
-    explorerBtn_ = std::make_unique<juce::TextButton>("Browse");
-    explorerBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    explorerBtn_->setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    explorerBtn_->setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    explorerBtn_->onClick = [this]() {
-        if (browseMode_)
-            exitBrowseMode();
-        else
-            enterBrowseMode();
-    };
-    addAndMakeVisible(explorerBtn_.get());
+    browseBtn_ = std::make_unique<magda::SvgButton>("Browse", BinaryData::browser_svg,
+                                                    BinaryData::browser_svgSize);
+    browseBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    browseBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    browseBtn_->setTooltip("Browse scales");
+    browseBtn_->onClick = [this]() { enterBrowseMode(); };
+    addAndMakeVisible(browseBtn_.get());
 
-    clearHistoryBtn_ = std::make_unique<juce::TextButton>("Clear");
-    clearHistoryBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    clearHistoryBtn_->setColour(juce::TextButton::buttonColourId,
-                                DarkTheme::getColour(DarkTheme::SURFACE));
-    clearHistoryBtn_->setColour(juce::TextButton::textColourOffId,
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    backBtn_ = std::make_unique<magda::SvgButton>("Back", BinaryData::chevron_left_svg,
+                                                  BinaryData::chevron_left_svgSize);
+    backBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    backBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    backBtn_->setTooltip("Back to suggestions");
+    backBtn_->onClick = [this]() { exitBrowseMode(); };
+    backBtn_->setVisible(false);
+    addAndMakeVisible(backBtn_.get());
+
+    clearHistoryBtn_ = std::make_unique<magda::SvgButton>("ClearHistory", BinaryData::delete_svg,
+                                                          BinaryData::delete_svgSize);
+    clearHistoryBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    clearHistoryBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clearHistoryBtn_->setTooltip("Clear chord history and reset detection");
     clearHistoryBtn_->onClick = [this]() {
         if (chordPlugin_)
@@ -1301,7 +1326,6 @@ void ChordPanelContent::setupFooterControls() {
     // AI tab viewport for scrollable progression display
     aiViewport_ = std::make_unique<juce::Viewport>();
     aiContainer_ = std::make_unique<AIContainerComponent>();
-    aiContainer_->setInterceptsMouseClicks(false, true);
     aiViewport_->setViewedComponent(aiContainer_.get(), false);
     aiViewport_->setScrollBarsShown(true, false);
     aiViewport_->setVisible(false);
@@ -1322,12 +1346,10 @@ void ChordPanelContent::setupFooterControls() {
     aiInputBox_->setVisible(false);
     addAndMakeVisible(aiInputBox_.get());
 
-    aiSendBtn_ = std::make_unique<juce::TextButton>("Send");
-    aiSendBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    aiSendBtn_->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    aiSendBtn_->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    aiSendBtn_ = std::make_unique<magda::SvgButton>("AISend", BinaryData::send_svg,
+                                                    BinaryData::send_svgSize);
+    aiSendBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    aiSendBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     aiSendBtn_->onClick = [this]() { requestAISuggestions(); };
     aiSendBtn_->setVisible(false);
     addAndMakeVisible(aiSendBtn_.get());
@@ -1410,7 +1432,7 @@ void ChordPanelContent::paint(juce::Graphics& g) {
         }
     }
 
-    // --- Column 2: Suggestions (tabbed: K&S / AI) ---
+    // --- Column 2: Suggestions (browse OR tabbed: K&S / AI) ---
     if (suggestionsCol_.getWidth() > 0) {
         auto col = suggestionsCol_;
 
@@ -1419,33 +1441,39 @@ void ChordPanelContent::paint(juce::Graphics& g) {
         g.fillRect(col.getX(), col.getY() + 4, 1, col.getHeight() - 8);
 
         auto area = col.reduced(PADDING, 0);
-        area.removeFromTop(SECTION_HEADER_HEIGHT);  // tab buttons positioned in resized()
 
-        if (suggestionTab_ == SuggestionTab::KS) {
-            if (browseMode_) {
-                // Browse mode label drawn below tabs
-            } else if (suggestionBlocks_.empty() && chordPlugin_) {
-                g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
-                g.setFont(FontManager::getInstance().getUIFont(11.0f));
-                area.removeFromTop(8);
-                g.drawText("Play to get suggestions", area.removeFromTop(20),
-                           juce::Justification::centredLeft);
-            }
+        if (browseMode_) {
+            // Browse mode header
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setFont(headerFont);
+            g.drawText("BROWSE SCALES", area.removeFromTop(SECTION_HEADER_HEIGHT),
+                       juce::Justification::centredLeft);
         } else {
-            // AI tab content — draw progression names and descriptions
-            // (chord blocks are child components positioned in layoutAIProgressionRows)
-            if (aiLoading_) {
-                g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
-                g.setFont(FontManager::getInstance().getUIFont(11.0f));
-                area.removeFromTop(8);
-                g.drawText("Generating...", area.removeFromTop(20),
-                           juce::Justification::centredLeft);
-            } else if (!chordPlugin_ || chordPlugin_->getAIProgressions().empty()) {
-                g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
-                g.setFont(FontManager::getInstance().getUIFont(11.0f));
-                area.removeFromTop(8);
-                g.drawText("Type a prompt or press Send", area.removeFromTop(20),
-                           juce::Justification::centredLeft);
+            area.removeFromTop(SECTION_HEADER_HEIGHT);  // tab buttons positioned in resized()
+
+            if (suggestionTab_ == SuggestionTab::KS) {
+                if (suggestionBlocks_.empty() && chordPlugin_) {
+                    g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+                    g.setFont(FontManager::getInstance().getUIFont(11.0f));
+                    area.removeFromTop(8);
+                    g.drawText("Play to get suggestions", area.removeFromTop(20),
+                               juce::Justification::centredLeft);
+                }
+            } else {
+                // AI tab content — draw progression names and descriptions
+                if (aiLoading_) {
+                    g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+                    g.setFont(FontManager::getInstance().getUIFont(11.0f));
+                    area.removeFromTop(8);
+                    g.drawText("Generating...", area.removeFromTop(20),
+                               juce::Justification::centredLeft);
+                } else if (!chordPlugin_ || chordPlugin_->getAIProgressions().empty()) {
+                    g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+                    g.setFont(FontManager::getInstance().getUIFont(11.0f));
+                    area.removeFromTop(8);
+                    g.drawText("Type a prompt or press Send", area.removeFromTop(20),
+                               juce::Justification::centredLeft);
+                }
             }
         }
     }
@@ -1514,8 +1542,8 @@ void ChordPanelContent::resized() {
     bounds.removeFromRight(COLUMN_GAP);
     suggestionsCol_ = bounds;
 
-    // Layout footer — depends on active tab
-    {
+    // Layout footer — depends on active tab (hidden in browse mode)
+    if (!browseMode_) {
         auto footer = footerArea;
         footer.removeFromTop(1);  // separator line
         footer.removeFromLeft(detectionWidth + COLUMN_GAP);
@@ -1539,7 +1567,7 @@ void ChordPanelContent::resized() {
         } else {
             // AI footer: [text input] [Send]
             auto mid = footer.reduced(PADDING, 0);
-            aiSendBtn_->setBounds(mid.removeFromRight(40).reduced(0, 2));
+            aiSendBtn_->setBounds(mid.removeFromRight(22).reduced(0, 2));
             mid.removeFromRight(4);
             aiInputBox_->setBounds(mid.reduced(0, 1));
         }
@@ -1553,7 +1581,7 @@ void ChordPanelContent::resized() {
         area.removeFromTop(8);                      // gap
 
         auto histHeader = area.removeFromTop(SECTION_HEADER_HEIGHT);
-        clearHistoryBtn_->setBounds(histHeader.removeFromRight(34).reduced(0, 2));
+        clearHistoryBtn_->setBounds(histHeader.removeFromRight(22).reduced(0, 2));
         area.removeFromTop(2);
 
         if (!historyBlocks_.empty()) {
@@ -1583,42 +1611,46 @@ void ChordPanelContent::resized() {
         }
     }
 
-    // Suggestions column — tab buttons + content
+    // Suggestions column — browse mode OR tab buttons + content
     {
         auto area = suggestionsCol_.reduced(PADDING, 0);
 
-        // Tab buttons in header row
-        auto tabRow = area.removeFromTop(SECTION_HEADER_HEIGHT);
-        ksTabBtn_->setBounds(tabRow.removeFromLeft(36).reduced(0, 2));
-        tabRow.removeFromLeft(2);
-        aiTabBtn_->setBounds(tabRow.removeFromLeft(30).reduced(0, 2));
+        if (browseMode_) {
+            // Browse mode takes over the entire suggestions column (no tabs)
+            area.removeFromTop(SECTION_HEADER_HEIGHT);  // "BROWSE SCALES" header painted in paint()
+            area.removeFromTop(2);
 
-        area.removeFromTop(2);
-
-        if (suggestionTab_ == SuggestionTab::KS) {
-            // K&S tab content
-            if (browseMode_) {
-                // Key filter buttons — two rows of 6
-                int keyBtnWidth = (area.getWidth() - 5 * 2) / 6;
-                for (int row = 0; row < 2; ++row) {
-                    int x = area.getX();
-                    for (int col = 0; col < 6; ++col) {
-                        int idx = row * 6 + col;
-                        if (idx < static_cast<int>(browseKeyButtons_.size())) {
-                            browseKeyButtons_[static_cast<size_t>(idx)]->setBounds(x, area.getY(),
-                                                                                   keyBtnWidth, 18);
-                            x += keyBtnWidth + 2;
-                        }
+            // Key filter buttons — two rows of 6
+            int keyBtnWidth = (area.getWidth() - 5 * 2) / 6;
+            for (int row = 0; row < 2; ++row) {
+                int x = area.getX();
+                for (int col = 0; col < 6; ++col) {
+                    int idx = row * 6 + col;
+                    if (idx < static_cast<int>(browseKeyButtons_.size())) {
+                        browseKeyButtons_[static_cast<size_t>(idx)]->setBounds(x, area.getY(),
+                                                                               keyBtnWidth, 18);
+                        x += keyBtnWidth + 2;
                     }
-                    area.removeFromTop(20);
                 }
-                area.removeFromTop(4);
+                area.removeFromTop(20);
+            }
+            area.removeFromTop(4);
 
-                if (browseViewport_) {
-                    browseViewport_->setBounds(area);
-                    layoutBrowseRows();
-                }
-            } else {
+            if (browseViewport_) {
+                browseViewport_->setBounds(area);
+                layoutBrowseRows();
+            }
+        } else {
+            // Tab buttons in header row
+            auto tabRow = area.removeFromTop(SECTION_HEADER_HEIGHT);
+            ksTabBtn_->setBounds(tabRow.removeFromLeft(36).reduced(0, 2));
+            tabRow.removeFromLeft(2);
+            aiTabBtn_->setBounds(tabRow.removeFromLeft(30).reduced(0, 2));
+
+            area.removeFromTop(2);
+
+            if (suggestionTab_ == SuggestionTab::KS) {
+                // K&S tab content
                 int numCols = area.getWidth() > 280 ? 3 : 2;
                 int blockWidth = (area.getWidth() - BLOCK_GAP * (numCols - 1)) / numCols;
                 int x = area.getX();
@@ -1643,12 +1675,12 @@ void ChordPanelContent::resized() {
                     block->setVisible(true);
                     x += blockWidth + BLOCK_GAP;
                 }
-            }
-        } else {
-            // AI tab content — scrollable viewport
-            if (aiViewport_) {
-                aiViewport_->setBounds(area);
-                layoutAIProgressionRows();
+            } else {
+                // AI tab content — scrollable viewport
+                if (aiViewport_) {
+                    aiViewport_->setBounds(area);
+                    layoutAIProgressionRows();
+                }
             }
         }
     }
@@ -1693,7 +1725,9 @@ void ChordPanelContent::resized() {
         // Browse button pinned to bottom of key/scale column
         auto browseArea = keyScaleCol_.reduced(PADDING, 0);
         browseArea.removeFromBottom(6);  // bottom padding
-        explorerBtn_->setBounds(browseArea.removeFromBottom(22).reduced(0, 1));
+        auto btnArea = browseArea.removeFromBottom(22).reduced(0, 1);
+        browseBtn_->setBounds(btnArea);
+        backBtn_->setBounds(btnArea);
     }
 }
 
