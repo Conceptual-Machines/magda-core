@@ -3,11 +3,13 @@
 #include <algorithm>
 
 #include "../../../../agents/daw_agent.hpp"
+#include "../../../../agents/dsl_interpreter.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackManager.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "BinaryData.h"
 #include "PluginBrowserContent.hpp"
 #include "audio/DrumGridPlugin.hpp"
@@ -322,6 +324,54 @@ AIChatConsoleContent::AIChatConsoleContent() {
     };
     addAndMakeVisible(copyButton_);
 
+    // Tab buttons (MAGDA flat tab style)
+    setupTabButtons();
+
+    // DSL output area
+    dslOutput_.setMultiLine(true);
+    dslOutput_.setReadOnly(true);
+    dslOutput_.setFont(FontManager::getInstance().getMonoFont(12.0f));
+    dslOutput_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    dslOutput_.setColour(juce::TextEditor::textColourId, juce::Colour(0xff88ff88));
+    dslOutput_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    dslOutput_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+    dslOutput_.setText("MAGDA DSL Console\nCtrl+Enter to execute.\n\n");
+
+    // DSL code editor
+    dslEditor_ = std::make_unique<juce::CodeEditorComponent>(dslDocument_, &dslTokeniser_);
+    dslEditor_->setFont(FontManager::getInstance().getMonoFont(13.0f));
+    dslEditor_->setColour(juce::CodeEditorComponent::backgroundColourId,
+                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    dslEditor_->setColour(juce::CodeEditorComponent::lineNumberBackgroundId,
+                          juce::Colour(0xff252526));
+    dslEditor_->setColour(juce::CodeEditorComponent::lineNumberTextId, juce::Colour(0xff858585));
+    dslEditor_->setColour(juce::CaretComponent::caretColourId, juce::Colour(0xff88ff88));
+    dslEditor_->setColour(juce::CodeEditorComponent::highlightColourId, juce::Colour(0xff264f78));
+    dslEditor_->setLineNumbersShown(false);
+    dslEditor_->setTabSize(2, true);
+    dslEditor_->setScrollbarThickness(8);
+    dslEditor_->addKeyListener(this);
+
+    // DSL status bar
+    dslStatusLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    dslStatusLabel_.setColour(juce::Label::backgroundColourId, juce::Colour(0xff007acc));
+    dslStatusLabel_.setColour(juce::Label::textColourId, juce::Colours::white);
+#if JUCE_MAC
+    dslStatusLabel_.setText("  MAGDA DSL  |  Cmd+Enter: Run  |  Cmd+L: Clear",
+                            juce::dontSendNotification);
+#else
+    dslStatusLabel_.setText("  MAGDA DSL  |  Ctrl+Enter: Run  |  Ctrl+L: Clear",
+                            juce::dontSendNotification);
+#endif
+
+    // DSL components start hidden
+    dslOutput_.setVisible(false);
+    dslEditor_->setVisible(false);
+    dslStatusLabel_.setVisible(false);
+    addChildComponent(dslOutput_);
+    addChildComponent(*dslEditor_);
+    addChildComponent(dslStatusLabel_);
+
     // Register for selection changes
     magda::SelectionManager::getInstance().addListener(this);
 
@@ -334,6 +384,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
+    if (dslEditor_)
+        dslEditor_->removeKeyListener(this);
     inputBox_.removeKeyListener(this);
     autocompletePopup_.reset();
     magda::ProjectManager::getInstance().removeListener(this);
@@ -377,6 +429,28 @@ juce::String AIChatConsoleContent::resolveAliases(const juce::String& text) {
 }
 
 void AIChatConsoleContent::sendMessage(const juce::String& text) {
+    // Direct DSL execution — bypass AI agent entirely
+    if (text.trimStart().startsWith("/dsl ")) {
+        auto dslCode = text.trimStart().substring(5).trim();
+        appendToChat(juce::String::charToString(0x25CF) + " " + text);
+
+        magda::dsl::Interpreter interpreter;
+        bool success = interpreter.execute(dslCode.toRawUTF8());
+
+        if (success) {
+            auto results = interpreter.getResults();
+            if (results.isEmpty())
+                results = "OK";
+            appendToChat(juce::String::charToString(0x25C6) + " " + results);
+        } else {
+            appendToChat(juce::String::charToString(0x25C6) +
+                         " Error: " + juce::String(interpreter.getError()));
+        }
+
+        inputBox_.clear();
+        return;
+    }
+
     // If a previous request thread is still around, stop it before starting a new one
     if (requestThread_ && requestThread_->isThreadRunning()) {
         agent_->requestCancel();
@@ -491,40 +565,172 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
 void AIChatConsoleContent::resized() {
     auto bounds = getLocalBounds().reduced(10);
 
-    // Bottom bar (always visible): icon + context label left, send button right
-    auto bottomBar = bounds.removeFromBottom(26);
-    bottomBarBounds_ = bottomBar;
-    sendButton_.setBounds(bottomBar.removeFromRight(22));
-    contextIconBounds_ = bottomBar.removeFromLeft(22);
-    contextLabel_.setBounds(bottomBar);
+    // Tab buttons at bottom
+    auto tabBar = bounds.removeFromBottom(22);
+    aiTabButton_.setBounds(tabBar.removeFromLeft(40));
+    dslTabButton_.setBounds(tabBar.removeFromLeft(40));
+    bounds.removeFromBottom(4);  // Spacing above tabs
 
-    // Input box directly above bottom bar (no gap — unified shape)
-    auto inputArea = bounds.removeFromBottom(80);
-    inputBox_.setBounds(inputArea);
+    if (activeTab_ == ConsoleTab::AI) {
+        // Context bar above tabs
+        auto bottomBar = bounds.removeFromBottom(26);
+        bottomBarBounds_ = bottomBar;
+        sendButton_.setBounds(bottomBar.removeFromRight(22));
+        contextIconBounds_ = bottomBar.removeFromLeft(22);
+        contextLabel_.setBounds(bottomBar);
 
-    bounds.removeFromBottom(8);  // Spacing
-    chatHistory_.setBounds(bounds);
+        // Input box directly above context bar (no gap — unified shape)
+        auto inputArea = bounds.removeFromBottom(80);
+        inputBox_.setBounds(inputArea);
 
-    // Clear + copy buttons inside chat panel, top-right corner
-    auto chatBounds = chatHistory_.getBounds();
-    int btnSize = 20;
-    int margin = 4;
-    copyButton_.setBounds(chatBounds.getRight() - btnSize - margin, chatBounds.getY() + margin,
-                          btnSize, btnSize);
-    clearButton_.setBounds(chatBounds.getRight() - 2 * btnSize - margin - 2,
-                           chatBounds.getY() + margin, btnSize, btnSize);
-    clearButton_.toFront(false);
-    copyButton_.toFront(false);
+        bounds.removeFromBottom(8);  // Spacing
+        chatHistory_.setBounds(bounds);
+
+        // Clear + copy buttons inside chat panel, top-right corner
+        auto chatBounds = chatHistory_.getBounds();
+        int btnSize = 20;
+        int margin = 4;
+        copyButton_.setBounds(chatBounds.getRight() - btnSize - margin, chatBounds.getY() + margin,
+                              btnSize, btnSize);
+        clearButton_.setBounds(chatBounds.getRight() - 2 * btnSize - margin - 2,
+                               chatBounds.getY() + margin, btnSize, btnSize);
+        clearButton_.toFront(false);
+        copyButton_.toFront(false);
+    } else {
+        // DSL tab layout
+        dslStatusLabel_.setBounds(bounds.removeFromBottom(20));
+        auto editorHeight = juce::jmax(60, bounds.getHeight() / 3);
+        dslEditor_->setBounds(bounds.removeFromBottom(editorHeight));
+        bounds.removeFromBottom(1);  // Separator
+        dslOutput_.setBounds(bounds);
+    }
 }
 
 void AIChatConsoleContent::onActivated() {
     buildAliasList();
-    if (isShowing())
-        inputBox_.grabKeyboardFocus();
+    if (isShowing()) {
+        if (activeTab_ == ConsoleTab::AI)
+            inputBox_.grabKeyboardFocus();
+        else if (dslEditor_)
+            dslEditor_->grabKeyboardFocus();
+    }
 }
 
 void AIChatConsoleContent::onDeactivated() {
     // Could save chat history here
+}
+
+// ============================================================================
+// Tab Switching
+// ============================================================================
+
+void AIChatConsoleContent::setupTabButtons() {
+    auto setupTab = [this](juce::TextButton& btn) {
+        btn.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        btn.setColour(juce::TextButton::buttonOnColourId,
+                      DarkTheme::getColour(DarkTheme::ACCENT_BLUE).darker(0.3f));
+        btn.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        btn.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
+        btn.setClickingTogglesState(true);
+        btn.setRadioGroupId(9001);
+        btn.setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
+        addAndMakeVisible(btn);
+    };
+
+    setupTab(aiTabButton_);
+    setupTab(dslTabButton_);
+
+    aiTabButton_.setToggleState(true, juce::dontSendNotification);
+
+    aiTabButton_.onClick = [this]() { switchTab(ConsoleTab::AI); };
+    dslTabButton_.onClick = [this]() { switchTab(ConsoleTab::DSL); };
+}
+
+void AIChatConsoleContent::switchTab(ConsoleTab tab) {
+    if (activeTab_ == tab)
+        return;
+    activeTab_ = tab;
+
+    bool isAI = (tab == ConsoleTab::AI);
+
+    // AI components
+    chatHistory_.setVisible(isAI);
+    inputBox_.setVisible(isAI);
+    sendButton_.setVisible(isAI);
+    contextLabel_.setVisible(isAI);
+    clearButton_.setVisible(isAI);
+    copyButton_.setVisible(isAI);
+
+    // DSL components
+    dslOutput_.setVisible(!isAI);
+    dslEditor_->setVisible(!isAI);
+    dslStatusLabel_.setVisible(!isAI);
+
+    resized();
+    repaint();
+
+    if (isAI)
+        inputBox_.grabKeyboardFocus();
+    else
+        dslEditor_->grabKeyboardFocus();
+}
+
+void AIChatConsoleContent::executeDSL() {
+    auto code = dslDocument_.getAllContent().trim();
+    if (code.isEmpty())
+        return;
+
+    // History
+    if (dslHistory_.isEmpty() || dslHistory_.strings.getLast() != code)
+        dslHistory_.add(code);
+    dslHistoryIndex_ = -1;
+
+    // Echo
+    appendDSLOutput("> " + code + "\n", juce::Colour(0xff88ff88));
+
+    // Built-in commands
+    if (code == "help") {
+        appendDSLOutput("MAGDA DSL Commands:\n"
+                        "  track(name=\"X\")              - Reference/create track\n"
+                        "  track(id=1)                  - Reference track by index\n"
+                        "  .clip.new(bar=1, length_bars=4) - Create MIDI clip\n"
+                        "  .fx.add(name=\"reverb\")       - Add effect\n"
+                        "  .notes.add(pitch=C4, beat=0) - Add note\n"
+                        "  .notes.add_chord(root=C4, quality=major)\n"
+                        "  filter(tracks, ...).delete()  - Bulk operations\n\n",
+                        juce::Colour(0xff569cd6));
+        dslDocument_.replaceAllContent({});
+        return;
+    }
+    if (code == "clear") {
+        dslOutput_.clear();
+        dslOutput_.setText("Output cleared.\n\n");
+        dslDocument_.replaceAllContent({});
+        return;
+    }
+
+    // Execute
+    magda::dsl::Interpreter interpreter;
+    bool success = interpreter.execute(code.toRawUTF8());
+
+    if (success) {
+        auto results = interpreter.getResults();
+        if (results.isEmpty())
+            results = "OK";
+        appendDSLOutput(results + "\n\n", juce::Colour(0xffd4d4d4));
+    } else {
+        appendDSLOutput("Error: " + juce::String(interpreter.getError()) + "\n\n",
+                        juce::Colour(0xfff48771));
+    }
+
+    dslDocument_.replaceAllContent({});
+}
+
+void AIChatConsoleContent::appendDSLOutput(const juce::String& text, juce::Colour colour) {
+    dslOutput_.setColour(juce::TextEditor::textColourId, colour);
+    dslOutput_.moveCaretToEnd();
+    dslOutput_.insertTextAtCaret(text);
+    dslOutput_.moveCaretToEnd();
 }
 
 // ============================================================================
@@ -748,6 +954,23 @@ void AIChatConsoleContent::insertAlias(const juce::String& alias) {
 }
 
 bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component*) {
+    // DSL tab key handling
+    if (activeTab_ == ConsoleTab::DSL) {
+        // Ctrl+Enter — execute DSL
+        if (key.getModifiers().isCommandDown() && key.getKeyCode() == juce::KeyPress::returnKey) {
+            executeDSL();
+            return true;
+        }
+        // Ctrl+L — clear DSL output
+        if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'L') {
+            dslOutput_.clear();
+            dslOutput_.setText("Output cleared.\n\n");
+            return true;
+        }
+        return false;
+    }
+
+    // AI tab — autocomplete navigation
     if (!autocompletePopup_ || !autocompletePopup_->isVisible())
         return false;
 

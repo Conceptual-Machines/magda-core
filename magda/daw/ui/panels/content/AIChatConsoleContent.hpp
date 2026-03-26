@@ -1,11 +1,14 @@
 #pragma once
 
+#include <juce_gui_extra/juce_gui_extra.h>
+
 #include <atomic>
 #include <memory>
 #include <vector>
 
 #include "../../../core/SelectionManager.hpp"
 #include "../../../project/ProjectManager.hpp"
+#include "DSLTokeniser.hpp"
 #include "PanelContent.hpp"
 
 namespace magda {
@@ -115,6 +118,26 @@ class AIChatConsoleContent : public PanelContent,
     void showAutocomplete(const juce::String& filter);
     void hideAutocomplete();
     void insertAlias(const juce::String& alias);
+
+    // Tab switching: AI vs DSL
+    enum class ConsoleTab { AI, DSL };
+    ConsoleTab activeTab_ = ConsoleTab::AI;
+    juce::TextButton aiTabButton_{"AI"};
+    juce::TextButton dslTabButton_{"DSL"};
+    void switchTab(ConsoleTab tab);
+    void setupTabButtons();
+
+    // DSL tab components
+    DSLTokeniser dslTokeniser_;
+    juce::CodeDocument dslDocument_;
+    std::unique_ptr<juce::CodeEditorComponent> dslEditor_;
+    juce::TextEditor dslOutput_;
+    juce::Label dslStatusLabel_;
+    juce::StringArray dslHistory_;
+    int dslHistoryIndex_ = -1;
+
+    void executeDSL();
+    void appendDSLOutput(const juce::String& text, juce::Colour colour);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AIChatConsoleContent)
 };
