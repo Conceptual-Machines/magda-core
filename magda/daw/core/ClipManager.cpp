@@ -841,15 +841,6 @@ void ClipManager::setTranspose(ClipId clipId, int semitones) {
     }
 }
 
-void ClipManager::setRootNote(ClipId clipId, int midiNote) {
-    if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
-            clip->rootNote = juce::jlimit(-1, 127, midiNote);
-            notifyClipPropertyChanged(clipId);
-        }
-    }
-}
-
 // ============================================================================
 // Beat Detection
 // ============================================================================

@@ -350,17 +350,12 @@ void ClipInspector::updateFromSelectedClip() {
         // Pitch/Transpose section (audio + MIDI clips)
         bool isMidiClip = (clip->type == magda::ClipType::MIDI);
         pitchSectionLabel_.setVisible(showAudioProps);
+        autoPitchToggle_.setVisible(false);     // hidden for now
+        autoPitchModeCombo_.setVisible(false);  // hidden for now
         pitchChangeValue_->setVisible(showAudioProps);
         midiTransposeUpBtn_.setVisible(isMidiClip);
         midiTransposeDownBtn_.setVisible(isMidiClip);
         midiTransposeLabel_.setVisible(isMidiClip);
-
-        // Root note combo: visible for audio clips
-        rootNoteCombo_.setVisible(showAudioProps);
-        if (showAudioProps) {
-            int comboId = clip->rootNote < 0 ? 1 : clip->rootNote + 2;
-            rootNoteCombo_.setSelectedId(comboId, juce::dontSendNotification);
-        }
 
         // Analog pitch toggle: visible for audio clips when not in autoTempo/warp mode
         bool canAnalog = showAudioProps && !clip->autoTempo && !clip->warpEnabled;
@@ -368,11 +363,6 @@ void ClipInspector::updateFromSelectedClip() {
         if (canAnalog) {
             analogPitchToggle_.setToggleState(clip->analogPitch, juce::dontSendNotification);
         }
-
-        // AutoPitch: visible when root note is set (required for TE transpose calculation)
-        bool hasRootNote = isAudioClip && clip->rootNote >= 0;
-        autoPitchToggle_.setVisible(hasRootNote);
-        autoPitchModeCombo_.setVisible(hasRootNote);
 
         if (isAudioClip) {
             autoPitchToggle_.setToggleState(clip->autoPitch, juce::dontSendNotification);

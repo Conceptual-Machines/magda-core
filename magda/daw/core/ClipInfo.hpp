@@ -177,7 +177,6 @@ struct ClipInfo {
     int autoPitchMode = 0;     // 0=pitchTrack, 1=chordTrackMono, 2=chordTrackPoly
     float pitchChange = 0.0f;  // -48 to +48 semitones
     int transpose = 0;         // -24 to +24 semitones (only when !autoPitch)
-    int rootNote = -1;         // MIDI note number of sample's original pitch (-1 = not set)
 
     // Beat Detection
     bool autoDetectBeats = false;
