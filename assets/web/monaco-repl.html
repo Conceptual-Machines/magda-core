@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAGDA Script Console</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  #toolbar {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    background: #252526;
+    border-bottom: 1px solid #3c3c3c;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  #toolbar .title {
+    color: #88ff88;
+    font-weight: bold;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  #toolbar button {
+    background: #3c3c3c;
+    border: 1px solid #555;
+    color: #ccc;
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  #toolbar button:hover { background: #505050; }
+  #output-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    min-height: 60px;
+  }
+  #output {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.5;
+  }
+  .output-prompt { color: #88ff88; }
+  .output-result { color: #d4d4d4; }
+  .output-error { color: #f48771; }
+  .output-info { color: #569cd6; }
+  #editor-container {
+    flex-shrink: 0;
+    border-top: 1px solid #3c3c3c;
+    height: 150px;
+    min-height: 40px;
+    position: relative;
+  }
+  #resize-handle {
+    position: absolute;
+    top: -3px;
+    left: 0;
+    right: 0;
+    height: 6px;
+    cursor: ns-resize;
+    z-index: 10;
+  }
+  #status-bar {
+    display: flex;
+    align-items: center;
+    padding: 2px 8px;
+    background: #007acc;
+    color: #fff;
+    font-size: 11px;
+    flex-shrink: 0;
+    justify-content: space-between;
+  }
+  .status-item { margin-right: 12px; }
+  .hint { opacity: 0.7; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <span class="title">MAGDA DSL</span>
+  <button onclick="runCode()">Run (Ctrl+Enter)</button>
+  <button onclick="clearOutput()">Clear</button>
+</div>
+
+<div id="output-container">
+  <div id="output"><span class="output-info">MAGDA Script Console v0.2 — Monaco Edition
+Type DSL commands below. Ctrl+Enter to execute. Ctrl+Space for suggestions.
+
+</span></div>
+</div>
+
+<div id="editor-container">
+  <div id="resize-handle"></div>
+  <div id="editor" style="width:100%;height:100%;"></div>
+</div>
+
+<div id="status-bar">
+  <div>
+    <span class="status-item">MAGDA DSL</span>
+    <span class="status-item hint">Ctrl+Enter: Run | Ctrl+L: Clear | Ctrl+Space: Autocomplete</span>
+  </div>
+  <div>
+    <span class="status-item" id="cursor-pos">Ln 1, Col 1</span>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+<script>
+// ============================================================================
+// MAGDA DSL Language Definition
+// ============================================================================
+const DSL_KEYWORDS = [
+  'track', 'filter', 'tracks', 'clip', 'clips', 'notes', 'fx', 'note'
+];
+
+const DSL_METHODS = [
+  'new', 'set', 'add', 'delete', 'rename', 'select', 'for_each',
+  'add_chord', 'add_arpeggio', 'transpose', 'set_pitch', 'set_velocity',
+  'quantize', 'resize'
+];
+
+const DSL_PARAMS = [
+  'name', 'id', 'new', 'bar', 'length_bars', 'beat', 'length', 'pitch',
+  'velocity', 'semitones', 'value', 'grid', 'volume_db', 'pan', 'mute',
+  'solo', 'root', 'quality', 'inversion', 'step', 'note_length', 'pattern',
+  'fill', 'beats', 'format', 'index'
+];
+
+const DSL_QUALITIES = [
+  'major', 'maj', 'minor', 'min', 'dim', 'aug', 'sus2', 'sus4',
+  'dom7', '7', 'maj7', 'min7', 'dim7', 'dom9', '9', 'maj9', 'min9',
+  'dom11', '11', 'min11', 'maj11', 'dom13', '13', 'min13', 'maj13',
+  'add9', 'add11', 'add13', 'madd9', '6', 'maj6', 'min6',
+  '7b5', '7sharp5', '7b9', '7sharp9', 'min7b5', 'half_dim', 'power', '5'
+];
+
+const DSL_FX = [
+  'eq', 'compressor', 'reverb', 'delay', 'chorus', 'phaser',
+  'filter', 'utility', 'pitch shift', 'ir reverb'
+];
+
+const DSL_PATTERNS = ['up', 'down', 'updown'];
+
+const DSL_NOTE_NAMES = [];
+for (const note of ['C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B']) {
+  for (let oct = 0; oct <= 8; oct++) {
+    DSL_NOTE_NAMES.push(note + oct);
+  }
+}
+
+// ============================================================================
+// Monaco Setup
+// ============================================================================
+require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
+
+let editor = null;
+
+require(['vs/editor/editor.main'], function () {
+  // Register MAGDA DSL language
+  monaco.languages.register({ id: 'magda-dsl' });
+
+  // Syntax highlighting
+  monaco.languages.setMonarchTokensProvider('magda-dsl', {
+    keywords: DSL_KEYWORDS,
+    methods: DSL_METHODS,
+    params: DSL_PARAMS,
+
+    tokenizer: {
+      root: [
+        // Comments
+        [/\/\/.*$/, 'comment'],
+
+        // Strings
+        [/"[^"]*"/, 'string'],
+
+        // Numbers
+        [/-?\d+(\.\d+)?/, 'number'],
+
+        // Note names (C4, F#3, Bb2)
+        [/[A-G][b#]?\d/, 'constant'],
+
+        // Boolean
+        [/\b(true|false|True|False)\b/, 'keyword'],
+
+        // Operators
+        [/[=!<>]=?/, 'operator'],
+
+        // Identifiers
+        [/[a-zA-Z_#][a-zA-Z0-9_#]*/, {
+          cases: {
+            '@keywords': 'keyword',
+            '@methods': 'type',
+            '@params': 'variable',
+            '@default': 'identifier'
+          }
+        }],
+
+        // Delimiters
+        [/[().\[\],;]/, 'delimiter'],
+      ]
+    }
+  });
+
+  // Define theme
+  monaco.editor.defineTheme('magda-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'keyword', foreground: '569cd6', fontStyle: 'bold' },
+      { token: 'type', foreground: 'dcdcaa' },
+      { token: 'variable', foreground: '9cdcfe' },
+      { token: 'string', foreground: 'ce9178' },
+      { token: 'number', foreground: 'b5cea8' },
+      { token: 'constant', foreground: '4ec9b0' },
+      { token: 'comment', foreground: '6a9955' },
+      { token: 'operator', foreground: 'd4d4d4' },
+      { token: 'delimiter', foreground: 'd4d4d4' },
+    ],
+    colors: {
+      'editor.background': '#1e1e1e',
+      'editor.lineHighlightBackground': '#2a2a2a',
+      'editorCursor.foreground': '#88ff88',
+    }
+  });
+
+  // Autocomplete provider
+  monaco.languages.registerCompletionItemProvider('magda-dsl', {
+    triggerCharacters: ['.', '(', '=', ' '],
+    provideCompletionItems: function (model, position) {
+      const textUntilPosition = model.getValueInRange({
+        startLineNumber: position.lineNumber,
+        startColumn: 1,
+        endLineNumber: position.lineNumber,
+        endColumn: position.column
+      });
+
+      const word = model.getWordUntilPosition(position);
+      const range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endColumn: word.endColumn
+      };
+
+      const suggestions = [];
+
+      // After dot — suggest methods/objects
+      if (textUntilPosition.match(/\.\s*$/)) {
+        for (const obj of ['clip', 'clips', 'notes', 'fx', 'track']) {
+          suggestions.push({
+            label: obj,
+            kind: monaco.languages.CompletionItemKind.Module,
+            insertText: obj,
+            range: range,
+            detail: 'DSL object'
+          });
+        }
+        for (const m of DSL_METHODS) {
+          suggestions.push({
+            label: m,
+            kind: monaco.languages.CompletionItemKind.Method,
+            insertText: m,
+            range: range,
+            detail: 'method'
+          });
+        }
+        return { suggestions };
+      }
+
+      // After = in params — context-dependent values
+      if (textUntilPosition.match(/quality\s*=\s*$/)) {
+        for (const q of DSL_QUALITIES) {
+          suggestions.push({
+            label: q,
+            kind: monaco.languages.CompletionItemKind.Enum,
+            insertText: q,
+            range: range,
+            detail: 'chord quality'
+          });
+        }
+        return { suggestions };
+      }
+
+      if (textUntilPosition.match(/pattern\s*=\s*$/)) {
+        for (const p of DSL_PATTERNS) {
+          suggestions.push({
+            label: p,
+            kind: monaco.languages.CompletionItemKind.Enum,
+            insertText: p,
+            range: range,
+            detail: 'arp pattern'
+          });
+        }
+        return { suggestions };
+      }
+
+      if (textUntilPosition.match(/(pitch|root)\s*=\s*$/)) {
+        for (const n of DSL_NOTE_NAMES) {
+          suggestions.push({
+            label: n,
+            kind: monaco.languages.CompletionItemKind.Value,
+            insertText: n,
+            range: range,
+            detail: 'note'
+          });
+        }
+        return { suggestions };
+      }
+
+      if (textUntilPosition.match(/name\s*=\s*$/)) {
+        for (const fx of DSL_FX) {
+          suggestions.push({
+            label: `"${fx}"`,
+            kind: monaco.languages.CompletionItemKind.Value,
+            insertText: `"${fx}"`,
+            range: range,
+            detail: 'built-in FX'
+          });
+        }
+        return { suggestions };
+      }
+
+      // Inside parentheses — suggest params
+      if (textUntilPosition.match(/\([^)]*$/)) {
+        for (const p of DSL_PARAMS) {
+          suggestions.push({
+            label: p,
+            kind: monaco.languages.CompletionItemKind.Property,
+            insertText: p + '=',
+            range: range,
+            detail: 'parameter'
+          });
+        }
+        return { suggestions };
+      }
+
+      // Default — top-level keywords + snippets
+      for (const k of DSL_KEYWORDS) {
+        suggestions.push({
+          label: k,
+          kind: monaco.languages.CompletionItemKind.Keyword,
+          insertText: k,
+          range: range
+        });
+      }
+
+      // Snippet completions
+      suggestions.push({
+        label: 'track (new)',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        insertText: 'track(name="${1:Name}", new=true)',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        range: range,
+        detail: 'Create a new track'
+      });
+      suggestions.push({
+        label: 'track + clip + notes',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        insertText: 'track(name="${1:Name}", new=true).clip.new(bar=${2:1}, length_bars=${3:4}).notes.add(pitch=${4:C4}, beat=${5:0}, length=${6:1})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        range: range,
+        detail: 'Create track with clip and note'
+      });
+      suggestions.push({
+        label: 'add chord',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        insertText: '.notes.add_chord(root=${1:C4}, quality=${2:major}, beat=${3:0}, length=${4:1})',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        range: range,
+        detail: 'Add a chord'
+      });
+      suggestions.push({
+        label: 'add arpeggio',
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        insertText: '.notes.add_arpeggio(root=${1:C4}, quality=${2:major}, beat=${3:0}, step=${4:0.5}, pattern=${5:up}, fill=true)',
+        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+        range: range,
+        detail: 'Add an arpeggio'
+      });
+
+      return { suggestions };
+    }
+  });
+
+  // Hover provider
+  monaco.languages.registerHoverProvider('magda-dsl', {
+    provideHover: function (model, position) {
+      const word = model.getWordAtPosition(position);
+      if (!word) return null;
+
+      const hovers = {
+        'track': 'Reference or create a track.\n\n`track(name="Bass")` — reference by name\n`track(id=1)` — reference by index\n`track(name="X", new=true)` — always create new',
+        'filter': 'Bulk operations on matching tracks.\n\n`filter(tracks, track.name == "X").delete()`',
+        'clip': 'Clip operations: `.clip.new()`, `.clip.rename()`, `.clip.delete()`',
+        'notes': 'Note operations: `.notes.add()`, `.notes.add_chord()`, `.notes.transpose()`',
+        'fx': 'FX chain: `.fx.add(name="reverb")`',
+        'add_chord': 'Add a chord.\n\n`root=C4, quality=major, beat=0, length=1, inversion=0`\n\nQualities: major, minor, dim, aug, sus2, sus4, dom7, maj7, min7...',
+        'add_arpeggio': 'Add an arpeggio.\n\n`root=C4, quality=major, step=0.5, pattern=up, fill=true`\n\nPatterns: up, down, updown',
+        'quantize': 'Quantize selected notes.\n\n`grid=0.25` (16th), `grid=0.5` (8th), `grid=1.0` (quarter)',
+      };
+
+      const text = hovers[word.word];
+      if (!text) return null;
+
+      return {
+        range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+        contents: [{ value: '```\n' + text + '\n```' }]
+      };
+    }
+  });
+
+  // Create editor
+  editor = monaco.editor.create(document.getElementById('editor'), {
+    value: '// Try: track(name="Bass", new=true).clip.new(bar=1, length_bars=4)\n',
+    language: 'magda-dsl',
+    theme: 'magda-dark',
+    minimap: { enabled: false },
+    lineNumbers: 'on',
+    renderLineHighlight: 'line',
+    scrollBeyondLastLine: false,
+    fontSize: 13,
+    fontFamily: "'Menlo', 'Consolas', 'Courier New', monospace",
+    automaticLayout: true,
+    tabSize: 2,
+    wordWrap: 'on',
+    suggestOnTriggerCharacters: true,
+    quickSuggestions: true,
+    parameterHints: { enabled: true },
+    folding: false,
+    glyphMargin: false,
+    overviewRulerLanes: 0,
+    hideCursorInOverviewRuler: true,
+    overviewRulerBorder: false,
+    scrollbar: {
+      vertical: 'auto',
+      horizontal: 'auto',
+      verticalScrollbarSize: 8,
+      horizontalScrollbarSize: 8,
+    },
+    padding: { top: 4 },
+  });
+
+  // Cursor position updates
+  editor.onDidChangeCursorPosition(function (e) {
+    document.getElementById('cursor-pos').textContent =
+      'Ln ' + e.position.lineNumber + ', Col ' + e.position.column;
+  });
+
+  // Ctrl+Enter to run
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, function () {
+    runCode();
+  });
+
+  // Ctrl+L to clear output
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL, function () {
+    clearOutput();
+  });
+
+  editor.focus();
+});
+
+// ============================================================================
+// REPL Execution
+// ============================================================================
+function appendOutput(text, className) {
+  const output = document.getElementById('output');
+  const span = document.createElement('span');
+  span.className = className || 'output-result';
+  span.textContent = text;
+  output.appendChild(span);
+  const container = document.getElementById('output-container');
+  container.scrollTop = container.scrollHeight;
+}
+
+function runCode() {
+  if (!editor) return;
+
+  const code = editor.getModel().getValue().trim();
+  if (!code) return;
+
+  // Echo command
+  appendOutput('> ' + code + '\n', 'output-prompt');
+
+  // Try native bridge first (JUCE WebBrowserComponent)
+  if (window.__JUCE__ && window.__JUCE__.backend) {
+    window.__JUCE__.backend.emitEvent('executeDSL', { code: code });
+  } else {
+    // Fallback: local simulation for testing without JUCE
+    simulateExecution(code);
+  }
+
+  // Clear editor after execution
+  editor.setValue('');
+  editor.focus();
+}
+
+// Called from C++ via evaluateJavascript
+function onDSLResult(result) {
+  appendOutput(result + '\n\n', 'output-result');
+}
+
+function onDSLError(error) {
+  appendOutput('Error: ' + error + '\n\n', 'output-error');
+}
+
+// Fallback simulation for standalone testing
+function simulateExecution(code) {
+  try {
+    // Basic validation
+    if (code.startsWith('//')) {
+      appendOutput('(comment skipped)\n\n', 'output-info');
+      return;
+    }
+    if (code === 'help') {
+      appendOutput(
+        'MAGDA DSL Commands:\n' +
+        '  track(name="X")              — Reference/create track\n' +
+        '  track(id=1)                  — Reference track by index\n' +
+        '  .clip.new(bar=1, length_bars=4) — Create MIDI clip\n' +
+        '  .fx.add(name="reverb")       — Add effect\n' +
+        '  .notes.add(pitch=C4, beat=0) — Add note\n' +
+        '  .notes.add_chord(root=C4, quality=major) — Add chord\n' +
+        '  .notes.transpose(semitones=5) — Transpose\n' +
+        '  filter(tracks, ...).delete()  — Bulk operations\n' +
+        '\nCtrl+Space for autocomplete. Hover keywords for docs.\n\n',
+        'output-info'
+      );
+      return;
+    }
+    if (code === 'clear') {
+      clearOutput();
+      return;
+    }
+
+    // Simulate success
+    appendOutput('[Simulated] Would execute: ' + code + '\n\n', 'output-info');
+  } catch (e) {
+    appendOutput('Parse error: ' + e.message + '\n\n', 'output-error');
+  }
+}
+
+function clearOutput() {
+  document.getElementById('output').innerHTML =
+    '<span class="output-info">Output cleared.\n\n</span>';
+}
+
+// ============================================================================
+// Resize Handle
+// ============================================================================
+(function () {
+  const handle = document.getElementById('resize-handle');
+  const editorContainer = document.getElementById('editor-container');
+  let startY, startH;
+
+  handle.addEventListener('mousedown', function (e) {
+    startY = e.clientY;
+    startH = editorContainer.offsetHeight;
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', onStop);
+    e.preventDefault();
+  });
+
+  function onDrag(e) {
+    const delta = startY - e.clientY;
+    const newH = Math.max(40, Math.min(window.innerHeight - 100, startH + delta));
+    editorContainer.style.height = newH + 'px';
+    if (editor) editor.layout();
+  }
+
+  function onStop() {
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', onStop);
+  }
+})();
+</script>
+</body>
+</html>

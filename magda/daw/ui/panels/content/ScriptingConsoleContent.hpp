@@ -5,9 +5,10 @@
 namespace magda::daw::ui {
 
 /**
- * @brief Scripting console panel content
+ * @brief Scripting console panel content (placeholder)
  *
- * Code editor and REPL for scripting automation.
+ * The DSL REPL is now part of the AI Chat console (DSL tab).
+ * This panel is kept for backward compatibility.
  */
 class ScriptingConsoleContent : public PanelContent {
   public:
@@ -29,11 +30,7 @@ class ScriptingConsoleContent : public PanelContent {
     void onDeactivated() override;
 
   private:
-    juce::Label titleLabel_;
-    juce::TextEditor outputArea_;
-    juce::TextEditor inputBox_;
-
-    void executeCommand(const juce::String& command);
+    juce::Label placeholderLabel_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScriptingConsoleContent)
 };

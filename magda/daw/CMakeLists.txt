@@ -286,6 +286,7 @@ set(DAW_UI_SOURCES
     ui/panels/content/inspector/InspectorContainer.cpp
     ui/panels/content/AIChatConsoleContent.cpp
     ui/panels/content/ScriptingConsoleContent.cpp
+    ui/panels/content/DSLTokeniser.cpp
     ui/panels/content/TrackChainContent.cpp
     ui/panels/content/MidiEditorContent.cpp
     ui/panels/content/PianoRollContent.cpp
@@ -472,6 +473,7 @@ set(DAW_HEADERS
     ui/panels/content/inspector/InspectorContainer.hpp
     ui/panels/content/AIChatConsoleContent.hpp
     ui/panels/content/ScriptingConsoleContent.hpp
+    ui/panels/content/DSLTokeniser.hpp
     ui/panels/content/TrackChainContent.hpp
     ui/panels/content/PianoRollContent.hpp
     ui/panels/content/WaveformEditorContent.hpp
@@ -644,6 +646,7 @@ target_link_libraries(magda_daw
     juce::juce_audio_formats
     juce::juce_audio_utils
     juce::juce_gui_basics
+    juce::juce_gui_extra
     tracktion::tracktion_engine
     MagdaAssets
     # Link GTK/WebKit and curl dependencies on Linux
@@ -689,6 +692,7 @@ target_link_libraries(magda_daw_app
     magda_agents
     MagdaAssets
     juce::juce_gui_basics
+    juce::juce_gui_extra
     juce::juce_audio_devices
     juce::juce_audio_formats
     juce::juce_audio_processors
