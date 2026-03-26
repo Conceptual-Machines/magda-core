@@ -2171,6 +2171,14 @@ bool Interpreter::executeGrooveNew(const Params& params) {
                        " per beat)");
     }
 
+    // Refresh clip inspector so new template appears in dropdown immediately
+    auto clipId = getSelectedClipId();
+    if (clipId != INVALID_CLIP_ID) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip && clip->type == ClipType::MIDI)
+            ClipManager::getInstance().setGrooveTemplate(clipId, clip->grooveTemplate);
+    }
+
     return true;
 }
 
@@ -2297,6 +2305,14 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     ctx_.addResult("Extracted groove '" + juce::String(name) + "' from " +
                    juce::String(transientCount) + " transients (" + juce::String(patternLength) +
                    " steps, " + juce::String(notesPerBeat) + " per beat)");
+
+    // Refresh clip inspector so new template appears in dropdown immediately
+    auto selClipId = getSelectedClipId();
+    if (selClipId != INVALID_CLIP_ID) {
+        auto* selClip = ClipManager::getInstance().getClip(selClipId);
+        if (selClip && selClip->type == ClipType::MIDI)
+            ClipManager::getInstance().setGrooveTemplate(selClipId, selClip->grooveTemplate);
+    }
     return true;
 }
 
