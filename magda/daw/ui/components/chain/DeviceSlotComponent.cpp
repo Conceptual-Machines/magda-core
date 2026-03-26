@@ -784,8 +784,8 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
 }
 
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
-    // Draw separator line to the left of the meter strip
-    if (!collapsed_) {
+    // Draw separator line to the left of the meter strip (skip for chord engine — no meter)
+    if (!collapsed_ && !isChordEngine_) {
         int lineX = contentArea.getRight() - METER_STRIP_WIDTH - 4;
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawVerticalLine(lineX, static_cast<float>(contentArea.getY() + 2),
@@ -859,11 +859,14 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // Position the level meter on the right edge of the content area
     // (when collapsed, meter is positioned by resizedCollapsed instead)
-    if (!collapsed_) {
+    // Chord engine has no audio output — skip meter
+    if (!collapsed_ && !isChordEngine_) {
         auto meterBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
         contentArea.removeFromRight(4);  // Padding between content and meter
         levelMeter_.setBounds(meterBounds);
         levelMeter_.setVisible(true);
+    } else if (isChordEngine_) {
+        levelMeter_.setVisible(false);
     }
 
     // Bottom padding
@@ -913,11 +916,12 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
     // Show header controls when expanded
     bool isDrumGrid = drumGridUI_ != nullptr;
-    modButton_->setVisible(!isDrumGrid);
-    macroButton_->setVisible(!isDrumGrid);
+    bool showModMacro = !isDrumGrid && device_.deviceType != magda::DeviceType::MIDI;
+    modButton_->setVisible(showModMacro);
+    macroButton_->setVisible(showModMacro);
     uiButton_->setVisible(!isInternalDevice());
     onButton_->setVisible(true);
-    gainSlider_.setVisible(true);
+    gainSlider_.setVisible(!isChordEngine_);
 
     // Content header subtitle area (all devices)
     contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
@@ -1091,6 +1095,14 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
     headerArea.removeFromRight(4);
 
+    // Chord engine: no volume/SC/meter — only power button in header
+    if (isChordEngine_) {
+        gainSlider_.setVisible(false);
+        if (scButton_)
+            scButton_->setVisible(false);
+        return;
+    }
+
     // Sidechain button (only if plugin supports it)
     if ((device_.canSidechain || device_.canReceiveMidi) && scButton_) {
         scButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
@@ -1122,7 +1134,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     // Meter is positioned by base class via getCollapsedMeterWidth() -> collapsedMeterArea_
     levelMeter_.setBounds(collapsedMeterArea_);
-    levelMeter_.setVisible(true);
+    levelMeter_.setVisible(!isChordEngine_);
 
     int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);
 
