@@ -33,9 +33,13 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
         addAndMakeVisible(listBox_);
     }
 
+    enum class Mode { Alias, SlashCommand };
+
     void updateFilter(const juce::String& filter) {
+        mode_ = Mode::Alias;
         filter_ = filter.toLowerCase();
         filtered_.clear();
+        filteredCommands_.clear();
 
         for (const auto& entry : owner_.allAliases_) {
             if (filter_.isEmpty() || entry.alias.toLowerCase().contains(filter_) ||
@@ -48,19 +52,49 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
         if (!filtered_.empty())
             listBox_.selectRow(0);
 
-        // Size to fit content (max 8 rows)
         int rows = juce::jmin(static_cast<int>(filtered_.size()), 8);
         setSize(getWidth(), rows * 22 + 2);
     }
 
+    void updateSlashFilter(const juce::String& filter) {
+        mode_ = Mode::SlashCommand;
+        filter_ = filter.toLowerCase();
+        filtered_.clear();
+        filteredCommands_.clear();
+
+        for (const auto& cmd : owner_.slashCommands_) {
+            if (filter_.isEmpty() || cmd.name.toLowerCase().startsWith(filter_))
+                filteredCommands_.push_back(&cmd);
+        }
+
+        listBox_.updateContent();
+        if (!filteredCommands_.empty())
+            listBox_.selectRow(0);
+
+        int rows = juce::jmin(static_cast<int>(filteredCommands_.size()), 8);
+        setSize(getWidth(), rows * 22 + 2);
+    }
+
     bool isEmpty() const {
-        return filtered_.empty();
+        return mode_ == Mode::Alias ? filtered_.empty() : filteredCommands_.empty();
+    }
+
+    Mode getMode() const {
+        return mode_;
     }
 
     const AliasEntry* getSelectedEntry() const {
         int row = listBox_.getSelectedRow();
-        if (row >= 0 && row < static_cast<int>(filtered_.size()))
+        if (mode_ == Mode::Alias && row >= 0 && row < static_cast<int>(filtered_.size()))
             return filtered_[static_cast<size_t>(row)];
+        return nullptr;
+    }
+
+    const SlashCommand* getSelectedCommand() const {
+        int row = listBox_.getSelectedRow();
+        if (mode_ == Mode::SlashCommand && row >= 0 &&
+            row < static_cast<int>(filteredCommands_.size()))
+            return filteredCommands_[static_cast<size_t>(row)];
         return nullptr;
     }
 
@@ -78,12 +112,13 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
 
     // ListBoxModel
     int getNumRows() override {
-        return static_cast<int>(filtered_.size());
+        return mode_ == Mode::Alias ? static_cast<int>(filtered_.size())
+                                    : static_cast<int>(filteredCommands_.size());
     }
 
     void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height,
                           bool rowIsSelected) override {
-        if (rowNumber < 0 || rowNumber >= static_cast<int>(filtered_.size()))
+        if (rowNumber < 0 || rowNumber >= getNumRows())
             return;
 
         if (rowIsSelected) {
@@ -91,23 +126,34 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
             g.fillRect(0, 0, width, height);
         }
 
-        const auto& entry = *filtered_[static_cast<size_t>(rowNumber)];
-
-        // Alias
-        g.setColour(DarkTheme::getAccentColour());
-        g.setFont(FontManager::getInstance().getMonoFont(11.0f));
-        g.drawText("@" + entry.alias, 6, 0, width / 2, height, juce::Justification::centredLeft);
-
-        // Plugin name (dimmed, right side)
-        g.setColour(DarkTheme::getSecondaryTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.drawText(entry.pluginName, width / 2, 0, width / 2 - 6, height,
-                   juce::Justification::centredRight);
+        if (mode_ == Mode::Alias) {
+            const auto& entry = *filtered_[static_cast<size_t>(rowNumber)];
+            g.setColour(DarkTheme::getAccentColour());
+            g.setFont(FontManager::getInstance().getMonoFont(11.0f));
+            g.drawText("@" + entry.alias, 6, 0, width / 2, height,
+                       juce::Justification::centredLeft);
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setFont(FontManager::getInstance().getUIFont(10.0f));
+            g.drawText(entry.pluginName, width / 2, 0, width / 2 - 6, height,
+                       juce::Justification::centredRight);
+        } else {
+            const auto& cmd = *filteredCommands_[static_cast<size_t>(rowNumber)];
+            g.setColour(DarkTheme::getAccentColour());
+            g.setFont(FontManager::getInstance().getMonoFont(11.0f));
+            g.drawText("/" + cmd.name, 6, 0, width / 3, height, juce::Justification::centredLeft);
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setFont(FontManager::getInstance().getUIFont(10.0f));
+            g.drawText(cmd.description, width / 3, 0, width * 2 / 3 - 6, height,
+                       juce::Justification::centredLeft);
+        }
     }
 
     void listBoxItemDoubleClicked(int row, const juce::MouseEvent&) override {
-        if (row >= 0 && row < static_cast<int>(filtered_.size())) {
+        if (mode_ == Mode::Alias && row >= 0 && row < static_cast<int>(filtered_.size())) {
             owner_.insertAlias(filtered_[static_cast<size_t>(row)]->alias);
+        } else if (mode_ == Mode::SlashCommand && row >= 0 &&
+                   row < static_cast<int>(filteredCommands_.size())) {
+            owner_.insertSlashCommand(filteredCommands_[static_cast<size_t>(row)]->name);
         }
     }
 
@@ -119,7 +165,9 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
     AIChatConsoleContent& owner_;
     juce::ListBox listBox_;
     juce::String filter_;
+    Mode mode_ = Mode::Alias;
     std::vector<const AliasEntry*> filtered_;
+    std::vector<const SlashCommand*> filteredCommands_;
 };
 
 // ============================================================================
@@ -212,11 +260,18 @@ AIChatConsoleContent::AIChatConsoleContent() {
     inputBox_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     inputBox_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     inputBox_.onReturnKey = [this]() {
-        // If autocomplete is showing, insert the selected alias instead of sending
+        // If autocomplete is showing, insert the selected item instead of sending
         if (autocompletePopup_ && autocompletePopup_->isVisible()) {
-            if (auto* entry = autocompletePopup_->getSelectedEntry()) {
-                insertAlias(entry->alias);
-                return;
+            if (autocompletePopup_->getMode() == AutocompletePopup::Mode::SlashCommand) {
+                if (auto* cmd = autocompletePopup_->getSelectedCommand()) {
+                    insertSlashCommand(cmd->name);
+                    return;
+                }
+            } else {
+                if (auto* entry = autocompletePopup_->getSelectedEntry()) {
+                    insertAlias(entry->alias);
+                    return;
+                }
             }
         }
         auto text = inputBox_.getText().trim();
@@ -226,6 +281,18 @@ AIChatConsoleContent::AIChatConsoleContent() {
     inputBox_.onTextChange = [this]() {
         auto text = inputBox_.getText();
         int caretPos = inputBox_.getCaretPosition();
+
+        // Check for / at start of input (slash commands)
+        if (text.startsWith("/")) {
+            // Extract the command token (up to first space or end)
+            int spacePos = text.indexOf(" ");
+            if (spacePos < 0 || caretPos <= spacePos) {
+                // Still typing the command name
+                auto filter = text.substring(1, caretPos);
+                showSlashAutocomplete(filter);
+                return;
+            }
+        }
 
         // Find the @ token before the caret
         int atPos = -1;
@@ -1003,9 +1070,16 @@ bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component
         return true;
     }
     if (key == juce::KeyPress::tabKey) {
-        if (auto* entry = autocompletePopup_->getSelectedEntry()) {
-            insertAlias(entry->alias);
-            return true;
+        if (autocompletePopup_->getMode() == AutocompletePopup::Mode::SlashCommand) {
+            if (auto* cmd = autocompletePopup_->getSelectedCommand()) {
+                insertSlashCommand(cmd->name);
+                return true;
+            }
+        } else {
+            if (auto* entry = autocompletePopup_->getSelectedEntry()) {
+                insertAlias(entry->alias);
+                return true;
+            }
         }
     }
     if (key == juce::KeyPress::escapeKey) {
@@ -1014,6 +1088,51 @@ bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component
     }
 
     return false;
+}
+
+void AIChatConsoleContent::buildSlashCommands() {
+    slashCommands_ = {
+        {"groove", "Create or apply swing/groove timing templates"},
+    };
+}
+
+void AIChatConsoleContent::showSlashAutocomplete(const juce::String& filter) {
+    if (slashCommands_.empty())
+        buildSlashCommands();
+
+    if (!autocompletePopup_) {
+        autocompletePopup_ = std::make_unique<AutocompletePopup>(*this);
+        addAndMakeVisible(*autocompletePopup_);
+    }
+
+    auto inputBounds = inputBox_.getBounds();
+    int popupWidth = inputBounds.getWidth();
+    autocompletePopup_->setSize(popupWidth, 8 * 22 + 2);
+    autocompletePopup_->updateSlashFilter(filter);
+
+    if (autocompletePopup_->isEmpty()) {
+        hideAutocomplete();
+        return;
+    }
+
+    int popupHeight = autocompletePopup_->getHeight();
+    autocompletePopup_->setBounds(inputBounds.getX(), inputBounds.getY() - popupHeight, popupWidth,
+                                  popupHeight);
+    autocompletePopup_->setVisible(true);
+    autocompletePopup_->toFront(false);
+}
+
+void AIChatConsoleContent::insertSlashCommand(const juce::String& command) {
+    auto text = inputBox_.getText();
+    // Find the end of the /command token
+    int spacePos = text.indexOf(" ");
+    auto after = (spacePos >= 0) ? text.substring(spacePos) : "";
+    auto newText = "/" + command + " " + after.trimStart();
+    inputBox_.setText(newText, false);
+    inputBox_.setCaretPosition(newText.length());
+
+    hideAutocomplete();
+    inputBox_.grabKeyboardFocus();
 }
 
 }  // namespace magda::daw::ui

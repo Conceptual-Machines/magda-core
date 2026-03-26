@@ -116,6 +116,16 @@ class AIChatConsoleContent : public PanelContent,
     void buildAliasList();
     juce::String resolveAliases(const juce::String& text);
     juce::String rewriteSlashCommand(const juce::String& text);
+
+    // Slash command definitions
+    struct SlashCommand {
+        juce::String name;         // e.g. "groove"
+        juce::String description;  // e.g. "Create or apply swing/groove templates"
+    };
+    std::vector<SlashCommand> slashCommands_;
+    void buildSlashCommands();
+    void showSlashAutocomplete(const juce::String& filter);
+    void insertSlashCommand(const juce::String& command);
     void showAutocomplete(const juce::String& filter);
     void hideAutocomplete();
     void insertAlias(const juce::String& alias);
