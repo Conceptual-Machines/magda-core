@@ -414,7 +414,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     dslEditor_->setColour(juce::CodeEditorComponent::lineNumberTextId, juce::Colour(0xff858585));
     dslEditor_->setColour(juce::CaretComponent::caretColourId, juce::Colour(0xff88ff88));
     dslEditor_->setColour(juce::CodeEditorComponent::highlightColourId, juce::Colour(0xff264f78));
-    dslEditor_->setLineNumbersShown(false);
+    dslEditor_->setLineNumbersShown(true);
     dslEditor_->setTabSize(2, true);
     dslEditor_->setScrollbarThickness(8);
     dslEditor_->addKeyListener(this);
