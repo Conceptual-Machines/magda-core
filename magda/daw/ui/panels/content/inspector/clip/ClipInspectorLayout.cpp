@@ -250,7 +250,7 @@ void ClipInspector::resized() {
         addSpace(4);
         {
             auto row = addRow(22);
-            grooveTemplateCombo_.setBounds(row);
+            grooveTemplateButton_.setBounds(row);
         }
         addSpace(4);
         {

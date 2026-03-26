@@ -18,8 +18,187 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
+
+// ========================================================================
+// GroovePickerPopup — two-column category browser
+// ========================================================================
+
+class ClipInspector::GroovePickerPopup : public juce::Component {
+  public:
+    GroovePickerPopup(ClipInspector& owner) : owner_(owner) {
+        addAndMakeVisible(categoryList_);
+        addAndMakeVisible(templateList_);
+
+        categoryList_.setModel(&categoryModel_);
+        categoryList_.setRowHeight(22);
+        categoryList_.setColour(juce::ListBox::backgroundColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+        categoryList_.setOutlineThickness(0);
+
+        templateList_.setModel(&templateModel_);
+        templateList_.setRowHeight(22);
+        templateList_.setColour(juce::ListBox::backgroundColourId,
+                                DarkTheme::getColour(DarkTheme::SURFACE));
+        templateList_.setOutlineThickness(0);
+
+        // Click on category → update right column
+        categoryModel_.onSelectionChanged = [this](int row) {
+            if (row >= 0 && row < static_cast<int>(categories_.size())) {
+                selectedCategory_ = row;
+                templateModel_.setItems(categories_[static_cast<size_t>(row)].templates);
+                templateList_.updateContent();
+                templateList_.deselectAllRows();
+                templateList_.repaint();
+            }
+        };
+
+        // Click on template → select and close
+        templateModel_.onItemClicked = [this](int row) {
+            auto& items = templateModel_.getItems();
+            if (row >= 0 && row < static_cast<int>(items.size())) {
+                owner_.onGrooveTemplateSelected(items[static_cast<size_t>(row)]);
+                // Dismiss the callout box we're hosted in
+                if (auto* callout = findParentComponentOfClass<juce::CallOutBox>())
+                    callout->dismiss();
+            }
+        };
+    }
+
+    struct Category {
+        juce::String name;
+        juce::StringArray templates;
+    };
+
+    void populate(const std::vector<Category>& cats, const juce::String& currentTemplate) {
+        categories_ = cats;
+        categoryModel_.setItems(categories_);
+        categoryList_.updateContent();
+
+        // Select the category containing the current template
+        selectedCategory_ = 0;
+        for (size_t i = 0; i < categories_.size(); ++i) {
+            if (categories_[i].templates.contains(currentTemplate)) {
+                selectedCategory_ = static_cast<int>(i);
+                break;
+            }
+        }
+        categoryList_.selectRow(selectedCategory_);
+        if (selectedCategory_ < static_cast<int>(categories_.size())) {
+            templateModel_.setItems(categories_[static_cast<size_t>(selectedCategory_)].templates);
+            templateList_.updateContent();
+
+            // Highlight current template
+            int idx = templateModel_.getItems().indexOf(currentTemplate);
+            if (idx >= 0)
+                templateList_.selectRow(idx);
+        }
+    }
+
+    void resized() override {
+        auto b = getLocalBounds().reduced(1);
+        int catWidth = b.getWidth() * 2 / 5;
+        categoryList_.setBounds(b.removeFromLeft(catWidth));
+        templateList_.setBounds(b);
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.setColour(DarkTheme::getBorderColour());
+        g.drawRect(getLocalBounds());
+        // Separator between columns
+        int catWidth = getWidth() * 2 / 5;
+        g.drawVerticalLine(catWidth, 1.0f, static_cast<float>(getHeight() - 1));
+    }
+
+  private:
+    // Left column model: category names
+    class CategoryListModel : public juce::ListBoxModel {
+      public:
+        std::function<void(int)> onSelectionChanged;
+
+        void setItems(const std::vector<Category>& cats) {
+            categories_ = &cats;
+        }
+
+        int getNumRows() override {
+            return categories_ ? static_cast<int>(categories_->size()) : 0;
+        }
+
+        void paintListBoxItem(int row, juce::Graphics& g, int width, int height,
+                              bool rowIsSelected) override {
+            if (!categories_ || row < 0 || row >= static_cast<int>(categories_->size()))
+                return;
+            if (rowIsSelected) {
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.25f));
+                g.fillRect(0, 0, width, height);
+            }
+            g.setColour(rowIsSelected ? DarkTheme::getTextColour()
+                                      : DarkTheme::getSecondaryTextColour());
+            g.setFont(FontManager::getInstance().getUIFont(11.0f));
+            g.drawText((*categories_)[static_cast<size_t>(row)].name, 8, 0, width - 8, height,
+                       juce::Justification::centredLeft);
+        }
+
+        void selectedRowsChanged(int lastRowSelected) override {
+            if (onSelectionChanged)
+                onSelectionChanged(lastRowSelected);
+        }
+
+      private:
+        const std::vector<Category>* categories_ = nullptr;
+    };
+
+    // Right column model: template names
+    class TemplateListModel : public juce::ListBoxModel {
+      public:
+        std::function<void(int)> onItemClicked;
+
+        void setItems(const juce::StringArray& items) {
+            items_ = items;
+        }
+
+        const juce::StringArray& getItems() const {
+            return items_;
+        }
+
+        int getNumRows() override {
+            return items_.size();
+        }
+
+        void paintListBoxItem(int row, juce::Graphics& g, int width, int height,
+                              bool rowIsSelected) override {
+            if (row < 0 || row >= items_.size())
+                return;
+            if (rowIsSelected) {
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.25f));
+                g.fillRect(0, 0, width, height);
+            }
+            g.setColour(DarkTheme::getTextColour());
+            g.setFont(FontManager::getInstance().getUIFont(11.0f));
+            g.drawText(items_[row], 8, 0, width - 8, height, juce::Justification::centredLeft);
+        }
+
+        void listBoxItemClicked(int row, const juce::MouseEvent&) override {
+            if (onItemClicked)
+                onItemClicked(row);
+        }
+
+      private:
+        juce::StringArray items_;
+    };
+
+    ClipInspector& owner_;
+    std::vector<Category> categories_;
+    int selectedCategory_ = 0;
+
+    CategoryListModel categoryModel_;
+    TemplateListModel templateModel_;
+    juce::ListBox categoryList_{"Categories"};
+    juce::ListBox templateList_{"Templates"};
+};
 
 // ========================================================================
 // Clip properties section
@@ -922,34 +1101,14 @@ void ClipInspector::initGrooveSection() {
     grooveSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     clipPropsContainer_.addChildComponent(grooveSectionLabel_);
 
-    // Groove template combo box
-    grooveTemplateCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
-    grooveTemplateCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    grooveTemplateCombo_.setColour(juce::ComboBox::outlineColourId,
-                                   DarkTheme::getColour(DarkTheme::SEPARATOR));
-    grooveTemplateCombo_.setLookAndFeel(&InspectorComboBoxLookAndFeel::getInstance());
-
-    grooveTemplateCombo_.addItem("None", 1);
-    grooveTemplateCombo_.setSelectedId(1, juce::dontSendNotification);
-
-    grooveTemplateCombo_.onChange = [this]() {
-        if (selectedClipIds_.empty())
-            return;
-        juce::String templateName;
-        int id = grooveTemplateCombo_.getSelectedId();
-        if (id > 1)
-            templateName = grooveTemplateCombo_.getItemText(grooveTemplateCombo_.indexOfItemId(id));
-
-        for (auto cid : selectedClipIds_) {
-            const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::MIDI) {
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipGrooveTemplateCommand>(cid, templateName));
-            }
-        }
-    };
-    clipPropsContainer_.addChildComponent(grooveTemplateCombo_);
+    // Groove template picker button
+    grooveTemplateButton_.setButtonText("None");
+    grooveTemplateButton_.setColour(juce::TextButton::buttonColourId,
+                                    DarkTheme::getColour(DarkTheme::SURFACE));
+    grooveTemplateButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    grooveTemplateButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    grooveTemplateButton_.onClick = [this]() { showGroovePicker(); };
+    clipPropsContainer_.addChildComponent(grooveTemplateButton_);
 
     // Groove strength slider
     grooveStrengthLabel_.setText("Strength", juce::dontSendNotification);
@@ -975,6 +1134,88 @@ void ClipInspector::initGrooveSection() {
         }
     };
     clipPropsContainer_.addChildComponent(*grooveStrengthValue_);
+}
+
+void ClipInspector::showGroovePicker() {
+    using Category = GroovePickerPopup::Category;
+
+    // Build category list from TE's GrooveTemplateManager
+    std::vector<Category> categories;
+    categories.push_back({"None", {"None"}});
+
+    juce::String currentTemplate;
+    if (!selectedClipIds_.empty()) {
+        auto* c = magda::ClipManager::getInstance().getClip(*selectedClipIds_.begin());
+        if (c)
+            currentTemplate = c->grooveTemplate;
+    }
+
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    auto* teWrapper = dynamic_cast<magda::TracktionEngineWrapper*>(audioEngine);
+    if (teWrapper && teWrapper->getEngine()) {
+        auto& gtm = teWrapper->getEngine()->getGrooveTemplateManager();
+        auto names = gtm.getTemplateNames();
+
+        struct GroupDef {
+            juce::String heading;
+            juce::String prefix;
+        };
+        const GroupDef groupDefs[] = {
+            {"Swing", "Swing"},          {"Swing", "Basic"},          {"Push Swing", "PushSwing"},
+            {"Pull Swing", "PullSwing"}, {"Push Snare", "PushSnare"}, {"Pull Snare", "PullSnare"},
+            {"Timing", "Slow"},          {"Timing", "Fast"},          {"Random", "random"},
+            {"Random", "Random"},
+        };
+
+        std::map<juce::String, juce::StringArray> grouped;
+        juce::StringArray uncategorized;
+
+        for (const auto& n : names) {
+            bool found = false;
+            for (const auto& g : groupDefs) {
+                if (n.startsWithIgnoreCase(g.prefix)) {
+                    grouped[g.heading].add(n);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                uncategorized.add(n);
+        }
+
+        const juce::String order[] = {"Swing",      "Push Swing", "Pull Swing", "Push Snare",
+                                      "Pull Snare", "Timing",     "Random"};
+        for (const auto& cat : order) {
+            auto it = grouped.find(cat);
+            if (it != grouped.end() && !it->second.isEmpty())
+                categories.push_back({cat, it->second});
+        }
+
+        if (!uncategorized.isEmpty())
+            categories.push_back({"Custom", uncategorized});
+    }
+
+    // Create popup and hand off to CallOutBox
+    auto popup = std::make_unique<GroovePickerPopup>(*this);
+    popup->populate(categories, currentTemplate.isEmpty() ? "None" : currentTemplate);
+    popup->setSize(320, 220);
+
+    auto buttonBounds = grooveTemplateButton_.getScreenBounds();
+    juce::CallOutBox::launchAsynchronously(std::move(popup), buttonBounds, nullptr);
+}
+
+void ClipInspector::onGrooveTemplateSelected(const juce::String& templateName) {
+    juce::String name = (templateName == "None") ? juce::String() : templateName;
+
+    for (auto cid : selectedClipIds_) {
+        const auto* c = magda::ClipManager::getInstance().getClip(cid);
+        if (c && c->type == magda::ClipType::MIDI) {
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetClipGrooveTemplateCommand>(cid, name));
+        }
+    }
+
+    // Popup dismisses itself via findParentComponentOfClass<CallOutBox>()
 }
 
 // ========================================================================

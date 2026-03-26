@@ -385,81 +385,13 @@ void ClipInspector::updateFromSelectedClip() {
 
         // Groove section (MIDI clips only)
         grooveSectionLabel_.setVisible(isMidiClip);
-        grooveTemplateCombo_.setVisible(isMidiClip);
+        grooveTemplateButton_.setVisible(isMidiClip);
         grooveStrengthLabel_.setVisible(isMidiClip);
         grooveStrengthValue_->setVisible(isMidiClip);
         if (isMidiClip) {
-            // Repopulate combo from TE's GrooveTemplateManager, grouped by category
-            grooveTemplateCombo_.clear(juce::dontSendNotification);
-            grooveTemplateCombo_.addItem("None", 1);
-
-            int selectedId = 1;
-            int nextItemId = 2;
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            auto* teWrapper = dynamic_cast<magda::TracktionEngineWrapper*>(audioEngine);
-            if (teWrapper && teWrapper->getEngine()) {
-                auto& gtm = teWrapper->getEngine()->getGrooveTemplateManager();
-                auto names = gtm.getTemplateNames();
-
-                // Group templates by prefix
-                struct Group {
-                    juce::String heading;
-                    juce::String prefix;
-                };
-                const Group groups[] = {
-                    {"Swing", "Swing"},          {"Swing", "Basic"},
-                    {"Push Swing", "PushSwing"}, {"Pull Swing", "PullSwing"},
-                    {"Push Snare", "PushSnare"}, {"Pull Snare", "PullSnare"},
-                    {"Timing", "Slow"},          {"Timing", "Fast"},
-                    {"Random", "random"},        {"Random", "Random"},
-                };
-
-                // Collect names into categories
-                std::map<juce::String, juce::StringArray> categories;
-                juce::StringArray uncategorized;
-
-                for (const auto& n : names) {
-                    bool found = false;
-                    for (const auto& g : groups) {
-                        if (n.startsWithIgnoreCase(g.prefix)) {
-                            categories[g.heading].add(n);
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found)
-                        uncategorized.add(n);
-                }
-
-                // Add grouped items with section headings
-                const juce::String categoryOrder[] = {"Swing",      "Push Swing", "Pull Swing",
-                                                      "Push Snare", "Pull Snare", "Timing",
-                                                      "Random"};
-                for (const auto& cat : categoryOrder) {
-                    auto it = categories.find(cat);
-                    if (it == categories.end() || it->second.isEmpty())
-                        continue;
-                    grooveTemplateCombo_.addSectionHeading(cat);
-                    for (const auto& n : it->second) {
-                        grooveTemplateCombo_.addItem(n, nextItemId);
-                        if (n == clip->grooveTemplate)
-                            selectedId = nextItemId;
-                        nextItemId++;
-                    }
-                }
-
-                // Add uncategorized (custom/user templates)
-                if (!uncategorized.isEmpty()) {
-                    grooveTemplateCombo_.addSectionHeading("Custom");
-                    for (const auto& n : uncategorized) {
-                        grooveTemplateCombo_.addItem(n, nextItemId);
-                        if (n == clip->grooveTemplate)
-                            selectedId = nextItemId;
-                        nextItemId++;
-                    }
-                }
-            }
-            grooveTemplateCombo_.setSelectedId(selectedId, juce::dontSendNotification);
+            // Update button text to show current template
+            grooveTemplateButton_.setButtonText(
+                clip->grooveTemplate.isNotEmpty() ? clip->grooveTemplate : "None");
 
             grooveStrengthValue_->setValue(clip->grooveStrength, juce::dontSendNotification);
 
@@ -620,7 +552,7 @@ void ClipInspector::showClipControls(bool show) {
         midiTransposeDownBtn_.setVisible(false);
         midiTransposeLabel_.setVisible(false);
         grooveSectionLabel_.setVisible(false);
-        grooveTemplateCombo_.setVisible(false);
+        grooveTemplateButton_.setVisible(false);
         grooveStrengthLabel_.setVisible(false);
         grooveStrengthValue_->setVisible(false);
         clipMixSectionLabel_.setVisible(false);

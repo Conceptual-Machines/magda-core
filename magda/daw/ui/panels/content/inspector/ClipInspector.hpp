@@ -137,9 +137,14 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
 
     // Groove/Shuffle/Swing (MIDI clips)
     juce::Label grooveSectionLabel_;
-    juce::ComboBox grooveTemplateCombo_;
+    juce::TextButton grooveTemplateButton_;
     juce::Label grooveStrengthLabel_;
     std::unique_ptr<magda::DraggableValueLabel> grooveStrengthValue_;
+
+    // Two-column groove template picker popup
+    class GroovePickerPopup;
+    void showGroovePicker();
+    void onGrooveTemplateSelected(const juce::String& templateName);
 
     // Playback
     juce::TextButton reverseToggle_;
