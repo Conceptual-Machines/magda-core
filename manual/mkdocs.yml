@@ -71,6 +71,7 @@ nav:
       - Linking Parameters: modulation/linking.md
   - Transport: transport.md
   - Reference:
+      - DSL Reference: reference/dsl.md
       - Keyboard Shortcuts: reference/keyboard-shortcuts.md
       - File Formats: reference/file-formats.md
       - Troubleshooting: reference/troubleshooting.md
