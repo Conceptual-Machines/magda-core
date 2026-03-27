@@ -821,6 +821,36 @@ void TrackChainContent::initGlobalModsPanel() {
             magda::TrackManager::getInstance().setTrackModLinkAmount(selectedTrackId_, modIndex,
                                                                      target, amount);
     };
+    globalModEditorPanel_->setParamNameResolver(
+        [this](magda::DeviceId deviceId, int paramIndex) -> juce::String {
+            if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+                return "P" + juce::String(paramIndex);
+            const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+            if (!track)
+                return "P" + juce::String(paramIndex);
+            std::function<juce::String(const std::vector<magda::ChainElement>&)> findParam;
+            findParam = [&](const std::vector<magda::ChainElement>& elements) -> juce::String {
+                for (const auto& element : elements) {
+                    if (magda::isDevice(element)) {
+                        const auto& device = magda::getDevice(element);
+                        if (device.id == deviceId && paramIndex >= 0 &&
+                            paramIndex < static_cast<int>(device.parameters.size())) {
+                            return device.parameters[static_cast<size_t>(paramIndex)].name;
+                        }
+                    } else {
+                        const auto& rack = magda::getRack(element);
+                        for (const auto& chain : rack.chains) {
+                            auto result = findParam(chain.elements);
+                            if (result.isNotEmpty())
+                                return result;
+                        }
+                    }
+                }
+                return {};
+            };
+            auto name = findParam(track->chainElements);
+            return name.isNotEmpty() ? name : ("P" + juce::String(paramIndex));
+        });
     addChildComponent(*globalModEditorPanel_);
 }
 
@@ -840,6 +870,20 @@ void TrackChainContent::initGlobalMacrosPanel() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().setTrackMacroName(selectedTrackId_, macroIndex,
                                                                  name);
+    };
+    globalMacrosPanel_->onMacroLinkRemoved = [this](int macroIndex, magda::MacroTarget target) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().removeTrackMacroLink(selectedTrackId_, macroIndex,
+                                                                    target);
+            updateGlobalMacrosPanel();
+        }
+    };
+    globalMacrosPanel_->onMacroAllLinksCleared = [this](int macroIndex) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().clearAllTrackMacroLinks(selectedTrackId_,
+                                                                       macroIndex);
+            updateGlobalMacrosPanel();
+        }
     };
     globalMacrosPanel_->onMacroClicked = [this](int macroIndex) {
         if (globalMacroEditorVisible_ && selectedGlobalMacroIndex_ == macroIndex) {
@@ -866,6 +910,48 @@ void TrackChainContent::initGlobalMacrosPanel() {
 
     // Macro editor panel
     globalMacroEditorPanel_ = std::make_unique<MacroEditorPanel>();
+    globalMacroEditorPanel_->onLinkAmountChanged = [this](magda::MacroTarget target, float amount) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0)
+            magda::TrackManager::getInstance().setTrackMacroLinkAmount(
+                selectedTrackId_, selectedGlobalMacroIndex_, target, amount);
+    };
+    globalMacroEditorPanel_->onLinkRemoved = [this](magda::MacroTarget target) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0) {
+            magda::TrackManager::getInstance().removeTrackMacroLink(
+                selectedTrackId_, selectedGlobalMacroIndex_, target);
+            updateGlobalMacrosPanel();
+        }
+    };
+    globalMacroEditorPanel_->setParamNameResolver(
+        [this](magda::DeviceId deviceId, int paramIndex) -> juce::String {
+            if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+                return "P" + juce::String(paramIndex);
+            const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+            if (!track)
+                return "P" + juce::String(paramIndex);
+            std::function<juce::String(const std::vector<magda::ChainElement>& elements)> findParam;
+            findParam = [&](const std::vector<magda::ChainElement>& elements) -> juce::String {
+                for (const auto& element : elements) {
+                    if (magda::isDevice(element)) {
+                        const auto& device = magda::getDevice(element);
+                        if (device.id == deviceId && paramIndex >= 0 &&
+                            paramIndex < static_cast<int>(device.parameters.size())) {
+                            return device.parameters[static_cast<size_t>(paramIndex)].name;
+                        }
+                    } else {
+                        const auto& rack = magda::getRack(element);
+                        for (const auto& chain : rack.chains) {
+                            auto result = findParam(chain.elements);
+                            if (result.isNotEmpty())
+                                return result;
+                        }
+                    }
+                }
+                return {};
+            };
+            auto name = findParam(track->chainElements);
+            return name.isNotEmpty() ? name : ("P" + juce::String(paramIndex));
+        });
     addChildComponent(*globalMacroEditorPanel_);
 }
 
@@ -902,8 +988,36 @@ void TrackChainContent::updateGlobalMacrosPanel() {
     if (!track)
         return;
 
+    // Collect all devices (flat list across devices and racks) for the link menu
+    std::vector<std::pair<magda::DeviceId, juce::String>> allDevices;
+    std::map<magda::DeviceId, std::vector<juce::String>> allDeviceParams;
+
+    std::function<void(const std::vector<magda::ChainElement>&)> collectDevices;
+    collectDevices = [&](const std::vector<magda::ChainElement>& elements) {
+        for (const auto& element : elements) {
+            if (magda::isDevice(element)) {
+                const auto& device = magda::getDevice(element);
+                allDevices.push_back({device.id, device.name});
+                std::vector<juce::String> names;
+                names.reserve(device.parameters.size());
+                for (const auto& p : device.parameters) {
+                    names.push_back(p.name);
+                }
+                allDeviceParams[device.id] = std::move(names);
+            } else {
+                const auto& rack = magda::getRack(element);
+                for (const auto& chain : rack.chains) {
+                    collectDevices(chain.elements);
+                }
+            }
+        }
+    };
+    collectDevices(track->chainElements);
+
     auto trackPath = magda::ChainNodePath::trackLevel(selectedTrackId_);
     globalMacrosPanel_->setParentPath(trackPath);
+    globalMacrosPanel_->setAvailableDevices(allDevices);
+    globalMacrosPanel_->setDeviceParamNames(allDeviceParams);
     globalMacrosPanel_->setMacros(track->macros);
 
     // Update editor if visible

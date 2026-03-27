@@ -5,15 +5,49 @@
 #include <functional>
 
 #include "core/MacroInfo.hpp"
+#include "core/TypeIds.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
 
 /**
+ * @brief Scrollable content component for macro link matrix
+ *
+ * Displays all parameter links for the selected macro.
+ * Each row: param_name | amount | delete button
+ */
+class MacroLinkMatrixContent : public juce::Component {
+  public:
+    static constexpr int ROW_HEIGHT = 18;
+
+    struct LinkRow {
+        magda::MacroTarget target;
+        juce::String paramName;
+        float amount = 1.0f;
+    };
+
+    void setLinks(const std::vector<LinkRow>& links);
+
+    std::function<void(magda::MacroTarget)> onDeleteLink;
+    std::function<void(magda::MacroTarget, float)> onAmountChanged;
+
+    void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+
+  private:
+    std::vector<LinkRow> links_;
+    int draggingRow_ = -1;
+    float dragStartAmount_ = 0.0f;
+    int dragStartX_ = 0;
+};
+
+/**
  * @brief Panel for editing macro settings
  *
  * Shows when a macro is selected from the macros panel.
- * Displays name, value control, and target info.
+ * Displays name, value control, and per-link amount controls.
  *
  * Layout:
  * +------------------+
@@ -21,8 +55,9 @@ namespace magda::daw::ui {
  * +------------------+
  * |   Value: 0.50    |  <- Value slider
  * +------------------+
- * | Target: Device   |  <- Target info
- * |   Param Name     |
+ * | Links:           |  <- Section header
+ * | [param] [100%] x |  <- Per-link row (drag amount, click x to remove)
+ * | [param] [ 50%] x |
  * +------------------+
  */
 class MacroEditorPanel : public juce::Component {
@@ -33,6 +68,12 @@ class MacroEditorPanel : public juce::Component {
     // Set the macro to edit
     void setMacroInfo(const magda::MacroInfo& macro);
 
+    // Set a resolver for getting parameter names from device/param IDs
+    void setParamNameResolver(
+        std::function<juce::String(magda::DeviceId deviceId, int paramIndex)> resolver) {
+        paramNameResolver_ = std::move(resolver);
+    }
+
     // Set the selected macro index (-1 for none)
     void setSelectedMacroIndex(int index);
     int getSelectedMacroIndex() const {
@@ -42,6 +83,8 @@ class MacroEditorPanel : public juce::Component {
     // Callbacks
     std::function<void(juce::String name)> onNameChanged;
     std::function<void(float value)> onValueChanged;
+    std::function<void(magda::MacroTarget, float amount)> onLinkAmountChanged;
+    std::function<void(magda::MacroTarget)> onLinkRemoved;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -49,7 +92,7 @@ class MacroEditorPanel : public juce::Component {
     void mouseUp(const juce::MouseEvent& e) override;
 
     // Preferred width for this panel
-    static constexpr int PREFERRED_WIDTH = 120;
+    static constexpr int PREFERRED_WIDTH = 150;
 
   private:
     int selectedMacroIndex_ = -1;
@@ -58,9 +101,12 @@ class MacroEditorPanel : public juce::Component {
     // UI Components
     juce::Label nameLabel_;
     TextSlider valueSlider_{TextSlider::Format::Decimal};
-    juce::Label targetLabel_;
+    juce::Viewport linkMatrixViewport_;
+    MacroLinkMatrixContent linkMatrixContent_;
 
     void updateFromMacro();
+
+    std::function<juce::String(magda::DeviceId, int)> paramNameResolver_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MacroEditorPanel)
 };

@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -39,6 +40,10 @@ class MacroPanelComponent : public PagedControlPanel {
     // Set available devices for linking (devices in this rack/chain)
     void setAvailableDevices(const std::vector<std::pair<magda::DeviceId, juce::String>>& devices);
 
+    // Set parameter names per device (for the link menu)
+    void setDeviceParamNames(
+        const std::map<magda::DeviceId, std::vector<juce::String>>& paramNames);
+
     // Set which macro is selected (purple highlight)
     void setSelectedMacroIndex(int macroIndex);
 
@@ -48,6 +53,8 @@ class MacroPanelComponent : public PagedControlPanel {
     // Callbacks
     std::function<void(int macroIndex, float value)> onMacroValueChanged;
     std::function<void(int macroIndex, magda::MacroTarget target)> onMacroTargetChanged;
+    std::function<void(int macroIndex, magda::MacroTarget target)> onMacroLinkRemoved;
+    std::function<void(int macroIndex)> onMacroAllLinksCleared;  // Clear all links for a macro
     std::function<void(int macroIndex, juce::String name)> onMacroNameChanged;
     std::function<void(int macroIndex)> onMacroClicked;  // Selection callback
 

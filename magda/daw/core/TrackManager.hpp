@@ -338,6 +338,7 @@ class TrackManager {
     void setRackMacroName(const ChainNodePath& rackPath, int macroIndex, const juce::String& name);
     void addRackMacroPage(const ChainNodePath& rackPath);
     void removeRackMacroPage(const ChainNodePath& rackPath);
+    void removeRackMacroLink(const ChainNodePath& rackPath, int macroIndex, MacroTarget target);
 
     // Mod management for racks (path-based for nested rack support)
     void setRackModAmount(const ChainNodePath& rackPath, int modIndex, float amount);
@@ -433,6 +434,7 @@ class TrackManager {
     void setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex, float value);
     void setDeviceMacroTarget(const ChainNodePath& devicePath, int macroIndex, MacroTarget target);
     void removeDeviceMacroLink(const ChainNodePath& devicePath, int macroIndex, MacroTarget target);
+    void clearAllDeviceMacroLinks(const ChainNodePath& devicePath, int macroIndex);
     void setDeviceMacroLinkAmount(const ChainNodePath& devicePath, int macroIndex,
                                   MacroTarget target, float amount);
     void setDeviceMacroLinkBipolar(const ChainNodePath& devicePath, int macroIndex,
@@ -475,6 +477,7 @@ class TrackManager {
                                   bool bipolar);
     void setTrackMacroName(TrackId trackId, int macroIndex, const juce::String& name);
     void removeTrackMacroLink(TrackId trackId, int macroIndex, MacroTarget target);
+    void clearAllTrackMacroLinks(TrackId trackId, int macroIndex);
     void addTrackMacroPage(TrackId trackId);
     void removeTrackMacroPage(TrackId trackId);
 

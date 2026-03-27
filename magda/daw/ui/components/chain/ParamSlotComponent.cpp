@@ -46,6 +46,9 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
                            .onMacroLinked = onMacroLinked,
                            .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
                            .onMacroUnlinked = onMacroUnlinked,
+                           .onRackMacroLinked = onRackMacroLinked,
+                           .onTrackMacroLinked = onTrackMacroLinked,
+                           .onRackMacroUnlinked = onRackMacroUnlinked,
                            .onTrackMacroUnlinked = onTrackMacroUnlinked});
     };
     valueSlider_.setRightClickEditsText(false);
@@ -489,6 +492,9 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
                            .onMacroLinked = onMacroLinked,
                            .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
                            .onMacroUnlinked = onMacroUnlinked,
+                           .onRackMacroLinked = onRackMacroLinked,
+                           .onTrackMacroLinked = onTrackMacroLinked,
+                           .onRackMacroUnlinked = onRackMacroUnlinked,
                            .onTrackMacroUnlinked = onTrackMacroUnlinked});
         return;
     }

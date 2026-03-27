@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <map>
 
 #include "core/LinkModeManager.hpp"
 #include "core/MacroInfo.hpp"
@@ -38,6 +39,10 @@ class MacroKnobComponent : public juce::Component, public magda::LinkModeManager
     // Set available devices for linking (name and deviceId pairs)
     void setAvailableTargets(const std::vector<std::pair<magda::DeviceId, juce::String>>& devices);
 
+    // Set parameter names per device (for the link menu)
+    void setDeviceParamNames(
+        const std::map<magda::DeviceId, std::vector<juce::String>>& paramNames);
+
     // Set parent path for drag-and-drop identification
     void setParentPath(const magda::ChainNodePath& path) {
         parentPath_ = path;
@@ -58,6 +63,9 @@ class MacroKnobComponent : public juce::Component, public magda::LinkModeManager
     // Callbacks
     std::function<void(float)> onValueChanged;
     std::function<void(magda::MacroTarget)> onTargetChanged;
+    std::function<void(magda::MacroTarget)>
+        onLinkRemoved;                        // Called when individual link is removed
+    std::function<void()> onAllLinksCleared;  // Called when "Clear All Links" clears all links
     std::function<void(juce::String)> onNameChanged;
     std::function<void()> onClicked;  // Selection callback
 
@@ -85,6 +93,7 @@ class MacroKnobComponent : public juce::Component, public magda::LinkModeManager
     std::unique_ptr<magda::SvgButton> linkButton_;
     magda::MacroInfo currentMacro_;
     std::vector<std::pair<magda::DeviceId, juce::String>> availableTargets_;
+    std::map<magda::DeviceId, std::vector<juce::String>> deviceParamNames_;
     bool selected_ = false;
     magda::ChainNodePath parentPath_;  // For drag-and-drop identification
 

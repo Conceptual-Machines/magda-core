@@ -65,6 +65,11 @@ void MacroKnobComponent::setAvailableTargets(
     availableTargets_ = devices;
 }
 
+void MacroKnobComponent::setDeviceParamNames(
+    const std::map<magda::DeviceId, std::vector<juce::String>>& paramNames) {
+    deviceParamNames_ = paramNames;
+}
+
 void MacroKnobComponent::setSelected(bool selected) {
     if (selected_ != selected) {
         selected_ = selected;
@@ -266,11 +271,6 @@ void MacroKnobComponent::paintLinkIndicator(juce::Graphics& g, juce::Rectangle<i
 void MacroKnobComponent::showLinkMenu() {
     juce::PopupMenu menu;
 
-    // Mock param names (same as DeviceSlotComponent)
-    static const char* mockParamNames[16] = {
-        "Cutoff",   "Resonance", "Drive",    "Mix",   "Attack", "Decay", "Sustain", "Release",
-        "LFO Rate", "LFO Depth", "Feedback", "Width", "Low",    "Mid",   "High",    "Output"};
-
     menu.addSectionHeader("Link to Parameter...");
     menu.addSeparator();
 
@@ -279,13 +279,21 @@ void MacroKnobComponent::showLinkMenu() {
     for (const auto& [deviceId, deviceName] : availableTargets_) {
         juce::PopupMenu deviceMenu;
 
-        // Use proper param names
-        for (int paramIdx = 0; paramIdx < 16; ++paramIdx) {
-            juce::String paramName = mockParamNames[paramIdx];
+        // Get real param names for this device, fall back to "Parameter N"
+        auto it = deviceParamNames_.find(deviceId);
+        int paramCount = (it != deviceParamNames_.end()) ? static_cast<int>(it->second.size()) : 16;
 
-            // Check if this is the currently linked target
-            bool isCurrentTarget = currentMacro_.target.deviceId == deviceId &&
-                                   currentMacro_.target.paramIndex == paramIdx;
+        for (int paramIdx = 0; paramIdx < paramCount; ++paramIdx) {
+            juce::String paramName =
+                (it != deviceParamNames_.end() && paramIdx < static_cast<int>(it->second.size()))
+                    ? it->second[static_cast<size_t>(paramIdx)]
+                    : "Parameter " + juce::String(paramIdx + 1);
+
+            // Check if this param is in the links vector
+            magda::MacroTarget t;
+            t.deviceId = deviceId;
+            t.paramIndex = paramIdx;
+            bool isCurrentTarget = currentMacro_.getLink(t) != nullptr;
 
             deviceMenu.addItem(itemId, paramName, true, isCurrentTarget);
             itemId++;
@@ -296,25 +304,67 @@ void MacroKnobComponent::showLinkMenu() {
 
     menu.addSeparator();
 
-    // Clear link option
-    int clearLinkId = 10000;
-    menu.addItem(clearLinkId, "Clear Link", currentMacro_.isLinked());
+    // Individual unlink items for each existing link
+    int unlinkBaseId = 10000;
+    std::vector<magda::MacroTarget> unlinkTargets;
+    for (const auto& link : currentMacro_.links) {
+        if (!link.target.isValid())
+            continue;
+        juce::String paramName;
+        auto it = deviceParamNames_.find(link.target.deviceId);
+        if (it != deviceParamNames_.end() && link.target.paramIndex >= 0 &&
+            link.target.paramIndex < static_cast<int>(it->second.size())) {
+            paramName = it->second[static_cast<size_t>(link.target.paramIndex)];
+        } else {
+            paramName = "P" + juce::String(link.target.paramIndex + 1);
+        }
+        // Find device name for context
+        for (const auto& [devId, devName] : availableTargets_) {
+            if (devId == link.target.deviceId) {
+                paramName = devName + " - " + paramName;
+                break;
+            }
+        }
+        menu.addItem(unlinkBaseId + static_cast<int>(unlinkTargets.size()), "Unlink " + paramName);
+        unlinkTargets.push_back(link.target);
+    }
+
+    // Clear all links option (only if multiple links)
+    int clearAllId = 20000;
+    if (unlinkTargets.size() > 1) {
+        menu.addItem(clearAllId, "Clear All Links");
+    }
 
     // Show menu and handle selection
     auto safeThis = juce::Component::SafePointer<MacroKnobComponent>(this);
-    auto targets = availableTargets_;  // Capture by value for async safety
+    auto targets = availableTargets_;     // Capture by value for async safety
+    auto paramNames = deviceParamNames_;  // Capture by value for async safety
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, targets, clearLinkId](int result) {
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, targets, paramNames, unlinkBaseId,
+                                                    unlinkTargets, clearAllId](int result) {
         if (safeThis == nullptr || result == 0) {
             return;
         }
 
-        if (result == clearLinkId) {
-            // Clear the link
+        // Clear all links
+        if (result == clearAllId) {
             safeThis->currentMacro_.target = magda::MacroTarget{};
+            safeThis->currentMacro_.links.clear();
             safeThis->repaint();
-            if (safeThis->onTargetChanged) {
-                safeThis->onTargetChanged(safeThis->currentMacro_.target);
+            if (safeThis->onAllLinksCleared) {
+                safeThis->onAllLinksCleared();
+            }
+            return;
+        }
+
+        // Individual unlink
+        int unlinkIdx = result - unlinkBaseId;
+        if (unlinkIdx >= 0 && unlinkIdx < static_cast<int>(unlinkTargets.size())) {
+            auto target = unlinkTargets[static_cast<size_t>(unlinkIdx)];
+            safeThis->currentMacro_.removeLink(target);
+            safeThis->repaint();
+            if (safeThis->onLinkRemoved) {
+                safeThis->onLinkRemoved(target);
             }
             return;
         }
@@ -322,14 +372,23 @@ void MacroKnobComponent::showLinkMenu() {
         // Calculate which device and param was selected
         int itemId = 1;
         for (const auto& [deviceId, deviceName] : targets) {
-            for (int paramIdx = 0; paramIdx < 16; ++paramIdx) {
+            auto it = paramNames.find(deviceId);
+            int paramCount = (it != paramNames.end()) ? static_cast<int>(it->second.size()) : 16;
+            for (int paramIdx = 0; paramIdx < paramCount; ++paramIdx) {
                 if (itemId == result) {
-                    // Set the new target
-                    safeThis->currentMacro_.target.deviceId = deviceId;
-                    safeThis->currentMacro_.target.paramIndex = paramIdx;
+                    // Add to links vector (not legacy target)
+                    magda::MacroTarget t;
+                    t.deviceId = deviceId;
+                    t.paramIndex = paramIdx;
+                    if (!safeThis->currentMacro_.getLink(t)) {
+                        magda::MacroLink link;
+                        link.target = t;
+                        link.amount = 1.0f;
+                        safeThis->currentMacro_.links.push_back(link);
+                    }
                     safeThis->repaint();
                     if (safeThis->onTargetChanged) {
-                        safeThis->onTargetChanged(safeThis->currentMacro_.target);
+                        safeThis->onTargetChanged(t);
                     }
                     return;
                 }

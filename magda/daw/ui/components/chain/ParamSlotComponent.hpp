@@ -117,6 +117,9 @@ class ParamSlotComponent : public juce::Component,
     std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
         onMacroLinkedWithAmount;
     std::function<void(int macroIndex, magda::MacroTarget target)> onMacroUnlinked;
+    std::function<void(int macroIndex, magda::MacroTarget target)> onRackMacroLinked;
+    std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroLinked;
+    std::function<void(int macroIndex, magda::MacroTarget target)> onRackMacroUnlinked;
     std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroUnlinked;
     std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
         onMacroAmountChanged;

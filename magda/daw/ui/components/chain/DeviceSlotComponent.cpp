@@ -450,6 +450,42 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 self->updateMacroPanel();
             }
         };
+        paramSlots_[i]->onRackMacroLinked = [safeThis = juce::Component::SafePointer(this)](
+                                                int macroIndex, magda::MacroTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto rackPath = self->nodePath_.parent();
+            if (rackPath.isValid())
+                magda::TrackManager::getInstance().setRackMacroTarget(rackPath, macroIndex, target);
+            if (self)
+                self->updateParamModulation();
+        };
+        paramSlots_[i]->onTrackMacroLinked = [safeThis = juce::Component::SafePointer(this)](
+                                                 int macroIndex, magda::MacroTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto trackId = self->nodePath_.trackId;
+            if (trackId != magda::INVALID_TRACK_ID)
+                magda::TrackManager::getInstance().setTrackMacroTarget(trackId, macroIndex, target);
+            if (self)
+                self->updateParamModulation();
+        };
+        paramSlots_[i]->onRackMacroUnlinked = [safeThis = juce::Component::SafePointer(this)](
+                                                  int macroIndex, magda::MacroTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto rackPath = self->nodePath_.parent();
+            if (rackPath.isValid())
+                magda::TrackManager::getInstance().removeRackMacroLink(rackPath, macroIndex,
+                                                                       target);
+            if (self) {
+                self->updateParamModulation();
+                self->updateMacroPanel();
+            }
+        };
         paramSlots_[i]->onMacroValueChanged =
             [safeThis = juce::Component::SafePointer(this)](int macroIndex, float value) {
                 auto self = safeThis;
@@ -1295,6 +1331,16 @@ std::vector<std::pair<magda::DeviceId, juce::String>> DeviceSlotComponent::getAv
     return {{device_.id, device_.name}};
 }
 
+std::map<magda::DeviceId, std::vector<juce::String>> DeviceSlotComponent::getDeviceParamNames()
+    const {
+    std::vector<juce::String> names;
+    names.reserve(device_.parameters.size());
+    for (const auto& param : device_.parameters) {
+        names.push_back(param.name);
+    }
+    return {{device_.id, std::move(names)}};
+}
+
 void DeviceSlotComponent::onModAmountChangedInternal(int modIndex, float amount) {
     magda::TrackManager::getInstance().setDeviceModAmount(nodePath_, modIndex, amount);
     updateParamModulation();  // Refresh param indicators to show new amount
@@ -1375,6 +1421,12 @@ void DeviceSlotComponent::onMacroTargetChangedInternal(int macroIndex, magda::Ma
 
 void DeviceSlotComponent::onMacroNameChangedInternal(int macroIndex, const juce::String& name) {
     magda::TrackManager::getInstance().setDeviceMacroName(nodePath_, macroIndex, name);
+}
+
+void DeviceSlotComponent::onMacroAllLinksClearedInternal(int macroIndex) {
+    magda::TrackManager::getInstance().clearAllDeviceMacroLinks(nodePath_, macroIndex);
+    updateParamModulation();
+    updateMacroPanel();
 }
 
 void DeviceSlotComponent::onMacroLinkAmountChangedInternal(int macroIndex,
@@ -3002,6 +3054,42 @@ void DeviceSlotComponent::setupCustomUILinking() {
             if (trackId != magda::INVALID_TRACK_ID)
                 magda::TrackManager::getInstance().removeTrackMacroLink(trackId, macroIndex,
                                                                         target);
+            if (!self)
+                return;
+            self->updateParamModulation();
+            self->updateMacroPanel();
+        };
+        slider->onRackMacroLinked = [safeThis = juce::Component::SafePointer(this)](
+                                        int macroIndex, magda::MacroTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto rackPath = self->nodePath_.parent();
+            if (rackPath.isValid())
+                magda::TrackManager::getInstance().setRackMacroTarget(rackPath, macroIndex, target);
+            if (self)
+                self->updateParamModulation();
+        };
+        slider->onTrackMacroLinked = [safeThis = juce::Component::SafePointer(this)](
+                                         int macroIndex, magda::MacroTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto trackId = self->nodePath_.trackId;
+            if (trackId != magda::INVALID_TRACK_ID)
+                magda::TrackManager::getInstance().setTrackMacroTarget(trackId, macroIndex, target);
+            if (self)
+                self->updateParamModulation();
+        };
+        slider->onRackMacroUnlinked = [safeThis = juce::Component::SafePointer(this)](
+                                          int macroIndex, magda::MacroTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto rackPath = self->nodePath_.parent();
+            if (rackPath.isValid())
+                magda::TrackManager::getInstance().removeRackMacroLink(rackPath, macroIndex,
+                                                                       target);
             if (!self)
                 return;
             self->updateParamModulation();

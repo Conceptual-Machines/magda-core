@@ -31,6 +31,18 @@ void MacroPanelComponent::ensureKnobCount(int count) {
             }
         };
 
+        knob->onLinkRemoved = [this, i](magda::MacroTarget target) {
+            if (onMacroLinkRemoved) {
+                onMacroLinkRemoved(i, target);
+            }
+        };
+
+        knob->onAllLinksCleared = [this, i]() {
+            if (onMacroAllLinksCleared) {
+                onMacroAllLinksCleared(i);
+            }
+        };
+
         knob->onNameChanged = [this, i](juce::String name) {
             if (onMacroNameChanged) {
                 onMacroNameChanged(i, name);
@@ -72,6 +84,13 @@ void MacroPanelComponent::setAvailableDevices(
     availableDevices_ = devices;
     for (auto& knob : knobs_) {
         knob->setAvailableTargets(devices);
+    }
+}
+
+void MacroPanelComponent::setDeviceParamNames(
+    const std::map<magda::DeviceId, std::vector<juce::String>>& paramNames) {
+    for (auto& knob : knobs_) {
+        knob->setDeviceParamNames(paramNames);
     }
 }
 

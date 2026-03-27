@@ -101,6 +101,17 @@ void TrackManager::removeRackMacroPage(const ChainNodePath& rackPath) {
     }
 }
 
+void TrackManager::removeRackMacroLink(const ChainNodePath& rackPath, int macroIndex,
+                                       MacroTarget target) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        if (macroIndex < 0 || macroIndex >= static_cast<int>(rack->macros.size())) {
+            return;
+        }
+        rack->macros[macroIndex].removeLink(target);
+        notifyTrackDevicesChanged(rackPath.trackId);
+    }
+}
+
 // ============================================================================
 // Rack Mod Management
 // ============================================================================
@@ -1021,6 +1032,17 @@ void TrackManager::removeDeviceMacroLink(const ChainNodePath& devicePath, int ma
     }
 }
 
+void TrackManager::clearAllDeviceMacroLinks(const ChainNodePath& devicePath, int macroIndex) {
+    if (auto* device = getDeviceInChainByPath(devicePath)) {
+        if (macroIndex < 0 || macroIndex >= static_cast<int>(device->macros.size())) {
+            return;
+        }
+        device->macros[macroIndex].links.clear();
+        device->macros[macroIndex].target = MacroTarget{};
+        notifyDeviceModifiersChanged(devicePath.trackId);
+    }
+}
+
 void TrackManager::setDeviceMacroLinkAmount(const ChainNodePath& devicePath, int macroIndex,
                                             MacroTarget target, float amount) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
@@ -1387,6 +1409,17 @@ void TrackManager::removeTrackMacroLink(TrackId trackId, int macroIndex, MacroTa
     if (macroIndex < 0 || macroIndex >= static_cast<int>(track->macros.size()))
         return;
     track->macros[macroIndex].removeLink(target);
+    notifyTrackDevicesChanged(trackId);
+}
+
+void TrackManager::clearAllTrackMacroLinks(TrackId trackId, int macroIndex) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+    if (macroIndex < 0 || macroIndex >= static_cast<int>(track->macros.size()))
+        return;
+    track->macros[macroIndex].links.clear();
+    track->macros[macroIndex].target = MacroTarget{};
     notifyTrackDevicesChanged(trackId);
 }
 

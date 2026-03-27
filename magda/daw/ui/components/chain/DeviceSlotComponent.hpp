@@ -110,6 +110,7 @@ class DeviceSlotComponent : public NodeComponent,
     const magda::ModArray* getModsData() const override;
     const magda::MacroArray* getMacrosData() const override;
     std::vector<std::pair<magda::DeviceId, juce::String>> getAvailableDevices() const override;
+    std::map<magda::DeviceId, std::vector<juce::String>> getDeviceParamNames() const override;
 
     // Mod/macro callbacks
     void onModAmountChangedInternal(int modIndex, float amount) override;
@@ -128,6 +129,7 @@ class DeviceSlotComponent : public NodeComponent,
     void onMacroValueChangedInternal(int macroIndex, float value) override;
     void onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) override;
     void onMacroNameChangedInternal(int macroIndex, const juce::String& name) override;
+    void onMacroAllLinksClearedInternal(int macroIndex) override;
     // Contextual link callbacks for macros (similar to mods)
     void onMacroLinkAmountChangedInternal(int macroIndex, magda::MacroTarget target,
                                           float amount) override;

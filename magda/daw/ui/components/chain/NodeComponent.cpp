@@ -960,6 +960,14 @@ void NodeComponent::initializeModsMacrosPanels() {
     macroPanel_->onMacroNameChanged = [this](int macroIndex, juce::String name) {
         onMacroNameChangedInternal(macroIndex, name);
     };
+    macroPanel_->onMacroLinkRemoved = [this](int macroIndex, magda::MacroTarget target) {
+        onMacroLinkRemovedInternal(macroIndex, target);
+        updateMacroPanel();
+        updateMacroEditor();
+    };
+    macroPanel_->onMacroAllLinksCleared = [this](int macroIndex) {
+        onMacroAllLinksClearedInternal(macroIndex);
+    };
     macroPanel_->onMacroClicked = [this](int macroIndex) {
         onMacroClickedInternal(macroIndex);
         // Toggle macro editor - if clicking same macro, hide; otherwise show
@@ -1169,6 +1177,27 @@ void NodeComponent::initializeModsMacrosPanels() {
             onMacroValueChangedInternal(selectedMacroIndex_, value);
         }
     };
+    macroEditorPanel_->onLinkAmountChanged = [this](magda::MacroTarget target, float amount) {
+        if (selectedMacroIndex_ >= 0) {
+            onMacroLinkAmountChangedInternal(selectedMacroIndex_, target, amount);
+        }
+    };
+    macroEditorPanel_->onLinkRemoved = [this](magda::MacroTarget target) {
+        if (selectedMacroIndex_ >= 0) {
+            onMacroLinkRemovedInternal(selectedMacroIndex_, target);
+            updateMacroEditor();
+        }
+    };
+    macroEditorPanel_->setParamNameResolver(
+        [this](magda::DeviceId deviceId, int paramIndex) -> juce::String {
+            auto paramNamesMap = getDeviceParamNames();
+            auto it = paramNamesMap.find(deviceId);
+            if (it != paramNamesMap.end() && paramIndex >= 0 &&
+                paramIndex < static_cast<int>(it->second.size())) {
+                return it->second[static_cast<size_t>(paramIndex)];
+            }
+            return "P" + juce::String(paramIndex);
+        });
     addChildComponent(*macroEditorPanel_);
 }
 
@@ -1196,6 +1225,7 @@ void NodeComponent::updateMacroPanel() {
 
     auto devices = getAvailableDevices();
     macroPanel_->setAvailableDevices(devices);
+    macroPanel_->setDeviceParamNames(getDeviceParamNames());
 }
 
 // === Modulator Editor Panel ===

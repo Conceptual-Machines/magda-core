@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -247,6 +248,9 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     virtual std::vector<std::pair<magda::DeviceId, juce::String>> getAvailableDevices() const {
         return {};
     }
+    virtual std::map<magda::DeviceId, std::vector<juce::String>> getDeviceParamNames() const {
+        return {};
+    }
 
     // Virtual callbacks for mod/macro changes (subclasses implement to persist changes)
     virtual void onModAmountChangedInternal(int /*modIndex*/, float /*amount*/) {}
@@ -273,6 +277,7 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     virtual void onMacroValueChangedInternal(int /*macroIndex*/, float /*value*/) {}
     virtual void onMacroTargetChangedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/) {}
     virtual void onMacroNameChangedInternal(int /*macroIndex*/, const juce::String& /*name*/) {}
+    virtual void onMacroAllLinksClearedInternal(int /*macroIndex*/) {}
     // Contextual link callbacks for macros (similar to mods)
     virtual void onMacroLinkAmountChangedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/,
                                                   float /*amount*/) {}

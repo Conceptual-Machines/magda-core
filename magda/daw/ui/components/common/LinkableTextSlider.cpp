@@ -116,6 +116,9 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
                                .onMacroLinked = onMacroLinked,
                                .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
                                .onMacroUnlinked = onMacroUnlinked,
+                               .onRackMacroLinked = onRackMacroLinked,
+                               .onTrackMacroLinked = onTrackMacroLinked,
+                               .onRackMacroUnlinked = onRackMacroUnlinked,
                                .onTrackMacroUnlinked = onTrackMacroUnlinked});
         }
     };
@@ -345,8 +348,12 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
                           {.onModUnlinked = onModUnlinked,
                            .onTrackModUnlinked = onTrackModUnlinked,
                            .onModLinkedWithAmount = onModLinkedWithAmount,
+                           .onMacroLinked = onMacroLinked,
                            .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
                            .onMacroUnlinked = onMacroUnlinked,
+                           .onRackMacroLinked = onRackMacroLinked,
+                           .onTrackMacroLinked = onTrackMacroLinked,
+                           .onRackMacroUnlinked = onRackMacroUnlinked,
                            .onTrackMacroUnlinked = onTrackMacroUnlinked});
         return;
     }

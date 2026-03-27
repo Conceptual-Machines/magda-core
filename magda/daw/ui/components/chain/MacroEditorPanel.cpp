@@ -5,6 +5,99 @@
 
 namespace magda::daw::ui {
 
+// ============================================================================
+// MacroLinkMatrixContent
+// ============================================================================
+
+void MacroLinkMatrixContent::setLinks(const std::vector<LinkRow>& links) {
+    links_ = links;
+    setSize(getWidth(), juce::jmax(1, static_cast<int>(links_.size())) * ROW_HEIGHT);
+    repaint();
+}
+
+void MacroLinkMatrixContent::paint(juce::Graphics& g) {
+    auto font = FontManager::getInstance().getUIFont(8.0f);
+    g.setFont(font);
+
+    for (int i = 0; i < static_cast<int>(links_.size()); ++i) {
+        const auto& link = links_[static_cast<size_t>(i)];
+        int y = i * ROW_HEIGHT;
+        auto rowBounds = juce::Rectangle<int>(0, y, getWidth(), ROW_HEIGHT);
+
+        // Alternating row background
+        if (i % 2 == 0) {
+            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).withAlpha(0.3f));
+            g.fillRect(rowBounds);
+        }
+
+        auto remaining = rowBounds.reduced(2, 0);
+
+        // Delete button (x) on right - 14px
+        auto deleteBounds = remaining.removeFromRight(14);
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.drawText("x", deleteBounds, juce::Justification::centred);
+        remaining.removeFromRight(2);
+
+        // Amount - 28px
+        auto amountBounds = remaining.removeFromRight(28);
+        int percent = static_cast<int>(link.amount * 100.0f);
+        g.setColour(DarkTheme::getTextColour());
+        g.drawText(juce::String(percent) + "%", amountBounds, juce::Justification::centredRight);
+        remaining.removeFromRight(2);
+
+        // Param name takes remaining space
+        g.setColour(DarkTheme::getTextColour());
+        g.drawText(link.paramName, remaining, juce::Justification::centredLeft, true);
+    }
+
+    if (links_.empty()) {
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.drawText("No links", getLocalBounds(), juce::Justification::centred);
+    }
+}
+
+void MacroLinkMatrixContent::mouseDown(const juce::MouseEvent& e) {
+    int rowIndex = e.getPosition().y / ROW_HEIGHT;
+    if (rowIndex < 0 || rowIndex >= static_cast<int>(links_.size()))
+        return;
+
+    int x = e.getPosition().x;
+    int width = getWidth();
+
+    // Delete button zone: rightmost 14px + 2px padding
+    if (x >= width - 16) {
+        if (onDeleteLink)
+            onDeleteLink(links_[static_cast<size_t>(rowIndex)].target);
+        return;
+    }
+
+    // Amount drag — anywhere else in the row
+    draggingRow_ = rowIndex;
+    dragStartAmount_ = links_[static_cast<size_t>(rowIndex)].amount;
+    dragStartX_ = e.getPosition().x;
+}
+
+void MacroLinkMatrixContent::mouseDrag(const juce::MouseEvent& e) {
+    if (draggingRow_ < 0 || draggingRow_ >= static_cast<int>(links_.size()))
+        return;
+
+    float delta = static_cast<float>(e.getPosition().x - dragStartX_) / 100.0f;
+    float newAmount = juce::jlimit(0.0f, 1.0f, dragStartAmount_ + delta);
+    links_[static_cast<size_t>(draggingRow_)].amount = newAmount;
+    repaint();
+
+    if (onAmountChanged)
+        onAmountChanged(links_[static_cast<size_t>(draggingRow_)].target, newAmount);
+}
+
+void MacroLinkMatrixContent::mouseUp(const juce::MouseEvent&) {
+    draggingRow_ = -1;
+}
+
+// ============================================================================
+// MacroEditorPanel
+// ============================================================================
+
 MacroEditorPanel::MacroEditorPanel() {
     // Intercept mouse clicks to prevent propagation to parent
     setInterceptsMouseClicks(true, true);
@@ -34,12 +127,18 @@ MacroEditorPanel::MacroEditorPanel() {
     };
     addAndMakeVisible(valueSlider_);
 
-    // Target label
-    targetLabel_.setFont(FontManager::getInstance().getUIFont(8.0f));
-    targetLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    targetLabel_.setJustificationType(juce::Justification::centred);
-    targetLabel_.setText("No Target", juce::dontSendNotification);
-    addAndMakeVisible(targetLabel_);
+    // Link matrix viewport + content
+    linkMatrixContent_.onDeleteLink = [this](magda::MacroTarget target) {
+        if (onLinkRemoved)
+            onLinkRemoved(target);
+    };
+    linkMatrixContent_.onAmountChanged = [this](magda::MacroTarget target, float amount) {
+        if (onLinkAmountChanged)
+            onLinkAmountChanged(target, amount);
+    };
+    linkMatrixViewport_.setViewedComponent(&linkMatrixContent_, false);
+    linkMatrixViewport_.setScrollBarsShown(true, false);
+    addAndMakeVisible(linkMatrixViewport_);
 }
 
 void MacroEditorPanel::setMacroInfo(const magda::MacroInfo& macro) {
@@ -53,7 +152,7 @@ void MacroEditorPanel::setSelectedMacroIndex(int index) {
         nameLabel_.setText("No Macro Selected", juce::dontSendNotification);
         nameLabel_.setEditable(false, false);
         valueSlider_.setEnabled(false);
-        targetLabel_.setText("No Target", juce::dontSendNotification);
+        linkMatrixContent_.setLinks({});
     } else {
         nameLabel_.setEditable(false, true);  // Allow double-click editing
         valueSlider_.setEnabled(true);
@@ -64,13 +163,41 @@ void MacroEditorPanel::updateFromMacro() {
     nameLabel_.setText(currentMacro_.name, juce::dontSendNotification);
     valueSlider_.setValue(currentMacro_.value, juce::dontSendNotification);
 
-    if (currentMacro_.isLinked()) {
-        targetLabel_.setText("Target: Device " + juce::String(currentMacro_.target.deviceId) +
-                                 "\nParam " + juce::String(currentMacro_.target.paramIndex + 1),
-                             juce::dontSendNotification);
-    } else {
-        targetLabel_.setText("No Target", juce::dontSendNotification);
+    std::vector<MacroLinkMatrixContent::LinkRow> rows;
+
+    // Prefer links vector (new multi-link system)
+    for (const auto& link : currentMacro_.links) {
+        if (!link.target.isValid())
+            continue;
+        MacroLinkMatrixContent::LinkRow row;
+        row.target = link.target;
+        row.amount = link.amount;
+        if (paramNameResolver_) {
+            row.paramName = paramNameResolver_(link.target.deviceId, link.target.paramIndex);
+        } else {
+            row.paramName = "Device " + juce::String(link.target.deviceId) + " P" +
+                            juce::String(link.target.paramIndex + 1);
+        }
+        rows.push_back(row);
     }
+
+    // Legacy fallback: single target
+    if (rows.empty() && currentMacro_.target.isValid()) {
+        MacroLinkMatrixContent::LinkRow row;
+        row.target = currentMacro_.target;
+        row.amount = 1.0f;
+        if (paramNameResolver_) {
+            row.paramName =
+                paramNameResolver_(currentMacro_.target.deviceId, currentMacro_.target.paramIndex);
+        } else {
+            row.paramName = "Device " + juce::String(currentMacro_.target.deviceId) + " P" +
+                            juce::String(currentMacro_.target.paramIndex + 1);
+        }
+        rows.push_back(row);
+    }
+
+    linkMatrixContent_.setLinks(rows);
+    resized();
 }
 
 void MacroEditorPanel::paint(juce::Graphics& g) {
@@ -90,6 +217,11 @@ void MacroEditorPanel::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(8.0f));
     g.drawText("Value", bounds.removeFromTop(12), juce::Justification::centredLeft);
+    bounds.removeFromTop(20);  // Skip value slider
+    bounds.removeFromTop(8);
+
+    // "Links" section header
+    g.drawText("Links", bounds.removeFromTop(12), juce::Justification::centredLeft);
 }
 
 void MacroEditorPanel::resized() {
@@ -104,8 +236,14 @@ void MacroEditorPanel::resized() {
     valueSlider_.setBounds(bounds.removeFromTop(20));
     bounds.removeFromTop(8);
 
-    // Target info at bottom
-    targetLabel_.setBounds(bounds);
+    // Links section header (painted) + matrix
+    bounds.removeFromTop(12);  // "Links" label
+
+    // Link matrix takes remaining space
+    if (bounds.getHeight() > 0) {
+        linkMatrixViewport_.setBounds(bounds);
+        linkMatrixContent_.setSize(bounds.getWidth(), linkMatrixContent_.getHeight());
+    }
 }
 
 void MacroEditorPanel::mouseDown(const juce::MouseEvent& /*e*/) {
