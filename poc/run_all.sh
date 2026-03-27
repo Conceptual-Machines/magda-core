@@ -3,6 +3,8 @@ set -e
 
 MODEL_32B=~/models/qwen2.5-coder-32b/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf
 MODEL_7B=~/models/qwen2.5-coder-7b/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
+MODEL_3B=~/models/qwen2.5-coder-3b/Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf
+MODEL_1_5B=~/models/qwen2.5-coder-1.5b/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf
 PYTHON=.venv/bin/python3
 
 start_server() {
@@ -53,6 +55,26 @@ echo ">>> 7B — GBNF-constrained"
 $PYTHON run_poc.py --7b --grammar
 stop_server
 
+# --- 3B ---
+start_server "$MODEL_3B"
+echo ""
+echo ">>> 3B — unconstrained"
+$PYTHON run_poc.py --3b
+echo ""
+echo ">>> 3B — GBNF-constrained"
+$PYTHON run_poc.py --3b --grammar
+stop_server
+
+# --- 1.5B ---
+start_server "$MODEL_1_5B"
+echo ""
+echo ">>> 1.5B — unconstrained"
+$PYTHON run_poc.py --1.5b
+echo ""
+echo ">>> 1.5B — GBNF-constrained"
+$PYTHON run_poc.py --1.5b --grammar
+stop_server
+
 # --- Summary ---
 echo ""
 echo "================================================================"
@@ -64,13 +86,13 @@ from pathlib import Path
 
 results_file = Path("results/results.jsonl")
 lines = results_file.read_text().strip().splitlines()
-runs = [json.loads(l) for l in lines[-4:]]
+runs = [json.loads(l) for l in lines[-8:]]
 
 header = f"{'Model':<40} {'Grammar':<8} {'Score':>7} {'Avg (s)':>8}  Per-case (s)"
 print(header)
 print("-" * 95)
 for r in runs:
-    per_case = "  ".join(f"{c.get('elapsed_s', 0):.2f}" for c in r["cases"])
+    per_case = "  ".join(f"{c.get('timing', {}).get('wall_s', 0):.2f}" for c in r["cases"])
     grammar = "yes" if r["grammar_constrained"] else "no"
     print(f"{r['model']:<40} {grammar:<8} {r['score_pct']:>6}%  {r['avg_elapsed_s']:>7.2f}s  {per_case}")
 EOF

@@ -27,8 +27,10 @@ import requests
 # ---------------------------------------------------------------------------
 LLAMA_SERVER_URL = "http://127.0.0.1:8080"
 MODELS = {
-    "32b": "~/models/qwen2.5-coder-32b/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf",
-    "7b":  "~/models/qwen2.5-coder-7b/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
+    "32b":  "~/models/qwen2.5-coder-32b/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf",
+    "7b":   "~/models/qwen2.5-coder-7b/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
+    "3b":   "~/models/qwen2.5-coder-3b/Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf",
+    "1.5b": "~/models/qwen2.5-coder-1.5b/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf",
 }
 RESULTS_FILE = Path(__file__).parent / "results" / "results.jsonl"
 
@@ -183,7 +185,7 @@ def wait_for_server(timeout=30):
     return False
 
 
-def generate_dsl(prompt: str, use_grammar: bool = False) -> tuple[str, float]:
+def generate_dsl(prompt: str, use_grammar: bool = False) -> tuple[str, dict]:
     payload = {
         "model": "local",
         "messages": [
@@ -203,10 +205,28 @@ def generate_dsl(prompt: str, use_grammar: bool = False) -> tuple[str, float]:
         json=payload,
         timeout=60,
     )
-    elapsed = time.perf_counter() - t0
+    wall_s = round(time.perf_counter() - t0, 3)
 
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip(), elapsed
+    body = r.json()
+
+    dsl = body["choices"][0]["message"]["content"].strip()
+
+    # llama.cpp returns a "timings" block with detailed breakdown
+    t = body.get("timings", {})
+    usage = body.get("usage", {})
+    timing = {
+        "wall_s": wall_s,
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+        # llama.cpp-specific fields (absent when hitting other servers)
+        "prompt_ms": t.get("prompt_ms"),
+        "predicted_ms": t.get("predicted_ms"),
+        "prompt_tokens_per_s": t.get("prompt_per_second"),
+        "predicted_tokens_per_s": t.get("predicted_per_second"),
+    }
+
+    return dsl, timing
 
 
 def score(dsl: str, expected_contains: list[str]) -> tuple[int, int]:
@@ -241,7 +261,7 @@ def run_tests(model_key: str = "32b", use_grammar: bool = False):
         print("-" * 60)
 
         try:
-            dsl, elapsed = generate_dsl(tc["prompt"], use_grammar=use_grammar)
+            dsl, timing = generate_dsl(tc["prompt"], use_grammar=use_grammar)
         except Exception as e:
             print(f"  ERROR: {e}")
             run["cases"].append({"prompt": tc["prompt"], "error": str(e)})
@@ -253,8 +273,12 @@ def run_tests(model_key: str = "32b", use_grammar: bool = False):
         status = "PASS" if hits == checks else "PARTIAL" if hits > 0 else "FAIL"
         missing = [t for t in tc["expected_contains"] if t.lower() not in dsl.lower()]
 
+        tok_s = timing["predicted_tokens_per_s"]
         print(f"  DSL:     {dsl}")
-        print(f"  Time:    {elapsed:.2f}s")
+        print(f"  Wall:    {timing['wall_s']:.2f}s  "
+              f"(prompt {timing['prompt_ms']}ms  gen {timing['predicted_ms']}ms  "
+              f"{tok_s:.0f} tok/s)" if tok_s else f"  Wall:    {timing['wall_s']:.2f}s")
+        print(f"  Tokens:  prompt={timing['prompt_tokens']}  completion={timing['completion_tokens']}")
         print(f"  Score:   {hits}/{checks} — {status}")
         if missing:
             print(f"  Missing: {missing}")
@@ -262,7 +286,7 @@ def run_tests(model_key: str = "32b", use_grammar: bool = False):
         run["cases"].append({
             "prompt": tc["prompt"],
             "dsl": dsl,
-            "elapsed_s": round(elapsed, 3),
+            "timing": timing,
             "hits": hits,
             "checks": checks,
             "status": status,
@@ -270,7 +294,7 @@ def run_tests(model_key: str = "32b", use_grammar: bool = False):
         })
 
     pct = int(100 * total_hits / total_checks) if total_checks else 0
-    avg_time = sum(c["elapsed_s"] for c in run["cases"] if "elapsed_s" in c) / len(run["cases"])
+    avg_time = sum(c["timing"]["wall_s"] for c in run["cases"] if "timing" in c) / len(run["cases"])
 
     run["total_hits"] = total_hits
     run["total_checks"] = total_checks
