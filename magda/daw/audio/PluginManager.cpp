@@ -520,6 +520,10 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Sync device-level macros (macro knobs assigned to plugin parameters)
     syncDeviceMacros(trackId, teTrack);
 
+    // Update mod link fingerprint so resyncDeviceModifiers doesn't rebuild immediately after
+    if (auto* info = TrackManager::getInstance().getTrack(trackId))
+        modLinkFingerprints_[trackId] = computeModLinkFingerprint(trackId, info);
+
     // Sync sidechain routing for plugins that support it
     syncSidechains(trackId, teTrack);
 
@@ -667,6 +671,20 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
 
     // 5. Remove all racks belonging to this track
     rackSyncManager_.removeRacksForTrack(trackId);
+
+    // 5b. Clean up track-level mod state
+    {
+        auto tmIt = trackModStates_.find(trackId);
+        if (tmIt != trackModStates_.end()) {
+            clearLFOCustomWaveCallbacks(tmIt->second.modifiers);
+            deferCurveSnapshots(tmIt->second.curveSnapshots, deferredHolders_);
+            trackModStates_.erase(tmIt);
+        }
+    }
+
+    // 5c. Clean up track-level macro state
+    trackMacroParams_.erase(trackId);
+    modLinkFingerprints_.erase(trackId);
 
     // 6. Clean up cross-track references (Stage 2)
     // Remove MidiReceivePlugins on other tracks that reference the deleted track as source
@@ -1176,6 +1194,77 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
             ++modIdx;
         }
     }
+
+    // Update track-level mod properties in-place
+    auto tmIt = trackModStates_.find(trackId);
+    if (tmIt != trackModStates_.end()) {
+        auto& trackModState = tmIt->second;
+        size_t modIdx = 0;
+        for (const auto& modInfo : trackInfo->mods) {
+            if (!modInfo.enabled || modInfo.links.empty())
+                continue;
+            if (modIdx >= trackModState.modifiers.size())
+                break;
+
+            auto& modifier = trackModState.modifiers[modIdx];
+            if (!modifier) {
+                ++modIdx;
+                continue;
+            }
+
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
+                auto& snapHolder = trackModState.curveSnapshots[modInfo.id];
+                if (!snapHolder)
+                    snapHolder = std::make_unique<CurveSnapshotHolder>();
+                applyLFOProperties(lfo, modInfo, snapHolder.get());
+            }
+
+            // Update assignment values
+            for (const auto& link : modInfo.links) {
+                if (!link.isValid())
+                    continue;
+
+                te::Plugin::Ptr linkTarget;
+                {
+                    juce::ScopedLock lock(pluginLock_);
+                    auto pit = syncedDevices_.find(link.target.deviceId);
+                    if (pit != syncedDevices_.end())
+                        linkTarget = pit->second.plugin;
+                }
+                if (!linkTarget) {
+                    auto* inner = instrumentRackManager_.getInnerPlugin(link.target.deviceId);
+                    if (inner)
+                        linkTarget = inner;
+                }
+                if (!linkTarget)
+                    continue;
+
+                auto params = linkTarget->getAutomatableParameters();
+                if (link.target.paramIndex >= 0 &&
+                    link.target.paramIndex < static_cast<int>(params.size())) {
+                    auto* param = params[static_cast<size_t>(link.target.paramIndex)];
+                    if (param) {
+                        for (auto* assignment : param->getAssignments()) {
+                            if (assignment->isForModifierSource(*modifier)) {
+                                float effectiveAmount = link.amount;
+                                if (!renderingActive_ &&
+                                    modInfo.triggerMode != LFOTriggerMode::Free &&
+                                    !modInfo.running) {
+                                    if (!modInfo.oneShot || modInfo.phase < 1.0f)
+                                        effectiveAmount = 0.0f;
+                                }
+                                assignment->value = effectiveAmount;
+                                assignment->offset = 0.0f;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            ++modIdx;
+        }
+    }
 }
 
 void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack) {
@@ -1356,6 +1445,131 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
             }
         }
     }
+
+    // ---- Track-level mods (global scope: can target any device on the track) ----
+    auto& trackModState = trackModStates_[trackId];
+
+    // Remove existing TE modifiers for track-level mods
+    if (!trackModState.modifiers.empty()) {
+        clearLFOCustomWaveCallbacks(trackModState.modifiers);
+        auto* trackModList = teTrack->getModifierList();
+        for (auto& mod : trackModState.modifiers) {
+            if (!mod)
+                continue;
+            // Remove assignments from all plugins on this track
+            for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
+                if (auto* plugin = teTrack->pluginList[pi]) {
+                    for (auto* param : plugin->getAutomatableParameters())
+                        param->removeModifier(*mod);
+                }
+            }
+            // Also remove from instrument rack inner plugins
+            for (const auto& el : trackInfo->chainElements) {
+                if (!isDevice(el))
+                    continue;
+                const auto& dev = getDevice(el);
+                if (dev.isInstrument) {
+                    if (auto* inner = instrumentRackManager_.getInnerPlugin(dev.id)) {
+                        for (auto* param : inner->getAutomatableParameters())
+                            param->removeModifier(*mod);
+                    }
+                }
+            }
+            if (trackModList)
+                trackModList->state.removeChild(mod->state, nullptr);
+        }
+    }
+    trackModState.modifiers.clear();
+
+    // Check if any track-level mod has active links
+    bool hasActiveTrackMods = false;
+    for (const auto& modInfo : trackInfo->mods) {
+        if (modInfo.enabled && !modInfo.links.empty()) {
+            hasActiveTrackMods = true;
+        }
+    }
+
+    if (hasActiveTrackMods) {
+        auto* trackModList = teTrack->getModifierList();
+        if (trackModList) {
+            for (const auto& modInfo : trackInfo->mods) {
+                if (!modInfo.enabled || modInfo.links.empty())
+                    continue;
+
+                te::Modifier::Ptr modifier;
+                switch (modInfo.type) {
+                    case ModType::LFO: {
+                        juce::ValueTree lfoState(te::IDs::LFO);
+                        auto lfoMod = trackModList->insertModifier(lfoState, -1, nullptr);
+                        if (!lfoMod)
+                            break;
+                        if (auto* lfo = dynamic_cast<te::LFOModifier*>(lfoMod.get())) {
+                            auto& snapHolder = trackModState.curveSnapshots[modInfo.id];
+                            if (!snapHolder)
+                                snapHolder = std::make_unique<CurveSnapshotHolder>();
+                            applyLFOProperties(lfo, modInfo, snapHolder.get());
+                        }
+                        modifier = lfoMod;
+                        break;
+                    }
+                    case ModType::Random: {
+                        juce::ValueTree randomState(te::IDs::RANDOM);
+                        modifier = trackModList->insertModifier(randomState, -1, nullptr);
+                        break;
+                    }
+                    case ModType::Follower: {
+                        juce::ValueTree envState(te::IDs::ENVELOPEFOLLOWER);
+                        modifier = trackModList->insertModifier(envState, -1, nullptr);
+                        break;
+                    }
+                    case ModType::Envelope:
+                        break;
+                }
+
+                if (!modifier)
+                    continue;
+
+                trackModState.modifiers.push_back(modifier);
+
+                // Create assignments — track mods can target any device on the track
+                for (const auto& link : modInfo.links) {
+                    if (!link.isValid())
+                        continue;
+
+                    te::Plugin::Ptr linkTarget;
+                    {
+                        juce::ScopedLock lock(pluginLock_);
+                        auto sdIt = syncedDevices_.find(link.target.deviceId);
+                        if (sdIt != syncedDevices_.end())
+                            linkTarget = sdIt->second.plugin;
+                    }
+                    // For instruments, use the inner plugin
+                    if (!linkTarget) {
+                        auto* inner = instrumentRackManager_.getInnerPlugin(link.target.deviceId);
+                        if (inner)
+                            linkTarget = inner;
+                    }
+                    if (!linkTarget)
+                        continue;
+
+                    auto params = linkTarget->getAutomatableParameters();
+                    if (link.target.paramIndex >= 0 &&
+                        link.target.paramIndex < static_cast<int>(params.size())) {
+                        auto* param = params[static_cast<size_t>(link.target.paramIndex)];
+                        if (param) {
+                            float initialAmount = link.amount;
+                            if (!renderingActive_ && modInfo.triggerMode != LFOTriggerMode::Free &&
+                                !modInfo.running) {
+                                if (!modInfo.oneShot || modInfo.phase < 1.0f)
+                                    initialAmount = 0.0f;
+                            }
+                            param->addModifier(*modifier, initialAmount);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // =============================================================================
@@ -1391,6 +1605,16 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
 
     // Also trigger LFOs inside MAGDA racks on this track
     rackSyncManager_.triggerLFONoteOn(trackId);
+
+    // Also trigger track-level LFOs
+    auto tmIt = trackModStates_.find(trackId);
+    if (tmIt != trackModStates_.end()) {
+        for (auto& mod : tmIt->second.modifiers) {
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
+                lfo->triggerNoteOn();
+            }
+        }
+    }
 }
 
 // =============================================================================
@@ -1606,49 +1830,71 @@ void PluginManager::rebuildSidechainLFOCache() {
 }
 
 // =============================================================================
-void PluginManager::resyncDeviceModifiers(TrackId trackId) {
-    // Check if any device or rack has new links that don't have TE modifiers yet
-    bool needsFullSync = false;
-    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
-    if (trackInfo) {
-        for (const auto& element : trackInfo->chainElements) {
-            if (!isDevice(element))
-                continue;
-            const auto& device = getDevice(element);
-            // Bypassed devices should have 0 active modifiers
-            int activeModCount = 0;
-            if (!device.bypassed) {
-                for (const auto& mod : device.mods) {
-                    if (mod.enabled && !mod.links.empty())
-                        activeModCount++;
-                }
+std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
+                                                             const TrackInfo* trackInfo) const {
+    if (!trackInfo)
+        return {0, 0};
+
+    int modCount = 0, linkCount = 0;
+
+    // Device-level mods
+    for (const auto& element : trackInfo->chainElements) {
+        if (!isDevice(element))
+            continue;
+        const auto& device = getDevice(element);
+        for (const auto& mod : device.mods) {
+            if (mod.enabled && !mod.links.empty()) {
+                ++modCount;
+                linkCount += static_cast<int>(mod.links.size());
             }
-            auto it = syncedDevices_.find(device.id);
-            int existingCount =
-                (it != syncedDevices_.end()) ? static_cast<int>(it->second.modifiers.size()) : 0;
-            if (activeModCount != existingCount) {
-                needsFullSync = true;
-                break;
+        }
+        // Device-level macros
+        for (const auto& macro : device.macros) {
+            if (!macro.links.empty()) {
+                ++modCount;
+                linkCount += static_cast<int>(macro.links.size());
             }
         }
     }
 
-    // Also check rack mods for structural changes (new/removed links)
-    if (!needsFullSync)
-        needsFullSync = rackSyncManager_.needsModifierResync(trackId);
-
-    if (needsFullSync) {
-        // New links added or removed — need full modifier rebuild
-        auto* teTrack = trackController_.getAudioTrack(trackId);
-        if (teTrack)
-            syncDeviceModifiers(trackId, teTrack);
-        rackSyncManager_.resyncAllModifiers(trackId);
-    } else {
-        // Just update properties on existing modifiers in-place
-        updateDeviceModifierProperties(trackId);
-        rackSyncManager_.updateAllModifierProperties(trackId);
+    // Track-level mods
+    for (const auto& mod : trackInfo->mods) {
+        if (mod.enabled && !mod.links.empty()) {
+            ++modCount;
+            linkCount += static_cast<int>(mod.links.size());
+        }
     }
 
+    // Track-level macros
+    for (const auto& macro : trackInfo->macros) {
+        if (!macro.links.empty()) {
+            ++modCount;
+            linkCount += static_cast<int>(macro.links.size());
+        }
+    }
+
+    return {modCount, linkCount};
+}
+
+// =============================================================================
+void PluginManager::resyncDeviceModifiers(TrackId trackId) {
+    auto* teTrack = trackController_.getAudioTrack(trackId);
+    if (teTrack) {
+        auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+        auto currentFP = computeModLinkFingerprint(trackId, trackInfo);
+        auto& storedFP = modLinkFingerprints_[trackId];
+
+        if (currentFP != storedFP) {
+            // Link structure changed — full rebuild
+            storedFP = currentFP;
+            syncDeviceModifiers(trackId, teTrack);
+            syncDeviceMacros(trackId, teTrack);
+        } else {
+            // Properties only changed (rate, waveform, etc.) — update in-place
+            updateDeviceModifierProperties(trackId);
+        }
+    }
+    rackSyncManager_.resyncAllModifiers(trackId);
     rebuildSidechainLFOCache();
 }
 
@@ -1662,6 +1908,15 @@ void PluginManager::setMacroValue(TrackId trackId, bool isRack, int id, int macr
         // Rack macro — delegate to RackSyncManager
         rackSyncManager_.setMacroValue(static_cast<RackId>(id), macroIndex, value);
     } else {
+        // Check if this is a track-level macro (id == trackId, stored in trackMacroParams_)
+        auto tmIt = trackMacroParams_.find(static_cast<TrackId>(id));
+        if (tmIt != trackMacroParams_.end()) {
+            auto macroIt = tmIt->second.find(macroIndex);
+            if (macroIt != tmIt->second.end() && macroIt->second != nullptr) {
+                macroIt->second->setParameter(value, juce::sendNotificationSync);
+                return;
+            }
+        }
         // Device macro — use device macro params
         setDeviceMacroValue(static_cast<DeviceId>(id), macroIndex, value);
     }
@@ -1756,6 +2011,11 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
                     if (pit != syncedDevices_.end())
                         linkTarget = pit->second.plugin;
                 }
+                if (!linkTarget) {
+                    auto* inner = instrumentRackManager_.getInnerPlugin(link.target.deviceId);
+                    if (inner)
+                        linkTarget = inner;
+                }
                 if (!linkTarget)
                     continue;
 
@@ -1766,6 +2026,89 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
                     if (param)
                         param->addModifier(*macroParam, link.amount);
                 }
+            }
+        }
+    }
+
+    // ---- Track-level macros (can target any device on the track) ----
+
+    // Remove existing track-level macro params
+    auto& existingTrackMacros = trackMacroParams_[trackId];
+    if (!existingTrackMacros.empty()) {
+        for (auto& [macroIdx, macroParam] : existingTrackMacros) {
+            if (!macroParam)
+                continue;
+
+            // Remove assignments from all plugins on this track
+            for (const auto& el : trackInfo->chainElements) {
+                if (!isDevice(el))
+                    continue;
+                const auto& dev = getDevice(el);
+                te::Plugin::Ptr plugin;
+                {
+                    juce::ScopedLock lock(pluginLock_);
+                    auto pit = syncedDevices_.find(dev.id);
+                    if (pit != syncedDevices_.end())
+                        plugin = pit->second.plugin;
+                }
+                if (plugin) {
+                    for (auto* param : plugin->getAutomatableParameters())
+                        param->removeModifier(*macroParam);
+                }
+                // Also check instrument inner plugins
+                if (dev.isInstrument) {
+                    if (auto* inner = instrumentRackManager_.getInnerPlugin(dev.id)) {
+                        for (auto* param : inner->getAutomatableParameters())
+                            param->removeModifier(*macroParam);
+                    }
+                }
+            }
+
+            macroList.removeMacroParameter(*macroParam);
+        }
+        existingTrackMacros.clear();
+    }
+
+    // Create TE MacroParameters for each linked track-level macro
+    for (int i = 0; i < static_cast<int>(trackInfo->macros.size()); ++i) {
+        const auto& macroInfo = trackInfo->macros[static_cast<size_t>(i)];
+        if (!macroInfo.isLinked())
+            continue;
+
+        auto* macroParam = macroList.createMacroParameter();
+        if (!macroParam)
+            continue;
+
+        macroParam->macroName = macroInfo.name;
+        macroParam->setParameter(macroInfo.value, juce::dontSendNotification);
+
+        existingTrackMacros[i] = macroParam;
+
+        for (const auto& link : macroInfo.links) {
+            if (!link.target.isValid())
+                continue;
+
+            te::Plugin::Ptr linkTarget;
+            {
+                juce::ScopedLock lock(pluginLock_);
+                auto pit = syncedDevices_.find(link.target.deviceId);
+                if (pit != syncedDevices_.end())
+                    linkTarget = pit->second.plugin;
+            }
+            if (!linkTarget) {
+                auto* inner = instrumentRackManager_.getInnerPlugin(link.target.deviceId);
+                if (inner)
+                    linkTarget = inner;
+            }
+            if (!linkTarget)
+                continue;
+
+            auto params = linkTarget->getAutomatableParameters();
+            if (link.target.paramIndex >= 0 &&
+                link.target.paramIndex < static_cast<int>(params.size())) {
+                auto* param = params[static_cast<size_t>(link.target.paramIndex)];
+                if (param)
+                    param->addModifier(*macroParam, link.amount);
             }
         }
     }

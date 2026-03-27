@@ -196,6 +196,14 @@ void LinkableTextSlider::setAvailableRackMacros(const magda::MacroArray* rackMac
     availableRackMacros_ = rackMacros;
 }
 
+void LinkableTextSlider::setAvailableTrackMods(const magda::ModArray* trackMods) {
+    availableTrackMods_ = trackMods;
+}
+
+void LinkableTextSlider::setAvailableTrackMacros(const magda::MacroArray* trackMacros) {
+    availableTrackMacros_ = trackMacros;
+}
+
 void LinkableTextSlider::setSelectedModIndex(int modIndex) {
     selectedModIndex_ = modIndex;
     repaint();
@@ -322,8 +330,12 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
     // Right-click: show link/unlink context menu
     if (e.mods.isPopupMenu() && deviceId_ != magda::INVALID_DEVICE_ID) {
         showParamLinkMenu(this, buildLinkContext(),
-                          {onModUnlinked, onModLinkedWithAmount, nullptr, onMacroLinkedWithAmount,
-                           onMacroUnlinked});
+                          {.onModUnlinked = onModUnlinked,
+                           .onTrackModUnlinked = onTrackModUnlinked,
+                           .onModLinkedWithAmount = onModLinkedWithAmount,
+                           .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
+                           .onMacroUnlinked = onMacroUnlinked,
+                           .onTrackMacroUnlinked = onTrackMacroUnlinked});
         return;
     }
 
@@ -333,8 +345,8 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
 
     // Mod link mode
     if (activeMod_.isValid()) {
-        const auto* modPtr =
-            resolveModPtr(activeMod_, devicePath_, availableMods_, availableRackMods_);
+        const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_,
+                                           availableRackMods_, availableTrackMods_);
 
         float initialAmount = 0.0f;
         bool isLinked = false;
@@ -375,8 +387,8 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
 
     // Macro link mode
     if (activeMacro_.isValid()) {
-        const auto* macroPtr =
-            resolveMacroPtr(activeMacro_, devicePath_, availableMacros_, availableRackMacros_);
+        const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
+                                               availableRackMacros_, availableTrackMacros_);
 
         float initialAmount = 0.0f;
         bool isLinked = false;
@@ -430,7 +442,8 @@ void LinkableTextSlider::mouseDrag(const juce::MouseEvent& e) {
     amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
 
     // Resolve mod/macro and dispatch amount change
-    const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_, availableRackMods_);
+    const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_, availableRackMods_,
+                                       availableTrackMods_);
 
     if (modPtr) {
         magda::ModTarget thisTarget{deviceId_, paramIndex_};
@@ -450,8 +463,8 @@ void LinkableTextSlider::mouseDrag(const juce::MouseEvent& e) {
         }
         repaint();
     } else if (activeMacro_.isValid()) {
-        const auto* macroPtr =
-            resolveMacroPtr(activeMacro_, devicePath_, availableMacros_, availableRackMacros_);
+        const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
+                                               availableRackMacros_, availableTrackMacros_);
         if (macroPtr) {
             magda::MacroTarget thisTarget{deviceId_, paramIndex_};
 
@@ -490,8 +503,16 @@ void LinkableTextSlider::mouseUp(const juce::MouseEvent& /*e*/) {
 // ============================================================================
 
 ParamLinkContext LinkableTextSlider::buildLinkContext() const {
-    return {deviceId_,          paramIndex_,      devicePath_,          availableMods_,
-            availableRackMods_, availableMacros_, availableRackMacros_, selectedModIndex_,
+    return {deviceId_,
+            paramIndex_,
+            devicePath_,
+            availableMods_,
+            availableRackMods_,
+            availableMacros_,
+            availableRackMacros_,
+            availableTrackMods_,
+            availableTrackMacros_,
+            selectedModIndex_,
             selectedMacroIndex_};
 }
 

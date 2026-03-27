@@ -468,6 +468,10 @@ class PluginManager {
     // without destroying/recreating modifiers. Used for non-structural changes.
     void updateDeviceModifierProperties(TrackId trackId);
 
+    // Compute (activeModCount, totalLinkCount) fingerprint across device+track mods.
+    std::pair<int, int> computeModLinkFingerprint(TrackId trackId,
+                                                  const TrackInfo* trackInfo) const;
+
     // Check whether a track needs a SidechainMonitorPlugin.
     // Only MIDI-triggered mods need the monitor (audio peaks come from LevelMeterPlugin).
     bool trackNeedsSidechainMonitor(TrackId trackId) const;
@@ -489,6 +493,20 @@ class PluginManager {
 
     // Reverse index: TE Plugin* → DeviceId (maintained alongside .plugin assignments)
     std::map<te::Plugin*, DeviceId> pluginToDevice_;
+
+    // Track-level mod state (for track-scope modulators that target any device)
+    struct TrackModState {
+        std::vector<te::Modifier::Ptr> modifiers;
+        std::map<ModId, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
+    };
+    std::map<TrackId, TrackModState> trackModStates_;
+
+    // Track-level macro TE state (macroIndex → TE MacroParameter)
+    std::map<TrackId, std::map<int, te::MacroParameter*>> trackMacroParams_;
+
+    // Structural fingerprint for mod sync: {activeModCount, totalLinkCount}
+    // Used to decide if resyncDeviceModifiers needs a full rebuild or just property update.
+    std::map<TrackId, std::pair<int, int>> modLinkFingerprints_;
 
     // Sidechain monitor plugins (sourceTrackId → SidechainMonitorPlugin)
     std::map<TrackId, te::Plugin::Ptr> sidechainMonitors_;

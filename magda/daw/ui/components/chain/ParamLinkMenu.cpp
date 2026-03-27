@@ -57,7 +57,8 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
                                    }
                                }
 
-                               safeAnchor->repaint();
+                               if (safeAnchor != nullptr)
+                                   safeAnchor->repaint();
                            });
         return;
     }
@@ -74,23 +75,46 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
 
         for (const auto& resolved : linkedMods) {
             juce::String modName = "Mod " + juce::String(resolved.modIndex + 1);
-            if (ctx.deviceMods && resolved.modIndex < static_cast<int>(ctx.deviceMods->size())) {
-                modName = (*ctx.deviceMods)[static_cast<size_t>(resolved.modIndex)].name;
+            if (resolved.scope == ResolvedModLink::Scope::Track) {
+                if (ctx.trackMods && resolved.modIndex < static_cast<int>(ctx.trackMods->size()))
+                    modName = (*ctx.trackMods)[static_cast<size_t>(resolved.modIndex)].name;
+            } else if (resolved.scope == ResolvedModLink::Scope::Rack) {
+                if (ctx.rackMods && resolved.modIndex < static_cast<int>(ctx.rackMods->size()))
+                    modName = (*ctx.rackMods)[static_cast<size_t>(resolved.modIndex)].name;
+            } else {
+                if (ctx.deviceMods && resolved.modIndex < static_cast<int>(ctx.deviceMods->size()))
+                    modName = (*ctx.deviceMods)[static_cast<size_t>(resolved.modIndex)].name;
             }
             int currentAmountPercent = static_cast<int>(resolved.link.amount * 100);
             juce::String label = modName + " (" + juce::String(currentAmountPercent) + "%)";
-            menu.addItem(1500 + resolved.modIndex, "Unlink " + label);
+            // Use different ID ranges per scope to avoid collisions
+            int baseId = (resolved.scope == ResolvedModLink::Scope::Track)  ? 1700
+                         : (resolved.scope == ResolvedModLink::Scope::Rack) ? 1600
+                                                                            : 1500;
+            menu.addItem(baseId + resolved.modIndex, "Unlink " + label);
         }
 
         for (const auto& resolved : linkedMacros) {
             juce::String macroName = "Macro " + juce::String(resolved.macroIndex + 1);
-            if (ctx.deviceMacros &&
-                resolved.macroIndex < static_cast<int>(ctx.deviceMacros->size())) {
-                macroName = (*ctx.deviceMacros)[static_cast<size_t>(resolved.macroIndex)].name;
+            if (resolved.scope == ResolvedMacroLink::Scope::Track) {
+                if (ctx.trackMacros &&
+                    resolved.macroIndex < static_cast<int>(ctx.trackMacros->size()))
+                    macroName = (*ctx.trackMacros)[static_cast<size_t>(resolved.macroIndex)].name;
+            } else if (resolved.scope == ResolvedMacroLink::Scope::Rack) {
+                if (ctx.rackMacros &&
+                    resolved.macroIndex < static_cast<int>(ctx.rackMacros->size()))
+                    macroName = (*ctx.rackMacros)[static_cast<size_t>(resolved.macroIndex)].name;
+            } else {
+                if (ctx.deviceMacros &&
+                    resolved.macroIndex < static_cast<int>(ctx.deviceMacros->size()))
+                    macroName = (*ctx.deviceMacros)[static_cast<size_t>(resolved.macroIndex)].name;
             }
             int currentAmountPercent = static_cast<int>(resolved.link.amount * 100);
             juce::String label = macroName + " (" + juce::String(currentAmountPercent) + "%)";
-            menu.addItem(2000 + resolved.macroIndex, "Unlink " + label);
+            int baseId = (resolved.scope == ResolvedMacroLink::Scope::Track)  ? 2200
+                         : (resolved.scope == ResolvedMacroLink::Scope::Rack) ? 2100
+                                                                              : 2000;
+            menu.addItem(baseId + resolved.macroIndex, "Unlink " + label);
         }
 
         menu.addSeparator();
@@ -141,16 +165,24 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
 
                            magda::ModTarget target{deviceId, paramIdx};
 
-                           if (result >= 1500 && result < 2000) {
-                               int modIndex = result - 1500;
-                               if (cbs.onModUnlinked) {
+                           if (result >= 1700 && result < 1800) {
+                               int modIndex = result - 1700;
+                               if (cbs.onTrackModUnlinked)
+                                   cbs.onTrackModUnlinked(modIndex, target);
+                           } else if (result >= 1500 && result < 1700) {
+                               int modIndex = (result >= 1600) ? result - 1600 : result - 1500;
+                               if (cbs.onModUnlinked)
                                    cbs.onModUnlinked(modIndex, target);
-                               }
-                           } else if (result >= 2000 && result < 3000) {
-                               int macroIndex = result - 2000;
-                               if (cbs.onMacroLinked) {
-                                   cbs.onMacroLinked(macroIndex, magda::MacroTarget{});
-                               }
+                           } else if (result >= 2200 && result < 2300) {
+                               int macroIndex = result - 2200;
+                               magda::MacroTarget macroTarget{deviceId, paramIdx};
+                               if (cbs.onTrackMacroUnlinked)
+                                   cbs.onTrackMacroUnlinked(macroIndex, macroTarget);
+                           } else if (result >= 2000 && result < 2200) {
+                               int macroIndex = (result >= 2100) ? result - 2100 : result - 2000;
+                               magda::MacroTarget macroTarget{deviceId, paramIdx};
+                               if (cbs.onMacroUnlinked)
+                                   cbs.onMacroUnlinked(macroIndex, macroTarget);
                            } else if (result >= 3000 && result < 4000) {
                                int modIndex = result - 3000;
                                if (cbs.onModLinkedWithAmount) {
@@ -166,7 +198,8 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
                                }
                            }
 
-                           safeAnchor->repaint();
+                           if (safeAnchor != nullptr)
+                               safeAnchor->repaint();
                        });
 }
 

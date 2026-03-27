@@ -78,6 +78,25 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     }
     obj->setProperty("chainElements", juce::var(chainArray));
 
+    // Track-level mods and macros
+    juce::Array<juce::var> trackModsArray;
+    for (const auto& mod : track.mods) {
+        trackModsArray.add(serializeModInfo(mod));
+    }
+    obj->setProperty("trackMods", juce::var(trackModsArray));
+
+    juce::Array<juce::var> trackMacrosArray;
+    for (const auto& macro : track.macros) {
+        trackMacrosArray.add(serializeMacroInfo(macro));
+    }
+    obj->setProperty("trackMacros", juce::var(trackMacrosArray));
+
+    // Track-level panel UI state
+    obj->setProperty("globalModsPanelOpen", track.globalModsPanelOpen);
+    obj->setProperty("globalMacrosPanelOpen", track.globalMacrosPanelOpen);
+    obj->setProperty("selectedGlobalModIndex", track.selectedGlobalModIndex);
+    obj->setProperty("selectedGlobalMacroIndex", track.selectedGlobalMacroIndex);
+
     return juce::var(obj);
 }
 
@@ -186,6 +205,45 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
             outTrack.chainElements.push_back(std::move(element));
         }
     }
+
+    // Track-level mods (backward compatible — defaults if not present)
+    auto trackModsVar = obj->getProperty("trackMods");
+    if (trackModsVar.isArray()) {
+        outTrack.mods.clear();
+        auto* arr = trackModsVar.getArray();
+        for (const auto& modVar : *arr) {
+            ModInfo mod(static_cast<int>(outTrack.mods.size()));
+            if (!deserializeModInfo(modVar, mod))
+                return false;
+            outTrack.mods.push_back(mod);
+        }
+    }
+
+    // Track-level macros (backward compatible — defaults if not present)
+    auto trackMacrosVar = obj->getProperty("trackMacros");
+    if (trackMacrosVar.isArray()) {
+        outTrack.macros.clear();
+        auto* arr = trackMacrosVar.getArray();
+        for (const auto& macroVar : *arr) {
+            MacroInfo macro;
+            if (!deserializeMacroInfo(macroVar, macro))
+                return false;
+            outTrack.macros.push_back(macro);
+        }
+    }
+
+    // Track-level panel UI state (backward compatible — defaults if not present)
+    if (obj->hasProperty("globalModsPanelOpen"))
+        outTrack.globalModsPanelOpen = static_cast<bool>(obj->getProperty("globalModsPanelOpen"));
+    if (obj->hasProperty("globalMacrosPanelOpen"))
+        outTrack.globalMacrosPanelOpen =
+            static_cast<bool>(obj->getProperty("globalMacrosPanelOpen"));
+    if (obj->hasProperty("selectedGlobalModIndex"))
+        outTrack.selectedGlobalModIndex =
+            static_cast<int>(obj->getProperty("selectedGlobalModIndex"));
+    if (obj->hasProperty("selectedGlobalMacroIndex"))
+        outTrack.selectedGlobalMacroIndex =
+            static_cast<int>(obj->getProperty("selectedGlobalMacroIndex"));
 
     return true;
 }

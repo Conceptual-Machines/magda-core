@@ -612,6 +612,11 @@ const ModInfo* TrackManager::getModById(TrackId trackId, ModId modId) const {
     const auto* track = getTrack(trackId);
     if (!track)
         return nullptr;
+    // Search track-level mods first
+    for (const auto& mod : track->mods) {
+        if (mod.id == modId)
+            return &mod;
+    }
     for (const auto& element : track->chainElements) {
         if (std::holds_alternative<DeviceInfo>(element)) {
             for (const auto& mod : std::get<DeviceInfo>(element).mods) {
@@ -948,6 +953,13 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         bool trackMidiNoteOff = midiAllNotesOffTracks.count(track.id) > 0;
         float trackAudioPeak = audioPeakLevels[track.id];
         bool trackChanged = false;
+
+        // Track-level mods (global scope)
+        for (auto& mod : track.mods) {
+            trackChanged |= updateMod(mod, trackMidiTriggered, trackMidiNoteOff, trackAudioPeak);
+        }
+
+        // Device/rack-level mods
         for (auto& element : track.chainElements) {
             trackChanged |=
                 updateElementMods(element, trackMidiTriggered, trackMidiNoteOff, trackAudioPeak);
@@ -1070,6 +1082,326 @@ void TrackManager::removeDeviceMacroPage(const ChainNodePath& devicePath) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         if (removeMacroPage(device->macros)) {
             notifyTrackDevicesChanged(devicePath.trackId);
+        }
+    }
+}
+
+// ============================================================================
+// Track-Level Mod Management
+// ============================================================================
+
+ModInfo* TrackManager::getTrackMod(TrackId trackId, int modIndex) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return nullptr;
+    if (modIndex >= 0 && modIndex < static_cast<int>(track->mods.size()))
+        return &track->mods[modIndex];
+    return nullptr;
+}
+
+void TrackManager::setTrackModAmount(TrackId trackId, int modIndex, float amount) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->amount = juce::jlimit(-1.0f, 1.0f, amount);
+    }
+}
+
+void TrackManager::setTrackModTarget(TrackId trackId, int modIndex, ModTarget target) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        if (target.isValid()) {
+            mod->addLink(target, 0.0f);
+        }
+        mod->target = target;
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackModLinkAmount(TrackId trackId, int modIndex, ModTarget target,
+                                         float amount) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        if (auto* link = mod->getLink(target)) {
+            link->amount = amount;
+        } else {
+            mod->links.push_back({target, amount});
+        }
+        if (mod->target == target) {
+            mod->amount = amount;
+        }
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackModLinkBipolar(TrackId trackId, int modIndex, ModTarget target,
+                                          bool bipolar) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        if (auto* link = mod->getLink(target)) {
+            link->bipolar = bipolar;
+            notifyDeviceModifiersChanged(trackId);
+        }
+    }
+}
+
+void TrackManager::setTrackModName(TrackId trackId, int modIndex, const juce::String& name) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->name = name;
+    }
+}
+
+void TrackManager::setTrackModType(TrackId trackId, int modIndex, ModType type) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        auto oldType = mod->type;
+        mod->type = type;
+        auto defaultOldName = ModInfo::getDefaultName(modIndex, oldType);
+        if (mod->name == defaultOldName) {
+            mod->name = ModInfo::getDefaultName(modIndex, type);
+        }
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackModWaveform(TrackId trackId, int modIndex, LFOWaveform waveform) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->waveform = waveform;
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackModRate(TrackId trackId, int modIndex, float rate) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->rate = rate;
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackModPhaseOffset(TrackId trackId, int modIndex, float phaseOffset) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->phaseOffset = juce::jlimit(0.0f, 1.0f, phaseOffset);
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackModTempoSync(TrackId trackId, int modIndex, bool tempoSync) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->tempoSync = tempoSync;
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackModSyncDivision(TrackId trackId, int modIndex, SyncDivision division) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->syncDivision = division;
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackModTriggerMode(TrackId trackId, int modIndex, LFOTriggerMode mode) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->triggerMode = mode;
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackModCurvePreset(TrackId trackId, int modIndex, CurvePreset preset) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->curvePreset = preset;
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::notifyTrackModCurveChanged(TrackId trackId) {
+    notifyDeviceModifiersChanged(trackId);
+}
+
+void TrackManager::setTrackModAudioAttack(TrackId trackId, int modIndex, float ms) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->audioAttackMs = juce::jlimit(0.1f, 500.0f, ms);
+    }
+}
+
+void TrackManager::setTrackModAudioRelease(TrackId trackId, int modIndex, float ms) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->audioReleaseMs = juce::jlimit(1.0f, 2000.0f, ms);
+    }
+}
+
+void TrackManager::addTrackMod(TrackId trackId, int slotIndex, ModType type, LFOWaveform waveform) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+    if (slotIndex >= 0 && slotIndex <= static_cast<int>(track->mods.size())) {
+        ModInfo newMod(slotIndex);
+        newMod.type = type;
+        newMod.waveform = waveform;
+        if (waveform == LFOWaveform::Custom) {
+            newMod.name = "Curve " + juce::String(slotIndex + 1);
+        } else {
+            newMod.name = ModInfo::getDefaultName(slotIndex, type);
+        }
+        track->mods.insert(track->mods.begin() + slotIndex, newMod);
+
+        // Update IDs for mods after the inserted one
+        for (int i = slotIndex + 1; i < static_cast<int>(track->mods.size()); ++i) {
+            track->mods[i].id = i;
+        }
+
+        // Don't notify - caller handles UI update to avoid panel closing
+    }
+}
+
+void TrackManager::removeTrackMod(TrackId trackId, int modIndex) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+    if (modIndex >= 0 && modIndex < static_cast<int>(track->mods.size())) {
+        track->mods.erase(track->mods.begin() + modIndex);
+
+        // Update IDs for remaining mods
+        for (int i = modIndex; i < static_cast<int>(track->mods.size()); ++i) {
+            track->mods[i].id = i;
+            track->mods[i].name = ModInfo::getDefaultName(i, track->mods[i].type);
+        }
+
+        // Notify asynchronously so the UI callback can unwind before rebuild
+        juce::MessageManager::callAsync([trackId]() {
+            if (juce::JUCEApplicationBase::getInstance() == nullptr)
+                return;
+            TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
+        });
+    }
+}
+
+void TrackManager::removeTrackModLink(TrackId trackId, int modIndex, ModTarget target) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->removeLink(target);
+        if (mod->target == target) {
+            mod->target = ModTarget{};
+        }
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackModEnabled(TrackId trackId, int modIndex, bool enabled) {
+    if (auto* mod = getTrackMod(trackId, modIndex)) {
+        mod->enabled = enabled;
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::addTrackModPage(TrackId trackId) {
+    auto* track = getTrack(trackId);
+    if (track) {
+        addModPage(track->mods);
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::removeTrackModPage(TrackId trackId) {
+    auto* track = getTrack(trackId);
+    if (track) {
+        if (removeModPage(track->mods)) {
+            notifyTrackDevicesChanged(trackId);
+        }
+    }
+}
+
+// ============================================================================
+// Track-Level Macro Management
+// ============================================================================
+
+void TrackManager::setTrackMacroValue(TrackId trackId, int macroIndex, float value) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+    if (macroIndex < 0 || macroIndex >= static_cast<int>(track->macros.size()))
+        return;
+    float clampedValue = juce::jlimit(0.0f, 1.0f, value);
+    track->macros[macroIndex].value = clampedValue;
+    notifyMacroValueChanged(trackId, false, trackId, macroIndex, clampedValue);
+}
+
+void TrackManager::setTrackMacroTarget(TrackId trackId, int macroIndex, MacroTarget target) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+    if (macroIndex < 0 || macroIndex >= static_cast<int>(track->macros.size()))
+        return;
+    if (!track->macros[macroIndex].getLink(target)) {
+        MacroLink newLink;
+        newLink.target = target;
+        newLink.amount = 1.0f;
+        track->macros[macroIndex].links.push_back(newLink);
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackMacroLinkAmount(TrackId trackId, int macroIndex, MacroTarget target,
+                                           float amount) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+    if (macroIndex < 0 || macroIndex >= static_cast<int>(track->macros.size()))
+        return;
+    bool created = false;
+    if (auto* link = track->macros[macroIndex].getLink(target)) {
+        link->amount = amount;
+    } else {
+        MacroLink newLink;
+        newLink.target = target;
+        newLink.amount = amount;
+        track->macros[macroIndex].links.push_back(newLink);
+        created = true;
+    }
+    if (created) {
+        notifyTrackDevicesChanged(trackId);
+    } else {
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackMacroLinkBipolar(TrackId trackId, int macroIndex, MacroTarget target,
+                                            bool bipolar) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+    if (macroIndex < 0 || macroIndex >= static_cast<int>(track->macros.size()))
+        return;
+    if (auto* link = track->macros[macroIndex].getLink(target)) {
+        link->bipolar = bipolar;
+        notifyDeviceModifiersChanged(trackId);
+    }
+}
+
+void TrackManager::setTrackMacroName(TrackId trackId, int macroIndex, const juce::String& name) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+    if (macroIndex < 0 || macroIndex >= static_cast<int>(track->macros.size()))
+        return;
+    track->macros[macroIndex].name = name;
+}
+
+void TrackManager::removeTrackMacroLink(TrackId trackId, int macroIndex, MacroTarget target) {
+    auto* track = getTrack(trackId);
+    if (!track)
+        return;
+    if (macroIndex < 0 || macroIndex >= static_cast<int>(track->macros.size()))
+        return;
+    track->macros[macroIndex].removeLink(target);
+    notifyTrackDevicesChanged(trackId);
+}
+
+void TrackManager::addTrackMacroPage(TrackId trackId) {
+    auto* track = getTrack(trackId);
+    if (track) {
+        addMacroPage(track->macros);
+        notifyTrackDevicesChanged(trackId);
+    }
+}
+
+void TrackManager::removeTrackMacroPage(TrackId trackId) {
+    auto* track = getTrack(trackId);
+    if (track) {
+        if (removeMacroPage(track->macros)) {
+            notifyTrackDevicesChanged(trackId);
         }
     }
 }

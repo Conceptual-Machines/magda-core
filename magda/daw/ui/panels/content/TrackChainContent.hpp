@@ -23,6 +23,10 @@ namespace magda::daw::ui {
 class RackComponent;
 class NodeComponent;
 class DeviceSlotComponent;
+class ModsPanelComponent;
+class MacroPanelComponent;
+class ModulatorEditorPanel;
+class MacroEditorPanel;
 
 /**
  * @brief Track chain panel content
@@ -105,8 +109,30 @@ class TrackChainContent : public PanelContent,
     TextSlider panSlider_{TextSlider::Format::Pan};          // Track pan (L/R)
     std::unique_ptr<magda::SvgButton> chainBypassButton_;    // On/off - bypasses entire track chain
 
-    // Global mods panel visibility
+    // Global mods/macros panel visibility
     bool globalModsVisible_ = false;
+    bool globalMacrosVisible_ = false;
+
+    // Global mods panel (track-level modulators)
+    std::unique_ptr<ModsPanelComponent> globalModsPanel_;
+    std::unique_ptr<ModulatorEditorPanel> globalModEditorPanel_;
+    int selectedGlobalModIndex_ = -1;
+    bool globalModEditorVisible_ = false;
+
+    // Global macros panel (track-level macros)
+    std::unique_ptr<MacroPanelComponent> globalMacrosPanel_;
+    std::unique_ptr<MacroEditorPanel> globalMacroEditorPanel_;
+    int selectedGlobalMacroIndex_ = -1;
+    bool globalMacroEditorVisible_ = false;
+
+    void initGlobalModsPanel();
+    void initGlobalMacrosPanel();
+    void updateGlobalModsPanel();
+    void updateGlobalMacrosPanel();
+    void showGlobalModEditor(int modIndex);
+    void hideGlobalModEditor();
+    void showGlobalMacroEditor(int macroIndex);
+    void hideGlobalMacroEditor();
 
     magda::TrackId selectedTrackId_ = magda::INVALID_TRACK_ID;
     magda::RackId selectedRackId_ = magda::INVALID_RACK_ID;

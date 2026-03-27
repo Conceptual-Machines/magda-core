@@ -4,14 +4,14 @@ namespace magda::daw::ui {
 
 std::vector<ResolvedModLink> getLinkedMods(const ParamLinkContext& ctx) {
     std::vector<ResolvedModLink> linked;
-    if (!ctx.deviceMods || ctx.deviceId == magda::INVALID_DEVICE_ID) {
+    if (ctx.deviceId == magda::INVALID_DEVICE_ID) {
         return linked;
     }
 
     magda::ModTarget thisTarget{ctx.deviceId, ctx.paramIndex};
 
     // If a mod is selected, only check that specific mod
-    if (ctx.selectedModIndex >= 0 &&
+    if (ctx.selectedModIndex >= 0 && ctx.deviceMods &&
         ctx.selectedModIndex < static_cast<int>(ctx.deviceMods->size())) {
         const auto& mod = (*ctx.deviceMods)[static_cast<size_t>(ctx.selectedModIndex)];
         if (const auto* link = mod.getLink(thisTarget)) {
@@ -27,18 +27,37 @@ std::vector<ResolvedModLink> getLinkedMods(const ParamLinkContext& ctx) {
         return linked;
     }
 
-    // No mod selected - show all linked mods
-    for (size_t i = 0; i < ctx.deviceMods->size(); ++i) {
-        const auto& mod = (*ctx.deviceMods)[i];
-        if (const auto* link = mod.getLink(thisTarget)) {
-            linked.push_back({static_cast<int>(i), *link});
+    // No mod selected - show all linked mods from all scopes
+    if (ctx.deviceMods) {
+        for (size_t i = 0; i < ctx.deviceMods->size(); ++i) {
+            const auto& mod = (*ctx.deviceMods)[i];
+            if (const auto* link = mod.getLink(thisTarget)) {
+                linked.push_back({static_cast<int>(i), *link, ResolvedModLink::Scope::Device});
+            }
+            // Legacy: also check old target field
+            else if (mod.target.deviceId == ctx.deviceId &&
+                     mod.target.paramIndex == ctx.paramIndex) {
+                magda::ModLink legacyLink;
+                legacyLink.target = mod.target;
+                legacyLink.amount = mod.amount;
+                linked.push_back({static_cast<int>(i), legacyLink, ResolvedModLink::Scope::Device});
+            }
         }
-        // Legacy: also check old target field
-        else if (mod.target.deviceId == ctx.deviceId && mod.target.paramIndex == ctx.paramIndex) {
-            magda::ModLink legacyLink;
-            legacyLink.target = mod.target;
-            legacyLink.amount = mod.amount;
-            linked.push_back({static_cast<int>(i), legacyLink});
+    }
+    if (ctx.rackMods) {
+        for (size_t i = 0; i < ctx.rackMods->size(); ++i) {
+            const auto& mod = (*ctx.rackMods)[i];
+            if (const auto* link = mod.getLink(thisTarget)) {
+                linked.push_back({static_cast<int>(i), *link, ResolvedModLink::Scope::Rack});
+            }
+        }
+    }
+    if (ctx.trackMods) {
+        for (size_t i = 0; i < ctx.trackMods->size(); ++i) {
+            const auto& mod = (*ctx.trackMods)[i];
+            if (const auto* link = mod.getLink(thisTarget)) {
+                linked.push_back({static_cast<int>(i), *link, ResolvedModLink::Scope::Track});
+            }
         }
     }
     return linked;
@@ -46,14 +65,14 @@ std::vector<ResolvedModLink> getLinkedMods(const ParamLinkContext& ctx) {
 
 std::vector<ResolvedMacroLink> getLinkedMacros(const ParamLinkContext& ctx) {
     std::vector<ResolvedMacroLink> linked;
-    if (!ctx.deviceMacros || ctx.deviceId == magda::INVALID_DEVICE_ID) {
+    if (ctx.deviceId == magda::INVALID_DEVICE_ID) {
         return linked;
     }
 
     magda::MacroTarget thisTarget{ctx.deviceId, ctx.paramIndex};
 
     // If a macro is selected, only check that specific macro
-    if (ctx.selectedMacroIndex >= 0 &&
+    if (ctx.selectedMacroIndex >= 0 && ctx.deviceMacros &&
         ctx.selectedMacroIndex < static_cast<int>(ctx.deviceMacros->size())) {
         const auto& macro = (*ctx.deviceMacros)[static_cast<size_t>(ctx.selectedMacroIndex)];
         if (const auto* link = macro.getLink(thisTarget)) {
@@ -62,11 +81,29 @@ std::vector<ResolvedMacroLink> getLinkedMacros(const ParamLinkContext& ctx) {
         return linked;
     }
 
-    // No macro selected - show all linked macros
-    for (size_t i = 0; i < ctx.deviceMacros->size(); ++i) {
-        const auto& macro = (*ctx.deviceMacros)[i];
-        if (const auto* link = macro.getLink(thisTarget)) {
-            linked.push_back({static_cast<int>(i), *link});
+    // No macro selected - show all linked macros from all scopes
+    if (ctx.deviceMacros) {
+        for (size_t i = 0; i < ctx.deviceMacros->size(); ++i) {
+            const auto& macro = (*ctx.deviceMacros)[i];
+            if (const auto* link = macro.getLink(thisTarget)) {
+                linked.push_back({static_cast<int>(i), *link, ResolvedMacroLink::Scope::Device});
+            }
+        }
+    }
+    if (ctx.rackMacros) {
+        for (size_t i = 0; i < ctx.rackMacros->size(); ++i) {
+            const auto& macro = (*ctx.rackMacros)[i];
+            if (const auto* link = macro.getLink(thisTarget)) {
+                linked.push_back({static_cast<int>(i), *link, ResolvedMacroLink::Scope::Rack});
+            }
+        }
+    }
+    if (ctx.trackMacros) {
+        for (size_t i = 0; i < ctx.trackMacros->size(); ++i) {
+            const auto& macro = (*ctx.trackMacros)[i];
+            if (const auto* link = macro.getLink(thisTarget)) {
+                linked.push_back({static_cast<int>(i), *link, ResolvedMacroLink::Scope::Track});
+            }
         }
     }
     return linked;
@@ -116,6 +153,24 @@ bool hasActiveLinks(const ParamLinkContext& ctx) {
         }
     }
 
+    // Check track-level mods
+    if (ctx.trackMods) {
+        for (const auto& mod : *ctx.trackMods) {
+            if (mod.getLink(modTarget) != nullptr) {
+                return true;
+            }
+        }
+    }
+
+    // Check track-level macros
+    if (ctx.trackMacros) {
+        for (const auto& macro : *ctx.trackMacros) {
+            if (macro.getLink(macroTarget) != nullptr) {
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 
@@ -140,6 +195,16 @@ float computeTotalModModulation(const ParamLinkContext& ctx) {
     // Rack-level mods
     if (ctx.rackMods) {
         for (const auto& mod : *ctx.rackMods) {
+            if (const auto* link = mod.getLink(modTarget)) {
+                float modOffset = link->bipolar ? (mod.value * 2.0f - 1.0f) : mod.value;
+                total += modOffset * link->amount;
+            }
+        }
+    }
+
+    // Track-level mods
+    if (ctx.trackMods) {
+        for (const auto& mod : *ctx.trackMods) {
             if (const auto* link = mod.getLink(modTarget)) {
                 float modOffset = link->bipolar ? (mod.value * 2.0f - 1.0f) : mod.value;
                 total += modOffset * link->amount;
@@ -178,13 +243,24 @@ float computeTotalMacroModulation(const ParamLinkContext& ctx) {
         }
     }
 
+    // Track-level macros
+    if (ctx.trackMacros) {
+        for (const auto& macro : *ctx.trackMacros) {
+            if (const auto* link = macro.getLink(macroTarget)) {
+                float macroOffset = link->bipolar ? (macro.value * 2.0f - 1.0f) : macro.value;
+                total += macroOffset * link->amount;
+            }
+        }
+    }
+
     return total;
 }
 
 const magda::ModInfo* resolveModPtr(const magda::ModSelection& sel,
                                     const magda::ChainNodePath& devicePath,
                                     const magda::ModArray* deviceMods,
-                                    const magda::ModArray* rackMods) {
+                                    const magda::ModArray* rackMods,
+                                    const magda::ModArray* trackMods) {
     if (!sel.isValid() || sel.modIndex < 0) {
         return nullptr;
     }
@@ -195,7 +271,15 @@ const magda::ModInfo* resolveModPtr(const magda::ModSelection& sel,
     }
 
     if (rackMods && sel.modIndex < static_cast<int>(rackMods->size())) {
-        return &(*rackMods)[static_cast<size_t>(sel.modIndex)];
+        // Check if parentPath is a rack path (not track-level)
+        if (!sel.parentPath.isTrackLevel) {
+            return &(*rackMods)[static_cast<size_t>(sel.modIndex)];
+        }
+    }
+
+    if (trackMods && sel.parentPath.isTrackLevel &&
+        sel.modIndex < static_cast<int>(trackMods->size())) {
+        return &(*trackMods)[static_cast<size_t>(sel.modIndex)];
     }
 
     return nullptr;
@@ -204,7 +288,8 @@ const magda::ModInfo* resolveModPtr(const magda::ModSelection& sel,
 const magda::MacroInfo* resolveMacroPtr(const magda::MacroSelection& sel,
                                         const magda::ChainNodePath& devicePath,
                                         const magda::MacroArray* deviceMacros,
-                                        const magda::MacroArray* rackMacros) {
+                                        const magda::MacroArray* rackMacros,
+                                        const magda::MacroArray* trackMacros) {
     if (!sel.isValid() || sel.macroIndex < 0) {
         return nullptr;
     }
@@ -215,7 +300,14 @@ const magda::MacroInfo* resolveMacroPtr(const magda::MacroSelection& sel,
     }
 
     if (rackMacros && sel.macroIndex < static_cast<int>(rackMacros->size())) {
-        return &(*rackMacros)[static_cast<size_t>(sel.macroIndex)];
+        if (!sel.parentPath.isTrackLevel) {
+            return &(*rackMacros)[static_cast<size_t>(sel.macroIndex)];
+        }
+    }
+
+    if (trackMacros && sel.parentPath.isTrackLevel &&
+        sel.macroIndex < static_cast<int>(trackMacros->size())) {
+        return &(*trackMacros)[static_cast<size_t>(sel.macroIndex)];
     }
 
     return nullptr;
@@ -225,6 +317,11 @@ bool isInScopeOf(const magda::ChainNodePath& devicePath, const magda::ChainNodeP
     // Must be on the same track
     if (devicePath.trackId != parentPath.trackId) {
         return false;
+    }
+
+    // Track-level parent: all devices on the same track are in scope
+    if (parentPath.isTrackLevel) {
+        return true;
     }
 
     bool parentIsTopLevel = parentPath.topLevelDeviceId != magda::INVALID_DEVICE_ID;

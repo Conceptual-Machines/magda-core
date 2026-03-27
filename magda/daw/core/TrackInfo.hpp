@@ -78,6 +78,16 @@ struct TrackInfo {
     // View settings per view mode
     TrackViewSettingsMap viewSettings;
 
+    // Track-level modulators and macros (global: can target any device in the chain)
+    ModArray mods = createDefaultMods(0);
+    MacroArray macros = createDefaultMacros();
+
+    // Track-level panel UI state
+    bool globalModsPanelOpen = false;
+    bool globalMacrosPanelOpen = false;
+    int selectedGlobalModIndex = -1;
+    int selectedGlobalMacroIndex = -1;
+
     // Default constructor
     TrackInfo() = default;
 
@@ -108,7 +118,13 @@ struct TrackInfo {
           sends(other.sends),
           auxBusIndex(other.auxBusIndex),
           multiOutLink(other.multiOutLink),
-          viewSettings(other.viewSettings) {
+          viewSettings(other.viewSettings),
+          mods(other.mods),
+          macros(other.macros),
+          globalModsPanelOpen(other.globalModsPanelOpen),
+          globalMacrosPanelOpen(other.globalMacrosPanelOpen),
+          selectedGlobalModIndex(other.selectedGlobalModIndex),
+          selectedGlobalMacroIndex(other.selectedGlobalMacroIndex) {
         chainElements.reserve(other.chainElements.size());
         for (const auto& element : other.chainElements) {
             chainElements.push_back(deepCopyElement(element));
@@ -140,6 +156,12 @@ struct TrackInfo {
             auxBusIndex = other.auxBusIndex;
             multiOutLink = other.multiOutLink;
             viewSettings = other.viewSettings;
+            mods = other.mods;
+            macros = other.macros;
+            globalModsPanelOpen = other.globalModsPanelOpen;
+            globalMacrosPanelOpen = other.globalMacrosPanelOpen;
+            selectedGlobalModIndex = other.selectedGlobalModIndex;
+            selectedGlobalMacroIndex = other.selectedGlobalMacroIndex;
             chainElements.clear();
             chainElements.reserve(other.chainElements.size());
             for (const auto& element : other.chainElements) {

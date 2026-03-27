@@ -44,6 +44,8 @@ class LinkableTextSlider : public juce::Component,
     void setAvailableMacros(const magda::MacroArray* macros);
     void setAvailableRackMods(const magda::ModArray* rackMods);
     void setAvailableRackMacros(const magda::MacroArray* rackMacros);
+    void setAvailableTrackMods(const magda::ModArray* trackMods);
+    void setAvailableTrackMacros(const magda::MacroArray* trackMacros);
     void setSelectedModIndex(int modIndex);
     void setSelectedMacroIndex(int macroIndex);
 
@@ -57,10 +59,12 @@ class LinkableTextSlider : public juce::Component,
     // === Mod/macro link callbacks (wired by DeviceSlotComponent) ===
     std::function<void(int modIndex, magda::ModTarget target, float amount)> onModLinkedWithAmount;
     std::function<void(int modIndex, magda::ModTarget target)> onModUnlinked;
+    std::function<void(int modIndex, magda::ModTarget target)> onTrackModUnlinked;
     std::function<void(int modIndex, magda::ModTarget target, float amount)> onModAmountChanged;
     std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
         onMacroLinkedWithAmount;
     std::function<void(int macroIndex, magda::MacroTarget target)> onMacroUnlinked;
+    std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroUnlinked;
     std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
         onMacroAmountChanged;
 
@@ -91,6 +95,8 @@ class LinkableTextSlider : public juce::Component,
     const magda::ModArray* availableRackMods_ = nullptr;
     const magda::MacroArray* availableMacros_ = nullptr;
     const magda::MacroArray* availableRackMacros_ = nullptr;
+    const magda::ModArray* availableTrackMods_ = nullptr;
+    const magda::MacroArray* availableTrackMacros_ = nullptr;
     int selectedModIndex_ = -1;
     int selectedMacroIndex_ = -1;
 

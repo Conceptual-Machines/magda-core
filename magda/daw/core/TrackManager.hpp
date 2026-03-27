@@ -442,6 +442,42 @@ class TrackManager {
     void addDeviceMacroPage(const ChainNodePath& devicePath);
     void removeDeviceMacroPage(const ChainNodePath& devicePath);
 
+    // Track-level mod management (global: can target any device in the chain)
+    void setTrackModAmount(TrackId trackId, int modIndex, float amount);
+    void setTrackModTarget(TrackId trackId, int modIndex, ModTarget target);
+    void setTrackModLinkAmount(TrackId trackId, int modIndex, ModTarget target, float amount);
+    void setTrackModLinkBipolar(TrackId trackId, int modIndex, ModTarget target, bool bipolar);
+    void setTrackModName(TrackId trackId, int modIndex, const juce::String& name);
+    void setTrackModType(TrackId trackId, int modIndex, ModType type);
+    void setTrackModWaveform(TrackId trackId, int modIndex, LFOWaveform waveform);
+    void setTrackModRate(TrackId trackId, int modIndex, float rate);
+    void setTrackModPhaseOffset(TrackId trackId, int modIndex, float phaseOffset);
+    void setTrackModTempoSync(TrackId trackId, int modIndex, bool tempoSync);
+    void setTrackModSyncDivision(TrackId trackId, int modIndex, SyncDivision division);
+    void setTrackModTriggerMode(TrackId trackId, int modIndex, LFOTriggerMode mode);
+    void setTrackModCurvePreset(TrackId trackId, int modIndex, CurvePreset preset);
+    void notifyTrackModCurveChanged(TrackId trackId);
+    void setTrackModAudioAttack(TrackId trackId, int modIndex, float ms);
+    void setTrackModAudioRelease(TrackId trackId, int modIndex, float ms);
+    void addTrackMod(TrackId trackId, int slotIndex, ModType type,
+                     LFOWaveform waveform = LFOWaveform::Sine);
+    void removeTrackMod(TrackId trackId, int modIndex);
+    void removeTrackModLink(TrackId trackId, int modIndex, ModTarget target);
+    void setTrackModEnabled(TrackId trackId, int modIndex, bool enabled);
+    void addTrackModPage(TrackId trackId);
+    void removeTrackModPage(TrackId trackId);
+
+    // Track-level macro management (global: can target any device in the chain)
+    void setTrackMacroValue(TrackId trackId, int macroIndex, float value);
+    void setTrackMacroTarget(TrackId trackId, int macroIndex, MacroTarget target);
+    void setTrackMacroLinkAmount(TrackId trackId, int macroIndex, MacroTarget target, float amount);
+    void setTrackMacroLinkBipolar(TrackId trackId, int macroIndex, MacroTarget target,
+                                  bool bipolar);
+    void setTrackMacroName(TrackId trackId, int macroIndex, const juce::String& name);
+    void removeTrackMacroLink(TrackId trackId, int macroIndex, MacroTarget target);
+    void addTrackMacroPage(TrackId trackId);
+    void removeTrackMacroPage(TrackId trackId);
+
     // ========================================================================
     // Path Resolution - Centralized tree traversal
     // ========================================================================
@@ -617,6 +653,9 @@ class TrackManager {
 
     // Helper: get a ModInfo from device path + index
     ModInfo* getDeviceMod(const ChainNodePath& devicePath, int modIndex);
+
+    // Helper: get a ModInfo from track-level mods
+    ModInfo* getTrackMod(TrackId trackId, int modIndex);
 
     // Helper for recursive mod updates
     void updateRackMods(const RackInfo& rack, double deltaTime);

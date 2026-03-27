@@ -98,6 +98,12 @@ ModsPanelComponent::ModsPanelComponent() : PagedControlPanel(magda::MODS_PER_PAG
 }
 
 void ModsPanelComponent::ensureKnobCount(int count) {
+    // Remove excess knobs if count shrunk
+    while (static_cast<int>(knobs_.size()) > count) {
+        removeChildComponent(knobs_.back().get());
+        knobs_.pop_back();
+    }
+
     // Add new knobs if needed
     while (static_cast<int>(knobs_.size()) < count) {
         int i = static_cast<int>(knobs_.size());
@@ -178,13 +184,16 @@ void ModsPanelComponent::setMods(const magda::ModArray& mods) {
     currentModCount_ = static_cast<int>(mods.size());
     ensureKnobCount(currentModCount_);
 
-    // Calculate required pages based on highest mod index
-    if (currentModCount_ > 0) {
-        int requiredPages = (currentModCount_ + magda::MODS_PER_PAGE - 1) / magda::MODS_PER_PAGE;
-        if (requiredPages > allocatedPages_) {
-            allocatedPages_ = requiredPages;
-            ensureSlotCount(allocatedPages_ * magda::MODS_PER_PAGE);
-        }
+    // Calculate required pages based on mod count
+    int requiredPages = currentModCount_ > 0
+                            ? (currentModCount_ + magda::MODS_PER_PAGE - 1) / magda::MODS_PER_PAGE
+                            : 1;
+    if (requiredPages != allocatedPages_) {
+        allocatedPages_ = requiredPages;
+        ensureSlotCount(allocatedPages_ * magda::MODS_PER_PAGE);
+        // Clamp current page if it's now out of range
+        if (getCurrentPage() >= allocatedPages_)
+            setCurrentPage(juce::jmax(0, allocatedPages_ - 1));
     }
 
     // Update existing mods

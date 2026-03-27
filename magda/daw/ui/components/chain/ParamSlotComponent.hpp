@@ -65,6 +65,12 @@ class ParamSlotComponent : public juce::Component,
     void setAvailableRackMods(const magda::ModArray* rackMods) {
         availableRackMods_ = rackMods;
     }
+    void setAvailableTrackMods(const magda::ModArray* trackMods) {
+        availableTrackMods_ = trackMods;
+    }
+    void setAvailableTrackMacros(const magda::MacroArray* trackMacros) {
+        availableTrackMacros_ = trackMacros;
+    }
 
     // Contextual selection - when set, only shows this mod's/macro's link
     void setSelectedModIndex(int modIndex) {
@@ -105,11 +111,13 @@ class ParamSlotComponent : public juce::Component,
     std::function<void(int modIndex, magda::ModTarget target)> onModLinked;
     std::function<void(int modIndex, magda::ModTarget target, float amount)> onModLinkedWithAmount;
     std::function<void(int modIndex, magda::ModTarget target)> onModUnlinked;
+    std::function<void(int modIndex, magda::ModTarget target)> onTrackModUnlinked;
     std::function<void(int modIndex, magda::ModTarget target, float amount)> onModAmountChanged;
     std::function<void(int macroIndex, magda::MacroTarget target)> onMacroLinked;
     std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
         onMacroLinkedWithAmount;
     std::function<void(int macroIndex, magda::MacroTarget target)> onMacroUnlinked;
+    std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroUnlinked;
     std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
         onMacroAmountChanged;
     std::function<void(int macroIndex, float value)> onMacroValueChanged;
@@ -145,12 +153,14 @@ class ParamSlotComponent : public juce::Component,
 
     int paramIndex_;
     magda::DeviceId deviceId_ = magda::INVALID_DEVICE_ID;
-    magda::ChainNodePath devicePath_;                         // For param selection
-    const magda::ModArray* availableMods_ = nullptr;          // Device-level mods
-    const magda::ModArray* availableRackMods_ = nullptr;      // Rack-level mods
-    const magda::MacroArray* availableMacros_ = nullptr;      // Device-level macros
-    const magda::MacroArray* availableRackMacros_ = nullptr;  // Rack-level macros
-    int selectedModIndex_ = -1;                               // -1 means no mod selected (show all)
+    magda::ChainNodePath devicePath_;                          // For param selection
+    const magda::ModArray* availableMods_ = nullptr;           // Device-level mods
+    const magda::ModArray* availableRackMods_ = nullptr;       // Rack-level mods
+    const magda::MacroArray* availableMacros_ = nullptr;       // Device-level macros
+    const magda::MacroArray* availableRackMacros_ = nullptr;   // Rack-level macros
+    const magda::ModArray* availableTrackMods_ = nullptr;      // Track-level mods
+    const magda::MacroArray* availableTrackMacros_ = nullptr;  // Track-level macros
+    int selectedModIndex_ = -1;    // -1 means no mod selected (show all)
     int selectedMacroIndex_ = -1;  // -1 means no macro selected (show all)
     bool selected_ = false;        // This param cell is selected
 

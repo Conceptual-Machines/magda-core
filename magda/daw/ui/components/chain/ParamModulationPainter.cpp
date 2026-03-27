@@ -51,8 +51,9 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
             int y = sliderBounds.getY() + 2;
             magda::MacroTarget thisTarget{ctx.linkCtx.deviceId, ctx.linkCtx.paramIndex};
 
-            const auto* macro = resolveMacroPtr(ctx.activeMacro, ctx.linkCtx.devicePath,
-                                                ctx.linkCtx.deviceMacros, ctx.linkCtx.rackMacros);
+            const auto* macro =
+                resolveMacroPtr(ctx.activeMacro, ctx.linkCtx.devicePath, ctx.linkCtx.deviceMacros,
+                                ctx.linkCtx.rackMacros, ctx.linkCtx.trackMacros);
 
             if (macro) {
                 if (const auto* link = macro->getLink(thisTarget)) {
@@ -77,8 +78,9 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
 
         // Draw MOD amount line at BOTTOM - only for the ACTIVE mod in link mode
         if (ctx.activeMod.isValid() && ctx.activeMod.modIndex >= 0) {
-            const auto* modPtr = resolveModPtr(ctx.activeMod, ctx.linkCtx.devicePath,
-                                               ctx.linkCtx.deviceMods, ctx.linkCtx.rackMods);
+            const auto* modPtr =
+                resolveModPtr(ctx.activeMod, ctx.linkCtx.devicePath, ctx.linkCtx.deviceMods,
+                              ctx.linkCtx.rackMods, ctx.linkCtx.trackMods);
 
             if (modPtr) {
                 int y = sliderBounds.getBottom() - 6;

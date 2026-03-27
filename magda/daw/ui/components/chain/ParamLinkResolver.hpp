@@ -21,6 +21,8 @@ struct ParamLinkContext {
     const magda::ModArray* rackMods = nullptr;
     const magda::MacroArray* deviceMacros = nullptr;
     const magda::MacroArray* rackMacros = nullptr;
+    const magda::ModArray* trackMods = nullptr;
+    const magda::MacroArray* trackMacros = nullptr;
     int selectedModIndex = -1;    // -1 = show all
     int selectedMacroIndex = -1;  // -1 = show all
 };
@@ -29,16 +31,20 @@ struct ParamLinkContext {
  * @brief A resolved mod link returned by value (no static temporaries).
  */
 struct ResolvedModLink {
+    enum class Scope { Device, Rack, Track };
     int modIndex;
     magda::ModLink link;  // Copied by value — safe across threads
+    Scope scope = Scope::Device;
 };
 
 /**
  * @brief A resolved macro link returned by value.
  */
 struct ResolvedMacroLink {
+    enum class Scope { Device, Rack, Track };
     int macroIndex;
     magda::MacroLink link;
+    Scope scope = Scope::Device;
 };
 
 // Pure query functions — no side effects, no Component access
@@ -57,7 +63,8 @@ float computeTotalMacroModulation(const ParamLinkContext& ctx);
 const magda::ModInfo* resolveModPtr(const magda::ModSelection& sel,
                                     const magda::ChainNodePath& devicePath,
                                     const magda::ModArray* deviceMods,
-                                    const magda::ModArray* rackMods);
+                                    const magda::ModArray* rackMods,
+                                    const magda::ModArray* trackMods = nullptr);
 
 /**
  * @brief Resolve a MacroSelection to a concrete MacroInfo pointer.
@@ -65,7 +72,8 @@ const magda::ModInfo* resolveModPtr(const magda::ModSelection& sel,
 const magda::MacroInfo* resolveMacroPtr(const magda::MacroSelection& sel,
                                         const magda::ChainNodePath& devicePath,
                                         const magda::MacroArray* deviceMacros,
-                                        const magda::MacroArray* rackMacros);
+                                        const magda::MacroArray* rackMacros,
+                                        const magda::MacroArray* trackMacros = nullptr);
 
 /**
  * @brief Check if a device path is within the scope of a parent path.

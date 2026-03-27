@@ -40,8 +40,13 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     };
     valueSlider_.onRightClicked = [this]() {
         showParamLinkMenu(this, buildLinkContext(),
-                          {onModUnlinked, onModLinkedWithAmount, onMacroLinked,
-                           onMacroLinkedWithAmount, onMacroUnlinked});
+                          {.onModUnlinked = onModUnlinked,
+                           .onTrackModUnlinked = onTrackModUnlinked,
+                           .onModLinkedWithAmount = onModLinkedWithAmount,
+                           .onMacroLinked = onMacroLinked,
+                           .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
+                           .onMacroUnlinked = onMacroUnlinked,
+                           .onTrackMacroUnlinked = onTrackMacroUnlinked});
     };
 
     // Amount label for link mode drag tooltip
@@ -146,8 +151,16 @@ ParamSlotComponent::~ParamSlotComponent() {
 // ============================================================================
 
 ParamLinkContext ParamSlotComponent::buildLinkContext() const {
-    return {deviceId_,          paramIndex_,      devicePath_,          availableMods_,
-            availableRackMods_, availableMacros_, availableRackMacros_, selectedModIndex_,
+    return {deviceId_,
+            paramIndex_,
+            devicePath_,
+            availableMods_,
+            availableRackMods_,
+            availableMacros_,
+            availableRackMacros_,
+            availableTrackMods_,
+            availableTrackMacros_,
+            selectedModIndex_,
             selectedMacroIndex_};
 }
 
@@ -223,7 +236,8 @@ void ParamSlotComponent::handleLinkModeClick() {
         return;
     }
 
-    const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_, availableRackMods_);
+    const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_, availableRackMods_,
+                                       availableTrackMods_);
 
     if (modPtr) {
         magda::ModTarget thisTarget{deviceId_, paramIndex_};
@@ -243,8 +257,8 @@ void ParamSlotComponent::handleLinkModeClick() {
 
         showLinkModeSlider(!isLinked, initialAmount);
     } else {
-        const auto* macroPtr =
-            resolveMacroPtr(activeMacro_, devicePath_, availableMacros_, availableRackMacros_);
+        const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
+                                               availableRackMacros_, availableTrackMacros_);
 
         if (macroPtr) {
             magda::MacroTarget thisTarget{deviceId_, paramIndex_};
@@ -471,8 +485,13 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             return;
         }
         showParamLinkMenu(this, buildLinkContext(),
-                          {onModUnlinked, onModLinkedWithAmount, onMacroLinked,
-                           onMacroLinkedWithAmount, onMacroUnlinked});
+                          {.onModUnlinked = onModUnlinked,
+                           .onTrackModUnlinked = onTrackModUnlinked,
+                           .onModLinkedWithAmount = onModLinkedWithAmount,
+                           .onMacroLinked = onMacroLinked,
+                           .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
+                           .onMacroUnlinked = onMacroUnlinked,
+                           .onTrackMacroUnlinked = onTrackMacroUnlinked});
         return;
     }
 
@@ -480,8 +499,8 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
     if (isInLinkMode_ && e.mods.isLeftButtonDown()) {
         // Mod link mode
         if (activeMod_.isValid()) {
-            const auto* modPtr =
-                resolveModPtr(activeMod_, devicePath_, availableMods_, availableRackMods_);
+            const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_,
+                                               availableRackMods_, availableTrackMods_);
 
             float initialAmount = 0.0f;
             bool isLinked = false;
@@ -522,8 +541,8 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
 
         // Macro link mode
         if (activeMacro_.isValid()) {
-            const auto* macroPtr =
-                resolveMacroPtr(activeMacro_, devicePath_, availableMacros_, availableRackMacros_);
+            const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
+                                                   availableRackMacros_, availableTrackMacros_);
 
             float initialAmount = 0.0f;
             bool isLinked = false;
@@ -584,8 +603,8 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
         amountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
 
         // Resolve mod/macro and dispatch amount change
-        const auto* modPtr =
-            resolveModPtr(activeMod_, devicePath_, availableMods_, availableRackMods_);
+        const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_,
+                                           availableRackMods_, availableTrackMods_);
 
         if (modPtr) {
             magda::ModTarget thisTarget{deviceId_, paramIndex_};
@@ -605,8 +624,8 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
             }
             repaint();
         } else if (activeMacro_.isValid()) {
-            const auto* macroPtr =
-                resolveMacroPtr(activeMacro_, devicePath_, availableMacros_, availableRackMacros_);
+            const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
+                                                   availableRackMacros_, availableTrackMacros_);
             if (macroPtr) {
                 magda::MacroTarget thisTarget{deviceId_, paramIndex_};
 

@@ -17,6 +17,10 @@
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
+#include "ui/components/chain/MacroEditorPanel.hpp"
+#include "ui/components/chain/MacroPanelComponent.hpp"
+#include "ui/components/chain/ModsPanelComponent.hpp"
+#include "ui/components/chain/ModulatorEditorPanel.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -505,11 +509,17 @@ TrackChainContent::TrackChainContent()
     globalModsButton_->onClick = [this]() {
         globalModsButton_->setActive(globalModsButton_->getToggleState());
         globalModsVisible_ = globalModsButton_->getToggleState();
+        if (!globalModsVisible_) {
+            hideGlobalModEditor();
+        }
+        if (globalModsPanel_)
+            globalModsPanel_->setVisible(globalModsVisible_);
+        if (auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_))
+            track->globalModsPanelOpen = globalModsVisible_;
         resized();
         repaint();
     };
-    // TODO (#801): global mod/macro icons not yet implemented — hidden for now
-    // addChildComponent(*globalModsButton_);
+    addChildComponent(*globalModsButton_);
 
     // Macro button (global macros toggle)
     macroButton_ =
@@ -521,10 +531,18 @@ TrackChainContent::TrackChainContent()
     macroButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
-        // TODO: Toggle parameter linking mode
-        DBG("Link mode: " << (macroButton_->getToggleState() ? "ON" : "OFF"));
+        globalMacrosVisible_ = macroButton_->getToggleState();
+        if (!globalMacrosVisible_) {
+            hideGlobalMacroEditor();
+        }
+        if (globalMacrosPanel_)
+            globalMacrosPanel_->setVisible(globalMacrosVisible_);
+        if (auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_))
+            track->globalMacrosPanelOpen = globalMacrosVisible_;
+        resized();
+        repaint();
     };
-    // addChildComponent(*macroButton_);
+    addChildComponent(*macroButton_);
 
     // Add rack button (rack icon with blue fill, grey border)
     addRackButton_ =
@@ -659,6 +677,10 @@ TrackChainContent::TrackChainContent()
     linkModeLabel_.setVisible(false);
     addChildComponent(linkModeLabel_);
 
+    // Initialize global mods/macros panels
+    initGlobalModsPanel();
+    initGlobalMacrosPanel();
+
     // Register as listeners
     magda::TrackManager::getInstance().addListener(this);
     magda::SelectionManager::getInstance().addListener(this);
@@ -674,6 +696,281 @@ TrackChainContent::~TrackChainContent() {
     magda::TrackManager::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
     magda::LinkModeManager::getInstance().removeListener(this);
+}
+
+// ==============================================================================
+// Global Mods/Macros Panel Init
+// ==============================================================================
+
+void TrackChainContent::initGlobalModsPanel() {
+    globalModsPanel_ = std::make_unique<ModsPanelComponent>();
+    globalModsPanel_->onModAmountChanged = [this](int modIndex, float amount) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setTrackModAmount(selectedTrackId_, modIndex,
+                                                                 amount);
+    };
+    globalModsPanel_->onModTargetChanged = [this](int modIndex, magda::ModTarget target) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setTrackModTarget(selectedTrackId_, modIndex,
+                                                                 target);
+    };
+    globalModsPanel_->onModNameChanged = [this](int modIndex, juce::String name) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setTrackModName(selectedTrackId_, modIndex, name);
+    };
+    globalModsPanel_->onModClicked = [this](int modIndex) {
+        if (globalModEditorVisible_ && selectedGlobalModIndex_ == modIndex) {
+            hideGlobalModEditor();
+        } else {
+            showGlobalModEditor(modIndex);
+        }
+    };
+    globalModsPanel_->onAddModRequested = [this](int slotIndex, magda::ModType type,
+                                                 magda::LFOWaveform waveform) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            magda::TrackManager::getInstance().addTrackMod(selectedTrackId_, slotIndex, type,
+                                                           waveform);
+            magda::TrackManager::getInstance().notifyTrackDevicesChanged(selectedTrackId_);
+        }
+    };
+    globalModsPanel_->onModRemoveRequested = [this](int modIndex) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            if (selectedGlobalModIndex_ == modIndex)
+                hideGlobalModEditor();
+            magda::TrackManager::getInstance().removeTrackMod(selectedTrackId_, modIndex);
+        }
+    };
+    globalModsPanel_->onModEnableToggled = [this](int modIndex, bool enabled) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setTrackModEnabled(selectedTrackId_, modIndex,
+                                                                  enabled);
+    };
+    globalModsPanel_->onAddPageRequested = [this](int) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().addTrackModPage(selectedTrackId_);
+    };
+    globalModsPanel_->onRemovePageRequested = [this](int) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().removeTrackModPage(selectedTrackId_);
+    };
+    globalModsPanel_->onPanelClicked = [this]() {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            auto trackPath = magda::ChainNodePath::trackLevel(selectedTrackId_);
+            magda::SelectionManager::getInstance().selectModsPanel(trackPath);
+        }
+    };
+    addChildComponent(*globalModsPanel_);
+
+    // Modulator editor panel
+    globalModEditorPanel_ = std::make_unique<ModulatorEditorPanel>();
+    globalModEditorPanel_->onRateChanged = [this](float rate) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
+            magda::TrackManager::getInstance().setTrackModRate(selectedTrackId_,
+                                                               selectedGlobalModIndex_, rate);
+    };
+    globalModEditorPanel_->onWaveformChanged = [this](magda::LFOWaveform waveform) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
+            magda::TrackManager::getInstance().setTrackModWaveform(
+                selectedTrackId_, selectedGlobalModIndex_, waveform);
+    };
+    globalModEditorPanel_->onTempoSyncChanged = [this](bool tempoSync) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
+            magda::TrackManager::getInstance().setTrackModTempoSync(
+                selectedTrackId_, selectedGlobalModIndex_, tempoSync);
+    };
+    globalModEditorPanel_->onSyncDivisionChanged = [this](magda::SyncDivision division) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
+            magda::TrackManager::getInstance().setTrackModSyncDivision(
+                selectedTrackId_, selectedGlobalModIndex_, division);
+    };
+    globalModEditorPanel_->onTriggerModeChanged = [this](magda::LFOTriggerMode mode) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
+            magda::TrackManager::getInstance().setTrackModTriggerMode(
+                selectedTrackId_, selectedGlobalModIndex_, mode);
+    };
+    globalModEditorPanel_->onAudioAttackChanged = [this](float ms) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
+            magda::TrackManager::getInstance().setTrackModAudioAttack(selectedTrackId_,
+                                                                      selectedGlobalModIndex_, ms);
+    };
+    globalModEditorPanel_->onAudioReleaseChanged = [this](float ms) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
+            magda::TrackManager::getInstance().setTrackModAudioRelease(selectedTrackId_,
+                                                                       selectedGlobalModIndex_, ms);
+    };
+    globalModEditorPanel_->onCurveChanged = [this]() {
+        if (globalModsPanel_)
+            globalModsPanel_->repaintWaveforms();
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
+            magda::TrackManager::getInstance().notifyTrackModCurveChanged(selectedTrackId_);
+    };
+    globalModEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ModTarget target) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().removeTrackModLink(selectedTrackId_, modIndex,
+                                                                  target);
+    };
+    globalModEditorPanel_->onModLinkBipolarChanged = [this](int modIndex, magda::ModTarget target,
+                                                            bool bipolar) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setTrackModLinkBipolar(selectedTrackId_, modIndex,
+                                                                      target, bipolar);
+    };
+    globalModEditorPanel_->onModLinkAmountChanged = [this](int modIndex, magda::ModTarget target,
+                                                           float amount) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setTrackModLinkAmount(selectedTrackId_, modIndex,
+                                                                     target, amount);
+    };
+    addChildComponent(*globalModEditorPanel_);
+}
+
+void TrackChainContent::initGlobalMacrosPanel() {
+    globalMacrosPanel_ = std::make_unique<MacroPanelComponent>();
+    globalMacrosPanel_->onMacroValueChanged = [this](int macroIndex, float value) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setTrackMacroValue(selectedTrackId_, macroIndex,
+                                                                  value);
+    };
+    globalMacrosPanel_->onMacroTargetChanged = [this](int macroIndex, magda::MacroTarget target) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setTrackMacroTarget(selectedTrackId_, macroIndex,
+                                                                   target);
+    };
+    globalMacrosPanel_->onMacroNameChanged = [this](int macroIndex, juce::String name) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setTrackMacroName(selectedTrackId_, macroIndex,
+                                                                 name);
+    };
+    globalMacrosPanel_->onMacroClicked = [this](int macroIndex) {
+        if (globalMacroEditorVisible_ && selectedGlobalMacroIndex_ == macroIndex) {
+            hideGlobalMacroEditor();
+        } else {
+            showGlobalMacroEditor(macroIndex);
+        }
+    };
+    globalMacrosPanel_->onAddPageRequested = [this](int) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().addTrackMacroPage(selectedTrackId_);
+    };
+    globalMacrosPanel_->onRemovePageRequested = [this](int) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().removeTrackMacroPage(selectedTrackId_);
+    };
+    globalMacrosPanel_->onPanelClicked = [this]() {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+            auto trackPath = magda::ChainNodePath::trackLevel(selectedTrackId_);
+            magda::SelectionManager::getInstance().selectMacrosPanel(trackPath);
+        }
+    };
+    addChildComponent(*globalMacrosPanel_);
+
+    // Macro editor panel
+    globalMacroEditorPanel_ = std::make_unique<MacroEditorPanel>();
+    addChildComponent(*globalMacroEditorPanel_);
+}
+
+void TrackChainContent::updateGlobalModsPanel() {
+    if (!globalModsPanel_ || selectedTrackId_ == magda::INVALID_TRACK_ID)
+        return;
+    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    if (!track)
+        return;
+
+    auto trackPath = magda::ChainNodePath::trackLevel(selectedTrackId_);
+    globalModsPanel_->setParentPath(trackPath);
+    globalModsPanel_->setMods(track->mods);
+
+    // Update editor if visible
+    if (globalModEditorVisible_ && globalModEditorPanel_ && selectedGlobalModIndex_ >= 0 &&
+        selectedGlobalModIndex_ < static_cast<int>(track->mods.size())) {
+        int idx = selectedGlobalModIndex_;
+        auto trackId = selectedTrackId_;
+        globalModEditorPanel_->setModInfo(
+            track->mods[idx], &track->mods[idx], [trackId, idx]() -> const magda::ModInfo* {
+                const auto* t = magda::TrackManager::getInstance().getTrack(trackId);
+                if (!t || idx >= static_cast<int>(t->mods.size()))
+                    return nullptr;
+                return &t->mods[idx];
+            });
+    }
+}
+
+void TrackChainContent::updateGlobalMacrosPanel() {
+    if (!globalMacrosPanel_ || selectedTrackId_ == magda::INVALID_TRACK_ID)
+        return;
+    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    if (!track)
+        return;
+
+    auto trackPath = magda::ChainNodePath::trackLevel(selectedTrackId_);
+    globalMacrosPanel_->setParentPath(trackPath);
+    globalMacrosPanel_->setMacros(track->macros);
+
+    // Update editor if visible
+    if (globalMacroEditorVisible_ && globalMacroEditorPanel_ && selectedGlobalMacroIndex_ >= 0 &&
+        selectedGlobalMacroIndex_ < static_cast<int>(track->macros.size())) {
+        globalMacroEditorPanel_->setMacroInfo(track->macros[selectedGlobalMacroIndex_]);
+    }
+}
+
+void TrackChainContent::showGlobalModEditor(int modIndex) {
+    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    if (!track || modIndex < 0 || modIndex >= static_cast<int>(track->mods.size()))
+        return;
+
+    selectedGlobalModIndex_ = modIndex;
+    globalModEditorVisible_ = true;
+    if (auto* t = magda::TrackManager::getInstance().getTrack(selectedTrackId_))
+        t->selectedGlobalModIndex = modIndex;
+    auto trackId = selectedTrackId_;
+    globalModEditorPanel_->setModInfo(track->mods[modIndex], &track->mods[modIndex],
+                                      [trackId, modIndex]() -> const magda::ModInfo* {
+                                          const auto* t =
+                                              magda::TrackManager::getInstance().getTrack(trackId);
+                                          if (!t || modIndex >= static_cast<int>(t->mods.size()))
+                                              return nullptr;
+                                          return &t->mods[modIndex];
+                                      });
+    globalModEditorPanel_->setVisible(true);
+    resized();
+}
+
+void TrackChainContent::hideGlobalModEditor() {
+    bool wasVisible = globalModEditorVisible_;
+    selectedGlobalModIndex_ = -1;
+    globalModEditorVisible_ = false;
+    if (auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_))
+        track->selectedGlobalModIndex = -1;
+    if (globalModEditorPanel_)
+        globalModEditorPanel_->setVisible(false);
+    if (wasVisible)
+        resized();
+}
+
+void TrackChainContent::showGlobalMacroEditor(int macroIndex) {
+    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    if (!track || macroIndex < 0 || macroIndex >= static_cast<int>(track->macros.size()))
+        return;
+
+    selectedGlobalMacroIndex_ = macroIndex;
+    globalMacroEditorVisible_ = true;
+    if (auto* t = magda::TrackManager::getInstance().getTrack(selectedTrackId_))
+        t->selectedGlobalMacroIndex = macroIndex;
+    globalMacroEditorPanel_->setMacroInfo(track->macros[macroIndex]);
+    globalMacroEditorPanel_->setVisible(true);
+    resized();
+}
+
+void TrackChainContent::hideGlobalMacroEditor() {
+    bool wasVisible = globalMacroEditorVisible_;
+    selectedGlobalMacroIndex_ = -1;
+    globalMacroEditorVisible_ = false;
+    if (auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_))
+        track->selectedGlobalMacroIndex = -1;
+    if (globalMacroEditorPanel_)
+        globalMacroEditorPanel_->setVisible(false);
+    if (wasVisible)
+        resized();
 }
 
 void TrackChainContent::paint(juce::Graphics& g) {
@@ -695,37 +992,22 @@ void TrackChainContent::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawHorizontalLine(HEADER_HEIGHT - 1, 0.0f, static_cast<float>(getWidth()));
 
-        // Draw global mods panel on left if visible
-        if (globalModsVisible_) {
-            auto modsArea = bounds.removeFromLeft(MODS_PANEL_WIDTH);
-            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE).darker(0.1f));
-            g.fillRect(modsArea);
+        // Draw panel area borders (panels are child components, they paint themselves)
+        int panelAreaWidth = 0;
+        if (globalMacrosVisible_)
+            panelAreaWidth += MODS_PANEL_WIDTH;
+        if (globalMacroEditorVisible_)
+            panelAreaWidth += ModulatorEditorPanel::PREFERRED_WIDTH;
+        if (globalModsVisible_)
+            panelAreaWidth += MODS_PANEL_WIDTH;
+        if (globalModEditorVisible_)
+            panelAreaWidth += ModulatorEditorPanel::PREFERRED_WIDTH;
 
-            // Panel border
+        if (panelAreaWidth > 0) {
+            // Vertical separator between panels and chain content
             g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.drawVerticalLine(modsArea.getRight() - 1, static_cast<float>(modsArea.getY()),
-                               static_cast<float>(modsArea.getBottom()));
-
-            // Panel header
-            auto modsPanelHeader = modsArea.removeFromTop(24).reduced(8, 4);
-            g.setColour(DarkTheme::getTextColour());
-            g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-            g.drawText("MODULATORS", modsPanelHeader, juce::Justification::centredLeft);
-
-            // Placeholder content
-            auto modsContent = modsArea.reduced(8);
-            g.setColour(DarkTheme::getSecondaryTextColour());
-            g.setFont(FontManager::getInstance().getUIFont(9.0f));
-
-            int y = modsContent.getY();
-            g.drawText("+ Add LFO", modsContent.getX(), y, modsContent.getWidth(), 20,
-                       juce::Justification::centredLeft);
-            y += 24;
-            g.drawText("+ Add Envelope", modsContent.getX(), y, modsContent.getWidth(), 20,
-                       juce::Justification::centredLeft);
-            y += 24;
-            g.drawText("+ Add Random", modsContent.getX(), y, modsContent.getWidth(), 20,
-                       juce::Justification::centredLeft);
+            g.drawVerticalLine(panelAreaWidth, static_cast<float>(bounds.getY()),
+                               static_cast<float>(bounds.getBottom()));
         }
 
         // Arrows between chain elements are drawn by ChainContainer::paint
@@ -784,11 +1066,10 @@ void TrackChainContent::resized() {
         auto headerArea = bounds.removeFromTop(HEADER_HEIGHT).reduced(8, 4);
 
         // LEFT SIDE - Action buttons
-        // TODO (#801): global mod/macro icons hidden for now
-        // macroButton_->setBounds(headerArea.removeFromLeft(20));
-        // headerArea.removeFromLeft(2);
-        // globalModsButton_->setBounds(headerArea.removeFromLeft(20));
-        // headerArea.removeFromLeft(8);
+        macroButton_->setBounds(headerArea.removeFromLeft(20));
+        headerArea.removeFromLeft(2);
+        globalModsButton_->setBounds(headerArea.removeFromLeft(20));
+        headerArea.removeFromLeft(8);
         addRackButton_->setBounds(headerArea.removeFromLeft(20));
         headerArea.removeFromLeft(4);
         treeViewButton_->setBounds(headerArea.removeFromLeft(20));
@@ -826,9 +1107,20 @@ void TrackChainContent::resized() {
             linkModeLabel_.setBounds(linkLabelBounds);
         }
 
-        // === MODS PANEL (left side, if visible) ===
-        if (globalModsVisible_) {
-            bounds.removeFromLeft(MODS_PANEL_WIDTH);
+        // === GLOBAL PANELS (left side: macros | macro editor | mods | mod editor) ===
+        if (globalMacrosVisible_ && globalMacrosPanel_) {
+            globalMacrosPanel_->setBounds(bounds.removeFromLeft(MODS_PANEL_WIDTH));
+        }
+        if (globalMacroEditorVisible_ && globalMacroEditorPanel_) {
+            globalMacroEditorPanel_->setBounds(
+                bounds.removeFromLeft(ModulatorEditorPanel::PREFERRED_WIDTH));
+        }
+        if (globalModsVisible_ && globalModsPanel_) {
+            globalModsPanel_->setBounds(bounds.removeFromLeft(MODS_PANEL_WIDTH));
+        }
+        if (globalModEditorVisible_ && globalModEditorPanel_) {
+            globalModEditorPanel_->setBounds(
+                bounds.removeFromLeft(ModulatorEditorPanel::PREFERRED_WIDTH));
         }
 
         // === CONTENT AREA LAYOUT ===
@@ -934,6 +1226,8 @@ void TrackChainContent::trackSelectionChanged(magda::TrackId trackId) {
 void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
     if (trackId == selectedTrackId_) {
         rebuildNodeComponents();
+        updateGlobalModsPanel();
+        updateGlobalMacrosPanel();
     }
 }
 
@@ -1009,6 +1303,34 @@ void TrackChainContent::updateFromSelectedTrack() {
 
             noSelectionLabel_.setVisible(false);
             rebuildNodeComponents();
+
+            // Update global mods/macros panels
+            updateGlobalModsPanel();
+            updateGlobalMacrosPanel();
+
+            // Restore panel visibility from track state
+            globalModsVisible_ = track->globalModsPanelOpen;
+            globalModsButton_->setToggleState(globalModsVisible_, juce::dontSendNotification);
+            globalModsButton_->setActive(globalModsVisible_);
+            if (globalModsPanel_)
+                globalModsPanel_->setVisible(globalModsVisible_);
+
+            globalMacrosVisible_ = track->globalMacrosPanelOpen;
+            macroButton_->setToggleState(globalMacrosVisible_, juce::dontSendNotification);
+            macroButton_->setActive(globalMacrosVisible_);
+            if (globalMacrosPanel_)
+                globalMacrosPanel_->setVisible(globalMacrosVisible_);
+
+            // Restore editor state
+            if (globalModsVisible_ && track->selectedGlobalModIndex >= 0)
+                showGlobalModEditor(track->selectedGlobalModIndex);
+            else
+                hideGlobalModEditor();
+
+            if (globalMacrosVisible_ && track->selectedGlobalMacroIndex >= 0)
+                showGlobalMacroEditor(track->selectedGlobalMacroIndex);
+            else
+                hideGlobalMacroEditor();
         } else {
             showHeader(false);
             noSelectionLabel_.setVisible(true);
@@ -1022,10 +1344,24 @@ void TrackChainContent::updateFromSelectedTrack() {
 
 void TrackChainContent::showHeader(bool show) {
     // Left side - action buttons
-    // TODO (#801): global mod/macro icons hidden for now
-    // globalModsButton_->setVisible(show);
-    // macroButton_->setVisible(show);
+    globalModsButton_->setVisible(show);
+    macroButton_->setVisible(show);
     addRackButton_->setVisible(show);
+    // Hide panels when header is hidden
+    if (!show) {
+        if (globalModsPanel_)
+            globalModsPanel_->setVisible(false);
+        if (globalMacrosPanel_)
+            globalMacrosPanel_->setVisible(false);
+        hideGlobalModEditor();
+        hideGlobalMacroEditor();
+        globalModsVisible_ = false;
+        globalMacrosVisible_ = false;
+        globalModsButton_->setToggleState(false, juce::dontSendNotification);
+        globalModsButton_->setActive(false);
+        macroButton_->setToggleState(false, juce::dontSendNotification);
+        macroButton_->setActive(false);
+    }
     treeViewButton_->setVisible(show);
     // Right side - track info
     trackNameLabel_.setVisible(show);

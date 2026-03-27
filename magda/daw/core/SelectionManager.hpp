@@ -115,6 +115,7 @@ struct ChainPathStep {
  */
 enum class ChainNodeType {
     None,            // No node selected
+    Track,           // Track-level (mods/macros at track scope, can target any device)
     TopLevelDevice,  // Device directly on track (legacy, path empty + deviceId set)
     Rack,            // Rack at any depth (last step is Rack)
     Chain,           // Chain at any depth (last step is Chain)
@@ -138,9 +139,14 @@ struct ChainNodePath {
     // Legacy: top-level device (not in a rack/chain)
     DeviceId topLevelDeviceId = INVALID_DEVICE_ID;
 
+    // Explicit flag for track-level paths (only set by trackLevel() factory)
+    bool isTrackLevel = false;
+
     ChainNodeType getType() const {
         if (trackId == INVALID_TRACK_ID)
             return ChainNodeType::None;
+        if (isTrackLevel)
+            return ChainNodeType::Track;
         if (topLevelDeviceId != INVALID_DEVICE_ID)
             return ChainNodeType::TopLevelDevice;
         if (steps.empty())
@@ -163,7 +169,7 @@ struct ChainNodePath {
 
     bool operator==(const ChainNodePath& other) const {
         return trackId == other.trackId && steps == other.steps &&
-               topLevelDeviceId == other.topLevelDeviceId;
+               topLevelDeviceId == other.topLevelDeviceId && isTrackLevel == other.isTrackLevel;
     }
 
     bool operator!=(const ChainNodePath& other) const {
@@ -208,6 +214,13 @@ struct ChainNodePath {
     }
 
     // Factory methods for creating paths
+    static ChainNodePath trackLevel(TrackId track) {
+        ChainNodePath p;
+        p.trackId = track;
+        p.isTrackLevel = true;
+        return p;
+    }
+
     static ChainNodePath topLevelDevice(TrackId track, DeviceId device) {
         ChainNodePath p;
         p.trackId = track;
