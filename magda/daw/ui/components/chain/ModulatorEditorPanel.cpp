@@ -796,16 +796,22 @@ void ModulatorEditorPanel::timerCallback() {
     // when the mod vector reallocates (mods added/removed).
     const auto* liveMod = liveModGetter_ ? liveModGetter_() : liveModPtr_;
     if (liveMod && !modMatrixContent_.isDragging()) {
-        bool changed = false;
-        for (const auto& liveLink : liveMod->links) {
-            if (!liveLink.isValid())
-                continue;
-            if (modMatrixContent_.updateLinkAmount(liveLink.target, liveLink.amount,
-                                                   liveLink.bipolar))
-                changed = true;
+        // If links were added or removed, rebuild the full matrix
+        if (liveMod->links.size() != currentMod_.links.size()) {
+            currentMod_.links = liveMod->links;
+            updateModMatrix();
+        } else {
+            bool changed = false;
+            for (const auto& liveLink : liveMod->links) {
+                if (!liveLink.isValid())
+                    continue;
+                if (modMatrixContent_.updateLinkAmount(liveLink.target, liveLink.amount,
+                                                       liveLink.bipolar))
+                    changed = true;
+            }
+            if (changed)
+                modMatrixContent_.repaint();
         }
-        if (changed)
-            modMatrixContent_.repaint();
     }
     repaint();
 }
