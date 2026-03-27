@@ -147,7 +147,8 @@ class DrumGridClipGrid : public juce::Component,
     std::function<void(magda::ClipId, size_t, double, int)> onNoteCopied;
     std::function<void(magda::ClipId, size_t, bool)> onNoteSelected;
     std::function<void(magda::ClipId, std::vector<size_t>)> onNoteSelectionChanged;
-    std::function<void(magda::ClipId, std::vector<size_t>, magda::QuantizeMode)> onQuantizeNotes;
+    std::function<void(magda::ClipId, std::vector<size_t>, magda::QuantizeMode, double)>
+        onQuantizeNotes;
     std::function<void(magda::ClipId, std::vector<size_t>)> onCopyNotes;
     std::function<void(magda::ClipId)> onPasteNotes;
     std::function<void(magda::ClipId, std::vector<size_t>)> onDuplicateNotes;
@@ -618,31 +619,78 @@ class DrumGridClipGrid : public juce::Component,
             menu.addItem(12, "Duplicate", hasSelection);
             menu.addItem(13, "Delete", hasSelection);
             menu.addSeparator();
-            menu.addItem(1, "Quantize Start to Grid", hasSelection);
-            menu.addItem(2, "Quantize Length to Grid", hasSelection);
-            menu.addItem(3, "Quantize Start & Length to Grid", hasSelection);
 
-            menu.showMenuAsync(juce::PopupMenu::Options(),
-                               [this, indices = std::move(selectedIndices)](int result) {
-                                   if (result == 0)
-                                       return;
-                                   if (result == 10 && onCopyNotes)
-                                       onCopyNotes(clipId_, indices);
-                                   else if (result == 11 && onPasteNotes)
-                                       onPasteNotes(clipId_);
-                                   else if (result == 12 && onDuplicateNotes)
-                                       onDuplicateNotes(clipId_, indices);
-                                   else if (result == 13 && onDeleteNotes)
-                                       onDeleteNotes(clipId_, indices);
-                                   else if (result >= 1 && result <= 3 && onQuantizeNotes) {
-                                       magda::QuantizeMode mode = magda::QuantizeMode::StartOnly;
-                                       if (result == 2)
-                                           mode = magda::QuantizeMode::LengthOnly;
-                                       else if (result == 3)
-                                           mode = magda::QuantizeMode::StartAndLength;
-                                       onQuantizeNotes(clipId_, indices, mode);
-                                   }
-                               });
+            // Quantize submenu
+            {
+                juce::PopupMenu quantizeMenu;
+                {
+                    juce::PopupMenu modeMenu;
+                    modeMenu.addItem(1, "Start");
+                    modeMenu.addItem(2, "Length");
+                    modeMenu.addItem(3, "Start & Length");
+                    quantizeMenu.addSubMenu("Current Grid", modeMenu,
+                                            hasSelection && gridResolutionBeats_ > 0.0);
+                }
+                quantizeMenu.addSeparator();
+
+                struct GridOption {
+                    const char* name;
+                    double beats;
+                };
+                // clang-format off
+                const GridOption grids[] = {
+                    {"1/1",   4.0},    {"1/2",   2.0},    {"1/4",   1.0},
+                    {"1/8",   0.5},    {"1/16",  0.25},   {"1/32",  0.125},
+                    {"1/2.",  3.0},    {"1/4.",  1.5},
+                    {"1/8.",  0.75},   {"1/16.", 0.375},
+                    {"1/2T",  4.0/3},  {"1/4T",  2.0/3},
+                    {"1/8T",  1.0/3},  {"1/16T", 1.0/6},
+                };
+                // clang-format on
+                int itemId = 20;
+                for (const auto& grid : grids) {
+                    juce::PopupMenu modeMenu;
+                    modeMenu.addItem(itemId++, "Start");
+                    modeMenu.addItem(itemId++, "Length");
+                    modeMenu.addItem(itemId++, "Start & Length");
+                    quantizeMenu.addSubMenu(grid.name, modeMenu, hasSelection);
+                }
+                menu.addSubMenu("Quantize", quantizeMenu, hasSelection);
+            }
+
+            menu.showMenuAsync(
+                juce::PopupMenu::Options(), [this, indices = std::move(selectedIndices),
+                                             gridRes = gridResolutionBeats_](int result) {
+                    if (result == 0)
+                        return;
+                    if (result == 10 && onCopyNotes)
+                        onCopyNotes(clipId_, indices);
+                    else if (result == 11 && onPasteNotes)
+                        onPasteNotes(clipId_);
+                    else if (result == 12 && onDuplicateNotes)
+                        onDuplicateNotes(clipId_, indices);
+                    else if (result == 13 && onDeleteNotes)
+                        onDeleteNotes(clipId_, indices);
+                    else if (result >= 1 && result <= 3 && onQuantizeNotes) {
+                        const magda::QuantizeMode modes[] = {magda::QuantizeMode::StartOnly,
+                                                             magda::QuantizeMode::LengthOnly,
+                                                             magda::QuantizeMode::StartAndLength};
+                        onQuantizeNotes(clipId_, indices, modes[result - 1], gridRes);
+                    } else if (result >= 20 && result <= 61 && onQuantizeNotes) {
+                        // clang-format off
+                        const double gridBeats[] = {
+                            4.0, 2.0, 1.0, 0.5, 0.25, 0.125,
+                            3.0, 1.5, 0.75, 0.375,
+                            4.0/3, 2.0/3, 1.0/3, 1.0/6,
+                        };
+                        // clang-format on
+                        const magda::QuantizeMode modes[] = {magda::QuantizeMode::StartOnly,
+                                                             magda::QuantizeMode::LengthOnly,
+                                                             magda::QuantizeMode::StartAndLength};
+                        int offset = result - 20;
+                        onQuantizeNotes(clipId_, indices, modes[offset % 3], gridBeats[offset / 3]);
+                    }
+                });
             return;
         }
 
@@ -1032,32 +1080,79 @@ class DrumGridClipGrid : public juce::Component,
                 menu.addItem(12, "Duplicate", hasSelection);
                 menu.addItem(13, "Delete", hasSelection);
                 menu.addSeparator();
-                menu.addItem(1, "Quantize Start to Grid", hasSelection);
-                menu.addItem(2, "Quantize Length to Grid", hasSelection);
-                menu.addItem(3, "Quantize Start & Length to Grid", hasSelection);
 
-                menu.showMenuAsync(juce::PopupMenu::Options(),
-                                   [this, indices = std::move(selectedIndices)](int result) {
-                                       if (result == 0)
-                                           return;
-                                       if (result == 10 && onCopyNotes)
-                                           onCopyNotes(clipId_, indices);
-                                       else if (result == 11 && onPasteNotes)
-                                           onPasteNotes(clipId_);
-                                       else if (result == 12 && onDuplicateNotes)
-                                           onDuplicateNotes(clipId_, indices);
-                                       else if (result == 13 && onDeleteNotes)
-                                           onDeleteNotes(clipId_, indices);
-                                       else if (result >= 1 && result <= 3 && onQuantizeNotes) {
-                                           magda::QuantizeMode mode =
-                                               magda::QuantizeMode::StartOnly;
-                                           if (result == 2)
-                                               mode = magda::QuantizeMode::LengthOnly;
-                                           else if (result == 3)
-                                               mode = magda::QuantizeMode::StartAndLength;
-                                           onQuantizeNotes(clipId_, indices, mode);
-                                       }
-                                   });
+                // Quantize submenu
+                {
+                    juce::PopupMenu quantizeMenu;
+                    {
+                        juce::PopupMenu modeMenu;
+                        modeMenu.addItem(1, "Start");
+                        modeMenu.addItem(2, "Length");
+                        modeMenu.addItem(3, "Start & Length");
+                        quantizeMenu.addSubMenu("Current Grid", modeMenu,
+                                                hasSelection && gridResolutionBeats_ > 0.0);
+                    }
+                    quantizeMenu.addSeparator();
+
+                    struct GridOption {
+                        const char* name;
+                        double beats;
+                    };
+                    // clang-format off
+                    const GridOption grids[] = {
+                        {"1/1",   4.0},    {"1/2",   2.0},    {"1/4",   1.0},
+                        {"1/8",   0.5},    {"1/16",  0.25},   {"1/32",  0.125},
+                        {"1/2.",  3.0},    {"1/4.",  1.5},
+                        {"1/8.",  0.75},   {"1/16.", 0.375},
+                        {"1/2T",  4.0/3},  {"1/4T",  2.0/3},
+                        {"1/8T",  1.0/3},  {"1/16T", 1.0/6},
+                    };
+                    // clang-format on
+                    int itemId = 20;
+                    for (const auto& grid : grids) {
+                        juce::PopupMenu modeMenu;
+                        modeMenu.addItem(itemId++, "Start");
+                        modeMenu.addItem(itemId++, "Length");
+                        modeMenu.addItem(itemId++, "Start & Length");
+                        quantizeMenu.addSubMenu(grid.name, modeMenu, hasSelection);
+                    }
+                    menu.addSubMenu("Quantize", quantizeMenu, hasSelection);
+                }
+
+                menu.showMenuAsync(
+                    juce::PopupMenu::Options(), [this, indices = std::move(selectedIndices),
+                                                 gridRes = gridResolutionBeats_](int result) {
+                        if (result == 0)
+                            return;
+                        if (result == 10 && onCopyNotes)
+                            onCopyNotes(clipId_, indices);
+                        else if (result == 11 && onPasteNotes)
+                            onPasteNotes(clipId_);
+                        else if (result == 12 && onDuplicateNotes)
+                            onDuplicateNotes(clipId_, indices);
+                        else if (result == 13 && onDeleteNotes)
+                            onDeleteNotes(clipId_, indices);
+                        else if (result >= 1 && result <= 3 && onQuantizeNotes) {
+                            const magda::QuantizeMode modes[] = {
+                                magda::QuantizeMode::StartOnly, magda::QuantizeMode::LengthOnly,
+                                magda::QuantizeMode::StartAndLength};
+                            onQuantizeNotes(clipId_, indices, modes[result - 1], gridRes);
+                        } else if (result >= 20 && result <= 61 && onQuantizeNotes) {
+                            // clang-format off
+                            const double gridBeats[] = {
+                                4.0, 2.0, 1.0, 0.5, 0.25, 0.125,
+                                3.0, 1.5, 0.75, 0.375,
+                                4.0/3, 2.0/3, 1.0/3, 1.0/6,
+                            };
+                            // clang-format on
+                            const magda::QuantizeMode modes[] = {
+                                magda::QuantizeMode::StartOnly, magda::QuantizeMode::LengthOnly,
+                                magda::QuantizeMode::StartAndLength};
+                            int offset = result - 20;
+                            onQuantizeNotes(clipId_, indices, modes[offset % 3],
+                                            gridBeats[offset / 3]);
+                        }
+                    });
             };
 
             noteComp->updateFromNote(clip->midiNotes[i], noteColour);
@@ -1356,10 +1451,10 @@ DrumGridClipContent::DrumGridClipContent() {
     };
 
     // Handle quantize from right-click context menu
-    gridComponent_->onQuantizeNotes = [this](magda::ClipId clipId, std::vector<size_t> noteIndices,
-                                             magda::QuantizeMode mode) {
+    gridComponent_->onQuantizeNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices,
+                                         magda::QuantizeMode mode, double gridBeats) {
         auto cmd = std::make_unique<magda::QuantizeMidiNotesCommand>(clipId, std::move(noteIndices),
-                                                                     gridResolutionBeats_, mode);
+                                                                     gridBeats, mode);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 

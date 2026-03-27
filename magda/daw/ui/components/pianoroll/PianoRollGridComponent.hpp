@@ -202,7 +202,8 @@ class PianoRollGridComponent : public juce::Component,
         onLeftResizeMultipleNotes;  // compound move+resize for left-edge resize
 
     // Callbacks for edit operations from context menu
-    std::function<void(ClipId, std::vector<size_t>, QuantizeMode)> onQuantizeNotes;
+    std::function<void(ClipId, std::vector<size_t>, QuantizeMode, double gridBeats)>
+        onQuantizeNotes;
     std::function<void(ClipId, std::vector<size_t>)> onCopyNotes;
     std::function<void(ClipId)> onPasteNotes;
     std::function<void(ClipId, std::vector<size_t>)> onDuplicateNotes;

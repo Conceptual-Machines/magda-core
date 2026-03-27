@@ -971,6 +971,7 @@ void TrackChainContent::updateGlobalModsPanel() {
         selectedGlobalModIndex_ < static_cast<int>(track->mods.size())) {
         int idx = selectedGlobalModIndex_;
         auto trackId = selectedTrackId_;
+        globalModEditorPanel_->setSelectedModIndex(idx);
         globalModEditorPanel_->setModInfo(
             track->mods[idx], &track->mods[idx], [trackId, idx]() -> const magda::ModInfo* {
                 const auto* t = magda::TrackManager::getInstance().getTrack(trackId);
@@ -1037,6 +1038,7 @@ void TrackChainContent::showGlobalModEditor(int modIndex) {
     if (auto* t = magda::TrackManager::getInstance().getTrack(selectedTrackId_))
         t->selectedGlobalModIndex = modIndex;
     auto trackId = selectedTrackId_;
+    globalModEditorPanel_->setSelectedModIndex(modIndex);
     globalModEditorPanel_->setModInfo(track->mods[modIndex], &track->mods[modIndex],
                                       [trackId, modIndex]() -> const magda::ModInfo* {
                                           const auto* t =

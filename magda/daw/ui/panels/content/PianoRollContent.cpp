@@ -341,10 +341,10 @@ void PianoRollContent::setupGridCallbacks() {
     };
 
     // Handle quantize from right-click context menu
-    gridComponent_->onQuantizeNotes = [this](magda::ClipId clipId, std::vector<size_t> noteIndices,
-                                             magda::QuantizeMode mode) {
+    gridComponent_->onQuantizeNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices,
+                                         magda::QuantizeMode mode, double gridBeats) {
         auto cmd = std::make_unique<magda::QuantizeMidiNotesCommand>(clipId, std::move(noteIndices),
-                                                                     gridResolutionBeats_, mode);
+                                                                     gridBeats, mode);
         magda::UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 

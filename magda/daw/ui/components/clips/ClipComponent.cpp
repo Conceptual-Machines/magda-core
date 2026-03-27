@@ -4,6 +4,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <cmath>
+#include <numeric>
 
 #include "../../panels/state/PanelController.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -15,6 +16,7 @@
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
+#include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -2281,6 +2283,76 @@ void ClipComponent::showContextMenu() {
     menu.addItem(6, "Delete", canEdit);
     menu.addSeparator();
 
+    // Quantize (MIDI clips only)
+    {
+        bool hasMidi = false;
+        if (isMultiSelection) {
+            for (auto cid : selectionManager.getSelectedClips()) {
+                auto* c = clipManager.getClip(cid);
+                if (c && c->type == ClipType::MIDI && !c->midiNotes.empty()) {
+                    hasMidi = true;
+                    break;
+                }
+            }
+        } else {
+            const auto* ci = getClipInfo();
+            hasMidi = ci && ci->type == ClipType::MIDI && !ci->midiNotes.empty();
+        }
+
+        if (hasMidi) {
+            juce::PopupMenu quantizeMenu;
+
+            // "Current Grid" option (IDs 97-99)
+            bool hasGrid = false;
+            if (parentPanel_ && parentPanel_->getTimelineController()) {
+                const auto& state = parentPanel_->getTimelineController()->getState();
+                double gridBeats = GridConstants::computeGridInterval(
+                    state.display.gridQuantize, state.zoom.horizontalZoom,
+                    state.tempo.timeSignatureNumerator, 50);
+                hasGrid = gridBeats > 0.0;
+            }
+            {
+                juce::PopupMenu modeMenu;
+                modeMenu.addItem(97, "Start");
+                modeMenu.addItem(98, "Length");
+                modeMenu.addItem(99, "Start & Length");
+                quantizeMenu.addSubMenu("Current Grid", modeMenu, canEdit && hasGrid);
+            }
+            quantizeMenu.addSeparator();
+
+            // Grid values in beats
+            // Straight: 1/1=4, 1/2=2, 1/4=1, 1/8=0.5, 1/16=0.25, 1/32=0.125
+            // Dotted (1.5x): 1/2.=3, 1/4.=1.5, 1/8.=0.75, 1/16.=0.375
+            // Triplet (2/3x): 1/2T=4/3, 1/4T=2/3, 1/8T=1/3, 1/16T=1/6
+            struct GridOption {
+                const char* name;
+                double beats;
+            };
+            // clang-format off
+            const GridOption grids[] = {
+                {"1/1",   4.0},    {"1/2",   2.0},    {"1/4",   1.0},
+                {"1/8",   0.5},    {"1/16",  0.25},   {"1/32",  0.125},
+                {"1/2.",  3.0},    {"1/4.",  1.5},
+                {"1/8.",  0.75},   {"1/16.", 0.375},
+                {"1/2T",  4.0/3},  {"1/4T",  2.0/3},
+                {"1/8T",  1.0/3},  {"1/16T", 1.0/6},
+            };
+            // clang-format on
+
+            // IDs: 100+ (14 grids x 3 modes)
+            int itemId = 100;
+            for (const auto& grid : grids) {
+                juce::PopupMenu modeMenu;
+                modeMenu.addItem(itemId++, "Start");
+                modeMenu.addItem(itemId++, "Length");
+                modeMenu.addItem(itemId++, "Start & Length");
+                quantizeMenu.addSubMenu(grid.name, modeMenu, canEdit);
+            }
+            menu.addSubMenu("Quantize", quantizeMenu, canEdit);
+            menu.addSeparator();
+        }
+    }
+
     // Render Clip(s) - available for audio clips (single or multi-selection)
     {
         bool allAudio = true;
@@ -2552,8 +2624,92 @@ void ClipComponent::showContextMenu() {
                 break;
             }
 
-            default:
+            default: {
+                // Quantize with current grid: IDs 97-99
+                if (result >= 97 && result <= 99) {
+                    const QuantizeMode modes[] = {QuantizeMode::StartOnly, QuantizeMode::LengthOnly,
+                                                  QuantizeMode::StartAndLength};
+                    QuantizeMode mode = modes[result - 97];
+                    double grid = 1.0;
+                    if (parentPanel_ && parentPanel_->getTimelineController()) {
+                        const auto& state = parentPanel_->getTimelineController()->getState();
+                        grid = GridConstants::computeGridInterval(
+                            state.display.gridQuantize, state.zoom.horizontalZoom,
+                            state.tempo.timeSignatureNumerator, 50);
+                    }
+
+                    auto selectedClips = selectionManager.getSelectedClips();
+                    std::vector<ClipId> midiClips;
+                    for (auto cid : selectedClips) {
+                        auto* c = clipManager.getClip(cid);
+                        if (c && c->type == ClipType::MIDI && !c->midiNotes.empty()) {
+                            midiClips.push_back(cid);
+                        }
+                    }
+
+                    if (!midiClips.empty()) {
+                        if (midiClips.size() > 1)
+                            UndoManager::getInstance().beginCompoundOperation("Quantize Clips");
+                        for (auto cid : midiClips) {
+                            auto* c = clipManager.getClip(cid);
+                            if (!c)
+                                continue;
+                            std::vector<size_t> allIndices(c->midiNotes.size());
+                            std::iota(allIndices.begin(), allIndices.end(), 0);
+                            auto cmd = std::make_unique<QuantizeMidiNotesCommand>(
+                                cid, std::move(allIndices), grid, mode);
+                            UndoManager::getInstance().executeCommand(std::move(cmd));
+                        }
+                        if (midiClips.size() > 1)
+                            UndoManager::getInstance().endCompoundOperation();
+                    }
+                }
+
+                // Quantize items: IDs 100-141 (14 grids x 3 modes)
+                if (result >= 100 && result <= 141) {
+                    // clang-format off
+                    const double gridBeats[] = {
+                        4.0, 2.0, 1.0, 0.5, 0.25, 0.125,
+                        3.0, 1.5, 0.75, 0.375,
+                        4.0/3, 2.0/3, 1.0/3, 1.0/6,
+                    };
+                    // clang-format on
+                    const QuantizeMode modes[] = {QuantizeMode::StartOnly, QuantizeMode::LengthOnly,
+                                                  QuantizeMode::StartAndLength};
+                    int offset = result - 100;
+                    int gridIdx = offset / 3;
+                    int modeIdx = offset % 3;
+                    double grid = gridBeats[gridIdx];
+                    QuantizeMode mode = modes[modeIdx];
+
+                    auto selectedClips = selectionManager.getSelectedClips();
+                    std::vector<ClipId> midiClips;
+                    for (auto cid : selectedClips) {
+                        auto* c = clipManager.getClip(cid);
+                        if (c && c->type == ClipType::MIDI && !c->midiNotes.empty()) {
+                            midiClips.push_back(cid);
+                        }
+                    }
+
+                    if (!midiClips.empty()) {
+                        if (midiClips.size() > 1)
+                            UndoManager::getInstance().beginCompoundOperation("Quantize Clips");
+                        for (auto cid : midiClips) {
+                            auto* c = clipManager.getClip(cid);
+                            if (!c)
+                                continue;
+                            std::vector<size_t> allIndices(c->midiNotes.size());
+                            std::iota(allIndices.begin(), allIndices.end(), 0);
+                            auto cmd = std::make_unique<QuantizeMidiNotesCommand>(
+                                cid, std::move(allIndices), grid, mode);
+                            UndoManager::getInstance().executeCommand(std::move(cmd));
+                        }
+                        if (midiClips.size() > 1)
+                            UndoManager::getInstance().endCompoundOperation();
+                    }
+                }
                 break;
+            }
         }
     });
 }
