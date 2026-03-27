@@ -297,46 +297,88 @@ void EqualiserUI::CurveDisplay::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).darker(0.1f));
     g.fillRoundedRectangle(bounds, 2.0f);
 
-    // Grid lines - frequency
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
-    const float gridFreqs[] = {100.0f, 1000.0f, 10000.0f};
-    const juce::String gridLabels[] = {"100", "1k", "10k"};
-    auto gridFont = FontManager::getInstance().getUIFont(8.0f);
+    auto gridFont = FontManager::getInstance().getUIFont(7.0f);
+    auto gridLineColour = DarkTheme::getColour(DarkTheme::BORDER);
+    auto gridTextColour = DarkTheme::getSecondaryTextColour();
 
-    for (int i = 0; i < 3; ++i) {
-        float x = freqToX(gridFreqs[i], w);
+    // Frequency grid — major lines with labels, minor lines without
+    struct FreqGrid {
+        float freq;
+        const char* label;  // nullptr = minor (no label)
+    };
+    const FreqGrid freqGridLines[] = {
+        {30.0f, nullptr}, {50.0f, "50"},   {100.0f, "100"}, {200.0f, "200"},   {500.0f, "500"},
+        {1000.0f, "1k"},  {2000.0f, "2k"}, {5000.0f, "5k"}, {10000.0f, "10k"}, {20000.0f, nullptr},
+    };
+
+    for (const auto& fg : freqGridLines) {
+        float x = freqToX(fg.freq, w);
+        bool isMajor = (fg.label != nullptr);
+        g.setColour(gridLineColour.withAlpha(isMajor ? 0.3f : 0.12f));
         g.drawVerticalLine(static_cast<int>(x), 0.0f, h);
-        g.setFont(gridFont);
-        g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
-        g.drawText(gridLabels[i], static_cast<int>(x) - 15, static_cast<int>(h) - 12, 30, 12,
-                   juce::Justification::centred);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+        if (fg.label) {
+            g.setFont(gridFont);
+            g.setColour(gridTextColour.withAlpha(0.5f));
+            g.drawText(fg.label, static_cast<int>(x) - 15, static_cast<int>(h) - 11, 30, 11,
+                       juce::Justification::centred);
+        }
     }
 
-    // Grid lines - dB
+    // dB grid — horizontal lines with labels
     const float gridDbs[] = {-20.0f, -10.0f, 0.0f, 10.0f, 20.0f};
     for (float db : gridDbs) {
         float y = dbToY(db, h);
-        if (db == 0.0f)
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.6f));
-        else
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.2f));
+        bool isZero = (db == 0.0f);
+        g.setColour(gridLineColour.withAlpha(isZero ? 0.5f : 0.15f));
         g.drawHorizontalLine(static_cast<int>(y), 0.0f, w);
+        // Label (skip ±20 to avoid edge clutter)
+        if (db != -20.0f && db != 20.0f) {
+            g.setFont(gridFont);
+            g.setColour(gridTextColour.withAlpha(0.4f));
+            juce::String dbText = (db > 0 ? "+" : "") + juce::String(static_cast<int>(db));
+            g.drawText(dbText, 2, static_cast<int>(y) - 6, 22, 12,
+                       juce::Justification::centredLeft);
+        }
     }
 
     // Response curve
     if (owner_.getDBGainAtFrequency) {
+        float zeroY = dbToY(0.0f, h);
+
+        // Sample per pixel
+        int numSamples = juce::jmax(100, static_cast<int>(w));
+        std::vector<float> dbValues(static_cast<size_t>(numSamples));
+        for (int i = 0; i < numSamples; ++i) {
+            float x = (static_cast<float>(i) / static_cast<float>(numSamples - 1)) * w;
+            float freq = xToFreq(x, w);
+            dbValues[static_cast<size_t>(i)] = owner_.getDBGainAtFrequency(freq);
+        }
+
+        // Gaussian smoothing (3 passes of box blur ≈ Gaussian)
+        // Use adaptive radius: wider at low frequencies (left) where log scale is compressed
+        auto smoothed = dbValues;
+        for (int pass = 0; pass < 3; ++pass) {
+            auto prev = smoothed;
+            for (int i = 0; i < numSamples; ++i) {
+                float t = static_cast<float>(i) / static_cast<float>(numSamples - 1);
+                int radius = static_cast<int>(3.0f + (1.0f - t) * 9.0f);  // 12 at left, 3 at right
+                float sum = 0.0f;
+                int count = 0;
+                for (int k = juce::jmax(0, i - radius); k <= juce::jmin(numSamples - 1, i + radius);
+                     ++k) {
+                    sum += prev[static_cast<size_t>(k)];
+                    ++count;
+                }
+                smoothed[static_cast<size_t>(i)] = sum / static_cast<float>(count);
+            }
+        }
+
+        // Build path from smoothed data
         juce::Path curvePath;
         juce::Path fillPath;
-        float zeroY = dbToY(0.0f, h);
-        constexpr int numPoints = 200;
-
-        for (int i = 0; i <= numPoints; ++i) {
-            float x = (static_cast<float>(i) / static_cast<float>(numPoints)) * w;
-            float freq = xToFreq(x, w);
-            float db = owner_.getDBGainAtFrequency(freq);
-            float y = dbToY(db, h);
-
+        for (int i = 0; i < numSamples; ++i) {
+            float x = (static_cast<float>(i) / static_cast<float>(numSamples - 1)) * w;
+            float y = dbToY(smoothed[static_cast<size_t>(i)], h);
             if (i == 0) {
                 curvePath.startNewSubPath(x, y);
                 fillPath.startNewSubPath(x, zeroY);
@@ -351,24 +393,33 @@ void EqualiserUI::CurveDisplay::paint(juce::Graphics& g) {
         fillPath.lineTo(w, zeroY);
         fillPath.closeSubPath();
 
-        // Draw filled area
+        // Gradient fill under curve
         auto accentColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
-        g.setColour(accentColour.withAlpha(0.08f));
+        g.setGradientFill(juce::ColourGradient(accentColour.withAlpha(0.15f), 0.0f, 0.0f,
+                                               accentColour.withAlpha(0.02f), 0.0f, h, false));
         g.fillPath(fillPath);
 
-        // Draw curve line
-        g.setColour(accentColour.withAlpha(0.8f));
-        g.strokePath(curvePath, juce::PathStrokeType(1.5f));
+        // Curve stroke
+        g.setColour(accentColour.withAlpha(0.85f));
+        g.strokePath(curvePath, juce::PathStrokeType(2.0f));
     }
 
-    // Band dots
+    // Band dots — glow ring + filled centre
     for (int i = 0; i < kNumBands; ++i) {
         float x = freqToX(owner_.bandFreqs_[i], w);
         float y = dbToY(owner_.bandGains_[i], h);
+
+        // Outer glow
+        g.setColour(owner_.bandColours_[i].withAlpha(0.18f));
+        g.fillEllipse(x - 8.0f, y - 8.0f, 16.0f, 16.0f);
+
+        // Ring
+        g.setColour(owner_.bandColours_[i].withAlpha(0.6f));
+        g.drawEllipse(x - 6.0f, y - 6.0f, 12.0f, 12.0f, 1.5f);
+
+        // Filled centre
         g.setColour(owner_.bandColours_[i]);
         g.fillEllipse(x - 4.0f, y - 4.0f, 8.0f, 8.0f);
-        g.setColour(owner_.bandColours_[i].withAlpha(0.3f));
-        g.drawEllipse(x - 6.0f, y - 6.0f, 12.0f, 12.0f, 1.0f);
     }
 }
 
