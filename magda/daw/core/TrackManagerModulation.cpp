@@ -1017,6 +1017,7 @@ void TrackManager::removeDeviceMacroLink(const ChainNodePath& devicePath, int ma
             return;
         }
         device->macros[macroIndex].removeLink(target);
+        notifyDeviceModifiersChanged(devicePath.trackId);
     }
 }
 
