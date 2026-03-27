@@ -48,6 +48,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
                            .onMacroUnlinked = onMacroUnlinked,
                            .onTrackMacroUnlinked = onTrackMacroUnlinked});
     };
+    valueSlider_.setRightClickEditsText(false);
 
     // Amount label for link mode drag tooltip
     amountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
@@ -131,7 +132,6 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
         }
     };
 
-    valueSlider_.setRightClickEditsText(true);
     addAndMakeVisible(valueSlider_);
 
     setInterceptsMouseClicks(true, true);
@@ -471,11 +471,9 @@ void ParamSlotComponent::mouseExit(const juce::MouseEvent& /*e*/) {
 }
 
 void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
-    // Right-click — let value controls handle their own, otherwise show link menu
+    // Right-click — show link menu (value slider handles its own via onRightClicked;
+    // discrete/bool controls use their native right-click)
     if (e.mods.isPopupMenu()) {
-        if (valueSlider_.isVisible() && valueSlider_.getBounds().contains(e.getPosition())) {
-            return;
-        }
         if (discreteCombo_ && discreteCombo_->isVisible() &&
             discreteCombo_->getBounds().contains(e.getPosition())) {
             return;

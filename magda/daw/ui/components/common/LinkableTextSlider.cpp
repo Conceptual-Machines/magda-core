@@ -106,7 +106,18 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
         }
     };
 
-    slider_.setRightClickEditsText(true);
+    slider_.setRightClickEditsText(false);
+    slider_.onRightClicked = [this]() {
+        if (deviceId_ != magda::INVALID_DEVICE_ID) {
+            showParamLinkMenu(this, buildLinkContext(),
+                              {.onModUnlinked = onModUnlinked,
+                               .onTrackModUnlinked = onTrackModUnlinked,
+                               .onModLinkedWithAmount = onModLinkedWithAmount,
+                               .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
+                               .onMacroUnlinked = onMacroUnlinked,
+                               .onTrackMacroUnlinked = onTrackMacroUnlinked});
+        }
+    };
     addAndMakeVisible(slider_);
 }
 

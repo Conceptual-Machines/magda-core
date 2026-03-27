@@ -527,7 +527,7 @@ TrackChainContent::TrackChainContent()
     macroButton_->setClickingTogglesState(true);
     macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     macroButton_->setActiveColor(juce::Colours::white);
-    macroButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    macroButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     macroButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
@@ -1205,11 +1205,10 @@ void TrackChainContent::onDeactivated() {
 void TrackChainContent::tracksChanged() {
     if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-        if (!track) {
+        if (!track)
             selectedTrackId_ = magda::INVALID_TRACK_ID;
-            updateFromSelectedTrack();
-        }
     }
+    updateFromSelectedTrack();
 }
 
 void TrackChainContent::trackPropertyChanged(int trackId) {

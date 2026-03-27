@@ -7,65 +7,6 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
     juce::PopupMenu menu;
 
     magda::ModTarget thisTarget{ctx.deviceId, ctx.paramIndex};
-
-    // ========================================================================
-    // Contextual mode: if a mod is selected, show simple link/unlink options
-    // ========================================================================
-    if (ctx.selectedModIndex >= 0 && ctx.deviceMods &&
-        ctx.selectedModIndex < static_cast<int>(ctx.deviceMods->size())) {
-        const auto& selectedMod = (*ctx.deviceMods)[static_cast<size_t>(ctx.selectedModIndex)];
-        juce::String modName = selectedMod.name;
-
-        // Check if already linked
-        const auto* existingLink = selectedMod.getLink(thisTarget);
-        bool isLinked =
-            existingLink != nullptr || (selectedMod.target.deviceId == ctx.deviceId &&
-                                        selectedMod.target.paramIndex == ctx.paramIndex);
-
-        if (isLinked) {
-            float currentAmount = existingLink ? existingLink->amount : selectedMod.amount;
-            int amountPercent = static_cast<int>(currentAmount * 100);
-            menu.addSectionHeader(modName + " (" + juce::String(amountPercent) + "%)");
-            menu.addItem(1, "Unlink from " + modName);
-        } else {
-            menu.addSectionHeader(modName);
-            menu.addItem(2, "Link to " + modName);
-        }
-
-        // Show contextual menu
-        auto safeAnchor = juce::Component::SafePointer<juce::Component>(anchor);
-        auto deviceId = ctx.deviceId;
-        auto paramIdx = ctx.paramIndex;
-        auto modIndex = ctx.selectedModIndex;
-        auto cbs = callbacks;
-
-        menu.showMenuAsync(juce::PopupMenu::Options(),
-                           [safeAnchor, deviceId, paramIdx, modIndex, cbs](int result) {
-                               if (safeAnchor == nullptr || result == 0) {
-                                   return;
-                               }
-
-                               magda::ModTarget target{deviceId, paramIdx};
-
-                               if (result == 1) {
-                                   if (cbs.onModUnlinked) {
-                                       cbs.onModUnlinked(modIndex, target);
-                                   }
-                               } else if (result == 2) {
-                                   if (cbs.onModLinkedWithAmount) {
-                                       cbs.onModLinkedWithAmount(modIndex, target, 0.0f);
-                                   }
-                               }
-
-                               if (safeAnchor != nullptr)
-                                   safeAnchor->repaint();
-                           });
-        return;
-    }
-
-    // ========================================================================
-    // Full menu: no mod selected - show all options
-    // ========================================================================
     auto linkedMods = getLinkedMods(ctx);
     auto linkedMacros = getLinkedMacros(ctx);
 
