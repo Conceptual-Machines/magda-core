@@ -660,6 +660,7 @@ target_link_libraries(magda_daw
     juce::juce_gui_basics
     juce::juce_gui_extra
     tracktion::tracktion_engine
+    juce_llm
     MagdaAssets
     # Link GTK/WebKit and curl dependencies on Linux
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>

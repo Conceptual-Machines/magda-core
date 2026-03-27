@@ -93,6 +93,9 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 # Tracktion Engine for DAW functionality (using local submodule)
 add_subdirectory(third_party/tracktion_engine)
 
+# LLM API client module (juce_core only)
+juce_add_module(${CMAKE_CURRENT_SOURCE_DIR}/third_party/juce-llm/juce_llm)
+
 # Catch2 for testing
 if(MAGDA_BUILD_TESTS)
     FetchContent_Declare(

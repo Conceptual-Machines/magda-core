@@ -5,3 +5,6 @@
 [submodule "third_party/asiosdk"]
 	path = third_party/asiosdk
 	url = https://github.com/audiosdk/asio.git
+[submodule "third_party/juce-llm"]
+	path = third_party/juce-llm
+	url = https://github.com/Conceptual-Machines/juce-llm.git
