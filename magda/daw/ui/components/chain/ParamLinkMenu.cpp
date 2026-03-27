@@ -84,10 +84,7 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
         juce::PopupMenu macrosMenu;
         for (size_t i = 0; i < ctx.deviceMacros->size(); ++i) {
             const auto& macro = (*ctx.deviceMacros)[i];
-            bool alreadyLinked = (macro.target.deviceId == ctx.deviceId &&
-                                  macro.target.paramIndex == ctx.paramIndex);
-            macrosMenu.addItem(4000 + static_cast<int>(i), macro.name, !alreadyLinked,
-                               alreadyLinked);
+            macrosMenu.addItem(4000 + static_cast<int>(i), macro.name);
         }
         menu.addSubMenu("Link to Macro", macrosMenu);
     }
