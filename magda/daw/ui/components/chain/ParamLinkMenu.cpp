@@ -82,9 +82,11 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
     // Section: Link to Macro
     if (ctx.deviceMacros && !ctx.deviceMacros->empty()) {
         juce::PopupMenu macrosMenu;
+        magda::MacroTarget thisTarget{ctx.deviceId, ctx.paramIndex};
         for (size_t i = 0; i < ctx.deviceMacros->size(); ++i) {
             const auto& macro = (*ctx.deviceMacros)[i];
-            macrosMenu.addItem(4000 + static_cast<int>(i), macro.name);
+            bool alreadyLinked = macro.getLink(thisTarget) != nullptr || macro.target == thisTarget;
+            macrosMenu.addItem(4000 + static_cast<int>(i), macro.name, true, alreadyLinked);
         }
         menu.addSubMenu("Link to Macro", macrosMenu);
     }
