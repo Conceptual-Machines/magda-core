@@ -1363,14 +1363,11 @@ void DeviceSlotComponent::onMacroTargetChangedInternal(int macroIndex, magda::Ma
     // Check if the active macro is from this device or a parent rack
     auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
     if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath_) {
-        // Device-level macro
         magda::TrackManager::getInstance().setDeviceMacroTarget(nodePath_, macroIndex, target);
     } else if (activeMacroSelection.isValid()) {
-        // Rack-level macro
         magda::TrackManager::getInstance().setRackMacroTarget(activeMacroSelection.parentPath,
                                                               macroIndex, target);
     } else {
-        // No active link mode - default to device level (for menu-based linking)
         magda::TrackManager::getInstance().setDeviceMacroTarget(nodePath_, macroIndex, target);
     }
     updateParamModulation();  // Refresh param indicators
@@ -2970,6 +2967,16 @@ void DeviceSlotComponent::setupCustomUILinking() {
                 magda::TrackManager::getInstance().setRackMacroLinkAmount(
                     activeMacroSelection.parentPath, macroIndex, target, amount);
             }
+            if (self)
+                self->updateParamModulation();
+        };
+
+        slider->onMacroLinked = [safeThis = juce::Component::SafePointer(this)](
+                                    int macroIndex, magda::MacroTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            self->onMacroTargetChangedInternal(macroIndex, target);
             if (self)
                 self->updateParamModulation();
         };

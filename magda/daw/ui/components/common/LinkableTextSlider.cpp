@@ -113,6 +113,7 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
                               {.onModUnlinked = onModUnlinked,
                                .onTrackModUnlinked = onTrackModUnlinked,
                                .onModLinkedWithAmount = onModLinkedWithAmount,
+                               .onMacroLinked = onMacroLinked,
                                .onMacroLinkedWithAmount = onMacroLinkedWithAmount,
                                .onMacroUnlinked = onMacroUnlinked,
                                .onTrackMacroUnlinked = onTrackMacroUnlinked});
