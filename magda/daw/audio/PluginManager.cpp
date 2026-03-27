@@ -1668,6 +1668,17 @@ void PluginManager::prepareForRendering() {
             monitor->reset();
     }
 
+    // Re-enable tone generators that were bypassed when transport stopped.
+    // Must happen before the render graph is built so they appear as enabled.
+    {
+        juce::ScopedLock lock(pluginLock_);
+        for (const auto& [deviceId, sd] : syncedDevices_) {
+            if (auto* toneProc = dynamic_cast<ToneGeneratorProcessor*>(sd.processor.get())) {
+                toneProc->setBypassed(false);
+            }
+        }
+    }
+
     // Enable all MIDI/Audio-triggered LFO assignments so modulation is active
     // during offline rendering. The message-thread timer gating can't keep up
     // with the renderer's speed, so we disable gating entirely.
@@ -2838,6 +2849,11 @@ void PluginManager::clearAllMappings() {
 
 void PluginManager::updateTransportSyncedProcessors(bool isPlaying) {
     juce::ScopedLock lock(pluginLock_);
+
+    // During offline rendering, keep tone generators enabled regardless of
+    // transport state — the renderer drives playback independently.
+    if (renderingActive_)
+        return;
 
     for (const auto& [deviceId, sd] : syncedDevices_) {
         if (auto* toneProc = dynamic_cast<ToneGeneratorProcessor*>(sd.processor.get())) {
