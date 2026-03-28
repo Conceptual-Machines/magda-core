@@ -41,20 +41,36 @@ void styleCombo(juce::ComboBox& combo) {
     combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
 }
 
-// Known provider types for the "Add Provider" picker
+// Known cloud providers
 struct ProviderInfo {
-    const char* id;  // "openai_chat", "anthropic", "gemini", "deepseek", "openrouter", "local"
+    const char* id;           // credential key: "openai_chat", "anthropic", etc.
     const char* displayName;  // "OpenAI", "Anthropic", etc.
-    bool isLocal;             // true for local llama-server
+    const char* testProvider;
+    const char* testBaseUrl;
+    const char* testModel;
+    const char* iconData;
+    int iconDataSize;
 };
 
 const std::vector<ProviderInfo>& getKnownProviders() {
     static const std::vector<ProviderInfo> providers = {
-        {"openai_chat", "OpenAI", false},    {"anthropic", "Anthropic", false},
-        {"gemini", "Gemini", false},         {"deepseek", "DeepSeek", false},
-        {"openrouter", "OpenRouter", false}, {"local", "Local (llama-server)", true},
+        {"openai_chat", "OpenAI", "openai_chat", "", "gpt-4.1-mini", BinaryData::openai_svg,
+         BinaryData::openai_svgSize},
+        {"anthropic", "Anthropic", "anthropic", "", "claude-haiku-4-5-20251001",
+         BinaryData::anthropic_svg, BinaryData::anthropic_svgSize},
+        {"gemini", "Gemini", "gemini", "", "gemini-2.0-flash", BinaryData::gemini_svg,
+         BinaryData::gemini_svgSize},
+        {"deepseek", "DeepSeek", "deepseek", "", "deepseek-chat", BinaryData::deepseek_svg,
+         BinaryData::deepseek_svgSize},
+        {"openrouter", "OpenRouter", "openrouter", "", "meta-llama/llama-3.3-70b-instruct",
+         BinaryData::openrouter_svg, BinaryData::openrouter_svgSize},
     };
     return providers;
+}
+
+std::unique_ptr<juce::Drawable> createProviderIcon(const ProviderInfo& info) {
+    return juce::Drawable::createFromImageData(info.iconData,
+                                               static_cast<size_t>(info.iconDataSize));
 }
 
 const ProviderInfo* findProviderInfo(const std::string& id) {
@@ -67,166 +83,379 @@ const ProviderInfo* findProviderInfo(const std::string& id) {
 }  // namespace
 
 // ============================================================================
-// ProviderRow — one credential entry (cloud API key or local URL)
+// CloudPage — manage cloud provider API keys
+//
+// Top: provider combo + API key field + Test + Add buttons
+// Bottom: compact list of registered providers with remove buttons
 // ============================================================================
 
-class ProviderRow : public juce::Component {
+class AISettingsDialog::CloudPage : public juce::Component {
   public:
-    std::function<void()> onRemove;
-    std::function<void()> onChanged;
+    CloudPage() {
+        // Provider selector
+        providerLabel_.setText("Provider", juce::dontSendNotification);
+        styleLabel(providerLabel_);
+        addAndMakeVisible(providerLabel_);
 
-    ProviderRow(const std::string& providerId, bool isLocal)
-        : providerId_(providerId), isLocal_(isLocal) {
-        auto* info = findProviderInfo(providerId);
-        juce::String name = info ? info->displayName : juce::String(providerId);
-
-        nameLabel_.setText(name, juce::dontSendNotification);
-        styleLabel(nameLabel_, 13.0f);
-        nameLabel_.setFont(nameLabel_.getFont().boldened());
-        addAndMakeVisible(nameLabel_);
-
-        if (isLocal_) {
-            styleEditor(valueEditor_, "http://127.0.0.1:8080/v1");
-        } else {
-            styleEditor(valueEditor_, "API key...", true);
+        {
+            auto* menu = providerCombo_.getRootMenu();
+            int itemId = 1;
+            for (const auto& p : getKnownProviders()) {
+                auto icon = createProviderIcon(p);
+                juce::PopupMenu::Item item;
+                item.text = p.displayName;
+                item.itemID = itemId++;
+                item.image = std::move(icon);
+                menu->addItem(item);
+            }
         }
-        addAndMakeVisible(valueEditor_);
+        providerCombo_.setSelectedId(1, juce::dontSendNotification);
+        styleCombo(providerCombo_);
+        addAndMakeVisible(providerCombo_);
 
-        validateButton_.setButtonText("Test");
-        validateButton_.onClick = [this]() { validate(); };
-        addAndMakeVisible(validateButton_);
+        // API key input
+        keyLabel_.setText("API Key", juce::dontSendNotification);
+        styleLabel(keyLabel_);
+        addAndMakeVisible(keyLabel_);
 
+        styleEditor(keyEditor_, "Enter API key...", true);
+        addAndMakeVisible(keyEditor_);
+
+        // Test button
+        testBtn_.setButtonText("Test");
+        testBtn_.onClick = [this]() { testKey(); };
+        addAndMakeVisible(testBtn_);
+
+        // Status label
         styleLabel(statusLabel_, 11.0f);
         statusLabel_.setColour(juce::Label::textColourId,
                                DarkTheme::getColour(DarkTheme::TEXT_DIM));
         addAndMakeVisible(statusLabel_);
 
-        removeButton_.setButtonText(juce::String::charToString(0x2715));  // ✕
-        removeButton_.onClick = [this]() {
-            if (onRemove)
-                onRemove();
-        };
-        addAndMakeVisible(removeButton_);
+        // Add/Save button
+        addBtn_.setButtonText("Add");
+        addBtn_.onClick = [this]() { addCurrentProvider(); };
+        addAndMakeVisible(addBtn_);
+
+        // Registered providers header
+        registeredLabel_.setText("Registered Providers", juce::dontSendNotification);
+        styleLabel(registeredLabel_, 11.0f);
+        registeredLabel_.setColour(juce::Label::textColourId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        addAndMakeVisible(registeredLabel_);
+
+        addAndMakeVisible(listContainer_);
     }
 
     void resized() override {
-        auto bounds = getLocalBounds();
+        auto bounds = getLocalBounds().reduced(12);
+        const int labelW = 70;
+        const int rowH = 28;
 
-        auto topRow = bounds.removeFromTop(24);
-        nameLabel_.setBounds(topRow.removeFromLeft(160));
-        removeButton_.setBounds(topRow.removeFromRight(28).reduced(2));
+        // Provider combo row
+        auto row = bounds.removeFromTop(rowH);
+        providerLabel_.setBounds(row.removeFromLeft(labelW));
+        providerCombo_.setBounds(row.reduced(0, 2));
+        bounds.removeFromTop(4);
 
+        // API key row
+        row = bounds.removeFromTop(rowH);
+        keyLabel_.setBounds(row.removeFromLeft(labelW));
+        testBtn_.setBounds(row.removeFromRight(50).reduced(2, 2));
+        row.removeFromRight(4);
+        addBtn_.setBounds(row.removeFromRight(50).reduced(2, 2));
+        row.removeFromRight(4);
+        keyEditor_.setBounds(row.reduced(0, 1));
         bounds.removeFromTop(2);
-        auto editorRow = bounds.removeFromTop(26);
-        validateButton_.setBounds(editorRow.removeFromRight(60).reduced(2, 1));
-        editorRow.removeFromRight(4);
-        valueEditor_.setBounds(editorRow.reduced(0, 1));
 
-        bounds.removeFromTop(2);
-        statusLabel_.setBounds(bounds.removeFromTop(18));
+        // Status
+        statusLabel_.setBounds(bounds.removeFromTop(18).withTrimmedLeft(labelW));
+        bounds.removeFromTop(8);
+
+        // Registered providers list
+        registeredLabel_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(4);
+
+        int totalH = static_cast<int>(entries_.size()) * kListRowHeight;
+        listContainer_.setBounds(bounds.removeFromTop(totalH));
+
+        auto listBounds = listContainer_.getLocalBounds();
+        for (auto& entry : entries_) {
+            entry.layout(listBounds.removeFromTop(kListRowHeight));
+        }
     }
 
-    static constexpr int kRowHeight = 76;
+    void paint(juce::Graphics& g) override {
+        auto borderColour = DarkTheme::getColour(DarkTheme::BORDER);
+        float left = 12.0f;
+        float right = static_cast<float>(getWidth() - 12);
 
-    std::string getProviderId() const {
-        return providerId_;
-    }
-    bool isLocal() const {
-        return isLocal_;
+        // Separator above registered list
+        if (registeredLabel_.isVisible()) {
+            g.setColour(borderColour);
+            g.drawHorizontalLine(registeredLabel_.getY() - 4, left, right);
+        }
+
+        // Row separators between list entries
+        if (!entries_.empty()) {
+            g.setColour(borderColour.withAlpha(0.5f));
+            auto listTop = listContainer_.getY();
+            for (size_t i = 1; i < entries_.size(); ++i) {
+                auto y = listTop + static_cast<int>(i) * kListRowHeight;
+                g.drawHorizontalLine(y, left, right);
+            }
+        }
     }
 
-    juce::String getValue() const {
-        return valueEditor_.getText();
+    void load(const Config& config) {
+        // Clear existing entries
+        entries_.clear();
+        for (auto& c : ownedDrawables_)
+            listContainer_.removeChildComponent(c.get());
+        for (auto& c : ownedLabels_)
+            listContainer_.removeChildComponent(c.get());
+        for (auto& c : ownedButtons_)
+            listContainer_.removeChildComponent(c.get());
+        ownedDrawables_.clear();
+        ownedLabels_.clear();
+        ownedButtons_.clear();
+
+        for (const auto& [provider, key] : config.getAllAICredentials()) {
+            if (key.empty())
+                continue;
+            if (!findProviderInfo(provider))
+                continue;
+            credentials_[provider] = juce::String(key);
+            addListEntry(provider);
+        }
+
+        updateProviderComboState();
+        resized();
     }
-    void setValue(const juce::String& v) {
-        valueEditor_.setText(v, juce::dontSendNotification);
+
+    void apply(Config& config) const {
+        // Clear all credentials first
+        for (const auto& p : getKnownProviders())
+            config.setAICredential(p.id, "");
+
+        // Write stored credentials
+        for (const auto& [id, key] : credentials_)
+            config.setAICredential(id, key.toStdString());
+    }
+
+    /** Return list of configured provider IDs (those with non-empty keys). */
+    std::vector<std::string> getConfiguredProviders() const {
+        std::vector<std::string> result;
+        for (const auto& [id, key] : credentials_) {
+            if (key.isNotEmpty())
+                result.push_back(id);
+        }
+        return result;
     }
 
   private:
-    void validate() {
-        validateButton_.setEnabled(false);
+    static constexpr int kListRowHeight = 24;
+
+    struct ListEntry {
+        std::string providerId;
+        juce::Drawable* iconComp = nullptr;
+        juce::Label* nameLabel = nullptr;
+        juce::Label* statusLabel = nullptr;
+        juce::TextButton* removeBtn = nullptr;
+
+        void layout(juce::Rectangle<int> bounds) {
+            if (removeBtn)
+                removeBtn->setBounds(bounds.removeFromRight(24).reduced(2, 1));
+            if (statusLabel)
+                statusLabel->setBounds(bounds.removeFromRight(80));
+            if (iconComp)
+                iconComp->setBounds(bounds.removeFromLeft(20).reduced(2, 4));
+            bounds.removeFromLeft(4);
+            if (nameLabel)
+                nameLabel->setBounds(bounds);
+        }
+    };
+
+    std::string getSelectedProviderId() const {
+        int idx = providerCombo_.getSelectedId() - 1;
+        const auto& providers = getKnownProviders();
+        if (idx >= 0 && idx < static_cast<int>(providers.size()))
+            return providers[static_cast<size_t>(idx)].id;
+        return "";
+    }
+
+    void addCurrentProvider() {
+        auto providerId = getSelectedProviderId();
+        auto key = keyEditor_.getText().trim();
+
+        if (providerId.empty() || key.isEmpty()) {
+            statusLabel_.setText("Enter an API key first", juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        // Store credential
+        credentials_[providerId] = key;
+
+        // Check if already in list, update; otherwise add
+        bool found = false;
+        for (auto& entry : entries_) {
+            if (entry.providerId == providerId) {
+                entry.statusLabel->setText("Updated", juce::dontSendNotification);
+                entry.statusLabel->setColour(juce::Label::textColourId, juce::Colours::yellow);
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+            addListEntry(providerId);
+
+        keyEditor_.clear();
+        statusLabel_.setText("Added", juce::dontSendNotification);
+        statusLabel_.setColour(juce::Label::textColourId, juce::Colours::limegreen);
+        updateProviderComboState();
+        resized();
+    }
+
+    void removeProvider(const std::string& providerId) {
+        credentials_.erase(providerId);
+
+        // Remove list entry
+        for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+            if (it->providerId == providerId) {
+                listContainer_.removeChildComponent(it->iconComp);
+                listContainer_.removeChildComponent(it->nameLabel);
+                listContainer_.removeChildComponent(it->statusLabel);
+                listContainer_.removeChildComponent(it->removeBtn);
+                entries_.erase(it);
+                updateProviderComboState();
+                break;
+            }
+        }
+
+        resized();
+    }
+
+    void addListEntry(const std::string& providerId) {
+        auto* info = findProviderInfo(providerId);
+        if (!info)
+            return;
+
+        ListEntry entry;
+        entry.providerId = providerId;
+
+        // Icon
+        auto icon = createProviderIcon(*info);
+        listContainer_.addAndMakeVisible(*icon);
+        entry.iconComp = icon.get();
+        ownedDrawables_.push_back(std::move(icon));
+
+        // Name label
+        auto nameLabel = std::make_unique<juce::Label>();
+        nameLabel->setText(info->displayName, juce::dontSendNotification);
+        styleLabel(*nameLabel, 12.0f);
+        listContainer_.addAndMakeVisible(*nameLabel);
+        entry.nameLabel = nameLabel.get();
+        ownedLabels_.push_back(std::move(nameLabel));
+
+        // Status label (masked key preview)
+        auto statusLabel = std::make_unique<juce::Label>();
+        auto key = credentials_[providerId];
+        juce::String masked = key.substring(0, 4) + "..." + key.substring(key.length() - 4);
+        statusLabel->setText(masked, juce::dontSendNotification);
+        styleLabel(*statusLabel, 11.0f);
+        statusLabel->setColour(juce::Label::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        statusLabel->setJustificationType(juce::Justification::centredRight);
+        listContainer_.addAndMakeVisible(*statusLabel);
+        entry.statusLabel = statusLabel.get();
+        ownedLabels_.push_back(std::move(statusLabel));
+
+        // Remove button
+        auto removeBtn =
+            std::make_unique<juce::TextButton>(juce::String::charToString(0x2715));  // ✕
+        auto pid = providerId;
+        removeBtn->onClick = [this, pid]() { removeProvider(pid); };
+        listContainer_.addAndMakeVisible(*removeBtn);
+        entry.removeBtn = removeBtn.get();
+        ownedButtons_.push_back(std::move(removeBtn));
+
+        entries_.push_back(entry);
+    }
+
+    void updateProviderComboState() {
+        const auto& providers = getKnownProviders();
+        for (int i = 0; i < static_cast<int>(providers.size()); ++i) {
+            bool registered = credentials_.count(providers[static_cast<size_t>(i)].id) > 0;
+            providerCombo_.setItemEnabled(i + 1, !registered);
+        }
+
+        // If current selection is disabled, select the first enabled one
+        auto selectedId = providerCombo_.getSelectedId();
+        if (selectedId > 0 && !providerCombo_.isItemEnabled(selectedId)) {
+            for (int i = 0; i < static_cast<int>(providers.size()); ++i) {
+                if (providerCombo_.isItemEnabled(i + 1)) {
+                    providerCombo_.setSelectedId(i + 1, juce::dontSendNotification);
+                    break;
+                }
+            }
+        }
+    }
+
+    void testKey() {
+        auto providerId = getSelectedProviderId();
+        auto key = keyEditor_.getText().trim();
+
+        if (providerId.empty() || key.isEmpty()) {
+            statusLabel_.setText("Enter an API key first", juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        auto* info = findProviderInfo(providerId);
+        if (!info)
+            return;
+
+        testBtn_.setEnabled(false);
         statusLabel_.setText("Testing...", juce::dontSendNotification);
         statusLabel_.setColour(juce::Label::textColourId,
                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
 
-        auto value = valueEditor_.getText();
-        auto providerId = providerId_;
-        auto isLocal = isLocal_;
-        auto safeThis = juce::Component::SafePointer<ProviderRow>(this);
+        auto testProvider = std::string(info->testProvider);
+        auto testBaseUrl = std::string(info->testBaseUrl);
+        auto testModel = std::string(info->testModel);
+        auto safeThis = juce::Component::SafePointer<CloudPage>(this);
 
-        juce::Thread::launch([safeThis, value, providerId, isLocal]() {
+        juce::Thread::launch([safeThis, key, testProvider, testBaseUrl, testModel]() {
+            Config::AgentLLMConfig cfg;
+            cfg.provider = testProvider;
+            cfg.baseUrl = testBaseUrl;
+            cfg.apiKey = key.toStdString();
+            cfg.model = testModel;
+
+            auto pc = toLLMProviderConfig(cfg);
+            auto client = llm::LLMClientFactory::create(pc);
+
+            llm::Request req;
+            req.systemPrompt = "Reply OK.";
+            req.userMessage = "ping";
+            req.temperature = 0.0f;
+
+            auto resp = client->sendRequest(req);
             juce::String result;
             bool ok = false;
-
-            if (isLocal) {
-                // Check local server with short timeout
-                Config::AgentLLMConfig cfg;
-                cfg.provider = "openai_chat";
-                cfg.baseUrl = value.toStdString();
-                cfg.model = "local";
-                auto pc = toLLMProviderConfig(cfg);
-                pc.apiKey = "no-key";           // local doesn't need one
-                pc.connectionTimeoutMs = 5000;  // 5s timeout for local server
-                auto client = llm::LLMClientFactory::create(pc);
-                llm::Request req;
-                req.systemPrompt = "Reply OK.";
-                req.userMessage = "ping";
-                req.temperature = 0.0f;
-                auto resp = client->sendRequest(req);
-                if (resp.success) {
-                    ok = true;
-                    result = "Connected (" + juce::String(resp.wallSeconds, 1) + "s)";
-                } else if (resp.error.contains("connect")) {
-                    result = "Server not reachable";
-                } else {
-                    result = resp.error.substring(0, 50);
-                }
+            if (resp.success) {
+                ok = true;
+                result = "OK (" + juce::String(resp.wallSeconds, 1) + "s)";
             } else {
-                // Test cloud provider with API key
-                Config::AgentLLMConfig cfg;
-                cfg.provider = providerId;
-                cfg.apiKey = value.toStdString();
-
-                // Use a cheap model for testing
-                if (providerId == "openai_chat")
-                    cfg.model = "gpt-4.1-mini";
-                else if (providerId == "anthropic")
-                    cfg.model = "claude-haiku-4-5-20251001";
-                else if (providerId == "gemini")
-                    cfg.model = "gemini-2.0-flash";
-                else if (providerId == "deepseek") {
-                    cfg.provider = "openai_chat";
-                    cfg.baseUrl = "https://api.deepseek.com";
-                    cfg.model = "deepseek-chat";
-                } else if (providerId == "openrouter") {
-                    cfg.provider = "openai_chat";
-                    cfg.baseUrl = "https://openrouter.ai/api/v1";
-                    cfg.model = "meta-llama/llama-3.3-70b-instruct";
-                }
-
-                auto pc = toLLMProviderConfig(cfg);
-                if (pc.apiKey.isEmpty()) {
-                    result = "No API key";
-                } else {
-                    auto client = llm::LLMClientFactory::create(pc);
-                    llm::Request req;
-                    req.systemPrompt = "Reply OK.";
-                    req.userMessage = "ping";
-                    req.temperature = 0.0f;
-                    auto resp = client->sendRequest(req);
-                    if (resp.success) {
-                        ok = true;
-                        result = "OK (" + juce::String(resp.wallSeconds, 1) + "s)";
-                    } else {
-                        result = resp.error.substring(0, 50);
-                    }
-                }
+                result = resp.error.substring(0, 50);
             }
 
             juce::MessageManager::callAsync([safeThis, ok, result]() {
                 if (!safeThis)
                     return;
-                safeThis->validateButton_.setEnabled(true);
+                safeThis->testBtn_.setEnabled(true);
                 safeThis->statusLabel_.setText(result, juce::dontSendNotification);
                 safeThis->statusLabel_.setColour(juce::Label::textColourId,
                                                  ok ? juce::Colours::limegreen
@@ -235,27 +464,32 @@ class ProviderRow : public juce::Component {
         });
     }
 
-    std::string providerId_;
-    bool isLocal_;
-    juce::Label nameLabel_;
-    juce::TextEditor valueEditor_;
-    juce::TextButton validateButton_;
+    // Input area
+    juce::Label providerLabel_, keyLabel_;
+    juce::ComboBox providerCombo_;
+    juce::TextEditor keyEditor_;
+    juce::TextButton testBtn_, addBtn_;
     juce::Label statusLabel_;
-    juce::TextButton removeButton_;
+
+    // Registered providers list
+    juce::Label registeredLabel_;
+    juce::Component listContainer_;
+    std::vector<ListEntry> entries_;
+    std::vector<std::unique_ptr<juce::Drawable>> ownedDrawables_;
+    std::vector<std::unique_ptr<juce::Label>> ownedLabels_;
+    std::vector<std::unique_ptr<juce::TextButton>> ownedButtons_;
+
+    // Credential storage (provider ID → API key)
+    std::map<std::string, juce::String> credentials_;
 };
 
 // ============================================================================
-// LocalModelPanel — embedded model loader, replaces old server panel
+// LocalPage — embedded model configuration
 // ============================================================================
 
-class LocalModelPanel : public juce::Component {
+class AISettingsDialog::LocalPage : public juce::Component {
   public:
-    LocalModelPanel() {
-        titleLabel_.setText("Local Model (Embedded)", juce::dontSendNotification);
-        styleLabel(titleLabel_, 13.0f);
-        titleLabel_.setFont(titleLabel_.getFont().boldened());
-        addAndMakeVisible(titleLabel_);
-
+    LocalPage() {
         // Download model button
         downloadButton_.setButtonText("Download Model");
         downloadButton_.onClick = [this]() { startDownload(); };
@@ -305,15 +539,10 @@ class LocalModelPanel : public juce::Component {
         updateStatus();
     }
 
-    static constexpr int kPanelHeight = 190;
-
     void resized() override {
-        auto bounds = getLocalBounds();
+        auto bounds = getLocalBounds().reduced(12);
         const int labelW = 90;
         const int rowH = 26;
-
-        titleLabel_.setBounds(bounds.removeFromTop(22));
-        bounds.removeFromTop(4);
 
         // Model path row
         auto row = bounds.removeFromTop(rowH);
@@ -356,6 +585,10 @@ class LocalModelPanel : public juce::Component {
         config.setLocalLlamaContextSize(ctxEditor_.getText().getIntValue());
     }
 
+    bool isModelLoaded() const {
+        return LlamaModelManager::getInstance().isLoaded();
+    }
+
   private:
     void browseModel() {
         chooser_ = std::make_unique<juce::FileChooser>(
@@ -370,7 +603,6 @@ class LocalModelPanel : public juce::Component {
     }
 
     void startDownload() {
-        // Ask user where to save the model
         chooser_ =
             std::make_unique<juce::FileChooser>("Save MAGDA Model",
                                                 juce::File(modelEditor_.getText())
@@ -446,24 +678,15 @@ class LocalModelPanel : public juce::Component {
             statusLabel_.setText("Loading...", juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId, juce::Colours::yellow);
 
-            // Load in background thread to avoid blocking UI
             std::thread([this, cfg]() {
                 bool ok = LlamaModelManager::getInstance().loadModel(cfg);
                 juce::MessageManager::callAsync([this, ok, cfg]() {
                     loadButton_.setEnabled(true);
                     if (ok) {
-                        // Switch config to use embedded model
                         auto& config = Config::getInstance();
                         config.setLocalModelPath(cfg.modelPath);
                         config.setLocalLlamaGpuLayers(cfg.gpuLayers);
                         config.setLocalLlamaContextSize(cfg.contextSize);
-                        config.setAIPreset("local_embedded");
-                        auto* preset = magda::findPreset("local_embedded");
-                        if (preset) {
-                            for (const auto& [role, presetCfg] : preset->agents)
-                                config.setAgentLLMConfig(role, presetCfg);
-                        }
-                        config.save();
                     } else {
                         statusLabel_.setText("Failed to load model", juce::dontSendNotification);
                     }
@@ -490,7 +713,7 @@ class LocalModelPanel : public juce::Component {
         }
     }
 
-    juce::Label titleLabel_, modelLabel_, gpuLabel_, ctxLabel_;
+    juce::Label modelLabel_, gpuLabel_, ctxLabel_;
     juce::TextEditor modelEditor_, gpuEditor_, ctxEditor_;
     juce::TextButton browseButton_, downloadButton_, loadButton_;
     juce::Label statusLabel_;
@@ -499,385 +722,310 @@ class LocalModelPanel : public juce::Component {
 };
 
 // ============================================================================
-// CredentialsPage — cloud credentials + local server panel
-// ============================================================================
-
-class AISettingsDialog::CredentialsPage : public juce::Component {
-  public:
-    CredentialsPage() {
-        // "Add Provider" row — cloud providers only
-        addProviderCombo_.addItem("Add provider...", 1);
-        int itemId = 2;
-        for (const auto& p : getKnownProviders()) {
-            if (!p.isLocal)
-                addProviderCombo_.addItem(p.displayName, itemId);
-            ++itemId;
-        }
-        styleCombo(addProviderCombo_);
-        addProviderCombo_.onChange = [this]() {
-            int sel = addProviderCombo_.getSelectedId();
-            if (sel <= 1)
-                return;
-            auto idx = static_cast<size_t>(sel - 2);
-            const auto& providers = getKnownProviders();
-            if (idx < providers.size() && !providers[idx].isLocal) {
-                addProvider(providers[idx].id);
-                addProviderCombo_.setSelectedId(1, juce::dontSendNotification);
-            }
-        };
-        addAndMakeVisible(addProviderCombo_);
-
-        // Cloud row container
-        addAndMakeVisible(rowContainer_);
-
-        // Local server panel (always visible)
-        localPanel_ = std::make_unique<LocalModelPanel>();
-        addAndMakeVisible(*localPanel_);
-
-        // Separator label
-        localSeparator_.setText("Local Model", juce::dontSendNotification);
-        styleLabel(localSeparator_, 11.0f);
-        localSeparator_.setColour(juce::Label::textColourId,
-                                  DarkTheme::getColour(DarkTheme::TEXT_DIM));
-        addAndMakeVisible(localSeparator_);
-    }
-
-    void resized() override {
-        auto bounds = getLocalBounds().reduced(12);
-
-        // Cloud provider rows
-        int totalRowH = static_cast<int>(rows_.size()) * (ProviderRow::kRowHeight + 4);
-        rowContainer_.setBounds(bounds.removeFromTop(totalRowH));
-
-        auto containerBounds = rowContainer_.getLocalBounds();
-        for (auto* row : rows_) {
-            row->setBounds(containerBounds.removeFromTop(ProviderRow::kRowHeight));
-            containerBounds.removeFromTop(4);
-        }
-
-        bounds.removeFromTop(4);
-        addProviderCombo_.setBounds(bounds.removeFromTop(28).removeFromLeft(200));
-
-        // Separator + local panel
-        bounds.removeFromTop(12);
-        localSeparator_.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(4);
-        localPanel_->setBounds(bounds.removeFromTop(LocalModelPanel::kPanelHeight));
-    }
-
-    void load(const Config& config) {
-        // Clear existing cloud rows
-        rows_.clear();
-        ownedRows_.clear();
-        rowContainer_.removeAllChildren();
-
-        for (const auto& [provider, key] : config.getAllAICredentials()) {
-            if (key.empty())
-                continue;
-            auto* info = findProviderInfo(provider);
-            if (!info || info->isLocal)
-                continue;
-            auto& row = addProviderInternal(provider);
-            row.setValue(juce::String(key));
-        }
-
-        localPanel_->load(config);
-        updateAddCombo();
-        resized();
-    }
-
-    void apply(Config& config) const {
-        // Clear and rebuild cloud credentials
-        for (const auto& provider :
-             {"openai_chat", "anthropic", "gemini", "deepseek", "openrouter"})
-            config.setAICredential(provider, "");
-
-        for (auto* row : rows_)
-            config.setAICredential(row->getProviderId(), row->getValue().toStdString());
-
-        localPanel_->apply(config);
-    }
-
-  private:
-    ProviderRow& addProviderInternal(const std::string& id) {
-        auto row = std::make_unique<ProviderRow>(id, false);
-        auto* rawPtr = row.get();
-        row->onRemove = [this, rawPtr]() { removeProvider(rawPtr); };
-        rowContainer_.addAndMakeVisible(*row);
-        rows_.push_back(rawPtr);
-        ownedRows_.push_back(std::move(row));
-        return *rawPtr;
-    }
-
-    void addProvider(const std::string& id) {
-        for (auto* r : rows_) {
-            if (r->getProviderId() == id)
-                return;
-        }
-
-        addProviderInternal(id);
-        updateAddCombo();
-
-        if (auto* parent = getParentComponent())
-            parent->resized();
-        resized();
-    }
-
-    void removeProvider(ProviderRow* row) {
-        rows_.erase(std::remove(rows_.begin(), rows_.end(), row), rows_.end());
-        ownedRows_.erase(std::remove_if(ownedRows_.begin(), ownedRows_.end(),
-                                        [row](const auto& p) { return p.get() == row; }),
-                         ownedRows_.end());
-        updateAddCombo();
-
-        if (auto* parent = getParentComponent())
-            parent->resized();
-        resized();
-    }
-
-    void updateAddCombo() {
-        addProviderCombo_.clear();
-        addProviderCombo_.addItem("Add provider...", 1);
-
-        int itemId = 2;
-        for (const auto& p : getKnownProviders()) {
-            if (p.isLocal) {
-                ++itemId;
-                continue;
-            }
-            bool exists = false;
-            for (auto* r : rows_) {
-                if (r->getProviderId() == p.id) {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists)
-                addProviderCombo_.addItem(p.displayName, itemId);
-            ++itemId;
-        }
-        addProviderCombo_.setSelectedId(1, juce::dontSendNotification);
-    }
-
-    juce::Component rowContainer_;
-    std::vector<ProviderRow*> rows_;
-    std::vector<std::unique_ptr<ProviderRow>> ownedRows_;
-    juce::ComboBox addProviderCombo_;
-    juce::Label localSeparator_;
-    std::unique_ptr<LocalModelPanel> localPanel_;
-};
-
-// ============================================================================
-// ConfigPage — Easy (preset) / Advanced (per-agent mapping)
+// ConfigPage — Simple (preset) / Advanced (per-agent mapping)
+//
+// Provider combos are populated dynamically from the Cloud/Local pages
+// so there is no duplication of provider selection.
 // ============================================================================
 
 class AISettingsDialog::ConfigPage : public juce::Component {
   public:
+    CloudPage* cloudPage = nullptr;
+    LocalPage* localPage = nullptr;
+
     ConfigPage() {
-        easyButton_.setRadioGroupId(1);
-        advancedButton_.setRadioGroupId(1);
-        easyButton_.setClickingTogglesState(true);
-        advancedButton_.setClickingTogglesState(true);
-        easyButton_.setToggleState(true, juce::dontSendNotification);
+        // Mode selector: Local / Cloud / Hybrid
+        modeLabel_.setText("Mode", juce::dontSendNotification);
+        styleLabel(modeLabel_);
+        addAndMakeVisible(modeLabel_);
 
-        easyButton_.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
-        advancedButton_.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+        modeCombo_.addItem("Local", 1);
+        modeCombo_.addItem("Cloud", 2);
+        modeCombo_.addItem("Hybrid", 3);
+        styleCombo(modeCombo_);
+        modeCombo_.onChange = [this]() { updateModeUI(); };
+        addAndMakeVisible(modeCombo_);
 
-        easyButton_.onClick = [this]() { setMode(true); };
-        advancedButton_.onClick = [this]() { setMode(false); };
-        addAndMakeVisible(easyButton_);
-        addAndMakeVisible(advancedButton_);
+        // Provider selector (cloud/hybrid)
+        providerLabel_.setText("Provider", juce::dontSendNotification);
+        styleLabel(providerLabel_);
+        addAndMakeVisible(providerLabel_);
+        styleCombo(providerCombo_);
+        addAndMakeVisible(providerCombo_);
 
-        // Easy mode: preset combo
-        int itemId = 1;
-        for (const auto& preset : magda::getBuiltInPresets())
-            presetCombo_.addItem(juce::String(preset.displayName), itemId++);
-        styleCombo(presetCombo_);
-        addAndMakeVisible(presetCombo_);
+        // Optimize selector (cloud/hybrid)
+        optimizeLabel_.setText("Optimize", juce::dontSendNotification);
+        styleLabel(optimizeLabel_);
+        addAndMakeVisible(optimizeLabel_);
+        styleCombo(optimizeCombo_);
+        addAndMakeVisible(optimizeCombo_);
 
-        presetLabel_.setText("Preset", juce::dontSendNotification);
-        styleLabel(presetLabel_);
-        addAndMakeVisible(presetLabel_);
+        // Local model name label
+        modelNameLabel_.setText("No model loaded", juce::dontSendNotification);
+        styleLabel(modelNameLabel_);
+        modelNameLabel_.setColour(juce::Label::textColourId,
+                                  DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        addAndMakeVisible(modelNameLabel_);
 
-        // Advanced mode: per-agent rows
-        const char* roles[] = {"Router", "Command", "Music"};
-        for (int i = 0; i < 3; ++i)
-            agentRows_[static_cast<size_t>(i)].init(*this, roles[i]);
-
-        setMode(true);
+        modeCombo_.setSelectedId(1, juce::dontSendNotification);
+        updateModeUI();
     }
 
     void resized() override {
         auto bounds = getLocalBounds().reduced(12);
         const int rowH = 28;
+        const int labelW = 80;
 
-        // Mode toggle
-        auto toggleRow = bounds.removeFromTop(rowH);
-        easyButton_.setBounds(toggleRow.removeFromLeft(80).reduced(0, 2));
-        toggleRow.removeFromLeft(4);
-        advancedButton_.setBounds(toggleRow.removeFromLeft(100).reduced(0, 2));
-        bounds.removeFromTop(12);
+        // Mode row
+        auto row = bounds.removeFromTop(rowH);
+        modeLabel_.setBounds(row.removeFromLeft(labelW));
+        modeCombo_.setBounds(row.reduced(0, 2));
+        bounds.removeFromTop(8);
 
-        if (easyMode_) {
-            auto row = bounds.removeFromTop(rowH);
-            presetLabel_.setBounds(row.removeFromLeft(80));
-            presetCombo_.setBounds(row.reduced(0, 2));
+        int mode = modeCombo_.getSelectedId();
+
+        if (mode == 1) {
+            // Local: show model name
+            modelNameLabel_.setBounds(bounds.removeFromTop(rowH).withTrimmedLeft(labelW));
         } else {
-            for (int i = 0; i < 3; ++i) {
-                agentRows_[static_cast<size_t>(i)].layout(bounds, rowH);
-                bounds.removeFromTop(8);
+            // Cloud/Hybrid: provider + optimize
+            row = bounds.removeFromTop(rowH);
+            providerLabel_.setBounds(row.removeFromLeft(labelW));
+            providerCombo_.setBounds(row.reduced(0, 2));
+            bounds.removeFromTop(4);
+
+            row = bounds.removeFromTop(rowH);
+            optimizeLabel_.setBounds(row.removeFromLeft(labelW));
+            optimizeCombo_.setBounds(row.reduced(0, 2));
+        }
+    }
+
+    void refreshProviderCombos() {
+        providerCombo_.clear();
+        int nextId = 1;
+        if (cloudPage) {
+            for (const auto& pid : cloudPage->getConfiguredProviders()) {
+                auto* info = findProviderInfo(pid);
+                if (info)
+                    providerCombo_.addItem(info->displayName, nextId++);
             }
         }
+        // Re-select saved provider
+        if (savedProviderDisplay_.isNotEmpty()) {
+            for (int i = 0; i < providerCombo_.getNumItems(); ++i) {
+                if (providerCombo_.getItemText(i) == savedProviderDisplay_) {
+                    providerCombo_.setSelectedId(providerCombo_.getItemId(i),
+                                                 juce::dontSendNotification);
+                    return;
+                }
+            }
+        }
+        if (providerCombo_.getNumItems() > 0)
+            providerCombo_.setSelectedId(providerCombo_.getItemId(0), juce::dontSendNotification);
     }
 
     void load(const Config& config) {
         auto presetId = config.getAIPreset();
-        auto* preset = magda::findPreset(presetId);
 
-        if (preset) {
-            easyMode_ = true;
-            easyButton_.setToggleState(true, juce::dontSendNotification);
-
-            const auto& presets = magda::getBuiltInPresets();
-            for (size_t i = 0; i < presets.size(); ++i) {
-                if (presets[i].id == presetId) {
-                    presetCombo_.setSelectedId(static_cast<int>(i) + 1, juce::dontSendNotification);
-                    break;
-                }
-            }
+        // Determine mode from preset
+        if (presetId.starts_with("local") || presetId == "local_embedded") {
+            modeCombo_.setSelectedId(1, juce::dontSendNotification);
+        } else if (presetId.starts_with("hybrid")) {
+            modeCombo_.setSelectedId(3, juce::dontSendNotification);
+            if (presetId == "hybrid_speed")
+                savedOptimize_ = "Speed";
+            else
+                savedOptimize_ = "Cost";
         } else {
-            easyMode_ = false;
-            advancedButton_.setToggleState(true, juce::dontSendNotification);
+            modeCombo_.setSelectedId(2, juce::dontSendNotification);
+            // Infer optimize from whether command uses cloud
+            auto cmdCfg = config.getAgentLLMConfig("command");
+            auto musicCfg = config.getAgentLLMConfig("music");
+            if (cmdCfg.provider == musicCfg.provider && cmdCfg.model == musicCfg.model)
+                savedOptimize_ = "Quality";
+            else
+                savedOptimize_ = "Cost";
         }
 
-        const std::string roles[] = {"router", "command", "music"};
-        for (int i = 0; i < 3; ++i)
-            agentRows_[static_cast<size_t>(i)].loadFrom(config.getAgentLLMConfig(roles[i]));
+        // Determine provider from music agent config
+        auto musicCfg = config.getAgentLLMConfig("music");
+        if (musicCfg.provider == "anthropic")
+            savedProviderDisplay_ = "Anthropic";
+        else if (musicCfg.provider == "gemini")
+            savedProviderDisplay_ = "Gemini";
+        else if (musicCfg.provider == "deepseek")
+            savedProviderDisplay_ = "DeepSeek";
+        else if (musicCfg.provider == "openrouter")
+            savedProviderDisplay_ = "OpenRouter";
+        else if (musicCfg.provider == "openai_chat")
+            savedProviderDisplay_ = "OpenAI";
 
-        setMode(easyMode_);
+        // Update local model label
+        auto modelPath = config.getLocalModelPath();
+        if (!modelPath.empty()) {
+            auto filename = juce::File(juce::String(modelPath)).getFileName();
+            modelNameLabel_.setText(filename, juce::dontSendNotification);
+        } else {
+            modelNameLabel_.setText("No model configured", juce::dontSendNotification);
+        }
+
+        updateModeUI();
     }
 
     void apply(Config& config) const {
-        if (easyMode_) {
-            auto presetId = getSelectedPresetId();
+        int mode = modeCombo_.getSelectedId();
+        auto providerStr = providerDisplayToId(providerCombo_.getText());
+        auto optimize = optimizeCombo_.getText();
+
+        if (mode == 1) {
+            // Local
+            config.setAIPreset("local_embedded");
+            auto* preset = magda::findPreset("local_embedded");
+            if (preset)
+                for (const auto& [role, cfg] : preset->agents)
+                    config.setAgentLLMConfig(role, cfg);
+        } else if (mode == 2) {
+            // Cloud
+            std::string presetId = "cloud_" + providerStr;
             config.setAIPreset(presetId);
 
             auto* preset = magda::findPreset(presetId);
             if (preset) {
                 for (const auto& [role, presetCfg] : preset->agents) {
                     auto cfg = presetCfg;
-                    cfg.apiKey = "";  // credentials page handles keys
+                    cfg.apiKey = "";
                     config.setAgentLLMConfig(role, cfg);
                 }
             }
+
+            // Cost optimization: use cheaper models for router+command
+            if (optimize == "Cost") {
+                auto routerCfg = config.getAgentLLMConfig("router");
+                auto cmdCfg = config.getAgentLLMConfig("command");
+                applyCheaperModel(routerCfg, providerStr);
+                applyCheaperModel(cmdCfg, providerStr);
+                config.setAgentLLMConfig("router", routerCfg);
+                config.setAgentLLMConfig("command", cmdCfg);
+            }
         } else {
-            config.setAIPreset("custom");
-            const std::string roles[] = {"router", "command", "music"};
-            for (int i = 0; i < 3; ++i)
-                config.setAgentLLMConfig(roles[i],
-                                         agentRows_[static_cast<size_t>(i)].toConfig(roles[i]));
+            // Hybrid
+            std::string presetId = optimize == "Speed" ? "hybrid_speed" : "hybrid_cost";
+            config.setAIPreset(presetId);
+
+            // Router is always local
+            Config::AgentLLMConfig localCfg;
+            localCfg.provider = "llama_local";
+            config.setAgentLLMConfig("router", localCfg);
+
+            // Music always uses cloud
+            auto musicCfg = makeCloudConfig("music", providerStr);
+            config.setAgentLLMConfig("music", musicCfg);
+
+            // Command: cloud for speed, local for cost
+            if (optimize == "Speed") {
+                auto cmdCfg = makeCloudConfig("command", providerStr);
+                config.setAgentLLMConfig("command", cmdCfg);
+            } else {
+                Config::AgentLLMConfig cmdLocal;
+                cmdLocal.provider = "llama_local";
+                config.setAgentLLMConfig("command", cmdLocal);
+            }
         }
     }
 
   private:
-    struct AgentRow {
-        juce::Label nameLabel;
-        juce::Label providerLabel;
-        juce::ComboBox providerCombo;
+    void updateModeUI() {
+        int mode = modeCombo_.getSelectedId();
+        bool isLocal = (mode == 1);
+        bool isCloud = (mode == 2);
+        bool isHybrid = (mode == 3);
 
-        void init(juce::Component& parent, const char* name) {
-            nameLabel.setText(name, juce::dontSendNotification);
-            styleLabel(nameLabel, 13.0f);
-            nameLabel.setFont(nameLabel.getFont().boldened());
-            parent.addAndMakeVisible(nameLabel);
+        modelNameLabel_.setVisible(isLocal);
+        providerLabel_.setVisible(!isLocal);
+        providerCombo_.setVisible(!isLocal);
+        optimizeLabel_.setVisible(!isLocal);
+        optimizeCombo_.setVisible(!isLocal);
 
-            providerLabel.setText("Provider", juce::dontSendNotification);
-            styleLabel(providerLabel);
-            parent.addAndMakeVisible(providerLabel);
-
-            providerCombo.addItem("OpenAI", 1);
-            providerCombo.addItem("Anthropic", 2);
-            providerCombo.addItem("Gemini", 3);
-            providerCombo.addItem("Local (Embedded)", 4);
-            styleCombo(providerCombo);
-            parent.addAndMakeVisible(providerCombo);
+        // Update optimize options based on mode
+        optimizeCombo_.clear();
+        if (isCloud) {
+            optimizeCombo_.addItem("Quality", 1);
+            optimizeCombo_.addItem("Cost", 2);
+        } else if (isHybrid) {
+            optimizeCombo_.addItem("Speed", 1);
+            optimizeCombo_.addItem("Cost", 2);
         }
 
-        void layout(juce::Rectangle<int>& bounds, int rowH) {
-            const int labelW = 80;
-            nameLabel.setBounds(bounds.removeFromTop(22));
-            bounds.removeFromTop(2);
-
-            auto row = bounds.removeFromTop(rowH);
-            providerLabel.setBounds(row.removeFromLeft(labelW));
-            providerCombo.setBounds(row.reduced(0, 2));
-        }
-
-        void loadFrom(const Config::AgentLLMConfig& cfg) {
-            if (cfg.provider == "anthropic")
-                providerCombo.setSelectedId(2, juce::dontSendNotification);
-            else if (cfg.provider == "gemini")
-                providerCombo.setSelectedId(3, juce::dontSendNotification);
-            else if (cfg.provider == "llama_local")
-                providerCombo.setSelectedId(4, juce::dontSendNotification);
-            else
-                providerCombo.setSelectedId(1, juce::dontSendNotification);
-        }
-
-        Config::AgentLLMConfig toConfig(const std::string& role) const {
-            Config::AgentLLMConfig cfg;
-            switch (providerCombo.getSelectedId()) {
-                case 2:
-                    cfg.provider = "anthropic";
-                    cfg.model =
-                        (role == "router") ? "claude-haiku-4-5-20251001" : "claude-opus-4-6";
+        // Restore saved optimize selection
+        if (!isLocal) {
+            refreshProviderCombos();
+            bool found = false;
+            for (int i = 0; i < optimizeCombo_.getNumItems(); ++i) {
+                if (optimizeCombo_.getItemText(i) == savedOptimize_) {
+                    optimizeCombo_.setSelectedId(optimizeCombo_.getItemId(i),
+                                                 juce::dontSendNotification);
+                    found = true;
                     break;
-                case 3:
-                    cfg.provider = "gemini";
-                    cfg.model = (role == "router") ? "gemini-2.0-flash" : "gemini-2.5-pro";
-                    break;
-                case 4:
-                    cfg.provider = "llama_local";
-                    break;
-                default:
-                    cfg.provider = "openai_chat";
-                    cfg.model = (role == "router") ? "gpt-4.1" : "gpt-5";
-                    break;
+                }
             }
-            cfg.apiKey = "";
-            return cfg;
+            if (!found)
+                optimizeCombo_.setSelectedId(1, juce::dontSendNotification);
         }
 
-        void setVisible(bool visible) {
-            nameLabel.setVisible(visible);
-            providerLabel.setVisible(visible);
-            providerCombo.setVisible(visible);
-        }
-    };
-
-    void setMode(bool easy) {
-        easyMode_ = easy;
-        presetCombo_.setVisible(easy);
-        presetLabel_.setVisible(easy);
-        for (auto& row : agentRows_)
-            row.setVisible(!easy);
         resized();
     }
 
-    std::string getSelectedPresetId() const {
-        int idx = presetCombo_.getSelectedId() - 1;
-        const auto& presets = magda::getBuiltInPresets();
-        if (idx >= 0 && idx < static_cast<int>(presets.size()))
-            return presets[static_cast<size_t>(idx)].id;
-        return "cloud_openai";
+    static std::string providerDisplayToId(const juce::String& display) {
+        if (display == "Anthropic")
+            return "anthropic";
+        if (display == "Gemini")
+            return "gemini";
+        if (display == "DeepSeek")
+            return "deepseek";
+        if (display == "OpenRouter")
+            return "openrouter";
+        return "openai_chat";
     }
 
-    bool easyMode_ = true;
-    juce::TextButton easyButton_{"Easy"};
-    juce::TextButton advancedButton_{"Advanced"};
-    juce::Label presetLabel_;
-    juce::ComboBox presetCombo_;
-    std::array<AgentRow, 3> agentRows_;
+    static Config::AgentLLMConfig makeCloudConfig(const std::string& role,
+                                                  const std::string& provider) {
+        // Look up from preset for correct model assignments
+        std::string presetId = "cloud_" + provider;
+        if (auto* preset = magda::findPreset(presetId)) {
+            auto it = preset->agents.find(role);
+            if (it != preset->agents.end()) {
+                auto cfg = it->second;
+                cfg.apiKey = "";
+                return cfg;
+            }
+        }
+        // Fallback
+        Config::AgentLLMConfig cfg;
+        cfg.provider = provider;
+        return cfg;
+    }
+
+    static void applyCheaperModel(Config::AgentLLMConfig& cfg, const std::string& provider) {
+        if (provider == "openai_chat")
+            cfg.model = "gpt-4.1-mini";
+        else if (provider == "anthropic")
+            cfg.model = "claude-haiku-4-5-20251001";
+        else if (provider == "gemini")
+            cfg.model = "gemini-2.0-flash";
+        else if (provider == "deepseek")
+            cfg.model = "deepseek-chat";
+        // openrouter: keep default
+    }
+
+    juce::Label modeLabel_;
+    juce::ComboBox modeCombo_;
+    juce::Label providerLabel_;
+    juce::ComboBox providerCombo_;
+    juce::Label optimizeLabel_;
+    juce::ComboBox optimizeCombo_;
+    juce::Label modelNameLabel_;
+    juce::String savedProviderDisplay_;
+    juce::String savedOptimize_ = "Quality";
 };
 
 // ============================================================================
@@ -886,30 +1034,44 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
 AISettingsDialog::AISettingsDialog() {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
-    credentialsPage_ = std::make_unique<CredentialsPage>();
+
+    cloudPage_ = std::make_unique<CloudPage>();
+    localPage_ = std::make_unique<LocalPage>();
     configPage_ = std::make_unique<ConfigPage>();
 
+    // Wire config page to sibling pages
+    configPage_->cloudPage = cloudPage_.get();
+    configPage_->localPage = localPage_.get();
+
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
-    tabbedComponent_.addTab("Credentials", tabBg, credentialsPage_.get(), false);
-    tabbedComponent_.addTab("Configuration", tabBg, configPage_.get(), false);
+    tabbedComponent_.addTab("Cloud", tabBg, cloudPage_.get(), false);
+    tabbedComponent_.addTab("Local", tabBg, localPage_.get(), false);
+    tabbedComponent_.addTab("Config", tabBg, configPage_.get(), false);
+
+    // Refresh config combos when switching to Config tab
+    tabbedComponent_.onTabChanged = [this](int tabIndex) {
+        if (tabIndex == 2)
+            configPage_->refreshProviderCombos();
+    };
+
     addAndMakeVisible(tabbedComponent_);
 
-    okButton_.onClick = [this]() {
+    okBtn_.onClick = [this]() {
         applySettings();
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
             dw->closeButtonPressed();
     };
-    addAndMakeVisible(okButton_);
+    addAndMakeVisible(okBtn_);
 
-    cancelButton_.onClick = [this]() {
+    cancelBtn_.onClick = [this]() {
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
             dw->closeButtonPressed();
     };
-    addAndMakeVisible(cancelButton_);
+    addAndMakeVisible(cancelBtn_);
 
     loadSettings();
 
-    setSize(540, 600);
+    setSize(540, 480);
 }
 
 AISettingsDialog::~AISettingsDialog() {
@@ -923,26 +1085,26 @@ void AISettingsDialog::paint(juce::Graphics& g) {
 void AISettingsDialog::resized() {
     auto bounds = getLocalBounds().reduced(8);
 
-    // Bottom buttons
     auto buttonRow = bounds.removeFromBottom(36);
-    cancelButton_.setBounds(buttonRow.removeFromRight(80).reduced(0, 4));
+    cancelBtn_.setBounds(buttonRow.removeFromRight(80).reduced(0, 4));
     buttonRow.removeFromRight(8);
-    okButton_.setBounds(buttonRow.removeFromRight(80).reduced(0, 4));
+    okBtn_.setBounds(buttonRow.removeFromRight(80).reduced(0, 4));
     bounds.removeFromBottom(4);
 
-    // Tabs get the rest
     tabbedComponent_.setBounds(bounds);
 }
 
 void AISettingsDialog::loadSettings() {
     auto& config = Config::getInstance();
-    credentialsPage_->load(config);
+    cloudPage_->load(config);
+    localPage_->load(config);
     configPage_->load(config);
 }
 
 void AISettingsDialog::applySettings() {
     auto& config = Config::getInstance();
-    credentialsPage_->apply(config);
+    cloudPage_->apply(config);
+    localPage_->apply(config);
     configPage_->apply(config);
     config.save();
 }

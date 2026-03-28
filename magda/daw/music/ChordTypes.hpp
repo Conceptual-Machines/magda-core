@@ -36,6 +36,9 @@ struct Chord {
     std::vector<ChordNote> notes;
     int rootNoteNumber = -1;
     std::optional<int> degree;
+    bool exactMatch = true;              // false when detected chord is a partial/fuzzy match
+    std::vector<int> missingIntervals;   // intervals present in ideal chord but absent in input
+    std::vector<int> extraPitchClasses;  // pitch classes in input but not in ideal chord
 
     Chord()
         : root(ChordRoot::C),
@@ -111,7 +114,30 @@ struct Chord {
     juce::String getDisplayName() const {
         if (displayName.isNotEmpty())
             return displayName;
-        auto base = getName();
+        // Build name with octave after root: "D3 sus4" instead of "D sus4"
+        int octave = findRootOctave();
+        juce::String base;
+        if (octave >= 0)
+            base = ChordUtils::rootToString(root) + juce::String(octave) + " " +
+                   ChordUtils::qualityToString(quality);
+        else
+            base = getName();
+
+        // Append (noX) for missing intervals in partial matches
+        if (!exactMatch) {
+            for (int interval : missingIntervals) {
+                auto degree = intervalToDegreeName(interval);
+                if (degree.isNotEmpty())
+                    base += " (no" + degree + ")";
+            }
+            if (!extraPitchClasses.empty()) {
+                static const char* kNames[12] = {"C",  "C#", "D",  "D#", "E",  "F",
+                                                 "F#", "G",  "G#", "A",  "A#", "B"};
+                for (int pc : extraPitchClasses)
+                    base += " (+" + juce::String(kNames[pc % 12]) + ")";
+            }
+        }
+
         if (inversion <= 0)
             return base;
         const int bassPc = getBassPitchClass();
@@ -142,6 +168,48 @@ struct Chord {
         if (notes.empty())
             return -1;
         return notes.front().noteNumber / 12 - 2;
+    }
+
+  private:
+    /** Find the octave of the root note from the played notes.
+        Returns -1 if no note matches the root pitch class. */
+    int findRootOctave() const {
+        int rootPc = static_cast<int>(root);
+        for (const auto& note : notes) {
+            if (note.noteNumber % 12 == rootPc)
+                return note.noteNumber / 12 - 1;  // MIDI octave convention: C4 = 60
+        }
+        return -1;
+    }
+
+    /** Map a semitone interval to its degree name for (noX) notation. */
+    static juce::String intervalToDegreeName(int semitones) {
+        switch (semitones) {
+            case 2:
+                return "2";
+            case 3:
+                return "3";
+            case 4:
+                return "3";
+            case 5:
+                return "4";
+            case 7:
+                return "5";
+            case 9:
+                return "6";
+            case 10:
+                return "7";
+            case 11:
+                return "7";
+            case 14:
+                return "9";
+            case 17:
+                return "11";
+            case 21:
+                return "13";
+            default:
+                return {};
+        }
     }
 };
 

@@ -9,6 +9,7 @@
 
 #include "TypeIds.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
+#include "core/Config.hpp"
 #include "music/ChordEngine.hpp"
 #include "music/Scales.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -114,6 +115,7 @@ class BrowseScaleRowComponent : public juce::Component {
  */
 class ChordPanelContent : public juce::Component,
                           private magda::daw::audio::MidiChordEnginePlugin::Listener,
+                          private magda::ConfigListener,
                           private juce::Timer {
   public:
     ChordPanelContent();
@@ -132,6 +134,9 @@ class ChordPanelContent : public juce::Component,
     void chordChanged(magda::daw::audio::MidiChordEnginePlugin*) override;
     void keyModeChanged(magda::daw::audio::MidiChordEnginePlugin*) override;
     void suggestionsChanged(magda::daw::audio::MidiChordEnginePlugin*) override;
+
+    // ConfigListener
+    void configChanged() override;
 
     void updateFromPlugin();
     void timerCallback() override;  // delayed chord clear after note release
@@ -184,6 +189,7 @@ class ChordPanelContent : public juce::Component,
     SuggestionTab suggestionTab_ = SuggestionTab::KS;
     std::unique_ptr<magda::SvgButton> ksTabBtn_;
     std::unique_ptr<magda::SvgButton> aiTabBtn_;
+    juce::Label aiModelLabel_;
 
     // AI tab — inline progression display + text input
     std::unique_ptr<juce::Viewport> aiViewport_;
@@ -197,6 +203,9 @@ class ChordPanelContent : public juce::Component,
     std::unique_ptr<juce::TextEditor> aiInputBox_;
     std::unique_ptr<magda::SvgButton> aiSendBtn_;
     bool aiLoading_ = false;
+    bool aiGreyOut_ = false;        // dim old results while generating
+    juce::String aiStreamingText_;  // accumulated tokens during streaming
+    juce::String aiPromptText_;     // user prompt shown during generation
 
     void switchToTab(SuggestionTab tab);
     void rebuildAIProgressionRows();

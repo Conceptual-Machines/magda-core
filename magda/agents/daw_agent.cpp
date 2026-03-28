@@ -119,7 +119,7 @@ DAWAgent::GenerateResult DAWAgent::generate(const std::string& message) {
         }
     }
 
-    auto client = createLLMClient(agentConfig);
+    auto client = createLLMClient(agentConfig, "music");
 
     // Build state snapshot for context
     auto stateJson = dsl::Interpreter::buildStateSnapshot();
@@ -137,6 +137,8 @@ DAWAgent::GenerateResult DAWAgent::generate(const std::string& message) {
     auto response = client->sendRequest(request);
 
     if (!response.success) {
+        DBG("MAGDA DAWAgent ERROR (" + client->getName() + "/" + client->getConfig().model +
+            "): " + response.error);
         result.error = response.error.toStdString();
         result.hasError = true;
         return result;
@@ -144,7 +146,7 @@ DAWAgent::GenerateResult DAWAgent::generate(const std::string& message) {
 
     result.compactOutput = response.text.trim().toStdString();
 
-    DBG("MAGDA DAWAgent: Compact output (" + client->getName() + ", " +
+    DBG("MAGDA DAWAgent (" + client->getName() + "/" + client->getConfig().model + ", " +
         juce::String(response.wallSeconds, 2) + "s): " + juce::String(result.compactOutput));
 
     // Parse into IR

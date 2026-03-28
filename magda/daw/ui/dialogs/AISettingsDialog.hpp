@@ -6,9 +6,10 @@
 namespace magda {
 
 /**
- * Standalone AI Settings dialog with two tabs:
- *  - Credentials: dynamic provider list with add/validate/remove
- *  - Configuration: Easy (preset) / Advanced (per-agent mapping)
+ * AI Settings dialog with three tabs:
+ *  - Cloud: manage cloud provider API keys
+ *  - Local: embedded model configuration
+ *  - Config: preset or per-agent provider mapping (references configured providers)
  */
 class AISettingsDialog : public juce::Component {
   public:
@@ -21,15 +22,27 @@ class AISettingsDialog : public juce::Component {
     static void showDialog(juce::Component* parent);
 
   private:
-    class CredentialsPage;
+    class CloudPage;
+    class LocalPage;
     class ConfigPage;
 
-    juce::TabbedComponent tabbedComponent_{juce::TabbedButtonBar::TabsAtTop};
-    std::unique_ptr<CredentialsPage> credentialsPage_;
+    class TabComponent : public juce::TabbedComponent {
+      public:
+        using juce::TabbedComponent::TabbedComponent;
+        std::function<void(int)> onTabChanged;
+        void currentTabChanged(int idx, const juce::String&) override {
+            if (onTabChanged)
+                onTabChanged(idx);
+        }
+    };
+
+    TabComponent tabbedComponent_{juce::TabbedButtonBar::TabsAtTop};
+    std::unique_ptr<CloudPage> cloudPage_;
+    std::unique_ptr<LocalPage> localPage_;
     std::unique_ptr<ConfigPage> configPage_;
 
-    juce::TextButton okButton_{"OK"};
-    juce::TextButton cancelButton_{"Cancel"};
+    juce::TextButton okBtn_{"OK"};
+    juce::TextButton cancelBtn_{"Cancel"};
 
     void loadSettings();
     void applySettings();

@@ -952,8 +952,9 @@ void AIChatConsoleContent::resized() {
 
     // Tab buttons at bottom
     auto tabBar = bounds.removeFromBottom(22);
-    aiTabButton_.setBounds(tabBar.removeFromLeft(40));
-    dslTabButton_.setBounds(tabBar.removeFromLeft(40));
+    aiTabButton_->setBounds(tabBar.removeFromLeft(28));
+    tabBar.removeFromLeft(2);
+    dslTabButton_->setBounds(tabBar.removeFromLeft(28));
     bounds.removeFromBottom(4);  // Spacing above tabs
 
     if (activeTab_ == ConsoleTab::AI) {
@@ -1029,25 +1030,30 @@ void AIChatConsoleContent::onDeactivated() {
 // ============================================================================
 
 void AIChatConsoleContent::setupTabButtons() {
-    auto setupTab = [this](juce::TextButton& btn) {
-        btn.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-        btn.setColour(juce::TextButton::buttonOnColourId,
-                      DarkTheme::getColour(DarkTheme::ACCENT_BLUE).darker(0.3f));
-        btn.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-        btn.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
-        btn.setClickingTogglesState(true);
-        btn.setRadioGroupId(9001);
-        btn.setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
-        addAndMakeVisible(btn);
-    };
+    aiTabButton_ =
+        std::make_unique<magda::SvgButton>("AITab", BinaryData::ai_svg, BinaryData::ai_svgSize);
+    aiTabButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    aiTabButton_->setActiveColor(juce::Colours::white);
+    aiTabButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    aiTabButton_->setActiveBackgroundColor(DarkTheme::getAccentColour());
+    aiTabButton_->setClickingTogglesState(true);
+    aiTabButton_->setRadioGroupId(9001);
+    aiTabButton_->setToggleState(true, juce::dontSendNotification);
+    aiTabButton_->setTooltip("AI Chat");
+    aiTabButton_->onClick = [this]() { switchTab(ConsoleTab::AI); };
+    addAndMakeVisible(aiTabButton_.get());
 
-    setupTab(aiTabButton_);
-    setupTab(dslTabButton_);
-
-    aiTabButton_.setToggleState(true, juce::dontSendNotification);
-
-    aiTabButton_.onClick = [this]() { switchTab(ConsoleTab::AI); };
-    dslTabButton_.onClick = [this]() { switchTab(ConsoleTab::DSL); };
+    dslTabButton_ = std::make_unique<magda::SvgButton>("DSLTab", BinaryData::script_svg,
+                                                       BinaryData::script_svgSize);
+    dslTabButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    dslTabButton_->setActiveColor(juce::Colours::white);
+    dslTabButton_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    dslTabButton_->setActiveBackgroundColor(DarkTheme::getAccentColour());
+    dslTabButton_->setClickingTogglesState(true);
+    dslTabButton_->setRadioGroupId(9001);
+    dslTabButton_->setTooltip("DSL Console");
+    dslTabButton_->onClick = [this]() { switchTab(ConsoleTab::DSL); };
+    addAndMakeVisible(dslTabButton_.get());
 }
 
 void AIChatConsoleContent::switchTab(ConsoleTab tab) {

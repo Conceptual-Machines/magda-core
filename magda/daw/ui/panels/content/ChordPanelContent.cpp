@@ -258,18 +258,42 @@ struct AIContainerPaintData {
 class AIContainerComponent : public juce::Component {
   public:
     AIContainerPaintData paintData;
+    bool greyOut = false;
+    juce::String streamingText;
+    int streamingTextBottom = 0;  // y position after streaming text block
 
     void paint(juce::Graphics& g) override {
+        float alpha = greyOut ? 0.3f : 1.0f;
+
         for (auto& row : paintData.rows) {
-            g.setColour(DarkTheme::getAccentColour());
+            g.setColour(DarkTheme::getAccentColour().withAlpha(alpha));
             g.setFont(FontManager::getInstance().getUIFont(11.0f).boldened());
             g.drawText(row.name, row.nameArea, juce::Justification::centredLeft);
 
             if (row.description.isNotEmpty() && !row.descArea.isEmpty()) {
-                g.setColour(DarkTheme::getSecondaryTextColour());
+                g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(alpha));
                 g.setFont(FontManager::getInstance().getUIFont(9.5f));
                 g.drawText(row.description, row.descArea, juce::Justification::centredLeft);
             }
+        }
+
+        // Draw streaming text below existing content
+        if (streamingText.isNotEmpty()) {
+            auto font = FontManager::getInstance().getUIFont(9.5f);
+            g.setFont(font);
+            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.7f));
+
+            int textY = streamingTextBottom;
+            int textWidth = getWidth() - 8;
+            auto layout = juce::TextLayout();
+            juce::AttributedString attrStr;
+            attrStr.append(streamingText, font,
+                           DarkTheme::getSecondaryTextColour().withAlpha(0.7f));
+            attrStr.setWordWrap(juce::AttributedString::WordWrap::byWord);
+            layout.createLayout(attrStr, static_cast<float>(textWidth));
+            layout.draw(g, juce::Rectangle<float>(4.0f, static_cast<float>(textY),
+                                                  static_cast<float>(textWidth),
+                                                  static_cast<float>(getHeight() - textY)));
         }
     }
 };
@@ -283,9 +307,11 @@ class AIContainerComponent : public juce::Component {
 ChordPanelContent::ChordPanelContent() {
     setName("ChordPanel");
     setupFooterControls();
+    Config::getInstance().addListener(this);
 }
 
 ChordPanelContent::~ChordPanelContent() {
+    Config::getInstance().removeListener(this);
     if (aiThread_ && aiThread_->isThreadRunning()) {
         aiCancelFlag_ = true;
         aiThread_->stopThread(2000);
@@ -391,6 +417,16 @@ void ChordPanelContent::suggestionsChanged(magda::daw::audio::MidiChordEnginePlu
     juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
         if (safeThis)
             safeThis->updateFromPlugin();
+    });
+}
+
+void ChordPanelContent::configChanged() {
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
+        if (safeThis && safeThis->suggestionTab_ == SuggestionTab::AI) {
+            auto cfg = Config::getInstance().getAgentLLMConfig("music");
+            auto model = cfg.model.empty() ? cfg.provider : cfg.model;
+            safeThis->aiModelLabel_.setText(juce::String(model), juce::dontSendNotification);
+        }
     });
 }
 
@@ -765,6 +801,21 @@ void ChordPanelContent::requestAISuggestions() {
 
     aiCancelFlag_ = false;
     aiLoading_ = true;
+    aiStreamingText_ = {};
+    aiPromptText_ = userPrompt;
+
+    // Grey out existing results while generating
+    if (!aiRows_.empty()) {
+        aiGreyOut_ = true;
+        for (auto& row : aiRows_)
+            for (auto& block : row->blocks)
+                block->setAlpha(0.3f);
+        if (auto* container = dynamic_cast<AIContainerComponent*>(aiContainer_.get())) {
+            container->greyOut = true;
+            container->streamingText = {};
+        }
+    }
+
     if (aiSendBtn_)
         aiSendBtn_->setEnabled(false);
     repaint();
@@ -789,6 +840,13 @@ void ChordPanelContent::switchToTab(SuggestionTab tab) {
         aiInputBox_->setVisible(!isKS);
     if (aiSendBtn_)
         aiSendBtn_->setVisible(!isKS);
+    aiModelLabel_.setVisible(!isKS);
+
+    if (!isKS) {
+        auto cfg = Config::getInstance().getAgentLLMConfig("music");
+        auto model = cfg.model.empty() ? cfg.provider : cfg.model;
+        aiModelLabel_.setText(juce::String(model), juce::dontSendNotification);
+    }
 
     // Toggle K&S footer controls
     noveltyLabel_->setVisible(isKS);
@@ -888,8 +946,21 @@ void ChordPanelContent::layoutAIProgressionRows() {
         y += 4;
     }
 
-    if (container)
+    if (container) {
         container->paintData = std::move(paintData);
+        container->streamingTextBottom = y;
+
+        // If streaming, expand container to fit streaming text
+        if (container->streamingText.isNotEmpty()) {
+            auto font = FontManager::getInstance().getUIFont(9.5f);
+            juce::AttributedString attrStr;
+            attrStr.append(container->streamingText, font, DarkTheme::getSecondaryTextColour());
+            attrStr.setWordWrap(juce::AttributedString::WordWrap::byWord);
+            juce::TextLayout layout;
+            layout.createLayout(attrStr, static_cast<float>(containerWidth - 8));
+            y += static_cast<int>(layout.getHeight()) + 8;
+        }
+    }
 
     aiContainer_->setSize(containerWidth, y);
     aiContainer_->repaint();
@@ -1021,11 +1092,11 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
 
     std::unique_ptr<llm::LLMClient> client;
     if (cfg) {
-        auto pc = magda::toLLMProviderConfig(agentConfig);
+        auto pc = magda::toLLMProviderConfig(agentConfig, "music");
         pc.provider = llm::Provider::OpenAIResponses;
         client = llm::LLMClientFactory::create(pc);
     } else {
-        client = magda::createLLMClient(agentConfig);
+        client = magda::createLLMClient(agentConfig, "music");
     }
 
     const char* systemPrompt = isLocal ? chordToolDescriptionLocal : chordToolDescription;
@@ -1040,7 +1111,40 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
         request.grammarToolDescription = juce::String(chordToolDescription);
     }
 
-    auto response = client->sendRequest(request);
+    // Stream tokens to UI — post each token to the message thread for live display
+    auto safeThis = juce::Component::SafePointer<ChordPanelContent>(&owner_);
+
+    // CFG (OpenAI Responses API) doesn't support streaming — use sync
+    bool isCfg = cfg;
+    llm::Response response;
+
+    if (isCfg) {
+        response = client->sendRequest(request);
+    } else {
+        response = client->sendStreamingRequest(request, [&](const juce::String& token) {
+            if (threadShouldExit() || owner_.aiCancelFlag_)
+                return false;
+
+            // Post token to UI thread for live display
+            auto tokenCopy = token;
+            juce::MessageManager::callAsync([safeThis, tokenCopy]() {
+                if (!safeThis)
+                    return;
+                safeThis->aiStreamingText_ += tokenCopy;
+                if (auto* container =
+                        dynamic_cast<AIContainerComponent*>(safeThis->aiContainer_.get())) {
+                    container->streamingText = safeThis->aiStreamingText_;
+                    safeThis->layoutAIProgressionRows();
+                    // Scroll to bottom to follow streaming text
+                    if (safeThis->aiViewport_)
+                        safeThis->aiViewport_->setViewPosition(
+                            0, std::max(0, container->getHeight() -
+                                               safeThis->aiViewport_->getHeight()));
+                }
+            });
+            return true;
+        });
+    }
 
     if (threadShouldExit() || owner_.aiCancelFlag_)
         return;
@@ -1049,11 +1153,21 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
 
     if (!response.success || dsl.isEmpty()) {
         DBG("AI Suggest: No DSL generated - " + response.error);
-        auto safeThis = juce::Component::SafePointer<ChordPanelContent>(&owner_);
         juce::MessageManager::callAsync([safeThis]() {
             if (!safeThis)
                 return;
             safeThis->aiLoading_ = false;
+            safeThis->aiGreyOut_ = false;
+            safeThis->aiStreamingText_ = {};
+            if (auto* container =
+                    dynamic_cast<AIContainerComponent*>(safeThis->aiContainer_.get())) {
+                container->greyOut = false;
+                container->streamingText = {};
+            }
+            // Restore block alpha
+            for (auto& row : safeThis->aiRows_)
+                for (auto& block : row->blocks)
+                    block->setAlpha(1.0f);
             if (safeThis->aiSendBtn_)
                 safeThis->aiSendBtn_->setEnabled(true);
             safeThis->repaint();
@@ -1066,12 +1180,19 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
     auto progressions = owner_.parseAIResponse(dsl);
 
     // Post result back to UI thread — store and display inline
-    auto safeThis = juce::Component::SafePointer<ChordPanelContent>(&owner_);
     juce::MessageManager::callAsync([safeThis, progressions = std::move(progressions)]() mutable {
         if (!safeThis)
             return;
 
         safeThis->aiLoading_ = false;
+        safeThis->aiGreyOut_ = false;
+        safeThis->aiStreamingText_ = {};
+
+        if (auto* container = dynamic_cast<AIContainerComponent*>(safeThis->aiContainer_.get())) {
+            container->greyOut = false;
+            container->streamingText = {};
+        }
+
         if (safeThis->aiSendBtn_)
             safeThis->aiSendBtn_->setEnabled(true);
 
@@ -1368,6 +1489,13 @@ void ChordPanelContent::setupFooterControls() {
     aiTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::AI); };
     addAndMakeVisible(aiTabBtn_.get());
 
+    aiModelLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    aiModelLabel_.setColour(juce::Label::textColourId,
+                            DarkTheme::getSecondaryTextColour().withAlpha(0.6f));
+    aiModelLabel_.setJustificationType(juce::Justification::centredLeft);
+    aiModelLabel_.setVisible(false);
+    addAndMakeVisible(aiModelLabel_);
+
     // AI tab viewport for scrollable progression display
     aiViewport_ = std::make_unique<juce::Viewport>();
     aiContainer_ = std::make_unique<AIContainerComponent>();
@@ -1509,13 +1637,21 @@ void ChordPanelContent::paint(juce::Graphics& g) {
                 }
             } else {
                 // AI tab content — draw progression names and descriptions
-                if (aiLoading_) {
+                if (aiLoading_ && aiRows_.empty()) {
+                    area.removeFromTop(8);
+                    if (aiPromptText_.isNotEmpty()) {
+                        g.setColour(DarkTheme::getTextColour());
+                        g.setFont(FontManager::getInstance().getUIFont(11.0f));
+                        g.drawText(aiPromptText_, area.removeFromTop(20),
+                                   juce::Justification::centredLeft);
+                        area.removeFromTop(4);
+                    }
                     g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
                     g.setFont(FontManager::getInstance().getUIFont(11.0f));
-                    area.removeFromTop(8);
                     g.drawText("Generating...", area.removeFromTop(20),
                                juce::Justification::centredLeft);
-                } else if (!chordPlugin_ || chordPlugin_->getAIProgressions().empty()) {
+                } else if (!aiLoading_ &&
+                           (!chordPlugin_ || chordPlugin_->getAIProgressions().empty())) {
                     g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
                     g.setFont(FontManager::getInstance().getUIFont(11.0f));
                     area.removeFromTop(8);
@@ -1702,6 +1838,8 @@ void ChordPanelContent::resized() {
             ksTabBtn_->setBounds(tabRow.removeFromLeft(28));
             tabRow.removeFromLeft(2);
             aiTabBtn_->setBounds(tabRow.removeFromLeft(28));
+            tabRow.removeFromLeft(6);
+            aiModelLabel_.setBounds(tabRow);
 
             area.removeFromTop(2);
 

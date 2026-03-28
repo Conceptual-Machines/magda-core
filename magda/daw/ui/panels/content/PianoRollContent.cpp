@@ -40,10 +40,11 @@ PianoRollContent::PianoRollContent() {
     addAndMakeVisible(chordToggle_.get());
 
     // Create chord detect button (appears in chord row's keyboard column)
-    chordDetectBtn_ = std::make_unique<magda::SvgButton>("ChordDetect", BinaryData::chord_svg,
-                                                         BinaryData::chord_svgSize);
-    chordDetectBtn_->setTooltip("Detect chords from notes");
-    chordDetectBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    chordDetectBtn_ = std::make_unique<magda::SvgButton>("ChordDetect", BinaryData::refresh_svg,
+                                                         BinaryData::refresh_svgSize);
+    chordDetectBtn_->setTooltip("Recalculate chords from notes");
+    chordDetectBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
+    chordDetectBtn_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     chordDetectBtn_->onClick = [this]() { detectChordsFromNotes(); };
     chordDetectBtn_->setVisible(showChordRow_);
     addAndMakeVisible(chordDetectBtn_.get());
@@ -542,6 +543,11 @@ void PianoRollContent::paint(juce::Graphics& g) {
         chordArea = chordArea.removeFromTop(CHORD_ROW_HEIGHT);
         chordArea.removeFromLeft(KEYBOARD_WIDTH);
         drawChordRow(g, chordArea);
+
+        // Horizontal separator at bottom of chord row — full width
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawHorizontalLine(CHORD_ROW_HEIGHT - 1, static_cast<float>(SIDEBAR_WIDTH),
+                             static_cast<float>(getWidth()));
     }
 
     // Draw velocity drawer header (if open) — only for legacy path without MidiDrawer
@@ -554,17 +560,28 @@ void PianoRollContent::paint(juce::Graphics& g) {
     }
 }
 
+void PianoRollContent::paintOverChildren(juce::Graphics& g) {
+    // Extend the ruler's tick-area border line through the sidebar/keyboard corner
+    int rulerTop = showChordRow_ ? CHORD_ROW_HEIGHT : 0;
+    int tickLineY = rulerTop + RULER_HEIGHT - LayoutConfig::getInstance().rulerMajorTickHeight;
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.fillRect(SIDEBAR_WIDTH, tickLineY, KEYBOARD_WIDTH, 1);
+}
+
 void PianoRollContent::resized() {
     auto bounds = getLocalBounds();
 
     // Skip sidebar (painted in paint())
     bounds.removeFromLeft(SIDEBAR_WIDTH);
 
-    // Position sidebar icons: chord toggle above velocity toggle at bottom
+    // Position sidebar icons
     int iconSize = 22;
     int padding = (SIDEBAR_WIDTH - iconSize) / 2;
+    // Chord toggle at top of sidebar — vertically centered in chord row height
+    int chordToggleY = showChordRow_ ? (CHORD_ROW_HEIGHT - iconSize) / 2 : padding;
+    chordToggle_->setBounds(padding, chordToggleY, iconSize, iconSize);
+    // Velocity toggle at bottom
     velocityToggle_->setBounds(padding, getHeight() - iconSize - padding, iconSize, iconSize);
-    chordToggle_->setBounds(padding, getHeight() - (iconSize + padding) * 2, iconSize, iconSize);
 
     // Skip chord row space if visible (drawn in paint)
     if (showChordRow_) {

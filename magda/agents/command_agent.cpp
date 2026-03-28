@@ -11,6 +11,28 @@ const char* CommandAgent::getSystemPrompt() {
     return dsl::getToolDescription();
 }
 
+/** Strip markdown code fences and surrounding prose from LLM output.
+    Cloud providers (Anthropic, Gemini) often wrap DSL in ```blocks. */
+static std::string extractDSL(const juce::String& raw) {
+    auto text = raw.trim();
+
+    // Strip ```dsl ... ``` or ``` ... ``` fences
+    if (text.contains("```")) {
+        auto start = text.indexOf("```");
+        auto afterFence = text.indexOf(start, "\n");
+        if (afterFence < 0)
+            afterFence = start + 3;
+        else
+            afterFence += 1;
+
+        auto end = text.lastIndexOf("```");
+        if (end > start)
+            text = text.substring(afterFence, end).trim();
+    }
+
+    return text.toStdString();
+}
+
 /** Check if provider supports CFG grammar (OpenAI Responses API). */
 static bool usesCFG(const Config::AgentLLMConfig& config) {
     // OpenAI direct (no custom baseUrl) — use Responses API with CFG
@@ -21,11 +43,11 @@ static bool usesCFG(const Config::AgentLLMConfig& config) {
 static std::unique_ptr<llm::LLMClient> createCommandClient(const Config::AgentLLMConfig& config) {
     if (usesCFG(config)) {
         // Route to OpenAI Responses API for CFG support
-        auto pc = toLLMProviderConfig(config);
+        auto pc = toLLMProviderConfig(config, "command");
         pc.provider = llm::Provider::OpenAIResponses;
         return llm::LLMClientFactory::create(pc);
     }
-    return createLLMClient(config);
+    return createLLMClient(config, "command");
 }
 
 /** Build the LLM request, adding CFG grammar when supported. */
@@ -76,15 +98,17 @@ CommandAgent::GenerateResult CommandAgent::generate(const std::string& message) 
     auto response = client->sendRequest(request);
 
     if (!response.success) {
+        DBG("MAGDA CommandAgent ERROR (" + client->getName() + "/" + client->getConfig().model +
+            "): " + response.error);
         result.error = response.error.toStdString();
         result.hasError = true;
         return result;
     }
 
-    result.dslOutput = response.text.trim().toStdString();
+    result.dslOutput = extractDSL(response.text);
 
-    DBG("MAGDA CommandAgent (" + client->getName() + ", " + juce::String(response.wallSeconds, 2) +
-        "s): " + juce::String(result.dslOutput));
+    DBG("MAGDA CommandAgent (" + client->getName() + "/" + client->getConfig().model + ", " +
+        juce::String(response.wallSeconds, 2) + "s): " + juce::String(result.dslOutput));
 
     return result;
 }
@@ -118,13 +142,15 @@ CommandAgent::GenerateResult CommandAgent::generateStreaming(const std::string& 
     if (cfg) {
         auto response = client->sendRequest(request);
         if (!response.success) {
+            DBG("MAGDA CommandAgent CFG ERROR (" + client->getName() + "/" +
+                client->getConfig().model + "): " + response.error);
             result.error = response.error.toStdString();
             result.hasError = true;
             return result;
         }
-        result.dslOutput = response.text.trim().toStdString();
-        DBG("MAGDA CommandAgent CFG (" + client->getName() + ", " +
-            juce::String(response.wallSeconds, 2) + "s): " + juce::String(result.dslOutput));
+        result.dslOutput = extractDSL(response.text);
+        DBG("MAGDA CommandAgent CFG (" + client->getName() + "/" + client->getConfig().model +
+            ", " + juce::String(response.wallSeconds, 2) + "s): " + juce::String(result.dslOutput));
         return result;
     }
 
@@ -137,14 +163,16 @@ CommandAgent::GenerateResult CommandAgent::generateStreaming(const std::string& 
     });
 
     if (!response.success) {
+        DBG("MAGDA CommandAgent stream ERROR (" + client->getName() + "/" +
+            client->getConfig().model + "): " + response.error);
         result.error = response.error.toStdString();
         result.hasError = true;
         return result;
     }
 
-    result.dslOutput = response.text.trim().toStdString();
+    result.dslOutput = extractDSL(response.text);
 
-    DBG("MAGDA CommandAgent stream (" + client->getName() + ", " +
+    DBG("MAGDA CommandAgent stream (" + client->getName() + "/" + client->getConfig().model + ", " +
         juce::String(response.wallSeconds, 2) + "s): " + juce::String(result.dslOutput));
 
     return result;

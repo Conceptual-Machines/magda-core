@@ -156,6 +156,12 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/psychology.svg
     ../../assets/icons/robot.svg
     ../../assets/icons/ai.svg
+    # Cloud provider icons
+    ../../assets/icons/cloud_providers/openai.svg
+    ../../assets/icons/cloud_providers/anthropic.svg
+    ../../assets/icons/cloud_providers/gemini.svg
+    ../../assets/icons/cloud_providers/deepseek.svg
+    ../../assets/icons/cloud_providers/openrouter.svg
     # App logo
     ../../assets/magda-lisa.svg
 )

@@ -73,7 +73,7 @@ MusicAgent::GenerateResult MusicAgent::generate(const std::string& message) {
         }
     }
 
-    auto client = createLLMClient(agentConfig);
+    auto client = createLLMClient(agentConfig, "music");
 
     llm::Request request;
     request.systemPrompt = juce::String(getSystemPrompt());
@@ -123,7 +123,7 @@ MusicAgent::GenerateResult MusicAgent::generateStreaming(const std::string& mess
         }
     }
 
-    auto client = createLLMClient(agentConfig);
+    auto client = createLLMClient(agentConfig, "music");
 
     llm::Request request;
     request.systemPrompt = juce::String(getSystemPrompt());

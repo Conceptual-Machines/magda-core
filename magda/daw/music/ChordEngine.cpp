@@ -262,6 +262,31 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
     ChordCandidate best = candidates[0];
 
     Chord chord(best.root, best.quality, heldNotes, actualBassNote, std::nullopt, best.inversion);
+    chord.exactMatch = best.isExactMatch;
+
+    // Compute missing intervals and extra notes for partial matches
+    if (!best.isExactMatch) {
+        auto intervals = ChordUtils::getChordIntervals(best.quality);
+        int rootOffset = static_cast<int>(best.root);
+
+        // Which ideal chord tones are missing from the input?
+        std::vector<int> idealPitchClasses;
+        for (int interval : intervals) {
+            int chordTone = (rootOffset + interval) % 12;
+            idealPitchClasses.push_back(chordTone);
+            if (std::find(pitchClasses.begin(), pitchClasses.end(), chordTone) ==
+                pitchClasses.end())
+                chord.missingIntervals.push_back(interval);
+        }
+
+        // Which input notes are not in the ideal chord?
+        for (int pc : pitchClasses) {
+            if (std::find(idealPitchClasses.begin(), idealPitchClasses.end(), pc) ==
+                idealPitchClasses.end())
+                chord.extraPitchClasses.push_back(pc);
+        }
+    }
+
     return chord;
 }
 
@@ -511,19 +536,8 @@ void ChordEngine::finalizeChord(Chord& c) {
     }
     c.inversion = inv;
 
-    static const char* kNames[12] = {"C",  "C#", "D",  "D#", "E",  "F",
-                                     "F#", "G",  "G#", "A",  "A#", "B"};
-
-    juce::String baseName =
-        c.name.isNotEmpty()
-            ? c.name
-            : (ChordUtils::rootToString(c.root) + " " + ChordUtils::qualityToString(c.quality));
-    if (c.inversion > 0) {
-        int pc = (bassPc % 12 + 12) % 12;
-        c.displayName = baseName + " / " + kNames[pc];
-    } else {
-        c.displayName = baseName;
-    }
+    // Don't set displayName — let Chord::getDisplayName() build it dynamically
+    // with octave info and (noX)/(+X) annotations for partial matches.
 }
 
 }  // namespace magda::music

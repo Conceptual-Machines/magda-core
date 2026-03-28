@@ -16,15 +16,6 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             },
         },
         {
-            "local",
-            "Local (llama-server)",
-            {
-                {"router", {"openai_chat", "http://127.0.0.1:8080/v1", "", "local"}},
-                {"command", {"openai_chat", "http://127.0.0.1:8080/v1", "", "local"}},
-                {"music", {"openai_chat", "http://127.0.0.1:8080/v1", "", "local"}},
-            },
-        },
-        {
             "cloud_openai",
             "Cloud (OpenAI)",
             {
@@ -38,7 +29,7 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             "Cloud (Anthropic)",
             {
                 {"router", {"anthropic", "", "", "claude-haiku-4-5-20251001"}},
-                {"command", {"anthropic", "", "", "claude-haiku-4-5-20251001"}},
+                {"command", {"anthropic", "", "", "claude-sonnet-4-6"}},
                 {"music", {"anthropic", "", "", "claude-opus-4-6"}},
             },
         },
@@ -55,24 +46,18 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             "cloud_deepseek",
             "Cloud (DeepSeek)",
             {
-                {"router", {"openai_chat", "https://api.deepseek.com", "", "deepseek-chat"}},
-                {"command", {"openai_chat", "https://api.deepseek.com", "", "deepseek-chat"}},
-                {"music", {"openai_chat", "https://api.deepseek.com", "", "deepseek-reasoner"}},
+                {"router", {"deepseek", "", "", "deepseek-chat"}},
+                {"command", {"deepseek", "", "", "deepseek-chat"}},
+                {"music", {"deepseek", "", "", "deepseek-reasoner"}},
             },
         },
         {
             "cloud_openrouter",
             "Cloud (OpenRouter)",
             {
-                {"router",
-                 {"openai_chat", "https://openrouter.ai/api/v1", "",
-                  "meta-llama/llama-3.3-70b-instruct"}},
-                {"command",
-                 {"openai_chat", "https://openrouter.ai/api/v1", "",
-                  "meta-llama/llama-3.3-70b-instruct"}},
-                {"music",
-                 {"openai_chat", "https://openrouter.ai/api/v1", "",
-                  "meta-llama/llama-3.3-70b-instruct"}},
+                {"router", {"openrouter", "", "", "meta-llama/llama-3.3-70b-instruct"}},
+                {"command", {"openrouter", "", "", "meta-llama/llama-3.3-70b-instruct"}},
+                {"music", {"openrouter", "", "", "meta-llama/llama-3.3-70b-instruct"}},
             },
         },
         {

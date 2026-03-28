@@ -154,8 +154,8 @@ class AIChatConsoleContent : public PanelContent,
     // Tab switching: AI vs DSL
     enum class ConsoleTab { AI, DSL };
     ConsoleTab activeTab_ = ConsoleTab::AI;
-    juce::TextButton aiTabButton_{"AI"};
-    juce::TextButton dslTabButton_{"DSL"};
+    std::unique_ptr<magda::SvgButton> aiTabButton_;
+    std::unique_ptr<magda::SvgButton> dslTabButton_;
     void switchTab(ConsoleTab tab);
     void setupTabButtons();
 

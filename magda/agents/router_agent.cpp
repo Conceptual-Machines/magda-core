@@ -40,7 +40,7 @@ RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
         }
     }
 
-    auto client = createLLMClient(agentConfig);
+    auto client = createLLMClient(agentConfig, "router");
 
     llm::Request request;
     request.systemPrompt = juce::String(getSystemPrompt());
@@ -50,6 +50,8 @@ RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
     auto response = client->sendRequest(request);
 
     if (!response.success) {
+        DBG("MAGDA Router ERROR (" + client->getName() + "/" + client->getConfig().model +
+            "): " + response.error);
         result.error = response.error.toStdString();
         result.hasError = true;
         return result;
@@ -62,7 +64,8 @@ RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
     if (result.intent != "COMMAND" && result.intent != "MUSIC" && result.intent != "BOTH")
         result.intent = "COMMAND";  // safe default
 
-    DBG("MAGDA Router: " + juce::String(message) + " -> " + juce::String(result.intent) + " (" +
+    DBG("MAGDA Router (" + client->getName() + "/" + client->getConfig().model +
+        "): " + juce::String(message) + " -> " + juce::String(result.intent) + " (" +
         juce::String(result.wallSeconds, 2) + "s)");
 
     return result;

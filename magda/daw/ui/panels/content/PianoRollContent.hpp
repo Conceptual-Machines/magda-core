@@ -35,6 +35,7 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     }
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 

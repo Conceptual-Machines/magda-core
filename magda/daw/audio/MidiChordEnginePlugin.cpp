@@ -173,7 +173,10 @@ void MidiChordEnginePlugin::runDetection() {
     lastDetectedChordName_ = detected.getDisplayName();
 
     if (chordChanged) {
-        DBG("MidiChordEngine: " << detected.getDisplayName());
+        DBG("MidiChordEngine: " << detected.getDisplayName()
+                                << " exact=" << (detected.exactMatch ? "yes" : "no")
+                                << " missing=" << (int)detected.missingIntervals.size()
+                                << " extra=" << (int)detected.extraPitchClasses.size());
         // Add to history
         chordHistory_.push_back(detected);
         if (chordHistory_.size() > MAX_CHORD_HISTORY)

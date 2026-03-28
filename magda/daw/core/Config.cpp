@@ -324,6 +324,17 @@ void Config::load() {
                         cfg.baseUrl = agentObj->getProperty("baseUrl").toString().toStdString();
                         cfg.apiKey = agentObj->getProperty("apiKey").toString().toStdString();
                         cfg.model = agentObj->getProperty("model").toString().toStdString();
+                        // Migrate: openai_chat + deepseek/openrouter baseUrl → own provider
+                        if (cfg.provider == "openai_chat" && !cfg.baseUrl.empty()) {
+                            if (cfg.baseUrl.find("deepseek") != std::string::npos) {
+                                cfg.provider = "deepseek";
+                                cfg.baseUrl.clear();
+                            } else if (cfg.baseUrl.find("openrouter") != std::string::npos) {
+                                cfg.provider = "openrouter";
+                                cfg.baseUrl.clear();
+                            }
+                        }
+
                         agentConfigs[role] = cfg;
                     }
                 }
