@@ -14,6 +14,7 @@
 namespace magda {
 class CommandAgent;
 class DAWAgent;
+class LlamaServerManager;
 class MusicAgent;
 class RouterAgent;
 }  // namespace magda
@@ -108,6 +109,10 @@ class AIChatConsoleContent : public PanelContent,
     std::atomic<bool> processing_{false};
     juce::String pendingMessage_;
     int dotCount_{0};
+
+    // Config status bar
+    juce::Label configStatusLabel_;
+    void updateConfigStatus();
 
     // Plugin alias autocomplete
     struct AliasEntry {

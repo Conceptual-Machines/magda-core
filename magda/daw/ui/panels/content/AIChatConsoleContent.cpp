@@ -7,9 +7,11 @@
 #include "../../../../agents/compact_parser.hpp"
 #include "../../../../agents/daw_agent.hpp"
 #include "../../../../agents/dsl_interpreter.hpp"
+#include "../../../../agents/llama_server_manager.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/router_agent.hpp"
 #include "../../../core/ClipManager.hpp"
+#include "../../../core/Config.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackManager.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -554,6 +556,15 @@ AIChatConsoleContent::AIChatConsoleContent() {
     addChildComponent(*dslEditor_);
     addChildComponent(dslStatusLabel_);
 
+    // Config status bar
+    configStatusLabel_.setFont(FontManager::getInstance().getMonoFont(10.0f));
+    configStatusLabel_.setColour(juce::Label::textColourId,
+                                 DarkTheme::getSecondaryTextColour().withAlpha(0.6f));
+    configStatusLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    configStatusLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(configStatusLabel_);
+    updateConfigStatus();
+
     // Register for selection changes
     magda::SelectionManager::getInstance().addListener(this);
 
@@ -797,6 +808,10 @@ void AIChatConsoleContent::resized() {
     bounds.removeFromBottom(4);  // Spacing above tabs
 
     if (activeTab_ == ConsoleTab::AI) {
+        // Config status bar at the top
+        configStatusLabel_.setBounds(bounds.removeFromTop(16));
+        bounds.removeFromTop(2);
+
         // Context bar above tabs
         auto bottomBar = bounds.removeFromBottom(26);
         bottomBarBounds_ = bottomBar;
@@ -833,6 +848,7 @@ void AIChatConsoleContent::resized() {
 
 void AIChatConsoleContent::onActivated() {
     buildAliasList();
+    updateConfigStatus();
     if (isShowing()) {
         if (activeTab_ == ConsoleTab::AI)
             inputBox_.grabKeyboardFocus();
@@ -885,6 +901,7 @@ void AIChatConsoleContent::switchTab(ConsoleTab tab) {
     contextLabel_.setVisible(isAI);
     clearButton_.setVisible(isAI);
     copyButton_.setVisible(isAI);
+    configStatusLabel_.setVisible(isAI);
 
     // DSL components
     dslOutput_.setVisible(!isAI);
@@ -1035,6 +1052,50 @@ void AIChatConsoleContent::updateContextBar() {
                             contextEnabled_ ? DarkTheme::getAccentColour()
                                             : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
     repaint();
+}
+
+void AIChatConsoleContent::updateConfigStatus() {
+    auto& config = magda::Config::getInstance();
+    auto preset = config.getAIPreset();
+    auto musicCfg = config.getAgentLLMConfig("music");
+
+    juce::String status;
+
+    // Show preset/provider + model
+    if (preset == "custom")
+        status = "Custom";
+    else {
+        // Capitalize first letter of preset
+        status = juce::String(preset).replaceCharacter('_', ' ');
+        if (status.isNotEmpty())
+            status = status.substring(0, 1).toUpperCase() + status.substring(1);
+    }
+
+    status += " | " + juce::String(musicCfg.model);
+
+    // If local provider, show server status
+    bool isLocal = musicCfg.provider == "openai_chat" &&
+                   musicCfg.baseUrl.find("127.0.0.1") != std::string::npos;
+    if (isLocal || preset == "local" || preset == "hybrid") {
+        auto& mgr = magda::LlamaServerManager::getInstance();
+        auto serverStatus = mgr.getStatus();
+        switch (serverStatus) {
+            case magda::LlamaServerManager::Status::Running:
+                status += " | Server listening on :" + juce::String(config.getLocalLlamaPort());
+                break;
+            case magda::LlamaServerManager::Status::Starting:
+                status += " | Server starting...";
+                break;
+            case magda::LlamaServerManager::Status::Error:
+                status += " | Server error";
+                break;
+            case magda::LlamaServerManager::Status::Stopped:
+                status += " | Server stopped";
+                break;
+        }
+    }
+
+    configStatusLabel_.setText(status, juce::dontSendNotification);
 }
 
 void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
