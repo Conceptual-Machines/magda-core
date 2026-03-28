@@ -2,7 +2,7 @@
 
 #include "../daw/core/Config.hpp"
 #include "dsl_grammar.hpp"
-#include "llm_config_utils.hpp"
+#include "llm_client_factory.hpp"
 
 namespace magda {
 
@@ -109,15 +109,17 @@ DAWAgent::GenerateResult DAWAgent::generate(const std::string& message) {
     }
 
     auto agentConfig = Config::getInstance().getAgentLLMConfig("music");
-    auto providerConfig = toLLMProviderConfig(agentConfig);
 
-    if (providerConfig.apiKey.isEmpty()) {
-        result.error = "API key not configured. Set it in Preferences > AI Assistant.";
-        result.hasError = true;
-        return result;
+    if (agentConfig.provider != "llama_local") {
+        auto providerConfig = toLLMProviderConfig(agentConfig);
+        if (providerConfig.apiKey.isEmpty()) {
+            result.error = "API key not configured. Set it in Preferences > AI Assistant.";
+            result.hasError = true;
+            return result;
+        }
     }
 
-    auto client = llm::LLMClientFactory::create(providerConfig);
+    auto client = createLLMClient(agentConfig);
 
     // Build state snapshot for context
     auto stateJson = dsl::Interpreter::buildStateSnapshot();

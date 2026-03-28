@@ -63,6 +63,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/sine-wave.svg
     ../../assets/icons/bare_sine.svg
     ../../assets/icons/play_bare.svg
+    ../../assets/icons/server_play.svg
+    ../../assets/icons/server_stop.svg
     ../../assets/icons/open_in_new.svg
     ../../assets/icons/power_on.svg
     ../../assets/icons/rack.svg

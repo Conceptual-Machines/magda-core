@@ -186,6 +186,9 @@ void Config::save() {
         DBG("Config::save - failed to write " + configFile.getFullPathName());
     else
         DBG("Config::save - " + configFile.getFullPathName());
+
+    for (auto* l : listeners_)
+        l->configChanged();
 }
 
 // ---------------------------------------------------------------------------

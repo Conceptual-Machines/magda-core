@@ -78,7 +78,10 @@ value: STRING
      | NUMBER
      | BOOLEAN
      | IDENTIFIER
+     | function_call
      | array
+
+function_call: IDENTIFIER "(" value ("," value)* ")"
 
 // Array for progression chords
 array: "[" array_items? "]"
@@ -126,7 +129,7 @@ METHOD CHAINING:
 - .clip.rename(name="Clip {i}") - Rename selected clips with auto-numbering: Clip 1, Clip 2, etc.
 - .clip.delete(index=0) - Delete clip at index on track
 - .select() - Select track in the UI
-- .clips.select(clip.length_bars >= 2) - Select clips matching predicate (fields: length_bars, start_bar; ops: ==, !=, >, >=, <, <=)
+- .clips.select(clip.length_bars >= 2) - Select clips matching predicate (numeric fields: length_bars, start_bar, length, start, start_beats, id, track_id; string fields: name, type; ops: ==, !=, >, >=, <, <=; string fields support == and != only)
 
 FILTER OPERATIONS (bulk):
 - filter(tracks, track.name == "X").delete() - Delete all tracks named X
@@ -154,6 +157,7 @@ EXAMPLES:
 - "select track 1" -> track(id=1).select()
 - "select all clips longer than 2 bars on track 1" -> track(id=1).clips.select(clip.length_bars > 2)
 - "select all clips shorter than or equal to 1 bar on track 2" -> track(id=2).clips.select(clip.length_bars <= 1)
+- "select the clip named Intro" -> track(id=1).clips.select(clip.name == "Intro")
 
 NOTE OPERATIONS (require a selected clip):
 - .notes.select(note.pitch == C4) - Select notes matching predicate (fields: pitch, velocity, start_beat, length_beats; pitch accepts MIDI numbers or note names like C4, C#4, Bb3; C4=60)
@@ -205,6 +209,11 @@ EXAMPLES (groove):
 - "what grooves are available" -> groove.list()
 
 IMPORTANT: "groove" means TIMING/SWING, not a drum pattern. If the user asks for a "drum groove" or "beat", create notes with .notes.add(). If they ask to "add groove/swing/shuffle" to a clip, use groove.set().
+
+BUILT-IN FUNCTIONS:
+- random(min, max) - Returns a random value between min and max (inclusive). Integer if both args are integers, float otherwise.
+  Example: .clip.new(length_bars=random(1, 4)) - Create a clip with random length between 1 and 4 bars
+  Example: .notes.add(pitch=C4, beat=0, velocity=random(80, 127)) - Add a note with random velocity
 
 NOTE: The DAW state JSON includes "selected_track_id" when a track is selected, and "selected_clip_index" / "selected_clip_track_id" when a clip is selected.
 Use track(id=N) to reference any track. When the user says "this track" or implies the current selection, use the selected_track_id from the state.

@@ -29,6 +29,9 @@ class MusicAgent {
     /** Generate music instructions from user message (background thread safe). */
     GenerateResult generate(const std::string& message);
 
+    /** Streaming variant — calls onToken for each received token. */
+    GenerateResult generateStreaming(const std::string& message, TokenCallback onToken);
+
     void requestCancel() {
         shouldStop_ = true;
     }

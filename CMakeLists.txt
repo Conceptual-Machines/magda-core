@@ -96,6 +96,14 @@ add_subdirectory(third_party/tracktion_engine)
 # LLM API client module (juce_core only)
 juce_add_module(${CMAKE_CURRENT_SOURCE_DIR}/third_party/juce-llm/juce_llm)
 
+# llama.cpp — embedded local inference with Metal GPU acceleration
+set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+set(GGML_METAL ON CACHE BOOL "" FORCE)
+set(GGML_METAL_EMBED_LIBRARY ON CACHE BOOL "" FORCE)
+add_subdirectory(third_party/llama.cpp)
+
 # Catch2 for testing
 if(MAGDA_BUILD_TESTS)
     FetchContent_Declare(
@@ -127,6 +135,8 @@ if(MAGDA_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+add_subdirectory(poc)
 
 # JUCE adapter (optional)
 if(MAGDA_BUILD_JUCE_ADAPTER)

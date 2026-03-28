@@ -2,8 +2,11 @@
 
 #include <juce_core/juce_core.h>
 
+#include <unordered_set>
 #include <vector>
 
+#include "../daw/core/ClipTypes.hpp"
+#include "../daw/core/TypeIds.hpp"
 #include "compact_parser.hpp"
 
 namespace magda {
@@ -37,9 +40,13 @@ class CompactExecutor {
     bool executeSet(const SetOp& op);
     bool executeClip(const ClipOp& op);
     bool executeFx(const FxOp& op);
+    bool executeSelect(const SelectOp& op);
     bool executeArp(const ArpOp& op);
     bool executeChord(const ChordOp& op);
     bool executeNote(const NoteOp& op);
+
+    /** Apply SET key=value props to a track. */
+    void applySetProps(int trackId, const juce::StringPairArray& props);
 
     /** Resolve a TrackRef to an internal track ID. Returns -1 on failure. */
     int resolveTrackRef(const TrackRef& ref);
@@ -50,10 +57,24 @@ class CompactExecutor {
     /** Convert 1-based bar number to time in seconds. */
     double barsToTime(double bar) const;
 
+    /** Convert bar count to duration in seconds. */
+    double barsToLength(double bars) const;
+
     int currentTrackId_ = -1;
     int currentClipId_ = -1;
     juce::String error_;
     juce::StringArray results_;
+
+    // Active selection from SELECT — consumed by subsequent instructions
+    std::unordered_set<TrackId> selectedTracks_;
+    std::unordered_set<ClipId> selectedClips_;
+    bool hasActiveSelection() const {
+        return !selectedTracks_.empty() || !selectedClips_.empty();
+    }
+    void clearActiveSelection() {
+        selectedTracks_.clear();
+        selectedClips_.clear();
+    }
 };
 
 }  // namespace magda

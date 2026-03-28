@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <map>
@@ -8,6 +9,12 @@
 
 namespace magda {
 
+class ConfigListener {
+  public:
+    virtual ~ConfigListener() = default;
+    virtual void configChanged() = 0;
+};
+
 /**
  * Configuration class to manage all configurable settings in the DAW
  * This will later be exposed through a UI for user customization
@@ -15,6 +22,13 @@ namespace magda {
 class Config {
   public:
     static Config& getInstance();
+
+    void addListener(ConfigListener* l) {
+        listeners_.push_back(l);
+    }
+    void removeListener(ConfigListener* l) {
+        listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), l), listeners_.end());
+    }
 
     // Timeline Configuration (stored in bars)
     int getDefaultTimelineLengthBars() const {
@@ -619,11 +633,11 @@ class Config {
     int preferredOutputChannels = 0;  // Preferred output channel count (0 = use device default)
 
     // AI settings
-    std::string aiPreset = "cloud_openai";
+    std::string aiPreset = "local_embedded";
     std::map<std::string, AgentLLMConfig> agentConfigs = {
-        {"router", {"openai_chat", "", "", "gpt-4.1-mini"}},
-        {"command", {"openai_chat", "", "", "gpt-4.1"}},
-        {"music", {"openai_chat", "", "", "gpt-5"}},
+        {"router", {"llama_local", "", "", ""}},
+        {"command", {"llama_local", "", "", ""}},
+        {"music", {"llama_local", "", "", ""}},
     };
     std::map<std::string, std::string> aiCredentials;  // provider → API key
     std::string localLlamaUrl = "http://127.0.0.1:8080/v1";
@@ -632,6 +646,8 @@ class Config {
     int localLlamaPort = 8080;
     int localLlamaGpuLayers = -1;  // -1 = auto
     int localLlamaContextSize = 4096;
+
+    std::vector<ConfigListener*> listeners_;
 };
 
 }  // namespace magda

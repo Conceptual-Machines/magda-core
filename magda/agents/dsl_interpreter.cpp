@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <random>
 
 #include "../daw/audio/AudioThumbnailManager.hpp"
 #include "../daw/core/ClipManager.hpp"
@@ -671,13 +672,75 @@ bool Interpreter::parseParams(Tokenizer& tok, Params& outParams) {
 bool Interpreter::parseValue(Tokenizer& tok, std::string& outValue) {
     Token t = tok.next();
 
-    if (t.type == TokenType::STRING || t.type == TokenType::NUMBER ||
-        t.type == TokenType::IDENTIFIER) {
+    if (t.type == TokenType::STRING || t.type == TokenType::NUMBER) {
+        outValue = t.value;
+        return true;
+    }
+
+    if (t.type == TokenType::IDENTIFIER) {
+        // Check for function call: identifier(args...)
+        if (tok.peek().is(TokenType::LPAREN)) {
+            tok.next();  // consume '('
+            return evaluateFunction(t.value, tok, outValue);
+        }
         outValue = t.value;
         return true;
     }
 
     ctx_.setError("Expected value, got '" + juce::String(t.value) + "'");
+    return false;
+}
+
+// ============================================================================
+// Built-in Functions
+// ============================================================================
+
+bool Interpreter::evaluateFunction(const std::string& name, Tokenizer& tok, std::string& outValue) {
+    // Parse arguments as comma-separated values
+    std::vector<std::string> args;
+    if (!tok.peek().is(TokenType::RPAREN)) {
+        while (true) {
+            std::string arg;
+            if (!parseValue(tok, arg))
+                return false;
+            args.push_back(arg);
+            if (tok.peek().is(TokenType::COMMA))
+                tok.next();
+            else
+                break;
+        }
+    }
+    if (!tok.expect(TokenType::RPAREN)) {
+        ctx_.setError("Expected ')' after function arguments");
+        return false;
+    }
+
+    if (name == "random") {
+        if (args.size() != 2) {
+            ctx_.setError("random() requires 2 arguments: random(min, max)");
+            return false;
+        }
+        double lo = std::stod(args[0]);
+        double hi = std::stod(args[1]);
+        if (lo > hi)
+            std::swap(lo, hi);
+
+        static thread_local std::mt19937 rng{std::random_device{}()};
+
+        // Integer range if both args are integers
+        bool isInt =
+            (args[0].find('.') == std::string::npos) && (args[1].find('.') == std::string::npos);
+        if (isInt) {
+            std::uniform_int_distribution<int> dist(static_cast<int>(lo), static_cast<int>(hi));
+            outValue = std::to_string(dist(rng));
+        } else {
+            std::uniform_real_distribution<double> dist(lo, hi);
+            outValue = std::to_string(dist(rng));
+        }
+        return true;
+    }
+
+    ctx_.setError("Unknown function: " + juce::String(name));
     return false;
 }
 
@@ -1150,18 +1213,17 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
         return false;
     }
 
-    Token value = tok.next();
-    if (value.type != TokenType::NUMBER && value.type != TokenType::STRING) {
-        ctx_.setError("Expected value in clips.select condition");
+    std::string valueStr;
+    if (!parseValue(tok, valueStr))
         return false;
-    }
 
     if (!tok.expect(TokenType::RPAREN)) {
         ctx_.setError("Expected ')' after clips.select condition");
         return false;
     }
 
-    double numValue = std::atof(value.value.c_str());
+    // Determine if this is a string or numeric field
+    bool isStringField = (field.value == "name" || field.value == "type");
 
     // Get tempo for bar/time conversions
     double bpm = 120.0;
@@ -1170,8 +1232,10 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
         bpm = engine->getTempo();
     double secondsPerBar = 4.0 * 60.0 / bpm;
 
-    // Comparator lambda
-    auto compare = [&](double clipVal) -> bool {
+    double numValue = isStringField ? 0.0 : std::atof(valueStr.c_str());
+
+    // Numeric comparator
+    auto compareNum = [&](double clipVal) -> bool {
         if (op.type == TokenType::EQUALS_EQUALS)
             return std::abs(clipVal - numValue) < 0.001;
         if (op.type == TokenType::NOT_EQUALS)
@@ -1187,7 +1251,50 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
         return false;
     };
 
+    // String comparator (== and != only, case-insensitive contains for ==)
+    auto compareStr = [&](const juce::String& clipStr) -> bool {
+        if (op.type == TokenType::EQUALS_EQUALS)
+            return clipStr.equalsIgnoreCase(juce::String(valueStr));
+        if (op.type == TokenType::NOT_EQUALS)
+            return !clipStr.equalsIgnoreCase(juce::String(valueStr));
+        return false;
+    };
+
     auto& cm = ClipManager::getInstance();
+
+    // Resolve a clip field to either a numeric or string match
+    auto matchClip = [&](const ClipInfo* clip) -> bool {
+        if (isStringField) {
+            juce::String strVal;
+            if (field.value == "name")
+                strVal = clip->name;
+            else if (field.value == "type")
+                strVal = (clip->type == ClipType::Audio) ? "audio" : "midi";
+            return compareStr(strVal);
+        }
+
+        // Numeric fields
+        double val = 0.0;
+        if (field.value == "length_bars")
+            val = clip->length / secondsPerBar;
+        else if (field.value == "start_bar")
+            val = (clip->startTime / secondsPerBar) + 1.0;
+        else if (field.value == "length")
+            val = clip->length;
+        else if (field.value == "start")
+            val = clip->startTime;
+        else if (field.value == "start_beats")
+            val = clip->startBeats;
+        else if (field.value == "id")
+            val = static_cast<double>(clip->id);
+        else if (field.value == "track_id")
+            val = static_cast<double>(clip->trackId);
+        else {
+            ctx_.setError("Unknown clip field: " + juce::String(field.value));
+            return false;
+        }
+        return compareNum(val);
+    };
 
     auto matchOnTrack = [&](int trackId) {
         auto clipIds = cm.getClipsOnTrack(trackId);
@@ -1197,22 +1304,7 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
             auto* clip = cm.getClip(clipId);
             if (!clip)
                 continue;
-
-            double clipVal = 0.0;
-            if (field.value == "length_bars")
-                clipVal = clip->length / secondsPerBar;
-            else if (field.value == "start_bar")
-                clipVal = (clip->startTime / secondsPerBar) + 1.0;
-            else if (field.value == "length")
-                clipVal = clip->length;
-            else if (field.value == "start")
-                clipVal = clip->startTime;
-            else {
-                ctx_.setError("Unknown clip field: " + juce::String(field.value));
-                return matched;  // empty
-            }
-
-            if (compare(clipVal))
+            if (matchClip(clip))
                 matched.insert(clipId);
         }
         return matched;

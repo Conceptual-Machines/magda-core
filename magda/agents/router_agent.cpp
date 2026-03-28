@@ -1,7 +1,7 @@
 #include "router_agent.hpp"
 
 #include "../daw/core/Config.hpp"
-#include "llm_config_utils.hpp"
+#include "llm_client_factory.hpp"
 
 namespace magda {
 
@@ -30,17 +30,17 @@ RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
     }
 
     auto agentConfig = Config::getInstance().getAgentLLMConfig("router");
-    auto providerConfig = toLLMProviderConfig(agentConfig);
 
-    if (providerConfig.apiKey.isEmpty() && !agentConfig.baseUrl.empty()) {
-        // Local server doesn't need an API key — allow it through
-    } else if (providerConfig.apiKey.isEmpty()) {
-        result.error = "Router API key not configured";
-        result.hasError = true;
-        return result;
+    if (agentConfig.provider != "llama_local") {
+        auto providerConfig = toLLMProviderConfig(agentConfig);
+        if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
+            result.error = "Router API key not configured";
+            result.hasError = true;
+            return result;
+        }
     }
 
-    auto client = llm::LLMClientFactory::create(providerConfig);
+    auto client = createLLMClient(agentConfig);
 
     llm::Request request;
     request.systemPrompt = juce::String(getSystemPrompt());

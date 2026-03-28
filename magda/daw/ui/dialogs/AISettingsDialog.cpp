@@ -2,7 +2,7 @@
 
 #include <juce_llm/juce_llm.h>
 
-#include "../../../agents/llama_server_manager.hpp"
+#include "../../../agents/llama_model_manager.hpp"
 #include "../../../agents/llm_config_utils.hpp"
 #include "../../../agents/llm_presets.hpp"
 #include "../../core/Config.hpp"
@@ -243,13 +243,13 @@ class ProviderRow : public juce::Component {
 };
 
 // ============================================================================
-// LocalServerPanel — model picker, port, start/stop, status
+// LocalModelPanel — embedded model loader, replaces old server panel
 // ============================================================================
 
-class LocalServerPanel : public juce::Component {
+class LocalModelPanel : public juce::Component {
   public:
-    LocalServerPanel() {
-        titleLabel_.setText("Local (llama-server)", juce::dontSendNotification);
+    LocalModelPanel() {
+        titleLabel_.setText("Local Model (Embedded)", juce::dontSendNotification);
         styleLabel(titleLabel_, 13.0f);
         titleLabel_.setFont(titleLabel_.getFont().boldened());
         addAndMakeVisible(titleLabel_);
@@ -265,15 +265,6 @@ class LocalServerPanel : public juce::Component {
         browseButton_.setButtonText("...");
         browseButton_.onClick = [this]() { browseModel(); };
         addAndMakeVisible(browseButton_);
-
-        // Port
-        portLabel_.setText("Port", juce::dontSendNotification);
-        styleLabel(portLabel_);
-        addAndMakeVisible(portLabel_);
-
-        styleEditor(portEditor_, "8080");
-        portEditor_.setInputRestrictions(5, "0123456789");
-        addAndMakeVisible(portEditor_);
 
         // GPU layers
         gpuLabel_.setText("GPU Layers", juce::dontSendNotification);
@@ -293,18 +284,10 @@ class LocalServerPanel : public juce::Component {
         ctxEditor_.setInputRestrictions(6, "0123456789");
         addAndMakeVisible(ctxEditor_);
 
-        // Binary path (optional)
-        binaryLabel_.setText("Binary", juce::dontSendNotification);
-        styleLabel(binaryLabel_);
-        addAndMakeVisible(binaryLabel_);
-
-        styleEditor(binaryEditor_, "auto-detect on PATH");
-        addAndMakeVisible(binaryEditor_);
-
-        // Start/Stop button
-        startStopButton_.setButtonText("Start");
-        startStopButton_.onClick = [this]() { toggleServer(); };
-        addAndMakeVisible(startStopButton_);
+        // Load/Unload button
+        loadButton_.setButtonText("Load Model");
+        loadButton_.onClick = [this]() { toggleModel(); };
+        addAndMakeVisible(loadButton_);
 
         // Status
         styleLabel(statusLabel_, 11.0f);
@@ -312,19 +295,10 @@ class LocalServerPanel : public juce::Component {
                                DarkTheme::getColour(DarkTheme::TEXT_DIM));
         addAndMakeVisible(statusLabel_);
 
-        // Listen for status changes
-        auto& mgr = LlamaServerManager::getInstance();
-        mgr.onStatusChanged = [this](LlamaServerManager::Status) {
-            juce::MessageManager::callAsync([this]() { updateStatus(); });
-        };
         updateStatus();
     }
 
-    ~LocalServerPanel() override {
-        // Don't clear the callback — manager outlives us and other dialogs may set it
-    }
-
-    static constexpr int kPanelHeight = 230;
+    static constexpr int kPanelHeight = 160;
 
     void resized() override {
         auto bounds = getLocalBounds();
@@ -342,52 +316,35 @@ class LocalServerPanel : public juce::Component {
         modelEditor_.setBounds(row.reduced(0, 1));
         bounds.removeFromTop(2);
 
-        // Port + GPU + Context on one row
+        // GPU + Context on one row
         row = bounds.removeFromTop(rowH);
-        portLabel_.setBounds(row.removeFromLeft(labelW));
-        portEditor_.setBounds(row.removeFromLeft(60).reduced(0, 1));
-        row.removeFromLeft(12);
-        gpuLabel_.setBounds(row.removeFromLeft(72));
+        gpuLabel_.setBounds(row.removeFromLeft(labelW));
         gpuEditor_.setBounds(row.removeFromLeft(50).reduced(0, 1));
         row.removeFromLeft(12);
         ctxLabel_.setBounds(row.removeFromLeft(56));
         ctxEditor_.setBounds(row.removeFromLeft(60).reduced(0, 1));
-        bounds.removeFromTop(2);
-
-        // Binary row
-        row = bounds.removeFromTop(rowH);
-        binaryLabel_.setBounds(row.removeFromLeft(labelW));
-        binaryEditor_.setBounds(row.reduced(0, 1));
         bounds.removeFromTop(6);
 
-        // Start/Stop + Status
+        // Load/Unload + Status
         row = bounds.removeFromTop(rowH);
-        startStopButton_.setBounds(row.removeFromLeft(80).reduced(0, 1));
+        loadButton_.setBounds(row.removeFromLeft(100).reduced(0, 1));
         row.removeFromLeft(8);
         statusLabel_.setBounds(row);
     }
 
     void load(const Config& config) {
         modelEditor_.setText(juce::String(config.getLocalModelPath()), juce::dontSendNotification);
-        portEditor_.setText(juce::String(config.getLocalLlamaPort()), juce::dontSendNotification);
         gpuEditor_.setText(juce::String(config.getLocalLlamaGpuLayers()),
                            juce::dontSendNotification);
         ctxEditor_.setText(juce::String(config.getLocalLlamaContextSize()),
                            juce::dontSendNotification);
-        binaryEditor_.setText(juce::String(config.getLocalLlamaBinary()),
-                              juce::dontSendNotification);
+        updateStatus();
     }
 
     void apply(Config& config) const {
         config.setLocalModelPath(modelEditor_.getText().toStdString());
-        config.setLocalLlamaPort(portEditor_.getText().getIntValue());
         config.setLocalLlamaGpuLayers(gpuEditor_.getText().getIntValue());
         config.setLocalLlamaContextSize(ctxEditor_.getText().getIntValue());
-        config.setLocalLlamaBinary(binaryEditor_.getText().toStdString());
-
-        // Update the local URL to match the port
-        auto port = portEditor_.getText().getIntValue();
-        config.setLocalLlamaUrl("http://127.0.0.1:" + std::to_string(port) + "/v1");
     }
 
   private:
@@ -403,52 +360,67 @@ class LocalServerPanel : public juce::Component {
             });
     }
 
-    void toggleServer() {
-        auto& mgr = LlamaServerManager::getInstance();
-        if (mgr.isRunning()) {
-            mgr.stop();
+    void toggleModel() {
+        auto& mgr = LlamaModelManager::getInstance();
+        if (mgr.isLoaded()) {
+            mgr.unloadModel();
         } else {
-            LlamaServerManager::Config cfg;
+            LlamaModelManager::Config cfg;
             cfg.modelPath = modelEditor_.getText().toStdString();
-            cfg.port = portEditor_.getText().getIntValue();
             cfg.gpuLayers = gpuEditor_.getText().getIntValue();
             cfg.contextSize = ctxEditor_.getText().getIntValue();
-            cfg.binaryPath = binaryEditor_.getText().toStdString();
-            mgr.start(cfg);
+
+            loadButton_.setEnabled(false);
+            statusLabel_.setText("Loading...", juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId, juce::Colours::yellow);
+
+            // Load in background thread to avoid blocking UI
+            std::thread([this, cfg]() {
+                bool ok = LlamaModelManager::getInstance().loadModel(cfg);
+                juce::MessageManager::callAsync([this, ok, cfg]() {
+                    loadButton_.setEnabled(true);
+                    if (ok) {
+                        // Switch config to use embedded model
+                        auto& config = Config::getInstance();
+                        config.setLocalModelPath(cfg.modelPath);
+                        config.setLocalLlamaGpuLayers(cfg.gpuLayers);
+                        config.setLocalLlamaContextSize(cfg.contextSize);
+                        config.setAIPreset("local_embedded");
+                        auto* preset = magda::findPreset("local_embedded");
+                        if (preset) {
+                            for (const auto& [role, presetCfg] : preset->agents)
+                                config.setAgentLLMConfig(role, presetCfg);
+                        }
+                        config.save();
+                    } else {
+                        statusLabel_.setText("Failed to load model", juce::dontSendNotification);
+                    }
+                    updateStatus();
+                });
+            }).detach();
+            return;
         }
         updateStatus();
     }
 
     void updateStatus() {
-        auto& mgr = LlamaServerManager::getInstance();
-        auto status = mgr.getStatus();
-
-        statusLabel_.setText(mgr.getStatusMessage(), juce::dontSendNotification);
-
-        switch (status) {
-            case LlamaServerManager::Status::Stopped:
-                startStopButton_.setButtonText("Start");
-                statusLabel_.setColour(juce::Label::textColourId,
-                                       DarkTheme::getColour(DarkTheme::TEXT_DIM));
-                break;
-            case LlamaServerManager::Status::Starting:
-                startStopButton_.setButtonText("Stop");
-                statusLabel_.setColour(juce::Label::textColourId, juce::Colours::yellow);
-                break;
-            case LlamaServerManager::Status::Running:
-                startStopButton_.setButtonText("Stop");
-                statusLabel_.setColour(juce::Label::textColourId, juce::Colours::limegreen);
-                break;
-            case LlamaServerManager::Status::Error:
-                startStopButton_.setButtonText("Start");
-                statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
-                break;
+        auto& mgr = LlamaModelManager::getInstance();
+        if (mgr.isLoaded()) {
+            loadButton_.setButtonText("Unload");
+            auto path = juce::File(mgr.getLoadedModelPath()).getFileName();
+            statusLabel_.setText("Loaded: " + path, juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId, juce::Colours::limegreen);
+        } else {
+            loadButton_.setButtonText("Load Model");
+            statusLabel_.setText("No model loaded", juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
         }
     }
 
-    juce::Label titleLabel_, modelLabel_, portLabel_, gpuLabel_, ctxLabel_, binaryLabel_;
-    juce::TextEditor modelEditor_, portEditor_, gpuEditor_, ctxEditor_, binaryEditor_;
-    juce::TextButton browseButton_, startStopButton_;
+    juce::Label titleLabel_, modelLabel_, gpuLabel_, ctxLabel_;
+    juce::TextEditor modelEditor_, gpuEditor_, ctxEditor_;
+    juce::TextButton browseButton_, loadButton_;
     juce::Label statusLabel_;
     std::unique_ptr<juce::FileChooser> chooser_;
 };
@@ -486,11 +458,11 @@ class AISettingsDialog::CredentialsPage : public juce::Component {
         addAndMakeVisible(rowContainer_);
 
         // Local server panel (always visible)
-        localPanel_ = std::make_unique<LocalServerPanel>();
+        localPanel_ = std::make_unique<LocalModelPanel>();
         addAndMakeVisible(*localPanel_);
 
         // Separator label
-        localSeparator_.setText("Local Server", juce::dontSendNotification);
+        localSeparator_.setText("Local Model", juce::dontSendNotification);
         styleLabel(localSeparator_, 11.0f);
         localSeparator_.setColour(juce::Label::textColourId,
                                   DarkTheme::getColour(DarkTheme::TEXT_DIM));
@@ -517,7 +489,7 @@ class AISettingsDialog::CredentialsPage : public juce::Component {
         bounds.removeFromTop(12);
         localSeparator_.setBounds(bounds.removeFromTop(18));
         bounds.removeFromTop(4);
-        localPanel_->setBounds(bounds.removeFromTop(LocalServerPanel::kPanelHeight));
+        localPanel_->setBounds(bounds.removeFromTop(LocalModelPanel::kPanelHeight));
     }
 
     void load(const Config& config) {
@@ -619,7 +591,7 @@ class AISettingsDialog::CredentialsPage : public juce::Component {
     std::vector<std::unique_ptr<ProviderRow>> ownedRows_;
     juce::ComboBox addProviderCombo_;
     juce::Label localSeparator_;
-    std::unique_ptr<LocalServerPanel> localPanel_;
+    std::unique_ptr<LocalModelPanel> localPanel_;
 };
 
 // ============================================================================

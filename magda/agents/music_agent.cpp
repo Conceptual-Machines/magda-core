@@ -1,7 +1,7 @@
 #include "music_agent.hpp"
 
 #include "../daw/core/Config.hpp"
-#include "llm_config_utils.hpp"
+#include "llm_client_factory.hpp"
 
 namespace magda {
 
@@ -63,15 +63,17 @@ MusicAgent::GenerateResult MusicAgent::generate(const std::string& message) {
     }
 
     auto agentConfig = Config::getInstance().getAgentLLMConfig("music");
-    auto providerConfig = toLLMProviderConfig(agentConfig);
 
-    if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
-        result.error = "Music agent API key not configured.";
-        result.hasError = true;
-        return result;
+    if (agentConfig.provider != "llama_local") {
+        auto providerConfig = toLLMProviderConfig(agentConfig);
+        if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
+            result.error = "Music agent API key not configured.";
+            result.hasError = true;
+            return result;
+        }
     }
 
-    auto client = llm::LLMClientFactory::create(providerConfig);
+    auto client = createLLMClient(agentConfig);
 
     llm::Request request;
     request.systemPrompt = juce::String(getSystemPrompt());
@@ -90,6 +92,62 @@ MusicAgent::GenerateResult MusicAgent::generate(const std::string& message) {
 
     DBG("MAGDA MusicAgent (" + client->getName() + ", " + juce::String(response.wallSeconds, 2) +
         "s): " + juce::String(result.compactOutput));
+
+    result.instructions = parser_.parse(juce::String(result.compactOutput));
+    if (result.instructions.empty() && parser_.getLastError().isNotEmpty()) {
+        result.error = "Parse error: " + parser_.getLastError().toStdString();
+        result.hasError = true;
+    }
+
+    return result;
+}
+
+MusicAgent::GenerateResult MusicAgent::generateStreaming(const std::string& message,
+                                                         TokenCallback onToken) {
+    GenerateResult result;
+
+    if (shouldStop_.load()) {
+        result.error = "Cancelled";
+        result.hasError = true;
+        return result;
+    }
+
+    auto agentConfig = Config::getInstance().getAgentLLMConfig("music");
+
+    if (agentConfig.provider != "llama_local") {
+        auto providerConfig = toLLMProviderConfig(agentConfig);
+        if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
+            result.error = "Music agent API key not configured.";
+            result.hasError = true;
+            return result;
+        }
+    }
+
+    auto client = createLLMClient(agentConfig);
+
+    llm::Request request;
+    request.systemPrompt = juce::String(getSystemPrompt());
+    request.userMessage = juce::String(message);
+    request.temperature = 0.3f;
+
+    auto response = client->sendStreamingRequest(request, [&](const juce::String& token) {
+        if (shouldStop_.load())
+            return false;
+        if (onToken)
+            return onToken(token);
+        return true;
+    });
+
+    if (!response.success) {
+        result.error = response.error.toStdString();
+        result.hasError = true;
+        return result;
+    }
+
+    result.compactOutput = response.text.trim().toStdString();
+
+    DBG("MAGDA MusicAgent stream (" + client->getName() + ", " +
+        juce::String(response.wallSeconds, 2) + "s): " + juce::String(result.compactOutput));
 
     result.instructions = parser_.parse(juce::String(result.compactOutput));
     if (result.instructions.empty() && parser_.getLastError().isNotEmpty()) {

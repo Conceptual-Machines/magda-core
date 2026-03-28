@@ -320,10 +320,10 @@ void PluginBrowserContent::buildInternalPluginList() {
     plugins_.push_back(PluginBrowserInfo::createInternal(audio::DrumGridPlugin::getPluginName(),
                                                          audio::DrumGridPlugin::xmlTypeName, true));
 
-    // MIDI analysis
-    plugins_.push_back(PluginBrowserInfo::createInternal(
-        audio::MidiChordEnginePlugin::getPluginName(), audio::MidiChordEnginePlugin::xmlTypeName,
-        false, "MIDI"));
+    // MIDI analysis — Chord Engine hidden until 0.4
+    // plugins_.push_back(PluginBrowserInfo::createInternal(
+    //     audio::MidiChordEnginePlugin::getPluginName(),
+    //     audio::MidiChordEnginePlugin::xmlTypeName, false, "MIDI"));
 
     // Built-in FX (TE plugins)
     plugins_.push_back(PluginBrowserInfo::createInternal("Equaliser", "eq", false, "EQ"));

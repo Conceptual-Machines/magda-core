@@ -6,6 +6,8 @@
 #include <memory>
 #include <vector>
 
+#include "../../../../agents/llama_model_manager.hpp"
+#include "../../../core/Config.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../project/ProjectManager.hpp"
 #include "DSLTokeniser.hpp"
@@ -14,9 +16,9 @@
 namespace magda {
 class CommandAgent;
 class DAWAgent;
-class LlamaServerManager;
 class MusicAgent;
 class RouterAgent;
+class SvgButton;
 }  // namespace magda
 
 namespace magda::daw::ui {
@@ -31,7 +33,8 @@ class AIChatConsoleContent : public PanelContent,
                              private juce::Timer,
                              private juce::KeyListener,
                              public magda::SelectionManagerListener,
-                             public magda::ProjectManagerListener {
+                             public magda::ProjectManagerListener,
+                             public magda::ConfigListener {
   public:
     AIChatConsoleContent();
     ~AIChatConsoleContent() override;
@@ -53,6 +56,9 @@ class AIChatConsoleContent : public PanelContent,
     // ProjectManagerListener
     void projectOpened(const magda::ProjectInfo& info) override;
 
+    // ConfigListener
+    void configChanged() override;
+
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
@@ -71,6 +77,8 @@ class AIChatConsoleContent : public PanelContent,
     };
 
     void sendMessage(const juce::String& text);
+    void cancelRequest();
+    void restoreSendIcon();
     void appendToChat(const juce::String& text);
     void updateContextBar();
 
@@ -112,7 +120,9 @@ class AIChatConsoleContent : public PanelContent,
 
     // Config status bar
     juce::Label configStatusLabel_;
+    std::unique_ptr<magda::SvgButton> serverToggleButton_;
     void updateConfigStatus();
+    bool isLocalPreset() const;
 
     // Plugin alias autocomplete
     struct AliasEntry {

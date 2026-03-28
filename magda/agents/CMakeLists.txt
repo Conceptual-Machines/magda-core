@@ -27,8 +27,11 @@ set(AGENTS_SOURCES
     music_agent.cpp
     router_agent.hpp
     router_agent.cpp
-    llama_server_manager.hpp
-    llama_server_manager.cpp
+    llama_model_manager.hpp
+    llama_model_manager.cpp
+    llama_local_client.hpp
+    llama_local_client.cpp
+    llm_client_factory.hpp
     daw_agent.hpp
     daw_agent.cpp
 )
@@ -42,6 +45,8 @@ target_link_libraries(magda_agents
     magda_daw
     PRIVATE
     Threads::Threads
+    llama
+    ggml
 )
 
 # Include directories

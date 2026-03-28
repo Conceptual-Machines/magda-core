@@ -62,6 +62,14 @@ double CompactExecutor::barsToTime(double bar) const {
     return (bar - 1.0) * 4.0 * 60.0 / bpm;
 }
 
+double CompactExecutor::barsToLength(double bars) const {
+    double bpm = 120.0;
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    if (engine)
+        bpm = engine->getTempo();
+    return bars * 4.0 * 60.0 / bpm;
+}
+
 // ============================================================================
 // Main execute
 // ============================================================================
@@ -71,12 +79,44 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
     results_.clear();
     currentTrackId_ = -1;
     currentClipId_ = -1;
+    clearActiveSelection();
 
-    // Inherit selected clip from UI
+    // Inherit selected track/clip from UI context
     auto& sm = SelectionManager::getInstance();
+    auto selectedTrack = sm.getSelectedTrack();
+
+    // Ignore master track as implicit target — it's not a user track
+    if (selectedTrack != INVALID_TRACK_ID && selectedTrack != MASTER_TRACK_ID)
+        currentTrackId_ = selectedTrack;
+
+    // Single clip selection
     auto selectedClip = sm.getSelectedClip();
-    if (selectedClip != INVALID_CLIP_ID)
+    if (selectedClip != INVALID_CLIP_ID) {
         currentClipId_ = selectedClip;
+        auto* clipInfo = ClipManager::getInstance().getClip(selectedClip);
+        if (clipInfo && clipInfo->trackId != INVALID_TRACK_ID)
+            currentTrackId_ = clipInfo->trackId;
+    }
+
+    // Multi-clip selection → populate selectedClips_ so SET/DEL apply to all
+    auto& uiClips = sm.getSelectedClips();
+    if (!uiClips.empty()) {
+        selectedClips_.insert(uiClips.begin(), uiClips.end());
+        // Derive track from first clip if no track selected
+        if (currentTrackId_ < 0) {
+            for (auto cid : uiClips) {
+                auto* clipInfo = ClipManager::getInstance().getClip(cid);
+                if (clipInfo && clipInfo->trackId != INVALID_TRACK_ID) {
+                    currentTrackId_ = clipInfo->trackId;
+                    break;
+                }
+            }
+        }
+    }
+
+    DBG("CompactExecutor: currentTrack=" + juce::String(currentTrackId_) +
+        " currentClip=" + juce::String(currentClipId_) +
+        " selectedClips=" + juce::String(static_cast<int>(selectedClips_.size())));
 
     int succeeded = 0;
     int failed = 0;
@@ -105,6 +145,9 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
                 break;
             case OpCode::Fx:
                 ok = executeFx(std::get<FxOp>(inst.payload));
+                break;
+            case OpCode::Select:
+                ok = executeSelect(std::get<SelectOp>(inst.payload));
                 break;
             case OpCode::Arp:
                 ok = executeArp(std::get<ArpOp>(inst.payload));
@@ -142,11 +185,9 @@ bool CompactExecutor::executeTrack(const TrackOp& op) {
 
     // TRACK FX <alias> — resolve plugin, name track after it, add plugin
     if (op.fxAlias.isNotEmpty()) {
-        // Try to resolve plugin from alias
         FxOp fxOp;
         fxOp.fxName = op.fxAlias;
 
-        // We need to find the plugin name before creating the track
         juce::String trackName = op.fxAlias;  // fallback to alias
 
         auto* engine = tm.getAudioEngine();
@@ -169,10 +210,11 @@ bool CompactExecutor::executeTrack(const TrackOp& op) {
         currentTrackId_ = trackId;
         results_.add("Created track '" + trackName + "'");
 
-        // Now add the FX via the existing executeFx path
         fxOp.target.implicit = true;
-        if (!executeFx(fxOp))
-            return false;
+        if (!executeFx(fxOp)) {
+            results_.add("[!] Could not add FX '" + op.fxAlias + "': " + error_);
+            error_ = {};
+        }
 
         return true;
     }
@@ -184,6 +226,31 @@ bool CompactExecutor::executeTrack(const TrackOp& op) {
 }
 
 bool CompactExecutor::executeDel(const DelOp& op) {
+    // If active selection from SELECT, delete all selected items
+    if (op.target.isImplicit() && hasActiveSelection()) {
+        auto& tm = TrackManager::getInstance();
+        auto& cm = ClipManager::getInstance();
+        int count = 0;
+
+        if (!selectedClips_.empty()) {
+            for (auto clipId : selectedClips_) {
+                cm.deleteClip(clipId);
+                count++;
+            }
+            results_.add("Deleted " + juce::String(count) + " clip(s)");
+        }
+        if (!selectedTracks_.empty()) {
+            for (auto trackId : selectedTracks_) {
+                tm.deleteTrack(trackId);
+                count++;
+            }
+            results_.add("Deleted " + juce::String(static_cast<int>(selectedTracks_.size())) +
+                         " track(s)");
+        }
+        clearActiveSelection();
+        return true;
+    }
+
     int trackId = resolveTrackRef(op.target);
     if (trackId < 0)
         return false;
@@ -194,6 +261,16 @@ bool CompactExecutor::executeDel(const DelOp& op) {
 
 bool CompactExecutor::executeMute(const MuteOp& op) {
     auto& tm = TrackManager::getInstance();
+
+    // If active track selection from SELECT, mute all selected
+    if (!selectedTracks_.empty()) {
+        for (auto trackId : selectedTracks_)
+            tm.setTrackMuted(trackId, true);
+        results_.add("Muted " + juce::String(static_cast<int>(selectedTracks_.size())) +
+                     " track(s)");
+        return true;
+    }
+
     int count = 0;
     for (const auto& track : tm.getTracks()) {
         if (track.name.equalsIgnoreCase(op.name)) {
@@ -207,6 +284,16 @@ bool CompactExecutor::executeMute(const MuteOp& op) {
 
 bool CompactExecutor::executeSolo(const SoloOp& op) {
     auto& tm = TrackManager::getInstance();
+
+    // If active track selection from SELECT, solo all selected
+    if (!selectedTracks_.empty()) {
+        for (auto trackId : selectedTracks_)
+            tm.setTrackSoloed(trackId, true);
+        results_.add("Soloed " + juce::String(static_cast<int>(selectedTracks_.size())) +
+                     " track(s)");
+        return true;
+    }
+
     int count = 0;
     for (const auto& track : tm.getTracks()) {
         if (track.name.equalsIgnoreCase(op.name)) {
@@ -218,18 +305,10 @@ bool CompactExecutor::executeSolo(const SoloOp& op) {
     return true;
 }
 
-bool CompactExecutor::executeSet(const SetOp& op) {
-    int trackId = resolveTrackRef(op.target);
-    if (trackId < 0)
-        return false;
-
-    currentTrackId_ = trackId;
-
+void CompactExecutor::applySetProps(int trackId, const juce::StringPairArray& props) {
     auto& tm = TrackManager::getInstance();
-
-    for (const auto& key : op.props.getAllKeys()) {
-        auto val = op.props.getValue(key, "");
-
+    for (const auto& key : props.getAllKeys()) {
+        auto val = props.getValue(key, "");
         if (key == "vol" || key == "volume_db") {
             double db = val.getDoubleValue();
             float vol = static_cast<float>(std::pow(10.0, db / 20.0));
@@ -244,7 +323,44 @@ bool CompactExecutor::executeSet(const SetOp& op) {
             tm.setTrackName(trackId, val);
         }
     }
+}
 
+bool CompactExecutor::executeSet(const SetOp& op) {
+    // If active track selection from SELECT, apply to all
+    if (op.target.isImplicit() && !selectedTracks_.empty()) {
+        for (auto trackId : selectedTracks_)
+            applySetProps(trackId, op.props);
+        results_.add("Set properties on " + juce::String(static_cast<int>(selectedTracks_.size())) +
+                     " track(s)");
+        return true;
+    }
+
+    // If active clip selection, apply track props to each clip's parent track
+    // and apply clip-specific props (name) to the clips
+    if (op.target.isImplicit() && !selectedClips_.empty()) {
+        auto& cm = ClipManager::getInstance();
+        int count = 0;
+        for (auto clipId : selectedClips_) {
+            auto* clip = cm.getClip(clipId);
+            if (!clip)
+                continue;
+            // Clip-level property: name
+            for (const auto& key : op.props.getAllKeys()) {
+                if (key == "name")
+                    cm.setClipName(clipId, op.props.getValue(key, ""));
+            }
+            count++;
+        }
+        results_.add("Set properties on " + juce::String(count) + " clip(s)");
+        return true;
+    }
+
+    int trackId = resolveTrackRef(op.target);
+    if (trackId < 0)
+        return false;
+
+    currentTrackId_ = trackId;
+    applySetProps(trackId, op.props);
     results_.add("Set track properties");
     return true;
 }
@@ -268,8 +384,15 @@ bool CompactExecutor::executeClip(const ClipOp& op) {
     }
 
     currentClipId_ = clipId;
-    results_.add("Created clip at bar " + juce::String(op.bar, 0) + ", length " +
-                 juce::String(op.lengthBars, 0) + " bars");
+
+    if (op.name.isNotEmpty()) {
+        cm.setClipName(clipId, op.name);
+        results_.add("Created clip '" + op.name + "' at bar " + juce::String(op.bar, 0) +
+                     ", length " + juce::String(op.lengthBars, 0) + " bars");
+    } else {
+        results_.add("Created clip at bar " + juce::String(op.bar, 0) + ", length " +
+                     juce::String(op.lengthBars, 0) + " bars");
+    }
     return true;
 }
 
@@ -373,6 +496,130 @@ bool CompactExecutor::executeFx(const FxOp& op) {
     }
 
     results_.add("Added plugin '" + matchedName + "' by " + device.manufacturer);
+    return true;
+}
+
+bool CompactExecutor::executeSelect(const SelectOp& op) {
+    auto& sm = SelectionManager::getInstance();
+
+    if (op.target == SelectOp::Target::Tracks) {
+        auto& tm = TrackManager::getInstance();
+        std::unordered_set<TrackId> matches;
+
+        for (const auto& track : tm.getTracks()) {
+            if (op.field.isEmpty()) {
+                // No predicate → select all
+                matches.insert(track.id);
+                continue;
+            }
+
+            bool match = false;
+            if (op.field == "name") {
+                auto trackName = track.name.toLowerCase();
+                auto val = op.value.toLowerCase();
+                if (op.op == "=")
+                    match = trackName == val;
+                else if (op.op == "!=")
+                    match = trackName != val;
+                else if (op.op == "~")
+                    match = trackName.contains(val);
+            } else if (op.field == "mute" || op.field == "muted") {
+                bool muted = track.muted;
+                bool val = op.value == "true" || op.value == "1";
+                match = (op.op == "=") ? (muted == val) : (muted != val);
+            } else if (op.field == "solo" || op.field == "soloed") {
+                bool soloed = track.soloed;
+                bool val = op.value == "true" || op.value == "1";
+                match = (op.op == "=") ? (soloed == val) : (soloed != val);
+            }
+
+            if (match)
+                matches.insert(track.id);
+        }
+
+        selectedTracks_ = matches;
+        selectedClips_.clear();
+        sm.selectTracks(matches);
+        results_.add("Selected " + juce::String(static_cast<int>(matches.size())) + " track(s)");
+        return true;
+    }
+
+    // SELECT CLIPS
+    auto& cm = ClipManager::getInstance();
+    std::unordered_set<ClipId> matches;
+
+    for (const auto& clip : cm.getArrangementClips()) {
+        if (op.field.isEmpty()) {
+            matches.insert(clip.id);
+            continue;
+        }
+
+        bool match = false;
+        double numVal = op.value.getDoubleValue();
+
+        if (op.field == "length" || op.field == "len") {
+            // Compare clip length in bars
+            double clipLenBars = clip.length / barsToLength(1.0);
+            if (op.op == "<")
+                match = clipLenBars < numVal;
+            else if (op.op == ">")
+                match = clipLenBars > numVal;
+            else if (op.op == "<=")
+                match = clipLenBars <= numVal;
+            else if (op.op == ">=")
+                match = clipLenBars >= numVal;
+            else if (op.op == "=")
+                match = std::abs(clipLenBars - numVal) < 0.01;
+            else if (op.op == "!=")
+                match = std::abs(clipLenBars - numVal) >= 0.01;
+        } else if (op.field == "bar" || op.field == "start") {
+            // Compare clip start position in bars (1-based)
+            double clipBar = clip.startTime / barsToLength(1.0) + 1.0;
+            if (op.op == "<")
+                match = clipBar < numVal;
+            else if (op.op == ">")
+                match = clipBar > numVal;
+            else if (op.op == "<=")
+                match = clipBar <= numVal;
+            else if (op.op == ">=")
+                match = clipBar >= numVal;
+            else if (op.op == "=")
+                match = std::abs(clipBar - numVal) < 0.01;
+        } else if (op.field == "track") {
+            // Filter by parent track name
+            auto& tm = TrackManager::getInstance();
+            for (const auto& track : tm.getTracks()) {
+                if (track.id == clip.trackId) {
+                    auto trackName = track.name.toLowerCase();
+                    auto val = op.value.toLowerCase();
+                    if (op.op == "=")
+                        match = trackName == val;
+                    else if (op.op == "!=")
+                        match = trackName != val;
+                    else if (op.op == "~")
+                        match = trackName.contains(val);
+                    break;
+                }
+            }
+        } else if (op.field == "name") {
+            auto clipName = clip.name.toLowerCase();
+            auto val = op.value.toLowerCase();
+            if (op.op == "=")
+                match = clipName == val;
+            else if (op.op == "!=")
+                match = clipName != val;
+            else if (op.op == "~")
+                match = clipName.contains(val);
+        }
+
+        if (match)
+            matches.insert(clip.id);
+    }
+
+    selectedClips_ = matches;
+    selectedTracks_.clear();
+    sm.selectClips(matches);
+    results_.add("Selected " + juce::String(static_cast<int>(matches.size())) + " clip(s)");
     return true;
 }
 

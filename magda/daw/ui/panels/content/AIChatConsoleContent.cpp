@@ -4,16 +4,17 @@
 
 #include "../../../../agents/command_agent.hpp"
 #include "../../../../agents/compact_executor.hpp"
-#include "../../../../agents/compact_parser.hpp"
 #include "../../../../agents/daw_agent.hpp"
 #include "../../../../agents/dsl_interpreter.hpp"
-#include "../../../../agents/llama_server_manager.hpp"
+#include "../../../../agents/llama_model_manager.hpp"
+#include "../../../../agents/llm_presets.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/router_agent.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackManager.hpp"
+#include "../../components/common/SvgButton.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
@@ -184,48 +185,9 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
 AIChatConsoleContent::RequestThread::RequestThread(AIChatConsoleContent& owner)
     : juce::Thread("AI Chat Request"), owner_(owner) {}
 
-namespace {
-
-bool isCommandOpcode(magda::OpCode op) {
-    switch (op) {
-        case magda::OpCode::Track:
-        case magda::OpCode::Del:
-        case magda::OpCode::Mute:
-        case magda::OpCode::Solo:
-        case magda::OpCode::Set:
-        case magda::OpCode::Clip:
-        case magda::OpCode::Fx:
-            return true;
-        default:
-            return false;
-    }
-}
-
-bool isMusicOpcode(magda::OpCode op) {
-    switch (op) {
-        case magda::OpCode::Arp:
-        case magda::OpCode::Chord:
-        case magda::OpCode::Note:
-            return true;
-        default:
-            return false;
-    }
-}
-
-std::vector<magda::Instruction> filterInstructions(
-    const std::vector<magda::Instruction>& instructions, bool (*predicate)(magda::OpCode)) {
-    std::vector<magda::Instruction> filtered;
-    for (const auto& inst : instructions) {
-        if (predicate(inst.opcode))
-            filtered.push_back(inst);
-    }
-    return filtered;
-}
-
-}  // namespace
-
 void AIChatConsoleContent::RequestThread::run() {
     auto message = owner_.pendingMessage_.toStdString();
+    auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(&owner_);
 
     // Step 1: Classify intent via router
     std::string intent = "COMMAND";  // default fallback
@@ -244,31 +206,76 @@ void AIChatConsoleContent::RequestThread::run() {
     if (threadShouldExit())
         return;
 
+    // streamAnchor marks the text position where streamed output begins,
+    // so we can replace it with execution results later.
+    std::atomic<int> streamAnchor{-1};
+
+    // Helper: replace "Thinking..." with streaming output area
+    auto startStreaming = [safeThis, &streamAnchor]() {
+        juce::MessageManager::callAsync([safeThis, &streamAnchor]() {
+            if (!safeThis)
+                return;
+            safeThis->stopTimer();
+            auto text = safeThis->chatHistory_.getText();
+            auto thinkingPos = text.lastIndexOf(juce::String::charToString(0x25C6) + " Thinking");
+            if (thinkingPos >= 0) {
+                auto lineEnd = text.indexOf(thinkingPos, "\n");
+                if (lineEnd < 0)
+                    lineEnd = text.length();
+                text = text.substring(0, thinkingPos) + text.substring(lineEnd + 1);
+            }
+            streamAnchor.store(text.length());
+            safeThis->chatHistory_.setText(text);
+            safeThis->chatHistory_.moveCaretToEnd();
+        });
+    };
+
+    // Helper: append a token to the chat
+    auto appendToken = [safeThis](const juce::String& token) {
+        juce::MessageManager::callAsync([safeThis, token]() {
+            if (!safeThis)
+                return;
+            auto text = safeThis->chatHistory_.getText();
+            safeThis->chatHistory_.setText(text + token);
+            safeThis->chatHistory_.moveCaretToEnd();
+        });
+    };
+
+    // Token callback for streaming — starts stream on first token
+    bool streamStarted = false;
+    auto onToken = [&](const juce::String& token) -> bool {
+        if (threadShouldExit())
+            return false;
+        if (!streamStarted) {
+            startStreaming();
+            streamStarted = true;
+            wait(16);
+        }
+        appendToken(token);
+        return true;
+    };
+
     // Step 2: Dispatch to agents based on classification
-    std::vector<magda::Instruction> mergedInstructions;
+    std::string dslCode;                                // DSL from command agent
+    std::vector<magda::Instruction> musicInstructions;  // compact IR from music agent
     std::string error;
 
     if (intent == "COMMAND" || intent == "BOTH") {
         if (owner_.commandAgent_) {
-            auto result = owner_.commandAgent_->generate(message);
+            auto result = owner_.commandAgent_->generateStreaming(message, onToken);
             if (threadShouldExit())
                 return;
             if (result.hasError) {
                 error = result.error;
             } else {
-                auto filtered = filterInstructions(result.instructions, isCommandOpcode);
-                mergedInstructions.insert(mergedInstructions.end(), filtered.begin(),
-                                          filtered.end());
-                DBG("MAGDA CommandAgent: " +
-                    juce::String(static_cast<int>(result.instructions.size())) + " raw, " +
-                    juce::String(static_cast<int>(filtered.size())) + " after filter");
+                dslCode = result.dslOutput;
             }
         }
     }
 
     if (intent == "MUSIC" || intent == "BOTH") {
         if (owner_.musicAgent_) {
-            auto result = owner_.musicAgent_->generate(message);
+            auto result = owner_.musicAgent_->generateStreaming(message, onToken);
             if (threadShouldExit())
                 return;
             if (result.hasError) {
@@ -277,12 +284,7 @@ void AIChatConsoleContent::RequestThread::run() {
                 else
                     error += "\n" + result.error;
             } else {
-                auto filtered = filterInstructions(result.instructions, isMusicOpcode);
-                mergedInstructions.insert(mergedInstructions.end(), filtered.begin(),
-                                          filtered.end());
-                DBG("MAGDA MusicAgent: " +
-                    juce::String(static_cast<int>(result.instructions.size())) + " raw, " +
-                    juce::String(static_cast<int>(filtered.size())) + " after filter");
+                musicInstructions = std::move(result.instructions);
             }
         }
     }
@@ -290,35 +292,60 @@ void AIChatConsoleContent::RequestThread::run() {
     if (threadShouldExit())
         return;
 
-    auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(&owner_);
+    int anchor = streamAnchor.load();
 
-    // Step 3: Execute merged IR on message thread
-    juce::MessageManager::callAsync(
-        [safeThis, instructions = std::move(mergedInstructions), error = std::move(error)]() {
-            if (!safeThis)
-                return;
+    // Step 3: Execute on message thread, replacing streamed output
+    juce::MessageManager::callAsync([safeThis, dsl = std::move(dslCode),
+                                     musicIR = std::move(musicInstructions),
+                                     error = std::move(error), anchor]() {
+        if (!safeThis)
+            return;
 
-            std::string response;
-            if (!error.empty() && instructions.empty()) {
-                response = error;
-            } else {
-                magda::CompactExecutor executor;
-                if (executor.execute(instructions)) {
-                    response = executor.getResults().toStdString();
-                    if (response.empty())
-                        response = "OK";
+        std::string response;
+        bool hasContent = !dsl.empty() || !musicIR.empty();
+
+        if (!error.empty() && !hasContent) {
+            response = error;
+        } else {
+            // Execute DSL from command agent
+            if (!dsl.empty()) {
+                magda::dsl::Interpreter interpreter;
+                if (interpreter.execute(dsl.c_str())) {
+                    auto results = interpreter.getResults().toStdString();
+                    response = results.empty() ? "OK" : results;
                 } else {
-                    response = "Error: " + executor.getError().toStdString();
+                    response = "Error: " + std::string(interpreter.getError());
                 }
-                // Append any agent errors as warnings
-                if (!error.empty())
-                    response += "\n[Warning] " + error;
             }
 
-            safeThis->stopTimer();
+            // Execute compact IR from music agent
+            if (!musicIR.empty()) {
+                magda::CompactExecutor executor;
+                if (executor.execute(musicIR)) {
+                    auto results = executor.getResults().toStdString();
+                    if (!response.empty())
+                        response += "\n";
+                    response += results.empty() ? "OK" : results;
+                } else {
+                    if (!response.empty())
+                        response += "\n";
+                    response += "Error: " + executor.getError().toStdString();
+                }
+            }
 
-            // Remove "Thinking..." line and show response
-            auto currentText = safeThis->chatHistory_.getText();
+            if (!error.empty())
+                response += "\n[Warning] " + error;
+        }
+
+        safeThis->stopTimer();
+
+        auto currentText = safeThis->chatHistory_.getText();
+
+        // Replace streamed raw output with execution results
+        if (anchor >= 0 && anchor <= currentText.length()) {
+            currentText = currentText.substring(0, anchor);
+        } else {
+            // Streaming never started — remove "Thinking..." if present
             auto thinkingPos =
                 currentText.lastIndexOf(juce::String::charToString(0x25C6) + " Thinking");
             if (thinkingPos >= 0) {
@@ -328,22 +355,22 @@ void AIChatConsoleContent::RequestThread::run() {
                 currentText =
                     currentText.substring(0, thinkingPos) + currentText.substring(lineEnd + 1);
             }
+        }
 
-            // Format response — prefix errors distinctly
-            juce::String formattedResponse(response);
-            if (formattedResponse.startsWith("Error:") ||
-                formattedResponse.startsWith("DSL execution error:")) {
-                formattedResponse = "[!] " + formattedResponse;
-            }
+        juce::String formattedResponse(response);
+        if (formattedResponse.startsWith("Error:") ||
+            formattedResponse.startsWith("DSL execution error:")) {
+            formattedResponse = "[!] " + formattedResponse;
+        }
 
-            safeThis->chatHistory_.setText(currentText + juce::String::charToString(0x25C6) + " " +
-                                           formattedResponse + "\n\n");
-            safeThis->chatHistory_.moveCaretToEnd();
-            safeThis->inputBox_.setEnabled(true);
-            safeThis->sendButton_.setEnabled(true);
-            safeThis->inputBox_.grabKeyboardFocus();
-            safeThis->processing_ = false;
-        });
+        currentText += juce::String::charToString(0x25C6) + " " + formattedResponse + "\n\n";
+        safeThis->chatHistory_.setText(currentText);
+        safeThis->chatHistory_.moveCaretToEnd();
+        safeThis->inputBox_.setEnabled(true);
+        safeThis->processing_ = false;
+        safeThis->restoreSendIcon();
+        safeThis->inputBox_.grabKeyboardFocus();
+    });
 }
 
 // ============================================================================
@@ -468,8 +495,12 @@ AIChatConsoleContent::AIChatConsoleContent() {
     sendButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     sendButton_.setAlpha(0.35f);
     sendButton_.onClick = [this]() {
+        if (processing_) {
+            cancelRequest();
+            return;
+        }
         auto text = inputBox_.getText().trim();
-        if (text.isNotEmpty() && !processing_)
+        if (text.isNotEmpty())
             sendMessage(text);
     };
     addAndMakeVisible(sendButton_);
@@ -563,6 +594,41 @@ AIChatConsoleContent::AIChatConsoleContent() {
     configStatusLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     configStatusLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(configStatusLabel_);
+
+    // Model load/unload button (shown only for local_embedded preset)
+    serverToggleButton_ = std::make_unique<magda::SvgButton>(
+        "ModelToggle", BinaryData::server_play_svg, BinaryData::server_play_svgSize);
+    serverToggleButton_->onClick = [this]() {
+        auto& mgr = magda::LlamaModelManager::getInstance();
+        if (mgr.isLoaded()) {
+            mgr.unloadModel();
+            updateConfigStatus();
+        } else {
+            auto& config = magda::Config::getInstance();
+            auto modelPath = config.getLocalModelPath();
+            if (modelPath.empty()) {
+                configStatusLabel_.setText("No model path configured", juce::dontSendNotification);
+                configStatusLabel_.setColour(juce::Label::textColourId, juce::Colours::red);
+                return;
+            }
+            magda::LlamaModelManager::Config cfg;
+            cfg.modelPath = modelPath;
+            cfg.gpuLayers = config.getLocalLlamaGpuLayers();
+            cfg.contextSize = config.getLocalLlamaContextSize();
+            configStatusLabel_.setText("Loading model...", juce::dontSendNotification);
+            configStatusLabel_.setColour(juce::Label::textColourId, juce::Colours::yellow);
+            std::thread([this, cfg]() {
+                bool ok = magda::LlamaModelManager::getInstance().loadModel(cfg);
+                juce::MessageManager::callAsync([this, ok]() {
+                    if (!ok)
+                        DBG("Console: failed to load local model");
+                    updateConfigStatus();
+                });
+            }).detach();
+        }
+    };
+    addChildComponent(*serverToggleButton_);  // hidden by default
+
     updateConfigStatus();
 
     // Register for selection changes
@@ -570,6 +636,9 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     // Register for project lifecycle events
     magda::ProjectManager::getInstance().addListener(this);
+
+    // Register for config changes (e.g. preset changed in settings dialog)
+    magda::Config::getInstance().addListener(this);
 
     // Create agents
     agent_ = std::make_unique<magda::DAWAgent>();  // legacy DSL REPL
@@ -584,6 +653,7 @@ AIChatConsoleContent::~AIChatConsoleContent() {
         dslEditor_->removeKeyListener(this);
     inputBox_.removeKeyListener(this);
     autocompletePopup_.reset();
+    magda::Config::getInstance().removeListener(this);
     magda::ProjectManager::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
     stopTimer();
@@ -695,7 +765,12 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
     processing_ = true;
     inputBox_.clear();
     inputBox_.setEnabled(false);
-    sendButton_.setEnabled(false);
+
+    // Swap send button to stop icon
+    auto stopSvg =
+        juce::Drawable::createFromImageData(BinaryData::stop_off_svg, BinaryData::stop_off_svgSize);
+    sendButton_.setImages(stopSvg.get());
+    sendButton_.setAlpha(0.6f);
 
     appendToChat(juce::String::charToString(0x25CF) + " " + text);
     appendToChat(juce::String::charToString(0x25C6) + " Thinking");
@@ -718,6 +793,42 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
     requestThread_ = std::make_unique<RequestThread>(*this);
     requestThread_->startThread();
+}
+
+void AIChatConsoleContent::cancelRequest() {
+    if (!processing_)
+        return;
+
+    shouldStop_ = true;
+    if (agent_)
+        agent_->requestCancel();
+    if (routerAgent_)
+        routerAgent_->requestCancel();
+    if (commandAgent_)
+        commandAgent_->requestCancel();
+    if (musicAgent_)
+        musicAgent_->requestCancel();
+
+    if (requestThread_ && requestThread_->isThreadRunning()) {
+        requestThread_->signalThreadShouldExit();
+        requestThread_->stopThread(3000);
+        requestThread_.reset();
+    }
+
+    stopTimer();
+    processing_ = false;
+
+    appendToChat("[cancelled]\n");
+    inputBox_.setEnabled(true);
+    inputBox_.grabKeyboardFocus();
+    restoreSendIcon();
+}
+
+void AIChatConsoleContent::restoreSendIcon() {
+    auto enterSvg =
+        juce::Drawable::createFromImageData(BinaryData::enter_svg, BinaryData::enter_svgSize);
+    sendButton_.setImages(enterSvg.get());
+    sendButton_.setAlpha(0.35f);
 }
 
 void AIChatConsoleContent::timerCallback() {
@@ -753,12 +864,21 @@ void AIChatConsoleContent::appendToChat(const juce::String& text) {
 void AIChatConsoleContent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getPanelBackgroundColour());
 
-    // Draw chat history background with rounded corners
+    // Draw chat history + status footer as one rounded panel
     auto chatBounds = chatHistory_.getBounds().toFloat();
+    auto statusBounds = configStatusLabel_.getBounds().toFloat();
+    auto chatPanel = chatBounds.getUnion(statusBounds);
     g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    g.fillRoundedRectangle(chatBounds, 4.0f);
+    g.fillRoundedRectangle(chatPanel, 4.0f);
     g.setColour(DarkTheme::getBorderColour());
-    g.drawRoundedRectangle(chatBounds, 4.0f, 1.0f);
+    g.drawRoundedRectangle(chatPanel, 4.0f, 1.0f);
+
+    // Separator between chat and status footer
+    if (activeTab_ == ConsoleTab::AI) {
+        float sepY = chatBounds.getBottom();
+        g.drawHorizontalLine(static_cast<int>(sepY), chatPanel.getX() + 1.0f,
+                             chatPanel.getRight() - 1.0f);
+    }
 
     // Draw input box + bottom bar as one unified rounded rectangle
     auto inputBounds = inputBox_.getBounds();
@@ -808,10 +928,6 @@ void AIChatConsoleContent::resized() {
     bounds.removeFromBottom(4);  // Spacing above tabs
 
     if (activeTab_ == ConsoleTab::AI) {
-        // Config status bar at the top
-        configStatusLabel_.setBounds(bounds.removeFromTop(16));
-        bounds.removeFromTop(2);
-
         // Context bar above tabs
         auto bottomBar = bounds.removeFromBottom(26);
         bottomBarBounds_ = bottomBar;
@@ -824,7 +940,11 @@ void AIChatConsoleContent::resized() {
         inputBox_.setBounds(inputArea);
 
         bounds.removeFromBottom(8);  // Spacing
-        chatHistory_.setBounds(bounds);
+
+        // Config status footer inside chat panel (bottom strip)
+        int statusH = 26;
+
+        chatHistory_.setBounds(bounds.withTrimmedBottom(statusH));
 
         // Clear + copy buttons inside chat panel, top-right corner
         auto chatBounds = chatHistory_.getBounds();
@@ -836,6 +956,18 @@ void AIChatConsoleContent::resized() {
                                chatBounds.getY() + margin, btnSize, btnSize);
         clearButton_.toFront(false);
         copyButton_.toFront(false);
+
+        // Status bar sits below chat history, inside the same visual panel
+        auto statusBar = juce::Rectangle<int>(bounds.getX(), bounds.getBottom() - statusH,
+                                              bounds.getWidth(), statusH);
+        statusBar.reduce(6, 2);  // Padding
+        if (serverToggleButton_ && serverToggleButton_->isVisible()) {
+            statusBar.removeFromRight(2);
+            serverToggleButton_->setBounds(statusBar.removeFromRight(20).reduced(1));
+            serverToggleButton_->toFront(false);
+        }
+        configStatusLabel_.setBounds(statusBar);
+        configStatusLabel_.toFront(false);
     } else {
         // DSL tab layout
         dslStatusLabel_.setBounds(bounds.removeFromBottom(20));
@@ -984,16 +1116,15 @@ void AIChatConsoleContent::projectOpened(const magda::ProjectInfo& /*info*/) {
     chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
 
     // Cancel any in-flight request
-    if (requestThread_ && requestThread_->isThreadRunning()) {
-        agent_->requestCancel();
-        requestThread_->signalThreadShouldExit();
-        requestThread_->stopThread(2000);
-        requestThread_.reset();
-    }
-    stopTimer();
-    processing_ = false;
-    inputBox_.setEnabled(true);
-    sendButton_.setEnabled(true);
+    cancelRequest();
+}
+
+// ============================================================================
+// ConfigListener
+// ============================================================================
+
+void AIChatConsoleContent::configChanged() {
+    updateConfigStatus();
 }
 
 // ============================================================================
@@ -1065,37 +1196,56 @@ void AIChatConsoleContent::updateConfigStatus() {
     if (preset == "custom")
         status = "Custom";
     else {
-        // Capitalize first letter of preset
         status = juce::String(preset).replaceCharacter('_', ' ');
         if (status.isNotEmpty())
             status = status.substring(0, 1).toUpperCase() + status.substring(1);
     }
 
-    status += " | " + juce::String(musicCfg.model);
+    if (musicCfg.model.empty())
+        status += " | Embedded";
+    else
+        status += " | " + juce::String(musicCfg.model);
 
-    // If local provider, show server status
-    bool isLocal = musicCfg.provider == "openai_chat" &&
-                   musicCfg.baseUrl.find("127.0.0.1") != std::string::npos;
-    if (isLocal || preset == "local" || preset == "hybrid") {
-        auto& mgr = magda::LlamaServerManager::getInstance();
-        auto serverStatus = mgr.getStatus();
-        switch (serverStatus) {
-            case magda::LlamaServerManager::Status::Running:
-                status += " | Server listening on :" + juce::String(config.getLocalLlamaPort());
-                break;
-            case magda::LlamaServerManager::Status::Starting:
-                status += " | Server starting...";
-                break;
-            case magda::LlamaServerManager::Status::Error:
-                status += " | Server error";
-                break;
-            case magda::LlamaServerManager::Status::Stopped:
-                status += " | Server stopped";
-                break;
+    // If embedded local provider, show model status + toggle button
+    if (isLocalPreset() && serverToggleButton_) {
+        auto& mgr = magda::LlamaModelManager::getInstance();
+        if (mgr.isLoaded()) {
+            auto modelName = juce::File(mgr.getLoadedModelPath()).getFileName();
+            status += " | " + modelName;
+            serverToggleButton_->updateSvgData(BinaryData::server_stop_svg,
+                                               BinaryData::server_stop_svgSize);
+            serverToggleButton_->setNormalColor(juce::Colours::limegreen);
+            serverToggleButton_->setHoverColor(juce::Colours::limegreen.brighter(0.3f));
+            serverToggleButton_->setVisible(true);
+            configStatusLabel_.setColour(juce::Label::textColourId, juce::Colours::limegreen);
+        } else {
+            status += " | No model loaded";
+            serverToggleButton_->updateSvgData(BinaryData::server_play_svg,
+                                               BinaryData::server_play_svgSize);
+            serverToggleButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+            serverToggleButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            serverToggleButton_->setVisible(true);
+            configStatusLabel_.setColour(juce::Label::textColourId,
+                                         DarkTheme::getSecondaryTextColour());
         }
+        serverToggleButton_->repaint();
+    } else {
+        if (serverToggleButton_)
+            serverToggleButton_->setVisible(false);
+        configStatusLabel_.setColour(juce::Label::textColourId,
+                                     DarkTheme::getSecondaryTextColour());
     }
 
     configStatusLabel_.setText(status, juce::dontSendNotification);
+    resized();
+}
+
+bool AIChatConsoleContent::isLocalPreset() const {
+    auto& config = magda::Config::getInstance();
+    auto preset = config.getAIPreset();
+    auto commandCfg = config.getAgentLLMConfig("command");
+    return commandCfg.provider == "llama_local" || preset == "local_embedded" ||
+           preset == "local" || preset == "hybrid";
 }
 
 void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {

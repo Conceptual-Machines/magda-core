@@ -210,6 +210,7 @@ class Interpreter {
     // Parameter parsing
     bool parseParams(Tokenizer& tok, Params& outParams);
     bool parseValue(Tokenizer& tok, std::string& outValue);
+    bool evaluateFunction(const std::string& name, Tokenizer& tok, std::string& outValue);
 
     // Helpers
     static TrackType parseTrackType(const Params& params);

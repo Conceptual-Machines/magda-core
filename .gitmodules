@@ -8,3 +8,6 @@
 [submodule "third_party/juce-llm"]
 	path = third_party/juce-llm
 	url = https://github.com/Conceptual-Machines/juce-llm.git
+[submodule "third_party/llama.cpp"]
+	path = third_party/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp.git

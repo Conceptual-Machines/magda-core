@@ -111,26 +111,63 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
             }
             instructions.push_back({OpCode::Set, payload});
         } else if (op == "CLIP") {
-            // CLIP <bar> <length_bars>         (implicit track)
-            // CLIP <ref> <bar> <length_bars>   (explicit track)
+            // CLIP <bar> <length_bars>         (implicit track, 2 args)
+            // CLIP <ref> <bar> <length_bars>   (explicit track, 3 args)
             if (parts.size() < 3) {
                 lastError_ = "CLIP requires <bar> <length_bars>";
                 return {};
             }
             ClipOp payload;
-            if (parts.size() == 3 ||
-                (parts.size() >= 3 && isInteger(parts[1]) && isInteger(parts[2]))) {
-                // 2 numeric args → implicit track
+            if (isInteger(parts[1]) && parts.size() >= 4) {
+                // Numeric first arg → explicit track: CLIP <ref> <bar> <len> [name...]
+                payload.target = parseRef(parts[1]);
+                payload.bar = parts[2].getDoubleValue();
+                payload.lengthBars = parts[3].getDoubleValue();
+                if (parts.size() > 4) {
+                    payload.name = parts[4];
+                    for (int i = 5; i < parts.size(); ++i)
+                        payload.name += " " + parts[i];
+                }
+            } else {
+                // Implicit track: CLIP <bar> <len> [name...]
                 payload.target.implicit = true;
                 payload.bar = parts[1].getDoubleValue();
                 payload.lengthBars = parts[2].getDoubleValue();
-            } else {
-                payload.target = parseRef(parts[1]);
-                payload.bar = parts[2].getDoubleValue();
-                if (parts.size() > 3)
-                    payload.lengthBars = parts[3].getDoubleValue();
+                if (parts.size() > 3) {
+                    payload.name = parts[3];
+                    for (int i = 4; i < parts.size(); ++i)
+                        payload.name += " " + parts[i];
+                }
             }
             instructions.push_back({OpCode::Clip, payload});
+        } else if (op == "SELECT") {
+            // SELECT CLIPS [WHERE <field> <op> <value>]
+            // SELECT TRACKS [WHERE <field> <op> <value>]
+            if (parts.size() < 2) {
+                lastError_ = "SELECT requires CLIPS or TRACKS";
+                return {};
+            }
+            SelectOp payload;
+            auto target = parts[1].toUpperCase();
+            if (target == "CLIPS")
+                payload.target = SelectOp::Target::Clips;
+            else if (target == "TRACKS")
+                payload.target = SelectOp::Target::Tracks;
+            else {
+                lastError_ = "SELECT target must be CLIPS or TRACKS";
+                return {};
+            }
+            // Optional WHERE clause
+            if (parts.size() >= 5 && parts[2].toUpperCase() == "WHERE") {
+                payload.field = parts[3].toLowerCase();
+                payload.op = parts[4];
+                if (parts.size() > 5) {
+                    payload.value = parts[5];
+                    for (int i = 6; i < parts.size(); ++i)
+                        payload.value += " " + parts[i];
+                }
+            }
+            instructions.push_back({OpCode::Select, payload});
         } else if (op == "FX") {
             // FX <fx_name>          (implicit track)
             // FX <ref> <fx_name>    (explicit track)

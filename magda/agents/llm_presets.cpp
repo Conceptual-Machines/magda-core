@@ -7,6 +7,15 @@ using AC = Config::AgentLLMConfig;
 const std::vector<LLMPreset>& getBuiltInPresets() {
     static const std::vector<LLMPreset> presets = {
         {
+            "local_embedded",
+            "Local (Embedded)",
+            {
+                {"router", {"llama_local", "", "", ""}},
+                {"command", {"llama_local", "", "", ""}},
+                {"music", {"llama_local", "", "", ""}},
+            },
+        },
+        {
             "local",
             "Local (llama-server)",
             {
@@ -19,8 +28,8 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             "cloud_openai",
             "Cloud (OpenAI)",
             {
-                {"router", {"openai_chat", "", "", "gpt-4.1-mini"}},
-                {"command", {"openai_chat", "", "", "gpt-4.1"}},
+                {"router", {"openai_chat", "", "", "gpt-4.1"}},
+                {"command", {"openai_chat", "", "", "gpt-5"}},
                 {"music", {"openai_chat", "", "", "gpt-5"}},
             },
         },
@@ -70,8 +79,8 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             "hybrid",
             "Hybrid (local router+command, cloud music)",
             {
-                {"router", {"openai_chat", "http://127.0.0.1:8080/v1", "", "local"}},
-                {"command", {"openai_chat", "http://127.0.0.1:8080/v1", "", "local"}},
+                {"router", {"llama_local", "", "", ""}},
+                {"command", {"llama_local", "", "", ""}},
                 {"music", {"openai_chat", "", "", "gpt-5"}},
             },
         },
