@@ -189,14 +189,21 @@ void AIChatConsoleContent::RequestThread::run() {
     auto message = owner_.pendingMessage_.toStdString();
     auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(&owner_);
 
+    auto totalStart = std::chrono::steady_clock::now();
+    double routerMs = 0.0, agentMs = 0.0;
+
     // Step 1: Classify intent via router
     std::string intent = "COMMAND";  // default fallback
     if (owner_.routerAgent_) {
+        auto routerStart = std::chrono::steady_clock::now();
         auto classification = owner_.routerAgent_->classify(message);
+        routerMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
+                                                             routerStart)
+                       .count();
         if (!classification.hasError) {
             intent = classification.intent;
-            DBG("MAGDA Router: intent=" + juce::String(intent) + " (" +
-                juce::String(classification.wallSeconds, 2) + "s)");
+            DBG("MAGDA Router: intent=" + juce::String(intent) + " (" + juce::String(routerMs, 0) +
+                "ms)");
         } else {
             DBG("MAGDA Router: error: " + juce::String(classification.error) +
                 ", defaulting to COMMAND");
@@ -260,6 +267,8 @@ void AIChatConsoleContent::RequestThread::run() {
     std::vector<magda::Instruction> musicInstructions;  // compact IR from music agent
     std::string error;
 
+    auto agentStart = std::chrono::steady_clock::now();
+
     if (intent == "COMMAND" || intent == "BOTH") {
         if (owner_.commandAgent_) {
             auto result = owner_.commandAgent_->generateStreaming(message, onToken);
@@ -289,88 +298,107 @@ void AIChatConsoleContent::RequestThread::run() {
         }
     }
 
+    agentMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - agentStart)
+            .count();
+    auto totalMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - totalStart)
+            .count();
+
+    DBG("MAGDA Timing: router=" + juce::String(routerMs, 0) +
+        "ms, agent=" + juce::String(agentMs, 0) + "ms, total=" + juce::String(totalMs, 0) + "ms");
+
     if (threadShouldExit())
         return;
 
     int anchor = streamAnchor.load();
 
     // Step 3: Execute on message thread, replacing streamed output
-    juce::MessageManager::callAsync([safeThis, dsl = std::move(dslCode),
-                                     musicIR = std::move(musicInstructions),
-                                     error = std::move(error), anchor]() {
-        if (!safeThis)
-            return;
+    juce::MessageManager::callAsync(
+        [safeThis, dsl = std::move(dslCode), musicIR = std::move(musicInstructions),
+         error = std::move(error), anchor, routerMs, agentMs, totalMs]() {
+            if (!safeThis)
+                return;
 
-        std::string response;
-        bool hasContent = !dsl.empty() || !musicIR.empty();
+            std::string response;
+            bool hasContent = !dsl.empty() || !musicIR.empty();
 
-        if (!error.empty() && !hasContent) {
-            response = error;
-        } else {
-            // Execute DSL from command agent
-            if (!dsl.empty()) {
-                magda::dsl::Interpreter interpreter;
-                if (interpreter.execute(dsl.c_str())) {
-                    auto results = interpreter.getResults().toStdString();
-                    response = results.empty() ? "OK" : results;
-                } else {
-                    response = "Error: " + std::string(interpreter.getError());
+            if (!error.empty() && !hasContent) {
+                response = error;
+            } else {
+                // Execute DSL from command agent
+                if (!dsl.empty()) {
+                    magda::dsl::Interpreter interpreter;
+                    if (interpreter.execute(dsl.c_str())) {
+                        auto results = interpreter.getResults().toStdString();
+                        response = results.empty() ? "OK" : results;
+                    } else {
+                        response = "Error: " + std::string(interpreter.getError());
+                    }
+                }
+
+                // Execute compact IR from music agent
+                if (!musicIR.empty()) {
+                    magda::CompactExecutor executor;
+                    if (executor.execute(musicIR)) {
+                        auto results = executor.getResults().toStdString();
+                        if (!response.empty())
+                            response += "\n";
+                        response += results.empty() ? "OK" : results;
+                    } else {
+                        if (!response.empty())
+                            response += "\n";
+                        response += "Error: " + executor.getError().toStdString();
+                    }
+                }
+
+                if (!error.empty())
+                    response += "\n[Warning] " + error;
+            }
+
+            // Append timing info
+            auto formatMs = [](double ms) -> std::string {
+                if (ms >= 1000.0)
+                    return juce::String(ms / 1000.0, 1).toStdString() + "s";
+                return juce::String(ms, 0).toStdString() + "ms";
+            };
+            response += "\n[" + formatMs(routerMs) + " router, " + formatMs(agentMs) + " agent, " +
+                        formatMs(totalMs) + " total]";
+
+            safeThis->stopTimer();
+
+            auto currentText = safeThis->chatHistory_.getText();
+
+            // Replace streamed raw output with execution results
+            if (anchor >= 0 && anchor <= currentText.length()) {
+                currentText = currentText.substring(0, anchor);
+            } else {
+                // Streaming never started — remove "Thinking..." if present
+                auto thinkingPos =
+                    currentText.lastIndexOf(juce::String::charToString(0x25C6) + " Thinking");
+                if (thinkingPos >= 0) {
+                    auto lineEnd = currentText.indexOf(thinkingPos, "\n");
+                    if (lineEnd < 0)
+                        lineEnd = currentText.length();
+                    currentText =
+                        currentText.substring(0, thinkingPos) + currentText.substring(lineEnd + 1);
                 }
             }
 
-            // Execute compact IR from music agent
-            if (!musicIR.empty()) {
-                magda::CompactExecutor executor;
-                if (executor.execute(musicIR)) {
-                    auto results = executor.getResults().toStdString();
-                    if (!response.empty())
-                        response += "\n";
-                    response += results.empty() ? "OK" : results;
-                } else {
-                    if (!response.empty())
-                        response += "\n";
-                    response += "Error: " + executor.getError().toStdString();
-                }
+            juce::String formattedResponse(response);
+            if (formattedResponse.startsWith("Error:") ||
+                formattedResponse.startsWith("DSL execution error:")) {
+                formattedResponse = "[!] " + formattedResponse;
             }
 
-            if (!error.empty())
-                response += "\n[Warning] " + error;
-        }
-
-        safeThis->stopTimer();
-
-        auto currentText = safeThis->chatHistory_.getText();
-
-        // Replace streamed raw output with execution results
-        if (anchor >= 0 && anchor <= currentText.length()) {
-            currentText = currentText.substring(0, anchor);
-        } else {
-            // Streaming never started — remove "Thinking..." if present
-            auto thinkingPos =
-                currentText.lastIndexOf(juce::String::charToString(0x25C6) + " Thinking");
-            if (thinkingPos >= 0) {
-                auto lineEnd = currentText.indexOf(thinkingPos, "\n");
-                if (lineEnd < 0)
-                    lineEnd = currentText.length();
-                currentText =
-                    currentText.substring(0, thinkingPos) + currentText.substring(lineEnd + 1);
-            }
-        }
-
-        juce::String formattedResponse(response);
-        if (formattedResponse.startsWith("Error:") ||
-            formattedResponse.startsWith("DSL execution error:")) {
-            formattedResponse = "[!] " + formattedResponse;
-        }
-
-        currentText += juce::String::charToString(0x25C6) + " " + formattedResponse + "\n\n";
-        safeThis->chatHistory_.setText(currentText);
-        safeThis->chatHistory_.moveCaretToEnd();
-        safeThis->inputBox_.setEnabled(true);
-        safeThis->processing_ = false;
-        safeThis->restoreSendIcon();
-        safeThis->inputBox_.grabKeyboardFocus();
-    });
+            currentText += juce::String::charToString(0x25C6) + " " + formattedResponse + "\n\n";
+            safeThis->chatHistory_.setText(currentText);
+            safeThis->chatHistory_.moveCaretToEnd();
+            safeThis->inputBox_.setEnabled(true);
+            safeThis->processing_ = false;
+            safeThis->restoreSendIcon();
+            safeThis->inputBox_.grabKeyboardFocus();
+        });
 }
 
 // ============================================================================
@@ -691,11 +719,12 @@ juce::String AIChatConsoleContent::resolveAliases(const juce::String& text) {
     std::sort(sorted.begin(), sorted.end(),
               [](const auto& a, const auto& b) { return a.alias.length() > b.alias.length(); });
 
+    // Convert @alias to <alias> token format for the LLM — resolved at DSL execution time
     auto resolved = text;
     for (const auto& entry : sorted) {
         auto token = "@" + entry.alias;
         if (resolved.contains(token))
-            resolved = resolved.replace(token, entry.pluginName);
+            resolved = resolved.replace(token, "<" + entry.alias + ">");
     }
     return resolved;
 }
@@ -1245,7 +1274,7 @@ bool AIChatConsoleContent::isLocalPreset() const {
     auto preset = config.getAIPreset();
     auto commandCfg = config.getAgentLLMConfig("command");
     return commandCfg.provider == "llama_local" || preset == "local_embedded" ||
-           preset == "local" || preset == "hybrid";
+           preset == "local" || preset == "hybrid_cost";
 }
 
 void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {

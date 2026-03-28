@@ -9,7 +9,6 @@
 #include "compact_executor.hpp"
 #include "compact_parser.hpp"
 #include "dsl_interpreter.hpp"
-#include "openai_client.hpp"
 
 namespace magda {
 
@@ -92,7 +91,6 @@ class DAWAgent : public AgentInterface {
     /** Get the compact system prompt with instruction set. */
     static const char* getCompactSystemPrompt();
 
-    OpenAIClient openai_;
     CompactParser parser_;
     CompactExecutor executor_;
     dsl::Interpreter interpreter_;

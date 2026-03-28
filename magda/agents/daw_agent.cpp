@@ -186,28 +186,42 @@ DAWAgent::DSLResult DAWAgent::generateDSL(const std::string& message) {
         return result;
     }
 
-    openai_.loadFromConfig();
+    auto agentConfig = Config::getInstance().getAgentLLMConfig("command");
+    auto pc = toLLMProviderConfig(agentConfig);
 
-    if (!openai_.hasApiKey()) {
-        result.error = "OpenAI API key not configured. Set it in Preferences > AI Assistant.";
+    if (pc.apiKey.isEmpty()) {
+        result.error = "API key not configured. Set it in Preferences > AI Assistant.";
         result.hasError = true;
         return result;
     }
+
+    // Use Responses API for CFG grammar
+    pc.provider = llm::Provider::OpenAIResponses;
+    auto client = llm::LLMClientFactory::create(pc);
 
     auto stateJson = dsl::Interpreter::buildStateSnapshot();
+    auto systemPrompt = juce::String(dsl::getToolDescription());
+    if (stateJson.isNotEmpty())
+        systemPrompt += "\n\nCurrent DAW state:\n" + stateJson;
 
-    auto dslString =
-        openai_.generateDSL(juce::String(message), stateJson, juce::String(dsl::getGrammar()),
-                            juce::String(dsl::getToolDescription()), &shouldStop_);
+    llm::Request request;
+    request.systemPrompt = systemPrompt;
+    request.userMessage = juce::String(message);
+    request.temperature = 0.1f;
+    request.grammar = juce::String(dsl::getGrammar());
+    request.grammarToolName = "magda_dsl";
+    request.grammarToolDescription = systemPrompt;
 
-    if (dslString.isEmpty()) {
-        result.error = "Error: " + openai_.getLastError().toStdString();
+    auto response = client->sendRequest(request);
+
+    if (!response.success) {
+        result.error = "Error: " + response.error.toStdString();
         result.hasError = true;
         return result;
     }
 
-    DBG("MAGDA DAWAgent: DSL received: " + dslString);
-    result.dsl = dslString.toStdString();
+    DBG("MAGDA DAWAgent: DSL received: " + response.text);
+    result.dsl = response.text.trim().toStdString();
     return result;
 }
 

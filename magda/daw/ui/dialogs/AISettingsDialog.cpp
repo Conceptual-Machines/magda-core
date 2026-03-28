@@ -5,8 +5,10 @@
 #include "../../../agents/llama_model_manager.hpp"
 #include "../../../agents/llm_config_utils.hpp"
 #include "../../../agents/llm_presets.hpp"
+#include "../../../agents/model_downloader.hpp"
 #include "../../core/Config.hpp"
 #include "../themes/DarkTheme.hpp"
+#include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 
 namespace magda {
@@ -254,6 +256,11 @@ class LocalModelPanel : public juce::Component {
         titleLabel_.setFont(titleLabel_.getFont().boldened());
         addAndMakeVisible(titleLabel_);
 
+        // Download model button
+        downloadButton_.setButtonText("Download Model");
+        downloadButton_.onClick = [this]() { startDownload(); };
+        addAndMakeVisible(downloadButton_);
+
         // Model file
         modelLabel_.setText("Model (.gguf)", juce::dontSendNotification);
         styleLabel(modelLabel_);
@@ -298,17 +305,17 @@ class LocalModelPanel : public juce::Component {
         updateStatus();
     }
 
-    static constexpr int kPanelHeight = 160;
+    static constexpr int kPanelHeight = 190;
 
     void resized() override {
         auto bounds = getLocalBounds();
-        const int labelW = 80;
+        const int labelW = 90;
         const int rowH = 26;
 
         titleLabel_.setBounds(bounds.removeFromTop(22));
         bounds.removeFromTop(4);
 
-        // Model row
+        // Model path row
         auto row = bounds.removeFromTop(rowH);
         modelLabel_.setBounds(row.removeFromLeft(labelW));
         browseButton_.setBounds(row.removeFromRight(32).reduced(2, 1));
@@ -325,9 +332,11 @@ class LocalModelPanel : public juce::Component {
         ctxEditor_.setBounds(row.removeFromLeft(60).reduced(0, 1));
         bounds.removeFromTop(6);
 
-        // Load/Unload + Status
+        // Load/Unload + Download + Status
         row = bounds.removeFromTop(rowH);
         loadButton_.setBounds(row.removeFromLeft(100).reduced(0, 1));
+        row.removeFromLeft(8);
+        downloadButton_.setBounds(row.removeFromLeft(120).reduced(0, 1));
         row.removeFromLeft(8);
         statusLabel_.setBounds(row);
     }
@@ -357,6 +366,69 @@ class LocalModelPanel : public juce::Component {
                 auto result = fc.getResult();
                 if (result.existsAsFile())
                     modelEditor_.setText(result.getFullPathName(), juce::dontSendNotification);
+            });
+    }
+
+    void startDownload() {
+        // Ask user where to save the model
+        chooser_ =
+            std::make_unique<juce::FileChooser>("Save MAGDA Model",
+                                                juce::File(modelEditor_.getText())
+                                                    .getParentDirectory()
+                                                    .getChildFile("magda-v0.3.0-q4_k_m.gguf"),
+                                                "*.gguf");
+        chooser_->launchAsync(
+            juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+            [this](const juce::FileChooser& fc) {
+                auto result = fc.getResult();
+                if (result == juce::File())
+                    return;
+
+                auto targetFile = result.withFileExtension("gguf");
+
+                downloadButton_.setEnabled(false);
+                downloadButton_.setButtonText("0%");
+                statusLabel_.setText("Downloading...", juce::dontSendNotification);
+                statusLabel_.setColour(juce::Label::textColourId, juce::Colours::yellow);
+
+                downloader_ = std::make_unique<ModelDownloader>();
+                downloader_->startDownload(
+                    ModelDownloader::getDefaultModelUrl(), targetFile,
+                    [this](int64_t bytesDownloaded, int64_t totalBytes) {
+                        juce::MessageManager::callAsync([this, bytesDownloaded, totalBytes]() {
+                            if (totalBytes > 0) {
+                                int pct = static_cast<int>(bytesDownloaded * 100 / totalBytes);
+                                downloadButton_.setButtonText(juce::String(pct) + "%");
+                                auto mb = static_cast<double>(bytesDownloaded) / (1024.0 * 1024.0);
+                                auto totalMb = static_cast<double>(totalBytes) / (1024.0 * 1024.0);
+                                statusLabel_.setText(juce::String(mb, 0) + " / " +
+                                                         juce::String(totalMb, 0) + " MB",
+                                                     juce::dontSendNotification);
+                            } else {
+                                auto mb = static_cast<double>(bytesDownloaded) / (1024.0 * 1024.0);
+                                statusLabel_.setText(juce::String(mb, 0) + " MB downloaded",
+                                                     juce::dontSendNotification);
+                            }
+                        });
+                    },
+                    [this](bool success, const juce::String& modelPath) {
+                        juce::MessageManager::callAsync([this, success, modelPath]() {
+                            downloadButton_.setEnabled(true);
+                            downloadButton_.setButtonText("Download Model");
+
+                            if (success) {
+                                modelEditor_.setText(modelPath, juce::dontSendNotification);
+                                statusLabel_.setText("Download complete",
+                                                     juce::dontSendNotification);
+                                statusLabel_.setColour(juce::Label::textColourId,
+                                                       juce::Colours::limegreen);
+                            } else {
+                                statusLabel_.setText("Download failed", juce::dontSendNotification);
+                                statusLabel_.setColour(juce::Label::textColourId,
+                                                       juce::Colours::red);
+                            }
+                        });
+                    });
             });
     }
 
@@ -420,9 +492,10 @@ class LocalModelPanel : public juce::Component {
 
     juce::Label titleLabel_, modelLabel_, gpuLabel_, ctxLabel_;
     juce::TextEditor modelEditor_, gpuEditor_, ctxEditor_;
-    juce::TextButton browseButton_, loadButton_;
+    juce::TextButton browseButton_, downloadButton_, loadButton_;
     juce::Label statusLabel_;
     std::unique_ptr<juce::FileChooser> chooser_;
+    std::unique_ptr<ModelDownloader> downloader_;
 };
 
 // ============================================================================
@@ -607,8 +680,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         advancedButton_.setClickingTogglesState(true);
         easyButton_.setToggleState(true, juce::dontSendNotification);
 
-        easyButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
-        advancedButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
+        easyButton_.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
+        advancedButton_.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
 
         easyButton_.onClick = [this]() { setMode(true); };
         advancedButton_.onClick = [this]() { setMode(false); };
@@ -701,16 +774,16 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             config.setAIPreset("custom");
             const std::string roles[] = {"router", "command", "music"};
             for (int i = 0; i < 3; ++i)
-                config.setAgentLLMConfig(roles[i], agentRows_[static_cast<size_t>(i)].toConfig());
+                config.setAgentLLMConfig(roles[i],
+                                         agentRows_[static_cast<size_t>(i)].toConfig(roles[i]));
         }
     }
 
   private:
     struct AgentRow {
         juce::Label nameLabel;
-        juce::Label providerLabel, modelLabel, baseUrlLabel;
+        juce::Label providerLabel;
         juce::ComboBox providerCombo;
-        juce::TextEditor modelEditor, baseUrlEditor;
 
         void init(juce::Component& parent, const char* name) {
             nameLabel.setText(name, juce::dontSendNotification);
@@ -722,25 +795,12 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             styleLabel(providerLabel);
             parent.addAndMakeVisible(providerLabel);
 
-            modelLabel.setText("Model", juce::dontSendNotification);
-            styleLabel(modelLabel);
-            parent.addAndMakeVisible(modelLabel);
-
-            baseUrlLabel.setText("Base URL", juce::dontSendNotification);
-            styleLabel(baseUrlLabel);
-            parent.addAndMakeVisible(baseUrlLabel);
-
-            providerCombo.addItem("OpenAI Chat", 1);
+            providerCombo.addItem("OpenAI", 1);
             providerCombo.addItem("Anthropic", 2);
             providerCombo.addItem("Gemini", 3);
+            providerCombo.addItem("Local (Embedded)", 4);
             styleCombo(providerCombo);
             parent.addAndMakeVisible(providerCombo);
-
-            styleEditor(modelEditor, "model name");
-            parent.addAndMakeVisible(modelEditor);
-
-            styleEditor(baseUrlEditor, "Leave empty for default");
-            parent.addAndMakeVisible(baseUrlEditor);
         }
 
         void layout(juce::Rectangle<int>& bounds, int rowH) {
@@ -751,16 +811,6 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             auto row = bounds.removeFromTop(rowH);
             providerLabel.setBounds(row.removeFromLeft(labelW));
             providerCombo.setBounds(row.reduced(0, 2));
-            bounds.removeFromTop(2);
-
-            row = bounds.removeFromTop(rowH);
-            modelLabel.setBounds(row.removeFromLeft(labelW));
-            modelEditor.setBounds(row.reduced(0, 2));
-            bounds.removeFromTop(2);
-
-            row = bounds.removeFromTop(rowH);
-            baseUrlLabel.setBounds(row.removeFromLeft(labelW));
-            baseUrlEditor.setBounds(row.reduced(0, 2));
         }
 
         void loadFrom(const Config::AgentLLMConfig& cfg) {
@@ -768,28 +818,32 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                 providerCombo.setSelectedId(2, juce::dontSendNotification);
             else if (cfg.provider == "gemini")
                 providerCombo.setSelectedId(3, juce::dontSendNotification);
+            else if (cfg.provider == "llama_local")
+                providerCombo.setSelectedId(4, juce::dontSendNotification);
             else
                 providerCombo.setSelectedId(1, juce::dontSendNotification);
-
-            modelEditor.setText(juce::String(cfg.model), juce::dontSendNotification);
-            baseUrlEditor.setText(juce::String(cfg.baseUrl), juce::dontSendNotification);
         }
 
-        Config::AgentLLMConfig toConfig() const {
+        Config::AgentLLMConfig toConfig(const std::string& role) const {
             Config::AgentLLMConfig cfg;
             switch (providerCombo.getSelectedId()) {
                 case 2:
                     cfg.provider = "anthropic";
+                    cfg.model =
+                        (role == "router") ? "claude-haiku-4-5-20251001" : "claude-opus-4-6";
                     break;
                 case 3:
                     cfg.provider = "gemini";
+                    cfg.model = (role == "router") ? "gemini-2.0-flash" : "gemini-2.5-pro";
+                    break;
+                case 4:
+                    cfg.provider = "llama_local";
                     break;
                 default:
                     cfg.provider = "openai_chat";
+                    cfg.model = (role == "router") ? "gpt-4.1" : "gpt-5";
                     break;
             }
-            cfg.model = modelEditor.getText().toStdString();
-            cfg.baseUrl = baseUrlEditor.getText().toStdString();
             cfg.apiKey = "";
             return cfg;
         }
@@ -798,10 +852,6 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             nameLabel.setVisible(visible);
             providerLabel.setVisible(visible);
             providerCombo.setVisible(visible);
-            modelLabel.setVisible(visible);
-            modelEditor.setVisible(visible);
-            baseUrlLabel.setVisible(visible);
-            baseUrlEditor.setVisible(visible);
         }
     };
 
@@ -835,6 +885,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 // ============================================================================
 
 AISettingsDialog::AISettingsDialog() {
+    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
     credentialsPage_ = std::make_unique<CredentialsPage>();
     configPage_ = std::make_unique<ConfigPage>();
 
@@ -861,7 +912,9 @@ AISettingsDialog::AISettingsDialog() {
     setSize(540, 600);
 }
 
-AISettingsDialog::~AISettingsDialog() = default;
+AISettingsDialog::~AISettingsDialog() {
+    setLookAndFeel(nullptr);
+}
 
 void AISettingsDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));

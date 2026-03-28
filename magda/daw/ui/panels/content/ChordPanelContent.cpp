@@ -1,6 +1,6 @@
 #include "ChordPanelContent.hpp"
 
-#include "../../../../agents/openai_client.hpp"
+#include "../../../../agents/llm_client_factory.hpp"
 #include "BinaryData.h"
 #include "core/Config.hpp"
 #include "core/TrackManager.hpp"
@@ -987,16 +987,39 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
         "Use inversions to create smooth voice leading matching the played voicings.\n"
         "Notes: C3-B5 range (e.g. C4, F#3, Bb4)";
 
-    // Use OpenAIClient with grammar-constrained output
-    magda::OpenAIClient client;
-    auto dsl = client.generateDSL(prompt, {}, juce::String(chordProgressionGrammar),
-                                  juce::String(chordToolDescription), &owner_.aiCancelFlag_);
+    // Create LLM client — use Responses API for CFG when on OpenAI direct,
+    // otherwise fall back to the configured provider (local, Anthropic, etc.)
+    auto agentConfig = magda::Config::getInstance().getAgentLLMConfig("music");
+    bool cfg = agentConfig.provider == "openai_chat" && agentConfig.baseUrl.empty();
+
+    std::unique_ptr<llm::LLMClient> client;
+    if (cfg) {
+        auto pc = magda::toLLMProviderConfig(agentConfig);
+        pc.provider = llm::Provider::OpenAIResponses;
+        client = llm::LLMClientFactory::create(pc);
+    } else {
+        client = magda::createLLMClient(agentConfig);
+    }
+
+    llm::Request request;
+    request.systemPrompt = juce::String(chordToolDescription);
+    request.userMessage = prompt;
+    request.temperature = 0.1f;
+    if (cfg) {
+        request.grammar = juce::String(chordProgressionGrammar);
+        request.grammarToolName = "chord_progression";
+        request.grammarToolDescription = juce::String(chordToolDescription);
+    }
+
+    auto response = client->sendRequest(request);
 
     if (threadShouldExit() || owner_.aiCancelFlag_)
         return;
 
-    if (dsl.isEmpty()) {
-        DBG("AI Suggest: No DSL generated - " + client.getLastError());
+    auto dsl = response.text.trim();
+
+    if (!response.success || dsl.isEmpty()) {
+        DBG("AI Suggest: No DSL generated - " + response.error);
         auto safeThis = juce::Component::SafePointer<ChordPanelContent>(&owner_);
         juce::MessageManager::callAsync([safeThis]() {
             if (!safeThis)

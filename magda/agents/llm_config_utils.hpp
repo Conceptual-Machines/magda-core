@@ -62,6 +62,10 @@ inline llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& con
         }
     }
 
+    // GPT-5 does not support the temperature parameter
+    if (pc.model.startsWith("gpt-5"))
+        pc.noTemperature = true;
+
     return pc;
 }
 

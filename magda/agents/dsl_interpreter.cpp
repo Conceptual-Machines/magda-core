@@ -976,6 +976,10 @@ bool Interpreter::executeAddFx(const Params& params) {
     juce::String fxName(params.get("name"));
     juce::String formatHint(params.get("format"));
 
+    // Strip <alias> token wrapper — resolve at execution time
+    if (fxName.startsWith("<") && fxName.endsWith(">"))
+        fxName = fxName.substring(1, fxName.length() - 1);
+
     // --- Internal plugin lookup (case-insensitive alias map) ---
     static const std::map<juce::String, juce::String> internalAliases = {
         {"eq", "eq"},

@@ -121,7 +121,8 @@ METHOD CHAINING:
 - .clip.new(length_bars=4) - Create MIDI clip after the last clip on the track (omit bar to auto-place)
 - .track.set(name="X", volume_db=-3, pan=0.5, mute=true, solo=true)
 - .fx.add(name="eq") - Add internal FX (eq, compressor, reverb, delay, chorus, phaser, filter, utility, pitch shift, ir reverb)
-- .fx.add(name="Pro-Q 3") - Add scanned third-party plugin by name
+- .fx.add(name="<plugin_alias>") - Add third-party plugin using alias token (e.g. <serum_2>, <pro_q_3>, <surge_xt>)
+- .fx.add(name="Pro-Q 3") - Add plugin by exact display name (prefer alias tokens when available)
 - .fx.add(name="Pro-Q 3", format="VST3") - Add plugin with format hint (VST3, AU, VST)
 - .delete() - Delete track
 - .clip.rename(index=0, name="Intro") - Rename clip at index on track
@@ -147,8 +148,8 @@ EXAMPLES:
   track(name="Lead").clip.new(bar=1, length_bars=4)
 - "set volume of track 2 to -6 dB" -> track(id=2).track.set(volume_db=-6)
 - "add an EQ to the Bass track" -> track(name="Bass").fx.add(name="eq")
-- "add Pro-Q 3 to track 1" -> track(id=1).fx.add(name="Pro-Q 3")
-- "create a track with Surge XT" -> track(name="Surge XT", new=true).fx.add(name="Surge XT")
+- "add <pro_q_3> to track 1" -> track(id=1).fx.add(name="<pro_q_3>")
+- "create a track with <surge_xt>" -> track(name="Surge XT", new=true).fx.add(name="<surge_xt>")
 - "add reverb and delay to the Vocals track" ->
   track(name="Vocals").fx.add(name="reverb")
   track(name="Vocals").fx.add(name="delay")

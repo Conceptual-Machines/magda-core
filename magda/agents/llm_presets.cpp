@@ -76,11 +76,20 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             },
         },
         {
-            "hybrid",
-            "Hybrid (local router+command, cloud music)",
+            "hybrid_cost",
+            "Hybrid - Optimize for Cost",
             {
                 {"router", {"llama_local", "", "", ""}},
                 {"command", {"llama_local", "", "", ""}},
+                {"music", {"openai_chat", "", "", "gpt-5"}},
+            },
+        },
+        {
+            "hybrid_speed",
+            "Hybrid - Optimize for Speed",
+            {
+                {"router", {"llama_local", "", "", ""}},
+                {"command", {"openai_chat", "", "", "gpt-5"}},
                 {"music", {"openai_chat", "", "", "gpt-5"}},
             },
         },
