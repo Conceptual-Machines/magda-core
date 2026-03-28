@@ -182,8 +182,8 @@ class ChordPanelContent : public juce::Component,
     // Suggestion tabs: K&S (Krumhansl-Schmuckler) vs AI
     enum class SuggestionTab { KS, AI };
     SuggestionTab suggestionTab_ = SuggestionTab::KS;
-    std::unique_ptr<juce::TextButton> ksTabBtn_;
-    std::unique_ptr<juce::TextButton> aiTabBtn_;
+    std::unique_ptr<magda::SvgButton> ksTabBtn_;
+    std::unique_ptr<magda::SvgButton> aiTabBtn_;
 
     // AI tab — inline progression display + text input
     std::unique_ptr<juce::Viewport> aiViewport_;

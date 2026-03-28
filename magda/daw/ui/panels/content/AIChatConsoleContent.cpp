@@ -999,7 +999,9 @@ void AIChatConsoleContent::resized() {
         configStatusLabel_.toFront(false);
     } else {
         // DSL tab layout
+        bounds.removeFromBottom(4);  // Spacing above status bar
         dslStatusLabel_.setBounds(bounds.removeFromBottom(20));
+        bounds.removeFromBottom(2);  // Spacing above editor
         auto editorHeight = juce::jmax(60, bounds.getHeight() / 3);
         dslEditor_->setBounds(bounds.removeFromBottom(editorHeight));
         bounds.removeFromBottom(1);  // Separator

@@ -931,14 +931,28 @@ void ChordPanelContent::AIRequestThread::run() {
                  "continuations or variations.\n\n" +
                  context + "\n";
     }
-    prompt += "Generate DSL using the chord_progressions tool. Each progression() block should "
-              "have a name, a short description (under 60 chars), and 4-8 chords via "
-              ".add_chord() calls.\n"
-              "Use beat values starting at 0, incrementing by the chord length.\n"
-              "Use appropriate octaves (root around C3-C4). Use inversions (inversion=0/1/2) "
-              "to match the voicings in the chord history and create smooth voice leading.\n"
-              "Quality names: major, minor, dim, aug, dom7, maj7, min7, dim7, dom9, maj9, "
-              "min9, sus2, sus4, add9, madd9, 6, min6, power.";
+    // Create LLM client early so we know which provider we're using
+    auto agentConfig = magda::Config::getInstance().getAgentLLMConfig("music");
+    bool isLocal = agentConfig.provider == "llama_local";
+
+    if (isLocal) {
+        // Local model: skip name/description to maximize chord output
+        prompt += "Generate chord progressions. Each progression() block should have 4-8 chords "
+                  "via .add_chord() calls.\n"
+                  "Use beat values starting at 0, incrementing by the chord length.\n"
+                  "Use appropriate octaves (root around C3-C4).\n"
+                  "Quality names: major, minor, dim, aug, dom7, maj7, min7, dim7, dom9, maj9, "
+                  "min9, sus2, sus4, add9, madd9, 6, min6, power.";
+    } else {
+        prompt += "Generate DSL using the chord_progressions tool. Each progression() block should "
+                  "have a name, a short description (under 60 chars), and 4-8 chords via "
+                  ".add_chord() calls.\n"
+                  "Use beat values starting at 0, incrementing by the chord length.\n"
+                  "Use appropriate octaves (root around C3-C4). Use inversions (inversion=0/1/2) "
+                  "to match the voicings in the chord history and create smooth voice leading.\n"
+                  "Quality names: major, minor, dim, aug, dom7, maj7, min7, dim7, dom9, maj9, "
+                  "min9, sus2, sus4, add9, madd9, 6, min6, power.";
+    }
 
     // Chord progression grammar (Lark format) for grammar-constrained output
     static const char* chordProgressionGrammar = R"GRAMMAR(
@@ -987,9 +1001,22 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
         "Use inversions to create smooth voice leading matching the played voicings.\n"
         "Notes: C3-B5 range (e.g. C4, F#3, Bb4)";
 
+    static const char* chordToolDescriptionLocal =
+        "Generate chord progressions using MAGDA DSL. No prose.\n\n"
+        "Format: progression() followed by .add_chord() chains. 4-8 chords per progression.\n\n"
+        "Example:\n"
+        "progression()"
+        ".add_chord(root=C4, quality=major, beat=0, length=1)"
+        ".add_chord(root=G3, quality=major, beat=1, length=1)"
+        ".add_chord(root=A3, quality=minor, beat=2, length=1)"
+        ".add_chord(root=F3, quality=major, beat=3, length=1)\n"
+        "progression()"
+        ".add_chord(root=D3, quality=min7, beat=0, length=1)"
+        ".add_chord(root=G3, quality=dom7, beat=1, length=1)"
+        ".add_chord(root=C4, quality=maj7, beat=2, length=2)";
+
     // Create LLM client — use Responses API for CFG when on OpenAI direct,
     // otherwise fall back to the configured provider (local, Anthropic, etc.)
-    auto agentConfig = magda::Config::getInstance().getAgentLLMConfig("music");
     bool cfg = agentConfig.provider == "openai_chat" && agentConfig.baseUrl.empty();
 
     std::unique_ptr<llm::LLMClient> client;
@@ -1001,8 +1028,10 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
         client = magda::createLLMClient(agentConfig);
     }
 
+    const char* systemPrompt = isLocal ? chordToolDescriptionLocal : chordToolDescription;
+
     llm::Request request;
-    request.systemPrompt = juce::String(chordToolDescription);
+    request.systemPrompt = juce::String(systemPrompt);
     request.userMessage = prompt;
     request.temperature = 0.1f;
     if (cfg) {
@@ -1314,34 +1343,27 @@ void ChordPanelContent::setupFooterControls() {
     addAndMakeVisible(clearHistoryBtn_.get());
 
     // Suggestion column tab buttons
-    ksTabBtn_ = std::make_unique<juce::TextButton>("K&S");
-    ksTabBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    ksTabBtn_ = std::make_unique<magda::SvgButton>("KSTab", BinaryData::psychology_svg,
+                                                   BinaryData::psychology_svgSize);
     ksTabBtn_->setClickingTogglesState(true);
     ksTabBtn_->setRadioGroupId(1001);
     ksTabBtn_->setToggleState(true, juce::dontSendNotification);
-    ksTabBtn_->setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    ksTabBtn_->setColour(juce::TextButton::buttonOnColourId, DarkTheme::getAccentColour());
-    ksTabBtn_->setColour(juce::TextButton::textColourOffId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    ksTabBtn_->setColour(juce::TextButton::textColourOnId,
-                         DarkTheme::getColour(DarkTheme::BACKGROUND));
+    ksTabBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
+    ksTabBtn_->setActiveColor(juce::Colours::white);
+    ksTabBtn_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    ksTabBtn_->setActiveBackgroundColor(DarkTheme::getAccentColour());
     ksTabBtn_->setTooltip("Krumhansl-Schmuckler profile suggestions");
     ksTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::KS); };
     addAndMakeVisible(ksTabBtn_.get());
 
-    aiTabBtn_ = std::make_unique<juce::TextButton>("AI");
-    aiTabBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    aiTabBtn_ =
+        std::make_unique<magda::SvgButton>("AITab", BinaryData::ai_svg, BinaryData::ai_svgSize);
     aiTabBtn_->setClickingTogglesState(true);
     aiTabBtn_->setRadioGroupId(1001);
-    aiTabBtn_->setColour(juce::TextButton::buttonColourId,
-                         DarkTheme::getColour(DarkTheme::SURFACE));
-    aiTabBtn_->setColour(juce::TextButton::buttonOnColourId,
-                         DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    aiTabBtn_->setColour(juce::TextButton::textColourOffId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    aiTabBtn_->setColour(juce::TextButton::textColourOnId,
-                         DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    aiTabBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    aiTabBtn_->setActiveColor(juce::Colours::white);
+    aiTabBtn_->setNormalBackgroundColor(DarkTheme::getColour(DarkTheme::SURFACE));
+    aiTabBtn_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     aiTabBtn_->setTooltip("AI chord progression suggestions");
     aiTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::AI); };
     addAndMakeVisible(aiTabBtn_.get());
@@ -1472,7 +1494,10 @@ void ChordPanelContent::paint(juce::Graphics& g) {
             g.drawText("BROWSE SCALES", area.removeFromTop(SECTION_HEADER_HEIGHT),
                        juce::Justification::centredLeft);
         } else {
-            area.removeFromTop(SECTION_HEADER_HEIGHT);  // tab buttons positioned in resized()
+            auto tabArea = area.removeFromTop(SECTION_HEADER_HEIGHT);
+            // Horizontal border below tab header
+            g.setColour(DarkTheme::getBorderColour());
+            g.fillRect(col.getX() + PADDING, tabArea.getBottom(), col.getWidth() - 2 * PADDING, 1);
 
             if (suggestionTab_ == SuggestionTab::KS) {
                 if (suggestionBlocks_.empty() && chordPlugin_) {
@@ -1538,6 +1563,14 @@ void ChordPanelContent::paint(juce::Graphics& g) {
                        juce::Justification::centredLeft);
             // Scale blocks positioned in resized()
         }
+    }
+
+    // --- Border above browse button ---
+    if (chordPlugin_ && keyScaleCol_.getWidth() > 0 && browseBtn_ && browseBtn_->isVisible()) {
+        g.setColour(DarkTheme::getBorderColour());
+        int browseTopY = browseBtn_->getY() - 6;
+        g.fillRect(keyScaleCol_.getX() + PADDING, browseTopY, keyScaleCol_.getWidth() - 2 * PADDING,
+                   1);
     }
 
     // --- Footer separator line ---
@@ -1666,9 +1699,9 @@ void ChordPanelContent::resized() {
         } else {
             // Tab buttons in header row
             auto tabRow = area.removeFromTop(SECTION_HEADER_HEIGHT);
-            ksTabBtn_->setBounds(tabRow.removeFromLeft(36).reduced(0, 2));
+            ksTabBtn_->setBounds(tabRow.removeFromLeft(28));
             tabRow.removeFromLeft(2);
-            aiTabBtn_->setBounds(tabRow.removeFromLeft(30).reduced(0, 2));
+            aiTabBtn_->setBounds(tabRow.removeFromLeft(28));
 
             area.removeFromTop(2);
 
@@ -1745,7 +1778,7 @@ void ChordPanelContent::resized() {
             }
         }
 
-        // Browse button pinned to bottom of key/scale column
+        // Browse button pinned to bottom of key/scale column (border drawn in paint)
         auto browseArea = keyScaleCol_.reduced(PADDING, 0);
         browseArea.removeFromBottom(6);  // bottom padding
         auto btnArea = browseArea.removeFromBottom(22).reduced(0, 1);

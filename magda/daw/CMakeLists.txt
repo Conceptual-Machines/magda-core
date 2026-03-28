@@ -152,6 +152,10 @@ juce_add_binary_data(MagdaAssets
     # Fontaudio logo icons
     ../../assets/icons/fontaudio/fad-logo-tracktion.svg
     ../../assets/icons/fontaudio/fad-logo-juce.svg
+    # Chord engine icons
+    ../../assets/icons/psychology.svg
+    ../../assets/icons/robot.svg
+    ../../assets/icons/ai.svg
     # App logo
     ../../assets/magda-lisa.svg
 )

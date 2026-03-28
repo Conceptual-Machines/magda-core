@@ -81,6 +81,9 @@ class PluginBrowserContent : public PanelContent,
      */
     void refreshPluginList();
 
+    /** Returns the canonical list of built-in internal plugins. */
+    static std::vector<PluginBrowserInfo> getInternalPlugins();
+
     // TreeViewItem interface (for root item only)
     bool mightContainSubItems() override {
         return true;
@@ -105,7 +108,6 @@ class PluginBrowserContent : public PanelContent,
     std::vector<PluginBrowserInfo> plugins_;
     magda::TracktionEngineWrapper* engine_ = nullptr;  // For plugin scanning
 
-    // Tree building
     void buildInternalPluginList();
     void loadExternalPlugins();
     void rebuildTree();
