@@ -16,6 +16,7 @@
 #include "../daw/core/UndoManager.hpp"
 #include "../daw/engine/AudioEngine.hpp"
 #include "../daw/engine/TracktionEngineWrapper.hpp"
+#include "music_helpers.hpp"
 
 namespace magda::dsl {
 
@@ -1351,68 +1352,7 @@ juce::String Interpreter::buildStateSnapshot() {
 // ============================================================================
 
 int Interpreter::parseNoteName(const std::string& name) {
-    // Parse note names like C4, C#4, Db3, Bb3 → MIDI number
-    // C4 = 60
-    if (name.empty())
-        return -1;
-
-    // If it's a plain number, return it directly
-    bool allDigits = true;
-    size_t start = (name[0] == '-') ? 1 : 0;
-    for (size_t i = start; i < name.size(); i++) {
-        if (!std::isdigit(static_cast<unsigned char>(name[i]))) {
-            allDigits = false;
-            break;
-        }
-    }
-    if (allDigits && !name.empty())
-        return std::atoi(name.c_str());
-
-    // Parse note letter
-    static const int noteOffsets[] = {
-        9, 11, 0, 2, 4, 5, 7  // A=9, B=11, C=0, D=2, E=4, F=5, G=7
-    };
-
-    char letter = static_cast<char>(std::toupper(static_cast<unsigned char>(name[0])));
-    if (letter < 'A' || letter > 'G')
-        return -1;
-
-    int semitone = noteOffsets[letter - 'A'];
-    size_t pos = 1;
-
-    // Check for sharp/flat
-    if (pos < name.size() && name[pos] == '#') {
-        semitone++;
-        pos++;
-    } else if (pos < name.size() && (name[pos] == 'b' || name[pos] == 'B')) {
-        // Distinguish 'b' (flat) from 'B' at start — here pos>0 so it's a modifier
-        // But watch for "Bb3" — first B is note, second b is flat
-        semitone--;
-        pos++;
-    }
-
-    // Parse octave number
-    if (pos >= name.size())
-        return -1;
-
-    bool negative = false;
-    if (name[pos] == '-') {
-        negative = true;
-        pos++;
-    }
-    if (pos >= name.size())
-        return -1;
-
-    int octave = 0;
-    while (pos < name.size() && std::isdigit(static_cast<unsigned char>(name[pos]))) {
-        octave = octave * 10 + (name[pos] - '0');
-        pos++;
-    }
-    if (negative)
-        octave = -octave;
-
-    // MIDI: C4 = 60, so octave 4 base = (4+1)*12 = 60, C offset = 0 → 60
-    return (octave + 1) * 12 + semitone;
+    return music::parseNoteName(name);
 }
 
 // ============================================================================
@@ -1632,98 +1572,21 @@ bool Interpreter::executeAddNote(const Params& params) {
 }
 
 bool Interpreter::resolveChordNotes(const Params& params, std::vector<int>& outNotes) {
-    // Parse root (required)
     if (!params.has("root")) {
         ctx_.setError("notes.add_chord requires 'root' parameter");
         return false;
     }
-    int rootNote = parseNoteName(params.get("root"));
-    if (rootNote < 0 || rootNote > 127) {
-        ctx_.setError("Invalid root note: " + juce::String(params.get("root")));
-        return false;
-    }
-
-    // Parse quality (required)
     if (!params.has("quality")) {
         ctx_.setError("notes.add_chord requires 'quality' parameter");
         return false;
     }
 
-    // Chord quality → semitone intervals
-    static const std::map<std::string, std::vector<int>> chordQualities = {
-        {"major", {0, 4, 7}},
-        {"maj", {0, 4, 7}},
-        {"minor", {0, 3, 7}},
-        {"min", {0, 3, 7}},
-        {"dim", {0, 3, 6}},
-        {"aug", {0, 4, 8}},
-        {"sus2", {0, 2, 7}},
-        {"sus4", {0, 5, 7}},
-        {"dom7", {0, 4, 7, 10}},
-        {"7", {0, 4, 7, 10}},
-        {"maj7", {0, 4, 7, 11}},
-        {"min7", {0, 3, 7, 10}},
-        {"dim7", {0, 3, 6, 9}},
-        // 9th chords
-        {"dom9", {0, 4, 7, 10, 14}},
-        {"9", {0, 4, 7, 10, 14}},
-        {"maj9", {0, 4, 7, 11, 14}},
-        {"min9", {0, 3, 7, 10, 14}},
-        // 11th chords
-        {"dom11", {0, 4, 7, 10, 14, 17}},
-        {"11", {0, 4, 7, 10, 14, 17}},
-        {"min11", {0, 3, 7, 10, 14, 17}},
-        {"maj11", {0, 4, 7, 11, 14, 17}},
-        // 13th chords
-        {"dom13", {0, 4, 7, 10, 14, 21}},
-        {"13", {0, 4, 7, 10, 14, 21}},
-        {"min13", {0, 3, 7, 10, 14, 21}},
-        {"maj13", {0, 4, 7, 11, 14, 21}},
-        // Add chords
-        {"add9", {0, 4, 7, 14}},
-        {"add11", {0, 4, 7, 17}},
-        {"add13", {0, 4, 7, 21}},
-        {"madd9", {0, 3, 7, 14}},
-        // 6th chords
-        {"6", {0, 4, 7, 9}},
-        {"maj6", {0, 4, 7, 9}},
-        {"min6", {0, 3, 7, 9}},
-        // Altered dominants
-        {"7b5", {0, 4, 6, 10}},
-        {"7sharp5", {0, 4, 8, 10}},
-        {"7b9", {0, 4, 7, 10, 13}},
-        {"7sharp9", {0, 4, 7, 10, 15}},
-        // Half-diminished
-        {"min7b5", {0, 3, 6, 10}},
-        {"half_dim", {0, 3, 6, 10}},
-        // Other
-        {"power", {0, 7}},
-        {"5", {0, 7}},
-    };
-
-    std::string quality = params.get("quality");
-    auto it = chordQualities.find(quality);
-    if (it == chordQualities.end()) {
-        ctx_.setError("Unknown chord quality: " + juce::String(quality));
+    juce::String error;
+    if (!music::resolveChordNotes(params.get("root"), params.get("quality"),
+                                  params.getInt("inversion", 0), outNotes, error)) {
+        ctx_.setError(error);
         return false;
     }
-
-    const auto& intervals = it->second;
-    int inversion = params.getInt("inversion", 0);
-
-    // Build MIDI note numbers from root + intervals
-    outNotes.clear();
-    for (int interval : intervals)
-        outNotes.push_back(rootNote + interval);
-
-    // Apply inversions: rotate the lowest N notes up an octave
-    for (int i = 0; i < inversion && i < static_cast<int>(outNotes.size()); i++)
-        outNotes[static_cast<size_t>(i)] += 12;
-
-    // Clamp to valid MIDI range
-    for (auto& n : outNotes)
-        n = juce::jlimit(0, 127, n);
-
     return true;
 }
 

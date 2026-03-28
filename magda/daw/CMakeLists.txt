@@ -252,6 +252,7 @@ set(DAW_UI_SOURCES
     ui/windows/MainWindowExport.cpp
     ui/windows/MenuManager.cpp
     # Dialogs
+    ui/dialogs/AISettingsDialog.cpp
     ui/dialogs/AudioSettingsDialog.cpp
     ui/dialogs/ChainTreeDialog.cpp
     ui/dialogs/ExportAudioDialog.cpp
@@ -445,6 +446,7 @@ set(DAW_HEADERS
     ui/windows/MainWindow.hpp
     ui/windows/MenuManager.hpp
     # Dialogs
+    ui/dialogs/AISettingsDialog.hpp
     ui/dialogs/AudioSettingsDialog.hpp
     ui/dialogs/ChainTreeDialog.hpp
     ui/dialogs/ExportAudioDialog.hpp

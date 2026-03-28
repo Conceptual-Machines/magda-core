@@ -2,8 +2,13 @@
 
 #include <algorithm>
 
+#include "../../../../agents/command_agent.hpp"
+#include "../../../../agents/compact_executor.hpp"
+#include "../../../../agents/compact_parser.hpp"
 #include "../../../../agents/daw_agent.hpp"
 #include "../../../../agents/dsl_interpreter.hpp"
+#include "../../../../agents/music_agent.hpp"
+#include "../../../../agents/router_agent.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackManager.hpp"
@@ -177,56 +182,166 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
 AIChatConsoleContent::RequestThread::RequestThread(AIChatConsoleContent& owner)
     : juce::Thread("AI Chat Request"), owner_(owner) {}
 
+namespace {
+
+bool isCommandOpcode(magda::OpCode op) {
+    switch (op) {
+        case magda::OpCode::Track:
+        case magda::OpCode::Del:
+        case magda::OpCode::Mute:
+        case magda::OpCode::Solo:
+        case magda::OpCode::Set:
+        case magda::OpCode::Clip:
+        case magda::OpCode::Fx:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool isMusicOpcode(magda::OpCode op) {
+    switch (op) {
+        case magda::OpCode::Arp:
+        case magda::OpCode::Chord:
+        case magda::OpCode::Note:
+            return true;
+        default:
+            return false;
+    }
+}
+
+std::vector<magda::Instruction> filterInstructions(
+    const std::vector<magda::Instruction>& instructions, bool (*predicate)(magda::OpCode)) {
+    std::vector<magda::Instruction> filtered;
+    for (const auto& inst : instructions) {
+        if (predicate(inst.opcode))
+            filtered.push_back(inst);
+    }
+    return filtered;
+}
+
+}  // namespace
+
 void AIChatConsoleContent::RequestThread::run() {
-    // Step 1: Generate DSL on background thread (HTTP call)
-    auto dslResult = owner_.agent_->generateDSL(owner_.pendingMessage_.toStdString());
+    auto message = owner_.pendingMessage_.toStdString();
+
+    // Step 1: Classify intent via router
+    std::string intent = "COMMAND";  // default fallback
+    if (owner_.routerAgent_) {
+        auto classification = owner_.routerAgent_->classify(message);
+        if (!classification.hasError) {
+            intent = classification.intent;
+            DBG("MAGDA Router: intent=" + juce::String(intent) + " (" +
+                juce::String(classification.wallSeconds, 2) + "s)");
+        } else {
+            DBG("MAGDA Router: error: " + juce::String(classification.error) +
+                ", defaulting to COMMAND");
+        }
+    }
+
+    if (threadShouldExit())
+        return;
+
+    // Step 2: Dispatch to agents based on classification
+    std::vector<magda::Instruction> mergedInstructions;
+    std::string error;
+
+    if (intent == "COMMAND" || intent == "BOTH") {
+        if (owner_.commandAgent_) {
+            auto result = owner_.commandAgent_->generate(message);
+            if (threadShouldExit())
+                return;
+            if (result.hasError) {
+                error = result.error;
+            } else {
+                auto filtered = filterInstructions(result.instructions, isCommandOpcode);
+                mergedInstructions.insert(mergedInstructions.end(), filtered.begin(),
+                                          filtered.end());
+                DBG("MAGDA CommandAgent: " +
+                    juce::String(static_cast<int>(result.instructions.size())) + " raw, " +
+                    juce::String(static_cast<int>(filtered.size())) + " after filter");
+            }
+        }
+    }
+
+    if (intent == "MUSIC" || intent == "BOTH") {
+        if (owner_.musicAgent_) {
+            auto result = owner_.musicAgent_->generate(message);
+            if (threadShouldExit())
+                return;
+            if (result.hasError) {
+                if (error.empty())
+                    error = result.error;
+                else
+                    error += "\n" + result.error;
+            } else {
+                auto filtered = filterInstructions(result.instructions, isMusicOpcode);
+                mergedInstructions.insert(mergedInstructions.end(), filtered.begin(),
+                                          filtered.end());
+                DBG("MAGDA MusicAgent: " +
+                    juce::String(static_cast<int>(result.instructions.size())) + " raw, " +
+                    juce::String(static_cast<int>(filtered.size())) + " after filter");
+            }
+        }
+    }
 
     if (threadShouldExit())
         return;
 
     auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(&owner_);
 
-    // Step 2: Execute DSL on message thread (modifies tracks/clips)
-    juce::MessageManager::callAsync([safeThis, dslResult = std::move(dslResult)]() {
-        if (!safeThis)
-            return;
+    // Step 3: Execute merged IR on message thread
+    juce::MessageManager::callAsync(
+        [safeThis, instructions = std::move(mergedInstructions), error = std::move(error)]() {
+            if (!safeThis)
+                return;
 
-        std::string response;
-        if (dslResult.hasError) {
-            response = dslResult.error;
-        } else {
-            response = safeThis->agent_->executeDSL(dslResult);
-        }
+            std::string response;
+            if (!error.empty() && instructions.empty()) {
+                response = error;
+            } else {
+                magda::CompactExecutor executor;
+                if (executor.execute(instructions)) {
+                    response = executor.getResults().toStdString();
+                    if (response.empty())
+                        response = "OK";
+                } else {
+                    response = "Error: " + executor.getError().toStdString();
+                }
+                // Append any agent errors as warnings
+                if (!error.empty())
+                    response += "\n[Warning] " + error;
+            }
 
-        safeThis->stopTimer();
+            safeThis->stopTimer();
 
-        // Remove "Thinking..." line and show response
-        auto currentText = safeThis->chatHistory_.getText();
-        auto thinkingPos =
-            currentText.lastIndexOf(juce::String::charToString(0x25C6) + " Thinking");
-        if (thinkingPos >= 0) {
-            auto lineEnd = currentText.indexOf(thinkingPos, "\n");
-            if (lineEnd < 0)
-                lineEnd = currentText.length();
-            currentText =
-                currentText.substring(0, thinkingPos) + currentText.substring(lineEnd + 1);
-        }
+            // Remove "Thinking..." line and show response
+            auto currentText = safeThis->chatHistory_.getText();
+            auto thinkingPos =
+                currentText.lastIndexOf(juce::String::charToString(0x25C6) + " Thinking");
+            if (thinkingPos >= 0) {
+                auto lineEnd = currentText.indexOf(thinkingPos, "\n");
+                if (lineEnd < 0)
+                    lineEnd = currentText.length();
+                currentText =
+                    currentText.substring(0, thinkingPos) + currentText.substring(lineEnd + 1);
+            }
 
-        // Format response - prefix errors distinctly
-        juce::String formattedResponse(response);
-        if (formattedResponse.startsWith("Error:") ||
-            formattedResponse.startsWith("DSL execution error:")) {
-            formattedResponse = "[!] " + formattedResponse;
-        }
+            // Format response — prefix errors distinctly
+            juce::String formattedResponse(response);
+            if (formattedResponse.startsWith("Error:") ||
+                formattedResponse.startsWith("DSL execution error:")) {
+                formattedResponse = "[!] " + formattedResponse;
+            }
 
-        safeThis->chatHistory_.setText(currentText + juce::String::charToString(0x25C6) + " " +
-                                       formattedResponse + "\n\n");
-        safeThis->chatHistory_.moveCaretToEnd();
-        safeThis->inputBox_.setEnabled(true);
-        safeThis->sendButton_.setEnabled(true);
-        safeThis->inputBox_.grabKeyboardFocus();
-        safeThis->processing_ = false;
-    });
+            safeThis->chatHistory_.setText(currentText + juce::String::charToString(0x25C6) + " " +
+                                           formattedResponse + "\n\n");
+            safeThis->chatHistory_.moveCaretToEnd();
+            safeThis->inputBox_.setEnabled(true);
+            safeThis->sendButton_.setEnabled(true);
+            safeThis->inputBox_.grabKeyboardFocus();
+            safeThis->processing_ = false;
+        });
 }
 
 // ============================================================================
@@ -445,9 +560,12 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // Register for project lifecycle events
     magda::ProjectManager::getInstance().addListener(this);
 
-    // Create and start the DAW agent
-    agent_ = std::make_unique<magda::DAWAgent>();
+    // Create agents
+    agent_ = std::make_unique<magda::DAWAgent>();  // legacy DSL REPL
     agent_->start();
+    routerAgent_ = std::make_unique<magda::RouterAgent>();
+    commandAgent_ = std::make_unique<magda::CommandAgent>();
+    musicAgent_ = std::make_unique<magda::MusicAgent>();
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
@@ -463,6 +581,12 @@ AIChatConsoleContent::~AIChatConsoleContent() {
     shouldStop_ = true;
     if (agent_)
         agent_->requestCancel();
+    if (routerAgent_)
+        routerAgent_->requestCancel();
+    if (commandAgent_)
+        commandAgent_->requestCancel();
+    if (musicAgent_)
+        musicAgent_->requestCancel();
 
     // Stop the background thread with a timeout
     if (requestThread_) {
@@ -537,7 +661,14 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
     // If a previous request thread is still around, stop it before starting a new one
     if (requestThread_ && requestThread_->isThreadRunning()) {
-        agent_->requestCancel();
+        if (agent_)
+            agent_->requestCancel();
+        if (routerAgent_)
+            routerAgent_->requestCancel();
+        if (commandAgent_)
+            commandAgent_->requestCancel();
+        if (musicAgent_)
+            musicAgent_->requestCancel();
         requestThread_->signalThreadShouldExit();
         if (!requestThread_->stopThread(2000))
             DBG("AIChatConsole: Warning - previous request thread did not stop within timeout");
@@ -560,7 +691,14 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
     // Reset cancel state and start new request
     shouldStop_ = false;
-    agent_->resetCancel();
+    if (agent_)
+        agent_->resetCancel();
+    if (routerAgent_)
+        routerAgent_->resetCancel();
+    if (commandAgent_)
+        commandAgent_->resetCancel();
+    if (musicAgent_)
+        musicAgent_->resetCancel();
 
     pendingMessage_ = resolvedText;
 

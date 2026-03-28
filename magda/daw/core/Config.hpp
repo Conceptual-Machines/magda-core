@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -290,19 +291,138 @@ class Config {
         bounceBitDepth = depth;
     }
 
-    // AI Configuration
-    std::string getOpenAIApiKey() const {
-        return openaiApiKey;
+    // AI Configuration — per-agent LLM settings
+    struct AgentLLMConfig {
+        std::string provider = "openai_chat";
+        std::string baseUrl;
+        std::string apiKey;
+        std::string model;
+    };
+
+    std::string getAIPreset() const {
+        return aiPreset;
     }
-    void setOpenAIApiKey(const std::string& key) {
-        openaiApiKey = key;
+    void setAIPreset(const std::string& preset) {
+        aiPreset = preset;
     }
 
+    AgentLLMConfig getAgentLLMConfig(const std::string& role) const {
+        auto it = agentConfigs.find(role);
+        if (it != agentConfigs.end())
+            return it->second;
+        return {};
+    }
+    void setAgentLLMConfig(const std::string& role, const AgentLLMConfig& config) {
+        agentConfigs[role] = config;
+    }
+
+    const std::map<std::string, AgentLLMConfig>& getAllAgentConfigs() const {
+        return agentConfigs;
+    }
+
+    // Per-provider API credentials (provider name → API key)
+    std::string getAICredential(const std::string& provider) const {
+        auto it = aiCredentials.find(provider);
+        if (it != aiCredentials.end())
+            return it->second;
+        return {};
+    }
+    void setAICredential(const std::string& provider, const std::string& key) {
+        aiCredentials[provider] = key;
+    }
+    const std::map<std::string, std::string>& getAllAICredentials() const {
+        return aiCredentials;
+    }
+
+    /** Resolve the API key for an agent: per-agent key first, then credential by provider. */
+    std::string resolveApiKey(const std::string& role) const {
+        auto cfg = getAgentLLMConfig(role);
+        if (!cfg.apiKey.empty())
+            return cfg.apiKey;
+        return getAICredential(cfg.provider);
+    }
+
+    std::string getLocalLlamaUrl() const {
+        return localLlamaUrl;
+    }
+    void setLocalLlamaUrl(const std::string& url) {
+        localLlamaUrl = url;
+    }
+
+    // Local llama-server managed process settings
+    std::string getLocalModelPath() const {
+        return localModelPath;
+    }
+    void setLocalModelPath(const std::string& path) {
+        localModelPath = path;
+    }
+
+    std::string getLocalLlamaBinary() const {
+        return localLlamaBinary;
+    }
+    void setLocalLlamaBinary(const std::string& path) {
+        localLlamaBinary = path;
+    }
+
+    int getLocalLlamaPort() const {
+        return localLlamaPort;
+    }
+    void setLocalLlamaPort(int port) {
+        localLlamaPort = port;
+    }
+
+    int getLocalLlamaGpuLayers() const {
+        return localLlamaGpuLayers;
+    }
+    void setLocalLlamaGpuLayers(int layers) {
+        localLlamaGpuLayers = layers;
+    }
+
+    int getLocalLlamaContextSize() const {
+        return localLlamaContextSize;
+    }
+    void setLocalLlamaContextSize(int size) {
+        localLlamaContextSize = size;
+    }
+
+    // Legacy accessors — delegate to "music" agent config
+    std::string getLLMProvider() const {
+        return getAgentLLMConfig("music").provider;
+    }
+    std::string getLLMBaseUrl() const {
+        return getAgentLLMConfig("music").baseUrl;
+    }
+    std::string getLLMApiKey() const {
+        return getAgentLLMConfig("music").apiKey;
+    }
+    std::string getLLMModel() const {
+        return getAgentLLMConfig("music").model;
+    }
+    std::string getOpenAIApiKey() const {
+        return getAgentLLMConfig("music").apiKey;
+    }
     std::string getOpenAIModel() const {
-        return openaiModel;
+        return getAgentLLMConfig("music").model;
+    }
+
+    // Legacy setters — write to "music" agent config
+    void setLLMProvider(const std::string& p) {
+        agentConfigs["music"].provider = p;
+    }
+    void setLLMBaseUrl(const std::string& url) {
+        agentConfigs["music"].baseUrl = url;
+    }
+    void setLLMApiKey(const std::string& key) {
+        agentConfigs["music"].apiKey = key;
+    }
+    void setLLMModel(const std::string& model) {
+        agentConfigs["music"].model = model;
+    }
+    void setOpenAIApiKey(const std::string& key) {
+        agentConfigs["music"].apiKey = key;
     }
     void setOpenAIModel(const std::string& model) {
-        openaiModel = model;
+        agentConfigs["music"].model = model;
     }
 
     // Unified default colour palette (tracks + clips share the same palette)
@@ -499,8 +619,19 @@ class Config {
     int preferredOutputChannels = 0;  // Preferred output channel count (0 = use device default)
 
     // AI settings
-    std::string openaiApiKey = "";        // OpenAI API key (empty = not configured)
-    std::string openaiModel = "gpt-5.2";  // OpenAI model for DSL generation (requires CFG support)
+    std::string aiPreset = "cloud_openai";
+    std::map<std::string, AgentLLMConfig> agentConfigs = {
+        {"router", {"openai_chat", "", "", "gpt-4.1-mini"}},
+        {"command", {"openai_chat", "", "", "gpt-4.1"}},
+        {"music", {"openai_chat", "", "", "gpt-5"}},
+    };
+    std::map<std::string, std::string> aiCredentials;  // provider → API key
+    std::string localLlamaUrl = "http://127.0.0.1:8080/v1";
+    std::string localModelPath;
+    std::string localLlamaBinary;  // empty = search PATH
+    int localLlamaPort = 8080;
+    int localLlamaGpuLayers = -1;  // -1 = auto
+    int localLlamaContextSize = 4096;
 };
 
 }  // namespace magda

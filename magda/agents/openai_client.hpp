@@ -28,6 +28,13 @@ class OpenAIClient {
         return apiKey_.isNotEmpty();
     }
 
+    const juce::String& getApiKey() const {
+        return apiKey_;
+    }
+    const juce::String& getModel() const {
+        return model_;
+    }
+
     /**
      * @brief Generate DSL from a natural language prompt (synchronous, call from background
      * thread).

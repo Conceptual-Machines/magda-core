@@ -1,5 +1,6 @@
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../dialogs/AISettingsDialog.hpp"
 #include "../dialogs/AboutDialog.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
@@ -464,6 +465,8 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onPreferences = [this]() { PreferencesDialog::showDialog(this); };
+
+    callbacks.onAISettings = [this]() { AISettingsDialog::showDialog(this); };
 
     callbacks.onAudioSettings = [this]() {
         DBG("onAudioSettings called");

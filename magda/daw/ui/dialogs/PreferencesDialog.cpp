@@ -790,135 +790,6 @@ class RenderingPage : public juce::Component {
     std::unique_ptr<juce::FileChooser> fileChooser_;
 };
 
-// ---- AI tab ---------------------------------------------------------------
-
-class AIPage : public juce::Component {
-  public:
-    AIPage() {
-        setupSectionHeader(*this, aiHeader, "AI Assistant");
-
-        aiApiKeyLabel.setText("OpenAI API Key", juce::dontSendNotification);
-        aiApiKeyLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
-        aiApiKeyLabel.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        aiApiKeyLabel.setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(aiApiKeyLabel);
-
-        aiApiKeyEditor.setFont(FontManager::getInstance().getUIFont(12.0f));
-        aiApiKeyEditor.setPasswordCharacter(static_cast<juce::juce_wchar>('*'));
-        aiApiKeyEditor.setTextToShowWhenEmpty("sk-...", DarkTheme::getColour(DarkTheme::TEXT_DIM));
-        aiApiKeyEditor.setColour(juce::TextEditor::backgroundColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
-        aiApiKeyEditor.setColour(juce::TextEditor::textColourId,
-                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        aiApiKeyEditor.setColour(juce::TextEditor::outlineColourId,
-                                 DarkTheme::getColour(DarkTheme::BORDER));
-        addAndMakeVisible(aiApiKeyEditor);
-
-        aiValidateButton.setButtonText("Validate");
-        aiValidateButton.onClick = [this]() {
-            auto key = aiApiKeyEditor.getText().trim();
-            if (key.isEmpty()) {
-                aiStatusLabel.setText("Enter an API key first", juce::dontSendNotification);
-                aiStatusLabel.setColour(juce::Label::textColourId, juce::Colours::orange);
-                return;
-            }
-
-            aiValidateButton.setEnabled(false);
-            aiStatusLabel.setText("Validating...", juce::dontSendNotification);
-            aiStatusLabel.setColour(juce::Label::textColourId,
-                                    DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-
-            auto safeThis = juce::Component::SafePointer<AIPage>(this);
-
-            juce::Thread::launch([safeThis, key]() {
-                juce::URL url("https://api.openai.com/v1/models");
-                juce::String headers = "Authorization: Bearer " + key;
-
-                int statusCode = 0;
-                auto options =
-                    juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-                        .withExtraHeaders(headers)
-                        .withConnectionTimeoutMs(10000)
-                        .withStatusCode(&statusCode);
-
-                auto stream = url.createInputStream(options);
-
-                // Consume the response body so macOS NSURLSession doesn't
-                // cancel the task when the stream is destroyed (avoids -999)
-                if (stream)
-                    stream->readEntireStreamAsString();
-
-                bool valid = false;
-                juce::String statusMsg;
-
-                if (statusCode == 200) {
-                    valid = true;
-                    statusMsg = "Valid";
-                } else if (statusCode == 401) {
-                    statusMsg = "Invalid API key";
-                } else if (statusCode > 0) {
-                    statusMsg = "HTTP " + juce::String(statusCode);
-                } else {
-                    statusMsg = "Connection failed - check your network";
-                }
-
-                juce::MessageManager::callAsync([safeThis, valid, statusMsg]() {
-                    if (!safeThis)
-                        return;
-                    safeThis->aiValidateButton.setEnabled(true);
-                    safeThis->aiStatusLabel.setText(statusMsg, juce::dontSendNotification);
-                    safeThis->aiStatusLabel.setColour(juce::Label::textColourId,
-                                                      valid ? juce::Colours::limegreen
-                                                            : juce::Colours::red);
-                });
-            });
-        };
-        addAndMakeVisible(aiValidateButton);
-
-        aiStatusLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
-        aiStatusLabel.setColour(juce::Label::textColourId,
-                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        aiStatusLabel.setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(aiStatusLabel);
-    }
-
-    void resized() override {
-        auto bounds = getLocalBounds().reduced(16);
-        const int rowH = 32;
-        const int labelW = 180;
-        const int headerH = 28;
-
-        aiHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-
-        auto row = bounds.removeFromTop(rowH);
-        aiApiKeyLabel.setBounds(row.removeFromLeft(labelW));
-        aiApiKeyEditor.setBounds(row.reduced(0, 4));
-        bounds.removeFromTop(4);
-
-        row = bounds.removeFromTop(rowH);
-        aiValidateButton.setBounds(row.removeFromLeft(80).reduced(0, 4));
-        row.removeFromLeft(8);
-        aiStatusLabel.setBounds(row);
-    }
-
-    void loadSettings(Config& config) {
-        aiApiKeyEditor.setText(juce::String(config.getOpenAIApiKey()), juce::dontSendNotification);
-    }
-
-    void applySettings(Config& config) {
-        config.setOpenAIApiKey(aiApiKeyEditor.getText().toStdString());
-    }
-
-  private:
-    juce::Label aiHeader;
-    juce::Label aiApiKeyLabel;
-    juce::TextEditor aiApiKeyEditor;
-    juce::TextButton aiValidateButton;
-    juce::Label aiStatusLabel;
-};
-
 // ---- Shortcuts tab (read-only) --------------------------------------------
 
 class ShortcutsPage : public juce::Component {
@@ -979,7 +850,6 @@ PreferencesDialog::PreferencesDialog() {
     uiPage = std::make_unique<UIPage>();
     coloursPage = std::make_unique<ColoursPage>();
     renderingPage = std::make_unique<RenderingPage>();
-    aiPage = std::make_unique<AIPage>();
     shortcutsPage = std::make_unique<ShortcutsPage>();
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
@@ -987,7 +857,6 @@ PreferencesDialog::PreferencesDialog() {
     tabbedComponent.addTab("UI", tabBg, uiPage.get(), false);
     tabbedComponent.addTab("Colours", tabBg, coloursPage.get(), false);
     tabbedComponent.addTab("Rendering", tabBg, renderingPage.get(), false);
-    tabbedComponent.addTab("AI", tabBg, aiPage.get(), false);
     tabbedComponent.addTab("Shortcuts", tabBg, shortcutsPage.get(), false);
     addAndMakeVisible(tabbedComponent);
 
@@ -1052,7 +921,6 @@ void PreferencesDialog::loadCurrentSettings() {
     uiPage->loadSettings(config);
     coloursPage->loadSettings(config);
     renderingPage->loadSettings(config);
-    aiPage->loadSettings(config);
     shortcutsPage->loadSettings(config);
 }
 
@@ -1062,7 +930,6 @@ void PreferencesDialog::applySettings() {
     uiPage->applySettings(config);
     coloursPage->applySettings(config);
     renderingPage->applySettings(config);
-    aiPage->applySettings(config);
     shortcutsPage->applySettings(config);
     config.save();
 

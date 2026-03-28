@@ -13,6 +13,22 @@ set(AGENTS_SOURCES
     dsl_grammar.hpp
     dsl_interpreter.hpp
     dsl_interpreter.cpp
+    music_helpers.hpp
+    compact_parser.hpp
+    compact_parser.cpp
+    compact_executor.hpp
+    compact_executor.cpp
+    llm_config_utils.hpp
+    llm_presets.hpp
+    llm_presets.cpp
+    command_agent.hpp
+    command_agent.cpp
+    music_agent.hpp
+    music_agent.cpp
+    router_agent.hpp
+    router_agent.cpp
+    llama_server_manager.hpp
+    llama_server_manager.cpp
     daw_agent.hpp
     daw_agent.cpp
 )

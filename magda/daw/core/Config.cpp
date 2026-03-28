@@ -111,9 +111,36 @@ void Config::save() {
     root->setProperty("preferredInputChannels", preferredInputChannels);
     root->setProperty("preferredOutputChannels", preferredOutputChannels);
 
-    // AI
-    root->setProperty("openaiApiKey", toJuceString(openaiApiKey));
-    root->setProperty("openaiModel", toJuceString(openaiModel));
+    // AI — nested "ai" object with per-agent configs
+    {
+        auto* aiObj = new juce::DynamicObject();
+        aiObj->setProperty("preset", toJuceString(aiPreset));
+
+        auto* agentsObj = new juce::DynamicObject();
+        for (const auto& [role, cfg] : agentConfigs) {
+            auto* agentObj = new juce::DynamicObject();
+            agentObj->setProperty("provider", toJuceString(cfg.provider));
+            agentObj->setProperty("baseUrl", toJuceString(cfg.baseUrl));
+            agentObj->setProperty("apiKey", toJuceString(cfg.apiKey));
+            agentObj->setProperty("model", toJuceString(cfg.model));
+            agentsObj->setProperty(juce::String(role), juce::var(agentObj));
+        }
+        aiObj->setProperty("agents", juce::var(agentsObj));
+
+        auto* credsObj = new juce::DynamicObject();
+        for (const auto& [provider, key] : aiCredentials) {
+            credsObj->setProperty(juce::String(provider), toJuceString(key));
+        }
+        aiObj->setProperty("credentials", juce::var(credsObj));
+        aiObj->setProperty("localLlamaUrl", toJuceString(localLlamaUrl));
+        aiObj->setProperty("localModelPath", toJuceString(localModelPath));
+        aiObj->setProperty("localLlamaBinary", toJuceString(localLlamaBinary));
+        aiObj->setProperty("localLlamaPort", localLlamaPort);
+        aiObj->setProperty("localLlamaGpuLayers", localLlamaGpuLayers);
+        aiObj->setProperty("localLlamaContextSize", localLlamaContextSize);
+
+        root->setProperty("ai", juce::var(aiObj));
+    }
 
     // Browser
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
@@ -278,8 +305,74 @@ void Config::load() {
     preferredInputChannels = getInt("preferredInputChannels", preferredInputChannels);
     preferredOutputChannels = getInt("preferredOutputChannels", preferredOutputChannels);
 
-    openaiApiKey = getString("openaiApiKey", openaiApiKey);
-    openaiModel = getString("openaiModel", openaiModel);
+    // AI — load nested "ai" object, or migrate from legacy flat fields
+    if (obj->hasProperty("ai")) {
+        auto aiVar = obj->getProperty("ai");
+        if (auto* aiObj = aiVar.getDynamicObject()) {
+            aiPreset = aiObj->getProperty("preset").toString().toStdString();
+            auto agentsVar = aiObj->getProperty("agents");
+            if (auto* agentsObj = agentsVar.getDynamicObject()) {
+                agentConfigs.clear();
+                for (const auto& prop : agentsObj->getProperties()) {
+                    auto role = prop.name.toString().toStdString();
+                    if (auto* agentObj = prop.value.getDynamicObject()) {
+                        AgentLLMConfig cfg;
+                        cfg.provider = agentObj->getProperty("provider").toString().toStdString();
+                        cfg.baseUrl = agentObj->getProperty("baseUrl").toString().toStdString();
+                        cfg.apiKey = agentObj->getProperty("apiKey").toString().toStdString();
+                        cfg.model = agentObj->getProperty("model").toString().toStdString();
+                        agentConfigs[role] = cfg;
+                    }
+                }
+            }
+
+            // Local llama settings
+            if (aiObj->hasProperty("localLlamaUrl"))
+                localLlamaUrl = aiObj->getProperty("localLlamaUrl").toString().toStdString();
+            if (aiObj->hasProperty("localModelPath"))
+                localModelPath = aiObj->getProperty("localModelPath").toString().toStdString();
+            if (aiObj->hasProperty("localLlamaBinary"))
+                localLlamaBinary = aiObj->getProperty("localLlamaBinary").toString().toStdString();
+            if (aiObj->hasProperty("localLlamaPort"))
+                localLlamaPort = static_cast<int>(aiObj->getProperty("localLlamaPort"));
+            if (aiObj->hasProperty("localLlamaGpuLayers"))
+                localLlamaGpuLayers = static_cast<int>(aiObj->getProperty("localLlamaGpuLayers"));
+            if (aiObj->hasProperty("localLlamaContextSize"))
+                localLlamaContextSize =
+                    static_cast<int>(aiObj->getProperty("localLlamaContextSize"));
+
+            // Load per-provider credentials
+            auto credsVar = aiObj->getProperty("credentials");
+            if (auto* credsObj = credsVar.getDynamicObject()) {
+                aiCredentials.clear();
+                for (const auto& prop : credsObj->getProperties()) {
+                    auto provider = prop.name.toString().toStdString();
+                    auto key = prop.value.toString().toStdString();
+                    if (!key.empty())
+                        aiCredentials[provider] = key;
+                }
+            }
+        }
+    } else {
+        // Migrate from legacy flat fields
+        AgentLLMConfig musicCfg;
+        musicCfg.provider = getString("llmProvider", "openai_chat");
+        musicCfg.baseUrl = getString("llmBaseUrl", "");
+        musicCfg.model = getString("llmModel", "gpt-4.1");
+        musicCfg.apiKey = getString("llmApiKey", "");
+        // Try legacy OpenAI key
+        if (musicCfg.apiKey.empty())
+            musicCfg.apiKey = getString("openaiApiKey", "");
+        if (!musicCfg.model.empty() && musicCfg.model == "gpt-4.1")
+            musicCfg.model = getString("openaiModel", musicCfg.model);
+
+        agentConfigs["music"] = musicCfg;
+        // Command and router default to same provider, cheaper model
+        AgentLLMConfig cheapCfg = musicCfg;
+        cheapCfg.model = "gpt-4.1-mini";
+        agentConfigs["router"] = cheapCfg;
+        agentConfigs["command"] = cheapCfg;
+    }
 
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserFavorites = getStringArray("browserFavorites");

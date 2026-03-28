@@ -12,8 +12,11 @@
 #include "PanelContent.hpp"
 
 namespace magda {
+class CommandAgent;
 class DAWAgent;
-}
+class MusicAgent;
+class RouterAgent;
+}  // namespace magda
 
 namespace magda::daw::ui {
 
@@ -96,7 +99,10 @@ class AIChatConsoleContent : public PanelContent,
     using juce::Component::keyPressed;  // unhide 1-param overload
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
 
-    std::unique_ptr<magda::DAWAgent> agent_;
+    std::unique_ptr<magda::DAWAgent> agent_;  // kept for legacy DSL REPL
+    std::unique_ptr<magda::RouterAgent> routerAgent_;
+    std::unique_ptr<magda::CommandAgent> commandAgent_;
+    std::unique_ptr<magda::MusicAgent> musicAgent_;
     std::unique_ptr<RequestThread> requestThread_;
     std::atomic<bool> shouldStop_{false};
     std::atomic<bool> processing_{false};

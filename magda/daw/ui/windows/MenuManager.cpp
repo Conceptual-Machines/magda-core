@@ -166,6 +166,8 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
     } else if (menuName == "Settings") {
         menu.addItem(Preferences, "Preferences...", true, false);
         menu.addSeparator();
+        menu.addItem(AISettings, "AI Settings...", true, false);
+        menu.addSeparator();
         menu.addItem(AudioSettings, "Audio/MIDI Settings...", true, false);
         menu.addSeparator();
         menu.addItem(PluginSettings, "Plugin Settings...", true, false);
@@ -326,6 +328,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
                 callbacks_.onPreferences();
             break;
         // Settings menu
+        case AISettings:
+            if (callbacks_.onAISettings)
+                callbacks_.onAISettings();
+            break;
         case AudioSettings:
             if (callbacks_.onAudioSettings)
                 callbacks_.onAudioSettings();
