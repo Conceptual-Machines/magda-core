@@ -49,8 +49,8 @@ endif()
 
 # Compiler flags
 if(MSVC)
-    set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /W3 /Zc:char8_t-")
-    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG /Zc:char8_t-")
+    set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /W3")
+    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
 else()
     set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
@@ -107,6 +107,11 @@ else()
     set(GGML_METAL OFF CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(third_party/llama.cpp)
+
+# Fix llama.cpp char8_t errors on MSVC C++20: /Zc:char8_t- must come after -std:c++20
+if(MSVC)
+    target_compile_options(llama PRIVATE /Zc:char8_t-)
+endif()
 
 # Catch2 for testing
 if(MAGDA_BUILD_TESTS)
