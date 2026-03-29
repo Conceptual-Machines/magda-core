@@ -41,7 +41,7 @@ MAGDA is a free, open-source DAW with AI integrated from the ground up. Built on
 
 ## Status
 
-v0.1.0 released. See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known bugs and planned features.
+See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known bugs and planned features.
 
 ## Building
 
@@ -125,6 +125,8 @@ docs/           # Documentation
 
 - [Tracktion Engine](https://github.com/Tracktion/tracktion_engine) - Audio engine
 - [JUCE](https://juce.com/) - GUI framework
+- [juce-llm](https://github.com/Conceptual-Machines/juce-llm) - LLM API client module
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) - Embedded local LLM inference
 - [Catch2](https://github.com/catchorg/Catch2) - Testing (fetched via CMake)
 
 ## Issues
