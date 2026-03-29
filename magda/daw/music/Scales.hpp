@@ -12,7 +12,7 @@ struct Scale {
     std::vector<int> notes;  // pitches in 0-11 range
 };
 
-const std::vector<Scale> scaleIntervals = {
+inline const std::vector<Scale> scaleIntervals = {
     {"Ionian", {0, 2, 4, 5, 7, 9, 11}},
     {"Dorian", {0, 2, 3, 5, 7, 9, 10}},
     {"Phrygian", {0, 1, 3, 5, 7, 8, 10}},

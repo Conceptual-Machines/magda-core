@@ -187,8 +187,10 @@ void Config::save() {
     else
         DBG("Config::save - " + configFile.getFullPathName());
 
-    for (auto* l : listeners_)
-        l->configChanged();
+    auto listenersCopy = listeners_;
+    for (auto* l : listenersCopy)
+        if (l != nullptr)
+            l->configChanged();
 }
 
 // ---------------------------------------------------------------------------

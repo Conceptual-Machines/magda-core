@@ -39,6 +39,7 @@ class MagdaDAWApplication : public JUCEApplication {
         }
     };
     std::unique_ptr<InitTimer> initTimer_;
+    std::thread modelLoadThread_;
 
   public:
     MagdaDAWApplication() = default;
@@ -113,14 +114,14 @@ class MagdaDAWApplication : public JUCEApplication {
                 modelCfg.gpuLayers = config.getLocalLlamaGpuLayers();
                 modelCfg.contextSize = config.getLocalLlamaContextSize();
                 DBG("Auto-loading local model: " << modelCfg.modelPath);
-                std::thread([modelCfg]() {
+                modelLoadThread_ = std::thread([modelCfg]() {
                     bool ok = magda::LlamaModelManager::getInstance().loadModel(modelCfg);
                     if (ok) {
                         DBG("Local model loaded successfully");
                     } else {
                         DBG("Failed to load local model");
                     }
-                }).detach();
+                });
             }
         }
 
@@ -130,6 +131,9 @@ class MagdaDAWApplication : public JUCEApplication {
     void shutdown() override {
         initTimer_.reset();
         DBG("=== SHUTDOWN START ===");
+
+        if (modelLoadThread_.joinable())
+            modelLoadThread_.join();
 
         // Stop timers first to prevent callbacks during destruction
         DBG("[1] ModulatorEngine shutdown...");

@@ -102,8 +102,7 @@ template <typename Key, typename Value> class LRUCache {
 
     void evictLRU() {
         if (!cacheList.empty()) {
-            auto last = cacheList.back();
-            cacheMap.erase(last.first);
+            cacheMap.erase(cacheList.back().first);
             cacheList.pop_back();
         }
     }
