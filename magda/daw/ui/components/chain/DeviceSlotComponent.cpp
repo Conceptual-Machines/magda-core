@@ -2408,8 +2408,47 @@ void DeviceSlotComponent::createCustomUI() {
             if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get()))
                 fourOsc->state.setProperty(juce::Identifier(propertyId), value, nullptr);
         };
+        fourOscUI_->onModDepthChanged = [this](int paramIndex, int modSourceId, float depth) {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return;
+            auto* bridge = audioEngine->getAudioBridge();
+            if (!bridge)
+                return;
+            auto plugin = bridge->getPlugin(device_.id);
+            if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
+                auto params = fourOsc->getAutomatableParameters();
+                if (paramIndex >= 0 && paramIndex < params.size()) {
+                    auto src = static_cast<te::FourOscPlugin::ModSource>(modSourceId);
+                    fourOsc->setModulationDepth(src, params[paramIndex], depth);
+                    static_cast<te::Plugin*>(fourOsc)->flushPluginStateToValueTree();
+                }
+            }
+            // No UI update needed — the slider already shows the new value.
+        };
+        fourOscUI_->onModEntryRemoved = [this](int paramIndex, int modSourceId) {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            if (!audioEngine)
+                return;
+            auto* bridge = audioEngine->getAudioBridge();
+            if (!bridge)
+                return;
+            auto plugin = bridge->getPlugin(device_.id);
+            if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
+                auto params = fourOsc->getAutomatableParameters();
+                if (paramIndex >= 0 && paramIndex < params.size()) {
+                    auto src = static_cast<te::FourOscPlugin::ModSource>(modSourceId);
+                    fourOsc->clearModulation(src, params[paramIndex]);
+                    static_cast<te::Plugin*>(fourOsc)->flushPluginStateToValueTree();
+                }
+                // Re-read mod matrix and push to UI directly
+                readAndPushModMatrix();
+            }
+        };
+        fourOscUI_->onModMatrixStructureChanged = [this]() { readAndPushModMatrix(); };
         addAndMakeVisible(*fourOscUI_);
         updateCustomUI();
+        readAndPushModMatrix();
         // Restore saved tab index after rebuild
         if (pendingCustomUITabIndex_ != NO_PENDING_TAB) {
             fourOscUI_->setCurrentTabIndex(pendingCustomUITabIndex_);
@@ -2586,6 +2625,47 @@ void DeviceSlotComponent::createCustomUI() {
     }
 }
 
+void DeviceSlotComponent::readAndPushModMatrix() {
+    if (!fourOscUI_)
+        return;
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return;
+    auto plugin = bridge->getPlugin(device_.id);
+    auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get());
+    if (!fourOsc)
+        return;
+
+    auto autoParams = fourOsc->getAutomatableParameters();
+
+    // Build parameter name list for the add-popup destination dropdown
+    std::vector<std::pair<int, juce::String>> paramNames;
+    for (int pi = 0; pi < autoParams.size(); ++pi)
+        paramNames.push_back({pi, autoParams[pi]->getParameterName()});
+    fourOscUI_->setModMatrixParameterNames(paramNames);
+
+    // Read mod matrix entries
+    std::vector<ModMatrixEntry> matrixEntries;
+    for (auto& [param, assign] : fourOsc->modMatrix) {
+        if (!assign.isModulated())
+            continue;
+        int paramIdx = autoParams.indexOf(param);
+        if (paramIdx < 0)
+            continue;
+        for (int s = 0; s < static_cast<int>(te::FourOscPlugin::numModSources); ++s) {
+            if (assign.depths[s] >= -1.0f) {
+                auto src = static_cast<te::FourOscPlugin::ModSource>(s);
+                matrixEntries.push_back({paramIdx, autoParams[paramIdx]->getParameterName(), s,
+                                         fourOsc->modulationSourceToName(src), assign.depths[s]});
+            }
+        }
+    }
+    fourOscUI_->updateModMatrix(matrixEntries);
+}
+
 void DeviceSlotComponent::updateCustomUI() {
     if (toneGeneratorUI_ && device_.pluginId.containsIgnoreCase("tone")) {
         // Extract parameters from device (stored as actual values)
@@ -2747,6 +2827,9 @@ void DeviceSlotComponent::updateCustomUI() {
                     state.voiceMode = fourOsc->voiceModeValue.get();
                     state.globalVoices = fourOsc->voicesValue.get();
                     fourOscUI_->updatePluginState(state);
+
+                    // Mod matrix is updated via callbacks (readAndPushModMatrix),
+                    // not periodic polling.
                 }
             }
         }

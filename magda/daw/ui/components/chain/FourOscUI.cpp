@@ -22,7 +22,6 @@ FourOscUI::FourOscUI() {
     modEnvTab_ = std::make_unique<ModEnvTab>(*this);
     lfoTab_ = std::make_unique<LFOTab>(*this);
     fxTab_ = std::make_unique<FXTab>(*this);
-
     tabs_->addTab("OSC", tabBg, oscTab_.get(), false);
     tabs_->addTab("Filter", tabBg, filterTab_.get(), false);
     tabs_->addTab("Amp", tabBg, ampTab_.get(), false);
@@ -48,6 +47,29 @@ void FourOscUI::updatePluginState(const FourOscPluginState& state) {
     ampTab_->updatePluginState(state);
     lfoTab_->updatePluginState(state);
     fxTab_->updatePluginState(state);
+}
+
+void FourOscUI::updateModMatrix(const std::vector<ModMatrixEntry>& entries) {
+    // Split entries by source: LFO sources -> LFO tab, Env sources -> ModEnv tab
+    // ModSource enum: lfo1=0, lfo2=1, env1=2, env2=3
+    std::vector<ModMatrixEntry> lfoEntries, envEntries;
+    for (auto& e : entries) {
+        if (e.modSourceId == 0 || e.modSourceId == 1)
+            lfoEntries.push_back(e);
+        else if (e.modSourceId == 2 || e.modSourceId == 3)
+            envEntries.push_back(e);
+    }
+    if (lfoTab_)
+        lfoTab_->updateModEntries(lfoEntries);
+    if (modEnvTab_)
+        modEnvTab_->updateModEntries(envEntries);
+}
+
+void FourOscUI::setModMatrixParameterNames(const std::vector<std::pair<int, juce::String>>& names) {
+    if (lfoTab_)
+        lfoTab_->setParameterNames(names);
+    if (modEnvTab_)
+        modEnvTab_->setParameterNames(names);
 }
 
 int FourOscUI::getCurrentTabIndex() const {
@@ -793,6 +815,52 @@ void FourOscUI::AmpTab::setupLabel(juce::Label& label, const juce::String& text)
 // ModEnvTab
 // =============================================================================
 
+// LookAndFeel override so mod matrix buttons use the theme font
+struct ModMatrixButtonLookAndFeel : juce::LookAndFeel_V4 {
+    juce::Font getTextButtonFont(juce::TextButton&, int buttonHeight) override {
+        return FontManager::getInstance().getUIFont(
+            juce::jmin(11.0f, static_cast<float>(buttonHeight) * 0.65f));
+    }
+
+    void drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour&,
+                              bool isHighlighted, bool isDown) override {
+        auto bounds = button.getLocalBounds().toFloat();
+        auto bgColour = button.findColour(juce::TextButton::buttonColourId);
+        if (isDown)
+            bgColour = bgColour.brighter(0.15f);
+        else if (isHighlighted)
+            bgColour = bgColour.brighter(0.08f);
+        g.setColour(bgColour);
+        g.fillRect(bounds);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRect(bounds, 1.0f);
+    }
+
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool /*isHighlighted*/,
+                        bool /*isDown*/) override {
+        auto font = FontManager::getInstance().getUIFont(
+            juce::jmin(11.0f, static_cast<float>(button.getHeight()) * 0.65f));
+        g.setFont(font);
+        g.setColour(button.findColour(button.getToggleState() ? juce::TextButton::textColourOnId
+                                                              : juce::TextButton::textColourOffId));
+        g.drawText(button.getButtonText(), button.getLocalBounds().reduced(2, 0),
+                   juce::Justification::centred);
+    }
+
+    void drawLabel(juce::Graphics& g, juce::Label& label) override {
+        g.setColour(label.findColour(juce::Label::textColourId));
+        g.setFont(FontManager::getInstance().getUIFont(
+            juce::jmin(11.0f, static_cast<float>(label.getHeight()) * 0.8f)));
+        g.drawText(label.getText(), label.getLocalBounds().reduced(2, 0),
+                   label.getJustificationType());
+    }
+
+    static ModMatrixButtonLookAndFeel& getInstance() {
+        static ModMatrixButtonLookAndFeel instance;
+        return instance;
+    }
+};
+
 FourOscUI::ModEnvTab::ModEnvTab(FourOscUI& owner) : owner_(owner) {
     setupLabel(hdrAtk_, "ATK");
     setupLabel(hdrDec_, "DEC");
@@ -833,6 +901,27 @@ FourOscUI::ModEnvTab::ModEnvTab(FourOscUI& owner) : owner_(owner) {
         };
         addAndMakeVisible(row.releaseSlider);
     }
+
+    // Mod destination section
+    addDestBtn1_.setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
+    addDestBtn1_.setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+    addDestBtn1_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    addDestBtn1_.onClick = [this] { showAddDestPopup(2, "Env 1"); };  // env1=2
+    addAndMakeVisible(addDestBtn1_);
+
+    addDestBtn2_.setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
+    addDestBtn2_.setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+    addDestBtn2_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    addDestBtn2_.onClick = [this] { showAddDestPopup(3, "Env 2"); };  // env2=3
+    addAndMakeVisible(addDestBtn2_);
+
+    modListContent_ = std::make_unique<juce::Component>();
+    modViewport_ = std::make_unique<juce::Viewport>();
+    modViewport_->setViewedComponent(modListContent_.get(), false);
+    modViewport_->setScrollBarsShown(true, false);
+    addAndMakeVisible(*modViewport_);
 }
 
 void FourOscUI::ModEnvTab::resized() {
@@ -867,6 +956,31 @@ void FourOscUI::ModEnvTab::resized() {
         row.sustainSlider.setBounds(rowArea.removeFromLeft(sliderW));
         rowArea.removeFromLeft(gap);
         row.releaseSlider.setBounds(rowArea.removeFromLeft(sliderW));
+    }
+
+    // Mod destinations section — "+" buttons for Env 1 and Env 2
+    area.removeFromTop(4);
+    auto btnRow = area.removeFromTop(18);
+    addDestBtn1_.setBounds(btnRow.removeFromLeft(70));
+    btnRow.removeFromLeft(gap);
+    addDestBtn2_.setBounds(btnRow.removeFromLeft(70));
+
+    area.removeFromTop(2);
+    modViewport_->setBounds(area);
+
+    // Layout mod destination rows inside viewport
+    constexpr int modRowH = 20;
+    int contentW = modViewport_->getMaximumVisibleWidth();
+    int totalH = juce::jmax(static_cast<int>(modDestRows_.size()) * modRowH, area.getHeight());
+    modListContent_->setSize(contentW, totalH);
+
+    int y = 0;
+    for (auto& row : modDestRows_) {
+        int destW = contentW - 70 - 20;  // depth slider + delete btn
+        row.destLabel->setBounds(0, y, destW, modRowH);
+        row.depthSlider->setBounds(destW, y, 70, modRowH);
+        row.deleteButton->setBounds(destW + 70, y, 20, modRowH);
+        y += modRowH;
     }
 }
 
@@ -940,6 +1054,27 @@ FourOscUI::LFOTab::LFOTab(FourOscUI& owner) : owner_(owner) {
         };
         addAndMakeVisible(row.syncButton);
     }
+
+    // Mod destination section
+    addDestBtn1_.setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
+    addDestBtn1_.setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+    addDestBtn1_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    addDestBtn1_.onClick = [this] { showAddDestPopup(0, "LFO 1"); };  // lfo1=0
+    addAndMakeVisible(addDestBtn1_);
+
+    addDestBtn2_.setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
+    addDestBtn2_.setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::SURFACE));
+    addDestBtn2_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    addDestBtn2_.onClick = [this] { showAddDestPopup(1, "LFO 2"); };  // lfo2=1
+    addAndMakeVisible(addDestBtn2_);
+
+    modListContent_ = std::make_unique<juce::Component>();
+    modViewport_ = std::make_unique<juce::Viewport>();
+    modViewport_->setViewedComponent(modListContent_.get(), false);
+    modViewport_->setScrollBarsShown(true, false);
+    addAndMakeVisible(*modViewport_);
 }
 
 void FourOscUI::LFOTab::setupWaveSelector(IconSelector& selector) {
@@ -980,6 +1115,31 @@ void FourOscUI::LFOTab::resized() {
         row.depthSlider.setBounds(rowArea.removeFromLeft(sliderW));
         rowArea.removeFromLeft(gap);
         row.syncButton.setBounds(rowArea.removeFromLeft(toggleW));
+    }
+
+    // Mod destinations section — "+" buttons for LFO 1 and LFO 2
+    area.removeFromTop(4);
+    auto btnRow = area.removeFromTop(18);
+    addDestBtn1_.setBounds(btnRow.removeFromLeft(70));
+    btnRow.removeFromLeft(gap);
+    addDestBtn2_.setBounds(btnRow.removeFromLeft(70));
+
+    area.removeFromTop(2);
+    modViewport_->setBounds(area);
+
+    // Layout mod destination rows inside viewport
+    constexpr int modRowH = 20;
+    int contentW = modViewport_->getMaximumVisibleWidth();
+    int totalH = juce::jmax(static_cast<int>(modDestRows_.size()) * modRowH, area.getHeight());
+    modListContent_->setSize(contentW, totalH);
+
+    int y = 0;
+    for (auto& row : modDestRows_) {
+        int destW = contentW - 70 - 20;  // depth slider + delete btn
+        row.destLabel->setBounds(0, y, destW, modRowH);
+        row.depthSlider->setBounds(destW, y, 70, modRowH);
+        row.deleteButton->setBounds(destW + 70, y, 20, modRowH);
+        y += modRowH;
     }
 }
 
@@ -1300,6 +1460,255 @@ void FourOscUI::FXTab::updatePluginState(const FourOscPluginState& state) {
 
 void FourOscUI::FXTab::setupLabel(juce::Label& label, const juce::String& text) {
     setupLabelStatic(label, text, this);
+}
+
+// =============================================================================
+// LFOTab — Mod destination assignments
+// =============================================================================
+
+void FourOscUI::LFOTab::setParameterNames(const std::vector<std::pair<int, juce::String>>& names) {
+    paramNames_ = names;
+}
+
+void FourOscUI::LFOTab::updateModEntries(const std::vector<ModMatrixEntry>& entries) {
+    // Check if structure changed (entries added/removed/reordered)
+    bool structureChanged = entries.size() != modEntries_.size();
+    if (!structureChanged) {
+        for (size_t i = 0; i < entries.size(); ++i) {
+            if (entries[i].paramIndex != modEntries_[i].paramIndex ||
+                entries[i].modSourceId != modEntries_[i].modSourceId) {
+                structureChanged = true;
+                break;
+            }
+        }
+    }
+
+    modEntries_ = entries;
+
+    if (structureChanged) {
+        rebuildModRows();
+    } else {
+        // Only depths changed — update sliders in place (don't rebuild mid-drag)
+        for (size_t i = 0; i < entries.size() && i < modDestRows_.size(); ++i) {
+            auto* slider = modDestRows_[i].depthSlider.get();
+            if (slider && !slider->isBeingDragged())
+                slider->setValue(static_cast<double>(entries[i].depth) * 100.0,
+                                 juce::dontSendNotification);
+        }
+    }
+}
+
+void FourOscUI::LFOTab::rebuildModRows() {
+    modDestRows_.clear();
+    modListContent_->removeAllChildren();
+
+    for (size_t i = 0; i < modEntries_.size(); ++i) {
+        auto& entry = modEntries_[i];
+        ModDestRow row;
+
+        // "LFO 1 > Filter Freq" style label
+        juce::String label = entry.sourceName + " > " + entry.paramName;
+        row.destLabel = std::make_unique<juce::Label>("", label);
+        row.destLabel->setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
+        row.destLabel->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        row.destLabel->setJustificationType(juce::Justification::centredLeft);
+        modListContent_->addAndMakeVisible(*row.destLabel);
+
+        row.depthSlider = std::make_unique<TextSlider>(TextSlider::Format::Decimal);
+        row.depthSlider->setRange(-100.0, 100.0, 0.1);
+        row.depthSlider->setValueFormatter(
+            [](double v) { return juce::String(juce::roundToInt(v)); });
+        row.depthSlider->setValueParser([](const juce::String& s) { return s.getDoubleValue(); });
+        row.depthSlider->setValue(static_cast<double>(entry.depth) * 100.0,
+                                  juce::dontSendNotification);
+        int paramIdx = entry.paramIndex;
+        int srcId = entry.modSourceId;
+        row.depthSlider->onValueChanged = [this, paramIdx, srcId](double newVal) {
+            if (owner_.onModDepthChanged)
+                owner_.onModDepthChanged(paramIdx, srcId, static_cast<float>(newVal / 100.0));
+        };
+        modListContent_->addAndMakeVisible(*row.depthSlider);
+
+        row.deleteButton = std::make_unique<juce::TextButton>("X");
+        row.deleteButton->setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
+        row.deleteButton->setColour(juce::TextButton::buttonColourId,
+                                    DarkTheme::getColour(DarkTheme::SURFACE));
+        row.deleteButton->setColour(juce::TextButton::textColourOffId,
+                                    DarkTheme::getColour(DarkTheme::ACCENT_RED));
+        row.deleteButton->onClick = [this, paramIdx, srcId] {
+            if (owner_.onModEntryRemoved)
+                owner_.onModEntryRemoved(paramIdx, srcId);
+        };
+        modListContent_->addAndMakeVisible(*row.deleteButton);
+
+        modDestRows_.push_back(std::move(row));
+    }
+
+    resized();
+    repaint();
+}
+
+void FourOscUI::LFOTab::showAddDestPopup(int modSourceId, const juce::String& sourceName) {
+    auto popup = std::make_unique<juce::Component>();
+    popup->setSize(200, 70);
+
+    auto* destCombo = new juce::ComboBox("Dest");
+    destCombo->setBounds(10, 10, 180, 24);
+    for (auto& [idx, name] : paramNames_)
+        destCombo->addItem(name, idx + 1);
+    if (!paramNames_.empty())
+        destCombo->setSelectedId(paramNames_[0].first + 1);
+    popup->addAndMakeVisible(destCombo);
+
+    auto* addBtn = new juce::TextButton("Add");
+    addBtn->setBounds(60, 40, 80, 24);
+    addBtn->setColour(juce::TextButton::buttonColourId,
+                      DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    popup->addAndMakeVisible(addBtn);
+
+    auto& addBtnRef = (modSourceId == 0) ? addDestBtn1_ : addDestBtn2_;
+    auto& cb = juce::CallOutBox::launchAsynchronously(std::move(popup), addBtnRef.getScreenBounds(),
+                                                      nullptr);
+
+    addBtn->onClick = [this, destCombo, &cb, modSourceId]() {
+        int paramIdx = destCombo->getSelectedId() - 1;
+        if (paramIdx >= 0) {
+            for (auto& e : modEntries_) {
+                if (e.paramIndex == paramIdx && e.modSourceId == modSourceId)
+                    return;
+            }
+            if (owner_.onModDepthChanged)
+                owner_.onModDepthChanged(paramIdx, modSourceId, 0.0f);
+            if (owner_.onModMatrixStructureChanged)
+                owner_.onModMatrixStructureChanged();
+        }
+        cb.dismiss();
+    };
+    juce::ignoreUnused(sourceName);
+}
+
+// =============================================================================
+// ModEnvTab — Mod destination assignments
+// =============================================================================
+
+void FourOscUI::ModEnvTab::setParameterNames(
+    const std::vector<std::pair<int, juce::String>>& names) {
+    paramNames_ = names;
+}
+
+void FourOscUI::ModEnvTab::updateModEntries(const std::vector<ModMatrixEntry>& entries) {
+    bool structureChanged = entries.size() != modEntries_.size();
+    if (!structureChanged) {
+        for (size_t i = 0; i < entries.size(); ++i) {
+            if (entries[i].paramIndex != modEntries_[i].paramIndex ||
+                entries[i].modSourceId != modEntries_[i].modSourceId) {
+                structureChanged = true;
+                break;
+            }
+        }
+    }
+
+    modEntries_ = entries;
+
+    if (structureChanged) {
+        rebuildModRows();
+    } else {
+        for (size_t i = 0; i < entries.size() && i < modDestRows_.size(); ++i) {
+            auto* slider = modDestRows_[i].depthSlider.get();
+            if (slider && !slider->isBeingDragged())
+                slider->setValue(static_cast<double>(entries[i].depth) * 100.0,
+                                 juce::dontSendNotification);
+        }
+    }
+}
+
+void FourOscUI::ModEnvTab::rebuildModRows() {
+    modDestRows_.clear();
+    modListContent_->removeAllChildren();
+
+    for (size_t i = 0; i < modEntries_.size(); ++i) {
+        auto& entry = modEntries_[i];
+        ModDestRow row;
+
+        juce::String label = entry.sourceName + " > " + entry.paramName;
+        row.destLabel = std::make_unique<juce::Label>("", label);
+        row.destLabel->setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
+        row.destLabel->setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        row.destLabel->setJustificationType(juce::Justification::centredLeft);
+        modListContent_->addAndMakeVisible(*row.destLabel);
+
+        row.depthSlider = std::make_unique<TextSlider>(TextSlider::Format::Decimal);
+        row.depthSlider->setRange(-100.0, 100.0, 0.1);
+        row.depthSlider->setValueFormatter(
+            [](double v) { return juce::String(juce::roundToInt(v)); });
+        row.depthSlider->setValueParser([](const juce::String& s) { return s.getDoubleValue(); });
+        row.depthSlider->setValue(static_cast<double>(entry.depth) * 100.0,
+                                  juce::dontSendNotification);
+        int paramIdx = entry.paramIndex;
+        int srcId = entry.modSourceId;
+        row.depthSlider->onValueChanged = [this, paramIdx, srcId](double newVal) {
+            if (owner_.onModDepthChanged)
+                owner_.onModDepthChanged(paramIdx, srcId, static_cast<float>(newVal / 100.0));
+        };
+        modListContent_->addAndMakeVisible(*row.depthSlider);
+
+        row.deleteButton = std::make_unique<juce::TextButton>("X");
+        row.deleteButton->setLookAndFeel(&ModMatrixButtonLookAndFeel::getInstance());
+        row.deleteButton->setColour(juce::TextButton::buttonColourId,
+                                    DarkTheme::getColour(DarkTheme::SURFACE));
+        row.deleteButton->setColour(juce::TextButton::textColourOffId,
+                                    DarkTheme::getColour(DarkTheme::ACCENT_RED));
+        row.deleteButton->onClick = [this, paramIdx, srcId] {
+            if (owner_.onModEntryRemoved)
+                owner_.onModEntryRemoved(paramIdx, srcId);
+        };
+        modListContent_->addAndMakeVisible(*row.deleteButton);
+
+        modDestRows_.push_back(std::move(row));
+    }
+
+    resized();
+    repaint();
+}
+
+void FourOscUI::ModEnvTab::showAddDestPopup(int modSourceId, const juce::String& sourceName) {
+    auto popup = std::make_unique<juce::Component>();
+    popup->setSize(200, 70);
+
+    auto* destCombo = new juce::ComboBox("Dest");
+    destCombo->setBounds(10, 10, 180, 24);
+    for (auto& [idx, name] : paramNames_)
+        destCombo->addItem(name, idx + 1);
+    if (!paramNames_.empty())
+        destCombo->setSelectedId(paramNames_[0].first + 1);
+    popup->addAndMakeVisible(destCombo);
+
+    auto* addBtn = new juce::TextButton("Add");
+    addBtn->setBounds(60, 40, 80, 24);
+    addBtn->setColour(juce::TextButton::buttonColourId,
+                      DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    popup->addAndMakeVisible(addBtn);
+
+    // env1=2, env2=3 -> button index 0 or 1
+    auto& addBtnRef = (modSourceId == 2) ? addDestBtn1_ : addDestBtn2_;
+    auto& cb = juce::CallOutBox::launchAsynchronously(std::move(popup), addBtnRef.getScreenBounds(),
+                                                      nullptr);
+
+    addBtn->onClick = [this, destCombo, &cb, modSourceId]() {
+        int paramIdx = destCombo->getSelectedId() - 1;
+        if (paramIdx >= 0) {
+            for (auto& e : modEntries_) {
+                if (e.paramIndex == paramIdx && e.modSourceId == modSourceId)
+                    return;
+            }
+            if (owner_.onModDepthChanged)
+                owner_.onModDepthChanged(paramIdx, modSourceId, 0.0f);
+            if (owner_.onModMatrixStructureChanged)
+                owner_.onModMatrixStructureChanged();
+        }
+        cb.dismiss();
+    };
+    juce::ignoreUnused(sourceName);
 }
 
 }  // namespace magda::daw::ui

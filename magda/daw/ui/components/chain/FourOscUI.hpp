@@ -5,6 +5,7 @@
 #include "core/DeviceInfo.hpp"
 #include "ui/components/common/IconSelector.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
 
@@ -31,9 +32,20 @@ struct FourOscPluginState {
 };
 
 /**
+ * @brief A single row in the mod matrix display
+ */
+struct ModMatrixEntry {
+    int paramIndex;           // 0-67 (index into getAutomatableParameters)
+    juce::String paramName;   // human-readable destination name
+    int modSourceId;          // FourOscPlugin::ModSource enum value
+    juce::String sourceName;  // human-readable source name
+    float depth;              // -1.0 to +1.0
+};
+
+/**
  * @brief Custom tabbed UI for the 4OSC synthesizer
  *
- * 6 tabs: OSC, Filter, Amp, Mod Env, LFO, FX
+ * 7 tabs: OSC, Filter, Amp, Mod Env, LFO, FX, Matrix
  *
  * Automatable parameters use paramIndex-based callbacks through TrackManager.
  * Non-automatable CachedValues use a separate callback that writes directly
@@ -47,8 +59,18 @@ class FourOscUI : public juce::Component {
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
     void updatePluginState(const FourOscPluginState& state);
 
+    // Update mod matrix display from DeviceSlotComponent
+    void updateModMatrix(const std::vector<ModMatrixEntry>& entries);
+    void setModMatrixParameterNames(const std::vector<std::pair<int, juce::String>>& names);
+
     std::function<void(int paramIndex, float value)> onParameterChanged;
     std::function<void(const juce::String& propertyId, juce::var value)> onPluginStateChanged;
+
+    // Mod matrix callbacks (fired from Matrix tab -> DeviceSlotComponent)
+    std::function<void(int paramIndex, int modSourceId, float depth)> onModDepthChanged;
+    std::function<void(int paramIndex, int modSourceId)> onModEntryRemoved;
+    std::function<void()>
+        onModMatrixStructureChanged;  // Called after add/remove to trigger re-read
 
     // Get all linkable sliders for mod/macro wiring (in parameter-index order)
     std::vector<LinkableTextSlider*> getLinkableSliders();
@@ -162,8 +184,13 @@ class FourOscUI : public juce::Component {
         void resized() override;
         void paint(juce::Graphics& g) override;
         void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
+        void updateModEntries(const std::vector<ModMatrixEntry>& entries);
+        void setParameterNames(const std::vector<std::pair<int, juce::String>>& names);
 
       private:
+        void rebuildModRows();
+        void showAddDestPopup(int modSourceId, const juce::String& sourceName);
+
         FourOscUI& owner_;
         struct EnvRow {
             juce::Label label;
@@ -175,6 +202,19 @@ class FourOscUI : public juce::Component {
         EnvRow rows_[2];
         juce::Label hdrAtk_, hdrDec_, hdrSus_, hdrRel_;
         void setupLabel(juce::Label& label, const juce::String& text);
+
+        // Mod destination assignments
+        juce::TextButton addDestBtn1_{"+ Env 1"}, addDestBtn2_{"+ Env 2"};
+        std::vector<ModMatrixEntry> modEntries_;
+        std::vector<std::pair<int, juce::String>> paramNames_;
+        struct ModDestRow {
+            std::unique_ptr<juce::Label> destLabel;
+            std::unique_ptr<TextSlider> depthSlider;
+            std::unique_ptr<juce::TextButton> deleteButton;
+        };
+        std::vector<ModDestRow> modDestRows_;
+        std::unique_ptr<juce::Viewport> modViewport_;
+        std::unique_ptr<juce::Component> modListContent_;
     };
 
     class LFOTab : public juce::Component {
@@ -185,8 +225,13 @@ class FourOscUI : public juce::Component {
         void resized() override;
         void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
         void updatePluginState(const FourOscPluginState& state);
+        void updateModEntries(const std::vector<ModMatrixEntry>& entries);
+        void setParameterNames(const std::vector<std::pair<int, juce::String>>& names);
 
       private:
+        void rebuildModRows();
+        void showAddDestPopup(int modSourceId, const juce::String& sourceName);
+
         FourOscUI& owner_;
         struct LFORow {
             juce::Label label;
@@ -199,6 +244,19 @@ class FourOscUI : public juce::Component {
         static void setupWaveSelector(IconSelector& selector);
         juce::Label hdrWave_, hdrRate_, hdrDepth_, hdrSync_;
         void setupLabel(juce::Label& label, const juce::String& text);
+
+        // Mod destination assignments
+        juce::TextButton addDestBtn1_{"+ LFO 1"}, addDestBtn2_{"+ LFO 2"};
+        std::vector<ModMatrixEntry> modEntries_;
+        std::vector<std::pair<int, juce::String>> paramNames_;
+        struct ModDestRow {
+            std::unique_ptr<juce::Label> destLabel;
+            std::unique_ptr<TextSlider> depthSlider;
+            std::unique_ptr<juce::TextButton> deleteButton;
+        };
+        std::vector<ModDestRow> modDestRows_;
+        std::unique_ptr<juce::Viewport> modViewport_;
+        std::unique_ptr<juce::Component> modListContent_;
     };
 
     class FXTab : public juce::Component {
