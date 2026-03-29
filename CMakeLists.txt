@@ -108,9 +108,9 @@ else()
 endif()
 add_subdirectory(third_party/llama.cpp)
 
-# Fix llama.cpp char8_t errors on MSVC C++20: /Zc:char8_t- must come after -std:c++20
+# llama.cpp doesn't need C++20; building as C++17 avoids MSVC char8_t errors
 if(MSVC)
-    target_compile_options(llama PRIVATE /Zc:char8_t-)
+    set_target_properties(llama PROPERTIES CXX_STANDARD 17)
 endif()
 
 # Catch2 for testing
