@@ -140,7 +140,6 @@ if(MAGDA_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-add_subdirectory(poc)
 
 # JUCE adapter (optional)
 if(MAGDA_BUILD_JUCE_ADAPTER)
