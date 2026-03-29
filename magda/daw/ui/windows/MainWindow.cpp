@@ -731,6 +731,10 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         mainView->getTimelineController().dispatch(SetTempoEvent{bpm});
     };
 
+    transportPanel->onTimeSignatureChange = [this](int numerator, int denominator) {
+        mainView->getTimelineController().dispatch(SetTimeSignatureEvent{numerator, denominator});
+    };
+
     transportPanel->onMetronomeToggle = [engine](bool enabled) {
         // Metronome is audio-engine only, not part of timeline state
         engine->setMetronomeEnabled(enabled);

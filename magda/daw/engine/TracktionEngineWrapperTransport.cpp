@@ -206,21 +206,33 @@ double TracktionEngineWrapper::getTempo() const {
     return 120.0;
 }
 
-void TracktionEngineWrapper::setTimeSignature(int /*numerator*/, int /*denominator*/) {
+void TracktionEngineWrapper::setTimeSignature(int numerator, int denominator) {
     if (currentEdit_) {
-        // Time signature handling in Tracktion Engine - simplified for now
+        auto& tempoSeq = currentEdit_->tempoSequence;
+        if (tempoSeq.getNumTimeSigs() > 0) {
+            auto* timeSig = tempoSeq.getTimeSig(0);
+            if (timeSig) {
+                timeSig->numerator = numerator;
+                timeSig->denominator = denominator;
+            }
+        }
     }
 }
 
 void TracktionEngineWrapper::getTimeSignature(int& numerator, int& denominator) const {
     if (currentEdit_) {
-        // Time signature handling in Tracktion Engine - simplified for now
-        numerator = 4;
-        denominator = 4;
-    } else {
-        numerator = 4;
-        denominator = 4;
+        auto& tempoSeq = currentEdit_->tempoSequence;
+        if (tempoSeq.getNumTimeSigs() > 0) {
+            auto* timeSig = tempoSeq.getTimeSig(0);
+            if (timeSig) {
+                numerator = timeSig->numerator;
+                denominator = timeSig->denominator;
+                return;
+            }
+        }
     }
+    numerator = 4;
+    denominator = 4;
 }
 
 void TracktionEngineWrapper::setLooping(bool enabled) {

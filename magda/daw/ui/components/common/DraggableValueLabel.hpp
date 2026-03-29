@@ -109,6 +109,11 @@ class DraggableValueLabel : public juce::Component, public juce::SettableTooltip
         repaint();
     }
 
+    void setJustification(juce::Justification j) {
+        justification_ = j;
+        repaint();
+    }
+
     // Whether to draw the border
     void setDrawBorder(bool draw) {
         drawBorder_ = draw;
@@ -161,6 +166,7 @@ class DraggableValueLabel : public juce::Component, public juce::SettableTooltip
     bool drawBackground_ = true;
     bool drawBorder_ = true;
     float fontSize_ = 10.0f;
+    juce::Justification justification_ = juce::Justification::centred;
     juce::String textOverride_;
 
   public:

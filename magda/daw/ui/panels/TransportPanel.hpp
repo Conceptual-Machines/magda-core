@@ -27,6 +27,7 @@ class TransportPanel : public juce::Component {
     std::function<void(double)> onTempoChange;
     std::function<void(bool)> onMetronomeToggle;
     std::function<void(bool)> onSnapToggle;
+    std::function<void(int, int)> onTimeSignatureChange;
     std::function<void(bool, int, int)> onGridQuantizeChange;  // (autoGrid, numerator, denominator)
 
     // Navigation callbacks
@@ -120,7 +121,8 @@ class TransportPanel : public juce::Component {
     // Metronome, snap, time signature
     std::unique_ptr<SvgButton> metronomeButton;
     std::unique_ptr<juce::TextButton> snapButton;
-    std::unique_ptr<juce::Label> timeSignatureLabel;
+    std::unique_ptr<DraggableValueLabel> timeSigNumeratorLabel;
+    std::unique_ptr<DraggableValueLabel> timeSigDenominatorLabel;
 
     // Layout sections
     juce::Rectangle<int> getTransportControlsArea() const;

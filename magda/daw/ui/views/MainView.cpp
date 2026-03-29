@@ -543,6 +543,14 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
             onTimeSignatureChanged(state.tempo.timeSignatureNumerator,
                                    state.tempo.timeSignatureDenominator);
         }
+        if (timeline) {
+            timeline->setTimeSignature(state.tempo.timeSignatureNumerator,
+                                       state.tempo.timeSignatureDenominator);
+        }
+        if (trackContentPanel) {
+            trackContentPanel->setTimeSignature(state.tempo.timeSignatureNumerator,
+                                                state.tempo.timeSignatureDenominator);
+        }
     }
 
     // Punch changes

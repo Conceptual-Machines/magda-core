@@ -69,7 +69,7 @@ juce::String DraggableValueLabel::formatValue(double val) const {
         }
 
         case Format::Integer: {
-            return juce::String(static_cast<int>(std::round(val)));
+            return juce::String(static_cast<int>(std::round(val))) + suffix_;
         }
 
         case Format::MidiNote: {
@@ -294,7 +294,7 @@ void DraggableValueLabel::paint(juce::Graphics& g) {
                         .withMultipliedAlpha(alpha));
         g.setFont(FontManager::getInstance().getUIFont(fontSize_));
         auto displayText = textOverride_.isNotEmpty() ? textOverride_ : formatValue(value_);
-        g.drawText(displayText, bounds.reduced(2, 0), juce::Justification::centred, false);
+        g.drawText(displayText, bounds.reduced(2, 0), justification_, false);
     }
 }
 
