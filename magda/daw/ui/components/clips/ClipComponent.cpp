@@ -1103,6 +1103,10 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         dragMode_ = DragMode::Move;
     }
 
+    // Bring to front so the dragged/resized clip renders on top of neighbours
+    if (dragMode_ != DragMode::None)
+        toFront(false);
+
     repaint();
 }
 

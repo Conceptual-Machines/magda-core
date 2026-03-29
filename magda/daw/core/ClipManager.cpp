@@ -319,6 +319,7 @@ void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, do
                 }
             }
         }
+        resolveOverlaps(clipId);
         notifyClipPropertyChanged(clipId);
     }
 }
