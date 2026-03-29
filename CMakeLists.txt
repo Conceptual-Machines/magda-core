@@ -49,8 +49,8 @@ endif()
 
 # Compiler flags
 if(MSVC)
-    set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /W3")
-    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /W3 /Zc:char8_t-")
+    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG /Zc:char8_t-")
 else()
     set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
