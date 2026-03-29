@@ -326,6 +326,19 @@ bool TracktionEngineWrapper::isMetronomeEnabled() const {
     return false;
 }
 
+void TracktionEngineWrapper::setCountInMode(int mode) {
+    if (currentEdit_) {
+        currentEdit_->setCountInMode(static_cast<tracktion::engine::Edit::CountIn>(mode));
+    }
+}
+
+int TracktionEngineWrapper::getCountInMode() const {
+    if (currentEdit_) {
+        return static_cast<int>(currentEdit_->getCountInMode());
+    }
+    return 0;
+}
+
 // ===== AudioEngineListener Implementation =====
 // These methods are called by TimelineController when UI state changes
 
@@ -439,6 +452,7 @@ void TracktionEngineWrapper::onTransportRecord(double position) {
         // so MIDI/audio input is captured on armed tracks.
         if (sessionRecorder_)
             sessionRecorder_->setArmed(true);
+        intendedRecordPosition_ = position;
         locate(position);
         record();
     }

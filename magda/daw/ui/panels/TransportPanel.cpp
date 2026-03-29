@@ -742,6 +742,7 @@ void TransportPanel::setupTempoAndQuantize() {
         if (onMetronomeToggle)
             onMetronomeToggle(newState);
     };
+    metronomeButton->addMouseListener(this, false);
     addAndMakeVisible(*metronomeButton);
 
     // Snap button (text-based toggle)
@@ -1067,6 +1068,37 @@ void TransportPanel::updateCpuTooltip() {
         cpuTitleLabel->setTooltip(tip);
     if (cpuValueLabel)
         cpuValueLabel->setTooltip(tip);
+}
+
+void TransportPanel::mouseDown(const juce::MouseEvent& e) {
+    if (e.originalComponent == metronomeButton.get() && e.mods.isRightButtonDown()) {
+        showCountInMenu();
+    }
+}
+
+void TransportPanel::showCountInMenu() {
+    juce::PopupMenu menu;
+    menu.addItem(1, "Off", true, countInMode_ == 0);
+    menu.addItem(5, "1 Beat", true, countInMode_ == 4);
+    menu.addItem(4, "2 Beats", true, countInMode_ == 3);
+    menu.addItem(2, "1 Bar", true, countInMode_ == 1);
+    menu.addItem(3, "2 Bars", true, countInMode_ == 2);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(metronomeButton.get()),
+                       [this](int result) {
+                           if (result <= 0)
+                               return;
+                           // Map menu item IDs to CountIn enum values
+                           static constexpr int idToMode[] = {0, 0, 1, 2, 3, 4};
+                           int mode = idToMode[result];
+                           countInMode_ = mode;
+                           if (onCountInModeChange)
+                               onCountInModeChange(mode);
+                       });
+}
+
+void TransportPanel::setCountInMode(int mode) {
+    countInMode_ = mode;
 }
 
 }  // namespace magda

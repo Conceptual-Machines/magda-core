@@ -13,10 +13,12 @@ void TracktionEngineWrapper::recordingAboutToStart(tracktion::InputDeviceInstanc
         << " instance.isRecording()=" << (int)instance.isRecording());
 
     // Store recording start time per track (first device wins)
+    // Use intendedRecordPosition_ (set before count-in) rather than getCurrentPosition()
+    // which may reflect the pre-roll position.
     if (audioBridge_) {
         TrackId trackId = audioBridge_->getTrackIdForTeTrack(targetID);
         if (trackId != INVALID_TRACK_ID && recordingStartTimes_.count(trackId) == 0) {
-            double startTime = getCurrentPosition();
+            double startTime = intendedRecordPosition_;
             recordingStartTimes_[trackId] = startTime;
             DBG("  -> stored recording start time " << startTime << " for track " << trackId);
 

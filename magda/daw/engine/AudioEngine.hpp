@@ -67,6 +67,10 @@ class AudioEngine : public AudioEngineListener {
     virtual void setMetronomeEnabled(bool enabled) = 0;
     virtual bool isMetronomeEnabled() const = 0;
 
+    // Count-in / pre-roll (0=none, 1=1bar, 2=2bars, 3=2beats, 4=1beat)
+    virtual void setCountInMode(int mode) = 0;
+    virtual int getCountInMode() const = 0;
+
     // ===== Trigger State (for transport-synced devices) =====
     virtual void updateTriggerState() = 0;
 

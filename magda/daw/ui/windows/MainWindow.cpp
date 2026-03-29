@@ -740,6 +740,11 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         engine->setMetronomeEnabled(enabled);
     };
 
+    transportPanel->onCountInModeChange = [engine](int mode) { engine->setCountInMode(mode); };
+
+    // Initialize count-in UI from engine state
+    transportPanel->setCountInMode(engine->getCountInMode());
+
     transportPanel->onSnapToggle = [this](bool enabled) {
         mainView->getTimelineController().dispatch(SetSnapEnabledEvent{enabled});
         // Sync timeline component's snap state
