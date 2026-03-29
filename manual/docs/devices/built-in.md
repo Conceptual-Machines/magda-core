@@ -16,7 +16,7 @@ These processors are provided by the Tracktion Engine and are available in every
 | Device | Description |
 |--------|-------------|
 | **Sampler** | 8-voice sample player with ADSR and pitch controls. See [Sampler](sampler.md). |
-| **4OSC Synth** | Four-oscillator subtractive synthesizer |
+| **4OSC Synth** | Four-oscillator subtractive synthesizer with internal mod matrix. See [4OSC Synth](4osc.md). |
 | **EQ** | Parametric equalizer |
 | **Compressor** | Dynamics compressor |
 | **Reverb** | Algorithmic reverb |

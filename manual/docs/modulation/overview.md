@@ -28,6 +28,18 @@ Modulators and macros are scoped to their parent track. A modulator on Track 1 c
 - A single modulator can drive **multiple target parameters** simultaneously
 - A single parameter can be driven by **multiple modulation sources**, with their effects combined
 
+## Global Modulator & Macro Panel
+
+![Global Macros & Modulators](../assets/images/modulation/global-macros-mods.png){ width="400" }
+
+Each track's modulators and macros are managed from the modulation panel in the bottom section. The panel shows macro knobs on the left and active modulators (LFO, Curve) on the right, with page navigation for both.
+
+## Internal Device Modulation
+
+Some built-in devices have their own internal modulation routing that operates inside the device's audio processing. For example, the [4OSC Synth](../devices/4osc.md) has two LFOs and two modulation envelopes that can be routed to any of its parameters via an internal mod matrix.
+
+Internal modulation and track-level modulation are independent and can be used together.
+
 ## Linking
 
 Parameters are connected to modulation sources using MAGDA's link mode. See [Linking Parameters](linking.md) for the workflow.

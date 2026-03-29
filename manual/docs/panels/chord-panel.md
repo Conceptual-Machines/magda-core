@@ -3,7 +3,7 @@
 !!! note "Chord Engine device"
     The Chord Panel documents the standalone bottom-panel view. The same functionality is also available as a device on any instrument track — see [Chord Engine](../devices/chord-engine.md).
 
-![Chord Panel — Browse Mode](../assets/images/panels/chord-panel.png)
+![Chord Panel — K&S Mode](../assets/images/devices/chord-engine-ks.png)
 
 The Chord Panel is a real-time chord analysis and suggestion tool. It detects chords as you play, identifies the musical key, lists matching scales, and suggests what chord to play next.
 
@@ -77,7 +77,7 @@ The **Browse** button at the bottom of the Key/Scale column opens the scale expl
 
 ## AI Mode
 
-![Chord Panel — AI Mode](../assets/images/panels/chord-panel-ai.png)
+![Chord Panel — AI Mode](../assets/images/devices/chord-engine-ai.png)
 
 Switch to the **AI** tab to generate chord progressions from text descriptions. Type a prompt describing the style or mood (e.g. "Soulful I-iv-V7", "Jazzy backdoor voicing") and the AI returns labelled progressions as clickable chord buttons. Chords can be auditioned by clicking or dragged onto the Piano Roll.
 

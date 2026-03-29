@@ -28,12 +28,45 @@ The assistant is **context-aware** — it knows which tracks, clips, and devices
 
 ### Setup
 
-The AI Assistant uses the OpenAI API. You'll need an API key to get started.
+![AI Settings](../assets/images/panels/ai-settings.png){ width="400" }
 
-1. Go to **Settings > Preferences > AI**
-2. Enter your OpenAI API key
+The AI Assistant supports multiple LLM providers. Open the AI Settings dialog from **Settings > AI Settings** to configure your providers.
 
-If you don't have an API key, you can generate one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
+The settings dialog has three tabs:
+
+| Tab | Description |
+|-----|-------------|
+| **Cloud** | Configure cloud API providers (Anthropic, OpenAI, DeepSeek, Gemini, OpenRouter) |
+| **Local** | Configure the embedded llama.cpp engine with a local GGUF model |
+| **Config** | Mode selection (Local / Cloud / Hybrid), provider, and optimization strategy |
+
+To add a cloud provider:
+
+1. Select the **Provider** from the dropdown
+2. Enter your **API Key**
+3. Click **Add** (or **Test** to verify the key first)
+
+Registered providers appear in the list below. You can add multiple providers and switch between them. Click **X** to remove a provider.
+
+#### Local Tab
+
+The Local tab configures the embedded **llama.cpp** inference engine for fully offline AI. MAGDA includes a one-click downloader for the custom **magda-v0.3.0** GGUF model, fine-tuned for DAW operations.
+
+- **Download Model** — Downloads the MAGDA model from HuggingFace with a progress indicator
+- **Model Path** — Path to any `.gguf` model file (use the file browser to select a custom model)
+- **GPU Layers** — Number of layers to offload to the GPU (-1 = all layers, for Metal/CUDA acceleration)
+- **Context Size** — Context window size (default 4096)
+- **Load / Unload** — Load the model into memory or unload it to free resources
+
+#### Config Tab
+
+The Config tab selects which providers the AI agents use:
+
+| Setting | Description |
+|---------|-------------|
+| **Mode** | **Local** (all agents use embedded llama), **Cloud** (all agents use a cloud provider), or **Hybrid** (mix of local and cloud) |
+| **Provider** | Which cloud provider to use (from the registered providers in the Cloud tab) |
+| **Optimize** | **Cost** (prefer local where possible), **Speed** (prefer fastest), or **Quality** (prefer most capable model) |
 
 ### Usage Tips
 
@@ -43,6 +76,8 @@ If you don't have an API key, you can generate one at [platform.openai.com/api-k
 - Prefix a message with `/dsl` to execute DSL directly from the AI chat without making an AI call
 
 ## DSL Tab
+
+![DSL Console](../assets/images/panels/dsl-repl.png){ width="300" }
 
 The DSL tab provides a code editor with **syntax highlighting** for the MAGDA DSL. It's designed for users who want to script DAW operations directly without going through the AI.
 

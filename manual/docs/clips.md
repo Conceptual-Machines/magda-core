@@ -122,6 +122,42 @@ Right-click an audio clip to access slice operations. These split the clip into 
 
 When Beat or Warp mode is active, MAGDA uses the **SoundTouch** algorithm for time-stretching.
 
+## Groove & Swing
+
+Groove templates add a human feel to MIDI clips by shifting note timing away from the strict grid.
+
+![Groove Inspector](assets/images/panels/groove-inspector.png){ width="300" }
+
+### Applying a Groove
+
+1. Select a MIDI clip
+2. In the **Inspector**, find the **Groove** section
+3. Click the dropdown to open the groove picker
+4. Select a category (Swing, Push Swing, Pull Swing, Push Snare, Pull Snare, Timing, Custom) and a template
+
+The groove picker shows categories on the left and templates on the right. Templates include standard swing amounts (e.g. "PushSwing 1/4 05%" through "PushSwing 1/4 50%").
+
+### Creating Grooves with AI
+
+You can create custom groove templates using the `/groove` slash command in the AI Assistant:
+
+![Groove via AI](assets/images/panels/groove-ai.png){ width="400" }
+
+```
+/groove funky 16th
+```
+
+The AI generates a groove template based on your description. Created templates appear in the **Custom** category of the groove picker.
+
+### Groove via DSL
+
+You can also list and apply grooves using the DSL console:
+
+```
+groove.list()
+groove.set(template="Basic 8th Swing", strength=0.5)
+```
+
 ## Freeze, Bounce, and Render
 
 These operations render a track or clip's output to audio, useful for reducing CPU load or committing effects.

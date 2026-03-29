@@ -61,6 +61,7 @@ nav:
       - Chord Panel: panels/chord-panel.md
   - Devices:
       - Built-in Devices: devices/built-in.md
+      - 4OSC Synth: devices/4osc.md
       - Chord Engine: devices/chord-engine.md
       - Drum Grid: devices/drum-grid.md
       - Sampler: devices/sampler.md

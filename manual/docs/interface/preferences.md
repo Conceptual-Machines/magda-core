@@ -32,9 +32,9 @@ Open the Preferences dialog from **Settings > Preferences**. The dialog has six 
 
 ## AI
 
-- **API key** — Enter your API key to enable the AI Assistant
+AI provider configuration has moved to a dedicated dialog. Open it from **Settings > AI Settings**.
 
-See [AI Assistant](../panels/ai-assistant.md) for more on setting up and using the AI chat.
+See [AI Assistant — Setup](../panels/ai-assistant.md#setup) for details.
 
 ## Shortcuts
 

@@ -80,6 +80,7 @@ Each track has a checkbox for each view mode: **Live**, **Arrange**, **Mix**, an
 | Item | Description |
 |------|-------------|
 | Preferences | Open the preferences dialog |
+| AI Settings | Open the AI settings dialog (see [AI Assistant — Setup](../panels/ai-assistant.md#setup)) |
 | Audio/MIDI Settings | Open audio and MIDI device configuration |
 | Plugin Settings | Open plugin settings (see [Plugin Settings](plugin-settings.md)) |
 

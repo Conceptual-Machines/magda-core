@@ -1,6 +1,10 @@
 # Modulators
 
-Modulators are signal generators that modulate device parameters over time. Each device and rack can have its own set of modulators.
+Modulators are signal generators that modulate device parameters over time. Each track has a global modulator panel that can target any parameter on any device in the track's chain.
+
+Modulators are managed from the modulation panel at the bottom of the track chain. Click the **+** button to add a new modulator. The panel shows active modulators alongside the macro knobs.
+
+![Global Macros & Modulators](../assets/images/modulation/global-macros-mods.png){ width="500" }
 
 ## LFO
 

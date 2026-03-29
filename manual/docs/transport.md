@@ -47,7 +47,30 @@ The tempo (BPM) is displayed in the transport bar. You can change it by:
 
 ## Time Signature
 
-The time signature is displayed alongside the tempo in the transport bar.
+![Time Signature](assets/images/transport/time-signature.png){ width="120" }
+
+The time signature is displayed below the tempo in the transport bar. You can change it by:
+
+- Clicking and dragging the numerator or denominator up or down
+- Clicking the value and typing a new number
+
+## Metronome & Count-In
+
+The metronome (click track) can be toggled on or off using the metronome icon in the transport bar.
+
+![Count-In Menu](assets/images/transport/count-in.png){ width="200" }
+
+**Right-click** the metronome icon to set a **count-in** (pre-roll) before recording starts:
+
+| Option | Description |
+|--------|-------------|
+| **Off** | Recording starts immediately |
+| **1 Beat** | One beat of click before recording |
+| **2 Beats** | Two beats of click before recording |
+| **1 Bar** | One full bar of click before recording |
+| **2 Bars** | Two full bars of click before recording |
+
+During count-in, the metronome plays but recording does not begin until the count-in period is complete.
 
 ## Grid & Snap
 

@@ -18,7 +18,7 @@ The device has two tabs: **K&S** (Krumhansl-Schmuckler analysis and suggestions)
 
 ## K&S Tab
 
-![Chord Engine — K&S Tab](../assets/images/devices/chord-engine-browse.png)
+![Chord Engine — K&S Tab](../assets/images/devices/chord-engine-ks.png)
 
 The K&S tab uses the Krumhansl-Schmuckler algorithm to detect the key from your playing and generate chord suggestions from music theory rules. The interface has three columns:
 
@@ -122,6 +122,8 @@ flowchart TD
 ```
 
 ## Chord Timeline
+
+![Chord Timeline in Piano Roll](../assets/images/devices/chord-engine-pianoroll.png)
 
 When a Chord Engine is present on a track, the Piano Roll automatically shows a **chord row** above the note grid. This row displays chord annotations that are linked to their MIDI notes.
 
