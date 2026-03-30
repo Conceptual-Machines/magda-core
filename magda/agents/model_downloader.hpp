@@ -49,6 +49,7 @@ class ModelDownloader : private juce::URL::DownloadTaskListener {
     std::unique_ptr<juce::URL::DownloadTask> downloadTask_;
     juce::File targetFile_;
     std::atomic<bool> downloading_{false};
+    juce::int64 expectedSize_{-1};
     ProgressCallback progressCallback_;
     CompletionCallback completionCallback_;
 };

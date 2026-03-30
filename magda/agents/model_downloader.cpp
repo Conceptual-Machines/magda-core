@@ -29,6 +29,18 @@ void ModelDownloader::startDownload(const juce::String& url, const juce::File& t
         return;
     }
 
+    // Probe Content-Length via a HEAD request (follows redirects).
+    // Some platforms (Windows WinINet) don't report the length during download
+    // after a 302 redirect, so we cache it here for the progress callback.
+    expectedSize_ = -1;
+    auto headStream = juce::URL(url).createInputStream(
+        juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+            .withHttpRequestCmd("HEAD")
+            .withNumRedirectsToFollow(5)
+            .withConnectionTimeoutMs(5000));
+    if (headStream)
+        expectedSize_ = headStream->getTotalLength();
+
     // Ensure parent directory exists
     targetFile_.getParentDirectory().createDirectory();
 
@@ -58,6 +70,11 @@ void ModelDownloader::cancel() {
 
 void ModelDownloader::progress(juce::URL::DownloadTask* /*task*/, juce::int64 bytesDownloaded,
                                juce::int64 totalLength) {
+    // Fall back to the size obtained from the HEAD request if the download
+    // task doesn't report Content-Length (e.g. Windows after a redirect).
+    if (totalLength <= 0 && expectedSize_ > 0)
+        totalLength = expectedSize_;
+
     if (progressCallback_)
         progressCallback_(bytesDownloaded, totalLength);
 }
