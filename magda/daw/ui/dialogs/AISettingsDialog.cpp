@@ -512,9 +512,17 @@ class AISettingsDialog::LocalPage : public juce::Component {
         styleLabel(gpuLabel_);
         addAndMakeVisible(gpuLabel_);
 
-        styleEditor(gpuEditor_, "-1 (auto)");
-        gpuEditor_.setInputRestrictions(4, "-0123456789");
-        addAndMakeVisible(gpuEditor_);
+        gpuCombo_.addItem("Auto (GPU)", 1);
+        gpuCombo_.addItem("CPU Only", 2);
+        gpuCombo_.addItem("Custom", 3);
+        styleCombo(gpuCombo_);
+        gpuCombo_.onChange = [this]() { gpuComboChanged(); };
+        addAndMakeVisible(gpuCombo_);
+
+        styleEditor(gpuCustomEditor_, "32");
+        gpuCustomEditor_.setInputRestrictions(4, "0123456789");
+        gpuCustomEditor_.setVisible(false);
+        addAndMakeVisible(gpuCustomEditor_);
 
         // Context size
         ctxLabel_.setText("Context", juce::dontSendNotification);
@@ -555,7 +563,11 @@ class AISettingsDialog::LocalPage : public juce::Component {
         // GPU + Context on one row
         row = bounds.removeFromTop(rowH);
         gpuLabel_.setBounds(row.removeFromLeft(labelW));
-        gpuEditor_.setBounds(row.removeFromLeft(50).reduced(0, 1));
+        gpuCombo_.setBounds(row.removeFromLeft(100).reduced(0, 1));
+        if (gpuCustomEditor_.isVisible()) {
+            row.removeFromLeft(4);
+            gpuCustomEditor_.setBounds(row.removeFromLeft(40).reduced(0, 1));
+        }
         row.removeFromLeft(12);
         ctxLabel_.setBounds(row.removeFromLeft(56));
         ctxEditor_.setBounds(row.removeFromLeft(60).reduced(0, 1));
@@ -572,8 +584,7 @@ class AISettingsDialog::LocalPage : public juce::Component {
 
     void load(const Config& config) {
         modelEditor_.setText(juce::String(config.getLocalModelPath()), juce::dontSendNotification);
-        gpuEditor_.setText(juce::String(config.getLocalLlamaGpuLayers()),
-                           juce::dontSendNotification);
+        setGpuLayers(config.getLocalLlamaGpuLayers());
         ctxEditor_.setText(juce::String(config.getLocalLlamaContextSize()),
                            juce::dontSendNotification);
         updateStatus();
@@ -581,7 +592,7 @@ class AISettingsDialog::LocalPage : public juce::Component {
 
     void apply(Config& config) const {
         config.setLocalModelPath(modelEditor_.getText().toStdString());
-        config.setLocalLlamaGpuLayers(gpuEditor_.getText().getIntValue());
+        config.setLocalLlamaGpuLayers(getGpuLayers());
         config.setLocalLlamaContextSize(ctxEditor_.getText().getIntValue());
     }
 
@@ -671,7 +682,7 @@ class AISettingsDialog::LocalPage : public juce::Component {
         } else {
             LlamaModelManager::Config cfg;
             cfg.modelPath = modelEditor_.getText().toStdString();
-            cfg.gpuLayers = gpuEditor_.getText().getIntValue();
+            cfg.gpuLayers = getGpuLayers();
             cfg.contextSize = ctxEditor_.getText().getIntValue();
 
             loadButton_.setEnabled(false);
@@ -713,8 +724,39 @@ class AISettingsDialog::LocalPage : public juce::Component {
         }
     }
 
+    void gpuComboChanged() {
+        gpuCustomEditor_.setVisible(gpuCombo_.getSelectedId() == 3);
+        resized();
+    }
+
+    void setGpuLayers(int layers) {
+        if (layers < 0) {
+            gpuCombo_.setSelectedId(1, juce::dontSendNotification);  // Auto (GPU)
+        } else if (layers == 0) {
+            gpuCombo_.setSelectedId(2, juce::dontSendNotification);  // CPU Only
+        } else {
+            gpuCombo_.setSelectedId(3, juce::dontSendNotification);  // Custom
+            gpuCustomEditor_.setText(juce::String(layers), juce::dontSendNotification);
+        }
+        gpuCustomEditor_.setVisible(gpuCombo_.getSelectedId() == 3);
+    }
+
+    int getGpuLayers() const {
+        switch (gpuCombo_.getSelectedId()) {
+            case 1:
+                return -1;  // Auto (GPU)
+            case 2:
+                return 0;  // CPU Only
+            case 3:
+                return gpuCustomEditor_.getText().getIntValue();  // Custom
+            default:
+                return -1;
+        }
+    }
+
     juce::Label modelLabel_, gpuLabel_, ctxLabel_;
-    juce::TextEditor modelEditor_, gpuEditor_, ctxEditor_;
+    juce::TextEditor modelEditor_, gpuCustomEditor_, ctxEditor_;
+    juce::ComboBox gpuCombo_;
     juce::TextButton browseButton_, downloadButton_, loadButton_;
     juce::Label statusLabel_;
     std::unique_ptr<juce::FileChooser> chooser_;
