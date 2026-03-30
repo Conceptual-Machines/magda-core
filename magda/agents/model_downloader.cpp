@@ -29,17 +29,32 @@ void ModelDownloader::startDownload(const juce::String& url, const juce::File& t
         return;
     }
 
-    // Probe Content-Length via a HEAD request (follows redirects).
-    // Some platforms (Windows WinINet) don't report the length during download
-    // after a 302 redirect, so we cache it here for the progress callback.
+    // Probe Content-Length before starting the download.
+    // Windows WinINet doesn't report Content-Length after a 302 redirect,
+    // so we obtain it here for the progress callback.
+    // Use a ranged GET (bytes=0-0) instead of HEAD — WinINet handles
+    // Content-Range headers more reliably than Content-Length on HEAD.
     expectedSize_ = -1;
-    auto headStream = juce::URL(url).createInputStream(
+    juce::StringPairArray responseHeaders;
+    auto probeStream = juce::URL(url).createInputStream(
         juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-            .withHttpRequestCmd("HEAD")
+            .withExtraHeaders("Range: bytes=0-0")
             .withNumRedirectsToFollow(5)
-            .withConnectionTimeoutMs(5000));
-    if (headStream)
-        expectedSize_ = headStream->getTotalLength();
+            .withConnectionTimeoutMs(5000)
+            .withResponseHeaders(&responseHeaders));
+    if (probeStream) {
+        // Content-Range: bytes 0-0/<total>
+        auto contentRange = responseHeaders["Content-Range"];
+        if (contentRange.contains("/")) {
+            auto totalStr = contentRange.fromLastOccurrenceOf("/", false, false).trim();
+            auto parsed = totalStr.getLargeIntValue();
+            if (parsed > 0)
+                expectedSize_ = parsed;
+        }
+        // Fallback: try Content-Length (works if server ignores Range header)
+        if (expectedSize_ <= 0)
+            expectedSize_ = probeStream->getTotalLength();
+    }
 
     // Ensure parent directory exists
     targetFile_.getParentDirectory().createDirectory();
