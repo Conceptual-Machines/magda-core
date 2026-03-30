@@ -291,7 +291,7 @@ jobs:
         & "$sccacheDir\sccache.exe" --version
 
     - name: Cache sccache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~\AppData\Local\Mozilla\sccache
         key: sccache-windows-release-${{ hashFiles('CMakeLists.txt', 'magda/daw/CMakeLists.txt') }}
