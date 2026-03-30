@@ -350,7 +350,7 @@ jobs:
           Write-Warning "magda_plugin_scanner.exe not found at $scanner"
         }
 
-        makensis /DVERSION=$env:VERSION "$stagingDir\magda-installer.nsi"
+        & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" /DVERSION=$env:VERSION "$stagingDir\magda-installer.nsi"
 
         $installerName = "MAGDA-$env:VERSION-Windows-x86_64-Setup.exe"
         Move-Item "$stagingDir\MAGDA-$env:VERSION-Windows-Setup.exe" $installerName
