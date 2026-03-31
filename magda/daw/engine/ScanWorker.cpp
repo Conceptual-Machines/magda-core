@@ -21,9 +21,20 @@ void ScanWorker::scanPlugin(const juce::String& formatName, const juce::String& 
     currentResult_ = {};
     currentResult_.pluginPath = pluginPath;
 
+#if JUCE_WINDOWS
     // Reuse existing subprocess if still connected; only launch a new one
     // when this is the first scan or after a crash killed the previous process.
+    // On Windows, CreateProcess is expensive so we keep the subprocess alive.
     if (!connected_) {
+#else
+    // On Mac/Linux, always start a fresh subprocess per plugin to avoid
+    // accumulated state from DLL load/unload and to keep process count clean.
+    if (connected_) {
+        killWorkerProcess();
+        connected_ = false;
+    }
+    {
+#endif
         if (!launchSubprocess()) {
             juce::Logger::writeToLog("[ScanWorker " + juce::String(workerIndex_) +
                                      "] Failed to launch subprocess for: " + pluginPath);
@@ -101,14 +112,6 @@ void ScanWorker::handleMessageFromWorker(const juce::MemoryBlock& message) {
         DBG("[ScanWorker " << workerIndex_ << "] Error: " << plugin << " - " << error);
     } else if (msgType == ScannerIPC::MSG_SCAN_COMPLETE) {
         receivedDone_ = true;
-#if !JUCE_WINDOWS
-        // On Mac/Linux, process creation is cheap — quit the subprocess after each
-        // plugin to avoid lingering processes visible in Activity Monitor.
-        sendQuit();
-        connected_ = false;
-#endif
-        // On Windows, keep the subprocess alive to avoid the expensive
-        // CreateProcess cost per plugin. It's killed on abort/timeout/destroy.
         bool scanOk = currentResult_.errorMessage.isEmpty();
         // Defer the result callback so we fully exit the ChildProcessCoordinator's
         // IPC callback before the coordinator tries to send the next scan command
