@@ -24,7 +24,8 @@ void ScanWorker::scanPlugin(const juce::String& formatName, const juce::String& 
     currentResult_.pluginPath = pluginPath;
 
     if (!launchSubprocess()) {
-        DBG("[ScanWorker " << workerIndex_ << "] Failed to launch subprocess for: " << pluginPath);
+        juce::Logger::writeToLog("[ScanWorker " + juce::String(workerIndex_) +
+                                 "] Failed to launch subprocess for: " + pluginPath);
         reportResultAsync(false, "Failed to launch subprocess");
         return;
     }
@@ -118,8 +119,8 @@ void ScanWorker::handleConnectionLost() {
     }
 
     // Subprocess crashed before sending DONE
-    DBG("[ScanWorker " << workerIndex_
-                       << "] Subprocess crashed while scanning: " << currentPlugin_);
+    juce::Logger::writeToLog("[ScanWorker " + juce::String(workerIndex_) +
+                             "] Subprocess CRASHED while scanning: " + currentPlugin_);
     // Also defer crash results to avoid re-entrant issues
     reportResultAsync(false, "crash");
 }

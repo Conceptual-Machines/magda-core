@@ -72,11 +72,13 @@ void PluginScanCoordinator::startScan(juce::AudioPluginFormatManager& formatMana
         return;
     }
 
-    DBG("[ScanCoordinator] Found " << pluginsToScan_.size() << " plugins to scan");
+    juce::Logger::writeToLog("[ScanCoordinator] Found " +
+                             juce::String(static_cast<int>(pluginsToScan_.size())) +
+                             " plugins to scan");
 
     auto scannerExe = getScannerExecutable();
     if (!scannerExe.existsAsFile()) {
-        DBG("[ScanCoordinator] Plugin scanner executable not found");
+        juce::Logger::writeToLog("[ScanCoordinator] Plugin scanner executable not found!");
         if (completionCallback)
             completionCallback(false, foundPlugins_, failedPlugins_);
         return;
@@ -328,7 +330,9 @@ void PluginScanCoordinator::timerCallback() {
         juce::int64 elapsed = now - workerStartTimes_[i];
         if (elapsed > pluginTimeoutMs_) {
             juce::String timedOutPlugin = workerCurrentPlugin_[i];
-            DBG("[ScanCoordinator] Worker " << i << " timed out on: " << timedOutPlugin);
+            juce::Logger::writeToLog("[ScanCoordinator] Worker " +
+                                     juce::String(static_cast<int>(i)) +
+                                     " TIMED OUT on: " + timedOutPlugin);
 
             // Abort kills the subprocess (sets busy_=false first, so handleConnectionLost
             // won't fire a result). We handle the timeout result here manually.
@@ -385,7 +389,8 @@ void PluginScanCoordinator::abortScan() {
 }
 
 void PluginScanCoordinator::finishScan(bool success) {
-    DBG("[ScanCoordinator] finishScan called, success=" << (int)success);
+    juce::Logger::writeToLog("[ScanCoordinator] finishScan called, success=" +
+                             juce::String(static_cast<int>(success)));
 
     isScanning_ = false;
     stopTimer();
@@ -395,8 +400,9 @@ void PluginScanCoordinator::finishScan(bool success) {
 
     writeScanReport();
 
-    DBG("[ScanCoordinator] Scan finished. Found " << foundPlugins_.size() << " plugins, "
-                                                  << failedPlugins_.size() << " failed.");
+    juce::Logger::writeToLog("[ScanCoordinator] Scan finished. Found " +
+                             juce::String(foundPlugins_.size()) + " plugins, " +
+                             juce::String(failedPlugins_.size()) + " failed.");
 
     auto callback = completionCallback_;
     completionCallback_ = nullptr;

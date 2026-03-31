@@ -243,6 +243,7 @@ void TracktionEngineWrapper::detectNewPlugins(
 
     auto reportStatus = [&](const juce::String& msg) {
         DBG("[AutoDetect] " << msg);
+        juce::Logger::writeToLog("[AutoDetect] " + msg);
         if (statusCallback)
             statusCallback(msg);
     };
@@ -328,10 +329,13 @@ void TracktionEngineWrapper::detectNewPlugins(
             for (const auto& desc : plugins)
                 knownPlugins.addType(desc);
 
-            DBG("[AutoDetect] Incremental scan complete: "
-                << plugins.size() << " new plugin(s) added"
-                << (failedPlugins.size() > 0 ? ", " + juce::String(failedPlugins.size()) + " failed"
-                                             : ""));
+            auto msg =
+                "[AutoDetect] Incremental scan complete: " + juce::String(plugins.size()) +
+                " new plugin(s) added" +
+                (failedPlugins.size() > 0 ? ", " + juce::String(failedPlugins.size()) + " failed"
+                                          : "");
+            DBG(msg);
+            juce::Logger::writeToLog(msg);
             savePluginList();
             isScanning_ = false;
         });

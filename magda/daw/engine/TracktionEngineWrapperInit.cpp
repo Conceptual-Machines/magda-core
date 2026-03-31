@@ -383,28 +383,40 @@ void TracktionEngineWrapper::createEditAndBridges() {
 bool TracktionEngineWrapper::initialize() {
     try {
         // Initialize Tracktion Engine with custom UIBehaviour for plugin windows
+        juce::Logger::writeToLog("[Init] Creating Tracktion Engine...");
         auto uiBehaviour = std::make_unique<MagdaUIBehaviour>();
         auto engineBehaviour = std::make_unique<MagdaEngineBehaviour>();
         engine_ = std::make_unique<tracktion::Engine>("MAGDA", std::move(uiBehaviour),
                                                       std::move(engineBehaviour));
 
         // Load config early so preferred device settings are available
+        juce::Logger::writeToLog("[Init] Loading config...");
         magda::Config::getInstance().load();
 
         // Initialize plugin formats and load plugin list
+        juce::Logger::writeToLog("[Init] initializePluginFormats()...");
         initializePluginFormats();
+        juce::Logger::writeToLog("[Init] initializePluginFormats() done");
 
         // Initialize device manager with preferred settings
+        juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
         initializeDeviceManager();
+        juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
 
         // Configure audio devices if user has preferences
+        juce::Logger::writeToLog("[Init] configureAudioDevices()...");
         configureAudioDevices();
+        juce::Logger::writeToLog("[Init] configureAudioDevices() done");
 
         // Setup MIDI devices
+        juce::Logger::writeToLog("[Init] setupMidiDevices()...");
         setupMidiDevices();
+        juce::Logger::writeToLog("[Init] setupMidiDevices() done");
 
         // Create Edit and bridges
+        juce::Logger::writeToLog("[Init] createEditAndBridges()...");
         createEditAndBridges();
+        juce::Logger::writeToLog("[Init] createEditAndBridges() done");
 
         // Ensure devicesLoading_ is cleared so transport isn't blocked
         // The async changeListenerCallback may not fire if no MIDI devices are present
@@ -412,10 +424,12 @@ bool TracktionEngineWrapper::initialize() {
             devicesLoading_ = false;
         }
 
+        juce::Logger::writeToLog("[Init] initialize() complete, edit=" +
+                                 juce::String(currentEdit_ != nullptr ? "OK" : "NULL"));
         return currentEdit_ != nullptr;
 
     } catch (const std::exception& e) {
-        DBG("ERROR: Failed to initialize Tracktion Engine: " << e.what());
+        juce::Logger::writeToLog("ERROR: Failed to initialize: " + juce::String(e.what()));
         return false;
     }
 }

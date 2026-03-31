@@ -23,6 +23,7 @@ using namespace juce;
 
 class MagdaDAWApplication : public JUCEApplication {
   private:
+    std::unique_ptr<juce::FileLogger> fileLogger_;
     std::unique_ptr<magda::TracktionEngineWrapper> daw_engine_;
     std::unique_ptr<magda::MainWindow> mainWindow_;
     std::unique_ptr<juce::LookAndFeel> lookAndFeel_;
@@ -58,6 +59,18 @@ class MagdaDAWApplication : public JUCEApplication {
             return;
         }
 
+        // Set up file logger early so all startup activity is captured
+        auto logDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                          .getChildFile("MAGDA")
+                          .getChildFile("Logs");
+        logDir.createDirectory();
+        fileLogger_ = std::make_unique<juce::FileLogger>(
+            logDir.getChildFile("magda.log"), "MAGDA v" + getApplicationVersion(), 1024 * 512);
+        juce::Logger::setCurrentLogger(fileLogger_.get());
+        juce::Logger::writeToLog("=== MAGDA " + getApplicationVersion() + " starting ===");
+        juce::Logger::writeToLog("OS: " + juce::SystemStats::getOperatingSystemName());
+        juce::Logger::writeToLog("Command line: " + commandLine);
+
         // 1. Initialize fonts
         magda::FontManager::getInstance().initialize();
 
@@ -76,6 +89,8 @@ class MagdaDAWApplication : public JUCEApplication {
     }
 
     void finishInitialisation() {
+        juce::Logger::writeToLog("finishInitialisation() entered");
+
         // 3. Initialize audio engine
         daw_engine_ = std::make_unique<magda::TracktionEngineWrapper>();
 
@@ -88,19 +103,22 @@ class MagdaDAWApplication : public JUCEApplication {
         if (splashScreen_)
             splashScreen_->setStatus("Initializing audio engine...");
 
+        juce::Logger::writeToLog("Calling daw_engine_->initialize()...");
         if (!daw_engine_->initialize()) {
-            DBG("ERROR: Failed to initialize Tracktion Engine");
+            juce::Logger::writeToLog("ERROR: Failed to initialize Tracktion Engine");
             quit();
             return;
         }
 
-        DBG("Audio engine initialized");
+        juce::Logger::writeToLog("Audio engine initialized");
 
         // 3b. Clean up stale temp media directories from previous sessions
         magda::ProjectManager::cleanupStaleTempDirectories();
 
         // 4. Create main window with full UI (pass the audio engine)
+        juce::Logger::writeToLog("Creating MainWindow...");
         mainWindow_ = std::make_unique<magda::MainWindow>(daw_engine_.get());
+        juce::Logger::writeToLog("MainWindow created");
 
         // 5. Dismiss splash screen
         splashScreen_.reset();
@@ -125,7 +143,7 @@ class MagdaDAWApplication : public JUCEApplication {
             }
         }
 
-        DBG("MAGDA is ready!");
+        juce::Logger::writeToLog("=== MAGDA is ready! ===");
     }
 
     void shutdown() override {
@@ -172,6 +190,10 @@ class MagdaDAWApplication : public JUCEApplication {
         // Release fonts before JUCE's leak detector runs
         DBG("[8] FontManager shutdown...");
         magda::FontManager::getInstance().shutdown();
+
+        juce::Logger::writeToLog("=== SHUTDOWN COMPLETE ===");
+        juce::Logger::setCurrentLogger(nullptr);
+        fileLogger_.reset();
 
         DBG("MAGDA shutdown complete");
         DBG("=== SHUTDOWN END ===");
