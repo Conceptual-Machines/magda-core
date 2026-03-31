@@ -73,7 +73,7 @@ void PluginScanCoordinator::startScan(juce::AudioPluginFormatManager& formatMana
     }
 
     juce::Logger::writeToLog("[ScanCoordinator] Found " +
-                             juce::String(static_cast<int>(pluginsToScan_.size())) +
+                             juce::String(static_cast<juce::int64>(pluginsToScan_.size())) +
                              " plugins to scan");
 
     auto scannerExe = getScannerExecutable();
@@ -331,7 +331,7 @@ void PluginScanCoordinator::timerCallback() {
         if (elapsed > pluginTimeoutMs_) {
             juce::String timedOutPlugin = workerCurrentPlugin_[i];
             juce::Logger::writeToLog("[ScanCoordinator] Worker " +
-                                     juce::String(static_cast<int>(i)) +
+                                     juce::String(static_cast<juce::int64>(i)) +
                                      " TIMED OUT on: " + timedOutPlugin);
 
             // Abort kills the subprocess (sets busy_=false first, so handleConnectionLost

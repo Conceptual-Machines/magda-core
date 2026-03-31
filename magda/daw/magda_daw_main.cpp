@@ -63,7 +63,12 @@ class MagdaDAWApplication : public JUCEApplication {
         auto logDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
                           .getChildFile("MAGDA")
                           .getChildFile("Logs");
-        logDir.createDirectory();
+        if (!logDir.createDirectory()) {
+            // Fall back to temp directory if APPDATA is not writable
+            logDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                         .getChildFile("MAGDA-Logs");
+            logDir.createDirectory();
+        }
         fileLogger_ = std::make_unique<juce::FileLogger>(
             logDir.getChildFile("magda.log"), "MAGDA v" + getApplicationVersion(), 1024 * 512);
         juce::Logger::setCurrentLogger(fileLogger_.get());
