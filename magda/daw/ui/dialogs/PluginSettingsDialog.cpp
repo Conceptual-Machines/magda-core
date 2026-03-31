@@ -445,6 +445,7 @@ void PluginSettingsDialog::setScanningUIEnabled(bool enabled) {
     viewReportButton_.setEnabled(enabled);
     removeSelectedButton_.setEnabled(enabled);
     resetAllButton_.setEnabled(enabled);
+    scanOnStartupToggle_.setEnabled(enabled);
     okButton_.setEnabled(enabled);
     cancelButton_.setEnabled(enabled);
 }

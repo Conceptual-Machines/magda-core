@@ -456,6 +456,8 @@ class TracktionEngineWrapper : public AudioEngine,
     std::unique_ptr<PluginScanCoordinator> pluginScanCoordinator_;
     std::thread pluginDiscoveryThread_;
     std::shared_ptr<std::atomic<bool>> aliveFlag_ = std::make_shared<std::atomic<bool>>(true);
+
+    JUCE_DECLARE_WEAK_REFERENCEABLE(TracktionEngineWrapper)
 };
 
 }  // namespace magda

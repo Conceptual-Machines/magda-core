@@ -300,16 +300,19 @@ void TracktionEngineWrapper::detectNewPlugins(
             diskPaths.add(plugin.pluginPath);
 
         // Switch back to message thread for UI updates and scan dispatch
-        // Re-acquire engine references inside the lambda to avoid dangling refs
         auto alive = aliveFlag_;
-        juce::MessageManager::callAsync([this, alive, newPlugins = std::move(newPlugins),
+        if (!*alive)
+            return;
+
+        juce::WeakReference<TracktionEngineWrapper> weakThis(this);
+        juce::MessageManager::callAsync([weakThis, alive, newPlugins = std::move(newPlugins),
                                          diskPaths = std::move(diskPaths),
                                          statusCallback]() mutable {
-            // Guard against shutdown — wrapper may have been destroyed
-            if (!*alive || !engine_)
+            auto* self = weakThis.get();
+            if (!self || !*alive || !self->engine_)
                 return;
 
-            auto& pm = engine_->getPluginManager();
+            auto& pm = self->engine_->getPluginManager();
             auto& kp = pm.knownPluginList;
             auto& fm = pm.pluginFormatManager;
 
@@ -342,7 +345,7 @@ void TracktionEngineWrapper::detectNewPlugins(
                 juce::Logger::writeToLog("[AutoDetect] " + msg);
                 if (statusCallback)
                     statusCallback(msg);
-                savePluginList();
+                self->savePluginList();
             }
 
             if (newPlugins.empty())
@@ -354,9 +357,9 @@ void TracktionEngineWrapper::detectNewPlugins(
             if (statusCallback)
                 statusCallback(msg);
 
-            isScanning_ = true;
+            self->isScanning_ = true;
 
-            pluginScanCoordinator_->startIncrementalScan(
+            self->pluginScanCoordinator_->startIncrementalScan(
                 fm, newPlugins,
                 [statusCallback](float, const juce::String& currentPlugin) {
                     if (statusCallback) {
@@ -364,11 +367,13 @@ void TracktionEngineWrapper::detectNewPlugins(
                         statusCallback("Scanning: " + name + "...");
                     }
                 },
-                [this, alive](bool /*success*/, const juce::Array<juce::PluginDescription>& plugins,
-                              const juce::StringArray& failedPlugins) {
-                    if (!*alive || !engine_)
+                [weakThis, alive](bool /*success*/,
+                                  const juce::Array<juce::PluginDescription>& plugins,
+                                  const juce::StringArray& failedPlugins) {
+                    auto* s = weakThis.get();
+                    if (!s || !*alive || !s->engine_)
                         return;
-                    auto& kpl = engine_->getPluginManager().knownPluginList;
+                    auto& kpl = s->engine_->getPluginManager().knownPluginList;
                     for (const auto& desc : plugins)
                         kpl.addType(desc);
 
@@ -380,8 +385,8 @@ void TracktionEngineWrapper::detectNewPlugins(
                              : "");
                     DBG(msg);
                     juce::Logger::writeToLog(msg);
-                    savePluginList();
-                    isScanning_ = false;
+                    s->savePluginList();
+                    s->isScanning_ = false;
                 });
         });
     });
