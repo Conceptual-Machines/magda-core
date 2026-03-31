@@ -205,7 +205,9 @@ ArpeggiatorUI::ArpeggiatorUI() {
         }
     };
     addAndMakeVisible(latchButton_);
-    setupLabel(rampLabel_, "RAMP");
+    setupLabel(rampLabel_, "TIMING");
+    rampCurveDisplay_.setTooltip("Drag the handle to shape note timing within each arpeggio cycle. "
+                                 "Double-click to reset.");
     addAndMakeVisible(rampCurveDisplay_);
 
     // Right column

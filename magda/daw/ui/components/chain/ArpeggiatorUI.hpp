@@ -17,7 +17,7 @@ namespace magda::daw::ui {
  * Reads/writes CachedValues on the plugin's ValueTree directly.
  */
 /** Small component that draws the ramp bezier curve. */
-class RampCurveDisplay : public juce::Component {
+class RampCurveDisplay : public juce::Component, public juce::SettableTooltipClient {
   public:
     RampCurveDisplay() = default;
 
