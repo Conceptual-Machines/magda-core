@@ -128,10 +128,10 @@ class MagdaDAWApplication : public JUCEApplication {
         // 5. Dismiss splash screen
         splashScreen_.reset();
 
-        // 6. Auto-load local model if configured
+        // 6. Auto-load local model if configured and enabled
         {
             auto& config = magda::Config::getInstance();
-            if (!config.getLocalModelPath().empty()) {
+            if (config.getLoadModelOnStartup() && !config.getLocalModelPath().empty()) {
                 magda::LlamaModelManager::Config modelCfg;
                 modelCfg.modelPath = config.getLocalModelPath();
                 modelCfg.gpuLayers = config.getLocalLlamaGpuLayers();

@@ -165,6 +165,7 @@ void Config::save() {
     // Total plugin count
     root->setProperty("totalPluginCount", totalPluginCount);
     root->setProperty("scanPluginsOnStartup", scanPluginsOnStartup);
+    root->setProperty("loadModelOnStartup", loadModelOnStartup);
 
     // Clip colour mode
     root->setProperty("clipColourMode", clipColourMode);
@@ -400,6 +401,7 @@ void Config::load() {
     customPluginPaths = getStringArray("customPluginPaths");
     totalPluginCount = getInt("totalPluginCount", totalPluginCount);
     scanPluginsOnStartup = getBool("scanPluginsOnStartup", scanPluginsOnStartup);
+    loadModelOnStartup = getBool("loadModelOnStartup", loadModelOnStartup);
 
     clipColourMode = getInt("clipColourMode", clipColourMode);
 

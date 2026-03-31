@@ -544,6 +544,12 @@ class AISettingsDialog::LocalPage : public juce::Component {
                                DarkTheme::getColour(DarkTheme::TEXT_DIM));
         addAndMakeVisible(statusLabel_);
 
+        // Load on startup toggle
+        loadOnStartupToggle_.setButtonText("Load model on startup");
+        loadOnStartupToggle_.setColour(juce::ToggleButton::textColourId,
+                                       DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        addAndMakeVisible(loadOnStartupToggle_);
+
         updateStatus();
     }
 
@@ -580,6 +586,9 @@ class AISettingsDialog::LocalPage : public juce::Component {
         downloadButton_.setBounds(row.removeFromLeft(120).reduced(0, 1));
         row.removeFromLeft(8);
         statusLabel_.setBounds(row);
+
+        bounds.removeFromTop(4);
+        loadOnStartupToggle_.setBounds(bounds.removeFromTop(22));
     }
 
     void load(const Config& config) {
@@ -587,6 +596,8 @@ class AISettingsDialog::LocalPage : public juce::Component {
         setGpuLayers(config.getLocalLlamaGpuLayers());
         ctxEditor_.setText(juce::String(config.getLocalLlamaContextSize()),
                            juce::dontSendNotification);
+        loadOnStartupToggle_.setToggleState(config.getLoadModelOnStartup(),
+                                            juce::dontSendNotification);
         updateStatus();
     }
 
@@ -594,6 +605,7 @@ class AISettingsDialog::LocalPage : public juce::Component {
         config.setLocalModelPath(modelEditor_.getText().toStdString());
         config.setLocalLlamaGpuLayers(getGpuLayers());
         config.setLocalLlamaContextSize(ctxEditor_.getText().getIntValue());
+        config.setLoadModelOnStartup(loadOnStartupToggle_.getToggleState());
     }
 
     bool isModelLoaded() const {
@@ -758,6 +770,7 @@ class AISettingsDialog::LocalPage : public juce::Component {
     juce::TextEditor modelEditor_, gpuCustomEditor_, ctxEditor_;
     juce::ComboBox gpuCombo_;
     juce::TextButton browseButton_, downloadButton_, loadButton_;
+    juce::ToggleButton loadOnStartupToggle_;
     juce::Label statusLabel_;
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<ModelDownloader> downloader_;

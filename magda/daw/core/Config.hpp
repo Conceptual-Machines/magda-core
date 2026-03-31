@@ -238,6 +238,14 @@ class Config {
         scanPluginsOnStartup = enabled;
     }
 
+    // Load AI model on startup
+    bool getLoadModelOnStartup() const {
+        return loadModelOnStartup;
+    }
+    void setLoadModelOnStartup(bool enabled) {
+        loadModelOnStartup = enabled;
+    }
+
     // Recent Projects
     std::vector<std::string> getRecentProjects() const {
         return recentProjects;
@@ -629,6 +637,9 @@ class Config {
 
     // Auto-detect new plugins on startup (off by default)
     bool scanPluginsOnStartup = false;
+
+    // Load AI model on startup (off by default)
+    bool loadModelOnStartup = false;
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;
