@@ -4,6 +4,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
+#include "audio/ArpeggiatorPlugin.hpp"
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
@@ -322,6 +323,9 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     list.push_back(PluginBrowserInfo::createInternal(audio::MidiChordEnginePlugin::getPluginName(),
                                                      audio::MidiChordEnginePlugin::xmlTypeName,
                                                      false, "MIDI"));
+    list.push_back(PluginBrowserInfo::createInternal(audio::ArpeggiatorPlugin::getPluginName(),
+                                                     audio::ArpeggiatorPlugin::xmlTypeName, false,
+                                                     "MIDI"));
     list.push_back(PluginBrowserInfo::createInternal("Equaliser", "eq", false, "EQ"));
     list.push_back(
         PluginBrowserInfo::createInternal("Compressor", "compressor", false, "Dynamics"));

@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "ArpeggiatorUI.hpp"
 #include "ChorusUI.hpp"
 #include "CompressorUI.hpp"
 #include "DelayUI.hpp"
@@ -103,7 +104,7 @@ class DeviceSlotComponent : public NodeComponent,
         return 0;  // Meter is positioned in content area only, not the full height
     }
     int getCollapsedMeterWidth() const override {
-        return isChordEngine_ ? 0 : METER_STRIP_WIDTH;
+        return (isChordEngine_ || isArpeggiator_) ? 0 : METER_STRIP_WIDTH;
     }
 
     // Mod/macro data providers
@@ -172,6 +173,7 @@ class DeviceSlotComponent : public NodeComponent,
     magda::DeviceInfo device_;
     bool isDrumGrid_ = false;
     bool isChordEngine_ = false;
+    bool isArpeggiator_ = false;
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
 
@@ -212,6 +214,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
     std::unique_ptr<UtilityUI> utilityUI_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
+    std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
 
     static constexpr int METER_STRIP_WIDTH = 10;
     magda::LevelMeter levelMeter_;

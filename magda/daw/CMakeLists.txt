@@ -229,6 +229,7 @@ set(DAW_CORE_SOURCES
     audio/MagdaSamplerPlugin.cpp
     audio/DrumGridPlugin.cpp
     audio/MidiChordEnginePlugin.cpp
+    audio/ArpeggiatorPlugin.cpp
     # Project serialization
     project/serialization/ProjectSerializer.cpp
     project/serialization/TrackSerializer.cpp
@@ -387,6 +388,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/ImpulseResponseUI.cpp
     ui/components/chain/UtilityUI.cpp
     ui/components/chain/FourOscUI.cpp
+    ui/components/chain/ArpeggiatorUI.cpp
     ui/components/chain/PadChainPanel.cpp
     ui/components/chain/PadDeviceSlot.cpp
     ui/components/chain/PadChainRangeRowComponent.cpp
@@ -528,6 +530,7 @@ set(DAW_HEADERS
     audio/MagdaSamplerPlugin.hpp
     audio/DrumGridPlugin.hpp
     audio/MidiChordEnginePlugin.hpp
+    audio/ArpeggiatorPlugin.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp
@@ -575,6 +578,7 @@ set(DAW_HEADERS
     ui/components/mixer/MasterChannelStrip.hpp
     ui/components/mixer/InputTypeSelector.hpp
     ui/components/mixer/RoutingSelector.hpp
+    ui/components/mixer/MidiNoteStrip.hpp
     # Components - Chain
     ui/components/chain/NodeComponent.hpp
     ui/components/chain/ChainRowComponent.hpp
@@ -594,6 +598,7 @@ set(DAW_HEADERS
     ui/components/chain/ImpulseResponseUI.hpp
     ui/components/chain/UtilityUI.hpp
     ui/components/chain/FourOscUI.hpp
+    ui/components/chain/ArpeggiatorUI.hpp
     ui/components/chain/PagedControlPanel.hpp
     ui/components/chain/MacroKnobComponent.hpp
     ui/components/chain/MacroPanelComponent.hpp

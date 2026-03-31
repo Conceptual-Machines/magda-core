@@ -5,6 +5,7 @@
 #include "MacroPanelComponent.hpp"
 #include "ModsPanelComponent.hpp"
 #include "ParamSlotComponent.hpp"
+#include "audio/ArpeggiatorPlugin.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
@@ -31,7 +32,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
     isChordEngine_ =
         device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName);
-    isTracktionDevice_ = isInternalDevice() && !isDrumGrid_ && !isChordEngine_;
+    isArpeggiator_ = device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName);
+    isTracktionDevice_ = isInternalDevice() && !isDrumGrid_ && !isChordEngine_ && !isArpeggiator_;
     if (isTracktionDevice_) {
         tracktionLogo_ = juce::Drawable::createFromImageData(BinaryData::fadlogotracktion_svg,
                                                              BinaryData::fadlogotracktion_svgSize);
@@ -633,6 +635,18 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
             }
         }
     }
+
+    // Same for arpeggiator
+    if (arpeggiatorUI_ && nodePath_.trackId != magda::INVALID_TRACK_ID) {
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
+                    arpeggiatorUI_->setArpeggiator(arp);
+                }
+            }
+        }
+    }
 }
 
 int DeviceSlotComponent::getCustomUITabIndex() const {
@@ -1023,6 +1037,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             utilityUI_->setVisible(false);
         if (chordEngineUI_)
             chordEngineUI_->setVisible(false);
+        if (arpeggiatorUI_)
+            arpeggiatorUI_->setVisible(false);
         return;
     }
 
@@ -1033,7 +1049,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     macroButton_->setVisible(showModMacro);
     uiButton_->setVisible(!isInternalDevice());
     onButton_->setVisible(true);
-    gainSlider_.setVisible(!isChordEngine_);
+    gainSlider_.setVisible(!isChordEngine_ && !isArpeggiator_);
 
     // Content header subtitle area (all devices)
     contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
@@ -1042,7 +1058,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     if (isInternalDevice() &&
         (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
          reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-         impulseResponseUI_ || utilityUI_ || chordEngineUI_)) {
+         impulseResponseUI_ || utilityUI_ || chordEngineUI_ || arpeggiatorUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
             toneGeneratorUI_->setBounds(contentArea.reduced(4));
@@ -1105,6 +1121,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             chordEngineUI_->setBounds(contentArea.reduced(4));
             chordEngineUI_->setVisible(true);
         }
+        if (arpeggiatorUI_) {
+            arpeggiatorUI_->setBounds(contentArea.reduced(4));
+            arpeggiatorUI_->setVisible(true);
+        }
 
         // Hide parameter grid and pagination
         for (int i = 0; i < NUM_PARAMS_PER_PAGE; ++i) {
@@ -1145,6 +1165,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             utilityUI_->setVisible(false);
         if (chordEngineUI_)
             chordEngineUI_->setVisible(false);
+        if (arpeggiatorUI_)
+            arpeggiatorUI_->setVisible(false);
 
         // Pagination area
         contentArea.removeFromTop(2);
@@ -2613,6 +2635,17 @@ void DeviceSlotComponent::createCustomUI() {
                 if (auto* chordPlugin =
                         dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
                     chordEngineUI_->setChordEngine(chordPlugin, nodePath_.trackId);
+                }
+            }
+        }
+    } else if (device_.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
+        arpeggiatorUI_ = std::make_unique<ArpeggiatorUI>();
+        addAndMakeVisible(*arpeggiatorUI_);
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
+                    arpeggiatorUI_->setArpeggiator(arp);
                 }
             }
         }

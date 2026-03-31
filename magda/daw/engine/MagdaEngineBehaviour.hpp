@@ -1,6 +1,7 @@
 #pragma once
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "../audio/ArpeggiatorPlugin.hpp"
 #include "../audio/DrumGridPlugin.hpp"
 #include "../audio/MagdaSamplerPlugin.hpp"
 #include "../audio/MidiChordEnginePlugin.hpp"
@@ -85,6 +86,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == daw::audio::MidiChordEnginePlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiChordEnginePlugin");
             return new daw::audio::MidiChordEnginePlugin(info);
+        }
+        if (type == daw::audio::ArpeggiatorPlugin::xmlTypeName) {
+            return new daw::audio::ArpeggiatorPlugin(info);
         }
         DBG("MagdaEngineBehaviour::createCustomPlugin - unknown type: " << type);
         return {};

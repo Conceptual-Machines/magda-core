@@ -1015,6 +1015,8 @@ bool Interpreter::executeAddFx(const Params& params) {
         {"chord engine", {"midichordengine", DeviceType::MIDI}},
         {"chord", {"midichordengine", DeviceType::MIDI}},
         {"midichordengine", {"midichordengine", DeviceType::MIDI}},
+        {"arpeggiator", {"arpeggiator", DeviceType::MIDI}},
+        {"arp", {"arpeggiator", DeviceType::MIDI}},
         // Tone generator
         {"test tone", {"tone", DeviceType::Effect}},
         {"tone", {"tone", DeviceType::Effect}},
