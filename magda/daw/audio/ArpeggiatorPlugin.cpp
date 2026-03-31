@@ -1,0 +1,407 @@
+#include "ArpeggiatorPlugin.hpp"
+
+#include <algorithm>
+
+namespace magda::daw::audio {
+
+const char* ArpeggiatorPlugin::xmlTypeName = "arpeggiator";
+
+// ValueTree property IDs
+namespace ArpIDs {
+static const juce::Identifier pattern("arpPattern");
+static const juce::Identifier rate("arpRate");
+static const juce::Identifier octaveRange("arpOctaves");
+static const juce::Identifier gate("arpGate");
+static const juce::Identifier swing("arpSwing");
+static const juce::Identifier latch("arpLatch");
+static const juce::Identifier velocityMode("arpVelMode");
+static const juce::Identifier fixedVelocity("arpFixedVel");
+}  // namespace ArpIDs
+
+ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) {
+    auto um = getUndoManager();
+    pattern.referTo(state, ArpIDs::pattern, um, 0);
+    rate.referTo(state, ArpIDs::rate, um, 4);  // Eighth note
+    octaveRange.referTo(state, ArpIDs::octaveRange, um, 1);
+    gate.referTo(state, ArpIDs::gate, um, 0.8f);
+    swing.referTo(state, ArpIDs::swing, um, 0.0f);
+    latch.referTo(state, ArpIDs::latch, um, false);
+    velocityMode.referTo(state, ArpIDs::velocityMode, um, 0);
+    fixedVelocity.referTo(state, ArpIDs::fixedVelocity, um, 100);
+}
+
+ArpeggiatorPlugin::~ArpeggiatorPlugin() {
+    notifyListenersOfDeletion();
+}
+
+void ArpeggiatorPlugin::initialise(const te::PluginInitialisationInfo& info) {
+    sampleRate_ = info.sampleRate;
+    resetArpState();
+}
+
+void ArpeggiatorPlugin::deinitialise() {
+    resetArpState();
+}
+
+void ArpeggiatorPlugin::reset() {
+    resetArpState();
+    clearHeldNotes();
+}
+
+void ArpeggiatorPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
+    tracktion::copyPropertiesToCachedValues(v, pattern, rate, octaveRange, gate, swing, latch,
+                                            velocityMode, fixedVelocity);
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+double ArpeggiatorPlugin::rateToBeats(Rate r) {
+    switch (r) {
+        case Rate::DottedQuarter:
+            return 1.5;
+        case Rate::Quarter:
+            return 1.0;
+        case Rate::TripletQuarter:
+            return 2.0 / 3.0;
+        case Rate::DottedEighth:
+            return 0.75;
+        case Rate::Eighth:
+            return 0.5;
+        case Rate::TripletEighth:
+            return 1.0 / 3.0;
+        case Rate::DottedSixteenth:
+            return 0.375;
+        case Rate::Sixteenth:
+            return 0.25;
+        case Rate::TripletSixteenth:
+            return 0.5 / 3.0;
+        case Rate::ThirtySecond:
+            return 0.125;
+        default:
+            return 0.5;
+    }
+}
+
+void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity) {
+    // Check if already held
+    for (int i = 0; i < heldCount_; ++i) {
+        if (heldNotes_[static_cast<size_t>(i)].noteNumber == noteNumber)
+            return;
+    }
+    if (heldCount_ < MAX_HELD) {
+        heldNotes_[static_cast<size_t>(heldCount_)] = {noteNumber, velocity, nextOrder_++};
+        ++heldCount_;
+    }
+}
+
+void ArpeggiatorPlugin::removeHeldNote(int noteNumber) {
+    for (int i = 0; i < heldCount_; ++i) {
+        if (heldNotes_[static_cast<size_t>(i)].noteNumber == noteNumber) {
+            // Swap with last
+            if (i < heldCount_ - 1)
+                heldNotes_[static_cast<size_t>(i)] =
+                    heldNotes_[static_cast<size_t>(heldCount_ - 1)];
+            --heldCount_;
+            return;
+        }
+    }
+}
+
+void ArpeggiatorPlugin::clearHeldNotes() {
+    heldCount_ = 0;
+    physicallyHeldCount_ = 0;
+    latchedSetStale_ = false;
+    nextOrder_ = 0;
+}
+
+void ArpeggiatorPlugin::sendAllNotesOff(te::MidiMessageArray& midi) {
+    if (lastPlayedNote_ >= 0) {
+        midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), 0.0, te::MPESourceID{});
+        lastPlayedNote_ = -1;
+        midiOutNote_.store(-1, std::memory_order_relaxed);
+        midiOutVelocity_.store(0, std::memory_order_relaxed);
+    }
+}
+
+void ArpeggiatorPlugin::resetArpState() {
+    currentStep_ = 0;
+    goingUp_ = true;
+    lastStepBeat_ = -1.0;
+    lastPlayedNote_ = -1;
+    lastPlayedVelocity_ = 0;
+    lastNoteOffBeat_ = -1.0;
+    wasPlaying_ = false;
+    midiOutNote_.store(-1, std::memory_order_relaxed);
+    midiOutVelocity_.store(0, std::memory_order_relaxed);
+}
+
+ArpeggiatorPlugin::ExpandedSequence ArpeggiatorPlugin::buildSequence() const {
+    ExpandedSequence seq;
+    if (heldCount_ == 0)
+        return seq;
+
+    auto pat = static_cast<Pattern>(pattern.get());
+    int octaves = juce::jlimit(1, 4, octaveRange.get());
+
+    // Copy held notes for sorting
+    std::array<HeldNote, MAX_HELD> sorted{};
+    for (int i = 0; i < heldCount_; ++i)
+        sorted[static_cast<size_t>(i)] = heldNotes_[static_cast<size_t>(i)];
+
+    // Sort based on pattern
+    if (pat == Pattern::AsPlayed) {
+        std::sort(sorted.begin(), sorted.begin() + heldCount_,
+                  [](const HeldNote& a, const HeldNote& b) { return a.order < b.order; });
+    } else {
+        std::sort(sorted.begin(), sorted.begin() + heldCount_,
+                  [](const HeldNote& a, const HeldNote& b) { return a.noteNumber < b.noteNumber; });
+    }
+
+    // Expand across octaves
+    for (int oct = 0; oct < octaves; ++oct) {
+        for (int i = 0; i < heldCount_; ++i) {
+            int note = sorted[static_cast<size_t>(i)].noteNumber + oct * 12;
+            if (note > 127)
+                break;
+            if (seq.length >= static_cast<int>(seq.notes.size()))
+                break;
+            seq.notes[static_cast<size_t>(seq.length)] = {note,
+                                                          sorted[static_cast<size_t>(i)].velocity,
+                                                          sorted[static_cast<size_t>(i)].order};
+            ++seq.length;
+        }
+    }
+
+    // Reverse for Down pattern
+    if (pat == Pattern::Down) {
+        std::reverse(seq.notes.begin(), seq.notes.begin() + seq.length);
+    }
+    // UpDown: append reverse (excluding last to avoid double)
+    else if (pat == Pattern::UpDown && seq.length > 1) {
+        int origLen = seq.length;
+        for (int i = origLen - 2; i >= 0; --i) {
+            if (seq.length >= static_cast<int>(seq.notes.size()))
+                break;
+            seq.notes[static_cast<size_t>(seq.length)] = seq.notes[static_cast<size_t>(i)];
+            ++seq.length;
+        }
+    }
+    // DownUp: reverse then append forward (excluding first)
+    else if (pat == Pattern::DownUp && seq.length > 1) {
+        std::reverse(seq.notes.begin(), seq.notes.begin() + seq.length);
+        int origLen = seq.length;
+        for (int i = 1; i < origLen; ++i) {
+            if (seq.length >= static_cast<int>(seq.notes.size()))
+                break;
+            // Forward order = reversed array from index 1
+            seq.notes[static_cast<size_t>(seq.length)] =
+                seq.notes[static_cast<size_t>(origLen - 1 - i)];
+            ++seq.length;
+        }
+    }
+
+    return seq;
+}
+
+// =============================================================================
+// Audio thread
+// =============================================================================
+
+void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
+    if (!fc.bufferForMidiMessages)
+        return;
+
+    auto& midi = *fc.bufferForMidiMessages;
+    bool isLatched = latch.get();
+
+    // --- 1. Capture incoming MIDI ---
+    for (const auto& msg : midi) {
+        if (msg.isNoteOn()) {
+            ++physicallyHeldCount_;
+
+            // Latch: if old set is stale (all keys were released), clear before adding
+            if (isLatched && latchedSetStale_) {
+                // Send note-off for any currently playing note before clearing
+                sendAllNotesOff(midi);
+                heldCount_ = 0;
+                nextOrder_ = 0;
+                latchedSetStale_ = false;
+                currentStep_ = 0;
+                goingUp_ = true;
+            }
+
+            bool wasEmpty = (heldCount_ == 0);
+            addHeldNote(msg.getNoteNumber(), msg.getVelocity());
+            // Reset free-running clock when first note arrives
+            if (wasEmpty && heldCount_ > 0) {
+                freeRunSamples_ = 0.0;
+                resetArpState();
+            }
+        } else if (msg.isNoteOff()) {
+            --physicallyHeldCount_;
+            if (physicallyHeldCount_ < 0)
+                physicallyHeldCount_ = 0;
+
+            if (isLatched) {
+                // Don't remove notes; mark stale when all physically released
+                if (physicallyHeldCount_ == 0)
+                    latchedSetStale_ = true;
+            } else {
+                removeHeldNote(msg.getNoteNumber());
+            }
+        } else if (msg.isAllNotesOff() || msg.isAllSoundOff()) {
+            clearHeldNotes();
+            resetArpState();
+        }
+    }
+
+    // --- 2. Clear MIDI buffer (arp replaces input) ---
+    midi.clear();
+
+    // --- 3. Handle transport transitions ---
+    if (fc.isPlaying && !wasPlaying_) {
+        resetArpState();
+        wasPlaying_ = true;
+    } else if (!fc.isPlaying && wasPlaying_) {
+        sendAllNotesOff(midi);
+        resetArpState();
+        freeRunSamples_ = 0.0;
+        wasPlaying_ = false;
+    }
+
+    // --- 4. No held notes? ---
+    if (heldCount_ == 0) {
+        sendAllNotesOff(midi);
+        freeRunSamples_ = 0.0;
+        return;
+    }
+
+    // --- 5. Get beat positions ---
+    double blockStartBeat, blockEndBeat;
+
+    if (fc.isPlaying) {
+        // Use transport position
+        auto& tempoSeq = edit.tempoSequence;
+        blockStartBeat = tempoSeq.toBeats(fc.editTime.getStart()).inBeats();
+        blockEndBeat = tempoSeq.toBeats(fc.editTime.getEnd()).inBeats();
+    } else {
+        // Free-running clock — get tempo from edit position 0
+        auto& tempoSeq = edit.tempoSequence;
+        double bpm = tempoSeq.getBpmAt(tracktion::TimePosition());
+        double beatsPerSample = bpm / (60.0 * sampleRate_);
+        blockStartBeat = freeRunSamples_ * beatsPerSample;
+        freeRunSamples_ += fc.bufferNumSamples;
+        blockEndBeat = freeRunSamples_ * beatsPerSample;
+    }
+
+    if (blockEndBeat <= blockStartBeat)
+        return;
+
+    // --- 6. Build note sequence ---
+    auto seq = buildSequence();
+    if (seq.length == 0)
+        return;
+
+    auto pat = static_cast<Pattern>(pattern.get());
+    auto currentRate = static_cast<Rate>(rate.get());
+    double stepBeats = rateToBeats(currentRate);
+    float gateVal = juce::jlimit(0.01f, 1.0f, gate.get());
+    float swingVal = juce::jlimit(0.0f, 1.0f, swing.get());
+    auto velMode = static_cast<VelocityMode>(velocityMode.get());
+    int fixedVel = juce::jlimit(1, 127, fixedVelocity.get());
+
+    // Initialise lastStepBeat on first buffer — one step back so first note fires immediately
+    if (lastStepBeat_ < 0.0) {
+        lastStepBeat_ = std::floor(blockStartBeat / stepBeats) * stepBeats - stepBeats;
+    }
+
+    // Block duration in seconds (for MIDI timestamp conversion — TE uses seconds, not samples)
+    double blockDurationSecs = static_cast<double>(fc.bufferNumSamples) / sampleRate_;
+
+    // --- 7. Emit pending note-off from previous block ---
+    if (lastNoteOffBeat_ >= blockStartBeat && lastNoteOffBeat_ < blockEndBeat &&
+        lastPlayedNote_ >= 0) {
+        double frac = (lastNoteOffBeat_ - blockStartBeat) / (blockEndBeat - blockStartBeat);
+        double timeInBlock = frac * blockDurationSecs;
+        midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock,
+                            te::MPESourceID{});
+        lastPlayedNote_ = -1;
+        lastNoteOffBeat_ = -1.0;
+    }
+
+    // --- 8. Walk steps and generate notes ---
+    double nextBeat = lastStepBeat_ + stepBeats;
+
+    while (nextBeat < blockEndBeat) {
+        // Apply swing to odd steps
+        double swungBeat = nextBeat;
+        if (currentStep_ % 2 == 1 && swingVal > 0.0f) {
+            swungBeat += static_cast<double>(swingVal) * stepBeats * 0.5;
+        }
+
+        if (swungBeat >= blockStartBeat && swungBeat < blockEndBeat) {
+            double frac = (swungBeat - blockStartBeat) / (blockEndBeat - blockStartBeat);
+            double timeInBlock = frac * blockDurationSecs;
+
+            // Note-off for previous note
+            if (lastPlayedNote_ >= 0) {
+                midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock,
+                                    te::MPESourceID{});
+                lastPlayedNote_ = -1;
+            }
+
+            // Determine which note to play
+            int stepIdx;
+            if (pat == Pattern::Random) {
+                stepIdx = arpRandom_.nextInt(seq.length);
+            } else {
+                stepIdx = currentStep_ % seq.length;
+            }
+
+            auto& note = seq.notes[static_cast<size_t>(stepIdx)];
+
+            // Determine velocity
+            int vel = note.velocity;
+            if (velMode == VelocityMode::Fixed) {
+                vel = fixedVel;
+            } else if (velMode == VelocityMode::Accent) {
+                vel = (currentStep_ % 4 == 0) ? juce::jmin(127, note.velocity + 30) : note.velocity;
+            }
+
+            // Note-on
+            midi.addMidiMessage(
+                juce::MidiMessage::noteOn(1, note.noteNumber, static_cast<juce::uint8>(vel)),
+                timeInBlock, te::MPESourceID{});
+
+            lastPlayedNote_ = note.noteNumber;
+            lastPlayedVelocity_ = vel;
+            midiOutNote_.store(note.noteNumber, std::memory_order_relaxed);
+            midiOutVelocity_.store(vel, std::memory_order_relaxed);
+
+            // Schedule note-off
+            double noteOffBeat = swungBeat + stepBeats * static_cast<double>(gateVal);
+            if (noteOffBeat < blockEndBeat) {
+                double offFrac = (noteOffBeat - blockStartBeat) / (blockEndBeat - blockStartBeat);
+                double offTimeInBlock = offFrac * blockDurationSecs;
+                midi.addMidiMessage(juce::MidiMessage::noteOff(1, note.noteNumber), offTimeInBlock,
+                                    te::MPESourceID{});
+                lastPlayedNote_ = -1;
+                lastNoteOffBeat_ = -1.0;
+            } else {
+                // Note-off in a future block
+                lastNoteOffBeat_ = noteOffBeat;
+            }
+
+            // Advance step
+            if (pat != Pattern::Random)
+                ++currentStep_;
+        }
+
+        lastStepBeat_ = nextBeat;
+        nextBeat += stepBeats;
+    }
+}
+
+}  // namespace magda::daw::audio
