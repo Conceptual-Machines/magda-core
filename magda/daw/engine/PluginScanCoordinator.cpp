@@ -166,6 +166,16 @@ void PluginScanCoordinator::startIncrementalScan(juce::AudioPluginFormatManager&
 
 std::vector<PluginScanCoordinator::PluginToScan> PluginScanCoordinator::discoverPluginFiles(
     juce::AudioPluginFormatManager& formatManager) {
+    juce::StringArray excludedPaths;
+    for (const auto& entry : excludedPlugins_)
+        excludedPaths.add(entry.path);
+    return discoverPluginFiles(formatManager, excludedPaths,
+                               Config::getInstance().getCustomPluginPaths());
+}
+
+std::vector<PluginScanCoordinator::PluginToScan> PluginScanCoordinator::discoverPluginFiles(
+    juce::AudioPluginFormatManager& formatManager, const juce::StringArray& excludedPaths,
+    const std::vector<std::string>& customPaths) {
     std::vector<PluginToScan> result;
     for (int i = 0; i < formatManager.getNumFormats(); ++i) {
         auto* format = formatManager.getFormat(i);
@@ -176,15 +186,10 @@ std::vector<PluginScanCoordinator::PluginToScan> PluginScanCoordinator::discover
             continue;
 
         auto searchPath = format->getDefaultLocationsToSearch();
-        for (const auto& p : Config::getInstance().getCustomPluginPaths())
+        for (const auto& p : customPaths)
             searchPath.add(juce::File(p));
 
         auto files = format->searchPathsForPlugins(searchPath, true, false);
-
-        juce::StringArray excludedPaths;
-        for (const auto& entry : excludedPlugins_)
-            excludedPaths.add(entry.path);
-
         for (const auto& file : files) {
             if (!excludedPaths.contains(file))
                 result.push_back({formatName, file});

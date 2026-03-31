@@ -438,6 +438,10 @@ bool TracktionEngineWrapper::initialize() {
 void TracktionEngineWrapper::shutdown() {
     DBG("TracktionEngineWrapper::shutdown - starting...");
 
+    // Signal that this object is being destroyed so pending callAsync lambdas
+    // that captured aliveFlag_ can bail out instead of dereferencing `this`.
+    *aliveFlag_ = false;
+
     // Wait for background plugin discovery to finish before tearing down
     if (pluginDiscoveryThread_.joinable())
         pluginDiscoveryThread_.join();

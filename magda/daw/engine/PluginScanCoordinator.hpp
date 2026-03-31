@@ -70,6 +70,11 @@ class PluginScanCoordinator : private juce::Timer {
     /** Discover all plugin files on disk (respecting exclusions), without scanning them. */
     std::vector<PluginToScan> discoverPluginFiles(juce::AudioPluginFormatManager& formatManager);
 
+    /** Thread-safe overload using pre-snapshotted exclusion and custom path data. */
+    static std::vector<PluginToScan> discoverPluginFiles(
+        juce::AudioPluginFormatManager& formatManager, const juce::StringArray& excludedPaths,
+        const std::vector<std::string>& customPaths);
+
     void setPluginTimeoutMs(int timeoutMs) {
         pluginTimeoutMs_ = timeoutMs;
     }
