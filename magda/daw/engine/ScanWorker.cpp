@@ -14,6 +14,18 @@ ScanWorker::~ScanWorker() {
 void ScanWorker::scanPlugin(const juce::String& formatName, const juce::String& pluginPath) {
     jassert(!busy_);
 
+#if !JUCE_WINDOWS
+    // On Mac/Linux, always start a fresh subprocess per plugin to avoid
+    // accumulated state from DLL load/unload and to keep process count clean.
+    // IMPORTANT: Kill BEFORE setting busy_/receivedDone_, because
+    // killWorkerProcess() synchronously triggers handleConnectionLost(),
+    // which would report a false crash if busy_ were already true.
+    if (connected_) {
+        killWorkerProcess();
+        connected_ = false;
+    }
+#endif
+
     busy_ = true;
     receivedDone_ = false;
     currentFormat_ = formatName;
@@ -27,12 +39,6 @@ void ScanWorker::scanPlugin(const juce::String& formatName, const juce::String& 
     // On Windows, CreateProcess is expensive so we keep the subprocess alive.
     if (!connected_) {
 #else
-    // On Mac/Linux, always start a fresh subprocess per plugin to avoid
-    // accumulated state from DLL load/unload and to keep process count clean.
-    if (connected_) {
-        killWorkerProcess();
-        connected_ = false;
-    }
     {
 #endif
         if (!launchSubprocess()) {
