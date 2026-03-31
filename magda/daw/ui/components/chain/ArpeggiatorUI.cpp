@@ -340,20 +340,15 @@ void ArpeggiatorUI::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds().reduced(1));
 
-    // Column divider
+    // Column divider (only in the two-column top section)
     int midX = getWidth() / 2;
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
-    g.drawVerticalLine(midX, static_cast<float>(PADDING),
-                       static_cast<float>(getHeight() - PADDING));
+    g.drawVerticalLine(midX, static_cast<float>(PADDING), static_cast<float>(topSectionBottom_));
 }
 
 void ArpeggiatorUI::resized() {
     auto bounds = getLocalBounds().reduced(PADDING);
     int colWidth = (bounds.getWidth() - COLUMN_GAP) / 2;
-
-    auto leftCol = bounds.removeFromLeft(colWidth);
-    bounds.removeFromLeft(COLUMN_GAP);
-    auto rightCol = bounds;
 
     // Helper to layout a label + control row
     auto layoutRow = [](juce::Rectangle<int>& col, juce::Label& label, juce::Component& control) {
@@ -363,26 +358,34 @@ void ArpeggiatorUI::resized() {
         col.removeFromTop(ROW_GAP);
     };
 
+    // Two-column top section (4 rows each)
+    int topRowsHeight = 4 * (ROW_HEIGHT + ROW_GAP);
+    auto topSection = bounds.removeFromTop(topRowsHeight);
+    topSectionBottom_ = topSection.getBottom();
+
+    auto leftCol = topSection.removeFromLeft(colWidth);
+    topSection.removeFromLeft(COLUMN_GAP);
+    auto rightCol = topSection;
+
     // Left column
     layoutRow(leftCol, patternLabel_, patternCombo_);
     layoutRow(leftCol, rateLabel_, rateSlider_);
     layoutRow(leftCol, octavesLabel_, octavesSlider_);
     layoutRow(leftCol, latchLabel_, latchButton_);
 
-    // Ramp: header label + fixed square display
-    if (leftCol.getHeight() > ROW_HEIGHT + ROW_GAP + 4) {
-        leftCol.removeFromTop(ROW_GAP);
-        rampLabel_.setBounds(leftCol.removeFromTop(ROW_HEIGHT));
-        leftCol.removeFromTop(ROW_GAP);
-        int side = juce::jmin(leftCol.getWidth(), leftCol.getHeight());
-        rampCurveDisplay_.setBounds(leftCol.removeFromTop(side).withWidth(side));
-    }
-
     // Right column
     layoutRow(rightCol, gateLabel_, gateSlider_);
     layoutRow(rightCol, swingLabel_, swingSlider_);
     layoutRow(rightCol, velModeLabel_, velModeCombo_);
     layoutRow(rightCol, fixedVelLabel_, fixedVelSlider_);
+
+    // Ramp: full-width below both columns
+    bounds.removeFromTop(ROW_GAP);
+    if (bounds.getHeight() > ROW_HEIGHT + ROW_GAP + 4) {
+        rampLabel_.setBounds(bounds.removeFromTop(ROW_HEIGHT));
+        bounds.removeFromTop(ROW_GAP);
+        rampCurveDisplay_.setBounds(bounds);
+    }
 }
 
 void ArpeggiatorUI::setupLabel(juce::Label& label, const juce::String& text) {

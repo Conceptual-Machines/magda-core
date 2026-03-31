@@ -90,6 +90,8 @@ class ArpeggiatorUI : public juce::Component, private juce::ValueTree::Listener 
     juce::Label fixedVelLabel_;
     juce::Slider fixedVelSlider_;
 
+    int topSectionBottom_ = 0;  // Y boundary between two-column section and full-width RAMP
+
     void syncFromPlugin();
     void setupLabel(juce::Label& label, const juce::String& text);
     void setupCombo(juce::ComboBox& combo);
