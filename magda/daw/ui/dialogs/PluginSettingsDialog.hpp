@@ -77,6 +77,7 @@ class PluginSettingsDialog : public juce::Component {
     juce::ProgressBar scanProgressBar_;
     double scanProgress_ = -1.0;
     juce::Label scanStatusLabel_;
+    juce::Label pluginCountLabel_;
 
     // Excluded plugins section
     juce::Label excludedHeader_;
@@ -91,6 +92,7 @@ class PluginSettingsDialog : public juce::Component {
 
     TracktionEngineWrapper* engine_;
 
+    void updatePluginCountLabel();
     void setupSectionHeader(juce::Label& header, const juce::String& text);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginSettingsDialog)

@@ -232,6 +232,8 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                         juce::dontSendNotification);
                 }
 
+                safeThis->updatePluginCountLabel();
+
                 // Refresh excluded plugins list
                 if (safeThis->engine_) {
                     auto* coordinator = safeThis->engine_->getPluginScanCoordinator();
@@ -267,6 +269,12 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     scanStatusLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     scanStatusLabel_.setVisible(false);
     addAndMakeVisible(scanStatusLabel_);
+
+    pluginCountLabel_.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    pluginCountLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    updatePluginCountLabel();
+    addAndMakeVisible(pluginCountLabel_);
 
     // Excluded plugins section
     setupSectionHeader(excludedHeader_, "Excluded Plugins");
@@ -319,7 +327,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
             return;
         applySettings();
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            dw->setVisible(false);
+            delete dw;
     };
     addAndMakeVisible(okButton_);
 
@@ -328,7 +336,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
         if (isScanRunning())
             return;
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            dw->setVisible(false);
+            delete dw;
     };
     addAndMakeVisible(cancelButton_);
 
@@ -385,6 +393,7 @@ void PluginSettingsDialog::resized() {
 
     bounds.removeFromTop(2);
     scanStatusLabel_.setBounds(bounds.removeFromTop(18));
+    pluginCountLabel_.setBounds(bounds.removeFromTop(18));
 
     bounds.removeFromTop(spacing);
 
@@ -462,7 +471,7 @@ class PluginSettingsDialogWindow : public juce::DialogWindow {
     void closeButtonPressed() override {
         if (content_ && content_->isScanRunning())
             return;  // Block close while scanning
-        setVisible(false);
+        delete this;
     }
 
   private:
@@ -480,6 +489,15 @@ void PluginSettingsDialog::showDialog(TracktionEngineWrapper* engine, juce::Comp
     window->setAlwaysOnTop(true);
     window->centreWithSize(dialog->getWidth(), dialog->getHeight());
     window->setVisible(true);
+}
+
+void PluginSettingsDialog::updatePluginCountLabel() {
+    int count = Config::getInstance().getTotalPluginCount();
+    if (count > 0)
+        pluginCountLabel_.setText(juce::String(count) + " plugins available",
+                                  juce::dontSendNotification);
+    else
+        pluginCountLabel_.setText("No plugins scanned yet", juce::dontSendNotification);
 }
 
 void PluginSettingsDialog::setupSectionHeader(juce::Label& header, const juce::String& text) {

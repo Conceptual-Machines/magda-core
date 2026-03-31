@@ -162,6 +162,9 @@ void Config::save() {
         pluginPathArray.add(toJuceString(p));
     root->setProperty("customPluginPaths", pluginPathArray);
 
+    // Total plugin count
+    root->setProperty("totalPluginCount", totalPluginCount);
+
     // Clip colour mode
     root->setProperty("clipColourMode", clipColourMode);
 
@@ -394,6 +397,7 @@ void Config::load() {
     browserFavorites = getStringArray("browserFavorites");
     recentProjects = getStringArray("recentProjects");
     customPluginPaths = getStringArray("customPluginPaths");
+    totalPluginCount = getInt("totalPluginCount", totalPluginCount);
 
     clipColourMode = getInt("clipColourMode", clipColourMode);
 

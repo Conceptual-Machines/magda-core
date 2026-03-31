@@ -222,6 +222,14 @@ class Config {
         customPluginPaths = paths;
     }
 
+    // Total plugin count (persisted after last successful scan)
+    int getTotalPluginCount() const {
+        return totalPluginCount;
+    }
+    void setTotalPluginCount(int count) {
+        totalPluginCount = count;
+    }
+
     // Recent Projects
     std::vector<std::string> getRecentProjects() const {
         return recentProjects;
@@ -607,6 +615,9 @@ class Config {
 
     // Custom plugin paths
     std::vector<std::string> customPluginPaths;
+
+    // Total plugin count from last scan
+    int totalPluginCount = 0;
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;
