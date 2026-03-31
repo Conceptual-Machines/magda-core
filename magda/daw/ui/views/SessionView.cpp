@@ -621,16 +621,18 @@ class SessionView::MiniIOStrip : public juce::Component {
         auto* midiBridge = audioEngine_ ? audioEngine_->getMidiBridge() : nullptr;
 
         juce::BigInteger enabledInputChannels, enabledOutputChannels;
+        std::map<int, juce::String> teInputDeviceNames;
         if (auto* bridge = audioEngine_->getAudioBridge()) {
             enabledInputChannels = bridge->getEnabledInputChannels();
             enabledOutputChannels = bridge->getEnabledOutputChannels();
+            teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
         }
 
         RoutingSyncHelper::syncSelectorsFromTrack(
             *track, audioInSelector_.get(), midiInSelector_.get(), audioOutSelector_.get(),
             midiOutSelector_.get(), midiBridge, device, trackId_, outputTrackMapping_,
             midiOutputTrackMapping_, &inputTrackMapping_, enabledInputChannels,
-            enabledOutputChannels);
+            enabledOutputChannels, nullptr, teInputDeviceNames);
     }
 
     TrackId getTrackId() const {
@@ -657,13 +659,16 @@ class SessionView::MiniIOStrip : public juce::Component {
         auto* midiBridge = audioEngine_->getMidiBridge();
 
         juce::BigInteger enabledInputChannels, enabledOutputChannels;
+        std::map<int, juce::String> teInputDeviceNames;
         if (auto* bridge = audioEngine_->getAudioBridge()) {
             enabledInputChannels = bridge->getEnabledInputChannels();
             enabledOutputChannels = bridge->getEnabledOutputChannels();
+            teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
         }
 
         RoutingSyncHelper::populateAudioInputOptions(audioInSelector_.get(), device, trackId_,
-                                                     &inputTrackMapping_, enabledInputChannels);
+                                                     &inputTrackMapping_, enabledInputChannels,
+                                                     nullptr, teInputDeviceNames);
         RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector_.get(), trackId_, device,
                                                       outputTrackMapping_, enabledOutputChannels);
         RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), midiBridge);

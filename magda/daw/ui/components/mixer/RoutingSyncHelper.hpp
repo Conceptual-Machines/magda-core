@@ -26,7 +26,8 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
                                       TrackId currentTrackId = INVALID_TRACK_ID,
                                       std::map<int, TrackId>* outInputTrackMapping = nullptr,
                                       juce::BigInteger enabledInputChannels = {},
-                                      std::map<int, juce::String>* outChannelMapping = nullptr) {
+                                      std::map<int, juce::String>* outChannelMapping = nullptr,
+                                      const std::map<int, juce::String>& teDeviceNames = {}) {
     if (!selector)
         return;
 
@@ -54,6 +55,14 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
             if (outChannelMapping)
                 outChannelMapping->clear();
 
+            // Helper: get the TE device name for a channel index, fall back to "In N"
+            auto getDeviceName = [&](int channelIndex) -> juce::String {
+                auto it = teDeviceNames.find(channelIndex);
+                if (it != teDeviceNames.end())
+                    return it->second;
+                return "In " + juce::String(channelIndex + 1);
+            };
+
             // Stereo pairs (ID 10+)
             int id = 10;
             for (int i = 0; i < activeIndices.size(); i += 2) {
@@ -62,9 +71,10 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
                     int ch2 = activeIndices[i + 1] + 1;
                     juce::String pairName = juce::String(ch1) + "-" + juce::String(ch2);
                     options.push_back({id, pairName});
-                    // Store as "stereo:In 1" to distinguish from mono "In 1"
+                    // Use actual TE device name for routing
                     if (outChannelMapping)
-                        (*outChannelMapping)[id] = "stereo:In " + juce::String(ch1);
+                        (*outChannelMapping)[id] =
+                            "stereo:" + getDeviceName(activeIndices[i]);
                     ++id;
                 }
             }
@@ -79,7 +89,7 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
                 int channelNum = activeIndices[i] + 1;
                 options.push_back({id, juce::String(channelNum) + " (mono)"});
                 if (outChannelMapping)
-                    (*outChannelMapping)[id] = "In " + juce::String(channelNum);
+                    (*outChannelMapping)[id] = getDeviceName(activeIndices[i]);
                 ++id;
             }
         }
@@ -317,7 +327,8 @@ inline void syncSelectorsFromTrack(
     std::map<int, TrackId>& midiOutputTrackMapping,
     std::map<int, TrackId>* inputTrackMapping = nullptr, juce::BigInteger enabledInputChannels = {},
     juce::BigInteger enabledOutputChannels = {},
-    std::map<int, juce::String>* inputChannelMapping = nullptr) {
+    std::map<int, juce::String>* inputChannelMapping = nullptr,
+    const std::map<int, juce::String>& teDeviceNames = {}) {
     bool hasAudioInput = !track.audioInputDevice.isEmpty();
     bool hasMidiInput = !track.midiInputDevice.isEmpty();
 
@@ -325,7 +336,7 @@ inline void syncSelectorsFromTrack(
     if (audioInSelector) {
         if (hasAudioInput) {
             populateAudioInputOptions(audioInSelector, device, currentTrackId, inputTrackMapping,
-                                      enabledInputChannels, inputChannelMapping);
+                                      enabledInputChannels, inputChannelMapping, teDeviceNames);
 
             if (track.audioInputDevice.startsWith("track:") && inputTrackMapping) {
                 // Track-as-input: find the matching option ID

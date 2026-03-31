@@ -233,12 +233,12 @@ void TrackController::setTrackMidiOutput(TrackId trackId, const juce::String& de
 void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& deviceId) {
     auto* track = getAudioTrack(trackId);
     if (!track) {
-        DBG("TrackController::setTrackAudioInput - track not found: " << trackId);
+        juce::Logger::writeToLog("[AudioInput] track not found: " + juce::String(trackId));
         return;
     }
 
-    DBG("TrackController::setTrackAudioInput - trackId=" << trackId << " deviceId='" << deviceId
-                                                         << "'");
+    juce::Logger::writeToLog("[AudioInput] trackId=" + juce::String(trackId) + " deviceId='" +
+                             deviceId + "'");
 
     if (deviceId.isEmpty()) {
         // Disable input - clear all assignments
@@ -284,7 +284,8 @@ void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& de
                     auto result = input->setTarget(track->itemID, false, nullptr);
                     if (result.has_value()) {
                         (*result)->recordEnabled = false;  // Don't auto-enable recording
-                        DBG("  -> Routed default audio input to track");
+                        juce::Logger::writeToLog("[AudioInput] routed default '" +
+                                                 input->owner.getName() + "' to track");
                         break;
                     }
                 }
@@ -294,15 +295,29 @@ void TrackController::setTrackAudioInput(TrackId trackId, const juce::String& de
                                         ? deviceId.fromFirstOccurrenceOf("stereo:", false, false)
                                         : deviceId;
                 // Find specific device by name and route it
+                bool found = false;
                 for (auto* inputDeviceInstance : allInputs) {
+                    juce::Logger::writeToLog("[AudioInput] checking device '" +
+                                             inputDeviceInstance->owner.getName() +
+                                             "' against '" + resolvedName + "'");
                     if (inputDeviceInstance->owner.getName() == resolvedName) {
                         auto result = inputDeviceInstance->setTarget(track->itemID, false, nullptr);
                         if (result.has_value()) {
                             (*result)->recordEnabled = false;
-                            DBG("  -> Routed input '" << resolvedName << "' to track");
+                            juce::Logger::writeToLog("[AudioInput] routed '" + resolvedName +
+                                                     "' to track " + juce::String(trackId));
+                        } else {
+                            juce::Logger::writeToLog("[AudioInput] setTarget FAILED for '" +
+                                                     resolvedName + "'");
                         }
+                        found = true;
                         break;
                     }
+                }
+                if (!found) {
+                    juce::Logger::writeToLog("[AudioInput] device '" + resolvedName +
+                                             "' NOT FOUND in " +
+                                             juce::String(allInputs.size()) + " inputs");
                 }
             }
         }

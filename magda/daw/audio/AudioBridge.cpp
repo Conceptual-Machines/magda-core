@@ -220,15 +220,22 @@ void AudioBridge::trackPropertyChanged(int trackId) {
                         if (targetID == track->itemID) {
                             inputDeviceInstance->setRecordingEnabled(track->itemID,
                                                                      trackInfo->recordArmed);
+                            juce::Logger::writeToLog(
+                                "[Arm] set recordEnabled=" +
+                                juce::String(trackInfo->recordArmed ? "Y" : "N") + " on device '" +
+                                inputDeviceInstance->owner.getName() + "' for track " +
+                                juce::String(trackId));
                             foundAnyDest = true;
                             break;
                         }
                     }
                 }
                 if (!foundAnyDest) {
-                    DBG("  WARNING: No input device destination found for track "
-                        << trackId << " - recordArmed=" << (trackInfo->recordArmed ? 1 : 0)
-                        << " will NOT be synced to TE!");
+                    juce::Logger::writeToLog(
+                        "[Arm] WARNING: No input device destination found for track " +
+                        juce::String(trackId) + " - recordArmed=" +
+                        juce::String(trackInfo->recordArmed ? 1 : 0) +
+                        " will NOT be synced to TE!");
                 }
             }
         }
@@ -1040,6 +1047,18 @@ juce::BigInteger AudioBridge::getEnabledInputChannels() const {
         }
     }
     return enabled;
+}
+
+std::map<int, juce::String> AudioBridge::getInputDeviceNamesByChannel() const {
+    std::map<int, juce::String> result;
+    auto& dm = engine_.getDeviceManager();
+    for (auto* dev : dm.getWaveInputDevices()) {
+        if (dev->isEnabled()) {
+            for (const auto& ch : dev->getChannels())
+                result[ch.indexInDevice] = dev->getName();
+        }
+    }
+    return result;
 }
 
 juce::BigInteger AudioBridge::getEnabledOutputChannels() const {

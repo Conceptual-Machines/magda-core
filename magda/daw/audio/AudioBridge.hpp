@@ -535,6 +535,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     juce::BigInteger getEnabledInputChannels() const;
 
+    /** Map from hardware channel index to TE WaveInputDevice name (e.g. "Input 1"). */
+    std::map<int, juce::String> getInputDeviceNamesByChannel() const;
+
     /**
      * @brief Get a bitmask of user-enabled output channels from TE WaveOutputDevices
      * @return BigInteger with bits set for each enabled output channel

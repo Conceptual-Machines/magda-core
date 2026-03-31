@@ -291,14 +291,17 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
             auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
             auto* midiBridge = audioEngine_->getMidiBridge();
             juce::BigInteger enabledIn, enabledOut;
+            std::map<int, juce::String> teInputDeviceNames;
             if (auto* bridge = audioEngine_->getAudioBridge()) {
                 enabledIn = bridge->getEnabledInputChannels();
                 enabledOut = bridge->getEnabledOutputChannels();
+                teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
             }
             RoutingSyncHelper::syncSelectorsFromTrack(
                 track, audioInSelector.get(), midiInSelector.get(), audioOutSelector.get(),
                 midiOutSelector.get(), midiBridge, device, trackId_, outputTrackMapping_,
-                midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut);
+                midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut, nullptr,
+                teInputDeviceNames);
         }
     }
 
@@ -529,13 +532,16 @@ void MixerView::ChannelStrip::setupControls() {
             auto* midiBridge = audioEngine_->getMidiBridge();
 
             juce::BigInteger enabledInputChannels, enabledOutputChannels;
+            std::map<int, juce::String> teInputDeviceNames;
             if (auto* bridge = audioEngine_->getAudioBridge()) {
                 enabledInputChannels = bridge->getEnabledInputChannels();
                 enabledOutputChannels = bridge->getEnabledOutputChannels();
+                teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
             }
 
             RoutingSyncHelper::populateAudioInputOptions(audioInSelector.get(), device, trackId_,
-                                                         &inputTrackMapping_, enabledInputChannels);
+                                                         &inputTrackMapping_, enabledInputChannels,
+                                                         nullptr, teInputDeviceNames);
             RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector.get(), trackId_, device,
                                                           outputTrackMapping_,
                                                           enabledOutputChannels);

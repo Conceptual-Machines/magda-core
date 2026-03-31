@@ -92,42 +92,47 @@ void TracktionEngineWrapper::pause() {
 void TracktionEngineWrapper::record() {
     // Block recording while devices are loading
     if (devicesLoading_) {
-        DBG("TracktionEngineWrapper::record() - blocked, devices still loading");
+        juce::Logger::writeToLog("[Record] blocked - devices still loading");
         return;
     }
 
     if (currentEdit_) {
         // Dump all input device instances and their record-enabled state
         if (auto* ctx = currentEdit_->getCurrentPlaybackContext()) {
-            DBG("TracktionEngineWrapper::record() - input devices before record:");
+            juce::Logger::writeToLog("[Record] input devices before record:");
             for (auto* input : ctx->getAllInputs()) {
                 auto& dev = input->owner;
                 bool isMidi = dynamic_cast<tracktion::MidiInputDevice*>(&dev) != nullptr;
-                DBG("  device='" << dev.getName() << "' type=" << (isMidi ? "MIDI" : "Audio")
-                                 << " enabled=" << (dev.isEnabled() ? "Y" : "N")
-                                 << " destinations=" << (int)input->destinations.size());
+                juce::Logger::writeToLog(
+                    "  device='" + dev.getName() + "' type=" +
+                    juce::String(isMidi ? "MIDI" : "Audio") +
+                    " enabled=" + juce::String(dev.isEnabled() ? "Y" : "N") +
+                    " destinations=" +
+                    juce::String(static_cast<int>(input->destinations.size())));
                 for (auto* dest : input->destinations) {
-                    DBG("    dest targetID=" << dest->targetID.getRawID() << " recordEnabled="
-                                             << (dest->recordEnabled ? "Y" : "N"));
+                    juce::Logger::writeToLog(
+                        "    dest targetID=" + juce::String(dest->targetID.getRawID()) +
+                        " recordEnabled=" + juce::String(dest->recordEnabled ? "Y" : "N"));
                 }
             }
         } else {
-            DBG("TracktionEngineWrapper::record() - NO playback context!");
+            juce::Logger::writeToLog("[Record] NO playback context!");
         }
 
-        DBG("TracktionEngineWrapper::record() - calling transport.record(false, true)");
+        juce::Logger::writeToLog("[Record] calling transport.record(false, true)");
         currentEdit_->getTransport().record(false, /*allowRecordingIfNoInputsArmed=*/true);
-        DBG("TracktionEngineWrapper::record() - isRecording=" << (int)isRecording());
+        juce::Logger::writeToLog("[Record] isRecording=" +
+                                 juce::String(static_cast<int>(isRecording())));
 
         // Verify recording state on all input instances after record() returns
         if (auto* ctx = currentEdit_->getCurrentPlaybackContext()) {
-            DBG("TracktionEngineWrapper::record() - post-record instance states:");
+            juce::Logger::writeToLog("[Record] post-record instance states:");
             for (auto* input : ctx->getAllInputs()) {
-                if (dynamic_cast<tracktion::MidiInputDevice*>(&input->owner)) {
-                    DBG("  device='" << input->owner.getName()
-                                     << "' isRecording()=" << (int)input->isRecording()
-                                     << " isRecordingActive()=" << (int)input->isRecordingActive());
-                }
+                juce::Logger::writeToLog(
+                    "  device='" + input->owner.getName() + "' isRecording=" +
+                    juce::String(static_cast<int>(input->isRecording())) +
+                    " isRecordingActive=" +
+                    juce::String(static_cast<int>(input->isRecordingActive())));
             }
         }
     }
