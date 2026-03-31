@@ -7,14 +7,12 @@ ScanWorker::ScanWorker(int index, const juce::File& scannerExe, ResultCallback c
 
 ScanWorker::~ScanWorker() {
     busy_ = false;
+    connected_ = false;
     killWorkerProcess();
 }
 
 void ScanWorker::scanPlugin(const juce::String& formatName, const juce::String& pluginPath) {
     jassert(!busy_);
-
-    // Clean up any previous subprocess state before launching a new one
-    killWorkerProcess();
 
     busy_ = true;
     receivedDone_ = false;
@@ -23,11 +21,15 @@ void ScanWorker::scanPlugin(const juce::String& formatName, const juce::String& 
     currentResult_ = {};
     currentResult_.pluginPath = pluginPath;
 
-    if (!launchSubprocess()) {
-        juce::Logger::writeToLog("[ScanWorker " + juce::String(workerIndex_) +
-                                 "] Failed to launch subprocess for: " + pluginPath);
-        reportResultAsync(false, "Failed to launch subprocess");
-        return;
+    // Reuse existing subprocess if still connected; only launch a new one
+    // when this is the first scan or after a crash killed the previous process.
+    if (!connected_) {
+        if (!launchSubprocess()) {
+            juce::Logger::writeToLog("[ScanWorker " + juce::String(workerIndex_) +
+                                     "] Failed to launch subprocess for: " + pluginPath);
+            reportResultAsync(false, "Failed to launch subprocess");
+            return;
+        }
     }
 
     sendScanOneCommand(formatName, pluginPath);
@@ -37,8 +39,9 @@ void ScanWorker::abort() {
     if (busy_) {
         busy_ = false;
         receivedDone_ = false;
-        killWorkerProcess();
     }
+    connected_ = false;
+    killWorkerProcess();
 }
 
 bool ScanWorker::launchSubprocess() {
@@ -52,7 +55,8 @@ bool ScanWorker::launchSubprocess() {
     // streamFlags = 0: do NOT capture stdout/stderr — the scanner writes log lines
     // to stdout, and if the pipe buffer fills up the subprocess blocks, deadlocking
     // both processes (same fix as Tracktion Engine's own scanner).
-    return launchWorkerProcess(scannerExe_, "magda-plugin-scanner", 10000, 0);
+    connected_ = launchWorkerProcess(scannerExe_, "magda-plugin-scanner", 10000, 0);
+    return connected_;
 }
 
 void ScanWorker::sendScanOneCommand(const juce::String& formatName,
@@ -97,24 +101,26 @@ void ScanWorker::handleMessageFromWorker(const juce::MemoryBlock& message) {
         DBG("[ScanWorker " << workerIndex_ << "] Error: " << plugin << " - " << error);
     } else if (msgType == ScannerIPC::MSG_SCAN_COMPLETE) {
         receivedDone_ = true;
-        sendQuit();
-        // Success if the scan completed without errors (0 plugins is valid)
+        // Don't send QUIT — keep the subprocess alive so the next plugin can
+        // reuse it without the cost of launching a new process. The subprocess
+        // is only killed on abort, timeout, or when the worker is destroyed.
         bool scanOk = currentResult_.errorMessage.isEmpty();
         // Defer the result callback so we fully exit the ChildProcessCoordinator's
-        // IPC callback before the coordinator tries to launch a new subprocess on
-        // this same worker. Without this, launchWorkerProcess is called re-entrantly
-        // from within handleMessageFromWorker, causing thread assertion failures.
+        // IPC callback before the coordinator tries to send the next scan command
+        // on this same worker.
         reportResultAsync(scanOk);
     }
 }
 
 void ScanWorker::handleConnectionLost() {
+    connected_ = false;
+
     if (!busy_) {
         return;
     }
 
     if (receivedDone_) {
-        // Clean exit after we sent QUIT - already reported in handleMessageFromWorker
+        // Subprocess exited after scan completed — not an error
         return;
     }
 

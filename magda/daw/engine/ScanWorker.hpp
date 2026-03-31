@@ -54,6 +54,7 @@ class ScanWorker : private juce::ChildProcessCoordinator {
     juce::String currentFormat_;
     juce::String currentPlugin_;
     std::atomic<bool> busy_{false};
+    bool connected_ = false;
     bool receivedDone_ = false;
     Result currentResult_;
 
