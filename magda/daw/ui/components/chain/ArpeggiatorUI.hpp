@@ -16,6 +16,35 @@ namespace magda::daw::ui {
  *
  * Reads/writes CachedValues on the plugin's ValueTree directly.
  */
+/** Small component that draws the ramp bezier curve. */
+class RampCurveDisplay : public juce::Component {
+  public:
+    RampCurveDisplay() = default;
+
+    void setRampValue(float r) {
+        if (std::abs(ramp_ - r) > 0.001f) {
+            ramp_ = r;
+            repaint();
+        }
+    }
+
+    float getRampValue() const {
+        return ramp_;
+    }
+
+    std::function<void(float)> onRampChanged;
+
+    void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+
+  private:
+    float ramp_ = 0.0f;
+    float dragStartRamp_ = 0.0f;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RampCurveDisplay)
+};
+
 class ArpeggiatorUI : public juce::Component, private juce::ValueTree::Listener {
   public:
     ArpeggiatorUI();
@@ -39,6 +68,7 @@ class ArpeggiatorUI : public juce::Component, private juce::ValueTree::Listener 
     juce::Slider octavesSlider_;
     juce::Label latchLabel_;
     juce::TextButton latchButton_{"OFF"};
+    RampCurveDisplay rampCurveDisplay_;
 
     // Right column
     juce::Label gateLabel_;

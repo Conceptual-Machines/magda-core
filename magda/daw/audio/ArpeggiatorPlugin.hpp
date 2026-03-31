@@ -86,6 +86,7 @@ class ArpeggiatorPlugin : public te::Plugin {
     juce::CachedValue<int> octaveRange;
     juce::CachedValue<float> gate;
     juce::CachedValue<float> swing;
+    juce::CachedValue<float> ramp;  // -1.0 to 1.0: bezier timing curve
     juce::CachedValue<bool> latch;
     juce::CachedValue<int> velocityMode;
     juce::CachedValue<int> fixedVelocity;
@@ -93,6 +94,9 @@ class ArpeggiatorPlugin : public te::Plugin {
     // MIDI output note data for UI strip — written on audio thread, read on UI
     std::atomic<int> midiOutNote_{-1};     // Current note number (-1 = none)
     std::atomic<int> midiOutVelocity_{0};  // Current velocity
+
+    /** Cubic bezier timing curve for ramp parameter. */
+    static double applyRampCurve(double t, float rampVal);
 
   private:
     // --- Audio-thread state ---

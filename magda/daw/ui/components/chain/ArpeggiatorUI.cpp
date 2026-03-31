@@ -39,6 +39,61 @@ class ArpSliderLookAndFeel : public juce::LookAndFeel_V4 {
     ArpSliderLookAndFeel() = default;
 };
 
+void RampCurveDisplay::paint(juce::Graphics& g) {
+    auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+    if (bounds.getWidth() < 4.0f || bounds.getHeight() < 4.0f)
+        return;
+
+    // Background
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.08f));
+    g.fillRoundedRectangle(bounds, 2.0f);
+
+    // Border
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.drawRoundedRectangle(bounds, 2.0f, 0.5f);
+
+    // Draw the curve
+    float w = bounds.getWidth();
+    float h = bounds.getHeight();
+    float x0 = bounds.getX();
+    float y0 = bounds.getY();
+
+    juce::Path curvePath;
+    constexpr int NUM_POINTS = 48;
+    for (int i = 0; i <= NUM_POINTS; ++i) {
+        double t = static_cast<double>(i) / static_cast<double>(NUM_POINTS);
+        double curved = daw::audio::ArpeggiatorPlugin::applyRampCurve(t, ramp_);
+        float px = x0 + static_cast<float>(t) * w;
+        float py = y0 + h - static_cast<float>(curved) * h;  // y-axis inverted
+        if (i == 0)
+            curvePath.startNewSubPath(px, py);
+        else
+            curvePath.lineTo(px, py);
+    }
+
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    g.strokePath(curvePath, juce::PathStrokeType(1.5f));
+
+    // Diagonal reference line (linear)
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+    g.drawLine(x0, y0 + h, x0 + w, y0, 0.5f);
+}
+
+void RampCurveDisplay::mouseDown(const juce::MouseEvent&) {
+    dragStartRamp_ = ramp_;
+}
+
+void RampCurveDisplay::mouseDrag(const juce::MouseEvent& e) {
+    // Vertical drag: up = positive ramp, down = negative
+    float sensitivity = 2.0f / static_cast<float>(getHeight());
+    float newRamp =
+        dragStartRamp_ - static_cast<float>(e.getDistanceFromDragStartY()) * sensitivity;
+    newRamp = juce::jlimit(-1.0f, 1.0f, newRamp);
+    setRampValue(newRamp);
+    if (onRampChanged)
+        onRampChanged(newRamp);
+}
+
 // Layout constants
 static constexpr int ROW_HEIGHT = 22;
 static constexpr int ROW_GAP = 4;
@@ -104,6 +159,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
         }
     };
     addAndMakeVisible(latchButton_);
+    addAndMakeVisible(rampCurveDisplay_);
 
     // Right column
     setupLabel(gateLabel_, "GATE");
@@ -132,6 +188,12 @@ ArpeggiatorUI::ArpeggiatorUI() {
     swingSlider_.onValueChange = [this] {
         if (plugin_)
             plugin_->swing = static_cast<float>(swingSlider_.getValue());
+    };
+
+    rampCurveDisplay_.setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    rampCurveDisplay_.onRampChanged = [this](float r) {
+        if (plugin_)
+            plugin_->ramp = r;
     };
 
     setupLabel(velModeLabel_, "VEL MODE");
@@ -205,6 +267,7 @@ void ArpeggiatorUI::syncFromPlugin() {
 
     gateSlider_.setValue(plugin_->gate.get(), juce::dontSendNotification);
     swingSlider_.setValue(plugin_->swing.get(), juce::dontSendNotification);
+    rampCurveDisplay_.setRampValue(plugin_->ramp.get());
     velModeCombo_.setSelectedId(plugin_->velocityMode.get() + 1, juce::dontSendNotification);
     fixedVelSlider_.setValue(plugin_->fixedVelocity.get(), juce::dontSendNotification);
 
@@ -256,6 +319,10 @@ void ArpeggiatorUI::resized() {
     layoutRow(leftCol, rateLabel_, rateSlider_);
     layoutRow(leftCol, octavesLabel_, octavesSlider_);
     layoutRow(leftCol, latchLabel_, latchButton_);
+
+    // Ramp curve display fills remaining left column space
+    if (leftCol.getHeight() > 4)
+        rampCurveDisplay_.setBounds(leftCol);
 
     // Right column
     layoutRow(rightCol, gateLabel_, gateSlider_);

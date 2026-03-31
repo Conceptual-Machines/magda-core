@@ -13,6 +13,7 @@ static const juce::Identifier rate("arpRate");
 static const juce::Identifier octaveRange("arpOctaves");
 static const juce::Identifier gate("arpGate");
 static const juce::Identifier swing("arpSwing");
+static const juce::Identifier ramp("arpRamp");
 static const juce::Identifier latch("arpLatch");
 static const juce::Identifier velocityMode("arpVelMode");
 static const juce::Identifier fixedVelocity("arpFixedVel");
@@ -25,6 +26,7 @@ ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : te::P
     octaveRange.referTo(state, ArpIDs::octaveRange, um, 1);
     gate.referTo(state, ArpIDs::gate, um, 0.8f);
     swing.referTo(state, ArpIDs::swing, um, 0.0f);
+    ramp.referTo(state, ArpIDs::ramp, um, 0.0f);
     latch.referTo(state, ArpIDs::latch, um, false);
     velocityMode.referTo(state, ArpIDs::velocityMode, um, 0);
     fixedVelocity.referTo(state, ArpIDs::fixedVelocity, um, 100);
@@ -49,7 +51,7 @@ void ArpeggiatorPlugin::reset() {
 }
 
 void ArpeggiatorPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
-    tracktion::copyPropertiesToCachedValues(v, pattern, rate, octaveRange, gate, swing, latch,
+    tracktion::copyPropertiesToCachedValues(v, pattern, rate, octaveRange, gate, swing, ramp, latch,
                                             velocityMode, fixedVelocity);
 }
 
@@ -82,6 +84,42 @@ double ArpeggiatorPlugin::rateToBeats(Rate r) {
         default:
             return 0.5;
     }
+}
+
+double ArpeggiatorPlugin::applyRampCurve(double t, float rampVal) {
+    // Cubic bezier from (0,0) to (1,1). Ramp controls how the two interior
+    // control points shift, warping the time distribution of steps.
+    //   ramp > 0 → notes front-loaded (accelerando feel)
+    //   ramp < 0 → notes back-loaded  (ritardando feel)
+    //   ramp = 0 → linear (evenly spaced)
+    //
+    // Control points:
+    //   P0 = (0, 0)
+    //   P1 = (0.5 - 0.5*r, 0.5 + 0.5*r)   — pulled toward top-left when r>0
+    //   P2 = (0.5 + 0.5*r, 0.5 - 0.5*r)   — pulled toward bottom-right when r>0
+    //   P3 = (1, 1)
+    //
+    // Since we need y(t) but the bezier is parametric, and we want y as a
+    // function of x, we use the fact that when the curve is monotonic we can
+    // evaluate directly with the parametric t ≈ x approximation for musical use.
+    // For exact results we'd need to invert x(t), but for an arp timing curve
+    // the direct evaluation is musically indistinguishable.
+
+    double r = static_cast<double>(juce::jlimit(-1.0f, 1.0f, rampVal));
+    if (std::abs(r) < 0.001)
+        return t;  // linear
+
+    double t2 = t * t;
+    double t3 = t2 * t;
+    double omt = 1.0 - t;
+    double omt2 = omt * omt;
+    double omt3 = omt2 * omt;
+
+    // Y coordinates of control points
+    double y1 = 0.5 + 0.5 * r;
+    double y2 = 0.5 - 0.5 * r;
+
+    return omt3 * 0.0 + 3.0 * omt2 * t * y1 + 3.0 * omt * t2 * y2 + t3 * 1.0;
 }
 
 void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity) {
@@ -309,8 +347,12 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     double stepBeats = rateToBeats(currentRate);
     float gateVal = juce::jlimit(0.01f, 1.0f, gate.get());
     float swingVal = juce::jlimit(0.0f, 1.0f, swing.get());
+    float rampVal = juce::jlimit(-1.0f, 1.0f, ramp.get());
     auto velMode = static_cast<VelocityMode>(velocityMode.get());
     int fixedVel = juce::jlimit(1, 127, fixedVelocity.get());
+
+    // Cycle length in beats (one full pass through the sequence)
+    double cycleBeats = seq.length * stepBeats;
 
     // Initialise lastStepBeat on first buffer — one step back so first note fires immediately
     if (lastStepBeat_ < 0.0) {
@@ -335,8 +377,20 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     double nextBeat = lastStepBeat_ + stepBeats;
 
     while (nextBeat < blockEndBeat) {
-        // Apply swing to odd steps
+        // Apply ramp curve: warp step timing within each cycle
         double swungBeat = nextBeat;
+        if (std::abs(rampVal) > 0.001f && seq.length > 1) {
+            int stepInCycle = currentStep_ % seq.length;
+            // Where this step's cycle started
+            double cycleStart = nextBeat - stepInCycle * stepBeats;
+            // Linear position within cycle (0.0–1.0)
+            double tLinear = static_cast<double>(stepInCycle) / static_cast<double>(seq.length);
+            // Curved position
+            double tCurved = applyRampCurve(tLinear, rampVal);
+            swungBeat = cycleStart + tCurved * cycleBeats;
+        }
+
+        // Apply swing to odd steps (on top of ramp)
         if (currentStep_ % 2 == 1 && swingVal > 0.0f) {
             swungBeat += static_cast<double>(swingVal) * stepBeats * 0.5;
         }
