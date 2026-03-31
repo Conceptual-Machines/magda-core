@@ -14,6 +14,7 @@ static const juce::Identifier octaveRange("arpOctaves");
 static const juce::Identifier gate("arpGate");
 static const juce::Identifier swing("arpSwing");
 static const juce::Identifier ramp("arpRamp");
+static const juce::Identifier skew("arpSkew");
 static const juce::Identifier latch("arpLatch");
 static const juce::Identifier velocityMode("arpVelMode");
 static const juce::Identifier fixedVelocity("arpFixedVel");
@@ -27,6 +28,7 @@ ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : te::P
     gate.referTo(state, ArpIDs::gate, um, 0.8f);
     swing.referTo(state, ArpIDs::swing, um, 0.0f);
     ramp.referTo(state, ArpIDs::ramp, um, 0.0f);
+    skew.referTo(state, ArpIDs::skew, um, 0.5f);
     latch.referTo(state, ArpIDs::latch, um, false);
     velocityMode.referTo(state, ArpIDs::velocityMode, um, 0);
     fixedVelocity.referTo(state, ArpIDs::fixedVelocity, um, 100);
@@ -51,8 +53,8 @@ void ArpeggiatorPlugin::reset() {
 }
 
 void ArpeggiatorPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
-    tracktion::copyPropertiesToCachedValues(v, pattern, rate, octaveRange, gate, swing, ramp, latch,
-                                            velocityMode, fixedVelocity);
+    tracktion::copyPropertiesToCachedValues(v, pattern, rate, octaveRange, gate, swing, ramp, skew,
+                                            latch, velocityMode, fixedVelocity);
 }
 
 // =============================================================================
@@ -86,40 +88,36 @@ double ArpeggiatorPlugin::rateToBeats(Rate r) {
     }
 }
 
-double ArpeggiatorPlugin::applyRampCurve(double t, float rampVal) {
-    // Cubic bezier from (0,0) to (1,1). Ramp controls how the two interior
-    // control points shift, warping the time distribution of steps.
-    //   ramp > 0 → notes front-loaded (accelerando feel)
-    //   ramp < 0 → notes back-loaded  (ritardando feel)
-    //   ramp = 0 → linear (evenly spaced)
+double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew) {
+    // Quadratic bezier from P0=(0,0) to P2=(1,1) with control point P1=(s, s+d).
+    //   s = skew  [0,1]: position along diagonal — 0.5 = symmetric bow
+    //   d = depth [-1,1]: perpendicular offset from diagonal
+    //              d > 0 → bowed above diagonal (front-loaded / log-like)
+    //              d < 0 → bowed below diagonal (back-loaded / exp-like)
+    //              d = 0 → linear (regardless of skew)
     //
-    // Control points:
-    //   P0 = (0, 0)
-    //   P1 = (0.5 - 0.5*r, 0.5 + 0.5*r)   — pulled toward top-left when r>0
-    //   P2 = (0.5 + 0.5*r, 0.5 - 0.5*r)   — pulled toward bottom-right when r>0
-    //   P3 = (1, 1)
-    //
-    // Since we need y(t) but the bezier is parametric, and we want y as a
-    // function of x, we use the fact that when the curve is monotonic we can
-    // evaluate directly with the parametric t ≈ x approximation for musical use.
-    // For exact results we'd need to invert x(t), but for an arp timing curve
-    // the direct evaluation is musically indistinguishable.
+    // Because the bezier is parametric, x_bez(u) ≠ u in general. We invert
+    // x_bez(u) = 2*(1-u)*u*s + u²  to find u given input t, then return y_bez(u).
 
-    double r = static_cast<double>(juce::jlimit(-1.0f, 1.0f, rampVal));
-    if (std::abs(r) < 0.001)
-        return t;  // linear
+    double d = static_cast<double>(juce::jlimit(-0.99f, 0.99f, depth));
+    double s = static_cast<double>(juce::jlimit(0.01f, 0.99f, skew));
 
-    double t2 = t * t;
-    double t3 = t2 * t;
-    double omt = 1.0 - t;
-    double omt2 = omt * omt;
-    double omt3 = omt2 * omt;
+    if (std::abs(d) < 0.001)
+        return t;  // linear — skew irrelevant
 
-    // Y coordinates of control points
-    double y1 = 0.5 + 0.5 * r;
-    double y2 = 0.5 - 0.5 * r;
+    // Solve (1-2s)*u² + 2s*u - t = 0 for u in [0,1].
+    double u;
+    double a = 1.0 - 2.0 * s;
+    if (std::abs(a) < 1e-10) {
+        u = t;  // s = 0.5: x_bez(u) = u, no inversion needed
+    } else {
+        double disc = s * s + a * t;  // (s² + (1-2s)*t), always ≥ 0 for t∈[0,1]
+        u = (-s + std::sqrt(std::max(0.0, disc))) / a;
+        u = juce::jlimit(0.0, 1.0, u);
+    }
 
-    return omt3 * 0.0 + 3.0 * omt2 * t * y1 + 3.0 * omt * t2 * y2 + t3 * 1.0;
+    // y_bez(u) = 2*(1-u)*u*(s+d) + u²
+    return 2.0 * (1.0 - u) * u * (s + d) + u * u;
 }
 
 void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity) {
@@ -166,7 +164,7 @@ void ArpeggiatorPlugin::sendAllNotesOff(te::MidiMessageArray& midi) {
 void ArpeggiatorPlugin::resetArpState() {
     currentStep_ = 0;
     goingUp_ = true;
-    lastStepBeat_ = -1.0;
+    arpOriginBeat_ = -1.0;
     lastPlayedNote_ = -1;
     lastPlayedVelocity_ = 0;
     lastNoteOffBeat_ = -1.0;
@@ -348,16 +346,33 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     float gateVal = juce::jlimit(0.01f, 1.0f, gate.get());
     float swingVal = juce::jlimit(0.0f, 1.0f, swing.get());
     float rampVal = juce::jlimit(-1.0f, 1.0f, ramp.get());
+    float skewVal = juce::jlimit(0.01f, 0.99f, skew.get());
     auto velMode = static_cast<VelocityMode>(velocityMode.get());
     int fixedVel = juce::jlimit(1, 127, fixedVelocity.get());
 
     // Cycle length in beats (one full pass through the sequence)
     double cycleBeats = seq.length * stepBeats;
 
-    // Initialise lastStepBeat on first buffer — one step back so first note fires immediately
-    if (lastStepBeat_ < 0.0) {
-        lastStepBeat_ = std::floor(blockStartBeat / stepBeats) * stepBeats - stepBeats;
+    // Initialise arp origin on first buffer — align to step grid
+    if (arpOriginBeat_ < 0.0) {
+        arpOriginBeat_ = std::floor(blockStartBeat / stepBeats) * stepBeats;
     }
+
+    // Compute the beat position for a given global step index.
+    // With ramp, steps within each cycle are warped by the bezier curve.
+    // Without ramp, steps are evenly spaced at stepBeats intervals.
+    auto computeStepBeat = [&](int step) -> double {
+        int cycle = step / seq.length;
+        int stepInCycle = step % seq.length;
+        double cycleStart = arpOriginBeat_ + cycle * cycleBeats;
+
+        if (std::abs(rampVal) > 0.001f && seq.length > 1) {
+            double tLinear = static_cast<double>(stepInCycle) / static_cast<double>(seq.length);
+            double tCurved = applyRampCurve(tLinear, rampVal, skewVal);
+            return cycleStart + tCurved * cycleBeats;
+        }
+        return cycleStart + stepInCycle * stepBeats;
+    };
 
     // Block duration in seconds (for MIDI timestamp conversion — TE uses seconds, not samples)
     double blockDurationSecs = static_cast<double>(fc.bufferNumSamples) / sampleRate_;
@@ -374,23 +389,15 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     }
 
     // --- 8. Walk steps and generate notes ---
-    double nextBeat = lastStepBeat_ + stepBeats;
+    // Catch up: skip past any steps whose warped position is before this block
+    while (computeStepBeat(currentStep_) < blockStartBeat)
+        ++currentStep_;
 
-    while (nextBeat < blockEndBeat) {
-        // Apply ramp curve: warp step timing within each cycle
-        double swungBeat = nextBeat;
-        if (std::abs(rampVal) > 0.001f && seq.length > 1) {
-            int stepInCycle = currentStep_ % seq.length;
-            // Where this step's cycle started
-            double cycleStart = nextBeat - stepInCycle * stepBeats;
-            // Linear position within cycle (0.0–1.0)
-            double tLinear = static_cast<double>(stepInCycle) / static_cast<double>(seq.length);
-            // Curved position
-            double tCurved = applyRampCurve(tLinear, rampVal);
-            swungBeat = cycleStart + tCurved * cycleBeats;
-        }
+    double stepBeat = computeStepBeat(currentStep_);
 
+    while (stepBeat < blockEndBeat) {
         // Apply swing to odd steps (on top of ramp)
+        double swungBeat = stepBeat;
         if (currentStep_ % 2 == 1 && swingVal > 0.0f) {
             swungBeat += static_cast<double>(swingVal) * stepBeats * 0.5;
         }
@@ -447,14 +454,10 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                 // Note-off in a future block
                 lastNoteOffBeat_ = noteOffBeat;
             }
-
-            // Advance step
-            if (pat != Pattern::Random)
-                ++currentStep_;
         }
 
-        lastStepBeat_ = nextBeat;
-        nextBeat += stepBeats;
+        ++currentStep_;
+        stepBeat = computeStepBeat(currentStep_);
     }
 }
 

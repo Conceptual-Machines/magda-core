@@ -52,46 +52,92 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
     g.drawRoundedRectangle(bounds, 2.0f, 0.5f);
 
-    // Draw the curve
     float w = bounds.getWidth();
     float h = bounds.getHeight();
     float x0 = bounds.getX();
     float y0 = bounds.getY();
 
+    // Diagonal reference line (linear)
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+    g.drawLine(x0, y0 + h, x0 + w, y0, 0.5f);
+
+    // Draw the curve
     juce::Path curvePath;
     constexpr int NUM_POINTS = 48;
     for (int i = 0; i <= NUM_POINTS; ++i) {
         double t = static_cast<double>(i) / static_cast<double>(NUM_POINTS);
-        double curved = daw::audio::ArpeggiatorPlugin::applyRampCurve(t, ramp_);
+        double curved = daw::audio::ArpeggiatorPlugin::applyRampCurve(t, depth_, skew_);
         float px = x0 + static_cast<float>(t) * w;
-        float py = y0 + h - static_cast<float>(curved) * h;  // y-axis inverted
+        float py = y0 + h - static_cast<float>(curved) * h;
         if (i == 0)
             curvePath.startNewSubPath(px, py);
         else
             curvePath.lineTo(px, py);
     }
-
     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
     g.strokePath(curvePath, juce::PathStrokeType(1.5f));
 
-    // Diagonal reference line (linear)
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
-    g.drawLine(x0, y0 + h, x0 + w, y0, 0.5f);
+    // Handle circle at the bezier control point: (skew, skew+depth) in graph space.
+    // This is the natural drag handle — moving it directly sets the control point.
+    float hx = x0 + skew_ * w;
+    float hy = y0 + h - (skew_ + depth_) * h;
+    // Clamp to visible area so the handle never escapes the component
+    hx = juce::jlimit(x0, x0 + w, hx);
+    hy = juce::jlimit(y0, y0 + h, hy);
+
+    constexpr float HANDLE_R = 4.0f;
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.fillEllipse(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2.0f, HANDLE_R * 2.0f);
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    g.drawEllipse(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2.0f, HANDLE_R * 2.0f, 1.5f);
 }
 
-void RampCurveDisplay::mouseDown(const juce::MouseEvent&) {
-    dragStartRamp_ = ramp_;
+void RampCurveDisplay::mouseDown(const juce::MouseEvent& e) {
+    auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+    float w = bounds.getWidth();
+    float h = bounds.getHeight();
+    float x0 = bounds.getX();
+    float y0 = bounds.getY();
+    // Record offset from click point to handle centre so the handle doesn't jump
+    float handleX = x0 + skew_ * w;
+    float handleY = y0 + h - (skew_ + depth_) * h;
+    handleOffsetX_ = handleX - e.position.x;
+    handleOffsetY_ = handleY - e.position.y;
 }
 
 void RampCurveDisplay::mouseDrag(const juce::MouseEvent& e) {
-    // Vertical drag: up = positive ramp, down = negative
-    float sensitivity = 2.0f / static_cast<float>(getHeight());
-    float newRamp =
-        dragStartRamp_ - static_cast<float>(e.getDistanceFromDragStartY()) * sensitivity;
-    newRamp = juce::jlimit(-1.0f, 1.0f, newRamp);
-    setRampValue(newRamp);
-    if (onRampChanged)
-        onRampChanged(newRamp);
+    auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+    float w = bounds.getWidth();
+    float h = bounds.getHeight();
+    float x0 = bounds.getX();
+    float y0 = bounds.getY();
+
+    // Translate mouse position to where the handle centre should be
+    float cx = e.position.x + handleOffsetX_;
+    float cy = e.position.y + handleOffsetY_;
+
+    // Control point (skew, skew+depth) in graph space maps to screen as:
+    //   cx = x0 + skew * w   →   skew = (cx - x0) / w
+    //   cy = y0 + h - (skew + depth) * h   →   depth = (y0 + h - cy) / h - skew
+    float newSkew = (cx - x0) / w;
+    float newDepth = (y0 + h - cy) / h - newSkew;
+
+    newSkew = juce::jlimit(0.01f, 0.99f, newSkew);
+    newDepth = juce::jlimit(-1.0f, 1.0f, newDepth);
+
+    depth_ = newDepth;
+    skew_ = newSkew;
+    repaint();
+    if (onCurveChanged)
+        onCurveChanged(newDepth, newSkew);
+}
+
+void RampCurveDisplay::mouseDoubleClick(const juce::MouseEvent&) {
+    depth_ = 0.0f;
+    skew_ = 0.5f;
+    repaint();
+    if (onCurveChanged)
+        onCurveChanged(0.0f, 0.5f);
 }
 
 // Layout constants
@@ -159,6 +205,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
         }
     };
     addAndMakeVisible(latchButton_);
+    setupLabel(rampLabel_, "RAMP");
     addAndMakeVisible(rampCurveDisplay_);
 
     // Right column
@@ -190,10 +237,12 @@ ArpeggiatorUI::ArpeggiatorUI() {
             plugin_->swing = static_cast<float>(swingSlider_.getValue());
     };
 
-    rampCurveDisplay_.setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
-    rampCurveDisplay_.onRampChanged = [this](float r) {
-        if (plugin_)
-            plugin_->ramp = r;
+    rampCurveDisplay_.setMouseCursor(juce::MouseCursor::CrosshairCursor);
+    rampCurveDisplay_.onCurveChanged = [this](float depth, float sk) {
+        if (plugin_) {
+            plugin_->ramp = depth;
+            plugin_->skew = sk;
+        }
     };
 
     setupLabel(velModeLabel_, "VEL MODE");
@@ -267,7 +316,7 @@ void ArpeggiatorUI::syncFromPlugin() {
 
     gateSlider_.setValue(plugin_->gate.get(), juce::dontSendNotification);
     swingSlider_.setValue(plugin_->swing.get(), juce::dontSendNotification);
-    rampCurveDisplay_.setRampValue(plugin_->ramp.get());
+    rampCurveDisplay_.setValues(plugin_->ramp.get(), plugin_->skew.get());
     velModeCombo_.setSelectedId(plugin_->velocityMode.get() + 1, juce::dontSendNotification);
     fixedVelSlider_.setValue(plugin_->fixedVelocity.get(), juce::dontSendNotification);
 
@@ -320,9 +369,14 @@ void ArpeggiatorUI::resized() {
     layoutRow(leftCol, octavesLabel_, octavesSlider_);
     layoutRow(leftCol, latchLabel_, latchButton_);
 
-    // Ramp curve display fills remaining left column space
-    if (leftCol.getHeight() > 4)
-        rampCurveDisplay_.setBounds(leftCol);
+    // Ramp: header label + fixed square display
+    if (leftCol.getHeight() > ROW_HEIGHT + ROW_GAP + 4) {
+        leftCol.removeFromTop(ROW_GAP);
+        rampLabel_.setBounds(leftCol.removeFromTop(ROW_HEIGHT));
+        leftCol.removeFromTop(ROW_GAP);
+        int side = juce::jmin(leftCol.getWidth(), leftCol.getHeight());
+        rampCurveDisplay_.setBounds(leftCol.removeFromTop(side).withWidth(side));
+    }
 
     // Right column
     layoutRow(rightCol, gateLabel_, gateSlider_);

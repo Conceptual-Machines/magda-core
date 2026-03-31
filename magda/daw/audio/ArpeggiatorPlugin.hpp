@@ -86,7 +86,8 @@ class ArpeggiatorPlugin : public te::Plugin {
     juce::CachedValue<int> octaveRange;
     juce::CachedValue<float> gate;
     juce::CachedValue<float> swing;
-    juce::CachedValue<float> ramp;  // -1.0 to 1.0: bezier timing curve
+    juce::CachedValue<float> ramp;  // -1.0 to 1.0: bezier depth (perpendicular bow)
+    juce::CachedValue<float> skew;  // 0.0 to 1.0: control-point position along diagonal
     juce::CachedValue<bool> latch;
     juce::CachedValue<int> velocityMode;
     juce::CachedValue<int> fixedVelocity;
@@ -95,8 +96,12 @@ class ArpeggiatorPlugin : public te::Plugin {
     std::atomic<int> midiOutNote_{-1};     // Current note number (-1 = none)
     std::atomic<int> midiOutVelocity_{0};  // Current velocity
 
-    /** Cubic bezier timing curve for ramp parameter. */
-    static double applyRampCurve(double t, float rampVal);
+    /** Quadratic bezier timing curve. Control point at (skew, skew+depth) in graph space.
+     *  skew=0.5, depth=0  → linear.
+     *  depth > 0 → bowed above diagonal (front-loaded / log-like).
+     *  depth < 0 → bowed below diagonal (back-loaded / exp-like).
+     *  Moving skew away from 0.5 creates asymmetric curves. */
+    static double applyRampCurve(double t, float depth, float skew);
 
   private:
     // --- Audio-thread state ---
@@ -117,7 +122,7 @@ class ArpeggiatorPlugin : public te::Plugin {
     // Pattern state
     int currentStep_ = 0;
     bool goingUp_ = true;
-    double lastStepBeat_ = -1.0;
+    double arpOriginBeat_ = -1.0;
     int lastPlayedNote_ = -1;
     int lastPlayedVelocity_ = 0;
     double lastNoteOffBeat_ = -1.0;

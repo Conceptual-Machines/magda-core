@@ -21,26 +21,35 @@ class RampCurveDisplay : public juce::Component {
   public:
     RampCurveDisplay() = default;
 
-    void setRampValue(float r) {
-        if (std::abs(ramp_ - r) > 0.001f) {
-            ramp_ = r;
+    void setValues(float depth, float skew) {
+        if (std::abs(depth_ - depth) > 0.001f || std::abs(skew_ - skew) > 0.001f) {
+            depth_ = depth;
+            skew_ = skew;
             repaint();
         }
     }
 
-    float getRampValue() const {
-        return ramp_;
+    float getDepth() const {
+        return depth_;
+    }
+    float getSkew() const {
+        return skew_;
     }
 
-    std::function<void(float)> onRampChanged;
+    /** Called whenever depth or skew change. */
+    std::function<void(float depth, float skew)> onCurveChanged;
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
 
   private:
-    float ramp_ = 0.0f;
-    float dragStartRamp_ = 0.0f;
+    float depth_ = 0.0f;
+    float skew_ = 0.5f;
+    // Offset from mouseDown position to handle centre — prevents handle jumping on click
+    float handleOffsetX_ = 0.0f;
+    float handleOffsetY_ = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RampCurveDisplay)
 };
@@ -68,6 +77,7 @@ class ArpeggiatorUI : public juce::Component, private juce::ValueTree::Listener 
     juce::Slider octavesSlider_;
     juce::Label latchLabel_;
     juce::TextButton latchButton_{"OFF"};
+    juce::Label rampLabel_;
     RampCurveDisplay rampCurveDisplay_;
 
     // Right column
