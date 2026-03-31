@@ -41,12 +41,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
             tracktionLogo_->replaceColour(juce::Colours::black,
                                           DarkTheme::getSecondaryTextColour());
     }
-    if (isArpeggiator_ || isChordEngine_) {
-        midiIcon_ =
-            juce::Drawable::createFromImageData(BinaryData::midi_svg, BinaryData::midi_svgSize);
-        if (midiIcon_)
-            midiIcon_->replaceColour(juce::Colours::black, DarkTheme::getSecondaryTextColour());
-    }
+
     if (isDrumGrid_) {
         // Set empty name - we'll draw custom two-color text in paint()
         setNodeName("");
@@ -998,14 +993,6 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
             g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
             g.drawText("MAGDA Drum Grid", textArea, juce::Justification::centredLeft);
         } else if (isChordEngine_ || isArpeggiator_) {
-            constexpr int logoSize = 12;
-            if (midiIcon_) {
-                auto logoBounds = textArea.removeFromLeft(logoSize).toFloat();
-                logoBounds = logoBounds.withSizeKeepingCentre(logoSize, logoSize);
-                midiIcon_->drawWithin(g, logoBounds, juce::RectanglePlacement::centred,
-                                      isBypassed() ? 0.3f : 0.6f);
-                textArea.removeFromLeft(4);
-            }
             g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
             juce::String label = isChordEngine_ ? "Chord Engine" : "Arpeggiator";
             g.drawText(label, textArea, juce::Justification::centredLeft);

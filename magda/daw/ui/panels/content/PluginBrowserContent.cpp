@@ -1,5 +1,7 @@
 #include "PluginBrowserContent.hpp"
 
+#include <BinaryData.h>
+
 #include "../../dialogs/ParameterConfigDialog.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -87,17 +89,16 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
             bounds.removeFromLeft(16);
         }
 
-        // Plugin type icon: 🎹 for instruments, 🎵 for MIDI, 🎛️ for effects
+        // Plugin type icon: 🎹 for instruments, chord svg for MIDI, 🎛️ for effects
+        auto iconArea = bounds.removeFromLeft(18);
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
         if (plugin_.category == "Instrument") {
-            g.drawText(juce::String::fromUTF8("🎹"), bounds.removeFromLeft(18),
-                       juce::Justification::centred);
-        } else if (plugin_.subcategory == "MIDI") {
-            g.drawText(juce::String::fromUTF8("🎵"), bounds.removeFromLeft(18),
-                       juce::Justification::centred);
+            g.drawText(juce::String::fromUTF8("🎹"), iconArea, juce::Justification::centred);
+        } else if (plugin_.subcategory == "MIDI" && owner_.midiIcon_) {
+            auto iconBounds = iconArea.toFloat().reduced(2.0f);
+            owner_.midiIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         } else {
-            g.drawText(juce::String::fromUTF8("🎛️"), bounds.removeFromLeft(18),
-                       juce::Justification::centred);
+            g.drawText(juce::String::fromUTF8("🎛️"), iconArea, juce::Justification::centred);
         }
         bounds.removeFromLeft(2);
 
@@ -241,6 +242,12 @@ class PluginBrowserContent::CategoryTreeItem : public juce::TreeViewItem {
 //==============================================================================
 PluginBrowserContent::PluginBrowserContent() {
     setName("Plugin Browser");
+
+    midiIcon_ =
+        juce::Drawable::createFromImageData(BinaryData::chord_svg, BinaryData::chord_svgSize);
+    if (midiIcon_)
+        midiIcon_->replaceColour(juce::Colours::black,
+                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
 
     // Setup search box
     searchBox_.setTextToShowWhenEmpty("Search plugins...", DarkTheme::getSecondaryTextColour());
