@@ -3,6 +3,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <functional>
+#include <thread>
 #include <unordered_map>
 
 #include "../audio/RecordingNoteQueue.hpp"
@@ -453,6 +454,7 @@ class TracktionEngineWrapper : public AudioEngine,
     bool isScanning_ = false;
     std::function<void(float, const juce::String&)> scanProgressCallback_;
     std::unique_ptr<PluginScanCoordinator> pluginScanCoordinator_;
+    std::thread pluginDiscoveryThread_;
 };
 
 }  // namespace magda

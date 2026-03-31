@@ -437,6 +437,10 @@ bool TracktionEngineWrapper::initialize() {
 void TracktionEngineWrapper::shutdown() {
     DBG("TracktionEngineWrapper::shutdown - starting...");
 
+    // Wait for background plugin discovery to finish before tearing down
+    if (pluginDiscoveryThread_.joinable())
+        pluginDiscoveryThread_.join();
+
     // Release test tone plugin first (before Edit is destroyed)
     testTonePlugin_.reset();
 
