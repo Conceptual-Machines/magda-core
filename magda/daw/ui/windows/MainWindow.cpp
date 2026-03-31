@@ -171,14 +171,19 @@ class MainWindow::MainComponent::ResizeHandle : public juce::Component {
 MainWindow::MainWindow(AudioEngine* audioEngine)
     : DocumentWindow("MAGDA", DarkTheme::getBackgroundColour(), DocumentWindow::allButtons),
       externalAudioEngine_(audioEngine) {
+    juce::Logger::writeToLog("[MainWindow] Constructor started");
     setUsingNativeTitleBar(true);
     setResizable(true, true);
 
+    juce::Logger::writeToLog("[MainWindow] Creating MainComponent...");
     mainComponent = new MainComponent(externalAudioEngine_);
+    juce::Logger::writeToLog("[MainWindow] MainComponent created");
     setContentOwned(mainComponent, true);  // Window takes ownership
 
     // Setup menu bar
+    juce::Logger::writeToLog("[MainWindow] Setting up menu bar...");
     setupMenuBar();
+    juce::Logger::writeToLog("[MainWindow] Menu bar ready");
 
     // Size and position the window within the display's work area
     auto display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
@@ -193,7 +198,9 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
         setSize(1200, 800);
         centreWithSize(getWidth(), getHeight());
     }
+    juce::Logger::writeToLog("[MainWindow] Calling setVisible(true)...");
     setVisible(true);
+    juce::Logger::writeToLog("[MainWindow] Window is now visible");
 
     // Listen for project changes to update window title
     ProjectManager::getInstance().addListener(this);
@@ -281,6 +288,7 @@ void MainWindow::projectDirtyStateChanged(bool) {
 
 // MainComponent implementation
 MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
+    juce::Logger::writeToLog("[MainComponent] Constructor started");
     setWantsKeyboardFocus(true);
 
     // Enable tooltips if configured
@@ -303,15 +311,16 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
         externalAudioEngine_ = externalEngine;  // Store external engine pointer
-        DBG("MainComponent using external audio engine");
+        juce::Logger::writeToLog("[MainComponent] Using external audio engine");
     } else {
         // Create audio engine FIRST (before creating views that need it)
+        juce::Logger::writeToLog("[MainComponent] Creating internal audio engine...");
         audioEngine_ = std::make_unique<TracktionEngineWrapper>();
         if (!audioEngine_->initialize()) {
-            DBG("Warning: Failed to initialize audio engine");
+            juce::Logger::writeToLog("[MainComponent] WARNING: Failed to initialize audio engine");
         }
         externalEngine = audioEngine_.get();
-        DBG("MainComponent created internal audio engine");
+        juce::Logger::writeToLog("[MainComponent] Internal audio engine created");
     }
 
     // Initialize TrackManager with audio engine for routing operations
@@ -371,9 +380,11 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         bottomPanelHeight = juce::jmax(layout.minBottomPanelHeight, config.getBottomPanelHeight());
 
     // Create panels
+    juce::Logger::writeToLog("[MainComponent] Creating TransportPanel...");
     transportPanel = std::make_unique<TransportPanel>();
     addAndMakeVisible(*transportPanel);
 
+    juce::Logger::writeToLog("[MainComponent] Creating LeftPanel...");
     leftPanel = std::make_unique<LeftPanel>();
     leftPanel->setAudioEngine(externalEngine);
     leftPanel->onCollapseChanged = [this](bool collapsed) {
@@ -382,6 +393,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     };
     addAndMakeVisible(*leftPanel);
 
+    juce::Logger::writeToLog("[MainComponent] Creating RightPanel...");
     rightPanel = std::make_unique<RightPanel>();
     rightPanel->setAudioEngine(externalEngine);
     rightPanel->onCollapseChanged = [this](bool collapsed) {
@@ -390,6 +402,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     };
     addAndMakeVisible(*rightPanel);
 
+    juce::Logger::writeToLog("[MainComponent] Creating BottomPanel...");
     bottomPanel = std::make_unique<BottomPanel>();
     bottomPanel->setAudioEngine(externalEngine);
     bottomPanel->onCollapseChanged = [this](bool collapsed) {
@@ -400,6 +413,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     };
     addAndMakeVisible(*bottomPanel);
 
+    juce::Logger::writeToLog("[MainComponent] Creating FooterBar...");
     footerBar = std::make_unique<FooterBar>();
     footerBar->onBottomPanelCollapseToggle = [this]() {
         bottomPanelCollapsed = !bottomPanelCollapsed;
@@ -411,9 +425,12 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     // Create views (now audioEngine is valid - use externalEngine which points to either external
     // or internal)
+    juce::Logger::writeToLog("[MainComponent] Creating MainView...");
     mainView = std::make_unique<MainView>(externalEngine);
     addAndMakeVisible(*mainView);
+    juce::Logger::writeToLog("[MainComponent] MainView created");
 
+    juce::Logger::writeToLog("[MainComponent] Creating SessionView...");
     sessionView = std::make_unique<SessionView>();
     sessionView->setTimelineController(&mainView->getTimelineController());
     sessionView->setAudioEngine(externalEngine);
@@ -424,8 +441,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     rightPanel->setTimelineController(&mainView->getTimelineController());
     bottomPanel->setTimelineController(&mainView->getTimelineController());
 
+    juce::Logger::writeToLog("[MainComponent] Creating MixerView...");
     mixerView = std::make_unique<MixerView>(externalEngine);
     addChildComponent(*mixerView);
+    juce::Logger::writeToLog("[MainComponent] MixerView created");
 
     // Wire up callbacks between views and transport
     mainView->onLoopRegionChanged = [this](double start, double end, bool enabled) {
@@ -548,6 +567,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 
+    juce::Logger::writeToLog("[MainComponent] Setting up resize handles, view mode, callbacks...");
     setupResizeHandles();
     setupViewModeListener();
     setupAudioEngineCallbacks(externalEngine);
@@ -576,6 +596,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     // Select master channel by default so the inspector isn't empty on startup
     SelectionManager::getInstance().selectTrack(MASTER_TRACK_ID);
+    juce::Logger::writeToLog("[MainComponent] Constructor complete");
 }
 
 void MainWindow::MainComponent::setupResizeHandles() {
