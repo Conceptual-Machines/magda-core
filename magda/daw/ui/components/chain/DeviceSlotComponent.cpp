@@ -994,6 +994,9 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         } else if (isChordEngine_) {
             g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
             g.drawText("MAGDA Chord Engine", textArea, juce::Justification::centredLeft);
+        } else if (isArpeggiator_) {
+            g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
+            g.drawText("MAGDA / Arpeggiator", textArea, juce::Justification::centredLeft);
         } else if (isTracktionDevice_ && tracktionLogo_) {
             // Tracktion devices: TE logo inline + "Tracktion / {device name}"
             constexpr int logoSize = 14;
