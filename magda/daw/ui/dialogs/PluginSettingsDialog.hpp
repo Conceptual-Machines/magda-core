@@ -74,6 +74,7 @@ class PluginSettingsDialog : public juce::Component {
     // Scan section
     juce::TextButton scanButton_;
     juce::TextButton viewReportButton_;
+    juce::ToggleButton scanOnStartupToggle_;
     juce::ProgressBar scanProgressBar_;
     double scanProgress_ = -1.0;
     juce::Label scanStatusLabel_;

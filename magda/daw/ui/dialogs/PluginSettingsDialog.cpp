@@ -260,6 +260,13 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     };
     addAndMakeVisible(viewReportButton_);
 
+    scanOnStartupToggle_.setButtonText("Scan for new plugins on startup");
+    scanOnStartupToggle_.setToggleState(Config::getInstance().getScanPluginsOnStartup(),
+                                        juce::dontSendNotification);
+    scanOnStartupToggle_.setColour(juce::ToggleButton::textColourId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    addAndMakeVisible(scanOnStartupToggle_);
+
     scanProgressBar_.setPercentageDisplay(true);
     scanProgressBar_.setVisible(false);
     addAndMakeVisible(scanProgressBar_);
@@ -340,7 +347,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     };
     addAndMakeVisible(cancelButton_);
 
-    setSize(550, 650);
+    setSize(550, 680);
 }
 
 PluginSettingsDialog::~PluginSettingsDialog() {
@@ -394,6 +401,8 @@ void PluginSettingsDialog::resized() {
     bounds.removeFromTop(2);
     scanStatusLabel_.setBounds(bounds.removeFromTop(18));
     pluginCountLabel_.setBounds(bounds.removeFromTop(18));
+    bounds.removeFromTop(2);
+    scanOnStartupToggle_.setBounds(bounds.removeFromTop(22));
 
     bounds.removeFromTop(spacing);
 
@@ -442,6 +451,7 @@ void PluginSettingsDialog::setScanningUIEnabled(bool enabled) {
 
 void PluginSettingsDialog::applySettings() {
     Config::getInstance().setCustomPluginPaths(customPaths_);
+    Config::getInstance().setScanPluginsOnStartup(scanOnStartupToggle_.getToggleState());
     Config::getInstance().save();
 
     if (engine_) {

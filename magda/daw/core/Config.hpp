@@ -230,6 +230,14 @@ class Config {
         totalPluginCount = count;
     }
 
+    // Scan plugins on startup (auto-detect new/removed plugins)
+    bool getScanPluginsOnStartup() const {
+        return scanPluginsOnStartup;
+    }
+    void setScanPluginsOnStartup(bool enabled) {
+        scanPluginsOnStartup = enabled;
+    }
+
     // Recent Projects
     std::vector<std::string> getRecentProjects() const {
         return recentProjects;
@@ -618,6 +626,9 @@ class Config {
 
     // Total plugin count from last scan
     int totalPluginCount = 0;
+
+    // Auto-detect new plugins on startup (off by default)
+    bool scanPluginsOnStartup = false;
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;
