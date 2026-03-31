@@ -113,9 +113,11 @@ void TracktionEngineWrapper::startPluginScan(
             // Save the updated plugin list to persistent storage
             savePluginList();
 
-            // Persist total plugin count
-            Config::getInstance().setTotalPluginCount(numPlugins);
-            Config::getInstance().save();
+            // Persist total plugin count only after a successful scan
+            if (success) {
+                Config::getInstance().setTotalPluginCount(numPlugins);
+                Config::getInstance().save();
+            }
 
             isScanning_ = false;
 

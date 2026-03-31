@@ -327,7 +327,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
             return;
         applySettings();
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            delete dw;
+            juce::MessageManager::callAsync([dw]() { delete dw; });
     };
     addAndMakeVisible(okButton_);
 
@@ -336,7 +336,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
         if (isScanRunning())
             return;
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            delete dw;
+            juce::MessageManager::callAsync([dw]() { delete dw; });
     };
     addAndMakeVisible(cancelButton_);
 
@@ -471,7 +471,7 @@ class PluginSettingsDialogWindow : public juce::DialogWindow {
     void closeButtonPressed() override {
         if (content_ && content_->isScanRunning())
             return;  // Block close while scanning
-        delete this;
+        juce::MessageManager::callAsync([this]() { delete this; });
     }
 
   private:
