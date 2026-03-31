@@ -101,9 +101,14 @@ void ScanWorker::handleMessageFromWorker(const juce::MemoryBlock& message) {
         DBG("[ScanWorker " << workerIndex_ << "] Error: " << plugin << " - " << error);
     } else if (msgType == ScannerIPC::MSG_SCAN_COMPLETE) {
         receivedDone_ = true;
-        // Don't send QUIT — keep the subprocess alive so the next plugin can
-        // reuse it without the cost of launching a new process. The subprocess
-        // is only killed on abort, timeout, or when the worker is destroyed.
+#if !JUCE_WINDOWS
+        // On Mac/Linux, process creation is cheap — quit the subprocess after each
+        // plugin to avoid lingering processes visible in Activity Monitor.
+        sendQuit();
+        connected_ = false;
+#endif
+        // On Windows, keep the subprocess alive to avoid the expensive
+        // CreateProcess cost per plugin. It's killed on abort/timeout/destroy.
         bool scanOk = currentResult_.errorMessage.isEmpty();
         // Defer the result callback so we fully exit the ChildProcessCoordinator's
         // IPC callback before the coordinator tries to send the next scan command
