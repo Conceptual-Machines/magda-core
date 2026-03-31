@@ -493,11 +493,16 @@ void PluginSettingsDialog::showDialog(TracktionEngineWrapper* engine, juce::Comp
 
 void PluginSettingsDialog::updatePluginCountLabel() {
     int count = Config::getInstance().getTotalPluginCount();
-    if (count > 0)
-        pluginCountLabel_.setText(juce::String(count) + " plugins available",
-                                  juce::dontSendNotification);
-    else
+    int excluded = static_cast<int>(excludedPlugins_.size());
+
+    if (count > 0) {
+        juce::String text = juce::String(count) + " plugins available";
+        if (excluded > 0)
+            text += ", " + juce::String(excluded) + " excluded";
+        pluginCountLabel_.setText(text, juce::dontSendNotification);
+    } else {
         pluginCountLabel_.setText("No plugins scanned yet", juce::dontSendNotification);
+    }
 }
 
 void PluginSettingsDialog::setupSectionHeader(juce::Label& header, const juce::String& text) {
