@@ -412,18 +412,10 @@ void PluginScanCoordinator::finishScan(bool success) {
 }
 
 void PluginScanCoordinator::killOrphanScannerProcesses() {
-#if JUCE_MAC || JUCE_LINUX
-    juce::ChildProcess killProc;
-    if (killProc.start("pkill -f magda_plugin_scanner")) {
-        killProc.waitForProcessToFinish(3000);
-    }
-#elif JUCE_WINDOWS
-    juce::ChildProcess killProc;
-    if (killProc.start("taskkill /F /IM magda_plugin_scanner.exe")) {
-        killProc.waitForProcessToFinish(3000);
-    }
-#endif
-    DBG("[ScanCoordinator] Cleaned up orphan scanner processes");
+    // Workers are already cleaned up via abort() / destructor which kills their
+    // child processes through JUCE's ChildProcessCoordinator. No need to run
+    // pkill/taskkill which could kill scanner processes from other MAGDA instances.
+    DBG("[ScanCoordinator] Scanner processes cleaned up via worker shutdown");
 }
 
 // Exclusion management
