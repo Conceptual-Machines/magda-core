@@ -41,6 +41,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
             tracktionLogo_->replaceColour(juce::Colours::black,
                                           DarkTheme::getSecondaryTextColour());
     }
+    if (isArpeggiator_ || isChordEngine_) {
+        midiIcon_ =
+            juce::Drawable::createFromImageData(BinaryData::midi_svg, BinaryData::midi_svgSize);
+        if (midiIcon_)
+            midiIcon_->replaceColour(juce::Colours::black, DarkTheme::getSecondaryTextColour());
+    }
     if (isDrumGrid_) {
         // Set empty name - we'll draw custom two-color text in paint()
         setNodeName("");
@@ -991,12 +997,18 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
             // Drum Grid: "MAGDA Drum Grid" in Microgramma
             g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
             g.drawText("MAGDA Drum Grid", textArea, juce::Justification::centredLeft);
-        } else if (isChordEngine_) {
+        } else if (isChordEngine_ || isArpeggiator_) {
+            constexpr int logoSize = 12;
+            if (midiIcon_) {
+                auto logoBounds = textArea.removeFromLeft(logoSize).toFloat();
+                logoBounds = logoBounds.withSizeKeepingCentre(logoSize, logoSize);
+                midiIcon_->drawWithin(g, logoBounds, juce::RectanglePlacement::centred,
+                                      isBypassed() ? 0.3f : 0.6f);
+                textArea.removeFromLeft(4);
+            }
             g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-            g.drawText("MAGDA Chord Engine", textArea, juce::Justification::centredLeft);
-        } else if (isArpeggiator_) {
-            g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-            g.drawText("MAGDA / Arpeggiator", textArea, juce::Justification::centredLeft);
+            juce::String label = isChordEngine_ ? "Chord Engine" : "Arpeggiator";
+            g.drawText(label, textArea, juce::Justification::centredLeft);
         } else if (isTracktionDevice_ && tracktionLogo_) {
             // Tracktion devices: TE logo inline + "Tracktion / {device name}"
             constexpr int logoSize = 14;
@@ -1017,10 +1029,10 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
-    // Position the level meter on the right edge of the content area
-    // (when collapsed, meter is positioned by resizedCollapsed instead)
-    // Chord engine has no audio output — skip meter
-    if (!collapsed_ && !isChordEngine_) {
+    // Position the level meter / note strip on the right edge of the content area.
+    // When collapsed, NodeComponent calls resizedCollapsed() first then resizedContent()
+    // with an empty rect — so we must not touch meter visibility when collapsed.
+    if (!collapsed_) {
         auto meterBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
         contentArea.removeFromRight(4);  // Padding between content and meter
         bool usesNoteStrip = isArpeggiator_ || isChordEngine_;
@@ -1028,9 +1040,6 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
         levelMeter_.setVisible(!usesNoteStrip);
         midiNoteStrip_.setBounds(meterBounds);
         midiNoteStrip_.setVisible(usesNoteStrip);
-    } else {
-        levelMeter_.setVisible(false);
-        midiNoteStrip_.setVisible(false);
     }
 
     // Bottom padding

@@ -179,6 +179,7 @@ class DeviceSlotComponent : public NodeComponent,
     bool isArpeggiator_ = false;
     bool isTracktionDevice_ = false;
     std::unique_ptr<juce::Drawable> tracktionLogo_;
+    std::unique_ptr<juce::Drawable> midiIcon_;
 
     // Header controls
     std::unique_ptr<magda::SvgButton> modButton_;
