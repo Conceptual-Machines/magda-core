@@ -5,6 +5,7 @@
 #include <array>
 
 #include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda {
 

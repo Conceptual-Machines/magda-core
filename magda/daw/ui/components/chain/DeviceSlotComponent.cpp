@@ -56,8 +56,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Hide built-in bypass button - we'll add our own in the header
     setBypassButtonVisible(false);
 
-    // Add level meter as child (positioned in resized via getMeterWidth)
+    // Add level meter and MIDI note strip (only one visible at a time)
     addAndMakeVisible(levelMeter_);
+    addAndMakeVisible(midiNoteStrip_);
 
     // Set up NodeComponent callbacks
     onDeleteClicked = [this]() {
@@ -573,10 +574,40 @@ void DeviceSlotComponent::timerCallback() {
         }
     }
 
-    // Poll device peak levels for right-side meter strip
-    magda::DeviceMeteringManager::DeviceMeterData data;
-    if (bridge->getDeviceMetering().getLatestLevels(device_.id, data)) {
-        levelMeter_.setLevels(data.peakL, data.peakR);
+    if (isArpeggiator_) {
+        // Poll arpeggiator note output for the MIDI note strip
+        if (arpPlugin_) {
+            int note = arpPlugin_->midiOutNote_.load(std::memory_order_relaxed);
+            int vel = arpPlugin_->midiOutVelocity_.load(std::memory_order_relaxed);
+            if (note != lastArpNote_) {
+                if (lastArpNote_ >= 0)
+                    midiNoteStrip_.clearNote(lastArpNote_);
+                lastArpNote_ = note;
+            }
+            if (note >= 0)
+                midiNoteStrip_.setNote(note, vel);
+        }
+    } else if (isChordEngine_) {
+        // Poll chord engine held notes for the MIDI note strip
+        if (chordPlugin_) {
+            int count = chordPlugin_->getHeldNoteCount();
+            // Clear notes that are no longer held
+            for (int i = 0; i < lastChordCount_; ++i)
+                midiNoteStrip_.clearNote(lastChordNotes_[static_cast<size_t>(i)]);
+            // Set currently held notes
+            for (int i = 0; i < count && i < static_cast<int>(lastChordNotes_.size()); ++i) {
+                int n = chordPlugin_->getHeldNote(i);
+                lastChordNotes_[static_cast<size_t>(i)] = n;
+                midiNoteStrip_.setNote(n, 100);
+            }
+            lastChordCount_ = count;
+        }
+    } else {
+        // Poll device peak levels for right-side meter strip
+        magda::DeviceMeteringManager::DeviceMeterData data;
+        if (bridge->getDeviceMetering().getLatestLevels(device_.id, data)) {
+            levelMeter_.setLevels(data.peakL, data.peakR);
+        }
     }
 }
 
@@ -910,8 +941,8 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
 }
 
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
-    // Draw separator line to the left of the meter strip (skip for chord engine — no meter)
-    if (!collapsed_ && !isChordEngine_) {
+    // Draw separator line to the left of the meter/note strip
+    if (!collapsed_) {
         int lineX = contentArea.getRight() - METER_STRIP_WIDTH - 4;
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawVerticalLine(lineX, static_cast<float>(contentArea.getY() + 2),
@@ -989,10 +1020,14 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     if (!collapsed_ && !isChordEngine_) {
         auto meterBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
         contentArea.removeFromRight(4);  // Padding between content and meter
+        bool usesNoteStrip = isArpeggiator_ || isChordEngine_;
         levelMeter_.setBounds(meterBounds);
-        levelMeter_.setVisible(true);
-    } else if (isChordEngine_) {
+        levelMeter_.setVisible(!usesNoteStrip);
+        midiNoteStrip_.setBounds(meterBounds);
+        midiNoteStrip_.setVisible(usesNoteStrip);
+    } else {
         levelMeter_.setVisible(false);
+        midiNoteStrip_.setVisible(false);
     }
 
     // Bottom padding
@@ -1267,8 +1302,11 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     // Meter is positioned by base class via getCollapsedMeterWidth() -> collapsedMeterArea_
+    bool usesNoteStrip = isArpeggiator_ || isChordEngine_;
     levelMeter_.setBounds(collapsedMeterArea_);
-    levelMeter_.setVisible(!isChordEngine_);
+    levelMeter_.setVisible(!usesNoteStrip);
+    midiNoteStrip_.setBounds(collapsedMeterArea_);
+    midiNoteStrip_.setVisible(usesNoteStrip);
 
     int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);
 
@@ -2632,9 +2670,9 @@ void DeviceSlotComponent::createCustomUI() {
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
                 auto plugin = bridge->getPlugin(device_.id);
-                if (auto* chordPlugin =
-                        dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
-                    chordEngineUI_->setChordEngine(chordPlugin, nodePath_.trackId);
+                if (auto* cp = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
+                    chordEngineUI_->setChordEngine(cp, nodePath_.trackId);
+                    chordPlugin_ = cp;
                 }
             }
         }
@@ -2646,6 +2684,7 @@ void DeviceSlotComponent::createCustomUI() {
                 auto plugin = bridge->getPlugin(device_.id);
                 if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
                     arpeggiatorUI_->setArpeggiator(arp);
+                    arpPlugin_ = arp;
                 }
             }
         }

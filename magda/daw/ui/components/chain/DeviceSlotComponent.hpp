@@ -19,12 +19,15 @@
 #include "SamplerUI.hpp"
 #include "ToneGeneratorUI.hpp"
 #include "UtilityUI.hpp"
+#include "audio/ArpeggiatorPlugin.hpp"
+#include "audio/MidiChordEnginePlugin.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
+#include "ui/components/mixer/MidiNoteStrip.hpp"
 #include "ui/panels/content/ChordPanelContent.hpp"  // relative to magda/daw/
 
 namespace magda::daw::ui {
@@ -104,7 +107,7 @@ class DeviceSlotComponent : public NodeComponent,
         return 0;  // Meter is positioned in content area only, not the full height
     }
     int getCollapsedMeterWidth() const override {
-        return (isChordEngine_ || isArpeggiator_) ? 0 : METER_STRIP_WIDTH;
+        return isChordEngine_ ? 0 : METER_STRIP_WIDTH;
     }
 
     // Mod/macro data providers
@@ -218,6 +221,12 @@ class DeviceSlotComponent : public NodeComponent,
 
     static constexpr int METER_STRIP_WIDTH = 10;
     magda::LevelMeter levelMeter_;
+    magda::MidiNoteStrip midiNoteStrip_;
+    daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;
+    int lastArpNote_ = -1;
+    daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
+    std::array<int, 32> lastChordNotes_{};
+    int lastChordCount_ = 0;
 
     void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params

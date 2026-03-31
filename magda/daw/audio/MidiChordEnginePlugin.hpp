@@ -118,6 +118,15 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
         return aiProgressions_;
     }
 
+    /** Number of currently held notes (audio-thread written, safe to read on message thread). */
+    int getHeldNoteCount() const {
+        return heldNoteCount_.load(std::memory_order_relaxed);
+    }
+    /** Note number for held note at index (0 ≤ index < getHeldNoteCount()). */
+    int getHeldNote(int index) const {
+        return heldNotes_[static_cast<size_t>(index)].load(std::memory_order_relaxed);
+    }
+
     /** Suppress detection (e.g. during chord preview playback). */
     void setDetectionSuppressed(bool suppressed) {
         detectionSuppressed_.store(suppressed, std::memory_order_relaxed);
