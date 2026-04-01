@@ -7,37 +7,7 @@ namespace magda::daw::ui {
 
 using Arp = daw::audio::ArpeggiatorPlugin;
 
-// LookAndFeel for LinearBar sliders that uses the theme font
-class ArpSliderLookAndFeel : public juce::LookAndFeel_V4 {
-  public:
-    static ArpSliderLookAndFeel& getInstance() {
-        static ArpSliderLookAndFeel instance;
-        return instance;
-    }
-
-    void drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
-                          float /*minSliderPos*/, float /*maxSliderPos*/, juce::Slider::SliderStyle,
-                          juce::Slider& slider) override {
-        auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat();
-
-        // Background
-        g.setColour(slider.findColour(juce::Slider::backgroundColourId));
-        g.fillRect(bounds);
-
-        // Track fill
-        g.setColour(slider.findColour(juce::Slider::trackColourId));
-        g.fillRect(bounds.withWidth(sliderPos - static_cast<float>(x)));
-
-        // Text
-        g.setColour(slider.findColour(juce::Slider::textBoxTextColourId));
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.drawText(slider.getTextFromValue(slider.getValue()), bounds.toNearestInt(),
-                   juce::Justification::centred);
-    }
-
-  private:
-    ArpSliderLookAndFeel() = default;
-};
+// (LinkableTextSlider replaces the old ArpSliderLookAndFeel)
 
 void RampCurveDisplay::paint(juce::Graphics& g) {
     auto outerBounds = getLocalBounds().toFloat();
@@ -59,6 +29,15 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
     float x0 = bounds.getX();
     float y0 = bounds.getY();
 
+    // Grid lines (4x4)
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
+    for (int i = 1; i < 4; ++i) {
+        float fx = x0 + w * (static_cast<float>(i) / 4.0f);
+        float fy = y0 + h * (static_cast<float>(i) / 4.0f);
+        g.drawLine(fx, y0, fx, y0 + h, 1.0f);
+        g.drawLine(x0, fy, x0 + w, fy, 1.0f);
+    }
+
     // Diagonal reference line (linear)
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
     g.drawLine(x0, y0 + h, x0 + w, y0, 0.5f);
@@ -79,10 +58,11 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
     g.strokePath(curvePath, juce::PathStrokeType(1.5f));
 
-    // Handle circle at the bezier control point: (skew, skew+depth) in graph space.
-    // This is the natural drag handle — moving it directly sets the control point.
-    float hx = x0 + skew_ * w;
-    float hy = y0 + h - (skew_ + depth_) * h;
+    // Handle circle at the bezier control point: (s, s+depth) in graph space.
+    // Remap skew from [-1,1] to [0.01,0.99] for display position.
+    float s = 0.5f + skew_ * 0.49f;
+    float hx = x0 + s * w;
+    float hy = y0 + h - (s + depth_) * h;
     // Clamp to visible area so the handle never escapes the component
     hx = juce::jlimit(x0, x0 + w, hx);
     hy = juce::jlimit(y0, y0 + h, hy);
@@ -101,8 +81,9 @@ void RampCurveDisplay::mouseDown(const juce::MouseEvent& e) {
     float x0 = bounds.getX();
     float y0 = bounds.getY();
     // Record offset from click point to handle centre so the handle doesn't jump
-    float handleX = x0 + skew_ * w;
-    float handleY = y0 + h - (skew_ + depth_) * h;
+    float s = 0.5f + skew_ * 0.49f;
+    float handleX = x0 + s * w;
+    float handleY = y0 + h - (s + depth_) * h;
     handleOffsetX_ = handleX - e.position.x;
     handleOffsetY_ = handleY - e.position.y;
 }
@@ -118,13 +99,16 @@ void RampCurveDisplay::mouseDrag(const juce::MouseEvent& e) {
     float cx = e.position.x + handleOffsetX_;
     float cy = e.position.y + handleOffsetY_;
 
-    // Control point (skew, skew+depth) in graph space maps to screen as:
-    //   cx = x0 + skew * w   →   skew = (cx - x0) / w
-    //   cy = y0 + h - (skew + depth) * h   →   depth = (y0 + h - cy) / h - skew
-    float newSkew = (cx - x0) / w;
-    float newDepth = (y0 + h - cy) / h - newSkew;
+    // Control point (s, s+depth) in graph space maps to screen as:
+    //   cx = x0 + s * w   →   s = (cx - x0) / w
+    //   cy = y0 + h - (s + depth) * h   →   depth = (y0 + h - cy) / h - s
+    // Then remap s from [0.01,0.99] back to skew [-1,1]: skew = (s - 0.5) / 0.49
+    float sRaw = (cx - x0) / w;
+    float s = juce::jlimit(0.01f, 0.99f, sRaw);
+    float newDepth = (y0 + h - cy) / h - s;
+    float newSkew = (s - 0.5f) / 0.49f;
 
-    newSkew = juce::jlimit(0.01f, 0.99f, newSkew);
+    newSkew = juce::jlimit(-1.0f, 1.0f, newSkew);
     newDepth = juce::jlimit(-1.0f, 1.0f, newDepth);
 
     depth_ = newDepth;
@@ -136,10 +120,10 @@ void RampCurveDisplay::mouseDrag(const juce::MouseEvent& e) {
 
 void RampCurveDisplay::mouseDoubleClick(const juce::MouseEvent&) {
     depth_ = 0.0f;
-    skew_ = 0.5f;
+    skew_ = 0.0f;
     repaint();
     if (onCurveChanged)
-        onCurveChanged(0.0f, 0.5f);
+        onCurveChanged(0.0f, 0.0f);
 }
 
 // Layout constants
@@ -169,25 +153,23 @@ ArpeggiatorUI::ArpeggiatorUI() {
 
     setupLabel(rateLabel_, "RATE");
     setupSlider(rateSlider_, 0, 9, 1);
-    rateSlider_.textFromValueFunction = [](double v) {
+    rateSlider_.setValueFormatter([](double v) {
         int idx = juce::jlimit(0, 9, juce::roundToInt(v));
         return juce::String(rateNames[idx]);
-    };
-    rateSlider_.valueFromTextFunction = [](const juce::String&) { return 1.0; };
-    rateSlider_.onValueChange = [this] {
+    });
+    rateSlider_.setValueParser([](const juce::String&) { return 1.0; });
+    rateSlider_.onValueChanged = [this](double value) {
         if (plugin_)
-            plugin_->rate = juce::roundToInt(rateSlider_.getValue());
+            plugin_->rate = juce::roundToInt(value);
     };
 
     setupLabel(octavesLabel_, "OCTAVES");
     setupSlider(octavesSlider_, 1, 4, 1);
-    octavesSlider_.textFromValueFunction = [](double v) {
-        return juce::String(juce::roundToInt(v));
-    };
-    octavesSlider_.valueFromTextFunction = [](const juce::String& t) { return t.getDoubleValue(); };
-    octavesSlider_.onValueChange = [this] {
+    octavesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
+    octavesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
+    octavesSlider_.onValueChanged = [this](double value) {
         if (plugin_)
-            plugin_->octaveRange = juce::roundToInt(octavesSlider_.getValue());
+            plugin_->octaveRange = juce::roundToInt(value);
     };
 
     setupLabel(latchLabel_, "LATCH");
@@ -215,30 +197,24 @@ ArpeggiatorUI::ArpeggiatorUI() {
     // Right column
     setupLabel(gateLabel_, "GATE");
     setupSlider(gateSlider_, 0.01, 1.0, 0.01);
-    gateSlider_.setTextValueSuffix("%");
-    gateSlider_.textFromValueFunction = [](double v) {
-        return juce::String(juce::roundToInt(v * 100));
-    };
-    gateSlider_.valueFromTextFunction = [](const juce::String& t) {
-        return t.getDoubleValue() / 100.0;
-    };
-    gateSlider_.onValueChange = [this] {
+    gateSlider_.setValueFormatter(
+        [](double v) { return juce::String(juce::roundToInt(v * 100)) + "%"; });
+    gateSlider_.setValueParser(
+        [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
+    gateSlider_.onValueChanged = [this](double value) {
         if (plugin_)
-            plugin_->gate = static_cast<float>(gateSlider_.getValue());
+            plugin_->gate = static_cast<float>(value);
     };
 
     setupLabel(swingLabel_, "SWING");
     setupSlider(swingSlider_, 0.0, 1.0, 0.01);
-    swingSlider_.setTextValueSuffix("%");
-    swingSlider_.textFromValueFunction = [](double v) {
-        return juce::String(juce::roundToInt(v * 100));
-    };
-    swingSlider_.valueFromTextFunction = [](const juce::String& t) {
-        return t.getDoubleValue() / 100.0;
-    };
-    swingSlider_.onValueChange = [this] {
+    swingSlider_.setValueFormatter(
+        [](double v) { return juce::String(juce::roundToInt(v * 100)) + "%"; });
+    swingSlider_.setValueParser(
+        [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
+    swingSlider_.onValueChanged = [this](double value) {
         if (plugin_)
-            plugin_->swing = static_cast<float>(swingSlider_.getValue());
+            plugin_->swing = static_cast<float>(value);
     };
 
     rampCurveDisplay_.setMouseCursor(juce::MouseCursor::CrosshairCursor);
@@ -247,6 +223,29 @@ ArpeggiatorUI::ArpeggiatorUI() {
             plugin_->ramp = depth;
             plugin_->skew = sk;
         }
+        depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
+        skewSlider_.setValue(static_cast<double>(sk), juce::dontSendNotification);
+    };
+
+    // Timing X/Y sliders (linkable via macros)
+    setupLabel(depthLabel_, "Y");
+    setupSlider(depthSlider_, -1.0, 1.0, 0.01);
+    depthSlider_.setValueFormatter([](double v) { return juce::String(v, 2); });
+    depthSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
+    depthSlider_.onValueChanged = [this](double value) {
+        if (plugin_)
+            plugin_->ramp = static_cast<float>(value);
+        rampCurveDisplay_.setValues(static_cast<float>(value), rampCurveDisplay_.getSkew());
+    };
+
+    setupLabel(skewLabel_, "X");
+    setupSlider(skewSlider_, -1.0, 1.0, 0.01);
+    skewSlider_.setValueFormatter([](double v) { return juce::String(v, 2); });
+    skewSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
+    skewSlider_.onValueChanged = [this](double value) {
+        if (plugin_)
+            plugin_->skew = static_cast<float>(value);
+        rampCurveDisplay_.setValues(rampCurveDisplay_.getDepth(), static_cast<float>(value));
     };
 
     setupLabel(velModeLabel_, "VEL MODE");
@@ -266,34 +265,27 @@ ArpeggiatorUI::ArpeggiatorUI() {
 
     setupLabel(fixedVelLabel_, "FIXED VEL");
     setupSlider(fixedVelSlider_, 1, 127, 1);
-    fixedVelSlider_.textFromValueFunction = [](double v) {
-        return juce::String(juce::roundToInt(v));
-    };
-    fixedVelSlider_.valueFromTextFunction = [](const juce::String& t) {
-        return t.getDoubleValue();
-    };
-    fixedVelSlider_.onValueChange = [this] {
+    fixedVelSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
+    fixedVelSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
+    fixedVelSlider_.onValueChanged = [this](double value) {
         if (plugin_)
-            plugin_->fixedVelocity = juce::roundToInt(fixedVelSlider_.getValue());
+            plugin_->fixedVelocity = juce::roundToInt(value);
     };
     fixedVelSlider_.setEnabled(false);
     fixedVelSlider_.setAlpha(0.3f);
 }
 
 ArpeggiatorUI::~ArpeggiatorUI() {
+    stopTimer();
     if (watchedState_.isValid())
         watchedState_.removeListener(this);
     latchButton_.setLookAndFeel(nullptr);
     patternCombo_.setLookAndFeel(nullptr);
     velModeCombo_.setLookAndFeel(nullptr);
-    rateSlider_.setLookAndFeel(nullptr);
-    octavesSlider_.setLookAndFeel(nullptr);
-    gateSlider_.setLookAndFeel(nullptr);
-    swingSlider_.setLookAndFeel(nullptr);
-    fixedVelSlider_.setLookAndFeel(nullptr);
 }
 
 void ArpeggiatorUI::setArpeggiator(daw::audio::ArpeggiatorPlugin* plugin) {
+    stopTimer();
     if (watchedState_.isValid())
         watchedState_.removeListener(this);
 
@@ -303,6 +295,7 @@ void ArpeggiatorUI::setArpeggiator(daw::audio::ArpeggiatorPlugin* plugin) {
         watchedState_ = plugin_->state;
         watchedState_.addListener(this);
         syncFromPlugin();
+        startTimerHz(30);
     }
 }
 
@@ -311,18 +304,22 @@ void ArpeggiatorUI::syncFromPlugin() {
         return;
 
     patternCombo_.setSelectedId(plugin_->pattern.get() + 1, juce::dontSendNotification);
-    rateSlider_.setValue(plugin_->rate.get(), juce::dontSendNotification);
-    octavesSlider_.setValue(plugin_->octaveRange.get(), juce::dontSendNotification);
+    rateSlider_.setValue(static_cast<double>(plugin_->rate.get()), juce::dontSendNotification);
+    octavesSlider_.setValue(static_cast<double>(plugin_->octaveRange.get()),
+                            juce::dontSendNotification);
 
     bool latched = plugin_->latch.get();
     latchButton_.setToggleState(latched, juce::dontSendNotification);
     latchButton_.setButtonText(latched ? "ON" : "OFF");
 
-    gateSlider_.setValue(plugin_->gate.get(), juce::dontSendNotification);
-    swingSlider_.setValue(plugin_->swing.get(), juce::dontSendNotification);
+    gateSlider_.setValue(static_cast<double>(plugin_->gate.get()), juce::dontSendNotification);
+    swingSlider_.setValue(static_cast<double>(plugin_->swing.get()), juce::dontSendNotification);
     rampCurveDisplay_.setValues(plugin_->ramp.get(), plugin_->skew.get());
+    depthSlider_.setValue(static_cast<double>(plugin_->ramp.get()), juce::dontSendNotification);
+    skewSlider_.setValue(static_cast<double>(plugin_->skew.get()), juce::dontSendNotification);
     velModeCombo_.setSelectedId(plugin_->velocityMode.get() + 1, juce::dontSendNotification);
-    fixedVelSlider_.setValue(plugin_->fixedVelocity.get(), juce::dontSendNotification);
+    fixedVelSlider_.setValue(static_cast<double>(plugin_->fixedVelocity.get()),
+                             juce::dontSendNotification);
 
     bool showFixed =
         static_cast<Arp::VelocityMode>(plugin_->velocityMode.get()) == Arp::VelocityMode::Fixed;
@@ -336,6 +333,19 @@ void ArpeggiatorUI::valueTreePropertyChanged(juce::ValueTree&, const juce::Ident
         if (safeThis)
             safeThis->syncFromPlugin();
     });
+}
+
+void ArpeggiatorUI::timerCallback() {
+    if (!plugin_)
+        return;
+
+    // Read modulated values from AutomatableParams (includes macro modulation)
+    float depth = plugin_->rampParam ? plugin_->rampParam->getCurrentValue() : plugin_->ramp.get();
+    float skew = plugin_->skewParam ? plugin_->skewParam->getCurrentValue() : plugin_->skew.get();
+
+    rampCurveDisplay_.setValues(depth, skew);
+    depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
+    skewSlider_.setValue(static_cast<double>(skew), juce::dontSendNotification);
 }
 
 void ArpeggiatorUI::paint(juce::Graphics&) {
@@ -377,10 +387,25 @@ void ArpeggiatorUI::resized() {
 
     // Timing curve: full-width below both columns with side padding
     bounds.removeFromTop(ROW_GAP);
-    if (bounds.getHeight() > ROW_HEIGHT + ROW_GAP + 4) {
+    int xyRowHeight = ROW_HEIGHT + ROW_GAP;
+    if (bounds.getHeight() > ROW_HEIGHT + ROW_GAP + xyRowHeight + 4) {
         rampLabel_.setBounds(bounds.removeFromTop(ROW_HEIGHT));
         bounds.removeFromTop(ROW_GAP);
+
+        // Reserve bottom row for X/Y sliders
+        auto xyRow = bounds.removeFromBottom(ROW_HEIGHT);
+        bounds.removeFromBottom(ROW_GAP);
         rampCurveDisplay_.setBounds(bounds);
+
+        // X/Y sliders side by side
+        int xyLabelW = 14;
+        int halfW = xyRow.getWidth() / 2;
+        auto leftXY = xyRow.removeFromLeft(halfW).reduced(2, 0);
+        auto rightXY = xyRow.reduced(2, 0);
+        skewLabel_.setBounds(leftXY.removeFromLeft(xyLabelW));
+        skewSlider_.setBounds(leftXY);
+        depthLabel_.setBounds(rightXY.removeFromLeft(xyLabelW));
+        depthSlider_.setBounds(rightXY);
     }
 }
 
@@ -401,17 +426,26 @@ void ArpeggiatorUI::setupCombo(juce::ComboBox& combo) {
     addAndMakeVisible(combo);
 }
 
-void ArpeggiatorUI::setupSlider(juce::Slider& slider, double min, double max, double step) {
-    slider.setSliderStyle(juce::Slider::LinearBar);
+void ArpeggiatorUI::setupSlider(LinkableTextSlider& slider, double min, double max, double step) {
     slider.setRange(min, max, step);
-    slider.setLookAndFeel(&ArpSliderLookAndFeel::getInstance());
-    slider.setColour(juce::Slider::trackColourId,
-                     DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.4f));
-    slider.setColour(juce::Slider::backgroundColourId,
-                     DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-    slider.setColour(juce::Slider::textBoxTextColourId, DarkTheme::getTextColour());
-    slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     addAndMakeVisible(slider);
+}
+
+std::vector<LinkableTextSlider*> ArpeggiatorUI::getLinkableSliders() {
+    // Pre-set param indices to match AutomatableParameter registration order:
+    // 0=pattern, 1=rate, 2=octaves, 3=gate, 4=swing, 5=ramp, 6=skew, 7=latch, 8=velMode, 9=fixedVel
+    // setupCustomUILinking() will use these indices (via getParamIndex()) instead of vector
+    // position.
+    magda::ChainNodePath dummy;
+    rateSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 1, dummy);
+    octavesSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 2, dummy);
+    gateSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 3, dummy);
+    swingSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 4, dummy);
+    depthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 5, dummy);
+    skewSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 6, dummy);
+    fixedVelSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 9, dummy);
+    return {&rateSlider_,  &octavesSlider_, &gateSlider_,    &swingSlider_,
+            &depthSlider_, &skewSlider_,    &fixedVelSlider_};
 }
 
 }  // namespace magda::daw::ui

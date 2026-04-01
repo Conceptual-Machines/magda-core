@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "audio/ArpeggiatorPlugin.hpp"
+#include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -54,12 +55,16 @@ class RampCurveDisplay : public juce::Component, public juce::SettableTooltipCli
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RampCurveDisplay)
 };
 
-class ArpeggiatorUI : public juce::Component, private juce::ValueTree::Listener {
+class ArpeggiatorUI : public juce::Component,
+                      private juce::ValueTree::Listener,
+                      private juce::Timer {
   public:
     ArpeggiatorUI();
     ~ArpeggiatorUI() override;
 
     void setArpeggiator(daw::audio::ArpeggiatorPlugin* plugin);
+
+    std::vector<LinkableTextSlider*> getLinkableSliders();
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -72,33 +77,40 @@ class ArpeggiatorUI : public juce::Component, private juce::ValueTree::Listener 
     juce::Label patternLabel_;
     juce::ComboBox patternCombo_;
     juce::Label rateLabel_;
-    juce::Slider rateSlider_;
+    LinkableTextSlider rateSlider_;
     juce::Label octavesLabel_;
-    juce::Slider octavesSlider_;
+    LinkableTextSlider octavesSlider_;
     juce::Label latchLabel_;
     juce::TextButton latchButton_{"OFF"};
     juce::Label rampLabel_;
     RampCurveDisplay rampCurveDisplay_;
+    juce::Label depthLabel_;
+    LinkableTextSlider depthSlider_;
+    juce::Label skewLabel_;
+    LinkableTextSlider skewSlider_;
 
     // Right column
     juce::Label gateLabel_;
-    juce::Slider gateSlider_;
+    LinkableTextSlider gateSlider_;
     juce::Label swingLabel_;
-    juce::Slider swingSlider_;
+    LinkableTextSlider swingSlider_;
     juce::Label velModeLabel_;
     juce::ComboBox velModeCombo_;
     juce::Label fixedVelLabel_;
-    juce::Slider fixedVelSlider_;
+    LinkableTextSlider fixedVelSlider_;
 
     int topSectionBottom_ = 0;  // Y boundary between two-column section and full-width RAMP
 
     void syncFromPlugin();
     void setupLabel(juce::Label& label, const juce::String& text);
     void setupCombo(juce::ComboBox& combo);
-    void setupSlider(juce::Slider& slider, double min, double max, double step);
+    void setupSlider(LinkableTextSlider& slider, double min, double max, double step);
 
     // ValueTree::Listener — sync UI when plugin state changes externally
     void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier& property) override;
+
+    // Timer — poll automatable param values for modulated curve display
+    void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ArpeggiatorUI)
 };

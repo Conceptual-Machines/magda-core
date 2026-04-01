@@ -140,6 +140,8 @@ class DeviceSlotComponent : public NodeComponent,
     void onMacroNewLinkCreatedInternal(int macroIndex, magda::MacroTarget target,
                                        float amount) override;
     void onMacroLinkRemovedInternal(int macroIndex, magda::MacroTarget target) override;
+    void onMacroLinkBipolarChangedInternal(int macroIndex, magda::MacroTarget target,
+                                           bool bipolar) override;
     void onModClickedInternal(int modIndex) override;
     void onMacroClickedInternal(int macroIndex) override;
     void onAddModRequestedInternal(int slotIndex, magda::ModType type,

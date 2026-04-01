@@ -922,6 +922,13 @@ void TrackChainContent::initGlobalMacrosPanel() {
             updateGlobalMacrosPanel();
         }
     };
+    globalMacroEditorPanel_->onLinkBipolarToggled = [this](magda::MacroTarget target,
+                                                           bool bipolar) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0) {
+            magda::TrackManager::getInstance().setTrackMacroLinkBipolar(
+                selectedTrackId_, selectedGlobalMacroIndex_, target, bipolar);
+        }
+    };
     globalMacroEditorPanel_->setParamNameResolver(
         [this](magda::DeviceId deviceId, int paramIndex) -> juce::String {
             if (selectedTrackId_ == magda::INVALID_TRACK_ID)

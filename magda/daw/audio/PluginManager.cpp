@@ -1853,7 +1853,7 @@ std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
     if (!trackInfo)
         return {0, 0};
 
-    int modCount = 0, linkCount = 0;
+    int modCount = 0, linkCount = 0, bipolarCount = 0;
 
     // Device-level mods
     for (const auto& element : trackInfo->chainElements) {
@@ -1864,6 +1864,8 @@ std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
             if (mod.enabled && !mod.links.empty()) {
                 ++modCount;
                 linkCount += static_cast<int>(mod.links.size());
+                for (const auto& link : mod.links)
+                    bipolarCount += link.bipolar ? 1 : 0;
             }
         }
         // Device-level macros
@@ -1871,6 +1873,8 @@ std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
             if (!macro.links.empty()) {
                 ++modCount;
                 linkCount += static_cast<int>(macro.links.size());
+                for (const auto& link : macro.links)
+                    bipolarCount += link.bipolar ? 1 : 0;
             }
         }
     }
@@ -1880,6 +1884,8 @@ std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
         if (mod.enabled && !mod.links.empty()) {
             ++modCount;
             linkCount += static_cast<int>(mod.links.size());
+            for (const auto& link : mod.links)
+                bipolarCount += link.bipolar ? 1 : 0;
         }
     }
 
@@ -1888,10 +1894,12 @@ std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
         if (!macro.links.empty()) {
             ++modCount;
             linkCount += static_cast<int>(macro.links.size());
+            for (const auto& link : macro.links)
+                bipolarCount += link.bipolar ? 1 : 0;
         }
     }
 
-    return {modCount, linkCount};
+    return {modCount, linkCount + (bipolarCount << 16)};
 }
 
 // =============================================================================
@@ -2041,8 +2049,13 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
                 if (link.target.paramIndex >= 0 &&
                     link.target.paramIndex < static_cast<int>(params.size())) {
                     auto* param = params[static_cast<size_t>(link.target.paramIndex)];
-                    if (param)
-                        param->addModifier(*macroParam, link.amount);
+                    if (param) {
+                        // Bipolar: macro 0→-amount, 0.5→0, 1→+amount
+                        // Unipolar: macro 0→0, 1→+amount
+                        float offset = link.bipolar ? -link.amount : 0.0f;
+                        float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                        param->addModifier(*macroParam, value, offset);
+                    }
                 }
             }
         }
@@ -2125,8 +2138,11 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
             if (link.target.paramIndex >= 0 &&
                 link.target.paramIndex < static_cast<int>(params.size())) {
                 auto* param = params[static_cast<size_t>(link.target.paramIndex)];
-                if (param)
-                    param->addModifier(*macroParam, link.amount);
+                if (param) {
+                    float offset = link.bipolar ? -link.amount : 0.0f;
+                    float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                    param->addModifier(*macroParam, value, offset);
+                }
             }
         }
     }

@@ -545,6 +545,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         setupCustomUILinking();
     }
 
+    // Populate macro panel with parameter names
+    updateMacroPanel();
+
     // Start timer for UI button state sync and meter updates (~30 FPS)
     startTimerHz(30);
 }
@@ -1521,6 +1524,14 @@ void DeviceSlotComponent::onMacroNewLinkCreatedInternal(int macroIndex, magda::M
 void DeviceSlotComponent::onMacroLinkRemovedInternal(int macroIndex, magda::MacroTarget target) {
     magda::TrackManager::getInstance().removeDeviceMacroLink(nodePath_, macroIndex, target);
     updateMacroPanel();
+    updateParamModulation();
+}
+
+void DeviceSlotComponent::onMacroLinkBipolarChangedInternal(int macroIndex,
+                                                            magda::MacroTarget target,
+                                                            bool bipolar) {
+    magda::TrackManager::getInstance().setDeviceMacroLinkBipolar(nodePath_, macroIndex, target,
+                                                                 bipolar);
     updateParamModulation();
 }
 
@@ -3003,6 +3014,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
         sliders = utilityUI_->getLinkableSliders();
     else if (samplerUI_)
         sliders = samplerUI_->getLinkableSliders();
+    else if (arpeggiatorUI_)
+        sliders = arpeggiatorUI_->getLinkableSliders();
 
     if (sliders.empty())
         return;
@@ -3053,8 +3066,10 @@ void DeviceSlotComponent::setupCustomUILinking() {
     for (int i = 0; i < static_cast<int>(sliders.size()); ++i) {
         auto* slider = sliders[static_cast<size_t>(i)];
 
+        // Use pre-set param index if available, otherwise use vector position
+        int paramIdx = slider->getParamIndex() >= 0 ? slider->getParamIndex() : i;
         // Set link context
-        slider->setLinkContext(device_.id, i, nodePath_);
+        slider->setLinkContext(device_.id, paramIdx, nodePath_);
         slider->setAvailableMods(mods);
         slider->setAvailableRackMods(rackMods);
         slider->setAvailableMacros(macros);

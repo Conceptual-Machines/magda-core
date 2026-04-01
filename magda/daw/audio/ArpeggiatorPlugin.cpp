@@ -28,7 +28,7 @@ ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : te::P
     gate.referTo(state, ArpIDs::gate, um, 0.8f);
     swing.referTo(state, ArpIDs::swing, um, 0.0f);
     ramp.referTo(state, ArpIDs::ramp, um, 0.0f);
-    skew.referTo(state, ArpIDs::skew, um, 0.5f);
+    skew.referTo(state, ArpIDs::skew, um, 0.0f);
     latch.referTo(state, ArpIDs::latch, um, false);
     velocityMode.referTo(state, ArpIDs::velocityMode, um, 0);
     fixedVelocity.referTo(state, ArpIDs::fixedVelocity, um, 100);
@@ -40,7 +40,7 @@ ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : te::P
     gateParam = addParam("gate", "Gate", {0.01f, 1.0f});
     swingParam = addParam("swing", "Swing", {0.0f, 1.0f});
     rampParam = addParam("ramp", "Timing Depth", {-1.0f, 1.0f});
-    skewParam = addParam("skew", "Timing Skew", {0.01f, 0.99f});
+    skewParam = addParam("skew", "Timing Skew", {-1.0f, 1.0f});
     latchParam = addParam("latch", "Latch", {0.0f, 1.0f, 1.0f});
     velModeParam = addParam("velmode", "Velocity Mode", {0.0f, 2.0f, 1.0f});
     fixedVelParam = addParam("fixedvel", "Fixed Velocity", {1.0f, 127.0f, 1.0f});
@@ -146,7 +146,7 @@ double ArpeggiatorPlugin::rateToBeats(Rate r) {
 
 double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew) {
     // Quadratic bezier from P0=(0,0) to P2=(1,1) with control point P1=(s, s+d).
-    //   s = skew  [0,1]: position along diagonal — 0.5 = symmetric bow
+    //   skew is [-1,1] externally, remapped to s in [0.01,0.99] for the bezier
     //   d = depth [-1,1]: perpendicular offset from diagonal
     //              d > 0 → bowed above diagonal (front-loaded / log-like)
     //              d < 0 → bowed below diagonal (back-loaded / exp-like)
@@ -156,7 +156,9 @@ double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew) {
     // x_bez(u) = 2*(1-u)*u*s + u²  to find u given input t, then return y_bez(u).
 
     double d = static_cast<double>(juce::jlimit(-0.99f, 0.99f, depth));
-    double s = static_cast<double>(juce::jlimit(0.01f, 0.99f, skew));
+    // Remap skew from [-1,1] to [0.01,0.99]: s = 0.5 + skew * 0.49
+    double s =
+        static_cast<double>(juce::jlimit(0.01, 0.99, 0.5 + static_cast<double>(skew) * 0.49));
 
     if (std::abs(d) < 0.001)
         return t;  // linear — skew irrelevant
@@ -411,7 +413,7 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     float rampVal =
         juce::jlimit(-1.0f, 1.0f, rampParam ? rampParam->getCurrentValue() : ramp.get());
     float skewVal =
-        juce::jlimit(0.01f, 0.99f, skewParam ? skewParam->getCurrentValue() : skew.get());
+        juce::jlimit(-1.0f, 1.0f, skewParam ? skewParam->getCurrentValue() : skew.get());
     auto velMode = static_cast<VelocityMode>(
         juce::roundToInt(velModeParam ? velModeParam->getCurrentValue() : velocityMode.get()));
     int fixedVel = juce::jlimit(

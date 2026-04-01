@@ -284,6 +284,9 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     virtual void onMacroNewLinkCreatedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/,
                                                float /*amount*/) {}
     virtual void onMacroLinkRemovedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/) {}
+    virtual void onMacroLinkBipolarChangedInternal(int /*macroIndex*/,
+                                                   magda::MacroTarget /*target*/,
+                                                   bool /*bipolar*/) {}
     virtual void onModClickedInternal(int /*modIndex*/) {}
     virtual void onMacroClickedInternal(int /*macroIndex*/) {}
     virtual void onAddModRequestedInternal(int /*slotIndex*/, magda::ModType /*type*/,

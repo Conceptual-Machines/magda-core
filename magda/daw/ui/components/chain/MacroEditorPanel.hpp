@@ -24,12 +24,14 @@ class MacroLinkMatrixContent : public juce::Component {
         magda::MacroTarget target;
         juce::String paramName;
         float amount = 1.0f;
+        bool bipolar = false;
     };
 
     void setLinks(const std::vector<LinkRow>& links);
 
     std::function<void(magda::MacroTarget)> onDeleteLink;
     std::function<void(magda::MacroTarget, float)> onAmountChanged;
+    std::function<void(magda::MacroTarget, bool)> onToggleBipolar;
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
@@ -85,6 +87,7 @@ class MacroEditorPanel : public juce::Component {
     std::function<void(float value)> onValueChanged;
     std::function<void(magda::MacroTarget, float amount)> onLinkAmountChanged;
     std::function<void(magda::MacroTarget)> onLinkRemoved;
+    std::function<void(magda::MacroTarget, bool bipolar)> onLinkBipolarToggled;
 
     void paint(juce::Graphics& g) override;
     void resized() override;

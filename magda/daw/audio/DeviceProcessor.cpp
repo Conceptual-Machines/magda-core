@@ -1279,99 +1279,29 @@ daw::audio::ArpeggiatorPlugin* ArpeggiatorProcessor::getArpPlugin() const {
 }
 
 int ArpeggiatorProcessor::getParameterCount() const {
-    return 10;
+    if (plugin_)
+        return static_cast<int>(plugin_->getAutomatableParameters().size());
+    return 0;
 }
 
 ParameterInfo ArpeggiatorProcessor::getParameterInfo(int index) const {
     ParameterInfo info;
-    auto* arp = getArpPlugin();
-    if (!arp)
+    if (!plugin_)
         return info;
 
-    info.paramIndex = index;
+    auto params = plugin_->getAutomatableParameters();
+    int autoCount = static_cast<int>(params.size());
 
-    switch (index) {
-        case 0:
-            info.name = "Pattern";
-            info.minValue = 0.0f;
-            info.maxValue = 5.0f;
-            info.defaultValue = 0.0f;
-            info.currentValue = static_cast<float>(arp->pattern.get());
-            info.scale = ParameterScale::Discrete;
-            info.choices = {"Up", "Down", "Up/Down", "Down/Up", "Random", "As Played"};
-            break;
-        case 1:
-            info.name = "Rate";
-            info.minValue = 0.0f;
-            info.maxValue = 9.0f;
-            info.defaultValue = 4.0f;
-            info.currentValue = static_cast<float>(arp->rate.get());
-            info.scale = ParameterScale::Discrete;
-            info.choices = {"1/4.", "1/4",   "1/4T", "1/8.",  "1/8",
-                            "1/8T", "1/16.", "1/16", "1/16T", "1/32"};
-            break;
-        case 2:
-            info.name = "Octaves";
-            info.minValue = 1.0f;
-            info.maxValue = 4.0f;
-            info.defaultValue = 1.0f;
-            info.currentValue = static_cast<float>(arp->octaveRange.get());
-            info.scale = ParameterScale::Discrete;
-            break;
-        case 3:
-            info.name = "Gate";
-            info.minValue = 0.01f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.8f;
-            info.currentValue = arp->gate.get();
-            break;
-        case 4:
-            info.name = "Swing";
-            info.minValue = 0.0f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.0f;
-            info.currentValue = arp->swing.get();
-            break;
-        case 5:
-            info.name = "Timing Depth";
-            info.minValue = -1.0f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.0f;
-            info.currentValue = arp->ramp.get();
-            break;
-        case 6:
-            info.name = "Timing Skew";
-            info.minValue = 0.01f;
-            info.maxValue = 0.99f;
-            info.defaultValue = 0.5f;
-            info.currentValue = arp->skew.get();
-            break;
-        case 7:
-            info.name = "Latch";
-            info.minValue = 0.0f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.0f;
-            info.currentValue = arp->latch.get() ? 1.0f : 0.0f;
-            info.scale = ParameterScale::Boolean;
-            break;
-        case 8:
-            info.name = "Velocity Mode";
-            info.minValue = 0.0f;
-            info.maxValue = 2.0f;
-            info.defaultValue = 0.0f;
-            info.currentValue = static_cast<float>(arp->velocityMode.get());
-            info.scale = ParameterScale::Discrete;
-            info.choices = {"Original", "Fixed", "Accent"};
-            break;
-        case 9:
-            info.name = "Fixed Velocity";
-            info.minValue = 1.0f;
-            info.maxValue = 127.0f;
-            info.defaultValue = 100.0f;
-            info.currentValue = static_cast<float>(arp->fixedVelocity.get());
-            break;
-        default:
-            break;
+    if (index >= 0 && index < autoCount) {
+        auto* param = params[index];
+        info.name = param->getParameterName();
+        info.currentValue = param->getCurrentValue();
+        auto range = param->getValueRange();
+        info.minValue = range.getStart();
+        info.maxValue = range.getEnd();
+        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+        // Depth (5) and skew (6) default to bipolar; all others unipolar
+        info.bipolarModulation = (index == 5 || index == 6);
     }
     return info;
 }
@@ -1384,75 +1314,27 @@ void ArpeggiatorProcessor::populateParameters(DeviceInfo& info) const {
 }
 
 void ArpeggiatorProcessor::setParameterByIndex(int paramIndex, float value) {
-    auto* arp = getArpPlugin();
-    if (!arp)
+    if (!plugin_)
         return;
 
-    switch (paramIndex) {
-        case 0:
-            arp->pattern = juce::roundToInt(value);
-            break;
-        case 1:
-            arp->rate = juce::roundToInt(value);
-            break;
-        case 2:
-            arp->octaveRange = juce::roundToInt(value);
-            break;
-        case 3:
-            arp->gate = value;
-            break;
-        case 4:
-            arp->swing = value;
-            break;
-        case 5:
-            arp->ramp = value;
-            break;
-        case 6:
-            arp->skew = value;
-            break;
-        case 7:
-            arp->latch = value >= 0.5f;
-            break;
-        case 8:
-            arp->velocityMode = juce::roundToInt(value);
-            break;
-        case 9:
-            arp->fixedVelocity = juce::roundToInt(value);
-            break;
-        default:
-            break;
+    auto params = plugin_->getAutomatableParameters();
+    int autoCount = static_cast<int>(params.size());
+
+    if (paramIndex >= 0 && paramIndex < autoCount) {
+        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
     }
 }
 
 float ArpeggiatorProcessor::getParameterByIndex(int paramIndex) const {
-    auto* arp = getArpPlugin();
-    if (!arp)
+    if (!plugin_)
         return 0.0f;
 
-    switch (paramIndex) {
-        case 0:
-            return static_cast<float>(arp->pattern.get());
-        case 1:
-            return static_cast<float>(arp->rate.get());
-        case 2:
-            return static_cast<float>(arp->octaveRange.get());
-        case 3:
-            return arp->gate.get();
-        case 4:
-            return arp->swing.get();
-        case 5:
-            return arp->ramp.get();
-        case 6:
-            return arp->skew.get();
-        case 7:
-            return arp->latch.get() ? 1.0f : 0.0f;
-        case 8:
-            return static_cast<float>(arp->velocityMode.get());
-        case 9:
-            return static_cast<float>(arp->fixedVelocity.get());
-        default:
-            return 0.0f;
-    }
+    auto params = plugin_->getAutomatableParameters();
+    int autoCount = static_cast<int>(params.size());
+
+    if (paramIndex >= 0 && paramIndex < autoCount)
+        return params[paramIndex]->getCurrentValue();
+    return 0.0f;
 }
 
 // =============================================================================

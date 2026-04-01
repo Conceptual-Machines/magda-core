@@ -1013,6 +1013,11 @@ void TrackManager::setDeviceMacroTarget(const ChainNodePath& devicePath, int mac
             MacroLink newLink;
             newLink.target = target;
             newLink.amount = 1.0f;  // Default amount (full range)
+            // Default bipolar from parameter's bipolarModulation flag
+            if (target.paramIndex >= 0 &&
+                target.paramIndex < static_cast<int>(device->parameters.size())) {
+                newLink.bipolar = device->parameters[target.paramIndex].bipolarModulation;
+            }
             device->macros[macroIndex].links.push_back(newLink);
             // Use lighter notification — adding a macro link doesn't change device
             // structure, and a full rebuild would destroy the active link mode UI.

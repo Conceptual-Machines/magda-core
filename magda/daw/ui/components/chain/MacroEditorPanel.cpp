@@ -38,6 +38,13 @@ void MacroLinkMatrixContent::paint(juce::Graphics& g) {
         g.drawText("x", deleteBounds, juce::Justification::centred);
         remaining.removeFromRight(2);
 
+        // Bipolar toggle - 16px
+        auto bipolarBounds = remaining.removeFromRight(16);
+        g.setColour(link.bipolar ? DarkTheme::getColour(DarkTheme::ACCENT_ORANGE)
+                                 : DarkTheme::getSecondaryTextColour());
+        g.drawText(link.bipolar ? "Bi" : "Un", bipolarBounds, juce::Justification::centred);
+        remaining.removeFromRight(2);
+
         // Amount - 28px
         auto amountBounds = remaining.removeFromRight(28);
         int percent = static_cast<int>(link.amount * 100.0f);
@@ -68,6 +75,15 @@ void MacroLinkMatrixContent::mouseDown(const juce::MouseEvent& e) {
     if (x >= width - 16) {
         if (onDeleteLink)
             onDeleteLink(links_[static_cast<size_t>(rowIndex)].target);
+        return;
+    }
+
+    // Bipolar toggle zone: next 16px + 2px padding
+    if (x >= width - 36 && x < width - 18) {
+        if (onToggleBipolar) {
+            auto& link = links_[static_cast<size_t>(rowIndex)];
+            onToggleBipolar(link.target, !link.bipolar);
+        }
         return;
     }
 
@@ -136,6 +152,10 @@ MacroEditorPanel::MacroEditorPanel() {
         if (onLinkAmountChanged)
             onLinkAmountChanged(target, amount);
     };
+    linkMatrixContent_.onToggleBipolar = [this](magda::MacroTarget target, bool bipolar) {
+        if (onLinkBipolarToggled)
+            onLinkBipolarToggled(target, bipolar);
+    };
     linkMatrixViewport_.setViewedComponent(&linkMatrixContent_, false);
     linkMatrixViewport_.setScrollBarsShown(true, false);
     addAndMakeVisible(linkMatrixViewport_);
@@ -172,6 +192,7 @@ void MacroEditorPanel::updateFromMacro() {
         MacroLinkMatrixContent::LinkRow row;
         row.target = link.target;
         row.amount = link.amount;
+        row.bipolar = link.bipolar;
         if (paramNameResolver_) {
             row.paramName = paramNameResolver_(link.target.deviceId, link.target.paramIndex);
         } else {

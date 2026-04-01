@@ -1188,6 +1188,12 @@ void NodeComponent::initializeModsMacrosPanels() {
             updateMacroEditor();
         }
     };
+    macroEditorPanel_->onLinkBipolarToggled = [this](magda::MacroTarget target, bool bipolar) {
+        if (selectedMacroIndex_ >= 0) {
+            onMacroLinkBipolarChangedInternal(selectedMacroIndex_, target, bipolar);
+            updateMacroEditor();
+        }
+    };
     macroEditorPanel_->setParamNameResolver(
         [this](magda::DeviceId deviceId, int paramIndex) -> juce::String {
             auto paramNamesMap = getDeviceParamNames();
