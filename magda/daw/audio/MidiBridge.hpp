@@ -94,6 +94,12 @@ class MidiBridge : public juce::MidiInputCallback {
     void disableMidiInput(const juce::String& deviceId);
 
     /**
+     * @brief Stop all MIDI inputs and wait for in-flight callbacks to drain.
+     * Call before destruction to avoid CoreMIDI race conditions.
+     */
+    void stopAllInputs();
+
+    /**
      * @brief Check if a MIDI input is enabled
      */
     bool isMidiInputEnabled(const juce::String& deviceId) const;

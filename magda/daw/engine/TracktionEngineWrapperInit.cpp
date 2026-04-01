@@ -508,6 +508,8 @@ void TracktionEngineWrapper::shutdown() {
     // which unregisters CoreMIDI callbacks. This must happen while the MIDI
     // devices still exist, but after playback is stopped.
     if (midiBridge_) {
+        DBG("Stopping MIDI inputs...");
+        midiBridge_->stopAllInputs();
         DBG("Destroying MidiBridge...");
         midiBridge_.reset();
     }

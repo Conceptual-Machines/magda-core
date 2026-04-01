@@ -14,6 +14,10 @@ void MidiBridge::setAudioBridge(AudioBridge* audioBridge) {
 }
 
 MidiBridge::~MidiBridge() {
+    stopAllInputs();
+}
+
+void MidiBridge::stopAllInputs() {
     // Signal all callbacks to bail out immediately
     isShuttingDown_.store(true, std::memory_order_release);
 
@@ -37,6 +41,12 @@ MidiBridge::~MidiBridge() {
     // Wait for any in-flight callbacks to finish (they check isShuttingDown_)
     while (activeCallbacks_.load(std::memory_order_acquire) > 0)
         juce::Thread::sleep(1);
+
+    // Give CoreMIDI's thread time to fully exit JUCE's WaitFreeListeners dispatch.
+    // MidiInput::stop() unregisters the callback, but CoreMIDI may already be
+    // mid-dispatch inside WaitFreeListeners::call — destroying `this` (the
+    // MidiInputCallback) while that's in-flight causes EXC_BAD_ACCESS.
+    juce::Thread::sleep(50);
 
     inputsToDestroy.clear();
 }
