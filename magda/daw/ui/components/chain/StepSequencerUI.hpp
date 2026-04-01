@@ -17,10 +17,10 @@ namespace magda::daw::ui {
  *   - Step boxes row: 16/32 clickable step cells showing note name
  *   - Accent row: toggle accent per step
  *   - Glide row: toggle glide per step
- *   - Mini keyboard: 2-octave keyboard for pitch entry
- *   - Octave shift: -2 to +2 buttons
+ *   - Mini keyboard: 2-octave keyboard with octave arrows on each side
  *
  * Click a step to select it, then click a keyboard key to assign pitch.
+ * Use < > arrows to shift the keyboard range up/down by one octave.
  * Click accent/glide toggles directly.
  */
 class StepSequencerUI : public juce::Component,
@@ -55,42 +55,44 @@ class StepSequencerUI : public juce::Component,
     LinkableTextSlider glideSlider_;
 
     // --- State ---
-    int selectedStep_ = 0;      // Currently selected step for editing
-    int currentPlayStep_ = -1;  // Step being played (for highlight)
+    int selectedStep_ = 0;       // Currently selected step for editing
+    int currentPlayStep_ = -1;   // Step being played (for highlight)
+    int keyboardBaseNote_ = 48;  // Current keyboard base note (shifts with octave arrows)
 
     // --- Layout constants ---
     static constexpr int CONTROL_ROW_HEIGHT = 22;
     static constexpr int STEP_BOX_SIZE = 22;
     static constexpr int TOGGLE_ROW_HEIGHT = 16;
     static constexpr int KEYBOARD_HEIGHT = 48;
-    static constexpr int OCTAVE_ROW_HEIGHT = 20;
+    static constexpr int OCTAVE_ARROW_WIDTH = 20;
     static constexpr int ROW_GAP = 3;
     static constexpr int PADDING = 4;
     static constexpr int LABEL_WIDTH = 44;
 
     // --- Keyboard layout ---
-    // 2 octaves: C3-B4 (notes 48-71)
-    static constexpr int KEYBOARD_BASE_NOTE = 48;
+    // 2 octaves visible at a time, scrollable via octave arrows
     static constexpr int KEYBOARD_NUM_NOTES = 24;
+    static constexpr int MIN_BASE_NOTE = 0;    // C-1
+    static constexpr int MAX_BASE_NOTE = 108;  // C8 (108 + 24 would be > 127)
 
     // --- Drawing helpers ---
     void drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area);
     void drawAccentRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawGlideRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area);
-    void drawOctaveRow(juce::Graphics& g, juce::Rectangle<int> area);
+    void drawOctaveArrow(juce::Graphics& g, juce::Rectangle<int> area, bool isLeft);
 
     // --- Hit testing ---
     int getStepAtX(int x, int areaX, int areaWidth, int numSteps) const;
     int getKeyboardNoteAtPosition(juce::Point<int> pos, juce::Rectangle<int> area) const;
-    int getOctaveShiftAtPosition(juce::Point<int> pos, juce::Rectangle<int> area) const;
 
     // --- Layout bounds (computed in resized, used in paint/mouseDown) ---
     juce::Rectangle<int> stepBoxArea_;
     juce::Rectangle<int> accentArea_;
     juce::Rectangle<int> glideArea_;
     juce::Rectangle<int> keyboardArea_;
-    juce::Rectangle<int> octaveArea_;
+    juce::Rectangle<int> octaveDownArea_;
+    juce::Rectangle<int> octaveUpArea_;
 
     // --- Setup helpers ---
     void setupLabel(juce::Label& label, const juce::String& text);

@@ -194,12 +194,11 @@ void StepSequencerUI::resized() {
     glideArea_ = bounds.removeFromTop(TOGGLE_ROW_HEIGHT);
     bounds.removeFromTop(ROW_GAP + 2);
 
-    // Keyboard
-    keyboardArea_ = bounds.removeFromTop(KEYBOARD_HEIGHT);
-    bounds.removeFromTop(ROW_GAP);
-
-    // Octave row
-    octaveArea_ = bounds.removeFromTop(OCTAVE_ROW_HEIGHT);
+    // Keyboard with octave arrows on each side
+    auto keyboardRow = bounds.removeFromTop(KEYBOARD_HEIGHT);
+    octaveDownArea_ = keyboardRow.removeFromLeft(OCTAVE_ARROW_WIDTH);
+    octaveUpArea_ = keyboardRow.removeFromRight(OCTAVE_ARROW_WIDTH);
+    keyboardArea_ = keyboardRow;
 }
 
 // =============================================================================
@@ -210,8 +209,9 @@ void StepSequencerUI::paint(juce::Graphics& g) {
     drawStepBoxes(g, stepBoxArea_);
     drawAccentRow(g, accentArea_);
     drawGlideRow(g, glideArea_);
+    drawOctaveArrow(g, octaveDownArea_, true);
     drawKeyboard(g, keyboardArea_);
-    drawOctaveRow(g, octaveArea_);
+    drawOctaveArrow(g, octaveUpArea_, false);
 }
 
 void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area) {
@@ -329,10 +329,6 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
     if (area.isEmpty())
         return;
 
-    // Draw a 2-octave mini keyboard (C3-B4)
-    // White keys: C D E F G A B × 2 = 14 white keys
-    // Black keys overlay on top
-
     static const bool isBlack[] = {false, true,  false, true,  false, false,
                                    true,  false, true,  false, true,  false};
     static constexpr int WHITE_KEYS_PER_OCTAVE = 7;
@@ -346,6 +342,13 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
     auto font = FontManager::getInstance().getUIFont(7.0f);
     g.setFont(font);
 
+    // Get the selected step's resolved note (including octave shift) for highlighting
+    int selectedNote = -1;
+    if (plugin_) {
+        auto step = plugin_->getStep(selectedStep_);
+        selectedNote = step.noteNumber + step.octaveShift * 12;
+    }
+
     // Draw white keys
     int whiteIdx = 0;
     for (int note = 0; note < KEYBOARD_NUM_NOTES; ++note) {
@@ -356,8 +359,8 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
         auto keyRect =
             juce::Rectangle<float>(x, static_cast<float>(area.getY()), whiteKeyW - 1.0f, whiteKeyH);
 
-        int midiNote = KEYBOARD_BASE_NOTE + note;
-        bool isSelected = plugin_ && plugin_->getStep(selectedStep_).noteNumber == midiNote;
+        int midiNote = keyboardBaseNote_ + note;
+        bool isSelected = (midiNote == selectedNote);
 
         g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.4f)
                                : juce::Colours::white.withAlpha(0.85f));
@@ -384,13 +387,12 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
             continue;
         }
 
-        // Black key sits between the previous and current white key
         float x = area.getX() + (whiteIdx - 1) * whiteKeyW + whiteKeyW - blackKeyW / 2.0f;
         auto keyRect =
             juce::Rectangle<float>(x, static_cast<float>(area.getY()), blackKeyW, blackKeyH);
 
-        int midiNote = KEYBOARD_BASE_NOTE + note;
-        bool isSelected = plugin_ && plugin_->getStep(selectedStep_).noteNumber == midiNote;
+        int midiNote = keyboardBaseNote_ + note;
+        bool isSelected = (midiNote == selectedNote);
 
         g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.6f)
                                : juce::Colours::black.withAlpha(0.85f));
@@ -401,35 +403,36 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
     }
 }
 
-void StepSequencerUI::drawOctaveRow(juce::Graphics& g, juce::Rectangle<int> area) {
-    if (!plugin_ || area.isEmpty())
+void StepSequencerUI::drawOctaveArrow(juce::Graphics& g, juce::Rectangle<int> area, bool isLeft) {
+    if (area.isEmpty())
         return;
 
-    auto font = FontManager::getInstance().getUIFont(8.0f);
-    g.setFont(font);
+    auto btn = area.reduced(2);
+    bool canShift =
+        isLeft ? (keyboardBaseNote_ > MIN_BASE_NOTE) : (keyboardBaseNote_ < MAX_BASE_NOTE);
 
-    g.setColour(DarkTheme::getSecondaryTextColour());
-    g.drawText("OCT", area.removeFromLeft(24), juce::Justification::centredLeft);
+    g.setColour(canShift ? DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.15f)
+                         : DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
+    g.fillRoundedRectangle(btn.toFloat(), 2.0f);
 
-    int currentOctave = plugin_->getStep(selectedStep_).octaveShift;
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+    g.drawRoundedRectangle(btn.toFloat(), 2.0f, 0.5f);
 
-    // Draw octave buttons: -2, -1, 0, +1, +2
-    int btnW = std::min(32, area.getWidth() / 5);
-    for (int oct = -2; oct <= 2; ++oct) {
-        auto btn = area.removeFromLeft(btnW).reduced(1);
-        bool isActive = (oct == currentOctave);
-
-        g.setColour(isActive ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.5f)
-                             : DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
-        g.fillRoundedRectangle(btn.toFloat(), 2.0f);
-
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
-        g.drawRoundedRectangle(btn.toFloat(), 2.0f, 0.5f);
-
-        g.setColour(isActive ? DarkTheme::getTextColour() : DarkTheme::getSecondaryTextColour());
-        juce::String label = (oct > 0) ? ("+" + juce::String(oct)) : juce::String(oct);
-        g.drawText(label, btn, juce::Justification::centred);
+    // Draw arrow triangle
+    g.setColour(canShift ? DarkTheme::getTextColour()
+                         : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
+    float cx = btn.getCentreX();
+    float cy = btn.getCentreY();
+    float arrowSize = 5.0f;
+    juce::Path arrow;
+    if (isLeft) {
+        arrow.addTriangle(cx + arrowSize, cy - arrowSize, cx + arrowSize, cy + arrowSize,
+                          cx - arrowSize, cy);
+    } else {
+        arrow.addTriangle(cx - arrowSize, cy - arrowSize, cx - arrowSize, cy + arrowSize,
+                          cx + arrowSize, cy);
     }
+    g.fillPath(arrow);
 }
 
 // =============================================================================
@@ -483,22 +486,30 @@ void StepSequencerUI::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Keyboard — assign note to selected step
-    if (keyboardArea_.contains(pos)) {
-        int note = getKeyboardNoteAtPosition(pos, keyboardArea_);
-        if (note >= 0) {
-            plugin_->setStepNote(selectedStep_, note);
-            plugin_->setStepOctaveShift(selectedStep_, 0);  // Reset octave shift when setting note
+    // Octave down arrow
+    if (octaveDownArea_.contains(pos)) {
+        if (keyboardBaseNote_ > MIN_BASE_NOTE) {
+            keyboardBaseNote_ = std::max(MIN_BASE_NOTE, keyboardBaseNote_ - 12);
             repaint();
         }
         return;
     }
 
-    // Octave row — set octave shift for selected step
-    if (octaveArea_.contains(pos)) {
-        int shift = getOctaveShiftAtPosition(pos, octaveArea_);
-        if (shift >= -2 && shift <= 2) {
-            plugin_->setStepOctaveShift(selectedStep_, shift);
+    // Octave up arrow
+    if (octaveUpArea_.contains(pos)) {
+        if (keyboardBaseNote_ < MAX_BASE_NOTE) {
+            keyboardBaseNote_ = std::min(MAX_BASE_NOTE, keyboardBaseNote_ + 12);
+            repaint();
+        }
+        return;
+    }
+
+    // Keyboard — assign note to selected step
+    if (keyboardArea_.contains(pos)) {
+        int note = getKeyboardNoteAtPosition(pos, keyboardArea_);
+        if (note >= 0 && note <= 127) {
+            plugin_->setStepNote(selectedStep_, note);
+            plugin_->setStepOctaveShift(selectedStep_, 0);
             repaint();
         }
         return;
@@ -542,7 +553,7 @@ int StepSequencerUI::getKeyboardNoteAtPosition(juce::Point<int> pos,
         auto keyRect =
             juce::Rectangle<float>(x, static_cast<float>(area.getY()), blackKeyW, blackKeyH);
         if (keyRect.contains(pos.toFloat()))
-            return KEYBOARD_BASE_NOTE + note;
+            return keyboardBaseNote_ + note;
     }
 
     // Check white keys
@@ -555,25 +566,11 @@ int StepSequencerUI::getKeyboardNoteAtPosition(juce::Point<int> pos,
         auto keyRect = juce::Rectangle<float>(x, static_cast<float>(area.getY()), whiteKeyW,
                                               static_cast<float>(area.getHeight()));
         if (keyRect.contains(pos.toFloat()))
-            return KEYBOARD_BASE_NOTE + note;
+            return keyboardBaseNote_ + note;
         ++whiteIdx;
     }
 
     return -1;
-}
-
-int StepSequencerUI::getOctaveShiftAtPosition(juce::Point<int> pos,
-                                              juce::Rectangle<int> area) const {
-    auto contentArea = area.withTrimmedLeft(24);
-    int btnW = std::min(32, contentArea.getWidth() / 5);
-
-    for (int oct = -2; oct <= 2; ++oct) {
-        auto btn = juce::Rectangle<int>(contentArea.getX() + (oct + 2) * btnW, contentArea.getY(),
-                                        btnW, contentArea.getHeight());
-        if (btn.contains(pos))
-            return oct;
-    }
-    return -99;  // No hit
 }
 
 // =============================================================================

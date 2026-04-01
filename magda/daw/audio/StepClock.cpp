@@ -91,25 +91,18 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
         return 0;
     }
 
+    // Only run when transport is playing
+    if (!fc.isPlaying) {
+        running_ = false;
+        return 0;
+    }
+
     running_ = true;
 
     // --- Get beat positions for this block ---
-    double blockStartBeat = 0.0;
-    double blockEndBeat = 0.0;
-
-    if (fc.isPlaying) {
-        auto& tempoSeq = edit.tempoSequence;
-        blockStartBeat = tempoSeq.toBeats(fc.editTime.getStart()).inBeats();
-        blockEndBeat = tempoSeq.toBeats(fc.editTime.getEnd()).inBeats();
-    } else {
-        // Free-running clock
-        auto& tempoSeq = edit.tempoSequence;
-        double bpm = tempoSeq.getBpmAt(tracktion::TimePosition());
-        double beatsPerSample = bpm / (60.0 * sampleRate_);
-        blockStartBeat = freeRunSamples_ * beatsPerSample;
-        freeRunSamples_ += fc.bufferNumSamples;
-        blockEndBeat = freeRunSamples_ * beatsPerSample;
-    }
+    auto& tempoSeq = edit.tempoSequence;
+    double blockStartBeat = tempoSeq.toBeats(fc.editTime.getStart()).inBeats();
+    double blockEndBeat = tempoSeq.toBeats(fc.editTime.getEnd()).inBeats();
 
     if (blockEndBeat <= blockStartBeat)
         return 0;

@@ -225,6 +225,20 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // Step sequencer ignores incoming MIDI — it generates its own pattern
     midi.clear();
 
+    // Only run when transport is playing
+    if (!fc.isPlaying) {
+        if (lastPlayedNote_ >= 0) {
+            midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), 0.0,
+                                te::MPESourceID{});
+            lastPlayedNote_ = -1;
+            lastNoteOffBeat_ = -1.0;
+            clearMidiOutDisplay();
+        }
+        stepClock_.reset();
+        currentPlayStep_.store(-1, std::memory_order_relaxed);
+        return;
+    }
+
     // Read params (includes macro modulation)
     auto currentRate = static_cast<StepClock::Rate>(
         juce::roundToInt(rateParam ? rateParam->getCurrentValue() : rate.get()));
@@ -246,18 +260,9 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     double blockDurationSecs = static_cast<double>(fc.bufferNumSamples) / sampleRate_;
 
     // Get block beat positions for note-off scheduling
-    double blockStartBeat = 0.0;
-    double blockEndBeat = 0.0;
-    if (fc.isPlaying) {
-        auto& tempoSeq = edit.tempoSequence;
-        blockStartBeat = tempoSeq.toBeats(fc.editTime.getStart()).inBeats();
-        blockEndBeat = tempoSeq.toBeats(fc.editTime.getEnd()).inBeats();
-    } else {
-        // Approximate — StepClock handles the precise free-running position
-        blockEndBeat =
-            blockStartBeat + (static_cast<double>(fc.bufferNumSamples) / sampleRate_) *
-                                 (edit.tempoSequence.getBpmAt(tracktion::TimePosition()) / 60.0);
-    }
+    auto& tempoSeq = edit.tempoSequence;
+    double blockStartBeat = tempoSeq.toBeats(fc.editTime.getStart()).inBeats();
+    double blockEndBeat = tempoSeq.toBeats(fc.editTime.getEnd()).inBeats();
 
     // --- Emit pending note-off from previous block ---
     if (lastNoteOffBeat_ >= blockStartBeat && lastNoteOffBeat_ < blockEndBeat &&
