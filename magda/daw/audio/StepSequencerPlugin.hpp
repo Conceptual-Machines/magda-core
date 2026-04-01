@@ -66,13 +66,13 @@ class StepSequencerPlugin : public MidiDevicePlugin {
     juce::CachedValue<int> rate;       // StepClock::Rate enum
     juce::CachedValue<int> direction;  // StepClock::Direction enum
     juce::CachedValue<float> swing;
-    juce::CachedValue<float> glideTime;  // 0-1 normalized
+    juce::CachedValue<float> gateLength;  // 0-1 normalized (0.1 = staccato, 1.0 = legato)
     juce::CachedValue<int> accentVelocity;
     juce::CachedValue<int> normalVelocity;
 
     // --- Automatable parameters (for macro/mod linking) ---
     te::AutomatableParameter::Ptr rateParam, directionParam;
-    te::AutomatableParameter::Ptr swingParam, glideTimeParam;
+    te::AutomatableParameter::Ptr swingParam, gateLengthParam;
     te::AutomatableParameter::Ptr accentVelParam, normalVelParam;
 
     // --- Step access (message thread) ---

@@ -10,7 +10,7 @@ static const juce::Identifier numSteps("seqNumSteps");
 static const juce::Identifier rate("seqRate");
 static const juce::Identifier direction("seqDirection");
 static const juce::Identifier swing("seqSwing");
-static const juce::Identifier glideTime("seqGlideTime");
+static const juce::Identifier gateLength("seqGateLength");
 static const juce::Identifier accentVelocity("seqAccentVel");
 static const juce::Identifier normalVelocity("seqNormalVel");
 
@@ -33,7 +33,7 @@ StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
     direction.referTo(state, SeqIDs::direction, um,
                       static_cast<int>(StepClock::Direction::Forward));
     swing.referTo(state, SeqIDs::swing, um, 0.0f);
-    glideTime.referTo(state, SeqIDs::glideTime, um, 0.3f);
+    gateLength.referTo(state, SeqIDs::gateLength, um, 0.8f);
     accentVelocity.referTo(state, SeqIDs::accentVelocity, um, 120);
     normalVelocity.referTo(state, SeqIDs::normalVelocity, um, 90);
 
@@ -41,7 +41,7 @@ StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
     rateParam = addParam("rate", "Rate", {0.0f, 9.0f, 1.0f});
     directionParam = addParam("direction", "Direction", {0.0f, 3.0f, 1.0f});
     swingParam = addParam("swing", "Swing", {0.0f, 1.0f});
-    glideTimeParam = addParam("glidetime", "Glide Time", {0.0f, 1.0f});
+    gateLengthParam = addParam("gatelength", "Gate", {0.05f, 1.0f});
     accentVelParam = addParam("accentvel", "Accent Vel", {1.0f, 127.0f, 1.0f});
     normalVelParam = addParam("normalvel", "Normal Vel", {1.0f, 127.0f, 1.0f});
 
@@ -49,7 +49,7 @@ StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
     rateParam->setParameter(static_cast<float>(rate.get()), juce::dontSendNotification);
     directionParam->setParameter(static_cast<float>(direction.get()), juce::dontSendNotification);
     swingParam->setParameter(swing.get(), juce::dontSendNotification);
-    glideTimeParam->setParameter(glideTime.get(), juce::dontSendNotification);
+    gateLengthParam->setParameter(gateLength.get(), juce::dontSendNotification);
     accentVelParam->setParameter(static_cast<float>(accentVelocity.get()),
                                  juce::dontSendNotification);
     normalVelParam->setParameter(static_cast<float>(normalVelocity.get()),
@@ -74,8 +74,8 @@ void StepSequencerPlugin::syncParamFromProperty(const juce::Identifier& property
                                      juce::dontSendNotification);
     else if (property == SeqIDs::swing && swingParam)
         swingParam->setParameter(swing.get(), juce::dontSendNotification);
-    else if (property == SeqIDs::glideTime && glideTimeParam)
-        glideTimeParam->setParameter(glideTime.get(), juce::dontSendNotification);
+    else if (property == SeqIDs::gateLength && gateLengthParam)
+        gateLengthParam->setParameter(gateLength.get(), juce::dontSendNotification);
     else if (property == SeqIDs::accentVelocity && accentVelParam)
         accentVelParam->setParameter(static_cast<float>(accentVelocity.get()),
                                      juce::dontSendNotification);
@@ -109,7 +109,7 @@ void StepSequencerPlugin::flushPluginStateToValueTree() {
 }
 
 void StepSequencerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
-    tracktion::copyPropertiesToCachedValues(v, numSteps, rate, direction, swing, glideTime,
+    tracktion::copyPropertiesToCachedValues(v, numSteps, rate, direction, swing, gateLength,
                                             accentVelocity, normalVelocity);
 
     // Copy step children from the incoming tree into our state
@@ -274,8 +274,8 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         juce::roundToInt(directionParam ? directionParam->getCurrentValue() : direction.get()));
     float swingVal =
         juce::jlimit(0.0f, 1.0f, swingParam ? swingParam->getCurrentValue() : swing.get());
-    [[maybe_unused]] float glideVal = juce::jlimit(
-        0.0f, 1.0f, glideTimeParam ? glideTimeParam->getCurrentValue() : glideTime.get());
+    float gateLengthVal = juce::jlimit(
+        0.05f, 1.0f, gateLengthParam ? gateLengthParam->getCurrentValue() : gateLength.get());
     int accentVel = juce::jlimit(1, 127,
                                  juce::roundToInt(accentVelParam ? accentVelParam->getCurrentValue()
                                                                  : accentVelocity.get()));
@@ -376,10 +376,10 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
         // Schedule note-off via sample countdown
         // 100% gate if: glide, or next step is a tie (must hold for the tie to extend)
-        // Otherwise 80% gate
+        // Otherwise use the gate length parameter
         int nextIdx = (evt.stepIndex + 1) % stepCount;
         bool nextIsTie = steps_[static_cast<size_t>(nextIdx)].tie;
-        double gateRatio = (step.glide || nextIsTie) ? 1.0 : 0.8;
+        double gateRatio = (step.glide || nextIsTie) ? 1.0 : static_cast<double>(gateLengthVal);
         int noteOnSample = static_cast<int>(evt.timeInBlock * sampleRate_);
         int gateSamples = static_cast<int>(stepDurationSamples * gateRatio);
         noteOffCountdown_ = gateSamples - (bufferSamples - noteOnSample);

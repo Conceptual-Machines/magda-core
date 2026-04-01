@@ -2688,6 +2688,7 @@ void PluginManager::captureAllPluginStates() {
             // TE internal plugin (4osc, EQ, Compressor, etc.):
             // Capture the full ValueTree as XML so non-automatable
             // CachedValues (wave shapes, filter type, etc.) are preserved.
+            sd.plugin->flushPluginStateToValueTree();
             if (auto xml = sd.plugin->state.createXml())
                 stateStr = xml->toString();
         }
@@ -2711,11 +2712,16 @@ void PluginManager::restorePluginState(TrackId trackId, DeviceId deviceId, te::P
     if (!devInfo || devInfo->pluginState.isEmpty())
         return;
 
-    auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get());
-    if (!ext)
-        return;
-
-    ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
+    if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
+        ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
+    } else {
+        // Internal plugin: restore from saved XML ValueTree
+        if (auto xml = juce::parseXML(devInfo->pluginState)) {
+            auto savedState = juce::ValueTree::fromXml(*xml);
+            if (savedState.isValid())
+                plugin->restorePluginStateFromValueTree(savedState);
+        }
+    }
 }
 
 void PluginManager::purgeStaleEntries() {
@@ -3186,10 +3192,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             }
         } else if (device.pluginId.containsIgnoreCase(
                        daw::audio::StepSequencerPlugin::xmlTypeName)) {
-            juce::ValueTree pluginState(te::IDs::PLUGIN);
-            pluginState.setProperty(te::IDs::type, daw::audio::StepSequencerPlugin::xmlTypeName,
-                                    nullptr);
-            plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+            plugin = createInternalPlugin(daw::audio::StepSequencerPlugin::xmlTypeName,
+                                          device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<StepSequencerProcessor>(device.id, plugin);

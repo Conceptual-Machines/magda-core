@@ -73,15 +73,15 @@ StepSequencerUI::StepSequencerUI() {
             plugin_->swing = static_cast<float>(value);
     };
 
-    setupLabel(glideLabel_, "GLIDE");
-    setupSlider(glideSlider_, 0.0, 1.0, 0.01);
+    setupLabel(glideLabel_, "GATE");
+    setupSlider(glideSlider_, 0.05, 1.0, 0.01);
     glideSlider_.setValueFormatter(
         [](double v) { return juce::String(juce::roundToInt(v * 100)) + "%"; });
     glideSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
     glideSlider_.onValueChanged = [this](double value) {
         if (plugin_)
-            plugin_->glideTime = static_cast<float>(value);
+            plugin_->gateLength = static_cast<float>(value);
     };
 }
 
@@ -119,7 +119,7 @@ void StepSequencerUI::syncFromPlugin() {
     stepsSlider_.setValue(static_cast<double>(plugin_->numSteps.get()), juce::dontSendNotification);
     dirCombo_.setSelectedId(plugin_->direction.get() + 1, juce::dontSendNotification);
     swingSlider_.setValue(static_cast<double>(plugin_->swing.get()), juce::dontSendNotification);
-    glideSlider_.setValue(static_cast<double>(plugin_->glideTime.get()),
+    glideSlider_.setValue(static_cast<double>(plugin_->gateLength.get()),
                           juce::dontSendNotification);
     repaint();
 }
