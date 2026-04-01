@@ -501,50 +501,49 @@ MediaExplorerContent::MediaExplorerContent() {
     addAndMakeVisible(searchBox_);
 
     // Setup type filter buttons with icons
-    audioFilterButton_ = std::make_unique<magda::SvgButton>("Audio", BinaryData::sample_svg,
-                                                            BinaryData::sample_svgSize);
+    // Load persisted filter state
+    audioFilterActive_ = magda::Config::getInstance().getBrowserFilterAudio();
+    midiFilterActive_ = magda::Config::getInstance().getBrowserFilterMidi();
+
+    auto activeBackground = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.25f);
+
+    audioFilterButton_ = std::make_unique<magda::SvgButton>("Audio", BinaryData::AUDIO_svg,
+                                                            BinaryData::AUDIO_svgSize);
     audioFilterButton_->setToggleable(true);
-    audioFilterButton_->setClickingTogglesState(true);  // Enable click-to-toggle
-    audioFilterButton_->setToggleState(true, juce::dontSendNotification);
-    audioFilterButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
+    audioFilterButton_->setClickingTogglesState(true);
+    audioFilterButton_->setToggleState(audioFilterActive_, juce::dontSendNotification);
+    audioFilterButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     audioFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     audioFilterButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     audioFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    audioFilterButton_->setActiveBackgroundColor(activeBackground);
+    audioFilterButton_->setTooltip("Show audio files");
     audioFilterButton_->onClick = [this]() {
         audioFilterActive_ = audioFilterButton_->getToggleState();
+        magda::Config::getInstance().setBrowserFilterAudio(audioFilterActive_);
+        magda::Config::getInstance().save();
         updateMediaFilter();
     };
     addAndMakeVisible(*audioFilterButton_);
 
     midiFilterButton_ =
-        std::make_unique<magda::SvgButton>("MIDI", BinaryData::midi_svg, BinaryData::midi_svgSize);
+        std::make_unique<magda::SvgButton>("MIDI", BinaryData::MIDI_svg, BinaryData::MIDI_svgSize);
     midiFilterButton_->setToggleable(true);
-    midiFilterButton_->setClickingTogglesState(true);  // Enable click-to-toggle
-    midiFilterButton_->setToggleState(false, juce::dontSendNotification);
-    midiFilterButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
+    midiFilterButton_->setClickingTogglesState(true);
+    midiFilterButton_->setToggleState(midiFilterActive_, juce::dontSendNotification);
+    midiFilterButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     midiFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     midiFilterButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     midiFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    midiFilterButton_->setActiveBackgroundColor(activeBackground);
+    midiFilterButton_->setTooltip("Show MIDI files");
     midiFilterButton_->onClick = [this]() {
         midiFilterActive_ = midiFilterButton_->getToggleState();
+        magda::Config::getInstance().setBrowserFilterMidi(midiFilterActive_);
+        magda::Config::getInstance().save();
         updateMediaFilter();
     };
     addAndMakeVisible(*midiFilterButton_);
-
-    presetFilterButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::preset_svg,
-                                                             BinaryData::preset_svgSize);
-    presetFilterButton_->setToggleable(true);
-    presetFilterButton_->setClickingTogglesState(true);  // Enable click-to-toggle
-    presetFilterButton_->setToggleState(false, juce::dontSendNotification);
-    presetFilterButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG's gray fill
-    presetFilterButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    presetFilterButton_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    presetFilterButton_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    presetFilterButton_->onClick = [this]() {
-        presetFilterActive_ = presetFilterButton_->getToggleState();
-        updateMediaFilter();
-    };
-    addAndMakeVisible(*presetFilterButton_);
 
     // View toggle buttons removed - not needed for now
     // View mode selector dropdown removed - not needed for now
@@ -1020,11 +1019,11 @@ void MediaExplorerContent::resized() {
     // Top bar with all controls
     auto topBar = bounds.removeFromTop(32);
 
-    // Left: Search box (flexible width, but leave room for right side)
-    const int iconButtonSize = 24;  // Smaller square icon buttons
-    const int buttonSpacing = 6;
-    const int rightSideWidth = iconButtonSize * 3 + buttonSpacing * 2;  // 3 icons + spacing
-    auto searchWidth = juce::jmax(200, topBar.getWidth() - rightSideWidth - 8);
+    // Right: Type filter icon buttons, then search fills remaining space
+    const int iconButtonSize = 30;
+    const int buttonSpacing = 4;
+    const int rightSideWidth = iconButtonSize * 2 + buttonSpacing + 8;  // 2 icons + spacing + gap
+    auto searchWidth = juce::jmax(120, topBar.getWidth() - rightSideWidth);
     searchBox_.setBounds(topBar.removeFromLeft(searchWidth));
     topBar.removeFromLeft(8);
 
@@ -1037,10 +1036,6 @@ void MediaExplorerContent::resized() {
     midiFilterButton_->setBounds(topBar.removeFromLeft(iconButtonSize)
                                      .withTrimmedTop(iconVerticalOffset)
                                      .withHeight(iconButtonSize));
-    topBar.removeFromLeft(buttonSpacing);
-    presetFilterButton_->setBounds(topBar.removeFromLeft(iconButtonSize)
-                                       .withTrimmedTop(iconVerticalOffset)
-                                       .withHeight(iconButtonSize));
 
     bounds.removeFromTop(8);
 

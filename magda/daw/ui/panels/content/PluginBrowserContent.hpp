@@ -133,6 +133,8 @@ class PluginBrowserContent : public PanelContent,
     class CategoryTreeItem;
 
     std::unique_ptr<juce::TreeViewItem> rootItem_;
+    std::unique_ptr<juce::Drawable> instrumentIcon_;
+    std::unique_ptr<juce::Drawable> effectIcon_;
     std::unique_ptr<juce::Drawable> midiIcon_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginBrowserContent)

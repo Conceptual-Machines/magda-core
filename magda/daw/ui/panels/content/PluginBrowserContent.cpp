@@ -89,16 +89,16 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
             bounds.removeFromLeft(16);
         }
 
-        // Plugin type icon: 🎹 for instruments, chord svg for MIDI, 🎛️ for effects
+        // Plugin type icon
         auto iconArea = bounds.removeFromLeft(18);
-        g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        if (plugin_.category == "Instrument") {
-            g.drawText(juce::String::fromUTF8("🎹"), iconArea, juce::Justification::centred);
+        auto iconBounds = iconArea.toFloat().reduced(1.0f);
+        if (plugin_.category == "Instrument" && owner_.instrumentIcon_) {
+            owner_.instrumentIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred,
+                                               1.0f);
         } else if (plugin_.subcategory == "MIDI" && owner_.midiIcon_) {
-            auto iconBounds = iconArea.toFloat().reduced(2.0f);
             owner_.midiIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
-        } else {
-            g.drawText(juce::String::fromUTF8("🎛️"), iconArea, juce::Justification::centred);
+        } else if (owner_.effectIcon_) {
+            owner_.effectIcon_->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
         }
         bounds.removeFromLeft(2);
 
@@ -243,11 +243,23 @@ class PluginBrowserContent::CategoryTreeItem : public juce::TreeViewItem {
 PluginBrowserContent::PluginBrowserContent() {
     setName("Plugin Browser");
 
-    midiIcon_ =
-        juce::Drawable::createFromImageData(BinaryData::chord_svg, BinaryData::chord_svgSize);
+    instrumentIcon_ = juce::Drawable::createFromImageData(BinaryData::INSTRUMENT_DEVICE_svg,
+                                                          BinaryData::INSTRUMENT_DEVICE_svgSize);
+    if (instrumentIcon_)
+        instrumentIcon_->replaceColour(juce::Colour(0xFFB3B3B3),
+                                       DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+
+    effectIcon_ = juce::Drawable::createFromImageData(BinaryData::AUDIODEVICE_svg,
+                                                      BinaryData::AUDIODEVICE_svgSize);
+    if (effectIcon_)
+        effectIcon_->replaceColour(juce::Colour(0xFFB3B3B3),
+                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+
+    midiIcon_ = juce::Drawable::createFromImageData(BinaryData::MIDIDEVICE_svg,
+                                                    BinaryData::MIDIDEVICE_svgSize);
     if (midiIcon_)
-        midiIcon_->replaceColour(juce::Colours::black,
-                                 DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        midiIcon_->replaceColour(juce::Colour(0xFFB3B3B3),
+                                 DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
 
     // Setup search box
     searchBox_.setTextToShowWhenEmpty("Search plugins...", DarkTheme::getSecondaryTextColour());

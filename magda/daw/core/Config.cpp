@@ -143,6 +143,8 @@ void Config::save() {
     }
 
     // Browser
+    root->setProperty("browserFilterAudio", browserFilterAudio);
+    root->setProperty("browserFilterMidi", browserFilterMidi);
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
 
     juce::Array<juce::var> favArray;
@@ -395,6 +397,8 @@ void Config::load() {
         agentConfigs["command"] = cheapCfg;
     }
 
+    browserFilterAudio = getBool("browserFilterAudio", browserFilterAudio);
+    browserFilterMidi = getBool("browserFilterMidi", browserFilterMidi);
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserFavorites = getStringArray("browserFavorites");
     recentProjects = getStringArray("recentProjects");

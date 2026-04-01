@@ -99,6 +99,12 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/favorite.svg
     # Media Explorer filter icons
     ../../assets/midi.svg
+    ../../assets/icons/audio_midi_files/AUDIO.svg
+    ../../assets/icons/audio_midi_files/MIDI.svg
+    # Plugin browser device type icons
+    ../../assets/icons/browser_icons/AUDIO-DEVICE.svg
+    ../../assets/icons/browser_icons/INSTRUMENT_DEVICE.svg
+    ../../assets/icons/browser_icons/MIDI-DEVICE.svg
     # Mixer fader icons
     ../../assets/icons/fader/fader_thumb.svg
     ../../assets/icons/fader/fader_track.svg

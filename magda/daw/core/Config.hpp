@@ -263,6 +263,20 @@ class Config {
         browserFavorites = paths;
     }
 
+    // Browser filter settings
+    bool getBrowserFilterAudio() const {
+        return browserFilterAudio;
+    }
+    void setBrowserFilterAudio(bool enabled) {
+        browserFilterAudio = enabled;
+    }
+    bool getBrowserFilterMidi() const {
+        return browserFilterMidi;
+    }
+    void setBrowserFilterMidi(bool enabled) {
+        browserFilterMidi = enabled;
+    }
+
     // Browser Default Directory
     std::string getBrowserDefaultDirectory() const {
         return browserDefaultDirectory;
@@ -640,6 +654,10 @@ class Config {
 
     // Load AI model on startup (off by default)
     bool loadModelOnStartup = false;
+
+    // Browser filter settings (media explorer)
+    bool browserFilterAudio = true;  // Show audio files by default
+    bool browserFilterMidi = false;  // Hide MIDI files by default
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;
