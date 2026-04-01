@@ -9,6 +9,10 @@ namespace magda {
 
 namespace te = tracktion;
 
+namespace daw::audio {
+class ArpeggiatorPlugin;
+}
+
 /**
  * @brief Processes a single device, bridging DeviceInfo state to plugin parameters
  *
@@ -379,6 +383,37 @@ class ImpulseResponseProcessor : public DeviceProcessor {
 
     void setParameterByIndex(int paramIndex, float value);
     float getParameterByIndex(int paramIndex) const;
+};
+
+/**
+ * @brief Processor for the Arpeggiator plugin
+ *
+ * Exposes CachedValue-based parameters so macros can target them.
+ * Parameters:
+ * - 0: Pattern (discrete 0-5)
+ * - 1: Rate (discrete 0-9)
+ * - 2: Octaves (discrete 1-4)
+ * - 3: Gate (0..1)
+ * - 4: Swing (0..1)
+ * - 5: Timing Depth (-1..1, ramp curve depth)
+ * - 6: Timing Skew (0..1, ramp curve skew)
+ * - 7: Latch (0/1 boolean)
+ * - 8: Velocity Mode (discrete 0-2)
+ * - 9: Fixed Velocity (1-127)
+ */
+class ArpeggiatorProcessor : public DeviceProcessor {
+  public:
+    ArpeggiatorProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+
+  private:
+    daw::audio::ArpeggiatorPlugin* getArpPlugin() const;
 };
 
 /**

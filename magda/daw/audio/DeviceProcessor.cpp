@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "../core/TrackManager.hpp"
+#include "ArpeggiatorPlugin.hpp"
 
 namespace magda {
 
@@ -1261,6 +1262,194 @@ float UtilityProcessor::getParameterByIndex(int paramIndex) const {
             return volPan->panParam ? volPan->panParam->getCurrentValue() : 0.0f;
         case 2:
             return volPan->polarity.get() ? 1.0f : 0.0f;
+        default:
+            return 0.0f;
+    }
+}
+
+// =============================================================================
+// ArpeggiatorProcessor
+// =============================================================================
+
+ArpeggiatorProcessor::ArpeggiatorProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+daw::audio::ArpeggiatorPlugin* ArpeggiatorProcessor::getArpPlugin() const {
+    return dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin_.get());
+}
+
+int ArpeggiatorProcessor::getParameterCount() const {
+    return 10;
+}
+
+ParameterInfo ArpeggiatorProcessor::getParameterInfo(int index) const {
+    ParameterInfo info;
+    auto* arp = getArpPlugin();
+    if (!arp)
+        return info;
+
+    info.paramIndex = index;
+
+    switch (index) {
+        case 0:
+            info.name = "Pattern";
+            info.minValue = 0.0f;
+            info.maxValue = 5.0f;
+            info.defaultValue = 0.0f;
+            info.currentValue = static_cast<float>(arp->pattern.get());
+            info.scale = ParameterScale::Discrete;
+            info.choices = {"Up", "Down", "Up/Down", "Down/Up", "Random", "As Played"};
+            break;
+        case 1:
+            info.name = "Rate";
+            info.minValue = 0.0f;
+            info.maxValue = 9.0f;
+            info.defaultValue = 4.0f;
+            info.currentValue = static_cast<float>(arp->rate.get());
+            info.scale = ParameterScale::Discrete;
+            info.choices = {"1/4.", "1/4",   "1/4T", "1/8.",  "1/8",
+                            "1/8T", "1/16.", "1/16", "1/16T", "1/32"};
+            break;
+        case 2:
+            info.name = "Octaves";
+            info.minValue = 1.0f;
+            info.maxValue = 4.0f;
+            info.defaultValue = 1.0f;
+            info.currentValue = static_cast<float>(arp->octaveRange.get());
+            info.scale = ParameterScale::Discrete;
+            break;
+        case 3:
+            info.name = "Gate";
+            info.minValue = 0.01f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.8f;
+            info.currentValue = arp->gate.get();
+            break;
+        case 4:
+            info.name = "Swing";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.currentValue = arp->swing.get();
+            break;
+        case 5:
+            info.name = "Timing Depth";
+            info.minValue = -1.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.currentValue = arp->ramp.get();
+            break;
+        case 6:
+            info.name = "Timing Skew";
+            info.minValue = 0.01f;
+            info.maxValue = 0.99f;
+            info.defaultValue = 0.5f;
+            info.currentValue = arp->skew.get();
+            break;
+        case 7:
+            info.name = "Latch";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.currentValue = arp->latch.get() ? 1.0f : 0.0f;
+            info.scale = ParameterScale::Boolean;
+            break;
+        case 8:
+            info.name = "Velocity Mode";
+            info.minValue = 0.0f;
+            info.maxValue = 2.0f;
+            info.defaultValue = 0.0f;
+            info.currentValue = static_cast<float>(arp->velocityMode.get());
+            info.scale = ParameterScale::Discrete;
+            info.choices = {"Original", "Fixed", "Accent"};
+            break;
+        case 9:
+            info.name = "Fixed Velocity";
+            info.minValue = 1.0f;
+            info.maxValue = 127.0f;
+            info.defaultValue = 100.0f;
+            info.currentValue = static_cast<float>(arp->fixedVelocity.get());
+            break;
+        default:
+            break;
+    }
+    return info;
+}
+
+void ArpeggiatorProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    for (int i = 0; i < getParameterCount(); ++i) {
+        info.parameters.push_back(getParameterInfo(i));
+    }
+}
+
+void ArpeggiatorProcessor::setParameterByIndex(int paramIndex, float value) {
+    auto* arp = getArpPlugin();
+    if (!arp)
+        return;
+
+    switch (paramIndex) {
+        case 0:
+            arp->pattern = juce::roundToInt(value);
+            break;
+        case 1:
+            arp->rate = juce::roundToInt(value);
+            break;
+        case 2:
+            arp->octaveRange = juce::roundToInt(value);
+            break;
+        case 3:
+            arp->gate = value;
+            break;
+        case 4:
+            arp->swing = value;
+            break;
+        case 5:
+            arp->ramp = value;
+            break;
+        case 6:
+            arp->skew = value;
+            break;
+        case 7:
+            arp->latch = value >= 0.5f;
+            break;
+        case 8:
+            arp->velocityMode = juce::roundToInt(value);
+            break;
+        case 9:
+            arp->fixedVelocity = juce::roundToInt(value);
+            break;
+        default:
+            break;
+    }
+}
+
+float ArpeggiatorProcessor::getParameterByIndex(int paramIndex) const {
+    auto* arp = getArpPlugin();
+    if (!arp)
+        return 0.0f;
+
+    switch (paramIndex) {
+        case 0:
+            return static_cast<float>(arp->pattern.get());
+        case 1:
+            return static_cast<float>(arp->rate.get());
+        case 2:
+            return static_cast<float>(arp->octaveRange.get());
+        case 3:
+            return arp->gate.get();
+        case 4:
+            return arp->swing.get();
+        case 5:
+            return arp->ramp.get();
+        case 6:
+            return arp->skew.get();
+        case 7:
+            return arp->latch.get() ? 1.0f : 0.0f;
+        case 8:
+            return static_cast<float>(arp->velocityMode.get());
+        case 9:
+            return static_cast<float>(arp->fixedVelocity.get());
         default:
             return 0.0f;
     }

@@ -3153,7 +3153,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             plugin = edit_.getPluginCache().createNewPlugin(pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
-                // No processor — MIDI transformation with transparent audio passthrough
+                processor = std::make_unique<ArpeggiatorProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("delay")) {
             plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, device.pluginState);
