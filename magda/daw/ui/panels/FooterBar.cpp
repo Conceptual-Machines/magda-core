@@ -83,7 +83,9 @@ void FooterBar::setupButtons() {
         // Set colors for the SvgButton
         modeButtons[i]->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         modeButtons[i]->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        modeButtons[i]->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        modeButtons[i]->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_CYAN));
+        modeButtons[i]->setActiveBackgroundColor(
+            DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.2f));
 
         addAndMakeVisible(*modeButtons[i]);  // Safe with ManagedChild
     }
