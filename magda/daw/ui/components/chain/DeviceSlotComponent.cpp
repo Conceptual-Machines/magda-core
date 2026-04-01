@@ -949,18 +949,20 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         g.drawVerticalLine(lineX, static_cast<float>(contentArea.getY() + 2),
                            static_cast<float>(contentArea.getBottom() - 2));
 
-        // Horizontal lines above and below the pagination row (for external plugin param grid)
+        // Separator under content header (all devices)
+        float left = static_cast<float>(contentArea.getX() + 2);
+        float right = static_cast<float>(lineX);
+        int headerBottom = contentArea.getY() + CONTENT_HEADER_HEIGHT;
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawHorizontalLine(headerBottom, left, right);
+
+        // Additional line below pagination row (for external plugin param grid only)
         if (!isInternalDevice() ||
             !(toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ ||
               compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
               pitchShiftUI_ || impulseResponseUI_ || utilityUI_ || chordEngineUI_ ||
               arpeggiatorUI_)) {
-            float left = static_cast<float>(contentArea.getX() + 2);
-            float right = static_cast<float>(lineX);
-            int paginationTop = contentArea.getY() + CONTENT_HEADER_HEIGHT;
-            int paginationBottom = paginationTop + PAGINATION_HEIGHT + 4;
-            g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-            g.drawHorizontalLine(paginationTop, left, right);
+            int paginationBottom = headerBottom + PAGINATION_HEIGHT + 4;
             g.drawHorizontalLine(paginationBottom, left, right);
         }
     }
