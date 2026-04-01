@@ -144,7 +144,7 @@ void RampCurveDisplay::mouseDoubleClick(const juce::MouseEvent&) {
 static constexpr int ROW_HEIGHT = 22;
 static constexpr int ROW_GAP = 4;
 static constexpr int LABEL_WIDTH = 52;
-static constexpr int PADDING = 6;
+static constexpr int PADDING = 10;
 static constexpr int COLUMN_GAP = 10;
 
 ArpeggiatorUI::ArpeggiatorUI() {
@@ -337,10 +337,9 @@ void ArpeggiatorUI::valueTreePropertyChanged(juce::ValueTree&, const juce::Ident
 }
 
 void ArpeggiatorUI::paint(juce::Graphics& g) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    // Thin grey border
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
     g.drawRect(getLocalBounds(), 1);
-    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
-    g.fillRect(getLocalBounds().reduced(1));
 
     // Column divider (only in the two-column top section)
     int midX = getWidth() / 2;
@@ -386,7 +385,7 @@ void ArpeggiatorUI::resized() {
     if (bounds.getHeight() > ROW_HEIGHT + ROW_GAP + 4) {
         rampLabel_.setBounds(bounds.removeFromTop(ROW_HEIGHT));
         bounds.removeFromTop(ROW_GAP);
-        rampCurveDisplay_.setBounds(bounds.reduced(PADDING, 0));
+        rampCurveDisplay_.setBounds(bounds);
     }
 }
 
