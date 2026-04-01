@@ -381,12 +381,12 @@ void ArpeggiatorUI::resized() {
     layoutRow(rightCol, velModeLabel_, velModeCombo_);
     layoutRow(rightCol, fixedVelLabel_, fixedVelSlider_);
 
-    // Ramp: full-width below both columns
+    // Timing curve: full-width below both columns with side padding
     bounds.removeFromTop(ROW_GAP);
     if (bounds.getHeight() > ROW_HEIGHT + ROW_GAP + 4) {
         rampLabel_.setBounds(bounds.removeFromTop(ROW_HEIGHT));
         bounds.removeFromTop(ROW_GAP);
-        rampCurveDisplay_.setBounds(bounds);
+        rampCurveDisplay_.setBounds(bounds.reduced(PADDING, 0));
     }
 }
 
