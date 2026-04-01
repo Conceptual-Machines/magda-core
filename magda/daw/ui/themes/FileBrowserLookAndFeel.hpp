@@ -18,6 +18,13 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         setColour(juce::ScrollBar::thumbColourId,
                   DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.5f));
         setColour(juce::ScrollBar::backgroundColourId, juce::Colours::transparentBlack);
+
+        // Pre-create and colour the MIDI icon once (avoid per-row replaceColour cost)
+        midiDrawable_ =
+            juce::Drawable::createFromImageData(BinaryData::midi_svg, BinaryData::midi_svgSize);
+        if (midiDrawable_)
+            midiDrawable_->replaceColour(juce::Colour(0xFFB3B3B3),
+                                         DarkTheme::getSecondaryTextColour());
     }
     ~FileBrowserLookAndFeel() override = default;
 
@@ -147,13 +154,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         // Use MIDI icon for .mid/.midi files
         auto ext = file.getFileExtension().toLowerCase();
         if (!isDirectory && (ext == ".mid" || ext == ".midi")) {
-            if (midiDrawable_ == nullptr) {
-                midiDrawable_ = juce::Drawable::createFromImageData(BinaryData::midi_svg,
-                                                                    BinaryData::midi_svgSize);
-            }
             if (midiDrawable_) {
-                midiDrawable_->replaceColour(juce::Colour(0xFFB3B3B3),
-                                             DarkTheme::getSecondaryTextColour());
                 midiDrawable_->drawWithin(
                     g,
                     juce::Rectangle<float>(2.0f, 2.0f, x - 4.0f, static_cast<float>(height) - 4.0f),

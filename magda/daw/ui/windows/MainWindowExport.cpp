@@ -441,10 +441,17 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
         return;
     }
 
-    // Collect MIDI clips grouped by track
+    // Collect MIDI clips grouped by track — copy data to avoid dangling pointers
+    // during async file chooser
+    struct ClipMidiData {
+        double startTime;
+        std::vector<MidiNote> midiNotes;
+        std::vector<MidiCCData> midiCCData;
+        std::vector<MidiPitchBendData> midiPitchBendData;
+    };
     struct TrackMidiData {
         juce::String trackName;
-        std::vector<const ClipInfo*> clips;
+        std::vector<ClipMidiData> clips;
     };
     std::map<TrackId, TrackMidiData> trackData;
 
@@ -464,7 +471,8 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
             auto* track = trackManager.getTrack(clip.trackId);
             td.trackName = track ? track->name : "Track";
         }
-        td.clips.push_back(&clip);
+        td.clips.push_back(
+            {clip.startTime, clip.midiNotes, clip.midiCCData, clip.midiPitchBendData});
     }
 
     DBG("Track data count: " << trackData.size());
@@ -492,10 +500,11 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
 
     auto midiFormat = settings.midiFormat;
     auto capturedRangeStart = rangeStart;
+    auto capturedRangeEnd = rangeEnd;
 
     fileChooser_->launchAsync(flags, [this, trackData = std::move(trackData), projectTempo,
-                                      timeSigNum, timeSigDen, midiFormat,
-                                      capturedRangeStart](const juce::FileChooser& chooser) {
+                                      timeSigNum, timeSigDen, midiFormat, capturedRangeStart,
+                                      capturedRangeEnd](const juce::FileChooser& chooser) {
         auto file = chooser.getResult();
         fileChooser_.reset();
 
@@ -521,16 +530,24 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
         auto timeSigMsg = juce::MidiMessage::timeSignatureMetaEvent(timeSigNum, timeSigDen);
         timeSigMsg.setTimeStamp(0.0);
 
-        // Helper to add notes/CC/PB from clips to a sequence
-        auto addClipDataToSequence = [&](juce::MidiMessageSequence& seq, const ClipInfo* clip,
-                                         int channel, double& maxTick) {
-            double clipStartBeats = secondsToBeats(clip->startTime - capturedRangeStart);
+        // Range end in beats (relative to range start) for clamping
+        double rangeEndBeats = secondsToBeats(capturedRangeEnd - capturedRangeStart);
+        double rangeEndTick = beatsToTicks(rangeEndBeats);
 
-            for (const auto& note : clip->midiNotes) {
+        // Helper to add notes/CC/PB from clips to a sequence
+        auto addClipDataToSequence = [&](juce::MidiMessageSequence& seq, const ClipMidiData& clip,
+                                         int channel, double& maxTick) {
+            double clipStartBeats = secondsToBeats(clip.startTime - capturedRangeStart);
+
+            for (const auto& note : clip.midiNotes) {
                 double startTick = beatsToTicks(clipStartBeats + note.startBeat);
                 double endTick = beatsToTicks(clipStartBeats + note.startBeat + note.lengthBeats);
                 if (startTick < 0.0)
                     startTick = 0.0;
+                if (startTick >= rangeEndTick)
+                    continue;
+                if (endTick > rangeEndTick)
+                    endTick = rangeEndTick;
 
                 auto noteOn = juce::MidiMessage::noteOn(channel, note.noteNumber,
                                                         static_cast<juce::uint8>(note.velocity));
@@ -544,20 +561,24 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
                 maxTick = std::max(maxTick, endTick);
             }
 
-            for (const auto& cc : clip->midiCCData) {
+            for (const auto& cc : clip.midiCCData) {
                 double tick = beatsToTicks(clipStartBeats + cc.beatPosition);
                 if (tick < 0.0)
                     tick = 0.0;
+                if (tick >= rangeEndTick)
+                    continue;
                 auto msg = juce::MidiMessage::controllerEvent(channel, cc.controller, cc.value);
                 msg.setTimeStamp(tick);
                 seq.addEvent(msg);
                 maxTick = std::max(maxTick, tick);
             }
 
-            for (const auto& pb : clip->midiPitchBendData) {
+            for (const auto& pb : clip.midiPitchBendData) {
                 double tick = beatsToTicks(clipStartBeats + pb.beatPosition);
                 if (tick < 0.0)
                     tick = 0.0;
+                if (tick >= rangeEndTick)
+                    continue;
                 auto msg = juce::MidiMessage::pitchWheel(channel, pb.value);
                 msg.setTimeStamp(tick);
                 seq.addEvent(msg);
@@ -573,7 +594,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
             double maxTick = 0.0;
 
             for (const auto& [trackId, td] : trackData)
-                for (const auto* clip : td.clips)
+                for (const auto& clip : td.clips)
                     addClipDataToSequence(seq, clip, 1, maxTick);
 
             seq.sort();
@@ -603,7 +624,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
                 nameMsg.setTimeStamp(0.0);
                 seq.addEvent(nameMsg);
 
-                for (const auto* clip : td.clips)
+                for (const auto& clip : td.clips)
                     addClipDataToSequence(seq, clip, channel, maxTick);
 
                 seq.sort();
