@@ -40,18 +40,20 @@ class ArpSliderLookAndFeel : public juce::LookAndFeel_V4 {
 };
 
 void RampCurveDisplay::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat().reduced(2.0f);
-    if (bounds.getWidth() < 4.0f || bounds.getHeight() < 4.0f)
+    auto outerBounds = getLocalBounds().toFloat();
+    if (outerBounds.getWidth() < 8.0f || outerBounds.getHeight() < 8.0f)
         return;
 
     // Background
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.08f));
-    g.fillRoundedRectangle(bounds, 2.0f);
+    g.fillRoundedRectangle(outerBounds, 2.0f);
 
     // Border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
-    g.drawRoundedRectangle(bounds, 2.0f, 0.5f);
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.3f));
+    g.drawRoundedRectangle(outerBounds.reduced(0.5f), 2.0f, 0.5f);
 
+    // Inset for curve content (padding inside the border)
+    auto bounds = outerBounds.reduced(8.0f);
     float w = bounds.getWidth();
     float h = bounds.getHeight();
     float x0 = bounds.getX();
@@ -93,7 +95,7 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
 }
 
 void RampCurveDisplay::mouseDown(const juce::MouseEvent& e) {
-    auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+    auto bounds = getLocalBounds().toFloat().reduced(8.0f);
     float w = bounds.getWidth();
     float h = bounds.getHeight();
     float x0 = bounds.getX();
@@ -106,7 +108,7 @@ void RampCurveDisplay::mouseDown(const juce::MouseEvent& e) {
 }
 
 void RampCurveDisplay::mouseDrag(const juce::MouseEvent& e) {
-    auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+    auto bounds = getLocalBounds().toFloat().reduced(8.0f);
     float w = bounds.getWidth();
     float h = bounds.getHeight();
     float x0 = bounds.getX();
@@ -144,7 +146,7 @@ void RampCurveDisplay::mouseDoubleClick(const juce::MouseEvent&) {
 static constexpr int ROW_HEIGHT = 22;
 static constexpr int ROW_GAP = 4;
 static constexpr int LABEL_WIDTH = 52;
-static constexpr int PADDING = 10;
+static constexpr int PADDING = 6;
 static constexpr int COLUMN_GAP = 10;
 
 ArpeggiatorUI::ArpeggiatorUI() {
