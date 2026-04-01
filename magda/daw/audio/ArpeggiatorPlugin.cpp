@@ -32,10 +32,66 @@ ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : te::P
     latch.referTo(state, ArpIDs::latch, um, false);
     velocityMode.referTo(state, ArpIDs::velocityMode, um, 0);
     fixedVelocity.referTo(state, ArpIDs::fixedVelocity, um, 100);
+
+    // Register automatable parameters so macros can link to them
+    patternParam = addParam("pattern", "Pattern", {0.0f, 5.0f, 1.0f});
+    rateParam = addParam("rate", "Rate", {0.0f, 9.0f, 1.0f});
+    octavesParam = addParam("octaves", "Octaves", {1.0f, 4.0f, 1.0f});
+    gateParam = addParam("gate", "Gate", {0.01f, 1.0f});
+    swingParam = addParam("swing", "Swing", {0.0f, 1.0f});
+    rampParam = addParam("ramp", "Timing Depth", {-1.0f, 1.0f});
+    skewParam = addParam("skew", "Timing Skew", {0.01f, 0.99f});
+    latchParam = addParam("latch", "Latch", {0.0f, 1.0f, 1.0f});
+    velModeParam = addParam("velmode", "Velocity Mode", {0.0f, 2.0f, 1.0f});
+    fixedVelParam = addParam("fixedvel", "Fixed Velocity", {1.0f, 127.0f, 1.0f});
+
+    // Initialize automatable params from CachedValues
+    patternParam->setParameter(static_cast<float>(pattern.get()), juce::dontSendNotification);
+    rateParam->setParameter(static_cast<float>(rate.get()), juce::dontSendNotification);
+    octavesParam->setParameter(static_cast<float>(octaveRange.get()), juce::dontSendNotification);
+    gateParam->setParameter(gate.get(), juce::dontSendNotification);
+    swingParam->setParameter(swing.get(), juce::dontSendNotification);
+    rampParam->setParameter(ramp.get(), juce::dontSendNotification);
+    skewParam->setParameter(skew.get(), juce::dontSendNotification);
+    latchParam->setParameter(latch.get() ? 1.0f : 0.0f, juce::dontSendNotification);
+    velModeParam->setParameter(static_cast<float>(velocityMode.get()), juce::dontSendNotification);
+    fixedVelParam->setParameter(static_cast<float>(fixedVelocity.get()),
+                                juce::dontSendNotification);
+
+    // Listen for CachedValue changes (from UI) to sync to AutomatableParams
+    state.addListener(&paramSyncListener_);
 }
 
 ArpeggiatorPlugin::~ArpeggiatorPlugin() {
+    state.removeListener(&paramSyncListener_);
     notifyListenersOfDeletion();
+}
+
+void ArpeggiatorPlugin::syncParamFromProperty(const juce::Identifier& property) {
+    // Push CachedValue changes to AutomatableParam base values
+    if (property == ArpIDs::pattern && patternParam)
+        patternParam->setParameter(static_cast<float>(pattern.get()), juce::dontSendNotification);
+    else if (property == ArpIDs::rate && rateParam)
+        rateParam->setParameter(static_cast<float>(rate.get()), juce::dontSendNotification);
+    else if (property == ArpIDs::octaveRange && octavesParam)
+        octavesParam->setParameter(static_cast<float>(octaveRange.get()),
+                                   juce::dontSendNotification);
+    else if (property == ArpIDs::gate && gateParam)
+        gateParam->setParameter(gate.get(), juce::dontSendNotification);
+    else if (property == ArpIDs::swing && swingParam)
+        swingParam->setParameter(swing.get(), juce::dontSendNotification);
+    else if (property == ArpIDs::ramp && rampParam)
+        rampParam->setParameter(ramp.get(), juce::dontSendNotification);
+    else if (property == ArpIDs::skew && skewParam)
+        skewParam->setParameter(skew.get(), juce::dontSendNotification);
+    else if (property == ArpIDs::latch && latchParam)
+        latchParam->setParameter(latch.get() ? 1.0f : 0.0f, juce::dontSendNotification);
+    else if (property == ArpIDs::velocityMode && velModeParam)
+        velModeParam->setParameter(static_cast<float>(velocityMode.get()),
+                                   juce::dontSendNotification);
+    else if (property == ArpIDs::fixedVelocity && fixedVelParam)
+        fixedVelParam->setParameter(static_cast<float>(fixedVelocity.get()),
+                                    juce::dontSendNotification);
 }
 
 void ArpeggiatorPlugin::initialise(const te::PluginInitialisationInfo& info) {
@@ -178,8 +234,10 @@ ArpeggiatorPlugin::ExpandedSequence ArpeggiatorPlugin::buildSequence() const {
     if (heldCount_ == 0)
         return seq;
 
-    auto pat = static_cast<Pattern>(pattern.get());
-    int octaves = juce::jlimit(1, 4, octaveRange.get());
+    auto pat = static_cast<Pattern>(
+        juce::roundToInt(patternParam ? patternParam->getCurrentValue() : pattern.get()));
+    int octaves = juce::jlimit(
+        1, 4, juce::roundToInt(octavesParam ? octavesParam->getCurrentValue() : octaveRange.get()));
 
     // Copy held notes for sorting
     std::array<HeldNote, MAX_HELD> sorted{};
@@ -250,7 +308,7 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         return;
 
     auto& midi = *fc.bufferForMidiMessages;
-    bool isLatched = latch.get();
+    bool isLatched = latchParam ? latchParam->getCurrentValue() >= 0.5f : latch.get();
 
     // --- 1. Capture incoming MIDI ---
     for (const auto& msg : midi) {
@@ -340,15 +398,25 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (seq.length == 0)
         return;
 
-    auto pat = static_cast<Pattern>(pattern.get());
-    auto currentRate = static_cast<Rate>(rate.get());
+    // Read from automatable params (includes macro modulation) with CachedValue fallbacks
+    auto pat = static_cast<Pattern>(
+        juce::roundToInt(patternParam ? patternParam->getCurrentValue() : pattern.get()));
+    auto currentRate =
+        static_cast<Rate>(juce::roundToInt(rateParam ? rateParam->getCurrentValue() : rate.get()));
     double stepBeats = rateToBeats(currentRate);
-    float gateVal = juce::jlimit(0.01f, 1.0f, gate.get());
-    float swingVal = juce::jlimit(0.0f, 1.0f, swing.get());
-    float rampVal = juce::jlimit(-1.0f, 1.0f, ramp.get());
-    float skewVal = juce::jlimit(0.01f, 0.99f, skew.get());
-    auto velMode = static_cast<VelocityMode>(velocityMode.get());
-    int fixedVel = juce::jlimit(1, 127, fixedVelocity.get());
+    float gateVal =
+        juce::jlimit(0.01f, 1.0f, gateParam ? gateParam->getCurrentValue() : gate.get());
+    float swingVal =
+        juce::jlimit(0.0f, 1.0f, swingParam ? swingParam->getCurrentValue() : swing.get());
+    float rampVal =
+        juce::jlimit(-1.0f, 1.0f, rampParam ? rampParam->getCurrentValue() : ramp.get());
+    float skewVal =
+        juce::jlimit(0.01f, 0.99f, skewParam ? skewParam->getCurrentValue() : skew.get());
+    auto velMode = static_cast<VelocityMode>(
+        juce::roundToInt(velModeParam ? velModeParam->getCurrentValue() : velocityMode.get()));
+    int fixedVel = juce::jlimit(
+        1, 127,
+        juce::roundToInt(fixedVelParam ? fixedVelParam->getCurrentValue() : fixedVelocity.get()));
 
     // Cycle length in beats (one full pass through the sequence)
     double cycleBeats = seq.length * stepBeats;

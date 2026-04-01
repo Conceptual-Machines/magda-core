@@ -80,7 +80,7 @@ class ArpeggiatorPlugin : public te::Plugin {
 
     void restorePluginStateFromValueTree(const juce::ValueTree&) override;
 
-    // --- Parameter access for UI ---
+    // --- Parameter access for UI (CachedValues for persistence) ---
     juce::CachedValue<int> pattern;
     juce::CachedValue<int> rate;
     juce::CachedValue<int> octaveRange;
@@ -91,6 +91,12 @@ class ArpeggiatorPlugin : public te::Plugin {
     juce::CachedValue<bool> latch;
     juce::CachedValue<int> velocityMode;
     juce::CachedValue<int> fixedVelocity;
+
+    // --- Automatable parameters (for macro/mod linking) ---
+    te::AutomatableParameter::Ptr patternParam, rateParam, octavesParam;
+    te::AutomatableParameter::Ptr gateParam, swingParam;
+    te::AutomatableParameter::Ptr rampParam, skewParam;
+    te::AutomatableParameter::Ptr latchParam, velModeParam, fixedVelParam;
 
     // MIDI output note data for UI strip — written on audio thread, read on UI
     std::atomic<int> midiOutNote_{-1};     // Current note number (-1 = none)
@@ -137,6 +143,19 @@ class ArpeggiatorPlugin : public te::Plugin {
     juce::Random arpRandom_;
 
     double sampleRate_ = 44100.0;
+
+    // Helper to sync CachedValue changes to AutomatableParams
+    void syncParamFromProperty(const juce::Identifier& property);
+
+    // Inner listener to forward ValueTree changes
+    struct ParamSyncListener : public juce::ValueTree::Listener {
+        ArpeggiatorPlugin& owner;
+        explicit ParamSyncListener(ArpeggiatorPlugin& o) : owner(o) {}
+        void valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier& p) override {
+            owner.syncParamFromProperty(p);
+        }
+    };
+    ParamSyncListener paramSyncListener_{*this};
 
     // --- Helpers ---
     static double rateToBeats(Rate r);
