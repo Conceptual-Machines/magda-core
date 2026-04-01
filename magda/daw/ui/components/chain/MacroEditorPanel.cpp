@@ -79,7 +79,7 @@ void MacroLinkMatrixContent::mouseDown(const juce::MouseEvent& e) {
     }
 
     // Bipolar toggle zone: next 16px + 2px padding
-    if (x >= width - 36 && x < width - 18) {
+    if (x >= width - 34 && x < width - 18) {
         if (onToggleBipolar) {
             auto& link = links_[static_cast<size_t>(rowIndex)];
             onToggleBipolar(link.target, !link.bipolar);

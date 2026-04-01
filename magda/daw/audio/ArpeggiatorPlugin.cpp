@@ -456,6 +456,8 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                             te::MPESourceID{});
         lastPlayedNote_ = -1;
         lastNoteOffBeat_ = -1.0;
+        midiOutNote_.store(-1, std::memory_order_relaxed);
+        midiOutVelocity_.store(0, std::memory_order_relaxed);
     }
 
     // --- 8. Walk steps and generate notes ---
@@ -520,6 +522,8 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                                     te::MPESourceID{});
                 lastPlayedNote_ = -1;
                 lastNoteOffBeat_ = -1.0;
+                midiOutNote_.store(-1, std::memory_order_relaxed);
+                midiOutVelocity_.store(0, std::memory_order_relaxed);
             } else {
                 // Note-off in a future block
                 lastNoteOffBeat_ = noteOffBeat;

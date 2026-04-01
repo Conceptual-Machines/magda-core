@@ -87,7 +87,7 @@ class ArpeggiatorPlugin : public te::Plugin {
     juce::CachedValue<float> gate;
     juce::CachedValue<float> swing;
     juce::CachedValue<float> ramp;  // -1.0 to 1.0: bezier depth (perpendicular bow)
-    juce::CachedValue<float> skew;  // 0.0 to 1.0: control-point position along diagonal
+    juce::CachedValue<float> skew;  // -1.0 to 1.0: control-point position offset from centre
     juce::CachedValue<bool> latch;
     juce::CachedValue<int> velocityMode;
     juce::CachedValue<int> fixedVelocity;

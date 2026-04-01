@@ -396,7 +396,7 @@ class ImpulseResponseProcessor : public DeviceProcessor {
  * - 3: Gate (0..1)
  * - 4: Swing (0..1)
  * - 5: Timing Depth (-1..1, ramp curve depth)
- * - 6: Timing Skew (0..1, ramp curve skew)
+ * - 6: Timing Skew (-1..1, bipolar ramp curve skew)
  * - 7: Latch (0/1 boolean)
  * - 8: Velocity Mode (discrete 0-2)
  * - 9: Fixed Velocity (1-127)

@@ -927,6 +927,7 @@ void TrackChainContent::initGlobalMacrosPanel() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0) {
             magda::TrackManager::getInstance().setTrackMacroLinkBipolar(
                 selectedTrackId_, selectedGlobalMacroIndex_, target, bipolar);
+            updateGlobalMacrosPanel();
         }
     };
     globalMacroEditorPanel_->setParamNameResolver(
