@@ -1266,8 +1266,8 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
     headerArea.removeFromRight(4);
 
-    // Chord engine: no volume/SC/meter — only power button in header
-    if (isChordEngine_) {
+    // MIDI devices: no volume/SC — only power button in header
+    if (isChordEngine_ || isArpeggiator_) {
         gainSlider_.setVisible(false);
         if (scButton_)
             scButton_->setVisible(false);
