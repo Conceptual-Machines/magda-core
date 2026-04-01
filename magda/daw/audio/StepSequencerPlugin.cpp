@@ -318,11 +318,9 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                 noteOffCountdown_ = 0;
                 clearMidiOutDisplay();
             } else {
-                // Step will handle the transition — cancel countdown
                 noteOffCountdown_ = 0;
             }
         } else {
-            // Check if a step fires in this block — if so, cancel countdown
             if (eventCount > 0) {
                 noteOffCountdown_ = 0;
             } else {

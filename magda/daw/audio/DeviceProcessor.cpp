@@ -1658,10 +1658,13 @@ void ExternalPluginProcessor::propagateParameterChange(te::AutomatableParameter&
     if (parameterIndex < 0)
         return;
 
-    // When modifiers are active, use the base value (without modulation) to prevent
-    // modulated values from overwriting the base parameter value in the data model.
-    float valueToStore = param.hasActiveModifierAssignments() ? param.getCurrentBaseValue()
-                                                              : param.getCurrentValue();
+    // When modifiers (macros) are active, the macro owns the base value — skip propagation
+    // entirely. Otherwise, internal plugin modulation (e.g. Serum LFO) gets misinterpreted
+    // as a base value change and overwrites the macro-controlled value.
+    if (param.hasActiveModifierAssignments())
+        return;
+
+    float valueToStore = param.getCurrentValue();
 
     // Update TrackManager on the message thread to avoid threading issues
     // Use callAsync to ensure we're on the message thread
