@@ -1203,8 +1203,10 @@ void TrackChainContent::resized() {
         const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         bool isMaster = selTrack && selTrack->type == magda::TrackType::Master;
 
-        chainBypassButton_->setBounds(headerArea.removeFromRight(17));
-        headerArea.removeFromRight(4);
+        if (!isMaster) {
+            chainBypassButton_->setBounds(headerArea.removeFromRight(17));
+            headerArea.removeFromRight(4);
+        }
         if (!isMaster) {
             panSlider_.setBounds(headerArea.removeFromRight(40));
             headerArea.removeFromRight(4);
@@ -1418,10 +1420,11 @@ void TrackChainContent::updateFromSelectedTrack() {
 
             showHeader(true);
 
-            // Hide solo and pan for master track
+            // Hide solo, pan, and chain bypass for master track
             if (track->type == magda::TrackType::Master) {
                 soloButton_.setVisible(false);
                 panSlider_.setVisible(false);
+                chainBypassButton_->setVisible(false);
             }
 
             noSelectionLabel_.setVisible(false);
