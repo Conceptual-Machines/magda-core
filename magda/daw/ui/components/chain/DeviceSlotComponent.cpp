@@ -1259,6 +1259,10 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         headerArea.removeFromLeft(4);
         modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
+    } else if (isArpeggiator_) {
+        macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+        headerArea.removeFromLeft(4);
+        modButton_->setVisible(false);
     } else {
         macroButton_->setVisible(false);
         modButton_->setVisible(false);
