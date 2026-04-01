@@ -1081,9 +1081,11 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
     // Show header controls when expanded
     bool isDrumGrid = drumGridUI_ != nullptr;
-    bool showModMacro = !isDrumGrid && device_.deviceType != magda::DeviceType::MIDI;
-    modButton_->setVisible(showModMacro);
-    macroButton_->setVisible(showModMacro);
+    bool showMod = !isDrumGrid && device_.deviceType != magda::DeviceType::MIDI;
+    bool showMacro =
+        !isDrumGrid && (device_.deviceType != magda::DeviceType::MIDI || isArpeggiator_);
+    modButton_->setVisible(showMod);
+    macroButton_->setVisible(showMacro);
     uiButton_->setVisible(!isInternalDevice());
     onButton_->setVisible(true);
     gainSlider_.setVisible(!isChordEngine_ && !isArpeggiator_);
@@ -1338,14 +1340,15 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     uiButton_->setVisible(!isInternalDevice());
     area.removeFromTop(4);
 
-    bool showModMacro = device_.deviceType != magda::DeviceType::MIDI;
+    bool showMod = device_.deviceType != magda::DeviceType::MIDI;
+    bool showMacro = device_.deviceType != magda::DeviceType::MIDI || isArpeggiator_;
     macroButton_->setBounds(
         area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    macroButton_->setVisible(showModMacro);
+    macroButton_->setVisible(showMacro);
     area.removeFromTop(4);
     modButton_->setBounds(
         area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-    modButton_->setVisible(showModMacro);
+    modButton_->setVisible(showMod);
 
     // Multi-out button (only if plugin is multi-out)
     if (device_.multiOut.isMultiOut && multiOutButton_) {
@@ -2692,10 +2695,12 @@ void DeviceSlotComponent::createCustomUI() {
         }
     }
 
-    // MIDI-only plugins have no mappable parameters — hide mod/macro buttons
+    // MIDI-only plugins have no mappable parameters — hide mod buttons
+    // Arpeggiator keeps macros for user-assignable control
     if (device_.deviceType == magda::DeviceType::MIDI) {
         modButton_->setVisible(false);
-        macroButton_->setVisible(false);
+        if (!isArpeggiator_)
+            macroButton_->setVisible(false);
     }
 }
 
