@@ -7,6 +7,7 @@
 #include "../audio/MidiChordEnginePlugin.hpp"
 #include "../audio/MidiReceivePlugin.hpp"
 #include "../audio/SidechainMonitorPlugin.hpp"
+#include "../audio/StepSequencerPlugin.hpp"
 #include "../project/ProjectManager.hpp"
 
 namespace magda {
@@ -89,6 +90,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         }
         if (type == daw::audio::ArpeggiatorPlugin::xmlTypeName) {
             return new daw::audio::ArpeggiatorPlugin(info);
+        }
+        if (type == daw::audio::StepSequencerPlugin::xmlTypeName) {
+            return new daw::audio::StepSequencerPlugin(info);
         }
         DBG("MagdaEngineBehaviour::createCustomPlugin - unknown type: " << type);
         return {};

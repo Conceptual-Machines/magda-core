@@ -10,6 +10,7 @@
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
+#include "audio/StepSequencerPlugin.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
 #include "core/TrackManager.hpp"
@@ -347,6 +348,9 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
                                                      false, "MIDI"));
     list.push_back(PluginBrowserInfo::createInternal(audio::ArpeggiatorPlugin::getPluginName(),
                                                      audio::ArpeggiatorPlugin::xmlTypeName, false,
+                                                     "MIDI"));
+    list.push_back(PluginBrowserInfo::createInternal(audio::StepSequencerPlugin::getPluginName(),
+                                                     audio::StepSequencerPlugin::xmlTypeName, false,
                                                      "MIDI"));
     list.push_back(PluginBrowserInfo::createInternal("Equaliser", "eq", false, "EQ"));
     list.push_back(

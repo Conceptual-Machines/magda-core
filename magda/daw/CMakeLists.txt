@@ -236,6 +236,9 @@ set(DAW_CORE_SOURCES
     audio/DrumGridPlugin.cpp
     audio/MidiChordEnginePlugin.cpp
     audio/ArpeggiatorPlugin.cpp
+    audio/MidiDevicePlugin.cpp
+    audio/StepClock.cpp
+    audio/StepSequencerPlugin.cpp
     # Project serialization
     project/serialization/ProjectSerializer.cpp
     project/serialization/TrackSerializer.cpp
@@ -396,6 +399,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/UtilityUI.cpp
     ui/components/chain/FourOscUI.cpp
     ui/components/chain/ArpeggiatorUI.cpp
+    ui/components/chain/StepSequencerUI.cpp
     ui/components/chain/PadChainPanel.cpp
     ui/components/chain/PadDeviceSlot.cpp
     ui/components/chain/PadChainRangeRowComponent.cpp
@@ -539,6 +543,9 @@ set(DAW_HEADERS
     audio/DrumGridPlugin.hpp
     audio/MidiChordEnginePlugin.hpp
     audio/ArpeggiatorPlugin.hpp
+    audio/MidiDevicePlugin.hpp
+    audio/StepClock.hpp
+    audio/StepSequencerPlugin.hpp
     # Views
     ui/views/MainView.hpp
     ui/views/SessionView.hpp
@@ -607,6 +614,7 @@ set(DAW_HEADERS
     ui/components/chain/UtilityUI.hpp
     ui/components/chain/FourOscUI.hpp
     ui/components/chain/ArpeggiatorUI.hpp
+    ui/components/chain/StepSequencerUI.hpp
     ui/components/chain/PagedControlPanel.hpp
     ui/components/chain/MacroKnobComponent.hpp
     ui/components/chain/MacroPanelComponent.hpp

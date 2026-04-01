@@ -15,6 +15,7 @@
 #include "ModifierHelpers.hpp"
 #include "PluginWindowBridge.hpp"
 #include "SidechainMonitorPlugin.hpp"
+#include "StepSequencerPlugin.hpp"
 #include "TrackController.hpp"
 #include "TransportStateManager.hpp"
 
@@ -779,6 +780,13 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
     } else if (type.equalsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
         juce::ValueTree pluginState(te::IDs::PLUGIN);
         pluginState.setProperty(te::IDs::type, daw::audio::ArpeggiatorPlugin::xmlTypeName, nullptr);
+        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+        if (plugin)
+            track->pluginList.insertPlugin(plugin, -1, nullptr);
+    } else if (type.equalsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName)) {
+        juce::ValueTree pluginState(te::IDs::PLUGIN);
+        pluginState.setProperty(te::IDs::type, daw::audio::StepSequencerPlugin::xmlTypeName,
+                                nullptr);
         plugin = edit_.getPluginCache().createNewPlugin(pluginState);
         if (plugin)
             track->pluginList.insertPlugin(plugin, -1, nullptr);
@@ -2949,6 +2957,11 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
             juce::ValueTree ps(te::IDs::PLUGIN);
             ps.setProperty(te::IDs::type, daw::audio::ArpeggiatorPlugin::xmlTypeName, nullptr);
             plugin = edit_.getPluginCache().createNewPlugin(ps);
+        } else if (device.pluginId.containsIgnoreCase(
+                       daw::audio::StepSequencerPlugin::xmlTypeName)) {
+            juce::ValueTree ps(te::IDs::PLUGIN);
+            ps.setProperty(te::IDs::type, daw::audio::StepSequencerPlugin::xmlTypeName, nullptr);
+            plugin = edit_.getPluginCache().createNewPlugin(ps);
         }
     } else {
         // External plugin — same lookup logic as loadDeviceAsPlugin but without track insertion
@@ -3170,6 +3183,16 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<ArpeggiatorProcessor>(device.id, plugin);
+            }
+        } else if (device.pluginId.containsIgnoreCase(
+                       daw::audio::StepSequencerPlugin::xmlTypeName)) {
+            juce::ValueTree pluginState(te::IDs::PLUGIN);
+            pluginState.setProperty(te::IDs::type, daw::audio::StepSequencerPlugin::xmlTypeName,
+                                    nullptr);
+            plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+            if (plugin) {
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
+                processor = std::make_unique<StepSequencerProcessor>(device.id, plugin);
             }
         } else if (device.pluginId.containsIgnoreCase("delay")) {
             plugin = createInternalPlugin(te::DelayPlugin::xmlTypeName, device.pluginState);

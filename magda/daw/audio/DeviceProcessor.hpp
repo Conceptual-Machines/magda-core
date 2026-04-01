@@ -11,7 +11,8 @@ namespace te = tracktion;
 
 namespace daw::audio {
 class ArpeggiatorPlugin;
-}
+class StepSequencerPlugin;
+}  // namespace daw::audio
 
 /**
  * @brief Processes a single device, bridging DeviceInfo state to plugin parameters
@@ -414,6 +415,33 @@ class ArpeggiatorProcessor : public DeviceProcessor {
 
   private:
     daw::audio::ArpeggiatorPlugin* getArpPlugin() const;
+};
+
+/**
+ * @brief Processor for the Step Sequencer plugin
+ *
+ * Exposes CachedValue-based parameters so macros can target them.
+ * Parameters:
+ * - 0: Rate (discrete 0-9)
+ * - 1: Direction (discrete 0-3)
+ * - 2: Swing (0..1)
+ * - 3: Glide Time (0..1)
+ * - 4: Accent Velocity (1-127)
+ * - 5: Normal Velocity (1-127)
+ */
+class StepSequencerProcessor : public DeviceProcessor {
+  public:
+    StepSequencerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+
+  private:
+    daw::audio::StepSequencerPlugin* getSeqPlugin() const;
 };
 
 /**
