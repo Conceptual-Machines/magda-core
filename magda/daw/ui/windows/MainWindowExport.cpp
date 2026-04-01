@@ -1,7 +1,12 @@
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include "../dialogs/ExportAudioDialog.hpp"
+#include "../dialogs/ExportMidiDialog.hpp"
 #include "MainWindow.hpp"
 #include "audio/AudioBridge.hpp"
+#include "core/ClipManager.hpp"
 #include "core/Config.hpp"
+#include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 
@@ -380,6 +385,266 @@ int MainWindow::getBitDepthForFormat(const juce::String& format) const {
     if (format == "FLAC")
         return 24;  // FLAC default
     return 16;      // Default
+}
+
+// ============================================================================
+// Export MIDI Implementation
+// ============================================================================
+
+void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
+    DBG("performMidiExport called, format=" << settings.midiFormat);
+    auto& clipManager = ClipManager::getInstance();
+    auto& trackManager = TrackManager::getInstance();
+    const auto& clips = clipManager.getArrangementClips();
+
+    DBG("Total arrangement clips: " << clips.size());
+
+    double projectTempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    if (projectTempo <= 0.0)
+        projectTempo = 120.0;
+
+    int timeSigNum = ProjectManager::getInstance().getCurrentProjectInfo().timeSignatureNumerator;
+    int timeSigDen = ProjectManager::getInstance().getCurrentProjectInfo().timeSignatureDenominator;
+    if (timeSigNum <= 0)
+        timeSigNum = 4;
+    if (timeSigDen <= 0)
+        timeSigDen = 4;
+
+    // Determine export time range
+    double rangeStart = 0.0;
+    double rangeEnd = 0.0;
+
+    // Find the extent of all MIDI clips
+    for (const auto& clip : clips) {
+        if (clip.type == ClipType::MIDI) {
+            double end = clip.startTime + clip.length;
+            if (end > rangeEnd)
+                rangeEnd = end;
+        }
+    }
+
+    if (settings.exportRange == ExportMidiDialog::ExportRange::LoopRegion) {
+        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
+        if (engine && engine->getEdit()) {
+            auto loopRange = engine->getEdit()->getTransport().getLoopRange();
+            rangeStart = loopRange.getStart().inSeconds();
+            rangeEnd = loopRange.getEnd().inSeconds();
+        }
+    }
+
+    DBG("MIDI export range: " << rangeStart << " - " << rangeEnd);
+
+    if (rangeEnd <= rangeStart) {
+        DBG("No MIDI clips found - rangeEnd <= rangeStart");
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Export MIDI",
+                                               "No MIDI clips to export.");
+        return;
+    }
+
+    // Collect MIDI clips grouped by track
+    struct TrackMidiData {
+        juce::String trackName;
+        std::vector<const ClipInfo*> clips;
+    };
+    std::map<TrackId, TrackMidiData> trackData;
+
+    for (const auto& clip : clips) {
+        if (clip.type != ClipType::MIDI)
+            continue;
+        if (clip.midiNotes.empty() && clip.midiCCData.empty() && clip.midiPitchBendData.empty())
+            continue;
+
+        // Check if clip overlaps with range
+        double clipEnd = clip.startTime + clip.length;
+        if (clipEnd <= rangeStart || clip.startTime >= rangeEnd)
+            continue;
+
+        auto& td = trackData[clip.trackId];
+        if (td.trackName.isEmpty()) {
+            auto* track = trackManager.getTrack(clip.trackId);
+            td.trackName = track ? track->name : "Track";
+        }
+        td.clips.push_back(&clip);
+    }
+
+    DBG("Track data count: " << trackData.size());
+    if (trackData.empty()) {
+        DBG("No MIDI clips with notes found");
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Export MIDI",
+                                               "No MIDI clips with notes to export.");
+        return;
+    }
+
+    // Build default output path
+    juce::String projName = ProjectManager::getInstance().getProjectName();
+    if (projName.isEmpty())
+        projName = "untitled";
+    projName = projName.replaceCharacters(" /\\:", "____");
+
+    auto defaultDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+    auto defaultFile = defaultDir.getChildFile(projName + ".mid");
+
+    // Launch file chooser
+    fileChooser_ = std::make_unique<juce::FileChooser>("Export MIDI", defaultFile, "*.mid", true);
+
+    auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
+                 juce::FileBrowserComponent::warnAboutOverwriting;
+
+    auto midiFormat = settings.midiFormat;
+    auto capturedRangeStart = rangeStart;
+
+    fileChooser_->launchAsync(flags, [this, trackData = std::move(trackData), projectTempo,
+                                      timeSigNum, timeSigDen, midiFormat,
+                                      capturedRangeStart](const juce::FileChooser& chooser) {
+        auto file = chooser.getResult();
+        fileChooser_.reset();
+
+        if (file == juce::File())
+            return;
+
+        if (!file.hasFileExtension(".mid"))
+            file = file.withFileExtension(".mid");
+
+        constexpr int ticksPerQuarter = 960;
+        auto beatsToTicks = [&](double beats) -> double { return beats * ticksPerQuarter; };
+        auto secondsToBeats = [&](double seconds) -> double {
+            return (seconds * projectTempo) / 60.0;
+        };
+
+        juce::MidiFile midiFile;
+        midiFile.setTicksPerQuarterNote(ticksPerQuarter);
+
+        // Tempo and time signature meta-events
+        int microsecondsPerBeat = static_cast<int>(60000000.0 / projectTempo);
+        auto tempoMsg = juce::MidiMessage::tempoMetaEvent(microsecondsPerBeat);
+        tempoMsg.setTimeStamp(0.0);
+        auto timeSigMsg = juce::MidiMessage::timeSignatureMetaEvent(timeSigNum, timeSigDen);
+        timeSigMsg.setTimeStamp(0.0);
+
+        // Helper to add notes/CC/PB from clips to a sequence
+        auto addClipDataToSequence = [&](juce::MidiMessageSequence& seq, const ClipInfo* clip,
+                                         int channel, double& maxTick) {
+            double clipStartBeats = secondsToBeats(clip->startTime - capturedRangeStart);
+
+            for (const auto& note : clip->midiNotes) {
+                double startTick = beatsToTicks(clipStartBeats + note.startBeat);
+                double endTick = beatsToTicks(clipStartBeats + note.startBeat + note.lengthBeats);
+                if (startTick < 0.0)
+                    startTick = 0.0;
+
+                auto noteOn = juce::MidiMessage::noteOn(channel, note.noteNumber,
+                                                        static_cast<juce::uint8>(note.velocity));
+                noteOn.setTimeStamp(startTick);
+                seq.addEvent(noteOn);
+
+                auto noteOff = juce::MidiMessage::noteOff(channel, note.noteNumber);
+                noteOff.setTimeStamp(endTick);
+                seq.addEvent(noteOff);
+
+                maxTick = std::max(maxTick, endTick);
+            }
+
+            for (const auto& cc : clip->midiCCData) {
+                double tick = beatsToTicks(clipStartBeats + cc.beatPosition);
+                if (tick < 0.0)
+                    tick = 0.0;
+                auto msg = juce::MidiMessage::controllerEvent(channel, cc.controller, cc.value);
+                msg.setTimeStamp(tick);
+                seq.addEvent(msg);
+                maxTick = std::max(maxTick, tick);
+            }
+
+            for (const auto& pb : clip->midiPitchBendData) {
+                double tick = beatsToTicks(clipStartBeats + pb.beatPosition);
+                if (tick < 0.0)
+                    tick = 0.0;
+                auto msg = juce::MidiMessage::pitchWheel(channel, pb.value);
+                msg.setTimeStamp(tick);
+                seq.addEvent(msg);
+                maxTick = std::max(maxTick, tick);
+            }
+        };
+
+        if (midiFormat == 0) {
+            // Type 0: everything in a single track (including tempo meta-events)
+            juce::MidiMessageSequence seq;
+            seq.addEvent(tempoMsg);
+            seq.addEvent(timeSigMsg);
+            double maxTick = 0.0;
+
+            for (const auto& [trackId, td] : trackData)
+                for (const auto* clip : td.clips)
+                    addClipDataToSequence(seq, clip, 1, maxTick);
+
+            seq.sort();
+            auto eot = juce::MidiMessage::endOfTrack();
+            eot.setTimeStamp(maxTick + 1.0);
+            seq.addEvent(eot);
+            midiFile.addTrack(seq);
+
+            DBG("Type 0: single track with " << seq.getNumEvents() << " events");
+        } else {
+            // Type 1: track 0 = tempo, then one track per MAGDA track
+            juce::MidiMessageSequence tempoTrack;
+            tempoTrack.addEvent(tempoMsg);
+            tempoTrack.addEvent(timeSigMsg);
+            auto eotTempo = juce::MidiMessage::endOfTrack();
+            eotTempo.setTimeStamp(0.0);
+            tempoTrack.addEvent(eotTempo);
+            midiFile.addTrack(tempoTrack);
+
+            int trackIdx = 0;
+            for (const auto& [trackId, td] : trackData) {
+                juce::MidiMessageSequence seq;
+                double maxTick = 0.0;
+                int channel = 1;
+
+                auto nameMsg = juce::MidiMessage::textMetaEvent(3, td.trackName);
+                nameMsg.setTimeStamp(0.0);
+                seq.addEvent(nameMsg);
+
+                for (const auto* clip : td.clips)
+                    addClipDataToSequence(seq, clip, channel, maxTick);
+
+                seq.sort();
+                auto eot = juce::MidiMessage::endOfTrack();
+                eot.setTimeStamp(maxTick + 1.0);
+                seq.addEvent(eot);
+                midiFile.addTrack(seq);
+
+                DBG("Type 1 track " << trackIdx << " (" << td.trackName
+                                    << "): " << seq.getNumEvents() << " events");
+                trackIdx++;
+            }
+        }
+
+        // Write the MIDI file
+        DBG("Writing MIDI file to: " << file.getFullPathName());
+        juce::FileOutputStream stream(file);
+        if (stream.openedOk()) {
+            stream.setPosition(0);
+            stream.truncate();
+            bool written = midiFile.writeTo(stream, midiFormat == 0 ? 0 : 1);
+            stream.flush();
+
+            DBG("MIDI write result: " << (written ? "success" : "failed")
+                                      << ", file size: " << file.getSize());
+
+            if (written) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::InfoIcon, "Export Complete",
+                    "MIDI exported successfully to:\n" + file.getFullPathName());
+            } else {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, "Export Failed", "Failed to write MIDI file.");
+            }
+        } else {
+            DBG("Failed to open output stream for: " << file.getFullPathName());
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Export Failed",
+                                                   "Could not create output file:\n" +
+                                                       file.getFullPathName());
+        }
+    });
 }
 
 }  // namespace magda

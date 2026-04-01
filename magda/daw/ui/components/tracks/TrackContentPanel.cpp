@@ -1,6 +1,7 @@
 #include "TrackContentPanel.hpp"
 
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <tracktion_engine/tracktion_engine.h>
 
 #include <functional>
 
@@ -15,6 +16,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -2267,11 +2269,11 @@ void TrackContentPanel::updateAutomationLanePositions() {
 // =============================================================================
 
 bool TrackContentPanel::isInterestedInFileDrag(const juce::StringArray& files) {
-    // Accept if any file is an audio file
     for (const auto& file : files) {
         if (file.endsWithIgnoreCase(".wav") || file.endsWithIgnoreCase(".aiff") ||
             file.endsWithIgnoreCase(".aif") || file.endsWithIgnoreCase(".mp3") ||
-            file.endsWithIgnoreCase(".ogg") || file.endsWithIgnoreCase(".flac")) {
+            file.endsWithIgnoreCase(".ogg") || file.endsWithIgnoreCase(".flac") ||
+            file.endsWithIgnoreCase(".mid") || file.endsWithIgnoreCase(".midi")) {
             return true;
         }
     }
@@ -2326,7 +2328,7 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
         if (track->type == TrackType::Group || track->type == TrackType::Aux) {
             juce::AlertWindow::showMessageBoxAsync(
                 juce::AlertWindow::WarningIcon, "Drop Failed",
-                "Audio files cannot be dropped on group or aux tracks.");
+                "Files cannot be dropped on group or aux tracks.");
             return;
         }
 
@@ -2335,65 +2337,193 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
             if (isDevice(element) && getDevice(element).pluginId.containsIgnoreCase("drumgrid")) {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::WarningIcon, "Drop Failed",
-                    "Audio files cannot be dropped on Drum Grid tracks.");
+                    "Files cannot be dropped on Drum Grid tracks.");
                 return;
             }
         }
     }
     // If targetTrackId is still INVALID, we'll create a new track below
 
-    juce::AudioFormatManager formatManager;
-    formatManager.registerBasicFormats();
+    // Separate audio and MIDI files
+    juce::StringArray audioFiles, midiFiles;
+    for (const auto& filePath : files) {
+        if (filePath.endsWithIgnoreCase(".mid") || filePath.endsWithIgnoreCase(".midi"))
+            midiFiles.add(filePath);
+        else if (filePath.endsWithIgnoreCase(".wav") || filePath.endsWithIgnoreCase(".aiff") ||
+                 filePath.endsWithIgnoreCase(".aif") || filePath.endsWithIgnoreCase(".mp3") ||
+                 filePath.endsWithIgnoreCase(".ogg") || filePath.endsWithIgnoreCase(".flac"))
+            audioFiles.add(filePath);
+    }
 
-    double currentTime = dropTime;
     int importedCount = 0;
 
-    // Wrap entire audio file drop in a compound operation so it's a single undo step
-    CompoundOperationScope scope("Import Audio Files");
+    // Import audio files
+    if (!audioFiles.isEmpty()) {
+        juce::AudioFormatManager formatManager;
+        formatManager.registerBasicFormats();
 
-    for (const auto& filePath : files) {
-        // Filter audio files only
-        if (!filePath.endsWithIgnoreCase(".wav") && !filePath.endsWithIgnoreCase(".aiff") &&
-            !filePath.endsWithIgnoreCase(".aif") && !filePath.endsWithIgnoreCase(".mp3") &&
-            !filePath.endsWithIgnoreCase(".ogg") && !filePath.endsWithIgnoreCase(".flac")) {
-            continue;
+        double currentTime = dropTime;
+        CompoundOperationScope scope("Import Audio Files");
+
+        for (const auto& filePath : audioFiles) {
+            juce::File audioFile(filePath);
+            if (!audioFile.existsAsFile())
+                continue;
+
+            if (targetTrackId == INVALID_TRACK_ID) {
+                juce::String trackName = audioFile.getFileNameWithoutExtension();
+                auto createTrackCmd =
+                    std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName);
+                auto* createTrackPtr = createTrackCmd.get();
+                UndoManager::getInstance().executeCommand(std::move(createTrackCmd));
+                targetTrackId = createTrackPtr->getCreatedTrackId();
+                if (targetTrackId == INVALID_TRACK_ID)
+                    return;
+                TrackManager::getInstance().setSelectedTrack(targetTrackId);
+            }
+
+            double fileDuration = 4.0;
+            if (auto reader = std::unique_ptr<juce::AudioFormatReader>(
+                    formatManager.createReaderFor(audioFile))) {
+                fileDuration = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+            }
+
+            auto cmd = std::make_unique<CreateClipCommand>(
+                ClipType::Audio, targetTrackId, currentTime, fileDuration, filePath.toStdString());
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+
+            currentTime += fileDuration + 0.5;
+            importedCount++;
         }
+    }
 
-        juce::File audioFile(filePath);
-        if (!audioFile.existsAsFile())
-            continue;
+    // Import MIDI files
+    if (!midiFiles.isEmpty()) {
+        double projectTempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+        if (projectTempo <= 0.0)
+            projectTempo = 120.0;
 
-        // Create a new audio track if dropped on empty area
-        if (targetTrackId == INVALID_TRACK_ID) {
-            juce::String trackName = audioFile.getFileNameWithoutExtension();
-            auto createTrackCmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName);
-            auto* createTrackPtr = createTrackCmd.get();
-            UndoManager::getInstance().executeCommand(std::move(createTrackCmd));
-            targetTrackId = createTrackPtr->getCreatedTrackId();
-            if (targetTrackId == INVALID_TRACK_ID)
-                return;
-            TrackManager::getInstance().setSelectedTrack(targetTrackId);
+        CompoundOperationScope scope("Import MIDI Files");
+
+        for (const auto& filePath : midiFiles) {
+            juce::File midiFile(filePath);
+            if (!midiFile.existsAsFile())
+                continue;
+
+            // Parse MIDI file using Tracktion Engine
+            juce::OwnedArray<tracktion::MidiList> lists;
+            juce::Array<tracktion::BeatPosition> tempoChangeBeatNumbers;
+            juce::Array<double> bpms;
+            juce::Array<int> numerators, denominators;
+            tracktion::BeatDuration songLength;
+
+            if (!tracktion::MidiList::readSeparateTracksFromFile(
+                    midiFile, lists, tempoChangeBeatNumbers, bpms, numerators, denominators,
+                    songLength, false)) {
+                continue;
+            }
+
+            if (lists.isEmpty())
+                continue;
+
+            // For single-track files dropped on an existing track, reuse that track
+            // For multi-track files or drops on empty area, create new tracks
+            bool createNewTracks = (lists.size() > 1) || (targetTrackId == INVALID_TRACK_ID);
+
+            for (int listIdx = 0; listIdx < lists.size(); ++listIdx) {
+                auto* list = lists[listIdx];
+                if (list->getNumNotes() == 0 && list->getNumControllerEvents() == 0)
+                    continue;
+
+                // Compute clip length in beats, round up to next bar
+                double lengthBeats = songLength.inBeats();
+                if (lengthBeats <= 0.0)
+                    lengthBeats = list->getLastBeatNumber().inBeats();
+                if (lengthBeats <= 0.0)
+                    lengthBeats = 4.0;
+
+                // Round up to whole bars
+                int beatsPerBar = 4;
+                if (!numerators.isEmpty() && numerators[0] > 0)
+                    beatsPerBar = numerators[0];
+                double bars = std::ceil(lengthBeats / beatsPerBar);
+                lengthBeats = bars * beatsPerBar;
+
+                double clipDuration = (lengthBeats * 60.0) / projectTempo;
+
+                // Create track if needed
+                TrackId clipTrackId = targetTrackId;
+                if (createNewTracks) {
+                    juce::String trackName = list->getImportedFileName();
+                    if (trackName.isEmpty())
+                        trackName = midiFile.getFileNameWithoutExtension();
+                    if (lists.size() > 1)
+                        trackName += " " + juce::String(listIdx + 1);
+
+                    auto createTrackCmd =
+                        std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName);
+                    auto* createTrackPtr = createTrackCmd.get();
+                    UndoManager::getInstance().executeCommand(std::move(createTrackCmd));
+                    clipTrackId = createTrackPtr->getCreatedTrackId();
+                    if (clipTrackId == INVALID_TRACK_ID)
+                        continue;
+                }
+
+                // Create MIDI clip
+                auto cmd = std::make_unique<CreateClipCommand>(ClipType::MIDI, clipTrackId,
+                                                               dropTime, clipDuration);
+                auto* cmdPtr = cmd.get();
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                ClipId clipId = cmdPtr->getCreatedClipId();
+                if (clipId == INVALID_CLIP_ID)
+                    continue;
+
+                auto* clip = ClipManager::getInstance().getClip(clipId);
+                if (!clip)
+                    continue;
+
+                // Populate MIDI notes
+                for (auto* note : list->getNotes()) {
+                    MidiNote midiNote;
+                    midiNote.noteNumber = note->getNoteNumber();
+                    midiNote.velocity = note->getVelocity();
+                    midiNote.startBeat = note->getStartBeat().inBeats();
+                    midiNote.lengthBeats = note->getLengthBeats().inBeats();
+                    clip->midiNotes.push_back(midiNote);
+                }
+
+                // Populate CC data
+                for (int i = 0; i < list->getNumControllerEvents(); ++i) {
+                    auto* event = list->getControllerEvent(i);
+                    int type = event->getType();
+
+                    if (type == tracktion::MidiControllerEvent::pitchWheelType) {
+                        MidiPitchBendData pb;
+                        pb.value = event->getControllerValue();
+                        pb.beatPosition = event->getBeatPosition().inBeats();
+                        clip->midiPitchBendData.push_back(pb);
+                    } else if (type >= 0 && type <= 127) {
+                        MidiCCData cc;
+                        cc.controller = type;
+                        cc.value = event->getControllerValue();
+                        cc.beatPosition = event->getBeatPosition().inBeats();
+                        clip->midiCCData.push_back(cc);
+                    }
+                }
+
+                // Set beat-based length
+                clip->lengthBeats = lengthBeats;
+                clip->startBeats = (dropTime * projectTempo) / 60.0;
+
+                ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId);
+                importedCount++;
+            }
         }
-
-        // Read actual file duration
-        double fileDuration = 4.0;  // fallback if reader fails
-        if (auto reader = std::unique_ptr<juce::AudioFormatReader>(
-                formatManager.createReaderFor(audioFile))) {
-            fileDuration = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
-        }
-
-        // Create clip via command
-        auto cmd = std::make_unique<CreateClipCommand>(ClipType::Audio, targetTrackId, currentTime,
-                                                       fileDuration, filePath.toStdString());
-
-        UndoManager::getInstance().executeCommand(std::move(cmd));
-
-        currentTime += fileDuration + 0.5;  // Space clips
-        importedCount++;
     }
 
     if (importedCount > 0) {
-        DBG("TrackContentPanel: Imported " << importedCount << " audio files");
+        DBG("TrackContentPanel: Imported " << importedCount << " files");
     }
 }
 

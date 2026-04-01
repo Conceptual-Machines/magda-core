@@ -269,6 +269,7 @@ set(DAW_UI_SOURCES
     ui/dialogs/AudioSettingsDialog.cpp
     ui/dialogs/ChainTreeDialog.cpp
     ui/dialogs/ExportAudioDialog.cpp
+    ui/dialogs/ExportMidiDialog.cpp
     ui/dialogs/ParameterConfigDialog.cpp
     ui/dialogs/PluginSettingsDialog.cpp
     ui/dialogs/PreferencesDialog.cpp
@@ -464,6 +465,7 @@ set(DAW_HEADERS
     ui/dialogs/AudioSettingsDialog.hpp
     ui/dialogs/ChainTreeDialog.hpp
     ui/dialogs/ExportAudioDialog.hpp
+    ui/dialogs/ExportMidiDialog.hpp
     ui/dialogs/ParameterConfigDialog.hpp
     ui/dialogs/PluginSettingsDialog.hpp
     ui/dialogs/PreferencesDialog.hpp

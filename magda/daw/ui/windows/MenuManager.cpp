@@ -81,6 +81,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::
         menu.addItem(SaveProjectAs, "Save Project As...", true, false);
         menu.addSeparator();
         menu.addItem(ExportAudio, "Export Audio...", true, false);
+        menu.addItem(ExportMidi, "Export MIDI...", true, false);
 
 #if !JUCE_MAC
         menu.addSeparator();
@@ -268,6 +269,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case ExportAudio:
             if (callbacks_.onExportAudio)
                 callbacks_.onExportAudio();
+            break;
+        case ExportMidi:
+            if (callbacks_.onExportMidi)
+                callbacks_.onExportMidi();
             break;
         case Quit:
             if (callbacks_.onQuit)

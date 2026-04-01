@@ -4,6 +4,7 @@
 #include "../dialogs/AboutDialog.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
+#include "../dialogs/ExportMidiDialog.hpp"
 #include "../dialogs/PluginSettingsDialog.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
@@ -401,6 +402,19 @@ void MainWindow::setupMenuCallbacks() {
                 performExport(settings, engine);
             },
             hasTimeSelection, hasLoopRegion);
+    };
+
+    callbacks.onExportMidi = [this]() {
+        if (fileChooser_ != nullptr)
+            return;
+
+        auto* engine = dynamic_cast<TracktionEngineWrapper*>(mainComponent->getAudioEngine());
+        bool hasLoopRegion = engine && engine->isLooping();
+
+        ExportMidiDialog::showDialog(
+            this,
+            [this](const ExportMidiDialog::Settings& settings) { performMidiExport(settings); },
+            false, hasLoopRegion);
     };
 
     callbacks.onQuit = [this]() { closeButtonPressed(); };

@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "BinaryData.h"
 #include "DarkTheme.hpp"
 #include "FontManager.hpp"
 
@@ -126,7 +127,7 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
 
     // ── File-browser row ────────────────────────────────────────────────
 
-    void drawFileBrowserRow(juce::Graphics& g, int width, int height, const juce::File&,
+    void drawFileBrowserRow(juce::Graphics& g, int width, int height, const juce::File& file,
                             const juce::String& filename, juce::Image* icon,
                             const juce::String& fileSizeDescription,
                             const juce::String& fileTimeDescription, bool isDirectory,
@@ -143,7 +144,23 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         const int x = 32;
         g.setColour(juce::Colours::black);
 
-        if (icon != nullptr && icon->isValid()) {
+        // Use MIDI icon for .mid/.midi files
+        auto ext = file.getFileExtension().toLowerCase();
+        if (!isDirectory && (ext == ".mid" || ext == ".midi")) {
+            if (midiDrawable_ == nullptr) {
+                midiDrawable_ = juce::Drawable::createFromImageData(BinaryData::midi_svg,
+                                                                    BinaryData::midi_svgSize);
+            }
+            if (midiDrawable_) {
+                midiDrawable_->replaceColour(juce::Colour(0xFFB3B3B3),
+                                             DarkTheme::getSecondaryTextColour());
+                midiDrawable_->drawWithin(
+                    g,
+                    juce::Rectangle<float>(2.0f, 2.0f, x - 4.0f, static_cast<float>(height) - 4.0f),
+                    juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize,
+                    1.0f);
+            }
+        } else if (icon != nullptr && icon->isValid()) {
             g.drawImageWithin(*icon, 2, 2, x - 4, height - 4,
                               juce::RectanglePlacement::centred |
                                   juce::RectanglePlacement::onlyReduceInSize,
@@ -264,6 +281,8 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
     }
 
   private:
+    mutable std::unique_ptr<juce::Drawable> midiDrawable_;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FileBrowserLookAndFeel)
 };
 

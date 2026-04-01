@@ -6,6 +6,7 @@
 
 #include "../../core/SelectionManager.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
+#include "../dialogs/ExportMidiDialog.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "CommandIDs.hpp"
 #include "MenuManager.hpp"
@@ -60,8 +61,9 @@ class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
     void setupMenuBar();
     void setupMenuCallbacks();
 
-    // Export audio helper methods
+    // Export helper methods
     void performExport(const ExportAudioDialog::Settings& settings, TracktionEngineWrapper* engine);
+    void performMidiExport(const ExportMidiDialog::Settings& settings);
     juce::String getFileExtensionForFormat(const juce::String& format) const;
     int getBitDepthForFormat(const juce::String& format) const;
 
