@@ -5,13 +5,12 @@ namespace magda::daw::audio {
 StepClock::StepClock() = default;
 
 void StepClock::reset() {
-    globalTick_ = 0;
+    nextStepBeat_ = -1.0;
+    tickParity_ = 0;
     sequenceStep_ = 0;
     goingUp_ = true;
-    originBeat_ = -1.0;
     wasPlaying_ = false;
     running_ = false;
-    freeRunSamples_ = 0.0;
 }
 
 double StepClock::rateToBeats(Rate r) {
@@ -110,28 +109,33 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
     double stepBeats = rateToBeats(rate);
     double blockDurationSecs = static_cast<double>(fc.bufferNumSamples) / sampleRate_;
 
-    // Initialise origin on first block
-    if (originBeat_ < 0.0)
-        originBeat_ = std::floor(blockStartBeat / stepBeats) * stepBeats;
+    // Initialise on first block — quantise to the nearest step grid position
+    if (nextStepBeat_ < 0.0)
+        nextStepBeat_ = std::floor(blockStartBeat / stepBeats) * stepBeats;
 
-    // --- Walk ticks and find events in this block ---
-    int eventCount = 0;
-
-    // Beat position of a given global tick
-    auto tickBeat = [&](int tick) -> double { return originBeat_ + tick * stepBeats; };
-
-    // Skip past ticks before this block
-    while (tickBeat(globalTick_) < blockStartBeat) {
-        ++globalTick_;
+    // Catch up if we fell behind (e.g. transport jumped forward)
+    // Limit iterations to prevent runaway loops
+    int catchUp = 0;
+    while (nextStepBeat_ < blockStartBeat && catchUp < numSteps) {
+        nextStepBeat_ += stepBeats;
         sequenceStep_ = advanceStep(sequenceStep_, numSteps, direction);
+        ++tickParity_;
+        ++catchUp;
+    }
+    // If still behind after numSteps iterations, re-anchor
+    if (nextStepBeat_ < blockStartBeat) {
+        nextStepBeat_ = std::floor(blockStartBeat / stepBeats) * stepBeats;
+        if (nextStepBeat_ < blockStartBeat)
+            nextStepBeat_ += stepBeats;
     }
 
-    double beat = tickBeat(globalTick_);
+    // --- Emit step events within this block ---
+    int eventCount = 0;
 
-    while (beat < blockEndBeat && eventCount < maxEvents) {
+    while (nextStepBeat_ < blockEndBeat && eventCount < maxEvents) {
         // Apply swing to odd ticks
-        double swungBeat = beat;
-        if (globalTick_ % 2 == 1 && swing > 0.0f)
+        double swungBeat = nextStepBeat_;
+        if (tickParity_ % 2 == 1 && swing > 0.0f)
             swungBeat += static_cast<double>(swing) * stepBeats * 0.5;
 
         if (swungBeat >= blockStartBeat && swungBeat < blockEndBeat) {
@@ -143,9 +147,10 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
             ++eventCount;
         }
 
-        ++globalTick_;
+        // Advance to next step using the CURRENT rate (immune to future rate changes)
+        nextStepBeat_ += stepBeats;
         sequenceStep_ = advanceStep(sequenceStep_, numSteps, direction);
-        beat = tickBeat(globalTick_);
+        ++tickParity_;
     }
 
     return eventCount;

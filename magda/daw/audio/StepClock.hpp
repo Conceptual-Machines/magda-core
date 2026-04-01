@@ -10,9 +10,12 @@ namespace te = tracktion::engine;
 /**
  * @brief Tempo-synced step clock used by MIDI sequencer devices.
  *
- * Handles transport state tracking, beat position resolution (from edit transport
- * or free-running clock when stopped), step timing with swing, and step advancement
- * in multiple direction modes.
+ * Handles transport state tracking, beat position resolution, step timing with
+ * swing, and step advancement in multiple direction modes.
+ *
+ * Tracks the next step's beat position directly rather than computing from a
+ * fixed grid, so rate changes (e.g. from macro modulation) only affect future
+ * steps and never cause note drops.
  *
  * Used by composition — each MIDI device that needs step-based timing owns a StepClock
  * and calls processBlock() each audio buffer to get the steps that fire within that block.
@@ -57,6 +60,7 @@ class StepClock {
      * @brief Process one audio block and return step events that fire within it.
      *
      * @param fc          Plugin render context (provides editTime, isPlaying, etc.)
+     * @param edit        The edit (for tempo sequence)
      * @param rate        Current rate division
      * @param direction   Current direction mode
      * @param swing       Swing amount 0-1
@@ -89,16 +93,13 @@ class StepClock {
     bool wasPlaying_ = false;
     bool running_ = false;
 
-    // Timing state (linear tick counter for beat position computation)
-    int globalTick_ = 0;
+    // Timing — tracks the next step beat directly (immune to rate changes)
+    double nextStepBeat_ = -1.0;  // Beat position of the next step to emit
+    int tickParity_ = 0;          // Even/odd counter for swing
 
     // Sequence state (direction-aware position within the pattern)
-    int sequenceStep_ = 0;      // Current position in the pattern (0..numSteps-1)
-    bool goingUp_ = true;       // For ping-pong direction
-    double originBeat_ = -1.0;  // Beat position when sequence started
-
-    // Free-running clock (for when transport is stopped)
-    double freeRunSamples_ = 0.0;
+    int sequenceStep_ = 0;  // Current position in the pattern (0..numSteps-1)
+    bool goingUp_ = true;   // For ping-pong direction
 
     // Random
     juce::Random random_;

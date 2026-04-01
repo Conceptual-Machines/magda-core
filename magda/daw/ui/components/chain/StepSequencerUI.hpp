@@ -37,6 +37,8 @@ class StepSequencerUI : public juce::Component,
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
 
   private:
     daw::audio::StepSequencerPlugin* plugin_ = nullptr;
@@ -58,6 +60,8 @@ class StepSequencerUI : public juce::Component,
     int selectedStep_ = 0;       // Currently selected step for editing
     int currentPlayStep_ = -1;   // Step being played (for highlight)
     int keyboardBaseNote_ = 48;  // Current keyboard base note (shifts with octave arrows)
+    int dragSourceStep_ = -1;    // Source step for shift+drag copy
+    int dragTargetStep_ = -1;    // Current drag target (for visual feedback)
 
     // --- Layout constants ---
     static constexpr int CONTROL_ROW_HEIGHT = 22;
@@ -78,7 +82,7 @@ class StepSequencerUI : public juce::Component,
     // --- Drawing helpers ---
     void drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area);
     void drawAccentRow(juce::Graphics& g, juce::Rectangle<int> area);
-    void drawGlideRow(juce::Graphics& g, juce::Rectangle<int> area);
+    void drawGlideTieRow(juce::Graphics& g, juce::Rectangle<int> area);
     void drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area);
     void drawOctaveArrow(juce::Graphics& g, juce::Rectangle<int> area, bool isLeft);
 
@@ -89,7 +93,7 @@ class StepSequencerUI : public juce::Component,
     // --- Layout bounds (computed in resized, used in paint/mouseDown) ---
     juce::Rectangle<int> stepBoxArea_;
     juce::Rectangle<int> accentArea_;
-    juce::Rectangle<int> glideArea_;
+    juce::Rectangle<int> glideTieArea_;
     juce::Rectangle<int> keyboardArea_;
     juce::Rectangle<int> octaveDownArea_;
     juce::Rectangle<int> octaveUpArea_;
@@ -105,6 +109,9 @@ class StepSequencerUI : public juce::Component,
 
     // Timer — poll playback position
     void timerCallback() override;
+
+    // Context menu
+    void showStepContextMenu(int stepIndex);
 
     // Note name helper
     static juce::String noteNameShort(int noteNumber);

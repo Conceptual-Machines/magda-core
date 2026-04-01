@@ -12,7 +12,7 @@ static const char* NOTE_NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G
 juce::String StepSequencerUI::noteNameShort(int noteNumber) {
     if (noteNumber < 0 || noteNumber > 127)
         return "-";
-    int octave = (noteNumber / 12) - 1;
+    int octave = (noteNumber / 12) - 2;
     return juce::String(NOTE_NAMES[noteNumber % 12]) + juce::String(octave);
 }
 
@@ -190,8 +190,8 @@ void StepSequencerUI::resized() {
     accentArea_ = bounds.removeFromTop(TOGGLE_ROW_HEIGHT);
     bounds.removeFromTop(ROW_GAP);
 
-    // Glide row
-    glideArea_ = bounds.removeFromTop(TOGGLE_ROW_HEIGHT);
+    // Glide/Tie row (click = glide, shift+click = tie)
+    glideTieArea_ = bounds.removeFromTop(TOGGLE_ROW_HEIGHT);
     bounds.removeFromTop(ROW_GAP + 2);
 
     // Keyboard with octave arrows on each side
@@ -208,7 +208,7 @@ void StepSequencerUI::resized() {
 void StepSequencerUI::paint(juce::Graphics& g) {
     drawStepBoxes(g, stepBoxArea_);
     drawAccentRow(g, accentArea_);
-    drawGlideRow(g, glideArea_);
+    drawGlideTieRow(g, glideTieArea_);
     drawOctaveArrow(g, octaveDownArea_, true);
     drawKeyboard(g, keyboardArea_);
     drawOctaveArrow(g, octaveUpArea_, false);
@@ -235,6 +235,8 @@ void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area
             bg = DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.3f);
         if (i == selectedStep_)
             bg = bg.brighter(0.15f);
+        if (i == dragTargetStep_ && dragSourceStep_ >= 0 && i != dragSourceStep_)
+            bg = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f);
         if (!step.gate)
             bg = bg.darker(0.3f);
 
@@ -292,7 +294,7 @@ void StepSequencerUI::drawAccentRow(juce::Graphics& g, juce::Rectangle<int> area
     }
 }
 
-void StepSequencerUI::drawGlideRow(juce::Graphics& g, juce::Rectangle<int> area) {
+void StepSequencerUI::drawGlideTieRow(juce::Graphics& g, juce::Rectangle<int> area) {
     if (!plugin_ || area.isEmpty())
         return;
 
@@ -302,7 +304,7 @@ void StepSequencerUI::drawGlideRow(juce::Graphics& g, juce::Rectangle<int> area)
 
     // Row label
     g.setColour(DarkTheme::getSecondaryTextColour());
-    g.drawText("GLD", area.removeFromLeft(24), juce::Justification::centredLeft);
+    g.drawText("G/T", area.removeFromLeft(24), juce::Justification::centredLeft);
 
     float boxW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
 
@@ -313,7 +315,12 @@ void StepSequencerUI::drawGlideRow(juce::Graphics& g, juce::Rectangle<int> area)
             juce::Rectangle<float>(x + 1.0f, static_cast<float>(area.getY()) + 1.0f, boxW - 2.0f,
                                    static_cast<float>(area.getHeight()) - 2.0f);
 
-        if (step.glide) {
+        if (step.tie) {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.7f));
+            g.fillRoundedRectangle(rect, 2.0f);
+            g.setColour(DarkTheme::getTextColour());
+            g.drawText("T", rect.toNearestInt(), juce::Justification::centred);
+        } else if (step.glide) {
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.7f));
             g.fillRoundedRectangle(rect, 2.0f);
             g.setColour(DarkTheme::getTextColour());
@@ -445,14 +452,17 @@ void StepSequencerUI::mouseDown(const juce::MouseEvent& e) {
     auto pos = e.getPosition();
     int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
 
-    // Step boxes — select step (or toggle gate on right-click)
+    // Step boxes — select step, toggle gate (right-click), or start shift+drag copy
     if (stepBoxArea_.contains(pos)) {
         int step = getStepAtX(pos.x, stepBoxArea_.getX(), stepBoxArea_.getWidth(), count);
         if (step >= 0 && step < count) {
             if (e.mods.isRightButtonDown()) {
-                // Toggle gate
-                auto s = plugin_->getStep(step);
-                plugin_->setStepGate(step, !s.gate);
+                selectedStep_ = step;
+                showStepContextMenu(step);
+            } else if (e.mods.isShiftDown()) {
+                dragSourceStep_ = step;
+                dragTargetStep_ = step;
+                selectedStep_ = step;
             } else {
                 selectedStep_ = step;
             }
@@ -474,13 +484,21 @@ void StepSequencerUI::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Glide row — toggle glide
-    if (glideArea_.contains(pos)) {
-        auto contentArea = glideArea_.withTrimmedLeft(24);
+    // Glide/Tie row — click = toggle glide, shift+click = toggle tie
+    if (glideTieArea_.contains(pos)) {
+        auto contentArea = glideTieArea_.withTrimmedLeft(24);
         int step = getStepAtX(pos.x, contentArea.getX(), contentArea.getWidth(), count);
         if (step >= 0 && step < count) {
             auto s = plugin_->getStep(step);
-            plugin_->setStepGlide(step, !s.glide);
+            if (e.mods.isShiftDown()) {
+                plugin_->setStepTie(step, !s.tie);
+                if (!s.tie)
+                    plugin_->setStepGlide(step, false);  // Tie and glide are mutually exclusive
+            } else {
+                plugin_->setStepGlide(step, !s.glide);
+                if (!s.glide)
+                    plugin_->setStepTie(step, false);  // Tie and glide are mutually exclusive
+            }
             repaint();
         }
         return;
@@ -514,6 +532,48 @@ void StepSequencerUI::mouseDown(const juce::MouseEvent& e) {
         }
         return;
     }
+}
+
+void StepSequencerUI::mouseDrag(const juce::MouseEvent& e) {
+    if (!plugin_ || dragSourceStep_ < 0)
+        return;
+
+    auto pos = e.getPosition();
+    int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+
+    if (stepBoxArea_.contains(pos)) {
+        int step = getStepAtX(pos.x, stepBoxArea_.getX(), stepBoxArea_.getWidth(), count);
+        if (step >= 0 && step < count && step != dragTargetStep_) {
+            dragTargetStep_ = step;
+            repaint();
+        }
+    }
+}
+
+void StepSequencerUI::mouseUp(const juce::MouseEvent&) {
+    if (!plugin_ || dragSourceStep_ < 0) {
+        dragSourceStep_ = -1;
+        dragTargetStep_ = -1;
+        return;
+    }
+
+    int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+
+    // Copy source step to target if they differ
+    if (dragTargetStep_ >= 0 && dragTargetStep_ < count && dragTargetStep_ != dragSourceStep_) {
+        auto src = plugin_->getStep(dragSourceStep_);
+        plugin_->setStepNote(dragTargetStep_, src.noteNumber);
+        plugin_->setStepOctaveShift(dragTargetStep_, src.octaveShift);
+        plugin_->setStepGate(dragTargetStep_, src.gate);
+        plugin_->setStepAccent(dragTargetStep_, src.accent);
+        plugin_->setStepGlide(dragTargetStep_, src.glide);
+        plugin_->setStepTie(dragTargetStep_, src.tie);
+        selectedStep_ = dragTargetStep_;
+    }
+
+    dragSourceStep_ = -1;
+    dragTargetStep_ = -1;
+    repaint();
 }
 
 // =============================================================================
@@ -571,6 +631,58 @@ int StepSequencerUI::getKeyboardNoteAtPosition(juce::Point<int> pos,
     }
 
     return -1;
+}
+
+// =============================================================================
+// Context menu
+// =============================================================================
+
+void StepSequencerUI::showStepContextMenu(int stepIndex) {
+    if (!plugin_)
+        return;
+
+    int count = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+    if (stepIndex < 0 || stepIndex >= count)
+        return;
+
+    auto step = plugin_->getStep(stepIndex);
+
+    juce::PopupMenu menu;
+    menu.addItem(1, step.gate ? "Mute Step" : "Unmute Step");
+    menu.addItem(2, "Copy to All Steps");
+    menu.addItem(3, "Clear Step");
+
+    menu.showMenuAsync(juce::PopupMenu::Options(), [this, stepIndex, count](int result) {
+        if (!plugin_)
+            return;
+        switch (result) {
+            case 1: {
+                auto s = plugin_->getStep(stepIndex);
+                plugin_->setStepGate(stepIndex, !s.gate);
+                break;
+            }
+            case 2: {
+                auto src = plugin_->getStep(stepIndex);
+                for (int i = 0; i < count; ++i) {
+                    if (i == stepIndex)
+                        continue;
+                    plugin_->setStepNote(i, src.noteNumber);
+                    plugin_->setStepOctaveShift(i, src.octaveShift);
+                    plugin_->setStepGate(i, src.gate);
+                    plugin_->setStepAccent(i, src.accent);
+                    plugin_->setStepGlide(i, src.glide);
+                    plugin_->setStepTie(i, src.tie);
+                }
+                break;
+            }
+            case 3:
+                plugin_->clearStep(stepIndex);
+                break;
+            default:
+                return;
+        }
+        repaint();
+    });
 }
 
 // =============================================================================

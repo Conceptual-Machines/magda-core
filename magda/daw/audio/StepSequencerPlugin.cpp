@@ -22,6 +22,7 @@ static const juce::Identifier stepOctave("oct");
 static const juce::Identifier stepGate("gate");
 static const juce::Identifier stepAccent("accent");
 static const juce::Identifier stepGlide("glide");
+static const juce::Identifier stepTie("tie");
 }  // namespace SeqIDs
 
 StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
@@ -97,14 +98,32 @@ void StepSequencerPlugin::deinitialise() {
 void StepSequencerPlugin::reset() {
     stepClock_.reset();
     lastPlayedNote_ = -1;
-    lastNoteOffBeat_ = -1.0;
+    noteOffCountdown_ = 0;
     currentPlayStep_.store(-1, std::memory_order_relaxed);
     clearMidiOutDisplay();
+}
+
+void StepSequencerPlugin::flushPluginStateToValueTree() {
+    Plugin::flushPluginStateToValueTree();
+    saveStepsToState();
 }
 
 void StepSequencerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     tracktion::copyPropertiesToCachedValues(v, numSteps, rate, direction, swing, glideTime,
                                             accentVelocity, normalVelocity);
+
+    // Copy step children from the incoming tree into our state
+    // (copyPropertiesToCachedValues only copies properties, not children)
+    for (int i = state.getNumChildren() - 1; i >= 0; --i) {
+        if (state.getChild(i).hasType(SeqIDs::stepTree))
+            state.removeChild(i, nullptr);
+    }
+    for (int i = 0; i < v.getNumChildren(); ++i) {
+        auto child = v.getChild(i);
+        if (child.hasType(SeqIDs::stepTree))
+            state.appendChild(child.createCopy(), nullptr);
+    }
+
     loadStepsFromState();
 }
 
@@ -153,6 +172,13 @@ void StepSequencerPlugin::setStepGlide(int index, bool glideOn) {
     saveStepsToState();
 }
 
+void StepSequencerPlugin::setStepTie(int index, bool tieOn) {
+    if (index < 0 || index >= MAX_STEPS)
+        return;
+    steps_[static_cast<size_t>(index)].tie = tieOn;
+    saveStepsToState();
+}
+
 void StepSequencerPlugin::clearStep(int index) {
     if (index < 0 || index >= MAX_STEPS)
         return;
@@ -186,6 +212,7 @@ void StepSequencerPlugin::saveStepsToState() {
         stepVT.setProperty(SeqIDs::stepGate, s.gate, nullptr);
         stepVT.setProperty(SeqIDs::stepAccent, s.accent, nullptr);
         stepVT.setProperty(SeqIDs::stepGlide, s.glide, nullptr);
+        stepVT.setProperty(SeqIDs::stepTie, s.tie, nullptr);
         state.appendChild(stepVT, nullptr);
     }
 }
@@ -209,6 +236,7 @@ void StepSequencerPlugin::loadStepsFromState() {
         s.gate = child.getProperty(SeqIDs::stepGate, true);
         s.accent = child.getProperty(SeqIDs::stepAccent, false);
         s.glide = child.getProperty(SeqIDs::stepGlide, false);
+        s.tie = child.getProperty(SeqIDs::stepTie, false);
     }
 }
 
@@ -231,7 +259,7 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), 0.0,
                                 te::MPESourceID{});
             lastPlayedNote_ = -1;
-            lastNoteOffBeat_ = -1.0;
+            noteOffCountdown_ = 0;
             clearMidiOutDisplay();
         }
         stepClock_.reset();
@@ -256,33 +284,52 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                                                                  : normalVelocity.get()));
 
     int stepCount = juce::jlimit(1, MAX_STEPS, numSteps.get());
+    int bufferSamples = fc.bufferNumSamples;
+    double blockDurationSecs = static_cast<double>(bufferSamples) / sampleRate_;
+
+    // Compute step duration in samples for gate length
+    double bpm = edit.tempoSequence.getBpmAt(fc.editTime.getStart());
     double stepBeats = StepClock::rateToBeats(currentRate);
-    double blockDurationSecs = static_cast<double>(fc.bufferNumSamples) / sampleRate_;
-
-    // Get block beat positions for note-off scheduling
-    auto& tempoSeq = edit.tempoSequence;
-    double blockStartBeat = tempoSeq.toBeats(fc.editTime.getStart()).inBeats();
-    double blockEndBeat = tempoSeq.toBeats(fc.editTime.getEnd()).inBeats();
-
-    // --- Emit pending note-off from previous block ---
-    if (lastNoteOffBeat_ >= blockStartBeat && lastNoteOffBeat_ < blockEndBeat &&
-        lastPlayedNote_ >= 0) {
-        double frac = (blockEndBeat > blockStartBeat)
-                          ? (lastNoteOffBeat_ - blockStartBeat) / (blockEndBeat - blockStartBeat)
-                          : 0.0;
-        double timeInBlock = frac * blockDurationSecs;
-        midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock,
-                            te::MPESourceID{});
-        lastPlayedNote_ = -1;
-        lastNoteOffBeat_ = -1.0;
-        clearMidiOutDisplay();
-    }
+    int stepDurationSamples = std::max(1, static_cast<int>(stepBeats * 60.0 / bpm * sampleRate_));
 
     // --- Get step events from the clock ---
     static constexpr int MAX_EVENTS_PER_BLOCK = 16;
     StepClock::StepEvent events[MAX_EVENTS_PER_BLOCK];
     int eventCount = stepClock_.processBlock(fc, edit, currentRate, currentDir, swingVal, stepCount,
                                              events, MAX_EVENTS_PER_BLOCK);
+
+    // --- Emit pending note-off (sample countdown) ---
+    // Only emit if the countdown fires BEFORE the first step event in this block.
+    // If a step fires first, it handles the note-off transition itself.
+    if (noteOffCountdown_ > 0 && lastPlayedNote_ >= 0) {
+        if (noteOffCountdown_ <= bufferSamples) {
+            double countdownTime = static_cast<double>(noteOffCountdown_) / sampleRate_;
+            bool stepFiresFirst = (eventCount > 0 && events[0].timeInBlock <= countdownTime);
+
+            // If the next step is a tie, never kill the note — let the tie hold it
+            bool nextStepIsTie =
+                (eventCount > 0 && steps_[static_cast<size_t>(events[0].stepIndex)].tie &&
+                 steps_[static_cast<size_t>(events[0].stepIndex)].gate);
+
+            if (!stepFiresFirst && !nextStepIsTie) {
+                midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), countdownTime,
+                                    te::MPESourceID{});
+                lastPlayedNote_ = -1;
+                noteOffCountdown_ = 0;
+                clearMidiOutDisplay();
+            } else {
+                // Step will handle the transition — cancel countdown
+                noteOffCountdown_ = 0;
+            }
+        } else {
+            // Check if a step fires in this block — if so, cancel countdown
+            if (eventCount > 0) {
+                noteOffCountdown_ = 0;
+            } else {
+                noteOffCountdown_ -= bufferSamples;
+            }
+        }
+    }
 
     // --- Process each step event ---
     for (int i = 0; i < eventCount; ++i) {
@@ -291,39 +338,33 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
         currentPlayStep_.store(evt.stepIndex, std::memory_order_relaxed);
 
-        // Rest step — just send note-off if needed
+        // Rest step — send note-off if needed
         if (!step.gate) {
             if (lastPlayedNote_ >= 0) {
                 midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), evt.timeInBlock,
                                     te::MPESourceID{});
                 lastPlayedNote_ = -1;
-                lastNoteOffBeat_ = -1.0;
+                noteOffCountdown_ = 0;
                 clearMidiOutDisplay();
             }
+            continue;
+        }
+
+        // Tie step — just keep the current note playing, no retrigger, no new countdown
+        if (step.tie && lastPlayedNote_ >= 0) {
+            noteOffCountdown_ = 0;  // Cancel any pending note-off — note holds
             continue;
         }
 
         int noteNum = resolveNote(step);
         int vel = step.accent ? accentVel : normalVel;
 
-        // Glide: if previous step had glide, don't send note-off before the new note-on.
-        // Instead, briefly overlap (legato). The synth handles portamento.
-        // Also send pitch bend for glide if transitioning between different pitches.
-        bool isGlideFromPrevious = (lastPlayedNote_ >= 0 && lastPlayedNote_ != noteNum);
-
-        // Note-off for previous note (unless gliding)
+        // Note-off for previous note — always BEFORE note-on
         if (lastPlayedNote_ >= 0) {
-            // Check if the previous step had glide enabled
-            // For glide, we send note-off slightly after the new note-on (legato overlap)
-            if (!isGlideFromPrevious) {
-                midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), evt.timeInBlock,
-                                    te::MPESourceID{});
-            } else {
-                // Glide: send note-off just after note-on (1ms later in the block)
-                double offTime = std::min(evt.timeInBlock + 0.001, blockDurationSecs);
-                midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), offTime,
-                                    te::MPESourceID{});
-            }
+            double offTime = std::max(0.0, evt.timeInBlock - 0.0001);
+            midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), offTime,
+                                te::MPESourceID{});
+            noteOffCountdown_ = 0;
         }
 
         // Note-on
@@ -333,28 +374,25 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         lastPlayedNote_ = noteNum;
         setMidiOutDisplay(noteNum, vel);
 
-        // Schedule note-off: if this step has glide, hold until next step.
-        // Otherwise, use a standard gate length (e.g., 80% of step duration).
-        if (step.glide) {
-            // Note-off will be handled by the next step event
-            lastNoteOffBeat_ = -1.0;
-        } else {
-            double gateLength = 0.8;  // 80% gate
-            double noteOffBeat = evt.beatPosition + stepBeats * gateLength;
-            if (noteOffBeat < blockEndBeat) {
-                double frac = (blockEndBeat > blockStartBeat)
-                                  ? (noteOffBeat - blockStartBeat) / (blockEndBeat - blockStartBeat)
-                                  : 0.0;
-                double offTimeInBlock = frac * blockDurationSecs;
-                midi.addMidiMessage(juce::MidiMessage::noteOff(1, noteNum), offTimeInBlock,
-                                    te::MPESourceID{});
-                lastPlayedNote_ = -1;
-                lastNoteOffBeat_ = -1.0;
-                clearMidiOutDisplay();
-            } else {
-                // Note-off in a future block
-                lastNoteOffBeat_ = noteOffBeat;
-            }
+        // Schedule note-off via sample countdown
+        // 100% gate if: glide, or next step is a tie (must hold for the tie to extend)
+        // Otherwise 80% gate
+        int nextIdx = (evt.stepIndex + 1) % stepCount;
+        bool nextIsTie = steps_[static_cast<size_t>(nextIdx)].tie;
+        double gateRatio = (step.glide || nextIsTie) ? 1.0 : 0.8;
+        int noteOnSample = static_cast<int>(evt.timeInBlock * sampleRate_);
+        int gateSamples = static_cast<int>(stepDurationSamples * gateRatio);
+        noteOffCountdown_ = gateSamples - (bufferSamples - noteOnSample);
+        if (noteOffCountdown_ <= 0) {
+            // Note-off falls within this block
+            double offTimeInBlock =
+                evt.timeInBlock + static_cast<double>(gateSamples) / sampleRate_;
+            offTimeInBlock = std::min(offTimeInBlock, blockDurationSecs);
+            midi.addMidiMessage(juce::MidiMessage::noteOff(1, noteNum), offTimeInBlock,
+                                te::MPESourceID{});
+            lastPlayedNote_ = -1;
+            noteOffCountdown_ = 0;
+            clearMidiOutDisplay();
         }
     }
 

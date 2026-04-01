@@ -33,6 +33,7 @@ class StepSequencerPlugin : public MidiDevicePlugin {
         bool gate = true;     // true = active, false = rest
         bool accent = false;
         bool glide = false;  // Portamento to next step
+        bool tie = false;    // Extend previous note (no retrigger)
     };
 
     static constexpr int MAX_STEPS = 32;
@@ -57,6 +58,7 @@ class StepSequencerPlugin : public MidiDevicePlugin {
 
     void applyToBuffer(const te::PluginRenderContext& fc) override;
 
+    void flushPluginStateToValueTree() override;
     void restorePluginStateFromValueTree(const juce::ValueTree& v) override;
 
     // --- Parameters (CachedValues for persistence) ---
@@ -80,6 +82,7 @@ class StepSequencerPlugin : public MidiDevicePlugin {
     void setStepGate(int index, bool gate);
     void setStepAccent(int index, bool accent);
     void setStepGlide(int index, bool glide);
+    void setStepTie(int index, bool tie);
     void clearStep(int index);
 
     /** Current playback step index for UI highlight (-1 if not playing). */
@@ -94,7 +97,7 @@ class StepSequencerPlugin : public MidiDevicePlugin {
 
     // --- Audio-thread state ---
     int lastPlayedNote_ = -1;
-    double lastNoteOffBeat_ = -1.0;
+    int noteOffCountdown_ = 0;  // Samples remaining until note-off (0 = no pending)
 
     // --- Helpers ---
     /** Resolve the effective note number for a step (noteNumber + octaveShift * 12). */
