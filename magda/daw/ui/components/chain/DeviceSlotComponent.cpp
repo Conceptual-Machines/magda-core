@@ -953,7 +953,8 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         if (!isInternalDevice() ||
             !(toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ ||
               compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
-              pitchShiftUI_ || impulseResponseUI_ || utilityUI_ || chordEngineUI_)) {
+              pitchShiftUI_ || impulseResponseUI_ || utilityUI_ || chordEngineUI_ ||
+              arpeggiatorUI_)) {
             float left = static_cast<float>(contentArea.getX() + 2);
             float right = static_cast<float>(lineX);
             int paginationTop = contentArea.getY() + CONTENT_HEADER_HEIGHT;

@@ -338,15 +338,8 @@ void ArpeggiatorUI::valueTreePropertyChanged(juce::ValueTree&, const juce::Ident
     });
 }
 
-void ArpeggiatorUI::paint(juce::Graphics& g) {
-    // Thin grey border
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.4f));
-    g.drawRect(getLocalBounds(), 1);
-
-    // Column divider (only in the two-column top section)
-    int midX = getWidth() / 2;
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
-    g.drawVerticalLine(midX, static_cast<float>(PADDING), static_cast<float>(topSectionBottom_));
+void ArpeggiatorUI::paint(juce::Graphics&) {
+    // No chrome — content is laid out directly
 }
 
 void ArpeggiatorUI::resized() {
