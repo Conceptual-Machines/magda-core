@@ -5,6 +5,7 @@
 #include "ArpeggiatorUI.hpp"
 #include "audio/StepSequencerPlugin.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -66,9 +67,10 @@ class StepSequencerUI : public juce::Component,
     LinkableTextSlider skewSlider_;
 
     // --- Pattern generation ---
-    juce::TextButton randomButton_{"RND"};
+    std::unique_ptr<magda::SvgButton> randomButton_;
     juce::TextButton aiButton_{"AI"};
     juce::TextEditor aiPromptEditor_;
+    juce::Label aiStatusLabel_;
 
     // --- State ---
     int selectedStep_ = 0;       // Currently selected step for editing
@@ -125,6 +127,9 @@ class StepSequencerUI : public juce::Component,
 
     // Timer — poll playback position
     void timerCallback() override;
+
+    // AI pattern generation
+    void generateAIPattern();
 
     // Context menu
     void showStepContextMenu(int stepIndex);

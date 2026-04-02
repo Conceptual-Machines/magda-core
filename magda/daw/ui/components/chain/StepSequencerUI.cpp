@@ -1,6 +1,11 @@
 #include "StepSequencerUI.hpp"
 
+#include <juce_llm/juce_llm.h>
+
+#include "../../../../agents/llm_client_factory.hpp"
 #include "audio/StepClock.hpp"
+#include "core/Config.hpp"
+#include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -119,47 +124,45 @@ StepSequencerUI::StepSequencerUI() {
         }
     };
 
-    // --- Pattern generation buttons ---
-    randomButton_.setColour(juce::TextButton::buttonColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    randomButton_.setColour(juce::TextButton::textColourOffId,
-                            DarkTheme::getColour(DarkTheme::TEXT_DIM));
-    randomButton_.onClick = [this] {
+    // --- Pattern generation: [RND] [prompt input] [Generate] ---
+    randomButton_ = std::make_unique<magda::SvgButton>("Random", BinaryData::random_svg,
+                                                       BinaryData::random_svgSize);
+    randomButton_->setTooltip("Randomize pattern");
+    randomButton_->onClick = [this] {
         if (plugin_) {
             plugin_->randomizePattern();
             repaint();
         }
     };
-    addAndMakeVisible(randomButton_);
-
-    aiButton_.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    aiButton_.setColour(juce::TextButton::textColourOffId,
-                        DarkTheme::getColour(DarkTheme::TEXT_DIM));
-    aiButton_.onClick = [this] {
-        // Toggle AI prompt visibility
-        bool visible = !aiPromptEditor_.isVisible();
-        aiPromptEditor_.setVisible(visible);
-        if (visible)
-            aiPromptEditor_.grabKeyboardFocus();
-    };
-    addAndMakeVisible(aiButton_);
+    addAndMakeVisible(randomButton_.get());
 
     aiPromptEditor_.setMultiLine(false);
-    aiPromptEditor_.setTextToShowWhenEmpty("acid bass in C minor...",
+    aiPromptEditor_.setTextToShowWhenEmpty("describe a pattern...",
                                            DarkTheme::getColour(DarkTheme::TEXT_DIM));
     aiPromptEditor_.setColour(juce::TextEditor::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
-    aiPromptEditor_.setColour(juce::TextEditor::textColourId,
-                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+                              DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+    aiPromptEditor_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
     aiPromptEditor_.setColour(juce::TextEditor::outlineColourId,
                               DarkTheme::getColour(DarkTheme::BORDER));
-    aiPromptEditor_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    aiPromptEditor_.setVisible(false);
-    aiPromptEditor_.onReturnKey = [this] {
-        // TODO: AI generation will be wired here
-        aiPromptEditor_.setVisible(false);
-    };
+    aiPromptEditor_.setColour(juce::TextEditor::focusedOutlineColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    aiPromptEditor_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    aiPromptEditor_.onReturnKey = [this] { generateAIPattern(); };
     addAndMakeVisible(aiPromptEditor_);
+
+    aiButton_.setButtonText("Generate");
+    aiButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    aiButton_.setColour(juce::TextButton::buttonColourId,
+                        DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.1f));
+    aiButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    aiButton_.setTooltip("Generate pattern with AI");
+    aiButton_.onClick = [this] { generateAIPattern(); };
+    addAndMakeVisible(aiButton_);
+
+    aiStatusLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    aiStatusLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    aiStatusLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(aiStatusLabel_);
 }
 
 StepSequencerUI::~StepSequencerUI() {
@@ -167,6 +170,7 @@ StepSequencerUI::~StepSequencerUI() {
     if (watchedState_.isValid())
         watchedState_.removeListener(this);
     dirCombo_.setLookAndFeel(nullptr);
+    aiButton_.setLookAndFeel(nullptr);
 }
 
 // =============================================================================
@@ -262,8 +266,8 @@ void StepSequencerUI::resized() {
 
     bounds.removeFromTop(ROW_GAP + 2);
 
-    // Step boxes
-    stepBoxArea_ = bounds.removeFromTop(STEP_BOX_SIZE);
+    // Step boxes (24px left margin to align with ACC/G/T label columns)
+    stepBoxArea_ = bounds.removeFromTop(STEP_BOX_SIZE).withTrimmedLeft(24);
     bounds.removeFromTop(ROW_GAP);
 
     // Accent row
@@ -298,13 +302,17 @@ void StepSequencerUI::resized() {
 
     bounds.removeFromTop(ROW_GAP);
 
-    // Pattern generation buttons row: [RND] [AI] [prompt editor]
+    // Pattern generation row: [RND] [prompt editor] [Generate]
     auto buttonRow = bounds.removeFromTop(CONTROL_ROW_HEIGHT);
-    randomButton_.setBounds(buttonRow.removeFromLeft(36));
+    randomButton_->setBounds(buttonRow.removeFromLeft(CONTROL_ROW_HEIGHT));
     buttonRow.removeFromLeft(4);
-    aiButton_.setBounds(buttonRow.removeFromLeft(30));
-    buttonRow.removeFromLeft(4);
+    aiButton_.setBounds(buttonRow.removeFromRight(60));
+    buttonRow.removeFromRight(4);
     aiPromptEditor_.setBounds(buttonRow);
+
+    // AI status row (streaming response / result description)
+    bounds.removeFromTop(2);
+    aiStatusLabel_.setBounds(bounds.removeFromTop(CONTROL_ROW_HEIGHT));
 }
 
 // =============================================================================
@@ -737,6 +745,163 @@ int StepSequencerUI::getKeyboardNoteAtPosition(juce::Point<int> pos,
     }
 
     return -1;
+}
+
+// =============================================================================
+// AI pattern generation
+// =============================================================================
+
+void StepSequencerUI::generateAIPattern() {
+    if (!plugin_)
+        return;
+
+    auto prompt = aiPromptEditor_.getText().trim();
+    if (prompt.isEmpty())
+        return;
+
+    int numSteps = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
+
+    // Build JSON schema for structured output
+    auto stepSchema = llm::Schema::object({
+        {"note", llm::Schema::integer()},
+        {"octave", llm::Schema::integer()},
+        {"gate", llm::Schema::boolean()},
+        {"accent", llm::Schema::boolean()},
+        {"glide", llm::Schema::boolean()},
+        {"tie", llm::Schema::boolean()},
+    });
+    auto stepsArraySchema = llm::Schema::array(stepSchema);
+    if (auto* obj = stepsArraySchema.getDynamicObject()) {
+        obj->setProperty("minItems", numSteps);
+        obj->setProperty("maxItems", numSteps);
+    }
+    auto responseSchema = llm::Schema::object({
+        {"description", llm::Schema::string()},
+        {"steps", stepsArraySchema},
+    });
+
+    auto systemPrompt =
+        juce::String("You are a music pattern generator for a 303-style step sequencer.\n"
+                     "Generate a JSON object with:\n"
+                     "  - description: a short label for the pattern (e.g. \"Acid C minor\", "
+                     "\"Funky bassline\")\n"
+                     "  - steps: array of step objects\n"
+                     "Each step has:\n"
+                     "  - note: MIDI note number (0-127, e.g. 60=C4, 48=C3, 36=C2)\n"
+                     "  - octave: octave shift (-2 to +2, applied on top of note)\n"
+                     "  - gate: true if the step plays, false for rest\n"
+                     "  - accent: true for accented (louder) steps\n"
+                     "  - glide: true for portamento slide to next note\n"
+                     "  - tie: true to extend previous note without retriggering\n"
+                     "Generate exactly " +
+                     juce::String(numSteps) +
+                     " steps. Return only 1 pattern.\n"
+                     "Keep octave at 0 unless the user asks for wide range.\n"
+                     "For acid bass lines, use lots of glides and accents on root/fifth notes.");
+
+    // Disable controls and show thinking indicator
+    aiButton_.setEnabled(false);
+    aiButton_.setButtonText("...");
+    aiPromptEditor_.setEnabled(false);
+    aiStatusLabel_.setText("Thinking...", juce::dontSendNotification);
+
+    auto safeThis = juce::Component::SafePointer<StepSequencerUI>(this);
+
+    // Run LLM call on background thread with streaming
+    std::thread([safeThis, prompt, systemPrompt, responseSchema, numSteps]() {
+        auto agentConfig = magda::Config::getInstance().getAgentLLMConfig("music");
+        auto client = magda::createLLMClient(agentConfig, "music");
+
+        llm::Request request;
+        request.systemPrompt = systemPrompt;
+        request.userMessage = prompt;
+        request.temperature = 0.7f;
+        request.schema = responseSchema;
+
+        DBG("AI pattern request - user: " + prompt);
+
+        // Stream tokens to the status label for live feedback
+        auto response = client->sendStreamingRequest(request, [&](const juce::String& token) {
+            auto tokenCopy = token;
+            juce::MessageManager::callAsync([safeThis, tokenCopy]() {
+                if (!safeThis)
+                    return;
+                auto current = safeThis->aiStatusLabel_.getText();
+                if (current == "Thinking...")
+                    current = "";
+                safeThis->aiStatusLabel_.setText(current + tokenCopy, juce::dontSendNotification);
+            });
+            return true;
+        });
+
+        DBG("AI pattern response - success: " + juce::String(response.success ? "true" : "false"));
+        if (!response.success)
+            DBG("AI pattern response - error: " + response.error);
+        DBG("AI pattern response - text: " + response.text);
+
+        juce::MessageManager::callAsync([safeThis, response, prompt, numSteps]() {
+            if (!safeThis)
+                return;
+
+            // Re-enable controls
+            safeThis->aiButton_.setEnabled(true);
+            safeThis->aiButton_.setButtonText("Generate");
+            safeThis->aiPromptEditor_.setEnabled(true);
+
+            if (!response.success || response.text.isEmpty()) {
+                DBG("AI pattern generation failed: " + response.error);
+                safeThis->aiStatusLabel_.setText("Error: " + response.error,
+                                                 juce::dontSendNotification);
+                return;
+            }
+
+            // Parse JSON response — strip markdown fences if present
+            auto text = response.text.trim();
+            if (text.startsWith("```")) {
+                auto firstNewline = text.indexOf("\n");
+                auto lastFence = text.lastIndexOf("```");
+                if (firstNewline >= 0 && lastFence > firstNewline)
+                    text = text.substring(firstNewline + 1, lastFence).trim();
+            }
+
+            auto json = juce::JSON::parse(text);
+            // Try "steps" key first, then treat root as array
+            auto* stepsArray = json.getProperty("steps", {}).getArray();
+            if (!stepsArray)
+                stepsArray = json.getArray();
+            if (!stepsArray) {
+                DBG("AI response missing 'steps' array: " + text.substring(0, 200));
+                safeThis->aiStatusLabel_.setText("Error: failed to parse response",
+                                                 juce::dontSendNotification);
+                return;
+            }
+
+            std::vector<SeqPlugin::Step> steps;
+            for (int i = 0; i < std::min((int)stepsArray->size(), numSteps); ++i) {
+                auto s = (*stepsArray)[i];
+                SeqPlugin::Step step;
+                step.noteNumber = juce::jlimit(0, 127, (int)s.getProperty("note", 60));
+                step.octaveShift = juce::jlimit(-2, 2, (int)s.getProperty("octave", 0));
+                step.gate = (bool)s.getProperty("gate", true);
+                step.accent = (bool)s.getProperty("accent", false);
+                step.glide = (bool)s.getProperty("glide", false);
+                step.tie = (bool)s.getProperty("tie", false);
+                steps.push_back(step);
+            }
+
+            if (safeThis->plugin_ && !steps.empty()) {
+                safeThis->plugin_->setPattern(steps);
+
+                // Show the description in the status label
+                auto description = json.getProperty("description", {}).toString().trim();
+                safeThis->aiStatusLabel_.setText(description.isNotEmpty() ? description
+                                                                          : "Pattern generated",
+                                                 juce::dontSendNotification);
+
+                safeThis->repaint();
+            }
+        });
+    }).detach();
 }
 
 // =============================================================================

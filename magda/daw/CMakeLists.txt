@@ -20,6 +20,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/clip.svg
     ../../assets/icons/copycontent.svg
     ../../assets/icons/delete.svg
+    ../../assets/icons/random.svg
     # Transport icons (off/on states)
     ../../assets/icons/play_off.svg
     ../../assets/icons/play_on.svg
