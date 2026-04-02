@@ -95,6 +95,7 @@ class DeviceSlotComponent : public NodeComponent,
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
     void resizedCollapsed(juce::Rectangle<int>& area) override;
     juce::String getCollapsedName() const override;
 
@@ -193,6 +194,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> multiOutButton_;  // Multi-output routing
     std::unique_ptr<magda::SvgButton> uiButton_;
     std::unique_ptr<magda::SvgButton> onButton_;
+    std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
 
     // Pagination
     int currentPage_ = 0;

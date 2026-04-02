@@ -123,6 +123,7 @@ class ChordPanelContent : public juce::Component,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDrag(const juce::MouseEvent& e) override;
 
     void setChordEngine(magda::daw::audio::MidiChordEnginePlugin* plugin,
                         magda::TrackId trackId = magda::INVALID_TRACK_ID);
@@ -198,6 +199,8 @@ class ChordPanelContent : public juce::Component,
         juce::Rectangle<int> nameArea;
         juce::Rectangle<int> descArea;
         std::vector<std::unique_ptr<ChordBlockComponent>> blocks;
+        std::unique_ptr<magda::SvgButton> exportButton;
+        int progressionIndex = 0;
     };
     std::vector<std::unique_ptr<AIProgressionRow>> aiRows_;
     std::unique_ptr<juce::TextEditor> aiInputBox_;
@@ -210,6 +213,7 @@ class ChordPanelContent : public juce::Component,
     void switchToTab(SuggestionTab tab);
     void rebuildAIProgressionRows();
     void layoutAIProgressionRows();
+    void startProgressionDrag(int progressionIndex);
 
     // Browse mode state
     bool browseMode_ = false;

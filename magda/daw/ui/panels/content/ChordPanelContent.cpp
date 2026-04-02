@@ -2,9 +2,12 @@
 
 #include "../../../../agents/llm_client_factory.hpp"
 #include "BinaryData.h"
+#include "core/ClipManager.hpp"
 #include "core/Config.hpp"
+#include "core/MidiFileWriter.hpp"
 #include "core/TrackManager.hpp"
 #include "music/ChordEngine.hpp"
+#include "project/ProjectManager.hpp"
 #include "ui/components/chord/ChordBlockComponent.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -875,8 +878,10 @@ void ChordPanelContent::rebuildAIProgressionRows() {
 
     const auto& aiProgs =
         chordPlugin_ ? chordPlugin_->getAIProgressions() : std::vector<AIProgression>{};
-    for (const auto& prog : aiProgs) {
+    for (int progIdx = 0; progIdx < static_cast<int>(aiProgs.size()); ++progIdx) {
+        const auto& prog = aiProgs[static_cast<size_t>(progIdx)];
         auto row = std::make_unique<AIProgressionRow>();
+        row->progressionIndex = progIdx;
 
         for (const auto& chord : prog.chords) {
             auto block = std::make_unique<ChordBlockComponent>(chord);
@@ -885,6 +890,40 @@ void ChordPanelContent::rebuildAIProgressionRows() {
             aiContainer_->addAndMakeVisible(block.get());
             row->blocks.push_back(std::move(block));
         }
+
+        // Export as clip button
+        row->exportButton = std::make_unique<magda::SvgButton>("ExportProg", BinaryData::clip_svg,
+                                                               BinaryData::clip_svgSize);
+        row->exportButton->setTooltip("Click to copy chords, drag to timeline");
+        row->exportButton->addMouseListener(this, false);
+        row->exportButton->onClick = [this, progIdx = row->progressionIndex]() {
+            if (!chordPlugin_)
+                return;
+            const auto& progs = chordPlugin_->getAIProgressions();
+            if (progIdx < 0 || progIdx >= static_cast<int>(progs.size()))
+                return;
+            const auto& prog = progs[static_cast<size_t>(progIdx)];
+            if (prog.chords.empty())
+                return;
+
+            constexpr double beatsPerChord = 4.0;
+            std::vector<magda::MidiNote> notes;
+            for (size_t ci = 0; ci < prog.chords.size(); ++ci) {
+                double startBeat = static_cast<double>(ci) * beatsPerChord;
+                for (const auto& cn : prog.chords[ci].notes) {
+                    magda::MidiNote note;
+                    note.noteNumber = std::clamp(cn.noteNumber, 0, 127);
+                    note.velocity = std::clamp(cn.velocity, 1, 127);
+                    note.startBeat = startBeat;
+                    note.lengthBeats = beatsPerChord;
+                    notes.push_back(note);
+                }
+            }
+
+            if (!notes.empty())
+                ClipManager::getInstance().setNoteClipboard(std::move(notes));
+        };
+        aiContainer_->addAndMakeVisible(row->exportButton.get());
 
         aiRows_.push_back(std::move(row));
     }
@@ -915,9 +954,13 @@ void ChordPanelContent::layoutAIProgressionRows() {
         paintRow.name = prog.name;
         paintRow.description = prog.description;
 
-        // Name area
-        row->nameArea = juce::Rectangle<int>(4, y, containerWidth - 8, 16);
+        // Name area with export button
+        int exportBtnSize = 16;
+        row->nameArea = juce::Rectangle<int>(4, y, containerWidth - 8 - exportBtnSize - 4, 16);
         paintRow.nameArea = row->nameArea;
+        if (row->exportButton)
+            row->exportButton->setBounds(containerWidth - 4 - exportBtnSize, y, exportBtnSize,
+                                         exportBtnSize);
         y += 16;
 
         // Description area
@@ -964,6 +1007,64 @@ void ChordPanelContent::layoutAIProgressionRows() {
 
     aiContainer_->setSize(containerWidth, y);
     aiContainer_->repaint();
+}
+
+void ChordPanelContent::mouseDrag(const juce::MouseEvent& e) {
+    if (e.getDistanceFromDragStart() < 5)
+        return;
+
+    // Check if drag originates from an AI progression export button
+    for (auto& row : aiRows_) {
+        if (row->exportButton && e.originalComponent == row->exportButton.get()) {
+            startProgressionDrag(row->progressionIndex);
+            return;
+        }
+    }
+}
+
+void ChordPanelContent::startProgressionDrag(int progressionIndex) {
+    if (!chordPlugin_)
+        return;
+
+    const auto& progs = chordPlugin_->getAIProgressions();
+    if (progressionIndex < 0 || progressionIndex >= static_cast<int>(progs.size()))
+        return;
+
+    const auto& prog = progs[static_cast<size_t>(progressionIndex)];
+    if (prog.chords.empty())
+        return;
+
+    // Convert chords to MidiNotes — 4 beats per chord (1 bar in 4/4)
+    constexpr double beatsPerChord = 4.0;
+    std::vector<magda::MidiNote> notes;
+
+    for (size_t chordIdx = 0; chordIdx < prog.chords.size(); ++chordIdx) {
+        const auto& chord = prog.chords[chordIdx];
+        double startBeat = static_cast<double>(chordIdx) * beatsPerChord;
+
+        for (const auto& cn : chord.notes) {
+            magda::MidiNote note;
+            note.noteNumber = std::clamp(cn.noteNumber, 0, 127);
+            note.velocity = std::clamp(cn.velocity, 1, 127);
+            note.startBeat = startBeat;
+            note.lengthBeats = beatsPerChord;
+            notes.push_back(note);
+        }
+    }
+
+    if (notes.empty())
+        return;
+
+    double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    if (tempo <= 0.0)
+        tempo = 120.0;
+
+    auto tempFile = daw::MidiFileWriter::writeToTempFile(notes, tempo, "chord-progression");
+    if (!tempFile.existsAsFile())
+        return;
+
+    juce::DragAndDropContainer::performExternalDragDropOfFiles(
+        juce::StringArray{tempFile.getFullPathName()}, false, this);
 }
 
 void ChordPanelContent::AIRequestThread::run() {

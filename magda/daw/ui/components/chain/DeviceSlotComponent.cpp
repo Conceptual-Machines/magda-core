@@ -10,7 +10,10 @@
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
+#include "audio/StepClock.hpp"
+#include "core/ClipManager.hpp"
 #include "core/MacroInfo.hpp"
+#include "core/MidiFileWriter.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
@@ -18,6 +21,7 @@
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
+#include "project/ProjectManager.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/dialogs/ParameterConfigDialog.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -212,6 +216,42 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         }
     };
     addAndMakeVisible(*onButton_);
+
+    // Export as MIDI clip button (step sequencer only for now)
+    if (isStepSequencer_) {
+        exportClipButton_ = std::make_unique<magda::SvgButton>("ExportClip", BinaryData::copy_svg,
+                                                               BinaryData::copy_svgSize);
+        exportClipButton_->setTooltip("Click to copy pattern, drag to timeline");
+        exportClipButton_->addMouseListener(this, false);
+        exportClipButton_->onClick = [this]() {
+            if (!stepSeqPlugin_)
+                return;
+            int count = juce::jlimit(1, daw::audio::StepSequencerPlugin::MAX_STEPS,
+                                     stepSeqPlugin_->numSteps.get());
+            auto rateEnum = static_cast<daw::audio::StepClock::Rate>(stepSeqPlugin_->rate.get());
+            double stepBeats = daw::audio::StepClock::rateToBeats(rateEnum);
+            float gate = stepSeqPlugin_->gateLength.get();
+            int accentVel = stepSeqPlugin_->accentVelocity.get();
+            int normalVel = stepSeqPlugin_->normalVelocity.get();
+
+            std::vector<magda::MidiNote> notes;
+            for (int i = 0; i < count; ++i) {
+                auto step = stepSeqPlugin_->getStep(i);
+                if (!step.gate)
+                    continue;
+                magda::MidiNote note;
+                note.noteNumber = std::clamp(step.noteNumber + step.octaveShift * 12, 0, 127);
+                note.velocity = step.accent ? accentVel : normalVel;
+                note.startBeat = i * stepBeats;
+                note.lengthBeats = stepBeats * gate;
+                notes.push_back(note);
+            }
+
+            if (!notes.empty())
+                ClipManager::getInstance().setNoteClipboard(std::move(notes));
+        };
+        addAndMakeVisible(*exportClipButton_);
+    }
 
     // Pagination controls
     prevPageButton_ = std::make_unique<juce::TextButton>("<");
@@ -1322,6 +1362,12 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
     headerArea.removeFromRight(4);
 
+    // Export clip button (step sequencer)
+    if (exportClipButton_) {
+        exportClipButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        headerArea.removeFromRight(4);
+    }
+
     // MIDI devices: no volume/SC — only power button in header
     if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
         gainSlider_.setVisible(false);
@@ -1356,6 +1402,45 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     }
 
     // Remaining space is for the name label (handled by NodeComponent)
+}
+
+void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
+    // Export clip drag from header button
+    if (exportClipButton_ && e.originalComponent == exportClipButton_.get() &&
+        e.getDistanceFromDragStart() > 5 && stepSeqPlugin_) {
+        int count = juce::jlimit(1, daw::audio::StepSequencerPlugin::MAX_STEPS,
+                                 stepSeqPlugin_->numSteps.get());
+        auto rateEnum = static_cast<daw::audio::StepClock::Rate>(stepSeqPlugin_->rate.get());
+        double stepBeats = daw::audio::StepClock::rateToBeats(rateEnum);
+        float gate = stepSeqPlugin_->gateLength.get();
+        int accentVel = stepSeqPlugin_->accentVelocity.get();
+        int normalVel = stepSeqPlugin_->normalVelocity.get();
+
+        std::vector<magda::MidiNote> notes;
+        for (int i = 0; i < count; ++i) {
+            auto step = stepSeqPlugin_->getStep(i);
+            if (!step.gate)
+                continue;
+            magda::MidiNote note;
+            note.noteNumber = std::clamp(step.noteNumber + step.octaveShift * 12, 0, 127);
+            note.velocity = step.accent ? accentVel : normalVel;
+            note.startBeat = i * stepBeats;
+            note.lengthBeats = stepBeats * gate;
+            notes.push_back(note);
+        }
+
+        if (notes.empty())
+            return;
+
+        double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+        if (tempo <= 0.0)
+            tempo = 120.0;
+
+        auto tempFile = daw::MidiFileWriter::writeToTempFile(notes, tempo, "seq-pattern");
+        if (tempFile.existsAsFile())
+            juce::DragAndDropContainer::performExternalDragDropOfFiles(
+                juce::StringArray{tempFile.getFullPathName()}, false, this);
+    }
 }
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {

@@ -1877,4 +1877,15 @@ double ClipManager::getNoteClipboardMinBeat() const {
     return noteClipboardMinBeat_;
 }
 
+void ClipManager::setNoteClipboard(std::vector<MidiNote> notes) {
+    noteClipboard_ = std::move(notes);
+    noteClipboardMinBeat_ = 0.0;
+    if (!noteClipboard_.empty()) {
+        double minBeat = noteClipboard_.front().startBeat;
+        for (const auto& n : noteClipboard_)
+            minBeat = std::min(minBeat, n.startBeat);
+        noteClipboardMinBeat_ = minBeat;
+    }
+}
+
 }  // namespace magda

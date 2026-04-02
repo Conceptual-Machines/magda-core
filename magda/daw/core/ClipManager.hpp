@@ -429,6 +429,12 @@ class ClipManager {
      */
     double getNoteClipboardMinBeat() const;
 
+    /**
+     * @brief Set note clipboard directly from external notes (e.g. step sequencer pattern export).
+     * Notes are stored as-is — caller is responsible for normalisation if desired.
+     */
+    void setNoteClipboard(std::vector<MidiNote> notes);
+
     // ========================================================================
     // Session View (Clip Launcher)
     // ========================================================================

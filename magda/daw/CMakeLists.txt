@@ -18,6 +18,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/enter.svg
     ../../assets/icons/track.svg
     ../../assets/icons/clip.svg
+    ../../assets/icons/copy.svg
     ../../assets/icons/copycontent.svg
     ../../assets/icons/delete.svg
     ../../assets/icons/random.svg
@@ -184,6 +185,7 @@ set(DAW_CORE_SOURCES
     core/TrackManagerDevices.cpp
     core/ModulatorEngine.cpp
     core/ClipManager.cpp
+    core/MidiFileWriter.cpp
     core/SelectionManager.cpp
     core/AutomationManager.cpp
     core/LinkModeManager.cpp
@@ -442,6 +444,7 @@ set(DAW_HEADERS
     core/ClipTypes.hpp
     core/ClipInfo.hpp
     core/ClipManager.hpp
+    core/MidiFileWriter.hpp
     core/SelectionManager.hpp
     core/LinkModeManager.hpp
     core/UndoManager.hpp
