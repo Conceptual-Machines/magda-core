@@ -2707,19 +2707,68 @@ void PluginManager::captureAllPluginStates() {
     rackSyncManager_.captureAllPluginStates();
 }
 
+void PluginManager::capturePluginState(DeviceId deviceId) {
+    juce::ScopedLock lock(pluginLock_);
+
+    auto it = syncedDevices_.find(deviceId);
+    if (it == syncedDevices_.end() || !it->second.plugin) {
+        DBG("capturePluginState: device " << deviceId << " not found in syncedDevices");
+        return;
+    }
+
+    auto* plugin = it->second.plugin.get();
+    juce::String stateStr;
+
+    if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin)) {
+        ext->flushPluginStateToValueTree();
+        stateStr = ext->state.getProperty(te::IDs::state).toString();
+        DBG("capturePluginState: external plugin, state length=" << stateStr.length());
+    } else {
+        plugin->flushPluginStateToValueTree();
+        if (auto xml = plugin->state.createXml())
+            stateStr = xml->toString();
+        DBG("capturePluginState: internal plugin, state length=" << stateStr.length());
+    }
+
+    bool found = false;
+    auto& trackManager = TrackManager::getInstance();
+    for (auto& track : trackManager.getTracks()) {
+        if (auto* devInfo = trackManager.getDevice(track.id, deviceId)) {
+            devInfo->pluginState = stateStr;
+            found = true;
+            DBG("capturePluginState: saved to DeviceInfo on track " << track.id);
+            break;
+        }
+    }
+    if (!found) {
+        DBG("capturePluginState: WARNING - device " << deviceId << " not found in any track");
+    }
+}
+
 void PluginManager::restorePluginState(TrackId trackId, DeviceId deviceId, te::Plugin::Ptr plugin) {
     auto* devInfo = TrackManager::getInstance().getDevice(trackId, deviceId);
-    if (!devInfo || devInfo->pluginState.isEmpty())
+    if (!devInfo || devInfo->pluginState.isEmpty()) {
+        DBG("restorePluginState: no state to restore for device "
+            << deviceId << " (devInfo=" << (devInfo ? "found" : "null") << ", state="
+            << (devInfo ? juce::String(devInfo->pluginState.length()) : "n/a") << ")");
         return;
+    }
+
+    DBG("restorePluginState: restoring device "
+        << deviceId << " on track " << trackId
+        << ", state length=" << devInfo->pluginState.length());
 
     if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
         ext->state.setProperty(te::IDs::state, devInfo->pluginState, nullptr);
+        DBG("restorePluginState: set external plugin state property");
     } else {
         // Internal plugin: restore from saved XML ValueTree
         if (auto xml = juce::parseXML(devInfo->pluginState)) {
             auto savedState = juce::ValueTree::fromXml(*xml);
-            if (savedState.isValid())
+            if (savedState.isValid()) {
                 plugin->restorePluginStateFromValueTree(savedState);
+                DBG("restorePluginState: restored internal plugin from XML");
+            }
         }
     }
 }
@@ -3173,19 +3222,15 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             // No processor for meter - it's just for measurement
         } else if (device.pluginId.containsIgnoreCase(
                        daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
-            juce::ValueTree pluginState(te::IDs::PLUGIN);
-            pluginState.setProperty(te::IDs::type, daw::audio::MidiChordEnginePlugin::xmlTypeName,
-                                    nullptr);
-            plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+            plugin = createInternalPlugin(daw::audio::MidiChordEnginePlugin::xmlTypeName,
+                                          device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 // No processor — analysis-only plugin with transparent passthrough
             }
         } else if (device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
-            juce::ValueTree pluginState(te::IDs::PLUGIN);
-            pluginState.setProperty(te::IDs::type, daw::audio::ArpeggiatorPlugin::xmlTypeName,
-                                    nullptr);
-            plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+            plugin = createInternalPlugin(daw::audio::ArpeggiatorPlugin::xmlTypeName,
+                                          device.pluginState);
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<ArpeggiatorProcessor>(device.id, plugin);

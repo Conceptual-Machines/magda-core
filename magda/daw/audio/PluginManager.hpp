@@ -259,6 +259,12 @@ class PluginManager {
     void captureAllPluginStates();
 
     /**
+     * @brief Capture a single device's plugin state into its DeviceInfo.
+     * Call before removing a device to preserve its state for undo.
+     */
+    void capturePluginState(DeviceId deviceId);
+
+    /**
      * @brief Restore plugin native state from DeviceInfo onto a TE plugin
      *
      * Reads DeviceInfo::pluginState and, if non-empty, sets it on the TE

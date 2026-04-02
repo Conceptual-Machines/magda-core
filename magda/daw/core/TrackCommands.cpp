@@ -1,5 +1,7 @@
 #include "TrackCommands.hpp"
 
+#include "../audio/AudioBridge.hpp"
+#include "../engine/AudioEngine.hpp"
 #include "ClipManager.hpp"
 
 namespace magda {
@@ -193,6 +195,18 @@ RemoveDeviceFromTrackCommand::RemoveDeviceFromTrackCommand(TrackId trackId, Devi
 void RemoveDeviceFromTrackCommand::execute() {
     auto& tm = TrackManager::getInstance();
 
+    // Flush the plugin's live state into DeviceInfo before capturing
+    if (auto* engine = tm.getAudioEngine()) {
+        if (auto* bridge = engine->getAudioBridge()) {
+            DBG("UNDO: Capturing plugin state for device " << deviceId_);
+            bridge->getPluginManager().capturePluginState(deviceId_);
+        } else {
+            DBG("UNDO: WARNING - no AudioBridge, cannot capture plugin state");
+        }
+    } else {
+        DBG("UNDO: WARNING - no AudioEngine, cannot capture plugin state");
+    }
+
     // Save the device info and position before removing
     const auto& elements = tm.getChainElements(trackId_);
     for (int i = 0; i < static_cast<int>(elements.size()); ++i) {
@@ -206,6 +220,8 @@ void RemoveDeviceFromTrackCommand::execute() {
     if (savedIndex_ < 0)
         return;
 
+    DBG("UNDO: Captured device state, pluginState length=" << savedDevice_.pluginState.length());
+
     tm.removeDeviceFromTrack(trackId_, deviceId_);
     executed_ = true;
     DBG("UNDO: Removed device " << savedDevice_.name << " (id=" << deviceId_ << ") from track "
@@ -216,6 +232,8 @@ void RemoveDeviceFromTrackCommand::undo() {
     if (!executed_)
         return;
 
+    DBG("UNDO: Restoring device " << savedDevice_.name << " (id=" << deviceId_
+                                  << "), pluginState length=" << savedDevice_.pluginState.length());
     auto& tm = TrackManager::getInstance();
     tm.addDeviceToTrack(trackId_, savedDevice_, savedIndex_);
     DBG("UNDO: Restored device " << savedDevice_.name << " (id=" << deviceId_ << ") to track "
