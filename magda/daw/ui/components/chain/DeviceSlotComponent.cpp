@@ -1440,9 +1440,14 @@ void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
             tempo = 120.0;
 
         auto tempFile = daw::MidiFileWriter::writeToTempFile(notes, tempo, "seq-pattern");
-        if (tempFile.existsAsFile())
+        if (tempFile.existsAsFile()) {
+            if (exportClipButton_)
+                exportClipButton_->setAlpha(0.4f);
             juce::DragAndDropContainer::performExternalDragDropOfFiles(
                 juce::StringArray{tempFile.getFullPathName()}, false, this);
+            if (exportClipButton_)
+                exportClipButton_->setAlpha(1.0f);
+        }
     }
 }
 

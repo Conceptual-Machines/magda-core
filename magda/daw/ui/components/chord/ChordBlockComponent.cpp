@@ -86,9 +86,12 @@ void ChordBlockComponent::mouseDrag(const juce::MouseEvent& e) {
 
         auto tempFile = daw::MidiFileWriter::writeToTempFile(midiNotes, tempo,
                                                              chord_.getDisplayName(), markers);
-        if (tempFile.existsAsFile())
+        if (tempFile.existsAsFile()) {
+            setAlpha(0.4f);
             juce::DragAndDropContainer::performExternalDragDropOfFiles(
                 juce::StringArray{tempFile.getFullPathName()}, false, this);
+            setAlpha(1.0f);
+        }
     }
 }
 

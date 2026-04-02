@@ -1073,8 +1073,31 @@ void ChordPanelContent::startProgressionDrag(int progressionIndex) {
     if (!tempFile.existsAsFile())
         return;
 
+    // Ghost the chord blocks during drag
+    std::vector<ChordBlockComponent*> draggedBlocks;
+    for (auto& row : aiRows_) {
+        if (row->progressionIndex == progressionIndex) {
+            for (auto& block : row->blocks) {
+                block->setAlpha(0.4f);
+                draggedBlocks.push_back(block.get());
+            }
+            if (row->exportButton)
+                row->exportButton->setAlpha(0.4f);
+            break;
+        }
+    }
+
     juce::DragAndDropContainer::performExternalDragDropOfFiles(
         juce::StringArray{tempFile.getFullPathName()}, false, this);
+
+    for (auto* block : draggedBlocks)
+        block->setAlpha(1.0f);
+    for (auto& row : aiRows_) {
+        if (row->progressionIndex == progressionIndex && row->exportButton) {
+            row->exportButton->setAlpha(1.0f);
+            break;
+        }
+    }
 }
 
 void ChordPanelContent::AIRequestThread::run() {
