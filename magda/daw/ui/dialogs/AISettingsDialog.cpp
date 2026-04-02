@@ -1061,7 +1061,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
     }
 
     static void applyCheaperModel(Config::AgentLLMConfig& cfg, const std::string& provider) {
-        if (provider == "openai" || provider == "openai_chat")
+        if (provider == "openai")
             cfg.model = "gpt-4.1-mini";
         else if (provider == "anthropic")
             cfg.model = "claude-haiku-4-5-20251001";
