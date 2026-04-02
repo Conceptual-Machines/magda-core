@@ -32,23 +32,19 @@ void MidiBridge::stopAllInputs() {
         monitoredTracks_.clear();
     }
 
-    // Stop all MIDI inputs outside of lock — this unregisters CoreMIDI callbacks
+    // Stop and destroy all MidiInput objects — destroying removes us from
+    // WaitFreeListeners so CoreMIDI can't dispatch to our callback anymore.
+    // We must stop() first, then destroy, to avoid CoreMIDI delivering to a
+    // half-torn-down MidiInput.
     for (auto& [deviceId, midiInput] : inputsToDestroy) {
         if (midiInput)
             midiInput->stop();
     }
+    inputsToDestroy.clear();
 
-    // Wait for any in-flight callbacks to finish (they check isShuttingDown_)
+    // Wait for any in-flight callbacks that entered before shutdown flag was set
     while (activeCallbacks_.load(std::memory_order_acquire) > 0)
         juce::Thread::sleep(1);
-
-    // Give CoreMIDI's thread time to fully exit JUCE's WaitFreeListeners dispatch.
-    // MidiInput::stop() unregisters the callback, but CoreMIDI may already be
-    // mid-dispatch inside WaitFreeListeners::call — destroying `this` (the
-    // MidiInputCallback) while that's in-flight causes EXC_BAD_ACCESS.
-    juce::Thread::sleep(50);
-
-    inputsToDestroy.clear();
 }
 
 std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
