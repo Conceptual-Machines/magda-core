@@ -3,6 +3,7 @@
 #include <juce_llm/juce_llm.h>
 
 #include "../daw/core/Config.hpp"
+#include "llm_presets.hpp"
 #include "version.hpp"
 
 namespace magda {
@@ -13,9 +14,9 @@ namespace magda {
 inline llm::Provider providerFromString(const std::string& s) {
     if (s == "openai_responses")
         return llm::Provider::OpenAIResponses;
-    if (s == "anthropic")
+    if (s == provider::ANTHROPIC)
         return llm::Provider::Anthropic;
-    if (s == "gemini")
+    if (s == provider::GEMINI)
         return llm::Provider::Gemini;
     // deepseek, openrouter, openai_chat all use the OpenAI Chat Completions format
     return llm::Provider::OpenAIChat;
@@ -23,13 +24,13 @@ inline llm::Provider providerFromString(const std::string& s) {
 
 /** Default base URL for a provider string. */
 inline juce::String defaultBaseUrl(const std::string& providerStr) {
-    if (providerStr == "deepseek")
+    if (providerStr == provider::DEEPSEEK)
         return "https://api.deepseek.com";
-    if (providerStr == "openrouter")
+    if (providerStr == provider::OPENROUTER)
         return "https://openrouter.ai/api/v1";
-    if (providerStr == "anthropic")
+    if (providerStr == provider::ANTHROPIC)
         return "https://api.anthropic.com/v1";
-    if (providerStr == "gemini")
+    if (providerStr == provider::GEMINI)
         return "https://generativelanguage.googleapis.com";
     return "https://api.openai.com/v1";
 }

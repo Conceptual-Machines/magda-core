@@ -108,9 +108,9 @@ DAWAgent::GenerateResult DAWAgent::generate(const std::string& message) {
         return result;
     }
 
-    auto agentConfig = Config::getInstance().getAgentLLMConfig("music");
+    auto agentConfig = Config::getInstance().getAgentLLMConfig(role::MUSIC);
 
-    if (agentConfig.provider != "llama_local") {
+    if (agentConfig.provider != provider::LLAMA_LOCAL) {
         auto providerConfig = toLLMProviderConfig(agentConfig);
         if (providerConfig.apiKey.isEmpty()) {
             result.error = "API key not configured. Set it in Preferences > AI Assistant.";
@@ -188,7 +188,7 @@ DAWAgent::DSLResult DAWAgent::generateDSL(const std::string& message) {
         return result;
     }
 
-    auto agentConfig = Config::getInstance().getAgentLLMConfig("command");
+    auto agentConfig = Config::getInstance().getAgentLLMConfig(role::COMMAND);
     auto pc = toLLMProviderConfig(agentConfig);
 
     if (pc.apiKey.isEmpty()) {

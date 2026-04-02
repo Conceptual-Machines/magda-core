@@ -4,6 +4,7 @@
 #include "dsl_grammar.hpp"
 #include "dsl_interpreter.hpp"
 #include "llm_client_factory.hpp"
+#include "llm_presets.hpp"
 
 namespace magda {
 
@@ -36,7 +37,7 @@ static std::string extractDSL(const juce::String& raw) {
 /** Check if provider supports CFG grammar (OpenAI Responses API). */
 static bool usesCFG(const Config::AgentLLMConfig& config) {
     // OpenAI direct (no custom baseUrl) — use Responses API with CFG
-    return config.provider == "openai_chat" && config.baseUrl.empty();
+    return config.provider == provider::OPENAI && config.baseUrl.empty();
 }
 
 /** Build an LLM client for the command agent, routing OpenAI to Responses API. */
@@ -80,9 +81,9 @@ CommandAgent::GenerateResult CommandAgent::generate(const std::string& message) 
         return result;
     }
 
-    auto agentConfig = Config::getInstance().getAgentLLMConfig("command");
+    auto agentConfig = Config::getInstance().getAgentLLMConfig(role::COMMAND);
 
-    if (agentConfig.provider != "llama_local") {
+    if (agentConfig.provider != provider::LLAMA_LOCAL) {
         auto providerConfig = toLLMProviderConfig(agentConfig);
         if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
             result.error = "Command agent API key not configured.";
@@ -123,9 +124,9 @@ CommandAgent::GenerateResult CommandAgent::generateStreaming(const std::string& 
         return result;
     }
 
-    auto agentConfig = Config::getInstance().getAgentLLMConfig("command");
+    auto agentConfig = Config::getInstance().getAgentLLMConfig(role::COMMAND);
 
-    if (agentConfig.provider != "llama_local") {
+    if (agentConfig.provider != provider::LLAMA_LOCAL) {
         auto providerConfig = toLLMProviderConfig(agentConfig);
         if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
             result.error = "Command agent API key not configured.";

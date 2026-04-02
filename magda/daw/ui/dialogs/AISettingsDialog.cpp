@@ -54,16 +54,17 @@ struct ProviderInfo {
 
 const std::vector<ProviderInfo>& getKnownProviders() {
     static const std::vector<ProviderInfo> providers = {
-        {"openai_chat", "OpenAI", "openai_chat", "", "gpt-4.1-mini", BinaryData::openai_svg,
-         BinaryData::openai_svgSize},
-        {"anthropic", "Anthropic", "anthropic", "", "claude-haiku-4-5-20251001",
-         BinaryData::anthropic_svg, BinaryData::anthropic_svgSize},
-        {"gemini", "Gemini", "gemini", "", "gemini-2.0-flash", BinaryData::gemini_svg,
-         BinaryData::gemini_svgSize},
-        {"deepseek", "DeepSeek", "deepseek", "", "deepseek-chat", BinaryData::deepseek_svg,
-         BinaryData::deepseek_svgSize},
-        {"openrouter", "OpenRouter", "openrouter", "", "meta-llama/llama-3.3-70b-instruct",
-         BinaryData::openrouter_svg, BinaryData::openrouter_svgSize},
+        {magda::provider::OPENAI, "OpenAI", magda::provider::OPENAI, "", "gpt-4.1-mini",
+         BinaryData::openai_svg, BinaryData::openai_svgSize},
+        {magda::provider::ANTHROPIC, "Anthropic", magda::provider::ANTHROPIC, "",
+         "claude-haiku-4-5-20251001", BinaryData::anthropic_svg, BinaryData::anthropic_svgSize},
+        {magda::provider::GEMINI, "Gemini", magda::provider::GEMINI, "", "gemini-2.0-flash",
+         BinaryData::gemini_svg, BinaryData::gemini_svgSize},
+        {magda::provider::DEEPSEEK, "DeepSeek", magda::provider::DEEPSEEK, "", "deepseek-chat",
+         BinaryData::deepseek_svg, BinaryData::deepseek_svgSize},
+        {magda::provider::OPENROUTER, "OpenRouter", magda::provider::OPENROUTER, "",
+         "meta-llama/llama-3.3-70b-instruct", BinaryData::openrouter_svg,
+         BinaryData::openrouter_svgSize},
     };
     return providers;
 }
@@ -883,19 +884,19 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         auto presetId = config.getAIPreset();
 
         // Determine mode from preset
-        if (presetId.starts_with("local") || presetId == "local_embedded") {
+        if (presetId.starts_with("local") || presetId == magda::preset::LOCAL_EMBEDDED) {
             modeCombo_.setSelectedId(1, juce::dontSendNotification);
         } else if (presetId.starts_with("hybrid")) {
             modeCombo_.setSelectedId(3, juce::dontSendNotification);
-            if (presetId == "hybrid_speed")
+            if (presetId == magda::preset::HYBRID_SPEED)
                 savedOptimize_ = "Speed";
             else
                 savedOptimize_ = "Cost";
         } else {
             modeCombo_.setSelectedId(2, juce::dontSendNotification);
             // Infer optimize from whether command uses cloud
-            auto cmdCfg = config.getAgentLLMConfig("command");
-            auto musicCfg = config.getAgentLLMConfig("music");
+            auto cmdCfg = config.getAgentLLMConfig(magda::role::COMMAND);
+            auto musicCfg = config.getAgentLLMConfig(magda::role::MUSIC);
             if (cmdCfg.provider == musicCfg.provider && cmdCfg.model == musicCfg.model)
                 savedOptimize_ = "Quality";
             else
@@ -903,16 +904,16 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         }
 
         // Determine provider from music agent config
-        auto musicCfg = config.getAgentLLMConfig("music");
-        if (musicCfg.provider == "anthropic")
+        auto musicCfg = config.getAgentLLMConfig(magda::role::MUSIC);
+        if (musicCfg.provider == magda::provider::ANTHROPIC)
             savedProviderDisplay_ = "Anthropic";
-        else if (musicCfg.provider == "gemini")
+        else if (musicCfg.provider == magda::provider::GEMINI)
             savedProviderDisplay_ = "Gemini";
-        else if (musicCfg.provider == "deepseek")
+        else if (musicCfg.provider == magda::provider::DEEPSEEK)
             savedProviderDisplay_ = "DeepSeek";
-        else if (musicCfg.provider == "openrouter")
+        else if (musicCfg.provider == magda::provider::OPENROUTER)
             savedProviderDisplay_ = "OpenRouter";
-        else if (musicCfg.provider == "openai_chat")
+        else if (musicCfg.provider == magda::provider::OPENAI)
             savedProviderDisplay_ = "OpenAI";
 
         // Update local model label
@@ -929,19 +930,18 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
     void apply(Config& config) const {
         int mode = modeCombo_.getSelectedId();
-        auto providerStr = providerDisplayToId(providerCombo_.getText());
+        auto presetId = providerDisplayToPresetId(providerCombo_.getText());
         auto optimize = optimizeCombo_.getText();
 
         if (mode == 1) {
             // Local
-            config.setAIPreset("local_embedded");
-            auto* preset = magda::findPreset("local_embedded");
+            config.setAIPreset(magda::preset::LOCAL_EMBEDDED);
+            auto* preset = magda::findPreset(magda::preset::LOCAL_EMBEDDED);
             if (preset)
                 for (const auto& [role, cfg] : preset->agents)
                     config.setAgentLLMConfig(role, cfg);
         } else if (mode == 2) {
             // Cloud
-            std::string presetId = "cloud_" + providerStr;
             config.setAIPreset(presetId);
 
             auto* preset = magda::findPreset(presetId);
@@ -955,35 +955,36 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
             // Cost optimization: use cheaper models for router+command
             if (optimize == "Cost") {
-                auto routerCfg = config.getAgentLLMConfig("router");
-                auto cmdCfg = config.getAgentLLMConfig("command");
-                applyCheaperModel(routerCfg, providerStr);
-                applyCheaperModel(cmdCfg, providerStr);
-                config.setAgentLLMConfig("router", routerCfg);
-                config.setAgentLLMConfig("command", cmdCfg);
+                auto routerCfg = config.getAgentLLMConfig(magda::role::ROUTER);
+                auto cmdCfg = config.getAgentLLMConfig(magda::role::COMMAND);
+                applyCheaperModel(routerCfg, presetId);
+                applyCheaperModel(cmdCfg, presetId);
+                config.setAgentLLMConfig(magda::role::ROUTER, routerCfg);
+                config.setAgentLLMConfig(magda::role::COMMAND, cmdCfg);
             }
         } else {
             // Hybrid
-            std::string presetId = optimize == "Speed" ? "hybrid_speed" : "hybrid_cost";
-            config.setAIPreset(presetId);
+            std::string hybridPresetId =
+                optimize == "Speed" ? magda::preset::HYBRID_SPEED : magda::preset::HYBRID_COST;
+            config.setAIPreset(hybridPresetId);
 
             // Router is always local
             Config::AgentLLMConfig localCfg;
-            localCfg.provider = "llama_local";
-            config.setAgentLLMConfig("router", localCfg);
+            localCfg.provider = magda::provider::LLAMA_LOCAL;
+            config.setAgentLLMConfig(magda::role::ROUTER, localCfg);
 
             // Music always uses cloud
-            auto musicCfg = makeCloudConfig("music", providerStr);
-            config.setAgentLLMConfig("music", musicCfg);
+            auto musicCfg = makeCloudConfig(magda::role::MUSIC, presetId);
+            config.setAgentLLMConfig(magda::role::MUSIC, musicCfg);
 
             // Command: cloud for speed, local for cost
             if (optimize == "Speed") {
-                auto cmdCfg = makeCloudConfig("command", providerStr);
-                config.setAgentLLMConfig("command", cmdCfg);
+                auto cmdCfg = makeCloudConfig(magda::role::COMMAND, presetId);
+                config.setAgentLLMConfig(magda::role::COMMAND, cmdCfg);
             } else {
                 Config::AgentLLMConfig cmdLocal;
-                cmdLocal.provider = "llama_local";
-                config.setAgentLLMConfig("command", cmdLocal);
+                cmdLocal.provider = magda::provider::LLAMA_LOCAL;
+                config.setAgentLLMConfig(magda::role::COMMAND, cmdLocal);
             }
         }
     }
@@ -1030,22 +1031,20 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         resized();
     }
 
-    static std::string providerDisplayToId(const juce::String& display) {
+    static std::string providerDisplayToPresetId(const juce::String& display) {
         if (display == "Anthropic")
-            return "anthropic";
+            return magda::preset::CLOUD_ANTHROPIC;
         if (display == "Gemini")
-            return "gemini";
+            return magda::preset::CLOUD_GEMINI;
         if (display == "DeepSeek")
-            return "deepseek";
+            return magda::preset::CLOUD_DEEPSEEK;
         if (display == "OpenRouter")
-            return "openrouter";
-        return "openai";
+            return magda::preset::CLOUD_OPENROUTER;
+        return magda::preset::CLOUD_OPENAI;
     }
 
     static Config::AgentLLMConfig makeCloudConfig(const std::string& role,
-                                                  const std::string& provider) {
-        // Look up from preset for correct model assignments
-        std::string presetId = "cloud_" + provider;
+                                                  const std::string& presetId) {
         if (auto* preset = magda::findPreset(presetId)) {
             auto it = preset->agents.find(role);
             if (it != preset->agents.end()) {
@@ -1054,20 +1053,18 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                 return cfg;
             }
         }
-        // Fallback
-        Config::AgentLLMConfig cfg;
-        cfg.provider = provider;
-        return cfg;
+        // Fallback — should not happen with valid preset IDs
+        return Config::AgentLLMConfig{};
     }
 
-    static void applyCheaperModel(Config::AgentLLMConfig& cfg, const std::string& provider) {
-        if (provider == "openai")
+    static void applyCheaperModel(Config::AgentLLMConfig& cfg, const std::string& presetId) {
+        if (presetId == magda::preset::CLOUD_OPENAI)
             cfg.model = "gpt-4.1-mini";
-        else if (provider == "anthropic")
+        else if (presetId == magda::preset::CLOUD_ANTHROPIC)
             cfg.model = "claude-haiku-4-5-20251001";
-        else if (provider == "gemini")
+        else if (presetId == magda::preset::CLOUD_GEMINI)
             cfg.model = "gemini-2.0-flash";
-        else if (provider == "deepseek")
+        else if (presetId == magda::preset::CLOUD_DEEPSEEK)
             cfg.model = "deepseek-chat";
         // openrouter: keep default
     }

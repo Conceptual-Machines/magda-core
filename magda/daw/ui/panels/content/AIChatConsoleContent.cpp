@@ -1231,7 +1231,7 @@ void AIChatConsoleContent::updateContextBar() {
 void AIChatConsoleContent::updateConfigStatus() {
     auto& config = magda::Config::getInstance();
     auto preset = config.getAIPreset();
-    auto musicCfg = config.getAgentLLMConfig("music");
+    auto musicCfg = config.getAgentLLMConfig(magda::role::MUSIC);
 
     juce::String status;
 
@@ -1286,9 +1286,10 @@ void AIChatConsoleContent::updateConfigStatus() {
 bool AIChatConsoleContent::isLocalPreset() const {
     auto& config = magda::Config::getInstance();
     auto preset = config.getAIPreset();
-    auto commandCfg = config.getAgentLLMConfig("command");
-    return commandCfg.provider == "llama_local" || preset == "local_embedded" ||
-           preset == "local" || preset == "hybrid_cost";
+    auto commandCfg = config.getAgentLLMConfig(magda::role::COMMAND);
+    return commandCfg.provider == magda::provider::LLAMA_LOCAL ||
+           preset == magda::preset::LOCAL_EMBEDDED || preset == "local" ||
+           preset == magda::preset::HYBRID_COST;
 }
 
 void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {

@@ -29,9 +29,9 @@ RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
         return result;
     }
 
-    auto agentConfig = Config::getInstance().getAgentLLMConfig("router");
+    auto agentConfig = Config::getInstance().getAgentLLMConfig(role::ROUTER);
 
-    if (agentConfig.provider != "llama_local") {
+    if (agentConfig.provider != provider::LLAMA_LOCAL) {
         auto providerConfig = toLLMProviderConfig(agentConfig);
         if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
             result.error = "Router API key not configured";

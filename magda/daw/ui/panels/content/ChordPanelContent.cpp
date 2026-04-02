@@ -423,7 +423,7 @@ void ChordPanelContent::suggestionsChanged(magda::daw::audio::MidiChordEnginePlu
 void ChordPanelContent::configChanged() {
     juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
         if (safeThis && safeThis->suggestionTab_ == SuggestionTab::AI) {
-            auto cfg = Config::getInstance().getAgentLLMConfig("music");
+            auto cfg = Config::getInstance().getAgentLLMConfig(magda::role::MUSIC);
             auto model = cfg.model.empty() ? cfg.provider : cfg.model;
             safeThis->aiModelLabel_.setText(juce::String(model), juce::dontSendNotification);
         }
@@ -843,7 +843,7 @@ void ChordPanelContent::switchToTab(SuggestionTab tab) {
     aiModelLabel_.setVisible(!isKS);
 
     if (!isKS) {
-        auto cfg = Config::getInstance().getAgentLLMConfig("music");
+        auto cfg = Config::getInstance().getAgentLLMConfig(magda::role::MUSIC);
         auto model = cfg.model.empty() ? cfg.provider : cfg.model;
         aiModelLabel_.setText(juce::String(model), juce::dontSendNotification);
     }
@@ -1003,8 +1003,8 @@ void ChordPanelContent::AIRequestThread::run() {
                  context + "\n";
     }
     // Create LLM client early so we know which provider we're using
-    auto agentConfig = magda::Config::getInstance().getAgentLLMConfig("music");
-    bool isLocal = agentConfig.provider == "llama_local";
+    auto agentConfig = magda::Config::getInstance().getAgentLLMConfig(magda::role::MUSIC);
+    bool isLocal = agentConfig.provider == magda::provider::LLAMA_LOCAL;
 
     if (isLocal) {
         // Local model: skip name/description to maximize chord output
@@ -1088,7 +1088,7 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
 
     // Create LLM client — use Responses API for CFG when on OpenAI direct,
     // otherwise fall back to the configured provider (local, Anthropic, etc.)
-    bool cfg = agentConfig.provider == "openai_chat" && agentConfig.baseUrl.empty();
+    bool cfg = agentConfig.provider == magda::provider::OPENAI && agentConfig.baseUrl.empty();
 
     std::unique_ptr<llm::LLMClient> client;
     if (cfg) {

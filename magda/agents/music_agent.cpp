@@ -62,9 +62,9 @@ MusicAgent::GenerateResult MusicAgent::generate(const std::string& message) {
         return result;
     }
 
-    auto agentConfig = Config::getInstance().getAgentLLMConfig("music");
+    auto agentConfig = Config::getInstance().getAgentLLMConfig(role::MUSIC);
 
-    if (agentConfig.provider != "llama_local") {
+    if (agentConfig.provider != provider::LLAMA_LOCAL) {
         auto providerConfig = toLLMProviderConfig(agentConfig);
         if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
             result.error = "Music agent API key not configured.";
@@ -112,9 +112,9 @@ MusicAgent::GenerateResult MusicAgent::generateStreaming(const std::string& mess
         return result;
     }
 
-    auto agentConfig = Config::getInstance().getAgentLLMConfig("music");
+    auto agentConfig = Config::getInstance().getAgentLLMConfig(role::MUSIC);
 
-    if (agentConfig.provider != "llama_local") {
+    if (agentConfig.provider != provider::LLAMA_LOCAL) {
         auto providerConfig = toLLMProviderConfig(agentConfig);
         if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
             result.error = "Music agent API key not configured.";
