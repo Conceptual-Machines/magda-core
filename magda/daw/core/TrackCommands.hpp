@@ -96,6 +96,27 @@ class AddDeviceToTrackCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for removing a device from a track (undoable)
+ */
+class RemoveDeviceFromTrackCommand : public UndoableCommand {
+  public:
+    RemoveDeviceFromTrackCommand(TrackId trackId, DeviceId deviceId);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Remove Device from Track";
+    }
+
+  private:
+    TrackId trackId_;
+    DeviceId deviceId_;
+    DeviceInfo savedDevice_;
+    int savedIndex_ = -1;
+    bool executed_ = false;
+};
+
+/**
  * @brief Command for creating a new track with a device (single undo step)
  */
 class CreateTrackWithDeviceCommand : public UndoableCommand {

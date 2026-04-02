@@ -13,7 +13,9 @@
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "ui/debug/DebugSettings.hpp"
@@ -66,13 +68,19 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
     // Set up NodeComponent callbacks
     onDeleteClicked = [this]() {
-        // IMPORTANT: Defer deletion to avoid crash - removeDeviceFromChainByPath will
-        // trigger a UI rebuild that destroys this component. We must not access 'this'
-        // after the removal, so we capture the path by value and defer the operation.
+        // IMPORTANT: Defer deletion to avoid crash - the UI rebuild destroys this component.
+        // Capture values by copy before 'this' is destroyed.
         auto pathToDelete = nodePath_;
-        auto callback = onDeviceDeleted;  // Copy callback before 'this' is destroyed
+        auto callback = onDeviceDeleted;
         juce::MessageManager::callAsync([pathToDelete, callback]() {
-            magda::TrackManager::getInstance().removeDeviceFromChainByPath(pathToDelete);
+            // Top-level devices use undoable command; nested devices fall back to direct removal
+            if (pathToDelete.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::RemoveDeviceFromTrackCommand>(
+                        pathToDelete.trackId, pathToDelete.topLevelDeviceId));
+            } else {
+                magda::TrackManager::getInstance().removeDeviceFromChainByPath(pathToDelete);
+            }
             if (callback) {
                 callback();
             }
@@ -1935,7 +1943,13 @@ void DeviceSlotComponent::showContextMenu() {
         } else if (result == 100) {
             // Delete — same deferred logic as onDeleteClicked
             juce::MessageManager::callAsync([path, callback]() {
-                magda::TrackManager::getInstance().removeDeviceFromChainByPath(path);
+                if (path.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::RemoveDeviceFromTrackCommand>(
+                            path.trackId, path.topLevelDeviceId));
+                } else {
+                    magda::TrackManager::getInstance().removeDeviceFromChainByPath(path);
+                }
                 if (callback)
                     callback();
             });

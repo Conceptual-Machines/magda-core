@@ -248,6 +248,9 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (!fc.bufferForMidiMessages)
         return;
 
+    if (!isEnabled())
+        return;
+
     auto& midi = *fc.bufferForMidiMessages;
 
     // Step sequencer ignores incoming MIDI — it generates its own pattern

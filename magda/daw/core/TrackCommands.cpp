@@ -184,6 +184,45 @@ void AddDeviceToTrackCommand::undo() {
 }
 
 // ============================================================================
+// RemoveDeviceFromTrackCommand
+// ============================================================================
+
+RemoveDeviceFromTrackCommand::RemoveDeviceFromTrackCommand(TrackId trackId, DeviceId deviceId)
+    : trackId_(trackId), deviceId_(deviceId) {}
+
+void RemoveDeviceFromTrackCommand::execute() {
+    auto& tm = TrackManager::getInstance();
+
+    // Save the device info and position before removing
+    const auto& elements = tm.getChainElements(trackId_);
+    for (int i = 0; i < static_cast<int>(elements.size()); ++i) {
+        if (isDevice(elements[i]) && getDevice(elements[i]).id == deviceId_) {
+            savedDevice_ = getDevice(elements[i]);
+            savedIndex_ = i;
+            break;
+        }
+    }
+
+    if (savedIndex_ < 0)
+        return;
+
+    tm.removeDeviceFromTrack(trackId_, deviceId_);
+    executed_ = true;
+    DBG("UNDO: Removed device " << savedDevice_.name << " (id=" << deviceId_ << ") from track "
+                                << trackId_ << " at index " << savedIndex_);
+}
+
+void RemoveDeviceFromTrackCommand::undo() {
+    if (!executed_)
+        return;
+
+    auto& tm = TrackManager::getInstance();
+    tm.addDeviceToTrack(trackId_, savedDevice_, savedIndex_);
+    DBG("UNDO: Restored device " << savedDevice_.name << " (id=" << deviceId_ << ") to track "
+                                 << trackId_ << " at index " << savedIndex_);
+}
+
+// ============================================================================
 // CreateTrackWithDeviceCommand
 // ============================================================================
 

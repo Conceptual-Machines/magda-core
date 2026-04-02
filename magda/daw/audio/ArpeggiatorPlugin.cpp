@@ -308,6 +308,9 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (!fc.bufferForMidiMessages)
         return;
 
+    if (!isEnabled())
+        return;
+
     auto& midi = *fc.bufferForMidiMessages;
     bool isLatched = latchParam ? latchParam->getCurrentValue() >= 0.5f : latch.get();
 
