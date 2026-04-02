@@ -263,6 +263,8 @@ class AIContainerComponent : public juce::Component {
     AIContainerPaintData paintData;
     bool greyOut = false;
     juce::String streamingText;
+    juce::String promptText;
+    bool loading = false;
     int streamingTextBottom = 0;  // y position after streaming text block
 
     void paint(juce::Graphics& g) override {
@@ -280,13 +282,29 @@ class AIContainerComponent : public juce::Component {
             }
         }
 
-        // Draw streaming text below existing content
+        // Draw prompt + status above streaming text
+        int promptBottom = streamingTextBottom;
+        if (loading && paintData.rows.empty()) {
+            int y = 8;
+            if (promptText.isNotEmpty()) {
+                g.setColour(DarkTheme::getTextColour());
+                g.setFont(FontManager::getInstance().getUIFont(11.0f));
+                g.drawText(promptText, 4, y, getWidth() - 8, 20, juce::Justification::centredLeft);
+                y += 24;
+            }
+            g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
+            g.setFont(FontManager::getInstance().getUIFont(11.0f));
+            g.drawText("Generating...", 4, y, getWidth() - 8, 20, juce::Justification::centredLeft);
+            promptBottom = juce::jmax(promptBottom, y + 28);
+        }
+
+        // Draw streaming text below prompt/existing content
         if (streamingText.isNotEmpty()) {
             auto font = FontManager::getInstance().getUIFont(9.5f);
             g.setFont(font);
             g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.7f));
 
-            int textY = streamingTextBottom;
+            int textY = promptBottom;
             int textWidth = getWidth() - 8;
             auto layout = juce::TextLayout();
             juce::AttributedString attrStr;
@@ -808,15 +826,19 @@ void ChordPanelContent::requestAISuggestions() {
     aiPromptText_ = userPrompt;
 
     // Grey out existing results while generating
+    if (auto* container = dynamic_cast<AIContainerComponent*>(aiContainer_.get())) {
+        container->loading = true;
+        container->promptText = userPrompt;
+        container->streamingText = {};
+        if (!aiRows_.empty()) {
+            container->greyOut = true;
+        }
+    }
     if (!aiRows_.empty()) {
         aiGreyOut_ = true;
         for (auto& row : aiRows_)
             for (auto& block : row->blocks)
                 block->setAlpha(0.3f);
-        if (auto* container = dynamic_cast<AIContainerComponent*>(aiContainer_.get())) {
-            container->greyOut = true;
-            container->streamingText = {};
-        }
     }
 
     if (aiSendBtn_)
@@ -991,6 +1013,15 @@ void ChordPanelContent::layoutAIProgressionRows() {
 
     if (container) {
         container->paintData = std::move(paintData);
+
+        // If loading with no rows, account for prompt + "Generating..." height
+        if (container->loading && paintData.rows.empty()) {
+            int promptHeight = 8;  // top padding
+            if (container->promptText.isNotEmpty())
+                promptHeight += 24;  // prompt text line
+            promptHeight += 28;      // "Generating..." line
+            y = juce::jmax(y, promptHeight);
+        }
         container->streamingTextBottom = y;
 
         // If streaming, expand container to fit streaming text
@@ -1297,6 +1328,8 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
                     dynamic_cast<AIContainerComponent*>(safeThis->aiContainer_.get())) {
                 container->greyOut = false;
                 container->streamingText = {};
+                container->loading = false;
+                container->promptText = {};
             }
             // Restore block alpha
             for (auto& row : safeThis->aiRows_)
@@ -1325,6 +1358,8 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
         if (auto* container = dynamic_cast<AIContainerComponent*>(safeThis->aiContainer_.get())) {
             container->greyOut = false;
             container->streamingText = {};
+            container->loading = false;
+            container->promptText = {};
         }
 
         if (safeThis->aiSendBtn_)
@@ -1771,21 +1806,7 @@ void ChordPanelContent::paint(juce::Graphics& g) {
                 }
             } else {
                 // AI tab content — draw progression names and descriptions
-                if (aiLoading_ && aiRows_.empty()) {
-                    area.removeFromTop(8);
-                    if (aiPromptText_.isNotEmpty()) {
-                        g.setColour(DarkTheme::getTextColour());
-                        g.setFont(FontManager::getInstance().getUIFont(11.0f));
-                        g.drawText(aiPromptText_, area.removeFromTop(20),
-                                   juce::Justification::centredLeft);
-                        area.removeFromTop(4);
-                    }
-                    g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.5f));
-                    g.setFont(FontManager::getInstance().getUIFont(11.0f));
-                    g.drawText("Generating...", area.removeFromTop(20),
-                               juce::Justification::centredLeft);
-                } else if (!aiLoading_ &&
-                           (!chordPlugin_ || chordPlugin_->getAIProgressions().empty())) {
+                if (!aiLoading_ && (!chordPlugin_ || chordPlugin_->getAIProgressions().empty())) {
                     g.setColour(DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
                     g.setFont(FontManager::getInstance().getUIFont(11.0f));
                     area.removeFromTop(8);
