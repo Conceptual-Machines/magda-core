@@ -127,6 +127,7 @@ StepSequencerUI::StepSequencerUI() {
     // --- Pattern generation: [RND] [prompt input] [Generate] ---
     randomButton_ = std::make_unique<magda::SvgButton>("Random", BinaryData::random_svg,
                                                        BinaryData::random_svgSize);
+    randomButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     randomButton_->setTooltip("Randomize pattern");
     randomButton_->onClick = [this] {
         if (plugin_) {
@@ -161,8 +162,22 @@ StepSequencerUI::StepSequencerUI() {
 
     aiStatusLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     aiStatusLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    aiStatusLabel_.setJustificationType(juce::Justification::centredLeft);
+    aiStatusLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(aiStatusLabel_);
+
+    // AI model indicator
+    aiIcon_ =
+        std::make_unique<magda::SvgButton>("AIIcon", BinaryData::ai_svg, BinaryData::ai_svgSize);
+    aiIcon_->setEnabled(false);
+    aiIcon_->setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(*aiIcon_);
+
+    auto modelName = magda::Config::getInstance().getLLMModel();
+    aiModelLabel_.setText(juce::String(modelName), juce::dontSendNotification);
+    aiModelLabel_.setFont(FontManager::getInstance().getUIFont(8.5f));
+    aiModelLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    aiModelLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(aiModelLabel_);
 }
 
 StepSequencerUI::~StepSequencerUI() {
@@ -310,9 +325,17 @@ void StepSequencerUI::resized() {
     buttonRow.removeFromRight(4);
     aiPromptEditor_.setBounds(buttonRow);
 
-    // AI status row (streaming response / result description)
+    // AI model indicator row: [AI icon] [model name]
     bounds.removeFromTop(2);
-    aiStatusLabel_.setBounds(bounds.removeFromTop(CONTROL_ROW_HEIGHT));
+    auto modelRow = bounds.removeFromTop(14);
+    aiIcon_->setBounds(modelRow.removeFromLeft(14));
+    modelRow.removeFromLeft(2);
+    aiModelLabel_.setBounds(modelRow);
+
+    // AI status row (streaming response / result description) — fill remaining space
+    bounds.removeFromTop(2);
+    if (bounds.getHeight() > 0)
+        aiStatusLabel_.setBounds(bounds);
 }
 
 // =============================================================================

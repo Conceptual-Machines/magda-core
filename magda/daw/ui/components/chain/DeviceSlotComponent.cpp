@@ -828,6 +828,9 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (utilityUI_) {
         return getTotalWidth(300) + meterExtra;
     }
+    if (stepSequencerUI_) {
+        return getTotalWidth(500) + meterExtra;
+    }
     if (chordEngineUI_) {
         return getTotalWidth(BASE_SLOT_WIDTH * 2) + meterExtra;
     }

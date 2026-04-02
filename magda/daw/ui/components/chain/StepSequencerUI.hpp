@@ -71,6 +71,8 @@ class StepSequencerUI : public juce::Component,
     juce::TextButton aiButton_{"AI"};
     juce::TextEditor aiPromptEditor_;
     juce::Label aiStatusLabel_;
+    juce::Label aiModelLabel_;
+    std::unique_ptr<magda::SvgButton> aiIcon_;
 
     // --- State ---
     int selectedStep_ = 0;       // Currently selected step for editing
