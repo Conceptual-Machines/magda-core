@@ -892,8 +892,8 @@ void ChordPanelContent::rebuildAIProgressionRows() {
         }
 
         // Export as clip button
-        row->exportButton = std::make_unique<magda::SvgButton>("ExportProg", BinaryData::clip_svg,
-                                                               BinaryData::clip_svgSize);
+        row->exportButton = std::make_unique<magda::SvgButton>("ExportProg", BinaryData::copy_svg,
+                                                               BinaryData::copy_svgSize);
         row->exportButton->setTooltip("Click to copy chords, drag to timeline");
         row->exportButton->addMouseListener(this, false);
         row->exportButton->onClick = [this, progIdx = row->progressionIndex]() {
@@ -1055,11 +1055,21 @@ void ChordPanelContent::startProgressionDrag(int progressionIndex) {
     if (notes.empty())
         return;
 
+    // Build chord markers for pre-populated annotations
+    std::vector<daw::ChordMarker> markers;
+    for (size_t chordIdx = 0; chordIdx < prog.chords.size(); ++chordIdx) {
+        double startBeat = static_cast<double>(chordIdx) * beatsPerChord;
+        markers.push_back({startBeat, beatsPerChord, prog.chords[chordIdx].getDisplayName()});
+    }
+
     double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
     if (tempo <= 0.0)
         tempo = 120.0;
 
-    auto tempFile = daw::MidiFileWriter::writeToTempFile(notes, tempo, "chord-progression");
+    auto clipName = prog.name.isNotEmpty() ? prog.name : prog.description;
+    if (clipName.isEmpty())
+        clipName = "chord-progression";
+    auto tempFile = daw::MidiFileWriter::writeToTempFile(notes, tempo, clipName, markers);
     if (!tempFile.existsAsFile())
         return;
 

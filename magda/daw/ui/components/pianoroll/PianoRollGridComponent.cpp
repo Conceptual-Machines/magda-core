@@ -1,9 +1,12 @@
 #include "PianoRollGridComponent.hpp"
 
+#include <juce_audio_formats/juce_audio_formats.h>
+
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "PhaseMarker.hpp"
+#include "core/ChordAnnotationCommands.hpp"
 #include "core/ClipManager.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
@@ -1893,6 +1896,170 @@ void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
 
     grabKeyboardFocus();
     startTimerHz(3);  // Blink at ~3Hz
+    repaint();
+}
+
+bool PianoRollGridComponent::isInterestedInFileDrag(const juce::StringArray& files) {
+    for (const auto& f : files)
+        if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi"))
+            return true;
+    return false;
+}
+
+void PianoRollGridComponent::filesDropped(const juce::StringArray& files, int x, int /*y*/) {
+    if (clipId_ == INVALID_CLIP_ID && selectedClipIds_.empty())
+        return;
+
+    // Find first .mid file
+    juce::File midiFile;
+    for (const auto& f : files) {
+        if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi")) {
+            midiFile = juce::File(f);
+            break;
+        }
+    }
+    if (!midiFile.existsAsFile())
+        return;
+
+    // Parse MIDI file
+    juce::FileInputStream fis(midiFile);
+    if (!fis.openedOk())
+        return;
+
+    juce::MidiFile midi;
+    if (!midi.readFrom(fis))
+        return;
+
+    int ticksPerQN = midi.getTimeFormat();
+    if (ticksPerQN <= 0)
+        return;
+
+    // Extract chord markers (MIDI marker meta events type 6, format "CHORD:name:length")
+    struct ChordMarker {
+        double beatPosition = 0.0;
+        double lengthBeats = 4.0;
+        juce::String chordName;
+    };
+    std::vector<ChordMarker> chordMarkers;
+
+    // Extract full note data (with timing) and simple note list
+    struct NoteData {
+        int noteNumber;
+        int velocity;
+        double startBeat;
+        double lengthBeats;
+    };
+    std::vector<NoteData> fullNotes;
+    std::vector<std::pair<int, int>> simpleNotes;
+
+    for (int t = 0; t < midi.getNumTracks(); ++t) {
+        auto* track = midi.getTrack(t);
+        if (!track)
+            continue;
+        for (int i = 0; i < track->getNumEvents(); ++i) {
+            auto& msg = track->getEventPointer(i)->message;
+            if (msg.isTextMetaEvent() && msg.getMetaEventType() == 6) {
+                auto text = msg.getTextFromTextMetaEvent();
+                if (text.startsWith("CHORD:")) {
+                    auto parts = juce::StringArray::fromTokens(text.substring(6), ":", "");
+                    if (parts.size() >= 2) {
+                        ChordMarker marker;
+                        marker.beatPosition = msg.getTimeStamp() / ticksPerQN;
+                        marker.chordName = parts[0];
+                        marker.lengthBeats = parts[1].getDoubleValue();
+                        if (marker.lengthBeats <= 0.0)
+                            marker.lengthBeats = 4.0;
+                        chordMarkers.push_back(marker);
+                    }
+                }
+            }
+            if (msg.isNoteOn()) {
+                simpleNotes.emplace_back(msg.getNoteNumber(), msg.getVelocity());
+
+                double startBeat = msg.getTimeStamp() / ticksPerQN;
+                double lengthBeats = 1.0;
+                // Find matching note-off by scanning forward
+                for (int j = i + 1; j < track->getNumEvents(); ++j) {
+                    auto& offMsg = track->getEventPointer(j)->message;
+                    if ((offMsg.isNoteOff() || (offMsg.isNoteOn() && offMsg.getVelocity() == 0)) &&
+                        offMsg.getNoteNumber() == msg.getNoteNumber()) {
+                        lengthBeats = (offMsg.getTimeStamp() - msg.getTimeStamp()) / ticksPerQN;
+                        break;
+                    }
+                }
+                fullNotes.push_back(
+                    {msg.getNoteNumber(), msg.getVelocity(), startBeat, lengthBeats});
+            }
+        }
+    }
+
+    if (simpleNotes.empty())
+        return;
+
+    double dropBeat = pixelToBeat(x);
+    if (snapEnabled_)
+        dropBeat = snapBeatToGrid(dropBeat);
+
+    ClipId targetClipId = clipId_;
+    if (targetClipId == INVALID_CLIP_ID && !selectedClipIds_.empty())
+        targetClipId = selectedClipIds_.front();
+
+    // If chord markers are present, insert the full progression directly
+    if (!chordMarkers.empty() && onChordDropped) {
+        auto* clipData = ClipManager::getInstance().getClip(targetClipId);
+        if (!clipData)
+            return;
+
+        CompoundOperationScope scope("Add Chord Progression");
+
+        for (const auto& marker : chordMarkers) {
+            int groupId = clipData->nextChordGroupId++;
+
+            // Collect notes belonging to this chord (within its beat range)
+            std::vector<MidiNote> chordNotes;
+            for (const auto& n : fullNotes) {
+                if (n.startBeat >= marker.beatPosition &&
+                    n.startBeat < marker.beatPosition + marker.lengthBeats) {
+                    MidiNote mn;
+                    mn.noteNumber = n.noteNumber;
+                    mn.velocity = n.velocity;
+                    mn.startBeat = dropBeat + n.startBeat;
+                    mn.lengthBeats = n.lengthBeats;
+                    mn.chordGroup = groupId;
+                    chordNotes.push_back(mn);
+                }
+            }
+
+            if (!chordNotes.empty()) {
+                auto noteCmd = std::make_unique<AddMultipleMidiNotesCommand>(
+                    targetClipId, std::move(chordNotes), "Add chord notes");
+                UndoManager::getInstance().executeCommand(std::move(noteCmd));
+            }
+
+            ClipInfo::ChordAnnotation annotation;
+            annotation.beatPosition = dropBeat + marker.beatPosition;
+            annotation.lengthBeats = marker.lengthBeats;
+            annotation.chordName = marker.chordName;
+            annotation.chordGroup = groupId;
+            auto chordCmd = std::make_unique<AddChordAnnotationCommand>(targetClipId, annotation);
+            UndoManager::getInstance().executeCommand(std::move(chordCmd));
+        }
+
+        repaint();
+        return;
+    }
+
+    // No chord markers — single chord, use pending chord flow
+    pendingChord_.clipId = targetClipId;
+    pendingChord_.startBeat = dropBeat;
+    pendingChord_.previewEndBeat = dropBeat + gridResolutionBeats_;
+    pendingChord_.notes = std::move(simpleNotes);
+    pendingChord_.chordName = midiFile.getFileNameWithoutExtension();
+    pendingChord_.active = true;
+    pendingChord_.blinkOn = true;
+
+    grabKeyboardFocus();
+    startTimerHz(3);
     repaint();
 }
 

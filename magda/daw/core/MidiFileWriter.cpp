@@ -3,7 +3,8 @@
 namespace magda::daw {
 
 juce::File MidiFileWriter::writeToTempFile(const std::vector<MidiNote>& notes, double tempo,
-                                           const juce::String& nameHint) {
+                                           const juce::String& nameHint,
+                                           const std::vector<ChordMarker>& chordMarkers) {
     if (notes.empty() || tempo <= 0.0)
         return {};
 
@@ -11,6 +12,13 @@ juce::File MidiFileWriter::writeToTempFile(const std::vector<MidiNote>& notes, d
     auto beatsToTicks = [](double beats) -> double { return beats * ticksPerQuarter; };
 
     juce::MidiMessageSequence seq;
+
+    // Track name meta event
+    if (nameHint.isNotEmpty()) {
+        auto nameMsg = juce::MidiMessage::textMetaEvent(3, nameHint);
+        nameMsg.setTimeStamp(0.0);
+        seq.addEvent(nameMsg);
+    }
 
     // Tempo meta event at tick 0
     double microsecondsPerBeat = 60000000.0 / tempo;
@@ -36,6 +44,15 @@ juce::File MidiFileWriter::writeToTempFile(const std::vector<MidiNote>& notes, d
         auto noteOff = juce::MidiMessage::noteOff(1, note.noteNumber);
         noteOff.setTimeStamp(endTick);
         seq.addEvent(noteOff);
+    }
+
+    // Chord markers as MIDI marker meta events (type 6)
+    // Format: "CHORD:name:lengthBeats" so the importer can reconstruct annotations
+    for (const auto& marker : chordMarkers) {
+        auto markerText = "CHORD:" + marker.chordName + ":" + juce::String(marker.lengthBeats);
+        auto markerMsg = juce::MidiMessage::textMetaEvent(6, markerText);
+        markerMsg.setTimeStamp(beatsToTicks(marker.beatPosition));
+        seq.addEvent(markerMsg);
     }
 
     seq.sort();

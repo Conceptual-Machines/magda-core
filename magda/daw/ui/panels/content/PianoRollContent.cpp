@@ -1291,12 +1291,22 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
     int scrollX = viewport_ ? viewport_->getViewPositionX() : 0;
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
 
+    // Chord annotations use clip-relative beat positions (0, 4, 8...).
+    // In absolute mode the viewport is scrolled to the clip's start, so we
+    // must offset annotation positions by the clip's start beat.
+    double clipStartBeats = 0.0;
+    if (!relativeTimeMode_ && clip->view != magda::ClipView::Session) {
+        double tempo = 120.0;
+        if (auto* controller = magda::TimelineController::getCurrent())
+            tempo = controller->getState().tempo.bpm;
+        clipStartBeats = clip->startTime * (tempo / 60.0);
+    }
+
     for (const auto& annotation : clip->chordAnnotations) {
-        int startX = static_cast<int>(annotation.beatPosition * horizontalZoom_) +
-                     GRID_LEFT_PADDING - scrollX;
-        int endX =
-            static_cast<int>((annotation.beatPosition + annotation.lengthBeats) * horizontalZoom_) +
-            GRID_LEFT_PADDING - scrollX;
+        double absBeat = annotation.beatPosition + clipStartBeats;
+        int startX = static_cast<int>(absBeat * horizontalZoom_) + GRID_LEFT_PADDING - scrollX;
+        int endX = static_cast<int>((absBeat + annotation.lengthBeats) * horizontalZoom_) +
+                   GRID_LEFT_PADDING - scrollX;
 
         // Skip if out of view
         if (endX < 0 || startX > area.getWidth())

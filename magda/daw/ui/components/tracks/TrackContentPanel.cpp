@@ -2512,9 +2512,50 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
                     }
                 }
 
-                // Set beat-based length
+                // Set beat-based length and name from MIDI track/file
                 clip->lengthBeats = lengthBeats;
                 clip->startBeats = (dropTime * projectTempo) / 60.0;
+                auto clipName = list->getImportedFileName();
+                if (clipName.isEmpty())
+                    clipName = midiFile.getFileNameWithoutExtension();
+                clip->name = clipName;
+
+                // Extract chord markers from MIDI marker meta events (type 6)
+                // Format: "CHORD:name:lengthBeats"
+                {
+                    juce::FileInputStream fis(midiFile);
+                    if (fis.openedOk()) {
+                        juce::MidiFile rawMidi;
+                        rawMidi.readFrom(fis);
+                        int ticksPerQN = rawMidi.getTimeFormat();
+                        if (ticksPerQN > 0) {
+                            for (int t = 0; t < rawMidi.getNumTracks(); ++t) {
+                                auto* track = rawMidi.getTrack(t);
+                                if (!track)
+                                    continue;
+                                for (int e = 0; e < track->getNumEvents(); ++e) {
+                                    auto& msg = track->getEventPointer(e)->message;
+                                    if (msg.isTextMetaEvent() && msg.getMetaEventType() == 6) {
+                                        auto text = msg.getTextFromTextMetaEvent();
+                                        if (text.startsWith("CHORD:")) {
+                                            auto parts = juce::StringArray::fromTokens(
+                                                text.substring(6), ":", "");
+                                            if (parts.size() >= 2) {
+                                                ClipInfo::ChordAnnotation ann;
+                                                ann.beatPosition = msg.getTimeStamp() / ticksPerQN;
+                                                ann.chordName = parts[0];
+                                                ann.lengthBeats = parts[1].getDoubleValue();
+                                                if (ann.lengthBeats <= 0.0)
+                                                    ann.lengthBeats = 4.0;
+                                                clip->chordAnnotations.push_back(ann);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId);
                 importedCount++;
