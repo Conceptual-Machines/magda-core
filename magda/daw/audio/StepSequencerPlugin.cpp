@@ -13,6 +13,8 @@ static const juce::Identifier swing("seqSwing");
 static const juce::Identifier gateLength("seqGateLength");
 static const juce::Identifier accentVelocity("seqAccentVel");
 static const juce::Identifier normalVelocity("seqNormalVel");
+static const juce::Identifier ramp("seqRamp");
+static const juce::Identifier skew("seqSkew");
 
 // Per-step child tree
 static const juce::Identifier stepTree("STEP");
@@ -36,6 +38,8 @@ StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
     gateLength.referTo(state, SeqIDs::gateLength, um, 0.8f);
     accentVelocity.referTo(state, SeqIDs::accentVelocity, um, 120);
     normalVelocity.referTo(state, SeqIDs::normalVelocity, um, 90);
+    ramp.referTo(state, SeqIDs::ramp, um, 0.0f);
+    skew.referTo(state, SeqIDs::skew, um, 0.0f);
 
     // Register automatable parameters for macro/mod linking
     rateParam = addParam("rate", "Rate", {0.0f, 9.0f, 1.0f});
@@ -44,6 +48,8 @@ StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
     gateLengthParam = addParam("gatelength", "Gate", {0.05f, 1.0f});
     accentVelParam = addParam("accentvel", "Accent Vel", {1.0f, 127.0f, 1.0f});
     normalVelParam = addParam("normalvel", "Normal Vel", {1.0f, 127.0f, 1.0f});
+    rampParam = addParam("ramp", "Timing Depth", {-1.0f, 1.0f});
+    skewParam = addParam("skew", "Timing Skew", {-1.0f, 1.0f});
 
     // Initialize automatable params from CachedValues
     rateParam->setParameter(static_cast<float>(rate.get()), juce::dontSendNotification);
@@ -54,6 +60,8 @@ StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
                                  juce::dontSendNotification);
     normalVelParam->setParameter(static_cast<float>(normalVelocity.get()),
                                  juce::dontSendNotification);
+    rampParam->setParameter(ramp.get(), juce::dontSendNotification);
+    skewParam->setParameter(skew.get(), juce::dontSendNotification);
 
     // Listen for CachedValue changes (from UI) to sync to AutomatableParams
     state.addListener(&paramSyncListener_);
@@ -82,6 +90,10 @@ void StepSequencerPlugin::syncParamFromProperty(const juce::Identifier& property
     else if (property == SeqIDs::normalVelocity && normalVelParam)
         normalVelParam->setParameter(static_cast<float>(normalVelocity.get()),
                                      juce::dontSendNotification);
+    else if (property == SeqIDs::ramp && rampParam)
+        rampParam->setParameter(ramp.get(), juce::dontSendNotification);
+    else if (property == SeqIDs::skew && skewParam)
+        skewParam->setParameter(skew.get(), juce::dontSendNotification);
 }
 
 void StepSequencerPlugin::initialise(const te::PluginInitialisationInfo& info) {
@@ -110,7 +122,7 @@ void StepSequencerPlugin::flushPluginStateToValueTree() {
 
 void StepSequencerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     tracktion::copyPropertiesToCachedValues(v, numSteps, rate, direction, swing, gateLength,
-                                            accentVelocity, normalVelocity);
+                                            accentVelocity, normalVelocity, ramp, skew);
 
     // Copy step children from the incoming tree into our state
     // (copyPropertiesToCachedValues only copies properties, not children)
@@ -183,6 +195,31 @@ void StepSequencerPlugin::clearStep(int index) {
     if (index < 0 || index >= MAX_STEPS)
         return;
     steps_[static_cast<size_t>(index)] = Step{};
+    saveStepsToState();
+}
+
+void StepSequencerPlugin::randomizePattern() {
+    juce::Random rng;
+    int stepCount = juce::jlimit(1, MAX_STEPS, numSteps.get());
+
+    for (int i = 0; i < stepCount; ++i) {
+        auto& step = steps_[static_cast<size_t>(i)];
+        step.noteNumber = 36 + rng.nextInt(24);  // C2 to B3 (two octaves)
+        step.octaveShift = 0;
+        step.gate = rng.nextFloat() < 0.7f;
+        step.accent = rng.nextFloat() < 0.2f;
+        step.glide = rng.nextFloat() < 0.15f;
+        step.tie = false;
+    }
+    saveStepsToState();
+}
+
+void StepSequencerPlugin::setPattern(const std::vector<Step>& steps) {
+    int count = std::min(static_cast<int>(steps.size()), MAX_STEPS);
+    for (int i = 0; i < count; ++i)
+        steps_[static_cast<size_t>(i)] = steps[static_cast<size_t>(i)];
+    if (count != numSteps.get())
+        numSteps = count;
     saveStepsToState();
 }
 
@@ -286,6 +323,11 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                                  juce::roundToInt(normalVelParam ? normalVelParam->getCurrentValue()
                                                                  : normalVelocity.get()));
 
+    float rampVal =
+        juce::jlimit(-1.0f, 1.0f, rampParam ? rampParam->getCurrentValue() : ramp.get());
+    float skewVal =
+        juce::jlimit(-1.0f, 1.0f, skewParam ? skewParam->getCurrentValue() : skew.get());
+
     int stepCount = juce::jlimit(1, MAX_STEPS, numSteps.get());
     int bufferSamples = fc.bufferNumSamples;
     double blockDurationSecs = static_cast<double>(bufferSamples) / sampleRate_;
@@ -299,7 +341,7 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     static constexpr int MAX_EVENTS_PER_BLOCK = 16;
     StepClock::StepEvent events[MAX_EVENTS_PER_BLOCK];
     int eventCount = stepClock_.processBlock(fc, edit, currentRate, currentDir, swingVal, stepCount,
-                                             events, MAX_EVENTS_PER_BLOCK);
+                                             events, MAX_EVENTS_PER_BLOCK, rampVal, skewVal);
 
     // --- Emit pending note-off (sample countdown) ---
     // Only emit if the countdown fires BEFORE the first step event in this block.

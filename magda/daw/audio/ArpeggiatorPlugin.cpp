@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "StepClock.hpp"
+
 namespace magda::daw::audio {
 
 const char* ArpeggiatorPlugin::xmlTypeName = "arpeggiator";
@@ -146,37 +148,7 @@ double ArpeggiatorPlugin::rateToBeats(Rate r) {
 }
 
 double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew) {
-    // Quadratic bezier from P0=(0,0) to P2=(1,1) with control point P1=(s, s+d).
-    //   skew is [-1,1] externally, remapped to s in [0.01,0.99] for the bezier
-    //   d = depth [-1,1]: perpendicular offset from diagonal
-    //              d > 0 → bowed above diagonal (front-loaded / log-like)
-    //              d < 0 → bowed below diagonal (back-loaded / exp-like)
-    //              d = 0 → linear (regardless of skew)
-    //
-    // Because the bezier is parametric, x_bez(u) ≠ u in general. We invert
-    // x_bez(u) = 2*(1-u)*u*s + u²  to find u given input t, then return y_bez(u).
-
-    double d = static_cast<double>(juce::jlimit(-0.99f, 0.99f, depth));
-    // Remap skew from [-1,1] to [0.01,0.99]: s = 0.5 + skew * 0.49
-    double s =
-        static_cast<double>(juce::jlimit(0.01, 0.99, 0.5 + static_cast<double>(skew) * 0.49));
-
-    if (std::abs(d) < 0.001)
-        return t;  // linear — skew irrelevant
-
-    // Solve (1-2s)*u² + 2s*u - t = 0 for u in [0,1].
-    double u;
-    double a = 1.0 - 2.0 * s;
-    if (std::abs(a) < 1e-10) {
-        u = t;  // s = 0.5: x_bez(u) = u, no inversion needed
-    } else {
-        double disc = s * s + a * t;  // (s² + (1-2s)*t), always ≥ 0 for t∈[0,1]
-        u = (-s + std::sqrt(std::max(0.0, disc))) / a;
-        u = juce::jlimit(0.0, 1.0, u);
-    }
-
-    // y_bez(u) = 2*(1-u)*u*(s+d) + u²
-    return 2.0 * (1.0 - u) * u * (s + d) + u * u;
+    return StepClock::applyRampCurve(t, depth, skew);
 }
 
 void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity) {

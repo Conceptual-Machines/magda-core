@@ -83,6 +83,83 @@ StepSequencerUI::StepSequencerUI() {
         if (plugin_)
             plugin_->gateLength = static_cast<float>(value);
     };
+
+    // --- Ramp curve (time warp) ---
+    setupLabel(rampLabel_, "RAMP");
+    addAndMakeVisible(rampCurveDisplay_);
+    rampCurveDisplay_.onCurveChanged = [this](float depth, float skew) {
+        if (plugin_) {
+            plugin_->ramp = depth;
+            plugin_->skew = skew;
+        }
+    };
+
+    setupLabel(depthLabel_, "DEPTH");
+    setupSlider(depthSlider_, -1.0, 1.0, 0.01);
+    depthSlider_.setValueFormatter(
+        [](double v) { return juce::String(juce::roundToInt(v * 100)); });
+    depthSlider_.setValueParser(
+        [](const juce::String& t) { return t.trim().getDoubleValue() / 100.0; });
+    depthSlider_.onValueChanged = [this](double value) {
+        if (plugin_) {
+            plugin_->ramp = static_cast<float>(value);
+            rampCurveDisplay_.setValues(static_cast<float>(value), plugin_->skew.get());
+        }
+    };
+
+    setupLabel(skewLabel_, "SKEW");
+    setupSlider(skewSlider_, -1.0, 1.0, 0.01);
+    skewSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v * 100)); });
+    skewSlider_.setValueParser(
+        [](const juce::String& t) { return t.trim().getDoubleValue() / 100.0; });
+    skewSlider_.onValueChanged = [this](double value) {
+        if (plugin_) {
+            plugin_->skew = static_cast<float>(value);
+            rampCurveDisplay_.setValues(plugin_->ramp.get(), static_cast<float>(value));
+        }
+    };
+
+    // --- Pattern generation buttons ---
+    randomButton_.setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE));
+    randomButton_.setColour(juce::TextButton::textColourOffId,
+                            DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    randomButton_.onClick = [this] {
+        if (plugin_) {
+            plugin_->randomizePattern();
+            repaint();
+        }
+    };
+    addAndMakeVisible(randomButton_);
+
+    aiButton_.setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+    aiButton_.setColour(juce::TextButton::textColourOffId,
+                        DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    aiButton_.onClick = [this] {
+        // Toggle AI prompt visibility
+        bool visible = !aiPromptEditor_.isVisible();
+        aiPromptEditor_.setVisible(visible);
+        if (visible)
+            aiPromptEditor_.grabKeyboardFocus();
+    };
+    addAndMakeVisible(aiButton_);
+
+    aiPromptEditor_.setMultiLine(false);
+    aiPromptEditor_.setTextToShowWhenEmpty("acid bass in C minor...",
+                                           DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    aiPromptEditor_.setColour(juce::TextEditor::backgroundColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
+    aiPromptEditor_.setColour(juce::TextEditor::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    aiPromptEditor_.setColour(juce::TextEditor::outlineColourId,
+                              DarkTheme::getColour(DarkTheme::BORDER));
+    aiPromptEditor_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    aiPromptEditor_.setVisible(false);
+    aiPromptEditor_.onReturnKey = [this] {
+        // TODO: AI generation will be wired here
+        aiPromptEditor_.setVisible(false);
+    };
+    addAndMakeVisible(aiPromptEditor_);
 }
 
 StepSequencerUI::~StepSequencerUI() {
@@ -121,6 +198,9 @@ void StepSequencerUI::syncFromPlugin() {
     swingSlider_.setValue(static_cast<double>(plugin_->swing.get()), juce::dontSendNotification);
     glideSlider_.setValue(static_cast<double>(plugin_->gateLength.get()),
                           juce::dontSendNotification);
+    depthSlider_.setValue(static_cast<double>(plugin_->ramp.get()), juce::dontSendNotification);
+    skewSlider_.setValue(static_cast<double>(plugin_->skew.get()), juce::dontSendNotification);
+    rampCurveDisplay_.setValues(plugin_->ramp.get(), plugin_->skew.get());
     repaint();
 }
 
@@ -199,6 +279,32 @@ void StepSequencerUI::resized() {
     octaveDownArea_ = keyboardRow.removeFromLeft(OCTAVE_ARROW_WIDTH);
     octaveUpArea_ = keyboardRow.removeFromRight(OCTAVE_ARROW_WIDTH);
     keyboardArea_ = keyboardRow;
+
+    bounds.removeFromTop(ROW_GAP + 2);
+
+    // Ramp curve section: [RAMP label] [curve display] [DEPTH slider] [SKEW slider]
+    auto rampRow = bounds.removeFromTop(CONTROL_ROW_HEIGHT * 2);
+    {
+        rampLabel_.setBounds(rampRow.removeFromLeft(LABEL_WIDTH));
+        rampCurveDisplay_.setBounds(rampRow.removeFromLeft(rampRow.getHeight()));
+        rampRow.removeFromLeft(4);
+        int sliderWidth = rampRow.getWidth() / 2;
+        auto depthCell = rampRow.removeFromLeft(sliderWidth);
+        depthLabel_.setBounds(depthCell.removeFromLeft(LABEL_WIDTH));
+        depthSlider_.setBounds(depthCell);
+        skewLabel_.setBounds(rampRow.removeFromLeft(LABEL_WIDTH));
+        skewSlider_.setBounds(rampRow);
+    }
+
+    bounds.removeFromTop(ROW_GAP);
+
+    // Pattern generation buttons row: [RND] [AI] [prompt editor]
+    auto buttonRow = bounds.removeFromTop(CONTROL_ROW_HEIGHT);
+    randomButton_.setBounds(buttonRow.removeFromLeft(36));
+    buttonRow.removeFromLeft(4);
+    aiButton_.setBounds(buttonRow.removeFromLeft(30));
+    buttonRow.removeFromLeft(4);
+    aiPromptEditor_.setBounds(buttonRow);
 }
 
 // =============================================================================
@@ -705,11 +811,13 @@ void StepSequencerUI::setupSlider(LinkableTextSlider& slider, double min, double
 std::vector<LinkableTextSlider*> StepSequencerUI::getLinkableSliders() {
     magda::ChainNodePath dummy;
     // Param indices match AutomatableParameter registration order:
-    // 0=rate, 1=direction, 2=swing, 3=glidetime, 4=accentvel, 5=normalvel
+    // 0=rate, 1=direction, 2=swing, 3=glidetime, 4=accentvel, 5=normalvel, 6=ramp, 7=skew
     rateSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 0, dummy);
     swingSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 2, dummy);
     glideSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 3, dummy);
-    return {&rateSlider_, &swingSlider_, &glideSlider_};
+    depthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 6, dummy);
+    skewSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 7, dummy);
+    return {&rateSlider_, &swingSlider_, &glideSlider_, &depthSlider_, &skewSlider_};
 }
 
 }  // namespace magda::daw::ui

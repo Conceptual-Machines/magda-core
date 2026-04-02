@@ -1371,6 +1371,8 @@ ParameterInfo StepSequencerProcessor::getParameterInfo(int index) const {
         info.minValue = range.getStart();
         info.maxValue = range.getEnd();
         info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+        // Timing Depth (6) and Timing Skew (7) are bipolar
+        info.bipolarModulation = (index == 6 || index == 7);
     }
     return info;
 }

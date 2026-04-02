@@ -69,11 +69,14 @@ class StepSequencerPlugin : public MidiDevicePlugin {
     juce::CachedValue<float> gateLength;  // 0-1 normalized (0.1 = staccato, 1.0 = legato)
     juce::CachedValue<int> accentVelocity;
     juce::CachedValue<int> normalVelocity;
+    juce::CachedValue<float> ramp;  // -1.0 to 1.0: bezier timing depth
+    juce::CachedValue<float> skew;  // -1.0 to 1.0: bezier control point offset
 
     // --- Automatable parameters (for macro/mod linking) ---
     te::AutomatableParameter::Ptr rateParam, directionParam;
     te::AutomatableParameter::Ptr swingParam, gateLengthParam;
     te::AutomatableParameter::Ptr accentVelParam, normalVelParam;
+    te::AutomatableParameter::Ptr rampParam, skewParam;
 
     // --- Step access (message thread) ---
     Step getStep(int index) const;
@@ -84,6 +87,12 @@ class StepSequencerPlugin : public MidiDevicePlugin {
     void setStepGlide(int index, bool glide);
     void setStepTie(int index, bool tie);
     void clearStep(int index);
+
+    /** Randomize all active steps with random notes, gates, accents, and glides. */
+    void randomizePattern();
+
+    /** Bulk-set the pattern from an external source (e.g. AI generation). */
+    void setPattern(const std::vector<Step>& steps);
 
     /** Current playback step index for UI highlight (-1 if not playing). */
     std::atomic<int> currentPlayStep_{-1};

@@ -71,7 +71,7 @@ class StepClock {
      */
     int processBlock(const te::PluginRenderContext& fc, te::Edit& edit, Rate rate,
                      Direction direction, float swing, int numSteps, StepEvent* events,
-                     int maxEvents);
+                     int maxEvents, float rampDepth = 0.0f, float rampSkew = 0.0f);
 
     /** Current step index within the sequence (for UI display). */
     int getCurrentStep() const {
@@ -86,6 +86,12 @@ class StepClock {
     /** Convert rate enum to beats per step. */
     static double rateToBeats(Rate r);
 
+    /** Quadratic bezier timing curve (shared by arpeggiator and step sequencer).
+     *  Control point at (skew, skew+depth) in unit square.
+     *  depth > 0 → front-loaded (log-like), depth < 0 → back-loaded (exp-like).
+     *  skew shifts the control point horizontally (-1..1 mapped to 0.01..0.99). */
+    static double applyRampCurve(double t, float depth, float skew);
+
   private:
     double sampleRate_ = 44100.0;
 
@@ -98,8 +104,10 @@ class StepClock {
     int tickParity_ = 0;          // Even/odd counter for swing
 
     // Sequence state (direction-aware position within the pattern)
-    int sequenceStep_ = 0;  // Current position in the pattern (0..numSteps-1)
-    bool goingUp_ = true;   // For ping-pong direction
+    int sequenceStep_ = 0;          // Current position in the pattern (0..numSteps-1)
+    int cycleStep_ = 0;             // Linear step count within current cycle (for ramp curve)
+    double cycleOriginBeat_ = 0.0;  // Beat position where current cycle started
+    bool goingUp_ = true;           // For ping-pong direction
 
     // Random
     juce::Random random_;

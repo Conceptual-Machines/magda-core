@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "ArpeggiatorUI.hpp"
 #include "audio/StepSequencerPlugin.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -56,6 +57,19 @@ class StepSequencerUI : public juce::Component,
     juce::Label glideLabel_;
     LinkableTextSlider glideSlider_;
 
+    // --- Ramp curve ---
+    juce::Label rampLabel_;
+    RampCurveDisplay rampCurveDisplay_;
+    juce::Label depthLabel_;
+    LinkableTextSlider depthSlider_;
+    juce::Label skewLabel_;
+    LinkableTextSlider skewSlider_;
+
+    // --- Pattern generation ---
+    juce::TextButton randomButton_{"RND"};
+    juce::TextButton aiButton_{"AI"};
+    juce::TextEditor aiPromptEditor_;
+
     // --- State ---
     int selectedStep_ = 0;       // Currently selected step for editing
     int currentPlayStep_ = -1;   // Step being played (for highlight)
@@ -97,6 +111,8 @@ class StepSequencerUI : public juce::Component,
     juce::Rectangle<int> keyboardArea_;
     juce::Rectangle<int> octaveDownArea_;
     juce::Rectangle<int> octaveUpArea_;
+    juce::Rectangle<int> rampArea_;
+    juce::Rectangle<int> buttonArea_;
 
     // --- Setup helpers ---
     void setupLabel(juce::Label& label, const juce::String& text);
