@@ -30,6 +30,26 @@ inline constexpr const char* HYBRID_COST = "hybrid_cost";
 inline constexpr const char* HYBRID_SPEED = "hybrid_speed";
 }  // namespace preset
 
+// --- Model IDs ---
+namespace model {
+// OpenAI
+inline constexpr const char* GPT_4_1 = "gpt-4.1";
+inline constexpr const char* GPT_4_1_MINI = "gpt-4.1-mini";
+inline constexpr const char* GPT_5 = "gpt-5";
+// Anthropic
+inline constexpr const char* CLAUDE_OPUS = "claude-opus-4-6";
+inline constexpr const char* CLAUDE_SONNET = "claude-sonnet-4-6";
+inline constexpr const char* CLAUDE_HAIKU = "claude-haiku-4-5-20251001";
+// Gemini
+inline constexpr const char* GEMINI_FLASH = "gemini-2.0-flash";
+inline constexpr const char* GEMINI_PRO = "gemini-2.5-pro";
+// DeepSeek
+inline constexpr const char* DEEPSEEK_CHAT = "deepseek-chat";
+inline constexpr const char* DEEPSEEK_REASONER = "deepseek-reasoner";
+// OpenRouter
+inline constexpr const char* LLAMA_70B = "meta-llama/llama-3.3-70b-instruct";
+}  // namespace model
+
 // --- Agent roles ---
 namespace role {
 inline constexpr const char* ROUTER = "router";

@@ -19,46 +19,45 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::CLOUD_OPENAI,
             "Cloud (OpenAI)",
             {
-                {role::ROUTER, {provider::OPENAI, "", "", "gpt-4.1"}},
-                {role::COMMAND, {provider::OPENAI, "", "", "gpt-5"}},
-                {role::MUSIC, {provider::OPENAI, "", "", "gpt-5"}},
+                {role::ROUTER, {provider::OPENAI, "", "", model::GPT_4_1}},
+                {role::COMMAND, {provider::OPENAI, "", "", model::GPT_5}},
+                {role::MUSIC, {provider::OPENAI, "", "", model::GPT_5}},
             },
         },
         {
             preset::CLOUD_ANTHROPIC,
             "Cloud (Anthropic)",
             {
-                {role::ROUTER, {provider::ANTHROPIC, "", "", "claude-haiku-4-5-20251001"}},
-                {role::COMMAND, {provider::ANTHROPIC, "", "", "claude-sonnet-4-6"}},
-                {role::MUSIC, {provider::ANTHROPIC, "", "", "claude-opus-4-6"}},
+                {role::ROUTER, {provider::ANTHROPIC, "", "", model::CLAUDE_HAIKU}},
+                {role::COMMAND, {provider::ANTHROPIC, "", "", model::CLAUDE_SONNET}},
+                {role::MUSIC, {provider::ANTHROPIC, "", "", model::CLAUDE_OPUS}},
             },
         },
         {
             preset::CLOUD_GEMINI,
             "Cloud (Gemini)",
             {
-                {role::ROUTER, {provider::GEMINI, "", "", "gemini-2.0-flash"}},
-                {role::COMMAND, {provider::GEMINI, "", "", "gemini-2.0-flash"}},
-                {role::MUSIC, {provider::GEMINI, "", "", "gemini-2.5-pro"}},
+                {role::ROUTER, {provider::GEMINI, "", "", model::GEMINI_FLASH}},
+                {role::COMMAND, {provider::GEMINI, "", "", model::GEMINI_FLASH}},
+                {role::MUSIC, {provider::GEMINI, "", "", model::GEMINI_PRO}},
             },
         },
         {
             preset::CLOUD_DEEPSEEK,
             "Cloud (DeepSeek)",
             {
-                {role::ROUTER, {provider::DEEPSEEK, "", "", "deepseek-chat"}},
-                {role::COMMAND, {provider::DEEPSEEK, "", "", "deepseek-chat"}},
-                {role::MUSIC, {provider::DEEPSEEK, "", "", "deepseek-reasoner"}},
+                {role::ROUTER, {provider::DEEPSEEK, "", "", model::DEEPSEEK_CHAT}},
+                {role::COMMAND, {provider::DEEPSEEK, "", "", model::DEEPSEEK_CHAT}},
+                {role::MUSIC, {provider::DEEPSEEK, "", "", model::DEEPSEEK_REASONER}},
             },
         },
         {
             preset::CLOUD_OPENROUTER,
             "Cloud (OpenRouter)",
             {
-                {role::ROUTER, {provider::OPENROUTER, "", "", "meta-llama/llama-3.3-70b-instruct"}},
-                {role::COMMAND,
-                 {provider::OPENROUTER, "", "", "meta-llama/llama-3.3-70b-instruct"}},
-                {role::MUSIC, {provider::OPENROUTER, "", "", "meta-llama/llama-3.3-70b-instruct"}},
+                {role::ROUTER, {provider::OPENROUTER, "", "", model::LLAMA_70B}},
+                {role::COMMAND, {provider::OPENROUTER, "", "", model::LLAMA_70B}},
+                {role::MUSIC, {provider::OPENROUTER, "", "", model::LLAMA_70B}},
             },
         },
         {
@@ -67,7 +66,7 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             {
                 {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
                 {role::COMMAND, {provider::LLAMA_LOCAL, "", "", ""}},
-                {role::MUSIC, {provider::OPENAI, "", "", "gpt-5"}},
+                {role::MUSIC, {provider::OPENAI, "", "", model::GPT_5}},
             },
         },
         {
@@ -75,8 +74,8 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             "Hybrid - Optimize for Speed",
             {
                 {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
-                {role::COMMAND, {provider::OPENAI, "", "", "gpt-5"}},
-                {role::MUSIC, {provider::OPENAI, "", "", "gpt-5"}},
+                {role::COMMAND, {provider::OPENAI, "", "", model::GPT_5}},
+                {role::MUSIC, {provider::OPENAI, "", "", model::GPT_5}},
             },
         },
     };

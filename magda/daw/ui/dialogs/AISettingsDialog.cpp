@@ -54,17 +54,16 @@ struct ProviderInfo {
 
 const std::vector<ProviderInfo>& getKnownProviders() {
     static const std::vector<ProviderInfo> providers = {
-        {magda::provider::OPENAI, "OpenAI", magda::provider::OPENAI, "", "gpt-4.1-mini",
+        {magda::provider::OPENAI, "OpenAI", magda::provider::OPENAI, "", magda::model::GPT_4_1_MINI,
          BinaryData::openai_svg, BinaryData::openai_svgSize},
         {magda::provider::ANTHROPIC, "Anthropic", magda::provider::ANTHROPIC, "",
-         "claude-haiku-4-5-20251001", BinaryData::anthropic_svg, BinaryData::anthropic_svgSize},
-        {magda::provider::GEMINI, "Gemini", magda::provider::GEMINI, "", "gemini-2.0-flash",
+         magda::model::CLAUDE_HAIKU, BinaryData::anthropic_svg, BinaryData::anthropic_svgSize},
+        {magda::provider::GEMINI, "Gemini", magda::provider::GEMINI, "", magda::model::GEMINI_FLASH,
          BinaryData::gemini_svg, BinaryData::gemini_svgSize},
-        {magda::provider::DEEPSEEK, "DeepSeek", magda::provider::DEEPSEEK, "", "deepseek-chat",
-         BinaryData::deepseek_svg, BinaryData::deepseek_svgSize},
+        {magda::provider::DEEPSEEK, "DeepSeek", magda::provider::DEEPSEEK, "",
+         magda::model::DEEPSEEK_CHAT, BinaryData::deepseek_svg, BinaryData::deepseek_svgSize},
         {magda::provider::OPENROUTER, "OpenRouter", magda::provider::OPENROUTER, "",
-         "meta-llama/llama-3.3-70b-instruct", BinaryData::openrouter_svg,
-         BinaryData::openrouter_svgSize},
+         magda::model::LLAMA_70B, BinaryData::openrouter_svg, BinaryData::openrouter_svgSize},
     };
     return providers;
 }
@@ -1059,13 +1058,13 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
     static void applyCheaperModel(Config::AgentLLMConfig& cfg, const std::string& presetId) {
         if (presetId == magda::preset::CLOUD_OPENAI)
-            cfg.model = "gpt-4.1-mini";
+            cfg.model = magda::model::GPT_4_1_MINI;
         else if (presetId == magda::preset::CLOUD_ANTHROPIC)
-            cfg.model = "claude-haiku-4-5-20251001";
+            cfg.model = magda::model::CLAUDE_HAIKU;
         else if (presetId == magda::preset::CLOUD_GEMINI)
-            cfg.model = "gemini-2.0-flash";
+            cfg.model = magda::model::GEMINI_FLASH;
         else if (presetId == magda::preset::CLOUD_DEEPSEEK)
-            cfg.model = "deepseek-chat";
+            cfg.model = magda::model::DEEPSEEK_CHAT;
         // openrouter: keep default
     }
 
