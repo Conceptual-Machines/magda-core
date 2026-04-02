@@ -20,7 +20,7 @@ static const juce::Identifier velocityMode("arpVelMode");
 static const juce::Identifier fixedVelocity("arpFixedVel");
 }  // namespace ArpIDs
 
-ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : te::Plugin(info) {
+ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : MidiDevicePlugin(info) {
     auto um = getUndoManager();
     pattern.referTo(state, ArpIDs::pattern, um, 0);
     rate.referTo(state, ArpIDs::rate, um, 4);  // Eighth note
@@ -95,11 +95,12 @@ void ArpeggiatorPlugin::syncParamFromProperty(const juce::Identifier& property) 
 }
 
 void ArpeggiatorPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    sampleRate_ = info.sampleRate;
+    MidiDevicePlugin::initialise(info);
     resetArpState();
 }
 
 void ArpeggiatorPlugin::deinitialise() {
+    MidiDevicePlugin::deinitialise();
     resetArpState();
 }
 
@@ -214,8 +215,7 @@ void ArpeggiatorPlugin::sendAllNotesOff(te::MidiMessageArray& midi) {
     if (lastPlayedNote_ >= 0) {
         midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), 0.0, te::MPESourceID{});
         lastPlayedNote_ = -1;
-        midiOutNote_.store(-1, std::memory_order_relaxed);
-        midiOutVelocity_.store(0, std::memory_order_relaxed);
+        clearMidiOutDisplay();
     }
 }
 
@@ -227,8 +227,7 @@ void ArpeggiatorPlugin::resetArpState() {
     lastPlayedVelocity_ = 0;
     lastNoteOffBeat_ = -1.0;
     wasPlaying_ = false;
-    midiOutNote_.store(-1, std::memory_order_relaxed);
-    midiOutVelocity_.store(0, std::memory_order_relaxed);
+    clearMidiOutDisplay();
 }
 
 ArpeggiatorPlugin::ExpandedSequence ArpeggiatorPlugin::buildSequence() const {
@@ -456,8 +455,7 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                             te::MPESourceID{});
         lastPlayedNote_ = -1;
         lastNoteOffBeat_ = -1.0;
-        midiOutNote_.store(-1, std::memory_order_relaxed);
-        midiOutVelocity_.store(0, std::memory_order_relaxed);
+        clearMidiOutDisplay();
     }
 
     // --- 8. Walk steps and generate notes ---
@@ -510,8 +508,7 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
             lastPlayedNote_ = note.noteNumber;
             lastPlayedVelocity_ = vel;
-            midiOutNote_.store(note.noteNumber, std::memory_order_relaxed);
-            midiOutVelocity_.store(vel, std::memory_order_relaxed);
+            setMidiOutDisplay(note.noteNumber, vel);
 
             // Schedule note-off
             double noteOffBeat = swungBeat + stepBeats * static_cast<double>(gateVal);
@@ -522,8 +519,7 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                                     te::MPESourceID{});
                 lastPlayedNote_ = -1;
                 lastNoteOffBeat_ = -1.0;
-                midiOutNote_.store(-1, std::memory_order_relaxed);
-                midiOutVelocity_.store(0, std::memory_order_relaxed);
+                clearMidiOutDisplay();
             } else {
                 // Note-off in a future block
                 lastNoteOffBeat_ = noteOffBeat;
