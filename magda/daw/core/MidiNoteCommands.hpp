@@ -735,4 +735,28 @@ class SetNoteChordGroupsCommand : public UndoableCommand {
         oldGroups_;  // {noteIndex, oldChordGroup} captured on execute
 };
 
+/**
+ * @brief Command for applying ease curve to selected notes' timing.
+ *
+ * Redistributes note start times within their original span using the
+ * ramp curve function (same as arpeggiator/step sequencer ease).
+ */
+class EaseNoteTimingCommand : public UndoableCommand {
+  public:
+    EaseNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices, float depth, float skew);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Time Ease MIDI Notes";
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<size_t> noteIndices_;
+    float depth_, skew_;
+    std::vector<double> oldStartBeats_;
+    bool executed_ = false;
+};
+
 }  // namespace magda

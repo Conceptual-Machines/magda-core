@@ -170,6 +170,9 @@ class PianoRollGridComponent : public juce::Component,
     // Request a note to be selected after the next refresh
     void selectNoteAfterRefresh(ClipId clipId, int noteIndex);
 
+    // Update visual selection to match SelectionManager state
+    void syncSelectionFromManager();
+
     // ClipManagerListener
     void clipsChanged() override {}
     void clipPropertyChanged(ClipId clipId) override;

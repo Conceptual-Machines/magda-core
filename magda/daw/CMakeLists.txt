@@ -72,6 +72,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/rack.svg
     ../../assets/icons/tree.svg
     ../../assets/icons/bezier.svg
+    ../../assets/icons/time_ease.svg
     ../../assets/icons/chevron_right.svg
     ../../assets/icons/chevron_down.svg
     ../../assets/icons/curve.svg
@@ -338,6 +339,8 @@ set(DAW_UI_SOURCES
     ui/views/SessionClipEditor.cpp
     ui/views/MixerView.cpp
     # Components - Common
+    ui/components/common/RampCurveDisplay.cpp
+    ui/components/common/TimeEasePopup.cpp
     ui/components/common/SvgButton.cpp
     ui/components/common/IconSelector.cpp
     ui/components/common/ZoomControls.cpp

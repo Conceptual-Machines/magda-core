@@ -1230,6 +1230,24 @@ void PianoRollGridComponent::selectNoteAfterRefresh(ClipId clipId, int noteIndex
     pendingSelectNoteIndex_ = noteIndex;
 }
 
+void PianoRollGridComponent::syncSelectionFromManager() {
+    const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
+    for (auto& nc : noteComponents_) {
+        bool shouldSelect = false;
+        if (noteSel.isValid() && nc->getSourceClipId() == noteSel.clipId) {
+            size_t idx = nc->getNoteIndex();
+            for (size_t selIdx : noteSel.noteIndices) {
+                if (idx == selIdx) {
+                    shouldSelect = true;
+                    break;
+                }
+            }
+        }
+        nc->setSelected(shouldSelect);
+    }
+    repaint();
+}
+
 void PianoRollGridComponent::refreshNotes() {
     // Pending single-note selection (e.g. after add)
     int selectNoteIndex = pendingSelectNoteIndex_ >= 0 ? pendingSelectNoteIndex_ : -1;

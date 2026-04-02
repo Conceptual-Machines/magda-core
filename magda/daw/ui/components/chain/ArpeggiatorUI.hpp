@@ -4,56 +4,11 @@
 
 #include "audio/ArpeggiatorPlugin.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/common/RampCurveDisplay.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
-
-/**
- * @brief Two-column UI for the ArpeggiatorPlugin.
- *
- * Left column:  Pattern (combo), Rate (combo), Octaves (combo), Latch (toggle)
- * Right column: Gate (slider), Swing (slider), Velocity Mode (combo), Fixed Vel (slider)
- *
- * Reads/writes CachedValues on the plugin's ValueTree directly.
- */
-/** Small component that draws the ramp bezier curve. */
-class RampCurveDisplay : public juce::Component, public juce::SettableTooltipClient {
-  public:
-    RampCurveDisplay() = default;
-
-    void setValues(float depth, float skew) {
-        if (std::abs(depth_ - depth) > 0.001f || std::abs(skew_ - skew) > 0.001f) {
-            depth_ = depth;
-            skew_ = skew;
-            repaint();
-        }
-    }
-
-    float getDepth() const {
-        return depth_;
-    }
-    float getSkew() const {
-        return skew_;
-    }
-
-    /** Called whenever depth or skew change. */
-    std::function<void(float depth, float skew)> onCurveChanged;
-
-    void paint(juce::Graphics& g) override;
-    void mouseDown(const juce::MouseEvent& e) override;
-    void mouseDrag(const juce::MouseEvent& e) override;
-    void mouseDoubleClick(const juce::MouseEvent& e) override;
-
-  private:
-    float depth_ = 0.0f;
-    float skew_ = 0.5f;
-    // Offset from mouseDown position to handle centre — prevents handle jumping on click
-    float handleOffsetX_ = 0.0f;
-    float handleOffsetY_ = 0.0f;
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RampCurveDisplay)
-};
 
 class ArpeggiatorUI : public juce::Component,
                       private juce::ValueTree::Listener,

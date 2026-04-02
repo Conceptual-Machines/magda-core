@@ -16,6 +16,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/common/SvgButton.hpp"
+#include "ui/components/common/TimeEasePopup.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/NoteComponent.hpp"
 #include "ui/components/pianoroll/NoteGridHost.hpp"
@@ -206,6 +207,24 @@ class DrumGridClipGrid : public juce::Component,
             }
         }
 
+        repaint();
+    }
+
+    void syncSelectionFromManager() {
+        const auto& noteSel = magda::SelectionManager::getInstance().getNoteSelection();
+        for (auto& nc : noteComponents_) {
+            bool shouldSelect = false;
+            if (noteSel.isValid() && nc->getSourceClipId() == noteSel.clipId) {
+                size_t idx = nc->getNoteIndex();
+                for (size_t selIdx : noteSel.noteIndices) {
+                    if (idx == selIdx) {
+                        shouldSelect = true;
+                        break;
+                    }
+                }
+            }
+            nc->setSelected(shouldSelect);
+        }
         repaint();
     }
 
@@ -1367,6 +1386,29 @@ DrumGridClipContent::DrumGridClipContent() {
     };
     addAndMakeVisible(controlsToggle_.get());
 
+    // Create time ease button
+    easeButton_ = std::make_unique<magda::SvgButton>("TimeEase", BinaryData::time_ease_svg,
+                                                     BinaryData::time_ease_svgSize);
+    easeButton_->setTooltip("Time Ease selected notes");
+    easeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    easeButton_->onClick = [this]() {
+        const auto& noteSel = magda::SelectionManager::getInstance().getNoteSelection();
+        if (!noteSel.isValid() || noteSel.noteIndices.size() < 2)
+            return;
+
+        auto clipId = noteSel.clipId;
+        auto indices = noteSel.noteIndices;
+        auto popup = std::make_unique<TimeEasePopup>(clipId, indices);
+        popup->onApply = [clipId, indices](float depth, float skew) {
+            auto cmd = std::make_unique<magda::EaseNoteTimingCommand>(clipId, indices, depth, skew);
+            magda::UndoManager::getInstance().executeCommand(std::move(cmd));
+        };
+
+        auto buttonBounds = easeButton_->getScreenBounds();
+        juce::CallOutBox::launchAsynchronously(std::move(popup), buttonBounds, nullptr);
+    };
+    addAndMakeVisible(easeButton_.get());
+
     // Create row labels
     rowLabels_ = std::make_unique<DrumGridRowLabels>();
     rowLabels_->setRowHeight(ROW_HEIGHT);
@@ -1496,7 +1538,8 @@ DrumGridClipContent::DrumGridClipContent() {
     };
 
     // Handle duplicate from context menu
-    gridComponent_->onDuplicateNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+    gridComponent_->onDuplicateNotes = [this](magda::ClipId clipId,
+                                              std::vector<size_t> noteIndices) {
         auto& clipManager = magda::ClipManager::getInstance();
         const auto* clip = clipManager.getClip(clipId);
         if (!clip || clip->type != magda::ClipType::MIDI)
@@ -1527,6 +1570,7 @@ DrumGridClipContent::DrumGridClipContent() {
             if (!inserted.empty()) {
                 magda::SelectionManager::getInstance().selectNotes(
                     clipId, std::vector<size_t>(inserted.begin(), inserted.end()));
+                gridComponent_->syncSelectionFromManager();
             }
         }
     };
@@ -1623,6 +1667,7 @@ void DrumGridClipContent::resized() {
     // Position sidebar icon at the bottom of the sidebar
     int iconSize = 22;
     int iconPadding = (SIDEBAR_WIDTH - iconSize) / 2;
+    easeButton_->setBounds(iconPadding, (getHeight() - iconSize) / 2, iconSize, iconSize);
     controlsToggle_->setBounds(iconPadding, getHeight() - iconSize - iconPadding, iconSize,
                                iconSize);
 

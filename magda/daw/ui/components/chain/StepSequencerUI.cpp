@@ -22,6 +22,171 @@ juce::String StepSequencerUI::noteNameShort(int noteNumber) {
 }
 
 // =============================================================================
+// AIResultDisplay
+// =============================================================================
+
+StepSequencerUI::AIResultDisplay::AIResultDisplay() {}
+
+void StepSequencerUI::AIResultDisplay::setStreamingText(const juce::String& text) {
+    mode_ = Mode::Streaming;
+    text_ = text;
+    scrollOffset_ = 0;
+    autoScroll_ = true;
+    repaint();
+}
+
+void StepSequencerUI::AIResultDisplay::appendStreamingToken(const juce::String& token) {
+    mode_ = Mode::Streaming;
+    if (text_ == "Thinking...")
+        text_ = "";
+    text_ += token;
+
+    // Try to extract description early from partial JSON
+    if (description_.isEmpty()) {
+        auto descIdx = text_.indexOf("\"description\"");
+        if (descIdx >= 0) {
+            auto colonIdx = text_.indexOf(descIdx, ":");
+            if (colonIdx >= 0) {
+                auto quoteStart = text_.indexOf(colonIdx, "\"");
+                if (quoteStart >= 0) {
+                    auto quoteEnd = text_.indexOf(quoteStart + 1, "\"");
+                    if (quoteEnd > quoteStart)
+                        description_ = text_.substring(quoteStart + 1, quoteEnd);
+                }
+            }
+        }
+    }
+
+    // Try to parse complete step objects from partial JSON for live preview
+    // Look for complete {...} objects within the steps array
+    previewSteps_.clear();
+    auto stepsIdx = text_.indexOf("\"steps\"");
+    if (stepsIdx >= 0) {
+        auto arrayStart = text_.indexOf(stepsIdx, "[");
+        if (arrayStart >= 0) {
+            // Find each complete step object
+            int searchFrom = arrayStart;
+            while (true) {
+                auto objStart = text_.indexOf(searchFrom, "{");
+                if (objStart < 0)
+                    break;
+                auto objEnd = text_.indexOf(objStart, "}");
+                if (objEnd < 0)
+                    break;  // Incomplete object — stop
+
+                auto objText = text_.substring(objStart, objEnd + 1);
+                auto parsed = juce::JSON::parse(objText);
+                if (parsed.isObject()) {
+                    audio::StepSequencerPlugin::Step step;
+                    step.noteNumber = juce::jlimit(0, 127, (int)parsed.getProperty("note", 60));
+                    step.octaveShift = juce::jlimit(-2, 2, (int)parsed.getProperty("octave", 0));
+                    step.gate = (bool)parsed.getProperty("gate", true);
+                    step.accent = (bool)parsed.getProperty("accent", false);
+                    step.glide = (bool)parsed.getProperty("glide", false);
+                    step.tie = (bool)parsed.getProperty("tie", false);
+                    previewSteps_.push_back(step);
+                }
+                searchFrom = objEnd + 1;
+            }
+        }
+    }
+
+    repaint();
+}
+
+void StepSequencerUI::AIResultDisplay::showResult(const juce::String& description, int) {
+    mode_ = Mode::Streaming;
+    description_ = description;
+    previewSteps_.clear();
+    text_ = {};
+    repaint();
+}
+
+void StepSequencerUI::AIResultDisplay::clear() {
+    mode_ = Mode::Empty;
+    text_ = {};
+    description_ = {};
+    previewSteps_.clear();
+    scrollOffset_ = 0;
+    autoScroll_ = true;
+    repaint();
+}
+
+void StepSequencerUI::AIResultDisplay::paint(juce::Graphics& g) {
+    auto bounds = getLocalBounds().toFloat();
+    if (bounds.isEmpty())
+        return;
+
+    g.setFont(FontManager::getInstance().getUIFont(9.0f));
+    g.setColour(DarkTheme::getSecondaryTextColour());
+
+    if (mode_ == Mode::Streaming) {
+        auto area = bounds.reduced(2, 0);
+        constexpr float lineH = 11.0f;
+
+        // Description header (always visible, not scrolled)
+        if (description_.isNotEmpty()) {
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.drawText(description_, area.removeFromTop(lineH), juce::Justification::centredLeft,
+                       true);
+            area.removeFromTop(2);
+        } else if (previewSteps_.empty()) {
+            g.drawText(text_, area, juce::Justification::centredLeft, true);
+            return;
+        }
+
+        // Auto-scroll: keep latest steps visible
+        int visibleLines = static_cast<int>(area.getHeight() / lineH);
+        int totalLines = static_cast<int>(previewSteps_.size());
+        int maxScroll = std::max(0, totalLines - visibleLines);
+        if (autoScroll_)
+            scrollOffset_ = maxScroll;
+        scrollOffset_ = juce::jlimit(0, maxScroll, scrollOffset_);
+
+        // Step list
+        g.setFont(FontManager::getInstance().getMonoFont(8.5f));
+        int startIdx = scrollOffset_;
+        int endIdx = std::min(totalLines, startIdx + visibleLines);
+        for (int i = startIdx; i < endIdx; ++i) {
+            auto& s = previewSteps_[static_cast<size_t>(i)];
+            int note = s.noteNumber + s.octaveShift * 12;
+            juce::String noteName = noteNameShort(note);
+
+            juce::String flags;
+            if (!s.gate)
+                flags = "rest";
+            else {
+                if (s.accent)
+                    flags += "acc ";
+                if (s.glide)
+                    flags += "gld ";
+                if (s.tie)
+                    flags += "tie ";
+                if (flags.isEmpty())
+                    flags = "-";
+                else
+                    flags = flags.trim();
+            }
+
+            auto line = juce::String(i + 1).paddedLeft('0', 2) + "  " +
+                        noteName.paddedRight(' ', 4) + " " + flags;
+
+            g.setColour(s.gate ? DarkTheme::getSecondaryTextColour()
+                               : DarkTheme::getColour(DarkTheme::BORDER));
+            g.drawText(line, area.removeFromTop(lineH), juce::Justification::centredLeft, true);
+        }
+    }
+}
+
+void StepSequencerUI::AIResultDisplay::mouseWheelMove(const juce::MouseEvent&,
+                                                      const juce::MouseWheelDetails& wheel) {
+    int delta = wheel.deltaY > 0 ? -2 : 2;
+    scrollOffset_ += delta;
+    autoScroll_ = false;
+    repaint();
+}
+
+// =============================================================================
 // Construction
 // =============================================================================
 
@@ -90,7 +255,7 @@ StepSequencerUI::StepSequencerUI() {
     };
 
     // --- Ramp curve (time warp) ---
-    setupLabel(rampLabel_, "RAMP");
+    setupLabel(rampLabel_, "TIME EASE");
     addAndMakeVisible(rampCurveDisplay_);
     rampCurveDisplay_.onCurveChanged = [this](float depth, float skew) {
         if (plugin_) {
@@ -127,6 +292,7 @@ StepSequencerUI::StepSequencerUI() {
     // --- Pattern generation: [RND] [prompt input] [Generate] ---
     randomButton_ = std::make_unique<magda::SvgButton>("Random", BinaryData::random_svg,
                                                        BinaryData::random_svgSize);
+    randomButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     randomButton_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     randomButton_->setTooltip("Randomize pattern");
     randomButton_->onClick = [this] {
@@ -160,27 +326,29 @@ StepSequencerUI::StepSequencerUI() {
     aiButton_.onClick = [this] { generateAIPattern(); };
     addAndMakeVisible(aiButton_);
 
-    aiStatusLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    aiStatusLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    aiStatusLabel_.setJustificationType(juce::Justification::topLeft);
-    addAndMakeVisible(aiStatusLabel_);
+    addAndMakeVisible(aiResultDisplay_);
 
     // AI model indicator
     aiIcon_ =
         std::make_unique<magda::SvgButton>("AIIcon", BinaryData::ai_svg, BinaryData::ai_svgSize);
-    aiIcon_->setEnabled(false);
+    aiIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    aiIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     aiIcon_->setInterceptsMouseClicks(false, false);
     addAndMakeVisible(*aiIcon_);
 
-    auto modelName = magda::Config::getInstance().getLLMModel();
+    auto cfg = magda::Config::getInstance().getAgentLLMConfig("music");
+    auto modelName = cfg.model.empty() ? cfg.provider : cfg.model;
     aiModelLabel_.setText(juce::String(modelName), juce::dontSendNotification);
     aiModelLabel_.setFont(FontManager::getInstance().getUIFont(8.5f));
     aiModelLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
     aiModelLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(aiModelLabel_);
+
+    magda::Config::getInstance().addListener(this);
 }
 
 StepSequencerUI::~StepSequencerUI() {
+    magda::Config::getInstance().removeListener(this);
     stopTimer();
     if (watchedState_.isValid())
         watchedState_.removeListener(this);
@@ -239,6 +407,16 @@ void StepSequencerUI::timerCallback() {
         currentPlayStep_ = step;
         repaint();  // Repaint to update step highlight
     }
+}
+
+void StepSequencerUI::configChanged() {
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
+        if (safeThis) {
+            auto cfg = magda::Config::getInstance().getAgentLLMConfig("music");
+            auto model = cfg.model.empty() ? cfg.provider : cfg.model;
+            safeThis->aiModelLabel_.setText(juce::String(model), juce::dontSendNotification);
+        }
+    });
 }
 
 // =============================================================================
@@ -317,25 +495,28 @@ void StepSequencerUI::resized() {
 
     bounds.removeFromTop(ROW_GAP);
 
-    // Pattern generation row: [RND] [prompt editor] [Generate]
+    // Pattern generation row: [RND] | [AI] modelname [prompt editor] [Generate]
     auto buttonRow = bounds.removeFromTop(CONTROL_ROW_HEIGHT);
     randomButton_->setBounds(buttonRow.removeFromLeft(CONTROL_ROW_HEIGHT));
-    buttonRow.removeFromLeft(4);
+    buttonRow.removeFromLeft(2);
+    dividerX_ = buttonRow.getX() - 1;
+    dividerY_ = buttonRow.getY();
+    dividerHeight_ = buttonRow.getHeight();
+    aiIcon_->setBounds(buttonRow.removeFromLeft(CONTROL_ROW_HEIGHT));
+    buttonRow.removeFromLeft(2);
+    aiModelLabel_.setBounds(buttonRow.removeFromLeft(90));
+    buttonRow.removeFromLeft(2);
     aiButton_.setBounds(buttonRow.removeFromRight(60));
     buttonRow.removeFromRight(4);
     aiPromptEditor_.setBounds(buttonRow);
 
-    // AI model indicator row: [AI icon] [model name]
-    bounds.removeFromTop(2);
-    auto modelRow = bounds.removeFromTop(14);
-    aiIcon_->setBounds(modelRow.removeFromLeft(14));
-    modelRow.removeFromLeft(2);
-    aiModelLabel_.setBounds(modelRow);
+    // Horizontal separator between generation row and streaming area
+    streamSeparatorY_ = bounds.getY() + 1;
 
     // AI status row (streaming response / result description) — fill remaining space
-    bounds.removeFromTop(2);
+    bounds.removeFromTop(4);
     if (bounds.getHeight() > 0)
-        aiStatusLabel_.setBounds(bounds);
+        aiResultDisplay_.setBounds(bounds);
 }
 
 // =============================================================================
@@ -349,6 +530,16 @@ void StepSequencerUI::paint(juce::Graphics& g) {
     drawOctaveArrow(g, octaveDownArea_, true);
     drawKeyboard(g, keyboardArea_);
     drawOctaveArrow(g, octaveUpArea_, false);
+
+    // Vertical divider between random and AI icons
+    g.setColour(DarkTheme::getBorderColour());
+    g.drawVerticalLine(dividerX_, static_cast<float>(dividerY_ + 2),
+                       static_cast<float>(dividerY_ + dividerHeight_ - 2));
+
+    // Horizontal separator above streaming area
+    if (streamSeparatorY_ > 0)
+        g.drawHorizontalLine(streamSeparatorY_, static_cast<float>(PADDING),
+                             static_cast<float>(getWidth() - PADDING));
 }
 
 void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area) {
@@ -826,7 +1017,7 @@ void StepSequencerUI::generateAIPattern() {
     aiButton_.setEnabled(false);
     aiButton_.setButtonText("...");
     aiPromptEditor_.setEnabled(false);
-    aiStatusLabel_.setText("Thinking...", juce::dontSendNotification);
+    aiResultDisplay_.setStreamingText("Thinking...");
 
     auto safeThis = juce::Component::SafePointer<StepSequencerUI>(this);
 
@@ -849,10 +1040,7 @@ void StepSequencerUI::generateAIPattern() {
             juce::MessageManager::callAsync([safeThis, tokenCopy]() {
                 if (!safeThis)
                     return;
-                auto current = safeThis->aiStatusLabel_.getText();
-                if (current == "Thinking...")
-                    current = "";
-                safeThis->aiStatusLabel_.setText(current + tokenCopy, juce::dontSendNotification);
+                safeThis->aiResultDisplay_.appendStreamingToken(tokenCopy);
             });
             return true;
         });
@@ -873,8 +1061,7 @@ void StepSequencerUI::generateAIPattern() {
 
             if (!response.success || response.text.isEmpty()) {
                 DBG("AI pattern generation failed: " + response.error);
-                safeThis->aiStatusLabel_.setText("Error: " + response.error,
-                                                 juce::dontSendNotification);
+                safeThis->aiResultDisplay_.setStreamingText("Error: " + response.error);
                 return;
             }
 
@@ -894,8 +1081,7 @@ void StepSequencerUI::generateAIPattern() {
                 stepsArray = json.getArray();
             if (!stepsArray) {
                 DBG("AI response missing 'steps' array: " + text.substring(0, 200));
-                safeThis->aiStatusLabel_.setText("Error: failed to parse response",
-                                                 juce::dontSendNotification);
+                safeThis->aiResultDisplay_.setStreamingText("Error: failed to parse response");
                 return;
             }
 
@@ -917,9 +1103,9 @@ void StepSequencerUI::generateAIPattern() {
 
                 // Show the description in the status label
                 auto description = json.getProperty("description", {}).toString().trim();
-                safeThis->aiStatusLabel_.setText(description.isNotEmpty() ? description
-                                                                          : "Pattern generated",
-                                                 juce::dontSendNotification);
+                safeThis->aiResultDisplay_.showResult(
+                    description.isNotEmpty() ? description : "Pattern generated",
+                    static_cast<int>(steps.size()));
 
                 safeThis->repaint();
             }

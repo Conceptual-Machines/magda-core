@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "audio/StepClock.hpp"
+
 namespace magda {
 
 // ============================================================================
@@ -1448,6 +1450,82 @@ void SetMidiPitchBendEventHandlesCommand::undo() {
     clip->midiPitchBendData[eventIndex_].inHandle = oldInHandle_;
     clip->midiPitchBendData[eventIndex_].outHandle = oldOutHandle_;
     ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+}
+
+// ============================================================================
+// EaseNoteTimingCommand
+// ============================================================================
+
+EaseNoteTimingCommand::EaseNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices,
+                                             float depth, float skew)
+    : clipId_(clipId), noteIndices_(std::move(noteIndices)), depth_(depth), skew_(skew) {}
+
+void EaseNoteTimingCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI || noteIndices_.size() < 2)
+        return;
+
+    // Capture old values on first execute
+    if (!executed_) {
+        oldStartBeats_.clear();
+        oldStartBeats_.reserve(noteIndices_.size());
+        for (size_t index : noteIndices_) {
+            if (index < clip->midiNotes.size())
+                oldStartBeats_.push_back(clip->midiNotes[index].startBeat);
+        }
+    }
+
+    // Find span of selected notes
+    double minBeat = std::numeric_limits<double>::max();
+    double maxBeat = std::numeric_limits<double>::lowest();
+    for (size_t i = 0; i < noteIndices_.size(); ++i) {
+        size_t index = noteIndices_[i];
+        if (index < clip->midiNotes.size()) {
+            double sb = executed_ ? oldStartBeats_[i] : clip->midiNotes[index].startBeat;
+            minBeat = std::min(minBeat, sb);
+            maxBeat = std::max(maxBeat, sb);
+        }
+    }
+
+    double span = maxBeat - minBeat;
+    if (span < 1e-9)
+        return;  // all notes at same position, nothing to ease
+
+    // Apply curve: remap each note's normalized position
+    for (size_t i = 0; i < noteIndices_.size(); ++i) {
+        size_t index = noteIndices_[i];
+        if (index >= clip->midiNotes.size())
+            continue;
+
+        double originalBeat = executed_ ? oldStartBeats_[i] : clip->midiNotes[index].startBeat;
+        double t = (originalBeat - minBeat) / span;
+        double tEased = daw::audio::StepClock::applyRampCurve(t, depth_, skew_);
+        clip->midiNotes[index].startBeat = minBeat + tEased * span;
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
+    executed_ = true;
+}
+
+void EaseNoteTimingCommand::undo() {
+    if (!executed_)
+        return;
+
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+
+    if (!clip || clip->type != ClipType::MIDI)
+        return;
+
+    for (size_t i = 0; i < noteIndices_.size() && i < oldStartBeats_.size(); ++i) {
+        size_t index = noteIndices_[i];
+        if (index < clip->midiNotes.size())
+            clip->midiNotes[index].startBeat = oldStartBeats_[i];
+    }
+
+    clipManager.forceNotifyClipPropertyChanged(clipId_);
 }
 
 }  // namespace magda

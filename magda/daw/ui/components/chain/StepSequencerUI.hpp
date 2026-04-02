@@ -2,9 +2,10 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "ArpeggiatorUI.hpp"
 #include "audio/StepSequencerPlugin.hpp"
+#include "core/Config.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/common/RampCurveDisplay.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -27,7 +28,8 @@ namespace magda::daw::ui {
  */
 class StepSequencerUI : public juce::Component,
                         private juce::ValueTree::Listener,
-                        private juce::Timer {
+                        private juce::Timer,
+                        private magda::ConfigListener {
   public:
     StepSequencerUI();
     ~StepSequencerUI() override;
@@ -70,9 +72,31 @@ class StepSequencerUI : public juce::Component,
     std::unique_ptr<magda::SvgButton> randomButton_;
     juce::TextButton aiButton_{"AI"};
     juce::TextEditor aiPromptEditor_;
-    juce::Label aiStatusLabel_;
     juce::Label aiModelLabel_;
     std::unique_ptr<magda::SvgButton> aiIcon_;
+
+    /** Shows streaming status: description + step list that auto-scrolls. */
+    class AIResultDisplay : public juce::Component {
+      public:
+        AIResultDisplay();
+        void paint(juce::Graphics& g) override;
+        void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+
+        void setStreamingText(const juce::String& text);
+        void appendStreamingToken(const juce::String& token);
+        void showResult(const juce::String& description, int numSteps);
+        void clear();
+
+      private:
+        enum class Mode { Empty, Streaming };
+        Mode mode_ = Mode::Empty;
+        juce::String text_;
+        juce::String description_;
+        std::vector<audio::StepSequencerPlugin::Step> previewSteps_;
+        int scrollOffset_ = 0;
+        bool autoScroll_ = true;  // scroll to bottom as new steps arrive
+    };
+    AIResultDisplay aiResultDisplay_;
 
     // --- State ---
     int selectedStep_ = 0;       // Currently selected step for editing
@@ -117,12 +141,17 @@ class StepSequencerUI : public juce::Component,
     juce::Rectangle<int> octaveUpArea_;
     juce::Rectangle<int> rampArea_;
     juce::Rectangle<int> buttonArea_;
+    int dividerX_ = 0, dividerY_ = 0, dividerHeight_ = 0;
+    int streamSeparatorY_ = 0;
 
     // --- Setup helpers ---
     void setupLabel(juce::Label& label, const juce::String& text);
     void setupSlider(LinkableTextSlider& slider, double min, double max, double step);
 
     void syncFromPlugin();
+
+    // ConfigListener
+    void configChanged() override;
 
     // ValueTree::Listener
     void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier& property) override;
