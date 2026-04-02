@@ -726,6 +726,9 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
                 auto plugin = bridge->getPlugin(device_.id);
+                DBG("setNodePath: chord engine getPlugin(" << device_.id
+                                                           << ") = " << (plugin ? "OK" : "NULL")
+                                                           << " trackId=" << nodePath_.trackId);
                 if (auto* chordPlugin =
                         dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
                     chordEngineUI_->setChordEngine(chordPlugin, nodePath_.trackId);
@@ -2832,11 +2835,19 @@ void DeviceSlotComponent::createCustomUI() {
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
             if (auto* bridge = audioEngine->getAudioBridge()) {
                 auto plugin = bridge->getPlugin(device_.id);
+                DBG("createCustomUI: chord engine getPlugin("
+                    << device_.id << ") = " << (plugin ? "OK" : "NULL"));
                 if (auto* cp = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
                     chordEngineUI_->setChordEngine(cp, nodePath_.trackId);
                     chordPlugin_ = cp;
+                } else {
+                    DBG("createCustomUI: chord engine dynamic_cast failed");
                 }
+            } else {
+                DBG("createCustomUI: chord engine — no AudioBridge");
             }
+        } else {
+            DBG("createCustomUI: chord engine — no AudioEngine");
         }
     } else if (device_.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
         arpeggiatorUI_ = std::make_unique<ArpeggiatorUI>();

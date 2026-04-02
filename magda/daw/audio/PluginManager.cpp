@@ -3703,7 +3703,17 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
         }
     }
 
+    // Try the string overload first (works for built-in TE plugins like delay, reverb, etc.)
     auto plugin = edit_.getPluginCache().createNewPlugin(xmlTypeName, {});
+
+    // For custom plugins (chord engine, arpeggiator, step sequencer, etc.) the string overload
+    // doesn't work — TE only routes the ValueTree overload through createCustomPlugin.
+    if (!plugin) {
+        juce::ValueTree pluginState(te::IDs::PLUGIN);
+        pluginState.setProperty(te::IDs::type, xmlTypeName, nullptr);
+        plugin = edit_.getPluginCache().createNewPlugin(pluginState);
+    }
+
     DBG("createInternalPlugin: fresh plugin -> "
         << (plugin ? plugin->getName().toRawUTF8() : "NULL")
         << " itemID=" << (plugin ? (juce::int64)plugin->itemID.getRawID() : -1));
