@@ -2,23 +2,28 @@
 
 MAGDA includes its own custom devices as well as processors from the Tracktion Engine.
 
-## MAGDA Devices
+## MIDI Devices
 
 | Device | Description |
 |--------|-------------|
-| **Chord Engine** | Real-time chord detection, suggestion, and AI progression generator. See [Chord Engine](chord-engine.md). |
-| **Drum Grid** | Chain-based drum machine with per-pad FX. See [Drum Grid](drum-grid.md). |
 | **Arpeggiator** | MIDI arpeggiator with pattern, swing, and time bend. See [Arpeggiator](arpeggiator.md). |
+| **Chord Engine** | Real-time chord detection, suggestion, and AI progression generator. See [Chord Engine](chord-engine.md). |
 | **Step Sequencer** | Programmable step sequencer with AI pattern generation. See [Step Sequencer](step-sequencer.md). |
 
-## Tracktion Engine Devices
+## Instruments
+
+| Device | Description |
+|--------|-------------|
+| **4OSC Synth** | Four-oscillator subtractive synthesizer with internal mod matrix. See [4OSC Synth](4osc.md). |
+| **Drum Grid** | Chain-based drum machine with per-pad FX. See [Drum Grid](drum-grid.md). |
+| **Sampler** | 8-voice sample player with ADSR and pitch controls. See [Sampler](sampler.md). |
+
+## Effects
 
 These processors are provided by the Tracktion Engine and are available in every MAGDA installation:
 
 | Device | Description |
 |--------|-------------|
-| **Sampler** | 8-voice sample player with ADSR and pitch controls. See [Sampler](sampler.md). |
-| **4OSC Synth** | Four-oscillator subtractive synthesizer with internal mod matrix. See [4OSC Synth](4osc.md). |
 | **EQ** | Parametric equalizer |
 | **Compressor** | Dynamics compressor |
 | **Reverb** | Algorithmic reverb |
@@ -37,6 +42,5 @@ In addition to built-in devices, MAGDA supports external plugins in the followin
 
 - **VST3** — Cross-platform
 - **Audio Units (AU)** — macOS only
-- **VST** — Legacy format, cross-platform
 
 Use the [Plugin Browser](../panels/browsers.md) to find and add plugins to your tracks.
