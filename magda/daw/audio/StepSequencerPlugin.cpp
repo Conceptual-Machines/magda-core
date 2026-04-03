@@ -306,7 +306,6 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                 int pos = stepRecordPosition_.load(std::memory_order_relaxed);
                 if (pos < maxSteps) {
                     int note = msg.getNoteNumber();
-                    // Post to message thread via async lambda
                     int capturedPos = pos;
                     juce::MessageManager::callAsync([this, capturedPos, note] {
                         setStepNote(capturedPos, note);
@@ -318,9 +317,13 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         }
     }
 
-    // Keep incoming MIDI for thru, or clear if thru is off
-    if (!midiThru.get())
-        midi.clear();
+    // Save incoming MIDI for thru, then clear for sequencer output
+    te::MidiMessageArray thruMessages;
+    if (midiThru.get()) {
+        for (auto& msg : midi)
+            thruMessages.addMidiMessage(msg, msg.getTimeStamp(), te::MPESourceID{});
+    }
+    midi.clear();
 
     // Only run when transport is playing
     if (!fc.isPlaying) {
@@ -472,6 +475,10 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (eventCount == 0 && !stepClock_.isRunning()) {
         currentPlayStep_.store(-1, std::memory_order_relaxed);
     }
+
+    // Re-add thru messages so incoming MIDI reaches downstream instruments
+    for (auto& msg : thruMessages)
+        midi.addMidiMessage(msg, msg.getTimeStamp(), te::MPESourceID{});
 }
 
 }  // namespace magda::daw::audio

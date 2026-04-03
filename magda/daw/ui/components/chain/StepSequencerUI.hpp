@@ -111,6 +111,7 @@ class StepSequencerUI : public juce::Component,
     int keyboardBaseNote_ = 48;  // Current keyboard base note (shifts with octave arrows)
     int dragSourceStep_ = -1;    // Source step for shift+drag copy
     int dragTargetStep_ = -1;    // Current drag target (for visual feedback)
+    bool wasRecording_ = false;  // Previous recording state (for header repaint)
 
     // --- Layout constants ---
     static constexpr int CONTROL_ROW_HEIGHT = 22;

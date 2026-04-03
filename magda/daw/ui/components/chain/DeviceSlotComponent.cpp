@@ -1024,16 +1024,17 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
 }
 
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
-    // Draw separator line to the left of the meter/note strip
+    // Draw separator line to the left of the meter/note strip (below content header)
     if (!collapsed_) {
         int lineX = contentArea.getRight() - METER_STRIP_WIDTH - 4;
+        int meterTop = contentArea.getY() + CONTENT_HEADER_HEIGHT;
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawVerticalLine(lineX, static_cast<float>(contentArea.getY() + 2),
+        g.drawVerticalLine(lineX, static_cast<float>(meterTop + 2),
                            static_cast<float>(contentArea.getBottom() - 2));
 
-        // Separator under content header (all devices)
+        // Separator under content header (all devices) — spans full width
         float left = static_cast<float>(contentArea.getX() + 2);
-        float right = static_cast<float>(lineX);
+        float right = static_cast<float>(contentArea.getRight() - 2);
         int headerBottom = contentArea.getY() + CONTENT_HEADER_HEIGHT;
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         g.drawHorizontalLine(headerBottom, left, right);
@@ -1078,11 +1079,26 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
             g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
             g.drawText("MAGDA Drum Grid", textArea, juce::Justification::centredLeft);
         } else if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
-            g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-            juce::String label = isChordEngine_   ? "MAGDA Chord Engine"
-                                 : isArpeggiator_ ? "MAGDA Arpeggiator"
-                                                  : "MAGDA Step Sequencer";
-            g.drawText(label, textArea, juce::Justification::centredLeft);
+            // Step recording banner overrides the header
+            if (isStepSequencer_ && stepSeqPlugin_ && stepSeqPlugin_->isStepRecording()) {
+                g.saveState();
+                g.setColour(juce::Colour(0xFFCC3333).withAlpha(0.9f));
+                g.fillRect(headerArea);
+                g.setColour(juce::Colours::white);
+                g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
+                int recPos = stepSeqPlugin_->stepRecordPosition_.load(std::memory_order_relaxed);
+                int maxSteps = juce::jlimit(1, 32, stepSeqPlugin_->numSteps.get());
+                g.drawText("STEP RECORDING  " + juce::String(recPos + 1) + "/" +
+                               juce::String(maxSteps),
+                           textArea, juce::Justification::centredLeft);
+                g.restoreState();
+            } else {
+                g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
+                juce::String label = isChordEngine_   ? "MAGDA Chord Engine"
+                                     : isArpeggiator_ ? "MAGDA Arpeggiator"
+                                                      : "MAGDA Step Sequencer";
+                g.drawText(label, textArea, juce::Justification::centredLeft);
+            }
         } else if (isTracktionDevice_ && tracktionLogo_) {
             // Tracktion devices: TE logo inline + "Tracktion / {device name}"
             constexpr int logoSize = 14;
@@ -1107,7 +1123,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // When collapsed, NodeComponent calls resizedCollapsed() first then resizedContent()
     // with an empty rect — so we must not touch meter visibility when collapsed.
     if (!collapsed_) {
-        auto meterBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
+        auto meterBounds = contentArea.removeFromRight(METER_STRIP_WIDTH)
+                               .withTrimmedTop(CONTENT_HEADER_HEIGHT)
+                               .reduced(1, 3);
         contentArea.removeFromRight(4);  // Padding between content and meter
         bool usesNoteStrip = isArpeggiator_ || isChordEngine_ || isStepSequencer_;
         levelMeter_.setBounds(meterBounds);

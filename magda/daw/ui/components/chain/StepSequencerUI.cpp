@@ -481,13 +481,22 @@ void StepSequencerUI::timerCallback() {
         currentPlayStep_ = step;
         needsRepaint = true;
     }
-    // Track step record position for highlight
-    if (plugin_->isStepRecording()) {
+    // Track step record position for highlight + parent header banner
+    bool isRec = plugin_->isStepRecording();
+    if (isRec) {
         int recPos = plugin_->stepRecordPosition_.load(std::memory_order_relaxed);
         if (recPos != selectedStep_) {
             selectedStep_ = recPos;
             needsRepaint = true;
+            // Repaint parent so device header banner updates
+            if (auto* parent = getParentComponent())
+                parent->repaint();
         }
+    }
+    if (isRec != wasRecording_) {
+        wasRecording_ = isRec;
+        if (auto* parent = getParentComponent())
+            parent->repaint();
     }
     if (needsRepaint)
         repaint();
@@ -628,19 +637,6 @@ void StepSequencerUI::paint(juce::Graphics& g) {
     if (streamSeparatorY_ > 0)
         g.drawHorizontalLine(streamSeparatorY_, static_cast<float>(PADDING),
                              static_cast<float>(getWidth() - PADDING));
-
-    // Step recording banner overlay
-    if (plugin_ && plugin_->isStepRecording()) {
-        auto banner = getLocalBounds().removeFromTop(18);
-        g.setColour(juce::Colour(0xFFCC3333).withAlpha(0.85f));
-        g.fillRect(banner);
-        g.setColour(juce::Colours::white);
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        int recPos = plugin_->stepRecordPosition_.load(std::memory_order_relaxed);
-        int maxSteps = juce::jlimit(1, 32, plugin_->numSteps.get());
-        g.drawText("STEP RECORDING  " + juce::String(recPos + 1) + "/" + juce::String(maxSteps),
-                   banner, juce::Justification::centred);
-    }
 }
 
 void StepSequencerUI::drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area) {
