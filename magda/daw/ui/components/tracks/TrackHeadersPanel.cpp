@@ -1182,6 +1182,8 @@ int TrackHeadersPanel::getNumTracks() const {
 void TrackHeadersPanel::setTrackHeight(int trackIndex, int height) {
     if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
         height = juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, height);
+        if (trackHeaders[trackIndex]->height == height)
+            return;
         trackHeaders[trackIndex]->height = height;
 
         // Persist to TrackManager so height survives tracksChanged() rebuilds
@@ -1288,7 +1290,10 @@ void TrackHeadersPanel::automationLanePropertyChanged(AutomationLaneId /*laneId*
 }
 
 void TrackHeadersPanel::setVerticalZoom(double zoom) {
-    verticalZoom = juce::jlimit(0.5, 3.0, zoom);
+    zoom = juce::jlimit(0.5, 3.0, zoom);
+    if (std::abs(zoom - verticalZoom) < 0.001)
+        return;
+    verticalZoom = zoom;
     updateTrackHeaderLayout();
     repaint();
 }

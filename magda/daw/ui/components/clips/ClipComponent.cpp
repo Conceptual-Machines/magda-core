@@ -212,7 +212,6 @@ size_t ClipComponent::computeWaveformHash(const ClipInfo& clip) {
 
 void ClipComponent::timerCallback() {
     stopTimer();
-    waveformCacheDirty_ = true;
     repaint();
 }
 
@@ -227,6 +226,33 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
 
     if (pixelsPerSecond <= 0.0)
         return;
+
+    // Visible X range from graphics clip region — skip waveform tiles that are off-screen
+    auto visClip = g.getClipBounds();
+    int visLeft = visClip.getX();
+    int visRight = visClip.getRight();
+
+    // Clip a draw rect to the visible area and adjust the source time range accordingly.
+    // Returns false if the rect is entirely off-screen.
+    auto clipToVisible = [&](juce::Rectangle<int>& rect, double& srcStart, double& srcEnd) -> bool {
+        int rectLeft = rect.getX();
+        int rectRight = rect.getRight();
+        if (rectRight <= visLeft || rectLeft >= visRight)
+            return false;
+        int clippedLeft = juce::jmax(rectLeft, visLeft);
+        int clippedRight = juce::jmin(rectRight, visRight);
+        int origWidth = rectRight - rectLeft;
+        if (origWidth > 0) {
+            double srcRange = srcEnd - srcStart;
+            double fracLeft = static_cast<double>(clippedLeft - rectLeft) / origWidth;
+            double fracRight = static_cast<double>(clippedRight - rectLeft) / origWidth;
+            srcStart = srcStart + fracLeft * srcRange;
+            srcEnd = srcStart + (fracRight - fracLeft) * srcRange;
+        }
+        rect = juce::Rectangle<int>(clippedLeft, rect.getY(), clippedRight - clippedLeft,
+                                    rect.getHeight());
+        return rect.getWidth() > 0;
+    };
 
     if (clip.isReversed) {
         g.saveState();
@@ -298,7 +324,8 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
                                                  waveformArea.getHeight());
             double finalSrcStart = juce::jmax(0.0, srcStart);
             double finalSrcEnd = fileDuration > 0.0 ? juce::jmin(srcEnd, fileDuration) : srcEnd;
-            if (finalSrcEnd > finalSrcStart) {
+            if (finalSrcEnd > finalSrcStart &&
+                clipToVisible(drawRect, finalSrcStart, finalSrcEnd)) {
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, finalSrcStart,
                                               finalSrcEnd, waveColour, gainLinear);
             }
@@ -339,8 +366,9 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
                 double fraction = tileDuration / tileFullDuration;
                 tileFileEnd = tileFileStart + tileSourceLen * fraction;
             }
-            thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, tileFileStart,
-                                          tileFileEnd, waveColour, gainLinear);
+            if (clipToVisible(drawRect, tileFileStart, tileFileEnd))
+                thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, tileFileStart,
+                                              tileFileEnd, waveColour, gainLinear);
             timePos += tileFullDuration;
         }
     } else {
@@ -353,8 +381,9 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
         drawWidth = juce::jmin(drawWidth, waveformArea.getWidth());
         auto drawRect = juce::Rectangle<int>(waveformArea.getX(), waveformArea.getY(), drawWidth,
                                              waveformArea.getHeight());
-        thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart, fileEnd,
-                                      waveColour, gainLinear);
+        if (clipToVisible(drawRect, fileStart, fileEnd))
+            thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart, fileEnd,
+                                          waveColour, gainLinear);
     }
 
     if (clip.isReversed)
@@ -375,81 +404,28 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
             clipDisplayLength = previewLength_;
     }
 
-    // During drag, bypass cache for live feedback
-    if (isDragging_) {
-        auto bgColour = clip.colour.darker(0.3f);
-        g.setColour(bgColour);
-        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
-        if (clip.audioFilePath.isNotEmpty())
-            paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength);
-        g.setColour(clip.colour.withAlpha(0.45f));
-        g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
-        return;
-    }
-
-    // Don't cache "Loading..." into the image — draw directly and poll until ready
+    // Poll until thumbnail is loaded
     if (clip.audioFilePath.isNotEmpty()) {
         auto* thumb = AudioThumbnailManager::getInstance().getThumbnail(clip.audioFilePath);
         if (thumb == nullptr || !thumb->isFullyLoaded()) {
-            auto bgColour = clip.colour.darker(0.3f);
-            g.setColour(bgColour);
-            g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
-            paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength);
-            g.setColour(clip.colour.withAlpha(0.45f));
-            g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
             if (!isTimerRunning())
                 startTimer(100);
-            return;
         }
     }
 
-    // --- Cached path ---
-    size_t clipHash = computeWaveformHash(clip);
-    bool sizeChanged = cachedWidth_ != bounds.getWidth() || cachedHeight_ != bounds.getHeight();
-    bool clipChanged = cachedClipHash_ != clipHash;
+    // Draw directly — no offscreen cache.  AudioThumbnail is already a
+    // pre-computed waveform cache (512 samples/point) so drawing from it is fast.
+    auto bgColour = clip.colour.darker(0.3f);
+    g.setColour(bgColour);
+    g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
 
-    if (waveformCacheDirty_ || clipChanged || (sizeChanged && !waveformCache_.isValid())) {
-        // Must render: first time, clip changed, or dirty flag set
-        waveformCache_ = juce::Image(juce::Image::ARGB, juce::jmax(1, bounds.getWidth()),
-                                     juce::jmax(1, bounds.getHeight()), true);
-        {
-            juce::Graphics ig(waveformCache_);
-            auto bgColour = clip.colour.darker(0.3f);
-            ig.setColour(bgColour);
-            ig.fillRoundedRectangle(waveformCache_.getBounds().toFloat(), CORNER_RADIUS);
+    if (clip.audioFilePath.isNotEmpty())
+        paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength);
 
-            if (clip.audioFilePath.isNotEmpty()) {
-                auto cacheWaveArea = waveformCache_.getBounds().reduced(2, HEADER_HEIGHT + 2);
-                paintAudioClipDirect(ig, clip, cacheWaveArea, clip.length);
-            } else {
-                auto cacheWaveArea = waveformCache_.getBounds().reduced(2, HEADER_HEIGHT + 2);
-                ig.setColour(clip.colour.brighter(0.2f).withAlpha(0.3f));
-                ig.drawText("No Audio", cacheWaveArea, juce::Justification::centred);
-            }
+    g.setColour(clip.colour.withAlpha(0.45f));
+    g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
 
-            ig.setColour(clip.colour.withAlpha(0.45f));
-            ig.drawRoundedRectangle(waveformCache_.getBounds().toFloat(), CORNER_RADIUS, 1.0f);
-        }
-
-        cachedWidth_ = bounds.getWidth();
-        cachedHeight_ = bounds.getHeight();
-        cachedClipHash_ = clipHash;
-        waveformCacheDirty_ = false;
-    } else if (sizeChanged) {
-        // Zoom: stretch existing cache, schedule re-render after zoom settles
-        startTimer(150);
-    }
-
-    // Blit (stretched if size differs, exact if same)
-    if (waveformCache_.isValid()) {
-        if (cachedWidth_ != bounds.getWidth() || cachedHeight_ != bounds.getHeight()) {
-            g.drawImage(waveformCache_, bounds.toFloat());
-        } else {
-            g.drawImageAt(waveformCache_, bounds.getX(), bounds.getY());
-        }
-    }
-
-    // Fade overlays on top of cache (cheap)
+    // Fade overlays
     if (clip.fadeIn > 0.0 || clip.fadeOut > 0.0) {
         double pps =
             (clip.length > 0.0) ? static_cast<double>(waveformArea.getWidth()) / clip.length : 0.0;
@@ -1220,9 +1196,10 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 // Alt+drag duplicate: show ghost at NEW position, keep original in place
                 const auto* clip = getClipInfo();
                 if (clip && parentPanel_) {
-                    int ghostX = parentPanel_->timeToPixel(finalTime);
+                    double finalBeats = finalTime * tempoBPM / 60.0;
+                    int ghostX = parentPanel_->beatsToPixel(finalBeats);
                     double lengthBeats = dragStartLength_ * tempoBPM / 60.0;
-                    int ghostWidth = static_cast<int>(lengthBeats * pixelsPerBeat);
+                    int ghostWidth = static_cast<int>(std::round(lengthBeats * pixelsPerBeat));
                     juce::Rectangle<int> ghostBounds(ghostX, getY(), juce::jmax(10, ghostWidth),
                                                      getHeight());
                     parentPanel_->setClipGhost(clipId_, ghostBounds, clip->colour);
@@ -1230,9 +1207,10 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 // Don't move the original clip component
             } else {
                 // Normal move: update component position
-                int newX = parentPanel_->timeToPixel(finalTime);
+                double finalBeats = finalTime * tempoBPM / 60.0;
+                int newX = parentPanel_->beatsToPixel(finalBeats);
                 double lengthBeats = dragStartLength_ * tempoBPM / 60.0;
-                int newWidth = static_cast<int>(lengthBeats * pixelsPerBeat);
+                int newWidth = static_cast<int>(std::round(lengthBeats * pixelsPerBeat));
                 setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
 
                 // Show ghost on target track when dragging across tracks
@@ -1268,31 +1246,41 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
         }
 
         case DragMode::ResizeLeft: {
-            // Work in time domain: resizing from left changes start time and length
-            double rawStartTime = juce::jmax(0.0, dragStartTime_ + deltaTime);
-            double endTime = dragStartTime_ + dragStartLength_;  // End stays fixed
-            double finalStartTime = rawStartTime;
+            // Work in beats domain: deltaBeats is already computed above
+            double dragStartBeats = dragStartTime_ * tempoBPM / 60.0;
+            double dragStartLenBeats = dragStartLength_ * tempoBPM / 60.0;
+            double rawStartBeats = juce::jmax(0.0, dragStartBeats + deltaBeats);
+            double endBeats = dragStartBeats + dragStartLenBeats;  // End stays fixed
+            double finalStartBeats = rawStartBeats;
 
-            // Magnetic snap for left edge
+            // Magnetic snap for left edge (snap works in seconds, convert)
             if (snapTimeToGrid) {
+                double rawStartTime = finalStartBeats * 60.0 / tempoBPM;
                 double snappedTime = snapTimeToGrid(rawStartTime);
-                double snapDeltaBeats = std::abs((snappedTime - rawStartTime) * tempoBPM / 60.0);
-                double snapDeltaPixels = snapDeltaBeats * pixelsPerBeat;
+                double snappedBeats = snappedTime * tempoBPM / 60.0;
+                double snapDeltaPixels = std::abs(snappedBeats - finalStartBeats) * pixelsPerBeat;
                 if (snapDeltaPixels <= SNAP_THRESHOLD_PIXELS) {
-                    finalStartTime = snappedTime;
+                    finalStartBeats = snappedBeats;
                 }
             }
 
-            // Ensure minimum length
-            finalStartTime = juce::jmin(finalStartTime, endTime - 0.1);
-            double finalLength = endTime - finalStartTime;
+            // Ensure minimum length (0.1 seconds in beats)
+            double minLenBeats = 0.1 * tempoBPM / 60.0;
+            finalStartBeats = juce::jmin(finalStartBeats, endBeats - minLenBeats);
+            double finalLenBeats = endBeats - finalStartBeats;
 
-            // Clamp to file duration for non-looped audio clips (can't reveal past file start)
+            // Convert to seconds for ClipOperations
+            double finalStartTime = finalStartBeats * 60.0 / tempoBPM;
+            double finalLength = finalLenBeats * 60.0 / tempoBPM;
+
+            // Clamp to file duration for non-looped audio clips
             if (dragStartFileDuration_ > 0.0 && !clip->loopEnabled) {
                 double maxLength = dragStartLength_ + dragStartAudioOffset_ * dragStartSpeedRatio_;
                 if (finalLength > maxLength) {
                     finalLength = maxLength;
-                    finalStartTime = endTime - finalLength;
+                    finalStartTime = (dragStartTime_ + dragStartLength_) - finalLength;
+                    finalStartBeats = finalStartTime * tempoBPM / 60.0;
+                    finalLenBeats = finalLength * tempoBPM / 60.0;
                 }
             }
 
@@ -1321,10 +1309,9 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 }
             }
 
-            // Convert to pixels (using parent's method to account for padding)
-            int newX = parentPanel_->timeToPixel(finalStartTime);
-            double finalLengthBeats = finalLength * tempoBPM / 60.0;
-            int newWidth = static_cast<int>(finalLengthBeats * pixelsPerBeat);
+            // Position using beats domain (matches updateClipComponentPositions)
+            int newX = parentPanel_->beatsToPixel(finalStartBeats);
+            int newWidth = static_cast<int>(std::round(finalLenBeats * pixelsPerBeat));
             setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
             break;
         }
@@ -1382,10 +1369,11 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 }
             }
 
-            // Convert to pixels (using parent's method to account for padding)
-            int newX = parentPanel_->timeToPixel(dragStartTime_);
+            // Position in beats domain (matches updateClipComponentPositions)
+            double startBeats = dragStartTime_ * tempoBPM / 60.0;
+            int newX = parentPanel_->beatsToPixel(startBeats);
             double finalLengthBeats = finalLength * tempoBPM / 60.0;
-            int newWidth = static_cast<int>(finalLengthBeats * pixelsPerBeat);
+            int newWidth = static_cast<int>(std::round(finalLengthBeats * pixelsPerBeat));
             setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
             break;
         }
@@ -1416,9 +1404,10 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
 
             previewLength_ = finalLength;
 
-            int newX = parentPanel_->timeToPixel(dragStartTime_);
+            double startBeatsStrR = dragStartTime_ * tempoBPM / 60.0;
+            int newX = parentPanel_->beatsToPixel(startBeatsStrR);
             double finalLengthBeats = finalLength * tempoBPM / 60.0;
-            int newWidth = static_cast<int>(finalLengthBeats * pixelsPerBeat);
+            int newWidth = static_cast<int>(std::round(finalLengthBeats * pixelsPerBeat));
             setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
 
             // Throttled live update
@@ -1541,9 +1530,10 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             previewStartTime_ = finalStartTime;
             previewLength_ = finalLength;
 
-            int newX = parentPanel_->timeToPixel(finalStartTime);
+            double finalStartBeatsStrL = finalStartTime * tempoBPM / 60.0;
+            int newX = parentPanel_->beatsToPixel(finalStartBeatsStrL);
             double finalLengthBeats = finalLength * tempoBPM / 60.0;
-            int newWidth = static_cast<int>(finalLengthBeats * pixelsPerBeat);
+            int newWidth = static_cast<int>(std::round(finalLengthBeats * pixelsPerBeat));
             setBounds(newX, getY(), juce::jmax(10, newWidth), getHeight());
 
             // Throttled live update

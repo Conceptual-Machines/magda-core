@@ -128,6 +128,70 @@ struct GridConstants {
     }
 
     /**
+     * Format a beat-within-beat position as a zoom-independent subdivision label.
+     * Uses fixed hierarchy: 16th (0.25) → 32nd (0.125) → 64th (0.0625) → ...
+     * Each level always means the same beat position regardless of zoom.
+     *
+     * Examples: 0.25 → ".2", 0.5 → ".3", 0.125 → ".1.2", 0.0625 → ".1.1.2"
+     * Returns empty string for beat boundaries (subdivInBeat ≈ 0).
+     */
+    static juce::String formatSubdivSuffix(double subdivInBeat) {
+        constexpr double eps = 0.001;
+
+        // On beat boundary → no suffix
+        if (subdivInBeat < eps || subdivInBeat > (1.0 - eps))
+            return {};
+
+        // Walk down the hierarchy: each level halves the interval
+        // Level 0: 16th notes (0.25 beats, 4 per beat)
+        // Level 1: 32nd notes (0.125 beats, 2 per 16th)
+        // Level 2: 64th notes (0.0625 beats, 2 per 32nd)
+        // etc.
+        juce::String result;
+        double remaining = subdivInBeat;
+        double interval = 0.25;  // start at 16th note
+
+        for (int level = 0; level < 6; ++level) {
+            int index = static_cast<int>(remaining / interval);
+            double posInSlot = remaining - index * interval;
+
+            // Snap to boundary if close
+            if (posInSlot > (interval - eps)) {
+                index++;
+                posInSlot = 0.0;
+            }
+
+            if (level == 0) {
+                // 16th note level: 1-based index within the beat (1-4)
+                result += "." + juce::String(index + 1);
+            } else {
+                // Finer levels: 1-based index within the parent (1-2)
+                result += "." + juce::String(index + 1);
+            }
+
+            // If we're on this level's boundary, done
+            if (posInSlot < eps)
+                return result;
+
+            // Go finer: halve the interval
+            remaining = posInSlot;
+            interval /= 2.0;
+        }
+
+        return result;
+    }
+
+    /**
+     * Format a complete bar.beat.subdiv label from beat position within bar.
+     * bar and beatInBar are 1-based integers already computed by the caller.
+     */
+    static juce::String formatBeatLabel(int bar, int beatInBar, double subdivInBeat) {
+        juce::String label = juce::String(bar) + "." + juce::String(beatInBar);
+        label += formatSubdivSuffix(subdivInBeat);
+        return label;
+    }
+
+    /**
      * Compute grid interval in beats, respecting auto/manual mode.
      * Returns the interval in beats (e.g. 0.5 for 1/8, 4.0 for 1 bar in 4/4).
      */

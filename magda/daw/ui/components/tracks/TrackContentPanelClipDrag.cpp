@@ -167,11 +167,11 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
                 // Find the clip component to get its Y position
                 for (const auto& clipComp : clipComponents_) {
                     if (clipComp->getClipId() == dragInfo.clipId) {
-                        int ghostX = timeToPixel(newStartTime);
+                        int ghostX = beatsToPixel(newStartTime * tempoBPM / 60.0);
                         double ghostBeats = (clip->autoTempo && clip->lengthBeats > 0.0)
                                                 ? clip->lengthBeats
                                                 : clip->length * tempoBPM / 60.0;
-                        int ghostWidth = static_cast<int>(ghostBeats * currentZoom);
+                        int ghostWidth = static_cast<int>(std::round(ghostBeats * currentZoom));
                         juce::Rectangle<int> ghostBounds(ghostX, clipComp->getY(),
                                                          juce::jmax(10, ghostWidth),
                                                          clipComp->getHeight());
@@ -192,11 +192,11 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
                 if (clipComp->getClipId() == dragInfo.clipId) {
                     const auto* clip = ClipManager::getInstance().getClip(dragInfo.clipId);
                     if (clip) {
-                        int newX = timeToPixel(newStartTime);
+                        int newX = beatsToPixel(newStartTime * tempoBPM / 60.0);
                         double clipBeats = (clip->autoTempo && clip->lengthBeats > 0.0)
                                                ? clip->lengthBeats
                                                : clip->length * tempoBPM / 60.0;
-                        int clipWidth = static_cast<int>(clipBeats * currentZoom);
+                        int clipWidth = static_cast<int>(std::round(clipBeats * currentZoom));
                         clipComp->setBounds(newX, clipComp->getY(), juce::jmax(10, clipWidth),
                                             clipComp->getHeight());
                     }
@@ -446,11 +446,11 @@ void TrackContentPanel::moveClipsWithTimeSelection(double deltaTime) {
             if (clipComp->getClipId() == info.clipId) {
                 const auto* clip = ClipManager::getInstance().getClip(info.clipId);
                 if (clip) {
-                    int newX = timeToPixel(newStartTime);
+                    int newX = beatsToPixel(newStartTime * tempoBPM / 60.0);
                     double clipBts = (clip->autoTempo && clip->lengthBeats > 0.0)
                                          ? clip->lengthBeats
                                          : clip->length * tempoBPM / 60.0;
-                    int clipWidth = static_cast<int>(clipBts * currentZoom);
+                    int clipWidth = static_cast<int>(std::round(clipBts * currentZoom));
                     clipComp->setBounds(newX, clipComp->getY(), juce::jmax(10, clipWidth),
                                         clipComp->getHeight());
                 }
@@ -499,7 +499,7 @@ void TrackContentPanel::setClipGhost(ClipId clipId, const juce::Rectangle<int>& 
         if (ghost.clipId == clipId) {
             ghost.bounds = bounds;
             ghost.colour = colour;
-            repaint();
+            repaintVisible();
             return;
         }
     }
@@ -510,7 +510,7 @@ void TrackContentPanel::setClipGhost(ClipId clipId, const juce::Rectangle<int>& 
     ghost.bounds = bounds;
     ghost.colour = colour;
     clipGhosts_.push_back(ghost);
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::clearClipGhost(ClipId clipId) {
@@ -518,14 +518,14 @@ void TrackContentPanel::clearClipGhost(ClipId clipId) {
                              [clipId](const ClipGhost& g) { return g.clipId == clipId; });
     if (it != clipGhosts_.end()) {
         clipGhosts_.erase(it, clipGhosts_.end());
-        repaint();
+        repaintVisible();
     }
 }
 
 void TrackContentPanel::clearAllClipGhosts() {
     if (!clipGhosts_.empty()) {
         clipGhosts_.clear();
-        repaint();
+        repaintVisible();
     }
 }
 

@@ -139,7 +139,11 @@ class TrackContentPanel : public juce::Component,
     bool isAutomationLaneVisible(TrackId trackId, AutomationLaneId laneId) const;
     int getTrackTotalHeight(int trackIndex) const;  // Track + visible automation lanes
 
-    // Time/pixel conversion (accounts for left padding)
+    // Beat/pixel conversion (native domain — zoom is ppb)
+    int beatsToPixel(double beats) const;
+    double pixelToBeats(int pixel) const;
+
+    // Time/pixel conversion (convenience wrappers — convert through beats)
     double pixelToTime(int pixel) const;
     int timeToPixel(double time) const;
 
@@ -201,6 +205,10 @@ class TrackContentPanel : public juce::Component,
     double tempoBPM = 120.0;
     int timeSignatureNumerator = 4;
     int timeSignatureDenominator = 4;
+
+    // Repaint only the visible viewport area (avoids invalidating 65000+ px at high zoom)
+    void repaintVisible();
+    void repaintVisiblePortion(const juce::Rectangle<int>& rect);
 
     // Helper methods
     void paintTrackLane(juce::Graphics& g, const TrackLane& lane, juce::Rectangle<int> area,
@@ -367,6 +375,16 @@ class TrackContentPanel : public juce::Component,
     bool showDropIndicator_ = false;
     double dropInsertTime_ = 0.0;
     int dropTargetTrackIndex_ = -1;
+
+    // Group track extent cache — avoids walking all descendants every paint
+    struct GroupExtent {
+        double earliest = 0.0;
+        double latest = 0.0;
+        bool hasClips = false;
+    };
+    std::unordered_map<TrackId, GroupExtent> groupExtentCache_;
+    bool groupExtentCacheDirty_ = true;
+    void rebuildGroupExtentCache();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackContentPanel)
 };

@@ -181,7 +181,9 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     int zoomAnchorScreenX = 0;                // Screen X position where anchor should stay
     static constexpr int DRAG_THRESHOLD = 5;  // Pixels of movement before it's a drag
 
-    // Helper methods
+    // Helper methods — beats are the native domain, time wrappers go through beats
+    int beatsToPixel(double beats) const;
+    double pixelToBeats(int pixel) const;
     double pixelToTime(int pixel) const;
     int timeToPixel(double time) const;
     int timeDurationToPixels(double duration) const;  // For calculating spacing/widths

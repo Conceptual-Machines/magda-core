@@ -140,11 +140,20 @@ void GridOverlayComponent::drawSecondsGrid(juce::Graphics& g, juce::Rectangle<in
         }
     }
 
-    for (double time = 0.0; time <= timelineLength; time += gridInterval) {
+    // Compute visible time range from pixel bounds to avoid iterating the entire timeline
+    double ppsActual = (tempoBPM > 0) ? currentZoom * tempoBPM / 60.0 : currentZoom;
+    double firstVisibleTime =
+        static_cast<double>(area.getX() - leftPadding + scrollOffset) / ppsActual;
+    double lastVisibleTime =
+        static_cast<double>(area.getRight() - leftPadding + scrollOffset) / ppsActual;
+    double startTime = juce::jmax(0.0, std::floor(firstVisibleTime / gridInterval) * gridInterval);
+    double endTime = juce::jmin(lastVisibleTime + gridInterval, timelineLength);
+
+    for (double time = startTime; time <= endTime; time += gridInterval) {
         // Convert time to beats, then to pixels
         double beats = time * tempoBPM / 60.0;
-        int x = static_cast<int>(beats * currentZoom) + leftPadding - scrollOffset;
-        if (x >= area.getX() && x <= area.getRight()) {
+        int x = static_cast<int>(std::round(beats * currentZoom)) + leftPadding - scrollOffset;
+        {
             // Determine line brightness based on time hierarchy
             bool isMajor = false;
             if (gridInterval >= 1.0) {
@@ -188,11 +197,18 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
     bool alignsWithBars = GridConstants::gridAlignsWithBars(markerIntervalBeats, barLengthBeats);
     bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats);
 
+    // Compute visible beat range to avoid iterating the entire timeline
+    double firstVisibleBeat =
+        static_cast<double>(area.getX() - leftPadding + scrollOffset) / currentZoom;
+    double lastVisibleBeat =
+        static_cast<double>(area.getRight() - leftPadding + scrollOffset) / currentZoom;
+    double startBeat =
+        juce::jmax(0.0, std::floor(firstVisibleBeat / markerIntervalBeats) * markerIntervalBeats);
+    double endBeat = juce::jmin(lastVisibleBeat + markerIntervalBeats, totalTimelineBeats);
+
     // Draw grid lines
-    for (double beat = 0.0; beat <= totalTimelineBeats; beat += markerIntervalBeats) {
-        int x = static_cast<int>(beat * currentZoom) + leftPadding - scrollOffset;
-        if (x < area.getX() || x > area.getRight())
-            continue;
+    for (double beat = startBeat; beat <= endBeat; beat += markerIntervalBeats) {
+        int x = static_cast<int>(std::round(beat * currentZoom)) + leftPadding - scrollOffset;
 
         if (alignsWithBars && alignsWithBeats) {
             // Grid aligns with musical structure — classify normally
@@ -222,10 +238,10 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
 
     // For non-aligned grids, draw bar/beat reference lines on top
     if (!alignsWithBars || !alignsWithBeats) {
-        for (double beat = 0.0; beat <= totalTimelineBeats; beat += 1.0) {
-            int x = static_cast<int>(beat * currentZoom) + leftPadding - scrollOffset;
-            if (x < area.getX() || x > area.getRight())
-                continue;
+        double refStartBeat = juce::jmax(0.0, std::floor(firstVisibleBeat));
+        double refEndBeat = juce::jmin(std::ceil(lastVisibleBeat) + 1.0, totalTimelineBeats);
+        for (double beat = refStartBeat; beat <= refEndBeat; beat += 1.0) {
+            int x = static_cast<int>(std::round(beat * currentZoom)) + leftPadding - scrollOffset;
 
             double barRemainder = std::fmod(beat, barLengthBeats);
             bool isBarLine = barRemainder < 0.001;
@@ -258,12 +274,16 @@ void GridOverlayComponent::drawBeatOverlay(juce::Graphics& g, juce::Rectangle<in
     // Only draw beat grid if it's not too dense
     double totalTimelineBeats = timelineLength * tempoBPM / 60.0;
     if (beatPixelSpacing >= 10) {
-        for (double beat = 0.0; beat <= totalTimelineBeats; beat += 1.0) {
-            int x = static_cast<int>(beat * currentZoom) + leftPadding - scrollOffset;
-            if (x >= area.getX() && x <= area.getRight()) {
-                g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
-                           static_cast<float>(x), static_cast<float>(area.getBottom()), 0.5f);
-            }
+        double firstVisBeat =
+            static_cast<double>(area.getX() - leftPadding + scrollOffset) / currentZoom;
+        double lastVisBeat =
+            static_cast<double>(area.getRight() - leftPadding + scrollOffset) / currentZoom;
+        double beatStart = juce::jmax(0.0, std::floor(firstVisBeat));
+        double beatEnd = juce::jmin(std::ceil(lastVisBeat) + 1.0, totalTimelineBeats);
+        for (double beat = beatStart; beat <= beatEnd; beat += 1.0) {
+            int x = static_cast<int>(std::round(beat * currentZoom)) + leftPadding - scrollOffset;
+            g.drawLine(static_cast<float>(x), static_cast<float>(area.getY()),
+                       static_cast<float>(x), static_cast<float>(area.getBottom()), 0.5f);
         }
     }
 }

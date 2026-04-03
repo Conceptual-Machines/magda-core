@@ -705,22 +705,29 @@ void TimelineComponent::clearSections() {
     repaint();
 }
 
+int TimelineComponent::beatsToPixel(double beats) const {
+    return static_cast<int>(std::round(beats * zoom));
+}
+
+double TimelineComponent::pixelToBeats(int pixel) const {
+    if (zoom > 0)
+        return static_cast<double>(pixel - LayoutConfig::TIMELINE_LEFT_PADDING) / zoom;
+    return 0.0;
+}
+
 double TimelineComponent::pixelToTime(int pixel) const {
-    if (zoom > 0 && tempoBPM > 0) {
-        double beats = (pixel - LayoutConfig::TIMELINE_LEFT_PADDING) / zoom;
-        return beats * 60.0 / tempoBPM;
-    }
+    if (tempoBPM > 0)
+        return pixelToBeats(pixel) * 60.0 / tempoBPM;
     return 0.0;
 }
 
 int TimelineComponent::timeToPixel(double time) const {
-    double beats = time * tempoBPM / 60.0;
-    return static_cast<int>(beats * zoom);
+    return beatsToPixel(time * tempoBPM / 60.0);
 }
 
 int TimelineComponent::timeDurationToPixels(double duration) const {
     double beats = duration * tempoBPM / 60.0;
-    return static_cast<int>(beats * zoom);
+    return static_cast<int>(std::round(beats * zoom));
 }
 
 void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
@@ -775,8 +782,20 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
             }
         }
 
+        // Compute visible time range from clip bounds to avoid iterating the entire timeline
+        auto clipBounds = g.getClipBounds();
+        double visibleStartTime = juce::jmax(
+            0.0, static_cast<double>(clipBounds.getX() - LayoutConfig::TIMELINE_LEFT_PADDING) /
+                     (tempoBPM / 60.0 * zoom));
+        double visibleEndTime =
+            juce::jmin(timelineLength, static_cast<double>(clipBounds.getRight() -
+                                                           LayoutConfig::TIMELINE_LEFT_PADDING) /
+                                           (tempoBPM / 60.0 * zoom));
+        double startTime = std::floor(visibleStartTime / markerInterval) * markerInterval;
+
         // Draw ticks and labels
-        for (double time = 0.0; time <= timelineLength; time += markerInterval) {
+        for (double time = startTime; time <= visibleEndTime + markerInterval;
+             time += markerInterval) {
             int x = timeToPixel(time) + LayoutConfig::TIMELINE_LEFT_PADDING;
             if (x >= 0 && x < getWidth()) {
                 bool isMajor = false;
@@ -843,15 +862,10 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         }
     } else {
         // ===== BARS/BEATS MODE =====
-        // Calculate beat duration in seconds
-        double secondsPerBeat = 60.0 / tempoBPM;
-        double secondsPerBar = secondsPerBeat * timeSignatureNumerator;
-
-        // Use zoom directly (pixels/beat) — avoid int truncation from timeDurationToPixels
+        // Everything in beats — zoom is pixels per beat (ppb)
         double markerIntervalBeats = GridConstants::computeGridInterval(
             gridQuantize, zoom, timeSignatureNumerator, minPixelSpacing);
 
-        double markerIntervalSeconds = secondsPerBeat * markerIntervalBeats;
         double barLengthBeats = static_cast<double>(timeSignatureNumerator);
 
         // Check if grid interval aligns with bar and beat boundaries
@@ -860,9 +874,10 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         bool alignsWithBeats = GridConstants::gridAlignsWithBeats(markerIntervalBeats);
         bool gridAligned = alignsWithBars && alignsWithBeats;
 
-        double pixelsPerBeat = timeDurationToPixels(secondsPerBeat);
-        double pixelsPerBar = timeDurationToPixels(secondsPerBar);
-        double pixelsPerSubdiv = timeDurationToPixels(markerIntervalSeconds);
+        // Pixel spacings directly from zoom (no seconds conversion)
+        double pixelsPerBeat = zoom;
+        double pixelsPerBar = zoom * barLengthBeats;
+        double pixelsPerSubdiv = zoom * markerIntervalBeats;
 
         // Determine bar label interval: show a label at every grid line that
         // falls on a bar boundary.  When the grid interval spans multiple bars
@@ -884,15 +899,28 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                 barLabelInterval = 2;
         }
 
-        // Pass 1: Draw grid ticks
-        for (double time = 0.0; time <= timelineLength; time += markerIntervalSeconds) {
-            int x = timeToPixel(time) + LayoutConfig::TIMELINE_LEFT_PADDING;
+        // Compute visible beat range from clip bounds — native beats, no seconds
+        auto clipBoundsRect = g.getClipBounds();
+        double totalTimelineBeats = timelineLength * tempoBPM / 60.0;
+        double visStartBeat = juce::jmax(
+            0.0, static_cast<double>(clipBoundsRect.getX() - LayoutConfig::TIMELINE_LEFT_PADDING) /
+                     zoom);
+        double visEndBeat = juce::jmin(
+            totalTimelineBeats,
+            static_cast<double>(clipBoundsRect.getRight() - LayoutConfig::TIMELINE_LEFT_PADDING) /
+                zoom);
+        double startBeat = std::floor(visStartBeat / markerIntervalBeats) * markerIntervalBeats;
+
+        // Pass 1: Draw grid ticks — iterate in beats
+        for (double beat = startBeat; beat <= visEndBeat + markerIntervalBeats;
+             beat += markerIntervalBeats) {
+            int x = beatsToPixel(beat) + LayoutConfig::TIMELINE_LEFT_PADDING;
             if (x < 0 || x >= getWidth())
                 continue;
 
             if (gridAligned) {
                 // Grid aligns — classify and draw with hierarchy
-                double totalBeats = time / secondsPerBeat;
+                double totalBeats = beat;
                 double beatInBarFractional = std::fmod(totalBeats, barLengthBeats);
 
                 auto [isBarStart, isBeatStart] =
@@ -928,13 +956,8 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                                static_cast<float>(x), static_cast<float>(tickBottom), 1.0f);
                 }
 
-                // Labels (always drawn, even at loop marker positions)
+                // Labels — zoom-independent via GridConstants::formatSubdivSuffix
                 double subdivInBeat = std::fmod(beatInBarFractional, 1.0);
-                int subdivsPerBeat = static_cast<int>(std::round(1.0 / markerIntervalBeats));
-                int subdivIndex = static_cast<int>(std::round(subdivInBeat * subdivsPerBeat)) + 1;
-                bool isPow2Subdiv =
-                    subdivsPerBeat > 0 && (subdivsPerBeat & (subdivsPerBeat - 1)) == 0;
-                bool isSubdivisionNotBeat = !isBeatStart && subdivIndex > 1 && isPow2Subdiv;
 
                 if (isBarStart && (bar - 1) % barLabelInterval == 0) {
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
@@ -946,12 +969,11 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                     g.setFont(FontManager::getInstance().getUIFont(10.0f));
                     g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY,
                                50, labelHeight, juce::Justification::centredTop);
-                } else if (isSubdivisionNotBeat && pixelsPerSubdiv >= 30) {
+                } else if (!isBeatStart && pixelsPerSubdiv >= 30) {
+                    auto label = GridConstants::formatBeatLabel(bar, beatInBar, subdivInBeat);
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
                     g.setFont(FontManager::getInstance().getUIFont(8.0f));
-                    g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
-                                   juce::String(subdivIndex),
-                               x - 30, labelY + 2, 60, labelHeight,
+                    g.drawText(label, x - 30, labelY + 2, 60, labelHeight,
                                juce::Justification::centredTop);
                 }
             } else {
@@ -971,9 +993,10 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
 
         // Pass 2: For non-aligned grids, draw bar/beat reference ticks and labels on top
         if (!gridAligned) {
-            for (double beat = 0.0; beat <= timelineLength / secondsPerBeat; beat += 1.0) {
-                double time = beat * secondsPerBeat;
-                int x = timeToPixel(time) + LayoutConfig::TIMELINE_LEFT_PADDING;
+            double refStartBeat = std::floor(visStartBeat);
+            double refEndBeat = std::ceil(visEndBeat);
+            for (double beat = refStartBeat; beat <= refEndBeat; beat += 1.0) {
+                int x = beatsToPixel(beat) + LayoutConfig::TIMELINE_LEFT_PADDING;
                 if (x < 0 || x >= getWidth())
                     continue;
 

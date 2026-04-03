@@ -152,6 +152,10 @@ class WaveformGridComponent : public juce::Component {
     /** Update warp markers for display */
     void setWarpMarkers(const std::vector<magda::WarpMarkerInfo>& markers);
 
+    double getClipStartTime() const {
+        return clipStartTime_;
+    }
+
     // ========================================================================
     // Coordinate Conversion
     // ========================================================================
@@ -255,6 +259,11 @@ class WaveformGridComponent : public juce::Component {
     double dragStartWarpTime_ = 0.0;
     double dragStartSourceTime_ = 0.0;
 
+    // Interaction tracking — when true, paint uses fast thumbnail path
+    bool interactionActive_ = false;
+    juce::int64 lastInteractionTime_ = 0;
+    static constexpr int INTERACTION_SETTLE_MS = 200;
+
     // Pre/post loop visibility
     bool showPreLoop_ = true;
     bool showPostLoop_ = true;
@@ -267,8 +276,9 @@ class WaveformGridComponent : public juce::Component {
 
     // Layout info shared between paint helpers
     struct WaveformLayout {
-        juce::Rectangle<int> rect;  // full waveform rect (position + size)
-        int clipEndPixel;           // pixel X of the effective clip/loop end
+        juce::Rectangle<int> rect;         // full waveform rect (position + size)
+        juce::Rectangle<int> visibleRect;  // rect clipped to visible component bounds
+        int clipEndPixel;                  // pixel X of the effective clip/loop end
     };
 
     // Painting helpers

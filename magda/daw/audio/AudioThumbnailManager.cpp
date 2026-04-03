@@ -90,12 +90,23 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
     startTime = juce::jlimit(0.0, totalLength, startTime);
     endTime = juce::jlimit(startTime, totalLength, endTime);
 
-    // When useHighRes is enabled (waveform editor), always use raw samples.
+    // When useHighRes is enabled (waveform editor), use raw samples only when
+    // zoomed in enough that the JUCE thumbnail (512 samples/point) lacks resolution.
+    // At moderate zoom, the thumbnail is sufficient and much faster (no disk IO).
     if (useHighRes) {
         auto* reader = getOrCreateReader(audioFilePath);
         if (reader != nullptr && reader->sampleRate > 0.0) {
-            drawWaveformFromSamples(g, bounds, reader, startTime, endTime, colour, verticalZoom);
-            return;
+            double timeRange = endTime - startTime;
+            double samplesInRange = timeRange * reader->sampleRate;
+            double samplesPerPixel = samplesInRange / bounds.getWidth();
+
+            // 512 = thumbnail resolution (samples per point). Below this threshold,
+            // raw samples provide visibly better quality than the thumbnail.
+            if (samplesPerPixel < 512.0) {
+                drawWaveformFromSamples(g, bounds, reader, startTime, endTime, colour,
+                                        verticalZoom);
+                return;
+            }
         }
     }
 

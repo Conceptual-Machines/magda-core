@@ -566,7 +566,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         if (beat > barOriginBeats + totalTimelineBeats)
             break;
 
-        int x = static_cast<int>(beat * zoom) - currentScrollOffset + leftPadding;
+        int x = static_cast<int>(std::round(beat * zoom)) - currentScrollOffset + leftPadding;
         if (x > width)
             break;
         if (x < 0)
@@ -610,7 +610,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             if (beat > barOriginBeats + totalTimelineBeats)
                 break;
 
-            int x = static_cast<int>(beat * zoom) - currentScrollOffset + leftPadding;
+            int x = static_cast<int>(std::round(beat * zoom)) - currentScrollOffset + leftPadding;
             if (x > width)
                 break;
             if (x < 0)
@@ -645,7 +645,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             if (beat > barOriginBeats + totalTimelineBeats)
                 break;
 
-            int x = static_cast<int>(beat * zoom) - currentScrollOffset + leftPadding;
+            int x = static_cast<int>(std::round(beat * zoom)) - currentScrollOffset + leftPadding;
             if (x > width)
                 break;
             if (x < 0)
@@ -666,7 +666,8 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
             // Check overlap with nearest bar label
             double barBeat = barOriginBeats + static_cast<double>(bar - 1) * barLengthBeats;
-            int barX = static_cast<int>(barBeat * zoom) - currentScrollOffset + leftPadding;
+            int barX =
+                static_cast<int>(std::round(barBeat * zoom)) - currentScrollOffset + leftPadding;
             if (std::abs(x - barX) < 40)
                 continue;
 
@@ -700,7 +701,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             if (beat > barOriginBeats + totalTimelineBeats)
                 break;
 
-            int x = static_cast<int>(beat * zoom) - currentScrollOffset + leftPadding;
+            int x = static_cast<int>(std::round(beat * zoom)) - currentScrollOffset + leftPadding;
             if (x > width)
                 break;
             if (x < 0)
@@ -719,30 +720,29 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             int bar = static_cast<int>(beatsFromOrigin / barLengthBeats) + 1;
             int beatInBar = static_cast<int>(beatsInBar) + 1;
             double subdivInBeat = std::fmod(beatsInBar, 1.0);
-            int subdivIndex =
-                static_cast<int>(std::round(subdivInBeat * subdivsPerBeatForLabel)) + 1;
 
             // Check overlap with nearest bar label
             double barBeat = barOriginBeats + static_cast<double>(bar - 1) * barLengthBeats;
-            int barX = static_cast<int>(barBeat * zoom) - currentScrollOffset + leftPadding;
+            int barX =
+                static_cast<int>(std::round(barBeat * zoom)) - currentScrollOffset + leftPadding;
             if (std::abs(x - barX) < 45)
                 continue;
 
             // Check overlap with nearest beat labels
             double beatBeat = barOriginBeats + std::floor(beatsFromOrigin);
-            int beatX = static_cast<int>(beatBeat * zoom) - currentScrollOffset + leftPadding;
+            int beatX =
+                static_cast<int>(std::round(beatBeat * zoom)) - currentScrollOffset + leftPadding;
             double nextBeatBeat = beatBeat + 1.0;
-            int nextBeatX =
-                static_cast<int>(nextBeatBeat * zoom) - currentScrollOffset + leftPadding;
+            int nextBeatX = static_cast<int>(std::round(nextBeatBeat * zoom)) -
+                            currentScrollOffset + leftPadding;
             if (std::abs(x - beatX) < 35 || std::abs(x - nextBeatX) < 35)
                 continue;
 
-            // Format: "bar.beat.subdiv" with musical subdivision index
+            // Zoom-independent label via fixed hierarchy
+            auto label = GridConstants::formatBeatLabel(bar, beatInBar, subdivInBeat);
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
             g.setFont(FontManager::getInstance().getUIFont(8.0f));
-            g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
-                           juce::String(subdivIndex),
-                       x - 30, labelY, 60, labelHeight, juce::Justification::centred);
+            g.drawText(label, x - 30, labelY, 60, labelHeight, juce::Justification::centred);
         }
     }
 
@@ -948,7 +948,7 @@ int TimeRuler::timeToPixel(double time) const {
     // zoom is ppb, so seconds→beats→pixel
     int currentScrollOffset = linkedViewport ? linkedViewport->getViewPositionX() : scrollOffset;
     double beats = time * tempo / 60.0;
-    return static_cast<int>(beats * zoom) - currentScrollOffset + leftPadding;
+    return static_cast<int>(std::round(beats * zoom)) - currentScrollOffset + leftPadding;
 }
 
 void TimeRuler::initLoopInteraction() {

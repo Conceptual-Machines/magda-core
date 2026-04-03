@@ -78,7 +78,32 @@ void TrackContentPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
     tracksChanged();  // Rebuild with new visibility settings
 }
 
+void TrackContentPanel::repaintVisible() {
+    if (auto* viewport = findParentComponentOfClass<juce::Viewport>()) {
+        repaint(juce::Rectangle<int>(viewport->getViewPositionX(), viewport->getViewPositionY(),
+                                     viewport->getViewWidth(), viewport->getViewHeight()));
+    } else {
+        juce::Component::repaint();
+    }
+}
+
+// Clip a repaint rect to only the visible viewport portion (avoids invalidating
+// e.g. a 65000px-wide track lane when only 1200px is on screen).
+void TrackContentPanel::repaintVisiblePortion(const juce::Rectangle<int>& rect) {
+    if (auto* viewport = findParentComponentOfClass<juce::Viewport>()) {
+        auto visibleArea =
+            juce::Rectangle<int>(viewport->getViewPositionX(), viewport->getViewPositionY(),
+                                 viewport->getViewWidth(), viewport->getViewHeight());
+        auto clipped = rect.getIntersection(visibleArea);
+        if (!clipped.isEmpty())
+            repaint(clipped);
+    } else {
+        repaint(rect);
+    }
+}
+
 void TrackContentPanel::tracksChanged() {
+    groupExtentCacheDirty_ = true;
     // Rebuild track lanes from TrackManager
     trackLanes.clear();
     visibleTrackIds_.clear();
@@ -116,7 +141,7 @@ void TrackContentPanel::tracksChanged() {
 
     resized();
     updateClipComponentPositions();
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::setController(TimelineController* controller) {
@@ -140,7 +165,7 @@ void TrackContentPanel::setController(TimelineController* controller) {
         timeSignatureNumerator = state.tempo.timeSignatureNumerator;
         timeSignatureDenominator = state.tempo.timeSignatureDenominator;
 
-        repaint();
+        repaintVisible();
     }
 }
 
@@ -185,21 +210,73 @@ void TrackContentPanel::timelineStateChanged(const TimelineState& state, ChangeF
         }
     }
 
+    // Edit cursor position changed — repaint immediately (bounded to cursor strip)
+    if (hasFlag(changes, ChangeFlags::Selection)) {
+        editCursorBlinkVisible_ = true;
+        // Restart timer so blink phase begins from now
+        if (state.editCursorPosition >= 0) {
+            stopTimer();
+            startTimer(EDIT_CURSOR_BLINK_MS);
+        }
+        // Bounded repaint: just the cursor strip on the selected track
+        if (selectedTrackIndex >= 0 && selectedTrackIndex < static_cast<int>(trackLanes.size())) {
+            int cursorX = timeToPixel(state.editCursorPosition);
+            auto trackArea = getTrackLaneArea(selectedTrackIndex);
+            repaint(juce::Rectangle<int>(cursorX - 3, trackArea.getY(), 6, trackArea.getHeight()));
+        }
+    }
+
     if (needsRepaint) {
         updateClipComponentPositions();
         resized();
-        repaint();
+        repaintVisible();
     }
+}
+
+void TrackContentPanel::rebuildGroupExtentCache() {
+    groupExtentCache_.clear();
+    auto& clipManager = ClipManager::getInstance();
+    auto& trackManager = TrackManager::getInstance();
+
+    for (auto trackId : visibleTrackIds_) {
+        auto* trackInfo = trackManager.getTrack(trackId);
+        if (!trackInfo || !trackInfo->isGroup())
+            continue;
+
+        GroupExtent extent;
+        auto descendants = trackManager.getAllDescendants(trackId);
+        for (auto childId : descendants) {
+            for (auto clipId : clipManager.getClipsOnTrack(childId)) {
+                const auto* clip = clipManager.getClip(clipId);
+                if (clip && clip->view == ClipView::Arrangement) {
+                    if (!extent.hasClips) {
+                        extent.earliest = clip->startTime;
+                        extent.latest = clip->startTime + clip->length;
+                        extent.hasClips = true;
+                    } else {
+                        extent.earliest = std::min(extent.earliest, clip->startTime);
+                        extent.latest = std::max(extent.latest, clip->startTime + clip->length);
+                    }
+                }
+            }
+        }
+        groupExtentCache_[trackId] = extent;
+    }
+    groupExtentCacheDirty_ = false;
 }
 
 void TrackContentPanel::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
 
+    // Rebuild group extent cache if dirty (at most once per paint)
+    if (groupExtentCacheDirty_)
+        rebuildGroupExtentCache();
+
     // Grid is now drawn by GridOverlayComponent in MainView
     // This component only draws track lanes with horizontal separators
     for (size_t i = 0; i < trackLanes.size(); ++i) {
         auto laneArea = getTrackLaneArea(static_cast<int>(i));
-        if (laneArea.intersects(getLocalBounds())) {
+        if (laneArea.intersects(g.getClipBounds())) {
             paintTrackLane(g, *trackLanes[i], laneArea, static_cast<int>(i) == selectedTrackIndex,
                            static_cast<int>(i));
         }
@@ -253,7 +330,7 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
 void TrackContentPanel::resized() {
     // Update size based on zoom (ppb) and timeline length
     double beats = timelineLength * tempoBPM / 60.0;
-    int contentWidth = static_cast<int>(beats * currentZoom);
+    int contentWidth = static_cast<int>(std::round(beats * currentZoom));
     int contentHeight = getTotalTracksHeight();
 
     setSize(juce::jmax(contentWidth, getWidth()), juce::jmax(contentHeight, getHeight()));
@@ -261,17 +338,22 @@ void TrackContentPanel::resized() {
 
 void TrackContentPanel::selectTrack(int index) {
     if (index >= 0 && index < static_cast<int>(trackLanes.size())) {
+        int oldIndex = selectedTrackIndex;
         selectedTrackIndex = index;
 
         if (onTrackSelected) {
             onTrackSelected(index);
         }
 
-        repaint();
+        // Bounded repaint: old and new track lanes only (clipped to visible viewport)
+        if (oldIndex >= 0 && oldIndex < static_cast<int>(trackLanes.size()))
+            repaintVisiblePortion(getTrackLaneArea(oldIndex));
+        repaintVisiblePortion(getTrackLaneArea(index));
     }
 }
 
 void TrackContentPanel::trackSelectionChanged(TrackId trackId) {
+    int oldIndex = selectedTrackIndex;
     selectedTrackIndex = -1;
     for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
         if (visibleTrackIds_[i] == trackId) {
@@ -279,13 +361,17 @@ void TrackContentPanel::trackSelectionChanged(TrackId trackId) {
             break;
         }
     }
-    repaint();
+    // Bounded repaint: old and new track lanes only (clipped to visible viewport)
+    if (oldIndex >= 0 && oldIndex < static_cast<int>(trackLanes.size()))
+        repaintVisiblePortion(getTrackLaneArea(oldIndex));
+    if (selectedTrackIndex >= 0)
+        repaintVisiblePortion(getTrackLaneArea(selectedTrackIndex));
 }
 
 void TrackContentPanel::trackPropertyChanged(int /*trackId*/) {
     // Repaint when track properties change (e.g. playback mode switching
     // between Arrangement and Session) to update visual overlays.
-    repaint();
+    repaintVisible();
 }
 
 int TrackContentPanel::getNumTracks() const {
@@ -295,10 +381,13 @@ int TrackContentPanel::getNumTracks() const {
 void TrackContentPanel::setTrackHeight(int trackIndex, int height) {
     if (trackIndex >= 0 && trackIndex < static_cast<int>(trackLanes.size())) {
         height = juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, height);
+        if (trackLanes[trackIndex]->height == height)
+            return;
         trackLanes[trackIndex]->height = height;
 
+        updateClipComponentPositions();
         resized();
-        repaint();
+        repaintVisible();
 
         if (onTrackHeightChanged) {
             onTrackHeightChanged(trackIndex, height);
@@ -314,39 +403,45 @@ int TrackContentPanel::getTrackHeight(int trackIndex) const {
 }
 
 void TrackContentPanel::setZoom(double zoom) {
-    currentZoom = juce::jmax(0.1, zoom);
+    zoom = juce::jmax(0.1, zoom);
+    if (std::abs(zoom - currentZoom) < 0.001)
+        return;
+    currentZoom = zoom;
     updateClipComponentPositions();
     resized();
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::setVerticalZoom(double zoom) {
-    verticalZoom = juce::jlimit(0.5, 3.0, zoom);
+    zoom = juce::jlimit(0.5, 3.0, zoom);
+    if (std::abs(zoom - verticalZoom) < 0.001)
+        return;
+    verticalZoom = zoom;
     updateClipComponentPositions();
     resized();
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::setTimelineLength(double lengthInSeconds) {
     timelineLength = lengthInSeconds;
     resized();
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::setTimeDisplayMode(TimeDisplayMode mode) {
     displayMode = mode;
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::setTempo(double bpm) {
     tempoBPM = juce::jlimit(20.0, 999.0, bpm);
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::setTimeSignature(int numerator, int denominator) {
     timeSignatureNumerator = juce::jlimit(1, 16, numerator);
     timeSignatureDenominator = juce::jlimit(1, 16, denominator);
-    repaint();
+    repaintVisible();
 }
 
 int TrackContentPanel::getTotalTracksHeight() const {
@@ -392,22 +487,10 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lan
 
         // Group extent indicator — show the time range covered by all child clips
         if (trackInfo && trackInfo->isGroup()) {
-            auto descendants = TrackManager::getInstance().getAllDescendants(trackInfo->id);
-            auto& clipManager = ClipManager::getInstance();
-            double earliest = std::numeric_limits<double>::max();
-            double latest = 0.0;
-            bool hasClips = false;
-
-            for (auto childId : descendants) {
-                for (auto clipId : clipManager.getClipsOnTrack(childId)) {
-                    const auto* clip = clipManager.getClip(clipId);
-                    if (clip && clip->view == ClipView::Arrangement) {
-                        earliest = std::min(earliest, clip->startTime);
-                        latest = std::max(latest, clip->startTime + clip->length);
-                        hasClips = true;
-                    }
-                }
-            }
+            auto extentIt = groupExtentCache_.find(trackInfo->id);
+            bool hasClips = extentIt != groupExtentCache_.end() && extentIt->second.hasClips;
+            double earliest = hasClips ? extentIt->second.earliest : 0.0;
+            double latest = hasClips ? extentIt->second.latest : 0.0;
 
             if (hasClips && latest > earliest) {
                 int x1 = timeToPixel(earliest);
@@ -565,9 +648,28 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         }
     }
 
-    // Schedule repaint to keep updating while recording previews exist.
-    // This ensures the full component is invalidated, not just the playhead strip.
-    repaint();
+    // Schedule bounded repaint covering only the recording preview areas.
+    // At high zoom the full component can be 65000+ px wide — avoid invalidating all of it.
+    juce::Rectangle<int> previewUnion;
+    for (const auto& [tId, prev] : previews) {
+        int px = timeToPixel(prev.startTime);
+        int pxEnd = timeToPixel(prev.startTime + prev.currentLength);
+        int tIdx = -1;
+        for (int i = 0; i < static_cast<int>(visibleTrackIds_.size()); ++i) {
+            if (visibleTrackIds_[static_cast<size_t>(i)] == tId) {
+                tIdx = i;
+                break;
+            }
+        }
+        if (tIdx >= 0) {
+            int tY = getTrackYPosition(tIdx);
+            int tH = getTrackHeight(tIdx);
+            auto r = juce::Rectangle<int>(px, tY, juce::jmax(2, pxEnd - px), tH);
+            previewUnion = previewUnion.isEmpty() ? r : previewUnion.getUnion(r);
+        }
+    }
+    if (!previewUnion.isEmpty())
+        repaint(previewUnion.expanded(4));
 }
 
 void TrackContentPanel::paintEditCursor(juce::Graphics& g) {
@@ -659,19 +761,23 @@ bool TrackContentPanel::isInSelectableArea(int x, int y) const {
 }
 
 double TrackContentPanel::pixelToTime(int pixel) const {
-    // currentZoom is ppb, convert through beats
-    if (currentZoom > 0 && tempoBPM > 0) {
-        double beats =
-            static_cast<double>(pixel - LayoutConfig::TIMELINE_LEFT_PADDING) / currentZoom;
-        return beats * 60.0 / tempoBPM;
-    }
+    if (currentZoom > 0 && tempoBPM > 0)
+        return pixelToBeats(pixel) * 60.0 / tempoBPM;
+    return 0.0;
+}
+
+int TrackContentPanel::beatsToPixel(double beats) const {
+    return static_cast<int>(std::round(beats * currentZoom)) + LayoutConfig::TIMELINE_LEFT_PADDING;
+}
+
+double TrackContentPanel::pixelToBeats(int pixel) const {
+    if (currentZoom > 0)
+        return static_cast<double>(pixel - LayoutConfig::TIMELINE_LEFT_PADDING) / currentZoom;
     return 0.0;
 }
 
 int TrackContentPanel::timeToPixel(double time) const {
-    // currentZoom is ppb, convert through beats
-    double beats = time * tempoBPM / 60.0;
-    return static_cast<int>(beats * currentZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    return beatsToPixel(time * tempoBPM / 60.0);
 }
 
 int TrackContentPanel::getTrackIndexAtY(int y) const {
@@ -1389,7 +1495,17 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
 void TrackContentPanel::timerCallback() {
     // Toggle edit cursor blink state
     editCursorBlinkVisible_ = !editCursorBlinkVisible_;
-    repaint();
+
+    // Bounded repaint: only the cursor strip, not the entire 65000px component
+    if (timelineController && selectedTrackIndex >= 0 &&
+        selectedTrackIndex < static_cast<int>(trackLanes.size())) {
+        double editCursorPos = timelineController->getState().editCursorPosition;
+        if (editCursorPos >= 0) {
+            int cursorX = timeToPixel(editCursorPos);
+            auto trackArea = getTrackLaneArea(selectedTrackIndex);
+            repaint(juce::Rectangle<int>(cursorX - 3, trackArea.getY(), 6, trackArea.getHeight()));
+        }
+    }
 
     // Update cursor when modifier keys change (e.g. shift for split mode)
     if (isMouseOver(true)) {
@@ -1466,10 +1582,12 @@ void TrackContentPanel::updateCursorForPosition(int x, int y, bool shiftHeld) {
 // ============================================================================
 
 void TrackContentPanel::clipsChanged() {
+    groupExtentCacheDirty_ = true;
     rebuildClipComponents();
 }
 
 void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
+    groupExtentCacheDirty_ = true;
     // Find the clip component and update its position/size
     for (auto& clipComp : clipComponents_) {
         if (clipComp->getClipId() == clipId) {
@@ -1504,7 +1622,7 @@ void TrackContentPanel::clipSelectionChanged(ClipId clipId) {
     }
 
     // Repaint to update selection visuals
-    repaint();
+    repaintVisible();
 }
 
 // ============================================================================
@@ -1674,15 +1792,15 @@ void TrackContentPanel::updateClipComponentPositions() {
         int trackIndex = static_cast<int>(std::distance(visibleTrackIds_.begin(), it));
         auto trackArea = getTrackLaneArea(trackIndex);
 
-        // Calculate clip bounds (currentZoom is ppb)
-        int clipX = (clip->autoTempo && clip->startBeats >= 0.0)
-                        ? static_cast<int>(clip->startBeats * currentZoom) +
-                              LayoutConfig::TIMELINE_LEFT_PADDING
-                        : timeToPixel(clip->startTime);
-        double clipBeats = (clip->autoTempo && clip->lengthBeats > 0.0)
-                               ? clip->lengthBeats
-                               : clip->length * tempoBPM / 60.0;
-        int clipWidth = static_cast<int>(clipBeats * currentZoom);
+        // Calculate clip bounds in beat domain (currentZoom is ppb).
+        // Always use beat values when available — avoids seconds→beats
+        // floating point drift that causes position to shift with zoom.
+        double startBeats =
+            (clip->startBeats >= 0.0) ? clip->startBeats : clip->startTime * tempoBPM / 60.0;
+        double clipBeats =
+            (clip->lengthBeats > 0.0) ? clip->lengthBeats : clip->length * tempoBPM / 60.0;
+        int clipX = beatsToPixel(startBeats);
+        int clipWidth = static_cast<int>(std::round(clipBeats * currentZoom));
 
         // Cull clips entirely outside the visible viewport area
         if (clipX + clipWidth < visibleLeft || clipX > visibleRight) {
@@ -1693,8 +1811,9 @@ void TrackContentPanel::updateClipComponentPositions() {
         // Inset from track edges
         int clipY = trackArea.getY() + 2;
         int clipHeight = trackArea.getHeight() - 4;
+        int finalWidth = juce::jmax(10, clipWidth);
 
-        auto newBounds = juce::Rectangle<int>(clipX, clipY, juce::jmax(10, clipWidth), clipHeight);
+        auto newBounds = juce::Rectangle<int>(clipX, clipY, finalWidth, clipHeight);
         if (clipComp->getBounds() != newBounds)
             clipComp->setBounds(newBounds);
         clipComp->setVisible(true);
@@ -1728,7 +1847,7 @@ void TrackContentPanel::updateMarqueeSelection(const juce::Point<int>& currentPo
 
     // Update highlighted clips
     updateMarqueeHighlights();
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::finishMarqueeSelection(bool addToSelection) {
@@ -1777,7 +1896,7 @@ void TrackContentPanel::finishMarqueeSelection(bool addToSelection) {
     marqueePreviewClips_.clear();
     marqueeRect_ = juce::Rectangle<int>();
 
-    repaint();
+    repaintVisible();
 }
 
 std::unordered_set<ClipId> TrackContentPanel::getClipsInRect(
@@ -1881,7 +2000,7 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
             for (auto& clipComp : clipComponents_) {
                 clipComp->setMarqueeHighlighted(false);
             }
-            repaint();
+            repaintVisible();
         }
         if (isMovingMultipleClips_) {
             cancelMultiClipDrag();
@@ -2081,7 +2200,7 @@ void TrackContentPanel::automationLanesChanged() {
     rebuildAutomationLaneComponents();
     updateClipComponentPositions();
     resized();
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::automationLanePropertyChanged(AutomationLaneId /*laneId*/) {
@@ -2101,7 +2220,7 @@ void TrackContentPanel::automationLanePropertyChanged(AutomationLaneId /*laneId*
 
     updateClipComponentPositions();
     resized();
-    repaint();
+    repaintVisible();
 }
 
 // ============================================================================
@@ -2211,7 +2330,7 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
                 updateAutomationLanePositions();
                 updateClipComponentPositions();
                 resized();
-                repaint();
+                repaintVisible();
             };
 
             addAndMakeVisible(entry.component.get());
@@ -2303,7 +2422,7 @@ void TrackContentPanel::fileDragEnter(const juce::StringArray& /*files*/, int x,
     }
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
     showDropIndicator_ = true;
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::fileDragMove(const juce::StringArray& /*files*/, int x, int y) {
@@ -2312,17 +2431,17 @@ void TrackContentPanel::fileDragMove(const juce::StringArray& /*files*/, int x, 
         dropInsertTime_ = snapTimeToGrid(dropInsertTime_);
     }
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::fileDragExit(const juce::StringArray& /*files*/) {
     showDropIndicator_ = false;
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int y) {
     showDropIndicator_ = false;
-    repaint();
+    repaintVisible();
 
     // Determine drop position (clamp to timeline start, snap if enabled)
     double dropTime = juce::jmax(0.0, pixelToTime(x));
@@ -2597,7 +2716,7 @@ bool TrackContentPanel::isInterestedInDragSource(const SourceDetails& details) {
 
 void TrackContentPanel::itemDragEnter(const SourceDetails& /*details*/) {
     showPluginDropOverlay_ = true;
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::itemDragMove(const SourceDetails& /*details*/) {
@@ -2606,12 +2725,12 @@ void TrackContentPanel::itemDragMove(const SourceDetails& /*details*/) {
 
 void TrackContentPanel::itemDragExit(const SourceDetails& /*details*/) {
     showPluginDropOverlay_ = false;
-    repaint();
+    repaintVisible();
 }
 
 void TrackContentPanel::itemDropped(const SourceDetails& details) {
     showPluginDropOverlay_ = false;
-    repaint();
+    repaintVisible();
 
     if (auto* obj = details.description.getDynamicObject()) {
         auto device = TrackManager::deviceInfoFromPluginObject(*obj);
