@@ -30,13 +30,25 @@ StepSequencerUI::AIResultDisplay::AIResultDisplay() {}
 void StepSequencerUI::AIResultDisplay::setStreamingText(const juce::String& text) {
     mode_ = Mode::Streaming;
     text_ = text;
+    description_ = {};
+    previewSteps_.clear();
     scrollOffset_ = 0;
     autoScroll_ = true;
+    spinnerAngle_ = 0.0f;
+    startTimerHz(30);
+    repaint();
+}
+
+void StepSequencerUI::AIResultDisplay::timerCallback() {
+    spinnerAngle_ += 0.15f;
+    if (spinnerAngle_ > juce::MathConstants<float>::twoPi)
+        spinnerAngle_ -= juce::MathConstants<float>::twoPi;
     repaint();
 }
 
 void StepSequencerUI::AIResultDisplay::appendStreamingToken(const juce::String& token) {
     mode_ = Mode::Streaming;
+    stopTimer();
     if (text_ == "Thinking...")
         text_ = "";
     text_ += token;
@@ -95,6 +107,7 @@ void StepSequencerUI::AIResultDisplay::appendStreamingToken(const juce::String& 
 }
 
 void StepSequencerUI::AIResultDisplay::showResult(const juce::String& description, int) {
+    stopTimer();
     mode_ = Mode::Streaming;
     description_ = description;
     previewSteps_.clear();
@@ -103,6 +116,7 @@ void StepSequencerUI::AIResultDisplay::showResult(const juce::String& descriptio
 }
 
 void StepSequencerUI::AIResultDisplay::clear() {
+    stopTimer();
     mode_ = Mode::Empty;
     text_ = {};
     description_ = {};
@@ -131,7 +145,26 @@ void StepSequencerUI::AIResultDisplay::paint(juce::Graphics& g) {
                        true);
             area.removeFromTop(2);
         } else if (previewSteps_.empty()) {
-            g.drawText(text_, area, juce::Justification::centredLeft, true);
+            // Draw spinner + text centered
+            constexpr float spinnerSize = 10.0f;
+            float textW = g.getCurrentFont().getStringWidthFloat(text_);
+            float totalW = spinnerSize + 4.0f + textW;
+            float cx = area.getCentreX() - totalW * 0.5f;
+            float cy = area.getCentreY();
+
+            // Spinning arc
+            juce::Path arc;
+            arc.addArc(cx, cy - spinnerSize * 0.5f, spinnerSize, spinnerSize, spinnerAngle_,
+                       spinnerAngle_ + juce::MathConstants<float>::pi * 1.5f, true);
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.7f));
+            g.strokePath(arc, juce::PathStrokeType(1.5f));
+
+            // Text
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.drawText(text_,
+                       juce::Rectangle<float>(cx + spinnerSize + 4.0f, area.getY(), textW + 4.0f,
+                                              area.getHeight()),
+                       juce::Justification::centredLeft, false);
             return;
         }
 
@@ -265,6 +298,7 @@ StepSequencerUI::StepSequencerUI() {
     };
 
     setupLabel(depthLabel_, "DEPTH");
+    depthLabel_.setJustificationType(juce::Justification::centred);
     setupSlider(depthSlider_, -1.0, 1.0, 0.01);
     depthSlider_.setValueFormatter(
         [](double v) { return juce::String(juce::roundToInt(v * 100)); });
@@ -278,6 +312,7 @@ StepSequencerUI::StepSequencerUI() {
     };
 
     setupLabel(skewLabel_, "SKEW");
+    skewLabel_.setJustificationType(juce::Justification::centred);
     setupSlider(skewSlider_, -1.0, 1.0, 0.01);
     skewSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v * 100)); });
     skewSlider_.setValueParser(
@@ -314,7 +349,11 @@ StepSequencerUI::StepSequencerUI() {
     aiPromptEditor_.setColour(juce::TextEditor::focusedOutlineColourId,
                               DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
     aiPromptEditor_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    aiPromptEditor_.onReturnKey = [this] { generateAIPattern(); };
+    aiPromptEditor_.onReturnKey = [this] {
+        generateAIPattern();
+        giveAwayKeyboardFocus();
+    };
+    aiPromptEditor_.onEscapeKey = [this] { giveAwayKeyboardFocus(); };
     addAndMakeVisible(aiPromptEditor_);
 
     aiButton_.setButtonText("Generate");
@@ -479,18 +518,24 @@ void StepSequencerUI::resized() {
 
     bounds.removeFromTop(ROW_GAP + 2);
 
-    // Ramp curve section: [RAMP label] [curve display] [DEPTH slider] [SKEW slider]
-    auto rampRow = bounds.removeFromTop(CONTROL_ROW_HEIGHT * 2);
+    // Ramp curve: full-width display with small D/S column on the right (labels above)
+    constexpr int LABEL_H = 14;
+    constexpr int RAMP_HEIGHT = CONTROL_ROW_HEIGHT * 4 + LABEL_H * 2;
+    constexpr int SLIDER_COL_W = 44;
+    auto rampRow = bounds.removeFromTop(RAMP_HEIGHT);
     {
         rampLabel_.setBounds(rampRow.removeFromLeft(LABEL_WIDTH));
-        rampCurveDisplay_.setBounds(rampRow.removeFromLeft(rampRow.getHeight()));
-        rampRow.removeFromLeft(4);
-        int sliderWidth = rampRow.getWidth() / 2;
-        auto depthCell = rampRow.removeFromLeft(sliderWidth);
-        depthLabel_.setBounds(depthCell.removeFromLeft(LABEL_WIDTH));
-        depthSlider_.setBounds(depthCell);
-        skewLabel_.setBounds(rampRow.removeFromLeft(LABEL_WIDTH));
-        skewSlider_.setBounds(rampRow);
+        // Sliders stacked on the right, each with label above
+        auto sliderCol = rampRow.removeFromRight(SLIDER_COL_W);
+        auto topCell = sliderCol.removeFromTop(RAMP_HEIGHT / 2);
+        depthLabel_.setBounds(topCell.removeFromTop(LABEL_H));
+        depthSlider_.setBounds(topCell);
+        auto bottomCell = sliderCol;
+        skewLabel_.setBounds(bottomCell.removeFromTop(LABEL_H));
+        skewSlider_.setBounds(bottomCell);
+        // Curve fills remaining width
+        rampRow.removeFromRight(4);
+        rampCurveDisplay_.setBounds(rampRow);
     }
 
     bounds.removeFromTop(ROW_GAP);

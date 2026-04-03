@@ -76,7 +76,7 @@ class StepSequencerUI : public juce::Component,
     std::unique_ptr<magda::SvgButton> aiIcon_;
 
     /** Shows streaming status: description + step list that auto-scrolls. */
-    class AIResultDisplay : public juce::Component {
+    class AIResultDisplay : public juce::Component, private juce::Timer {
       public:
         AIResultDisplay();
         void paint(juce::Graphics& g) override;
@@ -88,13 +88,16 @@ class StepSequencerUI : public juce::Component,
         void clear();
 
       private:
+        void timerCallback() override;
+
         enum class Mode { Empty, Streaming };
         Mode mode_ = Mode::Empty;
         juce::String text_;
         juce::String description_;
         std::vector<audio::StepSequencerPlugin::Step> previewSteps_;
         int scrollOffset_ = 0;
-        bool autoScroll_ = true;  // scroll to bottom as new steps arrive
+        bool autoScroll_ = true;
+        float spinnerAngle_ = 0.0f;
     };
     AIResultDisplay aiResultDisplay_;
 

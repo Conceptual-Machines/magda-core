@@ -78,28 +78,6 @@ daw::audio::MidiChordEnginePlugin* findChordEngine(TrackId trackId) {
     return nullptr;
 }
 
-/** Check if a track has any MIDI-type device (including inside racks). */
-bool trackHasMidiDevice(TrackId trackId) {
-    auto& trackManager = TrackManager::getInstance();
-    const auto* track = trackManager.getTrack(trackId);
-    if (!track)
-        return false;
-    for (const auto& elem : track->chainElements) {
-        if (isDevice(elem)) {
-            if (getDevice(elem).deviceType == DeviceType::MIDI)
-                return true;
-        } else if (isRack(elem)) {
-            const auto& rack = getRack(elem);
-            for (const auto& chain : rack.chains) {
-                for (const auto& ce : chain.elements) {
-                    if (isDevice(ce) && getDevice(ce).deviceType == DeviceType::MIDI)
-                        return true;
-                }
-            }
-        }
-    }
-    return false;
-}
 }  // namespace
 
 // Resize handle between waveform editor and properties panel
@@ -776,9 +754,8 @@ void BottomPanel::updateContentBasedOnSelection() {
     showEditorTabs_ = needsTabs;
     showPropsPanel_ = (targetContent == daw::ui::PanelContentType::WaveformEditor);
 
-    // Show chord panel when piano roll is active and track has MIDI device
+    // Show chord panel when piano roll is active and track has a chord engine
     {
-        bool wantChord = false;
         TrackId midiTrackId = INVALID_TRACK_ID;
         if (targetContent == daw::ui::PanelContentType::PianoRoll &&
             selectedClip != INVALID_CLIP_ID) {
@@ -786,13 +763,11 @@ void BottomPanel::updateContentBasedOnSelection() {
             if (clip)
                 midiTrackId = clip->trackId;
         }
-        if (midiTrackId != INVALID_TRACK_ID)
-            wantChord = trackHasMidiDevice(midiTrackId);
+        auto* ce = (midiTrackId != INVALID_TRACK_ID) ? findChordEngine(midiTrackId) : nullptr;
 
-        showChordPanel_ = wantChord;
-        if (wantChord) {
+        showChordPanel_ = (ce != nullptr);
+        if (ce) {
             ensureChordPanelCreated();
-            auto* ce = findChordEngine(midiTrackId);
             chordPanel_->setChordEngine(ce, midiTrackId);
         } else if (chordPanel_) {
             chordPanel_->setChordEngine(nullptr);
