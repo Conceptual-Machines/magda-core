@@ -536,9 +536,9 @@ void BottomPanel::resized() {
             tabX += iconSize + 4;
             drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
 
-            // Time ease button centered horizontally in header
-            easeButton_->setBounds((headerBounds.getCentreX() - iconSize / 2), tabY, iconSize,
-                                   iconSize);
+            // Time ease button centered horizontally in header (wider for icon clarity)
+            int easeW = iconSize * 2;
+            easeButton_->setBounds((headerBounds.getCentreX() - easeW / 2), tabY, easeW, iconSize);
             easeButton_->setVisible(true);
         } else {
             easeButton_->setVisible(false);
