@@ -32,6 +32,16 @@ class RampCurveDisplay : public juce::Component, public juce::SettableTooltipCli
         return skew_;
     }
 
+    /** Set current playback position (0-1) and cycle count for animated sweep.
+     *  Pass pos < 0 to hide the sweep. */
+    void setPlaybackPosition(float pos, int cycles = 1) {
+        if (std::abs(playbackPos_ - pos) > 0.001f || cycles_ != cycles) {
+            playbackPos_ = pos;
+            cycles_ = cycles;
+            repaint();
+        }
+    }
+
     /** Called whenever depth or skew change via mouse interaction. */
     std::function<void(float depth, float skew)> onCurveChanged;
 
@@ -45,6 +55,8 @@ class RampCurveDisplay : public juce::Component, public juce::SettableTooltipCli
     float skew_ = 0.0f;
     float handleOffsetX_ = 0.0f;
     float handleOffsetY_ = 0.0f;
+    float playbackPos_ = -1.0f;
+    int cycles_ = 1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RampCurveDisplay)
 };

@@ -129,6 +129,19 @@ ArpeggiatorUI::ArpeggiatorUI() {
         rampCurveDisplay_.setValues(rampCurveDisplay_.getDepth(), static_cast<float>(value));
     };
 
+    setupLabel(cyclesLabel_, "CYC");
+    cyclesLabel_.setJustificationType(juce::Justification::centred);
+    setupSlider(cyclesSlider_, 1.0, 8.0, 1.0);
+    cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
+    cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
+    cyclesSlider_.onValueChanged = [this](double value) {
+        if (plugin_)
+            plugin_->rampCycles = juce::roundToInt(value);
+    };
+    // Reparent cycles controls into curve display so they sit behind the curve painting
+    rampCurveDisplay_.addAndMakeVisible(cyclesLabel_);
+    rampCurveDisplay_.addAndMakeVisible(cyclesSlider_);
+
     setupLabel(velModeLabel_, "VEL MODE");
     setupCombo(velModeCombo_);
     velModeCombo_.addItem("Original", 1);
@@ -198,6 +211,8 @@ void ArpeggiatorUI::syncFromPlugin() {
     rampCurveDisplay_.setValues(plugin_->ramp.get(), plugin_->skew.get());
     depthSlider_.setValue(static_cast<double>(plugin_->ramp.get()), juce::dontSendNotification);
     skewSlider_.setValue(static_cast<double>(plugin_->skew.get()), juce::dontSendNotification);
+    cyclesSlider_.setValue(static_cast<double>(plugin_->rampCycles.get()),
+                           juce::dontSendNotification);
     velModeCombo_.setSelectedId(plugin_->velocityMode.get() + 1, juce::dontSendNotification);
     fixedVelSlider_.setValue(static_cast<double>(plugin_->fixedVelocity.get()),
                              juce::dontSendNotification);
@@ -227,6 +242,12 @@ void ArpeggiatorUI::timerCallback() {
     rampCurveDisplay_.setValues(depth, skew);
     depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
     skewSlider_.setValue(static_cast<double>(skew), juce::dontSendNotification);
+
+    // Playback sweep animation
+    int step = plugin_->currentPlayStep_.load(std::memory_order_relaxed);
+    int len = plugin_->currentSeqLength_.load(std::memory_order_relaxed);
+    float pos = (step >= 0 && len > 0) ? static_cast<float>(step) / static_cast<float>(len) : -1.0f;
+    rampCurveDisplay_.setPlaybackPosition(pos, juce::jlimit(1, 8, plugin_->rampCycles.get()));
 }
 
 void ArpeggiatorUI::paint(juce::Graphics&) {
@@ -280,10 +301,20 @@ void ArpeggiatorUI::resized() {
         skewLabel_.setBounds(easeRight.removeFromLeft(LABEL_WIDTH));
         skewSlider_.setBounds(easeRight);
     }
-    rampLabel_.setBounds(0, 0, 0, 0);  // hidden — curve display is self-explanatory
     bounds.removeFromTop(ROW_GAP);
-    if (bounds.getHeight() > 20)
+    auto rampLabelRow = bounds.removeFromTop(ROW_HEIGHT);
+    rampLabel_.setBounds(rampLabelRow);
+    bounds.removeFromTop(ROW_GAP);
+    if (bounds.getHeight() > 20) {
         rampCurveDisplay_.setBounds(bounds);
+        // Cycles overlaid inside curve display top-left (local coords, children of curve)
+        constexpr int CYC_W = 40;
+        constexpr int CYC_LABEL_H = 14;
+        constexpr int CYC_H = ROW_HEIGHT + CYC_LABEL_H;
+        auto cycArea = juce::Rectangle<int>(0, 0, CYC_W, CYC_H);
+        cyclesLabel_.setBounds(cycArea.removeFromTop(CYC_LABEL_H));
+        cyclesSlider_.setBounds(cycArea);
+    }
 }
 
 void ArpeggiatorUI::setupLabel(juce::Label& label, const juce::String& text) {

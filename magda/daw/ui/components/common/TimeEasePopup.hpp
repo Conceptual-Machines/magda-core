@@ -28,11 +28,11 @@ class TimeEasePopup : public juce::Component {
     void resized() override;
     void paint(juce::Graphics& g) override;
 
-    /** Called when the user clicks Apply with the chosen depth and skew. */
-    std::function<void(float depth, float skew)> onApply;
+    /** Called when the user clicks Apply with the chosen depth, skew, and cycles. */
+    std::function<void(float depth, float skew, int cycles)> onApply;
 
   private:
-    void applyPreview(float depth, float skew);
+    void applyPreview(float depth, float skew, int cycles);
     void restoreOriginals();
 
     magda::ClipId clipId_;
@@ -45,6 +45,8 @@ class TimeEasePopup : public juce::Component {
     LinkableTextSlider depthSlider_;
     juce::Label skewLabel_;
     LinkableTextSlider skewSlider_;
+    juce::Label cyclesLabel_;
+    LinkableTextSlider cyclesSlider_;
     juce::TextButton applyButton_{"Apply"};
     juce::TextButton cancelButton_{"Cancel"};
 

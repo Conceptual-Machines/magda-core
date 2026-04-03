@@ -54,6 +54,43 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
         }
     }
 
+    // Playback sweep on tick strip
+    if (h > 60.0f && playbackPos_ >= 0.0f && playbackPos_ <= 1.0f) {
+        constexpr float TICK_H = 10.0f;
+        float tickY0 = y0 + h - TICK_H;
+        float tickY1 = y0 + h;
+
+        // Apply curve with cycles to get the x position
+        float pos = playbackPos_;
+        float curvedPos;
+        if (cycles_ <= 1) {
+            curvedPos =
+                static_cast<float>(daw::audio::StepClock::applyRampCurve(pos, depth_, skew_));
+        } else {
+            float segLen = 1.0f / static_cast<float>(cycles_);
+            int seg = std::min(static_cast<int>(pos / segLen), cycles_ - 1);
+            float tLocal = (pos - seg * segLen) / segLen;
+            float tLocalCurved =
+                static_cast<float>(daw::audio::StepClock::applyRampCurve(tLocal, depth_, skew_));
+            curvedPos = (seg + tLocalCurved) * segLen;
+        }
+        curvedPos = juce::jlimit(0.0f, 1.0f, curvedPos);
+        float sweepX = x0 + curvedPos * w;
+
+        // Fading trail (gradient from transparent to green)
+        constexpr float TRAIL_W = 30.0f;
+        float trailLeft = std::max(x0, sweepX - TRAIL_W);
+        auto trailColour = DarkTheme::getColour(DarkTheme::ACCENT_GREEN);
+        g.setGradientFill(juce::ColourGradient(trailColour.withAlpha(0.0f), trailLeft, tickY0,
+                                               trailColour.withAlpha(0.25f), sweepX, tickY0,
+                                               false));
+        g.fillRect(trailLeft, tickY0, sweepX - trailLeft, TICK_H);
+
+        // Bright sweep line
+        g.setColour(trailColour.withAlpha(0.8f));
+        g.drawLine(sweepX, tickY0, sweepX, tickY1, 2.0f);
+    }
+
     // Clip graphics to curve bounds so the curve never draws outside
     g.reduceClipRegion(bounds.toNearestInt());
 

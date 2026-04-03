@@ -743,7 +743,8 @@ class SetNoteChordGroupsCommand : public UndoableCommand {
  */
 class EaseNoteTimingCommand : public UndoableCommand {
   public:
-    EaseNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices, float depth, float skew);
+    EaseNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices, float depth, float skew,
+                          int cycles = 1);
 
     void execute() override;
     void undo() override;
@@ -755,6 +756,7 @@ class EaseNoteTimingCommand : public UndoableCommand {
     ClipId clipId_;
     std::vector<size_t> noteIndices_;
     float depth_, skew_;
+    int cycles_;
     std::vector<double> oldStartBeats_;
     bool executed_ = false;
 };

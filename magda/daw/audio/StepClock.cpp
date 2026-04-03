@@ -99,7 +99,7 @@ int StepClock::advanceStep(int current, int numSteps, Direction dir) {
 
 int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, Rate rate,
                             Direction direction, float swing, int numSteps, StepEvent* events,
-                            int maxEvents, float rampDepth, float rampSkew) {
+                            int maxEvents, float rampDepth, float rampSkew, int rampCycles) {
     if (numSteps <= 0 || maxEvents <= 0)
         return 0;
 
@@ -134,14 +134,25 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
     double blockDurationSecs = static_cast<double>(fc.bufferNumSamples) / sampleRate_;
     bool hasRamp = std::abs(rampDepth) > 0.001f && numSteps > 1;
 
+    int cycles = std::max(1, rampCycles);
+
+    // Helper: apply ramp curve with cycle repetition
+    auto curveWithCycles = [&](double t) -> double {
+        if (cycles == 1)
+            return applyRampCurve(t, rampDepth, rampSkew);
+        double segLen = 1.0 / static_cast<double>(cycles);
+        int seg = std::min(static_cast<int>(t / segLen), cycles - 1);
+        double tLocal = (t - seg * segLen) / segLen;
+        return (seg + applyRampCurve(tLocal, rampDepth, rampSkew)) * segLen;
+    };
+
     // Helper: compute the warped duration for a given step in the cycle
     auto warpedStepDuration = [&](int stepInCycle) -> double {
         if (!hasRamp)
             return stepBeats;
         double t0 = static_cast<double>(stepInCycle) / static_cast<double>(numSteps);
         double t1 = static_cast<double>(stepInCycle + 1) / static_cast<double>(numSteps);
-        return (applyRampCurve(t1, rampDepth, rampSkew) - applyRampCurve(t0, rampDepth, rampSkew)) *
-               cycleBeats;
+        return (curveWithCycles(t1) - curveWithCycles(t0)) * cycleBeats;
     };
 
     // Initialise on first block — quantise to the nearest cycle grid position

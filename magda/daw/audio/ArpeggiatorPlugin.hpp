@@ -67,8 +67,9 @@ class ArpeggiatorPlugin : public MidiDevicePlugin {
     juce::CachedValue<int> octaveRange;
     juce::CachedValue<float> gate;
     juce::CachedValue<float> swing;
-    juce::CachedValue<float> ramp;  // -1.0 to 1.0: bezier depth (perpendicular bow)
-    juce::CachedValue<float> skew;  // -1.0 to 1.0: control-point position offset from centre
+    juce::CachedValue<float> ramp;      // -1.0 to 1.0: bezier depth (perpendicular bow)
+    juce::CachedValue<float> skew;      // -1.0 to 1.0: control-point position offset from centre
+    juce::CachedValue<int> rampCycles;  // 1-8: curve repetitions within one arp cycle
     juce::CachedValue<bool> latch;
     juce::CachedValue<int> velocityMode;
     juce::CachedValue<int> fixedVelocity;
@@ -85,6 +86,10 @@ class ArpeggiatorPlugin : public MidiDevicePlugin {
      *  depth < 0 → bowed below diagonal (back-loaded / exp-like).
      *  Moving skew away from 0.5 creates asymmetric curves. */
     static double applyRampCurve(double t, float depth, float skew);
+
+    /** Current arp step and sequence length for UI (set on audio thread). */
+    std::atomic<int> currentPlayStep_{-1};
+    std::atomic<int> currentSeqLength_{0};
 
   private:
     // --- Audio-thread state ---

@@ -40,7 +40,8 @@ TimeEasePopup::TimeEasePopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     depthSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     depthSlider_.onValueChanged = [this](double value) {
         curveDisplay_.setValues(static_cast<float>(value), curveDisplay_.getSkew());
-        applyPreview(curveDisplay_.getDepth(), curveDisplay_.getSkew());
+        applyPreview(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
+                     juce::roundToInt(cyclesSlider_.getValue()));
     };
     addAndMakeVisible(depthSlider_);
 
@@ -56,15 +57,33 @@ TimeEasePopup::TimeEasePopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     skewSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     skewSlider_.onValueChanged = [this](double value) {
         curveDisplay_.setValues(curveDisplay_.getDepth(), static_cast<float>(value));
-        applyPreview(curveDisplay_.getDepth(), curveDisplay_.getSkew());
+        applyPreview(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
+                     juce::roundToInt(cyclesSlider_.getValue()));
     };
     addAndMakeVisible(skewSlider_);
+
+    // Cycles slider
+    cyclesLabel_.setText("CYCLES", juce::dontSendNotification);
+    cyclesLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    cyclesLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    cyclesLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(cyclesLabel_);
+
+    cyclesSlider_.setRange(1.0, 8.0, 1.0);
+    cyclesSlider_.setValue(1.0, juce::dontSendNotification);
+    cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
+    cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
+    cyclesSlider_.onValueChanged = [this](double) {
+        applyPreview(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
+                     juce::roundToInt(cyclesSlider_.getValue()));
+    };
+    addAndMakeVisible(cyclesSlider_);
 
     // Sync curve → sliders + live preview
     curveDisplay_.onCurveChanged = [this](float depth, float skew) {
         depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
         skewSlider_.setValue(static_cast<double>(skew), juce::dontSendNotification);
-        applyPreview(depth, skew);
+        applyPreview(depth, skew, juce::roundToInt(cyclesSlider_.getValue()));
     };
 
     // Apply button
@@ -76,7 +95,8 @@ TimeEasePopup::TimeEasePopup(magda::ClipId clipId, std::vector<size_t> noteIndic
         // Restore originals so the command captures them for undo
         restoreOriginals();
         if (onApply)
-            onApply(curveDisplay_.getDepth(), curveDisplay_.getSkew());
+            onApply(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
+                    juce::roundToInt(cyclesSlider_.getValue()));
         if (auto* callout = findParentComponentOfClass<juce::CallOutBox>())
             callout->dismiss();
     };
@@ -94,7 +114,7 @@ TimeEasePopup::TimeEasePopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     };
     addAndMakeVisible(cancelButton_);
 
-    setSize(280, 340);
+    setSize(280, 370);
 }
 
 TimeEasePopup::~TimeEasePopup() {
@@ -103,7 +123,7 @@ TimeEasePopup::~TimeEasePopup() {
         restoreOriginals();
 }
 
-void TimeEasePopup::applyPreview(float depth, float skew) {
+void TimeEasePopup::applyPreview(float depth, float skew, int cycles) {
     auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
     if (!clip || clip->type != magda::ClipType::MIDI || originalStartBeats_.size() < 2)
         return;
@@ -115,13 +135,18 @@ void TimeEasePopup::applyPreview(float depth, float skew) {
     if (span < 1e-9)
         return;
 
-    // Apply curve to each note
+    // Apply curve to each note (with cycles)
+    int c = std::max(1, cycles);
+    double segLen = 1.0 / static_cast<double>(c);
     for (size_t i = 0; i < noteIndices_.size() && i < originalStartBeats_.size(); ++i) {
         size_t index = noteIndices_[i];
         if (index >= clip->midiNotes.size())
             continue;
         double t = (originalStartBeats_[i] - minBeat) / span;
-        double tEased = daw::audio::StepClock::applyRampCurve(t, depth, skew);
+        int seg = std::min(static_cast<int>(t / segLen), c - 1);
+        double tLocal = (t - seg * segLen) / segLen;
+        double tLocalEased = daw::audio::StepClock::applyRampCurve(tLocal, depth, skew);
+        double tEased = (seg + tLocalEased) * segLen;
         clip->midiNotes[index].startBeat = minBeat + tEased * span;
     }
 
@@ -159,6 +184,12 @@ void TimeEasePopup::resized() {
     auto skewRow = bounds.removeFromTop(ROW_HEIGHT);
     skewLabel_.setBounds(skewRow.removeFromLeft(LABEL_WIDTH));
     skewSlider_.setBounds(skewRow);
+
+    bounds.removeFromTop(GAP);
+
+    auto cyclesRow = bounds.removeFromTop(ROW_HEIGHT);
+    cyclesLabel_.setBounds(cyclesRow.removeFromLeft(LABEL_WIDTH));
+    cyclesSlider_.setBounds(cyclesRow);
 
     bounds.removeFromTop(GAP);
 

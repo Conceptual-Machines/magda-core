@@ -71,7 +71,8 @@ class StepClock {
      */
     int processBlock(const te::PluginRenderContext& fc, te::Edit& edit, Rate rate,
                      Direction direction, float swing, int numSteps, StepEvent* events,
-                     int maxEvents, float rampDepth = 0.0f, float rampSkew = 0.0f);
+                     int maxEvents, float rampDepth = 0.0f, float rampSkew = 0.0f,
+                     int rampCycles = 1);
 
     /** Current step index within the sequence (for UI display). */
     int getCurrentStep() const {

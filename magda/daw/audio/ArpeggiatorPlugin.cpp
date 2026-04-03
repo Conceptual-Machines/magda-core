@@ -20,6 +20,7 @@ static const juce::Identifier skew("arpSkew");
 static const juce::Identifier latch("arpLatch");
 static const juce::Identifier velocityMode("arpVelMode");
 static const juce::Identifier fixedVelocity("arpFixedVel");
+static const juce::Identifier rampCycles("arpRampCycles");
 }  // namespace ArpIDs
 
 ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : MidiDevicePlugin(info) {
@@ -31,6 +32,7 @@ ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : MidiD
     swing.referTo(state, ArpIDs::swing, um, 0.0f);
     ramp.referTo(state, ArpIDs::ramp, um, 0.0f);
     skew.referTo(state, ArpIDs::skew, um, 0.0f);
+    rampCycles.referTo(state, ArpIDs::rampCycles, um, 1);
     latch.referTo(state, ArpIDs::latch, um, false);
     velocityMode.referTo(state, ArpIDs::velocityMode, um, 0);
     fixedVelocity.referTo(state, ArpIDs::fixedVelocity, um, 100);
@@ -199,6 +201,8 @@ void ArpeggiatorPlugin::resetArpState() {
     lastPlayedVelocity_ = 0;
     lastNoteOffBeat_ = -1.0;
     wasPlaying_ = false;
+    currentPlayStep_.store(-1, std::memory_order_relaxed);
+    currentSeqLength_.store(0, std::memory_order_relaxed);
     clearMidiOutDisplay();
 }
 
@@ -411,8 +415,17 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         double cycleStart = arpOriginBeat_ + cycle * cycleBeats;
 
         if (std::abs(rampVal) > 0.001f && seq.length > 1) {
+            int cyc = juce::jlimit(1, 8, rampCycles.get());
             double tLinear = static_cast<double>(stepInCycle) / static_cast<double>(seq.length);
-            double tCurved = applyRampCurve(tLinear, rampVal, skewVal);
+            double tCurved;
+            if (cyc <= 1) {
+                tCurved = applyRampCurve(tLinear, rampVal, skewVal);
+            } else {
+                double segLen = 1.0 / static_cast<double>(cyc);
+                int seg = std::min(static_cast<int>(tLinear / segLen), cyc - 1);
+                double tLocal = (tLinear - seg * segLen) / segLen;
+                tCurved = (seg + applyRampCurve(tLocal, rampVal, skewVal)) * segLen;
+            }
             return cycleStart + tCurved * cycleBeats;
         }
         return cycleStart + stepInCycle * stepBeats;
@@ -502,6 +515,8 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         }
 
         ++currentStep_;
+        currentPlayStep_.store(currentStep_ % seq.length, std::memory_order_relaxed);
+        currentSeqLength_.store(seq.length, std::memory_order_relaxed);
         stepBeat = computeStepBeat(currentStep_);
     }
 }

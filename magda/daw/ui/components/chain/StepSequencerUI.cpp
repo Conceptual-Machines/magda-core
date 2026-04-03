@@ -324,6 +324,19 @@ StepSequencerUI::StepSequencerUI() {
         }
     };
 
+    setupLabel(cyclesLabel_, "CYC");
+    cyclesLabel_.setJustificationType(juce::Justification::centred);
+    setupSlider(cyclesSlider_, 1.0, 8.0, 1.0);
+    cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
+    cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
+    cyclesSlider_.onValueChanged = [this](double value) {
+        if (plugin_)
+            plugin_->rampCycles = juce::roundToInt(value);
+    };
+    // Reparent cycles controls into curve display so they sit behind the curve painting
+    rampCurveDisplay_.addAndMakeVisible(cyclesLabel_);
+    rampCurveDisplay_.addAndMakeVisible(cyclesSlider_);
+
     // --- MIDI controls ---
     midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::compare_svg,
                                                          BinaryData::compare_svgSize);
@@ -460,6 +473,8 @@ void StepSequencerUI::syncFromPlugin() {
     depthSlider_.setValue(static_cast<double>(plugin_->ramp.get()), juce::dontSendNotification);
     skewSlider_.setValue(static_cast<double>(plugin_->skew.get()), juce::dontSendNotification);
     rampCurveDisplay_.setValues(plugin_->ramp.get(), plugin_->skew.get());
+    cyclesSlider_.setValue(static_cast<double>(plugin_->rampCycles.get()),
+                           juce::dontSendNotification);
     midiThruButton_->setActive(plugin_->midiThru.get());
     repaint();
 }
@@ -480,6 +495,10 @@ void StepSequencerUI::timerCallback() {
     if (step != currentPlayStep_) {
         currentPlayStep_ = step;
         needsRepaint = true;
+        // Update curve display sweep
+        int numSteps = juce::jlimit(1, 32, plugin_->numSteps.get());
+        float pos = (step >= 0) ? static_cast<float>(step) / static_cast<float>(numSteps) : -1.0f;
+        rampCurveDisplay_.setPlaybackPosition(pos, juce::jlimit(1, 8, plugin_->rampCycles.get()));
     }
     // Track step record position for highlight + parent header banner
     bool isRec = plugin_->isStepRecording();
@@ -578,24 +597,30 @@ void StepSequencerUI::resized() {
 
     bounds.removeFromTop(ROW_GAP + 2);
 
-    // Ramp curve: full-width display with small D/S column on the right (labels above)
+    // TIME EASE label + curve display with D/S column on the right (labels above)
     constexpr int LABEL_H = 14;
-    constexpr int RAMP_HEIGHT = CONTROL_ROW_HEIGHT * 4 + LABEL_H * 2;
+    constexpr int CELL_H = CONTROL_ROW_HEIGHT + LABEL_H;
     constexpr int SLIDER_COL_W = 44;
-    auto rampRow = bounds.removeFromTop(RAMP_HEIGHT);
+    rampLabel_.setBounds(bounds.removeFromTop(LABEL_H));
+    auto rampRow = bounds.removeFromTop(CELL_H * 2);
     {
-        rampLabel_.setBounds(rampRow.removeFromLeft(LABEL_WIDTH));
         // Sliders stacked on the right, each with label above
         auto sliderCol = rampRow.removeFromRight(SLIDER_COL_W);
-        auto topCell = sliderCol.removeFromTop(RAMP_HEIGHT / 2);
-        depthLabel_.setBounds(topCell.removeFromTop(LABEL_H));
-        depthSlider_.setBounds(topCell);
-        auto bottomCell = sliderCol;
-        skewLabel_.setBounds(bottomCell.removeFromTop(LABEL_H));
-        skewSlider_.setBounds(bottomCell);
+        auto depthCell = sliderCol.removeFromTop(CELL_H);
+        depthLabel_.setBounds(depthCell.removeFromTop(LABEL_H));
+        depthSlider_.setBounds(depthCell);
+        auto skewCell = sliderCol;
+        skewLabel_.setBounds(skewCell.removeFromTop(LABEL_H));
+        skewSlider_.setBounds(skewCell);
         // Curve fills remaining width
         rampRow.removeFromRight(4);
         rampCurveDisplay_.setBounds(rampRow);
+        // Cycles overlaid inside curve display top-left (local coords, children of curve)
+        constexpr int CYC_W = 40;
+        constexpr int CYC_H = CONTROL_ROW_HEIGHT + LABEL_H;
+        auto cycArea = juce::Rectangle<int>(0, 0, CYC_W, CYC_H);
+        cyclesLabel_.setBounds(cycArea.removeFromTop(LABEL_H));
+        cyclesSlider_.setBounds(cycArea);
     }
 
     bounds.removeFromTop(ROW_GAP);

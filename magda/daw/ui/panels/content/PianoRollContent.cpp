@@ -75,8 +75,9 @@ PianoRollContent::PianoRollContent() {
         auto clipId = noteSel.clipId;
         auto indices = noteSel.noteIndices;
         auto popup = std::make_unique<TimeEasePopup>(clipId, indices);
-        popup->onApply = [clipId, indices](float depth, float skew) {
-            auto cmd = std::make_unique<magda::EaseNoteTimingCommand>(clipId, indices, depth, skew);
+        popup->onApply = [clipId, indices](float depth, float skew, int cycles) {
+            auto cmd = std::make_unique<magda::EaseNoteTimingCommand>(clipId, indices, depth, skew,
+                                                                      cycles);
             magda::UndoManager::getInstance().executeCommand(std::move(cmd));
         };
 

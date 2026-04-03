@@ -1457,8 +1457,12 @@ void SetMidiPitchBendEventHandlesCommand::undo() {
 // ============================================================================
 
 EaseNoteTimingCommand::EaseNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices,
-                                             float depth, float skew)
-    : clipId_(clipId), noteIndices_(std::move(noteIndices)), depth_(depth), skew_(skew) {}
+                                             float depth, float skew, int cycles)
+    : clipId_(clipId),
+      noteIndices_(std::move(noteIndices)),
+      depth_(depth),
+      skew_(skew),
+      cycles_(std::max(1, cycles)) {}
 
 void EaseNoteTimingCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
@@ -1493,7 +1497,8 @@ void EaseNoteTimingCommand::execute() {
     if (span < 1e-9)
         return;  // all notes at same position, nothing to ease
 
-    // Apply curve: remap each note's normalized position
+    // Apply curve: remap each note's normalized position (with cycles)
+    double segLen = 1.0 / static_cast<double>(cycles_);
     for (size_t i = 0; i < noteIndices_.size(); ++i) {
         size_t index = noteIndices_[i];
         if (index >= clip->midiNotes.size())
@@ -1501,7 +1506,10 @@ void EaseNoteTimingCommand::execute() {
 
         double originalBeat = executed_ ? oldStartBeats_[i] : clip->midiNotes[index].startBeat;
         double t = (originalBeat - minBeat) / span;
-        double tEased = daw::audio::StepClock::applyRampCurve(t, depth_, skew_);
+        int seg = std::min(static_cast<int>(t / segLen), cycles_ - 1);
+        double tLocal = (t - seg * segLen) / segLen;
+        double tLocalEased = daw::audio::StepClock::applyRampCurve(tLocal, depth_, skew_);
+        double tEased = (seg + tLocalEased) * segLen;
         clip->midiNotes[index].startBeat = minBeat + tEased * span;
     }
 

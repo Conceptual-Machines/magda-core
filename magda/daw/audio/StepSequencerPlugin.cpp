@@ -26,6 +26,7 @@ static const juce::Identifier stepAccent("accent");
 static const juce::Identifier stepGlide("glide");
 static const juce::Identifier stepTie("tie");
 static const juce::Identifier midiThru("seqMidiThru");
+static const juce::Identifier rampCycles("seqRampCycles");
 }  // namespace SeqIDs
 
 StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
@@ -42,6 +43,7 @@ StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
     ramp.referTo(state, SeqIDs::ramp, um, 0.0f);
     skew.referTo(state, SeqIDs::skew, um, 0.0f);
     midiThru.referTo(state, SeqIDs::midiThru, um, true);
+    rampCycles.referTo(state, SeqIDs::rampCycles, um, 1);
 
     // Register automatable parameters for macro/mod linking
     rateParam = addParam("rate", "Rate", {0.0f, 9.0f, 1.0f});
@@ -372,8 +374,10 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // --- Get step events from the clock ---
     static constexpr int MAX_EVENTS_PER_BLOCK = 16;
     StepClock::StepEvent events[MAX_EVENTS_PER_BLOCK];
-    int eventCount = stepClock_.processBlock(fc, edit, currentRate, currentDir, swingVal, stepCount,
-                                             events, MAX_EVENTS_PER_BLOCK, rampVal, skewVal);
+    int cyclesVal = juce::jlimit(1, 8, rampCycles.get());
+    int eventCount =
+        stepClock_.processBlock(fc, edit, currentRate, currentDir, swingVal, stepCount, events,
+                                MAX_EVENTS_PER_BLOCK, rampVal, skewVal, cyclesVal);
 
     // --- Emit pending note-off (sample countdown) ---
     // Only emit if the countdown fires BEFORE the first step event in this block.

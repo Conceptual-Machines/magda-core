@@ -69,8 +69,9 @@ class StepSequencerPlugin : public MidiDevicePlugin {
     juce::CachedValue<float> gateLength;  // 0-1 normalized (0.1 = staccato, 1.0 = legato)
     juce::CachedValue<int> accentVelocity;
     juce::CachedValue<int> normalVelocity;
-    juce::CachedValue<float> ramp;  // -1.0 to 1.0: bezier timing depth
-    juce::CachedValue<float> skew;  // -1.0 to 1.0: bezier control point offset
+    juce::CachedValue<float> ramp;      // -1.0 to 1.0: bezier timing depth
+    juce::CachedValue<float> skew;      // -1.0 to 1.0: bezier control point offset
+    juce::CachedValue<int> rampCycles;  // 1-8: curve repetitions within one pattern cycle
 
     // --- Automatable parameters (for macro/mod linking) ---
     te::AutomatableParameter::Ptr rateParam, directionParam;
