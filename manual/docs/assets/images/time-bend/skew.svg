@@ -1,0 +1,77 @@
+<svg width="720" height="220" viewBox="0 0 720 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    text { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  </style>
+
+  <!-- Background -->
+  <rect x="10" y="10" width="700" height="200" rx="8" fill="#1e1e22" stroke="#3a3a45" stroke-width="1"/>
+  <text x="360" y="38" text-anchor="middle" fill="#aabbcc" font-size="14" font-weight="600">Skew Parameter (depth = 0.6)</text>
+
+  <!-- Left: Negative skew -->
+  <text x="60" y="68" fill="#aabbcc" font-size="11" font-weight="600">Skew = -0.7</text>
+  <text x="60" y="82" fill="#666" font-size="9">Bend shifts earlier</text>
+
+  <rect x="60" y="90" width="180" height="50" rx="4" fill="#252530"/>
+  <!-- Axes -->
+  <line x1="60" y1="138" x2="240" y2="138" stroke="#3a3a45" stroke-width="0.5"/>
+  <line x1="60" y1="92" x2="60" y2="138" stroke="#3a3a45" stroke-width="0.5"/>
+  <!-- Diagonal -->
+  <line x1="60" y1="138" x2="240" y2="92" stroke="#555" stroke-width="0.5" stroke-dasharray="3,3"/>
+  <!-- Curve: sharp bend early, then gentle -->
+  <path d="M 60 138 C 70 95, 80 92, 240 92" stroke="#7B68EE" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+  <!-- Ticks -->
+  <rect x="60" y="148" width="180" height="12" rx="2" fill="#252530"/>
+  <line x1="60" y1="150" x2="60" y2="158" stroke="#7B68EE" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="70" y1="150" x2="70" y2="158" stroke="#7B68EE" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="82" y1="150" x2="82" y2="158" stroke="#7B68EE" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="100" y1="150" x2="100" y2="158" stroke="#7B68EE" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="130" y1="150" x2="130" y2="158" stroke="#7B68EE" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="165" y1="150" x2="165" y2="158" stroke="#7B68EE" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="200" y1="150" x2="200" y2="158" stroke="#7B68EE" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="240" y1="150" x2="240" y2="158" stroke="#7B68EE" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Center: No skew -->
+  <text x="280" y="68" fill="#aabbcc" font-size="11" font-weight="600">Skew = 0</text>
+  <text x="280" y="82" fill="#666" font-size="9">Symmetric bend</text>
+
+  <rect x="280" y="90" width="180" height="50" rx="4" fill="#252530"/>
+  <line x1="280" y1="138" x2="460" y2="138" stroke="#3a3a45" stroke-width="0.5"/>
+  <line x1="280" y1="92" x2="280" y2="138" stroke="#3a3a45" stroke-width="0.5"/>
+  <line x1="280" y1="138" x2="460" y2="92" stroke="#555" stroke-width="0.5" stroke-dasharray="3,3"/>
+  <!-- Curve: symmetric -->
+  <path d="M 280 138 Q 310 93, 460 92" stroke="#5588aa" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+  <!-- Ticks -->
+  <rect x="280" y="148" width="180" height="12" rx="2" fill="#252530"/>
+  <line x1="280" y1="150" x2="280" y2="158" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="296" y1="150" x2="296" y2="158" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="318" y1="150" x2="318" y2="158" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="348" y1="150" x2="348" y2="158" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="383" y1="150" x2="383" y2="158" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="416" y1="150" x2="416" y2="158" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="440" y1="150" x2="440" y2="158" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="460" y1="150" x2="460" y2="158" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Right: Positive skew -->
+  <text x="500" y="68" fill="#aabbcc" font-size="11" font-weight="600">Skew = 0.7</text>
+  <text x="500" y="82" fill="#666" font-size="9">Bend shifts later</text>
+
+  <rect x="500" y="90" width="180" height="50" rx="4" fill="#252530"/>
+  <line x1="500" y1="138" x2="680" y2="138" stroke="#3a3a45" stroke-width="0.5"/>
+  <line x1="500" y1="92" x2="500" y2="138" stroke="#3a3a45" stroke-width="0.5"/>
+  <line x1="500" y1="138" x2="680" y2="92" stroke="#555" stroke-width="0.5" stroke-dasharray="3,3"/>
+  <!-- Curve: gentle start, sharp bend late -->
+  <path d="M 500 138 C 660 135, 670 95, 680 92" stroke="#dd7744" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+  <!-- Ticks -->
+  <rect x="500" y="148" width="180" height="12" rx="2" fill="#252530"/>
+  <line x1="500" y1="150" x2="500" y2="158" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="540" y1="150" x2="540" y2="158" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="575" y1="150" x2="575" y2="158" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="610" y1="150" x2="610" y2="158" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="638" y1="150" x2="638" y2="158" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="656" y1="150" x2="656" y2="158" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="668" y1="150" x2="668" y2="158" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="680" y1="150" x2="680" y2="158" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

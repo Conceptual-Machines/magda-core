@@ -1,0 +1,88 @@
+<svg width="720" height="260" viewBox="0 0 720 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    text { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  </style>
+
+  <!-- Background -->
+  <rect x="10" y="10" width="700" height="240" rx="8" fill="#1e1e22" stroke="#3a3a45" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="360" y="38" text-anchor="middle" fill="#aabbcc" font-size="14" font-weight="600">Note Redistribution</text>
+
+  <!-- BEFORE row -->
+  <text x="50" y="78" fill="#999" font-size="11" font-weight="600">BEFORE</text>
+  <text x="50" y="92" fill="#666" font-size="9">(evenly spaced)</text>
+
+  <!-- Timeline bar: x=130 to x=670, width=540 -->
+  <!-- 4 beats: beat spacing = 135px. Beats at 130, 265, 400, 535, 670 -->
+  <!-- 8 notes on 8th notes (half-beat = 67.5px): 130, 197.5, 265, 332.5, 400, 467.5, 535, 602.5 -->
+  <!-- Note width = 54px -->
+  <rect x="130" y="68" width="540" height="24" rx="4" fill="#252530"/>
+
+  <!-- Beat markers -->
+  <line x1="130" y1="96" x2="130" y2="102" stroke="#555" stroke-width="1"/>
+  <text x="130" y="112" text-anchor="middle" fill="#555" font-size="8">1</text>
+  <line x1="265" y1="96" x2="265" y2="102" stroke="#555" stroke-width="1"/>
+  <text x="265" y="112" text-anchor="middle" fill="#555" font-size="8">2</text>
+  <line x1="400" y1="96" x2="400" y2="102" stroke="#555" stroke-width="1"/>
+  <text x="400" y="112" text-anchor="middle" fill="#555" font-size="8">3</text>
+  <line x1="535" y1="96" x2="535" y2="102" stroke="#555" stroke-width="1"/>
+  <text x="535" y="112" text-anchor="middle" fill="#555" font-size="8">4</text>
+  <line x1="670" y1="96" x2="670" y2="102" stroke="#555" stroke-width="1"/>
+
+  <!-- 8 even notes on 8th-note grid -->
+  <rect x="130" y="71" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="197.5" y="71" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="265" y="71" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="332.5" y="71" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="400" y="71" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="467.5" y="71" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="535" y="71" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="602.5" y="71" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+
+  <!-- Arrow -->
+  <text x="360" y="140" text-anchor="middle" fill="#5588aa" font-size="18">&#x25BC;</text>
+  <text x="390" y="140" text-anchor="start" fill="#5588aa" font-size="10">depth = 0.6</text>
+
+  <!-- AFTER row -->
+  <text x="50" y="172" fill="#999" font-size="11" font-weight="600">AFTER</text>
+  <text x="50" y="186" fill="#666" font-size="9">(front-loaded)</text>
+
+  <!-- Timeline bar -->
+  <rect x="130" y="162" width="540" height="24" rx="4" fill="#252530"/>
+  <!-- Beat markers -->
+  <line x1="130" y1="190" x2="130" y2="196" stroke="#555" stroke-width="1"/>
+  <text x="130" y="206" text-anchor="middle" fill="#555" font-size="8">1</text>
+  <line x1="265" y1="190" x2="265" y2="196" stroke="#555" stroke-width="1"/>
+  <text x="265" y="206" text-anchor="middle" fill="#555" font-size="8">2</text>
+  <line x1="400" y1="190" x2="400" y2="196" stroke="#555" stroke-width="1"/>
+  <text x="400" y="206" text-anchor="middle" fill="#555" font-size="8">3</text>
+  <line x1="535" y1="190" x2="535" y2="196" stroke="#555" stroke-width="1"/>
+  <text x="535" y="206" text-anchor="middle" fill="#555" font-size="8">4</text>
+  <line x1="670" y1="190" x2="670" y2="196" stroke="#555" stroke-width="1"/>
+
+  <!-- 8 bent notes — front-loaded: clustered at start, spread at end -->
+  <!-- Notes bunch early: small gaps at start, large gaps at end -->
+  <!-- Positions: 130, 157, 189, 232, 292, 376, 492, 670 (note 8 = last beat) -->
+  <rect x="130" y="165" width="22" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="157" y="165" width="26" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="189" y="165" width="34" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="232" y="165" width="44" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="292" y="165" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="376" y="165" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="492" y="165" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+  <rect x="616" y="165" width="54" height="18" rx="3" fill="#5588aa" opacity="0.8"/>
+
+  <!-- Annotation arrows showing compression/expansion -->
+  <path d="M 170 222 L 145 222" stroke="#5588aa" stroke-width="1"/>
+  <path d="M 140 220 L 145 222 L 140 224" stroke="#5588aa" stroke-width="1" fill="none"/>
+  <path d="M 220 222 L 270 222" stroke="#5588aa" stroke-width="1"/>
+  <path d="M 275 220 L 270 222 L 275 224" stroke="#5588aa" stroke-width="1" fill="none"/>
+  <text x="208" y="236" text-anchor="middle" fill="#5588aa" font-size="9">compressed</text>
+
+  <path d="M 490 222 L 440 222" stroke="#dd7744" stroke-width="1"/>
+  <path d="M 435 220 L 440 222 L 435 224" stroke="#dd7744" stroke-width="1" fill="none"/>
+  <path d="M 570 222 L 660 222" stroke="#dd7744" stroke-width="1"/>
+  <path d="M 665 220 L 660 222 L 665 224" stroke="#dd7744" stroke-width="1" fill="none"/>
+  <text x="560" y="236" text-anchor="middle" fill="#dd7744" font-size="9">expanded</text>
+</svg>

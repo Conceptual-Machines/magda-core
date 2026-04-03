@@ -6,6 +6,8 @@ Time Bend is a timing tool that redistributes notes or steps according to a curv
 
 Time Bend maps each note's position within a time span through a curve. Notes that fall on the steep part of the curve move further apart; notes on the flat part bunch together. The overall span stays the same — only the distribution within it changes.
 
+![Note redistribution — before and after](assets/images/time-bend/before-after.svg)
+
 ### Parameters
 
 | Parameter | Range | Description |
@@ -13,6 +15,24 @@ Time Bend maps each note's position within a time span through a curve. Notes th
 | **Depth** | -1.0 to 1.0 | Controls the curve intensity. Positive values front-load notes (they cluster toward the start). Negative values back-load notes (they cluster toward the end). Zero means no effect. |
 | **Skew** | -1.0 to 1.0 | Shifts the curve's inflection point left or right. At zero the curve is symmetric. Negative skew moves the bend earlier; positive skew moves it later. |
 | **Cycles** | 1–8 | Repeats the curve across the time span. At 1 the curve applies once across all notes. Higher values divide the span into equal segments, each shaped by the curve independently. |
+
+### Depth
+
+The depth parameter controls how aggressively notes are compressed or expanded. Positive depth pushes notes toward the start of the span (front-loading), while negative depth pushes them toward the end (back-loading). The curve shows the mapping: where it's steep, notes spread apart; where it's flat, they bunch together.
+
+![Depth — positive vs negative](assets/images/time-bend/curve-concept.svg)
+
+### Skew
+
+The skew parameter shifts where the bend happens within the span. At zero, the bend is symmetric. Negative skew moves the inflection point earlier (sharp bend at the start, gentle tail). Positive skew moves it later (gentle start, sharp bend at the end).
+
+![Skew — shifting the inflection point](assets/images/time-bend/skew.svg)
+
+### Cycles
+
+The cycles parameter repeats the curve across the time span. At 1, a single curve shapes all notes. At higher values, the span is divided into equal segments, each independently shaped by the same curve. This creates repeating rhythmic patterns within a single phrase.
+
+![Cycles — repeating the curve](assets/images/time-bend/cycles.svg)
 
 ### The Curve Display
 

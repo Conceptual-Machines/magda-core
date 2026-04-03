@@ -1,0 +1,77 @@
+<svg width="720" height="320" viewBox="0 0 720 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    text { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  </style>
+
+  <!-- Left panel: Positive depth (front-load) -->
+  <rect x="10" y="10" width="340" height="300" rx="8" fill="#1e1e22" stroke="#3a3a45" stroke-width="1"/>
+  <text x="180" y="38" text-anchor="middle" fill="#aabbcc" font-size="13" font-weight="600">Depth &gt; 0 (front-load)</text>
+
+  <!-- Axes -->
+  <line x1="50" y1="250" x2="310" y2="250" stroke="#3a3a45" stroke-width="1"/>
+  <line x1="50" y1="60" x2="50" y2="250" stroke="#3a3a45" stroke-width="1"/>
+  <text x="180" y="275" text-anchor="middle" fill="#777" font-size="10">Input position (original)</text>
+  <text x="28" y="158" text-anchor="middle" fill="#777" font-size="10" transform="rotate(-90, 28, 158)">Output position (bent)</text>
+
+  <!-- Diagonal (linear) -->
+  <line x1="50" y1="250" x2="310" y2="60" stroke="#555" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="270" y="95" fill="#666" font-size="9">linear</text>
+
+  <!-- Curve (positive depth = above diagonal) -->
+  <path d="M 50 250 Q 100 80, 310 60" stroke="#5588aa" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+  <!-- Annotations -->
+  <!-- Show a sample point mapping -->
+  <circle cx="115" cy="250" r="3" fill="#66AAFF"/>
+  <line x1="115" y1="250" x2="115" y2="130" stroke="#66AAFF" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="115" y1="130" x2="50" y2="130" stroke="#66AAFF" stroke-width="1" stroke-dasharray="3,3"/>
+  <circle cx="115" cy="130" r="3" fill="#66AAFF"/>
+  <circle cx="50" cy="130" r="3" fill="#66AAFF"/>
+
+  <!-- Tick strip: front-loaded -->
+  <rect x="50" y="286" width="260" height="14" rx="2" fill="#252530"/>
+  <line x1="50" y1="288" x2="50" y2="298" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="66" y1="288" x2="66" y2="298" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="86" y1="288" x2="86" y2="298" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="112" y1="288" x2="112" y2="298" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="146" y1="288" x2="146" y2="298" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="190" y1="288" x2="190" y2="298" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="244" y1="288" x2="244" y2="298" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="310" y1="288" x2="310" y2="298" stroke="#5588aa" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="180" y="310" text-anchor="middle" fill="#5588aa" font-size="9">clustered at start, spread at end</text>
+
+  <!-- Right panel: Negative depth (back-load) -->
+  <rect x="370" y="10" width="340" height="300" rx="8" fill="#1e1e22" stroke="#3a3a45" stroke-width="1"/>
+  <text x="540" y="38" text-anchor="middle" fill="#aabbcc" font-size="13" font-weight="600">Depth &lt; 0 (back-load)</text>
+
+  <!-- Axes -->
+  <line x1="410" y1="250" x2="670" y2="250" stroke="#3a3a45" stroke-width="1"/>
+  <line x1="410" y1="60" x2="410" y2="250" stroke="#3a3a45" stroke-width="1"/>
+  <text x="540" y="275" text-anchor="middle" fill="#777" font-size="10">Input position (original)</text>
+
+  <!-- Diagonal (linear) -->
+  <line x1="410" y1="250" x2="670" y2="60" stroke="#555" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="630" y="95" fill="#666" font-size="9">linear</text>
+
+  <!-- Curve (negative depth = below diagonal) -->
+  <path d="M 410 250 Q 620 230, 670 60" stroke="#dd7744" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+  <!-- Sample point mapping -->
+  <circle cx="555" cy="250" r="3" fill="#dd7744"/>
+  <line x1="555" y1="250" x2="555" y2="195" stroke="#dd7744" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="555" y1="195" x2="410" y2="195" stroke="#dd7744" stroke-width="1" stroke-dasharray="3,3"/>
+  <circle cx="555" cy="195" r="3" fill="#dd7744"/>
+  <circle cx="410" cy="195" r="3" fill="#dd7744"/>
+
+  <!-- Tick strip: back-loaded -->
+  <rect x="410" y="286" width="260" height="14" rx="2" fill="#252530"/>
+  <line x1="410" y1="288" x2="410" y2="298" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="476" y1="288" x2="476" y2="298" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="530" y1="288" x2="530" y2="298" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="574" y1="288" x2="574" y2="298" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="608" y1="288" x2="608" y2="298" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="634" y1="288" x2="634" y2="298" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="654" y1="288" x2="654" y2="298" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="670" y1="288" x2="670" y2="298" stroke="#dd7744" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="540" y="310" text-anchor="middle" fill="#dd7744" font-size="9">spread at start, clustered at end</text>
+</svg>
