@@ -64,6 +64,8 @@ nav:
       - 4OSC Synth: devices/4osc.md
       - Chord Engine: devices/chord-engine.md
       - Drum Grid: devices/drum-grid.md
+      - Arpeggiator: devices/arpeggiator.md
+      - Step Sequencer: devices/step-sequencer.md
       - Sampler: devices/sampler.md
   - Modulation:
       - Overview: modulation/overview.md

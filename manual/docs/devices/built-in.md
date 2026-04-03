@@ -8,6 +8,8 @@ MAGDA includes its own custom devices as well as processors from the Tracktion E
 |--------|-------------|
 | **Chord Engine** | Real-time chord detection, suggestion, and AI progression generator. See [Chord Engine](chord-engine.md). |
 | **Drum Grid** | Chain-based drum machine with per-pad FX. See [Drum Grid](drum-grid.md). |
+| **Arpeggiator** | MIDI arpeggiator with pattern, swing, and time bend. See [Arpeggiator](arpeggiator.md). |
+| **Step Sequencer** | Programmable step sequencer with AI pattern generation. See [Step Sequencer](step-sequencer.md). |
 
 ## Tracktion Engine Devices
 

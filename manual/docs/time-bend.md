@@ -48,6 +48,8 @@ During playback (in the Arpeggiator and Step Sequencer), a green sweep animation
 
 ## Piano Roll
 
+![Time Bend popup in the Piano Roll](assets/images/panels/piano-roll-time-bend.png)
+
 Select two or more notes in the [Piano Roll](panels/editors.md#piano-roll) and click the Time Bend button in the editor header bar. A popup appears with the curve display and Depth, Skew, and Cycles sliders.
 
 As you adjust the curve, the selected notes move in real time as a preview. Click **Apply** to confirm — this creates an undoable action, so you can ++ctrl+z++ to revert. Click **Cancel** or close the popup to restore the original positions.
@@ -61,13 +63,13 @@ Time Bend works identically in the [Drum Grid Editor](panels/editors.md#drum-gri
 
 ## Arpeggiator
 
-The [Arpeggiator](devices/built-in.md) has Time Bend built into its device panel. The **Depth**, **Skew**, and **Cycles** sliders sit alongside the curve display in the TIME BEND section.
+The [Arpeggiator](devices/arpeggiator.md) has Time Bend built into its device panel. The **Depth**, **Skew**, and **Cycles** sliders sit alongside the curve display in the TIME BEND section.
 
 In the Arpeggiator, Time Bend affects the timing of arpeggiated notes in real time during playback. The curve reshapes when each step fires within the arpeggio cycle — notes still play in the same order, but the rhythm changes. Depth, Skew, and Cycles can be linked to [Macros](modulation/macros.md) for dynamic, automatable timing modulation.
 
 ## Step Sequencer
 
-The [Step Sequencer](devices/built-in.md) also has Time Bend built into its device panel, working the same way as in the Arpeggiator. The curve redistributes step trigger times within each cycle, turning rigid grid patterns into flowing, organic rhythms.
+The [Step Sequencer](devices/step-sequencer.md) also has Time Bend built into its device panel, working the same way as in the Arpeggiator. The curve redistributes step trigger times within each cycle, turning rigid grid patterns into flowing, organic rhythms.
 
 ## Tips
 
