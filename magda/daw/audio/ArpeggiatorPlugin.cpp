@@ -335,18 +335,21 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     midi.clear();
 
     // --- 3. Handle transport transitions ---
+    // Note: TE briefly toggles isPlaying at loop boundaries, so we only
+    // reset the arp on a genuine stop (isPlaying goes false). On start we
+    // just update the flag — the step counter continues from where it was.
     if (fc.isPlaying && !wasPlaying_) {
-        resetArpState();
         wasPlaying_ = true;
     } else if (!fc.isPlaying && wasPlaying_) {
         sendAllNotesOff(midi);
+        clearHeldNotes();
         resetArpState();
         freeRunSamples_ = 0.0;
         wasPlaying_ = false;
     }
 
-    // --- 4. No held notes? ---
-    if (heldCount_ == 0) {
+    // --- 4. No held notes, or no MIDI input while transport is stopped? ---
+    if (heldCount_ == 0 || (!fc.isPlaying && physicallyHeldCount_ <= 0)) {
         sendAllNotesOff(midi);
         freeRunSamples_ = 0.0;
         return;
