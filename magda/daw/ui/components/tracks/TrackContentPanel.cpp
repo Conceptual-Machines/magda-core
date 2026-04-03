@@ -1645,6 +1645,14 @@ void TrackContentPanel::rebuildClipComponents() {
 }
 
 void TrackContentPanel::updateClipComponentPositions() {
+    // Get visible horizontal range from parent viewport for culling
+    int visibleLeft = 0;
+    int visibleRight = getWidth();
+    if (auto* viewport = findParentComponentOfClass<juce::Viewport>()) {
+        visibleLeft = viewport->getViewPositionX();
+        visibleRight = visibleLeft + viewport->getViewWidth();
+    }
+
     for (auto& clipComp : clipComponents_) {
         const auto* clip = ClipManager::getInstance().getClip(clipComp->getClipId());
         if (!clip) {
@@ -1676,11 +1684,19 @@ void TrackContentPanel::updateClipComponentPositions() {
                                : clip->length * tempoBPM / 60.0;
         int clipWidth = static_cast<int>(clipBeats * currentZoom);
 
+        // Cull clips entirely outside the visible viewport area
+        if (clipX + clipWidth < visibleLeft || clipX > visibleRight) {
+            clipComp->setVisible(false);
+            continue;
+        }
+
         // Inset from track edges
         int clipY = trackArea.getY() + 2;
         int clipHeight = trackArea.getHeight() - 4;
 
-        clipComp->setBounds(clipX, clipY, juce::jmax(10, clipWidth), clipHeight);
+        auto newBounds = juce::Rectangle<int>(clipX, clipY, juce::jmax(10, clipWidth), clipHeight);
+        if (clipComp->getBounds() != newBounds)
+            clipComp->setBounds(newBounds);
         clipComp->setVisible(true);
     }
 }

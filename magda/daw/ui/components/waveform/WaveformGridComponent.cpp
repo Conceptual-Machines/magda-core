@@ -147,10 +147,31 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
             auto audioRect = juce::Rectangle<int>(
                 waveformRect.getX(), waveformRect.getY(),
                 juce::jmin(audioWidthPixels, waveformRect.getWidth()), waveformRect.getHeight());
-            auto drawRect = audioRect.reduced(0, 4);
+
+            // Clip to visible bounds — only draw samples for the on-screen portion
+            auto visibleBounds = getLocalBounds();
+            auto clippedRect = audioRect.getIntersection(visibleBounds);
+            auto drawRect = clippedRect.reduced(0, 4);
+
             if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
-                thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, displayStart,
-                                              displayEnd, waveColour, vertZoom, true);
+                // Adjust time range to match the visible portion
+                double totalDisplayTime = displayEnd - displayStart;
+                int audioLeft = audioRect.getX();
+                int audioWidth = audioRect.getWidth();
+                if (audioWidth > 0 && totalDisplayTime > 0.0) {
+                    double tStart =
+                        displayStart + totalDisplayTime *
+                                           static_cast<double>(clippedRect.getX() - audioLeft) /
+                                           audioWidth;
+                    double tEnd =
+                        displayStart + totalDisplayTime *
+                                           static_cast<double>(clippedRect.getRight() - audioLeft) /
+                                           audioWidth;
+                    tStart = juce::jlimit(displayStart, displayEnd, tStart);
+                    tEnd = juce::jlimit(displayStart, displayEnd, tEnd);
+                    thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, tStart, tEnd,
+                                                  waveColour, vertZoom, true);
+                }
             }
         }
     }
@@ -174,8 +195,28 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
         int endX = waveformRect.getX() + static_cast<int>(remainingEnd * horizontalZoom_);
         auto remainingRect = juce::Rectangle<int>(startX, waveformRect.getY(), endX - startX,
                                                   waveformRect.getHeight());
-        auto drawRect = remainingRect.reduced(0, 4);
+        // Clip to visible bounds
+        auto visibleBounds = getLocalBounds();
+        auto clippedRemaining = remainingRect.getIntersection(visibleBounds);
+        auto drawRect = clippedRemaining.reduced(0, 4);
         if (drawRect.getWidth() > 0 && drawRect.getHeight() > 0) {
+            // Adjust time range to visible portion
+            double totalFileTime = remainingFileEnd - remainingFileStart;
+            int remWidth = remainingRect.getWidth();
+            double visFileStart = remainingFileStart;
+            double visFileEnd = remainingFileEnd;
+            if (remWidth > 0 && totalFileTime > 0.0) {
+                visFileStart =
+                    remainingFileStart +
+                    totalFileTime *
+                        static_cast<double>(clippedRemaining.getX() - remainingRect.getX()) /
+                        remWidth;
+                visFileEnd =
+                    remainingFileStart +
+                    totalFileTime *
+                        static_cast<double>(clippedRemaining.getRight() - remainingRect.getX()) /
+                        remWidth;
+            }
             if (clip.isReversed) {
                 g.saveState();
                 g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, drawRect.getCentreX(),
@@ -183,8 +224,8 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
             }
             // Draw dimmer to indicate it's outside the loop
             auto dimColour = waveColour.withAlpha(0.4f);
-            thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, remainingFileStart,
-                                          remainingFileEnd, dimColour, vertZoom, true);
+            thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, visFileStart, visFileEnd,
+                                          dimColour, vertZoom, true);
             if (clip.isReversed)
                 g.restoreState();
         }

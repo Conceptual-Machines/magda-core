@@ -23,7 +23,7 @@ class TrackContentPanel;
  * - Resize handles (left/right edges)
  * - Selection
  */
-class ClipComponent : public juce::Component, public ClipManagerListener {
+class ClipComponent : public juce::Component, public ClipManagerListener, private juce::Timer {
   public:
     explicit ClipComponent(ClipId clipId, TrackContentPanel* parent);
     ~ClipComponent() override;
@@ -193,6 +193,20 @@ class ClipComponent : public juce::Component, public ClipManagerListener {
 
     // Context menu
     void showContextMenu();
+
+    // Waveform render cache — avoids re-drawing from thumbnail on every paint.
+    // During zoom, the cached image is stretched (cheap blit). A debounce timer
+    // re-renders at full quality after zoom settles.
+    juce::Image waveformCache_;
+    int cachedWidth_ = 0;
+    int cachedHeight_ = 0;
+    size_t cachedClipHash_ = 0;
+    bool waveformCacheDirty_ = true;
+
+    static size_t computeWaveformHash(const ClipInfo& clip);
+    void paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip,
+                              juce::Rectangle<int> waveformArea, double clipDisplayLength);
+    void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipComponent)
 };

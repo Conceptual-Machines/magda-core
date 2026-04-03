@@ -451,9 +451,9 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
         updateVerticalZoomScrollBar();
         updateGridDivisionDisplay();
 
-        playheadComponent->repaint();
-        selectionOverlay->repaint();
-        repaint();
+        // Only repaint the scrollbar area, not the entire view.
+        // Child components (timeline, trackContentPanel, gridOverlay, playhead)
+        // handle their own repaints via their own timelineStateChanged listeners.
     }
 
     // Playhead changes
@@ -1005,9 +1005,6 @@ void MainView::updateContentSizes() {
     trackContentPanel->setVerticalZoom(verticalZoom);
     trackHeadersPanel->setSize(trackHeaderWidth, contentHeight);
     trackHeadersPanel->setVerticalZoom(verticalZoom);
-
-    // Repaint playhead after content size changes
-    playheadComponent->repaint();
 
     // Update both zoom scroll bars
     updateVerticalZoomScrollBar();
