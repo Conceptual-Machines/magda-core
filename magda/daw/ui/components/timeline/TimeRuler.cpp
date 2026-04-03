@@ -687,8 +687,6 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
     // Pass 4: Subdivision labels at musically meaningful positions
     if (subdivLabelBeats > 0.0 && gridAligned) {
-        int subdivsPerBeatForLabel = static_cast<int>(std::round(1.0 / subdivLabelBeats));
-
         // Iterate at the subdivision label level (not at grid resolution)
         long long startSubdivStep = static_cast<long long>(
             std::floor((firstVisibleBeat - barOriginBeats) / subdivLabelBeats));
@@ -738,11 +736,20 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             if (std::abs(x - beatX) < 35 || std::abs(x - nextBeatX) < 35)
                 continue;
 
-            // Zoom-independent label via fixed hierarchy
-            auto label = GridConstants::formatBeatLabel(bar, beatInBar, subdivInBeat);
-            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-            g.setFont(FontManager::getInstance().getUIFont(8.0f));
-            g.drawText(label, x - 30, labelY, 60, labelHeight, juce::Justification::centred);
+            // bar.beat.16th — fixed 16th-note labels only
+            constexpr double k16th = 0.25;
+            constexpr double eps = 0.001;
+            double pos16th = subdivInBeat / k16th;
+            int sixteenth = static_cast<int>(std::round(pos16th));
+            bool isOn16th = std::abs(pos16th - sixteenth) < eps && sixteenth > 0;
+
+            if (isOn16th) {
+                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+                g.setFont(FontManager::getInstance().getUIFont(8.0f));
+                g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
+                               juce::String(sixteenth + 1),
+                           x - 30, labelY, 60, labelHeight, juce::Justification::centred);
+            }
         }
     }
 

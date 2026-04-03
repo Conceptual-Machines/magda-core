@@ -714,15 +714,27 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     }
                 } else {
                     // NO TIME SELECTION → Split at edit cursor
+                    // If clips are selected, split those; otherwise split the clip
+                    // under the cursor on the selected track
                     double splitTime = state.editCursorPosition;
                     if (splitTime >= 0) {
-                        const auto& allClips = clipManager.getArrangementClips();
+                        const auto& selectedClips = selectionManager.getSelectedClips();
                         std::vector<ClipId> clipsToSplit;
-                        for (const auto& clip : allClips) {
-                            if (splitTime > clip.startTime &&
-                                splitTime < clip.startTime + clip.length) {
-                                clipsToSplit.push_back(clip.id);
+
+                        if (!selectedClips.empty()) {
+                            for (auto cid : selectedClips) {
+                                const auto* clip = clipManager.getClip(cid);
+                                if (clip && splitTime > clip->startTime &&
+                                    splitTime < clip->startTime + clip->length) {
+                                    clipsToSplit.push_back(cid);
+                                }
                             }
+                        } else {
+                            // No clip selection — split clip under cursor on selected track
+                            TrackId selectedTrack = selectionManager.getSelectedTrack();
+                            ClipId cid = clipManager.getClipAtPosition(selectedTrack, splitTime);
+                            if (cid != INVALID_CLIP_ID)
+                                clipsToSplit.push_back(cid);
                         }
 
                         if (!clipsToSplit.empty()) {

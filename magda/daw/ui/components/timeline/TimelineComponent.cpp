@@ -956,8 +956,16 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                                static_cast<float>(x), static_cast<float>(tickBottom), 1.0f);
                 }
 
-                // Labels — zoom-independent via GridConstants::formatSubdivSuffix
+                // Labels: bar.beat.16th — fixed 16th-note resolution
+                // Only bars, beats, and 16th notes get labels. Finer ticks = no label.
+                constexpr double k16th = 0.25;
+                constexpr double eps = 0.001;
                 double subdivInBeat = std::fmod(beatInBarFractional, 1.0);
+
+                // Check if this tick falls on a 16th-note boundary
+                double pos16th = subdivInBeat / k16th;
+                int sixteenth = static_cast<int>(std::round(pos16th));
+                bool isOn16th = std::abs(pos16th - sixteenth) < eps && sixteenth > 0;
 
                 if (isBarStart && (bar - 1) % barLabelInterval == 0) {
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
@@ -969,13 +977,15 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
                     g.setFont(FontManager::getInstance().getUIFont(10.0f));
                     g.drawText(juce::String(bar) + "." + juce::String(beatInBar), x - 25, labelY,
                                50, labelHeight, juce::Justification::centredTop);
-                } else if (!isBeatStart && pixelsPerSubdiv >= 30) {
-                    auto label = GridConstants::formatBeatLabel(bar, beatInBar, subdivInBeat);
+                } else if (isOn16th && pixelsPerSubdiv >= 30) {
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
                     g.setFont(FontManager::getInstance().getUIFont(8.0f));
-                    g.drawText(label, x - 30, labelY + 2, 60, labelHeight,
+                    g.drawText(juce::String(bar) + "." + juce::String(beatInBar) + "." +
+                                   juce::String(sixteenth + 1),
+                               x - 30, labelY + 2, 60, labelHeight,
                                juce::Justification::centredTop);
                 }
+                // Finer ticks (32nd, 64th, etc.) get tick marks but no labels
             } else {
                 // Grid doesn't align with bars/beats — draw minor ticks only
                 bool atLoopBorder = hasLoop && (x == loopStartPx || x == loopEndPx);

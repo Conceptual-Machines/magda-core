@@ -57,8 +57,10 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
         // Set beat position for tempo-independent placement
         double bpm = projectBPM > 0.0 ? projectBPM
                                       : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-        if (bpm > 0.0)
+        if (bpm > 0.0) {
             clip.startBeats = startTime * bpm / 60.0;
+            clip.lengthBeats = length * bpm / 60.0;
+        }
         arrangementClips_.push_back(clip);
         resolveOverlaps(clip.id);
     } else {
