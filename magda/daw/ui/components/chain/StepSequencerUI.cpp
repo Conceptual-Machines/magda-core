@@ -288,7 +288,7 @@ StepSequencerUI::StepSequencerUI() {
     };
 
     // --- Ramp curve (time warp) ---
-    setupLabel(rampLabel_, "TIME EASE");
+    setupLabel(rampLabel_, "TIME BEND");
     addAndMakeVisible(rampCurveDisplay_);
     rampCurveDisplay_.onCurveChanged = [this](float depth, float skew) {
         if (plugin_) {
@@ -593,7 +593,7 @@ void StepSequencerUI::resized() {
 
     bounds.removeFromTop(ROW_GAP + 2);
 
-    // TIME EASE label row with CYCLES slider on the right
+    // TIME BEND label row with CYCLES slider on the right
     constexpr int LABEL_H = 14;
     constexpr int CELL_H = CONTROL_ROW_HEIGHT + LABEL_H;
     constexpr int SLIDER_COL_W = 44;

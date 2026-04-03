@@ -22,7 +22,7 @@
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "state/PanelController.hpp"
-#include "ui/components/common/TimeEasePopup.hpp"
+#include "ui/components/common/TimeBendPopup.hpp"
 
 namespace magda {
 
@@ -396,29 +396,29 @@ void BottomPanel::setupHeaderControls() {
     };
     addChildComponent(snapButton_.get());
 
-    // Time ease button (dual icon: off=grey, on=blue when notes selected)
-    easeButton_ = std::make_unique<SvgButton>(
-        "TimeEase", BinaryData::ease_in_out_off_svg, BinaryData::ease_in_out_off_svgSize,
-        BinaryData::ease_in_out_on_svg, BinaryData::ease_in_out_on_svgSize);
-    easeButton_->setTooltip("Time Ease selected notes");
-    easeButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-    easeButton_->setBorderThickness(1.0f);
-    easeButton_->setCornerRadius(6.0f);
-    easeButton_->onClick = [this]() {
+    // Time bend button (dual icon: off=grey, on=blue when notes selected)
+    bendButton_ = std::make_unique<SvgButton>(
+        "TimeBend", BinaryData::time_bend_off_svg, BinaryData::time_bend_off_svgSize,
+        BinaryData::time_bend_on_svg, BinaryData::time_bend_on_svgSize);
+    bendButton_->setTooltip("Time Bend selected notes");
+    bendButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    bendButton_->setBorderThickness(1.0f);
+    bendButton_->setCornerRadius(3.0f);
+    bendButton_->onClick = [this]() {
         const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
         if (!noteSel.isValid() || noteSel.noteIndices.size() < 2)
             return;
         auto clipId = noteSel.clipId;
         auto indices = noteSel.noteIndices;
-        auto popup = std::make_unique<daw::ui::TimeEasePopup>(clipId, indices);
+        auto popup = std::make_unique<daw::ui::TimeBendPopup>(clipId, indices);
         popup->onApply = [clipId, indices](float depth, float skew, int cycles) {
             auto cmd =
-                std::make_unique<EaseNoteTimingCommand>(clipId, indices, depth, skew, cycles);
+                std::make_unique<BendNoteTimingCommand>(clipId, indices, depth, skew, cycles);
             UndoManager::getInstance().executeCommand(std::move(cmd));
         };
-        daw::ui::TimeEasePopup::showAbove(std::move(popup), easeButton_.get());
+        daw::ui::TimeBendPopup::showAbove(std::move(popup), bendButton_.get());
     };
-    addChildComponent(easeButton_.get());
+    addChildComponent(bendButton_.get());
 }
 
 void BottomPanel::setCollapsed(bool collapsed) {
@@ -445,10 +445,10 @@ void BottomPanel::paint(juce::Graphics& g) {
         if (showEditorTabs_) {
             g.fillRect(SIDEBAR_WIDTH, 0, 1, EDITOR_TAB_HEIGHT - 1);
 
-            // Update ease button active state based on note selection
+            // Update bend button active state based on note selection
             const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
             bool hasNotes = noteSel.isValid() && noteSel.noteIndices.size() >= 2;
-            easeButton_->setActive(hasNotes);
+            bendButton_->setActive(hasNotes);
         }
     }
 
@@ -536,12 +536,12 @@ void BottomPanel::resized() {
             tabX += iconSize + 4;
             drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
 
-            // Time ease button centered horizontally in header (wider for icon clarity)
-            int easeW = iconSize * 2;
-            easeButton_->setBounds((headerBounds.getCentreX() - easeW / 2), tabY, easeW, iconSize);
-            easeButton_->setVisible(true);
+            // Time bend button centered horizontally in header
+            bendButton_->setBounds((headerBounds.getCentreX() - iconSize / 2), tabY, iconSize,
+                                   iconSize);
+            bendButton_->setVisible(true);
         } else {
-            easeButton_->setVisible(false);
+            bendButton_->setVisible(false);
         }
     }
 

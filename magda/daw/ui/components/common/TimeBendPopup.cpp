@@ -1,4 +1,4 @@
-#include "TimeEasePopup.hpp"
+#include "TimeBendPopup.hpp"
 
 #include "audio/StepClock.hpp"
 #include "core/ClipManager.hpp"
@@ -11,7 +11,7 @@ static constexpr int PADDING = 8;
 static constexpr int GAP = 4;
 static constexpr int BUTTON_HEIGHT = 26;
 
-TimeEasePopup::TimeEasePopup(magda::ClipId clipId, std::vector<size_t> noteIndices)
+TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndices)
     : clipId_(clipId), noteIndices_(std::move(noteIndices)) {
     // Capture original positions for preview/restore
     auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
@@ -121,13 +121,13 @@ TimeEasePopup::TimeEasePopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     setSize(280, 370 + TITLE_BAR_HEIGHT);
 }
 
-TimeEasePopup::~TimeEasePopup() {
+TimeBendPopup::~TimeBendPopup() {
     // If dismissed without Apply or Cancel (e.g. clicked outside), restore originals
     if (!applied_)
         restoreOriginals();
 }
 
-void TimeEasePopup::applyPreview(float depth, float skew, int cycles) {
+void TimeBendPopup::applyPreview(float depth, float skew, int cycles) {
     auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
     if (!clip || clip->type != magda::ClipType::MIDI || originalStartBeats_.size() < 2)
         return;
@@ -157,7 +157,7 @@ void TimeEasePopup::applyPreview(float depth, float skew, int cycles) {
     magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
 }
 
-void TimeEasePopup::restoreOriginals() {
+void TimeBendPopup::restoreOriginals() {
     auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
     if (!clip || clip->type != magda::ClipType::MIDI)
         return;
@@ -171,7 +171,7 @@ void TimeEasePopup::restoreOriginals() {
     magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
 }
 
-void TimeEasePopup::paint(juce::Graphics& g) {
+void TimeBendPopup::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
     g.fillRoundedRectangle(bounds, 4.0f);
@@ -184,24 +184,24 @@ void TimeEasePopup::paint(juce::Graphics& g) {
     g.fillRect(titleArea);
     g.setColour(DarkTheme::getSecondaryTextColour());
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.drawText("TIME EASE", titleArea.reduced(6, 0), juce::Justification::centredLeft);
+    g.drawText("TIME BEND", titleArea.reduced(6, 0), juce::Justification::centredLeft);
     // Separator
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
     g.drawHorizontalLine(TITLE_BAR_HEIGHT, 0.0f, static_cast<float>(getWidth()));
 }
 
-void TimeEasePopup::mouseDown(const juce::MouseEvent& e) {
+void TimeBendPopup::mouseDown(const juce::MouseEvent& e) {
     if (e.y < TITLE_BAR_HEIGHT)
         dragger_.startDraggingComponent(this, e);
 }
 
-void TimeEasePopup::mouseDrag(const juce::MouseEvent& e) {
+void TimeBendPopup::mouseDrag(const juce::MouseEvent& e) {
     if (e.mouseWasClicked())
         return;
     dragger_.dragComponent(this, e, nullptr);
 }
 
-void TimeEasePopup::showAbove(std::unique_ptr<TimeEasePopup> popup, juce::Component* anchor) {
+void TimeBendPopup::showAbove(std::unique_ptr<TimeBendPopup> popup, juce::Component* anchor) {
     auto* raw = popup.release();
     auto screenBounds = anchor->getScreenBounds();
     int x = screenBounds.getCentreX() - raw->getWidth() / 2;
@@ -212,7 +212,7 @@ void TimeEasePopup::showAbove(std::unique_ptr<TimeEasePopup> popup, juce::Compon
     raw->toFront(true);
 }
 
-void TimeEasePopup::resized() {
+void TimeBendPopup::resized() {
     auto bounds = getLocalBounds();
     bounds.removeFromTop(TITLE_BAR_HEIGHT);
     bounds.reduce(PADDING, PADDING);

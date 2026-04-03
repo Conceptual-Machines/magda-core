@@ -19,6 +19,7 @@ Displayed when a MIDI clip is selected. Provides a grid for editing notes:
     - **Grid resolution** — Draggable numerator/denominator for grid subdivision
     - **AUTO** — Automatically adjust grid resolution based on zoom level
     - **SNAP** — Toggle snap-to-grid
+    - **Time Bend** — Redistribute selected note timing along a curve (see [Time Bend](../time-bend.md#piano-roll))
 
 !!! note "Footer controls"
     - ![bar chart](../assets/images/icons/bar_chart.svg){ width="16" } **Velocity** — Toggle the velocity/MIDI lane at the bottom of the editor
@@ -42,6 +43,7 @@ Displayed when a drum clip is selected or a DrumGrid device is active. Shows a s
     - **Grid resolution** — Draggable numerator/denominator for grid subdivision
     - **AUTO** — Automatically adjust grid resolution based on zoom level
     - **SNAP** — Toggle snap-to-grid
+    - **Time Bend** — Redistribute selected note timing along a curve (see [Time Bend](../time-bend.md#drum-grid-editor))
 
 !!! note "Footer controls"
     - ![bar chart](../assets/images/icons/bar_chart.svg){ width="16" } **Velocity** — Toggle the velocity lane at the bottom of the editor

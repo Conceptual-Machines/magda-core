@@ -1,7 +1,7 @@
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Parabola curve (bottom-left to top-right) -->
   <path d="M 3 18 C 3 17, 7 17, 10 14 C 14 10, 18 5, 21 4" stroke="#66AAFF" stroke-width="1.5" stroke-linecap="round" fill="none"/>
-  <!-- Non-uniform tick marks (eased timing distribution) -->
+  <!-- Non-uniform tick marks (bent timing distribution) -->
   <line x1="4" y1="20" x2="4" y2="22" stroke="#66AAFF" stroke-width="1" stroke-linecap="round"/>
   <line x1="5.5" y1="20" x2="5.5" y2="22" stroke="#66AAFF" stroke-width="1" stroke-linecap="round"/>
   <line x1="7.2" y1="20" x2="7.2" y2="22" stroke="#66AAFF" stroke-width="1" stroke-linecap="round"/>

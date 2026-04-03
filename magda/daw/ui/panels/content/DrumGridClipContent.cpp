@@ -16,7 +16,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/components/common/TimeEasePopup.hpp"
+#include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/NoteComponent.hpp"
 #include "ui/components/pianoroll/NoteGridHost.hpp"

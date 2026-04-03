@@ -70,6 +70,7 @@ nav:
       - Modulators: modulation/modulators.md
       - Macros: modulation/macros.md
       - Linking Parameters: modulation/linking.md
+  - Time Bend: time-bend.md
   - Transport: transport.md
   - Reference:
       - DSL Reference: reference/dsl.md

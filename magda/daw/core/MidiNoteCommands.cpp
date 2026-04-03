@@ -1453,10 +1453,10 @@ void SetMidiPitchBendEventHandlesCommand::undo() {
 }
 
 // ============================================================================
-// EaseNoteTimingCommand
+// BendNoteTimingCommand
 // ============================================================================
 
-EaseNoteTimingCommand::EaseNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices,
+BendNoteTimingCommand::BendNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices,
                                              float depth, float skew, int cycles)
     : clipId_(clipId),
       noteIndices_(std::move(noteIndices)),
@@ -1464,7 +1464,7 @@ EaseNoteTimingCommand::EaseNoteTimingCommand(ClipId clipId, std::vector<size_t> 
       skew_(skew),
       cycles_(std::max(1, cycles)) {}
 
-void EaseNoteTimingCommand::execute() {
+void BendNoteTimingCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
@@ -1495,7 +1495,7 @@ void EaseNoteTimingCommand::execute() {
 
     double span = maxBeat - minBeat;
     if (span < 1e-9)
-        return;  // all notes at same position, nothing to ease
+        return;  // all notes at same position, nothing to bend
 
     // Apply curve: remap each note's normalized position (with cycles)
     double segLen = 1.0 / static_cast<double>(cycles_);
@@ -1517,7 +1517,7 @@ void EaseNoteTimingCommand::execute() {
     executed_ = true;
 }
 
-void EaseNoteTimingCommand::undo() {
+void BendNoteTimingCommand::undo() {
     if (!executed_)
         return;
 

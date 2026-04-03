@@ -736,20 +736,20 @@ class SetNoteChordGroupsCommand : public UndoableCommand {
 };
 
 /**
- * @brief Command for applying ease curve to selected notes' timing.
+ * @brief Command for applying time bend curve to selected notes' timing.
  *
  * Redistributes note start times within their original span using the
- * ramp curve function (same as arpeggiator/step sequencer ease).
+ * ramp curve function (same as arpeggiator/step sequencer time bend).
  */
-class EaseNoteTimingCommand : public UndoableCommand {
+class BendNoteTimingCommand : public UndoableCommand {
   public:
-    EaseNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices, float depth, float skew,
+    BendNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices, float depth, float skew,
                           int cycles = 1);
 
     void execute() override;
     void undo() override;
     juce::String getDescription() const override {
-        return "Time Ease MIDI Notes";
+        return "Time Bend MIDI Notes";
     }
 
   private:

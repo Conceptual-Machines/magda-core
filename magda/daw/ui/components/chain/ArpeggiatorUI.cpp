@@ -70,7 +70,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
         }
     };
     addAndMakeVisible(latchButton_);
-    setupLabel(rampLabel_, "TIME EASE");
+    setupLabel(rampLabel_, "TIME BEND");
     rampCurveDisplay_.setTooltip("Drag the handle to shape note timing within each arpeggio cycle. "
                                  "Double-click to reset.");
     addAndMakeVisible(rampCurveDisplay_);

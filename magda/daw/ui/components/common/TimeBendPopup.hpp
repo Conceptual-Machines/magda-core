@@ -14,16 +14,16 @@
 namespace magda::daw::ui {
 
 /**
- * @brief Popup panel for applying time ease to selected MIDI notes.
+ * @brief Popup panel for applying time bend to selected MIDI notes.
  *
  * Provides real-time preview: as the user drags the curve, notes move live.
  * Apply commits via command (undoable). Cancel/dismiss restores originals.
  * Designed to be shown inside a juce::CallOutBox.
  */
-class TimeEasePopup : public juce::Component {
+class TimeBendPopup : public juce::Component {
   public:
-    TimeEasePopup(magda::ClipId clipId, std::vector<size_t> noteIndices);
-    ~TimeEasePopup() override;
+    TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndices);
+    ~TimeBendPopup() override;
 
     void resized() override;
     void paint(juce::Graphics& g) override;
@@ -34,7 +34,7 @@ class TimeEasePopup : public juce::Component {
     std::function<void(float depth, float skew, int cycles)> onApply;
 
     /** Show as a floating window above the given component. */
-    static void showAbove(std::unique_ptr<TimeEasePopup> popup, juce::Component* anchor);
+    static void showAbove(std::unique_ptr<TimeBendPopup> popup, juce::Component* anchor);
 
   private:
     void applyPreview(float depth, float skew, int cycles);
@@ -58,7 +58,7 @@ class TimeEasePopup : public juce::Component {
     juce::TextButton cancelButton_{"Cancel"};
     juce::ComponentDragger dragger_;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimeEasePopup)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimeBendPopup)
 };
 
 }  // namespace magda::daw::ui
