@@ -59,6 +59,9 @@ class SvgButton : public juce::Button {
     void setBorderThickness(float thickness) {
         borderThickness = thickness;
     }
+    void setCornerRadius(float radius) {
+        cornerRadius = radius;
+    }
 
     // Set button as toggle/active state
     void setActive(bool isActive) {
@@ -91,6 +94,7 @@ class SvgButton : public juce::Button {
     // Border settings
     juce::Colour borderColor;
     float borderThickness = 1.0f;
+    float cornerRadius = 2.0f;
     bool hasBorder = false;
 
     bool active = false;

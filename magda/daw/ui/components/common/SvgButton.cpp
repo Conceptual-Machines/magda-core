@@ -61,8 +61,8 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         // Draw border if set
         if (hasBorder) {
             g.setColour(borderColor);
-            g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f), 2.0f,
-                                   borderThickness);
+            g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f),
+                                   cornerRadius, borderThickness);
         }
 
         // Icons with built-in backgrounds (transport buttons) need no padding;

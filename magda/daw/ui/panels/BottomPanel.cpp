@@ -396,11 +396,14 @@ void BottomPanel::setupHeaderControls() {
     };
     addChildComponent(snapButton_.get());
 
-    // Time ease button
-    easeButton_ = std::make_unique<SvgButton>("TimeEase", BinaryData::easeinout_svg,
-                                              BinaryData::easeinout_svgSize);
+    // Time ease button (dual icon: off=grey, on=blue when notes selected)
+    easeButton_ = std::make_unique<SvgButton>(
+        "TimeEase", BinaryData::ease_in_out_off_svg, BinaryData::ease_in_out_off_svgSize,
+        BinaryData::ease_in_out_on_svg, BinaryData::ease_in_out_on_svgSize);
     easeButton_->setTooltip("Time Ease selected notes");
-    easeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    easeButton_->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+    easeButton_->setBorderThickness(1.0f);
+    easeButton_->setCornerRadius(6.0f);
     easeButton_->onClick = [this]() {
         const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
         if (!noteSel.isValid() || noteSel.noteIndices.size() < 2)
@@ -441,6 +444,11 @@ void BottomPanel::paint(juce::Graphics& g) {
         // Sidebar column divider (for MIDI editor tab icons)
         if (showEditorTabs_) {
             g.fillRect(SIDEBAR_WIDTH, 0, 1, EDITOR_TAB_HEIGHT - 1);
+
+            // Update ease button active state based on note selection
+            const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
+            bool hasNotes = noteSel.isValid() && noteSel.noteIndices.size() >= 2;
+            easeButton_->setActive(hasNotes);
         }
     }
 
