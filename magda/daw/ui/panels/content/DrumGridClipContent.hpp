@@ -96,7 +96,6 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     std::unique_ptr<DrumGridClipGrid> gridComponent_;
     std::unique_ptr<DrumGridRowLabels> rowLabels_;
     std::unique_ptr<magda::SvgButton> controlsToggle_;
-    std::unique_ptr<magda::SvgButton> easeButton_;
 
     void buildPadRows();
     void refreshPadRowNames();

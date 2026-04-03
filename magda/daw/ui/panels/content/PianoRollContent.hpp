@@ -115,7 +115,6 @@ class PianoRollContent : public MidiEditorContent, public magda::SelectionManage
     std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
     std::unique_ptr<magda::SvgButton> velocityToggle_;
-    std::unique_ptr<magda::SvgButton> easeButton_;
 
     // Grid component management
     void setupGridCallbacks();

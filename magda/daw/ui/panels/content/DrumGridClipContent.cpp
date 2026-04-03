@@ -159,11 +159,18 @@ class DrumGridClipGrid : public juce::Component,
     // Refresh note components from clip data
     void refreshNotes() {
         // Preserve selection: pending positions take priority, else keep current indices
+        // Prefer SelectionManager as source of truth (handles duplicate, paste, etc.)
         std::set<size_t> selectedIndices;
         if (pendingSelectPositions_.empty()) {
-            for (const auto& nc : noteComponents_) {
-                if (nc->isSelected())
-                    selectedIndices.insert(nc->getNoteIndex());
+            const auto& noteSel = magda::SelectionManager::getInstance().getNoteSelection();
+            if (noteSel.isValid() && noteSel.clipId == clipId_ && !noteSel.noteIndices.empty()) {
+                for (size_t idx : noteSel.noteIndices)
+                    selectedIndices.insert(idx);
+            } else {
+                for (const auto& nc : noteComponents_) {
+                    if (nc->isSelected())
+                        selectedIndices.insert(nc->getNoteIndex());
+                }
             }
         }
 
@@ -1386,30 +1393,6 @@ DrumGridClipContent::DrumGridClipContent() {
     };
     addAndMakeVisible(controlsToggle_.get());
 
-    // Create time ease button
-    easeButton_ = std::make_unique<magda::SvgButton>("TimeEase", BinaryData::time_ease_svg,
-                                                     BinaryData::time_ease_svgSize);
-    easeButton_->setTooltip("Time Ease selected notes");
-    easeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    easeButton_->onClick = [this]() {
-        const auto& noteSel = magda::SelectionManager::getInstance().getNoteSelection();
-        if (!noteSel.isValid() || noteSel.noteIndices.size() < 2)
-            return;
-
-        auto clipId = noteSel.clipId;
-        auto indices = noteSel.noteIndices;
-        auto popup = std::make_unique<TimeEasePopup>(clipId, indices);
-        popup->onApply = [clipId, indices](float depth, float skew, int cycles) {
-            auto cmd = std::make_unique<magda::EaseNoteTimingCommand>(clipId, indices, depth, skew,
-                                                                      cycles);
-            magda::UndoManager::getInstance().executeCommand(std::move(cmd));
-        };
-
-        auto buttonBounds = easeButton_->getScreenBounds();
-        juce::CallOutBox::launchAsynchronously(std::move(popup), buttonBounds, nullptr);
-    };
-    addAndMakeVisible(easeButton_.get());
-
     // Create row labels
     rowLabels_ = std::make_unique<DrumGridRowLabels>();
     rowLabels_->setRowHeight(ROW_HEIGHT);
@@ -1668,7 +1651,6 @@ void DrumGridClipContent::resized() {
     // Position sidebar icon at the bottom of the sidebar
     int iconSize = 22;
     int iconPadding = (SIDEBAR_WIDTH - iconSize) / 2;
-    easeButton_->setBounds(iconPadding, (getHeight() - iconSize) / 2, iconSize, iconSize);
     controlsToggle_->setBounds(iconPadding, getHeight() - iconSize - iconPadding, iconSize,
                                iconSize);
 

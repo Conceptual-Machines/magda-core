@@ -604,7 +604,7 @@ void StepSequencerUI::resized() {
         cyclesLabel_.setBounds(cyclesArea.removeFromLeft(40));
         cyclesSlider_.setBounds(cyclesArea);
     }
-    auto rampRow = bounds.removeFromTop(CELL_H * 2);
+    auto rampRow = bounds.removeFromTop(CELL_H * 3);
     {
         // Sliders stacked on the right, each with label above
         auto sliderCol = rampRow.removeFromRight(SLIDER_COL_W);

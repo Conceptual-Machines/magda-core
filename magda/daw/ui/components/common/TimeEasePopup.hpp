@@ -27,13 +27,20 @@ class TimeEasePopup : public juce::Component {
 
     void resized() override;
     void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
 
     /** Called when the user clicks Apply with the chosen depth, skew, and cycles. */
     std::function<void(float depth, float skew, int cycles)> onApply;
 
+    /** Show as a floating window above the given component. */
+    static void showAbove(std::unique_ptr<TimeEasePopup> popup, juce::Component* anchor);
+
   private:
     void applyPreview(float depth, float skew, int cycles);
     void restoreOriginals();
+
+    static constexpr int TITLE_BAR_HEIGHT = 22;
 
     magda::ClipId clipId_;
     std::vector<size_t> noteIndices_;
@@ -49,6 +56,7 @@ class TimeEasePopup : public juce::Component {
     LinkableTextSlider cyclesSlider_;
     juce::TextButton applyButton_{"Apply"};
     juce::TextButton cancelButton_{"Cancel"};
+    juce::ComponentDragger dragger_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimeEasePopup)
 };

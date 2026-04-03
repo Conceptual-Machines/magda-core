@@ -1262,15 +1262,22 @@ void PianoRollGridComponent::refreshNotes() {
     pendingSelectPositions_.clear();
 
     // Preserve multi-selection by index (when no pending overrides)
+    // Prefer SelectionManager as source of truth (handles duplicate, paste, etc.)
     struct SavedSel {
         ClipId clipId;
         size_t index;
     };
     std::vector<SavedSel> savedSelection;
     if (selectNoteIndex < 0 && pendingPositions.empty()) {
-        for (const auto& nc : noteComponents_) {
-            if (nc->isSelected())
-                savedSelection.push_back({nc->getSourceClipId(), nc->getNoteIndex()});
+        const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
+        if (noteSel.isValid() && !noteSel.noteIndices.empty()) {
+            for (size_t idx : noteSel.noteIndices)
+                savedSelection.push_back({noteSel.clipId, idx});
+        } else {
+            for (const auto& nc : noteComponents_) {
+                if (nc->isSelected())
+                    savedSelection.push_back({nc->getSourceClipId(), nc->getNoteIndex()});
+            }
         }
     }
 

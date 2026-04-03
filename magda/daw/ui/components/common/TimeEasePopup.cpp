@@ -99,6 +99,8 @@ TimeEasePopup::TimeEasePopup(magda::ClipId clipId, std::vector<size_t> noteIndic
                     juce::roundToInt(cyclesSlider_.getValue()));
         if (auto* callout = findParentComponentOfClass<juce::CallOutBox>())
             callout->dismiss();
+        else
+            delete this;
     };
     addAndMakeVisible(applyButton_);
 
@@ -111,10 +113,12 @@ TimeEasePopup::TimeEasePopup(magda::ClipId clipId, std::vector<size_t> noteIndic
         applied_ = true;  // prevent destructor double-restore
         if (auto* callout = findParentComponentOfClass<juce::CallOutBox>())
             callout->dismiss();
+        else
+            delete this;
     };
     addAndMakeVisible(cancelButton_);
 
-    setSize(280, 370);
+    setSize(280, 370 + TITLE_BAR_HEIGHT);
 }
 
 TimeEasePopup::~TimeEasePopup() {
@@ -168,11 +172,50 @@ void TimeEasePopup::restoreOriginals() {
 }
 
 void TimeEasePopup::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    auto bounds = getLocalBounds().toFloat();
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.fillRoundedRectangle(bounds, 4.0f);
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
+
+    // Title bar
+    auto titleArea = getLocalBounds().removeFromTop(TITLE_BAR_HEIGHT);
+    g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.08f));
+    g.fillRect(titleArea);
+    g.setColour(DarkTheme::getSecondaryTextColour());
+    g.setFont(FontManager::getInstance().getUIFont(10.0f));
+    g.drawText("TIME EASE", titleArea.reduced(6, 0), juce::Justification::centredLeft);
+    // Separator
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER).withAlpha(0.5f));
+    g.drawHorizontalLine(TITLE_BAR_HEIGHT, 0.0f, static_cast<float>(getWidth()));
+}
+
+void TimeEasePopup::mouseDown(const juce::MouseEvent& e) {
+    if (e.y < TITLE_BAR_HEIGHT)
+        dragger_.startDraggingComponent(this, e);
+}
+
+void TimeEasePopup::mouseDrag(const juce::MouseEvent& e) {
+    if (e.mouseWasClicked())
+        return;
+    dragger_.dragComponent(this, e, nullptr);
+}
+
+void TimeEasePopup::showAbove(std::unique_ptr<TimeEasePopup> popup, juce::Component* anchor) {
+    auto* raw = popup.release();
+    auto screenBounds = anchor->getScreenBounds();
+    int x = screenBounds.getCentreX() - raw->getWidth() / 2;
+    int y = screenBounds.getY() - raw->getHeight() - 4;
+    raw->setTopLeftPosition(x, y);
+    raw->addToDesktop(juce::ComponentPeer::windowHasDropShadow);
+    raw->setVisible(true);
+    raw->toFront(true);
 }
 
 void TimeEasePopup::resized() {
-    auto bounds = getLocalBounds().reduced(PADDING);
+    auto bounds = getLocalBounds();
+    bounds.removeFromTop(TITLE_BAR_HEIGHT);
+    bounds.reduce(PADDING, PADDING);
 
     // Slider rows at top
     auto depthRow = bounds.removeFromTop(ROW_HEIGHT);

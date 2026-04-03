@@ -17,9 +17,12 @@
 #include "content/DrumGridClipContent.hpp"
 #include "content/MidiEditorContent.hpp"
 #include "content/PianoRollContent.hpp"
+#include "core/MidiNoteCommands.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "state/PanelController.hpp"
+#include "ui/components/common/TimeEasePopup.hpp"
 
 namespace magda {
 
@@ -392,6 +395,27 @@ void BottomPanel::setupHeaderControls() {
         }
     };
     addChildComponent(snapButton_.get());
+
+    // Time ease button
+    easeButton_ = std::make_unique<SvgButton>("TimeEase", BinaryData::easeinout_svg,
+                                              BinaryData::easeinout_svgSize);
+    easeButton_->setTooltip("Time Ease selected notes");
+    easeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    easeButton_->onClick = [this]() {
+        const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
+        if (!noteSel.isValid() || noteSel.noteIndices.size() < 2)
+            return;
+        auto clipId = noteSel.clipId;
+        auto indices = noteSel.noteIndices;
+        auto popup = std::make_unique<daw::ui::TimeEasePopup>(clipId, indices);
+        popup->onApply = [clipId, indices](float depth, float skew, int cycles) {
+            auto cmd =
+                std::make_unique<EaseNoteTimingCommand>(clipId, indices, depth, skew, cycles);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        };
+        daw::ui::TimeEasePopup::showAbove(std::move(popup), easeButton_.get());
+    };
+    addChildComponent(easeButton_.get());
 }
 
 void BottomPanel::setCollapsed(bool collapsed) {
@@ -503,6 +527,13 @@ void BottomPanel::resized() {
             pianoRollTab_->setBounds(tabX, tabY, iconSize, iconSize);
             tabX += iconSize + 4;
             drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
+
+            // Time ease button centered horizontally in header
+            easeButton_->setBounds((headerBounds.getCentreX() - iconSize / 2), tabY, iconSize,
+                                   iconSize);
+            easeButton_->setVisible(true);
+        } else {
+            easeButton_->setVisible(false);
         }
     }
 

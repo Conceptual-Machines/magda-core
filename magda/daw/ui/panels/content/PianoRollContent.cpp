@@ -62,30 +62,6 @@ PianoRollContent::PianoRollContent() {
     };
     addAndMakeVisible(velocityToggle_.get());
 
-    // Create time ease button (bezier icon)
-    easeButton_ = std::make_unique<magda::SvgButton>("TimeEase", BinaryData::time_ease_svg,
-                                                     BinaryData::time_ease_svgSize);
-    easeButton_->setTooltip("Time Ease selected notes");
-    easeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    easeButton_->onClick = [this]() {
-        const auto& noteSel = magda::SelectionManager::getInstance().getNoteSelection();
-        if (!noteSel.isValid() || noteSel.noteIndices.size() < 2)
-            return;
-
-        auto clipId = noteSel.clipId;
-        auto indices = noteSel.noteIndices;
-        auto popup = std::make_unique<TimeEasePopup>(clipId, indices);
-        popup->onApply = [clipId, indices](float depth, float skew, int cycles) {
-            auto cmd = std::make_unique<magda::EaseNoteTimingCommand>(clipId, indices, depth, skew,
-                                                                      cycles);
-            magda::UndoManager::getInstance().executeCommand(std::move(cmd));
-        };
-
-        auto buttonBounds = easeButton_->getScreenBounds();
-        juce::CallOutBox::launchAsynchronously(std::move(popup), buttonBounds, nullptr);
-    };
-    addAndMakeVisible(easeButton_.get());
-
     // Create keyboard component
     keyboard_ = std::make_unique<magda::PianoRollKeyboard>();
     keyboard_->setNoteHeight(noteHeight_);
@@ -607,8 +583,6 @@ void PianoRollContent::resized() {
     // Chord toggle at top of sidebar — vertically centered in chord row height
     int chordToggleY = showChordRow_ ? (CHORD_ROW_HEIGHT - iconSize) / 2 : padding;
     chordToggle_->setBounds(padding, chordToggleY, iconSize, iconSize);
-    // Time ease button centered vertically in sidebar
-    easeButton_->setBounds(padding, (getHeight() - iconSize) / 2, iconSize, iconSize);
     // Velocity toggle at bottom
     velocityToggle_->setBounds(padding, getHeight() - iconSize - padding, iconSize, iconSize);
 

@@ -75,6 +75,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/tree.svg
     ../../assets/icons/bezier.svg
     ../../assets/icons/time_ease.svg
+    ../../assets/icons/ease-in-out.svg
     ../../assets/icons/chevron_right.svg
     ../../assets/icons/chevron_down.svg
     ../../assets/icons/curve.svg
