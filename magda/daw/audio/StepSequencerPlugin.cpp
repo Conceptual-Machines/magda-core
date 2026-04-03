@@ -25,6 +25,7 @@ static const juce::Identifier stepGate("gate");
 static const juce::Identifier stepAccent("accent");
 static const juce::Identifier stepGlide("glide");
 static const juce::Identifier stepTie("tie");
+static const juce::Identifier midiThru("seqMidiThru");
 }  // namespace SeqIDs
 
 StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
@@ -40,6 +41,7 @@ StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
     normalVelocity.referTo(state, SeqIDs::normalVelocity, um, 90);
     ramp.referTo(state, SeqIDs::ramp, um, 0.0f);
     skew.referTo(state, SeqIDs::skew, um, 0.0f);
+    midiThru.referTo(state, SeqIDs::midiThru, um, true);
 
     // Register automatable parameters for macro/mod linking
     rateParam = addParam("rate", "Rate", {0.0f, 9.0f, 1.0f});
@@ -277,6 +279,12 @@ void StepSequencerPlugin::loadStepsFromState() {
     }
 }
 
+void StepSequencerPlugin::setStepRecording(bool enabled) {
+    stepRecording_.store(enabled, std::memory_order_relaxed);
+    if (enabled)
+        stepRecordPosition_.store(0, std::memory_order_relaxed);
+}
+
 // =============================================================================
 // Audio thread
 // =============================================================================
@@ -290,8 +298,29 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
     auto& midi = *fc.bufferForMidiMessages;
 
-    // Step sequencer ignores incoming MIDI — it generates its own pattern
-    midi.clear();
+    // --- Step recording: incoming note-on → record to current step, advance ---
+    if (stepRecording_.load(std::memory_order_relaxed)) {
+        int maxSteps = juce::jlimit(1, MAX_STEPS, numSteps.get());
+        for (auto& msg : midi) {
+            if (msg.isNoteOn()) {
+                int pos = stepRecordPosition_.load(std::memory_order_relaxed);
+                if (pos < maxSteps) {
+                    int note = msg.getNoteNumber();
+                    // Post to message thread via async lambda
+                    int capturedPos = pos;
+                    juce::MessageManager::callAsync([this, capturedPos, note] {
+                        setStepNote(capturedPos, note);
+                        setStepGate(capturedPos, true);
+                    });
+                    stepRecordPosition_.store(pos + 1, std::memory_order_relaxed);
+                }
+            }
+        }
+    }
+
+    // Keep incoming MIDI for thru, or clear if thru is off
+    if (!midiThru.get())
+        midi.clear();
 
     // Only run when transport is playing
     if (!fc.isPlaying) {

@@ -97,6 +97,19 @@ class StepSequencerPlugin : public MidiDevicePlugin {
     /** Current playback step index for UI highlight (-1 if not playing). */
     std::atomic<int> currentPlayStep_{-1};
 
+    /** MIDI thru: pass incoming MIDI to downstream plugins. */
+    juce::CachedValue<bool> midiThru;
+
+    /** Step record mode: incoming notes are recorded to steps sequentially. */
+    std::atomic<bool> stepRecording_{false};
+    bool isStepRecording() const {
+        return stepRecording_.load(std::memory_order_relaxed);
+    }
+    void setStepRecording(bool enabled);
+
+    /** Current step record position (for UI). */
+    std::atomic<int> stepRecordPosition_{0};
+
   private:
     // Step clock (handles timing, transport, swing, direction)
     StepClock stepClock_;

@@ -68,6 +68,10 @@ class StepSequencerUI : public juce::Component,
     juce::Label skewLabel_;
     LinkableTextSlider skewSlider_;
 
+    // --- MIDI controls ---
+    std::unique_ptr<magda::SvgButton> midiThruButton_;
+    std::unique_ptr<magda::SvgButton> stepRecordButton_;
+
     // --- Pattern generation ---
     std::unique_ptr<magda::SvgButton> randomButton_;
     juce::TextButton aiButton_{"AI"};

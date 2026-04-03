@@ -45,8 +45,8 @@ struct ParameterInfo {
     std::vector<juce::String> choices;  // e.g., {"Off", "Low", "High"}
 
     // Modulation constraints
-    bool modulatable = true;        // Can mods affect this parameter?
-    bool bipolarModulation = true;  // Can mod go negative? (most do)
+    bool modulatable = true;         // Can mods affect this parameter?
+    bool bipolarModulation = false;  // Default unipolar; set true for params that need bipolar
 
     // Default constructor
     ParameterInfo() = default;
