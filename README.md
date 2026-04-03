@@ -88,6 +88,48 @@ The project includes automated GitHub Actions workflows:
 
 See [docs/AUTOMATED_WORKFLOWS.md](docs/AUTOMATED_WORKFLOWS.md) for details on automated analysis and periodic workflows.
 
+## AI Providers
+
+MAGDA supports local inference through `llama.cpp` and cloud-backed providers configured from `Settings > AI Settings`.
+
+### Codex Integration
+
+MAGDA includes a Codex cloud provider for users who authenticate with a ChatGPT account and want to use the Codex Responses backend directly from the app.
+
+What the integration does:
+
+- Adds a `Codex` provider in `AI Settings > Cloud`
+- Supports browser-based OAuth login from the app
+- Stores the resulting access token, refresh token, account id, and expiry in the MAGDA config
+- Refreshes the access token automatically when needed
+- Routes Codex requests through the Responses-style backend at `https://chatgpt.com/backend-api/codex/responses`
+
+### Codex Setup
+
+1. Open `Settings > AI Settings > Cloud`
+2. Select `Codex`
+3. Click `Login`
+4. Complete the browser login flow
+5. After login succeeds, MAGDA automatically switches the active cloud preset to `Cloud (Codex)`
+
+You can also override the provider `Base URL` and `Model` from the same page if needed.
+
+### Supported Codex Models
+
+The Codex provider is configured for Codex-compatible model ids, not standard OpenAI API chat model ids.
+
+- `gpt-5-codex`
+- `gpt-5.2-codex`
+- `o4-mini`
+
+Older values such as `gpt-5-mini` or `gpt-4o-mini` are normalized to Codex-compatible defaults when possible.
+
+### Notes
+
+- Codex requests use the app's cloud provider settings rather than per-agent API keys
+- The Codex backend does not accept all official Responses API parameters, so MAGDA omits incompatible fields for this provider
+- The `juce-llm` submodule contains the transport changes required for Codex-specific headers, payload shape, and streaming event parsing
+
 ## Security
 
 MAGDA takes security seriously. The repository implements comprehensive security measures:
