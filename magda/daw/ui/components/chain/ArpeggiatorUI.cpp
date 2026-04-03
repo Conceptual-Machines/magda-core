@@ -129,8 +129,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
         rampCurveDisplay_.setValues(rampCurveDisplay_.getDepth(), static_cast<float>(value));
     };
 
-    setupLabel(cyclesLabel_, "CYC");
-    cyclesLabel_.setJustificationType(juce::Justification::centred);
+    setupLabel(cyclesLabel_, "CYCLES");
     setupSlider(cyclesSlider_, 1.0, 8.0, 1.0);
     cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
@@ -138,9 +137,6 @@ ArpeggiatorUI::ArpeggiatorUI() {
         if (plugin_)
             plugin_->rampCycles = juce::roundToInt(value);
     };
-    // Reparent cycles controls into curve display so they sit behind the curve painting
-    rampCurveDisplay_.addAndMakeVisible(cyclesLabel_);
-    rampCurveDisplay_.addAndMakeVisible(cyclesSlider_);
 
     setupLabel(velModeLabel_, "VEL MODE");
     setupCombo(velModeCombo_);
@@ -303,18 +299,15 @@ void ArpeggiatorUI::resized() {
     }
     bounds.removeFromTop(ROW_GAP);
     auto rampLabelRow = bounds.removeFromTop(ROW_HEIGHT);
-    rampLabel_.setBounds(rampLabelRow);
-    bounds.removeFromTop(ROW_GAP);
-    if (bounds.getHeight() > 20) {
-        rampCurveDisplay_.setBounds(bounds);
-        // Cycles overlaid inside curve display top-left (local coords, children of curve)
-        constexpr int CYC_W = 40;
-        constexpr int CYC_LABEL_H = 14;
-        constexpr int CYC_H = ROW_HEIGHT + CYC_LABEL_H;
-        auto cycArea = juce::Rectangle<int>(0, 0, CYC_W, CYC_H);
-        cyclesLabel_.setBounds(cycArea.removeFromTop(CYC_LABEL_H));
-        cyclesSlider_.setBounds(cycArea);
+    {
+        auto cyclesArea = rampLabelRow.removeFromRight(100);
+        rampLabel_.setBounds(rampLabelRow);
+        cyclesLabel_.setBounds(cyclesArea.removeFromLeft(50));
+        cyclesSlider_.setBounds(cyclesArea);
     }
+    bounds.removeFromTop(ROW_GAP);
+    if (bounds.getHeight() > 20)
+        rampCurveDisplay_.setBounds(bounds);
 }
 
 void ArpeggiatorUI::setupLabel(juce::Label& label, const juce::String& text) {

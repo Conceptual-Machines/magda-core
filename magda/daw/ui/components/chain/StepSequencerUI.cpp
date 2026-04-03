@@ -324,8 +324,7 @@ StepSequencerUI::StepSequencerUI() {
         }
     };
 
-    setupLabel(cyclesLabel_, "CYC");
-    cyclesLabel_.setJustificationType(juce::Justification::centred);
+    setupLabel(cyclesLabel_, "CYCLES");
     setupSlider(cyclesSlider_, 1.0, 8.0, 1.0);
     cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
@@ -333,9 +332,6 @@ StepSequencerUI::StepSequencerUI() {
         if (plugin_)
             plugin_->rampCycles = juce::roundToInt(value);
     };
-    // Reparent cycles controls into curve display so they sit behind the curve painting
-    rampCurveDisplay_.addAndMakeVisible(cyclesLabel_);
-    rampCurveDisplay_.addAndMakeVisible(cyclesSlider_);
 
     // --- MIDI controls ---
     midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::compare_svg,
@@ -597,11 +593,17 @@ void StepSequencerUI::resized() {
 
     bounds.removeFromTop(ROW_GAP + 2);
 
-    // TIME EASE label + curve display with D/S column on the right (labels above)
+    // TIME EASE label row with CYCLES slider on the right
     constexpr int LABEL_H = 14;
     constexpr int CELL_H = CONTROL_ROW_HEIGHT + LABEL_H;
     constexpr int SLIDER_COL_W = 44;
-    rampLabel_.setBounds(bounds.removeFromTop(LABEL_H));
+    {
+        auto labelRow = bounds.removeFromTop(LABEL_H);
+        auto cyclesArea = labelRow.removeFromRight(80);
+        rampLabel_.setBounds(labelRow);
+        cyclesLabel_.setBounds(cyclesArea.removeFromLeft(40));
+        cyclesSlider_.setBounds(cyclesArea);
+    }
     auto rampRow = bounds.removeFromTop(CELL_H * 2);
     {
         // Sliders stacked on the right, each with label above
@@ -615,12 +617,6 @@ void StepSequencerUI::resized() {
         // Curve fills remaining width
         rampRow.removeFromRight(4);
         rampCurveDisplay_.setBounds(rampRow);
-        // Cycles overlaid inside curve display top-left (local coords, children of curve)
-        constexpr int CYC_W = 40;
-        constexpr int CYC_H = CONTROL_ROW_HEIGHT + LABEL_H;
-        auto cycArea = juce::Rectangle<int>(0, 0, CYC_W, CYC_H);
-        cyclesLabel_.setBounds(cycArea.removeFromTop(LABEL_H));
-        cyclesSlider_.setBounds(cycArea);
     }
 
     bounds.removeFromTop(ROW_GAP);
