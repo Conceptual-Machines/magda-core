@@ -127,10 +127,22 @@ void Config::save() {
         }
         aiObj->setProperty("agents", juce::var(agentsObj));
 
+        auto* providersObj = new juce::DynamicObject();
         auto* credsObj = new juce::DynamicObject();
-        for (const auto& [provider, key] : aiCredentials) {
-            credsObj->setProperty(juce::String(provider), toJuceString(key));
+        for (const auto& [provider, cfg] : aiProviderConfigs) {
+            auto* providerObj = new juce::DynamicObject();
+            providerObj->setProperty("apiKey", toJuceString(cfg.apiKey));
+            providerObj->setProperty("baseUrl", toJuceString(cfg.baseUrl));
+            providerObj->setProperty("model", toJuceString(cfg.model));
+            providerObj->setProperty("refreshToken", toJuceString(cfg.refreshToken));
+            providerObj->setProperty("accountId", toJuceString(cfg.accountId));
+            providerObj->setProperty("expiresAtUnixSeconds",
+                                     juce::var(static_cast<int64_t>(cfg.expiresAtUnixSeconds)));
+            providersObj->setProperty(juce::String(provider), juce::var(providerObj));
+            if (!cfg.apiKey.empty())
+                credsObj->setProperty(juce::String(provider), toJuceString(cfg.apiKey));
         }
+        aiObj->setProperty("providers", juce::var(providersObj));
         aiObj->setProperty("credentials", juce::var(credsObj));
         aiObj->setProperty("localLlamaUrl", toJuceString(localLlamaUrl));
         aiObj->setProperty("localModelPath", toJuceString(localModelPath));
@@ -364,15 +376,42 @@ void Config::load() {
                 localLlamaContextSize =
                     static_cast<int>(aiObj->getProperty("localLlamaContextSize"));
 
-            // Load per-provider credentials
+            aiProviderConfigs.clear();
+
+            // Load per-provider settings
+            auto providersVar = aiObj->getProperty("providers");
+            if (auto* providersObj = providersVar.getDynamicObject()) {
+                for (const auto& prop : providersObj->getProperties()) {
+                    auto provider = prop.name.toString().toStdString();
+                    AIProviderConfig cfg;
+                    if (auto* providerObj = prop.value.getDynamicObject()) {
+                        cfg.apiKey = providerObj->getProperty("apiKey").toString().toStdString();
+                        cfg.baseUrl = providerObj->getProperty("baseUrl").toString().toStdString();
+                        cfg.model = providerObj->getProperty("model").toString().toStdString();
+                        cfg.refreshToken =
+                            providerObj->getProperty("refreshToken").toString().toStdString();
+                        cfg.accountId =
+                            providerObj->getProperty("accountId").toString().toStdString();
+                        cfg.expiresAtUnixSeconds =
+                            static_cast<int64_t>(providerObj->getProperty("expiresAtUnixSeconds"));
+                    } else {
+                        cfg.apiKey = prop.value.toString().toStdString();
+                    }
+                    if (!cfg.apiKey.empty() || !cfg.baseUrl.empty() || !cfg.model.empty() ||
+                        !cfg.refreshToken.empty() || !cfg.accountId.empty() ||
+                        cfg.expiresAtUnixSeconds != 0)
+                        aiProviderConfigs[provider] = cfg;
+                }
+            }
+
+            // Load legacy per-provider credentials
             auto credsVar = aiObj->getProperty("credentials");
             if (auto* credsObj = credsVar.getDynamicObject()) {
-                aiCredentials.clear();
                 for (const auto& prop : credsObj->getProperties()) {
                     auto provider = prop.name.toString().toStdString();
                     auto key = prop.value.toString().toStdString();
                     if (!key.empty())
-                        aiCredentials[provider] = key;
+                        aiProviderConfigs[provider].apiKey = key;
                 }
             }
         }

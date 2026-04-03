@@ -351,6 +351,15 @@ class Config {
         std::string model;
     };
 
+    struct AIProviderConfig {
+        std::string apiKey;
+        std::string baseUrl;
+        std::string model;
+        std::string refreshToken;
+        std::string accountId;
+        int64_t expiresAtUnixSeconds = 0;
+    };
+
     std::string getAIPreset() const {
         return aiPreset;
     }
@@ -373,17 +382,26 @@ class Config {
     }
 
     // Per-provider API credentials (provider name → API key)
-    std::string getAICredential(const std::string& provider) const {
-        auto it = aiCredentials.find(provider);
-        if (it != aiCredentials.end())
+    AIProviderConfig getAIProviderConfig(const std::string& provider) const {
+        auto it = aiProviderConfigs.find(provider);
+        if (it != aiProviderConfigs.end())
             return it->second;
         return {};
     }
-    void setAICredential(const std::string& provider, const std::string& key) {
-        aiCredentials[provider] = key;
+    void setAIProviderConfig(const std::string& provider, const AIProviderConfig& config) {
+        aiProviderConfigs[provider] = config;
     }
-    const std::map<std::string, std::string>& getAllAICredentials() const {
-        return aiCredentials;
+    const std::map<std::string, AIProviderConfig>& getAllAIProviderConfigs() const {
+        return aiProviderConfigs;
+    }
+
+    std::string getAICredential(const std::string& provider) const {
+        return getAIProviderConfig(provider).apiKey;
+    }
+    void setAICredential(const std::string& provider, const std::string& key) {
+        auto cfg = getAIProviderConfig(provider);
+        cfg.apiKey = key;
+        setAIProviderConfig(provider, cfg);
     }
 
     /** Resolve the API key for an agent: per-agent key first, then credential by provider. */
@@ -690,7 +708,7 @@ class Config {
         {"command", {"llama_local", "", "", ""}},
         {"music", {"llama_local", "", "", ""}},
     };
-    std::map<std::string, std::string> aiCredentials;  // provider → API key
+    std::map<std::string, AIProviderConfig> aiProviderConfigs;  // provider override settings
     std::string localLlamaUrl = "http://127.0.0.1:8080/v1";
     std::string localModelPath;
     std::string localLlamaBinary;  // empty = search PATH

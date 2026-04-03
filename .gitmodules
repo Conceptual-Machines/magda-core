@@ -1,13 +1,13 @@
 [submodule "third_party/tracktion_engine"]
 	path = third_party/tracktion_engine
-	url = https://github.com/Conceptual-Machines/tracktion_engine.git
+	url = https://github.com/LuigiElleBalotta/tracktion_engine.git
 	branch = magda_minimal
 [submodule "third_party/asiosdk"]
 	path = third_party/asiosdk
 	url = https://github.com/audiosdk/asio.git
 [submodule "third_party/juce-llm"]
 	path = third_party/juce-llm
-	url = https://github.com/Conceptual-Machines/juce-llm.git
+	url = https://github.com/LuigiElleBalotta/juce-llm.git
 [submodule "third_party/llama.cpp"]
 	path = third_party/llama.cpp
 	url = https://github.com/ggml-org/llama.cpp.git

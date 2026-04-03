@@ -6,10 +6,13 @@
 #include "../../../agents/llm_config_utils.hpp"
 #include "../../../agents/llm_presets.hpp"
 #include "../../../agents/model_downloader.hpp"
+#include "../../../agents/openai_codex_auth.hpp"
 #include "../../core/Config.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+
+#include <functional>
 
 namespace magda {
 
@@ -56,6 +59,8 @@ const std::vector<ProviderInfo>& getKnownProviders() {
     static const std::vector<ProviderInfo> providers = {
         {magda::provider::OPENAI, "OpenAI", magda::provider::OPENAI, "", magda::model::GPT_4_1_MINI,
          BinaryData::openai_svg, BinaryData::openai_svgSize},
+        {magda::provider::OPENAI_CODEX, "Codex", magda::provider::OPENAI_CODEX, "",
+         magda::model::CODEX_GPT_5_CODEX, BinaryData::openai_svg, BinaryData::openai_svgSize},
         {magda::provider::ANTHROPIC, "Anthropic", magda::provider::ANTHROPIC, "",
          magda::model::CLAUDE_HAIKU, BinaryData::anthropic_svg, BinaryData::anthropic_svgSize},
         {magda::provider::GEMINI, "Gemini", magda::provider::GEMINI, "", magda::model::GEMINI_FLASH,
@@ -91,6 +96,8 @@ const ProviderInfo* findProviderInfo(const std::string& id) {
 
 class AISettingsDialog::CloudPage : public juce::Component {
   public:
+    std::function<void()> onSettingsChanged;
+
     CloudPage() {
         // Provider selector
         providerLabel_.setText("Provider", juce::dontSendNotification);
@@ -110,8 +117,25 @@ class AISettingsDialog::CloudPage : public juce::Component {
             }
         }
         providerCombo_.setSelectedId(1, juce::dontSendNotification);
+        providerCombo_.onChange = [this]() { updateEditorHints(); };
         styleCombo(providerCombo_);
         addAndMakeVisible(providerCombo_);
+
+        // Base URL input
+        baseUrlLabel_.setText("Base URL", juce::dontSendNotification);
+        styleLabel(baseUrlLabel_);
+        addAndMakeVisible(baseUrlLabel_);
+
+        styleEditor(baseUrlEditor_, "Optional override");
+        addAndMakeVisible(baseUrlEditor_);
+
+        // Model input
+        modelLabel_.setText("Model", juce::dontSendNotification);
+        styleLabel(modelLabel_);
+        addAndMakeVisible(modelLabel_);
+
+        styleEditor(modelEditor_, "Optional override");
+        addAndMakeVisible(modelEditor_);
 
         // API key input
         keyLabel_.setText("API Key", juce::dontSendNotification);
@@ -126,10 +150,15 @@ class AISettingsDialog::CloudPage : public juce::Component {
         testBtn_.onClick = [this]() { testKey(); };
         addAndMakeVisible(testBtn_);
 
+        loginBtn_.setButtonText("Login");
+        loginBtn_.onClick = [this]() { loginCodex(); };
+        addAndMakeVisible(loginBtn_);
+
         // Status label
         styleLabel(statusLabel_, 11.0f);
         statusLabel_.setColour(juce::Label::textColourId,
                                DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        statusLabel_.setJustificationType(juce::Justification::topLeft);
         addAndMakeVisible(statusLabel_);
 
         // Add/Save button
@@ -158,10 +187,24 @@ class AISettingsDialog::CloudPage : public juce::Component {
         providerCombo_.setBounds(row.reduced(0, 2));
         bounds.removeFromTop(4);
 
+        // Base URL row
+        row = bounds.removeFromTop(rowH);
+        baseUrlLabel_.setBounds(row.removeFromLeft(labelW));
+        baseUrlEditor_.setBounds(row.reduced(0, 1));
+        bounds.removeFromTop(4);
+
+        // Model row
+        row = bounds.removeFromTop(rowH);
+        modelLabel_.setBounds(row.removeFromLeft(labelW));
+        modelEditor_.setBounds(row.reduced(0, 1));
+        bounds.removeFromTop(4);
+
         // API key row
         row = bounds.removeFromTop(rowH);
         keyLabel_.setBounds(row.removeFromLeft(labelW));
         testBtn_.setBounds(row.removeFromRight(50).reduced(2, 2));
+        row.removeFromRight(4);
+        loginBtn_.setBounds(row.removeFromRight(60).reduced(2, 2));
         row.removeFromRight(4);
         addBtn_.setBounds(row.removeFromRight(50).reduced(2, 2));
         row.removeFromRight(4);
@@ -169,7 +212,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
         bounds.removeFromTop(2);
 
         // Status
-        statusLabel_.setBounds(bounds.removeFromTop(18).withTrimmedLeft(labelW));
+        statusLabel_.setBounds(bounds.removeFromTop(36).withTrimmedLeft(labelW));
         bounds.removeFromTop(8);
 
         // Registered providers list
@@ -220,37 +263,50 @@ class AISettingsDialog::CloudPage : public juce::Component {
         ownedLabels_.clear();
         ownedButtons_.clear();
 
-        for (const auto& [provider, key] : config.getAllAICredentials()) {
-            if (key.empty())
+        providerConfigs_.clear();
+        for (const auto& [provider, providerCfg] : config.getAllAIProviderConfigs()) {
+            if (providerCfg.apiKey.empty() && providerCfg.baseUrl.empty() &&
+                providerCfg.model.empty() && providerCfg.refreshToken.empty() &&
+                providerCfg.accountId.empty() && providerCfg.expiresAtUnixSeconds == 0)
                 continue;
             if (!findProviderInfo(provider))
                 continue;
-            credentials_[provider] = juce::String(key);
+            providerConfigs_[provider] = providerCfg;
             addListEntry(provider);
         }
 
         updateProviderComboState();
+        updateEditorHints();
         resized();
     }
 
     void apply(Config& config) const {
-        // Clear all credentials first
+        // Clear all provider settings first
         for (const auto& p : getKnownProviders())
-            config.setAICredential(p.id, "");
+            config.setAIProviderConfig(p.id, {});
 
-        // Write stored credentials
-        for (const auto& [id, key] : credentials_)
-            config.setAICredential(id, key.toStdString());
+        // Write stored provider settings
+        for (const auto& [id, providerCfg] : providerConfigs_)
+            config.setAIProviderConfig(id, providerCfg);
     }
 
-    /** Return list of configured provider IDs (those with non-empty keys). */
+    /** Return list of configured provider IDs (those with any overrides). */
     std::vector<std::string> getConfiguredProviders() const {
         std::vector<std::string> result;
-        for (const auto& [id, key] : credentials_) {
-            if (key.isNotEmpty())
+        for (const auto& [id, providerCfg] : providerConfigs_) {
+            if (!providerCfg.apiKey.empty() || !providerCfg.baseUrl.empty() ||
+                !providerCfg.model.empty() || !providerCfg.refreshToken.empty() ||
+                !providerCfg.accountId.empty() || providerCfg.expiresAtUnixSeconds != 0)
                 result.push_back(id);
         }
         return result;
+    }
+
+    Config::AIProviderConfig getProviderConfig(const std::string& providerId) const {
+        auto it = providerConfigs_.find(providerId);
+        if (it != providerConfigs_.end())
+            return it->second;
+        return {};
     }
 
   private:
@@ -287,22 +343,36 @@ class AISettingsDialog::CloudPage : public juce::Component {
     void addCurrentProvider() {
         auto providerId = getSelectedProviderId();
         auto key = keyEditor_.getText().trim();
+        auto baseUrl = baseUrlEditor_.getText().trim();
+        auto model = modelEditor_.getText().trim();
 
-        if (providerId.empty() || key.isEmpty()) {
-            statusLabel_.setText("Enter an API key first", juce::dontSendNotification);
+        if (providerId.empty()) {
+            statusLabel_.setText("Select a provider first", juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
             return;
         }
 
-        // Store credential
-        credentials_[providerId] = key;
+        if (key.isEmpty() && baseUrl.isEmpty() && model.isEmpty()) {
+            statusLabel_.setText("Enter at least one override", juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        Config::AIProviderConfig providerCfg;
+        auto existingCfg = getProviderConfig(providerId);
+        providerCfg.refreshToken = existingCfg.refreshToken;
+        providerCfg.accountId = existingCfg.accountId;
+        providerCfg.expiresAtUnixSeconds = existingCfg.expiresAtUnixSeconds;
+        providerCfg.apiKey = key.toStdString();
+        providerCfg.baseUrl = baseUrl.toStdString();
+        providerCfg.model = model.toStdString();
+        providerConfigs_[providerId] = providerCfg;
 
         // Check if already in list, update; otherwise add
         bool found = false;
         for (auto& entry : entries_) {
             if (entry.providerId == providerId) {
-                entry.statusLabel->setText("Updated", juce::dontSendNotification);
-                entry.statusLabel->setColour(juce::Label::textColourId, juce::Colours::yellow);
+                updateListEntry(entry);
                 found = true;
                 break;
             }
@@ -312,14 +382,144 @@ class AISettingsDialog::CloudPage : public juce::Component {
             addListEntry(providerId);
 
         keyEditor_.clear();
+        baseUrlEditor_.clear();
+        modelEditor_.clear();
         statusLabel_.setText("Added", juce::dontSendNotification);
         statusLabel_.setColour(juce::Label::textColourId, juce::Colours::limegreen);
         updateProviderComboState();
+        updateEditorHints();
         resized();
     }
 
+    void loginCodex() {
+        auto providerId = getSelectedProviderId();
+        if (providerId != magda::provider::OPENAI_CODEX) {
+            statusLabel_.setText("Login is only available for Codex", juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        loginBtn_.setEnabled(false);
+        testBtn_.setEnabled(false);
+        statusLabel_.setText("Starting browser login...", juce::dontSendNotification);
+        statusLabel_.setColour(juce::Label::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+
+        auto safeThis = juce::Component::SafePointer<CloudPage>(this);
+        juce::Thread::launch([safeThis]() {
+            auto pkce = codex_auth::generatePkceState();
+            auto authorizeUrl = codex_auth::buildAuthorizeUrl(pkce);
+
+            juce::MessageManager::callAsync([safeThis, authorizeUrl]() {
+                if (!safeThis)
+                    return;
+                juce::URL(authorizeUrl).launchInDefaultBrowser();
+                safeThis->statusLabel_.setText("Waiting for browser authorization...",
+                                               juce::dontSendNotification);
+                safeThis->statusLabel_.setColour(
+                    juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::InfoIcon, "Codex Browser Login",
+                    "A browser window was opened for OpenAI login.\n\n"
+                    "Complete the sign-in flow, then MAGDA will capture the callback automatically.\n"
+                    "Expected callback: http://localhost:1455/auth/callback");
+            });
+
+            juce::String code;
+            auto callbackResult = codex_auth::receiveLoopbackCode(pkce.state, 180000, code);
+            if (callbackResult.failed()) {
+                juce::MessageManager::callAsync([safeThis, callbackResult]() {
+                    if (!safeThis)
+                        return;
+                    safeThis->loginBtn_.setEnabled(true);
+                    safeThis->testBtn_.setEnabled(true);
+                    safeThis->statusLabel_.setText("Login failed", juce::dontSendNotification);
+                    safeThis->statusLabel_.setColour(juce::Label::textColourId,
+                                                     juce::Colours::orange);
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                           "Codex Login Failed",
+                                                           callbackResult.getErrorMessage());
+                });
+                return;
+            }
+
+            codex_auth::TokenSet tokens;
+            auto exchangeResult = codex_auth::exchangeCodeForTokens(code, pkce, tokens);
+            juce::MessageManager::callAsync([safeThis, exchangeResult, tokens]() {
+                if (!safeThis)
+                    return;
+                safeThis->loginBtn_.setEnabled(true);
+                safeThis->testBtn_.setEnabled(true);
+                if (exchangeResult.failed()) {
+                    safeThis->statusLabel_.setText("Login failed", juce::dontSendNotification);
+                    safeThis->statusLabel_.setColour(juce::Label::textColourId,
+                                                     juce::Colours::orange);
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                           "Codex Login Failed",
+                                                           exchangeResult.getErrorMessage());
+                    return;
+                }
+
+                auto providerId = std::string(magda::provider::OPENAI_CODEX);
+                auto cfg = safeThis->getProviderConfig(providerId);
+                cfg.apiKey = tokens.accessToken.toStdString();
+                cfg.refreshToken = tokens.refreshToken.toStdString();
+                cfg.expiresAtUnixSeconds = tokens.expiresAtUnixSeconds;
+                auto accountId = codex_auth::extractAccountIdFromJwt(tokens.accessToken);
+                cfg.accountId = accountId.toStdString();
+                if (cfg.baseUrl.empty())
+                    cfg.baseUrl = "https://chatgpt.com/backend-api/codex";
+                if (cfg.model.empty() || cfg.model == "codex/gpt-5-mini" ||
+                    cfg.model == "codex/gpt-4o-mini")
+                    cfg.model = magda::model::CODEX_GPT_5_CODEX;
+                safeThis->providerConfigs_[providerId] = cfg;
+
+                bool found = false;
+                for (auto& entry : safeThis->entries_) {
+                    if (entry.providerId == providerId) {
+                        safeThis->updateListEntry(entry);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    safeThis->addListEntry(providerId);
+
+                safeThis->baseUrlEditor_.setText(juce::String(cfg.baseUrl),
+                                                 juce::dontSendNotification);
+                safeThis->modelEditor_.setText(juce::String(cfg.model), juce::dontSendNotification);
+                safeThis->keyEditor_.clear();
+                safeThis->statusLabel_.setText("Codex login complete", juce::dontSendNotification);
+                safeThis->statusLabel_.setColour(juce::Label::textColourId,
+                                                 juce::Colours::limegreen);
+
+                auto& config = Config::getInstance();
+                config.setAIProviderConfig(providerId, cfg);
+                config.setAIPreset(magda::preset::CLOUD_OPENAI_CODEX);
+                if (auto* preset = magda::findPreset(magda::preset::CLOUD_OPENAI_CODEX)) {
+                    for (const auto& [role, presetCfg] : preset->agents) {
+                        auto roleCfg = presetCfg;
+                        roleCfg.apiKey = "";
+                        if (!cfg.baseUrl.empty())
+                            roleCfg.baseUrl = cfg.baseUrl;
+                        if (!cfg.model.empty())
+                            roleCfg.model = cfg.model;
+                        config.setAgentLLMConfig(role, roleCfg);
+                    }
+                }
+                config.save();
+
+                safeThis->updateProviderComboState();
+                safeThis->updateEditorHints();
+                if (safeThis->onSettingsChanged)
+                    safeThis->onSettingsChanged();
+                safeThis->resized();
+            });
+        });
+    }
+
     void removeProvider(const std::string& providerId) {
-        credentials_.erase(providerId);
+        providerConfigs_.erase(providerId);
 
         // Remove list entry
         for (auto it = entries_.begin(); it != entries_.end(); ++it) {
@@ -334,6 +534,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
             }
         }
 
+        updateEditorHints();
         resized();
     }
 
@@ -353,17 +554,14 @@ class AISettingsDialog::CloudPage : public juce::Component {
 
         // Name label
         auto nameLabel = std::make_unique<juce::Label>();
-        nameLabel->setText(info->displayName, juce::dontSendNotification);
+        nameLabel->setText(buildEntryTitle(providerId), juce::dontSendNotification);
         styleLabel(*nameLabel, 12.0f);
         listContainer_.addAndMakeVisible(*nameLabel);
         entry.nameLabel = nameLabel.get();
         ownedLabels_.push_back(std::move(nameLabel));
 
-        // Status label (masked key preview)
+        // Status label
         auto statusLabel = std::make_unique<juce::Label>();
-        auto key = credentials_[providerId];
-        juce::String masked = key.substring(0, 4) + "..." + key.substring(key.length() - 4);
-        statusLabel->setText(masked, juce::dontSendNotification);
         styleLabel(*statusLabel, 11.0f);
         statusLabel->setColour(juce::Label::textColourId,
                                DarkTheme::getColour(DarkTheme::TEXT_DIM));
@@ -371,6 +569,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
         listContainer_.addAndMakeVisible(*statusLabel);
         entry.statusLabel = statusLabel.get();
         ownedLabels_.push_back(std::move(statusLabel));
+        updateListEntry(entry);
 
         // Remove button
         auto removeBtn =
@@ -387,7 +586,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
     void updateProviderComboState() {
         const auto& providers = getKnownProviders();
         for (int i = 0; i < static_cast<int>(providers.size()); ++i) {
-            bool registered = credentials_.count(providers[static_cast<size_t>(i)].id) > 0;
+            bool registered = providerConfigs_.count(providers[static_cast<size_t>(i)].id) > 0;
             providerCombo_.setItemEnabled(i + 1, !registered);
         }
 
@@ -406,8 +605,21 @@ class AISettingsDialog::CloudPage : public juce::Component {
     void testKey() {
         auto providerId = getSelectedProviderId();
         auto key = keyEditor_.getText().trim();
+        auto baseUrl = baseUrlEditor_.getText().trim();
+        auto model = modelEditor_.getText().trim();
 
-        if (providerId.empty() || key.isEmpty()) {
+        if (providerId.empty()) {
+            statusLabel_.setText("Select a provider first", juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        auto existingCfg = getProviderConfig(providerId);
+        auto effectiveKey = key.isNotEmpty() ? key : juce::String(existingCfg.apiKey);
+        auto effectiveBaseUrl = baseUrl.isNotEmpty() ? baseUrl : juce::String(existingCfg.baseUrl);
+        auto effectiveModel = model.isNotEmpty() ? model : juce::String(existingCfg.model);
+
+        if (effectiveKey.isEmpty()) {
             statusLabel_.setText("Enter an API key first", juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
             return;
@@ -423,15 +635,17 @@ class AISettingsDialog::CloudPage : public juce::Component {
                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
 
         auto testProvider = std::string(info->testProvider);
-        auto testBaseUrl = std::string(info->testBaseUrl);
-        auto testModel = std::string(info->testModel);
+        auto testBaseUrl = effectiveBaseUrl.isNotEmpty() ? effectiveBaseUrl.toStdString()
+                                                         : std::string(info->testBaseUrl);
+        auto testModel =
+            effectiveModel.isNotEmpty() ? effectiveModel.toStdString() : std::string(info->testModel);
         auto safeThis = juce::Component::SafePointer<CloudPage>(this);
 
-        juce::Thread::launch([safeThis, key, testProvider, testBaseUrl, testModel]() {
+        juce::Thread::launch([safeThis, effectiveKey, testProvider, testBaseUrl, testModel]() {
             Config::AgentLLMConfig cfg;
             cfg.provider = testProvider;
             cfg.baseUrl = testBaseUrl;
-            cfg.apiKey = key.toStdString();
+            cfg.apiKey = effectiveKey.toStdString();
             cfg.model = testModel;
 
             auto pc = toLLMProviderConfig(cfg);
@@ -444,15 +658,21 @@ class AISettingsDialog::CloudPage : public juce::Component {
 
             auto resp = client->sendRequest(req);
             juce::String result;
+            juce::String detail;
             bool ok = false;
             if (resp.success) {
                 ok = true;
                 result = "OK (" + juce::String(resp.wallSeconds, 1) + "s)";
             } else {
-                result = resp.error.substring(0, 50);
+                auto fullError = resp.error.trim();
+                detail = fullError;
+                auto newline = fullError.indexOfChar('\n');
+                if (newline >= 0)
+                    fullError = fullError.substring(0, newline).trim();
+                result = fullError.substring(0, 140);
             }
 
-            juce::MessageManager::callAsync([safeThis, ok, result]() {
+            juce::MessageManager::callAsync([safeThis, ok, result, detail]() {
                 if (!safeThis)
                     return;
                 safeThis->testBtn_.setEnabled(true);
@@ -460,15 +680,74 @@ class AISettingsDialog::CloudPage : public juce::Component {
                 safeThis->statusLabel_.setColour(juce::Label::textColourId,
                                                  ok ? juce::Colours::limegreen
                                                     : juce::Colours::orange);
+                if (!ok && detail.isNotEmpty()) {
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                           "AI Provider Test Failed", detail);
+                }
             });
         });
     }
 
+    void updateEditorHints() {
+        auto* info = findProviderInfo(getSelectedProviderId());
+        if (!info)
+            return;
+
+        auto existingCfg = getProviderConfig(info->id);
+        loginBtn_.setVisible(info->id == std::string(magda::provider::OPENAI_CODEX));
+        baseUrlEditor_.setTextToShowWhenEmpty(
+            existingCfg.baseUrl.empty() ? "Optional override" : juce::String(existingCfg.baseUrl),
+            DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        modelEditor_.setTextToShowWhenEmpty(
+            existingCfg.model.empty() ? juce::String(info->testModel) : juce::String(existingCfg.model),
+            DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        keyEditor_.setTextToShowWhenEmpty(existingCfg.apiKey.empty() ? "Enter API key..." : "Stored API key",
+                                          DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    }
+
+    juce::String buildEntryTitle(const std::string& providerId) const {
+        auto* info = findProviderInfo(providerId);
+        if (!info)
+            return {};
+
+        juce::String title(info->displayName);
+        auto cfg = getProviderConfig(providerId);
+        if (!cfg.model.empty())
+            title << " - " << juce::String(cfg.model);
+        return title;
+    }
+
+    void updateListEntry(ListEntry& entry) {
+        if (entry.nameLabel)
+            entry.nameLabel->setText(buildEntryTitle(entry.providerId), juce::dontSendNotification);
+
+        auto cfg = getProviderConfig(entry.providerId);
+        juce::String summary;
+        if (!cfg.apiKey.empty()) {
+            auto storedKey = juce::String(cfg.apiKey);
+            summary =
+                storedKey.length() > 8
+                    ? storedKey.substring(0, 4) + "..." + storedKey.substring(storedKey.length() - 4)
+                    : "Stored key";
+            if (!cfg.refreshToken.empty())
+                summary = "OAuth";
+        } else if (!cfg.baseUrl.empty() || !cfg.model.empty()) {
+            summary = "Overrides";
+        } else {
+            summary = "Default";
+        }
+
+        if (entry.statusLabel)
+            entry.statusLabel->setText(summary, juce::dontSendNotification);
+    }
+
     // Input area
-    juce::Label providerLabel_, keyLabel_;
+    juce::Label providerLabel_, baseUrlLabel_, modelLabel_, keyLabel_;
     juce::ComboBox providerCombo_;
+    juce::TextEditor baseUrlEditor_;
+    juce::TextEditor modelEditor_;
     juce::TextEditor keyEditor_;
-    juce::TextButton testBtn_, addBtn_;
+    juce::TextButton testBtn_, loginBtn_, addBtn_;
     juce::Label statusLabel_;
 
     // Registered providers list
@@ -479,8 +758,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
     std::vector<std::unique_ptr<juce::Label>> ownedLabels_;
     std::vector<std::unique_ptr<juce::TextButton>> ownedButtons_;
 
-    // Credential storage (provider ID → API key)
-    std::map<std::string, juce::String> credentials_;
+    std::map<std::string, Config::AIProviderConfig> providerConfigs_;
 };
 
 // ============================================================================
@@ -912,6 +1190,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             savedProviderDisplay_ = "DeepSeek";
         else if (musicCfg.provider == magda::provider::OPENROUTER)
             savedProviderDisplay_ = "OpenRouter";
+        else if (musicCfg.provider == magda::provider::OPENAI_CODEX)
+            savedProviderDisplay_ = "Codex";
         else if (musicCfg.provider == magda::provider::OPENAI)
             savedProviderDisplay_ = "OpenAI";
 
@@ -929,7 +1209,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
     void apply(Config& config) const {
         int mode = modeCombo_.getSelectedId();
-        auto presetId = providerDisplayToPresetId(providerCombo_.getText());
+        auto providerId = providerDisplayToProviderId(providerCombo_.getText());
+        auto presetId = providerIdToPresetId(providerId);
         auto optimize = optimizeCombo_.getText();
 
         if (mode == 1) {
@@ -948,6 +1229,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                 for (const auto& [role, presetCfg] : preset->agents) {
                     auto cfg = presetCfg;
                     cfg.apiKey = "";
+                    applyProviderOverrides(config, providerId, cfg);
                     config.setAgentLLMConfig(role, cfg);
                 }
             }
@@ -956,8 +1238,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             if (optimize == "Cost") {
                 auto routerCfg = config.getAgentLLMConfig(magda::role::ROUTER);
                 auto cmdCfg = config.getAgentLLMConfig(magda::role::COMMAND);
-                applyCheaperModel(routerCfg, presetId);
-                applyCheaperModel(cmdCfg, presetId);
+                applyCheaperModel(config, providerId, routerCfg);
+                applyCheaperModel(config, providerId, cmdCfg);
                 config.setAgentLLMConfig(magda::role::ROUTER, routerCfg);
                 config.setAgentLLMConfig(magda::role::COMMAND, cmdCfg);
             }
@@ -973,12 +1255,12 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             config.setAgentLLMConfig(magda::role::ROUTER, localCfg);
 
             // Music always uses cloud
-            auto musicCfg = makeCloudConfig(magda::role::MUSIC, presetId);
+            auto musicCfg = makeCloudConfig(config, magda::role::MUSIC, providerId);
             config.setAgentLLMConfig(magda::role::MUSIC, musicCfg);
 
             // Command: cloud for speed, local for cost
             if (optimize == "Speed") {
-                auto cmdCfg = makeCloudConfig(magda::role::COMMAND, presetId);
+                auto cmdCfg = makeCloudConfig(config, magda::role::COMMAND, providerId);
                 config.setAgentLLMConfig(magda::role::COMMAND, cmdCfg);
             } else {
                 Config::AgentLLMConfig cmdLocal;
@@ -1030,35 +1312,72 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         resized();
     }
 
-    static std::string providerDisplayToPresetId(const juce::String& display) {
+    static std::string providerDisplayToProviderId(const juce::String& display) {
+        if (display == "Codex")
+            return magda::provider::OPENAI_CODEX;
         if (display == "Anthropic")
-            return magda::preset::CLOUD_ANTHROPIC;
+            return magda::provider::ANTHROPIC;
         if (display == "Gemini")
-            return magda::preset::CLOUD_GEMINI;
+            return magda::provider::GEMINI;
         if (display == "DeepSeek")
-            return magda::preset::CLOUD_DEEPSEEK;
+            return magda::provider::DEEPSEEK;
         if (display == "OpenRouter")
+            return magda::provider::OPENROUTER;
+        return magda::provider::OPENAI;
+    }
+
+    static std::string providerIdToPresetId(const std::string& providerId) {
+        if (providerId == magda::provider::OPENAI_CODEX)
+            return magda::preset::CLOUD_OPENAI_CODEX;
+        if (providerId == magda::provider::ANTHROPIC)
+            return magda::preset::CLOUD_ANTHROPIC;
+        if (providerId == magda::provider::GEMINI)
+            return magda::preset::CLOUD_GEMINI;
+        if (providerId == magda::provider::DEEPSEEK)
+            return magda::preset::CLOUD_DEEPSEEK;
+        if (providerId == magda::provider::OPENROUTER)
             return magda::preset::CLOUD_OPENROUTER;
         return magda::preset::CLOUD_OPENAI;
     }
 
-    static Config::AgentLLMConfig makeCloudConfig(const std::string& role,
-                                                  const std::string& presetId) {
+    static void applyProviderOverrides(const Config& config, const std::string& providerId,
+                                       Config::AgentLLMConfig& cfg) {
+        auto providerCfg = config.getAIProviderConfig(providerId);
+        if (!providerCfg.baseUrl.empty())
+            cfg.baseUrl = providerCfg.baseUrl;
+        if (!providerCfg.model.empty())
+            cfg.model = providerCfg.model;
+    }
+
+    static Config::AgentLLMConfig makeCloudConfig(const Config& config, const std::string& role,
+                                                  const std::string& providerId) {
+        auto presetId = providerIdToPresetId(providerId);
         if (auto* preset = magda::findPreset(presetId)) {
             auto it = preset->agents.find(role);
             if (it != preset->agents.end()) {
                 auto cfg = it->second;
                 cfg.apiKey = "";
+                applyProviderOverrides(config, providerId, cfg);
                 return cfg;
             }
         }
-        // Fallback — should not happen with valid preset IDs
-        return Config::AgentLLMConfig{};
+        Config::AgentLLMConfig cfg;
+        cfg.provider = providerId;
+        applyProviderOverrides(config, providerId, cfg);
+        return cfg;
     }
 
-    static void applyCheaperModel(Config::AgentLLMConfig& cfg, const std::string& presetId) {
+    static void applyCheaperModel(const Config& config, const std::string& providerId,
+                                  Config::AgentLLMConfig& cfg) {
+        auto providerCfg = config.getAIProviderConfig(providerId);
+        if (!providerCfg.model.empty())
+            return;
+
+        auto presetId = providerIdToPresetId(providerId);
         if (presetId == magda::preset::CLOUD_OPENAI)
             cfg.model = magda::model::GPT_4_1_MINI;
+        else if (presetId == magda::preset::CLOUD_OPENAI_CODEX)
+            cfg.model = magda::model::CODEX_O4_MINI;
         else if (presetId == magda::preset::CLOUD_ANTHROPIC)
             cfg.model = magda::model::CLAUDE_HAIKU;
         else if (presetId == magda::preset::CLOUD_GEMINI)
@@ -1089,6 +1408,10 @@ AISettingsDialog::AISettingsDialog() {
     cloudPage_ = std::make_unique<CloudPage>();
     localPage_ = std::make_unique<LocalPage>();
     configPage_ = std::make_unique<ConfigPage>();
+    cloudPage_->onSettingsChanged = [this]() {
+        if (configPage_)
+            configPage_->refreshProviderCombos();
+    };
 
     // Wire config page to sibling pages
     configPage_->cloudPage = cloudPage_.get();

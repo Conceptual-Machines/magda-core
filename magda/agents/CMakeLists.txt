@@ -17,6 +17,8 @@ dsl_grammar.hpp
     compact_executor.hpp
     compact_executor.cpp
     llm_config_utils.hpp
+    openai_codex_auth.hpp
+    openai_codex_auth.cpp
     llm_presets.hpp
     llm_presets.cpp
     command_agent.hpp

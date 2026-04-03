@@ -25,6 +25,15 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             },
         },
         {
+            preset::CLOUD_OPENAI_CODEX,
+            "Cloud (Codex)",
+            {
+                {role::ROUTER, {provider::OPENAI_CODEX, "", "", model::CODEX_GPT_5_CODEX}},
+                {role::COMMAND, {provider::OPENAI_CODEX, "", "", model::CODEX_GPT_5_CODEX}},
+                {role::MUSIC, {provider::OPENAI_CODEX, "", "", model::CODEX_GPT_5_CODEX}},
+            },
+        },
+        {
             preset::CLOUD_ANTHROPIC,
             "Cloud (Anthropic)",
             {
