@@ -24,45 +24,51 @@ SessionClipScheduler::~SessionClipScheduler() {
 
 void SessionClipScheduler::clipsChanged() {
     auto& cm = ClipManager::getInstance();
+    auto& tm = TrackManager::getInstance();
 
-    std::vector<ClipId> toRemove;
-    for (auto clipId : activeClips_) {
-        if (cm.getClip(clipId) == nullptr) {
-            toRemove.push_back(clipId);
+    // If a clip was deleted that was the active session clip on a track, clean up
+    for (const auto& track : tm.getTracks()) {
+        if (track.activeSessionClipId != INVALID_CLIP_ID &&
+            cm.getClip(track.activeSessionClipId) == nullptr) {
+            if (auto* t = tm.getTrack(track.id))
+                t->activeSessionClipId = INVALID_CLIP_ID;
+            sendUnmonitorCommand(track.activeSessionClipId);
+            releaseLaunchHandle(track.activeSessionClipId);
+            clipLaunchData_.erase(track.activeSessionClipId);
+            lastNotifiedState_.erase(track.activeSessionClipId);
         }
     }
-    for (auto clipId : toRemove) {
-        sendUnmonitorCommand(clipId);
-        audioBridge_.stopSessionClip(clipId);
-        activeClips_.erase(clipId);
-        clipLaunchData_.erase(clipId);
-        lastNotifiedState_.erase(clipId);
-        activeLaunchHandles_.erase(clipId);
-    }
+    syncTrackPlaybackModes();
 }
 
 void SessionClipScheduler::clipPropertyChanged(ClipId clipId) {
-    if (activeClips_.count(clipId) == 0)
-        return;
-
     const auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip)
+    if (!clip || clip->view != ClipView::Session)
         return;
 
-    updateLaunchTimings(clipId, clip);
+    // Only update timings if this clip is the active one on its track
+    const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
+    if (track && track->activeSessionClipId == clipId)
+        updateLaunchTimings(clipId, clip);
 }
 
 void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) {
     auto& cm = ClipManager::getInstance();
+    auto& tm = TrackManager::getInstance();
     const auto* clip = cm.getClip(clipId);
-    if (!clip || clip->view != ClipView::Session) {
+    if (!clip || clip->view != ClipView::Session)
         return;
-    }
 
     if (request == ClipPlaybackRequest::Play) {
-        // Mark this clip as the active session clip on its track
-        if (auto* track = TrackManager::getInstance().getTrack(clip->trackId))
-            track->activeSessionClipId = clipId;
+        auto* track = tm.getTrack(clip->trackId);
+        if (!track)
+            return;
+
+        // Toggle mode: if this clip is already the active one, stop it
+        if (clip->launchMode == LaunchMode::Toggle && track->activeSessionClipId == clipId) {
+            clipPlaybackRequested(clipId, ClipPlaybackRequest::Stop);
+            return;
+        }
 
         // Session clips always loop
         if (!clip->loopEnabled)
@@ -72,121 +78,128 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         audioBridge_.ensureSessionMonitorPlugin();
 
         // Snapshot state BEFORE any mutations in this batch.
-        // All clips launched in the same event cycle (e.g. scene launch) see the
-        // same pre-mutation state, preventing clip A's launch from poisoning clip B's
-        // forceImmediate decision.
         if (!launchSnapshotValid_) {
             launchSnapshot_.transportPlaying = edit_.getTransport().isPlaying();
-            launchSnapshot_.hasActiveClips = !activeClips_.empty();
+            launchSnapshot_.hasActiveClips = hasActiveClips();
             launchSnapshotValid_ = true;
-
-            // Reset after current message dispatch completes
             juce::MessageManager::callAsync([this] { launchSnapshotValid_ = false; });
-        }
-
-        // Toggle mode: if clip is already active, stop it instead
-        if (clip->launchMode == LaunchMode::Toggle && activeClips_.count(clipId)) {
-            clipPlaybackRequested(clipId, ClipPlaybackRequest::Stop);
-            return;
         }
 
         // Record clip timing data for playhead conversion
         updateLaunchTimings(clipId, clip);
 
-        if (activeClips_.empty()) {
-            playheadClipId_ = clipId;
-        }
-
-        // Force immediate when nothing is playing — no point quantizing against thin air.
-        // Uses the snapshot so all clips in a batch get the same decision.
+        // Force immediate when nothing is playing
         bool forceImmediate = !launchSnapshot_.transportPlaying || !launchSnapshot_.hasActiveClips;
 
-        // Add to active set and derive track playback modes BEFORE starting transport.
+        // Set active clip on track and sync modes BEFORE starting transport.
         // This ensures playSlotClips is already true when the audio thread
-        // starts processing, preventing a click from arrangement audio being
-        // output for a few blocks then abruptly stopping.
-        activeClips_.insert(clipId);
+        // starts processing.
+        track->activeSessionClipId = clipId;
         syncTrackPlaybackModes();
 
         // Ensure transport is playing
-        auto& transport = edit_.getTransport();
-        if (!transport.isPlaying()) {
-            transport.play(false);
-        }
+        if (!edit_.getTransport().isPlaying())
+            edit_.getTransport().play(false);
 
+        // Tell TE to play the clip
         audioBridge_.launchSessionClip(clipId, forceImmediate);
 
-        // Keep LaunchHandle alive and start audio-thread monitoring
+        // Retain handle and set up audio-thread monitoring for playhead
+        retainLaunchHandle(clipId);
         sendMonitorCommand(clipId);
 
-        // Set initial state — the audio monitor will detect the real transition
+        // Track UI state
         lastNotifiedState_[clipId] = SessionClipPlayState::Queued;
         playheadClipId_ = clipId;
         cm.notifyClipPlaybackStateChanged(clipId);
 
     } else {
-        // Stop request — clear active clip on the track
+        // Stop request
         if (const auto* c = cm.getClip(clipId)) {
-            if (auto* track = TrackManager::getInstance().getTrack(c->trackId)) {
+            if (auto* track = tm.getTrack(c->trackId)) {
                 if (track->activeSessionClipId == clipId)
                     track->activeSessionClipId = INVALID_CLIP_ID;
             }
         }
+
+        audioBridge_.stopSessionClip(clipId);
+        sendUnmonitorCommand(clipId);
+        releaseLaunchHandle(clipId);
+        clipLaunchData_.erase(clipId);
+        lastNotifiedState_.erase(clipId);
+
         if (auto* c = cm.getClip(clipId))
             c->sessionPlayheadPos = -1.0;
-        bool wasActive = activeClips_.count(clipId) > 0;
-        if (wasActive) {
-            sendUnmonitorCommand(clipId);
-            audioBridge_.stopSessionClip(clipId);
-            activeClips_.erase(clipId);
-            clipLaunchData_.erase(clipId);
-            lastNotifiedState_.erase(clipId);
-            activeLaunchHandles_.erase(clipId);
-            syncTrackPlaybackModes();
-        }
+
+        syncTrackPlaybackModes();
         cm.notifyClipPlaybackStateChanged(clipId);
 
-        if (activeClips_.empty()) {
+        // Update playhead tracking
+        if (playheadClipId_ == clipId)
             playheadClipId_ = INVALID_CLIP_ID;
-        }
     }
 }
 
 // =============================================================================
-// Play State Query
+// Play State Query — reads TE LaunchHandle directly
 // =============================================================================
 
 SessionClipPlayState SessionClipScheduler::getClipPlayState(ClipId clipId) const {
-    if (activeClips_.count(clipId) == 0)
+    auto it = activeLaunchHandles_.find(clipId);
+    if (it == activeLaunchHandles_.end())
         return SessionClipPlayState::Stopped;
 
-    auto it = lastNotifiedState_.find(clipId);
-    if (it != lastNotifiedState_.end())
-        return it->second;
+    auto* handle = it->second.get();
+    if (!handle)
+        return SessionClipPlayState::Stopped;
 
-    return SessionClipPlayState::Queued;
+    auto playState = handle->getPlayingStatus();
+    auto queuedState = handle->getQueuedStatus();
+
+    if (playState == te::LaunchHandle::PlayState::playing)
+        return SessionClipPlayState::Playing;
+
+    if (queuedState && *queuedState == te::LaunchHandle::QueueState::playQueued)
+        return SessionClipPlayState::Queued;
+
+    return SessionClipPlayState::Stopped;
+}
+
+bool SessionClipScheduler::hasActiveClips() const {
+    auto& tm = TrackManager::getInstance();
+    for (const auto& track : tm.getTracks()) {
+        if (track.activeSessionClipId != INVALID_CLIP_ID)
+            return true;
+    }
+    return false;
 }
 
 // =============================================================================
-// Audio Thread Command Helpers
+// LaunchHandle Lifecycle
 // =============================================================================
 
-void SessionClipScheduler::sendMonitorCommand(ClipId clipId) {
+void SessionClipScheduler::retainLaunchHandle(ClipId clipId) {
     auto* teClip = audioBridge_.getSessionTeClip(clipId);
     if (!teClip)
         return;
+    auto handle = teClip->getLaunchHandle();
+    if (handle)
+        activeLaunchHandles_[clipId] = handle;
+}
 
-    auto launchHandle = teClip->getLaunchHandle();
-    if (!launchHandle)
+void SessionClipScheduler::releaseLaunchHandle(ClipId clipId) {
+    activeLaunchHandles_.erase(clipId);
+}
+
+void SessionClipScheduler::sendMonitorCommand(ClipId clipId) {
+    auto it = activeLaunchHandles_.find(clipId);
+    if (it == activeLaunchHandles_.end())
         return;
-
-    // Keep the shared_ptr alive while the audio thread uses the raw pointer
-    activeLaunchHandles_[clipId] = launchHandle;
 
     SessionClipCommand cmd;
     cmd.clipId = clipId;
     cmd.action = SessionClipCommand::Action::Monitor;
-    cmd.launchHandle = launchHandle.get();
+    cmd.launchHandle = it->second.get();
     audioMonitor_.commandQueue().push(cmd);
 }
 
@@ -196,91 +209,98 @@ void SessionClipScheduler::sendUnmonitorCommand(ClipId clipId) {
     cmd.action = SessionClipCommand::Action::Unmonitor;
     cmd.launchHandle = nullptr;
     audioMonitor_.commandQueue().push(cmd);
-
-    // Note: we keep activeLaunchHandles_[clipId] alive until the caller
-    // erases it, giving the audio thread one buffer cycle to process
-    // the Unmonitor command before the shared_ptr is released.
 }
 
 // =============================================================================
-// Process Audio Thread State Events
+// Poll State & Update UI
 // =============================================================================
 
 void SessionClipScheduler::processStateEvents() {
     auto& cm = ClipManager::getInstance();
+    auto& tm = TrackManager::getInstance();
 
-    // Drain the state queue from the audio thread
+    // Drain stale events from the audio monitor state queue
     SessionClipStateEvent event;
     while (audioMonitor_.stateQueue().pop(event)) {
-        if (activeClips_.count(event.clipId) == 0)
-            continue;
-
-        if (event.type == SessionClipStateEvent::Type::StartedPlaying) {
-            auto& prev = lastNotifiedState_[event.clipId];
-            if (prev != SessionClipPlayState::Playing) {
-                prev = SessionClipPlayState::Playing;
-                cm.notifyClipPlaybackStateChanged(event.clipId);
-            }
-
-        } else if (event.type == SessionClipStateEvent::Type::StoppedPlaying) {
-            // Check if clip is looping — TE may briefly report stopped between loops
-            const auto* clip = cm.getClip(event.clipId);
-            if (clip && clip->loopEnabled)
-                continue;
-
-            activeClips_.erase(event.clipId);
-            clipLaunchData_.erase(event.clipId);
-            lastNotifiedState_.erase(event.clipId);
-            activeLaunchHandles_.erase(event.clipId);
-            sendUnmonitorCommand(event.clipId);
-            syncTrackPlaybackModes();
-            if (auto* c = cm.getClip(event.clipId)) {
-                // Non-looping clip finished naturally — clear from track
-                if (auto* track = TrackManager::getInstance().getTrack(c->trackId)) {
-                    if (track->activeSessionClipId == event.clipId)
-                        track->activeSessionClipId = INVALID_CLIP_ID;
-                }
-                c->sessionPlayheadPos = -1.0;
-            }
-            cm.notifyClipPlaybackStateChanged(event.clipId);
-        }
+        // discard — we read LaunchHandle state directly below
     }
 
-    // Transport stopped externally — tear down audio state but leave
-    // track.activeSessionClipId intact so clips re-launch on resume.
-    if (!activeClips_.empty() && !edit_.getTransport().isPlaying()) {
-        auto copy = activeClips_;
-        activeClips_.clear();
-        clipLaunchData_.clear();
-        lastNotifiedState_.clear();
-        playheadClipId_ = INVALID_CLIP_ID;
+    bool transportPlaying = edit_.getTransport().isPlaying();
 
-        for (auto clipId : copy) {
+    // Transport just stopped — stop all LaunchHandles so clips reset to start.
+    // activeSessionClipId stays set (user intent preserved).
+    if (wasTransportPlaying_ && !transportPlaying && hasActiveClips()) {
+        for (const auto& track : tm.getTracks()) {
+            ClipId clipId = track.activeSessionClipId;
+            if (clipId == INVALID_CLIP_ID)
+                continue;
+            audioBridge_.stopSessionClip(clipId);
             sendUnmonitorCommand(clipId);
+            releaseLaunchHandle(clipId);
             if (auto* c = cm.getClip(clipId))
                 c->sessionPlayheadPos = -1.0;
             cm.notifyClipPlaybackStateChanged(clipId);
         }
-        activeLaunchHandles_.clear();
-        syncTrackPlaybackModes();
+        clipLaunchData_.clear();
+        lastNotifiedState_.clear();
     }
 
-    // Transport resumed — re-launch each track's activeSessionClipId.
-    if (activeClips_.empty() && edit_.getTransport().isPlaying()) {
-        auto& tm = TrackManager::getInstance();
-        std::vector<ClipId> toRelaunch;
+    // Transport just resumed with active session clips — re-launch them.
+    if (!wasTransportPlaying_ && transportPlaying && hasActiveClips()) {
         for (const auto& track : tm.getTracks()) {
-            if (track.activeSessionClipId != INVALID_CLIP_ID)
-                toRelaunch.push_back(track.activeSessionClipId);
+            ClipId clipId = track.activeSessionClipId;
+            if (clipId == INVALID_CLIP_ID)
+                continue;
+            const auto* clip = cm.getClip(clipId);
+            if (!clip)
+                continue;
+            updateLaunchTimings(clipId, clip);
+            audioBridge_.launchSessionClip(clipId, true);
+            retainLaunchHandle(clipId);
+            sendMonitorCommand(clipId);
+            lastNotifiedState_[clipId] = SessionClipPlayState::Queued;
+            if (playheadClipId_ == INVALID_CLIP_ID)
+                playheadClipId_ = clipId;
         }
-        for (auto clipId : toRelaunch)
-            clipPlaybackRequested(clipId, ClipPlaybackRequest::Play);
     }
 
-    // Clean up playhead if all clips have ended
-    if (activeClips_.empty() && playheadClipId_ != INVALID_CLIP_ID) {
-        playheadClipId_ = INVALID_CLIP_ID;
+    wasTransportPlaying_ = transportPlaying;
+
+    // Poll LaunchHandle state for each active session clip and notify UI
+    for (const auto& track : tm.getTracks()) {
+        ClipId clipId = track.activeSessionClipId;
+        if (clipId == INVALID_CLIP_ID)
+            continue;
+
+        auto state = getClipPlayState(clipId);
+        auto& prev = lastNotifiedState_[clipId];
+
+        if (state != prev) {
+            prev = state;
+            cm.notifyClipPlaybackStateChanged(clipId);
+        }
+
+        // If handle reports stopped on a non-looping clip, it finished naturally
+        if (state == SessionClipPlayState::Stopped) {
+            const auto* clip = cm.getClip(clipId);
+            if (!clip || !clip->loopEnabled) {
+                if (auto* t = tm.getTrack(track.id))
+                    t->activeSessionClipId = INVALID_CLIP_ID;
+                sendUnmonitorCommand(clipId);
+                releaseLaunchHandle(clipId);
+                clipLaunchData_.erase(clipId);
+                lastNotifiedState_.erase(clipId);
+                if (auto* c = cm.getClip(clipId))
+                    c->sessionPlayheadPos = -1.0;
+                syncTrackPlaybackModes();
+                cm.notifyClipPlaybackStateChanged(clipId);
+            }
+        }
     }
+
+    // Update playhead tracking
+    if (playheadClipId_ != INVALID_CLIP_ID && !hasActiveClips())
+        playheadClipId_ = INVALID_CLIP_ID;
 }
 
 // =============================================================================
@@ -352,16 +372,21 @@ double SessionClipScheduler::getSessionPlayheadPosition() const {
 std::unordered_map<ClipId, double> SessionClipScheduler::getActiveClipPlayheadPositions() const {
     std::unordered_map<ClipId, double> positions;
 
-    if (activeClips_.empty())
-        return positions;
-
     std::unordered_map<ClipId, double> beatPositions;
     audioMonitor_.getActivePlayheadBeats(beatPositions);
 
+    auto& tm = TrackManager::getInstance();
     for (const auto& [clipId, beats] : beatPositions) {
-        if (activeClips_.count(clipId) && beats >= 0.0) {
-            positions[clipId] = elapsedBeatsToSeconds(clipId, beats);
+        // Only include clips that are still the active session clip on their track
+        bool isActive = false;
+        for (const auto& track : tm.getTracks()) {
+            if (track.activeSessionClipId == clipId) {
+                isActive = true;
+                break;
+            }
         }
+        if (isActive && beats >= 0.0)
+            positions[clipId] = elapsedBeatsToSeconds(clipId, beats);
     }
 
     return positions;
@@ -373,25 +398,10 @@ std::unordered_map<ClipId, double> SessionClipScheduler::getActiveClipPlayheadPo
 
 void SessionClipScheduler::syncTrackPlaybackModes() {
     auto& tm = TrackManager::getInstance();
-    auto& cm = ClipManager::getInstance();
-
-    // Build set of tracks with active session clips (running or suspended)
-    std::unordered_set<TrackId> sessionTracks;
-    for (auto clipId : activeClips_) {
-        if (const auto* clip = cm.getClip(clipId))
-            sessionTracks.insert(clip->trackId);
-    }
-
-    // Tracks with activeSessionClipId set stay in Session mode even when
-    // transport is stopped — the user hasn't pressed "back to arrangement".
-    for (const auto& track : tm.getTracks()) {
-        if (track.activeSessionClipId != INVALID_CLIP_ID)
-            sessionTracks.insert(track.id);
-    }
 
     for (const auto& track : tm.getTracks()) {
-        auto mode = sessionTracks.count(track.id) ? TrackPlaybackMode::Session
-                                                  : TrackPlaybackMode::Arrangement;
+        auto mode = (track.activeSessionClipId != INVALID_CLIP_ID) ? TrackPlaybackMode::Session
+                                                                   : TrackPlaybackMode::Arrangement;
         tm.setTrackPlaybackMode(track.id, mode);
     }
 }
@@ -404,23 +414,26 @@ void SessionClipScheduler::deactivateAllSessionClips() {
     auto& cm = ClipManager::getInstance();
     auto& tm = TrackManager::getInstance();
 
-    auto copy = activeClips_;
-    activeClips_.clear();
+    for (const auto& track : tm.getTracks()) {
+        ClipId clipId = track.activeSessionClipId;
+        if (clipId == INVALID_CLIP_ID)
+            continue;
+
+        if (auto* t = tm.getTrack(track.id))
+            t->activeSessionClipId = INVALID_CLIP_ID;
+
+        audioBridge_.stopSessionClip(clipId);
+        sendUnmonitorCommand(clipId);
+
+        if (auto* c = cm.getClip(clipId))
+            c->sessionPlayheadPos = -1.0;
+        cm.notifyClipPlaybackStateChanged(clipId);
+    }
+
+    activeLaunchHandles_.clear();
     clipLaunchData_.clear();
     lastNotifiedState_.clear();
     playheadClipId_ = INVALID_CLIP_ID;
-
-    for (auto clipId : copy) {
-        sendUnmonitorCommand(clipId);
-        audioBridge_.stopSessionClip(clipId);
-        if (auto* c = cm.getClip(clipId)) {
-            if (auto* track = tm.getTrack(c->trackId))
-                track->activeSessionClipId = INVALID_CLIP_ID;
-            c->sessionPlayheadPos = -1.0;
-        }
-        cm.notifyClipPlaybackStateChanged(clipId);
-    }
-    activeLaunchHandles_.clear();
     syncTrackPlaybackModes();
 }
 
