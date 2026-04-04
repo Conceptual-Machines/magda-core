@@ -39,8 +39,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
         const auto* track = TrackManager::getInstance().getTrack(trackId);
         clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));
     } else {
-        clip.colour = juce::Colour(Config::getDefaultColour(
-            static_cast<int>(arrangementClips_.size() + sessionClips_.size())));
+        clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
     }
     clip.startTime = startTime;
     clip.length = length;
@@ -52,7 +51,6 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     clip.loopStart = 0.0;
     clip.setLoopLengthFromTimeline(length);
 
-    // Add to appropriate array based on view
     if (view == ClipView::Arrangement) {
         // Set beat position for tempo-independent placement
         double bpm = projectBPM > 0.0 ? projectBPM
@@ -64,7 +62,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
             // clip width updates correctly when BPM changes.
             clip.lengthBeats = 0.0;
         }
-        arrangementClips_.push_back(clip);
+        clips_[clip.id] = clip;
         resolveOverlaps(clip.id);
     } else {
         // Session clips loop by default and follow project tempo
@@ -78,7 +76,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
             clip.loopLengthBeats = clip.lengthBeats;
         }
         clip.length = length;
-        sessionClips_.push_back(clip);
+        clips_[clip.id] = clip;
     }
 
     notifyClipsChanged();
@@ -98,8 +96,7 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
         const auto* track = TrackManager::getInstance().getTrack(trackId);
         clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));
     } else {
-        clip.colour = juce::Colour(Config::getDefaultColour(
-            static_cast<int>(arrangementClips_.size() + sessionClips_.size())));
+        clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
     }
     clip.startTime = startTime;
     clip.length = length;
@@ -111,16 +108,15 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
         clip.lengthBeats = (length * tempo) / 60.0;
     }
 
-    // Add to appropriate array based on view
     if (view == ClipView::Arrangement) {
-        arrangementClips_.push_back(clip);
+        clips_[clip.id] = clip;
         resolveOverlaps(clip.id);
     } else {
         // Session clips loop by default
         clip.loopEnabled = true;
         clip.loopLengthBeats = clip.lengthBeats;
         clip.loopLength = length;
-        sessionClips_.push_back(clip);
+        clips_[clip.id] = clip;
     }
 
     notifyClipsChanged();
@@ -129,59 +125,27 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
 }
 
 void ClipManager::deleteClip(ClipId clipId) {
-    // Try arrangement clips first
-    auto it = std::find_if(arrangementClips_.begin(), arrangementClips_.end(),
-                           [clipId](const ClipInfo& c) { return c.id == clipId; });
-
-    if (it != arrangementClips_.end()) {
-        // Clear selection if this was selected
-        if (selectedClipId_ == clipId) {
-            selectedClipId_ = INVALID_CLIP_ID;
-            notifyClipSelectionChanged(INVALID_CLIP_ID);
-        }
-
-        arrangementClips_.erase(it);
-        notifyClipsChanged();
+    auto it = clips_.find(clipId);
+    if (it == clips_.end())
         return;
+
+    if (selectedClipId_ == clipId) {
+        selectedClipId_ = INVALID_CLIP_ID;
+        notifyClipSelectionChanged(INVALID_CLIP_ID);
+    }
+    if (lastTriggeredSessionClipId_ == clipId) {
+        lastTriggeredSessionClipId_ = INVALID_CLIP_ID;
     }
 
-    // Try session clips
-    it = std::find_if(sessionClips_.begin(), sessionClips_.end(),
-                      [clipId](const ClipInfo& c) { return c.id == clipId; });
-
-    if (it != sessionClips_.end()) {
-        // Clear selection if this was selected
-        if (selectedClipId_ == clipId) {
-            selectedClipId_ = INVALID_CLIP_ID;
-            notifyClipSelectionChanged(INVALID_CLIP_ID);
-        }
-        if (lastTriggeredSessionClipId_ == clipId) {
-            lastTriggeredSessionClipId_ = INVALID_CLIP_ID;
-        }
-
-        sessionClips_.erase(it);
-        notifyClipsChanged();
-    }
+    clips_.erase(it);
+    notifyClipsChanged();
 }
 
 void ClipManager::restoreClip(const ClipInfo& clipInfo) {
-    // Check if a clip with this ID already exists in either array
-    auto checkExists = [&clipInfo](const std::vector<ClipInfo>& clips) {
-        return std::find_if(clips.begin(), clips.end(), [&clipInfo](const ClipInfo& c) {
-                   return c.id == clipInfo.id;
-               }) != clips.end();
-    };
-
-    if (checkExists(arrangementClips_) || checkExists(sessionClips_)) {
+    if (clips_.count(clipInfo.id))
         return;
-    }
 
-    // Add to appropriate array based on view
-    if (clipInfo.view == ClipView::Arrangement) {
-        arrangementClips_.push_back(clipInfo);
-    } else {
-        sessionClips_.push_back(clipInfo);
-    }
+    clips_[clipInfo.id] = clipInfo;
 
     // Ensure nextClipId_ is beyond any restored clip IDs
     if (clipInfo.id >= nextClipId_) {
@@ -215,13 +179,12 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
         if (newClip.type == ClipType::MIDI) {
             newClip.startBeats = original->startBeats + original->lengthBeats;
         }
-        arrangementClips_.push_back(newClip);
     } else {
         // Session clips always loop
         newClip.startTime = 0.0;
         newClip.loopEnabled = true;
-        sessionClips_.push_back(newClip);
     }
+    clips_[newClip.id] = newClip;
 
     notifyClipsChanged();
 
@@ -244,18 +207,17 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
         newClip.trackId = trackId;
     }
 
-    // Add to same array as original
     if (newClip.view == ClipView::Arrangement) {
         newClip.startTime = startTime;
         if (tempo > 0.0)
             newClip.startBeats = startTime * tempo / 60.0;
-        arrangementClips_.push_back(newClip);
+        clips_[newClip.id] = newClip;
         resolveOverlaps(newClip.id);
     } else {
         // Session clips always loop
         newClip.startTime = 0.0;
         newClip.loopEnabled = true;
-        sessionClips_.push_back(newClip);
+        clips_[newClip.id] = newClip;
     }
 
     notifyClipsChanged();
@@ -482,12 +444,8 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
         rightClip.fadeIn = kSplitFadeSeconds;
     }
 
-    // Add right clip to same array as left clip
-    if (rightClip.view == ClipView::Arrangement) {
-        arrangementClips_.push_back(rightClip);
-    } else {
-        sessionClips_.push_back(rightClip);
-    }
+    // Add right clip to the clip pool
+    clips_[rightClip.id] = rightClip;
 
     notifyClipsChanged();
 
@@ -1152,56 +1110,47 @@ void ClipManager::clearChordAnnotations(ClipId clipId) {
 // ============================================================================
 
 ClipInfo* ClipManager::getClip(ClipId clipId) {
-    // Search arrangement clips first
-    auto it = std::find_if(arrangementClips_.begin(), arrangementClips_.end(),
-                           [clipId](const ClipInfo& c) { return c.id == clipId; });
-    if (it != arrangementClips_.end()) {
-        return &(*it);
-    }
-
-    // Search session clips
-    it = std::find_if(sessionClips_.begin(), sessionClips_.end(),
-                      [clipId](const ClipInfo& c) { return c.id == clipId; });
-    return (it != sessionClips_.end()) ? &(*it) : nullptr;
+    auto it = clips_.find(clipId);
+    return (it != clips_.end()) ? &it->second : nullptr;
 }
 
 const ClipInfo* ClipManager::getClip(ClipId clipId) const {
-    // Search arrangement clips first
-    auto it = std::find_if(arrangementClips_.begin(), arrangementClips_.end(),
-                           [clipId](const ClipInfo& c) { return c.id == clipId; });
-    if (it != arrangementClips_.end()) {
-        return &(*it);
-    }
-
-    // Search session clips
-    it = std::find_if(sessionClips_.begin(), sessionClips_.end(),
-                      [clipId](const ClipInfo& c) { return c.id == clipId; });
-    return (it != sessionClips_.end()) ? &(*it) : nullptr;
+    auto it = clips_.find(clipId);
+    return (it != clips_.end()) ? &it->second : nullptr;
 }
 
-// TODO: Returns clips by value, copying potentially large structures. Callers should
-// migrate to getArrangementClips() or getSessionClips() which return const references.
+std::vector<ClipInfo> ClipManager::getArrangementClips() const {
+    std::vector<ClipInfo> result;
+    for (const auto& [id, clip] : clips_) {
+        if (clip.view == ClipView::Arrangement)
+            result.push_back(clip);
+    }
+    return result;
+}
+
+std::vector<ClipInfo> ClipManager::getSessionClips() const {
+    std::vector<ClipInfo> result;
+    for (const auto& [id, clip] : clips_) {
+        if (clip.view == ClipView::Session)
+            result.push_back(clip);
+    }
+    return result;
+}
+
 std::vector<ClipInfo> ClipManager::getClips() const {
     std::vector<ClipInfo> result;
-    result.reserve(arrangementClips_.size() + sessionClips_.size());
-    result.insert(result.end(), arrangementClips_.begin(), arrangementClips_.end());
-    result.insert(result.end(), sessionClips_.begin(), sessionClips_.end());
+    result.reserve(clips_.size());
+    for (const auto& [id, clip] : clips_)
+        result.push_back(clip);
     return result;
 }
 
 std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId) const {
     std::vector<ClipId> result;
-    for (const auto& clip : arrangementClips_) {
-        if (clip.trackId == trackId) {
+    for (const auto& [id, clip] : clips_) {
+        if (clip.trackId == trackId)
             result.push_back(clip.id);
-        }
     }
-    for (const auto& clip : sessionClips_) {
-        if (clip.trackId == trackId) {
-            result.push_back(clip.id);
-        }
-    }
-    // Sort arrangement clips by start time (session clips don't have meaningful ordering)
     std::sort(result.begin(), result.end(), [this](ClipId a, ClipId b) {
         const auto* clipA = getClip(a);
         const auto* clipB = getClip(b);
@@ -1211,12 +1160,10 @@ std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId) const {
 }
 
 std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId, ClipView view) const {
-    const auto& clips = (view == ClipView::Arrangement) ? arrangementClips_ : sessionClips_;
     std::vector<ClipId> result;
-    for (const auto& clip : clips) {
-        if (clip.trackId == trackId) {
+    for (const auto& [id, clip] : clips_) {
+        if (clip.trackId == trackId && clip.view == view)
             result.push_back(clip.id);
-        }
     }
     if (view == ClipView::Arrangement) {
         std::sort(result.begin(), result.end(), [this](ClipId a, ClipId b) {
@@ -1229,9 +1176,9 @@ std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId, ClipView view)
 }
 
 ClipId ClipManager::getClipAtPosition(TrackId trackId, double time) const {
-    // Only check arrangement clips (timeline-based positioning)
-    for (const auto& clip : arrangementClips_) {
-        if (clip.trackId == trackId && clip.containsTime(time)) {
+    for (const auto& [id, clip] : clips_) {
+        if (clip.view == ClipView::Arrangement && clip.trackId == trackId &&
+            clip.containsTime(time)) {
             return clip.id;
         }
     }
@@ -1241,9 +1188,9 @@ ClipId ClipManager::getClipAtPosition(TrackId trackId, double time) const {
 std::vector<ClipId> ClipManager::getClipsInRange(TrackId trackId, double startTime,
                                                  double endTime) const {
     std::vector<ClipId> result;
-    // Only check arrangement clips (timeline-based positioning)
-    for (const auto& clip : arrangementClips_) {
-        if (clip.trackId == trackId && clip.overlaps(startTime, endTime)) {
+    for (const auto& [id, clip] : clips_) {
+        if (clip.view == ClipView::Arrangement && clip.trackId == trackId &&
+            clip.overlaps(startTime, endTime)) {
             result.push_back(clip.id);
         }
     }
@@ -1273,9 +1220,9 @@ void ClipManager::clearClipSelection() {
 // ============================================================================
 
 ClipId ClipManager::getClipInSlot(TrackId trackId, int sceneIndex) const {
-    // Only check session clips (scene-based positioning)
-    for (const auto& clip : sessionClips_) {
-        if (clip.trackId == trackId && clip.sceneIndex == sceneIndex) {
+    for (const auto& [id, clip] : clips_) {
+        if (clip.view == ClipView::Session && clip.trackId == trackId &&
+            clip.sceneIndex == sceneIndex) {
             return clip.id;
         }
     }
@@ -1310,8 +1257,9 @@ void ClipManager::stopClip(ClipId clipId) {
 }
 
 void ClipManager::stopAllClips() {
-    for (const auto& clip : sessionClips_) {
-        notifyClipPlaybackRequested(clip.id, ClipPlaybackRequest::Stop);
+    for (const auto& [id, clip] : clips_) {
+        if (clip.view == ClipView::Session)
+            notifyClipPlaybackRequested(clip.id, ClipPlaybackRequest::Stop);
     }
 }
 
@@ -1334,8 +1282,7 @@ void ClipManager::removeListener(ClipManagerListener* listener) {
 // ============================================================================
 
 void ClipManager::clearAllClips() {
-    arrangementClips_.clear();
-    sessionClips_.clear();
+    clips_.clear();
     selectedClipId_ = INVALID_CLIP_ID;
     nextClipId_ = 1;
     notifyClipsChanged();
@@ -1395,8 +1342,9 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
     };
     std::vector<ResizeOp> toResize;
 
-    for (const auto& clip : arrangementClips_) {
-        if (clip.id == dominantClipId || clip.trackId != trackId) {
+    for (const auto& [cid, clip] : clips_) {
+        if (clip.view != ClipView::Arrangement || clip.id == dominantClipId ||
+            clip.trackId != trackId) {
             continue;
         }
 
@@ -1504,16 +1452,9 @@ void ClipManager::notifyClipDragPreview(ClipId clipId, double previewStartTime,
 
 juce::String ClipManager::generateClipName(ClipType type) const {
     int count = 1;
-    // Count clips of same type in both arrays
-    for (const auto& clip : arrangementClips_) {
-        if (clip.type == type) {
+    for (const auto& [id, clip] : clips_) {
+        if (clip.type == type)
             count++;
-        }
-    }
-    for (const auto& clip : sessionClips_) {
-        if (clip.type == type) {
-            count++;
-        }
     }
 
     if (type == ClipType::Audio) {
@@ -1597,7 +1538,9 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
     if (startTime >= endTime)
         return;
 
-    for (const auto& clip : arrangementClips_) {
+    for (const auto& [id, clip] : clips_) {
+        if (clip.view != ClipView::Arrangement)
+            continue;
         // Filter by track if trackIds is non-empty
         if (!trackIds.empty()) {
             if (std::find(trackIds.begin(), trackIds.end(), clip.trackId) == trackIds.end())

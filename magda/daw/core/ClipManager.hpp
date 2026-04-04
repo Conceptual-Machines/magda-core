@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "ClipInfo.hpp"
@@ -64,8 +65,7 @@ class ClipManager {
      * Call during app shutdown to prevent static cleanup issues
      */
     void shutdown() {
-        arrangementClips_.clear();  // Clear JUCE objects before JUCE cleanup
-        sessionClips_.clear();
+        clips_.clear();
     }
 
     // ========================================================================
@@ -305,20 +305,15 @@ class ClipManager {
     /**
      * @brief Get all arrangement clips (timeline-based)
      */
-    const std::vector<ClipInfo>& getArrangementClips() const {
-        return arrangementClips_;
-    }
+    std::vector<ClipInfo> getArrangementClips() const;
 
     /**
      * @brief Get all session clips (scene-based)
      */
-    const std::vector<ClipInfo>& getSessionClips() const {
-        return sessionClips_;
-    }
+    std::vector<ClipInfo> getSessionClips() const;
 
     /**
      * @brief Get all clips (both arrangement and session)
-     * @deprecated Use getArrangementClips() or getSessionClips() instead
      */
     std::vector<ClipInfo> getClips() const;
 
@@ -495,9 +490,8 @@ class ClipManager {
     ClipManager() = default;
     ~ClipManager() = default;
 
-    // Separate storage for arrangement and session clips
-    std::vector<ClipInfo> arrangementClips_;
-    std::vector<ClipInfo> sessionClips_;
+    // Unified clip storage — ClipView is a property, not storage identity
+    std::unordered_map<ClipId, ClipInfo> clips_;
 
     // Clipboard storage
     std::vector<ClipInfo> clipboard_;
