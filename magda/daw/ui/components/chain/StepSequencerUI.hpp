@@ -80,6 +80,7 @@ class StepSequencerUI : public juce::Component,
     juce::TextEditor aiPromptEditor_;
     juce::Label aiModelLabel_;
     std::unique_ptr<magda::SvgButton> aiIcon_;
+    std::unique_ptr<magda::SvgButton> aiClearButton_;
 
     /** Shows streaming status: description + step list that auto-scrolls. */
     class AIResultDisplay : public juce::Component, private juce::Timer {

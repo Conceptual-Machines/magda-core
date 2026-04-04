@@ -55,6 +55,7 @@ class WaveformEditorContent : public PanelContent,
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override;
+    void mouseMagnify(const juce::MouseEvent& event, float scaleFactor) override;
 
     // ClipManagerListener
     void clipsChanged() override;

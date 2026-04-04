@@ -59,7 +59,10 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
                                       : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
         if (bpm > 0.0) {
             clip.startBeats = startTime * bpm / 60.0;
-            clip.lengthBeats = length * bpm / 60.0;
+            // Don't set lengthBeats for non-autoTempo audio clips — time is
+            // authoritative and beats should be derived at display time so the
+            // clip width updates correctly when BPM changes.
+            clip.lengthBeats = 0.0;
         }
         arrangementClips_.push_back(clip);
         resolveOverlaps(clip.id);

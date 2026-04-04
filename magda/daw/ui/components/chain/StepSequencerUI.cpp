@@ -417,6 +417,14 @@ StepSequencerUI::StepSequencerUI() {
     aiIcon_->setInterceptsMouseClicks(false, false);
     addAndMakeVisible(*aiIcon_);
 
+    aiClearButton_ = std::make_unique<magda::SvgButton>("ClearAIResult", BinaryData::delete_svg,
+                                                        BinaryData::delete_svgSize);
+    aiClearButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    aiClearButton_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.4f));
+    aiClearButton_->setTooltip("Clear AI result");
+    aiClearButton_->onClick = [this] { aiResultDisplay_.clear(); };
+    addAndMakeVisible(aiClearButton_.get());
+
     auto cfg = magda::Config::getInstance().getAgentLLMConfig("music");
     auto modelName = cfg.model.empty() ? cfg.provider : cfg.model;
     aiModelLabel_.setText(juce::String(modelName), juce::dontSendNotification);
@@ -593,16 +601,13 @@ void StepSequencerUI::resized() {
 
     bounds.removeFromTop(ROW_GAP + 2);
 
-    // TIME BEND label row with CYCLES slider on the right
+    // TIME BEND label row
     constexpr int LABEL_H = 14;
     constexpr int CELL_H = CONTROL_ROW_HEIGHT + LABEL_H;
     constexpr int SLIDER_COL_W = 44;
     {
         auto labelRow = bounds.removeFromTop(LABEL_H);
-        auto cyclesArea = labelRow.removeFromRight(80);
         rampLabel_.setBounds(labelRow);
-        cyclesLabel_.setBounds(cyclesArea.removeFromLeft(40));
-        cyclesSlider_.setBounds(cyclesArea);
     }
     auto rampRow = bounds.removeFromTop(CELL_H * 3);
     {
@@ -611,9 +616,12 @@ void StepSequencerUI::resized() {
         auto depthCell = sliderCol.removeFromTop(CELL_H);
         depthLabel_.setBounds(depthCell.removeFromTop(LABEL_H));
         depthSlider_.setBounds(depthCell);
-        auto skewCell = sliderCol;
+        auto skewCell = sliderCol.removeFromTop(CELL_H);
         skewLabel_.setBounds(skewCell.removeFromTop(LABEL_H));
         skewSlider_.setBounds(skewCell);
+        auto cyclesCell = sliderCol.removeFromTop(CELL_H);
+        cyclesLabel_.setBounds(cyclesCell.removeFromTop(LABEL_H));
+        cyclesSlider_.setBounds(cyclesCell);
         // Curve fills remaining width
         rampRow.removeFromRight(4);
         rampCurveDisplay_.setBounds(rampRow);
@@ -629,6 +637,8 @@ void StepSequencerUI::resized() {
     buttonRow.removeFromLeft(2);
     aiModelLabel_.setBounds(buttonRow.removeFromLeft(90));
     buttonRow.removeFromLeft(2);
+    aiClearButton_->setBounds(buttonRow.removeFromRight(CONTROL_ROW_HEIGHT));
+    buttonRow.removeFromRight(2);
     aiButton_.setBounds(buttonRow.removeFromRight(60));
     buttonRow.removeFromRight(4);
     aiPromptEditor_.setBounds(buttonRow);

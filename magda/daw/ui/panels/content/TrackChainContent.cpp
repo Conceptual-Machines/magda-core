@@ -1339,7 +1339,17 @@ void TrackChainContent::tracksChanged() {
 
 void TrackChainContent::trackPropertyChanged(int trackId) {
     if (static_cast<magda::TrackId>(trackId) == selectedTrackId_) {
-        updateFromSelectedTrack();
+        // Only update header widgets — don't rebuild device components,
+        // as the device chain hasn't changed and rebuilding destroys
+        // transient UI state (e.g. AI results in step sequencer).
+        const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        if (track) {
+            trackNameLabel_.setText(track->name, juce::dontSendNotification);
+            muteButton_.setToggleState(track->muted, juce::dontSendNotification);
+            soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
+            volumeSlider_.setValue(gainToDb(track->volume), juce::dontSendNotification);
+            panSlider_.setValue(track->pan, juce::dontSendNotification);
+        }
     }
 }
 

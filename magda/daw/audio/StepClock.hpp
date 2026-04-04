@@ -101,13 +101,19 @@ class StepClock {
     bool running_ = false;
 
     // Timing — tracks the next step beat directly (immune to rate changes)
-    double nextStepBeat_ = -1.0;  // Beat position of the next step to emit
+    double nextStepBeat_ = -1.0;  // Beat position of the next step to emit (monotonic space)
     int tickParity_ = 0;          // Even/odd counter for swing
+
+    // Monotonic beat tracking — makes the clock immune to arrangement loop wraps.
+    // Edit beats wrap at arrangement loop boundaries; we accumulate an offset so
+    // the step clock always sees monotonically increasing beats.
+    double beatOffset_ = 0.0;
+    double lastBlockEndBeat_ = 0.0;
 
     // Sequence state (direction-aware position within the pattern)
     int sequenceStep_ = 0;          // Current position in the pattern (0..numSteps-1)
     int cycleStep_ = 0;             // Linear step count within current cycle (for ramp curve)
-    double cycleOriginBeat_ = 0.0;  // Beat position where current cycle started
+    double cycleOriginBeat_ = 0.0;  // Beat position where current cycle started (monotonic space)
     bool goingUp_ = true;           // For ping-pong direction
 
     // Random

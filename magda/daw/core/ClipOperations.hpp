@@ -548,19 +548,14 @@ class ClipOperations {
                 clip.setLoopLengthFromTimeline(clip.length);
             }
 
-            // Use source file's beat count when available, otherwise derive from
-            // sourceBPM and source duration, falling back to project BPM
-            double sourceBeats = clip.sourceNumBeats;
-            if (sourceBeats <= 0.0 && clip.sourceBPM > 0.0) {
-                double sourceDuration = clip.getSourceLength();
-                sourceBeats = sourceDuration * clip.sourceBPM / 60.0;
-            }
-            clip.lengthBeats = sourceBeats > 0.0 ? sourceBeats : clip.getLengthInBeats(bpm);
+            // Preserve the clip's current timeline length in beats — switching to
+            // beat mode should lock the existing position, not resize the clip
+            // to match the source file's beat count (which may be at a different BPM).
+            clip.lengthBeats = clip.getLengthInBeats(bpm);
 
             if (clip.loopEnabled && clip.loopLength > 0.0) {
-                clip.loopLengthBeats =
-                    sourceBeats > 0.0 ? sourceBeats : (clip.loopLength * bpm) / 60.0;
-                clip.loopStartBeats = (clip.loopStart * bpm) / 60.0;
+                clip.loopLengthBeats = clip.loopLength * bpm / 60.0;
+                clip.loopStartBeats = clip.loopStart * bpm / 60.0;
             } else {
                 clip.loopLengthBeats = clip.lengthBeats;
                 clip.loopStartBeats = 0.0;

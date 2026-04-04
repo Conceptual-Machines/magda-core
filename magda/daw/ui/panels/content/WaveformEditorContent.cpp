@@ -754,6 +754,11 @@ void WaveformEditorContent::mouseWheelMove(const juce::MouseEvent& event,
     }
 }
 
+void WaveformEditorContent::mouseMagnify(const juce::MouseEvent& event, float scaleFactor) {
+    int anchorX = event.x - viewport_->getX();
+    performAnchorPointZoom(static_cast<double>(scaleFactor), anchorX);
+}
+
 // ============================================================================
 // ClipManagerListener
 // ============================================================================

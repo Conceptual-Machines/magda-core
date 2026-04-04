@@ -69,3 +69,7 @@ The Step Sequencer can generate patterns using AI:
 3. The AI fills the step grid with a matching pattern
 
 You can also click the random button for a quick random pattern.
+
+## Known Limitations
+
+- **Arrangement loop boundary**: The Step Sequencer may produce a brief timing glitch when the arrangement transport loops back to the start. This does not affect session clips or non-looping playback.

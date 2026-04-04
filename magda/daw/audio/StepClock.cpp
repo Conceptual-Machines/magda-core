@@ -13,6 +13,8 @@ void StepClock::reset() {
     goingUp_ = true;
     wasPlaying_ = false;
     running_ = false;
+    beatOffset_ = 0.0;
+    lastBlockEndBeat_ = 0.0;
 }
 
 double StepClock::rateToBeats(Rate r) {
@@ -128,6 +130,16 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
 
     if (blockEndBeat <= blockStartBeat)
         return 0;
+
+    // Apply monotonic offset so the step clock is immune to arrangement loop
+    // wraps. Edit beats wrap at loop boundaries (e.g. 8→0); we detect backward
+    // jumps and accumulate an offset so beats always increase.
+    if (lastBlockEndBeat_ > 0.0 && blockStartBeat < lastBlockEndBeat_ - 0.01) {
+        beatOffset_ += lastBlockEndBeat_ - blockStartBeat;
+    }
+    lastBlockEndBeat_ = blockEndBeat;
+    blockStartBeat += beatOffset_;
+    blockEndBeat += beatOffset_;
 
     double stepBeats = rateToBeats(rate);
     double cycleBeats = stepBeats * numSteps;

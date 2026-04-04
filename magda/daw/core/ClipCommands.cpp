@@ -784,18 +784,11 @@ void RenderClipCommand::execute() {
         return;
     }
 
-    // Determine output file path
+    // Determine output file path — always use the project's renders directory
     juce::File sourceFile(clip->audioFilePath);
-    auto configFolder = Config::getInstance().getRenderFolder();
-    juce::File rendersDir;
-    if (!configFolder.empty()) {
-        rendersDir = juce::File(configFolder);
-    } else {
-        auto projRendersDir = ProjectManager::getInstance().getRendersDirectory();
-        rendersDir = projRendersDir != juce::File()
-                         ? projRendersDir
-                         : sourceFile.getParentDirectory().getChildFile("renders");
-    }
+    auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
+    if (rendersDir == juce::File())
+        rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
     rendersDir.createDirectory();
 
     auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
@@ -853,9 +846,19 @@ void RenderClipCommand::execute() {
     params.useMasterPlugins = false;
     params.checkNodesForAudio = false;
 
-    // Set time range to clip's timeline range
-    params.time = te::TimeRange(te::TimePosition::fromSeconds(clip->startTime),
-                                te::TimePosition::fromSeconds(clip->startTime + clip->length));
+    // Set time range — use seconds directly (authoritative for non-autoTempo clips)
+    double projectBPM = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    double renderStart = clip->startTime;
+    double renderEnd = clip->startTime + clip->length;
+
+    // For autoTempo clips (lengthBeats > 0), beats are authoritative
+    if (clip->lengthBeats > 0.0 && projectBPM > 0.0) {
+        renderStart = clip->startBeats * 60.0 / projectBPM;
+        renderEnd = (clip->startBeats + clip->lengthBeats) * 60.0 / projectBPM;
+    }
+
+    params.time = te::TimeRange(te::TimePosition::fromSeconds(renderStart),
+                                te::TimePosition::fromSeconds(renderEnd));
 
     // Set track and clip filters
     juce::BigInteger trackBits;
@@ -876,9 +879,17 @@ void RenderClipCommand::execute() {
         return;
     }
 
-    // Delete original clip and create new clean clip at same position
+    // Capture original clip properties before deletion — use seconds directly
+    double startBeats = clip->startBeats;
+    double lengthBeats = clip->lengthBeats;
     double startTime = clip->startTime;
     double length = clip->length;
+
+    // For autoTempo clips, derive seconds from beats (beats are authoritative)
+    if (lengthBeats > 0.0 && projectBPM > 0.0) {
+        startTime = startBeats * 60.0 / projectBPM;
+        length = lengthBeats * 60.0 / projectBPM;
+    }
     TrackId trackId = clip->trackId;
     juce::Colour colour = clip->colour;
     juce::String name = clip->name;
@@ -888,11 +899,16 @@ void RenderClipCommand::execute() {
     newClipId_ =
         clipManager.createAudioClip(trackId, startTime, length, renderedFile_.getFullPathName());
 
-    // Copy over visual properties to the new clip
+    // Copy over beat-domain values and visual properties to the new clip
     if (auto* newClip = clipManager.getClip(newClipId_)) {
+        newClip->startBeats = startBeats;
+        newClip->lengthBeats = lengthBeats;
         newClip->colour = colour;
         newClip->name = name.isNotEmpty() ? name : renderedFile_.getFileNameWithoutExtension();
         clipManager.forceNotifyClipsChanged();
+
+        // Select the new clip so the old (deleted) clip ID doesn't linger in selection
+        SelectionManager::getInstance().selectClip(newClipId_);
     }
 
     restoreTransport();
@@ -991,16 +1007,9 @@ void RenderTimeSelectionCommand::execute() {
         // Determine output file path from first overlapping clip's source
         auto* firstClip = clipManager.getClip(overlappingIds[0]);
         juce::File sourceFile(firstClip->audioFilePath);
-        auto configFolder = Config::getInstance().getRenderFolder();
-        juce::File rendersDir;
-        if (!configFolder.empty()) {
-            rendersDir = juce::File(configFolder);
-        } else {
-            auto projRendersDir = ProjectManager::getInstance().getRendersDirectory();
-            rendersDir = projRendersDir != juce::File()
-                             ? projRendersDir
-                             : sourceFile.getParentDirectory().getChildFile("renders");
-        }
+        auto rendersDir = ProjectManager::getInstance().getRendersDirectory();
+        if (rendersDir == juce::File())
+            rendersDir = sourceFile.getParentDirectory().getChildFile("renders");
         rendersDir.createDirectory();
 
         auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
