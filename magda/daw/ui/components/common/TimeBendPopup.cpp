@@ -41,7 +41,9 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     depthSlider_.onValueChanged = [this](double value) {
         curveDisplay_.setValues(static_cast<float>(value), curveDisplay_.getSkew());
         applyPreview(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
-                     juce::roundToInt(cyclesSlider_.getValue()));
+                     juce::roundToInt(cyclesSlider_.getValue()),
+                     static_cast<float>(quantizeSlider_.getValue()),
+                     juce::roundToInt(quantizeSubSlider_.getValue()), curveDisplay_.getHardAngle());
     };
     addAndMakeVisible(depthSlider_);
 
@@ -58,7 +60,9 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     skewSlider_.onValueChanged = [this](double value) {
         curveDisplay_.setValues(curveDisplay_.getDepth(), static_cast<float>(value));
         applyPreview(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
-                     juce::roundToInt(cyclesSlider_.getValue()));
+                     juce::roundToInt(cyclesSlider_.getValue()),
+                     static_cast<float>(quantizeSlider_.getValue()),
+                     juce::roundToInt(quantizeSubSlider_.getValue()), curveDisplay_.getHardAngle());
     };
     addAndMakeVisible(skewSlider_);
 
@@ -75,15 +79,68 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     cyclesSlider_.onValueChanged = [this](double) {
         applyPreview(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
-                     juce::roundToInt(cyclesSlider_.getValue()));
+                     juce::roundToInt(cyclesSlider_.getValue()),
+                     static_cast<float>(quantizeSlider_.getValue()),
+                     juce::roundToInt(quantizeSubSlider_.getValue()), curveDisplay_.getHardAngle());
     };
     addAndMakeVisible(cyclesSlider_);
+
+    // Quantize slider
+    quantizeLabel_.setText("QUANT", juce::dontSendNotification);
+    quantizeLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    quantizeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    quantizeLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(quantizeLabel_);
+
+    quantizeSlider_.setRange(0.0, 1.0, 0.01);
+    quantizeSlider_.setValue(0.0, juce::dontSendNotification);
+    quantizeSlider_.setValueFormatter(
+        [](double v) { return juce::String(juce::roundToInt(v * 100.0)) + "%"; });
+    quantizeSlider_.setValueParser(
+        [](const juce::String& t) { return t.trimCharactersAtEnd("%").getDoubleValue() / 100.0; });
+    quantizeSlider_.onValueChanged = [this](double) {
+        applyPreview(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
+                     juce::roundToInt(cyclesSlider_.getValue()),
+                     static_cast<float>(quantizeSlider_.getValue()),
+                     juce::roundToInt(quantizeSubSlider_.getValue()), curveDisplay_.getHardAngle());
+    };
+    addAndMakeVisible(quantizeSlider_);
+
+    // Quantize subdivisions slider
+    quantizeSubLabel_.setText("SUB", juce::dontSendNotification);
+    quantizeSubLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    quantizeSubLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
+    quantizeSubLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(quantizeSubLabel_);
+
+    quantizeSubSlider_.setRange(16.0, 512.0, 16.0);
+    quantizeSubSlider_.setValue(64.0, juce::dontSendNotification);
+    quantizeSubSlider_.setValueFormatter(
+        [](double v) { return juce::String(juce::roundToInt(v)); });
+    quantizeSubSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
+    quantizeSubSlider_.onValueChanged = [this](double) {
+        applyPreview(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
+                     juce::roundToInt(cyclesSlider_.getValue()),
+                     static_cast<float>(quantizeSlider_.getValue()),
+                     juce::roundToInt(quantizeSubSlider_.getValue()), curveDisplay_.getHardAngle());
+    };
+    addAndMakeVisible(quantizeSubSlider_);
 
     // Sync curve → sliders + live preview
     curveDisplay_.onCurveChanged = [this](float depth, float skew) {
         depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
         skewSlider_.setValue(static_cast<double>(skew), juce::dontSendNotification);
-        applyPreview(depth, skew, juce::roundToInt(cyclesSlider_.getValue()));
+        applyPreview(depth, skew, juce::roundToInt(cyclesSlider_.getValue()),
+                     static_cast<float>(quantizeSlider_.getValue()),
+                     juce::roundToInt(quantizeSubSlider_.getValue()), curveDisplay_.getHardAngle());
+    };
+
+    // Hard angle toggle → live preview
+    curveDisplay_.onHardAngleChanged = [this](bool) {
+        applyPreview(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
+                     juce::roundToInt(cyclesSlider_.getValue()),
+                     static_cast<float>(quantizeSlider_.getValue()),
+                     juce::roundToInt(quantizeSubSlider_.getValue()), curveDisplay_.getHardAngle());
     };
 
     // Apply button
@@ -96,7 +153,9 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
         restoreOriginals();
         if (onApply)
             onApply(curveDisplay_.getDepth(), curveDisplay_.getSkew(),
-                    juce::roundToInt(cyclesSlider_.getValue()));
+                    juce::roundToInt(cyclesSlider_.getValue()),
+                    static_cast<float>(quantizeSlider_.getValue()),
+                    juce::roundToInt(quantizeSubSlider_.getValue()), curveDisplay_.getHardAngle());
         if (auto* callout = findParentComponentOfClass<juce::CallOutBox>())
             callout->dismiss();
         else
@@ -118,7 +177,7 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     };
     addAndMakeVisible(cancelButton_);
 
-    setSize(280, 370 + TITLE_BAR_HEIGHT);
+    setSize(280, 370 + 2 * (ROW_HEIGHT + GAP) + TITLE_BAR_HEIGHT);
 }
 
 TimeBendPopup::~TimeBendPopup() {
@@ -127,10 +186,17 @@ TimeBendPopup::~TimeBendPopup() {
         restoreOriginals();
 }
 
-void TimeBendPopup::applyPreview(float depth, float skew, int cycles) {
+void TimeBendPopup::applyPreview(float depth, float skew, int cycles, float quantize,
+                                 int quantizeSub, bool hardAngle) {
     auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
     if (!clip || clip->type != magda::ClipType::MIDI || originalStartBeats_.size() < 2)
         return;
+
+    // Identity curve with no quantize — restore exact originals to avoid float drift
+    if (std::abs(depth) < 0.001f && std::abs(skew) < 0.001f && quantize < 0.001f) {
+        restoreOriginals();
+        return;
+    }
 
     // Find span from originals
     double minBeat = *std::min_element(originalStartBeats_.begin(), originalStartBeats_.end());
@@ -149,9 +215,18 @@ void TimeBendPopup::applyPreview(float depth, float skew, int cycles) {
         double t = (originalStartBeats_[i] - minBeat) / span;
         int seg = std::min(static_cast<int>(t / segLen), c - 1);
         double tLocal = (t - seg * segLen) / segLen;
-        double tLocalEased = daw::audio::StepClock::applyRampCurve(tLocal, depth, skew);
+        double tLocalEased = daw::audio::StepClock::applyRampCurve(tLocal, depth, skew, hardAngle);
         double tEased = (seg + tLocalEased) * segLen;
-        clip->midiNotes[index].startBeat = minBeat + tEased * span;
+        double newBeat = minBeat + tEased * span;
+
+        // Apply quantize snap
+        if (quantize > 0.0f && quantizeSub > 0) {
+            double gridSpacing = span / static_cast<double>(quantizeSub);
+            double snapped = std::round((newBeat - minBeat) / gridSpacing) * gridSpacing + minBeat;
+            newBeat += (snapped - newBeat) * static_cast<double>(quantize);
+        }
+
+        clip->midiNotes[index].startBeat = newBeat;
     }
 
     magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
@@ -233,6 +308,18 @@ void TimeBendPopup::resized() {
     auto cyclesRow = bounds.removeFromTop(ROW_HEIGHT);
     cyclesLabel_.setBounds(cyclesRow.removeFromLeft(LABEL_WIDTH));
     cyclesSlider_.setBounds(cyclesRow);
+
+    bounds.removeFromTop(GAP);
+
+    auto quantizeRow = bounds.removeFromTop(ROW_HEIGHT);
+    quantizeLabel_.setBounds(quantizeRow.removeFromLeft(LABEL_WIDTH));
+    quantizeSlider_.setBounds(quantizeRow);
+
+    bounds.removeFromTop(GAP);
+
+    auto quantizeSubRow = bounds.removeFromTop(ROW_HEIGHT);
+    quantizeSubLabel_.setBounds(quantizeSubRow.removeFromLeft(LABEL_WIDTH));
+    quantizeSubSlider_.setBounds(quantizeSubRow);
 
     bounds.removeFromTop(GAP);
 

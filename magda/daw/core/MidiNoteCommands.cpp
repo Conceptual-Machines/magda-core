@@ -1457,12 +1457,16 @@ void SetMidiPitchBendEventHandlesCommand::undo() {
 // ============================================================================
 
 BendNoteTimingCommand::BendNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices,
-                                             float depth, float skew, int cycles)
+                                             float depth, float skew, int cycles, float quantize,
+                                             int quantizeSub, bool hardAngle)
     : clipId_(clipId),
       noteIndices_(std::move(noteIndices)),
       depth_(depth),
       skew_(skew),
-      cycles_(std::max(1, cycles)) {}
+      cycles_(std::max(1, cycles)),
+      quantize_(quantize),
+      quantizeSub_(quantizeSub),
+      hardAngle_(hardAngle) {}
 
 void BendNoteTimingCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
@@ -1508,9 +1512,19 @@ void BendNoteTimingCommand::execute() {
         double t = (originalBeat - minBeat) / span;
         int seg = std::min(static_cast<int>(t / segLen), cycles_ - 1);
         double tLocal = (t - seg * segLen) / segLen;
-        double tLocalEased = daw::audio::StepClock::applyRampCurve(tLocal, depth_, skew_);
+        double tLocalEased =
+            daw::audio::StepClock::applyRampCurve(tLocal, depth_, skew_, hardAngle_);
         double tEased = (seg + tLocalEased) * segLen;
-        clip->midiNotes[index].startBeat = minBeat + tEased * span;
+        double newBeat = minBeat + tEased * span;
+
+        // Apply quantize snap
+        if (quantize_ > 0.0f && quantizeSub_ > 0) {
+            double gridSpacing = span / static_cast<double>(quantizeSub_);
+            double snapped = std::round((newBeat - minBeat) / gridSpacing) * gridSpacing + minBeat;
+            newBeat += (snapped - newBeat) * static_cast<double>(quantize_);
+        }
+
+        clip->midiNotes[index].startBeat = newBeat;
     }
 
     clipManager.forceNotifyClipPropertyChanged(clipId_);

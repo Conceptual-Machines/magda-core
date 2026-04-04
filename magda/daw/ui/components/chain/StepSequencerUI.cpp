@@ -244,7 +244,13 @@ StepSequencerUI::StepSequencerUI() {
     stepsSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     stepsSlider_.onValueChanged = [this](double value) {
         if (plugin_) {
-            plugin_->numSteps = juce::roundToInt(value);
+            int steps = juce::roundToInt(value);
+            plugin_->numSteps = steps;
+            rampCurveDisplay_.setNumTicks(steps);
+            // Clamp cycles to num steps
+            cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
+            if (cyclesSlider_.getValue() > steps)
+                cyclesSlider_.setValue(static_cast<double>(steps), juce::sendNotificationSync);
             repaint();
         }
     };
@@ -325,12 +331,43 @@ StepSequencerUI::StepSequencerUI() {
     };
 
     setupLabel(cyclesLabel_, "CYCLES");
-    setupSlider(cyclesSlider_, 1.0, 8.0, 1.0);
+    setupSlider(cyclesSlider_, 1.0, static_cast<double>(SeqPlugin::MAX_STEPS), 1.0);
     cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     cyclesSlider_.onValueChanged = [this](double value) {
         if (plugin_)
             plugin_->rampCycles = juce::roundToInt(value);
+    };
+
+    // Hard angle toggle (right-click on control point)
+    rampCurveDisplay_.onHardAngleChanged = [this](bool hardAngle) {
+        if (plugin_)
+            plugin_->hardAngle = hardAngle;
+    };
+
+    // Quantize slider (adaptive snap strength 0-100%)
+    setupLabel(quantizeLabel_, "QUANTIZE");
+    quantizeLabel_.setJustificationType(juce::Justification::centred);
+    setupSlider(quantizeSlider_, 0.0, 1.0, 0.01);
+    quantizeSlider_.setValueFormatter(
+        [](double v) { return juce::String(juce::roundToInt(v * 100)) + "%"; });
+    quantizeSlider_.setValueParser(
+        [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
+    quantizeSlider_.onValueChanged = [this](double value) {
+        if (plugin_)
+            plugin_->quantize = static_cast<float>(value);
+    };
+
+    // Quantize subdivisions (grid resolution, multiples of 16)
+    setupLabel(quantizeSubLabel_, "SUB");
+    setupSlider(quantizeSubSlider_, 16, 512, 16);
+    quantizeSubSlider_.setValueFormatter(
+        [](double v) { return juce::String(juce::roundToInt(v)); });
+    quantizeSubSlider_.setValueParser(
+        [](const juce::String& t) { return t.trim().getDoubleValue(); });
+    quantizeSubSlider_.onValueChanged = [this](double value) {
+        if (plugin_)
+            plugin_->quantizeSub = juce::roundToInt(value);
     };
 
     // --- MIDI controls ---
@@ -477,7 +514,15 @@ void StepSequencerUI::syncFromPlugin() {
     depthSlider_.setValue(static_cast<double>(plugin_->ramp.get()), juce::dontSendNotification);
     skewSlider_.setValue(static_cast<double>(plugin_->skew.get()), juce::dontSendNotification);
     rampCurveDisplay_.setValues(plugin_->ramp.get(), plugin_->skew.get());
-    cyclesSlider_.setValue(static_cast<double>(plugin_->rampCycles.get()),
+    rampCurveDisplay_.setHardAngle(plugin_->hardAngle.get());
+    int steps = plugin_->numSteps.get();
+    rampCurveDisplay_.setNumTicks(steps);
+    cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
+    quantizeSlider_.setValue(static_cast<double>(plugin_->quantize.get()),
+                             juce::dontSendNotification);
+    quantizeSubSlider_.setValue(static_cast<double>(plugin_->quantizeSub.get()),
+                                juce::dontSendNotification);
+    cyclesSlider_.setValue(static_cast<double>(juce::jlimit(1, steps, plugin_->rampCycles.get())),
                            juce::dontSendNotification);
     midiThruButton_->setActive(plugin_->midiThru.get());
     repaint();
@@ -500,9 +545,10 @@ void StepSequencerUI::timerCallback() {
         currentPlayStep_ = step;
         needsRepaint = true;
         // Update curve display sweep
-        int numSteps = juce::jlimit(1, 32, plugin_->numSteps.get());
+        int numSteps = juce::jlimit(1, SeqPlugin::MAX_STEPS, plugin_->numSteps.get());
         float pos = (step >= 0) ? static_cast<float>(step) / static_cast<float>(numSteps) : -1.0f;
-        rampCurveDisplay_.setPlaybackPosition(pos, juce::jlimit(1, 8, plugin_->rampCycles.get()));
+        rampCurveDisplay_.setPlaybackPosition(pos,
+                                              juce::jlimit(1, numSteps, plugin_->rampCycles.get()));
     }
     // Track step record position for highlight + parent header banner
     bool isRec = plugin_->isStepRecording();
@@ -542,7 +588,7 @@ void StepSequencerUI::configChanged() {
 void StepSequencerUI::resized() {
     auto bounds = getLocalBounds().reduced(PADDING);
 
-    // Controls row (two rows of label+control pairs)
+    // Controls row 1: RATE, STEPS, DIRECTION
     auto controlRow1 = bounds.removeFromTop(CONTROL_ROW_HEIGHT);
     int controlWidth = controlRow1.getWidth() / 3;
     {
@@ -561,22 +607,34 @@ void StepSequencerUI::resized() {
     }
 
     bounds.removeFromTop(ROW_GAP);
+
+    // Controls row 2: SWING, GATE, Q, SUB, THRU, REC
     auto controlRow2 = bounds.removeFromTop(CONTROL_ROW_HEIGHT);
     // Right side: THRU + REC icons
     stepRecordButton_->setBounds(controlRow2.removeFromRight(CONTROL_ROW_HEIGHT));
     controlRow2.removeFromRight(2);
     midiThruButton_->setBounds(controlRow2.removeFromRight(CONTROL_ROW_HEIGHT));
     controlRow2.removeFromRight(4);
-    // Left side: SWING + GATE
-    int halfWidth = controlRow2.getWidth() / 2;
+    // Left side: 4 controls evenly spaced
+    int quarterWidth = controlRow2.getWidth() / 4;
     {
-        auto cell = controlRow2.removeFromLeft(halfWidth);
+        auto cell = controlRow2.removeFromLeft(quarterWidth);
         swingLabel_.setBounds(cell.removeFromLeft(LABEL_WIDTH));
         swingSlider_.setBounds(cell);
     }
     {
-        glideLabel_.setBounds(controlRow2.removeFromLeft(LABEL_WIDTH));
-        glideSlider_.setBounds(controlRow2);
+        auto cell = controlRow2.removeFromLeft(quarterWidth);
+        glideLabel_.setBounds(cell.removeFromLeft(LABEL_WIDTH));
+        glideSlider_.setBounds(cell);
+    }
+    {
+        auto cell = controlRow2.removeFromLeft(quarterWidth);
+        quantizeLabel_.setBounds(cell.removeFromLeft(LABEL_WIDTH));
+        quantizeSlider_.setBounds(cell);
+    }
+    {
+        quantizeSubLabel_.setBounds(controlRow2.removeFromLeft(LABEL_WIDTH));
+        quantizeSubSlider_.setBounds(controlRow2);
     }
 
     bounds.removeFromTop(ROW_GAP + 2);
@@ -1120,6 +1178,8 @@ void StepSequencerUI::generateAIPattern() {
     auto responseSchema = llm::Schema::object({
         {"description", llm::Schema::string()},
         {"steps", stepsArraySchema},
+        {"depth", llm::Schema::number()},
+        {"skew", llm::Schema::number()},
     });
 
     auto systemPrompt =
@@ -1128,6 +1188,11 @@ void StepSequencerUI::generateAIPattern() {
                      "  - description: a short label for the pattern (e.g. \"Acid C minor\", "
                      "\"Funky bassline\")\n"
                      "  - steps: array of step objects\n"
+                     "  - depth: time bend depth (-1.0 to 1.0, 0.0 = no bend). "
+                     "Positive values push steps toward the end (swing feel), "
+                     "negative values push toward the start (rushed feel).\n"
+                     "  - skew: time bend skew (-1.0 to 1.0, 0.0 = symmetric). "
+                     "Controls where the bend peaks: negative = early, positive = late.\n"
                      "Each step has:\n"
                      "  - note: MIDI note number (0-127, e.g. 60=C4, 48=C3, 36=C2)\n"
                      "  - octave: octave shift (-2 to +2, applied on top of note)\n"
@@ -1139,6 +1204,8 @@ void StepSequencerUI::generateAIPattern() {
                      juce::String(numSteps) +
                      " steps. Return only 1 pattern.\n"
                      "Keep octave at 0 unless the user asks for wide range.\n"
+                     "Use depth/skew sparingly — set both to 0.0 unless the user "
+                     "asks for swing, shuffle, or humanize.\n"
                      "For acid bass lines, use lots of glides and accents on root/fifth notes.");
 
     // Disable controls and show thinking indicator
@@ -1227,7 +1294,15 @@ void StepSequencerUI::generateAIPattern() {
             }
 
             if (safeThis->plugin_ && !steps.empty()) {
-                safeThis->plugin_->setPattern(steps);
+                safeThis->plugin_->setPattern(steps, true);
+
+                // Apply depth and skew if provided
+                float depth = static_cast<float>((double)json.getProperty("depth", 0.0));
+                float skew = static_cast<float>((double)json.getProperty("skew", 0.0));
+                depth = juce::jlimit(-1.0f, 1.0f, depth);
+                skew = juce::jlimit(-1.0f, 1.0f, skew);
+                safeThis->plugin_->ramp = depth;
+                safeThis->plugin_->skew = skew;
 
                 // Show the description in the status label
                 auto description = json.getProperty("description", {}).toString().trim();

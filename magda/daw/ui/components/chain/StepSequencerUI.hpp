@@ -69,6 +69,10 @@ class StepSequencerUI : public juce::Component,
     LinkableTextSlider skewSlider_;
     juce::Label cyclesLabel_;
     LinkableTextSlider cyclesSlider_;
+    juce::Label quantizeLabel_;
+    LinkableTextSlider quantizeSlider_;
+    juce::Label quantizeSubLabel_;
+    LinkableTextSlider quantizeSubSlider_;
 
     // --- MIDI controls ---
     std::unique_ptr<magda::SvgButton> midiThruButton_;

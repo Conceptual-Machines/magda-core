@@ -21,6 +21,9 @@ static const juce::Identifier latch("arpLatch");
 static const juce::Identifier velocityMode("arpVelMode");
 static const juce::Identifier fixedVelocity("arpFixedVel");
 static const juce::Identifier rampCycles("arpRampCycles");
+static const juce::Identifier quantize("arpQuantize");
+static const juce::Identifier quantizeSub("arpQuantizeSub");
+static const juce::Identifier hardAngle("arpHardAngle");
 }  // namespace ArpIDs
 
 ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : MidiDevicePlugin(info) {
@@ -36,6 +39,9 @@ ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : MidiD
     latch.referTo(state, ArpIDs::latch, um, false);
     velocityMode.referTo(state, ArpIDs::velocityMode, um, 0);
     fixedVelocity.referTo(state, ArpIDs::fixedVelocity, um, 100);
+    quantize.referTo(state, ArpIDs::quantize, um, 0.0f);
+    quantizeSub.referTo(state, ArpIDs::quantizeSub, um, 16);
+    hardAngle.referTo(state, ArpIDs::hardAngle, um, false);
 
     // Register automatable parameters so macros can link to them
     patternParam = addParam("pattern", "Pattern", {0.0f, 5.0f, 1.0f});
@@ -115,7 +121,8 @@ void ArpeggiatorPlugin::reset() {
 
 void ArpeggiatorPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     tracktion::copyPropertiesToCachedValues(v, pattern, rate, octaveRange, gate, swing, ramp, skew,
-                                            latch, velocityMode, fixedVelocity);
+                                            latch, velocityMode, fixedVelocity, quantize,
+                                            quantizeSub, hardAngle);
 }
 
 // =============================================================================
@@ -149,8 +156,8 @@ double ArpeggiatorPlugin::rateToBeats(Rate r) {
     }
 }
 
-double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew) {
-    return StepClock::applyRampCurve(t, depth, skew);
+double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew, bool hardAngle) {
+    return StepClock::applyRampCurve(t, depth, skew, hardAngle);
 }
 
 void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity) {
@@ -400,6 +407,9 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     int fixedVel = juce::jlimit(
         1, 127,
         juce::roundToInt(fixedVelParam ? fixedVelParam->getCurrentValue() : fixedVelocity.get()));
+    float quantizeAmount = juce::jlimit(0.0f, 1.0f, quantize.get());
+    int quantizeSubVal = juce::jlimit(16, 512, quantizeSub.get());
+    bool hardAngleVal = hardAngle.get();
 
     // Cycle length in beats (one full pass through the sequence)
     double cycleBeats = seq.length * stepBeats;
@@ -422,12 +432,12 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             double tLinear = static_cast<double>(stepInCycle) / static_cast<double>(seq.length);
             double tCurved;
             if (cyc <= 1) {
-                tCurved = applyRampCurve(tLinear, rampVal, skewVal);
+                tCurved = applyRampCurve(tLinear, rampVal, skewVal, hardAngleVal);
             } else {
                 double segLen = 1.0 / static_cast<double>(cyc);
                 int seg = std::min(static_cast<int>(tLinear / segLen), cyc - 1);
                 double tLocal = (tLinear - seg * segLen) / segLen;
-                tCurved = (seg + applyRampCurve(tLocal, rampVal, skewVal)) * segLen;
+                tCurved = (seg + applyRampCurve(tLocal, rampVal, skewVal, hardAngleVal)) * segLen;
             }
             return cycleStart + tCurved * cycleBeats;
         }
@@ -461,6 +471,13 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         double swungBeat = stepBeat;
         if (currentStep_ % 2 == 1 && swingVal > 0.0f) {
             swungBeat += static_cast<double>(swingVal) * stepBeats * 0.5;
+        }
+
+        // Apply quantize: pull warped beat toward a regular grid
+        if (quantizeAmount > 0.0f && quantizeSubVal > 0) {
+            double gridSpacing = cycleBeats / static_cast<double>(quantizeSubVal);
+            double snapped = std::round(swungBeat / gridSpacing) * gridSpacing;
+            swungBeat += (snapped - swungBeat) * static_cast<double>(quantizeAmount);
         }
 
         if (swungBeat >= blockStartBeat && swungBeat < blockEndBeat) {

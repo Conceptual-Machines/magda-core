@@ -32,6 +32,24 @@ class RampCurveDisplay : public juce::Component, public juce::SettableTooltipCli
         return skew_;
     }
 
+    void setHardAngle(bool enabled) {
+        if (hardAngle_ != enabled) {
+            hardAngle_ = enabled;
+            repaint();
+        }
+    }
+    bool getHardAngle() const {
+        return hardAngle_;
+    }
+
+    /** Set the number of ticks to display (matches step count). */
+    void setNumTicks(int n) {
+        if (numTicks_ != n) {
+            numTicks_ = n;
+            repaint();
+        }
+    }
+
     /** Set current playback position (0-1) and cycle count for animated sweep.
      *  Pass pos < 0 to hide the sweep. */
     void setPlaybackPosition(float pos, int cycles = 1) {
@@ -45,6 +63,9 @@ class RampCurveDisplay : public juce::Component, public juce::SettableTooltipCli
     /** Called whenever depth or skew change via mouse interaction. */
     std::function<void(float depth, float skew)> onCurveChanged;
 
+    /** Called when hard angle is toggled via right-click on the control point. */
+    std::function<void(bool hardAngle)> onHardAngleChanged;
+
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
@@ -53,10 +74,12 @@ class RampCurveDisplay : public juce::Component, public juce::SettableTooltipCli
   private:
     float depth_ = 0.0f;
     float skew_ = 0.0f;
+    bool hardAngle_ = false;
     float handleOffsetX_ = 0.0f;
     float handleOffsetY_ = 0.0f;
     float playbackPos_ = -1.0f;
     int cycles_ = 1;
+    int numTicks_ = 16;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RampCurveDisplay)
 };

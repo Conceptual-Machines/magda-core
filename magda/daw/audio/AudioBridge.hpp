@@ -19,6 +19,7 @@
 #include "ParameterQueue.hpp"
 #include "PluginManager.hpp"
 #include "PluginWindowBridge.hpp"
+#include "SessionClipAudioMonitor.hpp"
 #include "SidechainTriggerBus.hpp"
 #include "TrackController.hpp"
 #include "TransportStateManager.hpp"
@@ -29,6 +30,7 @@ namespace magda {
 // Forward declarations
 namespace te = tracktion;
 class PluginWindowManager;
+class SessionMonitorPlugin;
 class TracktionEngineWrapper;
 
 /**
@@ -160,6 +162,14 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @return The TE Clip pointer, or nullptr if not found
      */
     te::Clip* getArrangementTeClip(ClipId clipId) const;
+
+    /** Get the audio-thread session clip monitor (for SessionClipScheduler). */
+    SessionClipAudioMonitor& getSessionAudioMonitor() {
+        return sessionAudioMonitor_;
+    }
+
+    /** Ensure the SessionMonitorPlugin is installed on a track for audio-thread monitoring. */
+    void ensureSessionMonitorPlugin();
 
     // =========================================================================
     // Transient Detection
@@ -723,6 +733,8 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     TrackController trackController_;
     PluginManager pluginManager_;
     ClipSynchronizer clipSynchronizer_;
+    SessionClipAudioMonitor sessionAudioMonitor_;
+    SessionMonitorPlugin* sessionMonitorPlugin_ = nullptr;
 
     // Per-device metering (LevelMeasurer per device, polled on timer)
     DeviceMeteringManager deviceMetering_;

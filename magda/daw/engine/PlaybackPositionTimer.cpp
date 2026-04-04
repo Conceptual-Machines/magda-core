@@ -3,6 +3,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 
 #include "AudioEngine.hpp"
+#include "core/ClipManager.hpp"
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineEvents.hpp"
 
@@ -31,6 +32,9 @@ void PlaybackPositionTimer::timerCallback() {
     // Update trigger state for transport-synced devices (tone generator, etc.)
     engine_.updateTriggerState();
 
+    // Drain audio-thread session clip state events before querying playhead
+    engine_.processSessionStateEvents();
+
     bool isPlaying = engine_.isPlaying();
 
     // Detect engine play/stop transitions that happened outside the UI
@@ -45,21 +49,20 @@ void PlaybackPositionTimer::timerCallback() {
     }
 
     if (isPlaying) {
-        double sessionPos = engine_.getSessionPlayheadPosition();
-        auto sessionClipId = engine_.getSessionPlayheadClipId();
         double transportPos = engine_.getCurrentPosition();
+        timeline_.dispatch(SetPlaybackPositionEvent{transportPos});
 
-        // Always use the real transport position for the main timeline playhead.
-        // The session position is passed through so clip editors (waveform,
-        // piano roll) can show a looped playhead independent of the arrangement.
-        timeline_.dispatch(SetPlaybackPositionEvent{transportPos, sessionPos, sessionClipId});
-
-        // Session clip playhead callback (for per-clip progress bars)
-        if (onSessionPlayheadUpdate) {
-            auto clipPositions = engine_.getActiveClipPlayheadPositions();
-            if (!clipPositions.empty()) {
-                onSessionPlayheadUpdate(clipPositions);
+        // Write per-clip playhead positions into ClipInfo and notify UI
+        auto clipPositions = engine_.getActiveClipPlayheadPositions();
+        if (!clipPositions.empty()) {
+            auto& cm = ClipManager::getInstance();
+            for (const auto& [clipId, pos] : clipPositions) {
+                if (auto* clip = cm.getClip(clipId))
+                    clip->sessionPlayheadPos = pos;
             }
+
+            if (onSessionPlayheadUpdate)
+                onSessionPlayheadUpdate(clipPositions);
         }
     }
 

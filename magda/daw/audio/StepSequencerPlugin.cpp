@@ -27,6 +27,9 @@ static const juce::Identifier stepGlide("glide");
 static const juce::Identifier stepTie("tie");
 static const juce::Identifier midiThru("seqMidiThru");
 static const juce::Identifier rampCycles("seqRampCycles");
+static const juce::Identifier hardAngle("seqHardAngle");
+static const juce::Identifier quantize("seqQuantize");
+static const juce::Identifier quantizeSub("seqQuantizeSub");
 }  // namespace SeqIDs
 
 StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
@@ -44,6 +47,9 @@ StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
     skew.referTo(state, SeqIDs::skew, um, 0.0f);
     midiThru.referTo(state, SeqIDs::midiThru, um, true);
     rampCycles.referTo(state, SeqIDs::rampCycles, um, 1);
+    hardAngle.referTo(state, SeqIDs::hardAngle, um, false);
+    quantize.referTo(state, SeqIDs::quantize, um, 0.0f);
+    quantizeSub.referTo(state, SeqIDs::quantizeSub, um, 16);
 
     // Register automatable parameters for macro/mod linking
     rateParam = addParam("rate", "Rate", {0.0f, 9.0f, 1.0f});
@@ -126,7 +132,8 @@ void StepSequencerPlugin::flushPluginStateToValueTree() {
 
 void StepSequencerPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     tracktion::copyPropertiesToCachedValues(v, numSteps, rate, direction, swing, gateLength,
-                                            accentVelocity, normalVelocity, ramp, skew);
+                                            accentVelocity, normalVelocity, ramp, skew, hardAngle,
+                                            quantize, quantizeSub);
 
     // Copy step children from the incoming tree into our state
     // (copyPropertiesToCachedValues only copies properties, not children)
@@ -218,13 +225,22 @@ void StepSequencerPlugin::randomizePattern() {
     saveStepsToState();
 }
 
-void StepSequencerPlugin::setPattern(const std::vector<Step>& steps) {
+void StepSequencerPlugin::setPattern(const std::vector<Step>& steps, bool cueOnBar) {
     int count = std::min(static_cast<int>(steps.size()), MAX_STEPS);
-    for (int i = 0; i < count; ++i)
-        steps_[static_cast<size_t>(i)] = steps[static_cast<size_t>(i)];
-    if (count != numSteps.get())
-        numSteps = count;
-    saveStepsToState();
+
+    if (cueOnBar && stepClock_.isRunning()) {
+        // Queue pattern — audio thread swaps it in at the next cycle boundary
+        for (int i = 0; i < count; ++i)
+            pendingSteps_[static_cast<size_t>(i)] = steps[static_cast<size_t>(i)];
+        pendingNumSteps_ = count;
+    } else {
+        // Apply immediately
+        for (int i = 0; i < count; ++i)
+            steps_[static_cast<size_t>(i)] = steps[static_cast<size_t>(i)];
+        if (count != numSteps.get())
+            numSteps = count;
+        saveStepsToState();
+    }
 }
 
 int StepSequencerPlugin::resolveNote(const Step& step) {
@@ -291,6 +307,16 @@ void StepSequencerPlugin::setStepRecording(bool enabled) {
 // Audio thread
 // =============================================================================
 
+void StepSequencerPlugin::killNote(te::MidiMessageArray& midi, double time) {
+    if (lastPlayedNote_ >= 0) {
+        midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), time,
+                            te::MPESourceID{});
+        lastPlayedNote_ = -1;
+        noteOffCountdown_ = 0;
+        clearMidiOutDisplay();
+    }
+}
+
 void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (!fc.bufferForMidiMessages)
         return;
@@ -329,15 +355,10 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
     // Only run when transport is playing
     if (!fc.isPlaying) {
-        if (lastPlayedNote_ >= 0) {
-            midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), 0.0,
-                                te::MPESourceID{});
-            lastPlayedNote_ = -1;
-            noteOffCountdown_ = 0;
-            clearMidiOutDisplay();
-        }
+        killNote(midi, 0.0);
         stepClock_.reset();
         currentPlayStep_.store(-1, std::memory_order_relaxed);
+        silentBlockCount_ = 0;
         return;
     }
 
@@ -371,13 +392,47 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     double stepBeats = StepClock::rateToBeats(currentRate);
     int stepDurationSamples = std::max(1, static_cast<int>(stepBeats * 60.0 / bpm * sampleRate_));
 
+    int cyclesVal = juce::jlimit(1, 8, rampCycles.get());
+    bool hardAngleVal = hardAngle.get();
+    float quantizeVal = juce::jlimit(0.0f, 1.0f, quantize.get());
+    int quantizeSubVal = juce::jlimit(16, 512, quantizeSub.get());
+
+    // --- Detect structural parameter changes → reset clock to re-sync ---
+    // Only reset for changes that alter the step grid timing structure.
+    // numSteps is NOT included: the clock wraps cycleStep_ % numSteps naturally,
+    // so pattern length changes (e.g. from streaming AI results) don't disrupt timing.
+    // Ramp depth/skew are NOT included: warpedStepDuration() recalculates
+    // each block, so the timing adapts smoothly without retriggering.
+    int rateInt = static_cast<int>(currentRate);
+    if (rateInt != prevRate_ || cyclesVal != prevCycles_ || hardAngleVal != prevHardAngle_) {
+        killNote(midi, 0.0);
+        stepClock_.reset();
+        prevRate_ = rateInt;
+        prevCycles_ = cyclesVal;
+        prevHardAngle_ = hardAngleVal;
+    }
+
+    // --- Swap pending pattern at cycle boundary ---
+    // The clock's cycleStep wraps to 0 at the start of each cycle.
+    // Swap before processBlock so the new step count is used this block.
+    if (pendingNumSteps_ > 0 && stepClock_.getCycleStep() == 0) {
+        int pCount = pendingNumSteps_;
+        for (int i = 0; i < pCount; ++i)
+            steps_[static_cast<size_t>(i)] = pendingSteps_[static_cast<size_t>(i)];
+        pendingNumSteps_ = 0;
+        if (pCount != numSteps.get())
+            numSteps = pCount;
+        stepCount = juce::jlimit(1, MAX_STEPS, pCount);
+        // Persist to ValueTree (on message thread to avoid blocking audio)
+        juce::MessageManager::callAsync([this] { saveStepsToState(); });
+    }
+
     // --- Get step events from the clock ---
     static constexpr int MAX_EVENTS_PER_BLOCK = 16;
     StepClock::StepEvent events[MAX_EVENTS_PER_BLOCK];
-    int cyclesVal = juce::jlimit(1, 8, rampCycles.get());
-    int eventCount =
-        stepClock_.processBlock(fc, edit, currentRate, currentDir, swingVal, stepCount, events,
-                                MAX_EVENTS_PER_BLOCK, rampVal, skewVal, cyclesVal);
+    int eventCount = stepClock_.processBlock(fc, edit, currentRate, currentDir, swingVal, stepCount,
+                                             events, MAX_EVENTS_PER_BLOCK, rampVal, skewVal,
+                                             cyclesVal, hardAngleVal, quantizeVal, quantizeSubVal);
 
     // --- Emit pending note-off (sample countdown) ---
     // Only emit if the countdown fires BEFORE the first step event in this block.
@@ -393,11 +448,7 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                  steps_[static_cast<size_t>(events[0].stepIndex)].gate);
 
             if (!stepFiresFirst && !nextStepIsTie) {
-                midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), countdownTime,
-                                    te::MPESourceID{});
-                lastPlayedNote_ = -1;
-                noteOffCountdown_ = 0;
-                clearMidiOutDisplay();
+                killNote(midi, countdownTime);
             } else {
                 noteOffCountdown_ = 0;
             }
@@ -419,13 +470,7 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
         // Rest step — send note-off if needed
         if (!step.gate) {
-            if (lastPlayedNote_ >= 0) {
-                midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), evt.timeInBlock,
-                                    te::MPESourceID{});
-                lastPlayedNote_ = -1;
-                noteOffCountdown_ = 0;
-                clearMidiOutDisplay();
-            }
+            killNote(midi, evt.timeInBlock);
             continue;
         }
 
@@ -467,11 +512,21 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             double offTimeInBlock =
                 evt.timeInBlock + static_cast<double>(gateSamples) / sampleRate_;
             offTimeInBlock = std::min(offTimeInBlock, blockDurationSecs);
-            midi.addMidiMessage(juce::MidiMessage::noteOff(1, noteNum), offTimeInBlock,
-                                te::MPESourceID{});
-            lastPlayedNote_ = -1;
-            noteOffCountdown_ = 0;
-            clearMidiOutDisplay();
+            killNote(midi, offTimeInBlock);
+        }
+    }
+
+    // --- Strict mono safety: kill stuck notes ---
+    // If no step events fired this block and there's a playing note with no
+    // pending note-off countdown, the note is stuck. Count silent blocks and
+    // kill after a short grace period (~50ms at 44.1kHz / 512 block = ~4 blocks).
+    if (eventCount > 0) {
+        silentBlockCount_ = 0;
+    } else if (lastPlayedNote_ >= 0 && noteOffCountdown_ <= 0) {
+        ++silentBlockCount_;
+        if (silentBlockCount_ > 4) {
+            killNote(midi, 0.0);
+            silentBlockCount_ = 0;
         }
     }
 

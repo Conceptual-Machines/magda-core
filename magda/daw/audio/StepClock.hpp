@@ -72,7 +72,8 @@ class StepClock {
     int processBlock(const te::PluginRenderContext& fc, te::Edit& edit, Rate rate,
                      Direction direction, float swing, int numSteps, StepEvent* events,
                      int maxEvents, float rampDepth = 0.0f, float rampSkew = 0.0f,
-                     int rampCycles = 1);
+                     int rampCycles = 1, bool hardAngle = false, float quantizeAmount = 0.0f,
+                     int quantizeSub = 16);
 
     /** Current step index within the sequence (for UI display). */
     int getCurrentStep() const {
@@ -84,14 +85,21 @@ class StepClock {
         return running_;
     }
 
+    /** Current linear step within the cycle (0..numSteps-1, for ramp curve). */
+    int getCycleStep() const {
+        return cycleStep_;
+    }
+
     /** Convert rate enum to beats per step. */
     static double rateToBeats(Rate r);
 
-    /** Quadratic bezier timing curve (shared by arpeggiator and step sequencer).
+    /** Timing curve (shared by arpeggiator and step sequencer).
      *  Control point at (skew, skew+depth) in unit square.
      *  depth > 0 → front-loaded (log-like), depth < 0 → back-loaded (exp-like).
-     *  skew shifts the control point horizontally (-1..1 mapped to 0.01..0.99). */
-    static double applyRampCurve(double t, float depth, float skew);
+     *  skew shifts the control point horizontally (-1..1 mapped to 0.01..0.99).
+     *  hardAngle = true → piecewise linear (two straight segments through control point).
+     *  hardAngle = false → quadratic bezier (smooth curve through control point). */
+    static double applyRampCurve(double t, float depth, float skew, bool hardAngle = false);
 
   private:
     double sampleRate_ = 44100.0;

@@ -145,14 +145,11 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
 
         // Draw playback cursor (vertical line) — only during playback
         if (owner_.cachedIsPlaying_) {
-            double sessionPos = owner_.cachedSessionPlaybackPosition_;
+            // Session mode: each clip owns its playhead via ClipInfo::sessionPlayheadPos
+            double sessionPos = clip->sessionPlayheadPos;
 
-            // Session mode: the session playhead is already loop-wrapped elapsed
-            // time — map it directly to source-file position, independent of the
-            // arrangement transport. Only show if this clip is the one playing.
             if (sessionPos >= 0.0) {
-                // Session playback active — only draw if this is the playing clip
-                if (owner_.cachedSessionPlaybackClipId_ == owner_.editingClipId_) {
+                {
                     double relPos = sessionPos;
                     if (clip->loopEnabled && di.loopLengthSeconds > 0.0) {
                         double phaseShift = di.offsetPositionSeconds - di.loopStartPositionSeconds;
@@ -458,8 +455,7 @@ WaveformEditorContent::WaveformEditorContent() {
         const auto& state = controller->getState();
         cachedEditPosition_ = state.playhead.editPosition;
         cachedPlaybackPosition_ = state.playhead.playbackPosition;
-        cachedSessionPlaybackPosition_ = state.playhead.sessionPlaybackPosition;
-        cachedSessionPlaybackClipId_ = state.playhead.sessionPlaybackClipId;
+        // Session playhead is now per-clip (ClipInfo::sessionPlayheadPos)
         cachedIsPlaying_ = state.playhead.isPlaying;
     }
 
@@ -871,8 +867,7 @@ void WaveformEditorContent::timelineStateChanged(const TimelineState& state, Cha
     if (hasFlag(changes, ChangeFlags::Playhead)) {
         cachedEditPosition_ = state.playhead.editPosition;
         cachedPlaybackPosition_ = state.playhead.playbackPosition;
-        cachedSessionPlaybackPosition_ = state.playhead.sessionPlaybackPosition;
-        cachedSessionPlaybackClipId_ = state.playhead.sessionPlaybackClipId;
+        // Session playhead is now per-clip (ClipInfo::sessionPlayheadPos)
         cachedIsPlaying_ = state.playhead.isPlaying;
 
         if (playheadOverlay_) {

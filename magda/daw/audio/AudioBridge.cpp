@@ -8,6 +8,7 @@
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
 #include "MagdaSamplerPlugin.hpp"
+#include "SessionMonitorPlugin.hpp"
 #include "SidechainTriggerBus.hpp"
 
 namespace magda {
@@ -233,8 +234,8 @@ void AudioBridge::trackPropertyChanged(int trackId) {
                 if (!foundAnyDest) {
                     juce::Logger::writeToLog(
                         "[Arm] WARNING: No input device destination found for track " +
-                        juce::String(trackId) + " - recordArmed=" +
-                        juce::String(trackInfo->recordArmed ? 1 : 0) +
+                        juce::String(trackId) +
+                        " - recordArmed=" + juce::String(trackInfo->recordArmed ? 1 : 0) +
                         " will NOT be synced to TE!");
                 }
             }
@@ -1422,6 +1423,38 @@ void AudioBridge::resetSynthsOnTrack(TrackId trackId) {
     for (auto* plugin : audioTrack->pluginList) {
         if (plugin && plugin->isSynth()) {
             plugin->reset();
+        }
+    }
+}
+
+void AudioBridge::ensureSessionMonitorPlugin() {
+    if (sessionMonitorPlugin_)
+        return;
+
+    // Use the master plugin list — it always renders regardless of which tracks
+    // are active, ensuring the audio monitor processes every buffer.
+    auto& masterList = edit_.getMasterPluginList();
+
+    // Check if a SessionMonitorPlugin already exists
+    for (int i = 0; i < masterList.size(); ++i) {
+        if (auto* existing = dynamic_cast<SessionMonitorPlugin*>(masterList[i])) {
+            sessionMonitorPlugin_ = existing;
+            sessionMonitorPlugin_->setAudioMonitor(&sessionAudioMonitor_);
+            return;
+        }
+    }
+
+    // Create and insert the plugin at position 0
+    auto pluginState = juce::ValueTree(te::IDs::PLUGIN);
+    pluginState.setProperty(te::IDs::type, SessionMonitorPlugin::xmlTypeName, nullptr);
+    masterList.insertPlugin(pluginState, 0);
+
+    // Find the newly created plugin
+    for (int i = 0; i < masterList.size(); ++i) {
+        if (auto* mon = dynamic_cast<SessionMonitorPlugin*>(masterList[i])) {
+            sessionMonitorPlugin_ = mon;
+            sessionMonitorPlugin_->setAudioMonitor(&sessionAudioMonitor_);
+            return;
         }
     }
 }

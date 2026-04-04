@@ -64,6 +64,11 @@ std::unordered_map<ClipId, double> TracktionEngineWrapper::getActiveClipPlayhead
     return {};
 }
 
+void TracktionEngineWrapper::processSessionStateEvents() {
+    if (sessionScheduler_)
+        sessionScheduler_->processStateEvents();
+}
+
 SessionClipPlayState TracktionEngineWrapper::getSessionClipPlayState(ClipId clipId) const {
     if (sessionScheduler_)
         return sessionScheduler_->getClipPlayState(clipId);

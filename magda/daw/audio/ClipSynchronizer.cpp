@@ -750,22 +750,31 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
     auto qType =
         (clip && !forceImmediate) ? toTELaunchQType(clip->launchQuantize) : te::LaunchQType::none;
 
+    // Override the TE slot's own launch quantize to match our intent.
+    // Without this, play(std::nullopt) uses the slot's stored quantize
+    // (e.g. OneBar), causing a delay even when we want immediate launch.
+    if (auto* lq = teClip->getLaunchQuantisation()) {
+        lq->type = qType;
+    }
+
     // Calculate the target beat (nullopt = immediate).
-    // Add a lookahead margin so the target is always safely in the future
-    // by the time the audio thread processes it. The SyncPoint is a snapshot
-    // from the audio thread; message-thread latency + 2-3 audio buffers can
-    // elapse before play() reaches the audio thread.
+    // Uses the next quantization grid point after the current playhead position.
+    // If the computed grid point is at or before the current beat (message thread
+    // was slow), snaps to the following grid point instead.
     std::optional<te::MonotonicBeat> targetBeat;
     if (qType != te::LaunchQType::none) {
         auto* ctx = edit_.getCurrentPlaybackContext();
         auto syncPoint = ctx ? ctx->getSyncPoint() : std::nullopt;
         if (syncPoint) {
-            // Lookahead: ~50ms worth of beats to cover message-thread + audio-buffer latency
-            double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
-            double lookaheadBeats = (bpm > 0.0) ? (0.05 * bpm / 60.0) : 0.1;
-            auto adjustedBeat = syncPoint->beat + te::BeatDuration::fromBeats(lookaheadBeats);
+            auto quantizedBeat = te::getNext(qType, edit_.tempoSequence, syncPoint->beat);
 
-            auto quantizedBeat = te::getNext(qType, edit_.tempoSequence, adjustedBeat);
+            // If the quantized beat is at or before the current position
+            // (possible due to message-thread latency), advance to the next grid point
+            if (quantizedBeat <= syncPoint->beat) {
+                quantizedBeat = te::getNext(qType, edit_.tempoSequence,
+                                            syncPoint->beat + te::BeatDuration::fromBeats(0.001));
+            }
+
             double offset = syncPoint->monotonicBeat.v.inBeats() - syncPoint->beat.inBeats();
             targetBeat =
                 te::MonotonicBeat{te::BeatPosition::fromBeats(quantizedBeat.inBeats() + offset)};
@@ -807,8 +816,12 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
         if (clip) {
             lastLaunchTimeByTrack_[clip->trackId] = edit_.getTransport().position.get().inSeconds();
         }
+        DBG("ClipSync: play(nullopt) — immediate launch for clip "
+            << clipId << " forceImmediate=" << (int)forceImmediate);
         launchHandle->play(std::nullopt);
     } else {
+        DBG("ClipSync: play(beat " << targetBeat->v.inBeats() << ") — quantized launch for clip "
+                                   << clipId << " qType=" << static_cast<int>(qType));
         launchHandle->play(*targetBeat);
     }
 }

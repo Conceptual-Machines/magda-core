@@ -103,8 +103,6 @@ struct SetPlayheadPositionEvent {
  */
 struct SetPlaybackPositionEvent {
     double position;
-    double sessionPosition = -1.0;           // Session clip playhead (looped), -1 = inactive
-    ClipId sessionClipId = INVALID_CLIP_ID;  // Which clip the session playhead tracks
 };
 
 /**

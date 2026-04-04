@@ -420,23 +420,16 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
             }
         }
 
-        // Session mode: use the loop-wrapped session playhead position
-        // instead of the arrangement transport position, matching the
-        // approach used by WaveformEditorContent.
-        double sessionPos = state.playhead.sessionPlaybackPosition;
-        if (sessionPos >= 0.0 && state.playhead.sessionPlaybackClipId == editingClipId_ &&
-            editingClipId_ != magda::INVALID_CLIP_ID) {
-            const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-            if (clip) {
-                // Convert session elapsed seconds to absolute seconds so the
-                // grid's beat conversion (playheadBeats = pos / secondsPerBeat)
-                // produces a beat offset relative to clip start.
-                double secondsPerBeat = 60.0 / state.tempo.bpm;
-                playPos = clip->startTime + sessionPos;
+        // Session mode: each clip owns its playhead via ClipInfo::sessionPlayheadPos
+        const auto* editClip = (editingClipId_ != magda::INVALID_CLIP_ID)
+                                   ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                                   : nullptr;
+        if (editClip && editClip->sessionPlayheadPos >= 0.0) {
+            double secondsPerBeat = 60.0 / state.tempo.bpm;
+            playPos = editClip->startTime + editClip->sessionPlayheadPos;
 
-                if (clip->midiOffset > 0.0) {
-                    playPos += clip->midiOffset * secondsPerBeat;
-                }
+            if (editClip->midiOffset > 0.0) {
+                playPos += editClip->midiOffset * secondsPerBeat;
             }
         } else {
             // Arrangement mode: offset playhead by midiOffset (beats → seconds)

@@ -6,6 +6,7 @@
 #include "../audio/MagdaSamplerPlugin.hpp"
 #include "../audio/MidiChordEnginePlugin.hpp"
 #include "../audio/MidiReceivePlugin.hpp"
+#include "../audio/SessionMonitorPlugin.hpp"
 #include "../audio/SidechainMonitorPlugin.hpp"
 #include "../audio/StepSequencerPlugin.hpp"
 #include "../project/ProjectManager.hpp"
@@ -75,6 +76,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == daw::audio::DrumGridPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating DrumGridPlugin");
             return new daw::audio::DrumGridPlugin(info);
+        }
+        if (type == SessionMonitorPlugin::xmlTypeName) {
+            return new SessionMonitorPlugin(info);
         }
         if (type == SidechainMonitorPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating SidechainMonitorPlugin");

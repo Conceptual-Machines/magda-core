@@ -242,8 +242,6 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
     }
 
     state.playhead.playbackPosition = newPos;
-    state.playhead.sessionPlaybackPosition = e.sessionPosition;
-    state.playhead.sessionPlaybackClipId = e.sessionClipId;
 
     // === Punch In: trigger recording when playhead reaches punch-in point ===
     if (punchArmed_ && newPos >= state.punch.startTime) {
@@ -363,8 +361,6 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlayba
 
     state.playhead.isPlaying = false;
     state.playhead.isRecording = false;
-    state.playhead.sessionPlaybackPosition = -1.0;
-    state.playhead.sessionPlaybackClipId = INVALID_CLIP_ID;
     punchArmed_ = false;
     // Reset playbackPosition to editPosition (Bitwig behavior)
     state.playhead.playbackPosition = state.playhead.editPosition;

@@ -85,6 +85,9 @@ class TracktionEngineWrapper : public AudioEngine,
     // Call this each frame to update trigger state (call before updateAllMods)
     void updateTriggerState() override;
 
+    // Drain audio-thread session clip state events
+    void processSessionStateEvents() override;
+
     // Metronome/click track control
     void setMetronomeEnabled(bool enabled) override;
     bool isMetronomeEnabled() const override;

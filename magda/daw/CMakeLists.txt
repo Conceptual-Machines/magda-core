@@ -225,6 +225,8 @@ set(DAW_CORE_SOURCES
     audio/DeviceProcessor.cpp
     audio/MidiBridge.cpp
     audio/SessionClipScheduler.cpp
+    audio/SessionClipAudioMonitor.cpp
+    audio/SessionMonitorPlugin.cpp
     audio/SessionRecorder.cpp
     # Phase 1 refactoring: Pure data managers
     audio/TransportStateManager.cpp
@@ -532,6 +534,10 @@ set(DAW_HEADERS
     audio/AudioEngineOptimizer.hpp
     audio/AudioBridge.hpp
     audio/SessionClipScheduler.hpp
+    audio/SessionClipAudioMonitor.hpp
+    audio/SessionClipCommandQueue.hpp
+    audio/SessionClipStateQueue.hpp
+    audio/SessionMonitorPlugin.hpp
     audio/MeteringBuffer.hpp
     audio/ParameterQueue.hpp
     # Phase 1 refactoring: Pure data managers

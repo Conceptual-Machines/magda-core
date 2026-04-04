@@ -744,7 +744,8 @@ class SetNoteChordGroupsCommand : public UndoableCommand {
 class BendNoteTimingCommand : public UndoableCommand {
   public:
     BendNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices, float depth, float skew,
-                          int cycles = 1);
+                          int cycles = 1, float quantize = 0.0f, int quantizeSub = 64,
+                          bool hardAngle = false);
 
     void execute() override;
     void undo() override;
@@ -757,6 +758,9 @@ class BendNoteTimingCommand : public UndoableCommand {
     std::vector<size_t> noteIndices_;
     float depth_, skew_;
     int cycles_;
+    float quantize_;
+    int quantizeSub_;
+    bool hardAngle_;
     std::vector<double> oldStartBeats_;
     bool executed_ = false;
 };

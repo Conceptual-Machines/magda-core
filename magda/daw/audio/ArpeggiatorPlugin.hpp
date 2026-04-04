@@ -73,6 +73,9 @@ class ArpeggiatorPlugin : public MidiDevicePlugin {
     juce::CachedValue<bool> latch;
     juce::CachedValue<int> velocityMode;
     juce::CachedValue<int> fixedVelocity;
+    juce::CachedValue<float> quantize;
+    juce::CachedValue<int> quantizeSub;
+    juce::CachedValue<bool> hardAngle;
 
     // --- Automatable parameters (for macro/mod linking) ---
     te::AutomatableParameter::Ptr patternParam, rateParam, octavesParam;
@@ -85,7 +88,7 @@ class ArpeggiatorPlugin : public MidiDevicePlugin {
      *  depth > 0 → bowed above diagonal (front-loaded / log-like).
      *  depth < 0 → bowed below diagonal (back-loaded / exp-like).
      *  Moving skew away from 0.5 creates asymmetric curves. */
-    static double applyRampCurve(double t, float depth, float skew);
+    static double applyRampCurve(double t, float depth, float skew, bool hardAngle = false);
 
     /** Current arp step and sequence length for UI (set on audio thread). */
     std::atomic<int> currentPlayStep_{-1};

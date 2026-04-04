@@ -44,7 +44,7 @@ double StepClock::rateToBeats(Rate r) {
     }
 }
 
-double StepClock::applyRampCurve(double t, float depth, float skew) {
+double StepClock::applyRampCurve(double t, float depth, float skew, bool hardAngle) {
     double d = static_cast<double>(juce::jlimit(-0.99f, 0.99f, depth));
     double s =
         static_cast<double>(juce::jlimit(0.01, 0.99, 0.5 + static_cast<double>(skew) * 0.49));
@@ -52,6 +52,15 @@ double StepClock::applyRampCurve(double t, float depth, float skew) {
     if (std::abs(d) < 0.001)
         return t;
 
+    if (hardAngle) {
+        // Piecewise linear: two straight segments through control point (s, s+d)
+        if (t <= s)
+            return t * (s + d) / s;
+        else
+            return (s + d) + (t - s) * (1.0 - (s + d)) / (1.0 - s);
+    }
+
+    // Quadratic bezier
     double u;
     double a = 1.0 - 2.0 * s;
     if (std::abs(a) < 1e-10) {
@@ -101,7 +110,8 @@ int StepClock::advanceStep(int current, int numSteps, Direction dir) {
 
 int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, Rate rate,
                             Direction direction, float swing, int numSteps, StepEvent* events,
-                            int maxEvents, float rampDepth, float rampSkew, int rampCycles) {
+                            int maxEvents, float rampDepth, float rampSkew, int rampCycles,
+                            bool hardAngle, float quantizeAmount, int quantizeSub) {
     if (numSteps <= 0 || maxEvents <= 0)
         return 0;
 
@@ -151,11 +161,11 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
     // Helper: apply ramp curve with cycle repetition
     auto curveWithCycles = [&](double t) -> double {
         if (cycles == 1)
-            return applyRampCurve(t, rampDepth, rampSkew);
+            return applyRampCurve(t, rampDepth, rampSkew, hardAngle);
         double segLen = 1.0 / static_cast<double>(cycles);
         int seg = std::min(static_cast<int>(t / segLen), cycles - 1);
         double tLocal = (t - seg * segLen) / segLen;
-        return (seg + applyRampCurve(tLocal, rampDepth, rampSkew)) * segLen;
+        return (seg + applyRampCurve(tLocal, rampDepth, rampSkew, hardAngle)) * segLen;
     };
 
     // Helper: compute the warped duration for a given step in the cycle
@@ -223,6 +233,13 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
         double swungBeat = nextStepBeat_;
         if (tickParity_ % 2 == 1 && swing > 0.0f)
             swungBeat += static_cast<double>(swing) * warpedStepDuration(cycleStep_) * 0.5;
+
+        // Quantize: snap toward a uniform grid of quantizeSub divisions per cycle
+        if (quantizeAmount > 0.0f && quantizeSub > 0) {
+            double gridSpacing = cycleBeats / static_cast<double>(quantizeSub);
+            double snapped = std::round(swungBeat / gridSpacing) * gridSpacing;
+            swungBeat += (snapped - swungBeat) * static_cast<double>(quantizeAmount);
+        }
 
         if (swungBeat >= blockStartBeat && swungBeat < blockEndBeat) {
             double frac = (swungBeat - blockStartBeat) / (blockEndBeat - blockStartBeat);

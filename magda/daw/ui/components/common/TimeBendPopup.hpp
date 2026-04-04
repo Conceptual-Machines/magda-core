@@ -30,14 +30,18 @@ class TimeBendPopup : public juce::Component {
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
 
-    /** Called when the user clicks Apply with the chosen depth, skew, and cycles. */
-    std::function<void(float depth, float skew, int cycles)> onApply;
+    /** Called when the user clicks Apply with the chosen depth, skew, cycles, quantize,
+     * quantizeSub, and hardAngle. */
+    std::function<void(float depth, float skew, int cycles, float quantize, int quantizeSub,
+                       bool hardAngle)>
+        onApply;
 
     /** Show as a floating window above the given component. */
     static void showAbove(std::unique_ptr<TimeBendPopup> popup, juce::Component* anchor);
 
   private:
-    void applyPreview(float depth, float skew, int cycles);
+    void applyPreview(float depth, float skew, int cycles, float quantize, int quantizeSub,
+                      bool hardAngle);
     void restoreOriginals();
 
     static constexpr int TITLE_BAR_HEIGHT = 22;
@@ -54,6 +58,10 @@ class TimeBendPopup : public juce::Component {
     LinkableTextSlider skewSlider_;
     juce::Label cyclesLabel_;
     LinkableTextSlider cyclesSlider_;
+    juce::Label quantizeLabel_;
+    LinkableTextSlider quantizeSlider_;
+    juce::Label quantizeSubLabel_;
+    LinkableTextSlider quantizeSubSlider_;
     juce::TextButton applyButton_{"Apply"};
     juce::TextButton cancelButton_{"Cancel"};
     juce::ComponentDragger dragger_;

@@ -74,6 +74,9 @@ class AudioEngine : public AudioEngineListener {
     // ===== Trigger State (for transport-synced devices) =====
     virtual void updateTriggerState() = 0;
 
+    // ===== Session State Events (audio thread → message thread) =====
+    virtual void processSessionStateEvents() = 0;
+
     // ===== Device Management =====
     virtual juce::AudioDeviceManager* getDeviceManager() = 0;
 

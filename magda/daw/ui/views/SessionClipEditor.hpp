@@ -7,6 +7,7 @@
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
+#include "ui/components/common/SvgButton.hpp"
 
 namespace magda {
 
@@ -41,7 +42,7 @@ class SessionClipEditor : public juce::Component, public ClipManagerListener {
 
     // Header controls
     std::unique_ptr<juce::TextButton> closeButton_;
-    std::unique_ptr<juce::ToggleButton> loopToggle_;
+    std::unique_ptr<SvgButton> loopToggle_;
     std::unique_ptr<juce::Label> clipNameLabel_;
     std::unique_ptr<juce::Label> lengthLabel_;
 

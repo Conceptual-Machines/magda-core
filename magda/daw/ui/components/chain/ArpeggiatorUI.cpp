@@ -138,6 +138,32 @@ ArpeggiatorUI::ArpeggiatorUI() {
             plugin_->rampCycles = juce::roundToInt(value);
     };
 
+    setupLabel(quantizeLabel_, "Q");
+    setupSlider(quantizeSlider_, 0.0, 1.0, 0.01);
+    quantizeSlider_.setValueFormatter(
+        [](double v) { return juce::String(juce::roundToInt(v * 100.0)) + "%"; });
+    quantizeSlider_.setValueParser(
+        [](const juce::String& t) { return t.trimCharactersAtEnd("%").getDoubleValue() / 100.0; });
+    quantizeSlider_.onValueChanged = [this](double value) {
+        if (plugin_)
+            plugin_->quantize = static_cast<float>(value);
+    };
+
+    setupLabel(quantizeSubLabel_, "SUB");
+    setupSlider(quantizeSubSlider_, 16, 512, 16);
+    quantizeSubSlider_.setValueFormatter(
+        [](double v) { return juce::String(juce::roundToInt(v)); });
+    quantizeSubSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
+    quantizeSubSlider_.onValueChanged = [this](double value) {
+        if (plugin_)
+            plugin_->quantizeSub = juce::roundToInt(value);
+    };
+
+    rampCurveDisplay_.onHardAngleChanged = [this](bool hardAngle) {
+        if (plugin_)
+            plugin_->hardAngle = hardAngle;
+    };
+
     setupLabel(velModeLabel_, "VEL MODE");
     setupCombo(velModeCombo_);
     velModeCombo_.addItem("Original", 1);
@@ -209,6 +235,11 @@ void ArpeggiatorUI::syncFromPlugin() {
     skewSlider_.setValue(static_cast<double>(plugin_->skew.get()), juce::dontSendNotification);
     cyclesSlider_.setValue(static_cast<double>(plugin_->rampCycles.get()),
                            juce::dontSendNotification);
+    rampCurveDisplay_.setHardAngle(plugin_->hardAngle.get());
+    quantizeSlider_.setValue(static_cast<double>(plugin_->quantize.get()),
+                             juce::dontSendNotification);
+    quantizeSubSlider_.setValue(static_cast<double>(plugin_->quantizeSub.get()),
+                                juce::dontSendNotification);
     velModeCombo_.setSelectedId(plugin_->velocityMode.get() + 1, juce::dontSendNotification);
     fixedVelSlider_.setValue(static_cast<double>(plugin_->fixedVelocity.get()),
                              juce::dontSendNotification);
@@ -242,8 +273,11 @@ void ArpeggiatorUI::timerCallback() {
     // Playback sweep animation
     int step = plugin_->currentPlayStep_.load(std::memory_order_relaxed);
     int len = plugin_->currentSeqLength_.load(std::memory_order_relaxed);
+    if (len > 0)
+        rampCurveDisplay_.setNumTicks(len);
+    int cycles = juce::jlimit(1, std::max(1, len), plugin_->rampCycles.get());
     float pos = (step >= 0 && len > 0) ? static_cast<float>(step) / static_cast<float>(len) : -1.0f;
-    rampCurveDisplay_.setPlaybackPosition(pos, juce::jlimit(1, 8, plugin_->rampCycles.get()));
+    rampCurveDisplay_.setPlaybackPosition(pos, cycles);
 }
 
 void ArpeggiatorUI::paint(juce::Graphics&) {
@@ -304,6 +338,17 @@ void ArpeggiatorUI::resized() {
         rampLabel_.setBounds(rampLabelRow);
         cyclesLabel_.setBounds(cyclesArea.removeFromLeft(50));
         cyclesSlider_.setBounds(cyclesArea);
+    }
+    bounds.removeFromTop(ROW_GAP);
+    auto quantizeRow = bounds.removeFromTop(ROW_HEIGHT);
+    {
+        auto qLeft = quantizeRow.removeFromLeft(colWidth);
+        quantizeRow.removeFromLeft(COLUMN_GAP);
+        auto qRight = quantizeRow;
+        quantizeLabel_.setBounds(qLeft.removeFromLeft(LABEL_WIDTH));
+        quantizeSlider_.setBounds(qLeft);
+        quantizeSubLabel_.setBounds(qRight.removeFromLeft(LABEL_WIDTH));
+        quantizeSubSlider_.setBounds(qRight);
     }
     bounds.removeFromTop(ROW_GAP);
     if (bounds.getHeight() > 20)

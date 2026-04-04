@@ -45,6 +45,10 @@ class ArpeggiatorUI : public juce::Component,
     LinkableTextSlider skewSlider_;
     juce::Label cyclesLabel_;
     LinkableTextSlider cyclesSlider_;
+    juce::Label quantizeLabel_;
+    LinkableTextSlider quantizeSlider_;
+    juce::Label quantizeSubLabel_;
+    LinkableTextSlider quantizeSubSlider_;
 
     // Right column
     juce::Label gateLabel_;
