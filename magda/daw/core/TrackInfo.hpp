@@ -5,6 +5,7 @@
 
 #include <optional>
 
+#include "ClipTypes.hpp"
 #include "RackInfo.hpp"
 #include "TrackTypes.hpp"
 #include "TrackViewSettings.hpp"
@@ -56,6 +57,11 @@ struct TrackInfo {
     InputMonitorMode inputMonitor = InputMonitorMode::Off;
     bool frozen = false;  // Track is frozen (rendered to audio, plugins disabled)
     TrackPlaybackMode playbackMode = TrackPlaybackMode::Arrangement;
+
+    // The session clip currently active on this track. Set on launch, cleared on
+    // explicit stop.  Transport stop/start does not touch this — it is the
+    // single source of truth for which clip to re-launch on transport resume.
+    ClipId activeSessionClipId = INVALID_CLIP_ID;
 
     // Routing
     juce::String midiInputDevice;    // MIDI input device ID ("all", device ID, or empty for none)
@@ -111,6 +117,7 @@ struct TrackInfo {
           inputMonitor(other.inputMonitor),
           frozen(other.frozen),
           playbackMode(other.playbackMode),
+          activeSessionClipId(other.activeSessionClipId),
           midiInputDevice(other.midiInputDevice),
           midiOutputDevice(other.midiOutputDevice),
           audioInputDevice(other.audioInputDevice),
@@ -148,6 +155,7 @@ struct TrackInfo {
             inputMonitor = other.inputMonitor;
             frozen = other.frozen;
             playbackMode = other.playbackMode;
+            activeSessionClipId = other.activeSessionClipId;
             midiInputDevice = other.midiInputDevice;
             midiOutputDevice = other.midiOutputDevice;
             audioInputDevice = other.audioInputDevice;

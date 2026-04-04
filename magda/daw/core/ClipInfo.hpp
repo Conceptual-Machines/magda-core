@@ -237,7 +237,7 @@ struct ClipInfo {
     LaunchMode launchMode = LaunchMode::Trigger;
     LaunchQuantize launchQuantize = LaunchQuantize::OneBar;
 
-    // Session playback — each clip owns its playhead position (seconds, looped).
+    // Per-clip playhead position (seconds, looped).
     // Updated by SessionClipScheduler from audio-thread data.
     // -1.0 = not playing.
     double sessionPlayheadPos = -1.0;

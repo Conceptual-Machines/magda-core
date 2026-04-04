@@ -60,6 +60,10 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
     }
 
     if (request == ClipPlaybackRequest::Play) {
+        // Mark this clip as the active session clip on its track
+        if (auto* track = TrackManager::getInstance().getTrack(clip->trackId))
+            track->activeSessionClipId = clipId;
+
         // Session clips always loop
         if (!clip->loopEnabled)
             cm.getClip(clipId)->loopEnabled = true;
@@ -121,7 +125,15 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         cm.notifyClipPlaybackStateChanged(clipId);
 
     } else {
-        // Stop request
+        // Stop request — clear active clip on the track
+        if (const auto* c = cm.getClip(clipId)) {
+            if (auto* track = TrackManager::getInstance().getTrack(c->trackId)) {
+                if (track->activeSessionClipId == clipId)
+                    track->activeSessionClipId = INVALID_CLIP_ID;
+            }
+        }
+        if (auto* c = cm.getClip(clipId))
+            c->sessionPlayheadPos = -1.0;
         bool wasActive = activeClips_.count(clipId) > 0;
         if (wasActive) {
             sendUnmonitorCommand(clipId);
@@ -132,8 +144,6 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
             activeLaunchHandles_.erase(clipId);
             syncTrackPlaybackModes();
         }
-        if (auto* c = cm.getClip(clipId))
-            c->sessionPlayheadPos = -1.0;
         cm.notifyClipPlaybackStateChanged(clipId);
 
         if (activeClips_.empty()) {
@@ -224,13 +234,20 @@ void SessionClipScheduler::processStateEvents() {
             activeLaunchHandles_.erase(event.clipId);
             sendUnmonitorCommand(event.clipId);
             syncTrackPlaybackModes();
-            if (auto* c = cm.getClip(event.clipId))
+            if (auto* c = cm.getClip(event.clipId)) {
+                // Non-looping clip finished naturally — clear from track
+                if (auto* track = TrackManager::getInstance().getTrack(c->trackId)) {
+                    if (track->activeSessionClipId == event.clipId)
+                        track->activeSessionClipId = INVALID_CLIP_ID;
+                }
                 c->sessionPlayheadPos = -1.0;
+            }
             cm.notifyClipPlaybackStateChanged(event.clipId);
         }
     }
 
-    // Check if transport was stopped externally
+    // Transport stopped externally — tear down audio state but leave
+    // track.activeSessionClipId intact so clips re-launch on resume.
     if (!activeClips_.empty() && !edit_.getTransport().isPlaying()) {
         auto copy = activeClips_;
         activeClips_.clear();
@@ -246,6 +263,18 @@ void SessionClipScheduler::processStateEvents() {
         }
         activeLaunchHandles_.clear();
         syncTrackPlaybackModes();
+    }
+
+    // Transport resumed — re-launch each track's activeSessionClipId.
+    if (activeClips_.empty() && edit_.getTransport().isPlaying()) {
+        auto& tm = TrackManager::getInstance();
+        std::vector<ClipId> toRelaunch;
+        for (const auto& track : tm.getTracks()) {
+            if (track.activeSessionClipId != INVALID_CLIP_ID)
+                toRelaunch.push_back(track.activeSessionClipId);
+        }
+        for (auto clipId : toRelaunch)
+            clipPlaybackRequested(clipId, ClipPlaybackRequest::Play);
     }
 
     // Clean up playhead if all clips have ended
@@ -367,6 +396,7 @@ void SessionClipScheduler::syncTrackPlaybackModes() {
 
 void SessionClipScheduler::deactivateAllSessionClips() {
     auto& cm = ClipManager::getInstance();
+    auto& tm = TrackManager::getInstance();
 
     auto copy = activeClips_;
     activeClips_.clear();
@@ -377,8 +407,11 @@ void SessionClipScheduler::deactivateAllSessionClips() {
     for (auto clipId : copy) {
         sendUnmonitorCommand(clipId);
         audioBridge_.stopSessionClip(clipId);
-        if (auto* c = cm.getClip(clipId))
+        if (auto* c = cm.getClip(clipId)) {
+            if (auto* track = tm.getTrack(c->trackId))
+                track->activeSessionClipId = INVALID_CLIP_ID;
             c->sessionPlayheadPos = -1.0;
+        }
         cm.notifyClipPlaybackStateChanged(clipId);
     }
     activeLaunchHandles_.clear();
