@@ -31,7 +31,6 @@ class ClipSlotButton : public juce::TextButton {
     bool clipIsQueued = false;
     bool blinkOn = false;  // Toggled by SessionView timer for queued blink
     bool isSelected = false;
-    bool isMidiClip = false;
     double clipLength = 0.0;           // Clip duration in seconds (for progress bar)
     double sessionPlayheadPos = -1.0;  // Looped playhead position in seconds
 
@@ -239,19 +238,9 @@ class ClipSlotButton : public juce::TextButton {
 
             // Draw clip name in content area, left-justified
             auto textArea = contentArea.reduced(2, 0);
-            if (isMidiClip)
-                textArea.removeFromRight(16);  // Reserve space for M badge
             g.setColour(findColour(juce::TextButton::textColourOffId));
             g.setFont(FontManager::getInstance().getUIFont(9.0f));
             g.drawText(getButtonText(), textArea, juce::Justification::centredLeft, true);
-
-            // Draw "M" badge for MIDI clips
-            if (isMidiClip) {
-                auto badgeArea = getLocalBounds().removeFromRight(16).removeFromTop(14);
-                g.setColour(juce::Colours::white.withAlpha(0.8f));
-                g.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-                g.drawText("M", badgeArea, juce::Justification::centred, false);
-            }
         }
     }
 };

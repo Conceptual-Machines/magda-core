@@ -1,4 +1,5 @@
 #include "../audio/AudioBridge.hpp"
+#include "../audio/SessionClipScheduler.hpp"
 #include "../audio/SessionRecorder.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
@@ -347,6 +348,9 @@ int TracktionEngineWrapper::getCountInMode() const {
 void TracktionEngineWrapper::onTransportPlay(double position) {
     locate(position);
     play();
+    // Re-launch session clips synchronously (skips already-playing clips)
+    if (sessionScheduler_)
+        sessionScheduler_->relaunchActiveClips();
 }
 
 void TracktionEngineWrapper::onTransportStop(double returnPosition) {

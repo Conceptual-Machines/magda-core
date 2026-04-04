@@ -98,8 +98,12 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         syncTrackPlaybackModes();
 
         // Ensure transport is playing
-        if (!edit_.getTransport().isPlaying())
+        if (!edit_.getTransport().isPlaying()) {
             edit_.getTransport().play(false);
+            // Update immediately so processStateEvents doesn't see a false
+            // stopped→playing transition and re-launch clips we just launched.
+            wasTransportPlaying_ = true;
+        }
 
         // Tell TE to play the clip
         audioBridge_.launchSessionClip(clipId, forceImmediate);
@@ -246,23 +250,8 @@ void SessionClipScheduler::processStateEvents() {
     }
 
     // Transport just resumed with active session clips — re-launch them.
-    if (!wasTransportPlaying_ && transportPlaying && hasActiveClips()) {
-        for (const auto& track : tm.getTracks()) {
-            ClipId clipId = track.activeSessionClipId;
-            if (clipId == INVALID_CLIP_ID)
-                continue;
-            const auto* clip = cm.getClip(clipId);
-            if (!clip)
-                continue;
-            updateLaunchTimings(clipId, clip);
-            audioBridge_.launchSessionClip(clipId, true);
-            retainLaunchHandle(clipId);
-            sendMonitorCommand(clipId);
-            lastNotifiedState_[clipId] = SessionClipPlayState::Queued;
-            if (playheadClipId_ == INVALID_CLIP_ID)
-                playheadClipId_ = clipId;
-        }
-    }
+    if (!wasTransportPlaying_ && transportPlaying && hasActiveClips())
+        relaunchActiveClips();
 
     wasTransportPlaying_ = transportPlaying;
 
@@ -404,6 +393,40 @@ void SessionClipScheduler::syncTrackPlaybackModes() {
                                                                    : TrackPlaybackMode::Arrangement;
         tm.setTrackPlaybackMode(track.id, mode);
     }
+}
+
+// =============================================================================
+// Re-launch
+// =============================================================================
+
+void SessionClipScheduler::relaunchActiveClips() {
+    auto& cm = ClipManager::getInstance();
+    auto& tm = TrackManager::getInstance();
+
+    for (const auto& track : tm.getTracks()) {
+        ClipId clipId = track.activeSessionClipId;
+        if (clipId == INVALID_CLIP_ID)
+            continue;
+
+        // Skip clips whose LaunchHandle is already playing or queued
+        auto state = getClipPlayState(clipId);
+        if (state == SessionClipPlayState::Playing || state == SessionClipPlayState::Queued)
+            continue;
+
+        const auto* clip = cm.getClip(clipId);
+        if (!clip)
+            continue;
+
+        updateLaunchTimings(clipId, clip);
+        audioBridge_.launchSessionClip(clipId, true);
+        retainLaunchHandle(clipId);
+        sendMonitorCommand(clipId);
+        lastNotifiedState_[clipId] = SessionClipPlayState::Queued;
+        if (playheadClipId_ == INVALID_CLIP_ID)
+            playheadClipId_ = clipId;
+    }
+
+    wasTransportPlaying_ = true;
 }
 
 // =============================================================================

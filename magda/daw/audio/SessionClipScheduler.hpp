@@ -44,6 +44,11 @@ class SessionClipScheduler : public ClipManagerListener {
     /** Stop all active session clips, clear activeSessionClipId, revert to arrangement. */
     void deactivateAllSessionClips();
 
+    /** Re-launch any session clips that have activeSessionClipId set but aren't
+        currently playing. Call synchronously when transport starts to avoid
+        the 33ms polling delay. */
+    void relaunchActiveClips();
+
     /** Returns true if any track has an activeSessionClipId set. */
     bool hasActiveClips() const;
 

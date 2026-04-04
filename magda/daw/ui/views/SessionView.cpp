@@ -2627,7 +2627,6 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             slot->clipIsPlaying = (playState == SessionClipPlayState::Playing);
             slot->clipIsQueued = (playState == SessionClipPlayState::Queued);
             slot->isSelected = (clipId == selectedClipId);
-            slot->isMidiClip = (clip->type == ClipType::MIDI);
             slot->clipLength = clip->length;
             {
                 auto posIt = clipPlayheadPositions_.find(clipId);
@@ -2649,7 +2648,6 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         slot->clipId = INVALID_CLIP_ID;
         slot->clipIsPlaying = false;
         slot->isSelected = false;
-        slot->isMidiClip = false;
         slot->clipLength = 0.0;
         slot->sessionPlayheadPos = -1.0;
         slot->setButtonText("");
