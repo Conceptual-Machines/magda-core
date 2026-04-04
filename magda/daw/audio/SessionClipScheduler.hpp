@@ -90,6 +90,11 @@ class SessionClipScheduler : public ClipManagerListener {
     /** Update ClipLaunchData from current clip properties. */
     void updateLaunchTimings(ClipId clipId, const ClipInfo* clip);
 
+    /** Derive and sync TrackPlaybackMode for all tracks from activeClips_.
+        Tracks with active session clips → Session, others → Arrangement.
+        This is the single place that manages playback mode transitions. */
+    void syncTrackPlaybackModes();
+
     AudioBridge& audioBridge_;
     te::Edit& edit_;
     SessionClipAudioMonitor& audioMonitor_;

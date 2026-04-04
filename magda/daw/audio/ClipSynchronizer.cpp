@@ -124,30 +124,7 @@ void ClipSynchronizer::clipsChanged() {
     // Force graph rebuild if new session clips were moved into slots,
     // so SlotControlNode instances are created in the audio graph
     if (sessionClipsSynced) {
-        // Ensure playback mode is Arrangement on tracks with no actively playing slots,
-        // so arrangement clips remain audible after graph rebuild
-        for (const auto& trackInfo : TrackManager::getInstance().getTracks()) {
-            if (trackInfo.playbackMode != TrackPlaybackMode::Session)
-                continue;
-            auto* track = trackController_.getAudioTrack(trackInfo.id);
-            if (!track)
-                continue;
-            bool anyPlaying = false;
-            for (auto* slot : track->getClipSlotList().getClipSlots()) {
-                if (auto* c = slot->getClip()) {
-                    if (auto lh = c->getLaunchHandle()) {
-                        if (lh->getPlayingStatus() == te::LaunchHandle::PlayState::playing) {
-                            anyPlaying = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!anyPlaying)
-                TrackManager::getInstance().setTrackPlaybackMode(trackInfo.id,
-                                                                 TrackPlaybackMode::Arrangement);
-        }
-
+        // Track playback modes are managed by SessionClipScheduler::syncTrackPlaybackModes()
         reallocateAndNotify();
     }
 }
@@ -741,11 +718,8 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
         }
     }
 
-    // Switch track to session mode before launching so the arrangement is
-    // already muted when the slot starts — prevents a brief audio overlap.
-    if (clip) {
-        TrackManager::getInstance().setTrackPlaybackMode(clip->trackId, TrackPlaybackMode::Session);
-    }
+    // Track playback mode is managed by SessionClipScheduler::syncTrackPlaybackModes()
+    // which runs before this method is called.
 
     auto qType =
         (clip && !forceImmediate) ? toTELaunchQType(clip->launchQuantize) : te::LaunchQType::none;

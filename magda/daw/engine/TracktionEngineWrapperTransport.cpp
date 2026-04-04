@@ -1,5 +1,4 @@
 #include "../audio/AudioBridge.hpp"
-#include "../audio/SessionClipScheduler.hpp"
 #include "../audio/SessionRecorder.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
@@ -104,11 +103,10 @@ void TracktionEngineWrapper::record() {
                 auto& dev = input->owner;
                 bool isMidi = dynamic_cast<tracktion::MidiInputDevice*>(&dev) != nullptr;
                 juce::Logger::writeToLog(
-                    "  device='" + dev.getName() + "' type=" +
-                    juce::String(isMidi ? "MIDI" : "Audio") +
+                    "  device='" + dev.getName() +
+                    "' type=" + juce::String(isMidi ? "MIDI" : "Audio") +
                     " enabled=" + juce::String(dev.isEnabled() ? "Y" : "N") +
-                    " destinations=" +
-                    juce::String(static_cast<int>(input->destinations.size())));
+                    " destinations=" + juce::String(static_cast<int>(input->destinations.size())));
                 for (auto* dest : input->destinations) {
                     juce::Logger::writeToLog(
                         "    dest targetID=" + juce::String(dest->targetID.getRawID()) +
@@ -130,8 +128,7 @@ void TracktionEngineWrapper::record() {
             for (auto* input : ctx->getAllInputs()) {
                 juce::Logger::writeToLog(
                     "  device='" + input->owner.getName() + "' isRecording=" +
-                    juce::String(static_cast<int>(input->isRecording())) +
-                    " isRecordingActive=" +
+                    juce::String(static_cast<int>(input->isRecording())) + " isRecordingActive=" +
                     juce::String(static_cast<int>(input->isRecordingActive())));
             }
         }
@@ -348,23 +345,6 @@ int TracktionEngineWrapper::getCountInMode() const {
 // These methods are called by TimelineController when UI state changes
 
 void TracktionEngineWrapper::onTransportPlay(double position) {
-    // If any track is in session mode, relaunch the last triggered session
-    // clip regardless of which view is currently active.
-    if (TrackManager::getInstance().isAnyTrackInSessionMode()) {
-        auto& cm = ClipManager::getInstance();
-        ClipId lastClip = cm.getLastTriggeredSessionClip();
-        if (lastClip != INVALID_CLIP_ID) {
-            const auto* clip = cm.getClip(lastClip);
-            if (clip && clip->view == ClipView::Session) {
-                auto state = getSessionClipPlayState(lastClip);
-                if (state == SessionClipPlayState::Stopped) {
-                    cm.triggerClip(lastClip);
-                    return;
-                }
-            }
-        }
-    }
-
     locate(position);
     play();
 }
@@ -433,25 +413,10 @@ void TracktionEngineWrapper::onTransportRecord(double position) {
     auto viewMode = ViewModeController::getInstance().getViewMode();
 
     if (viewMode == ViewMode::Live) {
-        // Session mode: arm the session recorder, then trigger the selected clip.
-        // The recorder captures session clip play/stop events into arrangement clips.
-        // This is separate from track R (MIDI input recording).
+        // Session mode: arm the session recorder.
+        // Clip triggering is handled by the session UI, not the transport.
         if (sessionRecorder_)
             sessionRecorder_->setArmed(true);
-
-        auto& cm = ClipManager::getInstance();
-        ClipId lastClip = cm.getLastTriggeredSessionClip();
-        if (lastClip != INVALID_CLIP_ID) {
-            const auto* clip = cm.getClip(lastClip);
-            // Only trigger if the clip isn't already playing/queued — re-triggering
-            // an active clip restarts it from beat 0 and causes an audible click.
-            if (clip && clip->view == ClipView::Session) {
-                auto state = getSessionClipPlayState(lastClip);
-                if (state == SessionClipPlayState::Stopped) {
-                    cm.triggerClip(lastClip);
-                }
-            }
-        }
     } else {
         // Arrangement mode: arm session recorder + start transport + TE recording
         // so MIDI/audio input is captured on armed tracks.

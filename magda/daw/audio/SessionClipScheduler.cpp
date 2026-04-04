@@ -86,18 +86,6 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
             return;
         }
 
-        // Switch the track to session mode BEFORE starting the transport.
-        // This ensures playSlotClips is already true when the audio thread
-        // starts processing, preventing a click from arrangement audio being
-        // output for a few blocks then abruptly stopping.
-        TrackManager::getInstance().setTrackPlaybackMode(clip->trackId, TrackPlaybackMode::Session);
-
-        // Ensure transport is playing
-        auto& transport = edit_.getTransport();
-        if (!transport.isPlaying()) {
-            transport.play(false);
-        }
-
         // Record clip timing data for playhead conversion
         updateLaunchTimings(clipId, clip);
 
@@ -108,7 +96,20 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         // Force immediate when nothing is playing — no point quantizing against thin air.
         // Uses the snapshot so all clips in a batch get the same decision.
         bool forceImmediate = !launchSnapshot_.transportPlaying || !launchSnapshot_.hasActiveClips;
+
+        // Add to active set and derive track playback modes BEFORE starting transport.
+        // This ensures playSlotClips is already true when the audio thread
+        // starts processing, preventing a click from arrangement audio being
+        // output for a few blocks then abruptly stopping.
         activeClips_.insert(clipId);
+        syncTrackPlaybackModes();
+
+        // Ensure transport is playing
+        auto& transport = edit_.getTransport();
+        if (!transport.isPlaying()) {
+            transport.play(false);
+        }
+
         audioBridge_.launchSessionClip(clipId, forceImmediate);
 
         // Keep LaunchHandle alive and start audio-thread monitoring
@@ -129,6 +130,7 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
             clipLaunchData_.erase(clipId);
             lastNotifiedState_.erase(clipId);
             activeLaunchHandles_.erase(clipId);
+            syncTrackPlaybackModes();
         }
         if (auto* c = cm.getClip(clipId))
             c->sessionPlayheadPos = -1.0;
@@ -136,10 +138,6 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
 
         if (activeClips_.empty()) {
             playheadClipId_ = INVALID_CLIP_ID;
-            auto& transport = edit_.getTransport();
-            if (transport.isPlaying()) {
-                transport.stop(false, false);
-            }
         }
     }
 }
@@ -225,24 +223,10 @@ void SessionClipScheduler::processStateEvents() {
             lastNotifiedState_.erase(event.clipId);
             activeLaunchHandles_.erase(event.clipId);
             sendUnmonitorCommand(event.clipId);
+            syncTrackPlaybackModes();
             if (auto* c = cm.getClip(event.clipId))
                 c->sessionPlayheadPos = -1.0;
             cm.notifyClipPlaybackStateChanged(event.clipId);
-
-            // If this track has no more active session clips, revert to Arrangement
-            if (clip) {
-                bool trackHasActive = false;
-                for (auto activeId : activeClips_) {
-                    const auto* other = cm.getClip(activeId);
-                    if (other && other->trackId == clip->trackId) {
-                        trackHasActive = true;
-                        break;
-                    }
-                }
-                if (!trackHasActive)
-                    TrackManager::getInstance().setTrackPlaybackMode(
-                        clip->trackId, TrackPlaybackMode::Arrangement);
-            }
         }
     }
 
@@ -261,17 +245,12 @@ void SessionClipScheduler::processStateEvents() {
             cm.notifyClipPlaybackStateChanged(clipId);
         }
         activeLaunchHandles_.clear();
-        TrackManager::getInstance().setAllTracksPlaybackMode(TrackPlaybackMode::Arrangement);
+        syncTrackPlaybackModes();
     }
 
-    // Stop transport if all clips have ended naturally
+    // Clean up playhead if all clips have ended
     if (activeClips_.empty() && playheadClipId_ != INVALID_CLIP_ID) {
         playheadClipId_ = INVALID_CLIP_ID;
-    }
-    if (activeClips_.empty() && edit_.getTransport().isPlaying()) {
-        if (!TrackManager::getInstance().isAnyTrackInSessionMode()) {
-            edit_.getTransport().stop(false, false);
-        }
     }
 }
 
@@ -360,6 +339,29 @@ std::unordered_map<ClipId, double> SessionClipScheduler::getActiveClipPlayheadPo
 }
 
 // =============================================================================
+// Track Playback Mode Sync
+// =============================================================================
+
+void SessionClipScheduler::syncTrackPlaybackModes() {
+    auto& tm = TrackManager::getInstance();
+    auto& cm = ClipManager::getInstance();
+
+    // Build set of tracks with active session clips
+    std::unordered_set<TrackId> sessionTracks;
+    for (auto clipId : activeClips_) {
+        if (const auto* clip = cm.getClip(clipId))
+            sessionTracks.insert(clip->trackId);
+    }
+
+    // Sync each track: active session clips → Session, otherwise → Arrangement
+    for (const auto& track : tm.getTracks()) {
+        auto mode = sessionTracks.count(track.id) ? TrackPlaybackMode::Session
+                                                  : TrackPlaybackMode::Arrangement;
+        tm.setTrackPlaybackMode(track.id, mode);
+    }
+}
+
+// =============================================================================
 // Deactivate All
 // =============================================================================
 
@@ -380,8 +382,7 @@ void SessionClipScheduler::deactivateAllSessionClips() {
         cm.notifyClipPlaybackStateChanged(clipId);
     }
     activeLaunchHandles_.clear();
-
-    TrackManager::getInstance().setAllTracksPlaybackMode(TrackPlaybackMode::Arrangement);
+    syncTrackPlaybackModes();
 }
 
 }  // namespace magda
