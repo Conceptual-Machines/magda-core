@@ -26,7 +26,7 @@ jobs:
       github.event.inputs.skip-cpp-build != 'true'
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
 
@@ -142,7 +142,7 @@ jobs:
       github.event.inputs.skip-cpp-build != 'true'
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
 
@@ -186,7 +186,7 @@ jobs:
       contents: read
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
       with:
         submodules: false  # Not needed for security checks
 
