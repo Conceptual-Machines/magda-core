@@ -19,6 +19,40 @@
 
 MAGDA is a free, open-source DAW with AI integrated from the ground up. Built on C++20, JUCE, and Tracktion Engine.
 
+## AI Providers
+
+MAGDA supports both local inference and cloud-backed agent workflows.
+
+- Local embedded models via `llama.cpp`
+- OpenAI-compatible HTTP providers via `juce-llm`
+- Codex via the official local `codex app-server` protocol
+
+### Codex App Server
+
+This branch includes an experimental Codex integration built on the official Codex App Server protocol rather than an unofficial ChatGPT web backend. MAGDA launches or connects to a local Codex App Server over WebSocket and uses browser-based ChatGPT login managed by the Codex runtime.
+
+Current assumptions:
+
+- `codex` CLI is installed and available on `PATH`
+- MAGDA connects to `ws://127.0.0.1:8765/` by default
+- The default model is `gpt-5-codex`
+- Login state is managed by the local Codex runtime, not by MAGDA storing OAuth tokens
+
+Setup:
+
+1. Install the Codex CLI.
+2. Open `Settings > AI Settings > Cloud`.
+3. Select `Codex App Server`.
+4. Click `Login` and complete the browser flow.
+5. Click `Enable`.
+6. Go to the `Config` tab and select `Codex App Server` as the cloud provider.
+
+Notes:
+
+- This integration is app-level and does not modify `juce-llm`.
+- The current transport uses the App Server WebSocket listener, which is documented by OpenAI as experimental.
+- The implementation is intended to stay cross-platform by relying on the local `codex` CLI and JSON-RPC rather than Windows-specific token plumbing.
+
 ### Features
 
 - **Hybrid tracks**: every track hosts both audio and MIDI clips
@@ -49,6 +83,7 @@ See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known
 
 - C++20 compiler (GCC 10+, Clang 12+, or Xcode)
 - CMake 3.20+
+- Codex CLI on `PATH` if you want to use the Codex App Server provider
 
 ### Quick Start
 

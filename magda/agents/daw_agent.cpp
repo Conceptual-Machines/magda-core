@@ -112,7 +112,7 @@ DAWAgent::GenerateResult DAWAgent::generate(const std::string& message) {
 
     if (agentConfig.provider != provider::LLAMA_LOCAL) {
         auto providerConfig = toLLMProviderConfig(agentConfig);
-        if (providerConfig.apiKey.isEmpty()) {
+        if (providerConfig.apiKey.isEmpty() && agentConfig.baseUrl.empty()) {
             result.error = "API key not configured. Set it in Preferences > AI Assistant.";
             result.hasError = true;
             return result;

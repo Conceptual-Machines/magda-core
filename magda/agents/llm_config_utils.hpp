@@ -12,6 +12,8 @@ namespace magda {
     "deepseek" and "openrouter" are OpenAI-compatible services with their own
     credentials and base URLs — they map to the same OpenAIChat wire format. */
 inline llm::Provider providerFromString(const std::string& s) {
+    if (s == provider::CODEX_APP_SERVER)
+        return llm::Provider::OpenAIResponses;
     if (s == "openai_responses")
         return llm::Provider::OpenAIResponses;
     if (s == provider::ANTHROPIC)
@@ -24,6 +26,8 @@ inline llm::Provider providerFromString(const std::string& s) {
 
 /** Default base URL for a provider string. */
 inline juce::String defaultBaseUrl(const std::string& providerStr) {
+    if (providerStr == provider::CODEX_APP_SERVER)
+        return "ws://127.0.0.1:8765";
     if (providerStr == provider::DEEPSEEK)
         return "https://api.deepseek.com";
     if (providerStr == provider::OPENROUTER)
@@ -53,12 +57,15 @@ inline llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& con
     } else {
         auto credential = Config::getInstance().getAICredential(config.provider);
 
-        if (!credential.empty()) {
+        if (!credential.empty() && credential != "__managed__") {
             pc.apiKey = juce::String(credential);
         } else {
             // Env var fallback by provider
             const char* envVar = nullptr;
-            if (provider == llm::Provider::OpenAIChat || provider == llm::Provider::OpenAIResponses)
+            if (config.provider == provider::CODEX_APP_SERVER)
+                envVar = std::getenv("MAGDA_CODEX_APP_SERVER_TOKEN");
+            else if (provider == llm::Provider::OpenAIChat ||
+                     provider == llm::Provider::OpenAIResponses)
                 envVar = std::getenv("OPENAI_API_KEY");
             else if (provider == llm::Provider::Anthropic)
                 envVar = std::getenv("ANTHROPIC_API_KEY");
@@ -70,7 +77,7 @@ inline llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& con
     }
 
     // GPT-5 does not support temperature, uses reasoning effort instead
-    if (pc.model.startsWith("gpt-5")) {
+    if (config.provider != provider::CODEX_APP_SERVER && pc.model.startsWith("gpt-5")) {
         pc.noTemperature = true;
         if (pc.reasoningEffort.isEmpty()) {
             if (agentName == "router")

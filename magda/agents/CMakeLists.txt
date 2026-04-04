@@ -30,10 +30,15 @@ dsl_grammar.hpp
     llama_local_client.hpp
     llama_local_client.cpp
     llm_client_factory.hpp
+    codex_app_server_manager.hpp
+    codex_app_server_manager.cpp
+    codex_app_server_client.hpp
+    codex_app_server_client.cpp
     model_downloader.hpp
     model_downloader.cpp
     daw_agent.hpp
     daw_agent.cpp
+    ../../third_party/llama.cpp/vendor/cpp-httplib/httplib.cpp
 )
 
 # Create the agents library

@@ -2,6 +2,7 @@
 
 #include <juce_llm/juce_llm.h>
 
+#include "../../../agents/codex_app_server_manager.hpp"
 #include "../../../agents/llama_model_manager.hpp"
 #include "../../../agents/llm_config_utils.hpp"
 #include "../../../agents/llm_presets.hpp"
@@ -18,6 +19,8 @@ namespace magda {
 // ============================================================================
 
 namespace {
+
+constexpr const char* kManagedCredentialMarker = "__managed__";
 
 void styleLabel(juce::Label& label, float size = 12.0f) {
     label.setFont(FontManager::getInstance().getUIFont(size));
@@ -56,6 +59,13 @@ const std::vector<ProviderInfo>& getKnownProviders() {
     static const std::vector<ProviderInfo> providers = {
         {magda::provider::OPENAI, "OpenAI", magda::provider::OPENAI, "", magda::model::GPT_4_1_MINI,
          BinaryData::openai_svg, BinaryData::openai_svgSize},
+        {magda::provider::CODEX_APP_SERVER,
+         "Codex App Server",
+         magda::provider::CODEX_APP_SERVER,
+         "",
+         magda::model::GPT_5_CODEX,
+         BinaryData::openai_svg,
+         BinaryData::openai_svgSize},
         {magda::provider::ANTHROPIC, "Anthropic", magda::provider::ANTHROPIC, "",
          magda::model::CLAUDE_HAIKU, BinaryData::anthropic_svg, BinaryData::anthropic_svgSize},
         {magda::provider::GEMINI, "Gemini", magda::provider::GEMINI, "", magda::model::GEMINI_FLASH,
@@ -110,6 +120,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
             }
         }
         providerCombo_.setSelectedId(1, juce::dontSendNotification);
+        providerCombo_.onChange = [this]() { updateInputMode(); };
         styleCombo(providerCombo_);
         addAndMakeVisible(providerCombo_);
 
@@ -120,6 +131,10 @@ class AISettingsDialog::CloudPage : public juce::Component {
 
         styleEditor(keyEditor_, "Enter API key...", true);
         addAndMakeVisible(keyEditor_);
+
+        loginBtn_.setButtonText("Login");
+        loginBtn_.onClick = [this]() { loginToCodex(); };
+        addAndMakeVisible(loginBtn_);
 
         // Test button
         testBtn_.setButtonText("Test");
@@ -145,6 +160,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
         addAndMakeVisible(registeredLabel_);
 
         addAndMakeVisible(listContainer_);
+        updateInputMode();
     }
 
     void resized() override {
@@ -164,6 +180,8 @@ class AISettingsDialog::CloudPage : public juce::Component {
         testBtn_.setBounds(row.removeFromRight(50).reduced(2, 2));
         row.removeFromRight(4);
         addBtn_.setBounds(row.removeFromRight(50).reduced(2, 2));
+        row.removeFromRight(4);
+        loginBtn_.setBounds(row.removeFromRight(56).reduced(2, 2));
         row.removeFromRight(4);
         keyEditor_.setBounds(row.reduced(0, 1));
         bounds.removeFromTop(2);
@@ -230,6 +248,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
         }
 
         updateProviderComboState();
+        updateInputMode();
         resized();
     }
 
@@ -288,7 +307,16 @@ class AISettingsDialog::CloudPage : public juce::Component {
         auto providerId = getSelectedProviderId();
         auto key = keyEditor_.getText().trim();
 
-        if (providerId.empty() || key.isEmpty()) {
+        if (providerId.empty()) {
+            statusLabel_.setText("Select a provider first", juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        if (providerId == provider::CODEX_APP_SERVER && key.isEmpty())
+            key = kManagedCredentialMarker;
+
+        if (key.isEmpty()) {
             statusLabel_.setText("Enter an API key first", juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
             return;
@@ -362,7 +390,12 @@ class AISettingsDialog::CloudPage : public juce::Component {
         // Status label (masked key preview)
         auto statusLabel = std::make_unique<juce::Label>();
         auto key = credentials_[providerId];
-        juce::String masked = key.substring(0, 4) + "..." + key.substring(key.length() - 4);
+        juce::String masked;
+        if (key == kManagedCredentialMarker) {
+            masked = "Managed login";
+        } else {
+            masked = key.substring(0, 4) + "..." + key.substring(key.length() - 4);
+        }
         statusLabel->setText(masked, juce::dontSendNotification);
         styleLabel(*statusLabel, 11.0f);
         statusLabel->setColour(juce::Label::textColourId,
@@ -403,11 +436,115 @@ class AISettingsDialog::CloudPage : public juce::Component {
         }
     }
 
+    void updateInputMode() {
+        auto providerId = getSelectedProviderId();
+        const bool isCodex = (providerId == provider::CODEX_APP_SERVER);
+        keyLabel_.setText(isCodex ? "Login" : "API Key", juce::dontSendNotification);
+        keyEditor_.setVisible(!isCodex);
+        loginBtn_.setVisible(isCodex);
+        addBtn_.setButtonText(isCodex ? "Enable" : "Add");
+        statusLabel_.setText({}, juce::dontSendNotification);
+        resized();
+    }
+
+    void loginToCodex() {
+        testBtn_.setEnabled(false);
+        loginBtn_.setEnabled(false);
+        addBtn_.setEnabled(false);
+        statusLabel_.setText("Opening ChatGPT login...", juce::dontSendNotification);
+        statusLabel_.setColour(juce::Label::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+
+        auto safeThis = juce::Component::SafePointer<CloudPage>(this);
+        juce::Thread::launch([safeThis]() {
+            auto result = CodexAppServerManager::getInstance().loginWithChatGPT(
+                CodexAppServerManager::getDefaultWsUrl(),
+                180000);
+
+            juce::MessageManager::callAsync([safeThis, result]() {
+                if (!safeThis)
+                    return;
+
+                safeThis->testBtn_.setEnabled(true);
+                safeThis->loginBtn_.setEnabled(true);
+                safeThis->addBtn_.setEnabled(true);
+
+                if (result.success) {
+                    safeThis->credentials_[provider::CODEX_APP_SERVER] = kManagedCredentialMarker;
+                    bool found = false;
+                    for (auto& entry : safeThis->entries_) {
+                        if (entry.providerId == provider::CODEX_APP_SERVER) {
+                            entry.statusLabel->setText("Managed login",
+                                                       juce::dontSendNotification);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                        safeThis->addListEntry(provider::CODEX_APP_SERVER);
+
+                    safeThis->statusLabel_.setText("Login complete", juce::dontSendNotification);
+                    safeThis->statusLabel_.setColour(juce::Label::textColourId,
+                                                     juce::Colours::limegreen);
+                    safeThis->updateProviderComboState();
+                    safeThis->resized();
+                    return;
+                }
+
+                safeThis->statusLabel_.setText(result.error, juce::dontSendNotification);
+                safeThis->statusLabel_.setColour(juce::Label::textColourId,
+                                                 juce::Colours::orange);
+            });
+        });
+    }
+
     void testKey() {
         auto providerId = getSelectedProviderId();
         auto key = keyEditor_.getText().trim();
 
-        if (providerId.empty() || key.isEmpty()) {
+        if (providerId.empty()) {
+            statusLabel_.setText("Select a provider first", juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        if (providerId == provider::CODEX_APP_SERVER) {
+            testBtn_.setEnabled(false);
+            statusLabel_.setText("Testing Codex App Server...", juce::dontSendNotification);
+            statusLabel_.setColour(juce::Label::textColourId,
+                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+
+            auto safeThis = juce::Component::SafePointer<CloudPage>(this);
+            juce::Thread::launch([safeThis]() {
+                auto result = CodexAppServerManager::getInstance().getAccountStatus(
+                    CodexAppServerManager::getDefaultWsUrl(),
+                    true);
+
+                juce::MessageManager::callAsync([safeThis, result]() {
+                    if (!safeThis)
+                        return;
+
+                    safeThis->testBtn_.setEnabled(true);
+                    if (result.loggedIn) {
+                        juce::String summary = "OK";
+                        if (result.email.isNotEmpty())
+                            summary += " (" + result.email + ")";
+                        safeThis->statusLabel_.setText(summary, juce::dontSendNotification);
+                        safeThis->statusLabel_.setColour(juce::Label::textColourId,
+                                                         juce::Colours::limegreen);
+                    } else {
+                        auto err = result.error.isNotEmpty() ? result.error
+                                                             : "Not logged in";
+                        safeThis->statusLabel_.setText(err, juce::dontSendNotification);
+                        safeThis->statusLabel_.setColour(juce::Label::textColourId,
+                                                         juce::Colours::orange);
+                    }
+                });
+            });
+            return;
+        }
+
+        if (key.isEmpty()) {
             statusLabel_.setText("Enter an API key first", juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
             return;
@@ -468,6 +605,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
     juce::Label providerLabel_, keyLabel_;
     juce::ComboBox providerCombo_;
     juce::TextEditor keyEditor_;
+    juce::TextButton loginBtn_;
     juce::TextButton testBtn_, addBtn_;
     juce::Label statusLabel_;
 
@@ -912,6 +1050,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             savedProviderDisplay_ = "DeepSeek";
         else if (musicCfg.provider == magda::provider::OPENROUTER)
             savedProviderDisplay_ = "OpenRouter";
+        else if (musicCfg.provider == magda::provider::CODEX_APP_SERVER)
+            savedProviderDisplay_ = "Codex App Server";
         else if (musicCfg.provider == magda::provider::OPENAI)
             savedProviderDisplay_ = "OpenAI";
 
@@ -1039,6 +1179,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             return magda::preset::CLOUD_DEEPSEEK;
         if (display == "OpenRouter")
             return magda::preset::CLOUD_OPENROUTER;
+        if (display == "Codex App Server")
+            return magda::preset::CLOUD_CODEX_APP_SERVER;
         return magda::preset::CLOUD_OPENAI;
     }
 
@@ -1059,6 +1201,8 @@ class AISettingsDialog::ConfigPage : public juce::Component {
     static void applyCheaperModel(Config::AgentLLMConfig& cfg, const std::string& presetId) {
         if (presetId == magda::preset::CLOUD_OPENAI)
             cfg.model = magda::model::GPT_4_1_MINI;
+        else if (presetId == magda::preset::CLOUD_CODEX_APP_SERVER)
+            cfg.model = magda::model::GPT_5_CODEX;
         else if (presetId == magda::preset::CLOUD_ANTHROPIC)
             cfg.model = magda::model::CLAUDE_HAIKU;
         else if (presetId == magda::preset::CLOUD_GEMINI)
@@ -1156,6 +1300,7 @@ void AISettingsDialog::applySettings() {
     auto& config = Config::getInstance();
     cloudPage_->apply(config);
     localPage_->apply(config);
+    configPage_->refreshProviderCombos();
     configPage_->apply(config);
     config.save();
 }
