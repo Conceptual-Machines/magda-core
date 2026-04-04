@@ -148,11 +148,15 @@ void SessionClipEditor::setupHeader() {
     clipNameLabel_->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(*clipNameLabel_);
 
-    // Loop toggle (SvgButton with dual icons)
-    loopToggle_ =
-        std::make_unique<SvgButton>("Loop", BinaryData::loop_off_svg, BinaryData::loop_off_svgSize,
-                                    BinaryData::loop_on_svg, BinaryData::loop_on_svgSize);
-    loopToggle_->setBorderColor(juce::Colour(0xff444444));
+    // Loop toggle (single-icon mode with programmatic bg/border)
+    loopToggle_ = std::make_unique<SvgButton>("Loop", BinaryData::loop_icon_svg,
+                                              BinaryData::loop_icon_svgSize);
+    loopToggle_->setOriginalColor(juce::Colour(0xffBCBCBC));
+    loopToggle_->setNormalColor(juce::Colour(0xff999999));
+    loopToggle_->setActiveColor(juce::Colour(0xffCCCCCC));
+    loopToggle_->setActiveBackgroundColor(juce::Colour(0xff5588AA));
+    loopToggle_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
+    loopToggle_->setBorderColor(juce::Colour(0xff555555));
     loopToggle_->setBorderThickness(1.0f);
     loopToggle_->setCornerRadius(4.0f);
     loopToggle_->onClick = [this]() {
