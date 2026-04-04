@@ -1,0 +1,42 @@
+name: CLA Assistant
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  cla:
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'pull_request_target' && github.event.action != 'closed') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+       contains(github.event.comment.body, 'I have read the CLA'))
+    steps:
+      - uses: contributor-assistant/github-action@v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-document: "https://github.com/Conceptual-Machines/magda-core/blob/main/CLA.md"
+          branch: "main"
+          allowlist: "Nomad-Monad,dependabot[bot],pre-commit-ci[bot]"
+          remote-organization-name: "Conceptual-Machines"
+          remote-repository-name: "magda-core"
+          create-file-commit-message: "Create CLA signature file"
+          signed-commit-message: "$contributorName has signed the CLA"
+          custom-notsigned-prcomment: |
+            Thank you for your pull request! Before we can merge it, you need to sign our [Contributor License Agreement](https://github.com/Conceptual-Machines/magda-core/blob/main/CLA.md).
+
+            To sign, please comment on this PR with:
+
+            > I have read the CLA Document and I hereby sign the CLA
+
+            This is a one-time requirement.
+          custom-pr-sign-comment: "I have read the CLA Document and I hereby sign the CLA"
+          lock-pullrequest-aftermerge: false
