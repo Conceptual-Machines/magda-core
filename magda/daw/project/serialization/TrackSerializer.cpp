@@ -32,6 +32,8 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     obj->setProperty("recordArmed", track.recordArmed);
     obj->setProperty("inputMonitor", static_cast<int>(track.inputMonitor));
     obj->setProperty("frozen", track.frozen);
+    if (track.activeSessionClipId != INVALID_CLIP_ID)
+        obj->setProperty("activeSessionClipId", track.activeSessionClipId);
 
     // View settings per view mode
     auto* viewSettingsObj = new juce::DynamicObject();
@@ -139,6 +141,9 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     // Frozen state (backward compatible - defaults to false)
     if (obj->hasProperty("frozen")) {
         outTrack.frozen = static_cast<bool>(obj->getProperty("frozen"));
+    }
+    if (obj->hasProperty("activeSessionClipId")) {
+        outTrack.activeSessionClipId = static_cast<int>(obj->getProperty("activeSessionClipId"));
     }
 
     // View settings per view mode (backward compatible - defaults applied if missing)
