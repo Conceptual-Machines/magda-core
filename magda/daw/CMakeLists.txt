@@ -14,134 +14,135 @@ juce_add_binary_data(MagdaAssets
     ../../assets/fonts/Inter-Bold.ttf
     "../../assets/fonts/Microgramma D Extended Bold.otf"
     ../../assets/fonts/JetBrainsMono-Regular.ttf
-    # UI icons
-    ../../assets/icons/enter.svg
-    ../../assets/icons/track.svg
-    ../../assets/icons/clip.svg
-    ../../assets/icons/copy.svg
-    ../../assets/icons/copycontent.svg
-    ../../assets/icons/delete.svg
-    ../../assets/icons/random.svg
-    ../../assets/icons/compare.svg
-    ../../assets/icons/record_circle.svg
-    # Transport icons (off/on states)
-    ../../assets/icons/play_off.svg
-    ../../assets/icons/play_on.svg
-    ../../assets/icons/pause_off.svg
-    ../../assets/icons/pause_on.svg
-    ../../assets/icons/stop_off.svg
-    ../../assets/icons/stop_on.svg
-    ../../assets/icons/record_off.svg
-    ../../assets/icons/record_on.svg
-    ../../assets/icons/loop_off.svg
-    ../../assets/icons/loop_on.svg
-    ../../assets/icons/rewind_off.svg
-    ../../assets/icons/rewind_on.svg
-    ../../assets/icons/prev_off.svg
-    ../../assets/icons/prev_on.svg
-    ../../assets/icons/next_off.svg
-    ../../assets/icons/next_on.svg
+    # General UI icons
+    ../../assets/icons/general/enter.svg
+    ../../assets/icons/general/track.svg
+    ../../assets/icons/general/clip.svg
+    ../../assets/icons/general/copy.svg
+    ../../assets/icons/general/copycontent.svg
+    ../../assets/icons/general/delete.svg
+    ../../assets/icons/general/random.svg
+    ../../assets/icons/general/compare.svg
+    ../../assets/icons/general/add.svg
+    ../../assets/icons/general/settings_nobg.svg
+    ../../assets/icons/general/menu.svg
+    ../../assets/icons/general/chord.svg
+    ../../assets/icons/general/funnel.svg
+    ../../assets/icons/general/refresh.svg
+    ../../assets/icons/general/send.svg
+    ../../assets/icons/general/chevron_left.svg
+    ../../assets/icons/general/chevron_right.svg
+    ../../assets/icons/general/chevron_down.svg
+    ../../assets/icons/general/bar_chart.svg
+    ../../assets/icons/general/link_flat.svg
+    ../../assets/icons/general/play_bare.svg
+    ../../assets/icons/general/server_play.svg
+    ../../assets/icons/general/server_stop.svg
+    ../../assets/icons/general/open_in_new.svg
+    ../../assets/icons/general/power_on.svg
+    ../../assets/icons/general/rack.svg
+    ../../assets/icons/general/tree.svg
+    ../../assets/icons/general/save.svg
+    ../../assets/icons/general/folder-open.svg
+    ../../assets/icons/general/piano_roll.svg
+    ../../assets/icons/general/drum_grid.svg
+    ../../assets/icons/general/script.svg
+    ../../assets/icons/general/volume_up.svg
+    ../../assets/icons/general/volume_off.svg
+    ../../assets/icons/general/headphones.svg
+    ../../assets/icons/general/metronome.svg
+    ../../assets/icons/general/project_home.svg
+    ../../assets/icons/general/harddrive.svg
+    ../../assets/icons/general/database.svg
+    ../../assets/icons/general/favorite.svg
+    # Transport icons
+    ../../assets/icons/transport/play_off.svg
+    ../../assets/icons/transport/play_on.svg
+    ../../assets/icons/transport/pause_off.svg
+    ../../assets/icons/transport/pause_on.svg
+    ../../assets/icons/transport/stop_off.svg
+    ../../assets/icons/transport/stop_on.svg
+    ../../assets/icons/transport/record_off.svg
+    ../../assets/icons/transport/record_on.svg
+    ../../assets/icons/transport/record_circle.svg
+    ../../assets/icons/transport/loop_off.svg
+    ../../assets/icons/transport/loop_on.svg
+    ../../assets/icons/transport/loop_icon.svg
+    ../../assets/icons/transport/rewind_off.svg
+    ../../assets/icons/transport/rewind_on.svg
+    ../../assets/icons/transport/prev_off.svg
+    ../../assets/icons/transport/prev_on.svg
+    ../../assets/icons/transport/next_off.svg
+    ../../assets/icons/transport/next_on.svg
+    ../../assets/icons/transport/punchin.svg
+    ../../assets/icons/transport/punchin_on.svg
+    ../../assets/icons/transport/punchout.svg
+    ../../assets/icons/transport/punchout_on.svg
+    # Inspector icons
+    ../../assets/icons/inspector/infinito.svg
+    ../../assets/icons/inspector/position.svg
+    ../../assets/icons/inspector/clip_loop_off.svg
+    ../../assets/icons/inspector/clip_loop_on.svg
+    ../../assets/icons/inspector/audio_clip.svg
+    ../../assets/icons/inspector/midi_clip.svg
+    ../../assets/icons/inspector/fade_linear.svg
+    ../../assets/icons/inspector/fade_convex.svg
+    ../../assets/icons/inspector/fade_concave.svg
+    ../../assets/icons/inspector/fade_scurve.svg
+    ../../assets/icons/inspector/fade_gain.svg
+    ../../assets/icons/inspector/fade_speedramp.svg
+    ../../assets/icons/inspector/phase_invert.svg
     # Resume/arrangement icons
     ../../assets/icons/resume/resume.svg
     ../../assets/icons/resume/resume_on.svg
-    # Audio icons
-    ../../assets/icons/volume_up.svg
-    ../../assets/icons/volume_off.svg
-    ../../assets/icons/headphones.svg
-    ../../assets/icons/metronome.svg
-    # UI icons
-    ../../assets/icons/add.svg
-    ../../assets/icons/settings_nobg.svg
-    ../../assets/icons/menu.svg
-    ../../assets/icons/density_small.svg
-    ../../assets/icons/density_medium.svg
-    ../../assets/icons/density_large.svg
-    ../../assets/icons/chord.svg
-    ../../assets/icons/funnel.svg
-    ../../assets/icons/refresh.svg
-    ../../assets/icons/send.svg
-    ../../assets/icons/chevron_left.svg
-    ../../assets/icons/bar_chart.svg
-    ../../assets/icons/link_flat.svg
-    ../../assets/icons/knob.svg
-    ../../assets/icons/sine-wave.svg
-    ../../assets/icons/bare_sine.svg
-    ../../assets/icons/play_bare.svg
-    ../../assets/icons/server_play.svg
-    ../../assets/icons/server_stop.svg
-    ../../assets/icons/open_in_new.svg
-    ../../assets/icons/power_on.svg
-    ../../assets/icons/rack.svg
-    ../../assets/icons/tree.svg
-    ../../assets/icons/bezier.svg
-    ../../assets/icons/time_bend.svg
-    ../../assets/icons/bend-in-out.svg
-    ../../assets/icons/time_bend_off.svg
-    ../../assets/icons/time_bend_on.svg
-    ../../assets/icons/chevron_right.svg
-    ../../assets/icons/chevron_down.svg
-    ../../assets/icons/curve.svg
-    ../../assets/icons/save.svg
-    ../../assets/icons/folder-open.svg
-    ../../assets/icons/infinito.svg
-    ../../assets/icons/position.svg
-    ../../assets/icons/piano_roll.svg
-    ../../assets/icons/drum_grid.svg
+    # Waveform icons
+    ../../assets/icons/waveform/sine-wave.svg
+    ../../assets/icons/waveform/bare_sine.svg
+    ../../assets/icons/waveform/time_bend.svg
+    ../../assets/icons/waveform/time_bend_off.svg
+    ../../assets/icons/waveform/time_bend_on.svg
+    ../../assets/icons/waveform/bezier.svg
+    ../../assets/icons/waveform/bend-in-out.svg
+    ../../assets/icons/waveform/curve.svg
+    # Toolbar icons
+    ../../assets/icons/toolbar/density_small.svg
+    ../../assets/icons/toolbar/density_medium.svg
+    ../../assets/icons/toolbar/density_large.svg
+    ../../assets/icons/toolbar/zoom_out_map.svg
+    ../../assets/icons/toolbar/fit_width.svg
+    ../../assets/icons/toolbar/fit_loop.svg
+    ../../assets/icons/toolbar/horizontal.svg
+    ../../assets/icons/toolbar/vertical.svg
+    ../../assets/icons/toolbar/io_routing.svg
     # Footer view mode icons
     ../../assets/icons/footer/Session.svg
     ../../assets/icons/footer/Arrangement.svg
     ../../assets/icons/footer/Mix.svg
     ../../assets/icons/footer/Master.svg
-    # Panel content type icons
+    # Sidebar icons
     ../../assets/icons/sidebar/plug.svg
     ../../assets/icons/sidebar/sample.svg
     ../../assets/icons/sidebar/preset.svg
     ../../assets/icons/sidebar/info.svg
     ../../assets/icons/sidebar/console.svg
-    ../../assets/icons/script.svg
-    ../../assets/icons/browser.svg
-    # Media Explorer sidebar icons
-    ../../assets/icons/project_home.svg
-    ../../assets/icons/harddrive.svg
-    ../../assets/icons/database.svg
-    ../../assets/icons/favorite.svg
-    # Media Explorer filter icons
+    # Browser icons
+    ../../assets/icons/browser/browser.svg
+    ../../assets/icons/browser/AUDIO-DEVICE.svg
+    ../../assets/icons/browser/INSTRUMENT_DEVICE.svg
+    ../../assets/icons/browser/MIDI-DEVICE.svg
     ../../assets/midi.svg
-    ../../assets/icons/audio_midi_files/AUDIO.svg
-    ../../assets/icons/audio_midi_files/MIDI.svg
-    # Plugin browser device type icons
-    ../../assets/icons/browser_icons/AUDIO-DEVICE.svg
-    ../../assets/icons/browser_icons/INSTRUMENT_DEVICE.svg
-    ../../assets/icons/browser_icons/MIDI-DEVICE.svg
+    ../../assets/icons/browser/AUDIO.svg
+    ../../assets/icons/browser/MIDI.svg
     # Mixer fader icons
     ../../assets/icons/fader/fader_thumb.svg
     ../../assets/icons/fader/fader_track.svg
     # Mixer knob icons
+    ../../assets/icons/knob/knob.svg
     ../../assets/icons/knob/knob_body.svg
     ../../assets/icons/knob/knob_pointer.svg
-    # View toolbar icons
-    ../../assets/icons/zoom_out_map.svg
-    ../../assets/icons/fit_width.svg
-    ../../assets/icons/fit_loop.svg
-    ../../assets/icons/horizontal.svg
-    ../../assets/icons/io_routing.svg
-    ../../assets/icons/vertical.svg
     # I/O routing icons
     ../../assets/icons/IO/Input.svg
     ../../assets/icons/IO/Output.svg
-    # Fade curve type icons
-    ../../assets/icons/fade_linear.svg
-    ../../assets/icons/fade_convex.svg
-    ../../assets/icons/fade_concave.svg
-    ../../assets/icons/fade_scurve.svg
-    # Fade behaviour icons
-    ../../assets/icons/fade_gain.svg
-    ../../assets/icons/fade_speedramp.svg
-    # Punch in/out icons
-    ../../assets/icons/punchinout/punchin.svg
-    ../../assets/icons/punchinout/punchin_on.svg
-    ../../assets/icons/punchinout/punchout.svg
-    ../../assets/icons/punchinout/punchout_on.svg
     # Panel open/close icons
     ../../assets/icons/panels/left_open.svg
     ../../assets/icons/panels/left_close.svg
@@ -149,8 +150,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/panels/right_close.svg
     ../../assets/icons/panels/bottom_open.svg
     ../../assets/icons/panels/bottom_close.svg
-    # Utility icons
-    ../../assets/icons/phase_invert.svg
     # Fontaudio waveform icons
     ../../assets/icons/fontaudio/fad-modsine.svg
     ../../assets/icons/fontaudio/fad-modtri.svg
@@ -166,10 +165,10 @@ juce_add_binary_data(MagdaAssets
     # Fontaudio logo icons
     ../../assets/icons/fontaudio/fad-logo-tracktion.svg
     ../../assets/icons/fontaudio/fad-logo-juce.svg
-    # Chord engine icons
-    ../../assets/icons/psychology.svg
-    ../../assets/icons/robot.svg
-    ../../assets/icons/ai.svg
+    # AI icons
+    ../../assets/icons/ai/psychology.svg
+    ../../assets/icons/ai/robot.svg
+    ../../assets/icons/ai/ai.svg
     # Cloud provider icons
     ../../assets/icons/cloud_providers/openai.svg
     ../../assets/icons/cloud_providers/anthropic.svg

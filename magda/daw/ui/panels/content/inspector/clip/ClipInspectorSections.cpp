@@ -328,9 +328,9 @@ void ClipInspector::initClipPropertiesSection() {
     clipFilePathLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(clipFilePathLabel_);
 
-    // Clip type icon (sinewave for audio, midi for MIDI)
-    clipTypeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::sinewave_svg,
-                                                       BinaryData::sinewave_svgSize);
+    // Clip type icon (audio_clip for audio, midi_clip for MIDI)
+    clipTypeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::audio_clip_svg,
+                                                       BinaryData::audio_clip_svgSize);
     clipTypeIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     clipTypeIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     clipTypeIcon_->setInterceptsMouseClicks(false, false);
@@ -525,13 +525,10 @@ void ClipInspector::initClipPropertiesSection() {
     };
     clipPropsContainer_.addChildComponent(*clipContentOffsetValue_);
 
-    // Loop toggle (infinito icon)
-    clipLoopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::infinito_svg,
-                                                         BinaryData::infinito_svgSize);
-    clipLoopToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clipLoopToggle_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    clipLoopToggle_->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    clipLoopToggle_->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    // Loop toggle (dual icon: clip_loop_off / clip_loop_on)
+    clipLoopToggle_ = std::make_unique<magda::SvgButton>(
+        "Loop", BinaryData::clip_loop_off_svg, BinaryData::clip_loop_off_svgSize,
+        BinaryData::clip_loop_on_svg, BinaryData::clip_loop_on_svgSize);
     clipLoopToggle_->setClickingTogglesState(false);
     clipLoopToggle_->onClick = [this]() {
         if (selectedClipIds_.empty())

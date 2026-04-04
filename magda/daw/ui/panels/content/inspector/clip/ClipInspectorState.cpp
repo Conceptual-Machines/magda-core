@@ -118,10 +118,11 @@ void ClipInspector::updateFromSelectedClip() {
         audioPropsLabel_.setVisible(isAudioClip);
 
         if (isAudioClip) {
-            clipTypeIcon_->updateSvgData(BinaryData::sinewave_svg, BinaryData::sinewave_svgSize);
+            clipTypeIcon_->updateSvgData(BinaryData::audio_clip_svg,
+                                         BinaryData::audio_clip_svgSize);
             clipTypeIcon_->setTooltip("Audio clip");
         } else {
-            clipTypeIcon_->updateSvgData(BinaryData::midi_svg, BinaryData::midi_svgSize);
+            clipTypeIcon_->updateSvgData(BinaryData::midi_clip_svg, BinaryData::midi_clip_svgSize);
             clipTypeIcon_->setTooltip("MIDI clip");
         }
 
