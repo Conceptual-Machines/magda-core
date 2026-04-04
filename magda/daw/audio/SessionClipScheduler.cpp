@@ -375,14 +375,20 @@ void SessionClipScheduler::syncTrackPlaybackModes() {
     auto& tm = TrackManager::getInstance();
     auto& cm = ClipManager::getInstance();
 
-    // Build set of tracks with active session clips
+    // Build set of tracks with active session clips (running or suspended)
     std::unordered_set<TrackId> sessionTracks;
     for (auto clipId : activeClips_) {
         if (const auto* clip = cm.getClip(clipId))
             sessionTracks.insert(clip->trackId);
     }
 
-    // Sync each track: active session clips → Session, otherwise → Arrangement
+    // Tracks with activeSessionClipId set stay in Session mode even when
+    // transport is stopped — the user hasn't pressed "back to arrangement".
+    for (const auto& track : tm.getTracks()) {
+        if (track.activeSessionClipId != INVALID_CLIP_ID)
+            sessionTracks.insert(track.id);
+    }
+
     for (const auto& track : tm.getTracks()) {
         auto mode = sessionTracks.count(track.id) ? TrackPlaybackMode::Session
                                                   : TrackPlaybackMode::Arrangement;
