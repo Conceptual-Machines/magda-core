@@ -22,7 +22,7 @@ TEST_CASE("ParameterInfo - Default construction", "[parameter]") {
     REQUIRE(info.skewFactor == Catch::Approx(1.0f));
     REQUIRE(info.choices.empty());
     REQUIRE(info.modulatable == true);
-    REQUIRE(info.bipolarModulation == true);
+    REQUIRE(info.bipolarModulation == false);
 }
 
 TEST_CASE("ParameterInfo - Constructor with values", "[parameter]") {

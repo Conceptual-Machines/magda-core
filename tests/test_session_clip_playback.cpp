@@ -841,25 +841,29 @@ TEST_CASE("AutoTempo session clip timing: 172bpm clip in 120bpm project",
     constexpr double PROJECT_BPM = 120.0;
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
-    SECTION("lengthBeats matches source beats") {
-        REQUIRE(clip.lengthBeats == Catch::Approx(8.0));
+    SECTION("lengthBeats preserves timeline length in project beats") {
+        // New behavior: lengthBeats = length * bpm / 60
+        double expectedBeats = clip.length * PROJECT_BPM / 60.0;
+        REQUIRE(clip.lengthBeats == Catch::Approx(expectedBeats));
     }
 
-    SECTION("Wall-clock duration stretched to project BPM") {
+    SECTION("Wall-clock duration preserves original timeline length") {
         auto [clipLen, loopLen] = computeAutoTempoTimings(clip, PROJECT_BPM);
-        // 8 beats at 120bpm = 4 seconds (slower than original ~2.79s)
-        REQUIRE(clipLen == Catch::Approx(4.0));
-        REQUIRE(loopLen == Catch::Approx(4.0));
+        // lengthBeats * 60 / bpm == original length (round-trip)
+        REQUIRE(clipLen == Catch::Approx(clip.length));
+        REQUIRE(loopLen == Catch::Approx(clip.length));
     }
 
-    SECTION("Playhead wraps at stretched duration, not original") {
+    SECTION("Playhead wraps at clip duration") {
         auto [clipLen, loopLen] = computeAutoTempoTimings(clip, PROJECT_BPM);
-        // At 3.5s elapsed, playhead should be at 3.5 (within 4s loop)
-        REQUIRE(computeSessionPlayhead(3.5, loopLen, clipLen, true) == Catch::Approx(3.5));
-        // At 4.0s, should wrap to 0
-        REQUIRE(computeSessionPlayhead(4.0, loopLen, clipLen, true) == Catch::Approx(0.0));
-        // At 5.0s, should be at 1.0
-        REQUIRE(computeSessionPlayhead(5.0, loopLen, clipLen, true) == Catch::Approx(1.0));
+        double dur = clipLen;
+        // Within one loop
+        REQUIRE(computeSessionPlayhead(dur * 0.5, loopLen, clipLen, true) ==
+                Catch::Approx(dur * 0.5));
+        // At exact loop boundary, wraps to 0
+        REQUIRE(computeSessionPlayhead(dur, loopLen, clipLen, true) == Catch::Approx(0.0));
+        // One second past loop boundary
+        REQUIRE(computeSessionPlayhead(dur + 1.0, loopLen, clipLen, true) == Catch::Approx(1.0));
     }
 
     SECTION("Without autoTempo, playhead uses original duration (wrong)") {
@@ -891,14 +895,13 @@ TEST_CASE("AutoTempo session clip timing: sub-loop region",
     constexpr double PROJECT_BPM = 120.0;
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
-    // loopLengthBeats should be set to source beats by setAutoTempo
-    // With a sub-loop of half the file, loopLengthBeats = sourceBeats (setAutoTempo
-    // uses full source region). Verify the timing math handles it correctly.
+    // lengthBeats preserves timeline length, loopLengthBeats preserves loop length
     auto [clipLen, loopLen] = computeAutoTempoTimings(clip, PROJECT_BPM);
 
-    SECTION("Clip length uses full beat count") {
-        REQUIRE(clip.lengthBeats == Catch::Approx(8.0));
-        REQUIRE(clipLen == Catch::Approx(4.0));  // 8 beats at 120bpm
+    SECTION("Clip length preserves timeline length") {
+        double expectedBeats = clip.length * PROJECT_BPM / 60.0;
+        REQUIRE(clip.lengthBeats == Catch::Approx(expectedBeats));
+        REQUIRE(clipLen == Catch::Approx(clip.length));
     }
 
     SECTION("Loop length uses loopLengthBeats") {

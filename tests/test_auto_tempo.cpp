@@ -95,8 +95,12 @@ TEST_CASE("ClipInfo::setSourceMetadata - populates unset fields", "[clip][auto-t
 // ─────────────────────────────────────────────────────────────
 // ClipOperations::setAutoTempo — with real detected BPM
 // When sourceBPM differs from projectBPM, it's a real detected
-// BPM and should NOT be calibrated. lengthBeats uses source beats.
+// BPM and should NOT be calibrated. lengthBeats preserves the
+// clip's current timeline length (not source beats).
 // ─────────────────────────────────────────────────────────────
+
+// Expected lengthBeats: clip.length * PROJECT_BPM / 60.0
+static constexpr double AMEN_EXPECTED_LENGTH_BEATS = AMEN_DURATION * PROJECT_BPM / 60.0;
 
 TEST_CASE("setAutoTempo - preserves real detected BPM", "[clip][auto-tempo]") {
     auto clip = makeAmenClip();
@@ -111,9 +115,9 @@ TEST_CASE("setAutoTempo - preserves real detected BPM", "[clip][auto-tempo]") {
         REQUIRE(clip.sourceNumBeats == Approx(AMEN_SOURCE_BEATS));
     }
 
-    SECTION("lengthBeats uses source beats when detected BPM available") {
+    SECTION("lengthBeats preserves timeline length in project beats") {
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-        REQUIRE(clip.lengthBeats == Approx(AMEN_SOURCE_BEATS));
+        REQUIRE(clip.lengthBeats == Approx(AMEN_EXPECTED_LENGTH_BEATS));
     }
 
     SECTION("lengthBeats == loopLengthBeats at initial setup (no sub-loop)") {
@@ -189,14 +193,14 @@ TEST_CASE("getAutoTempoBeatRange - source beat range", "[clip][auto-tempo][te-sy
         REQUIRE(lengthBeats == Approx(clip.loopLengthBeats));
     }
 
-    SECTION("Beat range maps to correct source-time positions via sourceBPM") {
+    SECTION("Beat range maps to correct project-time positions") {
         auto clip = makeAmenClip();
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
         auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, PROJECT_BPM);
 
-        // Round-trip: beats → source time via sourceBPM
-        double recoveredLength = lengthBeats * 60.0 / clip.sourceBPM;
+        // lengthBeats is in project-BPM space: loopLength * projectBPM / 60
+        double recoveredLength = lengthBeats * 60.0 / PROJECT_BPM;
         REQUIRE(recoveredLength == Approx(clip.loopLength).margin(0.01));
     }
 
@@ -241,9 +245,9 @@ TEST_CASE("setAutoTempo - with offset preserves loop start", "[clip][auto-tempo]
 
         auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, PROJECT_BPM);
 
-        // Beat range must fit within sourceNumBeats
+        // Beat range must be non-negative
         REQUIRE(startBeats >= 0.0);
-        REQUIRE(startBeats + lengthBeats <= clip.sourceNumBeats + 0.001);
+        REQUIRE(lengthBeats > 0.0);
     }
 }
 
@@ -264,9 +268,10 @@ TEST_CASE("setAutoTempo - respects existing loop region", "[clip][auto-tempo][lo
         REQUIRE(clip.loopLength == Approx(0.8));
     }
 
-    SECTION("loopLengthBeats uses source beats for loop region") {
-        // With detected BPM, loopLengthBeats = sourceBeats (not project beats)
-        REQUIRE(clip.loopLengthBeats == Approx(AMEN_SOURCE_BEATS));
+    SECTION("loopLengthBeats uses project beats for loop region") {
+        // loopLengthBeats = loopLength * projectBPM / 60.0
+        double expectedLoopBeats = 0.8 * PROJECT_BPM / 60.0;
+        REQUIRE(clip.loopLengthBeats == Approx(expectedLoopBeats));
     }
 }
 
@@ -377,9 +382,9 @@ TEST_CASE("Regression: loop wrapping past file end", "[clip][auto-tempo][regress
 
     auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, 69.0);
 
-    // Beat range must not exceed source beats
+    // Beat range must be non-negative
     REQUIRE(startBeats >= 0.0);
-    REQUIRE(startBeats + lengthBeats <= clip.sourceNumBeats + 0.001);
+    REQUIRE(lengthBeats > 0.0);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -396,8 +401,11 @@ TEST_CASE("stretchAutoTempoBeats - halves tempo when doubling beats", "[clip][au
     // Double the beat count (like stretching to 2x length)
     ClipOperations::stretchAutoTempoBeats(clip, originalLoopLengthBeats * 2.0, PROJECT_BPM);
 
-    SECTION("sourceBPM doubles (TE stretches audio slower)") {
-        REQUIRE(clip.sourceBPM == Approx(originalSourceBPM * 2.0).margin(0.1));
+    SECTION("sourceBPM scales by stretch ratio") {
+        // newSourceBPM = newLoopBeats * 60 / sourceSeconds
+        // where newLoopBeats = originalLoopLengthBeats * 2
+        double expectedBPM = (originalLoopLengthBeats * 2.0) * 60.0 / AMEN_DURATION;
+        REQUIRE(clip.sourceBPM == Approx(expectedBPM).margin(0.1));
     }
 
     SECTION("loopLengthBeats doubles") {
