@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 
+#include "audio/DrumGridPlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -41,17 +42,19 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     outputButton_.onClick = [this]() {
         juce::PopupMenu menu;
         menu.addItem(1, "Main", true, currentBusOutput_ == 0);
-        for (int bus = 1; bus <= 16; ++bus)
+        for (int bus = 1; bus < daw::audio::DrumGridPlugin::maxBusOutputs; ++bus)
             menu.addItem(bus + 1, "Bus " + juce::String(bus), true, currentBusOutput_ == bus);
+        juce::Component::SafePointer<PadChainRowComponent> safeThis(this);
         menu.showMenuAsync(
-            juce::PopupMenu::Options().withTargetComponent(&outputButton_), [this](int result) {
-                if (result <= 0)
+            juce::PopupMenu::Options().withTargetComponent(&outputButton_), [safeThis](int result) {
+                if (result <= 0 || safeThis == nullptr)
                     return;
                 int busIndex = result - 1;  // item 1 = Main (0), item 2 = Bus 1, etc.
-                currentBusOutput_ = busIndex;
-                outputButton_.setButtonText(busIndex == 0 ? "Main" : "B" + juce::String(busIndex));
-                if (onOutputChanged)
-                    onOutputChanged(padIndex_, busIndex);
+                safeThis->currentBusOutput_ = busIndex;
+                safeThis->outputButton_.setButtonText(busIndex == 0 ? "Main"
+                                                                    : "B" + juce::String(busIndex));
+                if (safeThis->onOutputChanged)
+                    safeThis->onOutputChanged(safeThis->padIndex_, busIndex);
             });
     };
     outputButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());

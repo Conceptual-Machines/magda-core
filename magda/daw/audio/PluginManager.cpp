@@ -116,6 +116,9 @@ void PluginManager::syncAllPlugins() {
                 if (validDeviceIds.find(it->first) == validDeviceIds.end()) {
                     clearLFOCustomWaveCallbacks(it->second.modifiers);
                     deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
+                    if (auto* dg =
+                            dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get()))
+                        dg->removeListener(this);
                     if (it->second.plugin)
                         pluginToDevice_.erase(it->second.plugin.get());
                     if (it->second.midiReceivePlugin)
@@ -252,6 +255,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                 // Clear LFO callbacks before destroying CurveSnapshotHolders
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
                 deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
+                if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get()))
+                    dg->removeListener(this);
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 syncedDevices_.erase(it);
@@ -396,6 +401,9 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
                             juce::ScopedLock lock(pluginLock_);
                             auto sdIt = syncedDevices_.find(devId);
                             if (sdIt != syncedDevices_.end()) {
+                                if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(
+                                        sdIt->second.plugin.get()))
+                                    dg->removeListener(this);
                                 if (sdIt->second.plugin)
                                     pluginToDevice_.erase(sdIt->second.plugin.get());
                                 syncedDevices_.erase(sdIt);
@@ -647,6 +655,8 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
                 // Clear LFO callbacks before destroying CurveSnapshotHolders
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
                 deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
+                if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get()))
+                    dg->removeListener(this);
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 syncedDevices_.erase(it);
@@ -2610,6 +2620,8 @@ void PluginManager::syncMasterPlugins() {
             if (it != syncedDevices_.end()) {
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
                 deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
+                if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get()))
+                    dg->removeListener(this);
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 syncedDevices_.erase(it);
@@ -2819,6 +2831,8 @@ void PluginManager::purgeStaleEntries() {
                 // Clear LFO callbacks before destroying CurveSnapshotHolders
                 clearLFOCustomWaveCallbacks(it->second.modifiers);
                 deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
+                if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get()))
+                    dg->removeListener(this);
                 if (it->second.plugin)
                     pluginToDevice_.erase(it->second.plugin.get());
                 if (it->second.midiReceivePlugin)
@@ -2927,6 +2941,12 @@ void PluginManager::clearAllMappings() {
     for (auto& [deviceId, sd] : syncedDevices_) {
         clearLFOCustomWaveCallbacks(sd.modifiers);
         deferCurveSnapshots(sd.curveSnapshots, deferredHolders_);
+        // Unregister DrumGrid listener to avoid dangling pointer
+        if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
+            dg->removeListener(this);
+        else if (auto* inner = instrumentRackManager_.getInnerPlugin(deviceId))
+            if (auto* dg2 = dynamic_cast<daw::audio::DrumGridPlugin*>(inner))
+                dg2->removeListener(this);
     }
     instrumentRackManager_.clear();
     rackSyncManager_.clear();
@@ -3761,19 +3781,39 @@ void PluginManager::drumGridChainsChanged(daw::audio::DrumGridPlugin* plugin) {
     // Dispatch asynchronously — this callback fires during loadSampleToPad/addChain,
     // and synchronous track activation would re-entrantly destroy UI components
     // (e.g., DeviceSlotComponent) while their callbacks are still on the stack.
-    juce::MessageManager::callAsync([this, pluginRef]() {
+    juce::WeakReference<PluginManager> weakThis(this);
+
+    juce::MessageManager::callAsync([weakThis, pluginRef]() {
+        auto* self = weakThis.get();
+        if (!self)
+            return;
+
         auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(pluginRef.get());
         if (!dg)
             return;
 
-        juce::ScopedLock lock(pluginLock_);
-        for (const auto& [deviceId, synced] : syncedDevices_) {
-            if (synced.plugin.get() == dg ||
-                instrumentRackManager_.getInnerPlugin(deviceId) == dg) {
-                syncDrumGridMultiOutTracks(synced.trackId, deviceId, dg);
-                return;
+        // Look up the device under lock, then release lock before mutating TrackManager
+        // to avoid deadlock (syncDrumGridMultiOutTracks -> TrackManager listeners ->
+        // syncAllPlugins -> pluginLock_).
+        TrackId matchedTrackId{};
+        DeviceId matchedDeviceId{};
+        bool foundMatch = false;
+
+        {
+            juce::ScopedLock lock(self->pluginLock_);
+            for (const auto& [deviceId, synced] : self->syncedDevices_) {
+                if (synced.plugin.get() == dg ||
+                    self->instrumentRackManager_.getInnerPlugin(deviceId) == dg) {
+                    matchedTrackId = synced.trackId;
+                    matchedDeviceId = deviceId;
+                    foundMatch = true;
+                    break;
+                }
             }
         }
+
+        if (foundMatch)
+            self->syncDrumGridMultiOutTracks(matchedTrackId, matchedDeviceId, dg);
     });
 }
 

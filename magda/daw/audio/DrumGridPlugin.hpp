@@ -161,6 +161,8 @@ class DrumGridPlugin : public te::Plugin {
     }
     void setChainBusOutput(int chainIndex, int busIndex);
     void assignBusOutputs();
+    void fullReassignBusOutputs();
+    int getNextFreeBus() const;
     int getActiveBusCount() const;
 
     // Trigger graph rebuild when chain configuration changes

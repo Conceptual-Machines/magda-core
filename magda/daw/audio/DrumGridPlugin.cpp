@@ -196,7 +196,7 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
         }
 
         // Route to the chain's assigned bus output (stereo pair)
-        int busIdx = chain->busOutput.get();
+        int busIdx = juce::jlimit(0, maxBusOutputs - 1, chain->busOutput.get());
         int leftCh = busIdx * 2;
         int rightCh = busIdx * 2 + 1;
 
@@ -770,7 +770,10 @@ void DrumGridPlugin::setMultiOutEnabled(bool enabled) {
     if (multiOutEnabled_.get() == enabled)
         return;
     multiOutEnabled_ = enabled;
-    assignBusOutputs();
+    if (enabled)
+        fullReassignBusOutputs();
+    else
+        assignBusOutputs();  // resets all to bus 0
     notifyGraphRebuildNeeded();
     notifyChainsChanged();
 }
@@ -790,11 +793,8 @@ void DrumGridPlugin::setChainBusOutput(int chainIndex, int busIndex) {
 }
 
 void DrumGridPlugin::assignBusOutputs() {
-    // Bus outputs are user-controlled per chain.
-    // This method only applies when multiOutEnabled toggles:
-    // OFF → reset all to Main (bus 0)
-    // ON  → auto-assign sequential buses to non-empty chains
     if (!multiOutEnabled_.get()) {
+        // Multi-out disabled → reset all to Main (bus 0)
         for (auto& chain : chains_) {
             if (chain->busOutput.get() != 0)
                 chain->busOutput = 0;
@@ -802,12 +802,42 @@ void DrumGridPlugin::assignBusOutputs() {
         return;
     }
 
+    // Multi-out enabled → only assign a bus to non-empty chains that are still
+    // on the main bus (0). This preserves user-selected bus assignments.
+    int nextBus = getNextFreeBus();
+    for (auto& chain : chains_) {
+        if (!chain->plugins.empty() && chain->busOutput.get() == 0) {
+            chain->busOutput = juce::jmin(nextBus, maxBusOutputs - 1);
+            if (nextBus < maxBusOutputs - 1)
+                ++nextBus;
+        }
+    }
+}
+
+void DrumGridPlugin::fullReassignBusOutputs() {
+    // Called only when multi-out is first enabled — assigns sequential buses
+    // to all non-empty chains, overwriting any existing assignments.
     int nextBus = 1;
     for (auto& chain : chains_) {
-        int newBus = chain->plugins.empty() ? 0 : nextBus++;
+        int newBus = 0;
+        if (!chain->plugins.empty()) {
+            newBus = juce::jmin(nextBus, maxBusOutputs - 1);
+            if (nextBus < maxBusOutputs - 1)
+                ++nextBus;
+        }
         if (chain->busOutput.get() != newBus)
             chain->busOutput = newBus;
     }
+}
+
+int DrumGridPlugin::getNextFreeBus() const {
+    int maxBus = 0;
+    for (const auto& chain : chains_) {
+        int bus = chain->busOutput.get();
+        if (bus > maxBus)
+            maxBus = bus;
+    }
+    return maxBus + 1;
 }
 
 int DrumGridPlugin::getActiveBusCount() const {
@@ -836,6 +866,7 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
     }
 
     mixerExpanded_.forceUpdateOfCachedValue();
+    multiOutEnabled_.forceUpdateOfCachedValue();
 
     // Copy CHAIN children into state ValueTree, then create Chain objects
     for (int i = 0; i < v.getNumChildren(); ++i) {

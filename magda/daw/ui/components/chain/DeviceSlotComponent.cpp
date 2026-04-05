@@ -172,6 +172,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     multiOutButton_ = std::make_unique<magda::SvgButton>("MultiOut", BinaryData::multiout_svg,
                                                          BinaryData::multiout_svgSize);
     multiOutButton_->setIconPadding(1);
+    multiOutButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     multiOutButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     multiOutButton_->setActiveColor(juce::Colours::white);
     multiOutButton_->onClick = [this]() { showMultiOutMenu(); };
@@ -182,6 +183,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     uiButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
                                                    BinaryData::open_in_new_svgSize);
     uiButton_->setIconPadding(1);
+    uiButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     uiButton_->setClickingTogglesState(true);
     uiButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     uiButton_->setActiveColor(juce::Colours::white);
@@ -1414,7 +1416,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 
     // Multi-output button (to the left of gain slider)
     if (device_.multiOut.isMultiOut && multiOutButton_) {
-        multiOutButton_->setBounds(headerArea.removeFromRight(HEADER_HEIGHT));
+        multiOutButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
         headerArea.removeFromRight(4);
     }
 
