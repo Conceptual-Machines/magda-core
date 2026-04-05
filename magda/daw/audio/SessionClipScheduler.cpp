@@ -338,6 +338,8 @@ void SessionClipScheduler::processStateEvents() {
             c->sessionPlayheadPos = -1.0;
         cm.notifyClipPlaybackStateChanged(cid);
     }
+    if (!orphaned.empty())
+        syncTrackPlaybackModes();
 
     // Update playhead tracking
     if (playheadClipId_ != INVALID_CLIP_ID && !hasActiveClips())
@@ -519,7 +521,6 @@ void SessionClipScheduler::deactivateAllSessionClips() {
 // =============================================================================
 
 void SessionClipScheduler::stopSessionTrack(TrackId trackId) {
-    auto& cm = ClipManager::getInstance();
     auto& tm = TrackManager::getInstance();
 
     auto* track = tm.getTrack(trackId);
@@ -527,26 +528,19 @@ void SessionClipScheduler::stopSessionTrack(TrackId trackId) {
         return;
 
     ClipId clipId = track->activeSessionClipId;
-    const auto* clip = cm.getClip(clipId);
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
 
     // Use the active clip's quantize setting for the stop timing
     LaunchQuantize quantize = clip ? clip->launchQuantize : LaunchQuantize::None;
 
-    track->activeSessionClipId = INVALID_CLIP_ID;
+    // Queue the stop — keep everything alive (handle, monitor, track mode)
+    // so TE continues playing the clip until the quantized beat.
+    // processStateEvents will clean up when the handle reports stopped.
     audioBridge_.stopSessionClipQueued(clipId, quantize);
-    sendUnmonitorCommand(clipId);
-    releaseLaunchHandle(clipId);
-    clipLaunchData_.erase(clipId);
-    lastNotifiedState_.erase(clipId);
 
-    if (auto* c = cm.getClip(clipId))
-        c->sessionPlayheadPos = -1.0;
-
-    syncTrackPlaybackModes();
-    cm.notifyClipPlaybackStateChanged(clipId);
-
-    if (playheadClipId_ == clipId)
-        playheadClipId_ = INVALID_CLIP_ID;
+    // Clear active clip so processStateEvents knows this is winding down
+    track->activeSessionClipId = INVALID_CLIP_ID;
+    // Don't sync track modes yet — TE needs playSlotClips=true until the handle stops
 }
 
 }  // namespace magda
