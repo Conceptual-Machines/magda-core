@@ -7,7 +7,7 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
   pull-requests: write
   statuses: write
 
@@ -26,8 +26,6 @@ jobs:
           path-to-document: "https://github.com/Conceptual-Machines/magda-core/blob/main/CLA.md"
           branch: "main"
           allowlist: "Nomad-Monad,dependabot[bot],pre-commit-ci[bot]"
-          remote-organization-name: "Conceptual-Machines"
-          remote-repository-name: "magda-core"
           create-file-commit-message: "Create CLA signature file"
           signed-commit-message: "$contributorName has signed the CLA"
           custom-notsigned-prcomment: |
