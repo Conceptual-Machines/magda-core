@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <memory>
+
 #include "core/ParameterInfo.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
