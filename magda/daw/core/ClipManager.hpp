@@ -26,6 +26,13 @@ class ClipManagerListener {
         juce::ignoreUnused(clipId);
     }
 
+    // Called when multiple clips' properties change in a batch (e.g. multi-selection drag).
+    // Default falls back to per-clip notifications; override for batch optimisation.
+    virtual void clipPropertiesChanged(const std::vector<ClipId>& clipIds) {
+        for (auto id : clipIds)
+            clipPropertyChanged(id);
+    }
+
     // Called when clip selection changes
     virtual void clipSelectionChanged(ClipId clipId) {
         juce::ignoreUnused(clipId);
@@ -109,6 +116,7 @@ class ClipManager {
      * Used by commands that directly modify clip data without going through ClipManager methods
      */
     void forceNotifyClipPropertyChanged(ClipId clipId);
+    void forceNotifyMultipleClipPropertiesChanged(const std::vector<ClipId>& clipIds);
 
     /**
      * @brief Duplicate a clip (places copy right after original)

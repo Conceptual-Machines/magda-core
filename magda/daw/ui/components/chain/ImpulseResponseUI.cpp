@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include "BinaryData.h"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -24,16 +25,14 @@ ImpulseResponseUI::ImpulseResponseUI() {
     irNameLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(irNameLabel_);
 
-    // Load button
-    loadButton_.setButtonText("LOAD");
-    loadButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getAccentColour().withAlpha(0.5f));
-    loadButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
-    loadButton_.onClick = [this]() {
+    // Load button (folder icon)
+    loadButton_ = std::make_unique<magda::SvgButton>("Load IR", BinaryData::folderopen_svg,
+                                                     BinaryData::folderopen_svgSize);
+    loadButton_->onClick = [this]() {
         if (onLoadIRRequested)
             onLoadIRRequested();
     };
-    addAndMakeVisible(loadButton_);
+    addAndMakeVisible(*loadButton_);
 
     setupSlider(gain_, "GAIN");
     setupSlider(lowCut_, "LOW CUT");
@@ -148,7 +147,7 @@ void ImpulseResponseUI::resized() {
 
     // Top row: IR name + load button
     auto fileRow = area.removeFromTop(20);
-    loadButton_.setBounds(fileRow.removeFromRight(50));
+    loadButton_->setBounds(fileRow.removeFromRight(20));
     fileRow.removeFromRight(4);
     irNameLabel_.setBounds(fileRow);
 

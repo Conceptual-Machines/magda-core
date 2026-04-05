@@ -163,6 +163,17 @@ void ClipManager::forceNotifyClipPropertyChanged(ClipId clipId) {
     notifyClipPropertyChanged(clipId);
 }
 
+void ClipManager::forceNotifyMultipleClipPropertiesChanged(const std::vector<ClipId>& clipIds) {
+    if (clipIds.empty())
+        return;
+    auto listenersCopy = listeners_;
+    for (auto* listener : listenersCopy) {
+        if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
+            listener->clipPropertiesChanged(clipIds);
+        }
+    }
+}
+
 ClipId ClipManager::duplicateClip(ClipId clipId) {
     const auto* original = getClip(clipId);
     if (!original) {

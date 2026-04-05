@@ -2804,36 +2804,67 @@ void DeviceSlotComponent::createCustomUI() {
         };
 
         // Helper to load an IR file into the plugin
-        auto loadIR = [this](const juce::File& file) {
+        auto loadIR = [safeThis = juce::Component::SafePointer<DeviceSlotComponent>(this)](
+                          const juce::File& file) {
+            if (!safeThis)
+                return;
+            if (!file.existsAsFile()) {
+                DBG("IR load: file does not exist: " << file.getFullPathName());
+                return;
+            }
+
             auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            if (!audioEngine)
+            if (!audioEngine) {
+                DBG("IR load: no audio engine");
                 return;
+            }
             auto* bridge = audioEngine->getAudioBridge();
-            if (!bridge)
+            if (!bridge) {
+                DBG("IR load: no audio bridge");
                 return;
-            auto plugin = bridge->getPlugin(device_.id);
-            if (auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get())) {
-                if (ir->loadImpulseResponse(file)) {
-                    ir->name = file.getFileNameWithoutExtension();
-                    impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
-                    repaint();
-                }
+            }
+            auto plugin = bridge->getPlugin(safeThis->device_.id);
+            if (!plugin) {
+                DBG("IR load: no plugin found for device " << safeThis->device_.id);
+                return;
+            }
+            auto* ir = dynamic_cast<te::ImpulseResponsePlugin*>(plugin.get());
+            if (!ir) {
+                DBG("IR load: plugin is not ImpulseResponsePlugin, type: " << plugin->getName());
+                return;
+            }
+            if (ir->loadImpulseResponse(file)) {
+                ir->name = file.getFileNameWithoutExtension();
+                if (safeThis->impulseResponseUI_)
+                    safeThis->impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
+                safeThis->repaint();
+
+                // Capture plugin state so the IR persists in the project
+                bridge->getPluginManager().capturePluginState(safeThis->device_.id);
+            } else {
+                DBG("IR load: loadImpulseResponse returned false for: " << file.getFullPathName());
             }
         };
 
         impulseResponseUI_->onLoadIRRequested = [loadIR]() {
+            DBG("IR: LOAD button clicked, opening file chooser");
             auto chooser = std::make_shared<juce::FileChooser>(
                 "Load Impulse Response", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg");
-            chooser->launchAsync(juce::FileBrowserComponent::openMode |
-                                     juce::FileBrowserComponent::canSelectFiles,
-                                 [loadIR, chooser](const juce::FileChooser&) {
-                                     auto result = chooser->getResult();
-                                     if (result.existsAsFile())
-                                         loadIR(result);
-                                 });
+            chooser->launchAsync(
+                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                [loadIR, chooser](const juce::FileChooser&) {
+                    auto result = chooser->getResult();
+                    DBG("IR: file chooser callback, result="
+                        << result.getFullPathName() << " exists=" << (int)result.existsAsFile());
+                    if (result.existsAsFile())
+                        loadIR(result);
+                });
         };
 
-        impulseResponseUI_->onFileDropped = loadIR;
+        impulseResponseUI_->onFileDropped = [loadIR](const juce::File& file) {
+            DBG("IR: file dropped: " << file.getFullPathName());
+            loadIR(file);
+        };
 
         addAndMakeVisible(*impulseResponseUI_);
         updateCustomUI();

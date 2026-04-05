@@ -4,6 +4,7 @@
 
 #include "core/ParameterInfo.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
 
@@ -47,7 +48,7 @@ class ImpulseResponseUI : public juce::Component, public juce::FileDragAndDropTa
 
     // IR file controls
     juce::Label irNameLabel_;
-    juce::TextButton loadButton_;
+    std::unique_ptr<magda::SvgButton> loadButton_;
 
     SliderWithLabel gain_{TextSlider::Format::Decibels};
     SliderWithLabel lowCut_;

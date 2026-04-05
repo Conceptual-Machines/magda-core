@@ -98,6 +98,9 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == daw::audio::StepSequencerPlugin::xmlTypeName) {
             return new daw::audio::StepSequencerPlugin(info);
         }
+        if (type == tracktion::ImpulseResponsePlugin::xmlTypeName) {
+            return new tracktion::ImpulseResponsePlugin(info);
+        }
         DBG("MagdaEngineBehaviour::createCustomPlugin - unknown type: " << type);
         return {};
     }

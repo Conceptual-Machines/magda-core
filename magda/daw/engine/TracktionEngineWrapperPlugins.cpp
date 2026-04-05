@@ -102,6 +102,31 @@ void TracktionEngineWrapper::startPluginScan(
                 knownPlugins.addType(desc);
             }
 
+            // Remove stale plugins whose files no longer exist on disk
+            {
+                juce::StringArray scannedPaths;
+                for (const auto& desc : plugins)
+                    scannedPaths.add(desc.fileOrIdentifier);
+
+                juce::Array<juce::PluginDescription> stalePlugins;
+                for (int i = 0; i < knownPlugins.getNumTypes(); ++i) {
+                    auto* desc = knownPlugins.getType(i);
+                    if (desc && !scannedPaths.contains(desc->fileOrIdentifier)) {
+                        juce::File pluginFile(desc->fileOrIdentifier);
+                        if (pluginFile.getFullPathName().isNotEmpty() && !pluginFile.exists()) {
+                            DBG("Removing stale plugin: " << desc->name << " ("
+                                                          << desc->fileOrIdentifier << ")");
+                            stalePlugins.add(*desc);
+                        }
+                    }
+                }
+                for (const auto& desc : stalePlugins)
+                    knownPlugins.removeType(desc);
+
+                if (!stalePlugins.isEmpty())
+                    DBG("Removed " << stalePlugins.size() << " stale plugin(s)");
+            }
+
             int numPlugins = knownPlugins.getNumTypes();
             DBG("Plugin scan complete. Found " << numPlugins << " plugins.");
 
