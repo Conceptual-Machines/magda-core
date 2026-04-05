@@ -40,6 +40,8 @@ set(TEST_SOURCES
     test_dsl_add_chord.cpp
     test_dsl_add_arpeggio.cpp
     test_scale_detection.cpp
+    test_step_clock.cpp
+    test_mono_note_processor.cpp
 )
 
 # Create test executable

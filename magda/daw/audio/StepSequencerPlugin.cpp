@@ -108,12 +108,21 @@ void StepSequencerPlugin::syncParamFromProperty(const juce::Identifier& property
 
 void StepSequencerPlugin::initialise(const te::PluginInitialisationInfo& info) {
     MidiDevicePlugin::initialise(info);
+    sampleRate_ = info.sampleRate;
     stepClock_.setSampleRate(info.sampleRate);
     stepClock_.reset();
+    lastPlayedNote_ = -1;
+    noteOffCountdown_ = 0;
+    silentBlockCount_ = 0;
+    needsAllNotesOff_ = true;
 }
 
 void StepSequencerPlugin::deinitialise() {
     stepClock_.reset();
+    lastPlayedNote_ = -1;
+    noteOffCountdown_ = 0;
+    silentBlockCount_ = 0;
+    currentPlayStep_.store(-1, std::memory_order_relaxed);
     MidiDevicePlugin::deinitialise();
 }
 
@@ -325,6 +334,12 @@ void StepSequencerPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         return;
 
     auto& midi = *fc.bufferForMidiMessages;
+
+    // Send all-notes-off after re-initialisation to clear any stuck notes
+    if (needsAllNotesOff_) {
+        midi.addMidiMessage(juce::MidiMessage::allNotesOff(1), 0.0, te::MPESourceID{});
+        needsAllNotesOff_ = false;
+    }
 
     // --- Step recording: incoming note-on → record to current step, advance ---
     if (stepRecording_.load(std::memory_order_relaxed)) {

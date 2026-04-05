@@ -125,8 +125,9 @@ class StepSequencerPlugin : public MidiDevicePlugin {
 
     // --- Audio-thread state ---
     int lastPlayedNote_ = -1;
-    int noteOffCountdown_ = 0;  // Samples remaining until note-off (0 = no pending)
-    int silentBlockCount_ = 0;  // Blocks with no step events (for safety note-off)
+    int noteOffCountdown_ = 0;       // Samples remaining until note-off (0 = no pending)
+    int silentBlockCount_ = 0;       // Blocks with no step events (for safety note-off)
+    bool needsAllNotesOff_ = false;  // Send all-notes-off on next applyToBuffer
 
     // Previous timing params — detect structural changes that require clock reset
     int prevRate_ = -1;
