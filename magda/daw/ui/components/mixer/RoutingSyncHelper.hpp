@@ -73,8 +73,7 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
                     options.push_back({id, pairName});
                     // Use actual TE device name for routing
                     if (outChannelMapping)
-                        (*outChannelMapping)[id] =
-                            "stereo:" + getDeviceName(activeIndices[i]);
+                        (*outChannelMapping)[id] = "stereo:" + getDeviceName(activeIndices[i]);
                     ++id;
                 }
             }
@@ -192,12 +191,24 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
     {
         std::vector<RoutingSelector::RoutingOption> trackOptions;
         int id = 400;
+
+        // If the current track is a multi-out, hide its source track from the list
+        TrackId multiOutSourceId = INVALID_TRACK_ID;
+        if (currentTrackId != INVALID_TRACK_ID) {
+            auto* currentTrack = trackManager.getTrack(currentTrackId);
+            if (currentTrack && currentTrack->multiOutLink)
+                multiOutSourceId = currentTrack->multiOutLink->sourceTrackId;
+        }
+
         for (const auto& t : allTracks) {
-            if (t.type == TrackType::Audio && t.id != currentTrackId) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
-                    continue;
-                trackOptions.push_back({id++, t.name});
-            }
+            if (t.type != TrackType::Audio || t.id == currentTrackId)
+                continue;
+            // Hide source track from its own multi-out tracks
+            if (t.id == multiOutSourceId)
+                continue;
+            if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                continue;
+            trackOptions.push_back({id++, t.name});
         }
         if (!trackOptions.empty()) {
             options.push_back({0, "", true});

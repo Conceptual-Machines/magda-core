@@ -169,8 +169,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     updateScButtonState();
 
     // Multi-output routing button (only visible for multi-out plugins)
-    multiOutButton_ = std::make_unique<magda::SvgButton>("MultiOut", BinaryData::Output_svg,
-                                                         BinaryData::Output_svgSize);
+    multiOutButton_ = std::make_unique<magda::SvgButton>("MultiOut", BinaryData::multiout_svg,
+                                                         BinaryData::multiout_svgSize);
     multiOutButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
     multiOutButton_->setActiveColor(juce::Colours::white);
     multiOutButton_->onClick = [this]() { showMultiOutMenu(); };
@@ -1412,7 +1412,8 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
 
     // Multi-output button (to the left of gain slider)
     if (device_.multiOut.isMultiOut && multiOutButton_) {
-        multiOutButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        int multiOutWidth = static_cast<int>(headerArea.getHeight() * 1.5f);
+        multiOutButton_->setBounds(headerArea.removeFromRight(multiOutWidth));
         headerArea.removeFromRight(4);
     }
 
