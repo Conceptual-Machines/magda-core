@@ -29,7 +29,8 @@ class DrumGridPlugin : public te::Plugin {
     static const char* xmlTypeName;
 
     static constexpr int maxPads = 128;
-    static constexpr int baseNote = 0;  // Pad 0 = MIDI note 0 (C-2)
+    static constexpr int baseNote = 0;        // Pad 0 = MIDI note 0 (C-2)
+    static constexpr int maxBusOutputs = 32;  // 32 stereo pairs = 64 channels
 
     juce::String getName() const override {
         return getPluginName();
@@ -57,6 +58,7 @@ class DrumGridPlugin : public te::Plugin {
         juce::CachedValue<bool> mute;
         juce::CachedValue<bool> solo;
         juce::CachedValue<bool> bypassed;
+        juce::CachedValue<int> busOutput;  // 0 = parent track main, 1+ = multi-out bus
     };
 
     //==============================================================================
@@ -134,6 +136,13 @@ class DrumGridPlugin : public te::Plugin {
         mixerExpanded_ = expanded;
     }
 
+    // Multi-out bus management
+    int getNumOutputChannels() const {
+        return maxBusOutputs * 2;
+    }
+    void assignBusOutputs();
+    int getActiveBusCount() const;
+
     // Trigger graph rebuild when chain configuration changes
     void notifyGraphRebuildNeeded();
 
@@ -179,6 +188,7 @@ class DrumGridPlugin : public te::Plugin {
     static const juce::Identifier padMuteId;
     static const juce::Identifier padSoloId;
     static const juce::Identifier padBypassedId;
+    static const juce::Identifier busOutputId;
     static const juce::Identifier mixerExpandedId;
 
     Chain* findChainForNote(int midiNote);

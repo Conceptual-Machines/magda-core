@@ -12,6 +12,7 @@
 #include "../core/TypeIds.hpp"
 #include "CurveSnapshot.hpp"
 #include "DeviceProcessor.hpp"
+#include "DrumGridPlugin.hpp"
 #include "InstrumentRackManager.hpp"
 #include "RackSyncManager.hpp"
 
@@ -61,7 +62,7 @@ struct PluginLoadResult {
  * - PluginWindowBridge& (for closing plugin windows)
  * - TransportStateManager& (for tone generator bypass state)
  */
-class PluginManager {
+class PluginManager : public daw::audio::DrumGridPlugin::Listener {
   public:
     /**
      * @brief Construct PluginManager with required dependencies
@@ -435,6 +436,16 @@ class PluginManager {
      * @brief Set a device macro parameter value on the TE MacroParameter
      */
     void setDeviceMacroValue(DeviceId deviceId, int macroIndex, float value);
+
+    /**
+     * @brief Sync multi-out tracks for a DrumGrid device
+     * Activates/deactivates multi-out pairs to match current non-empty chains.
+     */
+    void syncDrumGridMultiOutTracks(TrackId trackId, DeviceId deviceId,
+                                    daw::audio::DrumGridPlugin* drumGrid);
+
+    // DrumGridPlugin::Listener
+    void drumGridChainsChanged(daw::audio::DrumGridPlugin* plugin) override;
 
   private:
     // Internal device → plugin conversion (used by syncTrackPlugins)

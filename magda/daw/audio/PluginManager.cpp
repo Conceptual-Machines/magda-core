@@ -1,5 +1,6 @@
 #include "PluginManager.hpp"
 
+#include <set>
 #include <unordered_set>
 #include <vector>
 
@@ -3207,6 +3208,10 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                 // which can confuse TE's rack graph builder.
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<DrumGridProcessor>(device.id, plugin);
+
+                // Register as listener for auto multi-out track sync
+                if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get()))
+                    dg->addListener(this);
             }
         } else if (device.pluginId.containsIgnoreCase("4osc")) {
             plugin = createInternalPlugin(te::FourOscPlugin::xmlTypeName, device.pluginState);
@@ -3475,6 +3480,8 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             int numOutputChannels = 2;
             if (auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
                 numOutputChannels = extPlugin->getNumOutputs();
+            } else if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
+                numOutputChannels = drumGrid->getNumOutputChannels();
             }
 
             // Remember the plugin's position before wrapping removes it from the track
@@ -3539,6 +3546,20 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                                         ++pairIndex;
                                     }
                                 }
+                            }
+                        }
+
+                        // DrumGrid-specific bus names
+                        if (devInfo->multiOut.outputPairs.empty() &&
+                            dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
+                            int numPairs = numOutputChannels / 2;
+                            for (int p = 0; p < numPairs; ++p) {
+                                MultiOutOutputPair pair;
+                                pair.outputIndex = p;
+                                pair.firstPin = p * 2 + 1;
+                                pair.numChannels = 2;
+                                pair.name = (p == 0) ? "Main" : ("Bus " + juce::String(p));
+                                devInfo->multiOut.outputPairs.push_back(pair);
                             }
                         }
 
@@ -3718,6 +3739,98 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
         << (plugin ? plugin->getName().toRawUTF8() : "NULL")
         << " itemID=" << (plugin ? (juce::int64)plugin->itemID.getRawID() : -1));
     return plugin;
+}
+
+//==============================================================================
+// DrumGrid multi-out track sync
+//==============================================================================
+
+void PluginManager::drumGridChainsChanged(daw::audio::DrumGridPlugin* plugin) {
+    if (!plugin)
+        return;
+
+    // Hold a ref-counted pointer to keep the plugin alive across the async call.
+    te::Plugin::Ptr pluginRef(plugin);
+
+    // Dispatch asynchronously — this callback fires during loadSampleToPad/addChain,
+    // and synchronous track activation would re-entrantly destroy UI components
+    // (e.g., DeviceSlotComponent) while their callbacks are still on the stack.
+    juce::MessageManager::callAsync([this, pluginRef]() {
+        auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(pluginRef.get());
+        if (!dg)
+            return;
+
+        juce::ScopedLock lock(pluginLock_);
+        for (const auto& [deviceId, synced] : syncedDevices_) {
+            if (synced.plugin.get() == dg ||
+                instrumentRackManager_.getInnerPlugin(deviceId) == dg) {
+                syncDrumGridMultiOutTracks(synced.trackId, deviceId, dg);
+                return;
+            }
+        }
+    });
+}
+
+void PluginManager::syncDrumGridMultiOutTracks(TrackId trackId, DeviceId deviceId,
+                                               daw::audio::DrumGridPlugin* drumGrid) {
+    auto& tm = TrackManager::getInstance();
+    auto* devInfo = tm.getDevice(trackId, deviceId);
+    if (!devInfo || !devInfo->multiOut.isMultiOut)
+        return;
+
+    auto& pairs = devInfo->multiOut.outputPairs;
+    const auto& chains = drumGrid->getChains();
+
+    // Build set of bus indices that should be active (non-empty chains with busOutput > 0)
+    std::set<int> activeBuses;
+    std::map<int, juce::String> busNames;  // bus index → chain name
+    for (const auto& chain : chains) {
+        int bus = chain->busOutput.get();
+        if (bus > 0 && !chain->plugins.empty()) {
+            activeBuses.insert(bus);
+            busNames[bus] =
+                chain->name.isNotEmpty() ? chain->name : ("Pad " + juce::String(chain->index));
+        }
+    }
+
+    // Deactivate pairs that no longer have a corresponding chain
+    for (int p = 1; p < static_cast<int>(pairs.size()); ++p) {
+        if (pairs[static_cast<size_t>(p)].active && activeBuses.find(p) == activeBuses.end()) {
+            tm.deactivateMultiOutPair(trackId, deviceId, p);
+        }
+    }
+
+    // Activate pairs for chains that need them
+    for (int bus : activeBuses) {
+        if (bus >= static_cast<int>(pairs.size()))
+            continue;
+
+        auto& pair = pairs[static_cast<size_t>(bus)];
+        if (!pair.active) {
+            auto childTrackId = tm.activateMultiOutPair(trackId, deviceId, bus);
+
+            // Name the child track after the chain
+            if (childTrackId != INVALID_TRACK_ID) {
+                if (auto* childTrack = tm.getTrack(childTrackId)) {
+                    auto it = busNames.find(bus);
+                    if (it != busNames.end())
+                        childTrack->name = drumGrid->getName() + ": " + it->second;
+                }
+            }
+        } else {
+            // Update name if chain name changed
+            if (pair.trackId != INVALID_TRACK_ID) {
+                if (auto* childTrack = tm.getTrack(pair.trackId)) {
+                    auto it = busNames.find(bus);
+                    if (it != busNames.end()) {
+                        auto newName = drumGrid->getName() + ": " + it->second;
+                        if (childTrack->name != newName)
+                            childTrack->name = newName;
+                    }
+                }
+            }
+        }
+    }
 }
 
 }  // namespace magda

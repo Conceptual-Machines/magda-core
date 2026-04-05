@@ -5,7 +5,6 @@
 #include <unordered_map>
 
 #include "../../audio/AudioBridge.hpp"
-#include "../../audio/DrumGridPlugin.hpp"
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../audio/MidiBridge.hpp"
 #include "../../core/RackInfo.hpp"
@@ -1209,291 +1208,6 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
     }
 }
 
-//==============================================================================
-// DrumSubChannelStrip - LevelMeter (same as ChannelStrip::LevelMeter)
-//==============================================================================
-// Use shared LevelMeter for DrumSubChannelStrip too
-class MixerView::DrumSubChannelStrip::LevelMeter : public magda::LevelMeter {
-  public:
-    using magda::LevelMeter::LevelMeter;
-};
-
-//==============================================================================
-// DrumSubChannelStrip implementation
-//==============================================================================
-MixerView::DrumSubChannelStrip::DrumSubChannelStrip(daw::audio::DrumGridPlugin* dg, int chainIndex,
-                                                    const juce::String& name,
-                                                    juce::Colour parentColour)
-    : drumGrid_(dg), chainIndex_(chainIndex), parentColour_(parentColour), chainName_(name) {
-    setupControls();
-    updateFromChain();
-}
-
-MixerView::DrumSubChannelStrip::~DrumSubChannelStrip() = default;
-
-void MixerView::DrumSubChannelStrip::setupControls() {
-    // Track label
-    trackLabel = std::make_unique<juce::Label>();
-    trackLabel->setText(chainName_, juce::dontSendNotification);
-    trackLabel->setJustificationType(juce::Justification::centred);
-    trackLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    trackLabel->setColour(juce::Label::backgroundColourId,
-                          DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-    trackLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
-    addAndMakeVisible(*trackLabel);
-
-    // Pan slider (horizontal TextSlider)
-    panSlider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Pan);
-    panSlider->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
-    panSlider->setRange(-1.0, 1.0, 0.01);
-    panSlider->setValue(0.0, juce::dontSendNotification);
-    panSlider->setFont(FontManager::getInstance().getUIFont(10.0f));
-    panSlider->onValueChanged = [this](double val) {
-        if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
-            chain->pan = static_cast<float>(val);
-    };
-    addAndMakeVisible(*panSlider);
-
-    // Level meter
-    levelMeter = std::make_unique<LevelMeter>();
-    addAndMakeVisible(*levelMeter);
-
-    // Peak label
-    peakLabel = std::make_unique<juce::Label>();
-    peakLabel->setText("-inf", juce::dontSendNotification);
-    peakLabel->setJustificationType(juce::Justification::centred);
-    peakLabel->setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    peakLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
-    addAndMakeVisible(*peakLabel);
-
-    // Volume slider (vertical TextSlider, 0-1 range with power curve mapping)
-    volumeSlider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
-    volumeSlider->setOrientation(daw::ui::TextSlider::Orientation::Vertical);
-    volumeSlider->setRange(0.0, 1.0, 0.001);
-    volumeSlider->setValue(dbToMeterPos(0.0f), juce::dontSendNotification);
-    volumeSlider->setFont(FontManager::getInstance().getUIFont(9.0f));
-    volumeSlider->setValueFormatter([](double pos) -> juce::String {
-        float db = meterPosToDb(static_cast<float>(pos));
-        if (db <= MIN_DB)
-            return "-inf";
-        if (std::abs(db) < 0.05f)
-            db = 0.0f;
-        return juce::String(db, 1);
-    });
-    volumeSlider->setValueParser([](const juce::String& text) -> double {
-        auto t = text.trim();
-        if (t.endsWithIgnoreCase("db"))
-            t = t.dropLastCharacters(2).trim();
-        if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
-            return 0.0;
-        float db = t.getFloatValue();
-        return static_cast<double>(dbToMeterPos(db));
-    });
-    volumeSlider->onValueChanged = [this](double pos) {
-        float db = meterPosToDb(static_cast<float>(pos));
-        if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
-            chain->level = db;
-    };
-    addAndMakeVisible(*volumeSlider);
-
-    // Mute button
-    muteButton = std::make_unique<juce::TextButton>("M");
-    muteButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-    muteButton->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    muteButton->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFAA8855));
-    muteButton->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    muteButton->setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    muteButton->setClickingTogglesState(true);
-    muteButton->onClick = [this]() {
-        if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
-            chain->mute = muteButton->getToggleState();
-    };
-    addAndMakeVisible(*muteButton);
-
-    // Solo button
-    soloButton = std::make_unique<juce::TextButton>("S");
-    soloButton->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                  juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-    soloButton->setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-    soloButton->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFFAAAA55));
-    soloButton->setColour(juce::TextButton::textColourOffId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    soloButton->setColour(juce::TextButton::textColourOnId,
-                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    soloButton->setClickingTogglesState(true);
-    soloButton->onClick = [this]() {
-        if (auto* chain = drumGrid_->getChainByIndexMutable(chainIndex_))
-            chain->solo = soloButton->getToggleState();
-    };
-    addAndMakeVisible(*soloButton);
-}
-
-void MixerView::DrumSubChannelStrip::updateFromChain() {
-    const auto* chain = drumGrid_->getChainByIndex(chainIndex_);
-    if (!chain)
-        return;
-
-    if (trackLabel)
-        trackLabel->setText(chain->name.isNotEmpty() ? chain->name : chainName_,
-                            juce::dontSendNotification);
-    if (volumeSlider && !volumeSlider->isBeingDragged()) {
-        float db = chain->level.get();
-        float faderPos = dbToMeterPos(db);
-        volumeSlider->setValue(faderPos, juce::dontSendNotification);
-    }
-    if (panSlider && !panSlider->isBeingDragged())
-        panSlider->setValue(chain->pan.get(), juce::dontSendNotification);
-    if (muteButton)
-        muteButton->setToggleState(chain->mute.get(), juce::dontSendNotification);
-    if (soloButton)
-        soloButton->setToggleState(chain->solo.get(), juce::dontSendNotification);
-}
-
-void MixerView::DrumSubChannelStrip::setMeterLevels(float l, float r) {
-    if (levelMeter)
-        levelMeter->setLevels(l, r);
-
-    float maxLevel = std::max(l, r);
-    if (maxLevel > peakValue_) {
-        peakValue_ = maxLevel;
-        if (peakLabel) {
-            float db = gainToDb(peakValue_);
-            if (std::abs(db) < 0.05f)
-                db = 0.0f;
-            juce::String peakText;
-            if (db <= MIN_DB)
-                peakText = "-inf";
-            else
-                peakText = juce::String(db, 1);
-            peakLabel->setText(peakText, juce::dontSendNotification);
-        }
-    }
-}
-
-void MixerView::DrumSubChannelStrip::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds();
-
-    // Slightly dimmer background for sub-channels
-    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND).darker(0.15f));
-    g.fillRect(bounds);
-
-    // Border on right side (separator) — start below the name area
-    g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-    int separatorTop =
-        5 + 24 + MixerMetrics::getInstance().channelPadding;  // below color bar + label
-    g.fillRect(bounds.getRight() - 1, separatorTop, 1, bounds.getHeight() - separatorTop);
-
-    // Draw fader region border
-    if (!faderRegion_.isEmpty()) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.fillRect(faderRegion_.getX(), faderRegion_.getY(), faderRegion_.getWidth(), 1);
-        g.fillRect(faderRegion_.getX(), faderRegion_.getBottom() - 1, faderRegion_.getWidth(), 1);
-    }
-}
-
-void MixerView::DrumSubChannelStrip::resized() {
-    const auto& metrics = MixerMetrics::getInstance();
-    auto bounds = getLocalBounds().reduced(metrics.channelPadding);
-
-    // Color indicator space
-    bounds.removeFromTop(5);
-
-    // Track label at top
-    trackLabel->setBounds(bounds.removeFromTop(24));
-    bounds.removeFromTop(metrics.controlSpacing);
-
-    // M/S buttons at bottom (no record button for sub-channels)
-    auto buttonArea = bounds.removeFromBottom(metrics.buttonSize);
-    int buttonWidth = (buttonArea.getWidth() - 2) / 2;
-    muteButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-    buttonArea.removeFromLeft(2);
-    soloButton->setBounds(buttonArea.removeFromLeft(buttonWidth));
-
-    bounds.removeFromBottom(metrics.controlSpacing);
-
-    // Pan slider above buttons (horizontal TextSlider)
-    panSlider->setBounds(bounds.removeFromBottom(20));
-    bounds.removeFromBottom(metrics.controlSpacing);
-
-    // Fader region
-    int faderHeight = static_cast<int>(bounds.getHeight() * metrics.faderHeightRatio / 100.0f);
-    int extraSpace = bounds.getHeight() - faderHeight;
-    bounds.removeFromTop(extraSpace / 2);
-    bounds.setHeight(faderHeight);
-
-    int availWidth = bounds.getWidth();
-    int faderWidth = juce::jlimit(20, 60, availWidth * 40 / 100);
-    int meterWidthVal = faderWidth;  // Same width as fader
-
-    faderRegion_ = bounds;
-
-    // Peak label above fader region
-    const int labelHeight = 12;
-    auto valueLabelArea =
-        juce::Rectangle<int>(faderRegion_.getX(), faderRegion_.getY() - labelHeight,
-                             faderRegion_.getWidth(), labelHeight);
-    peakLabel->setBounds(valueLabelArea);
-
-    const int borderPadding = 6;
-    bounds.removeFromTop(borderPadding);
-    bounds.removeFromBottom(borderPadding);
-
-    auto layoutArea = bounds;
-
-    // Volume TextSlider on left
-    faderArea_ = layoutArea.removeFromLeft(faderWidth);
-    volumeSlider->setBounds(faderArea_);
-
-    // Meter on right
-    meterArea_ = layoutArea.removeFromRight(meterWidthVal);
-    levelMeter->setBounds(meterArea_);
-}
-
-void MixerView::DrumSubChannelStrip::mouseDown(const juce::MouseEvent& /*event*/) {
-    if (onClicked)
-        onClicked();
-}
-
-//==============================================================================
-// Helper: find DrumGridPlugin for a track via TE plugin list
-//==============================================================================
-namespace {
-daw::audio::DrumGridPlugin* findDrumGridForTrack(const TrackInfo& track, AudioEngine* audioEngine) {
-    if (!audioEngine)
-        return nullptr;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return nullptr;
-
-    auto* teTrack = bridge->getAudioTrack(track.id);
-    if (!teTrack)
-        return nullptr;
-
-    for (auto* plugin : teTrack->pluginList) {
-        // Direct match (not rack-wrapped)
-        if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
-            return dg;
-
-        // Check inside rack instances (DrumGridPlugin is rack-wrapped)
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin))
-                        return dg;
-                }
-            }
-        }
-    }
-    return nullptr;
-}
-}  // namespace
-
 // MixerView implementation
 MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Get current view mode
@@ -1578,10 +1292,6 @@ MixerView::~MixerView() {
     // mixerLookAndFeel_ is destroyed (member destruction happens in reverse order)
     for (auto& strip : channelStrips)
         strip->groupChildren_.clear();
-    for (auto* dg : listenedDrumGrids_)
-        dg->removeListener(this);
-    listenedDrumGrids_.clear();
-    drumSubStrips_.clear();
     orderedStrips_.clear();
     channelStrips.clear();
     auxChannelStrips.clear();
@@ -1594,17 +1304,11 @@ MixerView::~MixerView() {
 }
 
 void MixerView::rebuildChannelStrips() {
-    // Unregister from previously listened DrumGridPlugins
-    for (auto* dg : listenedDrumGrids_)
-        dg->removeListener(this);
-    listenedDrumGrids_.clear();
-
     // Clear group children references before destroying strips
     for (auto& strip : channelStrips)
         strip->groupChildren_.clear();
 
     // Clear existing strips
-    drumSubStrips_.clear();
     orderedStrips_.clear();
     channelStrips.clear();
 
@@ -1641,37 +1345,8 @@ void MixerView::rebuildChannelStrips() {
         // Wire up send area resize callback (coalesced relayout of all strips)
         strip->onSendAreaResized = [this]() { relayoutAllStrips(); };
 
-        // Check if this track has a DrumGridPlugin
-        auto* drumGrid = findDrumGridForTrack(track, audioEngine_);
-        if (drumGrid) {
-            strip->drumGrid_ = drumGrid;
-            // Register for chain add/remove notifications
-            if (std::find(listenedDrumGrids_.begin(), listenedDrumGrids_.end(), drumGrid) ==
-                listenedDrumGrids_.end()) {
-                drumGrid->addListener(this);
-                listenedDrumGrids_.push_back(drumGrid);
-            }
-
-            // Create expand toggle button
-            strip->expandToggle_ = std::make_unique<juce::TextButton>(
-                drumGrid->isMixerExpanded() ? juce::String::charToString(0x25BC)    // ▼
-                                            : juce::String::charToString(0x25B6));  // ▶
-            strip->expandToggle_->setConnectedEdges(
-                juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-            strip->expandToggle_->setColour(juce::TextButton::buttonColourId,
-                                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
-            strip->expandToggle_->setColour(juce::TextButton::textColourOffId,
-                                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            strip->expandToggle_->onClick = [this, drumGrid]() {
-                drumGrid->setMixerExpanded(!drumGrid->isMixerExpanded());
-                rebuildChannelStrips();
-            };
-            strip->addAndMakeVisible(*strip->expandToggle_);
-        }
-
         // Add expand/collapse toggle for group tracks with children
-        if (!drumGrid && track.isGroup() && track.hasChildren()) {
+        if (track.isGroup() && track.hasChildren()) {
             bool isCollapsed = track.isCollapsedIn(currentViewMode_);
             TrackId trackId = track.id;
             strip->expandToggle_ = std::make_unique<juce::TextButton>(
@@ -1696,44 +1371,16 @@ void MixerView::rebuildChannelStrips() {
         }
 
         channelStrips.push_back(std::move(strip));
-
-        // If DrumGrid is expanded, create sub-strips for non-empty chains
-        if (drumGrid && drumGrid->isMixerExpanded()) {
-            for (const auto& chain : drumGrid->getChains()) {
-                if (chain->plugins.empty())
-                    continue;
-
-                juce::String name = chain->name.isNotEmpty()
-                                        ? chain->name
-                                        : juce::String("Pad ") + juce::String(chain->index);
-
-                auto subStrip = std::make_unique<DrumSubChannelStrip>(drumGrid, chain->index, name,
-                                                                      track.colour);
-
-                drumSubStrips_.push_back(std::move(subStrip));
-            }
-        }
     }
 
     // Second pass: build orderedStrips_ and wire up parent-child hierarchy.
-    // Children of groups, multi-out parents, and DrumGrid parents all get
+    // Children of groups and multi-out parents all get
     // nested inside their parent strip's groupChildren_ for envelope rendering.
     // Use addChildComponent (not addAndMakeVisible) to avoid intermediate layouts.
 
     std::unordered_map<int, ChannelStrip*> stripByTrackId;
     for (auto& strip : channelStrips)
         stripByTrackId[strip->getTrackId()] = strip.get();
-
-    // Map drum sub-strips to their owning track
-    std::unordered_map<int, std::vector<size_t>> drumSubsByTrack;
-    for (size_t i = 0; i < drumSubStrips_.size(); ++i) {
-        for (auto& cs : channelStrips) {
-            if (cs->drumGrid_ == drumSubStrips_[i]->getDrumGrid()) {
-                drumSubsByTrack[cs->getTrackId()].push_back(i);
-                break;
-            }
-        }
-    }
 
     for (auto& strip : channelStrips) {
         int trackId = strip->getTrackId();
@@ -1758,15 +1405,6 @@ void MixerView::rebuildChannelStrips() {
         // --- Top-level strip ---
         channelContainer->addChildComponent(*strip);
         orderedStrips_.push_back(strip.get());
-
-        // Nest drum sub-strips inside this strip's envelope
-        auto dsIt = drumSubsByTrack.find(trackId);
-        if (dsIt != drumSubsByTrack.end()) {
-            for (size_t idx : dsIt->second) {
-                strip->addChildComponent(*drumSubStrips_[idx]);
-                strip->groupChildren_.push_back(drumSubStrips_[idx].get());
-            }
-        }
     }
 
     // Now make everything visible.
@@ -1853,15 +1491,6 @@ void MixerView::trackDevicesChanged(TrackId trackId) {
 void MixerView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profile*/) {
     currentViewMode_ = mode;
     rebuildChannelStrips();
-}
-
-void MixerView::drumGridChainsChanged(magda::daw::audio::DrumGridPlugin* /*plugin*/) {
-    // Rebuild asynchronously — this callback fires during addChain/removeChain
-    // and we must not re-enter the strip rebuild from within that call
-    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)]() {
-        if (safeThis)
-            safeThis->rebuildChannelStrips();
-    });
 }
 
 void MixerView::masterChannelChanged() {
@@ -2098,13 +1727,6 @@ void MixerView::timerCallback() {
         if (meteringBuffer.popLevels(trackId, data)) {
             strip->setMeterLevels(data.peakL, data.peakR);
         }
-    }
-
-    // Update drum sub-channel strip meters and sync controls (two-way sync)
-    for (auto& strip : drumSubStrips_) {
-        auto [peakL, peakR] = strip->getDrumGrid()->consumeChainPeak(strip->getChainIndex());
-        strip->setMeterLevels(peakL, peakR);
-        strip->updateFromChain();
     }
 
     // Update master strip meters

@@ -1480,16 +1480,22 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);
 
     if (drumGridUI_) {
-        // DrumGrid collapsed: only power button (delete/bypass from base)
+        // DrumGrid collapsed: only power button + multi-out (delete/bypass from base)
         macroButton_->setVisible(false);
         modButton_->setVisible(false);
         uiButton_->setVisible(false);
         if (multiOutButton_)
-            multiOutButton_->setVisible(false);
+            multiOutButton_->setVisible(device_.multiOut.isMultiOut);
 
         onButton_->setBounds(
             area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
         onButton_->setVisible(true);
+
+        if (device_.multiOut.isMultiOut && multiOutButton_) {
+            area.removeFromTop(4);
+            multiOutButton_->setBounds(
+                area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+        }
         return;
     }
 

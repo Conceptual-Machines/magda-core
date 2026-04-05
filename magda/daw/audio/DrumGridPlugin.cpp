@@ -19,6 +19,7 @@ const juce::Identifier DrumGridPlugin::padPanId("padPan");
 const juce::Identifier DrumGridPlugin::padMuteId("padMute");
 const juce::Identifier DrumGridPlugin::padSoloId("padSolo");
 const juce::Identifier DrumGridPlugin::padBypassedId("padBypassed");
+const juce::Identifier DrumGridPlugin::busOutputId("busOutput");
 const juce::Identifier DrumGridPlugin::mixerExpandedId("mixerExpanded");
 
 //==============================================================================
@@ -44,6 +45,7 @@ DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info) : Plugin(info
         chain->mute.referTo(childTree, padMuteId, um, false);
         chain->solo.referTo(childTree, padSoloId, um, false);
         chain->bypassed.referTo(childTree, padBypassedId, um, false);
+        chain->busOutput.referTo(childTree, busOutputId, um, 0);
 
         if (chain->index >= nextChainIndex_)
             nextChainIndex_ = chain->index + 1;
@@ -148,14 +150,16 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
             !chain->plugins[0]->producesAudioWhenNoAudioInput())
             continue;
 
-        // Create scratch buffer
-        juce::AudioBuffer<float> scratchBuffer(numChannels, numSamples);
+        // Create stereo scratch buffer (each chain processes in stereo regardless of bus count)
+        constexpr int scratchChannels = 2;
+        juce::AudioBuffer<float> scratchBuffer(scratchChannels, numSamples);
         scratchBuffer.clear();
 
         // Process each plugin in the chain
-        te::PluginRenderContext chainRc(
-            &scratchBuffer, juce::AudioChannelSet::canonicalChannelSet(numChannels), 0, numSamples,
-            &chainMidi_, 0.0, rc.editTime, rc.isPlaying, rc.isScrubbing, rc.isRendering, false);
+        te::PluginRenderContext chainRc(&scratchBuffer,
+                                        juce::AudioChannelSet::canonicalChannelSet(scratchChannels),
+                                        0, numSamples, &chainMidi_, 0.0, rc.editTime, rc.isPlaying,
+                                        rc.isScrubbing, rc.isRendering, false);
 
         for (auto& p : chain->plugins) {
             if (p != nullptr)
@@ -175,7 +179,8 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
         // Measure post-gain peak from scratch buffer
         float peakL = scratchBuffer.getMagnitude(0, 0, numSamples) * leftGain;
         float peakR =
-            (numChannels >= 2 ? scratchBuffer.getMagnitude(1, 0, numSamples) : peakL) * rightGain;
+            (scratchChannels >= 2 ? scratchBuffer.getMagnitude(1, 0, numSamples) : peakL) *
+            rightGain;
 
         // Store as running max (UI thread resets via consumeChainPeak)
         if (chain->index >= 0 && chain->index < maxPads) {
@@ -188,11 +193,21 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
                 meter.peakR.store(peakR, std::memory_order_relaxed);
         }
 
-        if (numChannels >= 1)
-            outputBuffer.addFrom(0, rc.bufferStartSample, scratchBuffer, 0, 0, numSamples,
-                                 leftGain);
-        if (numChannels >= 2)
-            outputBuffer.addFrom(1, rc.bufferStartSample, scratchBuffer,
+        // Route to the chain's assigned bus output (stereo pair)
+        int busIdx = chain->busOutput.get();
+        int leftCh = busIdx * 2;
+        int rightCh = busIdx * 2 + 1;
+
+        // Fall back to main bus if buffer has fewer channels
+        if (rightCh >= numChannels) {
+            leftCh = 0;
+            rightCh = std::min(1, numChannels - 1);
+        }
+
+        outputBuffer.addFrom(leftCh, rc.bufferStartSample, scratchBuffer, 0, 0, numSamples,
+                             leftGain);
+        if (rightCh < numChannels)
+            outputBuffer.addFrom(rightCh, rc.bufferStartSample, scratchBuffer,
                                  scratchBuffer.getNumChannels() >= 2 ? 1 : 0, 0, numSamples,
                                  rightGain);
     }
@@ -216,6 +231,7 @@ int DrumGridPlugin::addChain(int lowNote, int highNote, int rootNote, const juce
     chainTree.setProperty(padMuteId, false, nullptr);
     chainTree.setProperty(padSoloId, false, nullptr);
     chainTree.setProperty(padBypassedId, false, nullptr);
+    chainTree.setProperty(busOutputId, 0, nullptr);
     state.addChild(chainTree, -1, nullptr);
 
     auto chain = std::make_unique<Chain>();
@@ -231,9 +247,11 @@ int DrumGridPlugin::addChain(int lowNote, int highNote, int rootNote, const juce
     chain->mute.referTo(chainTree, padMuteId, um, false);
     chain->solo.referTo(chainTree, padSoloId, um, false);
     chain->bypassed.referTo(chainTree, padBypassedId, um, false);
+    chain->busOutput.referTo(chainTree, busOutputId, um, 0);
 
     chains_.push_back(std::move(chain));
 
+    assignBusOutputs();
     notifyGraphRebuildNeeded();
     notifyChainsChanged();
     return idx;
@@ -252,6 +270,7 @@ void DrumGridPlugin::removeChain(int chainIndex) {
         }
     }
     removeChainFromState(chainIndex);
+    assignBusOutputs();
     notifyGraphRebuildNeeded();
     notifyChainsChanged();
 }
@@ -398,7 +417,9 @@ void DrumGridPlugin::loadSampleToPad(int padIndex, const juce::File& file) {
         chainTree.addChild(plugin->state, -1, nullptr);
     }
 
+    assignBusOutputs();
     notifyGraphRebuildNeeded();
+    notifyChainsChanged();
 }
 
 void DrumGridPlugin::loadPluginToPad(int padIndex, const juce::PluginDescription& desc) {
@@ -440,7 +461,9 @@ void DrumGridPlugin::loadPluginToPad(int padIndex, const juce::PluginDescription
         chainTree.addChild(plugin->state, -1, nullptr);
     }
 
+    assignBusOutputs();
     notifyGraphRebuildNeeded();
+    notifyChainsChanged();
 }
 
 void DrumGridPlugin::swapPadChains(int padIndexA, int padIndexB) {
@@ -741,6 +764,24 @@ std::pair<float, float> DrumGridPlugin::consumeChainPeak(int chainIndex) {
     return {l, r};
 }
 
+void DrumGridPlugin::assignBusOutputs() {
+    int nextBus = 1;  // Bus 0 = parent track (audio passthrough only)
+    for (auto& chain : chains_) {
+        int newBus = chain->plugins.empty() ? 0 : nextBus++;
+        if (chain->busOutput.get() != newBus)
+            chain->busOutput = newBus;
+    }
+}
+
+int DrumGridPlugin::getActiveBusCount() const {
+    int count = 0;
+    for (const auto& chain : chains_) {
+        if (!chain->plugins.empty() && chain->busOutput.get() > 0)
+            ++count;
+    }
+    return count;
+}
+
 void DrumGridPlugin::notifyGraphRebuildNeeded() {
     edit.restartPlayback();
 }
@@ -788,6 +829,7 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
         chain->mute.referTo(chainCopy, padMuteId, um, false);
         chain->solo.referTo(chainCopy, padSoloId, um, false);
         chain->bypassed.referTo(chainCopy, padBypassedId, um, false);
+        chain->busOutput.referTo(chainCopy, busOutputId, um, 0);
 
         if (chain->index >= nextChainIndex_)
             nextChainIndex_ = chain->index + 1;
@@ -813,6 +855,8 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
 
         chains_.push_back(std::move(chain));
     }
+
+    assignBusOutputs();
 }
 
 }  // namespace magda::daw::audio
