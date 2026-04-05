@@ -36,6 +36,11 @@ class MagdaUIBehaviour : public tracktion::UIBehaviour {
      * Required by TE for track freezing and other rendering operations.
      */
     void runTaskWithProgressBar(tracktion::ThreadPoolJobWithProgress& task) override;
+
+    /**
+     * @brief Suppress TE's internal warning popups (e.g. "Converted to submix track").
+     */
+    void showWarningMessage(const juce::String& message) override;
 };
 
 /**

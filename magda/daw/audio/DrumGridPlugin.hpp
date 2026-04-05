@@ -149,10 +149,17 @@ class DrumGridPlugin : public te::Plugin {
         mixerExpanded_ = expanded;
     }
 
+    // Multi-out mode toggle (persisted in ValueTree)
+    bool isMultiOutEnabled() const {
+        return multiOutEnabled_.get();
+    }
+    void setMultiOutEnabled(bool enabled);
+
     // Multi-out bus management
     int getNumOutputChannels() const {
         return maxBusOutputs * 2;
     }
+    void setChainBusOutput(int chainIndex, int busIndex);
     void assignBusOutputs();
     int getActiveBusCount() const;
 
@@ -184,6 +191,7 @@ class DrumGridPlugin : public te::Plugin {
     std::array<std::atomic<bool>, maxPads> padTriggered_{};
     std::array<ChainMeterData, maxPads> chainMeters_{};
     juce::CachedValue<bool> mixerExpanded_;
+    juce::CachedValue<bool> multiOutEnabled_;
 
     // Audio processing state
     te::MidiMessageArray chainMidi_;
@@ -203,6 +211,7 @@ class DrumGridPlugin : public te::Plugin {
     static const juce::Identifier padBypassedId;
     static const juce::Identifier busOutputId;
     static const juce::Identifier mixerExpandedId;
+    static const juce::Identifier multiOutEnabledId;
 
     Chain* findChainForNote(int midiNote);
     Chain* findOrCreateChainForPad(int padIndex);

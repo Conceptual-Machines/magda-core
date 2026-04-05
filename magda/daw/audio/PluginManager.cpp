@@ -732,10 +732,7 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
         }
     }
 
-    // 7. Clean up DrumGrid FolderTrack if this was a DrumGrid parent track
-    trackController_.removeDrumGridFolder(trackId);
-
-    // 8. Rebuild sidechain LFO cache
+    // 7. Rebuild sidechain LFO cache
     rebuildSidechainLFOCache();
 
     DBG("PluginManager::cleanupTrackPlugins - cleaned up track "
@@ -3619,13 +3616,6 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
 
                 // Create a TE FolderTrack (submix) for DrumGrid so the parent and
                 // all multi-out children are summed under one fader — like
-                // Ableton/Bitwig drum racks. The folder lives only in TE
-                // (TrackController); MAGDA's TrackManager sees the DrumGrid track
-                // as the group parent via parentId/childIds.
-                if (dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
-                    trackController_.createDrumGridFolder(trackId, device.name);
-                }
-
                 // Return the INNER plugin (not the rack) so that syncedDevices_
                 // maps to the actual synth for parameter access and window opening
                 return plugin;
@@ -3825,39 +3815,32 @@ void PluginManager::syncDrumGridMultiOutTracks(TrackId trackId, DeviceId deviceI
         if (!pair.active) {
             auto childTrackId = tm.activateMultiOutPair(trackId, deviceId, bus);
 
-            // Name the child track after the chain
             if (childTrackId != INVALID_TRACK_ID) {
-                if (auto* childTrack = tm.getTrack(childTrackId)) {
-                    auto it = busNames.find(bus);
-                    if (it != busNames.end())
-                        childTrack->name = drumGrid->getName() + ": " + it->second;
-
-                    // Create the TE audio track and add the RackInstance
-                    // so audio actually flows through this child track
-                    syncMultiOutTrack(childTrackId, *childTrack);
+                // Name the child track after the chain (via setTrackName to notify UI)
+                auto it = busNames.find(bus);
+                if (it != busNames.end()) {
+                    tm.setTrackName(childTrackId, drumGrid->getName() + ": " + it->second);
+                    pair.name = it->second;
                 }
+
+                // Create the TE audio track and add the RackInstance
+                // so audio actually flows through this child track
+                if (auto* childTrack = tm.getTrack(childTrackId))
+                    syncMultiOutTrack(childTrackId, *childTrack);
             }
-        } else {
+        } else if (pair.trackId != INVALID_TRACK_ID) {
             // Update name if chain name changed
-            if (pair.trackId != INVALID_TRACK_ID) {
+            auto it = busNames.find(bus);
+            if (it != busNames.end()) {
+                auto newName = drumGrid->getName() + ": " + it->second;
                 if (auto* childTrack = tm.getTrack(pair.trackId)) {
-                    auto it = busNames.find(bus);
-                    if (it != busNames.end()) {
-                        auto newName = drumGrid->getName() + ": " + it->second;
-                        if (childTrack->name != newName)
-                            childTrack->name = newName;
+                    if (childTrack->name != newName) {
+                        tm.setTrackName(pair.trackId, newName);
+                        pair.name = it->second;
                     }
                 }
             }
         }
-    }
-
-    // Nest new multi-out children inside the TE FolderTrack (submix)
-    // so their audio is summed through the folder's VolumeAndPan fader.
-    for (const auto& pair : pairs) {
-        if (!pair.active || pair.trackId == INVALID_TRACK_ID)
-            continue;
-        trackController_.addToDrumGridFolder(trackId, pair.trackId);
     }
 }
 

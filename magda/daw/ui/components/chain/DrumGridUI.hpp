@@ -6,10 +6,8 @@
 #include <array>
 #include <functional>
 #include <memory>
-#include <tuple>
 
 #include "PadChainPanel.hpp"
-#include "PadChainRangeRowComponent.hpp"
 #include "PadChainRowComponent.hpp"
 #include "ParamSlotComponent.hpp"
 #include "SamplerUI.hpp"
@@ -55,7 +53,7 @@ class DrumGridUI : public juce::Component,
     // Fixed panel widths
     static constexpr int kToggleColWidth = 20;
     static constexpr int kPadGridWidth = 250;
-    static constexpr int kChainsPanelWidth = 260;
+    static constexpr int kChainsPanelWidth = 340;
     static constexpr int kDetailPanelWidth =
         800;  // Accommodate sampler (750px), FX scroll in viewport
     static constexpr int kGap = 6;
@@ -68,7 +66,8 @@ class DrumGridUI : public juce::Component,
 
     /** Update cached info for a single pad. Called from DeviceSlotComponent::updateCustomUI. */
     void updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                       float levelDb, float pan, int chainIndex = -1, bool bypassed = false);
+                       float levelDb, float pan, int chainIndex = -1, bool bypassed = false,
+                       int busOutput = 0);
 
     /** Set which pad is selected and populate the detail panel. */
     void setSelectedPad(int padIndex);
@@ -114,11 +113,8 @@ class DrumGridUI : public juce::Component,
     /** Called when a pad is dragged and dropped onto another pad. (sourcePad, targetPad) */
     std::function<void(int, int)> onPadsSwapped;
 
-    /** Called when pad note range changes. (padIndex, lowNote, highNote, rootNote) */
-    std::function<void(int, int, int, int)> onPadRangeChanged;
-
-    /** Query note range for a pad. Returns {lowNote, highNote, rootNote}. */
-    std::function<std::tuple<int, int, int>(int padIndex)> getNoteRange;
+    /** Called when pad output bus changes. (padIndex, busIndex) */
+    std::function<void(int, int)> onPadOutputChanged;
 
     /** Called when play button is pressed/released on a pad. (padIndex, isNoteOn) */
     std::function<void(int, bool)> onNotePreview;
@@ -220,6 +216,7 @@ class DrumGridUI : public juce::Component,
         float level = 0.0f;
         float pan = 0.0f;
         int chainIndex = -1;  // Index of the chain covering this pad, or -1 if empty
+        int busOutput = 0;    // 0 = Main, 1+ = multi-out bus
     };
 
     std::array<PadInfo, kTotalPads> padInfos_;
@@ -257,13 +254,6 @@ class DrumGridUI : public juce::Component,
     juce::Component chainsContainer_;
     std::vector<std::unique_ptr<PadChainRowComponent>> chainRows_;
     std::unique_ptr<magda::SvgButton> chainsToggleButton_;
-
-    // Chains tab system (Mix / Range)
-    enum class ChainsTab { Mix, Range };
-    ChainsTab currentChainsTab_ = ChainsTab::Mix;
-    juce::TextButton mixTabButton_{"Mix"};
-    juce::TextButton rangeTabButton_{"Range"};
-    std::vector<std::unique_ptr<PadChainRangeRowComponent>> rangeRows_;
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;

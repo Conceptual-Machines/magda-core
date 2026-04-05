@@ -58,6 +58,12 @@ void MagdaUIBehaviour::runTaskWithProgressBar(tracktion::ThreadPoolJobWithProgre
     }
 }
 
+void MagdaUIBehaviour::showWarningMessage(const juce::String& message) {
+    // Suppress TE's internal warnings (e.g. "Converted to submix track"
+    // when creating DrumGrid FolderTrack submixes). Log instead of popup.
+    DBG("MagdaUIBehaviour: suppressed warning: " << message);
+}
+
 std::unique_ptr<juce::Component> MagdaUIBehaviour::createPluginWindow(
     tracktion::PluginWindowState& state) {
     // Cast to Plugin::WindowState to access the plugin

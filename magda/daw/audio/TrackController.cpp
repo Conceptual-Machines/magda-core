@@ -382,7 +382,6 @@ void TrackController::clearAllMappings() {
     juce::ScopedLock lock(trackLock_);
     trackMapping_.clear();
     meterClients_.clear();
-    drumGridFolders_.clear();
 }
 
 void TrackController::withTrackMapping(
@@ -419,100 +418,6 @@ void TrackController::withMeterClients(
     std::function<void(const std::map<TrackId, te::LevelMeasurer::Client>&)> callback) const {
     juce::ScopedLock lock(trackLock_);
     callback(meterClients_);
-}
-
-// =============================================================================
-// DrumGrid FolderTrack (submix) Management
-// =============================================================================
-
-void TrackController::createDrumGridFolder(TrackId drumGridTrackId, const juce::String& name) {
-    juce::ScopedLock lock(trackLock_);
-
-    // Already exists?
-    if (drumGridFolders_.count(drumGridTrackId))
-        return;
-
-    // Find the DrumGrid's AudioTrack — it must exist before we can create the folder
-    auto trackIt = trackMapping_.find(drumGridTrackId);
-    if (trackIt == trackMapping_.end() || !trackIt->second) {
-        DBG("TrackController::createDrumGridFolder - track not found: " << drumGridTrackId);
-        return;
-    }
-
-    auto* audioTrack = trackIt->second;
-
-    // Create FolderTrack as submix (asSubmix=true gives VolumeAndPan + LevelMeter)
-    auto insertPoint = te::TrackInsertPoint(*audioTrack, true);  // Insert before the AudioTrack
-    auto folderTrack = edit_.insertNewFolderTrack(insertPoint, nullptr, true);
-
-    if (!folderTrack) {
-        DBG("TrackController::createDrumGridFolder - failed to create FolderTrack");
-        return;
-    }
-
-    folderTrack->setName(name);
-
-    // Move the DrumGrid's AudioTrack inside the folder.
-    // As a submix folder, TE automatically sums all children through
-    // the folder's VolumeAndPan plugin.
-    edit_.moveTrack(audioTrack, te::TrackInsertPoint(folderTrack.get(), nullptr));
-
-    drumGridFolders_[drumGridTrackId] = folderTrack.get();
-
-    DBG("TrackController::createDrumGridFolder - created folder for track " << drumGridTrackId
-                                                                            << " (" << name << ")");
-}
-
-void TrackController::addToDrumGridFolder(TrackId drumGridTrackId, TrackId childTrackId) {
-    juce::ScopedLock lock(trackLock_);
-
-    auto folderIt = drumGridFolders_.find(drumGridTrackId);
-    if (folderIt == drumGridFolders_.end() || !folderIt->second)
-        return;
-
-    auto* folder = folderIt->second;
-    auto trackIt = trackMapping_.find(childTrackId);
-    if (trackIt == trackMapping_.end() || !trackIt->second)
-        return;
-
-    auto* childTrack = trackIt->second;
-
-    // Check if already inside this folder
-    if (childTrack->getParentFolderTrack() == folder)
-        return;
-
-    // Move the child AudioTrack inside the folder (at the end)
-    edit_.moveTrack(childTrack, te::TrackInsertPoint(folder, nullptr));
-
-    DBG("TrackController::addToDrumGridFolder - moved track "
-        << childTrackId << " into folder for DrumGrid " << drumGridTrackId);
-}
-
-void TrackController::removeDrumGridFolder(TrackId drumGridTrackId) {
-    juce::ScopedLock lock(trackLock_);
-
-    auto it = drumGridFolders_.find(drumGridTrackId);
-    if (it == drumGridFolders_.end())
-        return;
-
-    auto* folder = it->second;
-    if (folder) {
-        // Move all children out of the folder before deleting it
-        if (auto* subList = folder->getSubTrackList()) {
-            // Collect tracks first to avoid modifying the list during iteration
-            juce::Array<te::Track*> children;
-            for (auto* child : subList->objects)
-                children.add(child);
-
-            for (auto* child : children)
-                edit_.moveTrack(child, te::TrackInsertPoint(nullptr, nullptr));
-        }
-
-        edit_.deleteTrack(folder);
-    }
-
-    drumGridFolders_.erase(it);
-    DBG("TrackController::removeDrumGridFolder - removed folder for track " << drumGridTrackId);
 }
 
 }  // namespace magda

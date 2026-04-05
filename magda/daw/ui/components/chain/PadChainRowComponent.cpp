@@ -34,6 +34,29 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     };
     addAndMakeVisible(panSlider_);
 
+    // Output bus selector button
+    outputButton_.setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.05f));
+    outputButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+    outputButton_.onClick = [this]() {
+        juce::PopupMenu menu;
+        menu.addItem(1, "Main", true, currentBusOutput_ == 0);
+        for (int bus = 1; bus <= 16; ++bus)
+            menu.addItem(bus + 1, "Bus " + juce::String(bus), true, currentBusOutput_ == bus);
+        menu.showMenuAsync(
+            juce::PopupMenu::Options().withTargetComponent(&outputButton_), [this](int result) {
+                if (result <= 0)
+                    return;
+                int busIndex = result - 1;  // item 1 = Main (0), item 2 = Bus 1, etc.
+                currentBusOutput_ = busIndex;
+                outputButton_.setButtonText(busIndex == 0 ? "Main" : "B" + juce::String(busIndex));
+                if (onOutputChanged)
+                    onOutputChanged(padIndex_, busIndex);
+            });
+    };
+    outputButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    addAndMakeVisible(outputButton_);
+
     // Mute button
     muteButton_.setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
@@ -106,6 +129,7 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
 }
 
 PadChainRowComponent::~PadChainRowComponent() {
+    outputButton_.setLookAndFeel(nullptr);
     muteButton_.setLookAndFeel(nullptr);
     soloButton_.setLookAndFeel(nullptr);
     deleteButton_.setLookAndFeel(nullptr);
@@ -145,7 +169,10 @@ void PadChainRowComponent::resized() {
     bounds.removeFromRight(2);
 
     muteButton_.setBounds(bounds.removeFromRight(16));
-    bounds.removeFromRight(8);
+    bounds.removeFromRight(4);
+
+    outputButton_.setBounds(bounds.removeFromRight(30));
+    bounds.removeFromRight(4);
 
     // Left side elements
     nameLabel_.setBounds(bounds.removeFromLeft(50));
@@ -176,7 +203,7 @@ void PadChainRowComponent::mouseUp(const juce::MouseEvent& e) {
 }
 
 void PadChainRowComponent::updateFromPad(const juce::String& name, float level, float pan,
-                                         bool mute, bool solo, bool bypassed) {
+                                         bool mute, bool solo, bool bypassed, int busOutput) {
     nameLabel_.setText(name, juce::dontSendNotification);
     levelSlider_.setValue(level, juce::dontSendNotification);
     panSlider_.setValue(pan, juce::dontSendNotification);
@@ -185,6 +212,9 @@ void PadChainRowComponent::updateFromPad(const juce::String& name, float level, 
     onButton_->setToggleState(!bypassed, juce::dontSendNotification);
     onButton_->setActive(!bypassed);
 
+    currentBusOutput_ = busOutput;
+    outputButton_.setButtonText(busOutput == 0 ? "Main" : "B" + juce::String(busOutput));
+
     // Dim controls when bypassed
     float alpha = bypassed ? 0.35f : 1.0f;
     nameLabel_.setAlpha(alpha);
@@ -192,6 +222,7 @@ void PadChainRowComponent::updateFromPad(const juce::String& name, float level, 
     soloButton_.setAlpha(alpha);
     levelSlider_.setAlpha(alpha);
     panSlider_.setAlpha(alpha);
+    outputButton_.setAlpha(alpha);
 }
 
 void PadChainRowComponent::setSelected(bool selected) {

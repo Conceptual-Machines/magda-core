@@ -2231,7 +2231,8 @@ void DeviceSlotComponent::createCustomUI() {
             if (auto* chain = dg->getChainForNote(midiNote)) {
                 drumGridUI_->updatePadInfo(padIndex, getChainDisplayName(*chain), chain->mute.get(),
                                            chain->solo.get(), chain->level.get(), chain->pan.get(),
-                                           chain->index, chain->bypassed.get());
+                                           chain->index, chain->bypassed.get(),
+                                           chain->busOutput.get());
             } else {
                 drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
             }
@@ -2397,23 +2398,12 @@ void DeviceSlotComponent::createCustomUI() {
                                                            isNoteOn ? 100 : 0, isNoteOn);
         };
 
-        // Note range query callback
-        drumGridUI_->getNoteRange = [getDrumGrid](int padIndex) -> std::tuple<int, int, int> {
+        // Per-chain output bus change callback
+        drumGridUI_->onPadOutputChanged = [getDrumGrid](int padIndex, int busIndex) {
             if (auto* dg = getDrumGrid()) {
                 int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
                 if (auto* chain = dg->getChainForNote(midiNote))
-                    return {chain->lowNote, chain->highNote, chain->rootNote};
-            }
-            return {padIndex, padIndex, padIndex};
-        };
-
-        // Note range change callback
-        drumGridUI_->onPadRangeChanged = [getDrumGrid](int padIndex, int lowNote, int highNote,
-                                                       int rootNote) {
-            if (auto* dg = getDrumGrid()) {
-                int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
-                if (auto* chain = dg->getChainForNote(midiNote))
-                    dg->setChainNoteRange(chain->index, lowNote, highNote, rootNote);
+                    dg->setChainBusOutput(chain->index, busIndex);
             }
         };
 
@@ -3091,10 +3081,10 @@ void DeviceSlotComponent::updateCustomUI() {
                         for (int note = chain->lowNote; note <= chain->highNote; ++note) {
                             int padIdx = note - daw::audio::DrumGridPlugin::baseNote;
                             if (padIdx >= 0 && padIdx < daw::audio::DrumGridPlugin::maxPads) {
-                                drumGridUI_->updatePadInfo(padIdx, displayName, chain->mute.get(),
-                                                           chain->solo.get(), chain->level.get(),
-                                                           chain->pan.get(), chain->index,
-                                                           chain->bypassed.get());
+                                drumGridUI_->updatePadInfo(
+                                    padIdx, displayName, chain->mute.get(), chain->solo.get(),
+                                    chain->level.get(), chain->pan.get(), chain->index,
+                                    chain->bypassed.get(), chain->busOutput.get());
                             }
                         }
                     }

@@ -178,30 +178,6 @@ class TrackController {
         std::function<void(const std::map<TrackId, te::AudioTrack*>&)> callback) const;
 
     // =========================================================================
-    // DrumGrid FolderTrack (submix) Management
-    // =========================================================================
-
-    /**
-     * @brief Create a TE FolderTrack as submix for a DrumGrid track.
-     *
-     * The folder is invisible to TrackManager — it exists only in TE.
-     * The DrumGrid's AudioTrack is moved inside the folder so that all
-     * multi-out children can also be nested there, giving one submix fader.
-     */
-    void createDrumGridFolder(TrackId drumGridTrackId, const juce::String& name);
-
-    /**
-     * @brief Nest a multi-out child AudioTrack inside the DrumGrid's FolderTrack.
-     * No-op if the folder doesn't exist or the child is already nested.
-     */
-    void addToDrumGridFolder(TrackId drumGridTrackId, TrackId childTrackId);
-
-    /**
-     * @brief Remove the FolderTrack for a DrumGrid (called on track deletion).
-     */
-    void removeDrumGridFolder(TrackId drumGridTrackId);
-
-    // =========================================================================
     // Metering Coordination (for PluginManager)
     // =========================================================================
 
@@ -236,10 +212,6 @@ class TrackController {
     // Track mapping and metering state
     std::map<TrackId, te::AudioTrack*> trackMapping_;
     std::map<TrackId, te::LevelMeasurer::Client> meterClients_;
-
-    // DrumGrid FolderTrack submixes (drumGridTrackId → FolderTrack*)
-    // These are invisible to TrackManager — purely TE-level.
-    std::map<TrackId, te::FolderTrack*> drumGridFolders_;
 
     // Thread safety
     mutable juce::CriticalSection trackLock_;

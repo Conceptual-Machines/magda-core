@@ -21,10 +21,12 @@ const juce::Identifier DrumGridPlugin::padSoloId("padSolo");
 const juce::Identifier DrumGridPlugin::padBypassedId("padBypassed");
 const juce::Identifier DrumGridPlugin::busOutputId("busOutput");
 const juce::Identifier DrumGridPlugin::mixerExpandedId("mixerExpanded");
+const juce::Identifier DrumGridPlugin::multiOutEnabledId("multiOutEnabled");
 
 //==============================================================================
 DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info) : Plugin(info) {
     mixerExpanded_.referTo(state, mixerExpandedId, getUndoManager(), false);
+    multiOutEnabled_.referTo(state, multiOutEnabledId, getUndoManager(), false);
 
     // Restore chains from existing ValueTree state (if any)
     for (int i = 0; i < state.getNumChildren(); ++i) {
@@ -764,8 +766,43 @@ std::pair<float, float> DrumGridPlugin::consumeChainPeak(int chainIndex) {
     return {l, r};
 }
 
+void DrumGridPlugin::setMultiOutEnabled(bool enabled) {
+    if (multiOutEnabled_.get() == enabled)
+        return;
+    multiOutEnabled_ = enabled;
+    assignBusOutputs();
+    notifyGraphRebuildNeeded();
+    notifyChainsChanged();
+}
+
+void DrumGridPlugin::setChainBusOutput(int chainIndex, int busIndex) {
+    auto* chain = getChainByIndexMutable(chainIndex);
+    if (!chain)
+        return;
+
+    busIndex = juce::jlimit(0, maxBusOutputs - 1, busIndex);
+    if (chain->busOutput.get() == busIndex)
+        return;
+
+    chain->busOutput = busIndex;
+    notifyGraphRebuildNeeded();
+    notifyChainsChanged();
+}
+
 void DrumGridPlugin::assignBusOutputs() {
-    int nextBus = 1;  // Bus 0 = parent track (audio passthrough only)
+    // Bus outputs are user-controlled per chain.
+    // This method only applies when multiOutEnabled toggles:
+    // OFF → reset all to Main (bus 0)
+    // ON  → auto-assign sequential buses to non-empty chains
+    if (!multiOutEnabled_.get()) {
+        for (auto& chain : chains_) {
+            if (chain->busOutput.get() != 0)
+                chain->busOutput = 0;
+        }
+        return;
+    }
+
+    int nextBus = 1;
     for (auto& chain : chains_) {
         int newBus = chain->plugins.empty() ? 0 : nextBus++;
         if (chain->busOutput.get() != newBus)
