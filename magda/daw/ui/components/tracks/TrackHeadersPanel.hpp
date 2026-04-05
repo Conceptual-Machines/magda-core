@@ -250,6 +250,7 @@ class TrackHeadersPanel : public juce::Component,
                           bool isSelected);
     void paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area);
     void updateCollapseButtonIcon(TrackHeader& header);
+    int getVisibleHeaderIndex(TrackId trackId) const;
     juce::Rectangle<int> getTrackHeaderArea(int trackIndex) const;
     juce::Rectangle<int> getResizeHandleArea(int trackIndex) const;
     bool isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const;

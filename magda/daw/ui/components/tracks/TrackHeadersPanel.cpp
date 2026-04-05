@@ -1368,8 +1368,8 @@ void TrackHeadersPanel::setupTrackHeader(TrackHeader& header, int trackIndex) {
 void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId) {
     // Name label callback - updates TrackManager
     header.nameLabel->onTextChange = [this, trackId]() {
-        int index = TrackManager::getInstance().getTrackIndex(trackId);
-        if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
+        int index = getVisibleHeaderIndex(trackId);
+        if (index >= 0) {
             auto& header = *trackHeaders[index];
             header.name = header.nameLabel->getText();
             UndoManager::getInstance().executeCommand(
@@ -1379,8 +1379,8 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
 
     // Mute button callback - updates TrackManager
     header.muteButton->onClick = [this, trackId]() {
-        int index = TrackManager::getInstance().getTrackIndex(trackId);
-        if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
+        int index = getVisibleHeaderIndex(trackId);
+        if (index >= 0) {
             auto& header = *trackHeaders[index];
             header.muted = header.muteButton->getToggleState();
             UndoManager::getInstance().executeCommand(
@@ -1390,8 +1390,8 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
 
     // Solo button callback - updates TrackManager
     header.soloButton->onClick = [this, trackId]() {
-        int index = TrackManager::getInstance().getTrackIndex(trackId);
-        if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
+        int index = getVisibleHeaderIndex(trackId);
+        if (index >= 0) {
             auto& header = *trackHeaders[index];
             header.solo = header.soloButton->getToggleState();
             UndoManager::getInstance().executeCommand(
@@ -1401,8 +1401,8 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
 
     // Volume label callback - updates TrackManager
     header.volumeLabel->onValueChange = [this, trackId]() {
-        int index = TrackManager::getInstance().getTrackIndex(trackId);
-        if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
+        int index = getVisibleHeaderIndex(trackId);
+        if (index >= 0) {
             auto& header = *trackHeaders[index];
             // Convert dB to linear gain
             header.volume = dbToGain(static_cast<float>(header.volumeLabel->getValue()));
@@ -1413,8 +1413,8 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
 
     // Pan label callback - updates TrackManager
     header.panLabel->onValueChange = [this, trackId]() {
-        int index = TrackManager::getInstance().getTrackIndex(trackId);
-        if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
+        int index = getVisibleHeaderIndex(trackId);
+        if (index >= 0) {
             auto& header = *trackHeaders[index];
             header.pan = static_cast<float>(header.panLabel->getValue());
             UndoManager::getInstance().executeCommand(
@@ -1424,8 +1424,8 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
 
     // Record arm button callback - updates TrackManager
     header.recordButton->onClick = [this, trackId]() {
-        int index = TrackManager::getInstance().getTrackIndex(trackId);
-        if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
+        int index = getVisibleHeaderIndex(trackId);
+        if (index >= 0) {
             bool armed = trackHeaders[index]->recordButton->getToggleState();
             TrackManager::getInstance().setTrackRecordArmed(trackId, armed);
         }
@@ -2140,6 +2140,14 @@ void TrackHeadersPanel::setTrackPan(int trackIndex, float pan) {
         trackHeaders[trackIndex]->pan = pan;
         trackHeaders[trackIndex]->panLabel->setValue(pan, juce::dontSendNotification);
     }
+}
+
+int TrackHeadersPanel::getVisibleHeaderIndex(TrackId trackId) const {
+    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+        if (visibleTrackIds_[i] == trackId)
+            return static_cast<int>(i);
+    }
+    return -1;
 }
 
 void TrackHeadersPanel::updateCollapseButtonIcon(TrackHeader& header) {
