@@ -80,6 +80,11 @@ void TracktionEngineWrapper::stopSessionTrack(TrackId trackId) {
         sessionScheduler_->stopSessionTrack(trackId);
 }
 
+void TracktionEngineWrapper::deactivateAllSessionClips() {
+    if (sessionScheduler_)
+        sessionScheduler_->deactivateAllSessionClips();
+}
+
 // =============================================================================
 // Helper Methods
 // =============================================================================

@@ -744,8 +744,9 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         mainView->setLoopEnabled(enabled);
     };
 
-    transportPanel->onBackToArrangement = []() {
-        TrackManager::getInstance().setAllTracksPlaybackMode(TrackPlaybackMode::Arrangement);
+    transportPanel->onBackToArrangement = [this]() {
+        if (auto* engine = getAudioEngine())
+            engine->deactivateAllSessionClips();
     };
 
     transportPanel->onTempoChange = [this](double bpm) {

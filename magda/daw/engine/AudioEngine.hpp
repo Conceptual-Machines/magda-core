@@ -56,6 +56,9 @@ class AudioEngine : public AudioEngineListener {
     /** Schedule a quantized stop for the active clip on a track (empty slot in scene). */
     virtual void stopSessionTrack(TrackId trackId) = 0;
 
+    /** Stop all session clips, clear active state, revert to arrangement. */
+    virtual void deactivateAllSessionClips() = 0;
+
     // ===== Tempo =====
     virtual void setTempo(double bpm) = 0;
     virtual double getTempo() const = 0;

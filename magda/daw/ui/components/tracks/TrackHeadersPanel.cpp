@@ -901,9 +901,9 @@ void TrackHeadersPanel::tracksChanged() {
         // Wire session mode button
         auto* smBtn = static_cast<SessionModeButton*>(header->sessionModeButton.get());
         smBtn->setSessionMode(track->playbackMode == TrackPlaybackMode::Session);
-        smBtn->onClick = [trackId]() {
-            TrackManager::getInstance().setTrackPlaybackMode(trackId,
-                                                             TrackPlaybackMode::Arrangement);
+        smBtn->onClick = [this, trackId]() {
+            if (audioEngine_)
+                audioEngine_->stopSessionTrack(trackId);
         };
 
         // Add collapse button for groups and tracks with multi-out children

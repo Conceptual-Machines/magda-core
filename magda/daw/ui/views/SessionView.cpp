@@ -2159,12 +2159,15 @@ void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
 }
 
 void SessionView::onSceneLaunched(int sceneIndex) {
-    // Trigger all clips in this scene
+    auto& cm = ClipManager::getInstance();
     for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
         TrackId trackId = visibleTrackIds_[i];
-        ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
+        ClipId clipId = cm.getClipInSlot(trackId, sceneIndex);
         if (clipId != INVALID_CLIP_ID) {
-            ClipManager::getInstance().triggerClip(clipId);
+            cm.triggerClip(clipId);
+        } else if (audioEngine_) {
+            // Empty slot: stop the active clip on this track
+            audioEngine_->stopSessionTrack(trackId);
         }
     }
 }
