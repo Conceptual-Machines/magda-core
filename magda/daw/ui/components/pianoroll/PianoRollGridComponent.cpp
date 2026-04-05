@@ -1990,8 +1990,11 @@ void PianoRollGridComponent::filesDropped(const juce::StringArray& files, int x,
                     if (parts.size() >= 2) {
                         ChordMarker marker;
                         marker.beatPosition = msg.getTimeStamp() / ticksPerQN;
-                        marker.chordName = parts[0];
-                        marker.lengthBeats = parts[1].getDoubleValue();
+                        // Last token is length; everything before is the chord name
+                        // (chord names can contain colons, e.g. "C:maj7")
+                        marker.lengthBeats = parts[parts.size() - 1].getDoubleValue();
+                        parts.remove(parts.size() - 1);
+                        marker.chordName = parts.joinIntoString(":");
                         if (marker.lengthBeats <= 0.0)
                             marker.lengthBeats = 4.0;
                         chordMarkers.push_back(marker);

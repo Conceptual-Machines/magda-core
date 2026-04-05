@@ -1121,6 +1121,7 @@ const ClipInfo* ClipManager::getClip(ClipId clipId) const {
 
 std::vector<ClipInfo> ClipManager::getArrangementClips() const {
     std::vector<ClipInfo> result;
+    result.reserve(clips_.size());
     for (const auto& [id, clip] : clips_) {
         if (clip.view == ClipView::Arrangement)
             result.push_back(clip);
@@ -1130,6 +1131,7 @@ std::vector<ClipInfo> ClipManager::getArrangementClips() const {
 
 std::vector<ClipInfo> ClipManager::getSessionClips() const {
     std::vector<ClipInfo> result;
+    result.reserve(clips_.size());
     for (const auto& [id, clip] : clips_) {
         if (clip.view == ClipView::Session)
             result.push_back(clip);

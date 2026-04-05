@@ -47,7 +47,8 @@ juce::File MidiFileWriter::writeToTempFile(const std::vector<MidiNote>& notes, d
     }
 
     // Chord markers as MIDI marker meta events (type 6)
-    // Format: "CHORD:name:lengthBeats" so the importer can reconstruct annotations
+    // Format: "CHORD:name:lengthBeats" — last colon-delimited token is the length,
+    // everything between the first and last colon is the chord name.
     for (const auto& marker : chordMarkers) {
         auto markerText = "CHORD:" + marker.chordName + ":" + juce::String(marker.lengthBeats);
         auto markerMsg = juce::MidiMessage::textMetaEvent(6, markerText);
@@ -62,9 +63,10 @@ juce::File MidiFileWriter::writeToTempFile(const std::vector<MidiNote>& notes, d
     midiFile.setTicksPerQuarterNote(ticksPerQuarter);
     midiFile.addTrack(seq);
 
+    auto safeName = juce::File::createLegalFileName(nameHint);
     auto tempFile =
         juce::File::getSpecialLocation(juce::File::tempDirectory)
-            .getChildFile(nameHint + "_" +
+            .getChildFile(safeName + "_" +
                           juce::String(juce::Random::getSystemRandom().nextInt(99999)) + ".mid");
 
     juce::FileOutputStream stream(tempFile);

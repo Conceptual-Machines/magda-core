@@ -2678,8 +2678,11 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
                                             if (parts.size() >= 2) {
                                                 ClipInfo::ChordAnnotation ann;
                                                 ann.beatPosition = msg.getTimeStamp() / ticksPerQN;
-                                                ann.chordName = parts[0];
-                                                ann.lengthBeats = parts[1].getDoubleValue();
+                                                // Last token is length; rest is chord name
+                                                ann.lengthBeats =
+                                                    parts[parts.size() - 1].getDoubleValue();
+                                                parts.remove(parts.size() - 1);
+                                                ann.chordName = parts.joinIntoString(":");
                                                 if (ann.lengthBeats <= 0.0)
                                                     ann.lengthBeats = 4.0;
                                                 clip->chordAnnotations.push_back(ann);
