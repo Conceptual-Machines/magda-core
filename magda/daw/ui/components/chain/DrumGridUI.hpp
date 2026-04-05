@@ -48,7 +48,7 @@ class DrumGridUI : public juce::Component,
     static constexpr int kPadsPerPage = 16;
     static constexpr int kGridCols = 4;
     static constexpr int kGridRows = 4;
-    static constexpr int kTotalPads = 128;
+    static constexpr int kTotalPads = 64;
     static constexpr int kNumPages = kTotalPads / kPadsPerPage;
     static constexpr int kPluginParamSlots = 16;
 

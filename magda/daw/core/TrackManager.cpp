@@ -216,7 +216,7 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
     newTrack.type = TrackType::MultiOut;
     newTrack.name = device->name + ": " + pair.name;
     newTrack.colour = parentTrack->colour;
-    newTrack.audioOutputDevice = "master";
+    newTrack.audioOutputDevice = "track:" + juce::String(parentTrackId);
 
     // Set the multi-out link (keeps routing reference, no parent-child hierarchy)
     newTrack.multiOutLink = MultiOutTrackLink{parentTrackId, deviceId, pairIndex};

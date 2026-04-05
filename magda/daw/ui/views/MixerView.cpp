@@ -1402,6 +1402,16 @@ void MixerView::rebuildChannelStrips() {
             }
         }
 
+        // --- Nest multi-out child inside its source track ---
+        if (trackInfo->multiOutLink) {
+            auto it = stripByTrackId.find(trackInfo->multiOutLink->sourceTrackId);
+            if (it != stripByTrackId.end()) {
+                it->second->addChildComponent(*strip);
+                it->second->groupChildren_.push_back(strip.get());
+                continue;
+            }
+        }
+
         // --- Top-level strip ---
         channelContainer->addChildComponent(*strip);
         orderedStrips_.push_back(strip.get());

@@ -28,9 +28,9 @@ class DrumGridPlugin : public te::Plugin {
     }
     static const char* xmlTypeName;
 
-    static constexpr int maxPads = 128;
-    static constexpr int baseNote = 0;        // Pad 0 = MIDI note 0 (C-2)
-    static constexpr int maxBusOutputs = 32;  // 32 stereo pairs = 64 channels
+    static constexpr int maxPads = 64;
+    static constexpr int baseNote = 24;       // Pad 0 = MIDI note 24 (C0)
+    static constexpr int maxBusOutputs = 64;  // one stereo pair per pad = 128 channels
 
     juce::String getName() const override {
         return getPluginName();
@@ -83,6 +83,19 @@ class DrumGridPlugin : public te::Plugin {
     }
     double getTailLength() const override {
         return 1.0;
+    }
+
+    int getNumOutputChannelsGivenInputs(int /*numInputChannels*/) override {
+        return getNumOutputChannels();
+    }
+    void getChannelNames(juce::StringArray* ins, juce::StringArray* outs) override {
+        if (ins)
+            ins->clear();
+        if (outs) {
+            outs->clear();
+            for (int ch = 1; ch <= getNumOutputChannels(); ++ch)
+                outs->add("Out " + juce::String(ch));
+        }
     }
 
     void restorePluginStateFromValueTree(const juce::ValueTree&) override;
