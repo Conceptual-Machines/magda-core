@@ -97,17 +97,9 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         // Force immediate when nothing is playing
         bool forceImmediate = !launchSnapshot_.transportPlaying || !launchSnapshot_.hasActiveClips;
 
-        // Clean up the previous active clip on this track (if any)
-        ClipId prevClipId = track->activeSessionClipId;
-        if (prevClipId != INVALID_CLIP_ID && prevClipId != clipId) {
-            sendUnmonitorCommand(prevClipId);
-            releaseLaunchHandle(prevClipId);
-            clipLaunchData_.erase(prevClipId);
-            lastNotifiedState_.erase(prevClipId);
-            if (auto* prevClip = cm.getClip(prevClipId))
-                prevClip->sessionPlayheadPos = -1.0;
-            cm.notifyClipPlaybackStateChanged(prevClipId);
-        }
+        // Previous clip on this track (if any) keeps playing until TE transitions.
+        // The orphan sweep in processStateEvents will clean it up when its
+        // LaunchHandle reports stopped.
 
         // Set active clip on track and sync modes BEFORE starting transport.
         // This ensures playSlotClips is already true when the audio thread
