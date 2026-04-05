@@ -55,7 +55,7 @@ class MultiOutTestFixture {
 // Multi-Out Child Track Routing
 // ============================================================================
 
-TEST_CASE("Multi-out child tracks always route to master", "[multi_out][routing]") {
+TEST_CASE("Multi-out child tracks inherit parent output", "[multi_out][routing]") {
     MultiOutTestFixture fixture;
 
     auto [trackId, deviceId] = fixture.createMultiOutTrack();
@@ -70,7 +70,7 @@ TEST_CASE("Multi-out child tracks always route to master", "[multi_out][routing]
         REQUIRE(child->audioOutputDevice == "master");
     }
 
-    SECTION("child routes to master even when parent routes to group") {
+    SECTION("child inherits parent output when parent routes to group") {
         auto groupId = fixture.tm().createGroupTrack("My Group");
         fixture.tm().addTrackToGroup(trackId, groupId);
 
@@ -78,12 +78,13 @@ TEST_CASE("Multi-out child tracks always route to master", "[multi_out][routing]
         auto* parent = fixture.tm().getTrack(trackId);
         REQUIRE(parent->audioOutputDevice == "track:" + juce::String(groupId));
 
-        // Activate a multi-out pair — child should still route to master
+        // Activate a multi-out pair — child should inherit parent's output
         auto childId = fixture.tm().activateMultiOutPair(trackId, deviceId, 1);
         REQUIRE(childId != INVALID_TRACK_ID);
 
         auto* child = fixture.tm().getTrack(childId);
-        REQUIRE(child->audioOutputDevice == "master");
+        auto* parentAfter = fixture.tm().getTrack(trackId);
+        REQUIRE(child->audioOutputDevice == parentAfter->audioOutputDevice);
     }
 
     SECTION("child has correct MultiOutTrackLink") {

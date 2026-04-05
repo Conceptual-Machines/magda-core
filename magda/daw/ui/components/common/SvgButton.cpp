@@ -137,7 +137,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     }
 
     // Calculate icon bounds (centered with some padding)
-    auto bounds = getLocalBounds().reduced(4);
+    auto bounds = getLocalBounds().reduced(iconPadding);
 
     // Create a copy of the drawable and replace colors
     auto iconCopy = svgIcon->createCopy();
