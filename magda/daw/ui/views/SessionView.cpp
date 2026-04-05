@@ -2205,11 +2205,17 @@ void SessionView::triggerGroupScene(TrackId groupId, int sceneIndex) {
 
     for (auto tid : descendants) {
         ClipId cid = cm.getClipInSlot(tid, sceneIndex);
-        if (cid != INVALID_CLIP_ID) {
-            if (anyPlaying)
+        if (anyPlaying) {
+            // Stop mode: stop all clips in this scene
+            if (cid != INVALID_CLIP_ID)
                 cm.stopClip(cid);
-            else
+        } else {
+            if (cid != INVALID_CLIP_ID) {
                 cm.triggerClip(cid);
+            } else if (audioEngine_) {
+                // Empty slot: schedule a quantized stop for this track
+                audioEngine_->stopSessionTrack(tid);
+            }
         }
     }
 }
@@ -2529,8 +2535,16 @@ void SessionView::clipSelectionChanged(ClipId /*clipId*/) {
 void SessionView::clipPlaybackStateChanged(ClipId clipId) {
     // Update slot appearance when playback state changes
     const auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->sceneIndex < 0)
+    if (!clip || clip->sceneIndex < 0) {
+        DBG("SessionView::clipPlaybackStateChanged: clip " << clipId << " not found or no scene");
         return;
+    }
+
+    auto playState = audioEngine_ ? audioEngine_->getSessionClipPlayState(clipId)
+                                  : SessionClipPlayState::Stopped;
+    DBG("SessionView::clipPlaybackStateChanged: clip "
+        << clipId << " playState=" << (int)playState
+        << " sessionPlayheadPos=" << clip->sessionPlayheadPos);
 
     // Find track index
     int trackIndex = -1;
@@ -2676,15 +2690,23 @@ void SessionView::updateAllClipSlots() {
 void SessionView::setSessionPlayheadPositions(const std::unordered_map<ClipId, double>& positions) {
     clipPlayheadPositions_ = positions;
 
-    // Update all playing clip slot buttons with their per-clip position
+    // Update playhead positions and reset slots that stopped playing
     for (auto& trackSlots : clipSlots) {
         for (auto& slotBtn : trackSlots) {
             auto* slot = dynamic_cast<ClipSlotButton*>(slotBtn.get());
-            if (slot && slot->clipIsPlaying) {
+            if (!slot || !slot->hasClip)
+                continue;
+
+            double prev = slot->sessionPlayheadPos;
+            if (slot->clipIsPlaying) {
                 auto it = positions.find(slot->clipId);
                 slot->sessionPlayheadPos = (it != positions.end()) ? it->second : -1.0;
-                slot->repaint();
+            } else {
+                slot->sessionPlayheadPos = -1.0;
             }
+
+            if (slot->sessionPlayheadPos != prev)
+                slot->repaint();
         }
     }
 }

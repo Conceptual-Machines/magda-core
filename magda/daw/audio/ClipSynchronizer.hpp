@@ -146,12 +146,17 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     void launchSessionClip(ClipId clipId, bool forceImmediate = false);
 
     /**
-     * @brief Stop a playing session clip
+     * @brief Stop a playing session clip immediately
      * @param clipId The MAGDA clip ID
-     *
-     * Stops playback and resets synth plugins
      */
     void stopSessionClip(ClipId clipId);
+
+    /**
+     * @brief Stop a playing session clip at the next quantization grid point
+     * @param clipId The MAGDA clip ID
+     * @param quantize The quantization to use for the stop
+     */
+    void stopSessionClipQueued(ClipId clipId, LaunchQuantize quantize);
 
     /**
      * @brief Get Tracktion Engine clip for session clip
@@ -301,6 +306,10 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      * offset, and beat-based loop range.
      */
     void configureSessionAutoTempo(te::WaveAudioClip* audioClip, const ClipInfo* clip);
+
+    /** Compute the next quantized target beat for a given LaunchQuantize value.
+        Returns nullopt if quantize is None or no playback context. */
+    std::optional<te::MonotonicBeat> computeQuantizedBeat(LaunchQuantize quantize);
 
     /**
      * @brief Sync TrackInfo::playbackMode to TE's audioTrack->playSlotClips

@@ -119,6 +119,7 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
 
     } else {
         // Stop request
+        DBG("SessionClipScheduler: Stop requested for clip " << clipId);
         if (const auto* c = cm.getClip(clipId)) {
             if (auto* track = tm.getTrack(c->trackId)) {
                 if (track->activeSessionClipId == clipId)
@@ -136,6 +137,7 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
             c->sessionPlayheadPos = -1.0;
 
         syncTrackPlaybackModes();
+        DBG("SessionClipScheduler: Notifying playback state changed (stopped) for clip " << clipId);
         cm.notifyClipPlaybackStateChanged(clipId);
 
         // Update playhead tracking
@@ -234,10 +236,12 @@ void SessionClipScheduler::processStateEvents() {
     // Transport just stopped — stop all LaunchHandles so clips reset to start.
     // activeSessionClipId stays set (user intent preserved).
     if (wasTransportPlaying_ && !transportPlaying && hasActiveClips()) {
+        DBG("SessionClipScheduler: Transport stopped — stopping all LaunchHandles");
         for (const auto& track : tm.getTracks()) {
             ClipId clipId = track.activeSessionClipId;
             if (clipId == INVALID_CLIP_ID)
                 continue;
+            DBG("SessionClipScheduler: Stopping clip " << clipId << " (transport stop)");
             audioBridge_.stopSessionClip(clipId);
             sendUnmonitorCommand(clipId);
             releaseLaunchHandle(clipId);
@@ -265,6 +269,8 @@ void SessionClipScheduler::processStateEvents() {
         auto& prev = lastNotifiedState_[clipId];
 
         if (state != prev) {
+            DBG("SessionClipScheduler: Clip " << clipId << " state changed: " << (int)prev << " -> "
+                                              << (int)state);
             prev = state;
             cm.notifyClipPlaybackStateChanged(clipId);
         }
@@ -364,17 +370,9 @@ std::unordered_map<ClipId, double> SessionClipScheduler::getActiveClipPlayheadPo
     std::unordered_map<ClipId, double> beatPositions;
     audioMonitor_.getActivePlayheadBeats(beatPositions);
 
-    auto& tm = TrackManager::getInstance();
     for (const auto& [clipId, beats] : beatPositions) {
-        // Only include clips that are still the active session clip on their track
-        bool isActive = false;
-        for (const auto& track : tm.getTracks()) {
-            if (track.activeSessionClipId == clipId) {
-                isActive = true;
-                break;
-            }
-        }
-        if (isActive && beats >= 0.0)
+        // Include any clip that has a retained LaunchHandle (still physically playing)
+        if (beats >= 0.0 && activeLaunchHandles_.count(clipId))
             positions[clipId] = elapsedBeatsToSeconds(clipId, beats);
     }
 
@@ -458,6 +456,41 @@ void SessionClipScheduler::deactivateAllSessionClips() {
     lastNotifiedState_.clear();
     playheadClipId_ = INVALID_CLIP_ID;
     syncTrackPlaybackModes();
+}
+
+// =============================================================================
+// Stop Track (empty slot in scene launch)
+// =============================================================================
+
+void SessionClipScheduler::stopSessionTrack(TrackId trackId) {
+    auto& cm = ClipManager::getInstance();
+    auto& tm = TrackManager::getInstance();
+
+    auto* track = tm.getTrack(trackId);
+    if (!track || track->activeSessionClipId == INVALID_CLIP_ID)
+        return;
+
+    ClipId clipId = track->activeSessionClipId;
+    const auto* clip = cm.getClip(clipId);
+
+    // Use the active clip's quantize setting for the stop timing
+    LaunchQuantize quantize = clip ? clip->launchQuantize : LaunchQuantize::None;
+
+    track->activeSessionClipId = INVALID_CLIP_ID;
+    audioBridge_.stopSessionClipQueued(clipId, quantize);
+    sendUnmonitorCommand(clipId);
+    releaseLaunchHandle(clipId);
+    clipLaunchData_.erase(clipId);
+    lastNotifiedState_.erase(clipId);
+
+    if (auto* c = cm.getClip(clipId))
+        c->sessionPlayheadPos = -1.0;
+
+    syncTrackPlaybackModes();
+    cm.notifyClipPlaybackStateChanged(clipId);
+
+    if (playheadClipId_ == clipId)
+        playheadClipId_ = INVALID_CLIP_ID;
 }
 
 }  // namespace magda

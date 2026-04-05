@@ -558,6 +558,10 @@ void AudioBridge::stopSessionClip(ClipId clipId) {
     clipSynchronizer_.stopSessionClip(clipId);
 }
 
+void AudioBridge::stopSessionClipQueued(ClipId clipId, LaunchQuantize quantize) {
+    clipSynchronizer_.stopSessionClipQueued(clipId, quantize);
+}
+
 te::Clip* AudioBridge::getSessionTeClip(ClipId clipId) {
     return clipSynchronizer_.getSessionTeClip(clipId);
 }

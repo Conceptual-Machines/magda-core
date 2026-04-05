@@ -44,6 +44,10 @@ class SessionClipScheduler : public ClipManagerListener {
     /** Stop all active session clips, clear activeSessionClipId, revert to arrangement. */
     void deactivateAllSessionClips();
 
+    /** Schedule a quantized stop for the active session clip on a track.
+        Used by scene launch for empty slots (empty slot = stop that track). */
+    void stopSessionTrack(TrackId trackId);
+
     /** Re-launch any session clips that have activeSessionClipId set but aren't
         currently playing. Call synchronously when transport starts to avoid
         the 33ms polling delay. */

@@ -130,6 +130,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     void stopSessionClip(ClipId clipId);
 
+    /** Stop a session clip at the next quantization grid point. */
+    void stopSessionClipQueued(ClipId clipId, LaunchQuantize quantize);
+
     /**
      * @brief Get the precise quantized launch time for a track's last-launched session clip.
      * @param trackId The track to query

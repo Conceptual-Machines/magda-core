@@ -75,6 +75,11 @@ SessionClipPlayState TracktionEngineWrapper::getSessionClipPlayState(ClipId clip
     return SessionClipPlayState::Stopped;
 }
 
+void TracktionEngineWrapper::stopSessionTrack(TrackId trackId) {
+    if (sessionScheduler_)
+        sessionScheduler_->stopSessionTrack(trackId);
+}
+
 // =============================================================================
 // Helper Methods
 // =============================================================================
