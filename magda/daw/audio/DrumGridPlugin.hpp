@@ -30,7 +30,7 @@ class DrumGridPlugin : public te::Plugin {
 
     static constexpr int maxPads = 64;
     static constexpr int baseNote = 24;       // Pad 0 = MIDI note 24 (C0)
-    static constexpr int maxBusOutputs = 64;  // one stereo pair per pad = 128 channels
+    static constexpr int maxBusOutputs = 32;  // TE RackType max is 64 audio pins = 32 stereo pairs
 
     juce::String getName() const override {
         return getPluginName();

@@ -732,7 +732,10 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
         }
     }
 
-    // 7. Rebuild sidechain LFO cache
+    // 7. Clean up DrumGrid FolderTrack if this was a DrumGrid parent track
+    trackController_.removeDrumGridFolder(trackId);
+
+    // 8. Rebuild sidechain LFO cache
     rebuildSidechainLFOCache();
 
     DBG("PluginManager::cleanupTrackPlugins - cleaned up track "
@@ -2553,8 +2556,12 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
     ensureVolumePluginPosition(teTrack);
     addLevelMeterToTrack(trackId);
 
-    DBG("PluginManager::syncMultiOutTrack: trackId="
-        << trackId << " sourceDevice=" << link.sourceDeviceId << " pair=" << link.outputPairIndex);
+    // Set audio output routing (e.g. "track:N" to route back to parent)
+    if (trackInfo.audioOutputDevice.isNotEmpty())
+        trackController_.setTrackAudioOutput(trackId, trackInfo.audioOutputDevice);
+
+    DBG("syncMultiOutTrack: trackId=" << trackId << " pair=" << link.outputPairIndex
+                                      << " firstPin=" << outPair.firstPin);
 }
 
 // =============================================================================
@@ -3610,6 +3617,15 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
                     }
                 }
 
+                // Create a TE FolderTrack (submix) for DrumGrid so the parent and
+                // all multi-out children are summed under one fader — like
+                // Ableton/Bitwig drum racks. The folder lives only in TE
+                // (TrackController); MAGDA's TrackManager sees the DrumGrid track
+                // as the group parent via parentId/childIds.
+                if (dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
+                    trackController_.createDrumGridFolder(trackId, device.name);
+                }
+
                 // Return the INNER plugin (not the rack) so that syncedDevices_
                 // maps to the actual synth for parameter access and window opening
                 return plugin;
@@ -3815,6 +3831,10 @@ void PluginManager::syncDrumGridMultiOutTracks(TrackId trackId, DeviceId deviceI
                     auto it = busNames.find(bus);
                     if (it != busNames.end())
                         childTrack->name = drumGrid->getName() + ": " + it->second;
+
+                    // Create the TE audio track and add the RackInstance
+                    // so audio actually flows through this child track
+                    syncMultiOutTrack(childTrackId, *childTrack);
                 }
             }
         } else {
@@ -3830,6 +3850,14 @@ void PluginManager::syncDrumGridMultiOutTracks(TrackId trackId, DeviceId deviceI
                 }
             }
         }
+    }
+
+    // Nest new multi-out children inside the TE FolderTrack (submix)
+    // so their audio is summed through the folder's VolumeAndPan fader.
+    for (const auto& pair : pairs) {
+        if (!pair.active || pair.trackId == INVALID_TRACK_ID)
+            continue;
+        trackController_.addToDrumGridFolder(trackId, pair.trackId);
     }
 }
 

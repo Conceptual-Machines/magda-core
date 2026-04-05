@@ -1326,7 +1326,8 @@ void MixerView::rebuildChannelStrips() {
         // Skip children of collapsed group tracks
         if (track.hasParent()) {
             if (auto* parent = TrackManager::getInstance().getTrack(track.parentId)) {
-                if (parent->isGroup() && parent->isCollapsedIn(currentViewMode_))
+                if ((parent->isGroup() || parent->hasChildren()) &&
+                    parent->isCollapsedIn(currentViewMode_))
                     continue;
             }
         }
@@ -1345,8 +1346,8 @@ void MixerView::rebuildChannelStrips() {
         // Wire up send area resize callback (coalesced relayout of all strips)
         strip->onSendAreaResized = [this]() { relayoutAllStrips(); };
 
-        // Add expand/collapse toggle for group tracks with children
-        if (track.isGroup() && track.hasChildren()) {
+        // Add expand/collapse toggle for tracks with children (groups, DrumGrid, etc.)
+        if (track.hasChildren()) {
             bool isCollapsed = track.isCollapsedIn(currentViewMode_);
             TrackId trackId = track.id;
             strip->expandToggle_ = std::make_unique<juce::TextButton>(
@@ -1388,10 +1389,10 @@ void MixerView::rebuildChannelStrips() {
         if (!trackInfo)
             continue;
 
-        // --- Nest inside group parent ---
+        // --- Nest inside parent (group tracks, DrumGrid with multi-out children, etc.) ---
         if (trackInfo->hasParent()) {
             if (auto* parentTrack = TrackManager::getInstance().getTrack(trackInfo->parentId)) {
-                if (parentTrack->isGroup()) {
+                if (parentTrack->isGroup() || parentTrack->hasChildren()) {
                     auto it = stripByTrackId.find(trackInfo->parentId);
                     if (it != stripByTrackId.end()) {
                         it->second->addChildComponent(*strip);

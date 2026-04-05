@@ -216,9 +216,13 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
     newTrack.type = TrackType::MultiOut;
     newTrack.name = device->name + ": " + pair.name;
     newTrack.colour = parentTrack->colour;
-    newTrack.audioOutputDevice = "track:" + juce::String(parentTrackId);
+    // Multi-out children route to master by default. TE-level routing
+    // is handled separately by TrackController's FolderTrack submix — the
+    // children are moved inside a hidden FolderTrack that sums them.
+    newTrack.audioOutputDevice = "master";
+    newTrack.parentId = parentTrackId;
 
-    // Set the multi-out link (keeps routing reference, no parent-child hierarchy)
+    // Set the multi-out link (keeps routing reference)
     newTrack.multiOutLink = MultiOutTrackLink{parentTrackId, deviceId, pairIndex};
 
     // Insert after the parent track (and any existing multi-out siblings) for adjacency
@@ -238,12 +242,18 @@ TrackId TrackManager::activateMultiOutPair(TrackId parentTrackId, DeviceId devic
     }
 
     // Re-fetch pointers after insert (vector reallocation invalidates them)
+    parentTrack = getTrack(parentTrackId);
     device = getDevice(parentTrackId, deviceId);
     auto& pairRef = device->multiOut.outputPairs[static_cast<size_t>(pairIndex)];
 
     // Update the output pair state
     pairRef.active = true;
     pairRef.trackId = newTrackId;
+
+    // Register child in parent's childIds
+    if (parentTrack) {
+        parentTrack->childIds.push_back(newTrackId);
+    }
 
     DBG("TrackManager: Activated multi-out pair " << pairIndex << " for device " << deviceId
                                                   << " → track " << newTrackId);
@@ -269,6 +279,10 @@ void TrackManager::deactivateMultiOutPair(TrackId parentTrackId, DeviceId device
         return;
 
     TrackId trackToRemove = pair.trackId;
+
+    // Remove child from parent's childIds
+    auto& children = parentTrack->childIds;
+    children.erase(std::remove(children.begin(), children.end(), trackToRemove), children.end());
 
     // Remove the track
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
