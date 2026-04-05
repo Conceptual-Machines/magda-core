@@ -52,15 +52,20 @@ double StepClock::applyRampCurve(double t, float depth, float skew, bool hardAng
     if (std::abs(d) < 0.001)
         return t;
 
+    // Clamp control point ordinate to [0, 1] so the curve stays in bounds
+    double cp = juce::jlimit(0.0, 1.0, s + d);
+
     if (hardAngle) {
-        // Piecewise linear: two straight segments through control point (s, s+d)
+        // Piecewise linear: two straight segments through control point (s, cp)
+        double result;
         if (t <= s)
-            return t * (s + d) / s;
+            result = t * cp / s;
         else
-            return (s + d) + (t - s) * (1.0 - (s + d)) / (1.0 - s);
+            result = cp + (t - s) * (1.0 - cp) / (1.0 - s);
+        return juce::jlimit(0.0, 1.0, result);
     }
 
-    // Quadratic bezier
+    // Quadratic bezier with control point (s, cp)
     double u;
     double a = 1.0 - 2.0 * s;
     if (std::abs(a) < 1e-10) {
@@ -71,7 +76,7 @@ double StepClock::applyRampCurve(double t, float depth, float skew, bool hardAng
         u = juce::jlimit(0.0, 1.0, u);
     }
 
-    return 2.0 * (1.0 - u) * u * (s + d) + u * u;
+    return juce::jlimit(0.0, 1.0, 2.0 * (1.0 - u) * u * cp + u * u);
 }
 
 int StepClock::advanceStep(int current, int numSteps, Direction dir) {

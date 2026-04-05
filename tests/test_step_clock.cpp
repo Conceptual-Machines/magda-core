@@ -183,10 +183,11 @@ TEST_CASE("StepClock hard angle vs bezier differ at midpoints", "[stepclock][har
 // Ramp curve — symmetry and skew
 // ============================================================================
 
-TEST_CASE("StepClock applyRampCurve with zero skew is symmetric about midpoint",
+TEST_CASE("StepClock applyRampCurve with zero depth and zero skew is symmetric about midpoint",
           "[stepclock][ramp]") {
-    // f(0.5 - dt) + f(0.5 + dt) should approximately equal 1.0 when skew=0
-    float depth = 0.4f;
+    // Symmetry f(0.5-dt) + f(0.5+dt) == 1.0 only holds when depth=0 (identity curve).
+    // With depth != 0 the control point moves off the diagonal, breaking symmetry.
+    float depth = 0.0f;
     for (double dt = 0.05; dt < 0.5; dt += 0.05) {
         double lo = StepClock::applyRampCurve(0.5 - dt, depth, 0.0f);
         double hi = StepClock::applyRampCurve(0.5 + dt, depth, 0.0f);
@@ -195,10 +196,11 @@ TEST_CASE("StepClock applyRampCurve with zero skew is symmetric about midpoint",
 }
 
 TEST_CASE("StepClock applyRampCurve skew shifts the inflection point", "[stepclock][ramp]") {
-    // Positive skew should shift the "fast" region to the right
-    // At t=0.3, positive skew should give a higher value than negative skew
+    // Positive skew shifts the control point right → left half is flatter (lower values).
+    // At t=0.3, negative skew (control point shifted left) bends the curve up earlier,
+    // giving higher values than positive skew.
     float depth = 0.3f;
     double valPosSkew = StepClock::applyRampCurve(0.3, depth, 0.5f);
     double valNegSkew = StepClock::applyRampCurve(0.3, depth, -0.5f);
-    REQUIRE(valPosSkew > valNegSkew);
+    REQUIRE(valNegSkew > valPosSkew);
 }
