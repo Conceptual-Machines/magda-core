@@ -52,7 +52,7 @@ class SvgButton : public juce::Button {
     }
 
     // Border settings
-    void setIconPadding(int padding) {
+    void setIconPadding(float padding) {
         iconPadding = padding;
     }
 
@@ -100,7 +100,7 @@ class SvgButton : public juce::Button {
     float borderThickness = 1.0f;
     float cornerRadius = 2.0f;
     bool hasBorder = false;
-    int iconPadding = 4;
+    float iconPadding = 4.0f;
 
     bool active = false;
 

@@ -137,7 +137,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     }
 
     // Calculate icon bounds (centered with some padding)
-    auto bounds = getLocalBounds().reduced(iconPadding);
+    auto bounds = getLocalBounds().toFloat().reduced(iconPadding);
 
     // Create a copy of the drawable and replace colors
     auto iconCopy = svgIcon->createCopy();
@@ -154,7 +154,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     // Draw the icon (dimmed when disabled)
     float opacity = isEnabled() ? 1.0f : 0.25f;
     if (!bounds.isEmpty())
-        iconCopy->drawWithin(g, bounds.toFloat(), juce::RectanglePlacement::centred, opacity);
+        iconCopy->drawWithin(g, bounds, juce::RectanglePlacement::centred, opacity);
 }
 
 }  // namespace magda

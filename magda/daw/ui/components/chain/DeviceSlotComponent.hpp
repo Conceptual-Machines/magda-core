@@ -266,6 +266,11 @@ class DeviceSlotComponent : public NodeComponent,
     int getDynamicSlotWidth() const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DeviceSlotComponent)
+
+    // Grant access to the free-function template that wires mod/macro callbacks
+    template <typename Widget>
+    friend void wireModMacroCallbacks(Widget* widget,
+                                      juce::Component::SafePointer<DeviceSlotComponent> owner);
 };
 
 }  // namespace magda::daw::ui
