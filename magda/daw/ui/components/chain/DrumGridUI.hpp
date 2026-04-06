@@ -119,6 +119,13 @@ class DrumGridUI : public juce::Component,
     /** Called when play button is pressed/released on a pad. (padIndex, isNoteOn) */
     std::function<void(int, bool)> onNotePreview;
 
+    /** Query note range for a pad. Returns {lowNote, highNote, rootNote}. (padIndex) */
+    std::function<std::tuple<int, int, int>(int)> getNoteRange;
+
+    /** Called when the user changes note range for a pad. (padIndex, lowNote, highNote, rootNote)
+     */
+    std::function<void(int, int, int, int)> onPadRangeChanged;
+
     /** Set the DrumGridPlugin pointer for trigger polling. Starts timer. */
     void setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin);
 

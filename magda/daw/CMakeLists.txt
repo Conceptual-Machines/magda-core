@@ -396,7 +396,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/RackComponent.cpp
     ui/components/chain/ChainPanel.cpp
     ui/components/chain/DeviceSlotComponent.cpp
-    ui/components/chain/DeviceCustomUIManager.cpp
+    ui/components/chain/ParamGridComponent.cpp
     ui/components/chain/ToneGeneratorUI.cpp
     ui/components/chain/SamplerUI.cpp
     ui/components/chain/DrumGridUI.cpp

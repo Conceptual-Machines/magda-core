@@ -2,9 +2,25 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "DeviceCustomUIManager.hpp"
+#include "ArpeggiatorUI.hpp"
+#include "ChorusUI.hpp"
+#include "CompressorUI.hpp"
+#include "DelayUI.hpp"
+#include "DrumGridUI.hpp"
+#include "EqualiserUI.hpp"
+#include "FilterUI.hpp"
+#include "FourOscUI.hpp"
+#include "ImpulseResponseUI.hpp"
 #include "NodeComponent.hpp"
+#include "ParamGridComponent.hpp"
 #include "ParamSlotComponent.hpp"
+#include "PhaserUI.hpp"
+#include "PitchShiftUI.hpp"
+#include "ReverbUI.hpp"
+#include "SamplerUI.hpp"
+#include "StepSequencerUI.hpp"
+#include "ToneGeneratorUI.hpp"
+#include "UtilityUI.hpp"
 #include "audio/ArpeggiatorPlugin.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
 #include "audio/StepSequencerPlugin.hpp"
@@ -15,6 +31,7 @@
 #include "ui/components/common/TextSlider.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/MidiNoteStrip.hpp"
+#include "ui/panels/content/ChordPanelContent.hpp"  // relative to magda/daw/
 
 namespace magda::daw::ui {
 
@@ -180,27 +197,40 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> onButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
 
-    // Pagination
-    int currentPage_ = 0;
-    int totalPages_ = 1;
-    std::unique_ptr<juce::TextButton> prevPageButton_;
-    std::unique_ptr<juce::TextButton> nextPageButton_;
-    std::unique_ptr<juce::Label> pageLabel_;
+    // Parameter grid (owns slots + pagination)
+    std::unique_ptr<ParamGridComponent> paramGrid_;
 
-    // Parameter grid
-    std::unique_ptr<ParamSlotComponent> paramSlots_[NUM_PARAMS_PER_PAGE];
-
-    // Custom UI manager for internal devices
-    DeviceCustomUIManager customUIManager_;
+    // Custom UI for internal devices
+    std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
+    std::unique_ptr<SamplerUI> samplerUI_;
+    std::unique_ptr<DrumGridUI> drumGridUI_;
+    std::unique_ptr<FourOscUI> fourOscUI_;
+    static constexpr int NO_PENDING_TAB = -1;
+    int pendingCustomUITabIndex_ = NO_PENDING_TAB;
+    std::unique_ptr<EqualiserUI> eqUI_;
+    std::unique_ptr<CompressorUI> compressorUI_;
+    std::unique_ptr<ReverbUI> reverbUI_;
+    std::unique_ptr<DelayUI> delayUI_;
+    std::unique_ptr<ChorusUI> chorusUI_;
+    std::unique_ptr<PhaserUI> phaserUI_;
+    std::unique_ptr<FilterUI> filterUI_;
+    std::unique_ptr<PitchShiftUI> pitchShiftUI_;
+    std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
+    std::unique_ptr<UtilityUI> utilityUI_;
+    std::unique_ptr<ChordPanelContent> chordEngineUI_;
+    std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
+    std::unique_ptr<StepSequencerUI> stepSequencerUI_;
 
     static constexpr int METER_STRIP_WIDTH = 10;
     magda::LevelMeter levelMeter_;
     magda::MidiNoteStrip midiNoteStrip_;
+    daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;
+    daw::audio::StepSequencerPlugin* stepSeqPlugin_ = nullptr;
     int lastArpNote_ = -1;
+    daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
     std::array<int, 32> lastChordNotes_{};
     int lastChordCount_ = 0;
 
-    void updatePageControls();
     void updateParamModulation();  // Update mod/macro pointers for params
     void updateParameterSlots();   // Reload parameter data for current page
     void updateParameterValues();  // Update only parameter values (for polling)
@@ -216,13 +246,14 @@ class DeviceSlotComponent : public NodeComponent,
         return device_.format == magda::PluginFormat::Internal;
     }
 
-    // Helper to create/update custom UI for internal devices
+    // Helper to create custom UI for internal devices
+    void createCustomUI();
+    void updateCustomUI();
+    void readAndPushModMatrix();  // Read FourOsc mod matrix and push to UI
     void setupCustomUILinking();
 
     // Dynamic layout helpers
     int getVisibleParamCount() const;
-    int getParamsPerRow() const;
-    int getParamsPerPage() const;
     int getDynamicSlotWidth() const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DeviceSlotComponent)
