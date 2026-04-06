@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "DeviceSlotHeaderLayout.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -406,19 +407,13 @@ void PadDeviceSlot::resized() {
     auto headerRow = area.removeFromTop(HEADER_HEIGHT);
     int btnSize = HEADER_HEIGHT;
 
-    deleteButton_.setBounds(headerRow.removeFromRight(btnSize));
-    headerRow.removeFromRight(2);
-
-    onButton_->setBounds(headerRow.removeFromRight(btnSize));
-    headerRow.removeFromRight(2);
-
-    if (uiButton_->isVisible()) {
-        uiButton_->setBounds(headerRow.removeFromRight(btnSize));
-        headerRow.removeFromRight(2);
-    }
-
-    gainSlider_.setBounds(headerRow.removeFromRight(GAIN_SLIDER_WIDTH));
-    headerRow.removeFromRight(2);
+    layoutDeviceSlotHeaderRight(headerRow, btnSize, 2,
+                                /*delete*/ &deleteButton_,
+                                /*power*/ onButton_.get(),
+                                /*multiOut*/ nullptr,
+                                /*sc*/ nullptr,
+                                /*slider*/ &gainSlider_, GAIN_SLIDER_WIDTH,
+                                /*ui*/ uiButton_.get());
 
     nameLabel_.setBounds(headerRow);
 

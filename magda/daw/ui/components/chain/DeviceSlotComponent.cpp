@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 
+#include "DeviceSlotHeaderLayout.hpp"
 #include "MacroPanelComponent.hpp"
 #include "ModsPanelComponent.hpp"
 #include "ParamGridComponent.hpp"
@@ -1318,50 +1319,36 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         modButton_->setVisible(false);
     }
 
-    // Power button on the right (before delete which is handled by parent)
-    onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-    headerArea.removeFromRight(4);
-
-    // Export clip button (step sequencer)
+    // Export clip button (step sequencer) — sits between delete and power, handled before shared
+    // layout
     if (exportClipButton_) {
+        exportClipButton_->setVisible(true);
         exportClipButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
         headerArea.removeFromRight(4);
     }
 
-    // MIDI devices: no volume/SC — only power button in header
+    // MIDI devices: no volume/SC
     if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
         gainSlider_.setVisible(false);
         if (scButton_)
             scButton_->setVisible(false);
+        onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
         return;
     }
 
-    // Sidechain button (only if plugin supports it)
-    if ((device_.canSidechain || device_.canReceiveMidi) && scButton_) {
-        scButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-        scButton_->setVisible(true);
-        headerArea.removeFromRight(4);
-    } else if (scButton_) {
-        scButton_->setVisible(false);
-    }
+    // Set conditional button visibility before calling shared layout
+    if (scButton_)
+        scButton_->setVisible(device_.canSidechain || device_.canReceiveMidi);
+    if (multiOutButton_)
+        multiOutButton_->setVisible(device_.multiOut.isMultiOut);
 
-    // Multi-output button (between power and gain slider)
-    if (device_.multiOut.isMultiOut && multiOutButton_) {
-        multiOutButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-        headerArea.removeFromRight(4);
-    }
-
-    // Gain slider
-    gainSlider_.setBounds(headerArea.removeFromRight(70));
-    headerArea.removeFromRight(4);
-
-    // UI button (ext window — leftmost of the right group)
-    if (uiButton_->isVisible()) {
-        uiButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-        headerArea.removeFromRight(4);
-    }
-
-    // Remaining space is for the name label (handled by NodeComponent)
+    layoutDeviceSlotHeaderRight(headerArea, BUTTON_SIZE, 4,
+                                /*delete*/ nullptr,
+                                /*power*/ onButton_.get(),
+                                /*multiOut*/ multiOutButton_ ? multiOutButton_.get() : nullptr,
+                                /*sc*/ scButton_ ? scButton_.get() : nullptr,
+                                /*slider*/ &gainSlider_, 70,
+                                /*ui*/ uiButton_.get());
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
