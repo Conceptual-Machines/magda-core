@@ -9,6 +9,10 @@
 
 #include "ParamSlotComponent.hpp"
 #include "SamplerUI.hpp"
+#include "core/MacroInfo.hpp"
+#include "core/ModInfo.hpp"
+#include "core/SelectionManager.hpp"
+#include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
@@ -76,6 +80,26 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     std::function<void(float)> onGainDbChanged;
     void setGainDb(float db);
 
+    /** Set link mode context so param slots / linkable sliders participate in linking. */
+    void setLinkContext(magda::DeviceId deviceId, const magda::ChainNodePath& devicePath,
+                        const magda::MacroArray* macros, const magda::ModArray* mods,
+                        const magda::MacroArray* trackMacros, const magda::ModArray* trackMods);
+
+    /** Get all linkable controls (sampler LinkableTextSliders or external ParamSlotComponents). */
+    std::vector<LinkableTextSlider*> getLinkableSliders();
+
+    /** Access a param slot for callback wiring (external plugins only). */
+    ParamSlotComponent* getParamSlot(int i) {
+        return (i >= 0 && i < PLUGIN_PARAM_SLOTS) ? paramSlots_[static_cast<size_t>(i)].get()
+                                                  : nullptr;
+    }
+    int getParamSlotCount() const {
+        return PLUGIN_PARAM_SLOTS;
+    }
+    int getVisibleParamCount() const {
+        return visibleParamCount_;
+    }
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
@@ -90,7 +114,9 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     static constexpr int GAIN_SLIDER_WIDTH = 44;
 
     tracktion::engine::Plugin* plugin_ = nullptr;
+    magda::DeviceId pluginDeviceId_ = magda::INVALID_DEVICE_ID;
     int preferredWidth_ = SLOT_WIDTH;
+    int visibleParamCount_ = 0;
     bool collapsed_ = false;
     bool selected_ = false;
 

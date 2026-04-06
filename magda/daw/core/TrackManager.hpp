@@ -97,6 +97,15 @@ class TrackManager {
     TrackManager(const TrackManager&) = delete;
     TrackManager& operator=(const TrackManager&) = delete;
 
+    // Allocate a unique DeviceId (used by DrumGrid for per-pad chain plugins)
+    DeviceId allocateDeviceId() {
+        return nextDeviceId_++;
+    }
+    // Ensure the counter is above a restored ID (prevents collisions on project load)
+    void ensureDeviceIdAbove(DeviceId id) {
+        nextDeviceId_ = std::max(nextDeviceId_, id + 1);
+    }
+
     /**
      * @brief Set the audio engine reference for routing operations
      * Should be called once during app initialization

@@ -1416,16 +1416,35 @@ DrumGridProcessor::DrumGridProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : DeviceProcessor(deviceId, std::move(plugin)) {}
 
 int DrumGridProcessor::getParameterCount() const {
-    // No top-level automatable parameters; per-pad params live on child plugins
+    if (plugin_)
+        return static_cast<int>(plugin_->getAutomatableParameters().size());
     return 0;
 }
 
-ParameterInfo DrumGridProcessor::getParameterInfo(int /*index*/) const {
-    return {};
+ParameterInfo DrumGridProcessor::getParameterInfo(int index) const {
+    ParameterInfo info;
+    if (!plugin_)
+        return info;
+
+    auto params = plugin_->getAutomatableParameters();
+    if (index >= 0 && index < static_cast<int>(params.size())) {
+        auto* param = params[index];
+        info.name = param->getParameterName();
+        info.currentValue = param->getCurrentValue();
+        auto range = param->getValueRange();
+        info.minValue = range.getStart();
+        info.maxValue = range.getEnd();
+        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+        // Pan params (odd indices) are bipolar
+        info.bipolarModulation = (index % 2 == 1);
+    }
+    return info;
 }
 
 void DrumGridProcessor::populateParameters(DeviceInfo& info) const {
     info.parameters.clear();
+    for (int i = 0; i < getParameterCount(); ++i)
+        info.parameters.push_back(getParameterInfo(i));
 }
 
 // =============================================================================

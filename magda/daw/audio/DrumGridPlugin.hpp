@@ -187,6 +187,9 @@ class DrumGridPlugin : public te::Plugin {
         listeners_.remove(l);
     }
 
+    // Per-chain-plugin DeviceId for macro/mod linking
+    int getPluginDeviceId(int chainIndex, int pluginIndex) const;
+
     // Legacy pad-level FX API (delegates to chain-based methods)
     void addPluginToPad(int padIndex, const juce::PluginDescription& desc, int insertIndex = -1);
     void removePluginFromPad(int padIndex, int pluginIndex);
@@ -198,6 +201,17 @@ class DrumGridPlugin : public te::Plugin {
     void processChain(Chain& chain, juce::AudioBuffer<float>& outputBuffer,
                       const te::MidiMessageArray& inputMidi, int numSamples, int numChannels,
                       const te::PluginRenderContext& rc);
+
+    // AutomatableParameters for per-pad level and pan (macro/mod targets)
+    // Fixed indexing: padIndex * 2 = level, padIndex * 2 + 1 = pan
+    std::array<te::AutomatableParameter::Ptr, maxPads> levelParams_;
+    std::array<te::AutomatableParameter::Ptr, maxPads> panParams_;
+
+    // Sync existing chain CachedValues → AutomatableParams
+    void syncParamFromChain(int chainIndex);
+
+    // ValueTree::Listener — sync CachedValue changes to AutomatableParams
+    void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier& property) override;
 
     std::vector<std::unique_ptr<Chain>> chains_;
     int nextChainIndex_ = 0;
@@ -226,6 +240,7 @@ class DrumGridPlugin : public te::Plugin {
     static const juce::Identifier busOutputId;
     static const juce::Identifier mixerExpandedId;
     static const juce::Identifier multiOutEnabledId;
+    static const juce::Identifier pluginDeviceIdProp;
 
     Chain* findChainForNote(int midiNote);
     Chain* findOrCreateChainForPad(int padIndex);

@@ -128,6 +128,9 @@ class DrumGridUI : public juce::Component,
 
     /** Set the DrumGridPlugin pointer for trigger polling. Starts timer. */
     void setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin);
+    daw::audio::DrumGridPlugin* getDrumGridPlugin() const {
+        return drumGridPlugin_;
+    }
 
     /** Called when layout changes (e.g., chains panel toggled) so parent can resize. */
     std::function<void()> onLayoutChanged;

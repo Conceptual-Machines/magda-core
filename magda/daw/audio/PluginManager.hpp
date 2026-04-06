@@ -444,6 +444,12 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     void syncDrumGridMultiOutTracks(TrackId trackId, DeviceId deviceId,
                                     daw::audio::DrumGridPlugin* drumGrid);
 
+    /**
+     * @brief Register per-pad chain plugins in syncedDevices_ for macro/mod linking
+     */
+    void syncDrumGridPadPlugins(TrackId trackId, DeviceId drumGridDeviceId,
+                                daw::audio::DrumGridPlugin* drumGrid);
+
     // DrumGridPlugin::Listener
     void drumGridChainsChanged(daw::audio::DrumGridPlugin* plugin) override;
 
@@ -524,6 +530,9 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Structural fingerprint for mod sync: {activeModCount, totalLinkCount}
     // Used to decide if resyncDeviceModifiers needs a full rebuild or just property update.
     std::map<TrackId, std::pair<int, int>> modLinkFingerprints_;
+
+    // DrumGrid DeviceId → set of pad-plugin DeviceIds registered in syncedDevices_
+    std::map<DeviceId, std::set<DeviceId>> drumGridPadDevices_;
 
     // Sidechain monitor plugins (sourceTrackId → SidechainMonitorPlugin)
     std::map<TrackId, te::Plugin::Ptr> sidechainMonitors_;

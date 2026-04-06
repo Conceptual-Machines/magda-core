@@ -251,6 +251,7 @@ class DeviceSlotComponent : public NodeComponent,
     void updateCustomUI();
     void readAndPushModMatrix();  // Read FourOsc mod matrix and push to UI
     void setupCustomUILinking();
+    void wirePadChainLinkCallbacks();  // Wire link mode on PadDeviceSlot param slots
 
     // Dynamic layout helpers
     int getVisibleParamCount() const;

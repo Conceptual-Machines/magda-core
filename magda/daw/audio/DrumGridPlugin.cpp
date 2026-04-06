@@ -1,6 +1,7 @@
 #include "DrumGridPlugin.hpp"
 
 #include "MagdaSamplerPlugin.hpp"
+#include "core/TrackManager.hpp"
 
 namespace magda::daw::audio {
 
@@ -22,11 +23,21 @@ const juce::Identifier DrumGridPlugin::padBypassedId("padBypassed");
 const juce::Identifier DrumGridPlugin::busOutputId("busOutput");
 const juce::Identifier DrumGridPlugin::mixerExpandedId("mixerExpanded");
 const juce::Identifier DrumGridPlugin::multiOutEnabledId("multiOutEnabled");
+const juce::Identifier DrumGridPlugin::pluginDeviceIdProp("magdaDeviceId");
 
 //==============================================================================
 DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info) : Plugin(info) {
     mixerExpanded_.referTo(state, mixerExpandedId, getUndoManager(), false);
     multiOutEnabled_.referTo(state, multiOutEnabledId, getUndoManager(), false);
+
+    // Register AutomatableParameters for all 64 pads (fixed slots for stable macro/mod indexing)
+    for (int i = 0; i < maxPads; ++i) {
+        auto padName = "Pad " + juce::String(i + 1);
+        levelParams_[static_cast<size_t>(i)] =
+            addParam("padLevel" + juce::String(i), padName + " Level", {-60.0f, 12.0f});
+        panParams_[static_cast<size_t>(i)] =
+            addParam("padPan" + juce::String(i), padName + " Pan", {-1.0f, 1.0f});
+    }
 
     // Restore chains from existing ValueTree state (if any)
     for (int i = 0; i < state.getNumChildren(); ++i) {
@@ -51,6 +62,9 @@ DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info) : Plugin(info
 
         if (chain->index >= nextChainIndex_)
             nextChainIndex_ = chain->index + 1;
+
+        // Sync CachedValues → AutomatableParams for restored chains
+        syncParamFromChain(chain->index);
 
         chains_.push_back(std::move(chain));
     }
@@ -172,9 +186,15 @@ void DrumGridPlugin::processChain(Chain& chain, juce::AudioBuffer<float>& output
             scratchBuffer.applyGain(pluginGain);
     }
 
-    // Compute level/pan gains
-    float levelLinear = juce::Decibels::decibelsToGain(chain.level.get());
-    float panValue = chain.pan.get();
+    // Compute level/pan gains (read from AutomatableParam to include macro/mod modulation)
+    auto idx = static_cast<size_t>(chain.index);
+    float levelDb = (idx < levelParams_.size() && levelParams_[idx] != nullptr)
+                        ? levelParams_[idx]->getCurrentValue()
+                        : chain.level.get();
+    float levelLinear = juce::Decibels::decibelsToGain(levelDb);
+    float panValue = (idx < panParams_.size() && panParams_[idx] != nullptr)
+                         ? panParams_[idx]->getCurrentValue()
+                         : chain.pan.get();
     float leftGain =
         levelLinear * std::cos((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
     float rightGain =
@@ -253,6 +273,7 @@ int DrumGridPlugin::addChain(int lowNote, int highNote, int rootNote, const juce
     chain->bypassed.referTo(chainTree, padBypassedId, um, false);
     chain->busOutput.referTo(chainTree, busOutputId, um, 0);
 
+    syncParamFromChain(idx);
     chains_.push_back(std::move(chain));
 
     assignBusOutputs();
@@ -281,6 +302,14 @@ void DrumGridPlugin::removeChain(int chainIndex) {
 
 const std::vector<std::unique_ptr<DrumGridPlugin::Chain>>& DrumGridPlugin::getChains() const {
     return chains_;
+}
+
+int DrumGridPlugin::getPluginDeviceId(int chainIndex, int pluginIndex) const {
+    auto* chain = getChainByIndex(chainIndex);
+    if (!chain || pluginIndex < 0 || pluginIndex >= static_cast<int>(chain->plugins.size()))
+        return -1;
+    return chain->plugins[static_cast<size_t>(pluginIndex)]->state.getProperty(pluginDeviceIdProp,
+                                                                               -1);
 }
 
 const DrumGridPlugin::Chain* DrumGridPlugin::getChainForNote(int midiNote) const {
@@ -404,6 +433,10 @@ void DrumGridPlugin::loadSampleToPad(int padIndex, const juce::File& file) {
     chain->name = file.getFileNameWithoutExtension();
     chain->plugins.push_back(plugin);
 
+    // Assign a stable DeviceId for macro/mod linking
+    plugin->state.setProperty(pluginDeviceIdProp,
+                              magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
+
     // Init new plugin if we're already initialized
     if (sampleRate_ > 0.0) {
         te::PluginInitialisationInfo initInfo;
@@ -447,6 +480,10 @@ void DrumGridPlugin::loadPluginToPad(int padIndex, const juce::PluginDescription
 
     chain->name = desc.name;
     chain->plugins.push_back(plugin);
+
+    // Assign a stable DeviceId for macro/mod linking
+    plugin->state.setProperty(pluginDeviceIdProp,
+                              magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
 
     // Init new plugin if we're already initialized
     if (sampleRate_ > 0.0) {
@@ -572,6 +609,10 @@ void DrumGridPlugin::addPluginToChain(int chainIndex, const juce::PluginDescript
         plugin->baseClassInitialise(initInfo);
     }
 
+    // Assign a stable DeviceId for macro/mod linking
+    plugin->state.setProperty(pluginDeviceIdProp,
+                              magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
+
     auto chainTree = findChainTree(chainIndex);
     if (chainTree.isValid()) {
         if (insertIndex < 0 || insertIndex >= static_cast<int>(chain->plugins.size()) - 1)
@@ -617,6 +658,10 @@ void DrumGridPlugin::addInternalPluginToChain(int chainIndex, const juce::String
         initInfo.blockSizeSamples = blockSize_;
         plugin->baseClassInitialise(initInfo);
     }
+
+    // Assign a stable DeviceId for macro/mod linking
+    plugin->state.setProperty(pluginDeviceIdProp,
+                              magda::TrackManager::getInstance().allocateDeviceId(), nullptr);
 
     auto chainTree = findChainTree(chainIndex);
     if (chainTree.isValid())
@@ -936,6 +981,16 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
                 continue;
             auto plugin = edit.getPluginCache().getOrCreatePluginFor(pluginState);
             if (plugin) {
+                // Ensure a stable DeviceId exists for macro/mod linking
+                if (!pluginState.hasProperty(pluginDeviceIdProp)) {
+                    pluginState.setProperty(pluginDeviceIdProp,
+                                            magda::TrackManager::getInstance().allocateDeviceId(),
+                                            nullptr);
+                } else {
+                    int restoredId = pluginState.getProperty(pluginDeviceIdProp);
+                    magda::TrackManager::getInstance().ensureDeviceIdAbove(restoredId);
+                }
+
                 chain->plugins.push_back(plugin);
 
                 if (sampleRate_ > 0.0) {
@@ -948,10 +1003,56 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
             }
         }
 
+        syncParamFromChain(chain->index);
         chains_.push_back(std::move(chain));
     }
 
     assignBusOutputs();
+}
+
+//==============================================================================
+// AutomatableParameter sync
+//==============================================================================
+
+void DrumGridPlugin::syncParamFromChain(int chainIndex) {
+    if (chainIndex < 0 || chainIndex >= maxPads)
+        return;
+
+    auto idx = static_cast<size_t>(chainIndex);
+
+    // Find the chain's CachedValues via its ValueTree
+    auto chainTree = findChainTree(chainIndex);
+    if (!chainTree.isValid())
+        return;
+
+    float level = chainTree.getProperty(padLevelId, 0.0f);
+    float pan = chainTree.getProperty(padPanId, 0.0f);
+
+    if (levelParams_[idx] != nullptr)
+        levelParams_[idx]->setParameter(level, juce::dontSendNotification);
+    if (panParams_[idx] != nullptr)
+        panParams_[idx]->setParameter(pan, juce::dontSendNotification);
+}
+
+void DrumGridPlugin::valueTreePropertyChanged(juce::ValueTree& tree,
+                                              const juce::Identifier& property) {
+    // Only respond to chain subtree changes (not the plugin root)
+    if (!tree.hasType(chainTreeId))
+        return;
+
+    int chainIndex = tree.getProperty(chainIndexId, -1);
+    if (chainIndex < 0 || chainIndex >= maxPads)
+        return;
+
+    auto idx = static_cast<size_t>(chainIndex);
+
+    if (property == padLevelId && levelParams_[idx] != nullptr) {
+        float val = tree.getProperty(padLevelId, 0.0f);
+        levelParams_[idx]->setParameter(val, juce::dontSendNotification);
+    } else if (property == padPanId && panParams_[idx] != nullptr) {
+        float val = tree.getProperty(padPanId, 0.0f);
+        panParams_[idx]->setParameter(val, juce::dontSendNotification);
+    }
 }
 
 }  // namespace magda::daw::audio

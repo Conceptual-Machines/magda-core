@@ -143,6 +143,8 @@ void PadDeviceSlot::setSampler(daw::audio::MagdaSamplerPlugin* sampler) {
 
 void PadDeviceSlot::clear() {
     plugin_ = nullptr;
+    pluginDeviceId_ = magda::INVALID_DEVICE_ID;
+    visibleParamCount_ = 0;
     nameLabel_.setText("", juce::dontSendNotification);
     samplerUI_.reset();
     for (auto& slot : paramSlots_)
@@ -172,10 +174,6 @@ void PadDeviceSlot::setCollapsed(bool collapsed) {
 
 void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
     preferredWidth_ = SAMPLER_SLOT_WIDTH;
-    // Hide param slots
-    for (auto& slot : paramSlots_)
-        if (slot)
-            slot->setVisible(false);
     uiButton_->setVisible(false);
 
     nameLabel_.setText("Sampler", juce::dontSendNotification);
@@ -234,6 +232,11 @@ void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
                                 sampler->getSampleLengthSeconds());
 
     samplerUI_->setVisible(true);
+
+    // Hide param slots — sampler uses LinkableTextSliders in SamplerUI instead
+    for (auto& slot : paramSlots_)
+        if (slot)
+            slot->setVisible(false);
 }
 
 void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
@@ -263,10 +266,12 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
 
     // Populate param slots
     auto params = plugin->getAutomatableParameters();
+    visibleParamCount_ = params.size();
     for (int i = 0; i < PLUGIN_PARAM_SLOTS; ++i) {
         auto& slot = paramSlots_[static_cast<size_t>(i)];
         if (i < params.size()) {
             auto* param = params[i];
+            slot->setParamIndex(i);
             slot->setParamName(param->getParameterName());
             slot->setParamValue(param->getCurrentNormalisedValue());
             slot->onValueChanged = [param](double value) {
@@ -282,6 +287,44 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
     constexpr int paramsPerRow = 8;
     constexpr int PARAM_CELL_WIDTH = 48;
     preferredWidth_ = PARAM_CELL_WIDTH * paramsPerRow;
+}
+
+void PadDeviceSlot::setLinkContext(magda::DeviceId deviceId, const magda::ChainNodePath& devicePath,
+                                   const magda::MacroArray* macros, const magda::ModArray* mods,
+                                   const magda::MacroArray* trackMacros,
+                                   const magda::ModArray* trackMods) {
+    pluginDeviceId_ = deviceId;
+
+    // Wire external plugin ParamSlotComponents
+    for (int i = 0; i < PLUGIN_PARAM_SLOTS; ++i) {
+        auto& slot = paramSlots_[static_cast<size_t>(i)];
+        slot->setDeviceId(deviceId);
+        slot->setDevicePath(devicePath);
+        slot->setAvailableMacros(macros);
+        slot->setAvailableMods(mods);
+        slot->setAvailableTrackMacros(trackMacros);
+        slot->setAvailableTrackMods(trackMods);
+    }
+
+    // Wire sampler LinkableTextSliders
+    if (samplerUI_) {
+        auto sliders = samplerUI_->getLinkableSliders();
+        for (int i = 0; i < static_cast<int>(sliders.size()); ++i) {
+            auto* slider = sliders[static_cast<size_t>(i)];
+            int paramIdx = slider->getParamIndex() >= 0 ? slider->getParamIndex() : i;
+            slider->setLinkContext(deviceId, paramIdx, devicePath);
+            slider->setAvailableMacros(macros);
+            slider->setAvailableMods(mods);
+            slider->setAvailableTrackMacros(trackMacros);
+            slider->setAvailableTrackMods(trackMods);
+        }
+    }
+}
+
+std::vector<LinkableTextSlider*> PadDeviceSlot::getLinkableSliders() {
+    if (samplerUI_)
+        return samplerUI_->getLinkableSliders();
+    return {};
 }
 
 void PadDeviceSlot::paint(juce::Graphics& g) {
@@ -389,10 +432,9 @@ void PadDeviceSlot::resized() {
             samplerUI_->setVisible(isSampler);
         if (!isSampler) {
             // Restore param slot visibility for external plugins
-            auto params = plugin_->getAutomatableParameters();
             for (int i = 0; i < PLUGIN_PARAM_SLOTS; ++i) {
                 if (paramSlots_[static_cast<size_t>(i)])
-                    paramSlots_[static_cast<size_t>(i)]->setVisible(i < params.size());
+                    paramSlots_[static_cast<size_t>(i)]->setVisible(i < visibleParamCount_);
             }
         }
     }
@@ -428,8 +470,6 @@ void PadDeviceSlot::resized() {
         constexpr int paramRows = 4;
         int cellWidth = contentArea.getWidth() / paramCols;
         int cellHeight = contentArea.getHeight() / paramRows;
-        DBG("  -> FX params: contentArea.width=" + juce::String(contentArea.getWidth()) +
-            " cellWidth=" + juce::String(cellWidth));
 
         auto labelFont = FontManager::getInstance().getUIFont(
             DebugSettings::getInstance().getParamLabelFontSize());

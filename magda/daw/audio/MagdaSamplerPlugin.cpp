@@ -503,6 +503,7 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
     float decay = juce::jlimit(0.001f, 5.0f, decayParam->getCurrentValue());
     float sustain = juce::jlimit(0.0f, 1.0f, sustainParam->getCurrentValue());
     float release = juce::jlimit(0.001f, 10.0f, releaseParam->getCurrentValue());
+
     float pitch = juce::jlimit(-24.0f, 24.0f, pitchParam->getCurrentValue());
     float fine = juce::jlimit(-100.0f, 100.0f, fineParam->getCurrentValue());
 

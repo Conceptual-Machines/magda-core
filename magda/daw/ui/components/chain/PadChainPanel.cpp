@@ -33,7 +33,6 @@ PadChainPanel::~PadChainPanel() {
 }
 
 void PadChainPanel::showPadChain(int padIndex) {
-    DBG("PadChainPanel::showPadChain - setting currentPadIndex=" + juce::String(padIndex));
     currentPadIndex_ = padIndex;
     rebuildSlots();
 }
@@ -46,7 +45,6 @@ void PadChainPanel::clear() {
 }
 
 void PadChainPanel::refresh() {
-    DBG("PadChainPanel::refresh() called, currentPadIndex=" + juce::String(currentPadIndex_));
     if (currentPadIndex_ >= 0)
         rebuildSlots();
 }
@@ -81,6 +79,34 @@ void PadChainPanel::setCollapsedPlugins(const std::vector<tracktion::engine::Plu
         onLayoutChanged();
 }
 
+void PadChainPanel::setLinkContext(const magda::ChainNodePath& devicePath,
+                                   const magda::MacroArray* macros, const magda::ModArray* mods,
+                                   const magda::MacroArray* trackMacros,
+                                   const magda::ModArray* trackMods) {
+    devicePath_ = devicePath;
+    macros_ = macros;
+    mods_ = mods;
+    trackMacros_ = trackMacros;
+    trackMods_ = trackMods;
+    // Apply to existing slots
+    updateLinkContext();
+}
+
+void PadChainPanel::updateLinkContext() {
+    if (currentPadIndex_ < 0 || !getPluginSlots)
+        return;
+    auto slotInfos = getPluginSlots(currentPadIndex_);
+    for (size_t i = 0; i < slots_.size() && i < slotInfos.size(); ++i) {
+        applyLinkContextToSlot(*slots_[i], slotInfos[i]);
+    }
+}
+
+void PadChainPanel::applyLinkContextToSlot(PadDeviceSlot& slot, const PluginSlotInfo& info) {
+    if (info.deviceId != magda::INVALID_DEVICE_ID) {
+        slot.setLinkContext(info.deviceId, devicePath_, macros_, mods_, trackMacros_, trackMods_);
+    }
+}
+
 int PadChainPanel::getContentWidth() const {
     // Must match resized() calculation: 2px left padding + slots + arrows + 2px right padding
     // plus DROP_ZONE_WIDTH (reserved outside the viewport)
@@ -111,15 +137,8 @@ void PadChainPanel::rebuildSlots() {
         return;
 
     auto slotInfos = getPluginSlots(currentPadIndex_);
-    DBG("PadChainPanel::rebuildSlots - pad " + juce::String(currentPadIndex_) + " has " +
-        juce::String((int)slotInfos.size()) +
-        " plugins, collapsedPlugins=" + juce::String((int)collapsedPlugins.size()));
-
     for (size_t i = 0; i < slotInfos.size(); ++i) {
         auto& info = slotInfos[i];
-        DBG("  Slot " + juce::String((int)i) + ": " + info.name +
-            " isSampler=" + juce::String(info.isSampler ? "true" : "false") +
-            " plugin=" + juce::String::toHexString((juce::pointer_sized_int)info.plugin));
 
         auto slot = std::make_unique<PadDeviceSlot>();
 
@@ -186,17 +205,21 @@ void PadChainPanel::rebuildSlots() {
 
         // Set plugin content
         if (info.isSampler) {
-            DBG("    Setting up as sampler");
             slot->setSampler(dynamic_cast<daw::audio::MagdaSamplerPlugin*>(info.plugin));
         } else if (info.plugin) {
-            DBG("    Setting up as external plugin");
             slot->setPlugin(info.plugin);
         }
+
+        // Apply link mode context (deviceId, macros, mods)
+        applyLinkContextToSlot(*slot, info);
+
+        // Let DeviceSlotComponent wire link callbacks on param slots
+        if (onSlotSetup)
+            onSlotSetup(*slot, info);
 
         // Restore collapsed state from before rebuild
         if (info.plugin && std::find(collapsedPlugins.begin(), collapsedPlugins.end(),
                                      info.plugin) != collapsedPlugins.end()) {
-            DBG("    Restoring collapsed state for " + info.name);
             slot->setCollapsed(true);
         }
 
@@ -223,23 +246,14 @@ void PadChainPanel::rebuildSlots() {
 // =============================================================================
 
 bool PadChainPanel::isInterestedInDragSource(const SourceDetails& details) {
-    if (currentPadIndex_ < 0) {
-        DBG("PadChainPanel::isInterestedInDragSource - NO (currentPadIndex_ < 0)");
+    if (currentPadIndex_ < 0)
         return false;
-    }
-    if (auto* obj = details.description.getDynamicObject()) {
-        bool interested = obj->getProperty("type").toString() == "plugin";
-        DBG("PadChainPanel::isInterestedInDragSource - " + juce::String(interested ? "YES" : "NO") +
-            " type=" + obj->getProperty("type").toString() +
-            " padIndex=" + juce::String(currentPadIndex_));
-        return interested;
-    }
-    DBG("PadChainPanel::isInterestedInDragSource - NO (no DynamicObject)");
+    if (auto* obj = details.description.getDynamicObject())
+        return obj->getProperty("type").toString() == "plugin";
     return false;
 }
 
 void PadChainPanel::itemDragEnter(const SourceDetails& details) {
-    DBG("PadChainPanel::itemDragEnter - x=" + juce::String(details.localPosition.getX()));
     dropInsertIndex_ = calculateInsertIndex(details.localPosition.getX());
     repaint();
 }
@@ -253,7 +267,6 @@ void PadChainPanel::itemDragMove(const SourceDetails& details) {
 }
 
 void PadChainPanel::itemDragExit(const SourceDetails&) {
-    DBG("PadChainPanel::itemDragExit");
     dropInsertIndex_ = -1;
     repaint();
 }
@@ -262,31 +275,15 @@ void PadChainPanel::itemDropped(const SourceDetails& details) {
     int insertIdx = dropInsertIndex_;
     dropInsertIndex_ = -1;
 
-    DBG("PadChainPanel::itemDropped - padIndex=" + juce::String(currentPadIndex_) +
-        " insertIdx=" + juce::String(insertIdx) +
-        " onPluginDropped=" + juce::String(onPluginDropped ? "SET" : "NULL") +
-        " numSlotsBefore=" + juce::String(static_cast<int>(slots_.size())));
-
     if (currentPadIndex_ < 0) {
-        DBG("  Invalid pad index, ignoring drop");
         repaint();
         return;
     }
 
     if (auto* obj = details.description.getDynamicObject()) {
-        DBG("  Plugin drop: type=" + obj->getProperty("type").toString() +
-            " fileOrId=" + obj->getProperty("fileOrIdentifier").toString() +
-            " isExternal=" + obj->getProperty("isExternal").toString() +
-            " uniqueId=" + obj->getProperty("uniqueId").toString());
         if (onPluginDropped)
             onPluginDropped(currentPadIndex_, *obj, insertIdx);
-        else
-            DBG("  WARNING: onPluginDropped callback is not set!");
-    } else {
-        DBG("  WARNING: dropped item has no DynamicObject");
     }
-
-    DBG("  numSlotsAfter=" + juce::String(static_cast<int>(slots_.size())));
     repaint();
 }
 
@@ -340,16 +337,6 @@ void PadChainPanel::resized() {
     int scrollbarHeight = needsScrollbar ? viewport_.getScrollBarThickness() : 0;
     int height = area.getHeight() - scrollbarHeight;
 
-    DBG("PadChainPanel::resized - bounds=" + getBounds().toString() + " area.w=" +
-        juce::String(area.getWidth()) + " totalContentWidth=" + juce::String(totalContentWidth) +
-        " needsScrollbar=" + juce::String(needsScrollbar ? "YES" : "NO") +
-        " numSlots=" + juce::String((int)slots_.size()));
-    for (size_t i = 0; i < slots_.size(); ++i) {
-        DBG("  slot[" + juce::String((int)i) +
-            "] preferredWidth=" + juce::String(slots_[i]->getPreferredWidth()) +
-            " collapsed=" + juce::String(slots_[i]->isCollapsed() ? "YES" : "NO"));
-    }
-
     int x = 2;
     int viewportWidth = area.getWidth();
     for (size_t i = 0; i < slots_.size(); ++i) {
@@ -367,8 +354,6 @@ void PadChainPanel::resized() {
     addButton_.setBounds(x + 4, (height - 20) / 2, 20, 20);
 
     x += 4 + 20 + 2;
-    DBG("  containerWidth=" + juce::String(juce::jmax(x, area.getWidth())) +
-        " x=" + juce::String(x));
     container_.setSize(juce::jmax(x, area.getWidth()), height);
 }
 

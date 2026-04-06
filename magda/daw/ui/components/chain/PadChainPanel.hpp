@@ -7,6 +7,10 @@
 #include <vector>
 
 #include "PadDeviceSlot.hpp"
+#include "core/MacroInfo.hpp"
+#include "core/ModInfo.hpp"
+#include "core/SelectionManager.hpp"
+#include "core/TypeIds.hpp"
 
 namespace tracktion {
 inline namespace engine {
@@ -39,6 +43,8 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
         bool isSampler = false;
         tracktion::engine::Plugin* plugin = nullptr;
         float gainDb = 0.0f;
+        magda::DeviceId deviceId =
+            magda::INVALID_DEVICE_ID;  // MAGDA DeviceId for macro/mod linking
         std::function<std::pair<float, float>()> getMeterLevels;
         std::function<void(float)> onGainDbChanged;
     };
@@ -76,6 +82,18 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
     // Called when the "+" button is clicked to add a plugin to the chain
     std::function<void(int padIndex)> onAddDeviceClicked;
 
+    // Called after a PadDeviceSlot is created/rebuilt, so DeviceSlotComponent can wire
+    // link mode callbacks on its ParamSlotComponents.
+    std::function<void(PadDeviceSlot& slot, const PluginSlotInfo& info)> onSlotSetup;
+
+    /** Set link mode context so PadDeviceSlots can participate in macro/mod linking. */
+    void setLinkContext(const magda::ChainNodePath& devicePath, const magda::MacroArray* macros,
+                        const magda::ModArray* mods, const magda::MacroArray* trackMacros,
+                        const magda::ModArray* trackMods);
+
+    /** Update link mode context on existing slots (called when mod/macro data changes). */
+    void updateLinkContext();
+
     // DragAndDropTarget
     bool isInterestedInDragSource(const SourceDetails& details) override;
     void itemDragEnter(const SourceDetails& details) override;
@@ -99,7 +117,15 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
     juce::Component container_;
     int dropInsertIndex_ = -1;
 
+    // Link mode context (from parent DeviceSlotComponent)
+    magda::ChainNodePath devicePath_;
+    const magda::MacroArray* macros_ = nullptr;
+    const magda::ModArray* mods_ = nullptr;
+    const magda::MacroArray* trackMacros_ = nullptr;
+    const magda::ModArray* trackMods_ = nullptr;
+
     void rebuildSlots();
+    void applyLinkContextToSlot(PadDeviceSlot& slot, const PluginSlotInfo& info);
     int calculateInsertIndex(int mouseX) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PadChainPanel)

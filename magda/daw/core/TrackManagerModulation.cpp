@@ -1012,12 +1012,8 @@ void TrackManager::setDeviceMacroTarget(const ChainNodePath& devicePath, int mac
         if (!device->macros[macroIndex].getLink(target)) {
             MacroLink newLink;
             newLink.target = target;
-            newLink.amount = 1.0f;  // Default amount (full range)
-            // Default bipolar from parameter's bipolarModulation flag
-            if (target.paramIndex >= 0 &&
-                target.paramIndex < static_cast<int>(device->parameters.size())) {
-                newLink.bipolar = device->parameters[target.paramIndex].bipolarModulation;
-            }
+            newLink.amount = 0.3f;    // Default amount (30% — adjustable via overlay)
+            newLink.bipolar = false;  // Default unipolar
             device->macros[macroIndex].links.push_back(newLink);
             // Use lighter notification — adding a macro link doesn't change device
             // structure, and a full rebuild would destroy the active link mode UI.
@@ -1355,7 +1351,7 @@ void TrackManager::setTrackMacroTarget(TrackId trackId, int macroIndex, MacroTar
     if (!track->macros[macroIndex].getLink(target)) {
         MacroLink newLink;
         newLink.target = target;
-        newLink.amount = 1.0f;
+        newLink.amount = 0.3f;
         track->macros[macroIndex].links.push_back(newLink);
         notifyDeviceModifiersChanged(trackId);
     }

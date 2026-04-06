@@ -250,7 +250,7 @@ void ParamSlotComponent::handleLinkModeClick() {
                                                     modPtr->target.paramIndex == paramIndex_);
 
         float initialAmount =
-            isLinked ? (existingLink ? existingLink->amount : modPtr->amount) : 1.0f;
+            isLinked ? (existingLink ? existingLink->amount : modPtr->amount) : 0.3f;
 
         if (!isLinked) {
             if (onModLinkedWithAmount) {
@@ -270,7 +270,7 @@ void ParamSlotComponent::handleLinkModeClick() {
             bool isLinked = existingLink != nullptr || (macroPtr->target.deviceId == deviceId_ &&
                                                         macroPtr->target.paramIndex == paramIndex_);
 
-            float initialAmount = isLinked ? (existingLink ? existingLink->amount : 1.0f) : 1.0f;
+            float initialAmount = isLinked ? (existingLink ? existingLink->amount : 0.3f) : 0.3f;
 
             if (!isLinked) {
                 if (onMacroLinkedWithAmount) {
