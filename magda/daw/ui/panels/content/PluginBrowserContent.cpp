@@ -339,8 +339,8 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     std::vector<PluginBrowserInfo> list;
     list.push_back(PluginBrowserInfo::createInternal("Test Tone", "tone", false));
     list.push_back(PluginBrowserInfo::createInternal("4OSC Synth", "4osc", true));
-    list.push_back(PluginBrowserInfo::createInternal(audio::MagdaSamplerPlugin::getPluginName(),
-                                                     audio::MagdaSamplerPlugin::xmlTypeName, true));
+    list.push_back(
+        PluginBrowserInfo::createInternal("Sampler", audio::MagdaSamplerPlugin::xmlTypeName, true));
     list.push_back(PluginBrowserInfo::createInternal(audio::DrumGridPlugin::getPluginName(),
                                                      audio::DrumGridPlugin::xmlTypeName, true));
     list.push_back(PluginBrowserInfo::createInternal(audio::MidiChordEnginePlugin::getPluginName(),

@@ -720,12 +720,7 @@ void DrumGridUI::resized() {
     gridArea.removeFromBottom(2);
 
     constexpr int padGap = 3;
-    constexpr int minPadSize = 40;
-    constexpr int maxPadSize = 65;
-    // Use only width to determine pad size — the grid width is fixed (kPadGridWidth),
-    // so pad size should not fluctuate with container height changes (e.g., scrollbar toggling).
-    int padSize = (gridArea.getWidth() - padGap * (kGridCols - 1)) / kGridCols;
-    padSize = juce::jlimit(minPadSize, maxPadSize, padSize);
+    constexpr int padSize = 55;
 
     for (int i = 0; i < kPadsPerPage; ++i) {
         int row = i / kGridCols;

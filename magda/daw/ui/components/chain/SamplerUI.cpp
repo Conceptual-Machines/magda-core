@@ -154,6 +154,7 @@ SamplerUI::SamplerUI() {
     sustainSlider_.onValueChanged = [this](double value) {
         if (onParameterChanged)
             onParameterChanged(2, static_cast<float>(value));
+        repaint();
     };
     addAndMakeVisible(sustainSlider_);
 
@@ -446,11 +447,6 @@ SamplerUI::DragTarget SamplerUI::markerHitTest(const juce::MouseEvent& e,
     float mx = static_cast<float>(e.getPosition().x);
     int my = e.getPosition().y;
 
-    // Check sample start marker
-    float startX = secondsToPixelX(startSlider_.getValue(), waveArea);
-    if (std::abs(mx - startX) <= kMarkerHitPixels)
-        return DragTarget::SampleStart;
-
     // Check sample end marker
     float endX = secondsToPixelX(endSlider_.getValue(), waveArea);
     if (std::abs(mx - endX) <= kMarkerHitPixels)
@@ -471,6 +467,59 @@ SamplerUI::DragTarget SamplerUI::markerHitTest(const juce::MouseEvent& e,
             my < waveArea.getY() + kLoopBarHeight)
             return DragTarget::LoopRegion;
     }
+
+    // Check envelope breakpoints
+    auto envTarget = envHitTest(e, waveArea);
+    if (envTarget != DragTarget::None)
+        return envTarget;
+
+    return DragTarget::None;
+}
+
+SamplerUI::DragTarget SamplerUI::envHitTest(const juce::MouseEvent& e,
+                                            juce::Rectangle<int> waveArea) const {
+    if (!hasWaveform_ || sampleLength_ <= 0.0)
+        return DragTarget::None;
+
+    float mx = static_cast<float>(e.getPosition().x);
+    float my = static_cast<float>(e.getPosition().y);
+    float wY = static_cast<float>(waveArea.getY());
+    float wH = static_cast<float>(waveArea.getHeight());
+
+    double startSec = startSlider_.getValue();
+    float a = static_cast<float>(attackSlider_.getValue());
+    float d = static_cast<float>(decaySlider_.getValue());
+    float s = static_cast<float>(sustainSlider_.getValue());
+    float noteDur = static_cast<float>(endSlider_.getValue() - startSec);
+    float r = static_cast<float>(releaseSlider_.getValue());
+
+    if (noteDur <= 0.0f)
+        return DragTarget::None;
+
+    auto envX = [&](float t) -> float {
+        return secondsToPixelX(startSec + static_cast<double>(t), waveArea);
+    };
+    auto envY = [&](float level) -> float { return wY + wH * (1.0f - level); };
+
+    constexpr float hitR = 8.0f;
+
+    // Attack breakpoint (end of attack = peak)
+    float ax = envX(a);
+    float ay = envY(1.0f);
+    if ((mx - ax) * (mx - ax) + (my - ay) * (my - ay) <= hitR * hitR)
+        return DragTarget::EnvAttack;
+
+    // Decay breakpoint (end of decay = sustain level)
+    float dx = envX(a + d);
+    float dy = envY(s);
+    if ((mx - dx) * (mx - dx) + (my - dy) * (my - dy) <= hitR * hitR)
+        return DragTarget::EnvDecay;
+
+    // Release breakpoint (end of release = zero)
+    float rx = envX(noteDur + r);
+    float ry = envY(0.0f);
+    if ((mx - rx) * (mx - rx) + (my - ry) * (my - ry) <= hitR * hitR)
+        return DragTarget::EnvRelease;
 
     return DragTarget::None;
 }
@@ -509,32 +558,31 @@ void SamplerUI::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Modifier-based placement (shift = loop start, cmd = loop end)
-    if (currentDrag_ == DragTarget::None) {
-        if (e.mods.isShiftDown()) {
-            currentDrag_ = DragTarget::LoopStart;
-        } else {
-            currentDrag_ = DragTarget::SampleStart;
-        }
+    // Shift+click = set loop start
+    if (currentDrag_ == DragTarget::None && e.mods.isShiftDown()) {
+        currentDrag_ = DragTarget::LoopStart;
     }
 
-    double seconds = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
+    if (currentDrag_ == DragTarget::None)
+        return;
 
-    switch (currentDrag_) {
-        case DragTarget::SampleStart:
-            startSlider_.setValue(seconds, juce::sendNotificationSync);
-            break;
-        case DragTarget::SampleEnd:
-            endSlider_.setValue(seconds, juce::sendNotificationSync);
-            break;
-        case DragTarget::LoopStart:
-            loopStartSlider_.setValue(seconds, juce::sendNotificationSync);
-            break;
-        case DragTarget::LoopEnd:
-            loopEndSlider_.setValue(seconds, juce::sendNotificationSync);
-            break;
-        default:
-            break;
+    // For non-envelope targets, set marker position immediately
+    if (currentDrag_ != DragTarget::EnvAttack && currentDrag_ != DragTarget::EnvDecay &&
+        currentDrag_ != DragTarget::EnvRelease) {
+        double seconds = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
+        switch (currentDrag_) {
+            case DragTarget::SampleEnd:
+                endSlider_.setValue(seconds, juce::sendNotificationSync);
+                break;
+            case DragTarget::LoopStart:
+                loopStartSlider_.setValue(seconds, juce::sendNotificationSync);
+                break;
+            case DragTarget::LoopEnd:
+                loopEndSlider_.setValue(seconds, juce::sendNotificationSync);
+                break;
+            default:
+                break;
+        }
     }
     repaint();
 }
@@ -619,12 +667,41 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
         return;
     }
 
+    // Envelope breakpoint dragging
+    if (currentDrag_ == DragTarget::EnvAttack || currentDrag_ == DragTarget::EnvDecay ||
+        currentDrag_ == DragTarget::EnvRelease) {
+        double startSec = startSlider_.getValue();
+        double endSec = endSlider_.getValue();
+        double seconds = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
+        float my = static_cast<float>(e.getPosition().y);
+        float wY = static_cast<float>(waveArea.getY());
+        float wH = static_cast<float>(waveArea.getHeight());
+        float level = 1.0f - (my - wY) / wH;
+
+        if (currentDrag_ == DragTarget::EnvAttack) {
+            // Drag X = attack time (relative to sample start)
+            float newAttack = juce::jlimit(0.001f, 5.0f, static_cast<float>(seconds - startSec));
+            attackSlider_.setValue(newAttack, juce::sendNotificationSync);
+        } else if (currentDrag_ == DragTarget::EnvDecay) {
+            // Drag X = attack + decay time, drag Y = sustain level
+            float attackVal = static_cast<float>(attackSlider_.getValue());
+            float newDecay =
+                juce::jlimit(0.001f, 5.0f, static_cast<float>(seconds - startSec) - attackVal);
+            float newSustain = juce::jlimit(0.0f, 1.0f, level);
+            decaySlider_.setValue(newDecay, juce::sendNotificationSync);
+            sustainSlider_.setValue(newSustain, juce::sendNotificationSync);
+        } else {
+            // Release: drag X = release time (relative to note-off)
+            float newRelease = juce::jlimit(0.001f, 10.0f, static_cast<float>(seconds - endSec));
+            releaseSlider_.setValue(newRelease, juce::sendNotificationSync);
+        }
+        repaint();
+        return;
+    }
+
     double seconds = pixelXToSeconds(static_cast<float>(e.getPosition().x), waveArea);
 
     switch (currentDrag_) {
-        case DragTarget::SampleStart:
-            startSlider_.setValue(seconds, juce::sendNotificationSync);
-            break;
         case DragTarget::SampleEnd:
             endSlider_.setValue(seconds, juce::sendNotificationSync);
             break;
@@ -660,7 +737,6 @@ void SamplerUI::mouseMove(const juce::MouseEvent& e) {
 
     auto target = markerHitTest(e, waveArea);
     switch (target) {
-        case DragTarget::SampleStart:
         case DragTarget::SampleEnd:
         case DragTarget::LoopStart:
         case DragTarget::LoopEnd:
@@ -668,6 +744,11 @@ void SamplerUI::mouseMove(const juce::MouseEvent& e) {
             break;
         case DragTarget::LoopRegion:
             setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+            break;
+        case DragTarget::EnvAttack:
+        case DragTarget::EnvDecay:
+        case DragTarget::EnvRelease:
+            setMouseCursor(juce::MouseCursor::CrosshairCursor);
             break;
         default:
             setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -759,6 +840,52 @@ void SamplerUI::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.7f));
         g.strokePath(waveformPath_, juce::PathStrokeType(0.5f));
         g.restoreState();
+
+        // ADSR envelope overlay
+        if (sampleLength_ > 0.0) {
+            float a = static_cast<float>(attackSlider_.getValue());
+            float d = static_cast<float>(decaySlider_.getValue());
+            float s = static_cast<float>(sustainSlider_.getValue());
+            float r = static_cast<float>(releaseSlider_.getValue());
+            double startSec = startSlider_.getValue();
+            double endSec = endSlider_.getValue();
+            double noteDuration = endSec - startSec;
+
+            if (noteDuration > 0.0) {
+                float wY = static_cast<float>(waveformArea.getY());
+                float wH = static_cast<float>(waveformArea.getHeight());
+
+                // Time points (relative to sample start)
+                float tAttack = a;
+                float tDecay = tAttack + d;
+                // Sustain holds until release begins (at note-off = end of sample region)
+                float tRelease = static_cast<float>(noteDuration);
+                float tEnd = tRelease + r;
+
+                // Convert time offsets (from sample start) to pixel X
+                auto envX = [&](float t) -> float {
+                    return secondsToPixelX(startSec + static_cast<double>(t), waveformArea);
+                };
+                // Envelope level (1.0 = top, 0.0 = bottom) to pixel Y
+                auto envY = [&](float level) -> float { return wY + wH * (1.0f - level); };
+
+                juce::Path envPath;
+                envPath.startNewSubPath(envX(0.0f), envY(0.0f));
+                envPath.lineTo(envX(tAttack), envY(1.0f));
+                envPath.lineTo(envX(tDecay), envY(s));
+                envPath.lineTo(envX(tRelease), envY(s));
+                envPath.lineTo(envX(tEnd), envY(0.0f));
+
+                g.setColour(juce::Colours::white.withAlpha(0.6f));
+                g.strokePath(envPath, juce::PathStrokeType(1.5f));
+
+                // Breakpoint dots
+                constexpr float dotR = 3.0f;
+                g.fillEllipse(envX(tAttack) - dotR, envY(1.0f) - dotR, dotR * 2, dotR * 2);
+                g.fillEllipse(envX(tDecay) - dotR, envY(s) - dotR, dotR * 2, dotR * 2);
+                g.fillEllipse(envX(tEnd) - dotR, envY(0.0f) - dotR, dotR * 2, dotR * 2);
+            }
+        }
 
         // Loop region highlight (semi-transparent green) + top drag bar
         if (loopButton_->isActive() && sampleLength_ > 0.0) {

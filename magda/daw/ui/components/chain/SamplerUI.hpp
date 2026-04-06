@@ -173,7 +173,10 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
         LoopEnd,
         LoopRegion,
         Scroll,
-        Zoom
+        Zoom,
+        EnvAttack,
+        EnvDecay,
+        EnvRelease
     };
     DragTarget currentDrag_ = DragTarget::None;
     double scrollDragStartOffset_ = 0.0;
@@ -190,6 +193,7 @@ class SamplerUI : public juce::Component, public juce::FileDragAndDropTarget, pr
     static constexpr int kMarkerHitPixels = 5;
     static constexpr int kLoopBarHeight = 8;
     DragTarget markerHitTest(const juce::MouseEvent& e, juce::Rectangle<int> waveArea) const;
+    DragTarget envHitTest(const juce::MouseEvent& e, juce::Rectangle<int> waveArea) const;
 
     void setupLabel(juce::Label& label, const juce::String& text);
     void buildWaveformPath(const juce::AudioBuffer<float>* buffer, int width, int height);

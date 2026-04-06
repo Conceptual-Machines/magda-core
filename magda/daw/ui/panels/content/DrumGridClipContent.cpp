@@ -879,6 +879,23 @@ class DrumGridClipGrid : public juce::Component,
             return true;
         }
 
+        // Cmd+D — Duplicate selected notes
+        if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'D') {
+            if (clipId_ == magda::INVALID_CLIP_ID)
+                return true;
+
+            std::vector<size_t> selectedIndices;
+            for (const auto& nc : noteComponents_) {
+                if (nc->isSelected() && nc->getSourceClipId() == clipId_)
+                    selectedIndices.push_back(nc->getNoteIndex());
+            }
+
+            if (!selectedIndices.empty() && onDuplicateNotes)
+                onDuplicateNotes(clipId_, selectedIndices);
+
+            return true;
+        }
+
         return false;
     }
 
