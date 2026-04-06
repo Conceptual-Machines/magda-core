@@ -163,9 +163,31 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
                                         0, numSamples, &chainMidi_, 0.0, rc.editTime, rc.isPlaying,
                                         rc.isScrubbing, rc.isRendering, false);
 
-        for (auto& p : chain->plugins) {
+        for (int pi = 0; pi < static_cast<int>(chain->plugins.size()); ++pi) {
+            auto& p = chain->plugins[static_cast<size_t>(pi)];
             if (p != nullptr)
                 p->applyToBufferWithAutomation(chainRc);
+
+            // Apply per-plugin gain
+            float pluginGain = (pi < static_cast<int>(chain->pluginGains.size()))
+                                   ? chain->pluginGains[static_cast<size_t>(pi)]
+                                   : 1.0f;
+            if (pluginGain != 1.0f)
+                scratchBuffer.applyGain(pluginGain);
+
+            // Measure per-plugin peak (post-gain, pre-chain-gain)
+            if (chain->index >= 0 && chain->index < maxPads && pi < maxFxPerChain) {
+                auto& meter =
+                    pluginMeters_[static_cast<size_t>(chain->index)][static_cast<size_t>(pi)];
+                float pL = scratchBuffer.getMagnitude(0, 0, numSamples);
+                float pR = scratchChannels >= 2 ? scratchBuffer.getMagnitude(1, 0, numSamples) : pL;
+                auto prevL = meter.peakL.load(std::memory_order_relaxed);
+                if (pL > prevL)
+                    meter.peakL.store(pL, std::memory_order_relaxed);
+                auto prevR = meter.peakR.load(std::memory_order_relaxed);
+                if (pR > prevR)
+                    meter.peakR.store(pR, std::memory_order_relaxed);
+            }
         }
 
         // Apply gain/pan and sum into output
@@ -761,6 +783,31 @@ std::pair<float, float> DrumGridPlugin::consumeChainPeak(int chainIndex) {
     if (chainIndex < 0 || chainIndex >= maxPads)
         return {0.0f, 0.0f};
     auto& m = chainMeters_[static_cast<size_t>(chainIndex)];
+    float l = m.peakL.exchange(0.0f, std::memory_order_relaxed);
+    float r = m.peakR.exchange(0.0f, std::memory_order_relaxed);
+    return {l, r};
+}
+
+void DrumGridPlugin::setChainPluginGain(int chainIndex, int pluginIndex, float gainLinear) {
+    auto* chain = getChainByIndexMutable(chainIndex);
+    if (!chain || pluginIndex < 0)
+        return;
+    if (pluginIndex >= static_cast<int>(chain->pluginGains.size()))
+        chain->pluginGains.resize(static_cast<size_t>(pluginIndex + 1), 1.0f);
+    chain->pluginGains[static_cast<size_t>(pluginIndex)] = gainLinear;
+}
+
+float DrumGridPlugin::getChainPluginGain(int chainIndex, int pluginIndex) const {
+    auto* chain = getChainByIndex(chainIndex);
+    if (!chain || pluginIndex < 0 || pluginIndex >= static_cast<int>(chain->pluginGains.size()))
+        return 1.0f;
+    return chain->pluginGains[static_cast<size_t>(pluginIndex)];
+}
+
+std::pair<float, float> DrumGridPlugin::consumeChainPluginPeak(int chainIndex, int pluginIndex) {
+    if (chainIndex < 0 || chainIndex >= maxPads || pluginIndex < 0 || pluginIndex >= maxFxPerChain)
+        return {0.0f, 0.0f};
+    auto& m = pluginMeters_[static_cast<size_t>(chainIndex)][static_cast<size_t>(pluginIndex)];
     float l = m.peakL.exchange(0.0f, std::memory_order_relaxed);
     float r = m.peakR.exchange(0.0f, std::memory_order_relaxed);
     return {l, r};

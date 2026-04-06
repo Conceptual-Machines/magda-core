@@ -179,6 +179,11 @@ void PadChainPanel::rebuildSlots() {
             }
         };
 
+        // Wire gain and meter callbacks
+        slot->getMeterLevels = info.getMeterLevels;
+        slot->onGainDbChanged = info.onGainDbChanged;
+        slot->setGainDb(info.gainDb);
+
         // Set plugin content
         if (info.isSampler) {
             DBG("    Setting up as sampler");

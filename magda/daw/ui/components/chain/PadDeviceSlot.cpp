@@ -59,16 +59,47 @@ PadDeviceSlot::PadDeviceSlot() {
     };
     addAndMakeVisible(*onButton_);
 
+    // Gain slider (header, right side)
+    gainSlider_.setRange(-60.0, 12.0, 0.1);
+    gainSlider_.setValue(0.0, juce::dontSendNotification);
+    gainSlider_.setValueFormatter([](double v) -> juce::String {
+        if (v <= -60.0)
+            return "-inf";
+        return juce::String(v, 1) + " dB";
+    });
+    gainSlider_.onValueChanged = [this](double value) {
+        if (onGainDbChanged)
+            onGainDbChanged(static_cast<float>(value));
+    };
+    addAndMakeVisible(gainSlider_);
+
+    // Level meter (right edge of content area)
+    addAndMakeVisible(levelMeter_);
+
     // Create param slots
     for (int i = 0; i < PLUGIN_PARAM_SLOTS; ++i) {
         paramSlots_[static_cast<size_t>(i)] = std::make_unique<ParamSlotComponent>(i);
         addChildComponent(*paramSlots_[static_cast<size_t>(i)]);
     }
+
+    startTimerHz(30);
 }
 
 PadDeviceSlot::~PadDeviceSlot() {
+    stopTimer();
     nameLabel_.removeMouseListener(this);
     deleteButton_.setLookAndFeel(nullptr);
+}
+
+void PadDeviceSlot::setGainDb(float db) {
+    gainSlider_.setValue(static_cast<double>(db), juce::dontSendNotification);
+}
+
+void PadDeviceSlot::timerCallback() {
+    if (getMeterLevels) {
+        auto [l, r] = getMeterLevels();
+        levelMeter_.setLevels(l, r);
+    }
 }
 
 void PadDeviceSlot::setPlugin(te::Plugin* plugin) {
@@ -333,8 +364,13 @@ void PadDeviceSlot::resized() {
         for (auto& slot : paramSlots_)
             if (slot)
                 slot->setVisible(false);
+        gainSlider_.setVisible(false);
+        levelMeter_.setVisible(false);
         return;
     }
+
+    gainSlider_.setVisible(true);
+    levelMeter_.setVisible(true);
 
     // Expanded: restore visibility and text colour
     nameLabel_.setVisible(true);
@@ -353,6 +389,12 @@ void PadDeviceSlot::resized() {
         }
     }
 
+    // Meter strip on the right edge (full height minus header)
+    auto meterArea = area;
+    meterArea.removeFromTop(HEADER_HEIGHT + 2);
+    levelMeter_.setBounds(meterArea.removeFromRight(METER_WIDTH).reduced(1, 2));
+    area.removeFromRight(METER_WIDTH);
+
     // Header
     auto headerRow = area.removeFromTop(HEADER_HEIGHT);
     int btnSize = HEADER_HEIGHT;
@@ -367,6 +409,9 @@ void PadDeviceSlot::resized() {
         uiButton_->setBounds(headerRow.removeFromRight(btnSize));
         headerRow.removeFromRight(2);
     }
+
+    gainSlider_.setBounds(headerRow.removeFromRight(GAIN_SLIDER_WIDTH));
+    headerRow.removeFromRight(2);
 
     nameLabel_.setBounds(headerRow);
 

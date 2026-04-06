@@ -5,10 +5,13 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <utility>
 
 #include "ParamSlotComponent.hpp"
 #include "SamplerUI.hpp"
 #include "ui/components/common/SvgButton.hpp"
+#include "ui/components/common/TextSlider.hpp"
+#include "ui/components/mixer/LevelMeter.hpp"
 
 namespace tracktion {
 inline namespace engine {
@@ -31,7 +34,7 @@ namespace magda::daw::ui {
  *   [ SamplerUI / Param Grid     ]   <- Content
  *   [                            ]
  */
-class PadDeviceSlot : public juce::Component {
+class PadDeviceSlot : public juce::Component, private juce::Timer {
   public:
     PadDeviceSlot();
     ~PadDeviceSlot() override;
@@ -68,6 +71,11 @@ class PadDeviceSlot : public juce::Component {
     std::function<void(const juce::File&)> onSampleDropped;
     std::function<void()> onLoadSampleRequested;
 
+    // Gain and metering (wired from DeviceSlotComponent via PadChainPanel)
+    std::function<std::pair<float, float>()> getMeterLevels;
+    std::function<void(float)> onGainDbChanged;
+    void setGainDb(float db);
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
@@ -78,6 +86,8 @@ class PadDeviceSlot : public juce::Component {
     static constexpr int SAMPLER_SLOT_WIDTH = 650;
     static constexpr int COLLAPSED_WIDTH = 48;
     static constexpr int PLUGIN_PARAM_SLOTS = 32;
+    static constexpr int METER_WIDTH = 8;
+    static constexpr int GAIN_SLIDER_WIDTH = 44;
 
     tracktion::engine::Plugin* plugin_ = nullptr;
     int preferredWidth_ = SLOT_WIDTH;
@@ -89,10 +99,16 @@ class PadDeviceSlot : public juce::Component {
     juce::TextButton deleteButton_;
     std::unique_ptr<magda::SvgButton> uiButton_;
     std::unique_ptr<magda::SvgButton> onButton_;
+    TextSlider gainSlider_;
+
+    // Meter strip (right edge of content area)
+    magda::LevelMeter levelMeter_;
 
     // Content — one of these visible at a time
     std::unique_ptr<SamplerUI> samplerUI_;
     std::array<std::unique_ptr<ParamSlotComponent>, PLUGIN_PARAM_SLOTS> paramSlots_;
+
+    void timerCallback() override;
 
     void setupForSampler(daw::audio::MagdaSamplerPlugin* sampler);
     void setupForExternalPlugin(tracktion::engine::Plugin* plugin);

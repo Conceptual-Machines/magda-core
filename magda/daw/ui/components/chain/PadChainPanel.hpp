@@ -38,6 +38,9 @@ class PadChainPanel : public juce::Component, public juce::DragAndDropTarget {
         juce::String name;
         bool isSampler = false;
         tracktion::engine::Plugin* plugin = nullptr;
+        float gainDb = 0.0f;
+        std::function<std::pair<float, float>()> getMeterLevels;
+        std::function<void(float)> onGainDbChanged;
     };
 
     PadChainPanel();

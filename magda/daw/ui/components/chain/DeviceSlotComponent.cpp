@@ -170,9 +170,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     updateScButtonState();
 
     // Multi-output routing button (only visible for multi-out plugins)
-    multiOutButton_ = std::make_unique<magda::SvgButton>("MultiOut", BinaryData::Output_svg,
-                                                         BinaryData::Output_svgSize);
-    multiOutButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    multiOutButton_ = std::make_unique<magda::SvgButton>("MultiOut", BinaryData::multiout_svg,
+                                                         BinaryData::multiout_svgSize);
+    multiOutButton_->setIconPadding(2.0f);
+    multiOutButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    multiOutButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
     multiOutButton_->setActiveColor(juce::Colours::white);
     multiOutButton_->onClick = [this]() { showMultiOutMenu(); };
     multiOutButton_->setVisible(device_.multiOut.isMultiOut);
@@ -181,8 +183,10 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // UI button (toggle plugin window) - open in new icon
     uiButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
                                                    BinaryData::open_in_new_svgSize);
+    uiButton_->setIconPadding(2.5f);
+    uiButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     uiButton_->setClickingTogglesState(true);
-    uiButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
+    uiButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
     uiButton_->setActiveColor(juce::Colours::white);
     uiButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     uiButton_->onClick = [this]() {
@@ -2283,7 +2287,9 @@ void DeviceSlotComponent::createCustomUI() {
             if (!chain)
                 return result;
 
-            for (auto& plugin : chain->plugins) {
+            int chainIndex = chain->index;
+            for (int pi = 0; pi < static_cast<int>(chain->plugins.size()); ++pi) {
+                auto& plugin = chain->plugins[static_cast<size_t>(pi)];
                 if (!plugin)
                     continue;
                 PadChainPanel::PluginSlotInfo info;
@@ -2291,6 +2297,19 @@ void DeviceSlotComponent::createCustomUI() {
                 info.isSampler =
                     dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get()) != nullptr;
                 info.name = plugin->getName();
+
+                // Wire per-plugin gain and peak meter
+                float gainLinear = dg->getChainPluginGain(chainIndex, pi);
+                info.gainDb = juce::Decibels::gainToDecibels(gainLinear);
+                info.getMeterLevels = [getDrumGrid, chainIndex, pi]() -> std::pair<float, float> {
+                    auto* dg2 = getDrumGrid();
+                    return dg2 ? dg2->consumeChainPluginPeak(chainIndex, pi)
+                               : std::make_pair(0.0f, 0.0f);
+                };
+                info.onGainDbChanged = [getDrumGrid, chainIndex, pi](float db) {
+                    if (auto* dg2 = getDrumGrid())
+                        dg2->setChainPluginGain(chainIndex, pi, juce::Decibels::decibelsToGain(db));
+                };
                 result.push_back(info);
             }
             return result;

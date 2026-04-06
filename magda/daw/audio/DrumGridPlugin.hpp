@@ -53,6 +53,7 @@ class DrumGridPlugin : public te::Plugin {
         int rootNote = 60;  // remap base: instrumentNote = rootNote + (incoming - lowNote)
         juce::String name;
         std::vector<te::Plugin::Ptr> plugins;
+        std::vector<float> pluginGains;  // per-plugin linear gain (parallel to plugins[])
         juce::CachedValue<float> level;
         juce::CachedValue<float> pan;
         juce::CachedValue<bool> mute;
@@ -141,6 +142,12 @@ class DrumGridPlugin : public te::Plugin {
     };
     std::pair<float, float> consumeChainPeak(int chainIndex);
 
+    // Per-plugin gain and peak metering within a chain
+    static constexpr int maxFxPerChain = 8;
+    void setChainPluginGain(int chainIndex, int pluginIndex, float gainLinear);
+    float getChainPluginGain(int chainIndex, int pluginIndex) const;
+    std::pair<float, float> consumeChainPluginPeak(int chainIndex, int pluginIndex);
+
     // Mixer expand/collapse state (persisted in ValueTree)
     bool isMixerExpanded() const {
         return mixerExpanded_.get();
@@ -192,6 +199,7 @@ class DrumGridPlugin : public te::Plugin {
     int nextChainIndex_ = 0;
     std::array<std::atomic<bool>, maxPads> padTriggered_{};
     std::array<ChainMeterData, maxPads> chainMeters_{};
+    std::array<std::array<ChainMeterData, maxFxPerChain>, maxPads> pluginMeters_{};
     juce::CachedValue<bool> mixerExpanded_;
     juce::CachedValue<bool> multiOutEnabled_;
 
