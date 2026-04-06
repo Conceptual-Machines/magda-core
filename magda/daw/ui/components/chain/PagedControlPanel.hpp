@@ -109,8 +109,8 @@ class PagedControlPanel : public juce::Component {
     int minPages_ = 2;  // Minimum pages before remove is disabled
 
     // Navigation controls
-    juce::TextButton prevButton_;
-    juce::TextButton nextButton_;
+    std::unique_ptr<juce::ArrowButton> prevButton_;
+    std::unique_ptr<juce::ArrowButton> nextButton_;
     juce::TextButton addPageButton_;
     juce::TextButton removePageButton_;
     juce::Label pageLabel_;

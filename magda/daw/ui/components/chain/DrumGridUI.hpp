@@ -51,7 +51,7 @@ class DrumGridUI : public juce::Component,
     static constexpr int kPluginParamSlots = 16;
 
     // Fixed panel widths
-    static constexpr int kToggleColWidth = 20;
+    static constexpr int kToggleColWidth = 28;
     static constexpr int kPadGridWidth = 250;
     static constexpr int kChainsPanelWidth = 340;
     static constexpr int kDetailPanelWidth =
@@ -234,8 +234,8 @@ class DrumGridUI : public juce::Component,
     std::array<PadButton, kPadsPerPage> padButtons_;
 
     // Pagination
-    juce::TextButton prevPageButton_{"<"};
-    juce::TextButton nextPageButton_{">"};
+    std::unique_ptr<juce::ArrowButton> prevPageButton_;
+    std::unique_ptr<juce::ArrowButton> nextPageButton_;
     juce::Label pageLabel_;
 
     // Detail panel (compact quick controls row)

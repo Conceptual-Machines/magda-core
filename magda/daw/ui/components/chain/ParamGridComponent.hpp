@@ -83,8 +83,8 @@ class ParamGridComponent : public juce::Component {
 
   private:
     std::unique_ptr<ParamSlotComponent> paramSlots_[NUM_PARAMS];
-    std::unique_ptr<juce::TextButton> prevPageButton_;
-    std::unique_ptr<juce::TextButton> nextPageButton_;
+    std::unique_ptr<juce::ArrowButton> prevPageButton_;
+    std::unique_ptr<juce::ArrowButton> nextPageButton_;
     std::unique_ptr<juce::Label> pageLabel_;
     int currentPage_ = 0;
     int totalPages_ = 1;

@@ -1,35 +1,25 @@
 #include "ParamGridComponent.hpp"
 
+#include "ui/components/chain/DeviceSlotHeaderLayout.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
-#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
 ParamGridComponent::ParamGridComponent() {
     // Pagination controls
-    prevPageButton_ = std::make_unique<juce::TextButton>("<");
-    prevPageButton_->setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
-    prevPageButton_->setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getSecondaryTextColour());
+    prevPageButton_ = makeNavArrowButton("prev", 0.5f);
     prevPageButton_->onClick = [this]() {
         if (onPrevPage)
             onPrevPage();
     };
-    prevPageButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addAndMakeVisible(*prevPageButton_);
 
-    nextPageButton_ = std::make_unique<juce::TextButton>(">");
-    nextPageButton_->setColour(juce::TextButton::buttonColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
-    nextPageButton_->setColour(juce::TextButton::textColourOffId,
-                               DarkTheme::getSecondaryTextColour());
+    nextPageButton_ = makeNavArrowButton("next", 0.0f);
     nextPageButton_->onClick = [this]() {
         if (onNextPage)
             onNextPage();
     };
-    nextPageButton_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addAndMakeVisible(*nextPageButton_);
 
     pageLabel_ = std::make_unique<juce::Label>();
@@ -45,10 +35,7 @@ ParamGridComponent::ParamGridComponent() {
     }
 }
 
-ParamGridComponent::~ParamGridComponent() {
-    prevPageButton_->setLookAndFeel(nullptr);
-    nextPageButton_->setLookAndFeel(nullptr);
-}
+ParamGridComponent::~ParamGridComponent() = default;
 
 void ParamGridComponent::updateParameterSlots(
     const magda::DeviceInfo& device, int currentPage,
@@ -195,9 +182,8 @@ void ParamGridComponent::layoutContent(const juce::Font& labelFont, const juce::
     auto paginationArea = area.removeFromTop(PAGINATION_HEIGHT);
     area.removeFromTop(2);
 
-    constexpr int buttonWidth = 18;
-    prevPageButton_->setBounds(paginationArea.removeFromLeft(buttonWidth));
-    nextPageButton_->setBounds(paginationArea.removeFromRight(buttonWidth));
+    placeNavArrow(*prevPageButton_, paginationArea, true);
+    placeNavArrow(*nextPageButton_, paginationArea, false);
     pageLabel_->setBounds(paginationArea);
 
     // Small gap

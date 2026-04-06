@@ -1302,15 +1302,17 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    // Header layout: [Macro] [M] [Name] [UI] [...] [gain slider] [SC] [MO] [on] [X]
+    // Header layout: [Macro] [M] [Name] [UI] [gain slider] [SC] [MO] [on] [X]
     // Note: delete (X) is handled by NodeComponent on the right
 
-    if (device_.deviceType != magda::DeviceType::MIDI) {
+    bool isDrumGrid = drumGridUI_ != nullptr;
+
+    if (!isDrumGrid && device_.deviceType != magda::DeviceType::MIDI) {
         macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
         modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
-    } else if (isArpeggiator_ || isStepSequencer_) {
+    } else if (!isDrumGrid && (isArpeggiator_ || isStepSequencer_)) {
         macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
         modButton_->setVisible(false);
@@ -1337,8 +1339,9 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     }
 
     // Set conditional button visibility before calling shared layout
+    // DrumGrid: hide SC button (manages its own MIDI internally)
     if (scButton_)
-        scButton_->setVisible(device_.canSidechain || device_.canReceiveMidi);
+        scButton_->setVisible(!isDrumGrid && (device_.canSidechain || device_.canReceiveMidi));
     if (multiOutButton_)
         multiOutButton_->setVisible(device_.multiOut.isMultiOut);
 

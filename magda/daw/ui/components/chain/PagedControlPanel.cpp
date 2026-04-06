@@ -1,5 +1,6 @@
 #include "PagedControlPanel.hpp"
 
+#include "ui/components/chain/DeviceSlotHeaderLayout.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -7,23 +8,14 @@
 namespace magda::daw::ui {
 
 PagedControlPanel::PagedControlPanel(int itemsPerPage) : itemsPerPage_(itemsPerPage) {
-    // Previous page button
-    prevButton_.setButtonText("<");
-    prevButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    prevButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    prevButton_.onClick = [this]() { prevPage(); };
-    prevButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addChildComponent(prevButton_);
+    // Previous / next page buttons
+    prevButton_ = makeNavArrowButton("prev", 0.5f);
+    prevButton_->onClick = [this]() { prevPage(); };
+    addChildComponent(*prevButton_);
 
-    // Next page button
-    nextButton_.setButtonText(">");
-    nextButton_.setColour(juce::TextButton::buttonColourId,
-                          DarkTheme::getColour(DarkTheme::SURFACE));
-    nextButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
-    nextButton_.onClick = [this]() { nextPage(); };
-    nextButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addChildComponent(nextButton_);
+    nextButton_ = makeNavArrowButton("next", 0.0f);
+    nextButton_->onClick = [this]() { nextPage(); };
+    addChildComponent(*nextButton_);
 
     // Page indicator label
     pageLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
@@ -152,15 +144,15 @@ void PagedControlPanel::updateNavButtons() {
     int totalPages = getTotalPages();
     bool showNav = totalPages > 1 || canAddPage_ || canRemovePage_;
 
-    prevButton_.setVisible(showNav && totalPages > 1);
-    nextButton_.setVisible(showNav && totalPages > 1);
+    prevButton_->setVisible(showNav && totalPages > 1);
+    nextButton_->setVisible(showNav && totalPages > 1);
     pageLabel_.setVisible(showNav);
     addPageButton_.setVisible(canAddPage_);
     removePageButton_.setVisible(canRemovePage_);
 
     if (showNav) {
-        prevButton_.setEnabled(currentPage_ > 0);
-        nextButton_.setEnabled(currentPage_ < totalPages - 1);
+        prevButton_->setEnabled(currentPage_ > 0);
+        nextButton_->setEnabled(currentPage_ < totalPages - 1);
         pageLabel_.setText(juce::String(currentPage_ + 1) + "/" + juce::String(totalPages),
                            juce::dontSendNotification);
 
@@ -214,8 +206,8 @@ void PagedControlPanel::resized() {
 
         // Prev/Next buttons around page label
         if (totalPages > 1) {
-            prevButton_.setBounds(navArea.removeFromLeft(buttonWidth));
-            nextButton_.setBounds(navArea.removeFromRight(buttonWidth));
+            placeNavArrow(*prevButton_, navArea, true);
+            placeNavArrow(*nextButton_, navArea, false);
         }
         pageLabel_.setBounds(navArea);
     }
