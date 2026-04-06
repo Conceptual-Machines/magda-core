@@ -184,7 +184,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // UI button (toggle plugin window) - open in new icon
     uiButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
                                                    BinaryData::open_in_new_svgSize);
-    uiButton_->setIconPadding(2.5f);
+    uiButton_->setIconPadding(2.0f);
     uiButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     uiButton_->setClickingTogglesState(true);
     uiButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
