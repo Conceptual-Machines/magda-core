@@ -143,7 +143,6 @@ juce_add_binary_data(MagdaAssets
     # I/O routing icons
     ../../assets/icons/IO/Input.svg
     ../../assets/icons/IO/Output.svg
-    ../../assets/icons/IO/multiout.svg
     # Panel open/close icons
     ../../assets/icons/panels/left_open.svg
     ../../assets/icons/panels/left_close.svg
@@ -397,6 +396,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/RackComponent.cpp
     ui/components/chain/ChainPanel.cpp
     ui/components/chain/DeviceSlotComponent.cpp
+    ui/components/chain/DeviceCustomUIManager.cpp
     ui/components/chain/ToneGeneratorUI.cpp
     ui/components/chain/SamplerUI.cpp
     ui/components/chain/DrumGridUI.cpp
@@ -415,6 +415,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/StepSequencerUI.cpp
     ui/components/chain/PadChainPanel.cpp
     ui/components/chain/PadDeviceSlot.cpp
+    ui/components/chain/PadChainRangeRowComponent.cpp
     ui/components/chain/PadChainRowComponent.cpp
     ui/components/chain/ParamSlotComponent.cpp
     ui/components/chain/ParamLinkResolver.cpp
