@@ -195,6 +195,10 @@ class DrumGridPlugin : public te::Plugin {
     te::Plugin* getPadPlugin(int padIndex, int pluginIndex) const;
 
   private:
+    void processChain(Chain& chain, juce::AudioBuffer<float>& outputBuffer,
+                      const te::MidiMessageArray& inputMidi, int numSamples, int numChannels,
+                      const te::PluginRenderContext& rc);
+
     std::vector<std::unique_ptr<Chain>> chains_;
     int nextChainIndex_ = 0;
     std::array<std::atomic<bool>, maxPads> padTriggered_{};

@@ -1345,17 +1345,17 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         scButton_->setVisible(false);
     }
 
-    // Gain slider
-    gainSlider_.setBounds(headerArea.removeFromRight(70));
-    headerArea.removeFromRight(4);
-
-    // Multi-output button (to the left of gain slider)
+    // Multi-output button (between power and gain slider)
     if (device_.multiOut.isMultiOut && multiOutButton_) {
         multiOutButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
         headerArea.removeFromRight(4);
     }
 
-    // UI button (only for external plugins)
+    // Gain slider
+    gainSlider_.setBounds(headerArea.removeFromRight(70));
+    headerArea.removeFromRight(4);
+
+    // UI button (ext window — leftmost of the right group)
     if (uiButton_->isVisible()) {
         uiButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
         headerArea.removeFromRight(4);
@@ -2164,6 +2164,14 @@ void DeviceSlotComponent::createCustomUI() {
                 int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
                 if (auto* chain = dg->getChainForNote(midiNote))
                     const_cast<daw::audio::DrumGridPlugin::Chain*>(chain)->bypassed = bypassed;
+            }
+        };
+
+        drumGridUI_->onPadOutputChanged = [getDrumGrid](int padIndex, int busIndex) {
+            if (auto* dg = getDrumGrid()) {
+                int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
+                if (auto* chain = dg->getChainForNote(midiNote))
+                    dg->setChainBusOutput(chain->index, busIndex);
             }
         };
 

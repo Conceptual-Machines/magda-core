@@ -102,10 +102,8 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
     const int numSamples = rc.bufferNumSamples;
     const int numChannels = outputBuffer.getNumChannels();
 
-    // Clear output (we sum into it)
     outputBuffer.clear(rc.bufferStartSample, numSamples);
 
-    // Detect solo
     bool anySoloed = false;
     for (const auto& chain : chains_) {
         if (!chain->plugins.empty() && chain->solo.get()) {
@@ -114,126 +112,108 @@ void DrumGridPlugin::applyToBuffer(const te::PluginRenderContext& rc) {
         }
     }
 
-    // Process each chain
     for (auto& chain : chains_) {
-        if (chain->plugins.empty())
-            continue;
-
-        if (chain->mute.get() || chain->bypassed.get())
+        if (chain->plugins.empty() || chain->mute.get() || chain->bypassed.get())
             continue;
         if (anySoloed && !chain->solo.get())
             continue;
 
-        // Filter MIDI by note range, remap notes
-        chainMidi_.clear();
-        chainMidi_.isAllNotesOff = inputMidi.isAllNotesOff;
+        processChain(*chain, outputBuffer, inputMidi, numSamples, numChannels, rc);
+    }
+}
 
-        for (auto& msg : inputMidi) {
-            if (msg.isNoteOnOrOff()) {
-                int note = msg.getNoteNumber();
-                if (note >= chain->lowNote && note <= chain->highNote) {
-                    if (msg.isNoteOn()) {
-                        int padIdx = note - baseNote;
-                        if (padIdx >= 0 && padIdx < maxPads)
-                            setPadTriggered(padIdx);
-                    }
-                    auto remapped = msg;
-                    int remappedNote = chain->rootNote + (note - chain->lowNote);
-                    remapped.setNoteNumber(remappedNote);
-                    chainMidi_.add(remapped);
+void DrumGridPlugin::processChain(Chain& chain, juce::AudioBuffer<float>& outputBuffer,
+                                  const te::MidiMessageArray& inputMidi, int numSamples,
+                                  int numChannels, const te::PluginRenderContext& rc) {
+    // Filter MIDI to this chain's note range and remap
+    chainMidi_.clear();
+    chainMidi_.isAllNotesOff = inputMidi.isAllNotesOff;
+
+    for (auto& msg : inputMidi) {
+        if (msg.isNoteOnOrOff()) {
+            int note = msg.getNoteNumber();
+            if (note >= chain.lowNote && note <= chain.highNote) {
+                if (msg.isNoteOn()) {
+                    int padIdx = note - baseNote;
+                    if (padIdx >= 0 && padIdx < maxPads)
+                        setPadTriggered(padIdx);
                 }
-            } else {
-                chainMidi_.add(msg);
+                auto remapped = msg;
+                remapped.setNoteNumber(chain.rootNote + (note - chain.lowNote));
+                chainMidi_.add(remapped);
             }
+        } else {
+            chainMidi_.add(msg);
         }
+    }
 
-        // Skip if no MIDI and instrument doesn't produce audio without input
-        if (chainMidi_.isEmpty() && !chain->plugins.empty() && chain->plugins[0] != nullptr &&
-            !chain->plugins[0]->producesAudioWhenNoAudioInput())
-            continue;
+    if (chainMidi_.isEmpty() && chain.plugins[0] != nullptr &&
+        !chain.plugins[0]->producesAudioWhenNoAudioInput())
+        return;
 
-        // Create stereo scratch buffer (each chain processes in stereo regardless of bus count)
-        constexpr int scratchChannels = 2;
-        juce::AudioBuffer<float> scratchBuffer(scratchChannels, numSamples);
-        scratchBuffer.clear();
+    // Run plugins on a stereo scratch buffer
+    constexpr int scratchChannels = 2;
+    juce::AudioBuffer<float> scratchBuffer(scratchChannels, numSamples);
+    scratchBuffer.clear();
 
-        // Process each plugin in the chain
-        te::PluginRenderContext chainRc(&scratchBuffer,
-                                        juce::AudioChannelSet::canonicalChannelSet(scratchChannels),
-                                        0, numSamples, &chainMidi_, 0.0, rc.editTime, rc.isPlaying,
-                                        rc.isScrubbing, rc.isRendering, false);
+    te::PluginRenderContext chainRc(
+        &scratchBuffer, juce::AudioChannelSet::canonicalChannelSet(scratchChannels), 0, numSamples,
+        &chainMidi_, 0.0, rc.editTime, rc.isPlaying, rc.isScrubbing, rc.isRendering, false);
 
-        for (int pi = 0; pi < static_cast<int>(chain->plugins.size()); ++pi) {
-            auto& p = chain->plugins[static_cast<size_t>(pi)];
-            if (p != nullptr)
-                p->applyToBufferWithAutomation(chainRc);
+    for (int pi = 0; pi < static_cast<int>(chain.plugins.size()); ++pi) {
+        auto& p = chain.plugins[static_cast<size_t>(pi)];
+        if (p != nullptr)
+            p->applyToBufferWithAutomation(chainRc);
 
-            // Apply per-plugin gain
-            float pluginGain = (pi < static_cast<int>(chain->pluginGains.size()))
-                                   ? chain->pluginGains[static_cast<size_t>(pi)]
-                                   : 1.0f;
-            if (pluginGain != 1.0f)
-                scratchBuffer.applyGain(pluginGain);
+        float pluginGain = (pi < static_cast<int>(chain.pluginGains.size()))
+                               ? chain.pluginGains[static_cast<size_t>(pi)]
+                               : 1.0f;
+        if (pluginGain != 1.0f)
+            scratchBuffer.applyGain(pluginGain);
+    }
 
-            // Measure per-plugin peak (post-gain, pre-chain-gain)
-            if (chain->index >= 0 && chain->index < maxPads && pi < maxFxPerChain) {
-                auto& meter =
-                    pluginMeters_[static_cast<size_t>(chain->index)][static_cast<size_t>(pi)];
-                float pL = scratchBuffer.getMagnitude(0, 0, numSamples);
-                float pR = scratchChannels >= 2 ? scratchBuffer.getMagnitude(1, 0, numSamples) : pL;
-                auto prevL = meter.peakL.load(std::memory_order_relaxed);
-                if (pL > prevL)
-                    meter.peakL.store(pL, std::memory_order_relaxed);
-                auto prevR = meter.peakR.load(std::memory_order_relaxed);
-                if (pR > prevR)
-                    meter.peakR.store(pR, std::memory_order_relaxed);
-            }
-        }
+    // Compute level/pan gains
+    float levelLinear = juce::Decibels::decibelsToGain(chain.level.get());
+    float panValue = chain.pan.get();
+    float leftGain =
+        levelLinear * std::cos((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
+    float rightGain =
+        levelLinear * std::sin((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
 
-        // Apply gain/pan and sum into output
-        float levelDb = chain->level.get();
-        float levelLinear = juce::Decibels::decibelsToGain(levelDb);
-        float panValue = chain->pan.get();
+    // Route to assigned bus output (stereo pair)
+    int busIdx = juce::jlimit(0, maxBusOutputs - 1, chain.busOutput.get());
+    int leftCh = busIdx * 2;
+    int rightCh = busIdx * 2 + 1;
+    if (rightCh >= numChannels) {
+        leftCh = 0;
+        rightCh = std::min(1, numChannels - 1);
+    }
 
-        float leftGain =
-            levelLinear * std::cos((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
-        float rightGain =
-            levelLinear * std::sin((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
+    outputBuffer.addFrom(leftCh, rc.bufferStartSample, scratchBuffer, 0, 0, numSamples, leftGain);
+    if (rightCh < numChannels)
+        outputBuffer.addFrom(rightCh, rc.bufferStartSample, scratchBuffer,
+                             scratchBuffer.getNumChannels() >= 2 ? 1 : 0, 0, numSamples, rightGain);
 
-        // Measure post-gain peak from scratch buffer
-        float peakL = scratchBuffer.getMagnitude(0, 0, numSamples) * leftGain;
-        float peakR =
-            (scratchChannels >= 2 ? scratchBuffer.getMagnitude(1, 0, numSamples) : peakL) *
-            rightGain;
+    // Store post-gain peaks (reflects what was written to outputBuffer)
+    if (chain.index >= 0 && chain.index < maxPads) {
+        float rawL = scratchBuffer.getMagnitude(0, 0, numSamples);
+        float rawR = scratchChannels >= 2 ? scratchBuffer.getMagnitude(1, 0, numSamples) : rawL;
+        float peakL = rawL * leftGain;
+        float peakR = rawR * rightGain;
 
-        // Store as running max (UI thread resets via consumeChainPeak)
-        if (chain->index >= 0 && chain->index < maxPads) {
-            auto& meter = chainMeters_[static_cast<size_t>(chain->index)];
-            auto prevL = meter.peakL.load(std::memory_order_relaxed);
-            if (peakL > prevL)
-                meter.peakL.store(peakL, std::memory_order_relaxed);
-            auto prevR = meter.peakR.load(std::memory_order_relaxed);
-            if (peakR > prevR)
-                meter.peakR.store(peakR, std::memory_order_relaxed);
-        }
+        auto& chainMeter = chainMeters_[static_cast<size_t>(chain.index)];
+        if (peakL > chainMeter.peakL.load(std::memory_order_relaxed))
+            chainMeter.peakL.store(peakL, std::memory_order_relaxed);
+        if (peakR > chainMeter.peakR.load(std::memory_order_relaxed))
+            chainMeter.peakR.store(peakR, std::memory_order_relaxed);
 
-        // Route to the chain's assigned bus output (stereo pair)
-        int busIdx = juce::jlimit(0, maxBusOutputs - 1, chain->busOutput.get());
-        int leftCh = busIdx * 2;
-        int rightCh = busIdx * 2 + 1;
-
-        // Fall back to main bus if buffer has fewer channels
-        if (rightCh >= numChannels) {
-            leftCh = 0;
-            rightCh = std::min(1, numChannels - 1);
-        }
-
-        outputBuffer.addFrom(leftCh, rc.bufferStartSample, scratchBuffer, 0, 0, numSamples,
-                             leftGain);
-        if (rightCh < numChannels)
-            outputBuffer.addFrom(rightCh, rc.bufferStartSample, scratchBuffer,
-                                 scratchBuffer.getNumChannels() >= 2 ? 1 : 0, 0, numSamples,
-                                 rightGain);
+        int lastPi = juce::jlimit(0, maxFxPerChain - 1, static_cast<int>(chain.plugins.size()) - 1);
+        auto& pluginMeter =
+            pluginMeters_[static_cast<size_t>(chain.index)][static_cast<size_t>(lastPi)];
+        if (peakL > pluginMeter.peakL.load(std::memory_order_relaxed))
+            pluginMeter.peakL.store(peakL, std::memory_order_relaxed);
+        if (peakR > pluginMeter.peakR.load(std::memory_order_relaxed))
+            pluginMeter.peakR.store(peakR, std::memory_order_relaxed);
     }
 }
 

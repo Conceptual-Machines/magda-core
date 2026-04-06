@@ -174,20 +174,19 @@ void PadChainRowComponent::resized() {
     muteButton_.setBounds(bounds.removeFromRight(16));
     bounds.removeFromRight(4);
 
-    outputButton_.setBounds(bounds.removeFromRight(30));
+    outputButton_.setBounds(bounds.removeFromRight(42));
     bounds.removeFromRight(4);
 
     // Left side elements
     nameLabel_.setBounds(bounds.removeFromLeft(50));
     bounds.removeFromLeft(4);
 
-    // Remaining space split equally for level and pan sliders
-    int sliderWidth = (bounds.getWidth() - 4) / 2;
+    // Pan gets a fixed small width; level takes the rest
+    constexpr int PAN_WIDTH = 32;
+    panSlider_.setBounds(bounds.removeFromRight(PAN_WIDTH));
+    bounds.removeFromRight(4);
 
-    levelSlider_.setBounds(bounds.removeFromLeft(sliderWidth));
-    bounds.removeFromLeft(4);
-
-    panSlider_.setBounds(bounds);
+    levelSlider_.setBounds(bounds);
 }
 
 void PadChainRowComponent::mouseDown(const juce::MouseEvent& e) {

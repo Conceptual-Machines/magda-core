@@ -37,8 +37,12 @@ PadDeviceSlot::PadDeviceSlot() {
     // UI button to open plugin native window
     uiButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
                                                    BinaryData::open_in_new_svgSize);
-    uiButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    uiButton_->setHoverColor(DarkTheme::getTextColour());
+    uiButton_->setIconPadding(2.5f);
+    uiButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    uiButton_->setClickingTogglesState(true);
+    uiButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
+    uiButton_->setActiveColor(juce::Colours::white);
+    uiButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     addChildComponent(*uiButton_);
 
     // On/power button
@@ -60,13 +64,9 @@ PadDeviceSlot::PadDeviceSlot() {
     addAndMakeVisible(*onButton_);
 
     // Gain slider (header, right side)
+    gainSlider_.setFormat(TextSlider::Format::Decibels);
     gainSlider_.setRange(-60.0, 12.0, 0.1);
     gainSlider_.setValue(0.0, juce::dontSendNotification);
-    gainSlider_.setValueFormatter([](double v) -> juce::String {
-        if (v <= -60.0)
-            return "-inf";
-        return juce::String(v, 1) + " dB";
-    });
     gainSlider_.onValueChanged = [this](double value) {
         if (onGainDbChanged)
             onGainDbChanged(static_cast<float>(value));
@@ -244,12 +244,19 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
 
     // Show UI button for external plugins
     uiButton_->setVisible(true);
-    uiButton_->onClick = [plugin]() {
+    uiButton_->onClick = [this, plugin]() {
+        bool isOpen = uiButton_->getToggleState();
+        uiButton_->setActive(isOpen);
         if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin)) {
-            if (ext->windowState)
-                ext->windowState->showWindowExplicitly();
+            if (ext->windowState) {
+                if (isOpen)
+                    ext->windowState->showWindowExplicitly();
+                else
+                    ext->windowState->hideWindowTemporarily();
+            }
         } else {
-            plugin->showWindowExplicitly();
+            if (isOpen)
+                plugin->showWindowExplicitly();
         }
     };
 
