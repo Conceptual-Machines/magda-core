@@ -226,15 +226,17 @@ DrumGridUI::DrumGridUI() {
     }
 
     // Pagination
-    setupButton(prevPageButton_);
+    for (auto* btn : {&prevPageButton_, &nextPageButton_}) {
+        btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+        btn->setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
+        btn->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    }
     prevPageButton_.onClick = [this]() { goToPrevPage(); };
     addAndMakeVisible(prevPageButton_);
-
-    setupButton(nextPageButton_);
     nextPageButton_.onClick = [this]() { goToNextPage(); };
     addAndMakeVisible(nextPageButton_);
 
-    pageLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    pageLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     pageLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     pageLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(pageLabel_);
@@ -363,6 +365,8 @@ DrumGridUI::DrumGridUI() {
 
 DrumGridUI::~DrumGridUI() {
     stopTimer();
+    prevPageButton_.setLookAndFeel(nullptr);
+    nextPageButton_.setLookAndFeel(nullptr);
 }
 
 void DrumGridUI::setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin) {
@@ -579,6 +583,23 @@ void DrumGridUI::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
     g.fillRect(getLocalBounds().reduced(1));
 
+    // Left column background
+    auto sidebarColour = DarkTheme::getColour(DarkTheme::BACKGROUND);
+    g.setColour(sidebarColour);
+    g.fillRect(toggleColBounds_);
+
+    // Pagination row background + top-edge separator
+    g.setColour(sidebarColour);
+    g.fillRect(paginationBounds_);
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawHorizontalLine(paginationBounds_.getY(), paginationBounds_.getX(),
+                         paginationBounds_.getRight());
+
+    // Left column right-edge separator — drawn last so it renders over pagination fill
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawVerticalLine(toggleColBounds_.getRight(), toggleColBounds_.getY(),
+                       toggleColBounds_.getBottom());
+
     // Dividers — positioned to match right-to-left layout
     bool selectedPadHasContent =
         padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
@@ -631,6 +652,8 @@ void DrumGridUI::resized() {
 
     // Left column: toggle button (always present)
     auto toggleCol = area.removeFromLeft(kToggleColWidth);
+    toggleColBounds_ =
+        toggleCol.withTop(getLocalBounds().getY()).withBottom(getLocalBounds().getBottom());
     chainsToggleButton_->setBounds(toggleCol.removeFromTop(20).withSizeKeepingCentre(20, 20));
 
     // Right side allocation
@@ -682,7 +705,9 @@ void DrumGridUI::resized() {
     }
 
     // --- Pad Grid layout ---
-    auto paginationRow = gridArea.removeFromBottom(18);
+    auto paginationRow = gridArea.removeFromBottom(26);
+    paginationBounds_ =
+        paginationRow.withLeft(getLocalBounds().getX()).withRight(getLocalBounds().getRight());
     gridArea.removeFromBottom(2);
 
     constexpr int padGap = 3;

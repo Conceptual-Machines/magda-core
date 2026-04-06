@@ -262,6 +262,10 @@ class DrumGridUI : public juce::Component,
     std::vector<std::unique_ptr<PadChainRowComponent>> chainRows_;
     std::unique_ptr<magda::SvgButton> chainsToggleButton_;
 
+    // Paint rects (set in resized, used in paint)
+    juce::Rectangle<int> toggleColBounds_;
+    juce::Rectangle<int> paginationBounds_;
+
     // Plugin drop highlight
     int dropHighlightPad_ = -1;
 
