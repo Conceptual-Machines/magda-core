@@ -145,13 +145,30 @@ void AudioClipPropertiesContent::createControls() {
             bpm = tc->getState().tempo.bpm;
 
         if (enable && clip->type == magda::ClipType::Audio) {
-            double detectedBPM =
-                magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
-            if (detectedBPM > 0.0) {
+            // Cached BPM applies immediately; cache miss kicks off background
+            // detection and patches the clip when the result arrives. Beat mode
+            // enables optimistically with the existing sourceBPM in the meantime.
+            auto& thumbs = magda::AudioThumbnailManager::getInstance();
+            double cached = thumbs.getCachedBPM(clip->audioFilePath);
+            if (cached > 0.0) {
                 double sourceDuration = clip->getSourceLength();
-                clip->sourceBPM = detectedBPM;
+                clip->sourceBPM = cached;
                 if (sourceDuration > 0.0)
-                    clip->sourceNumBeats = sourceDuration * detectedBPM / 60.0;
+                    clip->sourceNumBeats = sourceDuration * cached / 60.0;
+            } else {
+                auto cid = clipId_;
+                thumbs.requestBPMDetection(clip->audioFilePath, [cid](double detectedBPM) {
+                    if (detectedBPM <= 0.0)
+                        return;
+                    auto* c = magda::ClipManager::getInstance().getClip(cid);
+                    if (!c)
+                        return;
+                    c->sourceBPM = detectedBPM;
+                    double sd = c->getSourceLength();
+                    if (sd > 0.0)
+                        c->sourceNumBeats = sd * detectedBPM / 60.0;
+                    magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(cid);
+                });
             }
         }
 

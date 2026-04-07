@@ -4,11 +4,13 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace magda {
 
@@ -44,11 +46,33 @@ class AudioThumbnailManager {
                       bool useHighRes = false);
 
     /**
-     * @brief Detect BPM of an audio file using Tracktion's TempoDetect
+     * @brief Detect BPM of an audio file using Tracktion's TempoDetect.
+     *
+     * BLOCKING — walks the entire file on the calling thread. External callers
+     * should prefer requestBPMDetection() to avoid hanging the UI.
      * @param filePath Absolute path to the audio file
      * @return Detected BPM, or 0.0 if detection fails or result is not sensible
      */
     double detectBPM(const juce::String& filePath);
+
+    /**
+     * @brief Get cached BPM for an audio file without triggering detection.
+     * @return Cached BPM, or 0.0 if not yet detected.
+     */
+    double getCachedBPM(const juce::String& filePath) const;
+
+    /**
+     * @brief Request asynchronous BPM detection.
+     *
+     * If the result is already cached, @p onComplete fires synchronously on the
+     * calling (message) thread. Otherwise the scan is enqueued on a background
+     * thread and @p onComplete fires on the message thread when complete.
+     * Multiple concurrent requests for the same file are deduped — only one
+     * background scan runs and all callbacks fire when it finishes.
+     *
+     * Must be called from the message thread.
+     */
+    void requestBPMDetection(const juce::String& filePath, std::function<void(double)> onComplete);
 
     /**
      * @brief Get cached transient times for an audio file
@@ -97,8 +121,18 @@ class AudioThumbnailManager {
     // Create a new thumbnail for a file
     juce::AudioThumbnail* createThumbnail(const juce::String& audioFilePath);
 
-    // BPM detection cache (file path -> detected BPM)
+    // BPM detection cache (file path -> detected BPM).
+    // Message-thread only — never touched from background detection threads.
     std::map<juce::String, double> bpmCache_;
+
+    // Background thread pool for async BPM detection. Lazy-initialized on first
+    // request. Single thread — BPM scans serialize to keep disk I/O sane.
+    std::unique_ptr<juce::ThreadPool> bpmThreadPool_;
+
+    // In-flight BPM detection requests. Keyed by file path; value is the list of
+    // callbacks to fire when detection completes. Used to dedupe concurrent
+    // requests for the same file. Message-thread only.
+    std::map<juce::String, std::vector<std::function<void(double)>>> pendingBpmCallbacks_;
 
     // Transient detection cache (file path -> transient times in source-file seconds)
     std::map<juce::String, juce::Array<double>> transientCache_;

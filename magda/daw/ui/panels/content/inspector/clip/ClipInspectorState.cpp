@@ -144,9 +144,17 @@ void ClipInspector::updateFromSelectedClip() {
                 timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
             if (displayBPM <= 0.0 ||
                 (!clip->autoTempo && std::abs(displayBPM - projectBPM) < 0.1)) {
-                // sourceBPM is unset or matches project BPM (defaulted) — use detected
-                displayBPM =
-                    magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
+                // sourceBPM is unset or matches project BPM (defaulted) — use detected.
+                // Read cached value only; if missing, kick off async detection and refresh
+                // the inspector via the existing clipPropertyChanged listener path.
+                auto& thumbs = magda::AudioThumbnailManager::getInstance();
+                displayBPM = thumbs.getCachedBPM(clip->audioFilePath);
+                if (displayBPM <= 0.0) {
+                    auto cid = pid;
+                    thumbs.requestBPMDetection(clip->audioFilePath, [cid](double /*bpm*/) {
+                        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(cid);
+                    });
+                }
             }
             clipBpmValue_.setVisible(true);
             if (displayBPM > 0.0) {

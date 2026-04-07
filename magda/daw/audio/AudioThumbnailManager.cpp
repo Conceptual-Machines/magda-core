@@ -115,6 +115,38 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
     thumbnail->drawChannels(g, bounds, startTime, endTime, verticalZoom);
 }
 
+namespace {
+// Pure detection routine — no cache, no threading. Safe to call from any thread
+// as long as the format manager is local. Returns 0.0 on failure.
+double runBpmDetection(const juce::String& filePath) {
+    juce::File audioFile(filePath);
+    if (!audioFile.existsAsFile())
+        return 0.0;
+
+    // Local format manager — juce::AudioFormatManager is not thread-safe to share.
+    juce::AudioFormatManager fm;
+    fm.registerBasicFormats();
+
+    std::unique_ptr<juce::AudioFormatReader> reader(fm.createReaderFor(audioFile));
+    if (!reader)
+        return 0.0;
+
+    tracktion::engine::TempoDetect detector(static_cast<int>(reader->numChannels),
+                                            reader->sampleRate);
+    float bpm = detector.processReader(*reader);
+
+    if (!detector.isBpmSensible())
+        return 0.0;
+
+    double result = static_cast<double>(bpm);
+    // Snap to nearest integer BPM if within 0.5 — most music uses whole-number tempos
+    double rounded = std::round(result);
+    if (std::abs(result - rounded) < 0.5)
+        result = rounded;
+    return result;
+}
+}  // namespace
+
 double AudioThumbnailManager::detectBPM(const juce::String& filePath) {
     // Check cache first
     auto it = bpmCache_.find(filePath);
@@ -122,35 +154,68 @@ double AudioThumbnailManager::detectBPM(const juce::String& filePath) {
         return it->second;
     }
 
-    juce::File audioFile(filePath);
-    if (!audioFile.existsAsFile()) {
-        bpmCache_[filePath] = 0.0;
-        return 0.0;
-    }
-
-    std::unique_ptr<juce::AudioFormatReader> reader(formatManager_.createReaderFor(audioFile));
-    if (!reader) {
-        bpmCache_[filePath] = 0.0;
-        return 0.0;
-    }
-
-    tracktion::engine::TempoDetect detector(static_cast<int>(reader->numChannels),
-                                            reader->sampleRate);
-    float bpm = detector.processReader(*reader);
-
-    double result = 0.0;
-    if (detector.isBpmSensible()) {
-        result = static_cast<double>(bpm);
-        // Snap to nearest integer BPM if within 0.5 — most music uses whole-number tempos
-        double rounded = std::round(result);
-        if (std::abs(result - rounded) < 0.5) {
-            result = rounded;
-        }
-    }
-
+    double result = runBpmDetection(filePath);
     bpmCache_[filePath] = result;
     DBG("AudioThumbnailManager: Detected BPM for " << filePath << ": " << result);
     return result;
+}
+
+double AudioThumbnailManager::getCachedBPM(const juce::String& filePath) const {
+    auto it = bpmCache_.find(filePath);
+    return it != bpmCache_.end() ? it->second : 0.0;
+}
+
+void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
+                                                std::function<void(double)> onComplete) {
+    // Cache hit — fire callback synchronously and return.
+    auto cacheIt = bpmCache_.find(filePath);
+    if (cacheIt != bpmCache_.end()) {
+        if (onComplete)
+            onComplete(cacheIt->second);
+        return;
+    }
+
+    // Already in flight for this file — append callback and dedupe.
+    auto pendingIt = pendingBpmCallbacks_.find(filePath);
+    if (pendingIt != pendingBpmCallbacks_.end()) {
+        if (onComplete)
+            pendingIt->second.push_back(std::move(onComplete));
+        return;
+    }
+
+    // First request for this file — register pending entry, lazy-create the
+    // thread pool, and enqueue the background scan.
+    auto& callbacks = pendingBpmCallbacks_[filePath];
+    if (onComplete)
+        callbacks.push_back(std::move(onComplete));
+
+    if (!bpmThreadPool_) {
+        bpmThreadPool_ = std::make_unique<juce::ThreadPool>(1);
+    }
+
+    bpmThreadPool_->addJob([filePath]() {
+        const double result = runBpmDetection(filePath);
+        DBG("AudioThumbnailManager: Detected BPM for " << filePath << ": " << result);
+
+        juce::MessageManager::callAsync([filePath, result]() {
+            auto& self = AudioThumbnailManager::getInstance();
+            self.bpmCache_[filePath] = result;
+
+            auto it = self.pendingBpmCallbacks_.find(filePath);
+            if (it == self.pendingBpmCallbacks_.end())
+                return;
+
+            // Move callbacks out before invoking — the entry is erased
+            // immediately so re-entrant requests during callback iteration
+            // see a clean state and hit the cache.
+            auto callbacks = std::move(it->second);
+            self.pendingBpmCallbacks_.erase(it);
+
+            for (auto& cb : callbacks) {
+                cb(result);
+            }
+        });
+    });
 }
 
 const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
@@ -380,6 +445,7 @@ void AudioThumbnailManager::clearCache() {
     thumbnails_.clear();
     thumbnailCache_->clear();
     bpmCache_.clear();
+    pendingBpmCallbacks_.clear();
     transientCache_.clear();
     readerIndex_.clear();
     readerLru_.clear();
@@ -387,6 +453,15 @@ void AudioThumbnailManager::clearCache() {
 }
 
 void AudioThumbnailManager::shutdown() {
+    // Stop any in-flight BPM detection jobs before tearing down state. The
+    // 5000ms timeout caps the wait — TempoDetect doesn't honour interruption
+    // mid-scan, but a single scan should fit comfortably under that bound.
+    if (bpmThreadPool_) {
+        bpmThreadPool_->removeAllJobs(true, 5000);
+        bpmThreadPool_.reset();
+    }
+    pendingBpmCallbacks_.clear();
+
     // Clear the cache first — this cancels any pending background thumbnail jobs
     // in the internal thread pool before we destroy the AudioThumbnail objects.
     if (thumbnailCache_)

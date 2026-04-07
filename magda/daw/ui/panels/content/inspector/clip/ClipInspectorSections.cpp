@@ -633,17 +633,33 @@ void ClipInspector::initClipPropertiesSection() {
         }
 
         // When enabling, update sourceBPM from detected BPM (AudioThumbnailManager)
-        // since the clip model may have stale metadata from TE's default loopInfo
+        // since the clip model may have stale metadata from TE's default loopInfo.
+        // Cached value is applied immediately; cache miss kicks off background
+        // detection and patches the clip when the result arrives. Beat mode is
+        // enabled optimistically with the existing sourceBPM in the meantime.
         if (enable && clip->type == magda::ClipType::Audio) {
-            double detectedBPM =
-                magda::AudioThumbnailManager::getInstance().detectBPM(clip->audioFilePath);
-            if (detectedBPM > 0.0) {
+            auto& thumbs = magda::AudioThumbnailManager::getInstance();
+            double cached = thumbs.getCachedBPM(clip->audioFilePath);
+            if (cached > 0.0) {
+                clip->sourceBPM = cached;
                 double sourceDuration = clip->getSourceLength();
-                clip->sourceBPM = detectedBPM;
-                // Recalculate source beat count from detected BPM and file duration
                 if (sourceDuration > 0.0) {
-                    clip->sourceNumBeats = sourceDuration * detectedBPM / 60.0;
+                    clip->sourceNumBeats = sourceDuration * cached / 60.0;
                 }
+            } else {
+                auto cid = primaryClipId();
+                thumbs.requestBPMDetection(clip->audioFilePath, [cid](double detectedBPM) {
+                    if (detectedBPM <= 0.0)
+                        return;
+                    auto* c = magda::ClipManager::getInstance().getClip(cid);
+                    if (!c)
+                        return;
+                    c->sourceBPM = detectedBPM;
+                    double sd = c->getSourceLength();
+                    if (sd > 0.0)
+                        c->sourceNumBeats = sd * detectedBPM / 60.0;
+                    magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(cid);
+                });
             }
         }
 
