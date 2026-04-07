@@ -43,6 +43,7 @@ The interactive curve display shows a visual representation of the timing transf
 - The **tick marks** at the bottom show the resulting note distribution
 - **Drag the handle** to adjust depth and skew simultaneously
 - **Double-click** to reset to linear (no effect)
+- **Soft corner / hard corner toggle** — switches the curve shape between a smooth easing curve (soft) and a sharp two-segment break at the inflection point (hard). Hard corner produces instant rhythmic snaps instead of gradual pushes, useful for abrupt feel changes within a phrase.
 
 During playback (in the Arpeggiator and Step Sequencer), a green sweep animation shows the current playback position moving across the ticks.
 

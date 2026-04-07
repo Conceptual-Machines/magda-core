@@ -227,6 +227,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     if (isStepSequencer_) {
         exportClipButton_ = std::make_unique<magda::SvgButton>("ExportClip", BinaryData::copy_svg,
                                                                BinaryData::copy_svgSize);
+        // Match the muted styling of multiOut / open-in-external buttons so it
+        // blends into the header instead of popping.
+        exportClipButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        exportClipButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
+        exportClipButton_->setActiveColor(juce::Colours::white);
         exportClipButton_->setTooltip("Click to copy pattern, drag to timeline");
         exportClipButton_->addMouseListener(this, false);
         exportClipButton_->onClick = [this]() {
@@ -1338,21 +1343,27 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         modButton_->setVisible(false);
     }
 
-    // Export clip button (step sequencer) — sits between delete and power, handled before shared
-    // layout
-    if (exportClipButton_) {
-        exportClipButton_->setVisible(true);
-        exportClipButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-        headerArea.removeFromRight(4);
-    }
-
     // MIDI devices: no volume/SC
+    // Right-edge order (left → right): [export clip] [power] [delete X (NodeComponent)]
+    // Power must sit immediately to the left of the delete X — clip lives to its left.
     if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
         gainSlider_.setVisible(false);
         if (scButton_)
             scButton_->setVisible(false);
         onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        if (exportClipButton_) {
+            exportClipButton_->setVisible(true);
+            headerArea.removeFromRight(4);
+            exportClipButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        }
         return;
+    }
+
+    // Non-MIDI devices with export clip (none currently, but keep symmetric)
+    if (exportClipButton_) {
+        exportClipButton_->setVisible(true);
+        exportClipButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        headerArea.removeFromRight(4);
     }
 
     // Set conditional button visibility before calling shared layout

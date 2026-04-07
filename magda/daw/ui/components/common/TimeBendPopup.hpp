@@ -36,8 +36,12 @@ class TimeBendPopup : public juce::Component {
                        bool hardAngle)>
         onApply;
 
-    /** Show as a floating window above the given component. */
+    /** Show as a floating window above the given component. Singleton: any
+     * existing popup is dismissed first so only one is ever on screen. */
     static void showAbove(std::unique_ptr<TimeBendPopup> popup, juce::Component* anchor);
+
+    /** Dismiss the currently visible popup, if any. */
+    static void dismissCurrent();
 
   private:
     void applyPreview(float depth, float skew, int cycles, float quantize, int quantizeSub,
@@ -65,6 +69,8 @@ class TimeBendPopup : public juce::Component {
     juce::TextButton applyButton_{"Apply"};
     juce::TextButton cancelButton_{"Cancel"};
     juce::ComponentDragger dragger_;
+
+    static juce::Component::SafePointer<TimeBendPopup> currentPopup_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimeBendPopup)
 };

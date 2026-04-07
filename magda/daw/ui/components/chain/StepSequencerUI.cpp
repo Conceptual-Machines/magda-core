@@ -115,6 +115,16 @@ void StepSequencerUI::AIResultDisplay::showResult(const juce::String& descriptio
     repaint();
 }
 
+void StepSequencerUI::AIResultDisplay::showError(const juce::String& message) {
+    stopTimer();
+    mode_ = Mode::Streaming;
+    text_ = message;
+    description_ = {};
+    previewSteps_.clear();
+    scrollOffset_ = 0;
+    repaint();
+}
+
 void StepSequencerUI::AIResultDisplay::clear() {
     stopTimer();
     mode_ = Mode::Empty;
@@ -1178,8 +1188,6 @@ void StepSequencerUI::generateAIPattern() {
     auto responseSchema = llm::Schema::object({
         {"description", llm::Schema::string()},
         {"steps", stepsArraySchema},
-        {"depth", llm::Schema::number()},
-        {"skew", llm::Schema::number()},
     });
 
     auto systemPrompt =
@@ -1188,11 +1196,6 @@ void StepSequencerUI::generateAIPattern() {
                      "  - description: a short label for the pattern (e.g. \"Acid C minor\", "
                      "\"Funky bassline\")\n"
                      "  - steps: array of step objects\n"
-                     "  - depth: time bend depth (-1.0 to 1.0, 0.0 = no bend). "
-                     "Positive values push steps toward the end (swing feel), "
-                     "negative values push toward the start (rushed feel).\n"
-                     "  - skew: time bend skew (-1.0 to 1.0, 0.0 = symmetric). "
-                     "Controls where the bend peaks: negative = early, positive = late.\n"
                      "Each step has:\n"
                      "  - note: MIDI note number (0-127, e.g. 60=C4, 48=C3, 36=C2)\n"
                      "  - octave: octave shift (-2 to +2, applied on top of note)\n"
@@ -1204,8 +1207,6 @@ void StepSequencerUI::generateAIPattern() {
                      juce::String(numSteps) +
                      " steps. Return only 1 pattern.\n"
                      "Keep octave at 0 unless the user asks for wide range.\n"
-                     "Use depth/skew sparingly — set both to 0.0 unless the user "
-                     "asks for swing, shuffle, or humanize.\n"
                      "For acid bass lines, use lots of glides and accents on root/fifth notes.");
 
     // Disable controls and show thinking indicator
@@ -1256,7 +1257,9 @@ void StepSequencerUI::generateAIPattern() {
 
             if (!response.success || response.text.isEmpty()) {
                 DBG("AI pattern generation failed: " + response.error);
-                safeThis->aiResultDisplay_.setStreamingText("Error: " + response.error);
+                safeThis->aiResultDisplay_.showError(response.error.isNotEmpty()
+                                                         ? "Error: " + response.error
+                                                         : "Error: no response");
                 return;
             }
 
@@ -1276,7 +1279,7 @@ void StepSequencerUI::generateAIPattern() {
                 stepsArray = json.getArray();
             if (!stepsArray) {
                 DBG("AI response missing 'steps' array: " + text.substring(0, 200));
-                safeThis->aiResultDisplay_.setStreamingText("Error: failed to parse response");
+                safeThis->aiResultDisplay_.showError("Error: failed to parse response");
                 return;
             }
 
@@ -1295,14 +1298,6 @@ void StepSequencerUI::generateAIPattern() {
 
             if (safeThis->plugin_ && !steps.empty()) {
                 safeThis->plugin_->setPattern(steps, true);
-
-                // Apply depth and skew if provided
-                float depth = static_cast<float>((double)json.getProperty("depth", 0.0));
-                float skew = static_cast<float>((double)json.getProperty("skew", 0.0));
-                depth = juce::jlimit(-1.0f, 1.0f, depth);
-                skew = juce::jlimit(-1.0f, 1.0f, skew);
-                safeThis->plugin_->ramp = depth;
-                safeThis->plugin_->skew = skew;
 
                 // Show the description in the status label
                 auto description = json.getProperty("description", {}).toString().trim();

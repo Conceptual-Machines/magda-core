@@ -96,6 +96,7 @@ class StepSequencerUI : public juce::Component,
         void setStreamingText(const juce::String& text);
         void appendStreamingToken(const juce::String& token);
         void showResult(const juce::String& description, int numSteps);
+        void showError(const juce::String& message);
         void clear();
 
       private:

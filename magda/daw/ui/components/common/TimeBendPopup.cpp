@@ -11,6 +11,15 @@ static constexpr int PADDING = 8;
 static constexpr int GAP = 4;
 static constexpr int BUTTON_HEIGHT = 26;
 
+juce::Component::SafePointer<TimeBendPopup> TimeBendPopup::currentPopup_;
+
+void TimeBendPopup::dismissCurrent() {
+    if (auto* p = currentPopup_.getComponent()) {
+        delete p;  // destructor handles applied_ / restoreOriginals
+    }
+    currentPopup_ = nullptr;
+}
+
 TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndices)
     : clipId_(clipId), noteIndices_(std::move(noteIndices)) {
     // Capture original positions for preview/restore
@@ -277,14 +286,22 @@ void TimeBendPopup::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void TimeBendPopup::showAbove(std::unique_ptr<TimeBendPopup> popup, juce::Component* anchor) {
+    // Singleton: dismiss any existing popup before showing a new one so old
+    // foreground popups don't accumulate.
+    dismissCurrent();
+
     auto* raw = popup.release();
     auto screenBounds = anchor->getScreenBounds();
     int x = screenBounds.getCentreX() - raw->getWidth() / 2;
     int y = screenBounds.getY() - raw->getHeight() - 4;
     raw->setTopLeftPosition(x, y);
+    // Always-on-top so it stays visible during playback even when the main
+    // window keeps focus and repaints frequently (playhead, etc).
+    raw->setAlwaysOnTop(true);
     raw->addToDesktop(juce::ComponentPeer::windowHasDropShadow);
     raw->setVisible(true);
     raw->toFront(true);
+    currentPopup_ = raw;
 }
 
 void TimeBendPopup::resized() {
