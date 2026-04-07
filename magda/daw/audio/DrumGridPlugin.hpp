@@ -223,8 +223,15 @@ class DrumGridPlugin : public te::Plugin {
 
     // Audio processing state
     te::MidiMessageArray chainMidi_;
+    juce::AudioBuffer<float> scratchBuffer_;  // pre-allocated stereo scratch for processChain
     double sampleRate_ = 44100.0;
     int blockSize_ = 512;
+
+    // Internal helper: pad-array index for a chain (lowNote - baseNote), or -1 if out of range
+    int padIndexFor(const Chain& chain) const {
+        int p = chain.lowNote - baseNote;
+        return (p >= 0 && p < maxPads) ? p : -1;
+    }
 
     static const juce::Identifier chainTreeId;
     static const juce::Identifier chainIndexId;

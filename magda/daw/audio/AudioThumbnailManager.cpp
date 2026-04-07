@@ -167,6 +167,9 @@ double AudioThumbnailManager::getCachedBPM(const juce::String& filePath) const {
 
 void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
                                                 std::function<void(double)> onComplete) {
+    // Caches and pending-callback map are message-thread only (no locks).
+    JUCE_ASSERT_MESSAGE_THREAD;
+
     // Cache hit — fire callback synchronously and return.
     auto cacheIt = bpmCache_.find(filePath);
     if (cacheIt != bpmCache_.end()) {

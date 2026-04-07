@@ -79,6 +79,9 @@ void DrumGridPlugin::initialise(const te::PluginInitialisationInfo& info) {
     sampleRate_ = info.sampleRate;
     blockSize_ = info.blockSizeSamples;
 
+    // Pre-allocate stereo scratch buffer to avoid per-callback heap allocs on the audio thread.
+    scratchBuffer_.setSize(2, juce::jmax(1, blockSize_), false, false, true);
+
     // Initialise child plugins in all chains
     for (auto& chain : chains_) {
         for (auto& p : chain->plugins) {
@@ -165,14 +168,21 @@ void DrumGridPlugin::processChain(Chain& chain, juce::AudioBuffer<float>& output
         !chain.plugins[0]->producesAudioWhenNoAudioInput())
         return;
 
-    // Run plugins on a stereo scratch buffer
+    // Run plugins on a stereo scratch buffer (pre-allocated in initialise()).
     constexpr int scratchChannels = 2;
-    juce::AudioBuffer<float> scratchBuffer(scratchChannels, numSamples);
-    scratchBuffer.clear();
+    if (scratchBuffer_.getNumChannels() < scratchChannels ||
+        scratchBuffer_.getNumSamples() < numSamples) {
+        // Defensive — host changed block size without re-initialising. Shouldn't happen,
+        // but reallocate rather than write past the end.
+        scratchBuffer_.setSize(scratchChannels, numSamples, false, false, true);
+    }
+    scratchBuffer_.clear(0, numSamples);
 
     te::PluginRenderContext chainRc(
-        &scratchBuffer, juce::AudioChannelSet::canonicalChannelSet(scratchChannels), 0, numSamples,
+        &scratchBuffer_, juce::AudioChannelSet::canonicalChannelSet(scratchChannels), 0, numSamples,
         &chainMidi_, 0.0, rc.editTime, rc.isPlaying, rc.isScrubbing, rc.isRendering, false);
+
+    int padIdx = padIndexFor(chain);
 
     for (int pi = 0; pi < static_cast<int>(chain.plugins.size()); ++pi) {
         auto& p = chain.plugins[static_cast<size_t>(pi)];
@@ -183,17 +193,27 @@ void DrumGridPlugin::processChain(Chain& chain, juce::AudioBuffer<float>& output
                                ? chain.pluginGains[static_cast<size_t>(pi)]
                                : 1.0f;
         if (pluginGain != 1.0f)
-            scratchBuffer.applyGain(pluginGain);
+            scratchBuffer_.applyGain(0, numSamples, pluginGain);
+
+        // Capture per-plugin output peak (post pluginGain, pre level/pan).
+        if (padIdx >= 0 && pi < maxFxPerChain) {
+            float pl = scratchBuffer_.getMagnitude(0, 0, numSamples);
+            float pr = scratchChannels >= 2 ? scratchBuffer_.getMagnitude(1, 0, numSamples) : pl;
+            auto& pm = pluginMeters_[static_cast<size_t>(padIdx)][static_cast<size_t>(pi)];
+            if (pl > pm.peakL.load(std::memory_order_relaxed))
+                pm.peakL.store(pl, std::memory_order_relaxed);
+            if (pr > pm.peakR.load(std::memory_order_relaxed))
+                pm.peakR.store(pr, std::memory_order_relaxed);
+        }
     }
 
     // Compute level/pan gains (read from AutomatableParam to include macro/mod modulation)
-    auto idx = static_cast<size_t>(chain.index);
-    float levelDb = (idx < levelParams_.size() && levelParams_[idx] != nullptr)
-                        ? levelParams_[idx]->getCurrentValue()
+    float levelDb = (padIdx >= 0 && levelParams_[static_cast<size_t>(padIdx)] != nullptr)
+                        ? levelParams_[static_cast<size_t>(padIdx)]->getCurrentValue()
                         : chain.level.get();
     float levelLinear = juce::Decibels::decibelsToGain(levelDb);
-    float panValue = (idx < panParams_.size() && panParams_[idx] != nullptr)
-                         ? panParams_[idx]->getCurrentValue()
+    float panValue = (padIdx >= 0 && panParams_[static_cast<size_t>(padIdx)] != nullptr)
+                         ? panParams_[static_cast<size_t>(padIdx)]->getCurrentValue()
                          : chain.pan.get();
     float leftGain =
         levelLinear * std::cos((panValue + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
@@ -209,31 +229,24 @@ void DrumGridPlugin::processChain(Chain& chain, juce::AudioBuffer<float>& output
         rightCh = std::min(1, numChannels - 1);
     }
 
-    outputBuffer.addFrom(leftCh, rc.bufferStartSample, scratchBuffer, 0, 0, numSamples, leftGain);
+    outputBuffer.addFrom(leftCh, rc.bufferStartSample, scratchBuffer_, 0, 0, numSamples, leftGain);
     if (rightCh < numChannels)
-        outputBuffer.addFrom(rightCh, rc.bufferStartSample, scratchBuffer,
-                             scratchBuffer.getNumChannels() >= 2 ? 1 : 0, 0, numSamples, rightGain);
+        outputBuffer.addFrom(rightCh, rc.bufferStartSample, scratchBuffer_,
+                             scratchBuffer_.getNumChannels() >= 2 ? 1 : 0, 0, numSamples,
+                             rightGain);
 
-    // Store post-gain peaks (reflects what was written to outputBuffer)
-    if (chain.index >= 0 && chain.index < maxPads) {
-        float rawL = scratchBuffer.getMagnitude(0, 0, numSamples);
-        float rawR = scratchChannels >= 2 ? scratchBuffer.getMagnitude(1, 0, numSamples) : rawL;
+    // Store chain-out peaks (post level/pan).
+    if (padIdx >= 0) {
+        float rawL = scratchBuffer_.getMagnitude(0, 0, numSamples);
+        float rawR = scratchChannels >= 2 ? scratchBuffer_.getMagnitude(1, 0, numSamples) : rawL;
         float peakL = rawL * leftGain;
         float peakR = rawR * rightGain;
 
-        auto& chainMeter = chainMeters_[static_cast<size_t>(chain.index)];
+        auto& chainMeter = chainMeters_[static_cast<size_t>(padIdx)];
         if (peakL > chainMeter.peakL.load(std::memory_order_relaxed))
             chainMeter.peakL.store(peakL, std::memory_order_relaxed);
         if (peakR > chainMeter.peakR.load(std::memory_order_relaxed))
             chainMeter.peakR.store(peakR, std::memory_order_relaxed);
-
-        int lastPi = juce::jlimit(0, maxFxPerChain - 1, static_cast<int>(chain.plugins.size()) - 1);
-        auto& pluginMeter =
-            pluginMeters_[static_cast<size_t>(chain.index)][static_cast<size_t>(lastPi)];
-        if (peakL > pluginMeter.peakL.load(std::memory_order_relaxed))
-            pluginMeter.peakL.store(peakL, std::memory_order_relaxed);
-        if (peakR > pluginMeter.peakR.load(std::memory_order_relaxed))
-            pluginMeter.peakR.store(peakR, std::memory_order_relaxed);
     }
 }
 
@@ -805,9 +818,13 @@ bool DrumGridPlugin::consumePadTrigger(int padIndex) {
 }
 
 std::pair<float, float> DrumGridPlugin::consumeChainPeak(int chainIndex) {
-    if (chainIndex < 0 || chainIndex >= maxPads)
+    auto* chain = getChainByIndex(chainIndex);
+    if (!chain)
         return {0.0f, 0.0f};
-    auto& m = chainMeters_[static_cast<size_t>(chainIndex)];
+    int padIdx = padIndexFor(*chain);
+    if (padIdx < 0)
+        return {0.0f, 0.0f};
+    auto& m = chainMeters_[static_cast<size_t>(padIdx)];
     float l = m.peakL.exchange(0.0f, std::memory_order_relaxed);
     float r = m.peakR.exchange(0.0f, std::memory_order_relaxed);
     return {l, r};
@@ -830,9 +847,15 @@ float DrumGridPlugin::getChainPluginGain(int chainIndex, int pluginIndex) const 
 }
 
 std::pair<float, float> DrumGridPlugin::consumeChainPluginPeak(int chainIndex, int pluginIndex) {
-    if (chainIndex < 0 || chainIndex >= maxPads || pluginIndex < 0 || pluginIndex >= maxFxPerChain)
+    if (pluginIndex < 0 || pluginIndex >= maxFxPerChain)
         return {0.0f, 0.0f};
-    auto& m = pluginMeters_[static_cast<size_t>(chainIndex)][static_cast<size_t>(pluginIndex)];
+    auto* chain = getChainByIndex(chainIndex);
+    if (!chain)
+        return {0.0f, 0.0f};
+    int padIdx = padIndexFor(*chain);
+    if (padIdx < 0)
+        return {0.0f, 0.0f};
+    auto& m = pluginMeters_[static_cast<size_t>(padIdx)][static_cast<size_t>(pluginIndex)];
     float l = m.peakL.exchange(0.0f, std::memory_order_relaxed);
     float r = m.peakR.exchange(0.0f, std::memory_order_relaxed);
     return {l, r};
@@ -1015,15 +1038,16 @@ void DrumGridPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
 //==============================================================================
 
 void DrumGridPlugin::syncParamFromChain(int chainIndex) {
-    if (chainIndex < 0 || chainIndex >= maxPads)
-        return;
-
-    auto idx = static_cast<size_t>(chainIndex);
-
     // Find the chain's CachedValues via its ValueTree
     auto chainTree = findChainTree(chainIndex);
     if (!chainTree.isValid())
         return;
+
+    int lowNote = chainTree.getProperty(lowNoteId, -1);
+    int padIdx = lowNote - baseNote;
+    if (padIdx < 0 || padIdx >= maxPads)
+        return;
+    auto idx = static_cast<size_t>(padIdx);
 
     float level = chainTree.getProperty(padLevelId, 0.0f);
     float pan = chainTree.getProperty(padPanId, 0.0f);
@@ -1040,11 +1064,12 @@ void DrumGridPlugin::valueTreePropertyChanged(juce::ValueTree& tree,
     if (!tree.hasType(chainTreeId))
         return;
 
-    int chainIndex = tree.getProperty(chainIndexId, -1);
-    if (chainIndex < 0 || chainIndex >= maxPads)
+    int lowNote = tree.getProperty(lowNoteId, -1);
+    int padIdx = lowNote - baseNote;
+    if (padIdx < 0 || padIdx >= maxPads)
         return;
 
-    auto idx = static_cast<size_t>(chainIndex);
+    auto idx = static_cast<size_t>(padIdx);
 
     if (property == padLevelId && levelParams_[idx] != nullptr) {
         float val = tree.getProperty(padLevelId, 0.0f);
