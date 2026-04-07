@@ -124,7 +124,7 @@ docs/           # Documentation
 ## Dependencies
 
 - [Tracktion Engine](https://github.com/Tracktion/tracktion_engine) - Audio engine
-- [JUCE](https://juce.com/) - GUI framework
+- [JUCE](https://juce.com/) - C++ application framework (GUI, audio I/O, plugin hosting, MIDI, DSP)
 - [juce-llm](https://github.com/Conceptual-Machines/juce-llm) - LLM API client module
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) - Embedded local LLM inference
 - [Catch2](https://github.com/catchorg/Catch2) - Testing (fetched via CMake)
