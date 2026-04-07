@@ -227,6 +227,12 @@ DrumGridUI::DrumGridUI() {
     }
 
     // Pagination
+    // IMPORTANT: add the opaque strip background BEFORE the nav buttons so
+    // JUCE z-order is: pads → strip bg → nav buttons. The strip occludes any
+    // pad pixels overflowing into the pagination row; the nav buttons sit on
+    // top of the strip and stay visible.
+    addAndMakeVisible(paginationStripBg_);
+
     prevPageButton_ = makeNavArrowButton("prev", 0.5f);
     nextPageButton_ = makeNavArrowButton("next", 0.0f);
     prevPageButton_->onClick = [this]() { goToPrevPage(); };
@@ -590,12 +596,9 @@ void DrumGridUI::paint(juce::Graphics& g) {
         g.setColour(sidebarColour);
         g.fillRect(toggleColBounds_);
 
-        // Pagination row background + top-edge separator
-        g.setColour(sidebarColour);
-        g.fillRect(paginationBounds_);
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawHorizontalLine(paginationBounds_.getY(), static_cast<float>(paginationBounds_.getX()),
-                             static_cast<float>(paginationBounds_.getRight()));
+        // (Pagination row background and top separator are drawn in
+        // paintOverChildren — they need to occlude any pad buttons that
+        // overflow into this strip, which they can't if drawn before children.)
 
         // Left column right-edge separator — drawn last so it renders over pagination fill
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
@@ -622,6 +625,15 @@ void DrumGridUI::paint(juce::Graphics& g) {
     // Border drawn on top of everything
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawRoundedRectangle(bounds.reduced(0.5f), corner, 1.0f);
+}
+
+void DrumGridUI::PaginationStripBg::paint(juce::Graphics& g) {
+    // Opaque background — occludes any pad button pixels that overflow into
+    // the pagination strip. The nav arrow buttons and page label are siblings
+    // added AFTER this in z-order, so they paint on top and remain visible.
+    g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawHorizontalLine(0, 0.0f, static_cast<float>(getWidth()));
 }
 
 void DrumGridUI::paintOverChildren(juce::Graphics& g) {
@@ -731,6 +743,12 @@ void DrumGridUI::resized() {
         int y = gridArea.getY() + flippedRow * (padSize + padGap);
         padButtons_[static_cast<size_t>(i)].setBounds(x, y, padSize, padSize);
     }
+
+    // Extend the strip background all the way to the component's bottom edge
+    // (and full width) so any pad pixels overflowing past the visible
+    // pagination row — including into the 4px bottom reduce — are occluded.
+    paginationStripBg_.setBounds(0, paginationBounds_.getY(), getWidth(),
+                                 getHeight() - paginationBounds_.getY());
 
     auto btnRow = paginationRow.reduced(3, 3);
     placeNavArrow(*prevPageButton_, btnRow, true);

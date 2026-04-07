@@ -237,6 +237,19 @@ class DrumGridUI : public juce::Component,
     std::array<PadButton, kPadsPerPage> padButtons_;
 
     // Pagination
+    // Opaque background strip — added to children BETWEEN the pad buttons and
+    // the nav arrow buttons so JUCE z-order paints it OVER pad pixels that
+    // overflow into the strip when the device slot is short, but UNDER the
+    // nav buttons and label so they remain visible.
+    class PaginationStripBg : public juce::Component {
+      public:
+        PaginationStripBg() {
+            setOpaque(true);
+            setInterceptsMouseClicks(false, false);
+        }
+        void paint(juce::Graphics& g) override;
+    };
+    PaginationStripBg paginationStripBg_;
     std::unique_ptr<juce::ArrowButton> prevPageButton_;
     std::unique_ptr<juce::ArrowButton> nextPageButton_;
     juce::Label pageLabel_;
