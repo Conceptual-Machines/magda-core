@@ -454,6 +454,13 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
         // Only repaint the scrollbar area, not the entire view.
         // Child components (timeline, trackContentPanel, gridOverlay, playhead)
         // handle their own repaints via their own timelineStateChanged listeners.
+        // SelectionOverlayComponent is NOT a listener — it has to be repainted
+        // here so the loop/selection/recording lines re-derive their X positions
+        // against the new zoom/scroll, otherwise they stay frozen at the old
+        // pixel column and visibly drift away from the ruler markers.
+        if (selectionOverlay) {
+            selectionOverlay->repaint();
+        }
     }
 
     // Playhead changes
@@ -1206,15 +1213,16 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
 
     // Calculate edit cursor position in pixels (triangle position)
     // horizontalZoom is ppb, convert time to beats
+    // Use std::round to match TimeRuler so cursors align with the ruler ticks.
     double editBeats = state.secondsToBeats(editPos);
-    int editX =
-        static_cast<int>(editBeats * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int editX = static_cast<int>(std::round(editBeats * owner.horizontalZoom)) +
+                LayoutConfig::TIMELINE_LEFT_PADDING;
     editX -= scrollOffset;
 
     // Calculate play cursor position in pixels (vertical line position)
     double playBeats = state.secondsToBeats(playbackPos);
-    int playX =
-        static_cast<int>(playBeats * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int playX = static_cast<int>(std::round(playBeats * owner.horizontalZoom)) +
+                LayoutConfig::TIMELINE_LEFT_PADDING;
     playX -= scrollOffset;
 
     // Draw edit cursor (triangle) - always visible
@@ -1254,8 +1262,8 @@ void MainView::PlayheadComponent::mouseDown(const juce::MouseEvent& e) {
     // Calculate edit cursor (triangle) position in pixels
     // horizontalZoom is ppb, convert time to beats
     double editBeats = state.secondsToBeats(editPos);
-    int editX =
-        static_cast<int>(editBeats * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int editX = static_cast<int>(std::round(editBeats * owner.horizontalZoom)) +
+                LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Adjust for horizontal scroll offset
     int scrollOffset = owner.trackContentViewport->getViewPositionX();
@@ -1307,8 +1315,8 @@ void MainView::PlayheadComponent::mouseMove(const juce::MouseEvent& event) {
     // Calculate edit cursor (triangle) position in pixels
     // horizontalZoom is ppb, convert time to beats
     double editBeats = state.secondsToBeats(editPos);
-    int editX =
-        static_cast<int>(editBeats * owner.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int editX = static_cast<int>(std::round(editBeats * owner.horizontalZoom)) +
+                LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Adjust for horizontal scroll offset
     int scrollOffset = owner.trackContentViewport->getViewPositionX();
@@ -1608,10 +1616,10 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     // horizontalZoom is ppb, convert times to beats
     double startBeats = state.secondsToBeats(state.selection.startTime);
     double endBeats = state.secondsToBeats(state.selection.endTime);
-    // Add LEFT_PADDING to align with timeline markers
-    int startX = static_cast<int>(startBeats * state.zoom.horizontalZoom) +
+    // Add LEFT_PADDING to align with timeline markers; round to match TimeRuler.
+    int startX = static_cast<int>(std::round(startBeats * state.zoom.horizontalZoom)) +
                  LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = static_cast<int>(endBeats * state.zoom.horizontalZoom) +
+    int endX = static_cast<int>(std::round(endBeats * state.zoom.horizontalZoom)) +
                LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Adjust for scroll offset
@@ -1695,9 +1703,12 @@ void MainView::SelectionOverlayComponent::drawLoopRegion(juce::Graphics& g) {
     // horizontalZoom is ppb, convert times to beats
     double loopStartBeats = state.secondsToBeats(state.loop.startTime);
     double loopEndBeats = state.secondsToBeats(state.loop.endTime);
-    int startX = static_cast<int>(loopStartBeats * state.zoom.horizontalZoom) +
+    // std::round so the loop edges sit on the same column as the ruler flags
+    // and the bar/beat ticks; truncation here was the source of the visible
+    // 1-pixel misalignment between the ruler loop strip and the overlay line.
+    int startX = static_cast<int>(std::round(loopStartBeats * state.zoom.horizontalZoom)) +
                  LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = static_cast<int>(loopEndBeats * state.zoom.horizontalZoom) +
+    int endX = static_cast<int>(std::round(loopEndBeats * state.zoom.horizontalZoom)) +
                LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Adjust for scroll offset
@@ -1760,9 +1771,9 @@ void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g)
     // Convert to pixels
     double startBeats = state.secondsToBeats(recordStartTime);
     double endBeats = state.secondsToBeats(recordEndTime);
-    int startX = static_cast<int>(startBeats * state.zoom.horizontalZoom) +
+    int startX = static_cast<int>(std::round(startBeats * state.zoom.horizontalZoom)) +
                  LayoutConfig::TIMELINE_LEFT_PADDING;
-    int endX = static_cast<int>(endBeats * state.zoom.horizontalZoom) +
+    int endX = static_cast<int>(std::round(endBeats * state.zoom.horizontalZoom)) +
                LayoutConfig::TIMELINE_LEFT_PADDING;
 
     // Adjust for scroll offset

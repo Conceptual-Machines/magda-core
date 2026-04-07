@@ -408,11 +408,16 @@ struct TimelineState {
 
     /**
      * Convert time to pixel position (accounting for scroll and padding)
+     *
+     * Uses std::round to match TimeRuler::timeToPixel and
+     * TimelineComponent::beatsToPixel — truncation here would cause sub-pixel
+     * misalignment between the loop/selection markers in the ruler and the
+     * vertical lines drawn over the track area.
      */
     int timeToPixel(double time) const {
         double beats = secondsToBeats(time);
-        return static_cast<int>(beats * zoom.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING -
-               zoom.scrollX;
+        return static_cast<int>(std::round(beats * zoom.horizontalZoom)) +
+               LayoutConfig::TIMELINE_LEFT_PADDING - zoom.scrollX;
     }
 
     /**
@@ -420,7 +425,8 @@ struct TimelineState {
      */
     int timeToPixelLocal(double time) const {
         double beats = secondsToBeats(time);
-        return static_cast<int>(beats * zoom.horizontalZoom) + LayoutConfig::TIMELINE_LEFT_PADDING;
+        return static_cast<int>(std::round(beats * zoom.horizontalZoom)) +
+               LayoutConfig::TIMELINE_LEFT_PADDING;
     }
 
     /**
@@ -428,7 +434,7 @@ struct TimelineState {
      */
     int timeDurationToPixels(double duration) const {
         double beats = secondsToBeats(duration);
-        return static_cast<int>(beats * zoom.horizontalZoom);
+        return static_cast<int>(std::round(beats * zoom.horizontalZoom));
     }
 
     /**

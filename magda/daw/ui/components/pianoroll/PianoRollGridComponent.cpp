@@ -987,7 +987,10 @@ void PianoRollGridComponent::setTimeSignatureNumerator(int numerator) {
 }
 
 int PianoRollGridComponent::beatToPixel(double beat) const {
-    return static_cast<int>(beat * pixelsPerBeat_) + leftPadding_;
+    // std::round to match TimeRuler::timeToPixel — truncation here causes
+    // sub-pixel drift between the loop vertical line drawn by the grid and
+    // the loop flag drawn by the ruler above it.
+    return static_cast<int>(std::round(beat * pixelsPerBeat_)) + leftPadding_;
 }
 
 double PianoRollGridComponent::pixelToBeat(int x) const {
