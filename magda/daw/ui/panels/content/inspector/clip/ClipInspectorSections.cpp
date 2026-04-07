@@ -333,6 +333,7 @@ void ClipInspector::initClipPropertiesSection() {
                                                        BinaryData::audio_clip_svgSize);
     clipTypeIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     clipTypeIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipTypeIcon_->setIconPadding(1.0f);
     clipTypeIcon_->setInterceptsMouseClicks(false, false);
     clipTypeIcon_->setTooltip("Audio clip");
     addChildComponent(*clipTypeIcon_);
@@ -342,6 +343,7 @@ void ClipInspector::initClipPropertiesSection() {
                                                        BinaryData::Arrangement_svgSize);
     clipViewIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     clipViewIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipViewIcon_->setIconPadding(1.0f);
     clipViewIcon_->setInterceptsMouseClicks(false, false);
     clipViewIcon_->setTooltip("Arrangement clip");
     addChildComponent(*clipViewIcon_);
@@ -419,6 +421,7 @@ void ClipInspector::initClipPropertiesSection() {
                                                            BinaryData::position_svgSize);
     clipPositionIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     clipPositionIcon_->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    clipPositionIcon_->setIconPadding(1.0f);
     clipPositionIcon_->setInterceptsMouseClicks(false, false);
     clipPropsContainer_.addChildComponent(*clipPositionIcon_);
 
@@ -1469,6 +1472,8 @@ void ClipInspector::initFadesSection() {
         btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setBorderThickness(1.0f);
         btn->setTooltip(icon.tooltip);
         btn->setClickingTogglesState(false);
         clipPropsContainer_.addChildComponent(*btn);
@@ -1522,6 +1527,8 @@ void ClipInspector::initFadesSection() {
         btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setBorderThickness(1.0f);
         btn->setTooltip(icon.tooltip);
         btn->setClickingTogglesState(false);
         clipPropsContainer_.addChildComponent(*btn);

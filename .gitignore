@@ -1,6 +1,7 @@
 # Environment variables
 .env
 .venv*/
+graphify-out/
 
 # Build directories
 cmake-build-*/

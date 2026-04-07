@@ -57,3 +57,9 @@ Always use Makefile targets. Never use `cmake` or `ninja` directly.
 - Test binary is at `cmake-build-debug/tests/magda_tests`
 - App bundle is at `cmake-build-debug/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app`
 - Pre-commit hooks run clang-format automatically; if commit fails due to formatting, re-stage and commit again
+
+## When to Build
+
+- **Small cosmetic / non-logic changes** (UI sizes, paddings, colors, icon swaps, layout tweaks, comment edits, gitignore, etc.): do NOT build automatically. The user prefers to build these themselves. Just make the change and stop.
+- **Logic changes** (new functions, control flow, state management, threading, audio code, refactors, anything that could compile-fail or introduce bugs): always build to verify it compiles and to catch errors early.
+- When unsure, ask the user whether they want you to build.

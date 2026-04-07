@@ -19,7 +19,7 @@ void ClipInspector::resized() {
 
     // Clip name as header with view icon, type icon, and name (outside viewport)
     {
-        const int iconSize = 18;
+        const int iconSize = 20;
         const int gap = 6;
         auto headerRow = bounds.removeFromTop(24);
         if (clipViewIcon_->isVisible()) {
@@ -30,7 +30,7 @@ void ClipInspector::resized() {
         clipTypeIcon_->setBounds(
             headerRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
         headerRow.removeFromLeft(gap);
-        colourSwatch_->setBounds(headerRow.removeFromRight(24));
+        colourSwatch_->setBounds(headerRow.removeFromRight(iconSize));
         headerRow.removeFromRight(4);
         clipNameValue_.setBounds(headerRow);
     }
@@ -57,7 +57,7 @@ void ClipInspector::resized() {
         addSpace(5);
     };
 
-    const int iconSize = 22;
+    const int iconSize = 20;
     const int gap = 3;
     const int labelHeight = 14;
     const int valueHeight = 22;
@@ -91,36 +91,25 @@ void ClipInspector::resized() {
         addSeparator();
     }
 
-    // Loop row: loop toggle + lstart | lend | phase (only when loop is on)
+    // Loop row: loop toggle + lstart | lend | phase (always shown; greyed when off)
     if (clipLoopToggle_->isVisible()) {
-        const auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-        bool loopOn = clip && (clip->loopEnabled || clip->view == magda::ClipView::Session);
+        auto labelRow = addRow(labelHeight);
+        labelRow.removeFromLeft(iconSize + gap);
+        clipLoopStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+        labelRow.removeFromLeft(gap);
+        clipLoopEndLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+        labelRow.removeFromLeft(gap);
+        clipLoopPhaseLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
 
-        if (loopOn) {
-            // Loop ON: loop toggle — start, end, phase
-            auto labelRow = addRow(labelHeight);
-            labelRow.removeFromLeft(iconSize + gap);
-            clipLoopStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-            labelRow.removeFromLeft(gap);
-            clipLoopEndLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-            labelRow.removeFromLeft(gap);
-            clipLoopPhaseLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-
-            auto valueRow = addRow(valueHeight);
-            clipLoopToggle_->setBounds(
-                valueRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-            valueRow.removeFromLeft(gap);
-            clipLoopStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-            valueRow.removeFromLeft(gap);
-            clipLoopEndValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-            valueRow.removeFromLeft(gap);
-            clipLoopPhaseValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-        } else {
-            // Loop OFF: just the toggle icon (offset is in position row)
-            auto valueRow = addRow(valueHeight);
-            clipLoopToggle_->setBounds(
-                valueRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-        }
+        auto valueRow = addRow(valueHeight);
+        clipLoopToggle_->setBounds(
+            valueRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+        valueRow.removeFromLeft(gap);
+        clipLoopStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+        valueRow.removeFromLeft(gap);
+        clipLoopEndValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
+        valueRow.removeFromLeft(gap);
+        clipLoopPhaseValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
     }
     addSeparator();
 

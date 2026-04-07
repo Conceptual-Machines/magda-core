@@ -280,16 +280,27 @@ void ClipInspector::updateFromSelectedClip() {
             clipLoopPhaseValue_->setAlpha(1.0f);
             clipLoopPhaseLabel_.setAlpha(1.0f);
         } else {
-            // Loop OFF: offset is active, loop row hidden
+            // Loop OFF: offset is active, loop row shown but greyed out
             clipContentOffsetValue_->setEnabled(true);
             clipContentOffsetValue_->setAlpha(1.0f);
 
-            clipLoopStartLabel_.setVisible(false);
-            clipLoopStartValue_->setVisible(false);
-            clipLoopEndLabel_.setVisible(false);
-            clipLoopEndValue_->setVisible(false);
-            clipLoopPhaseLabel_.setVisible(false);
-            clipLoopPhaseValue_->setVisible(false);
+            clipLoopStartLabel_.setVisible(true);
+            clipLoopStartValue_->setVisible(true);
+            clipLoopStartValue_->setEnabled(false);
+            clipLoopStartValue_->setAlpha(0.4f);
+            clipLoopStartLabel_.setAlpha(0.4f);
+
+            clipLoopEndLabel_.setVisible(true);
+            clipLoopEndValue_->setVisible(true);
+            clipLoopEndValue_->setEnabled(false);
+            clipLoopEndValue_->setAlpha(0.4f);
+            clipLoopEndLabel_.setAlpha(0.4f);
+
+            clipLoopPhaseLabel_.setVisible(true);
+            clipLoopPhaseValue_->setVisible(true);
+            clipLoopPhaseValue_->setEnabled(false);
+            clipLoopPhaseValue_->setAlpha(0.4f);
+            clipLoopPhaseLabel_.setAlpha(0.4f);
         }
 
         // Warp toggle (visible when audio props expanded)
