@@ -20,6 +20,8 @@ concurrency:
 jobs:
   build-and-test-linux:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/conceptual-machines/magda-core/build-linux:latest
     # Skip C++ build/test when explicitly requested or when only non-C++ files changed
     if: |
       github.event_name != 'workflow_dispatch' ||
@@ -29,40 +31,6 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
-
-    - name: Cache apt packages
-      uses: actions/cache@v5
-      with:
-        path: /var/cache/apt/archives
-        key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/ci.yml') }}
-        restore-keys: |
-          ${{ runner.os }}-apt-
-
-    - name: Install dependencies (Linux)
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          cmake \
-          ninja-build \
-          pkg-config \
-          libgtk-3-dev \
-          libasound2-dev \
-          libjack-jackd2-dev \
-          ladspa-sdk \
-          libcurl4-openssl-dev \
-          libfreetype6-dev \
-          libx11-dev \
-          libxcomposite-dev \
-          libxcursor-dev \
-          libxext-dev \
-          libxinerama-dev \
-          libxrandr-dev \
-          libxrender-dev \
-          libwebkit2gtk-4.1-dev \
-          libglu1-mesa-dev \
-          mesa-common-dev \
-          xvfb
 
     - name: Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2

@@ -33,6 +33,7 @@ RUN apt-get update && apt-get install -y \
     libwebkit2gtk-4.1-dev \
     libglu1-mesa-dev \
     mesa-common-dev \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Install pre-commit for git hooks
