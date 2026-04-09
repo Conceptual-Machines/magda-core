@@ -151,7 +151,9 @@ void ClipInspector::updateFromSelectedClip() {
                 displayBPM = thumbs.getCachedBPM(clip->audioFilePath);
                 if (displayBPM <= 0.0) {
                     auto cid = pid;
-                    thumbs.requestBPMDetection(clip->audioFilePath, [cid](double /*bpm*/) {
+                    thumbs.requestBPMDetection(clip->audioFilePath, [cid](double bpm) {
+                        if (bpm <= 0.0)
+                            return;
                         magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(cid);
                     });
                 }

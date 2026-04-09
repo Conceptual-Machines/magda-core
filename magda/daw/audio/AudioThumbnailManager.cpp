@@ -22,14 +22,31 @@ AudioThumbnailManager& AudioThumbnailManager::getInstance() {
 }
 
 juce::AudioThumbnail* AudioThumbnailManager::getThumbnail(const juce::String& audioFilePath) {
-    // Check if thumbnail already exists in cache
     auto it = thumbnails_.find(audioFilePath);
-    if (it != thumbnails_.end()) {
+    if (it != thumbnails_.end())
         return it->second.get();
-    }
 
-    // Create new thumbnail
-    return createThumbnail(audioFilePath);
+    // Not cached yet — kick off async creation (safe to call repeatedly)
+    ensureThumbnail(audioFilePath);
+    return nullptr;
+}
+
+void AudioThumbnailManager::ensureThumbnail(const juce::String& audioFilePath) {
+    // Already cached or in-flight — nothing to do
+    if (thumbnails_.find(audioFilePath) != thumbnails_.end())
+        return;
+    if (pendingThumbnails_.count(audioFilePath) > 0)
+        return;
+
+    pendingThumbnails_.insert(audioFilePath);
+
+    // Defer creation to a callAsync so it runs on the message thread but NOT
+    // inside a paint() call. This unblocks the current paint immediately.
+    juce::MessageManager::callAsync([this, path = audioFilePath]() {
+        if (thumbnails_.find(path) == thumbnails_.end())
+            createThumbnail(path);
+        pendingThumbnails_.erase(path);
+    });
 }
 
 juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String& audioFilePath) {
@@ -48,16 +65,9 @@ juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String&
                                                *thumbnailCache_  // cache for storing thumbnail data
         );
 
-    // Load the audio file into the thumbnail
-    auto* reader = formatManager_.createReaderFor(audioFile);
-    if (reader == nullptr) {
-        DBG("AudioThumbnailManager: Could not create reader for: " << audioFilePath);
-        return nullptr;
-    }
-
-    // Set the reader with hash code for caching
-    // Thumbnail loads asynchronously - drawWaveform handles the not-yet-loaded case
-    thumbnail->setReader(reader, audioFile.hashCode64());
+    // Use setSource with FileInputSource — the AudioThumbnailCache loads the
+    // file data on its own background thread, keeping the message thread free.
+    thumbnail->setSource(new juce::FileInputSource(audioFile));
 
     // Store in cache
     auto* thumbnailPtr = thumbnail.get();

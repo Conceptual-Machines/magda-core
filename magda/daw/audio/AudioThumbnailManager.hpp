@@ -8,6 +8,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -25,11 +26,21 @@ class AudioThumbnailManager {
     static AudioThumbnailManager& getInstance();
 
     /**
-     * @brief Get or create a thumbnail for an audio file
-     * @param audioFilePath Absolute path to the audio file
-     * @return Pointer to the AudioThumbnail, or nullptr if file couldn't be loaded
+     * @brief Get an already-cached thumbnail for an audio file.
+     *
+     * Returns nullptr if the thumbnail is not yet ready. If the file has not
+     * been seen before, triggers asynchronous creation — callers should repaint
+     * after a short delay (the clip component already does this via a timer).
+     *
+     * Safe to call from paint().
      */
     juce::AudioThumbnail* getThumbnail(const juce::String& audioFilePath);
+
+    /**
+     * @brief Pre-load a thumbnail so it is ready before the first paint.
+     * Call from a non-paint context (e.g. when a clip is added to the timeline).
+     */
+    void ensureThumbnail(const juce::String& audioFilePath);
 
     /**
      * @brief Draw the waveform for an audio file
@@ -118,8 +129,11 @@ class AudioThumbnailManager {
     // Map of file paths to thumbnails
     std::map<juce::String, std::unique_ptr<juce::AudioThumbnail>> thumbnails_;
 
-    // Create a new thumbnail for a file
+    // Create a new thumbnail for a file (synchronous — call off the paint thread)
     juce::AudioThumbnail* createThumbnail(const juce::String& audioFilePath);
+
+    // Files whose thumbnails are currently being created asynchronously
+    std::set<juce::String> pendingThumbnails_;
 
     // BPM detection cache (file path -> detected BPM).
     // Message-thread only — never touched from background detection threads.
