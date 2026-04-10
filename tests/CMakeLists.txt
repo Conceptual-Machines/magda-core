@@ -42,6 +42,8 @@ set(TEST_SOURCES
     test_scale_detection.cpp
     test_step_clock.cpp
     test_mono_note_processor.cpp
+    test_sends_and_track_deletion.cpp
+    test_master_track_serialization.cpp
 )
 
 # Create test executable
