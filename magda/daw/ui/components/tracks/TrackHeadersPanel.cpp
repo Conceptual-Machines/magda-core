@@ -8,6 +8,7 @@
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/DeviceInfo.hpp"
+#include "../../../core/ParameterUtils.hpp"
 #include "../../../core/RackInfo.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackCommands.hpp"
@@ -2901,6 +2902,68 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
         g.setFont(11.0f);
         auto nameArea = headerArea.reduced(4, 2);
         g.drawText(lane->getDisplayName(), nameArea, juce::Justification::centredLeft);
+
+        // Value tick marks and labels in the lane content area
+        {
+            // Match CurveEditorBase's padding (5px) so ticks align with grid lines
+            constexpr int curvePadding = 5;
+            int contentTop = y + AutomationLaneComponent::HEADER_HEIGHT + curvePadding;
+            int contentBottom =
+                y + laneHeight - AutomationLaneComponent::RESIZE_HANDLE_HEIGHT - curvePadding;
+            int contentHeight = contentBottom - contentTop;
+            float rightEdge = static_cast<float>(getWidth());
+            constexpr float tickLen = 5.0f;
+
+            if (contentHeight > 20) {
+                auto paramInfo = lane->target.getParameterInfo();
+
+                // Build grid values: pairs of (normalized, label)
+                std::vector<std::pair<double, juce::String>> gridValues;
+                if (paramInfo.scale == ParameterScale::FaderDB) {
+                    const std::pair<double, const char*> dbValues[] = {
+                        {6.0, "6"},     {0.0, "0"},     {-6.0, "-6"},   {-12.0, "-12"},
+                        {-18.0, "-18"}, {-24.0, "-24"}, {-36.0, "-36"}, {-48.0, "-48"}};
+                    for (const auto& [db, label] : dbValues) {
+                        float norm =
+                            ParameterUtils::realToNormalized(static_cast<float>(db), paramInfo);
+                        gridValues.push_back({static_cast<double>(norm), label});
+                    }
+                } else if (lane->target.type == AutomationTargetType::TrackPan) {
+                    gridValues.push_back(
+                        {static_cast<double>(ParameterUtils::realToNormalized(1.0f, paramInfo)),
+                         "R"});
+                    gridValues.push_back(
+                        {static_cast<double>(ParameterUtils::realToNormalized(0.5f, paramInfo)),
+                         "50R"});
+                    gridValues.push_back(
+                        {static_cast<double>(ParameterUtils::realToNormalized(0.0f, paramInfo)),
+                         "C"});
+                    gridValues.push_back(
+                        {static_cast<double>(ParameterUtils::realToNormalized(-0.5f, paramInfo)),
+                         "50L"});
+                    gridValues.push_back(
+                        {static_cast<double>(ParameterUtils::realToNormalized(-1.0f, paramInfo)),
+                         "L"});
+                } else {
+                    for (int i = 1; i < 10; ++i)
+                        gridValues.push_back({i / 10.0, juce::String(i * 10) + "%"});
+                }
+
+                g.setFont(8.0f);
+                for (const auto& [norm, label] : gridValues) {
+                    if (norm <= 0.01 || norm >= 0.99)
+                        continue;
+                    int tickY = contentTop + static_cast<int>((1.0 - norm) * contentHeight);
+                    // Tick
+                    g.setColour(juce::Colour(0x66FFFFFF));
+                    g.drawHorizontalLine(tickY, rightEdge - tickLen, rightEdge);
+                    // Label
+                    g.setColour(juce::Colour(0xFF777777));
+                    auto labelBounds = juce::Rectangle<int>(2, tickY - 5, getWidth() - 10, 10);
+                    g.drawText(label, labelBounds, juce::Justification::centredRight);
+                }
+            }
+        }
 
         // Bottom border — matches the resize handle area on the content side
         int borderY = y + laneHeight - AutomationLaneComponent::RESIZE_HANDLE_HEIGHT;

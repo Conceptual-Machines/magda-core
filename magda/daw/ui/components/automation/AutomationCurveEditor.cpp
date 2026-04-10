@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "core/AutomationCommands.hpp"
+#include "core/ParameterUtils.hpp"
 #include "core/UndoManager.hpp"
 
 namespace magda {
@@ -142,6 +143,60 @@ double AutomationCurveEditor::pixelToX(int px) const {
 
 int AutomationCurveEditor::xToPixel(double x) const {
     return static_cast<int>(std::round((x - clipOffset_) * pixelsPerBeat_));
+}
+
+void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
+    const auto* lane = AutomationManager::getInstance().getLane(laneId_);
+    if (!lane) {
+        CurveEditorBase::paintGrid(g);
+        return;
+    }
+
+    auto paramInfo = lane->target.getParameterInfo();
+
+    // Build list of normalized grid positions based on parameter type
+    std::vector<double> gridNorms;
+
+    if (paramInfo.scale == ParameterScale::FaderDB) {
+        // dB values that make sense for a fader
+        const double dbValues[] = {6.0, 0.0, -6.0, -12.0, -18.0, -24.0, -36.0, -48.0, -60.0};
+        for (double db : dbValues) {
+            float norm = ParameterUtils::realToNormalized(static_cast<float>(db), paramInfo);
+            gridNorms.push_back(static_cast<double>(norm));
+        }
+    } else if (lane->target.type == AutomationTargetType::TrackPan) {
+        // Pan: fine divisions from -1 to +1
+        for (double pan = -1.0; pan <= 1.0; pan += 0.25) {
+            float norm = ParameterUtils::realToNormalized(static_cast<float>(pan), paramInfo);
+            gridNorms.push_back(static_cast<double>(norm));
+        }
+    } else {
+        // Generic: 10% increments
+        for (int i = 1; i < 10; ++i) {
+            gridNorms.push_back(i / 10.0);
+        }
+    }
+
+    auto bounds = getLocalBounds();
+    float width = static_cast<float>(bounds.getWidth());
+
+    for (double norm : gridNorms) {
+        if (norm <= 0.01 || norm >= 0.99)
+            continue;
+        int y = yToPixel(norm);
+        g.setColour(juce::Colour(0x18FFFFFF));
+        g.drawHorizontalLine(y, 0.0f, width);
+    }
+}
+
+juce::String AutomationCurveEditor::formatValueLabel(double y) const {
+    const auto* lane = AutomationManager::getInstance().getLane(laneId_);
+    if (!lane)
+        return CurveEditorBase::formatValueLabel(y);
+
+    auto paramInfo = lane->target.getParameterInfo();
+    float realValue = ParameterUtils::normalizedToReal(static_cast<float>(y), paramInfo);
+    return ParameterUtils::formatValue(realValue, paramInfo);
 }
 
 const std::vector<CurvePoint>& AutomationCurveEditor::getPoints() const {

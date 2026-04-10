@@ -122,7 +122,9 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
 
     // Save to file
     if (!ProjectSerializer::saveToFile(actualFile, newProject)) {
-        lastError_ = "Failed to save project: " + ProjectSerializer::getLastError();
+        DBG("Failed to save project: " + ProjectSerializer::getLastError());
+        lastError_ =
+            "The project could not be saved. Please check disk space and file permissions.";
         return false;
     }
 
@@ -183,7 +185,9 @@ bool ProjectManager::loadProject(const juce::File& file,
     // Stage first (file I/O + parse + validate)
     StagedProjectData staged;
     if (!ProjectSerializer::loadAndStage(fileToLoad, staged)) {
-        lastError_ = "Failed to load project: " + ProjectSerializer::getLastError();
+        DBG("Failed to load project: " + ProjectSerializer::getLastError());
+        lastError_ = "The project file could not be opened. It may be corrupted or from an "
+                     "incompatible version.";
         return false;
     }
 
@@ -266,8 +270,12 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
                                onComplete, this]() {
         auto staged = std::make_shared<StagedProjectData>();
         bool ok = ProjectSerializer::loadAndStage(fileCopy, *staged);
-        juce::String error =
-            ok ? juce::String() : ("Failed to load project: " + ProjectSerializer::getLastError());
+        juce::String error;
+        if (!ok) {
+            DBG("Failed to load project: " + ProjectSerializer::getLastError());
+            error = "The project file could not be opened. It may be corrupted or from an "
+                    "incompatible version.";
+        }
 
         // Bounce back to the message thread for commit + notification
         juce::MessageManager::callAsync([this, staged, ok, error, originalFile,

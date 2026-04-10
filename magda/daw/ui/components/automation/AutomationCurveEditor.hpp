@@ -88,6 +88,7 @@ class AutomationCurveEditor : public CurveEditorBase,
 
     // CurveEditorBase data access
     const std::vector<CurvePoint>& getPoints() const override;
+    juce::String formatValueLabel(double y) const override;
 
   protected:
     // CurveEditorBase data mutation callbacks
@@ -100,6 +101,7 @@ class AutomationCurveEditor : public CurveEditorBase,
                           const CurveHandleData& outHandle) override;
 
     void onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) override;
+    void paintGrid(juce::Graphics& g) override;
     void syncSelectionState() override;
     void rebuildPointComponents() override;
 

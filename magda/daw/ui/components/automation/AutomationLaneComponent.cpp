@@ -339,7 +339,7 @@ static double realToNormalizedForTarget(double realValue, const ParameterInfo& i
 }
 
 void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangle<int> area) {
-    if (area.getHeight() <= 0)
+    if (area.getHeight() <= 0 || area.getWidth() < 25)
         return;
 
     // Background for scale area
