@@ -879,8 +879,9 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
 
                 magda::SelectionManager::getInstance().selectChainNode(nodePath_);
 
-                // If was already selected, toggle collapse using captured state
-                if (wasAlreadySelected) {
+                // If was already selected, toggle collapse — but only when collapsed
+                // (to expand) or when the click is on the header bar (to collapse)
+                if (wasAlreadySelected && (wasCollapsed || e.getPosition().y < getHeaderHeight())) {
                     setCollapsed(!wasCollapsed);
                 }
             }
