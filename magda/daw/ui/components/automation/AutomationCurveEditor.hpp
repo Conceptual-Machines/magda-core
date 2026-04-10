@@ -74,6 +74,7 @@ class AutomationCurveEditor : public CurveEditorBase,
 
     // Snapping (uses base class snapXToGrid)
     std::function<double(double)> snapTimeToGrid;
+    std::function<double()> getGridSpacingBeats;  // Grid step in beats
 
     // Clip mode (for clip-based automation)
     void setClipId(AutomationClipId clipId) {

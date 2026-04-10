@@ -2327,6 +2327,7 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
             entry.component->setPixelsPerBeat(currentZoom);
             entry.component->setTempoBPM(tempoBPM);
             entry.component->snapTimeToGrid = snapBeatsToGrid;
+            entry.component->getGridSpacingBeats = getGridSpacingBeats;
 
             // Wire up height change callback for resizing
             entry.component->onHeightChanged = [this](AutomationLaneId /*changedLaneId*/,

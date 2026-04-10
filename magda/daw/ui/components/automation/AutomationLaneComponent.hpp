@@ -66,6 +66,7 @@ class AutomationLaneComponent : public juce::Component,
 
     // Snapping
     std::function<double(double)> snapTimeToGrid;
+    std::function<double()> getGridSpacingBeats;
 
     // Header dimensions
     static constexpr int HEADER_HEIGHT = 20;

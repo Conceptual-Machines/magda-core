@@ -1546,6 +1546,9 @@ void MainView::setupSelectionCallbacks() {
     trackContentPanel->snapBeatsToGrid = [this](double beats) {
         return timelineController->getState().snapBeatsToGrid(beats);
     };
+    trackContentPanel->getGridSpacingBeats = [this]() -> double {
+        return timelineController->getState().getSnapBeatFraction();
+    };
 
     // Set up render callbacks (bubble up to MainWindow)
     trackContentPanel->onClipRenderRequested = [this](ClipId id) {

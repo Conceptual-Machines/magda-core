@@ -46,6 +46,7 @@ class CurveEditorBase : public juce::Component {
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
     bool keyPressed(const juce::KeyPress& key) override;
+    void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
 
     // Configuration
     void setDrawMode(CurveDrawMode mode) {
@@ -109,6 +110,7 @@ class CurveEditorBase : public juce::Component {
 
     // Snapping
     std::function<double(double)> snapXToGrid;
+    std::function<double()> getGridSpacingX;  // Returns grid step size in X units
 
   protected:
     CurveDrawMode drawMode_ = CurveDrawMode::Select;

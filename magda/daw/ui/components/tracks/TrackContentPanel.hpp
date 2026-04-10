@@ -161,6 +161,8 @@ class TrackContentPanel : public juce::Component,
         snapTimeToGrid;  // Callback to snap time to grid (provided by MainView)
     std::function<double(double)>
         snapBeatsToGrid;  // Callback to snap beats to grid (for automation, provided by MainView)
+    std::function<double()>
+        getGridSpacingBeats;  // Returns current grid spacing in beats (for line stamp tool)
 
     // Multi-clip drag methods (public for ClipComponent access)
     void startMultiClipDrag(ClipId anchorClipId, const juce::Point<int>& startPos);

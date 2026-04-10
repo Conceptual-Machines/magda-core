@@ -20,6 +20,13 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
         return x;
     };
 
+    CurveEditorBase::getGridSpacingX = [this]() -> double {
+        if (getGridSpacingBeats) {
+            return getGridSpacingBeats();
+        }
+        return 1.0;  // Default: 1 beat
+    };
+
     // Register listeners
     AutomationManager::getInstance().addListener(this);
     SelectionManager::getInstance().addListener(this);

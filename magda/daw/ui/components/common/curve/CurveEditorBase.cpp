@@ -283,7 +283,8 @@ void CurveEditorBase::renderCurveSegment(juce::Path& path, const CurvePoint& p1,
 }
 
 void CurveEditorBase::paintDrawingPreview(juce::Graphics& g) {
-    if (activeDrawMode_ == CurveDrawMode::Pencil && !drawingPath_.empty()) {
+    if ((activeDrawMode_ == CurveDrawMode::Pencil || activeDrawMode_ == CurveDrawMode::Curve) &&
+        !drawingPath_.empty()) {
         g.setColour(juce::Colour(0xAAFFFFFF));
         for (size_t i = 1; i < drawingPath_.size(); ++i) {
             g.drawLine(static_cast<float>(drawingPath_[i - 1].x),
@@ -291,11 +292,6 @@ void CurveEditorBase::paintDrawingPreview(juce::Graphics& g) {
                        static_cast<float>(drawingPath_[i].x), static_cast<float>(drawingPath_[i].y),
                        2.0f);
         }
-    } else if (activeDrawMode_ == CurveDrawMode::Line && isDrawing_) {
-        g.setColour(juce::Colour(0xAAFFFFFF));
-        auto mousePos = getMouseXYRelative();
-        g.drawLine(static_cast<float>(lineStartPoint_.x), static_cast<float>(lineStartPoint_.y),
-                   static_cast<float>(mousePos.x), static_cast<float>(mousePos.y), 2.0f);
     }
 }
 
@@ -304,24 +300,20 @@ void CurveEditorBase::mouseDown(const juce::MouseEvent& e) {
 
     if (e.mods.isLeftButtonDown()) {
         // Resolve effective draw mode from modifier keys:
-        //   Cmd/Ctrl → Pencil, Alt/Option → Line, otherwise use drawMode_
+        //   Cmd/Ctrl → freeform Pencil, Shift → Line stamp, otherwise Select
         if (e.mods.isCommandDown()) {
             activeDrawMode_ = CurveDrawMode::Pencil;
-        } else if (e.mods.isAltDown()) {
+        } else if (e.mods.isShiftDown()) {
             activeDrawMode_ = CurveDrawMode::Line;
         } else {
-            activeDrawMode_ = drawMode_;
+            activeDrawMode_ = CurveDrawMode::Select;
         }
 
         switch (activeDrawMode_) {
             case CurveDrawMode::Select:
-                // Clear selection on empty-area click (no shift)
-                if (!e.mods.isShiftDown()) {
-                    clearSelection();
-                }
-                // Start lasso selection on empty area
+                // Record click position; lasso starts on drag, point added on click-release
                 lassoAnchor_ = e.getPosition();
-                isLassoActive_ = true;
+                isLassoActive_ = false;
                 lassoRect_ = {};
                 break;
 
@@ -331,13 +323,24 @@ void CurveEditorBase::mouseDown(const juce::MouseEvent& e) {
                 drawingPath_.push_back(e.getPosition());
                 break;
 
-            case CurveDrawMode::Line:
-                isDrawing_ = true;
-                lineStartPoint_ = e.getPosition();
+            case CurveDrawMode::Line: {
+                // Shift+click: stamp a step spanning one grid cell (2 points)
+                double x = pixelToX(e.x);
+                double y = pixelToY(e.y);
+                y = juce::jlimit(0.0, 1.0, y);
+
+                if (snapXToGrid && getGridSpacingX) {
+                    double gridStart = snapXToGrid(x);
+                    double gridEnd = gridStart + getGridSpacingX();
+                    onPointAdded(gridStart, y, CurveType::Step);
+                    onPointAdded(gridEnd, y, CurveType::Step);
+                } else {
+                    onPointAdded(x, y, CurveType::Step);
+                }
                 break;
+            }
 
             case CurveDrawMode::Curve:
-                // Similar to pencil but creates bezier points
                 isDrawing_ = true;
                 drawingPath_.clear();
                 drawingPath_.push_back(e.getPosition());
@@ -347,12 +350,24 @@ void CurveEditorBase::mouseDown(const juce::MouseEvent& e) {
 }
 
 void CurveEditorBase::mouseDrag(const juce::MouseEvent& e) {
-    if (isLassoActive_) {
+    // Select mode: start lasso after a small movement threshold
+    if (activeDrawMode_ == CurveDrawMode::Select && !isDrawing_) {
         auto pos = e.getPosition();
-        lassoRect_ = juce::Rectangle<int>(
-            std::min(lassoAnchor_.x, pos.x), std::min(lassoAnchor_.y, pos.y),
-            std::abs(pos.x - lassoAnchor_.x), std::abs(pos.y - lassoAnchor_.y));
-        repaint();
+        int dx = pos.x - lassoAnchor_.x;
+        int dy = pos.y - lassoAnchor_.y;
+
+        if (!isLassoActive_ && (dx * dx + dy * dy) > 16) {
+            // Passed threshold — start lasso
+            isLassoActive_ = true;
+            clearSelection();
+        }
+
+        if (isLassoActive_) {
+            lassoRect_ = juce::Rectangle<int>(
+                std::min(lassoAnchor_.x, pos.x), std::min(lassoAnchor_.y, pos.y),
+                std::abs(pos.x - lassoAnchor_.x), std::abs(pos.y - lassoAnchor_.y));
+            repaint();
+        }
         return;
     }
 
@@ -362,41 +377,43 @@ void CurveEditorBase::mouseDrag(const juce::MouseEvent& e) {
     if (activeDrawMode_ == CurveDrawMode::Pencil || activeDrawMode_ == CurveDrawMode::Curve) {
         drawingPath_.push_back(e.getPosition());
         repaint();
-    } else if (activeDrawMode_ == CurveDrawMode::Line) {
-        repaint();  // Redraw line preview
     }
 }
 
 void CurveEditorBase::mouseUp(const juce::MouseEvent& e) {
-    if (isLassoActive_) {
-        isLassoActive_ = false;
+    if (activeDrawMode_ == CurveDrawMode::Select && !isDrawing_) {
+        if (isLassoActive_) {
+            // Finish lasso selection
+            isLassoActive_ = false;
 
-        // If shift is NOT held, clear selection before adding lasso hits
-        if (!e.mods.isShiftDown()) {
-            selectedPointIds_.clear();
+            // Gather points whose centres fall within the lasso rectangle
+            std::vector<uint32_t> selectedIds;
             for (auto& pc : pointComponents_) {
-                pc->setSelected(false);
+                auto centre = pc->getBounds().getCentre();
+                if (lassoRect_.contains(centre)) {
+                    selectedPointIds_.insert(pc->getPointId());
+                    pc->setSelected(true);
+                    selectedIds.push_back(pc->getPointId());
+                }
             }
-        }
 
-        // Gather points whose centres fall within the lasso rectangle
-        std::vector<uint32_t> selectedIds;
-        for (auto& pc : pointComponents_) {
-            auto centre = pc->getBounds().getCentre();
-            bool hit = lassoRect_.contains(centre);
-            if (hit) {
-                selectedPointIds_.insert(pc->getPointId());
-                pc->setSelected(true);
-                selectedIds.push_back(pc->getPointId());
+            if (!selectedIds.empty()) {
+                onPointsSelected(selectedIds);
             }
-        }
 
-        if (!selectedIds.empty()) {
-            onPointsSelected(selectedIds);
-        }
+            lassoRect_ = {};
+            repaint();
+        } else {
+            // No drag happened — single click adds a point
+            double x = pixelToX(e.x);
+            double y = pixelToY(e.y);
 
-        lassoRect_ = {};
-        repaint();
+            if (snapXToGrid) {
+                x = snapXToGrid(x);
+            }
+
+            onPointAdded(x, y, CurveType::Linear);
+        }
         return;
     }
 
@@ -408,17 +425,8 @@ void CurveEditorBase::mouseUp(const juce::MouseEvent& e) {
                 createPointsFromDrawingPath();
                 break;
 
-            case CurveDrawMode::Line: {
-                // Create two points: start and end
-                double startX = pixelToX(lineStartPoint_.x);
-                double startY = pixelToY(lineStartPoint_.y);
-                double endX = pixelToX(e.x);
-                double endY = pixelToY(e.y);
-
-                onPointAdded(startX, startY, CurveType::Linear);
-                onPointAdded(endX, endY, CurveType::Linear);
-                break;
-            }
+            case CurveDrawMode::Line:
+                break;  // Line is handled on mouseDown (instant stamp)
 
             case CurveDrawMode::Curve:
                 createPointsFromDrawingPath();
@@ -434,19 +442,19 @@ void CurveEditorBase::mouseUp(const juce::MouseEvent& e) {
 }
 
 void CurveEditorBase::mouseDoubleClick(const juce::MouseEvent& e) {
-    // Double-click to add a point
-    double x = pixelToX(e.x);
-    double y = pixelToY(e.y);
+    // Double-click on empty area is a no-op.
+    // Point deletion on double-click is handled by CurvePointComponent.
+    juce::ignoreUnused(e);
+}
 
-    // Snap if enabled
-    if (snapXToGrid) {
-        x = snapXToGrid(x);
+void CurveEditorBase::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
+    if (modifiers.isShiftDown()) {
+        setMouseCursor(juce::MouseCursor::CrosshairCursor);
+    } else if (modifiers.isCommandDown()) {
+        setMouseCursor(juce::MouseCursor::CopyingCursor);
+    } else {
+        setMouseCursor(juce::MouseCursor::NormalCursor);
     }
-
-    CurveType curveType =
-        (drawMode_ == CurveDrawMode::Curve) ? CurveType::Bezier : CurveType::Linear;
-
-    onPointAdded(x, y, curveType);
 }
 
 bool CurveEditorBase::keyPressed(const juce::KeyPress& key) {
@@ -458,6 +466,22 @@ bool CurveEditorBase::keyPressed(const juce::KeyPress& key) {
         }
         return true;
     }
+
+    // Cmd+A: select all points
+    if (key == juce::KeyPress('a', juce::ModifierKeys::commandModifier, 0)) {
+        std::vector<uint32_t> allIds;
+        for (auto& pc : pointComponents_) {
+            selectedPointIds_.insert(pc->getPointId());
+            pc->setSelected(true);
+            allIds.push_back(pc->getPointId());
+        }
+        if (!allIds.empty()) {
+            onPointsSelected(allIds);
+        }
+        repaint();
+        return true;
+    }
+
     return false;
 }
 
@@ -534,12 +558,22 @@ void CurveEditorBase::rebuildPointComponents() {
             // Clear preview state - drag is complete
             previewPointId_ = INVALID_CURVE_POINT_ID;
 
+            // Snap X if enabled
+            if (snapXToGrid) {
+                newX = snapXToGrid(newX);
+            }
+
             // Allow subclass to constrain position (e.g., pin edge points)
             constrainPointPosition(pointId, newX, newY);
             onPointMoved(pointId, newX, newY);
         };
 
         pc->onPointDragPreview = [this](uint32_t pointId, double newX, double newY) {
+            // Snap X if enabled
+            if (snapXToGrid) {
+                newX = snapXToGrid(newX);
+            }
+
             // Allow subclass to constrain position (e.g., pin edge points)
             constrainPointPosition(pointId, newX, newY);
 

@@ -250,6 +250,11 @@ void AutomationLaneComponent::rebuildContent() {
                 return snapTimeToGrid(x);
             return x;
         };
+        curveEditor_->getGridSpacingBeats = [this]() -> double {
+            if (getGridSpacingBeats)
+                return getGridSpacingBeats();
+            return 1.0;
+        };
         curveEditor_->setDrawMode(AutomationDrawMode::Pencil);  // Default to draw mode
         addAndMakeVisible(curveEditor_.get());
 
