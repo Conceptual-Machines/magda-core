@@ -60,7 +60,8 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
       edit_(edit),
       trackController_(engine, edit),
       pluginManager_(engine, edit, trackController_, pluginWindowBridge_, transportState_),
-      clipSynchronizer_(edit, trackController_, warpMarkerManager_) {
+      clipSynchronizer_(edit, trackController_, warpMarkerManager_),
+      automationPlayback_(*this, edit) {
     // Wire up async plugin load completion callback to notify UI
     pluginManager_.onAsyncPluginLoaded = [](TrackId trackId) {
         TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
@@ -899,6 +900,9 @@ void AudioBridge::timerCallback() {
     }
 
     // NOTE: Window state sync is now handled by PluginWindowManager's timer
+
+    // Automation playback — sample curves at playhead and apply to parameters
+    automationPlayback_.process();
 
     // Update metering from level measurers (runs at 30 FPS on message thread)
     trackController_.withTrackMapping(

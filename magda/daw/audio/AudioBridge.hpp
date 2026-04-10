@@ -10,6 +10,7 @@
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
+#include "AutomationPlaybackEngine.hpp"
 #include "ClipSynchronizer.hpp"
 #include "DeviceMeteringManager.hpp"
 #include "DeviceProcessor.hpp"
@@ -738,6 +739,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     ClipSynchronizer clipSynchronizer_;
     SessionClipAudioMonitor sessionAudioMonitor_;
     SessionMonitorPlugin* sessionMonitorPlugin_ = nullptr;
+
+    // Automation playback (samples curves at 30Hz, applies to parameters)
+    AutomationPlaybackEngine automationPlayback_;
 
     // Per-device metering (LevelMeasurer per device, polled on timer)
     DeviceMeteringManager deviceMetering_;

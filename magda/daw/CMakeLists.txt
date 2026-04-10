@@ -240,6 +240,7 @@ set(DAW_CORE_SOURCES
     audio/PluginManager.cpp
     audio/InstrumentRackManager.cpp
     audio/RackSyncManager.cpp
+    audio/AutomationPlaybackEngine.cpp
     audio/ClipSynchronizer.cpp
     audio/SidechainMonitorPlugin.cpp
     audio/MidiReceivePlugin.cpp
@@ -553,6 +554,7 @@ set(DAW_HEADERS
     audio/PluginManager.hpp
     audio/InstrumentRackManager.hpp
     audio/RackSyncManager.hpp
+    audio/AutomationPlaybackEngine.hpp
     audio/ClipSynchronizer.hpp
     audio/SidechainTriggerBus.hpp
     audio/SidechainMonitorPlugin.hpp

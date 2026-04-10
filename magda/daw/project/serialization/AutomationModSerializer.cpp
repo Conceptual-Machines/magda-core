@@ -187,6 +187,8 @@ juce::var ProjectSerializer::serializeAutomationTarget(const AutomationTarget& t
     obj->setProperty("macroIndex", target.macroIndex);
     obj->setProperty("modId", target.modId);
     obj->setProperty("modParamIndex", target.modParamIndex);
+    if (target.paramName.isNotEmpty())
+        obj->setProperty("paramName", target.paramName);
 
     return juce::var(obj);
 }
@@ -209,6 +211,8 @@ bool ProjectSerializer::deserializeAutomationTarget(const juce::var& json,
     outTarget.macroIndex = obj->getProperty("macroIndex");
     outTarget.modId = obj->getProperty("modId");
     outTarget.modParamIndex = obj->getProperty("modParamIndex");
+    if (obj->hasProperty("paramName"))
+        outTarget.paramName = obj->getProperty("paramName").toString();
 
     return true;
 }

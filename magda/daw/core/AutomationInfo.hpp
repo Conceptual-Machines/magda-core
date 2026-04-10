@@ -74,6 +74,9 @@ struct AutomationTarget {
     ModId modId = INVALID_MOD_ID;
     int modParamIndex = -1;
 
+    // Display name for the parameter (populated at lane creation time)
+    juce::String paramName;
+
     bool isValid() const {
         if (trackId == INVALID_TRACK_ID)
             return false;
@@ -124,10 +127,16 @@ struct AutomationTarget {
             case AutomationTargetType::TrackPan:
                 return "Track Pan";
             case AutomationTargetType::DeviceParameter:
+                if (paramName.isNotEmpty())
+                    return paramName;
                 return "Param " + juce::String(paramIndex);
             case AutomationTargetType::Macro:
+                if (paramName.isNotEmpty())
+                    return paramName;
                 return "Macro " + juce::String(macroIndex + 1);
             case AutomationTargetType::ModParameter:
+                if (paramName.isNotEmpty())
+                    return paramName;
                 return "Mod " + juce::String(modId) + " Param " + juce::String(modParamIndex);
         }
         return "Unknown";

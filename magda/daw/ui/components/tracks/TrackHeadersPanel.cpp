@@ -8,6 +8,7 @@
 #include "../../../audio/MidiBridge.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/DeviceInfo.hpp"
+#include "../../../core/RackInfo.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackCommands.hpp"
 #include "../../../core/TrackPropertyCommands.hpp"
@@ -2688,16 +2689,104 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
     juce::PopupMenu addNewMenu;
 
     // Track volume
-    AutomationTarget volumeTarget;
-    volumeTarget.type = AutomationTargetType::TrackVolume;
-    volumeTarget.trackId = trackId;
     addNewMenu.addItem(1, "Track Volume");
 
     // Track pan
-    AutomationTarget panTarget;
-    panTarget.type = AutomationTargetType::TrackPan;
-    panTarget.trackId = trackId;
     addNewMenu.addItem(2, "Track Pan");
+
+    // Build device parameter targets from chain elements
+    // IDs 10+ are indices into deviceParamTargets
+    auto deviceParamTargets = std::make_shared<std::vector<AutomationTarget>>();
+    constexpr int kDeviceParamBase = 10;
+
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (trackInfo) {
+        addNewMenu.addSeparator();
+
+        // Recursive lambda to walk chain elements (handles nested racks)
+        std::function<void(const std::vector<ChainElement>&, const ChainNodePath&,
+                           juce::PopupMenu&)>
+            buildMenu = [&](const std::vector<ChainElement>& elements,
+                            const ChainNodePath& parentPath, juce::PopupMenu& parentMenu) {
+                for (const auto& element : elements) {
+                    if (isDevice(element)) {
+                        const auto& device = getDevice(element);
+                        if (device.parameters.empty())
+                            continue;
+
+                        juce::PopupMenu deviceMenu;
+                        auto devicePath = (parentPath.getType() == ChainNodeType::None ||
+                                           parentPath.getType() == ChainNodeType::Track)
+                                              ? ChainNodePath::topLevelDevice(trackId, device.id)
+                                              : parentPath.withDevice(device.id);
+
+                        for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i) {
+                            AutomationTarget target;
+                            target.type = AutomationTargetType::DeviceParameter;
+                            target.trackId = trackId;
+                            target.devicePath = devicePath;
+                            target.paramIndex = i;
+                            target.paramName =
+                                device.name + ": " + device.parameters[static_cast<size_t>(i)].name;
+
+                            int itemId =
+                                kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                            deviceParamTargets->push_back(target);
+                            deviceMenu.addItem(itemId,
+                                               device.parameters[static_cast<size_t>(i)].name);
+                        }
+                        parentMenu.addSubMenu(device.name, deviceMenu);
+
+                    } else if (isRack(element)) {
+                        const auto& rack = getRack(element);
+                        juce::PopupMenu rackMenu;
+                        auto rackPath = ChainNodePath::rack(trackId, rack.id);
+
+                        // Add macro entries
+                        for (int m = 0; m < static_cast<int>(rack.macros.size()); ++m) {
+                            if (!rack.macros[static_cast<size_t>(m)].name.isEmpty()) {
+                                AutomationTarget target;
+                                target.type = AutomationTargetType::Macro;
+                                target.trackId = trackId;
+                                target.devicePath = rackPath;
+                                target.macroIndex = m;
+                                target.paramName =
+                                    rack.name + ": " + rack.macros[static_cast<size_t>(m)].name;
+
+                                int itemId =
+                                    kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                deviceParamTargets->push_back(target);
+                                rackMenu.addItem(itemId, rack.macros[static_cast<size_t>(m)].name);
+                            }
+                        }
+
+                        // Add chain device parameters
+                        for (const auto& chain : rack.chains) {
+                            auto chainPath = ChainNodePath::chain(trackId, rack.id, chain.id);
+                            if (rack.chains.size() > 1) {
+                                juce::PopupMenu chainMenu;
+                                buildMenu(chain.elements, chainPath, chainMenu);
+                                if (chainMenu.getNumItems() > 0)
+                                    rackMenu.addSubMenu(chain.name.isEmpty()
+                                                            ? "Chain " + juce::String(chain.id)
+                                                            : chain.name,
+                                                        chainMenu);
+                            } else {
+                                // Single chain rack — flatten into rack menu
+                                buildMenu(chain.elements, chainPath, rackMenu);
+                            }
+                        }
+
+                        if (rackMenu.getNumItems() > 0)
+                            parentMenu.addSubMenu(rack.name.isEmpty() ? "Rack" : rack.name,
+                                                  rackMenu);
+                    }
+                }
+            };
+
+        ChainNodePath rootPath = ChainNodePath::trackLevel(trackId);
+        buildMenu(trackInfo->chainElements, rootPath, addNewMenu);
+    }
 
     menu.addSubMenu("Add New Lane...", addNewMenu);
 
@@ -2707,7 +2796,7 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
         options = options.withTargetComponent(relativeTo);
     }
 
-    menu.showMenuAsync(options, [this, trackId](int result) {
+    menu.showMenuAsync(options, [this, trackId, deviceParamTargets](int result) {
         if (result == 0)
             return;
 
@@ -2719,7 +2808,6 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
             const auto* lane = automationManager.getLane(laneId);
             if (lane) {
                 bool newVisible = !lane->visible;
-                // Defer visibility change to avoid destroying listeners during notification loop
                 juce::MessageManager::callAsync([laneId, newVisible]() {
                     AutomationManager::getInstance().setLaneVisible(laneId, newVisible);
                 });
@@ -2743,6 +2831,18 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
             automationManager.setLaneVisible(laneId, true);
             if (onShowAutomationLane) {
                 onShowAutomationLane(trackId, laneId);
+            }
+        } else if (result >= kDeviceParamBase) {
+            // Create device parameter / macro automation lane
+            int idx = result - kDeviceParamBase;
+            if (idx >= 0 && idx < static_cast<int>(deviceParamTargets->size())) {
+                const auto& target = (*deviceParamTargets)[static_cast<size_t>(idx)];
+                auto laneId =
+                    automationManager.getOrCreateLane(target, AutomationLaneType::Absolute);
+                automationManager.setLaneVisible(laneId, true);
+                if (onShowAutomationLane) {
+                    onShowAutomationLane(trackId, laneId);
+                }
             }
         }
     });

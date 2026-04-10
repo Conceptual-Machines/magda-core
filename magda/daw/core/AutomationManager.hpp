@@ -298,6 +298,19 @@ class AutomationManager : public TrackManagerListener {
     void tracksChanged() override {}
     void trackPropertyChanged(int trackId) override;
 
+    /**
+     * @brief Set by AutomationPlaybackEngine during value application
+     *
+     * When true, trackPropertyChanged() is suppressed to prevent feedback loops
+     * where automation-driven volume/pan changes would corrupt automation curves.
+     */
+    void setPlaybackActive(bool active) {
+        playbackActive_ = active;
+    }
+    bool isPlaybackActive() const {
+        return playbackActive_;
+    }
+
   private:
     AutomationManager();
     ~AutomationManager();
@@ -305,6 +318,8 @@ class AutomationManager : public TrackManagerListener {
     std::vector<AutomationLaneInfo> lanes_;
     std::vector<AutomationClipInfo> clips_;
     juce::ListenerList<AutomationManagerListener> listeners_;
+
+    bool playbackActive_ = false;
 
     int nextLaneId_ = 1;
     int nextClipId_ = 1;

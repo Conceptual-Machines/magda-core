@@ -62,6 +62,13 @@ AutomationManager::~AutomationManager() {
 // ============================================================================
 
 void AutomationManager::trackPropertyChanged(int trackId) {
+    // Suppress feedback when automation playback is driving parameter values.
+    // Without this guard, automation sets volume → TrackManager fires
+    // trackPropertyChanged → we'd overwrite the automation point with the
+    // value we just set, corrupting the curve.
+    if (playbackActive_)
+        return;
+
     // When a track's volume or pan changes, update any automation lanes
     // that target those parameters (if they have points)
     TrackId tid = static_cast<TrackId>(trackId);
