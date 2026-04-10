@@ -356,8 +356,8 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Automation button (bezier curve icon)
     automationButton = std::make_unique<SvgButton>("Automation", BinaryData::bezier_svg,
                                                    BinaryData::bezier_svgSize);
-    automationButton->setTooltip("Automation (coming soon)");
-    automationButton->setEnabled(false);
+    automationButton->setTooltip("Automation");
+    automationButton->setEnabled(true);
     automationButton->setColour(juce::TextButton::buttonColourId,
                                 DarkTheme::getColour(DarkTheme::SURFACE));
     automationButton->setColour(juce::TextButton::buttonOnColourId,
@@ -1453,8 +1453,10 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
             std::make_unique<SetTrackInputMonitorCommand>(trackId, nextMode));
     };
 
-    // Automation button - no-op for now (planned for v0.2.0)
-    header.automationButton->onClick = nullptr;
+    // Automation button - show automation lane menu
+    header.automationButton->onClick = [this, trackId, &header]() {
+        showAutomationMenu(trackId, header.automationButton.get());
+    };
 
     // Create send labels from actual track sends
     rebuildSendLabels(header, trackId);
