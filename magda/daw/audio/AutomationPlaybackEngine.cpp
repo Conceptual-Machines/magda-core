@@ -8,91 +8,201 @@
 namespace magda {
 
 AutomationPlaybackEngine::AutomationPlaybackEngine(AudioBridge& bridge, te::Edit& edit)
-    : bridge_(bridge), edit_(edit) {}
+    : bridge_(bridge), edit_(edit) {
+    AutomationManager::getInstance().addListener(this);
+}
+
+AutomationPlaybackEngine::~AutomationPlaybackEngine() {
+    AutomationManager::getInstance().removeListener(this);
+}
 
 void AutomationPlaybackEngine::process() {
     bool playing = edit_.getTransport().isPlaying();
 
-    // Detect stop transition — nothing special needed (hold last value)
+    if (!wasPlaying_ && playing) {
+        // Transport just started — bake all lanes into TE curves
+        bakeAllLanes();
+    } else if (wasPlaying_ && !playing) {
+        // Transport just stopped — clear TE curves so manual control works
+        clearAllLanes();
+    } else if (playing && needsRebake_) {
+        // Automation data changed during playback — rebake
+        bakeAllLanes();
+    }
+
     wasPlaying_ = playing;
+    needsRebake_ = false;
+}
 
-    if (!playing)
-        return;
+// ============================================================================
+// AutomationManagerListener
+// ============================================================================
 
-    double position = edit_.getTransport().getPosition().inSeconds();
+void AutomationPlaybackEngine::automationLanesChanged() {
+    if (wasPlaying_)
+        needsRebake_ = true;
+}
 
+void AutomationPlaybackEngine::automationPointsChanged(AutomationLaneId /*laneId*/) {
+    if (wasPlaying_)
+        needsRebake_ = true;
+}
+
+// ============================================================================
+// Bake / Clear
+// ============================================================================
+
+void AutomationPlaybackEngine::bakeAllLanes() {
     auto& autoMgr = AutomationManager::getInstance();
 
-    // Set feedback guard so AutomationManager::trackPropertyChanged() ignores
-    // changes that originate from automation playback
+    // Set feedback guard to prevent trackPropertyChanged from corrupting curves
+    // when TE reads baked values during playback
     autoMgr.setPlaybackActive(true);
 
     for (const auto& lane : autoMgr.getLanes()) {
-        if (!lane.hasData())
-            continue;
+        if (lane.hasData())
+            bakeLane(lane);
+    }
+}
 
-        applyLane(lane, position);
+void AutomationPlaybackEngine::clearAllLanes() {
+    auto& autoMgr = AutomationManager::getInstance();
+
+    for (const auto& lane : autoMgr.getLanes()) {
+        clearLane(lane);
     }
 
     autoMgr.setPlaybackActive(false);
 }
 
-void AutomationPlaybackEngine::applyLane(const AutomationLaneInfo& lane, double timeInSeconds) {
-    auto& autoMgr = AutomationManager::getInstance();
-    double normalizedValue = autoMgr.getValueAtTime(lane.id, timeInSeconds);
-
-    switch (lane.target.type) {
-        case AutomationTargetType::TrackVolume:
-            applyTrackVolume(lane.target.trackId, normalizedValue);
-            break;
-        case AutomationTargetType::TrackPan:
-            applyTrackPan(lane.target.trackId, normalizedValue);
-            break;
-        case AutomationTargetType::DeviceParameter:
-            applyDeviceParameter(lane.target, normalizedValue);
-            break;
-        case AutomationTargetType::Macro:
-            applyMacro(lane.target, normalizedValue);
-            break;
-        case AutomationTargetType::ModParameter:
-            // Not yet implemented
-            break;
-    }
-}
-
-void AutomationPlaybackEngine::applyTrackVolume(TrackId trackId, double normalizedValue) {
-    // Convert normalized 0-1 → dB via fader curve → linear gain
-    auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
-    float dB = ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), paramInfo);
-    float gain = juce::Decibels::decibelsToGain(dB);
-    bridge_.setTrackVolume(trackId, gain);
-}
-
-void AutomationPlaybackEngine::applyTrackPan(TrackId trackId, double normalizedValue) {
-    // Pan ParameterInfo: linear -1.0 to +1.0, so normalizedToReal gives the TE value directly
-    auto paramInfo = ParameterPresets::pan(-1, "Pan");
-    float pan = ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), paramInfo);
-    bridge_.setTrackPan(trackId, pan);
-}
-
-void AutomationPlaybackEngine::applyDeviceParameter(const AutomationTarget& target,
-                                                    double normalizedValue) {
-    DeviceId deviceId = target.devicePath.getDeviceId();
-    if (deviceId == INVALID_DEVICE_ID)
+void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
+    auto* param = resolveParameter(lane.target);
+    if (!param)
         return;
 
-    // Plugin parameters are already 0-1 normalized in TE
-    bridge_.pushParameterChange(deviceId, target.paramIndex, static_cast<float>(normalizedValue));
+    auto& autoMgr = AutomationManager::getInstance();
+    auto& curve = param->getCurve();
+
+    // Clear existing TE automation points
+    curve.clear(nullptr);
+
+    // Determine the time range from the automation data
+    double startTime = 0.0;
+    double endTime = 0.0;
+
+    if (lane.isAbsolute() && !lane.absolutePoints.empty()) {
+        startTime = lane.absolutePoints.front().time;
+        endTime = lane.absolutePoints.back().time;
+    } else if (lane.isClipBased()) {
+        // Find the overall range from all clips
+        bool first = true;
+        for (auto clipId : lane.clipIds) {
+            const auto* clip = autoMgr.getClip(clipId);
+            if (!clip)
+                continue;
+            if (first || clip->startTime < startTime)
+                startTime = clip->startTime;
+            if (first || clip->getEndTime() > endTime)
+                endTime = clip->getEndTime();
+            first = false;
+        }
+    }
+
+    if (endTime <= startTime)
+        return;
+
+    // Value conversion lambda: maps MAGDA's 0-1 normalized to TE's parameter range.
+    // MAGDA and TE use different fader curves, so we must convert through dB for volume.
+    auto convertValue = [&](double magdaNormalized) -> float {
+        switch (lane.target.type) {
+            case AutomationTargetType::TrackVolume: {
+                // MAGDA 0-1 (FaderDB scale) → dB → TE fader position
+                auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
+                float dB = ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized),
+                                                            paramInfo);
+                return te::decibelsToVolumeFaderPosition(dB);
+            }
+            case AutomationTargetType::TrackPan: {
+                // MAGDA 0-1 → linear -1..+1 (same as TE's pan range)
+                auto paramInfo = ParameterPresets::pan(-1, "Pan");
+                return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized),
+                                                        paramInfo);
+            }
+            default:
+                // Device parameters: both MAGDA and TE use 0-1 normalized
+                return static_cast<float>(magdaNormalized);
+        }
+    };
+
+    // Bake: sample our curve at regular intervals and write dense linear points to TE
+    for (double t = startTime; t <= endTime; t += kBakeIntervalSeconds) {
+        double normalizedValue = autoMgr.getValueAtTime(lane.id, t);
+        float teValue = convertValue(normalizedValue);
+        curve.addPoint(te::TimePosition::fromSeconds(t), teValue, 0.0f, nullptr);
+    }
+
+    // Ensure the final point is exact
+    double finalValue = autoMgr.getValueAtTime(lane.id, endTime);
+    float teFinalValue = convertValue(finalValue);
+    curve.addPoint(te::TimePosition::fromSeconds(endTime), teFinalValue, 0.0f, nullptr);
 }
 
-void AutomationPlaybackEngine::applyMacro(const AutomationTarget& target, double normalizedValue) {
-    // Determine if this is a rack macro based on the device path
-    RackId rackId = target.devicePath.getRackId();
-    bool isRack = (rackId != INVALID_RACK_ID);
-    int id = isRack ? rackId : target.trackId;
+void AutomationPlaybackEngine::clearLane(const AutomationLaneInfo& lane) {
+    auto* param = resolveParameter(lane.target);
+    if (!param)
+        return;
 
-    bridge_.macroValueChanged(target.trackId, isRack, id, target.macroIndex,
-                              static_cast<float>(normalizedValue));
+    param->getCurve().clear(nullptr);
+}
+
+// ============================================================================
+// Parameter Resolution
+// ============================================================================
+
+te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
+    const AutomationTarget& target) {
+    switch (target.type) {
+        case AutomationTargetType::TrackVolume: {
+            auto* track = bridge_.getAudioTrack(target.trackId);
+            if (!track)
+                return nullptr;
+            if (auto* vp = track->getVolumePlugin()) {
+                return vp->volParam.get();
+            }
+            return nullptr;
+        }
+
+        case AutomationTargetType::TrackPan: {
+            auto* track = bridge_.getAudioTrack(target.trackId);
+            if (!track)
+                return nullptr;
+            if (auto* vp = track->getVolumePlugin()) {
+                return vp->panParam.get();
+            }
+            return nullptr;
+        }
+
+        case AutomationTargetType::DeviceParameter: {
+            DeviceId deviceId = target.devicePath.getDeviceId();
+            if (deviceId == INVALID_DEVICE_ID)
+                return nullptr;
+            auto plugin = bridge_.getPlugin(deviceId);
+            if (!plugin)
+                return nullptr;
+            auto params = plugin->getAutomatableParameters();
+            if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size())) {
+                return params[static_cast<size_t>(target.paramIndex)];
+            }
+            return nullptr;
+        }
+
+        case AutomationTargetType::Macro:
+        case AutomationTargetType::ModParameter:
+            // TODO: resolve macro/mod parameters to TE AutomatableParameters
+            return nullptr;
+    }
+
+    return nullptr;
 }
 
 }  // namespace magda
