@@ -445,6 +445,17 @@ struct TimelineState {
             return time;
         }
 
+        if (display.timeDisplayMode == TimeDisplayMode::BarsBeats && tempo.bpm > 0) {
+            // Snap in the beat domain to avoid floating-point drift from
+            // round-tripping through irrational seconds-per-beat values.
+            double beatFraction = getSnapBeatFraction();
+            if (beatFraction > 0) {
+                double beats = time * tempo.bpm / 60.0;
+                double snappedBeats = std::round(beats / beatFraction) * beatFraction;
+                return snappedBeats * 60.0 / tempo.bpm;
+            }
+        }
+
         double interval = getSnapInterval();
         if (interval <= 0) {
             return time;
@@ -454,8 +465,35 @@ struct TimelineState {
     }
 
     /**
-     * Get the current snap interval based on zoom level and display mode
+     * Snap a beat value directly to the current grid (no seconds conversion)
      */
+    double snapBeatsToGrid(double beats) const {
+        if (!display.snapEnabled)
+            return beats;
+        double beatFraction = getSnapBeatFraction();
+        if (beatFraction > 0)
+            return std::round(beats / beatFraction) * beatFraction;
+        return beats;
+    }
+
+    /**
+     * Get snap interval as a beat fraction (for beat-domain snapping)
+     */
+    double getSnapBeatFraction() const {
+        if (!display.gridQuantize.autoGrid) {
+            return display.gridQuantize.toBeatFraction();
+        }
+
+        const int minPixelSpacing = 50;
+        double frac = GridConstants::findBeatSubdivision(zoom.horizontalZoom, minPixelSpacing);
+        if (frac > 0) {
+            return frac;
+        }
+        int mult = GridConstants::findBarMultiple(zoom.horizontalZoom, tempo.timeSignatureNumerator,
+                                                  minPixelSpacing);
+        return static_cast<double>(tempo.timeSignatureNumerator) * mult;
+    }
+
     double getSnapInterval() const {
         // If grid override is active, return the fixed interval
         if (!display.gridQuantize.autoGrid) {

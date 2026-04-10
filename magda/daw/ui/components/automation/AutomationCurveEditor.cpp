@@ -128,12 +128,20 @@ AutomationDrawMode AutomationCurveEditor::getAutomationDrawMode() const {
     return AutomationDrawMode::Select;
 }
 
+void AutomationCurveEditor::setPixelsPerBeat(double ppb) {
+    if (std::abs(ppb - pixelsPerBeat_) < 0.001)
+        return;
+    pixelsPerBeat_ = ppb;
+    updatePointPositions();
+    repaint();
+}
+
 double AutomationCurveEditor::pixelToX(int px) const {
-    return (px / pixelsPerSecond_) + clipOffset_;
+    return (static_cast<double>(px) / pixelsPerBeat_) + clipOffset_;
 }
 
 int AutomationCurveEditor::xToPixel(double x) const {
-    return static_cast<int>((x - clipOffset_) * pixelsPerSecond_);
+    return static_cast<int>(std::round((x - clipOffset_) * pixelsPerBeat_));
 }
 
 const std::vector<CurvePoint>& AutomationCurveEditor::getPoints() const {
@@ -284,6 +292,16 @@ void AutomationCurveEditor::rebuildPointComponents() {
 
     // Call base class implementation
     CurveEditorBase::rebuildPointComponents();
+}
+
+void AutomationCurveEditor::onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) {
+    if (pointIds.empty())
+        return;
+
+    CompoundOperationScope scope("Delete Automation Points");
+    for (auto it = pointIds.rbegin(); it != pointIds.rend(); ++it) {
+        onPointDeleted(*it);
+    }
 }
 
 void AutomationCurveEditor::deleteSelectedPoints() {

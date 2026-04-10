@@ -386,6 +386,7 @@ void TrackContentPanel::setTrackHeight(int trackIndex, int height) {
         trackLanes[trackIndex]->height = height;
 
         updateClipComponentPositions();
+        updateAutomationLanePositions();
         resized();
         repaintVisible();
 
@@ -408,6 +409,7 @@ void TrackContentPanel::setZoom(double zoom) {
         return;
     currentZoom = zoom;
     updateClipComponentPositions();
+    updateAutomationLanePositions();
     resized();
     repaintVisible();
 }
@@ -418,6 +420,7 @@ void TrackContentPanel::setVerticalZoom(double zoom) {
         return;
     verticalZoom = zoom;
     updateClipComponentPositions();
+    updateAutomationLanePositions();
     resized();
     repaintVisible();
 }
@@ -2321,7 +2324,9 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
             entry.component = std::make_unique<AutomationLaneComponent>(laneId);
             // Convert ppb to pps for automation (time-based rendering)
             entry.component->setPixelsPerSecond(currentZoom * tempoBPM / 60.0);
-            entry.component->snapTimeToGrid = snapTimeToGrid;
+            entry.component->setPixelsPerBeat(currentZoom);
+            entry.component->setTempoBPM(tempoBPM);
+            entry.component->snapTimeToGrid = snapBeatsToGrid;
 
             // Wire up height change callback for resizing
             entry.component->onHeightChanged = [this](AutomationLaneId /*changedLaneId*/,
@@ -2396,6 +2401,8 @@ void TrackContentPanel::updateAutomationLanePositions() {
         entry.component->setBounds(0, y, getWidth(), height);
         // Convert ppb to pps for automation (time-based rendering)
         entry.component->setPixelsPerSecond(currentZoom * tempoBPM / 60.0);
+        entry.component->setPixelsPerBeat(currentZoom);
+        entry.component->setTempoBPM(tempoBPM);
     }
 }
 

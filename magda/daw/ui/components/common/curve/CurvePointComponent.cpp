@@ -138,17 +138,23 @@ void CurvePointComponent::mouseUp(const juce::MouseEvent& e) {
             int deltaXPx = parentPos.x - dragStartPos_.x;
             int deltaYPx = parentPos.y - dragStartPos_.y;
 
-            double pixelsPerX = parentEditor_->getPixelsPerX();
-            double pixelsPerY = parentEditor_->getPixelsPerY();
+            // Only commit a move if the mouse actually moved (> 2px).
+            // Skipping no-op moves prevents a rebuildPointComponents() between
+            // the two clicks of a double-click, which would destroy this component
+            // and prevent mouseDoubleClick from ever firing.
+            if (std::abs(deltaXPx) > 2 || std::abs(deltaYPx) > 2) {
+                double pixelsPerX = parentEditor_->getPixelsPerX();
+                double pixelsPerY = parentEditor_->getPixelsPerY();
 
-            double newX = dragStartX_ + deltaXPx / pixelsPerX;
-            double newY = dragStartY_ - deltaYPx / pixelsPerY;
+                double newX = dragStartX_ + deltaXPx / pixelsPerX;
+                double newY = dragStartY_ - deltaYPx / pixelsPerY;
 
-            newX = juce::jmax(0.0, newX);
-            newY = juce::jlimit(0.0, 1.0, newY);
+                newX = juce::jmax(0.0, newX);
+                newY = juce::jlimit(0.0, 1.0, newY);
 
-            if (onPointMoved) {
-                onPointMoved(pointId_, newX, newY);
+                if (onPointMoved) {
+                    onPointMoved(pointId_, newX, newY);
+                }
             }
         }
     }

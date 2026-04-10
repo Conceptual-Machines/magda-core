@@ -20,14 +20,33 @@ void AutomationPlaybackEngine::process() {
     bool playing = edit_.getTransport().isPlaying();
 
     if (!wasPlaying_ && playing) {
-        // Transport just started — bake all lanes into TE curves
-        bakeAllLanes();
+        // Transport just started. Curves were pre-baked on last stop (or on data
+        // change while stopped), so only rebake if data changed since then.
+        // Skipping redundant bake avoids destroying the already-built
+        // AutomationIterator, which would cause TE to ignore the curve for
+        // ~10ms (its async rebuild timer) — audible as a late automation onset.
+        if (needsRebake_) {
+            bakeAllLanes();
+        } else {
+            AutomationManager::getInstance().setPlaybackActive(true);
+        }
     } else if (wasPlaying_ && !playing) {
-        // Transport just stopped — clear TE curves so manual control works
+        // Transport just stopped — clear TE curves, then immediately rebake
+        // so curves are ready before the next play. The 10ms deferred iterator
+        // rebuild will complete long before the user presses play again.
+        // Manual fader control still works because playbackActive_ is false.
         clearAllLanes();
+        bakeAllLanes();
+        AutomationManager::getInstance().setPlaybackActive(false);
     } else if (playing && needsRebake_) {
         // Automation data changed during playback — rebake
         bakeAllLanes();
+    } else if (!playing && needsRebake_) {
+        // Automation data changed while stopped — rebake so curves are ready
+        // before transport starts (prevents transient on first block)
+        bakeAllLanes();
+        // Clear playback flag since we're not playing
+        AutomationManager::getInstance().setPlaybackActive(false);
     }
 
     wasPlaying_ = playing;
@@ -39,13 +58,11 @@ void AutomationPlaybackEngine::process() {
 // ============================================================================
 
 void AutomationPlaybackEngine::automationLanesChanged() {
-    if (wasPlaying_)
-        needsRebake_ = true;
+    needsRebake_ = true;
 }
 
 void AutomationPlaybackEngine::automationPointsChanged(AutomationLaneId /*laneId*/) {
-    if (wasPlaying_)
-        needsRebake_ = true;
+    needsRebake_ = true;
 }
 
 // ============================================================================
@@ -86,13 +103,13 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // Clear existing TE automation points
     curve.clear(nullptr);
 
-    // Determine the time range from the automation data
-    double startTime = 0.0;
-    double endTime = 0.0;
+    // Determine the beat range of the automation data
+    double dataStartBeats = 0.0;
+    double dataEndBeats = 0.0;
 
     if (lane.isAbsolute() && !lane.absolutePoints.empty()) {
-        startTime = lane.absolutePoints.front().time;
-        endTime = lane.absolutePoints.back().time;
+        dataStartBeats = lane.absolutePoints.front().time;
+        dataEndBeats = lane.absolutePoints.back().time;
     } else if (lane.isClipBased()) {
         // Find the overall range from all clips
         bool first = true;
@@ -100,16 +117,30 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
             const auto* clip = autoMgr.getClip(clipId);
             if (!clip)
                 continue;
-            if (first || clip->startTime < startTime)
-                startTime = clip->startTime;
-            if (first || clip->getEndTime() > endTime)
-                endTime = clip->getEndTime();
+            if (first || clip->startTime < dataStartBeats)
+                dataStartBeats = clip->startTime;
+            if (first || clip->getEndTime() > dataEndBeats)
+                dataEndBeats = clip->getEndTime();
             first = false;
         }
     }
 
-    if (endTime <= startTime)
+    if (dataEndBeats <= dataStartBeats)
         return;
+
+    // Convert edit length from seconds to beats for range comparison
+    double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+    double editLengthBeats = edit_.getLength().inSeconds() * bpm / 60.0;
+
+    // Extend baked range: start from beat 0 and go past the last point.
+    // This ensures TE has explicit values before the first automation point
+    // (preventing transients from default parameter values) and after the last
+    // point (holding the final value until the end of the edit).
+    double startBeats = 0.0;
+    double endBeats = std::max(dataEndBeats, editLengthBeats);
+
+    // Bake interval in beats (equivalent to ~10ms at current tempo)
+    double bakeIntervalBeats = kBakeIntervalSeconds * bpm / 60.0;
 
     // Value conversion lambda: maps MAGDA's 0-1 normalized to TE's parameter range.
     // MAGDA and TE use different fader curves, so we must convert through dB for volume.
@@ -134,17 +165,60 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
         }
     };
 
-    // Bake: sample our curve at regular intervals and write dense linear points to TE
-    for (double t = startTime; t <= endTime; t += kBakeIntervalSeconds) {
-        double normalizedValue = autoMgr.getValueAtTime(lane.id, t);
+    // Bake: sample our curve at regular beat intervals and write dense linear points to TE.
+    // Automation data is stored in beats; convert to seconds only for TE's addPoint().
+    for (double beat = startBeats; beat <= endBeats; beat += bakeIntervalBeats) {
+        double normalizedValue = autoMgr.getValueAtTime(lane.id, beat);
         float teValue = convertValue(normalizedValue);
-        curve.addPoint(te::TimePosition::fromSeconds(t), teValue, 0.0f, nullptr);
+        auto teTime = edit_.tempoSequence.toTime(te::BeatPosition::fromBeats(beat));
+        curve.addPoint(teTime, teValue, 0.0f, nullptr);
     }
 
     // Ensure the final point is exact
-    double finalValue = autoMgr.getValueAtTime(lane.id, endTime);
+    double finalValue = autoMgr.getValueAtTime(lane.id, endBeats);
     float teFinalValue = convertValue(finalValue);
-    curve.addPoint(te::TimePosition::fromSeconds(endTime), teFinalValue, 0.0f, nullptr);
+    auto teFinalTime = edit_.tempoSequence.toTime(te::BeatPosition::fromBeats(endBeats));
+    curve.addPoint(teFinalTime, teFinalValue, 0.0f, nullptr);
+
+    // Add exact automation point positions to preserve sharp transitions.
+    // The regular sampling may skip over exact point boundaries, causing TE's
+    // linear interpolation to smooth out intended sharp edges (e.g., a step
+    // drop at a bar boundary lets through the first transient).
+    const std::vector<AutomationPoint>* sourcePoints = nullptr;
+    if (lane.isAbsolute()) {
+        sourcePoints = &lane.absolutePoints;
+    }
+    // TODO: handle clip-based lanes similarly
+
+    if (sourcePoints) {
+        constexpr double kStepEpsilon = 0.0001;  // tiny beat offset for step edges
+        for (size_t i = 0; i < sourcePoints->size(); ++i) {
+            const auto& point = (*sourcePoints)[i];
+
+            // For step curves, add a point just before this point at the
+            // previous segment's held value so TE doesn't linearly ramp.
+            if (i > 0 && (*sourcePoints)[i - 1].curveType == AutomationCurveType::Step) {
+                double preStepBeat = point.time - kStepEpsilon;
+                if (preStepBeat >= startBeats) {
+                    double preValue = autoMgr.getValueAtTime(lane.id, preStepBeat);
+                    float tePreValue = convertValue(preValue);
+                    auto tePreTime =
+                        edit_.tempoSequence.toTime(te::BeatPosition::fromBeats(preStepBeat));
+                    curve.addPoint(tePreTime, tePreValue, 0.0f, nullptr);
+                }
+            }
+
+            // Add the exact point value at its exact beat position
+            float tePointValue = convertValue(point.value);
+            auto tePointTime = edit_.tempoSequence.toTime(te::BeatPosition::fromBeats(point.time));
+            curve.addPoint(tePointTime, tePointValue, 0.0f, nullptr);
+        }
+    }
+
+    // Force synchronous AutomationIterator rebuild. Without this, TE defers
+    // the rebuild to a 10ms timer, during which the curve is invisible to the
+    // audio thread and the parameter falls back to its manual fader value.
+    param->updateStream();
 }
 
 void AutomationPlaybackEngine::clearLane(const AutomationLaneInfo& lane) {

@@ -198,6 +198,21 @@ void AutomationLaneComponent::setPixelsPerSecond(double pps) {
     updateClipPositions();
 }
 
+void AutomationLaneComponent::setPixelsPerBeat(double ppb) {
+    pixelsPerBeat_ = ppb;
+    if (curveEditor_) {
+        curveEditor_->setPixelsPerBeat(ppb);
+    }
+    updateClipPositions();
+}
+
+void AutomationLaneComponent::setTempoBPM(double bpm) {
+    tempoBPM_ = bpm;
+    if (curveEditor_) {
+        curveEditor_->setTempoBPM(bpm);
+    }
+}
+
 int AutomationLaneComponent::getPreferredHeight() const {
     const auto* lane = getLaneInfo();
     if (lane) {
@@ -228,7 +243,13 @@ void AutomationLaneComponent::rebuildContent() {
         // Absolute lane: single curve editor
         curveEditor_ = std::make_unique<AutomationCurveEditor>(laneId_);
         curveEditor_->setPixelsPerSecond(pixelsPerSecond_);
-        curveEditor_->snapTimeToGrid = snapTimeToGrid;
+        curveEditor_->setPixelsPerBeat(pixelsPerBeat_);
+        curveEditor_->setTempoBPM(tempoBPM_);
+        curveEditor_->snapTimeToGrid = [this](double x) {
+            if (snapTimeToGrid)
+                return snapTimeToGrid(x);
+            return x;
+        };
         curveEditor_->setDrawMode(AutomationDrawMode::Pencil);  // Default to draw mode
         addAndMakeVisible(curveEditor_.get());
 
@@ -274,8 +295,8 @@ void AutomationLaneComponent::updateClipPositions() {
         if (!clip)
             continue;
 
-        int x = static_cast<int>(clip->startTime * pixelsPerSecond_);
-        int width = static_cast<int>(clip->length * pixelsPerSecond_);
+        int x = SCALE_LABEL_WIDTH + static_cast<int>(clip->startTime * pixelsPerBeat_);
+        int width = static_cast<int>(clip->length * pixelsPerBeat_);
         cc->setBounds(x, contentY, juce::jmax(10, width), juce::jmax(10, contentHeight));
     }
 }

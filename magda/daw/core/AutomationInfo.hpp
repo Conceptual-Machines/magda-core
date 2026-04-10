@@ -20,7 +20,7 @@ namespace magda {
  * When linked=true, moving one handle mirrors the other.
  */
 struct BezierHandle {
-    double time = 0.0;   // Time offset from point (seconds)
+    double time = 0.0;   // Time offset from point (beats)
     double value = 0.0;  // Value offset from point (normalized)
     bool linked = true;  // Mirror handles when one is moved
 
@@ -34,7 +34,7 @@ struct BezierHandle {
  */
 struct AutomationPoint {
     AutomationPointId id = INVALID_AUTOMATION_POINT_ID;
-    double time = 0.0;   // Position in seconds
+    double time = 0.0;   // Position in beats
     double value = 0.5;  // Normalized value 0-1
 
     AutomationCurveType curveType = AutomationCurveType::Linear;
@@ -175,11 +175,11 @@ struct AutomationClipInfo {
     juce::String name;
     juce::Colour colour;
 
-    double startTime = 0.0;  // Position on timeline (seconds)
-    double length = 4.0;     // Duration (seconds)
+    double startTime = 0.0;  // Position on timeline (beats)
+    double length = 4.0;     // Duration (beats)
 
     bool looping = false;
-    double loopLength = 4.0;  // Loop length in seconds
+    double loopLength = 4.0;  // Loop length in beats
 
     std::vector<AutomationPoint> points;
 

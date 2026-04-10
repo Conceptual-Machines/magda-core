@@ -60,7 +60,7 @@ class AutomationPlaybackEngine : public AutomationManagerListener {
     AudioBridge& bridge_;
     te::Edit& edit_;
     bool wasPlaying_ = false;
-    bool needsRebake_ = false;
+    bool needsRebake_ = true;  // Start true so first play triggers initial bake
 };
 
 }  // namespace magda

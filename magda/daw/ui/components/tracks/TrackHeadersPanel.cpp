@@ -2902,6 +2902,13 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
         auto nameArea = headerArea.reduced(4, 2);
         g.drawText(lane->getDisplayName(), nameArea, juce::Justification::centredLeft);
 
+        // Bottom border — matches the resize handle area on the content side
+        int borderY = y + laneHeight - AutomationLaneComponent::RESIZE_HANDLE_HEIGHT;
+        g.setColour(juce::Colour(0xFF333333));
+        g.fillRect(0, borderY, getWidth(), AutomationLaneComponent::RESIZE_HANDLE_HEIGHT);
+        g.setColour(juce::Colour(0xFF444444));
+        g.drawHorizontalLine(borderY, 0.0f, static_cast<float>(getWidth()));
+
         y += laneHeight;
     }
 }

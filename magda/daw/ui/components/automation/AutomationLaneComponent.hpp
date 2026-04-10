@@ -54,6 +54,8 @@ class AutomationLaneComponent : public juce::Component,
         return laneId_;
     }
     void setPixelsPerSecond(double pps);
+    void setPixelsPerBeat(double ppb);
+    void setTempoBPM(double bpm);
     double getPixelsPerSecond() const {
         return pixelsPerSecond_;
     }
@@ -80,6 +82,8 @@ class AutomationLaneComponent : public juce::Component,
   private:
     AutomationLaneId laneId_;
     double pixelsPerSecond_ = 100.0;
+    double pixelsPerBeat_ = 10.0;
+    double tempoBPM_ = 120.0;
     bool isSelected_ = false;
 
     // Resize state

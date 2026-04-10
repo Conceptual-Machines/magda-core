@@ -159,6 +159,8 @@ class TrackContentPanel : public juce::Component,
     std::function<void(ClipId)> onBounceToNewTrackRequested;  // Bounce clip to new track
     std::function<double(double)>
         snapTimeToGrid;  // Callback to snap time to grid (provided by MainView)
+    std::function<double(double)>
+        snapBeatsToGrid;  // Callback to snap beats to grid (for automation, provided by MainView)
 
     // Multi-clip drag methods (public for ClipComponent access)
     void startMultiClipDrag(ClipId anchorClipId, const juce::Point<int>& startPos);

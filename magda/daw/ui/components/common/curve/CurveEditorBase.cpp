@@ -10,6 +10,7 @@ namespace magda {
 
 CurveEditorBase::CurveEditorBase() {
     setName("CurveEditorBase");
+    setWantsKeyboardFocus(true);
 }
 
 CurveEditorBase::~CurveEditorBase() = default;
@@ -229,15 +230,6 @@ void CurveEditorBase::renderCurveSegment(juce::Path& path, const CurvePoint& p1,
     int pixelY1 = yToPixel(y1);
     int pixelX2 = xToPixel(x2);
     int pixelY2 = yToPixel(y2);
-
-    // DEBUG: Check if path current position matches p1
-    auto currentPos = path.getCurrentPosition();
-    if (std::abs(currentPos.x - pixelX1) > 2 || std::abs(currentPos.y - pixelY1) > 2) {
-        DBG("!!! PATH MISMATCH !!! pathPos=(" + juce::String(currentPos.x) + "," +
-            juce::String(currentPos.y) + ")" + " p1Pixel=(" + juce::String(pixelX1) + "," +
-            juce::String(pixelY1) + ")" + " p1=(" + juce::String(x1) + "," + juce::String(y1) +
-            ")");
-    }
 
     switch (p1.curveType) {
         case CurveType::Linear: {

@@ -1082,7 +1082,7 @@ void MainView::setupTrackSynchronization() {
 
     // Wire up automation lane visibility toggle
     trackHeadersPanel->onShowAutomationLane = [this](TrackId trackId, AutomationLaneId laneId) {
-        trackContentPanel->toggleAutomationLane(trackId, laneId);
+        trackContentPanel->showAutomationLane(trackId, laneId);
         updateContentSizes();
     };
 
@@ -1542,6 +1542,9 @@ void MainView::setupSelectionCallbacks() {
     // This uses the controller's state for snapping
     trackContentPanel->snapTimeToGrid = [this](double time) {
         return timelineController->getState().snapTimeToGrid(time);
+    };
+    trackContentPanel->snapBeatsToGrid = [this](double beats) {
+        return timelineController->getState().snapBeatsToGrid(beats);
     };
 
     // Set up render callbacks (bubble up to MainWindow)

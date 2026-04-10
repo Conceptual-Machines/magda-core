@@ -60,10 +60,14 @@ class AutomationCurveEditor : public CurveEditorBase,
     double getPixelsPerSecond() const {
         return pixelsPerSecond_;
     }
+    void setPixelsPerBeat(double ppb);
+    void setTempoBPM(double bpm) {
+        tempoBPM_ = bpm;
+    }
 
     // CurveEditorBase coordinate interface
     double getPixelsPerX() const override {
-        return pixelsPerSecond_;
+        return pixelsPerBeat_;
     }
     double pixelToX(int px) const override;
     int xToPixel(double x) const override;
@@ -95,6 +99,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     void onHandlesChanged(uint32_t pointId, const CurveHandleData& inHandle,
                           const CurveHandleData& outHandle) override;
 
+    void onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) override;
     void syncSelectionState() override;
     void rebuildPointComponents() override;
 
@@ -103,6 +108,8 @@ class AutomationCurveEditor : public CurveEditorBase,
     AutomationClipId clipId_ = INVALID_AUTOMATION_CLIP_ID;
     double clipOffset_ = 0.0;
     double pixelsPerSecond_ = 100.0;
+    double pixelsPerBeat_ = 10.0;
+    double tempoBPM_ = 120.0;
 
     // Cached curve points (converted from AutomationPoints)
     mutable std::vector<CurvePoint> cachedPoints_;
