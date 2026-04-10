@@ -658,7 +658,7 @@ set(DAW_HEADERS
     core/AutomationManager.hpp
     # Project serialization
     project/ProjectInfo.hpp
-    project/ProjectSerializer.hpp
+    project/serialization/ProjectSerializer.hpp
     project/ProjectManager.hpp
     # Preset management
     core/PresetManager.hpp
