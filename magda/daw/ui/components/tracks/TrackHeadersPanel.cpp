@@ -2921,8 +2921,9 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                 std::vector<std::pair<double, juce::String>> gridValues;
                 if (paramInfo.scale == ParameterScale::FaderDB) {
                     const std::pair<double, const char*> dbValues[] = {
-                        {6.0, "6"},     {0.0, "0"},     {-6.0, "-6"},   {-12.0, "-12"},
-                        {-18.0, "-18"}, {-24.0, "-24"}, {-36.0, "-36"}, {-48.0, "-48"}};
+                        {6.0, "6"},     {3.0, "3"},     {0.0, "0"},
+                        {-6.0, "-6"},   {-12.0, "-12"}, {-18.0, "-18"},
+                        {-24.0, "-24"}, {-36.0, "-36"}, {-48.0, "-48"}};
                     for (const auto& [db, label] : dbValues) {
                         float norm =
                             ParameterUtils::realToNormalized(static_cast<float>(db), paramInfo);

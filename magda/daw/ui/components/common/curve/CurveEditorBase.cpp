@@ -706,6 +706,7 @@ void CurveEditorBase::updatePointPositions() {
     }
 
     // Position tension handles at the midpoint of each curve segment
+    constexpr int MIN_SEGMENT_PIXELS = 30;  // Hide handle if segment narrower than this
     size_t tensionIdx = 0;
     for (size_t i = 0; i < points.size() - 1 && tensionIdx < tensionHandles_.size(); ++i) {
         const auto& p1 = points[i];
@@ -713,26 +714,32 @@ void CurveEditorBase::updatePointPositions() {
 
         // Only position for Linear curves
         if (p1.curveType == CurveType::Linear) {
-            double midX = (p1.x + p2.x) / 2.0;
-            double midY = (p1.y + p2.y) / 2.0;
+            int segPixels = xToPixel(p2.x) - xToPixel(p1.x);
+            bool hasRoom = segPixels >= MIN_SEGMENT_PIXELS;
+            tensionHandles_[tensionIdx]->setVisible(hasRoom);
 
-            // Apply tension to get the actual curve position at midpoint
-            if (std::abs(p1.tension) > 0.001) {
-                double t = 0.5;
-                double curvedT;
-                if (p1.tension > 0) {
-                    curvedT = std::pow(t, 1.0 + p1.tension * 2.0);
-                } else {
-                    curvedT = 1.0 - std::pow(1.0 - t, 1.0 - p1.tension * 2.0);
+            if (hasRoom) {
+                double midX = (p1.x + p2.x) / 2.0;
+                double midY = (p1.y + p2.y) / 2.0;
+
+                // Apply tension to get the actual curve position at midpoint
+                if (std::abs(p1.tension) > 0.001) {
+                    double t = 0.5;
+                    double curvedT;
+                    if (p1.tension > 0) {
+                        curvedT = std::pow(t, 1.0 + p1.tension * 2.0);
+                    } else {
+                        curvedT = 1.0 - std::pow(1.0 - t, 1.0 - p1.tension * 2.0);
+                    }
+                    midY = p1.y + curvedT * (p2.y - p1.y);
                 }
-                midY = p1.y + curvedT * (p2.y - p1.y);
+
+                int px = xToPixel(midX);
+                int py = yToPixel(midY);
+
+                tensionHandles_[tensionIdx]->setCentrePosition(px, py);
+                tensionHandles_[tensionIdx]->setTension(p1.tension);
             }
-
-            int px = xToPixel(midX);
-            int py = yToPixel(midY);
-
-            tensionHandles_[tensionIdx]->setCentrePosition(px, py);
-            tensionHandles_[tensionIdx]->setTension(p1.tension);
             ++tensionIdx;
         }
     }
@@ -743,6 +750,7 @@ void CurveEditorBase::updateTensionHandlePositions() {
     if (points.size() < 2)
         return;
 
+    constexpr int MIN_SEGMENT_PIXELS = 30;
     size_t tensionIdx = 0;
     for (size_t i = 0; i < points.size() - 1 && tensionIdx < tensionHandles_.size(); ++i) {
         const auto& p1 = points[i];
@@ -752,33 +760,39 @@ void CurveEditorBase::updateTensionHandlePositions() {
             auto [x1, y1] = getEffectivePosition(p1);
             auto [x2, y2] = getEffectivePosition(p2);
 
-            double midX = (x1 + x2) / 2.0;
-            double midY = (y1 + y2) / 2.0;
+            int segPixels = xToPixel(x2) - xToPixel(x1);
+            bool hasRoom = segPixels >= MIN_SEGMENT_PIXELS;
+            tensionHandles_[tensionIdx]->setVisible(hasRoom);
 
-            // Apply tension to get actual curve position at midpoint
-            double tension = p1.tension;
-            if (tensionPreviewPointId_ != INVALID_CURVE_POINT_ID &&
-                p1.id == tensionPreviewPointId_) {
-                tension = tensionPreviewValue_;
-            }
+            if (hasRoom) {
+                double midX = (x1 + x2) / 2.0;
+                double midY = (y1 + y2) / 2.0;
 
-            if (std::abs(tension) > 0.001) {
-                double t = 0.5;
-                double curvedT;
-                if (tension > 0) {
-                    curvedT = std::pow(t, 1.0 + tension * 2.0);
-                } else {
-                    curvedT = 1.0 - std::pow(1.0 - t, 1.0 - tension * 2.0);
+                // Apply tension to get actual curve position at midpoint
+                double tension = p1.tension;
+                if (tensionPreviewPointId_ != INVALID_CURVE_POINT_ID &&
+                    p1.id == tensionPreviewPointId_) {
+                    tension = tensionPreviewValue_;
                 }
-                midY = y1 + curvedT * (y2 - y1);
+
+                if (std::abs(tension) > 0.001) {
+                    double t = 0.5;
+                    double curvedT;
+                    if (tension > 0) {
+                        curvedT = std::pow(t, 1.0 + tension * 2.0);
+                    } else {
+                        curvedT = 1.0 - std::pow(1.0 - t, 1.0 - tension * 2.0);
+                    }
+                    midY = y1 + curvedT * (y2 - y1);
+                }
+
+                int px = xToPixel(midX);
+                int py = yToPixel(midY);
+
+                tensionHandles_[tensionIdx]->setCentrePosition(px, py);
+                // Update slope direction in case points were moved
+                tensionHandles_[tensionIdx]->setSlopeGoesDown(y2 < y1);
             }
-
-            int px = xToPixel(midX);
-            int py = yToPixel(midY);
-
-            tensionHandles_[tensionIdx]->setCentrePosition(px, py);
-            // Update slope direction in case points were moved
-            tensionHandles_[tensionIdx]->setSlopeGoesDown(y2 < y1);
             ++tensionIdx;
         }
     }

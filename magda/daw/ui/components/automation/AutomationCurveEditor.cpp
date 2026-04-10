@@ -166,7 +166,7 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
 
     if (paramInfo.scale == ParameterScale::FaderDB) {
         // dB values that make sense for a fader
-        const double dbValues[] = {6.0, 0.0, -6.0, -12.0, -18.0, -24.0, -36.0, -48.0, -60.0};
+        const double dbValues[] = {6.0, 3.0, 0.0, -6.0, -12.0, -18.0, -24.0, -36.0, -48.0, -60.0};
         for (double db : dbValues) {
             float norm = ParameterUtils::realToNormalized(static_cast<float>(db), paramInfo);
             gridNorms.push_back(static_cast<double>(norm));
