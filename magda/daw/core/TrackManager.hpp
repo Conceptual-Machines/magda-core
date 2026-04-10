@@ -268,6 +268,7 @@ class TrackManager {
     void setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan);
     void setChainExpanded(TrackId trackId, RackId rackId, ChainId chainId, bool expanded);
     void setRackVolume(TrackId trackId, RackId rackId, float volume);
+    void setRackVolume(const ChainNodePath& rackPath, float volume);
 
     // Device management within chains
     DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,

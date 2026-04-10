@@ -1313,6 +1313,13 @@ void TrackManager::setRackVolume(TrackId trackId, RackId rackId, float volume) {
     }
 }
 
+void TrackManager::setRackVolume(const ChainNodePath& rackPath, float volume) {
+    if (auto* rack = getRackByPath(rackPath)) {
+        rack->volume = juce::jlimit(-60.0f, 6.0f, volume);
+        notifyTrackPropertyChanged(rackPath.trackId);
+    }
+}
+
 void TrackManager::setChainExpanded(TrackId trackId, RackId rackId, ChainId chainId,
                                     bool expanded) {
     if (auto* chain = getChain(trackId, rackId, chainId)) {
