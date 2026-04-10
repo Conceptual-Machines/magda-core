@@ -322,6 +322,13 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     void resyncDeviceModifiers(TrackId trackId);
 
     /**
+     * @brief Update rack/chain volume, pan, and mute/solo without structural resync
+     *
+     * Lighter than syncTrackPlugins — only pushes property values to existing TE plugins.
+     */
+    void syncRackProperties(TrackId trackId);
+
+    /**
      * @brief Trigger note-on resync on all TE LFO modifiers for a track
      *
      * Thread-safe: can be called from MIDI thread. The actual resync happens

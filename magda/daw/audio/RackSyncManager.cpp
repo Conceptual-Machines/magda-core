@@ -136,6 +136,13 @@ void RackSyncManager::resyncRack(TrackId trackId, const RackInfo& rackInfo) {
     DBG("RackSyncManager: Resynced rack " << rackInfo.id);
 }
 
+void RackSyncManager::updateRackProperties(const RackInfo& rackInfo) {
+    auto it = syncedRacks_.find(rackInfo.id);
+    if (it == syncedRacks_.end())
+        return;
+    updateProperties(it->second, rackInfo);
+}
+
 void RackSyncManager::removeRack(RackId rackId) {
     auto it = syncedRacks_.find(rackId);
     if (it == syncedRacks_.end())

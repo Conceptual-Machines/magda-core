@@ -103,8 +103,8 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
 void MidiChordEnginePlugin::timerCallback() {
     if (!isEnabled()) {
-        // Clear held notes so detection doesn't resume with stale data
-        heldNoteCount_.store(0, std::memory_order_relaxed);
+        // Clear held notes and FIFO so detection doesn't resume with stale data
+        reset();
         return;
     }
 

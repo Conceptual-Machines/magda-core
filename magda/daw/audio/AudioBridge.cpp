@@ -177,6 +177,9 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // Sync audio output routing
             trackController_.setTrackAudioOutput(trackId, trackInfo->audioOutputDevice);
 
+            // Sync rack/chain volume and pan
+            pluginManager_.syncRackProperties(trackId);
+
             // Sync send levels to AuxSendPlugins
             for (const auto& send : trackInfo->sends) {
                 if (auto* auxSend = track->getAuxSendPlugin(send.busIndex)) {

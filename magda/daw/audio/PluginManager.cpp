@@ -2000,6 +2000,18 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
     rebuildSidechainLFOCache();
 }
 
+void PluginManager::syncRackProperties(TrackId trackId) {
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (!trackInfo)
+        return;
+
+    for (const auto& element : trackInfo->chainElements) {
+        if (isRack(element)) {
+            rackSyncManager_.updateRackProperties(getRack(element));
+        }
+    }
+}
+
 // =============================================================================
 // Macro Value Routing
 // =============================================================================

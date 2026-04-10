@@ -219,9 +219,17 @@ void ProjectSerializer::commitStaged(StagedProjectData& data) {
 
     // Restore master track chain elements (plugins on the master bus)
     if (data.masterTrack) {
-        auto* masterTrack = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
+        auto& tm = TrackManager::getInstance();
+        auto* masterTrack = tm.getTrack(MASTER_TRACK_ID);
         if (masterTrack) {
             masterTrack->chainElements = std::move(data.masterTrack->chainElements);
+            // Update device ID counter to include master chain devices
+            for (const auto& element : masterTrack->chainElements) {
+                if (isDevice(element))
+                    tm.ensureDeviceIdAbove(getDevice(element).id);
+            }
+            // Notify listeners so audio bridge creates TE plugins for master devices
+            tm.notifyTrackDevicesChanged(MASTER_TRACK_ID);
         }
     }
 }
@@ -409,9 +417,15 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     if (masterTrackVar.isObject()) {
         TrackInfo masterTrackData;
         if (deserializeTrackInfo(masterTrackVar, masterTrackData)) {
-            auto* masterTrack = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
+            auto& tm = TrackManager::getInstance();
+            auto* masterTrack = tm.getTrack(MASTER_TRACK_ID);
             if (masterTrack) {
                 masterTrack->chainElements = std::move(masterTrackData.chainElements);
+                for (const auto& element : masterTrack->chainElements) {
+                    if (isDevice(element))
+                        tm.ensureDeviceIdAbove(getDevice(element).id);
+                }
+                tm.notifyTrackDevicesChanged(MASTER_TRACK_ID);
             }
         }
     }

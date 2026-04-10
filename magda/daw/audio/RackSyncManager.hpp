@@ -52,6 +52,12 @@ class RackSyncManager {
     void resyncRack(TrackId trackId, const RackInfo& rackInfo);
 
     /**
+     * @brief Lightweight update of rack/chain volume, pan, mute/solo without structural resync
+     * @param rackInfo Updated rack data model
+     */
+    void updateRackProperties(const RackInfo& rackInfo);
+
+    /**
      * @brief Clean up RackType, RackInstance, and inner plugins for a rack
      * @param rackId The MAGDA rack ID to remove
      */
