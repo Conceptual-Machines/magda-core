@@ -721,18 +721,14 @@ void RackSyncManager::applyBypassState(SyncedRack& synced, const RackInfo& rackI
     }
 
     // Apply rack output volume/pan via the RackInstance's output level parameters
-    if (rackInfo.volume != 0.0f) {
-        rackInstance->leftOutDb->setParameter(
-            static_cast<float>(juce::jlimit(te::RackInstance::rackMinDb,
-                                            te::RackInstance::rackMaxDb,
-                                            static_cast<double>(rackInfo.volume))),
-            juce::dontSendNotification);
-        rackInstance->rightOutDb->setParameter(
-            static_cast<float>(juce::jlimit(te::RackInstance::rackMinDb,
-                                            te::RackInstance::rackMaxDb,
-                                            static_cast<double>(rackInfo.volume))),
-            juce::dontSendNotification);
-    }
+    rackInstance->leftOutDb->setParameter(
+        static_cast<float>(juce::jlimit(te::RackInstance::rackMinDb, te::RackInstance::rackMaxDb,
+                                        static_cast<double>(rackInfo.volume))),
+        juce::dontSendNotification);
+    rackInstance->rightOutDb->setParameter(
+        static_cast<float>(juce::jlimit(te::RackInstance::rackMinDb, te::RackInstance::rackMaxDb,
+                                        static_cast<double>(rackInfo.volume))),
+        juce::dontSendNotification);
 }
 
 // =============================================================================

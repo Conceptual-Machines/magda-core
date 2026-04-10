@@ -103,8 +103,12 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
 void MidiChordEnginePlugin::timerCallback() {
     if (!isEnabled()) {
-        // Clear held notes and FIFO so detection doesn't resume with stale data
-        reset();
+        // Flush stale FIFO events by consuming them (safe — we're the reader).
+        // Don't call reset() here as it races with the audio thread writer.
+        int start1, size1, start2, size2;
+        noteFifo_.prepareToRead(noteFifo_.getNumReady(), start1, size1, start2, size2);
+        noteFifo_.finishedRead(size1 + size2);
+        heldNoteCount_.store(0, std::memory_order_relaxed);
         return;
     }
 

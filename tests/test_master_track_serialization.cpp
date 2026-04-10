@@ -15,6 +15,7 @@ using namespace magda;
 // ============================================================================
 
 struct MasterSerializationFixture {
+    std::vector<juce::File> tempFiles;
     std::vector<juce::File> tempDirs;
 
     MasterSerializationFixture() {
@@ -28,6 +29,10 @@ struct MasterSerializationFixture {
             if (dir.isDirectory())
                 dir.deleteRecursively();
         }
+        for (auto& file : tempFiles) {
+            if (file.existsAsFile())
+                file.deleteFile();
+        }
         TrackManager::getInstance().clearAllTracks();
         ClipManager::getInstance().clearAllClips();
         AutomationManager::getInstance().clearAll();
@@ -35,6 +40,7 @@ struct MasterSerializationFixture {
 
     juce::File createTempProjectFile(const juce::String& suffix) {
         auto file = juce::File::createTempFile(suffix);
+        tempFiles.push_back(file);
         auto wrapperDir =
             file.getParentDirectory().getChildFile(file.getFileNameWithoutExtension());
         tempDirs.push_back(wrapperDir);

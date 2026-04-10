@@ -200,6 +200,9 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             auto mt = std::make_unique<TrackInfo>();
             if (deserializeTrackInfo(masterTrackVar, *mt)) {
                 outData.masterTrack = std::move(mt);
+            } else {
+                DBG("WARNING: Failed to deserialize masterTrack data - master plugins will be "
+                    "lost");
             }
         }
 
