@@ -8,6 +8,7 @@
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
 #include "MagdaSamplerPlugin.hpp"
+#include "MidiChordEnginePlugin.hpp"
 #include "SessionMonitorPlugin.hpp"
 #include "SidechainTriggerBus.hpp"
 
@@ -289,6 +290,10 @@ void AudioBridge::updateMidiRoutingForSelection() {
                     const auto& device = getDevice(element);
                     if (device.isInstrument)
                         return true;
+                    // Chord Engine needs live MIDI input for real-time detection
+                    if (device.pluginId.containsIgnoreCase(
+                            daw::audio::MidiChordEnginePlugin::xmlTypeName))
+                        return true;
                     for (const auto& mod : device.mods) {
                         if (mod.enabled && mod.triggerMode == LFOTriggerMode::MIDI)
                             return true;
@@ -453,8 +458,6 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
 void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
     // A device property changed (gain, bypass, etc.) - sync to processor
     auto* processor = getDeviceProcessor(deviceId);
-    if (!processor)
-        return;
 
     // Find the DeviceInfo to get updated values
     // Search through all tracks, recursing into racks
@@ -462,7 +465,14 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
     for (const auto& track : tm.getTracks()) {
         auto* device = findDeviceRecursive(track.chainElements, deviceId);
         if (device) {
-            processor->syncFromDeviceInfo(*device);
+            if (processor) {
+                processor->syncFromDeviceInfo(*device);
+            } else {
+                // For plugins without a processor (e.g. Chord Engine), sync bypass directly
+                auto tePlugin = pluginManager_.getPlugin(deviceId);
+                if (tePlugin)
+                    tePlugin->setEnabled(!device->bypassed);
+            }
 
             // Push gain to the audio-graph atomic so DeviceGainNode picks it up
             deviceMetering_.setGain(deviceId, device->gainValue);

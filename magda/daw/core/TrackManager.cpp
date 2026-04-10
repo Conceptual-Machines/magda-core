@@ -172,6 +172,15 @@ void TrackManager::deleteTrack(TrackId trackId) {
         }
     }
 
+    // Remove sends targeting this track from all other tracks
+    for (auto& t : tracks_) {
+        auto& sends = t.sends;
+        sends.erase(
+            std::remove_if(sends.begin(), sends.end(),
+                           [trackId](const SendInfo& s) { return s.destTrackId == trackId; }),
+            sends.end());
+    }
+
     // Remove the track itself
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [trackId](const TrackInfo& t) { return t.id == trackId; });
@@ -819,6 +828,12 @@ void TrackManager::addSend(TrackId sourceTrackId, TrackId destTrackId) {
         return;
     }
 
+    // Tracktion Engine supports a limited number of aux buses
+    if (static_cast<int>(source->sends.size()) >= MAX_SENDS_PER_TRACK) {
+        DBG("addSend failed: maximum number of sends (" << MAX_SENDS_PER_TRACK << ") reached");
+        return;
+    }
+
     // Auto-assign auxBusIndex for non-Aux tracks that don't have one yet
     if (dest->auxBusIndex < 0) {
         dest->auxBusIndex = nextAuxBusIndex_++;
@@ -1280,14 +1295,21 @@ void TrackManager::setChainSolo(TrackId trackId, RackId rackId, ChainId chainId,
 void TrackManager::setChainVolume(TrackId trackId, RackId rackId, ChainId chainId, float volume) {
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         chain->volume = juce::jlimit(-60.0f, 6.0f, volume);  // dB range
-        notifyTrackDevicesChanged(trackId);
+        notifyTrackPropertyChanged(trackId);
     }
 }
 
 void TrackManager::setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan) {
     if (auto* chain = getChain(trackId, rackId, chainId)) {
         chain->pan = juce::jlimit(-1.0f, 1.0f, pan);
-        notifyTrackDevicesChanged(trackId);
+        notifyTrackPropertyChanged(trackId);
+    }
+}
+
+void TrackManager::setRackVolume(TrackId trackId, RackId rackId, float volume) {
+    if (auto* rack = getRack(trackId, rackId)) {
+        rack->volume = juce::jlimit(-60.0f, 6.0f, volume);
+        notifyTrackPropertyChanged(trackId);
     }
 }
 

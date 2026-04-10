@@ -31,8 +31,8 @@ bool ProjectSerializer::saveToFile(const juce::File& file, const ProjectInfo& in
         {
             juce::FileOutputStream outputStream(tempFile.getFile());
             if (!outputStream.openedOk()) {
-                lastError_ =
-                    "Failed to open temporary file for writing: " + tempFile.getFile().getFullPathName();
+                lastError_ = "Failed to open temporary file for writing: " +
+                             tempFile.getFile().getFullPathName();
                 return false;
             }
 
@@ -194,6 +194,15 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             return false;
         }
 
+        // Deserialize master track if present (backward-compatible: old projects won't have it)
+        auto masterTrackVar = obj->getProperty("masterTrack");
+        if (masterTrackVar.isObject()) {
+            auto mt = std::make_unique<TrackInfo>();
+            if (deserializeTrackInfo(masterTrackVar, *mt)) {
+                outData.masterTrack = std::move(mt);
+            }
+        }
+
         return true;
 
     } catch (const std::exception& e) {
@@ -207,6 +216,14 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 
 void ProjectSerializer::commitStaged(StagedProjectData& data) {
     commitStagedData(data.tracks, data.clips, data.automationLanes, data.automationClips);
+
+    // Restore master track chain elements (plugins on the master bus)
+    if (data.masterTrack) {
+        auto* masterTrack = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
+        if (masterTrack) {
+            masterTrack->chainElements = std::move(data.masterTrack->chainElements);
+        }
+    }
 }
 
 // ============================================================================
@@ -268,6 +285,12 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     obj->setProperty("tracks", serializeTracks());
     obj->setProperty("clips", serializeClips());
     obj->setProperty("automation", serializeAutomation());
+
+    // Serialize master track separately (its chain elements hold master bus plugins)
+    auto* masterTrack = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
+    if (masterTrack && !masterTrack->chainElements.empty()) {
+        obj->setProperty("masterTrack", serializeTrackInfo(*masterTrack));
+    }
 
     return juce::var(obj);
 }
@@ -380,6 +403,18 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
 
     // Stage 2: All components validated successfully - now commit to managers atomically
     commitStagedData(stagedTracks, stagedClips, stagedAutomation, stagedAutomationClips);
+
+    // Restore master track chain elements (plugins on the master bus)
+    auto masterTrackVar = obj->getProperty("masterTrack");
+    if (masterTrackVar.isObject()) {
+        TrackInfo masterTrackData;
+        if (deserializeTrackInfo(masterTrackVar, masterTrackData)) {
+            auto* masterTrack = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
+            if (masterTrack) {
+                masterTrack->chainElements = std::move(masterTrackData.chainElements);
+            }
+        }
+    }
 
     return true;
 }

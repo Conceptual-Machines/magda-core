@@ -60,6 +60,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         setNodeName(device.name);
     }
     setBypassed(device.bypassed);
+    setCollapsed(!device.expanded);
 
     // Restore panel visibility from device state
     modPanelVisible_ = device.modPanelOpen;
@@ -108,6 +109,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         }
         if (onDeviceLayoutChanged) {
             onDeviceLayoutChanged();
+        }
+    };
+
+    onCollapsedChanged = [this](bool collapsed) {
+        if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+            dev->expanded = !collapsed;
         }
     };
 

@@ -18,6 +18,7 @@ namespace magda {
 struct StagedProjectData {
     ProjectInfo info;
     std::vector<TrackInfo> tracks;
+    std::unique_ptr<TrackInfo> masterTrack;  // Master track (id=MASTER_TRACK_ID)
     std::vector<ClipInfo> clips;
     std::vector<AutomationLaneInfo> automationLanes;
     std::vector<AutomationClipInfo> automationClips;

@@ -42,8 +42,8 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (!fc.bufferForMidiMessages)
         return;
 
-    // Skip recording during preview playback
-    if (detectionSuppressed_.load(std::memory_order_relaxed))
+    // Skip recording during preview playback or when plugin is bypassed/disabled
+    if (detectionSuppressed_.load(std::memory_order_relaxed) || !isEnabled())
         return;
 
     const double blockTimeSeconds = static_cast<double>(fc.bufferStartSample) / sampleRate_;
@@ -102,6 +102,12 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 // =============================================================================
 
 void MidiChordEnginePlugin::timerCallback() {
+    if (!isEnabled()) {
+        // Clear held notes so detection doesn't resume with stale data
+        heldNoteCount_.store(0, std::memory_order_relaxed);
+        return;
+    }
+
     processNoteEvents();
 
     // Debounce: if held note count changed since last detection, wait

@@ -103,9 +103,8 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // Volume slider (dB format)
     volumeSlider_.setRange(-60.0, 6.0, 0.1);
     volumeSlider_.setValue(rack.volume, juce::dontSendNotification);
-    volumeSlider_.onValueChanged = [](double db) {
-        // TODO: Add TrackManager method to set rack volume
-        DBG("Rack volume changed to " << db << " dB");
+    volumeSlider_.onValueChanged = [this](double db) {
+        magda::TrackManager::getInstance().setRackVolume(trackId_, rackId_, static_cast<float>(db));
     };
     addAndMakeVisible(volumeSlider_);
     addAndMakeVisible(levelMeter_);

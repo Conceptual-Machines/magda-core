@@ -91,6 +91,8 @@ class TrackManagerListener {
  */
 class TrackManager {
   public:
+    static constexpr int MAX_SENDS_PER_TRACK = 8;  // Tracktion Engine aux bus limit
+
     static TrackManager& getInstance();
 
     // Prevent copying
@@ -265,6 +267,7 @@ class TrackManager {
     void setChainVolume(TrackId trackId, RackId rackId, ChainId chainId, float volume);
     void setChainPan(TrackId trackId, RackId rackId, ChainId chainId, float pan);
     void setChainExpanded(TrackId trackId, RackId rackId, ChainId chainId, bool expanded);
+    void setRackVolume(TrackId trackId, RackId rackId, float volume);
 
     // Device management within chains
     DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,
