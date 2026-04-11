@@ -258,10 +258,15 @@ class ChainTreeDialog::ContentComponent : public juce::Component,
     void tracksChanged() override {
         // Check if our track still exists
         if (!TrackManager::getInstance().getTrack(trackId_)) {
-            // Track was deleted, close the dialog
-            if (auto* parent = findParentComponentOfClass<ChainTreeDialog>()) {
-                parent->closeButtonPressed();
-            }
+            // Track was deleted — defer the close so we don't delete the
+            // dialog (and this component) while TrackManager is still
+            // iterating its listener list.
+            juce::Component::SafePointer<ChainTreeDialog> dialog{
+                findParentComponentOfClass<ChainTreeDialog>()};
+            juce::MessageManager::callAsync([dialog]() mutable {
+                if (dialog != nullptr)
+                    dialog->closeButtonPressed();
+            });
             return;
         }
         buildTree();
@@ -402,8 +407,11 @@ class ChainTreeDialog::ContentComponent : public juce::Component,
 // ChainTreeDialog
 // ============================================================================
 
+juce::Component::SafePointer<ChainTreeDialog> ChainTreeDialog::currentInstance_;
+
 ChainTreeDialog::ChainTreeDialog(TrackId trackId)
-    : DialogWindow("Chain Tree", DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND), true) {
+    : DialogWindow("Chain Tree", DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND), true),
+      trackId_(trackId) {
     content_ = std::make_unique<ContentComponent>(trackId);
     setContentOwned(content_.release(), true);
     centreWithSize(400, 500);
@@ -415,7 +423,7 @@ ChainTreeDialog::ChainTreeDialog(TrackId trackId)
 ChainTreeDialog::~ChainTreeDialog() = default;
 
 void ChainTreeDialog::closeButtonPressed() {
-    setVisible(false);
+    delete this;
 }
 
 void ChainTreeDialog::show(TrackId trackId) {
@@ -429,10 +437,21 @@ void ChainTreeDialog::show(TrackId trackId) {
         return;
     }
 
+    // Re-focus existing instance instead of spawning a duplicate
+    if (currentInstance_ != nullptr) {
+        if (currentInstance_->getTrackId() == trackId) {
+            currentInstance_->toFront(true);
+            return;
+        }
+        // Different track — close the existing dialog and open a fresh one
+        delete currentInstance_.getComponent();
+    }
+
     auto* dialog = new ChainTreeDialog(trackId);
     dialog->setName("Chain Tree - " + track->name);
     dialog->setVisible(true);
     dialog->toFront(true);
+    currentInstance_ = dialog;
 }
 
 }  // namespace magda
