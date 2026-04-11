@@ -110,7 +110,8 @@ class CurveEditorBase : public juce::Component {
 
     // Snapping
     std::function<double(double)> snapXToGrid;
-    std::function<double()> getGridSpacingX;  // Returns grid step size in X units
+    std::function<double(double)> snapYToGrid;  // Snap a normalized Y (0-1) to grid
+    std::function<double()> getGridSpacingX;    // Returns grid step size in X units
 
   protected:
     CurveDrawMode drawMode_ = CurveDrawMode::Select;

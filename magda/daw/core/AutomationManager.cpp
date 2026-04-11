@@ -226,6 +226,33 @@ void AutomationManager::setLaneArmed(AutomationLaneId laneId, bool armed) {
     }
 }
 
+void AutomationManager::setLaneBypass(AutomationLaneId laneId, bool bypass) {
+    if (auto* lane = getLane(laneId)) {
+        if (lane->bypass == bypass)
+            return;
+        lane->bypass = bypass;
+        notifyLanePropertyChanged(laneId);
+    }
+}
+
+void AutomationManager::setLaneSnapTime(AutomationLaneId laneId, bool snap) {
+    if (auto* lane = getLane(laneId)) {
+        if (lane->snapTime == snap)
+            return;
+        lane->snapTime = snap;
+        notifyLanePropertyChanged(laneId);
+    }
+}
+
+void AutomationManager::setLaneSnapValue(AutomationLaneId laneId, bool snap) {
+    if (auto* lane = getLane(laneId)) {
+        if (lane->snapValue == snap)
+            return;
+        lane->snapValue = snap;
+        notifyLanePropertyChanged(laneId);
+    }
+}
+
 void AutomationManager::setLaneHeight(AutomationLaneId laneId, int height) {
     if (auto* lane = getLane(laneId)) {
         lane->height = juce::jmax(30, height);
@@ -429,6 +456,15 @@ void AutomationManager::deletePoint(AutomationLaneId laneId, AutomationPointId p
                        [pointId](const AutomationPoint& p) { return p.id == pointId; }),
         lane->absolutePoints.end());
 
+    notifyPointsChanged(laneId);
+}
+
+void AutomationManager::clearLanePoints(AutomationLaneId laneId) {
+    auto* lane = getLane(laneId);
+    if (!lane || !lane->isAbsolute() || lane->absolutePoints.empty())
+        return;
+
+    lane->absolutePoints.clear();
     notifyPointsChanged(laneId);
 }
 

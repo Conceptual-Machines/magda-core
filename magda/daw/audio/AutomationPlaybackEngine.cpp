@@ -103,6 +103,14 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // Clear existing TE automation points
     curve.clear(nullptr);
 
+    // Bypass: leave the curve empty so TE's audio thread falls back to the
+    // parameter's manual/static value. Force iterator rebuild so the change
+    // takes effect on the next audio block rather than after TE's 10ms timer.
+    if (lane.bypass) {
+        param->updateStream();
+        return;
+    }
+
     // Determine the beat range of the automation data
     double dataStartBeats = 0.0;
     double dataEndBeats = 0.0;

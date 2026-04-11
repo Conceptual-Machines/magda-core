@@ -12,13 +12,22 @@ namespace magda {
 AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(laneId) {
     setName("AutomationCurveEditor");
 
-    // Wire up base class snapping to automation snapping
+    // Wire up base class snapping to automation snapping.
+    // Gated on the lane's snapTime flag so the user can disable per-lane.
     CurveEditorBase::snapXToGrid = [this](double x) -> double {
+        const auto* lane = AutomationManager::getInstance().getLane(laneId_);
+        if (lane && !lane->snapTime)
+            return x;
         if (snapTimeToGrid) {
             return snapTimeToGrid(x);
         }
         return x;
     };
+
+    // Y snap: delegate to ParameterUtils using the lane's parameter info.
+    // Wired via the base class so drag-previews jump live instead of
+    // only snapping on release.
+    CurveEditorBase::snapYToGrid = [this](double y) -> double { return applyValueSnap(y); };
 
     CurveEditorBase::getGridSpacingX = [this]() -> double {
         if (getGridSpacingBeats) {
@@ -254,6 +263,7 @@ void AutomationCurveEditor::updatePointsCache() const {
 
 void AutomationCurveEditor::onPointAdded(double x, double y, CurveType curveType) {
     AutomationCurveType autoCurveType = toAutomationCurveType(curveType);
+    y = applyValueSnap(y);
 
     if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
         UndoManager::getInstance().executeCommand(std::make_unique<AddAutomationPointCommand>(
@@ -265,6 +275,9 @@ void AutomationCurveEditor::onPointAdded(double x, double y, CurveType curveType
 }
 
 void AutomationCurveEditor::onPointMoved(uint32_t pointId, double newX, double newY) {
+    // Value snap is already applied by the base class lambda wrapper
+    // before this virtual is invoked, so we don't re-snap here.
+
     if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
         UndoManager::getInstance().executeCommand(std::make_unique<MoveAutomationPointCommand>(
             laneId_, clipId_, static_cast<AutomationPointId>(pointId), newX - clipOffset_, newY));
@@ -273,6 +286,13 @@ void AutomationCurveEditor::onPointMoved(uint32_t pointId, double newX, double n
             laneId_, INVALID_AUTOMATION_CLIP_ID, static_cast<AutomationPointId>(pointId), newX,
             newY));
     }
+}
+
+double AutomationCurveEditor::applyValueSnap(double normalized) const {
+    const auto* lane = AutomationManager::getInstance().getLane(laneId_);
+    if (!lane || !lane->snapValue)
+        return normalized;
+    return ParameterUtils::snapNormalizedToGrid(normalized, lane->target.getParameterInfo());
 }
 
 void AutomationCurveEditor::onPointDeleted(uint32_t pointId) {

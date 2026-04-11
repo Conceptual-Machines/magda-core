@@ -121,6 +121,10 @@ class AutomationCurveEditor : public CurveEditorBase,
     void updatePointsCache() const;
     void deleteSelectedPoints();
 
+    // Quantize a normalized value to the parameter's natural grid when
+    // the lane's snapValue flag is enabled.
+    double applyValueSnap(double normalized) const;
+
     // Convert between AutomationCurveType and CurveType
     static CurveType toCurveType(AutomationCurveType type);
     static AutomationCurveType toAutomationCurveType(CurveType type);

@@ -124,6 +124,9 @@ class AutomationManager : public TrackManagerListener {
     void setLaneVisible(AutomationLaneId laneId, bool visible);
     void setLaneExpanded(AutomationLaneId laneId, bool expanded);
     void setLaneArmed(AutomationLaneId laneId, bool armed);
+    void setLaneBypass(AutomationLaneId laneId, bool bypass);
+    void setLaneSnapTime(AutomationLaneId laneId, bool snap);
+    void setLaneSnapValue(AutomationLaneId laneId, bool snap);
     void setLaneHeight(AutomationLaneId laneId, int height);
 
     // ========================================================================
@@ -190,6 +193,11 @@ class AutomationManager : public TrackManagerListener {
      * @brief Delete a point from a lane
      */
     void deletePoint(AutomationLaneId laneId, AutomationPointId pointId);
+
+    /**
+     * @brief Delete all points from an absolute lane
+     */
+    void clearLanePoints(AutomationLaneId laneId);
 
     /**
      * @brief Delete a point from a clip

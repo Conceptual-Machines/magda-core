@@ -100,5 +100,16 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
  */
 juce::String getChoiceString(int index, const ParameterInfo& info);
 
+/**
+ * @brief Snap a normalized value (0-1) to the parameter's natural grid.
+ *
+ * Used by the automation curve editor's value-snap mode. Returns the
+ * closest normalized value on the grid the parameter would draw in its
+ * UI (dB ticks for fader volume, L/50L/C/50R/R for pan, 10% steps for
+ * generic percent, discrete choices). If the parameter has no natural
+ * grid, returns the input unchanged.
+ */
+double snapNormalizedToGrid(double normalized, const ParameterInfo& info);
+
 }  // namespace ParameterUtils
 }  // namespace magda

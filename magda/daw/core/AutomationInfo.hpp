@@ -239,8 +239,11 @@ struct AutomationLaneInfo {
     juce::String name;  // Display name (auto-generated if empty)
     bool visible = true;
     bool expanded = true;
-    bool armed = false;  // Ready to record automation
-    int height = 60;     // Lane height in pixels
+    bool armed = false;      // Ready to record automation
+    bool bypass = false;     // Ignore baked curve during playback
+    bool snapTime = true;    // Snap drawn points to time grid
+    bool snapValue = false;  // Snap drawn values to parameter's natural ticks
+    int height = 60;         // Lane height in pixels
 
     // For Absolute type: points directly on lane
     std::vector<AutomationPoint> absolutePoints;

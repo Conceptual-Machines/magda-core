@@ -961,6 +961,7 @@ void TrackHeadersPanel::tracksChanged() {
 
     // Sync automation lane visibility from AutomationManager
     syncAutomationLaneVisibility();
+    rebuildLaneHeaderButtons();
 
     updateTrackHeaderLayout();
     repaint();
@@ -1281,12 +1282,14 @@ void TrackHeadersPanel::syncAutomationLaneVisibility() {
 
 void TrackHeadersPanel::automationLanesChanged() {
     syncAutomationLaneVisibility();
+    rebuildLaneHeaderButtons();
     updateTrackHeaderLayout();
     repaint();
 }
 
 void TrackHeadersPanel::automationLanePropertyChanged(AutomationLaneId /*laneId*/) {
     syncAutomationLaneVisibility();
+    rebuildLaneHeaderButtons();
     updateTrackHeaderLayout();
     repaint();
 }
@@ -1951,6 +1954,10 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             layoutControlArea(header, tcpArea, inner, trackHeight);
         }
     }
+
+    // Position per-lane header buttons after track-row layout so their Y
+    // positions line up with the painted lane header strips.
+    positionLaneHeaderButtons();
 }
 
 void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
@@ -2975,6 +2982,186 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
 
         y += laneHeight;
     }
+}
+
+// ============================================================================
+// Automation Lane Header Buttons
+// ============================================================================
+
+TrackHeadersPanel::AutoLaneHeaderButtons* TrackHeadersPanel::findLaneHeaderButtons(
+    AutomationLaneId laneId) {
+    for (auto& entry : laneHeaderButtons_) {
+        if (entry->laneId == laneId)
+            return entry.get();
+    }
+    return nullptr;
+}
+
+void TrackHeadersPanel::rebuildLaneHeaderButtons() {
+    // Collect all currently-visible lane IDs.
+    std::unordered_set<AutomationLaneId> wantedIds;
+    for (const auto& [trackId, laneIds] : visibleAutomationLanes_) {
+        for (auto id : laneIds)
+            wantedIds.insert(id);
+    }
+
+    // Drop orphans — lanes that no longer exist or are hidden.
+    laneHeaderButtons_.erase(
+        std::remove_if(laneHeaderButtons_.begin(), laneHeaderButtons_.end(),
+                       [&](const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
+                           return wantedIds.find(entry->laneId) == wantedIds.end();
+                       }),
+        laneHeaderButtons_.end());
+
+    auto& manager = AutomationManager::getInstance();
+
+    // Create buttons for any new lanes.
+    for (auto laneId : wantedIds) {
+        if (findLaneHeaderButtons(laneId))
+            continue;
+
+        auto entry = std::make_unique<AutoLaneHeaderButtons>();
+        entry->laneId = laneId;
+
+        auto makeToggleButton = [this](const juce::String& label, const juce::String& tooltip) {
+            auto btn = std::make_unique<juce::TextButton>(label);
+            btn->setTooltip(tooltip);
+            btn->setClickingTogglesState(true);
+            btn->setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF2A2A2A));
+            btn->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFF4A7EC8));
+            btn->setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFAAAAAA));
+            btn->setColour(juce::TextButton::textColourOnId, juce::Colour(0xFFFFFFFF));
+            addAndMakeVisible(*btn);
+            return btn;
+        };
+
+        entry->snapTimeBtn = makeToggleButton("T", "Snap points to time grid");
+        entry->snapValueBtn = makeToggleButton("V", "Snap values to parameter grid");
+        entry->armBtn = makeToggleButton("R", "Arm for automation recording");
+        entry->bypassBtn = makeToggleButton("B", "Bypass automation (use manual value)");
+
+        entry->menuBtn = std::make_unique<juce::TextButton>(juce::String::fromUTF8("\xE2\x8B\xAF"));
+        entry->menuBtn->setTooltip("Lane options");
+        entry->menuBtn->setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF2A2A2A));
+        entry->menuBtn->setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFAAAAAA));
+        addAndMakeVisible(*entry->menuBtn);
+
+        // Wire click handlers. Capture laneId by value so the lambda survives
+        // rebuilds (the raw pointer `entry.get()` would dangle if the entry
+        // is later destroyed, but the laneId lookup is safe).
+        AutomationLaneId id = laneId;
+        entry->snapTimeBtn->onClick = [id]() {
+            auto& mgr = AutomationManager::getInstance();
+            if (const auto* lane = mgr.getLane(id))
+                mgr.setLaneSnapTime(id, !lane->snapTime);
+        };
+        entry->snapValueBtn->onClick = [id]() {
+            auto& mgr = AutomationManager::getInstance();
+            if (const auto* lane = mgr.getLane(id))
+                mgr.setLaneSnapValue(id, !lane->snapValue);
+        };
+        entry->armBtn->onClick = [id]() {
+            auto& mgr = AutomationManager::getInstance();
+            if (const auto* lane = mgr.getLane(id))
+                mgr.setLaneArmed(id, !lane->armed);
+        };
+        entry->bypassBtn->onClick = [id]() {
+            auto& mgr = AutomationManager::getInstance();
+            if (const auto* lane = mgr.getLane(id))
+                mgr.setLaneBypass(id, !lane->bypass);
+        };
+        auto* menuBtnPtr = entry->menuBtn.get();
+        entry->menuBtn->onClick = [this, id, menuBtnPtr]() { showLaneHeaderMenu(id, menuBtnPtr); };
+
+        laneHeaderButtons_.push_back(std::move(entry));
+    }
+
+    // Sync toggle state from lane data.
+    for (auto& entry : laneHeaderButtons_) {
+        const auto* lane = manager.getLane(entry->laneId);
+        if (!lane)
+            continue;
+        entry->snapTimeBtn->setToggleState(lane->snapTime, juce::dontSendNotification);
+        entry->snapValueBtn->setToggleState(lane->snapValue, juce::dontSendNotification);
+        entry->armBtn->setToggleState(lane->armed, juce::dontSendNotification);
+        entry->bypassBtn->setToggleState(lane->bypass, juce::dontSendNotification);
+    }
+}
+
+void TrackHeadersPanel::positionLaneHeaderButtons() {
+    auto& manager = AutomationManager::getInstance();
+
+    constexpr int kBtnSize = 16;
+    constexpr int kBtnGap = 2;
+    constexpr int kRightMargin = 4;
+
+    // Walk visible tracks + lanes the same way paintAutomationLaneHeaders does,
+    // computing the Y of each lane header strip and placing that lane's
+    // buttons there.
+    for (int trackIndex = 0; trackIndex < static_cast<int>(visibleTrackIds_.size()); ++trackIndex) {
+        TrackId trackId = visibleTrackIds_[trackIndex];
+        auto it = visibleAutomationLanes_.find(trackId);
+        if (it == visibleAutomationLanes_.end())
+            continue;
+
+        int y = getTrackYPosition(trackIndex) +
+                static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
+
+        for (auto laneId : it->second) {
+            const auto* lane = manager.getLane(laneId);
+            if (!lane || !lane->visible)
+                continue;
+
+            int laneHeight = lane->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
+                                               static_cast<int>(lane->height * verticalZoom) +
+                                               AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
+                                            : AutomationLaneComponent::HEADER_HEIGHT;
+
+            if (auto* entry = findLaneHeaderButtons(laneId)) {
+                int btnY = y + (AutomationLaneComponent::HEADER_HEIGHT - kBtnSize) / 2;
+                int x = getWidth() - kRightMargin - kBtnSize;
+
+                auto place = [&](juce::TextButton& b) {
+                    b.setBounds(x, btnY, kBtnSize, kBtnSize);
+                    x -= (kBtnSize + kBtnGap);
+                };
+                place(*entry->menuBtn);
+                place(*entry->bypassBtn);
+                place(*entry->armBtn);
+                place(*entry->snapValueBtn);
+                place(*entry->snapTimeBtn);
+            }
+
+            y += laneHeight;
+        }
+    }
+}
+
+void TrackHeadersPanel::showLaneHeaderMenu(AutomationLaneId laneId, juce::Component* relativeTo) {
+    auto& manager = AutomationManager::getInstance();
+    const auto* lane = manager.getLane(laneId);
+    if (!lane)
+        return;
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "Clear points", lane->hasData());
+    menu.addSeparator();
+    menu.addItem(2, "Delete lane");
+
+    auto opts = juce::PopupMenu::Options().withTargetComponent(relativeTo);
+    menu.showMenuAsync(opts, [laneId](int result) {
+        auto& mgr = AutomationManager::getInstance();
+        switch (result) {
+            case 1:
+                mgr.clearLanePoints(laneId);
+                break;
+            case 2:
+                mgr.deleteLane(laneId);
+                break;
+            default:
+                break;
+        }
+    });
 }
 
 // =============================================================================

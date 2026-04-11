@@ -558,9 +558,12 @@ void CurveEditorBase::rebuildPointComponents() {
             // Clear preview state - drag is complete
             previewPointId_ = INVALID_CURVE_POINT_ID;
 
-            // Snap X if enabled
+            // Snap X/Y if enabled
             if (snapXToGrid) {
                 newX = snapXToGrid(newX);
+            }
+            if (snapYToGrid) {
+                newY = snapYToGrid(newY);
             }
 
             // Allow subclass to constrain position (e.g., pin edge points)
@@ -569,9 +572,12 @@ void CurveEditorBase::rebuildPointComponents() {
         };
 
         pc->onPointDragPreview = [this](uint32_t pointId, double newX, double newY) {
-            // Snap X if enabled
+            // Snap X/Y if enabled
             if (snapXToGrid) {
                 newX = snapXToGrid(newX);
+            }
+            if (snapYToGrid) {
+                newY = snapYToGrid(newY);
             }
 
             // Allow subclass to constrain position (e.g., pin edge points)
@@ -841,6 +847,9 @@ void CurveEditorBase::createPointsFromDrawingPath() {
 
         if (snapXToGrid) {
             x = snapXToGrid(x);
+        }
+        if (snapYToGrid) {
+            y = snapYToGrid(y);
         }
 
         onPointAdded(x, y, curveType);

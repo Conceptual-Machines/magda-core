@@ -185,6 +185,19 @@ class TrackHeadersPanel : public juce::Component,
     std::vector<std::unique_ptr<TrackHeader>> trackHeaders;
     std::vector<TrackId> visibleTrackIds_;  // Track IDs in display order
     std::unordered_map<TrackId, std::vector<AutomationLaneId>> visibleAutomationLanes_;
+
+    // Per-lane header buttons (snap time / snap value / arm / bypass / menu).
+    // Managed as real child components (one entry per visible lane),
+    // rebuilt on automationLanesChanged and positioned in updateTrackHeaderLayout.
+    struct AutoLaneHeaderButtons {
+        AutomationLaneId laneId = INVALID_AUTOMATION_LANE_ID;
+        std::unique_ptr<juce::TextButton> snapTimeBtn;
+        std::unique_ptr<juce::TextButton> snapValueBtn;
+        std::unique_ptr<juce::TextButton> armBtn;
+        std::unique_ptr<juce::TextButton> bypassBtn;
+        std::unique_ptr<juce::TextButton> menuBtn;
+    };
+    std::vector<std::unique_ptr<AutoLaneHeaderButtons>> laneHeaderButtons_;
     std::unordered_set<int> selectedTrackIndices_;
     double verticalZoom = 1.0;  // Track height multiplier
     ViewMode currentViewMode_ = ViewMode::Arrange;
@@ -292,6 +305,12 @@ class TrackHeadersPanel : public juce::Component,
 
     // Automation lane header painting
     void paintAutomationLaneHeaders(juce::Graphics& g, int trackIndex);
+
+    // Automation lane header button management
+    void rebuildLaneHeaderButtons();
+    void positionLaneHeaderButtons();
+    AutoLaneHeaderButtons* findLaneHeaderButtons(AutomationLaneId laneId);
+    void showLaneHeaderMenu(AutomationLaneId laneId, juce::Component* relativeTo);
 
     // Indentation
     static constexpr int INDENT_WIDTH = 12;

@@ -69,7 +69,7 @@ class AutomationLaneComponent : public juce::Component,
     std::function<double()> getGridSpacingBeats;
 
     // Header dimensions
-    static constexpr int HEADER_HEIGHT = 20;
+    static constexpr int HEADER_HEIGHT = 24;
     static constexpr int MIN_LANE_HEIGHT = 40;
     static constexpr int MAX_LANE_HEIGHT = 200;
     static constexpr int DEFAULT_LANE_HEIGHT = 60;
