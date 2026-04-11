@@ -43,6 +43,15 @@ class AutomationManagerListener {
                                             double previewTime, double previewValue) {
         juce::ignoreUnused(laneId, pointId, previewTime, previewValue);
     }
+
+    // Called whenever a lane's effective value (at the current playhead or
+    // during a drag preview) changes. UI controls use this to follow
+    // automation without polling: drag previews, stopped commits, and
+    // playback evaluation all route through here. The value is the MAGDA
+    // 0..1 normalized form; listeners convert to their display domain.
+    virtual void automationValueChanged(AutomationLaneId laneId, double normalizedValue) {
+        juce::ignoreUnused(laneId, normalizedValue);
+    }
 };
 
 /**
@@ -277,6 +286,18 @@ class AutomationManager : public TrackManagerListener {
      */
     void notifyPointDragPreview(AutomationLaneId laneId, AutomationPointId pointId,
                                 double previewTime, double previewValue);
+
+    /**
+     * @brief Broadcast a lane's effective value change to UI listeners.
+     *
+     * Fired by AutomationPlaybackEngine on drag preview, stopped commits, and
+     * live playback-driven parameter changes. UI controls subscribe to this
+     * to track automation without polling.
+     *
+     * @param laneId          The lane whose value is being reported.
+     * @param normalizedValue The MAGDA 0..1 normalized value to display.
+     */
+    void notifyValueChanged(AutomationLaneId laneId, double normalizedValue);
 
     // ========================================================================
     // Project Management

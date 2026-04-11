@@ -95,6 +95,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     // CurveEditorBase data mutation callbacks
     void onPointAdded(double x, double y, CurveType curveType) override;
     void onPointMoved(uint32_t pointId, double newX, double newY) override;
+    void onPointDragPreview(uint32_t pointId, double newX, double newY) override;
     void onPointDeleted(uint32_t pointId) override;
     void onPointSelected(uint32_t pointId) override;
     void onTensionChanged(uint32_t pointId, double tension) override;

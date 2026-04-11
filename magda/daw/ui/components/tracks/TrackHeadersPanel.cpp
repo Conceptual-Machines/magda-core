@@ -1459,6 +1459,50 @@ void TrackHeadersPanel::automationLanePropertyChanged(AutomationLaneId /*laneId*
     repaint();
 }
 
+void TrackHeadersPanel::automationValueChanged(AutomationLaneId laneId, double normalizedValue) {
+    // Pure-callback path that keeps volume/pan faders following automation
+    // without polling. Fires on drag preview, stopped-rebake commits, and
+    // TE-driven playback writes (via AutomationPlaybackEngine's parameter
+    // listener). We only care about track-level lanes — device parameter
+    // lanes route through DeviceSlotComponent.
+    const auto* lane = AutomationManager::getInstance().getLane(laneId);
+    if (!lane)
+        return;
+
+    if (lane->target.type != AutomationTargetType::TrackVolume &&
+        lane->target.type != AutomationTargetType::TrackPan)
+        return;
+
+    int index = -1;
+    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+        if (visibleTrackIds_[i] == lane->target.trackId) {
+            index = static_cast<int>(i);
+            break;
+        }
+    }
+    if (index < 0 || index >= static_cast<int>(trackHeaders.size()))
+        return;
+
+    auto& header = *trackHeaders[index];
+    if (lane->target.type == AutomationTargetType::TrackVolume) {
+        // MAGDA normalized (FaderDB) → real dB for the draggable dB label.
+        auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
+        float dB = ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), paramInfo);
+        if (header.volumeLabel)
+            header.volumeLabel->setValue(dB, juce::dontSendNotification);
+        // Keep the cached gain in sync so a later non-automation property
+        // refresh doesn't snap the fader back to the stale value.
+        header.volume = dbToGain(dB);
+    } else {
+        auto paramInfo = ParameterPresets::pan(-1, "Pan");
+        float pan =
+            ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), paramInfo);
+        if (header.panLabel)
+            header.panLabel->setValue(pan, juce::dontSendNotification);
+        header.pan = pan;
+    }
+}
+
 void TrackHeadersPanel::setVerticalZoom(double zoom) {
     zoom = juce::jlimit(0.5, 3.0, zoom);
     if (std::abs(zoom - verticalZoom) < 0.001)
@@ -3117,6 +3161,36 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                     gridValues.push_back(
                         {static_cast<double>(ParameterUtils::realToNormalized(-1.0f, paramInfo)),
                          "L"});
+                } else if (paramInfo.isBipolar()) {
+                    // Bipolar params (EQ gain, pitch, etc): symmetric labels
+                    // around zero so the 0 line lands mid-lane. Use the larger
+                    // |bound| so extremes land on both ends regardless of
+                    // asymmetry.
+                    float absMax =
+                        std::max(std::abs(paramInfo.minValue), std::abs(paramInfo.maxValue));
+                    const double realTicks[] = {absMax, absMax * 0.5, 0.0, -absMax * 0.5, -absMax};
+                    for (double real : realTicks) {
+                        float norm =
+                            ParameterUtils::realToNormalized(static_cast<float>(real), paramInfo);
+                        juce::String label;
+                        int rounded = static_cast<int>(std::round(real));
+                        if (rounded > 0)
+                            label = "+" + juce::String(rounded);
+                        else
+                            label = juce::String(rounded);
+                        label += paramInfo.unit;
+                        gridValues.push_back({static_cast<double>(norm), label});
+                    }
+                } else if (paramInfo.unit.isNotEmpty()) {
+                    // Unipolar with unit: evenly spaced in normalized space,
+                    // labelled with the real value in the parameter's own unit.
+                    for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
+                        float real =
+                            ParameterUtils::normalizedToReal(static_cast<float>(norm), paramInfo);
+                        juce::String label =
+                            juce::String(static_cast<int>(std::round(real))) + paramInfo.unit;
+                        gridValues.push_back({norm, label});
+                    }
                 } else {
                     for (int i = 1; i < 10; ++i)
                         gridValues.push_back({i / 10.0, juce::String(i * 10) + "%"});

@@ -15,11 +15,14 @@ ParameterInfo AutomationTarget::getParameterInfo() const {
 
         case AutomationTargetType::DeviceParameter: {
             // Look up the real ParameterInfo populated by the owning
-            // DeviceProcessor so labels/units/ranges come from the actual plugin.
-            DeviceId deviceId = devicePath.getDeviceId();
-            if (deviceId == INVALID_DEVICE_ID || paramIndex < 0)
+            // DeviceProcessor so labels/units/ranges come from the actual
+            // plugin. Must use the path-based lookup since the target
+            // device often sits inside a rack/chain — the flat
+            // getDevice(trackId, deviceId) only scans top-level elements
+            // and would leave us falling back to a generic percent scale.
+            if (paramIndex < 0)
                 break;
-            auto* device = TrackManager::getInstance().getDevice(trackId, deviceId);
+            auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
             if (!device)
                 break;
             if (paramIndex >= static_cast<int>(device->parameters.size()))

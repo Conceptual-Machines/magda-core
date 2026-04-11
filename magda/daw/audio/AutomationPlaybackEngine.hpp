@@ -2,6 +2,7 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <unordered_map>
 #include <vector>
 
 #include "../core/AutomationInfo.hpp"
@@ -29,7 +30,8 @@ class AudioBridge;
  * Owned by AudioBridge. Called from timerCallback() (message thread) to detect
  * transport transitions and rebake when automation data changes.
  */
-class AutomationPlaybackEngine : public AutomationManagerListener {
+class AutomationPlaybackEngine : public AutomationManagerListener,
+                                 public te::AutomatableParameter::Listener {
   public:
     AutomationPlaybackEngine(AudioBridge& bridge, te::Edit& edit);
     ~AutomationPlaybackEngine() override;
@@ -50,6 +52,21 @@ class AutomationPlaybackEngine : public AutomationManagerListener {
     // means a bypass toggle has no audible effect until another event forces
     // a rebake — so mark dirty unconditionally here.
     void automationLanePropertyChanged(AutomationLaneId laneId) override;
+    // Fluid preview while the user is actively dragging a point — republish
+    // the value through AutomationManager::notifyValueChanged so UI listeners
+    // (faders, knobs, custom UIs) can follow the drag in real time without a
+    // round-trip through the TE parameter (which would fight the baked curve).
+    void automationPointDragPreview(AutomationLaneId laneId, AutomationPointId pointId,
+                                    double previewTime, double previewValue) override;
+
+    // te::AutomatableParameter::Listener — TE's audio thread writes the baked
+    // curve into the parameter on each block during playback, and
+    // updateToFollowCurve() (called from bakeLane when stopped) does the same
+    // while stopped. Both paths coalesce through this async callback, which
+    // we translate back to MAGDA 0..1 and broadcast via notifyValueChanged so
+    // UI controls track the curve without polling.
+    void curveHasChanged(te::AutomatableParameter&) override {}
+    void currentValueChanged(te::AutomatableParameter&) override;
 
   private:
     static constexpr double kBakeIntervalSeconds = 0.01;  // 10ms between baked points
@@ -62,6 +79,24 @@ class AutomationPlaybackEngine : public AutomationManagerListener {
 
     te::AutomatableParameter* resolveParameter(const AutomationTarget& target);
 
+    // Maps a MAGDA 0..1 normalized value to the TE parameter's real range,
+    // accounting for the non-linear dB scale on track volume and TE's native
+    // fader position encoding. Shared by the bake loop and the drag-preview
+    // fast path so both paths agree on the conversion.
+    float convertToTEValue(const AutomationTarget& target, te::AutomatableParameter* param,
+                           double magdaNormalized) const;
+
+    // Inverse of convertToTEValue: TE parameter's real value → MAGDA 0..1.
+    // Used by currentValueChanged to translate TE-driven parameter writes back
+    // into the normalized form UI listeners expect.
+    double convertFromTEValue(const AutomationTarget& target, te::AutomatableParameter* param,
+                              float teValue) const;
+
+    // Register this engine as a TE listener on every parameter we just baked,
+    // and unregister from any parameter we used to bake but no longer do. This
+    // keeps the listenedParams_ map in sync with bakedTargets_.
+    void syncParameterListeners();
+
     AudioBridge& bridge_;
     te::Edit& edit_;
     bool wasPlaying_ = false;
@@ -71,6 +106,16 @@ class AutomationPlaybackEngine : public AutomationManagerListener {
     // curve for any target that is no longer present — otherwise a deleted
     // lane's baked values continue driving the parameter on the audio thread.
     std::vector<AutomationTarget> bakedTargets_;
+
+    // Reverse lookup for TE parameter listener callbacks: when TE fires
+    // currentValueChanged(param), we look up which lane owns it so we can
+    // broadcast the normalized value. Rebuilt alongside bakedTargets_ in
+    // syncParameterListeners().
+    struct ListenedParamInfo {
+        AutomationLaneId laneId;
+        AutomationTarget target;
+    };
+    std::unordered_map<te::AutomatableParameter*, ListenedParamInfo> listenedParams_;
 };
 
 }  // namespace magda

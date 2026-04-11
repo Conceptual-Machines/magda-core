@@ -24,6 +24,7 @@
 #include "audio/ArpeggiatorPlugin.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
 #include "audio/StepSequencerPlugin.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
@@ -55,7 +56,8 @@ namespace magda::daw::ui {
  */
 class DeviceSlotComponent : public NodeComponent,
                             public juce::Timer,
-                            public magda::TrackManagerListener {
+                            public magda::TrackManagerListener,
+                            public magda::AutomationManagerListener {
   public:
     static constexpr int BASE_SLOT_WIDTH = 400;  // Maximum width (8 columns)
     static constexpr int NUM_PARAMS_PER_PAGE = 32;
@@ -178,6 +180,12 @@ class DeviceSlotComponent : public NodeComponent,
     void tracksChanged() override {}
     void deviceParameterChanged(magda::DeviceId deviceId, int paramIndex, float newValue) override;
 
+    // AutomationManagerListener — pure-callback slider updates from curve edits
+    // and playback. We only react to DeviceParameter lanes that target this
+    // device; track-level lanes are handled by TrackHeadersPanel.
+    void automationLanesChanged() override {}
+    void automationValueChanged(magda::AutomationLaneId laneId, double normalizedValue) override;
+
   private:
     magda::DeviceInfo device_;
     bool isDrumGrid_ = false;
@@ -249,6 +257,11 @@ class DeviceSlotComponent : public NodeComponent,
     // Helper to create custom UI for internal devices
     void createCustomUI();
     void updateCustomUI();
+    // Lightweight per-frame refresh: push current device_.parameters values
+    // into any active custom UI's sliders/knobs, without the heavy plugin-state
+    // reads (waveforms, drum pad info, etc) that updateCustomUI does. Safe to
+    // call from timerCallback.
+    void refreshCustomUIParameterValues();
     void readAndPushModMatrix();  // Read FourOsc mod matrix and push to UI
     void setupCustomUILinking();
     void wirePadChainLinkCallbacks();  // Wire link mode on PadDeviceSlot param slots

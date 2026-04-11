@@ -61,6 +61,18 @@ struct ParameterInfo {
           maxValue(max),
           defaultValue(def),
           scale(s) {}
+
+    /**
+     * @brief Whether this parameter's range straddles zero.
+     *
+     * Used by the automation UI to render a centred "neutral" line and
+     * symmetric scale labels for bipolar parameters (EQ gain, pitch,
+     * pan, etc.) rather than treating 0 as the bottom of the range.
+     * Pan is intentionally excluded since it has its own L/C/R renderer.
+     */
+    bool isBipolar() const {
+        return minValue < 0.0f && maxValue > 0.0f;
+    }
 };
 
 /**

@@ -81,7 +81,7 @@ void AutomationCurveEditor::automationPointDragPreview(AutomationLaneId laneId,
 
     // Update the point component position for visual feedback
     for (auto& pc : pointComponents_) {
-        if (pc->getPointId() == pointId) {
+        if (pc->getPointId() == static_cast<uint32_t>(pointId)) {
             int x = xToPixel(previewTime);
             int y = yToPixel(previewValue);
             pc->setCentrePosition(x, y);
@@ -186,6 +186,16 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
             float norm = ParameterUtils::realToNormalized(static_cast<float>(pan), paramInfo);
             gridNorms.push_back(static_cast<double>(norm));
         }
+    } else if (paramInfo.isBipolar()) {
+        // Symmetric real-value grid so 0 lands exactly at mid-lane.
+        // Quarter + half divisions give a readable ±max, ±50%, 0 grid.
+        float absMax = std::max(std::abs(paramInfo.minValue), std::abs(paramInfo.maxValue));
+        const double frac[] = {-1.0, -0.5, 0.0, 0.5, 1.0};
+        for (double f : frac) {
+            float norm =
+                ParameterUtils::realToNormalized(static_cast<float>(f * absMax), paramInfo);
+            gridNorms.push_back(static_cast<double>(norm));
+        }
     } else {
         // Generic: 10% increments
         for (int i = 1; i < 10; ++i) {
@@ -196,11 +206,20 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
     auto bounds = getLocalBounds();
     float width = static_cast<float>(bounds.getWidth());
 
+    // For bipolar parameters the neutral-value line (0 dB, 0 st, …) should
+    // read as the rest position. Draw it noticeably brighter than the rest
+    // of the grid.
+    double zeroNorm = -1.0;
+    if (paramInfo.isBipolar()) {
+        zeroNorm = static_cast<double>(ParameterUtils::realToNormalized(0.0f, paramInfo));
+    }
+
     for (double norm : gridNorms) {
         if (norm <= 0.01 || norm >= 0.99)
             continue;
         int y = yToPixel(norm);
-        g.setColour(juce::Colour(0x18FFFFFF));
+        bool isZeroLine = zeroNorm >= 0.0 && std::abs(norm - zeroNorm) < 0.002;
+        g.setColour(isZeroLine ? juce::Colour(0x50FFFFFF) : juce::Colour(0x18FFFFFF));
         g.drawHorizontalLine(y, 0.0f, width);
     }
 }
@@ -272,6 +291,16 @@ void AutomationCurveEditor::onPointAdded(double x, double y, CurveType curveType
         UndoManager::getInstance().executeCommand(std::make_unique<AddAutomationPointCommand>(
             laneId_, INVALID_AUTOMATION_CLIP_ID, x, y, autoCurveType));
     }
+}
+
+void AutomationCurveEditor::onPointDragPreview(uint32_t pointId, double newX, double newY) {
+    // Broadcast the in-progress drag so AutomationPlaybackEngine can push the
+    // preview value straight into the TE parameter — this keeps the fader /
+    // knob tracking the drag in real time without waiting for the mouseUp
+    // commit + full rebake. Visual point movement is already handled by the
+    // base-class lambda; this notification is purely for audio-side listeners.
+    AutomationManager::getInstance().notifyPointDragPreview(
+        laneId_, static_cast<AutomationPointId>(pointId), newX, newY);
 }
 
 void AutomationCurveEditor::onPointMoved(uint32_t pointId, double newX, double newY) {

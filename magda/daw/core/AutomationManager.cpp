@@ -729,6 +729,12 @@ void AutomationManager::notifyPointsChanged(AutomationLaneId laneId) {
     listeners_.call([laneId](AutomationManagerListener& l) { l.automationPointsChanged(laneId); });
 }
 
+void AutomationManager::notifyValueChanged(AutomationLaneId laneId, double normalizedValue) {
+    listeners_.call([laneId, normalizedValue](AutomationManagerListener& l) {
+        l.automationValueChanged(laneId, normalizedValue);
+    });
+}
+
 void AutomationManager::notifyPointDragPreview(AutomationLaneId laneId, AutomationPointId pointId,
                                                double previewTime, double previewValue) {
     listeners_.call([laneId, pointId, previewTime, previewValue](AutomationManagerListener& l) {

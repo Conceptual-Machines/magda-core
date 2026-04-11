@@ -36,6 +36,10 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Register as TrackManager listener for parameter updates from plugin
     magda::TrackManager::getInstance().addListener(this);
 
+    // Register for automation value updates so param slot knobs follow curve
+    // edits and playback without polling.
+    magda::AutomationManager::getInstance().addListener(this);
+
     // Custom name and font for drum grid (MPC-style with Microgramma)
     isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
     isChordEngine_ =
@@ -613,6 +617,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
 DeviceSlotComponent::~DeviceSlotComponent() {
     magda::TrackManager::getInstance().removeListener(this);
+    magda::AutomationManager::getInstance().removeListener(this);
     stopTimer();
 }
 
@@ -724,6 +729,69 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
             break;
         }
     }
+}
+
+void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
+                                                 double normalizedValue) {
+    // Curve-driven update: the lane has pushed a new value (drag preview,
+    // stopped rebake, or TE playback). Only react to DeviceParameter lanes
+    // that target this device — the engine sends us every lane because lane
+    // registration is global.
+    const auto* lane = magda::AutomationManager::getInstance().getLane(laneId);
+    if (!lane)
+        return;
+
+    if (lane->target.type != magda::AutomationTargetType::DeviceParameter)
+        return;
+
+    if (lane->target.devicePath.getDeviceId() != device_.id)
+        return;
+
+    const int paramIndex = lane->target.paramIndex;
+    if (paramIndex < 0 || paramIndex >= static_cast<int>(device_.parameters.size()))
+        return;
+
+    // MAGDA normalized 0..1 → the parameter's real range, matching the linear
+    // lerp that AutomationPlaybackEngine::convertToTEValue uses for device
+    // params. The UI slot's slider is configured in the real range by
+    // configureSliderFormatting, so we push the real value (same as
+    // deviceParameterChanged) rather than the normalized form.
+    const auto& info = device_.parameters[static_cast<size_t>(paramIndex)];
+    float realValue =
+        info.minValue + static_cast<float>(normalizedValue) * (info.maxValue - info.minValue);
+
+    // Keep the cached value in sync so any non-automation refresh path sees
+    // the latest curve value.
+    device_.parameters[static_cast<size_t>(paramIndex)].currentValue = realValue;
+
+    // Push into the param slot (if the matching parameter is on the current
+    // page) and into any active custom UI so the on-device knob follows too.
+    if (paramGrid_) {
+        const int paramsPerPage = NUM_PARAMS_PER_PAGE;
+        const int currentPage = paramGrid_->getCurrentPage();
+        const int pageOffset = currentPage * paramsPerPage;
+        const bool useVisibilityFilter = !device_.visibleParameters.empty();
+
+        for (int slotIndex = 0; slotIndex < NUM_PARAMS_PER_PAGE; ++slotIndex) {
+            const int visibleParamIndex = pageOffset + slotIndex;
+            int actualParamIndex;
+            if (useVisibilityFilter) {
+                if (visibleParamIndex >= static_cast<int>(device_.visibleParameters.size()))
+                    continue;
+                actualParamIndex =
+                    device_.visibleParameters[static_cast<size_t>(visibleParamIndex)];
+            } else {
+                actualParamIndex = visibleParamIndex;
+            }
+            if (actualParamIndex == paramIndex) {
+                if (auto* slot = paramGrid_->getSlot(slotIndex))
+                    slot->setParamValue(realValue);
+                break;
+            }
+        }
+    }
+
+    refreshCustomUIParameterValues();
 }
 
 void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
@@ -2934,6 +3002,34 @@ void DeviceSlotComponent::readAndPushModMatrix() {
         }
     }
     fourOscUI_->updateModMatrix(matrixEntries);
+}
+
+void DeviceSlotComponent::refreshCustomUIParameterValues() {
+    // Push current cached parameter values into each custom UI's sliders.
+    // Intentionally lightweight — no plugin state reads, no waveform/drum-pad
+    // fetches. Safe to call every timer tick.
+    if (eqUI_ && device_.pluginId.equalsIgnoreCase("eq"))
+        eqUI_->updateFromParameters(device_.parameters);
+    if (compressorUI_ && device_.pluginId.containsIgnoreCase("compressor"))
+        compressorUI_->updateFromParameters(device_.parameters);
+    if (reverbUI_ && device_.pluginId.containsIgnoreCase("reverb"))
+        reverbUI_->updateFromParameters(device_.parameters);
+    if (delayUI_ && device_.pluginId.containsIgnoreCase("delay"))
+        delayUI_->updateFromParameters(device_.parameters);
+    if (chorusUI_ && device_.pluginId.containsIgnoreCase("chorus"))
+        chorusUI_->updateFromParameters(device_.parameters);
+    if (phaserUI_ && device_.pluginId.containsIgnoreCase("phaser"))
+        phaserUI_->updateFromParameters(device_.parameters);
+    if (filterUI_ && device_.pluginId.containsIgnoreCase("lowpass"))
+        filterUI_->updateFromParameters(device_.parameters);
+    if (pitchShiftUI_ && device_.pluginId.containsIgnoreCase("pitchshift"))
+        pitchShiftUI_->updateFromParameters(device_.parameters);
+    if (impulseResponseUI_ && device_.pluginId.containsIgnoreCase("impulseresponse"))
+        impulseResponseUI_->updateFromParameters(device_.parameters);
+    if (utilityUI_ && device_.pluginId.containsIgnoreCase("utility"))
+        utilityUI_->updateFromParameters(device_.parameters);
+    if (fourOscUI_ && device_.pluginId.containsIgnoreCase("4osc"))
+        fourOscUI_->updateFromParameters(device_.parameters);
 }
 
 void DeviceSlotComponent::updateCustomUI() {

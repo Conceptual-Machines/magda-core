@@ -14,6 +14,16 @@ AutomationPlaybackEngine::AutomationPlaybackEngine(AudioBridge& bridge, te::Edit
 
 AutomationPlaybackEngine::~AutomationPlaybackEngine() {
     AutomationManager::getInstance().removeListener(this);
+
+    // Detach from every TE parameter we were listening on — otherwise the
+    // parameter keeps a dangling pointer and will crash on the next value
+    // change notification.
+    for (auto& [param, info] : listenedParams_) {
+        juce::ignoreUnused(info);
+        if (param != nullptr)
+            param->removeListener(this);
+    }
+    listenedParams_.clear();
 }
 
 void AutomationPlaybackEngine::process() {
@@ -61,8 +71,37 @@ void AutomationPlaybackEngine::automationLanesChanged() {
     needsRebake_ = true;
 }
 
-void AutomationPlaybackEngine::automationPointsChanged(AutomationLaneId /*laneId*/) {
+void AutomationPlaybackEngine::automationPointsChanged(AutomationLaneId laneId) {
     needsRebake_ = true;
+
+    // Real-time sync while the transport is stopped: rebake this single lane
+    // immediately instead of waiting for the next 30Hz process() tick, then
+    // push the current-playhead value through the parameter so any listening
+    // UI (fader, knob, label) follows the curve edit without a perceptible
+    // delay. Curve mutations are always dispatched from the UI thread, so
+    // calling bakeLane — which touches te::AutomationCurve — is safe here.
+    //
+    // During playback we leave the coalesced needsRebake_ path in place so
+    // rapid edits don't thrash TE's iterator rebuild.
+    if (edit_.getTransport().isPlaying())
+        return;
+
+    auto* lane = AutomationManager::getInstance().getLane(laneId);
+    if (!lane || !lane->hasData())
+        return;
+
+    // Ensure bakedTargets_ reflects this lane so syncParameterListeners
+    // registers a listener on its parameter. Otherwise a curve edit that
+    // introduces a brand-new lane (first point placed) would bake its values
+    // without ever subscribing, and the UI would stop tracking it.
+    if (std::none_of(bakedTargets_.begin(), bakedTargets_.end(),
+                     [&](const AutomationTarget& t) { return t == lane->target; })) {
+        bakedTargets_.push_back(lane->target);
+    }
+
+    bakeLane(*lane);
+    syncParameterListeners();
+    needsRebake_ = false;
 }
 
 void AutomationPlaybackEngine::automationLanePropertyChanged(AutomationLaneId /*laneId*/) {
@@ -104,6 +143,11 @@ void AutomationPlaybackEngine::bakeAllLanes() {
         if (lane.hasData())
             bakeLane(lane);
     }
+
+    // Subscribe to currentValueChanged on every baked param so the UI can
+    // follow curve-driven writes (playback, stopped rebake, drag commits)
+    // without polling.
+    syncParameterListeners();
 }
 
 void AutomationPlaybackEngine::clearAllLanes() {
@@ -157,7 +201,11 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
         }
     }
 
-    if (dataEndBeats <= dataStartBeats)
+    // Note: dataStartBeats == dataEndBeats is legal — it means the lane has a
+    // single point (or a single clip with one point). We still want to bake
+    // that value across the edit so TE holds it as a constant. Only bail if
+    // we truly have no data to work with.
+    if (dataEndBeats < dataStartBeats)
         return;
 
     // Convert edit length from seconds to beats for range comparison
@@ -174,34 +222,9 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // Bake interval in beats (equivalent to ~10ms at current tempo)
     double bakeIntervalBeats = kBakeIntervalSeconds * bpm / 60.0;
 
-    // Value conversion lambda: maps MAGDA's 0-1 normalized to TE's parameter range.
-    // TE AutomationCurve values live in the parameter's real range, not normalized,
-    // so we must convert through dB for volume and real units for device params.
+    // Shared converter: maps MAGDA's 0-1 normalized to TE's parameter range.
     auto convertValue = [&](double magdaNormalized) -> float {
-        switch (lane.target.type) {
-            case AutomationTargetType::TrackVolume: {
-                // MAGDA 0-1 (FaderDB scale) → dB → TE fader position
-                auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
-                float dB = ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized),
-                                                            paramInfo);
-                return te::decibelsToVolumeFaderPosition(dB);
-            }
-            case AutomationTargetType::TrackPan: {
-                // MAGDA 0-1 → linear -1..+1 (same as TE's pan range)
-                auto paramInfo = ParameterPresets::pan(-1, "Pan");
-                return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized),
-                                                        paramInfo);
-            }
-            default: {
-                // Device parameters: MAGDA stores 0-1 normalized, TE's curve takes
-                // the parameter's real range (e.g. −24..+24 dB for EQ gain). Map
-                // linearly across the TE param's reported value range — passing
-                // raw 0-1 would sit at the bottom of any non-unit range.
-                auto range = param->getValueRange();
-                return range.getStart() +
-                       static_cast<float>(magdaNormalized) * (range.getEnd() - range.getStart());
-            }
-        }
+        return convertToTEValue(lane.target, param, magdaNormalized);
     };
 
     // Bake: sample our curve at regular beat intervals and write dense linear points to TE.
@@ -258,6 +281,14 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // the rebuild to a 10ms timer, during which the curve is invisible to the
     // audio thread and the parameter falls back to its manual fader value.
     param->updateStream();
+
+    // When the transport is stopped, TE's audio thread isn't evaluating the
+    // curve, so the parameter would stay pinned at its manual fader value
+    // until the user presses play. Push the curve's value at the current
+    // playhead through immediately so the UI reflects edits while stopped.
+    if (!edit_.getTransport().isPlaying()) {
+        param->updateToFollowCurve(edit_.getTransport().getPosition());
+    }
 }
 
 void AutomationPlaybackEngine::clearLane(const AutomationLaneInfo& lane) {
@@ -271,6 +302,50 @@ void AutomationPlaybackEngine::clearLane(const AutomationLaneInfo& lane) {
 // ============================================================================
 // Parameter Resolution
 // ============================================================================
+
+float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
+                                                 te::AutomatableParameter* param,
+                                                 double magdaNormalized) const {
+    switch (target.type) {
+        case AutomationTargetType::TrackVolume: {
+            // MAGDA 0-1 (FaderDB scale) → dB → TE fader position
+            auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
+            float dB =
+                ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), paramInfo);
+            return te::decibelsToVolumeFaderPosition(dB);
+        }
+        case AutomationTargetType::TrackPan: {
+            // MAGDA 0-1 → linear -1..+1 (same as TE's pan range)
+            auto paramInfo = ParameterPresets::pan(-1, "Pan");
+            return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), paramInfo);
+        }
+        default: {
+            // Device parameters: MAGDA stores 0-1 normalized, TE's parameter
+            // takes the real range (e.g. −24..+24 dB for EQ gain). Map linearly
+            // across the TE param's reported value range — passing raw 0-1
+            // would sit at the bottom of any non-unit range.
+            if (!param)
+                return static_cast<float>(magdaNormalized);
+            auto range = param->getValueRange();
+            return range.getStart() +
+                   static_cast<float>(magdaNormalized) * (range.getEnd() - range.getStart());
+        }
+    }
+}
+
+void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneId,
+                                                          AutomationPointId /*pointId*/,
+                                                          double /*previewTime*/,
+                                                          double previewValue) {
+    // Fluid drag preview: republish the dragged value as an automation value
+    // change so UI listeners (fader labels, device knobs, custom UIs) can
+    // reflect the edit without a round-trip through the TE parameter — which
+    // would fight the already-baked curve and produce flicker when stopped.
+    //
+    // The stored lane points are untouched; on mouseUp the real commit runs
+    // through automationPointsChanged → bakeLane as usual.
+    AutomationManager::getInstance().notifyValueChanged(laneId, previewValue);
+}
 
 te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
     const AutomationTarget& target) {
@@ -316,6 +391,86 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
     }
 
     return nullptr;
+}
+
+double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& target,
+                                                    te::AutomatableParameter* param,
+                                                    float teValue) const {
+    switch (target.type) {
+        case AutomationTargetType::TrackVolume: {
+            // TE fader position → dB → MAGDA 0-1 (FaderDB scale)
+            auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
+            float dB = te::volumeFaderPositionToDB(teValue);
+            return ParameterUtils::realToNormalized(dB, paramInfo);
+        }
+        case AutomationTargetType::TrackPan: {
+            auto paramInfo = ParameterPresets::pan(-1, "Pan");
+            return ParameterUtils::realToNormalized(teValue, paramInfo);
+        }
+        default: {
+            // Device parameters: reverse the linear lerp across the TE param's
+            // reported range.
+            if (!param)
+                return teValue;
+            auto range = param->getValueRange();
+            float span = range.getEnd() - range.getStart();
+            if (span <= 0.0f)
+                return 0.0;
+            return juce::jlimit(0.0, 1.0, static_cast<double>((teValue - range.getStart()) / span));
+        }
+    }
+}
+
+void AutomationPlaybackEngine::syncParameterListeners() {
+    // Build the set of parameters that should currently be listened on —
+    // one per live baked target. A target that no longer resolves (device
+    // removed, track gone) drops out naturally.
+    auto& autoMgr = AutomationManager::getInstance();
+    std::unordered_map<te::AutomatableParameter*, ListenedParamInfo> desired;
+    for (const auto& target : bakedTargets_) {
+        auto* param = resolveParameter(target);
+        if (!param)
+            continue;
+        AutomationLaneId laneId = autoMgr.getLaneForTarget(target);
+        if (laneId == INVALID_AUTOMATION_LANE_ID)
+            continue;
+        desired[param] = ListenedParamInfo{laneId, target};
+    }
+
+    // Remove listeners for params no longer in the desired set.
+    for (auto it = listenedParams_.begin(); it != listenedParams_.end();) {
+        if (desired.find(it->first) == desired.end()) {
+            if (it->first != nullptr)
+                it->first->removeListener(this);
+            it = listenedParams_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Add listeners for new params; refresh info for existing ones so the
+    // lane id tracks target re-binds.
+    for (auto& [param, info] : desired) {
+        auto [it, inserted] = listenedParams_.insert({param, info});
+        if (inserted) {
+            param->addListener(this);
+        } else {
+            it->second = info;
+        }
+    }
+}
+
+void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& param) {
+    // Coalesced async callback from TE's message thread — fired whenever a
+    // baked curve or updateToFollowCurve() writes a new value into the
+    // parameter. Translate back to MAGDA 0..1 and broadcast so UI listeners
+    // (fader labels, device knobs, custom UIs) track the curve live.
+    auto it = listenedParams_.find(&param);
+    if (it == listenedParams_.end())
+        return;
+
+    double normalized = convertFromTEValue(it->second.target, &param, param.getCurrentValue());
+    AutomationManager::getInstance().notifyValueChanged(it->second.laneId, normalized);
 }
 
 }  // namespace magda

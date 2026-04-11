@@ -58,6 +58,7 @@ class TrackHeadersPanel : public juce::Component,
     // AutomationManagerListener
     void automationLanesChanged() override;
     void automationLanePropertyChanged(AutomationLaneId laneId) override;
+    void automationValueChanged(AutomationLaneId laneId, double normalizedValue) override;
 
     // DragAndDropTarget implementation (plugin drops)
     bool isInterestedInDragSource(const SourceDetails& details) override;

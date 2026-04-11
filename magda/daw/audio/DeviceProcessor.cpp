@@ -9,6 +9,52 @@
 
 namespace magda {
 
+namespace {
+
+/**
+ * @brief Fill a ParameterInfo from a te::AutomatableParameter.
+ *
+ * Most MAGDA processors wrap TE plugins and expose their automatable
+ * parameters verbatim. This helper centralises the boilerplate so every
+ * processor picks up the parameter's real unit label (dB, Hz, %, …) and
+ * infers a sensible ParameterScale — without which the automation lane
+ * UI would default to a percentage and the playback engine would write
+ * the wrong real-range values to TE's AutomationCurve.
+ */
+ParameterInfo makeInfoFromTeParam(int index, te::AutomatableParameter* param) {
+    ParameterInfo info;
+    info.paramIndex = index;
+    if (!param)
+        return info;
+
+    info.name = param->getParameterName();
+    info.unit = param->getLabel();
+
+    auto range = param->getValueRange();
+    info.minValue = range.getStart();
+    info.maxValue = range.getEnd();
+    info.defaultValue = param->getDefaultValue().value_or(range.getStart());
+    info.currentValue = param->getCurrentValue();
+
+    // Infer scale from TE's state count: a small state count indicates a
+    // discrete/enum parameter (e.g. filter slope), everything else is
+    // treated as linear. TE doesn't expose log/exp hints, so specialised
+    // scales must be set by the caller when known.
+    int numStates = param->getNumberOfStates();
+    if (numStates == 2) {
+        info.scale = ParameterScale::Boolean;
+        info.modulatable = false;
+    } else if (numStates > 0 && numStates <= 12) {
+        info.scale = ParameterScale::Discrete;
+    } else {
+        info.scale = ParameterScale::Linear;
+    }
+
+    return info;
+}
+
+}  // namespace
+
 // =============================================================================
 // DeviceProcessor Base Class
 // =============================================================================
@@ -368,22 +414,12 @@ int MagdaSamplerProcessor::getParameterCount() const {
 }
 
 ParameterInfo MagdaSamplerProcessor::getParameterInfo(int index) const {
-    ParameterInfo info;
     if (!plugin_)
-        return info;
-
+        return {};
     auto params = plugin_->getAutomatableParameters();
     if (index < 0 || index >= params.size())
-        return info;
-
-    auto* param = params[index];
-    info.name = param->getParameterName();
-    info.currentValue = param->getCurrentValue();
-    auto range = param->getValueRange();
-    info.minValue = range.getStart();
-    info.maxValue = range.getEnd();
-    info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-    return info;
+        return {};
+    return makeInfoFromTeParam(index, params[index]);
 }
 
 void MagdaSamplerProcessor::populateParameters(DeviceInfo& info) const {
@@ -428,22 +464,12 @@ int FourOscProcessor::getParameterCount() const {
 }
 
 ParameterInfo FourOscProcessor::getParameterInfo(int index) const {
-    ParameterInfo info;
     if (!plugin_)
-        return info;
-
+        return {};
     auto params = plugin_->getAutomatableParameters();
     if (index < 0 || index >= params.size())
-        return info;
-
-    auto* param = params[index];
-    info.name = param->getParameterName();
-    info.currentValue = param->getCurrentValue();
-    auto range = param->getValueRange();
-    info.minValue = range.getStart();
-    info.maxValue = range.getEnd();
-    info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-    return info;
+        return {};
+    return makeInfoFromTeParam(index, params[index]);
 }
 
 void FourOscProcessor::populateParameters(DeviceInfo& info) const {
@@ -496,18 +522,33 @@ ParameterInfo EqualiserProcessor::getParameterInfo(int index) const {
     int autoCount = static_cast<int>(params.size());
 
     if (index >= 0 && index < autoCount) {
-        auto* param = params[index];
-        info.name = param->getParameterName();
-        info.currentValue = param->getCurrentValue();
-        auto range = param->getValueRange();
-        info.minValue = range.getStart();
-        info.maxValue = range.getEnd();
-        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-    } else if (index == autoCount) {
+        ParameterInfo eqInfo = makeInfoFromTeParam(index, params[index]);
+        // TE's EQAutomatableParameter doesn't override getLabel(), so the
+        // helper leaves unit empty — patch units/scale based on the parameter
+        // name so the automation lane shows dB/Hz instead of falling back to %.
+        juce::String lowerName = eqInfo.name.toLowerCase();
+        if (lowerName.contains("gain")) {
+            eqInfo.unit = "dB";
+            eqInfo.scale = ParameterScale::Linear;
+            eqInfo.bipolarModulation = true;  // gain is symmetric around 0 dB
+        } else if (lowerName.contains("freq")) {
+            eqInfo.unit = "Hz";
+            eqInfo.scale = ParameterScale::Logarithmic;  // frequency sweeps log
+        } else if (lowerName.endsWithIgnoreCase("q") || lowerName.contains(" q ") ||
+                   lowerName.endsWith(" q")) {
+            eqInfo.unit = "";
+            eqInfo.scale = ParameterScale::Logarithmic;  // Q is perceptually log
+        }
+        return eqInfo;
+    }
+
+    if (index == autoCount) {
         info.name = "Phase Invert";
         info.minValue = 0.0f;
         info.maxValue = 1.0f;
         info.defaultValue = 0.0f;
+        info.scale = ParameterScale::Boolean;
+        info.modulatable = false;
         if (auto* eq = dynamic_cast<te::EqualiserPlugin*>(plugin_.get()))
             info.currentValue = eq->phaseInvert.get() ? 1.0f : 0.0f;
         else
@@ -576,19 +617,16 @@ ParameterInfo CompressorProcessor::getParameterInfo(int index) const {
     auto params = plugin_->getAutomatableParameters();
     int autoCount = static_cast<int>(params.size());
 
-    if (index >= 0 && index < autoCount) {
-        auto* param = params[index];
-        info.name = param->getParameterName();
-        info.currentValue = param->getCurrentValue();
-        auto range = param->getValueRange();
-        info.minValue = range.getStart();
-        info.maxValue = range.getEnd();
-        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-    } else if (index == autoCount) {
+    if (index >= 0 && index < autoCount)
+        return makeInfoFromTeParam(index, params[index]);
+
+    if (index == autoCount) {
         info.name = "Sidechain Trigger";
         info.minValue = 0.0f;
         info.maxValue = 1.0f;
         info.defaultValue = 0.0f;
+        info.scale = ParameterScale::Boolean;
+        info.modulatable = false;
         if (auto* comp = dynamic_cast<te::CompressorPlugin*>(plugin_.get()))
             info.currentValue = comp->useSidechainTrigger.get() ? 1.0f : 0.0f;
         else
@@ -658,15 +696,10 @@ ParameterInfo DelayProcessor::getParameterInfo(int index) const {
     auto params = plugin_->getAutomatableParameters();
     int autoCount = static_cast<int>(params.size());
 
-    if (index >= 0 && index < autoCount) {
-        auto* param = params[index];
-        info.name = param->getParameterName();
-        info.currentValue = param->getCurrentValue();
-        auto range = param->getValueRange();
-        info.minValue = range.getStart();
-        info.maxValue = range.getEnd();
-        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-    } else if (index == autoCount) {
+    if (index >= 0 && index < autoCount)
+        return makeInfoFromTeParam(index, params[index]);
+
+    if (index == autoCount) {
         // Virtual parameter: delay length in ms
         info.name = "Length";
         info.unit = "ms";
@@ -735,22 +768,12 @@ int ReverbProcessor::getParameterCount() const {
 }
 
 ParameterInfo ReverbProcessor::getParameterInfo(int index) const {
-    ParameterInfo info;
     if (!plugin_)
-        return info;
-
+        return {};
     auto params = plugin_->getAutomatableParameters();
     if (index < 0 || index >= params.size())
-        return info;
-
-    auto* param = params[index];
-    info.name = param->getParameterName();
-    info.currentValue = param->getCurrentValue();
-    auto range = param->getValueRange();
-    info.minValue = range.getStart();
-    info.maxValue = range.getEnd();
-    info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-    return info;
+        return {};
+    return makeInfoFromTeParam(index, params[index]);
 }
 
 void ReverbProcessor::populateParameters(DeviceInfo& info) const {
@@ -991,20 +1014,17 @@ ParameterInfo FilterProcessor::getParameterInfo(int index) const {
     auto params = plugin_->getAutomatableParameters();
     int autoCount = static_cast<int>(params.size());
 
-    if (index >= 0 && index < autoCount) {
-        auto* param = params[index];
-        info.name = param->getParameterName();
-        info.currentValue = param->getCurrentValue();
-        auto range = param->getValueRange();
-        info.minValue = range.getStart();
-        info.maxValue = range.getEnd();
-        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-    } else if (index == autoCount) {
+    if (index >= 0 && index < autoCount)
+        return makeInfoFromTeParam(index, params[index]);
+
+    if (index == autoCount) {
         // Virtual param: mode (0 = lowpass, 1 = highpass)
         info.name = "Mode";
         info.minValue = 0.0f;
         info.maxValue = 1.0f;
         info.defaultValue = 0.0f;
+        info.scale = ParameterScale::Boolean;
+        info.modulatable = false;
         if (auto* lp = dynamic_cast<te::LowPassPlugin*>(plugin_.get()))
             info.currentValue = lp->isLowPass() ? 0.0f : 1.0f;
         else
@@ -1070,21 +1090,12 @@ int PitchShiftProcessor::getParameterCount() const {
 }
 
 ParameterInfo PitchShiftProcessor::getParameterInfo(int index) const {
-    ParameterInfo info;
     if (!plugin_)
-        return info;
-
+        return {};
     auto params = plugin_->getAutomatableParameters();
-    if (index >= 0 && index < static_cast<int>(params.size())) {
-        auto* param = params[index];
-        info.name = param->getParameterName();
-        info.currentValue = param->getCurrentValue();
-        auto range = param->getValueRange();
-        info.minValue = range.getStart();
-        info.maxValue = range.getEnd();
-        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-    }
-    return info;
+    if (index < 0 || index >= static_cast<int>(params.size()))
+        return {};
+    return makeInfoFromTeParam(index, params[index]);
 }
 
 void PitchShiftProcessor::populateParameters(DeviceInfo& info) const {
@@ -1124,21 +1135,12 @@ int ImpulseResponseProcessor::getParameterCount() const {
 }
 
 ParameterInfo ImpulseResponseProcessor::getParameterInfo(int index) const {
-    ParameterInfo info;
     if (!plugin_)
-        return info;
-
+        return {};
     auto params = plugin_->getAutomatableParameters();
-    if (index >= 0 && index < static_cast<int>(params.size())) {
-        auto* param = params[index];
-        info.name = param->getParameterName();
-        info.currentValue = param->getCurrentValue();
-        auto range = param->getValueRange();
-        info.minValue = range.getStart();
-        info.maxValue = range.getEnd();
-        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-    }
-    return info;
+    if (index < 0 || index >= static_cast<int>(params.size()))
+        return {};
+    return makeInfoFromTeParam(index, params[index]);
 }
 
 void ImpulseResponseProcessor::populateParameters(DeviceInfo& info) const {
@@ -1188,7 +1190,7 @@ ParameterInfo UtilityProcessor::getParameterInfo(int index) const {
 
     switch (index) {
         case 0: {
-            // Volume — slider position 0..1
+            // Volume — slider position 0..1 (fader-position, not dB)
             info.name = "Volume";
             info.minValue = 0.0f;
             info.maxValue = 1.0f;
@@ -1199,20 +1201,14 @@ ParameterInfo UtilityProcessor::getParameterInfo(int index) const {
         }
         case 1: {
             // Pan — -1..1
-            info.name = "Pan";
-            info.minValue = -1.0f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.0f;
+            info = ParameterPresets::pan(1, "Pan");
             if (volPan->panParam)
                 info.currentValue = volPan->panParam->getCurrentValue();
             break;
         }
         case 2: {
             // Polarity — CachedValue<bool>
-            info.name = "Polarity";
-            info.minValue = 0.0f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.0f;
+            info = ParameterPresets::boolean(2, "Polarity");
             info.currentValue = volPan->polarity.get() ? 1.0f : 0.0f;
             break;
         }
@@ -1286,24 +1282,14 @@ int ArpeggiatorProcessor::getParameterCount() const {
 }
 
 ParameterInfo ArpeggiatorProcessor::getParameterInfo(int index) const {
-    ParameterInfo info;
     if (!plugin_)
-        return info;
-
+        return {};
     auto params = plugin_->getAutomatableParameters();
-    int autoCount = static_cast<int>(params.size());
-
-    if (index >= 0 && index < autoCount) {
-        auto* param = params[index];
-        info.name = param->getParameterName();
-        info.currentValue = param->getCurrentValue();
-        auto range = param->getValueRange();
-        info.minValue = range.getStart();
-        info.maxValue = range.getEnd();
-        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-        // Depth (5) and skew (6) default to bipolar; all others unipolar
-        info.bipolarModulation = (index == 5 || index == 6);
-    }
+    if (index < 0 || index >= static_cast<int>(params.size()))
+        return {};
+    ParameterInfo info = makeInfoFromTeParam(index, params[index]);
+    // Depth (5) and skew (6) default to bipolar; all others unipolar
+    info.bipolarModulation = (index == 5 || index == 6);
     return info;
 }
 
@@ -1356,24 +1342,14 @@ int StepSequencerProcessor::getParameterCount() const {
 }
 
 ParameterInfo StepSequencerProcessor::getParameterInfo(int index) const {
-    ParameterInfo info;
     if (!plugin_)
-        return info;
-
+        return {};
     auto params = plugin_->getAutomatableParameters();
-    int autoCount = static_cast<int>(params.size());
-
-    if (index >= 0 && index < autoCount) {
-        auto* param = params[index];
-        info.name = param->getParameterName();
-        info.currentValue = param->getCurrentValue();
-        auto range = param->getValueRange();
-        info.minValue = range.getStart();
-        info.maxValue = range.getEnd();
-        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-        // Timing Depth (6) and Timing Skew (7) are bipolar
-        info.bipolarModulation = (index == 6 || index == 7);
-    }
+    if (index < 0 || index >= static_cast<int>(params.size()))
+        return {};
+    ParameterInfo info = makeInfoFromTeParam(index, params[index]);
+    // Timing Depth (6) and Timing Skew (7) are bipolar
+    info.bipolarModulation = (index == 6 || index == 7);
     return info;
 }
 
@@ -1422,22 +1398,14 @@ int DrumGridProcessor::getParameterCount() const {
 }
 
 ParameterInfo DrumGridProcessor::getParameterInfo(int index) const {
-    ParameterInfo info;
     if (!plugin_)
-        return info;
-
+        return {};
     auto params = plugin_->getAutomatableParameters();
-    if (index >= 0 && index < static_cast<int>(params.size())) {
-        auto* param = params[index];
-        info.name = param->getParameterName();
-        info.currentValue = param->getCurrentValue();
-        auto range = param->getValueRange();
-        info.minValue = range.getStart();
-        info.maxValue = range.getEnd();
-        info.defaultValue = param->getDefaultValue().value_or(range.getStart());
-        // Pan params (odd indices) are bipolar
-        info.bipolarModulation = (index % 2 == 1);
-    }
+    if (index < 0 || index >= static_cast<int>(params.size()))
+        return {};
+    ParameterInfo info = makeInfoFromTeParam(index, params[index]);
+    // Pan params (odd indices) are bipolar
+    info.bipolarModulation = (index % 2 == 1);
     return info;
 }
 
@@ -1514,42 +1482,13 @@ int ExternalPluginProcessor::getParameterCount() const {
 }
 
 ParameterInfo ExternalPluginProcessor::getParameterInfo(int index) const {
-    ParameterInfo info;
-    info.paramIndex = index;
-
-    if (auto* ext = getExternalPlugin()) {
-        auto params = ext->getAutomatableParameters();
-        if (index >= 0 && index < static_cast<int>(params.size())) {
-            auto* param = params[static_cast<size_t>(index)];
-            if (param) {
-                info.name = param->getParameterName();
-                info.unit = param->getLabel();
-
-                // Get range from parameter
-                auto range = param->getValueRange();
-                info.minValue = range.getStart();
-                info.maxValue = range.getEnd();
-
-                // getDefaultValue returns optional<float>
-                auto defaultVal = param->getDefaultValue();
-                info.defaultValue = defaultVal.has_value() ? *defaultVal : info.minValue;
-                info.currentValue = param->getCurrentValue();
-
-                // Determine scale type
-                // Default to linear scale (could be enhanced to detect logarithmic ranges)
-                info.scale = ParameterScale::Linear;
-
-                // Check if parameter has discrete states
-                int numStates = param->getNumberOfStates();
-                if (numStates > 0 && numStates <= 10) {
-                    info.scale = ParameterScale::Discrete;
-                    // Could populate choices from parameter if available
-                }
-            }
-        }
-    }
-
-    return info;
+    auto* ext = getExternalPlugin();
+    if (!ext)
+        return {};
+    auto params = ext->getAutomatableParameters();
+    if (index < 0 || index >= static_cast<int>(params.size()))
+        return {};
+    return makeInfoFromTeParam(index, params[static_cast<size_t>(index)]);
 }
 
 void ExternalPluginProcessor::populateParameters(DeviceInfo& info) const {
