@@ -196,6 +196,7 @@ set(DAW_CORE_SOURCES
     core/ClipManager.cpp
     core/MidiFileWriter.cpp
     core/SelectionManager.cpp
+    core/AutomationInfo.cpp
     core/AutomationManager.cpp
     core/LinkModeManager.cpp
     core/UndoManager.cpp

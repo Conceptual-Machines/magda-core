@@ -197,4 +197,32 @@ class SetAutomationPointHandlesCommand : public UndoableCommand {
     bool isClip_;
 };
 
+/**
+ * @brief Command for deleting an entire automation lane (and its clips)
+ *
+ * Captures the full lane state plus any clip-based data so that undo
+ * re-inserts the lane at its original index.
+ */
+class DeleteAutomationLaneCommand : public UndoableCommand {
+  public:
+    explicit DeleteAutomationLaneCommand(AutomationLaneId laneId) : laneId_(laneId) {
+        captureLane();
+    }
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Delete Automation Lane";
+    }
+
+  private:
+    void captureLane();
+
+    AutomationLaneId laneId_;
+    AutomationLaneInfo storedLane_;
+    std::vector<AutomationClipInfo> storedClips_;
+    size_t storedIndex_ = 0;
+    bool captured_ = false;
+};
+
 }  // namespace magda

@@ -145,22 +145,12 @@ struct AutomationTarget {
     /**
      * @brief Get the ParameterInfo for this automation target
      *
-     * Provides consistent value conversion and display formatting.
+     * For track volume/pan returns preset info; for device parameters
+     * looks up the owning device's ParameterInfo (real range/unit/scale)
+     * via TrackManager so curve labels show real units. Defined in
+     * AutomationInfo.cpp to avoid pulling TrackManager into this header.
      */
-    ParameterInfo getParameterInfo() const {
-        switch (type) {
-            case AutomationTargetType::TrackVolume:
-                return ParameterPresets::faderVolume(-1, "Volume");
-            case AutomationTargetType::TrackPan:
-                return ParameterPresets::pan(-1, "Pan");
-            case AutomationTargetType::DeviceParameter:
-            case AutomationTargetType::Macro:
-            case AutomationTargetType::ModParameter:
-            default:
-                // Default to percentage for unknown parameters
-                return ParameterPresets::percent(-1, getDisplayName());
-        }
-    }
+    ParameterInfo getParameterInfo() const;
 };
 
 /**

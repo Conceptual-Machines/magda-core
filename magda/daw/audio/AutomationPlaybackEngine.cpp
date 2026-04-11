@@ -80,6 +80,26 @@ void AutomationPlaybackEngine::bakeAllLanes() {
     // when TE reads baked values during playback
     autoMgr.setPlaybackActive(true);
 
+    // Clear curves for any target we baked last time that is no longer
+    // backed by a live lane — otherwise a deleted lane keeps driving its
+    // parameter because bakeLane() only visits lanes that still exist.
+    std::vector<AutomationTarget> newTargets;
+    for (const auto& lane : autoMgr.getLanes()) {
+        if (lane.hasData())
+            newTargets.push_back(lane.target);
+    }
+    for (const auto& old : bakedTargets_) {
+        bool stillActive = std::any_of(newTargets.begin(), newTargets.end(),
+                                       [&](const AutomationTarget& t) { return t == old; });
+        if (stillActive)
+            continue;
+        if (auto* param = resolveParameter(old)) {
+            param->getCurve().clear(nullptr);
+            param->updateStream();
+        }
+    }
+    bakedTargets_ = std::move(newTargets);
+
     for (const auto& lane : autoMgr.getLanes()) {
         if (lane.hasData())
             bakeLane(lane);
@@ -155,7 +175,8 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     double bakeIntervalBeats = kBakeIntervalSeconds * bpm / 60.0;
 
     // Value conversion lambda: maps MAGDA's 0-1 normalized to TE's parameter range.
-    // MAGDA and TE use different fader curves, so we must convert through dB for volume.
+    // TE AutomationCurve values live in the parameter's real range, not normalized,
+    // so we must convert through dB for volume and real units for device params.
     auto convertValue = [&](double magdaNormalized) -> float {
         switch (lane.target.type) {
             case AutomationTargetType::TrackVolume: {
@@ -171,9 +192,15 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
                 return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized),
                                                         paramInfo);
             }
-            default:
-                // Device parameters: both MAGDA and TE use 0-1 normalized
-                return static_cast<float>(magdaNormalized);
+            default: {
+                // Device parameters: MAGDA stores 0-1 normalized, TE's curve takes
+                // the parameter's real range (e.g. −24..+24 dB for EQ gain). Map
+                // linearly across the TE param's reported value range — passing
+                // raw 0-1 would sit at the bottom of any non-unit range.
+                auto range = param->getValueRange();
+                return range.getStart() +
+                       static_cast<float>(magdaNormalized) * (range.getEnd() - range.getStart());
+            }
         }
     };
 

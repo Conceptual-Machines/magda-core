@@ -754,6 +754,13 @@ void AutomationManager::restoreLane(AutomationLaneInfo& lane) {
     notifyLanesChanged();
 }
 
+void AutomationManager::insertLaneAt(AutomationLaneInfo& lane, size_t index) {
+    if (index > lanes_.size())
+        index = lanes_.size();
+    lanes_.insert(lanes_.begin() + static_cast<std::ptrdiff_t>(index), std::move(lane));
+    notifyLanesChanged();
+}
+
 void AutomationManager::restoreClip(AutomationClipInfo& clip) {
     clips_.push_back(std::move(clip));
     notifyClipsChanged(clip.laneId);

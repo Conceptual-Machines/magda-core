@@ -66,6 +66,11 @@ class AutomationPlaybackEngine : public AutomationManagerListener {
     te::Edit& edit_;
     bool wasPlaying_ = false;
     bool needsRebake_ = true;  // Start true so first play triggers initial bake
+
+    // Targets we baked on the previous pass. On the next bake we clear the
+    // curve for any target that is no longer present — otherwise a deleted
+    // lane's baked values continue driving the parameter on the audio thread.
+    std::vector<AutomationTarget> bakedTargets_;
 };
 
 }  // namespace magda

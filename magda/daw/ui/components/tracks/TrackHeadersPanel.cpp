@@ -6,6 +6,7 @@
 
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
+#include "../../../core/AutomationCommands.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/DeviceInfo.hpp"
 #include "../../../core/ParameterUtils.hpp"
@@ -3244,7 +3245,10 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
             if (const auto* lane = mgr.getLane(id))
                 mgr.setLaneBypass(id, !lane->bypass);
         };
-        entry->deleteBtn->onClick = [id]() { AutomationManager::getInstance().deleteLane(id); };
+        entry->deleteBtn->onClick = [id]() {
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<DeleteAutomationLaneCommand>(id));
+        };
 
         laneHeaderButtons_.push_back(std::move(entry));
     }

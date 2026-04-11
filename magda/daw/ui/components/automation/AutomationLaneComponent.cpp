@@ -414,7 +414,7 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
             drawLabelAtRealValue(static_cast<double>(i), paramInfo.choices[static_cast<size_t>(i)]);
         }
     } else {
-        // Default: linear percentage scale
+        // Default: scale labels in the parameter's own units.
         std::vector<double> normalizedValues = {1.0, 0.75, 0.5, 0.25, 0.0};
         for (double normValue : normalizedValues) {
             float realValue =
@@ -427,9 +427,11 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
             if (labelBounds.getBottom() > area.getBottom())
                 labelBounds.setY(area.getBottom() - 10);
 
-            // Format as percentage for generic params
+            // Show the real value; append the unit when the parameter has one,
+            // otherwise fall back to "%" so unit-less params still read as a
+            // percentage rather than a bare number.
             juce::String label = juce::String(static_cast<int>(std::round(realValue))) +
-                                 (paramInfo.unit.isNotEmpty() ? "" : "%");
+                                 (paramInfo.unit.isNotEmpty() ? paramInfo.unit : juce::String("%"));
 
             g.drawText(label, labelBounds, juce::Justification::centredRight);
             g.drawHorizontalLine(y, static_cast<float>(area.getRight() - 4),
@@ -485,7 +487,10 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
         return "C";
     }
 
-    // Generic percentage
+    // Generic: show the real value in the parameter's unit.
+    // Fall back to percentage only for unit-less parameters.
+    if (paramInfo.unit.isNotEmpty())
+        return juce::String(static_cast<int>(std::round(realValue))) + paramInfo.unit;
     return juce::String(static_cast<int>(normalizedValue * 100)) + "%";
 }
 

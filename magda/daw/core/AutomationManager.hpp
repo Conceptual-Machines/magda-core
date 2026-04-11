@@ -290,6 +290,14 @@ class AutomationManager : public TrackManagerListener {
     void restoreLane(AutomationLaneInfo& lane);
 
     /**
+     * @brief Insert a lane at a specific index (used by undo after delete)
+     *
+     * Out-of-range indices clamp to the end, matching restoreLane's push_back
+     * semantics. Fires lanesChanged so listeners rebuild.
+     */
+    void insertLaneAt(AutomationLaneInfo& lane, size_t index);
+
+    /**
      * @brief Restore a clip from deserialized data (project load)
      */
     void restoreClip(AutomationClipInfo& clip);

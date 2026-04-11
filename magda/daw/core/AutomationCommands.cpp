@@ -176,4 +176,43 @@ void SetAutomationPointHandlesCommand::undo() {
         mgr.setPointHandles(laneId_, pointId_, oldInHandle_, oldOutHandle_);
 }
 
+// ============================================================================
+// DeleteAutomationLaneCommand
+// ============================================================================
+
+void DeleteAutomationLaneCommand::captureLane() {
+    auto& mgr = AutomationManager::getInstance();
+    const auto& lanes = mgr.getLanes();
+    for (size_t i = 0; i < lanes.size(); ++i) {
+        if (lanes[i].id != laneId_)
+            continue;
+        storedLane_ = lanes[i];
+        storedIndex_ = i;
+        if (storedLane_.isClipBased()) {
+            for (auto clipId : storedLane_.clipIds) {
+                if (const auto* clip = mgr.getClip(clipId))
+                    storedClips_.push_back(*clip);
+            }
+        }
+        captured_ = true;
+        return;
+    }
+}
+
+void DeleteAutomationLaneCommand::execute() {
+    AutomationManager::getInstance().deleteLane(laneId_);
+}
+
+void DeleteAutomationLaneCommand::undo() {
+    if (!captured_)
+        return;
+    auto& mgr = AutomationManager::getInstance();
+    AutomationLaneInfo laneCopy = storedLane_;
+    mgr.insertLaneAt(laneCopy, storedIndex_);
+    for (const auto& clip : storedClips_) {
+        AutomationClipInfo clipCopy = clip;
+        mgr.restoreClip(clipCopy);
+    }
+}
+
 }  // namespace magda
