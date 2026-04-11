@@ -65,6 +65,10 @@ void AutomationPlaybackEngine::automationPointsChanged(AutomationLaneId /*laneId
     needsRebake_ = true;
 }
 
+void AutomationPlaybackEngine::automationLanePropertyChanged(AutomationLaneId /*laneId*/) {
+    needsRebake_ = true;
+}
+
 // ============================================================================
 // Bake / Clear
 // ============================================================================

@@ -26,6 +26,191 @@ namespace magda {
 
 // dB conversion helpers for volume
 namespace {
+
+// Shared base for the automation-lane header buttons (snap time / snap value
+// / arm / bypass / delete). All five share the same rounded-rect chrome —
+// same corner radius, fill, and 1px darker border as SmallButtonLookAndFeel
+// — so they read as a single unified strip. Subclasses only supply the glyph.
+// Off: SURFACE background with a neutral-grey glyph.
+// On:  activeColour background with a white glyph (high contrast reversal).
+class LaneHeaderButton : public juce::Button {
+  public:
+    LaneHeaderButton(const juce::String& name, juce::Colour activeColour)
+        : juce::Button(name), activeColour_(activeColour) {}
+
+    void paintButton(juce::Graphics& g, bool isMouseOver, bool isButtonDown) override {
+        auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+        constexpr float corner = 3.0f;
+
+        const bool on = getToggleState();
+        juce::Colour bg = on ? activeColour_ : DarkTheme::getColour(DarkTheme::SURFACE);
+        if (isButtonDown)
+            bg = bg.darker(0.2f);
+        else if (isMouseOver)
+            bg = bg.brighter(0.1f);
+
+        g.setColour(bg);
+        g.fillRoundedRectangle(bounds, corner);
+        g.setColour(bg.darker(0.15f));
+        g.drawRoundedRectangle(bounds, corner, 1.0f);
+
+        // Glyph colour: white when on (reads against the coloured fill),
+        // neutral grey when off (reads as inactive against SURFACE).
+        juce::Colour glyph = on ? juce::Colours::white : juce::Colour(0xFFB3B3B3);
+        paintGlyph(g, glyph);
+    }
+
+  protected:
+    virtual void paintGlyph(juce::Graphics& g, juce::Colour colour) = 0;
+
+  private:
+    juce::Colour activeColour_;
+};
+
+// Snap toggles: show an SVG glyph. The SVG authors its shapes in #B3B3B3, so
+// we recolour-replace into whatever glyph colour the base class dictates.
+class SnapIconLaneButton : public LaneHeaderButton {
+  public:
+    SnapIconLaneButton(const juce::String& name, const void* svgData, int svgSize)
+        : LaneHeaderButton(name, DarkTheme::getColour(DarkTheme::ACCENT_CYAN)) {
+        setClickingTogglesState(true);
+        drawable_ = juce::Drawable::createFromImageData(svgData, svgSize);
+    }
+
+    void paintGlyph(juce::Graphics& g, juce::Colour colour) override {
+        if (drawable_ == nullptr)
+            return;
+        auto copy = drawable_->createCopy();
+        copy->replaceColour(juce::Colour(0xFFB3B3B3), colour);
+        copy->drawWithin(g, getLocalBounds().toFloat().reduced(1.0f),
+                         juce::RectanglePlacement::centred, 1.0f);
+    }
+
+  private:
+    std::unique_ptr<juce::Drawable> drawable_;
+};
+
+// Text-glyph variant: used for the "R" arm button and the "×" delete button.
+// Toggling behaviour is optional — the delete button fires once and doesn't
+// latch, while arm latches.
+class TextLaneButton : public LaneHeaderButton {
+  public:
+    TextLaneButton(const juce::String& name, const juce::String& glyphText,
+                   juce::Colour activeColour, float fontSize, bool toggles)
+        : LaneHeaderButton(name, activeColour), glyphText_(glyphText), fontSize_(fontSize) {
+        setClickingTogglesState(toggles);
+    }
+
+    void paintGlyph(juce::Graphics& g, juce::Colour colour) override {
+        g.setColour(colour);
+        g.setFont(FontManager::getInstance().getUIFontBold(fontSize_));
+        g.drawText(glyphText_, getLocalBounds().toFloat(), juce::Justification::centred, false);
+    }
+
+  private:
+    juce::String glyphText_;
+    float fontSize_;
+};
+
+// Delete button: always uses the reddish-purple "danger" fill whether toggled
+// or not (matches the device-header × button in NodeComponent). Overrides the
+// base background so the user immediately reads it as destructive.
+class DeleteLaneButton : public LaneHeaderButton {
+  public:
+    DeleteLaneButton()
+        : LaneHeaderButton(
+              "Delete", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+                            .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+                            .darker(0.2f)) {}
+
+    void paintButton(juce::Graphics& g, bool isMouseOver, bool isButtonDown) override {
+        auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+        constexpr float corner = 3.0f;
+
+        juce::Colour bg = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+                              .interpolatedWith(DarkTheme::getColour(DarkTheme::STATUS_ERROR), 0.5f)
+                              .darker(0.2f);
+        if (isButtonDown)
+            bg = bg.darker(0.2f);
+        else if (isMouseOver)
+            bg = bg.brighter(0.1f);
+
+        g.setColour(bg);
+        g.fillRoundedRectangle(bounds, corner);
+        g.setColour(bg.darker(0.15f));
+        g.drawRoundedRectangle(bounds, corner, 1.0f);
+
+        paintGlyph(g, juce::Colours::white);
+    }
+
+    void paintGlyph(juce::Graphics& g, juce::Colour colour) override {
+        g.setColour(colour);
+        g.setFont(FontManager::getInstance().getUIFontBold(13.0f));
+        g.drawText(juce::String::fromUTF8("\xc3\x97"), getLocalBounds().toFloat(),
+                   juce::Justification::centred, false);
+    }
+};
+
+// Bypass button: broken-ring power glyph drawn procedurally, so we don't need
+// a separate SVG and the stroke stays crisp at the 20px button size. Off =
+// grey on SURFACE, On = white on cyan — same colour rules as snap toggles.
+class PowerGlyphButton : public LaneHeaderButton {
+  public:
+    PowerGlyphButton() : LaneHeaderButton("Bypass", DarkTheme::getColour(DarkTheme::ACCENT_CYAN)) {
+        setClickingTogglesState(true);
+    }
+
+    void paintGlyph(juce::Graphics& g, juce::Colour colour) override {
+        auto bounds = getLocalBounds().toFloat();
+        // Leave padding so the glyph doesn't kiss the border.
+        auto glyph = bounds.reduced(bounds.getWidth() * 0.22f, bounds.getHeight() * 0.22f);
+
+        const float stroke = juce::jmax(1.4f, glyph.getWidth() * 0.12f);
+        const float cx = glyph.getCentreX();
+        const float cy = glyph.getCentreY();
+        const float radius = glyph.getWidth() * 0.5f - stroke * 0.5f;
+
+        // Broken ring: arc from ~20° past top going clockwise all the way
+        // around, leaving a gap at the top where the vertical stem passes
+        // through. Angles in JUCE are radians, 0 = 12 o'clock, clockwise.
+        constexpr float gap = 0.6f;  // Half-angle of the top gap, radians.
+        juce::Path ring;
+        ring.addCentredArc(cx, cy, radius, radius, 0.0f,
+                           gap,                                      // start angle
+                           juce::MathConstants<float>::twoPi - gap,  // end angle
+                           true);
+
+        g.setColour(colour);
+        g.strokePath(ring, juce::PathStrokeType(stroke, juce::PathStrokeType::curved,
+                                                juce::PathStrokeType::rounded));
+
+        // Vertical stem through the gap.
+        const float stemTop = cy - radius - stroke * 0.3f;
+        const float stemBottom = cy - radius * 0.15f;
+        g.drawLine(cx, stemTop, cx, stemBottom, stroke);
+    }
+};
+
+// Monitor button: matches the TrackInspector's monitor button exactly so the
+// two places the button appears (mixer track header + inspector) read the
+// same way. Glyph changes per mode — "-" / "I" / "A" — and the background
+// turns green when monitoring is active (In or Auto), driven by toggleState.
+void applyMonitorButtonState(juce::TextButton& btn, InputMonitorMode mode) {
+    switch (mode) {
+        case InputMonitorMode::Off:
+            btn.setButtonText("-");
+            break;
+        case InputMonitorMode::In:
+            btn.setButtonText("I");
+            break;
+        case InputMonitorMode::Auto:
+            btn.setButtonText("A");
+            break;
+    }
+    btn.setToggleState(mode != InputMonitorMode::Off, juce::dontSendNotification);
+    btn.repaint();
+}
+
 constexpr float MIN_DB = -60.0f;
 constexpr float MAX_DB = 6.0f;  // Allow +6 dB headroom
 
@@ -341,7 +526,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     recordButton->setClickingTogglesState(true);
 
-    // Monitor button (3-state: Off → In → Auto → Off)
+    // Monitor button (3-state: Off → In → Auto → Off). Matches the inspector
+    // monitor button: SURFACE bg off, ACCENT_GREEN bg on, dark-on-green text
+    // when active so it reads the same in both places.
     monitorButton = std::make_unique<juce::TextButton>("-");
     monitorButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     monitorButton->setColour(juce::TextButton::buttonColourId,
@@ -353,6 +540,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     monitorButton->setColour(juce::TextButton::textColourOnId,
                              DarkTheme::getColour(DarkTheme::BACKGROUND));
     monitorButton->setTooltip("Input monitoring (Off/In/Auto)");
+    applyMonitorButtonState(*monitorButton, InputMonitorMode::Off);
 
     // Automation button (bezier curve icon)
     automationButton = std::make_unique<SvgButton>("Automation", BinaryData::bezier_svg,
@@ -923,19 +1111,7 @@ void TrackHeadersPanel::tracksChanged() {
         header->panLabel->setValue(track->pan, juce::dontSendNotification);
 
         // Sync monitor button state
-        switch (track->inputMonitor) {
-            case InputMonitorMode::Off:
-                header->monitorButton->setButtonText("-");
-                break;
-            case InputMonitorMode::In:
-                header->monitorButton->setButtonText("I");
-                break;
-            case InputMonitorMode::Auto:
-                header->monitorButton->setButtonText("A");
-                break;
-        }
-        header->monitorButton->setToggleState(track->inputMonitor != InputMonitorMode::Off,
-                                              juce::dontSendNotification);
+        applyMonitorButtonState(*header->monitorButton, track->inputMonitor);
 
         trackHeaders.push_back(std::move(header));
 
@@ -1004,19 +1180,7 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
 
         // Update monitor button
         if (header.monitorButton) {
-            switch (track->inputMonitor) {
-                case InputMonitorMode::Off:
-                    header.monitorButton->setButtonText("-");
-                    break;
-                case InputMonitorMode::In:
-                    header.monitorButton->setButtonText("I");
-                    break;
-                case InputMonitorMode::Auto:
-                    header.monitorButton->setButtonText("A");
-                    break;
-            }
-            header.monitorButton->setToggleState(track->inputMonitor != InputMonitorMode::Off,
-                                                 juce::dontSendNotification);
+            applyMonitorButtonState(*header.monitorButton, track->inputMonitor);
         }
 
         // Update track colour
@@ -3023,28 +3187,38 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
         auto entry = std::make_unique<AutoLaneHeaderButtons>();
         entry->laneId = laneId;
 
-        auto makeToggleButton = [this](const juce::String& label, const juce::String& tooltip) {
-            auto btn = std::make_unique<juce::TextButton>(label);
-            btn->setTooltip(tooltip);
-            btn->setClickingTogglesState(true);
-            btn->setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF2A2A2A));
-            btn->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFF4A7EC8));
-            btn->setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFAAAAAA));
-            btn->setColour(juce::TextButton::textColourOnId, juce::Colour(0xFFFFFFFF));
-            addAndMakeVisible(*btn);
-            return btn;
-        };
+        entry->snapTimeBtn = std::make_unique<SnapIconLaneButton>(
+            "snapTime", BinaryData::horizontal_snap_svg, BinaryData::horizontal_snap_svgSize);
+        entry->snapTimeBtn->setTooltip("Snap points to time grid");
+        addAndMakeVisible(*entry->snapTimeBtn);
 
-        entry->snapTimeBtn = makeToggleButton("T", "Snap points to time grid");
-        entry->snapValueBtn = makeToggleButton("V", "Snap values to parameter grid");
-        entry->armBtn = makeToggleButton("R", "Arm for automation recording");
-        entry->bypassBtn = makeToggleButton("B", "Bypass automation (use manual value)");
+        entry->snapValueBtn = std::make_unique<SnapIconLaneButton>(
+            "snapValue", BinaryData::vertical_snap_svg, BinaryData::vertical_snap_svgSize);
+        entry->snapValueBtn->setTooltip("Snap values to parameter grid");
+        addAndMakeVisible(*entry->snapValueBtn);
 
-        entry->menuBtn = std::make_unique<juce::TextButton>(juce::String::fromUTF8("\xE2\x8B\xAF"));
-        entry->menuBtn->setTooltip("Lane options");
-        entry->menuBtn->setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF2A2A2A));
-        entry->menuBtn->setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFAAAAAA));
-        addAndMakeVisible(*entry->menuBtn);
+        // Arm: red fill when engaged. Same active colour as the track-header
+        // R button so the user reads "armed for recording" the same way in
+        // both places (context disambiguates track-arm vs automation-arm).
+        entry->armBtn = std::make_unique<TextLaneButton>(
+            "arm", "R", DarkTheme::getColour(DarkTheme::STATUS_ERROR), 10.0f, true);
+        entry->armBtn->setTooltip("Arm for automation recording");
+        addAndMakeVisible(*entry->armBtn);
+
+        // Bypass button uses a power glyph, so the "on" visual (cyan fill)
+        // represents automation-enabled — not automation-bypassed. Toggle
+        // state is the inverse of lane->bypass, and the click handler flips
+        // the underlying bypass flag accordingly.
+        entry->bypassBtn = std::make_unique<PowerGlyphButton>();
+        entry->bypassBtn->setTooltip("Automation on/off");
+        addAndMakeVisible(*entry->bypassBtn);
+
+        // Delete button: matches the device-header × in NodeComponent — same
+        // reddish-purple fill, same × glyph. Replaces the old "lane options"
+        // menu; clearing points is handled via the Backspace key instead.
+        entry->deleteBtn = std::make_unique<DeleteLaneButton>();
+        entry->deleteBtn->setTooltip("Delete automation lane");
+        addAndMakeVisible(*entry->deleteBtn);
 
         // Wire click handlers. Capture laneId by value so the lambda survives
         // rebuilds (the raw pointer `entry.get()` would dangle if the entry
@@ -3070,8 +3244,7 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
             if (const auto* lane = mgr.getLane(id))
                 mgr.setLaneBypass(id, !lane->bypass);
         };
-        auto* menuBtnPtr = entry->menuBtn.get();
-        entry->menuBtn->onClick = [this, id, menuBtnPtr]() { showLaneHeaderMenu(id, menuBtnPtr); };
+        entry->deleteBtn->onClick = [id]() { AutomationManager::getInstance().deleteLane(id); };
 
         laneHeaderButtons_.push_back(std::move(entry));
     }
@@ -3084,20 +3257,26 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
         entry->snapTimeBtn->setToggleState(lane->snapTime, juce::dontSendNotification);
         entry->snapValueBtn->setToggleState(lane->snapValue, juce::dontSendNotification);
         entry->armBtn->setToggleState(lane->armed, juce::dontSendNotification);
-        entry->bypassBtn->setToggleState(lane->bypass, juce::dontSendNotification);
+        // Power glyph: inverted — "on" means automation active, not bypassed.
+        entry->bypassBtn->setToggleState(!lane->bypass, juce::dontSendNotification);
     }
 }
 
 void TrackHeadersPanel::positionLaneHeaderButtons() {
     auto& manager = AutomationManager::getInstance();
 
-    constexpr int kBtnSize = 16;
-    constexpr int kBtnGap = 2;
-    constexpr int kRightMargin = 4;
+    // Buttons live in the lane *content* area (below the header strip), where
+    // there's room to actually see the icons. The header strip itself is too
+    // narrow (24px) and cramming 5 toggles next to the parameter name shrinks
+    // them to illegibility.
+    constexpr int kBtnSize = 20;
+    constexpr int kBtnGap = 3;
+    constexpr int kLeftMargin = 6;
+    constexpr int kTopMargin = 4;
 
     // Walk visible tracks + lanes the same way paintAutomationLaneHeaders does,
     // computing the Y of each lane header strip and placing that lane's
-    // buttons there.
+    // buttons just below it, inside the content area.
     for (int trackIndex = 0; trackIndex < static_cast<int>(visibleTrackIds_.size()); ++trackIndex) {
         TrackId trackId = visibleTrackIds_[trackIndex];
         auto it = visibleAutomationLanes_.find(trackId);
@@ -3118,50 +3297,34 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
                                             : AutomationLaneComponent::HEADER_HEIGHT;
 
             if (auto* entry = findLaneHeaderButtons(laneId)) {
-                int btnY = y + (AutomationLaneComponent::HEADER_HEIGHT - kBtnSize) / 2;
-                int x = getWidth() - kRightMargin - kBtnSize;
+                // Collapsed lanes have no content area to put the buttons in —
+                // hide them until the user expands the lane.
+                const bool showButtons = lane->expanded;
+                entry->snapTimeBtn->setVisible(showButtons);
+                entry->snapValueBtn->setVisible(showButtons);
+                entry->armBtn->setVisible(showButtons);
+                entry->bypassBtn->setVisible(showButtons);
+                entry->deleteBtn->setVisible(showButtons);
 
-                auto place = [&](juce::TextButton& b) {
-                    b.setBounds(x, btnY, kBtnSize, kBtnSize);
-                    x -= (kBtnSize + kBtnGap);
-                };
-                place(*entry->menuBtn);
-                place(*entry->bypassBtn);
-                place(*entry->armBtn);
-                place(*entry->snapValueBtn);
-                place(*entry->snapTimeBtn);
+                if (showButtons) {
+                    int btnY = y + AutomationLaneComponent::HEADER_HEIGHT + kTopMargin;
+                    int x = kLeftMargin;
+
+                    auto place = [&](juce::Button& b) {
+                        b.setBounds(x, btnY, kBtnSize, kBtnSize);
+                        x += (kBtnSize + kBtnGap);
+                    };
+                    place(*entry->snapTimeBtn);
+                    place(*entry->snapValueBtn);
+                    place(*entry->armBtn);
+                    place(*entry->bypassBtn);
+                    place(*entry->deleteBtn);
+                }
             }
 
             y += laneHeight;
         }
     }
-}
-
-void TrackHeadersPanel::showLaneHeaderMenu(AutomationLaneId laneId, juce::Component* relativeTo) {
-    auto& manager = AutomationManager::getInstance();
-    const auto* lane = manager.getLane(laneId);
-    if (!lane)
-        return;
-
-    juce::PopupMenu menu;
-    menu.addItem(1, "Clear points", lane->hasData());
-    menu.addSeparator();
-    menu.addItem(2, "Delete lane");
-
-    auto opts = juce::PopupMenu::Options().withTargetComponent(relativeTo);
-    menu.showMenuAsync(opts, [laneId](int result) {
-        auto& mgr = AutomationManager::getInstance();
-        switch (result) {
-            case 1:
-                mgr.clearLanePoints(laneId);
-                break;
-            case 2:
-                mgr.deleteLane(laneId);
-                break;
-            default:
-                break;
-        }
-    });
 }
 
 // =============================================================================

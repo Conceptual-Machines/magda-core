@@ -95,6 +95,9 @@ juce_add_binary_data(MagdaAssets
     # Resume/arrangement icons
     ../../assets/icons/resume/resume.svg
     ../../assets/icons/resume/resume_on.svg
+    # Automation icons
+    ../../assets/icons/automation/horizontal_snap.svg
+    ../../assets/icons/automation/vertical_snap.svg
     # Waveform icons
     ../../assets/icons/waveform/sine-wave.svg
     ../../assets/icons/waveform/bare_sine.svg

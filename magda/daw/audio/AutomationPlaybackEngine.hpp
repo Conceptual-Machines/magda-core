@@ -45,6 +45,11 @@ class AutomationPlaybackEngine : public AutomationManagerListener {
     // AutomationManagerListener — rebake on data changes during playback
     void automationLanesChanged() override;
     void automationPointsChanged(AutomationLaneId laneId) override;
+    // Property changes include bypass, snap flags, arm, name, etc. Only
+    // bypass affects what gets baked, but any property-change listener miss
+    // means a bypass toggle has no audible effect until another event forces
+    // a rebake — so mark dirty unconditionally here.
+    void automationLanePropertyChanged(AutomationLaneId laneId) override;
 
   private:
     static constexpr double kBakeIntervalSeconds = 0.01;  // 10ms between baked points
