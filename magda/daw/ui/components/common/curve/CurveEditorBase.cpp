@@ -1,6 +1,7 @@
 #include "CurveEditorBase.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <set>
 
@@ -324,19 +325,41 @@ void CurveEditorBase::mouseDown(const juce::MouseEvent& e) {
                 break;
 
             case CurveDrawMode::Line: {
-                // Shift+click: stamp a step spanning one grid cell (2 points)
+                // Shift+click: stamp a Serum-style step cell spanning one
+                // grid division. The cell has a cliff at both edges —
+                // achieved by flipping the preceding point to Step inside
+                // onStepStamped so the incoming segment holds flat then
+                // cliffs into the cell (instead of linearly fading in).
                 double x = pixelToX(e.x);
                 double y = pixelToY(e.y);
+                if (snapYToGrid)
+                    y = snapYToGrid(y);
                 y = juce::jlimit(0.0, 1.0, y);
 
+                double gridStart = x;
+                double gridEnd = x;
                 if (snapXToGrid && getGridSpacingX) {
-                    double gridStart = snapXToGrid(x);
-                    double gridEnd = gridStart + getGridSpacingX();
-                    onPointAdded(gridStart, y, CurveType::Step);
-                    onPointAdded(gridEnd, y, CurveType::Step);
-                } else {
-                    onPointAdded(x, y, CurveType::Step);
+                    gridStart = snapXToGrid(x);
+                    gridEnd = gridStart + getGridSpacingX();
                 }
+
+                // Find the nearest point strictly before gridStart so the
+                // subclass can flip it to Step (left-edge cliff) and so
+                // the cell's right edge can return to that point's value
+                // (the dip's baseline).
+                uint32_t prevPointId = INVALID_CURVE_POINT_ID;
+                double prevValue = 0.5;
+                const auto& existing = getPoints();
+                double bestTime = -std::numeric_limits<double>::infinity();
+                for (const auto& p : existing) {
+                    if (p.x < gridStart && p.x > bestTime) {
+                        bestTime = p.x;
+                        prevPointId = p.id;
+                        prevValue = p.y;
+                    }
+                }
+
+                onStepStamped(gridStart, gridEnd, y, prevPointId, prevValue);
                 break;
             }
 
@@ -808,6 +831,19 @@ void CurveEditorBase::syncSelectionState() {
     for (auto& pc : pointComponents_) {
         pc->setSelected(selectedPointIds_.count(pc->getPointId()) > 0);
     }
+}
+
+void CurveEditorBase::onStepStamped(double gridStart, double gridEnd, double y,
+                                    uint32_t prevPointId, double prevValue) {
+    // Default behaviour: add the cell's left edge at (gridStart, y) and,
+    // if we have a baseline, a recovery point at (gridEnd, prevValue) so
+    // the cell reads as a dip back to the previous value. Subclasses that
+    // support undo compound ops (e.g. AutomationCurveEditor) should
+    // override to also flip prevPointId's curveType to Step so the cell's
+    // left edge is a cliff instead of a linear fade.
+    onPointAdded(gridStart, y, CurveType::Step);
+    if (prevPointId != INVALID_CURVE_POINT_ID && gridEnd > gridStart)
+        onPointAdded(gridEnd, prevValue, CurveType::Step);
 }
 
 void CurveEditorBase::createPointsFromDrawingPath() {

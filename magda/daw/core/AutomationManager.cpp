@@ -549,6 +549,18 @@ void AutomationManager::setPointCurveType(AutomationLaneId laneId, AutomationPoi
     }
 }
 
+void AutomationManager::setPointCurveTypeInClip(AutomationClipId clipId, AutomationPointId pointId,
+                                                AutomationCurveType curveType) {
+    auto* clip = getClip(clipId);
+    if (!clip)
+        return;
+
+    if (auto* point = findPoint(clip->points, pointId)) {
+        point->curveType = curveType;
+        notifyClipsChanged(clip->laneId);
+    }
+}
+
 void AutomationManager::setPointTension(AutomationLaneId laneId, AutomationPointId pointId,
                                         double tension) {
     auto* lane = getLane(laneId);

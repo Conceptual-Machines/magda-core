@@ -177,6 +177,32 @@ void SetAutomationPointHandlesCommand::undo() {
 }
 
 // ============================================================================
+// SetAutomationPointCurveTypeCommand
+// ============================================================================
+
+void SetAutomationPointCurveTypeCommand::captureOldCurveType() {
+    const auto* pt = findPoint(isClip_, laneId_, clipId_, pointId_);
+    if (pt)
+        oldCurveType_ = pt->curveType;
+}
+
+void SetAutomationPointCurveTypeCommand::execute() {
+    auto& mgr = AutomationManager::getInstance();
+    if (isClip_)
+        mgr.setPointCurveTypeInClip(clipId_, pointId_, newCurveType_);
+    else
+        mgr.setPointCurveType(laneId_, pointId_, newCurveType_);
+}
+
+void SetAutomationPointCurveTypeCommand::undo() {
+    auto& mgr = AutomationManager::getInstance();
+    if (isClip_)
+        mgr.setPointCurveTypeInClip(clipId_, pointId_, oldCurveType_);
+    else
+        mgr.setPointCurveType(laneId_, pointId_, oldCurveType_);
+}
+
+// ============================================================================
 // DeleteAutomationLaneCommand
 // ============================================================================
 

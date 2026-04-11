@@ -198,6 +198,38 @@ class SetAutomationPointHandlesCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for setting an automation point's curve type
+ */
+class SetAutomationPointCurveTypeCommand : public UndoableCommand {
+  public:
+    SetAutomationPointCurveTypeCommand(AutomationLaneId laneId, AutomationClipId clipId,
+                                       AutomationPointId pointId, AutomationCurveType newCurveType)
+        : laneId_(laneId),
+          clipId_(clipId),
+          pointId_(pointId),
+          newCurveType_(newCurveType),
+          isClip_(clipId != INVALID_AUTOMATION_CLIP_ID) {
+        captureOldCurveType();
+    }
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Set Automation Curve Type";
+    }
+
+  private:
+    void captureOldCurveType();
+
+    AutomationLaneId laneId_;
+    AutomationClipId clipId_;
+    AutomationPointId pointId_;
+    AutomationCurveType newCurveType_;
+    AutomationCurveType oldCurveType_ = AutomationCurveType::Linear;
+    bool isClip_;
+};
+
+/**
  * @brief Command for deleting an entire automation lane (and its clips)
  *
  * Captures the full lane state plus any clip-based data so that undo

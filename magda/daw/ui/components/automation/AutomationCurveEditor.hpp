@@ -103,6 +103,8 @@ class AutomationCurveEditor : public CurveEditorBase,
                           const CurveHandleData& outHandle) override;
 
     void onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) override;
+    void onStepStamped(double gridStart, double gridEnd, double y, uint32_t prevPointId,
+                       double prevValue) override;
     void paintGrid(juce::Graphics& g) override;
     void syncSelectionState() override;
     void rebuildPointComponents() override;

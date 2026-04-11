@@ -180,6 +180,19 @@ class CurveEditorBase : public juce::Component {
         juce::ignoreUnused(pointIds);
     }
 
+    // Step stamp callback — creates a Serum-style "dip" cell:
+    //   - Left edge: cliff from prevValue down/up to y at gridStart
+    //   - Cell holds at y across one grid division
+    //   - Right edge: cliff back from y to prevValue at gridEnd
+    // Subclasses override to group the mutations into one undo step AND
+    // flip the preceding point's curveType to Step so its outgoing
+    // segment becomes the left-edge cliff instead of a linear fade.
+    // prevPointId is INVALID_CURVE_POINT_ID when nothing exists before
+    // the stamp position; in that case there is no baseline to return to,
+    // so the cell is stamped as a single point and extends rightward.
+    virtual void onStepStamped(double gridStart, double gridEnd, double y, uint32_t prevPointId,
+                               double prevValue);
+
     // Constrain point position during drag (override to pin edge points, etc.)
     virtual void constrainPointPosition(uint32_t pointId, double& x, double& y) {
         juce::ignoreUnused(pointId, x, y);

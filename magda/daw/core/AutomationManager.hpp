@@ -244,6 +244,12 @@ class AutomationManager : public TrackManagerListener {
                            AutomationCurveType curveType);
 
     /**
+     * @brief Set curve type for a point in a clip
+     */
+    void setPointCurveTypeInClip(AutomationClipId clipId, AutomationPointId pointId,
+                                 AutomationCurveType curveType);
+
+    /**
      * @brief Set tension for a curve segment
      * @param tension Range -1.0 (concave) to 0.0 (linear) to +1.0 (convex)
      */
