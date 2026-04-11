@@ -590,7 +590,13 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
             rackType->addConnection(src, 0, dst, 0);  // MIDI
         }
 
-        // Connect last plugin to rack output (only if chain is active)
+        // Connect last plugin to rack output.
+        // Audio L/R is only wired when the chain is active (mute/solo gating),
+        // but MIDI pin 0 is wired unconditionally so a MIDI plugin at the end
+        // of the chain can still feed downstream MIDI plugins / instruments
+        // when the chain is bypassed — matching TE's standard bypass semantics
+        // (a bypassed plugin passes MIDI through unchanged).
+        rackType->addConnection(lastPlugin, 0, rackIOId, 0);  // MIDI — always
         if (chainActive) {
             rackType->addConnection(lastPlugin, 1, rackIOId, 1);  // Left
             rackType->addConnection(lastPlugin, 2, rackIOId, 2);  // Right
@@ -598,11 +604,13 @@ void RackSyncManager::buildConnections(SyncedRack& synced, const RackInfo& rackI
         }
     }
 
-    // If no chains exist at all, pass audio straight through so the rack is transparent.
-    // When chains exist but are all muted/inactive, leave output disconnected for silence.
+    // If no chains exist at all, pass audio and MIDI straight through so the
+    // rack is transparent. When chains exist but are all muted/inactive, leave
+    // audio disconnected for silence (MIDI is already wired per-chain above).
     if (!anyChainConnectedToOutput && rackInfo.chains.empty()) {
-        rackType->addConnection(rackIOId, 1, rackIOId, 1);
-        rackType->addConnection(rackIOId, 2, rackIOId, 2);
+        rackType->addConnection(rackIOId, 1, rackIOId, 1);  // Audio L
+        rackType->addConnection(rackIOId, 2, rackIOId, 2);  // Audio R
+        rackType->addConnection(rackIOId, 0, rackIOId, 0);  // MIDI
     }
 }
 

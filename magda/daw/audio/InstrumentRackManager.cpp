@@ -43,6 +43,32 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
     // MIDI: rack input pin 0 --> synth pin 0
     rackType->addConnection(rackIOId, 0, synthId, 0);
 
+    // MIDI at the rack output: depends on what kind of plugin we wrap.
+    //
+    // - Zero audio outputs => MIDI-only plugin (Cthulhu, chord engines, arps).
+    //   Forward the plugin's transformed MIDI to the rack output so downstream
+    //   sees its events.
+    //
+    // - Has audio outputs => synth (Serum, Surge, 4osc, samplers...). Pass the
+    //   raw clip MIDI around the synth so downstream audio effects that sync
+    //   from note events (SerumFX LFO, sidechain envelopes) still see the
+    //   clip's MIDI after the instrument. We deliberately ignore the plugin's
+    //   own MIDI output here even if it claims producesMidi() — synths often
+    //   lie about that and emit nothing, which would silently kill MIDI flow.
+    //
+    // Exactly one of these edges is added so MIDI is never duplicated.
+    const bool isMidiOnly = [&] {
+        if (auto* ext = dynamic_cast<te::ExternalPlugin*>(instrument.get()))
+            if (auto* api = ext->getAudioPluginInstance())
+                return api->getTotalNumOutputChannels() == 0;
+        return false;
+    }();
+
+    if (isMidiOnly)
+        rackType->addConnection(synthId, 0, rackIOId, 0);  // plugin MIDI out --> rack output
+    else
+        rackType->addConnection(rackIOId, 0, rackIOId, 0);  // raw MIDI passthrough
+
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)
     rackType->addConnection(rackIOId, 1, rackIOId, 1);
     // Audio passthrough: rack input pin 2 --> rack output pin 2 (right)
@@ -109,6 +135,22 @@ te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr in
 
     // MIDI: rack input pin 0 --> synth pin 0
     rackType->addConnection(rackIOId, 0, synthId, 0);
+
+    // MIDI at the rack output: plugin-dependent (see wrapInstrument for rationale).
+    // A multi-out instrument always has audio outputs, so this branch will
+    // almost always be raw passthrough — kept symmetric with wrapInstrument
+    // for clarity.
+    const bool isMidiOnly = [&] {
+        if (auto* ext = dynamic_cast<te::ExternalPlugin*>(instrument.get()))
+            if (auto* api = ext->getAudioPluginInstance())
+                return api->getTotalNumOutputChannels() == 0;
+        return false;
+    }();
+
+    if (isMidiOnly)
+        rackType->addConnection(synthId, 0, rackIOId, 0);  // plugin MIDI out --> rack output
+    else
+        rackType->addConnection(rackIOId, 0, rackIOId, 0);  // raw MIDI passthrough
 
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)
     rackType->addConnection(rackIOId, 1, rackIOId, 1);
