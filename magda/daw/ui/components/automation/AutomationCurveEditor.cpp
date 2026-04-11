@@ -413,49 +413,53 @@ void AutomationCurveEditor::onStepStamped(double gridStart, double gridEnd, doub
     //
     // A segment's shape is controlled by the point BEFORE it, so to get
     // the left-edge cliff we flip the preceding point's curveType to
-    // Step as part of the same undo step.
+    // Step as part of the same undo step. The recovery point inherits
+    // the *original* curveType of the preceding point so the segment
+    // flowing out of the cell toward whatever existing point comes next
+    // keeps its original shape (linear fades stay as linear fades, etc).
     CompoundOperationScope scope("Stamp Automation Step");
 
-    if (prevPointId != INVALID_CURVE_POINT_ID) {
-        // Check the current type so we don't emit a redundant command when
-        // the preceding point is already a Step.
-        AutomationCurveType currentType = AutomationCurveType::Linear;
-        bool found = false;
-        if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
-            if (const auto* clip = AutomationManager::getInstance().getClip(clipId_)) {
-                for (const auto& p : clip->points) {
-                    if (p.id == static_cast<AutomationPointId>(prevPointId)) {
-                        currentType = p.curveType;
-                        found = true;
-                        break;
-                    }
-                }
-            }
-        } else if (const auto* lane = AutomationManager::getInstance().getLane(laneId_)) {
-            for (const auto& p : lane->absolutePoints) {
-                if (p.id == static_cast<AutomationPointId>(prevPointId)) {
-                    currentType = p.curveType;
-                    found = true;
-                    break;
-                }
-            }
-        }
+    AutomationCurveType originalPrevType = AutomationCurveType::Linear;
+    bool prevFound = false;
+    bool nextExistsAtGridEnd = false;
 
-        if (found && currentType != AutomationCurveType::Step) {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetAutomationPointCurveTypeCommand>(
-                    laneId_, clipId_, static_cast<AutomationPointId>(prevPointId),
-                    AutomationCurveType::Step));
+    auto gatherContext = [&](const std::vector<AutomationPoint>& points) {
+        constexpr double kTimeEps = 1e-6;
+        for (const auto& p : points) {
+            if (p.id == static_cast<AutomationPointId>(prevPointId)) {
+                originalPrevType = p.curveType;
+                prevFound = true;
+            }
+            if (std::abs(p.time - gridEnd) < kTimeEps)
+                nextExistsAtGridEnd = true;
         }
+    };
+
+    if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
+        if (const auto* clip = AutomationManager::getInstance().getClip(clipId_))
+            gatherContext(clip->points);
+    } else if (const auto* lane = AutomationManager::getInstance().getLane(laneId_)) {
+        gatherContext(lane->absolutePoints);
     }
 
-    // Add the cell's left edge at the click value, then a recovery point
-    // at the cell's right edge returning to prevValue. If there is no
-    // prev point, we have no baseline to return to so just stamp a single
-    // step point and let it extend rightward.
+    if (prevPointId != INVALID_CURVE_POINT_ID && prevFound &&
+        originalPrevType != AutomationCurveType::Step) {
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<SetAutomationPointCurveTypeCommand>(
+                laneId_, clipId_, static_cast<AutomationPointId>(prevPointId),
+                AutomationCurveType::Step));
+    }
+
+    // Add the cell's left edge at the click value.
     onPointAdded(gridStart, y, CurveType::Step);
-    if (prevPointId != INVALID_CURVE_POINT_ID && gridEnd > gridStart)
-        onPointAdded(gridEnd, prevValue, CurveType::Step);
+
+    // Recovery point at gridEnd — only if we have a baseline to return
+    // to AND there isn't already a point there. Uses the original prev
+    // curveType so downstream interpolation is preserved.
+    if (prevPointId != INVALID_CURVE_POINT_ID && gridEnd > gridStart && !nextExistsAtGridEnd) {
+        CurveType recoveryType = toCurveType(originalPrevType);
+        onPointAdded(gridEnd, prevValue, recoveryType);
+    }
 }
 
 void AutomationCurveEditor::onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) {

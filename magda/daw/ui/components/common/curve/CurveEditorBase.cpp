@@ -472,7 +472,7 @@ void CurveEditorBase::mouseDoubleClick(const juce::MouseEvent& e) {
 
 void CurveEditorBase::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
     if (modifiers.isShiftDown()) {
-        setMouseCursor(juce::MouseCursor::CrosshairCursor);
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
     } else if (modifiers.isCommandDown()) {
         setMouseCursor(juce::MouseCursor::CopyingCursor);
     } else {
@@ -837,13 +837,15 @@ void CurveEditorBase::onStepStamped(double gridStart, double gridEnd, double y,
                                     uint32_t prevPointId, double prevValue) {
     // Default behaviour: add the cell's left edge at (gridStart, y) and,
     // if we have a baseline, a recovery point at (gridEnd, prevValue) so
-    // the cell reads as a dip back to the previous value. Subclasses that
-    // support undo compound ops (e.g. AutomationCurveEditor) should
-    // override to also flip prevPointId's curveType to Step so the cell's
-    // left edge is a cliff instead of a linear fade.
+    // the cell reads as a dip back to the previous value. The recovery
+    // point is Linear so downstream segments don't mutate into
+    // hold-then-cliff. Subclasses that support undo compound ops (e.g.
+    // AutomationCurveEditor) should override to also flip prevPointId's
+    // curveType to Step so the cell's left edge is a cliff instead of a
+    // linear fade.
     onPointAdded(gridStart, y, CurveType::Step);
     if (prevPointId != INVALID_CURVE_POINT_ID && gridEnd > gridStart)
-        onPointAdded(gridEnd, prevValue, CurveType::Step);
+        onPointAdded(gridEnd, prevValue, CurveType::Linear);
 }
 
 void CurveEditorBase::createPointsFromDrawingPath() {
