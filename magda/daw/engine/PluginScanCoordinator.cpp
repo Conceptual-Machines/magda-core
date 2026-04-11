@@ -2,6 +2,12 @@
 
 #include "core/Config.hpp"
 
+#if JUCE_LINUX
+    #include <unistd.h>
+
+    #include <climits>
+#endif
+
 namespace magda {
 
 PluginScanCoordinator::PluginScanCoordinator() {
@@ -30,12 +36,31 @@ juce::File PluginScanCoordinator::getScannerExecutable() const {
     if (scanner.existsAsFile())
         return scanner;
 #else
+    // Resolve /proc/self/exe directly to find the real executable path.
+    // JUCE's currentApplicationFile uses dladdr which on glibc returns argv[0]
+    // for the main program. Inside an AppImage the type-2 runtime sets argv[0]
+    // to the original AppImage path (e.g. "./MAGDA-0.4.3.AppImage") rather than
+    // the mounted executable path (e.g. "/tmp/.mount_MAGDAxxxx/usr/bin/MAGDA"),
+    // so getParentDirectory() would resolve to the user's download folder
+    // instead of the AppImage's internal usr/bin where the scanner lives.
+    char buf[PATH_MAX];
+    auto len = ::readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len > 0) {
+        buf[len] = '\0';
+        juce::File selfExe(juce::String::fromUTF8(buf));
+        auto scanner = selfExe.getParentDirectory().getChildFile("magda_plugin_scanner");
+        if (scanner.existsAsFile())
+            return scanner;
+    }
+
+    // Fallback to JUCE's dladdr-based lookup (works for plain Linux installs).
     auto scanner = appBundle.getParentDirectory().getChildFile("magda_plugin_scanner");
     if (scanner.existsAsFile())
         return scanner;
 #endif
 
-    DBG("[ScanCoordinator] Scanner executable not found!");
+    juce::Logger::writeToLog("[ScanCoordinator] Scanner executable not found. Searched near: " +
+                             appBundle.getFullPathName());
     return {};
 }
 
