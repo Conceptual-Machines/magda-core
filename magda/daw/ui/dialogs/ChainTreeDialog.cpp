@@ -443,8 +443,10 @@ void ChainTreeDialog::show(TrackId trackId) {
             currentInstance_->toFront(true);
             return;
         }
-        // Different track — close the existing dialog and open a fresh one
-        delete currentInstance_.getComponent();
+        // Different track — close the existing dialog and open a fresh one.
+        // Route through closeButtonPressed so any future cleanup stays in
+        // one place.
+        currentInstance_->closeButtonPressed();
     }
 
     auto* dialog = new ChainTreeDialog(trackId);
