@@ -1506,7 +1506,11 @@ void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
             if (exportClipButton_)
                 exportClipButton_->setAlpha(1.0f);
         }
+        return;
     }
+
+    // Fall through to parent for drag-to-reorder
+    NodeComponent::mouseDrag(e);
 }
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
