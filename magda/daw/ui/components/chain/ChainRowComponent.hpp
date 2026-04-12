@@ -7,8 +7,8 @@
 #include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
 
@@ -80,8 +80,8 @@ class ChainRowComponent : public juce::Component, public magda::SelectionManager
 
     // Single row controls: Name | Gain | Pan | M | S | On | X
     juce::Label nameLabel_;
-    TextSlider gainSlider_;  // Will be configured in constructor
-    TextSlider panSlider_;   // Will be configured in constructor
+    magda::DraggableValueLabel gainLabel_;
+    magda::DraggableValueLabel panLabel_;
     juce::TextButton muteButton_;
     juce::TextButton soloButton_;
     std::unique_ptr<magda::SvgButton> onButton_;  // Bypass/enable toggle (power icon)

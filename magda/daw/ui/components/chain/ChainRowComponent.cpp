@@ -26,25 +26,29 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
 
-    // Gain text slider (dB format)
-    gainSlider_.setFormat(TextSlider::Format::Decibels);
-    gainSlider_.setRange(-60.0, 6.0, 0.1);
-    gainSlider_.setValue(chain.volume, juce::dontSendNotification);
-    gainSlider_.onValueChanged = [this](double value) {
-        magda::TrackManager::getInstance().setChainVolume(trackId_, rackId_, chainId_,
-                                                          static_cast<float>(value));
+    // Gain label (dB format, draggable)
+    gainLabel_.setFormat(magda::DraggableValueLabel::Format::Decibels);
+    gainLabel_.setRange(-60.0, 6.0, 0.0);
+    gainLabel_.setValue(chain.volume, juce::dontSendNotification);
+    gainLabel_.setFontSize(9.0f);
+    gainLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    gainLabel_.onValueChange = [this]() {
+        magda::TrackManager::getInstance().setChainVolume(
+            trackId_, rackId_, chainId_, static_cast<float>(gainLabel_.getValue()));
     };
-    addAndMakeVisible(gainSlider_);
+    addAndMakeVisible(gainLabel_);
 
-    // Pan text slider (L/C/R format)
-    panSlider_.setFormat(TextSlider::Format::Pan);
-    panSlider_.setRange(-1.0, 1.0, 0.01);
-    panSlider_.setValue(chain.pan, juce::dontSendNotification);
-    panSlider_.onValueChanged = [this](double value) {
+    // Pan label (L/C/R format, draggable)
+    panLabel_.setFormat(magda::DraggableValueLabel::Format::Pan);
+    panLabel_.setRange(-1.0, 1.0, 0.0);
+    panLabel_.setValue(chain.pan, juce::dontSendNotification);
+    panLabel_.setFontSize(9.0f);
+    panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    panLabel_.onValueChange = [this]() {
         magda::TrackManager::getInstance().setChainPan(trackId_, rackId_, chainId_,
-                                                       static_cast<float>(value));
+                                                       static_cast<float>(panLabel_.getValue()));
     };
-    addAndMakeVisible(panSlider_);
+    addAndMakeVisible(panLabel_);
 
     // Mute button
     muteButton_.setButtonText("M");
@@ -109,8 +113,8 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
         nameLabel_.setAlpha(alpha);
         muteButton_.setAlpha(alpha);
         soloButton_.setAlpha(alpha);
-        gainSlider_.setAlpha(alpha);
-        panSlider_.setAlpha(alpha);
+        gainLabel_.setAlpha(alpha);
+        panLabel_.setAlpha(alpha);
     }
 }
 
@@ -216,14 +220,15 @@ void ChainRowComponent::resized() {
     nameLabel_.setBounds(bounds.removeFromLeft(50));
     bounds.removeFromLeft(4);
 
-    // Remaining space for gain and pan sliders (spread them out)
+    // Remaining space for gain and pan (70/30 split)
     int remainingWidth = bounds.getWidth();
-    int sliderWidth = (remainingWidth - 8) / 2;  // Split remaining space, minus gap
+    int gainWidth = (remainingWidth - 8) * 70 / 100;
+    int panWidth = remainingWidth - 8 - gainWidth;
 
-    gainSlider_.setBounds(bounds.removeFromLeft(sliderWidth));
+    gainLabel_.setBounds(bounds.removeFromLeft(gainWidth));
     bounds.removeFromLeft(8);
 
-    panSlider_.setBounds(bounds.removeFromLeft(sliderWidth));
+    panLabel_.setBounds(bounds.removeFromLeft(panWidth));
 }
 
 int ChainRowComponent::getPreferredHeight() const {
@@ -234,8 +239,8 @@ void ChainRowComponent::updateFromChain(const magda::ChainInfo& chain) {
     nameLabel_.setText(chain.name, juce::dontSendNotification);
     muteButton_.setToggleState(chain.muted, juce::dontSendNotification);
     soloButton_.setToggleState(chain.solo, juce::dontSendNotification);
-    gainSlider_.setValue(chain.volume, juce::dontSendNotification);
-    panSlider_.setValue(chain.pan, juce::dontSendNotification);
+    gainLabel_.setValue(chain.volume, juce::dontSendNotification);
+    panLabel_.setValue(chain.pan, juce::dontSendNotification);
     onButton_->setToggleState(!chain.bypassed, juce::dontSendNotification);
     onButton_->setActive(!chain.bypassed);
 
@@ -244,8 +249,8 @@ void ChainRowComponent::updateFromChain(const magda::ChainInfo& chain) {
     nameLabel_.setAlpha(alpha);
     muteButton_.setAlpha(alpha);
     soloButton_.setAlpha(alpha);
-    gainSlider_.setAlpha(alpha);
-    panSlider_.setAlpha(alpha);
+    gainLabel_.setAlpha(alpha);
+    panLabel_.setAlpha(alpha);
 }
 
 void ChainRowComponent::onMuteClicked() {

@@ -27,9 +27,9 @@
 #include "core/AutomationManager.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
+#include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/components/common/TextSlider.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/MidiNoteStrip.hpp"
 #include "ui/panels/content/ChordPanelContent.hpp"  // relative to magda/daw/
@@ -198,7 +198,7 @@ class DeviceSlotComponent : public NodeComponent,
     // Header controls
     std::unique_ptr<magda::SvgButton> modButton_;
     std::unique_ptr<magda::SvgButton> macroButton_;
-    TextSlider gainSlider_{TextSlider::Format::Decibels};
+    magda::DraggableValueLabel gainLabel_{magda::DraggableValueLabel::Format::Decibels};
     std::unique_ptr<juce::TextButton> scButton_;        // Sidechain source selector
     std::unique_ptr<magda::SvgButton> multiOutButton_;  // Multi-output routing
     std::unique_ptr<magda::SvgButton> uiButton_;

@@ -120,6 +120,12 @@ class DraggableValueLabel : public juce::Component, public juce::SettableTooltip
         repaint();
     }
 
+    // Custom fill indicator colour (defaults to ACCENT_BLUE if not set)
+    void setFillColour(juce::Colour colour) {
+        customFillColour_ = colour;
+        repaint();
+    }
+
     // Text override: when set, displays this text instead of the formatted value
     void setTextOverride(const juce::String& text) {
         textOverride_ = text;
@@ -162,6 +168,7 @@ class DraggableValueLabel : public juce::Component, public juce::SettableTooltip
     bool doubleClickResets_ = true;
     bool snapToInteger_ = false;
     std::optional<juce::Colour> customTextColour_;
+    std::optional<juce::Colour> customFillColour_;
     bool showFillIndicator_ = true;
     bool drawBackground_ = true;
     bool drawBorder_ = true;

@@ -248,7 +248,9 @@ void DraggableValueLabel::paint(juce::Graphics& g) {
 
     // Fill indicator
     if (showFillIndicator_) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f * alpha));
+        auto fillBase = customFillColour_.value_or(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        float fillAlpha = customFillColour_ ? fillBase.getFloatAlpha() : 0.3f;
+        g.setColour(fillBase.withAlpha(fillAlpha * alpha));
 
         if (format_ == Format::Pan) {
             // Pan: draw from center outward

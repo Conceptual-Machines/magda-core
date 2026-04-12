@@ -100,13 +100,16 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     };
     addAndMakeVisible(*macroButton_);
 
-    // Volume slider (dB format)
-    volumeSlider_.setRange(-60.0, 6.0, 0.1);
-    volumeSlider_.setValue(rack.volume, juce::dontSendNotification);
-    volumeSlider_.onValueChanged = [this](double db) {
-        magda::TrackManager::getInstance().setRackVolume(rackPath_, static_cast<float>(db));
+    // Volume label (dB format, draggable)
+    volumeLabel_.setRange(-60.0, 6.0, 0.0);
+    volumeLabel_.setValue(rack.volume, juce::dontSendNotification);
+    volumeLabel_.setFontSize(10.0f);
+    volumeLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    volumeLabel_.onValueChange = [this]() {
+        magda::TrackManager::getInstance().setRackVolume(
+            rackPath_, static_cast<float>(volumeLabel_.getValue()));
     };
-    addAndMakeVisible(volumeSlider_);
+    addAndMakeVisible(volumeLabel_);
     addAndMakeVisible(levelMeter_);
 
     // === CONTENT AREA SETUP ===
@@ -221,7 +224,7 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
         if (chainPanel_) {
             chainPanel_->setVisible(false);
         }
-        volumeSlider_.setVisible(false);
+        volumeLabel_.setVisible(false);
         // levelMeter_ visibility handled by resizedCollapsed
         return;
     }
@@ -232,7 +235,7 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     chainViewport_.setVisible(true);
     modButton_->setVisible(true);
     macroButton_->setVisible(true);
-    volumeSlider_.setVisible(true);
+    volumeLabel_.setVisible(true);
     levelMeter_.setVisible(true);
 
     // Position the level meter on the right edge of the content area
@@ -309,7 +312,7 @@ void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     headerArea.removeFromLeft(4);
 
     // Volume slider on the right side of header (same width as device slots)
-    volumeSlider_.setBounds(headerArea.removeFromRight(70));
+    volumeLabel_.setBounds(headerArea.removeFromRight(70));
     headerArea.removeFromRight(4);
 }
 

@@ -8,8 +8,8 @@
 #include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/components/common/TextSlider.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 
 namespace magda::daw::ui {
@@ -95,9 +95,9 @@ class RackComponent : public NodeComponent, public juce::Timer {
     magda::RackId rackId_;
 
     // Header extra controls
-    std::unique_ptr<magda::SvgButton> modButton_;            // Modulators toggle
-    std::unique_ptr<magda::SvgButton> macroButton_;          // Macros toggle
-    TextSlider volumeSlider_{TextSlider::Format::Decibels};  // Rack volume (dB)
+    std::unique_ptr<magda::SvgButton> modButton_;    // Modulators toggle
+    std::unique_ptr<magda::SvgButton> macroButton_;  // Macros toggle
+    magda::DraggableValueLabel volumeLabel_{magda::DraggableValueLabel::Format::Decibels};
     juce::TextButton addChainButton_;
 
     // Level meter (right side of content area, like DeviceSlotComponent)

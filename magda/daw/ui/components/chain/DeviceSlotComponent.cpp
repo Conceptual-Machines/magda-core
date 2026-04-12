@@ -160,14 +160,17 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Initialize mods/macros panels from base class
     initializeModsMacrosPanels();
 
-    // Gain text slider in header
-    gainSlider_.setRange(-60.0, 12.0, 0.1);
-    gainSlider_.setValue(device_.gainDb, juce::dontSendNotification);
-    gainSlider_.onValueChanged = [this](double value) {
+    // Gain label in header (dB format, draggable)
+    gainLabel_.setRange(-60.0, 12.0, 0.0);
+    gainLabel_.setValue(device_.gainDb, juce::dontSendNotification);
+    gainLabel_.setFontSize(10.0f);
+    gainLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    gainLabel_.onValueChange = [this]() {
         // Use TrackManager method to notify AudioBridge for audio sync
-        magda::TrackManager::getInstance().setDeviceGainDb(nodePath_, static_cast<float>(value));
+        magda::TrackManager::getInstance().setDeviceGainDb(
+            nodePath_, static_cast<float>(gainLabel_.getValue()));
     };
-    addAndMakeVisible(gainSlider_);
+    addAndMakeVisible(gainLabel_);
 
     // Sidechain button (only visible when plugin supports sidechain)
     scButton_ = std::make_unique<juce::TextButton>("SC");
@@ -935,7 +938,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     setBypassed(device.bypassed);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);
-    gainSlider_.setValue(device.gainDb, juce::dontSendNotification);
+    gainLabel_.setValue(device.gainDb, juce::dontSendNotification);
 
     // Update sidechain button visibility and state
     if (scButton_) {
@@ -1221,7 +1224,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // When collapsed or still loading, hide all content controls
     if (collapsed_ || device_.loadState != magda::DeviceLoadState::Loaded) {
         paramGrid_->setVisible(false);
-        gainSlider_.setVisible(false);
+        gainLabel_.setVisible(false);
         if (toneGeneratorUI_)
             toneGeneratorUI_->setVisible(false);
         if (samplerUI_)
@@ -1268,7 +1271,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     macroButton_->setVisible(showMacro);
     uiButton_->setVisible(!isInternalDevice());
     onButton_->setVisible(true);
-    gainSlider_.setVisible(!isChordEngine_ && !isArpeggiator_ && !isStepSequencer_);
+    gainLabel_.setVisible(!isChordEngine_ && !isArpeggiator_ && !isStepSequencer_);
 
     // Content header subtitle area (all devices)
     contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
@@ -1425,7 +1428,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // Right-edge order (left → right): [export clip] [power] [delete X (NodeComponent)]
     // Power must sit immediately to the left of the delete X — clip lives to its left.
     if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
-        gainSlider_.setVisible(false);
+        gainLabel_.setVisible(false);
         if (scButton_)
             scButton_->setVisible(false);
         onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
@@ -1451,14 +1454,14 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     if (multiOutButton_)
         multiOutButton_->setVisible(device_.multiOut.isMultiOut);
     if (isDrumGrid)
-        gainSlider_.setVisible(false);
+        gainLabel_.setVisible(false);
 
     layoutDeviceSlotHeaderRight(headerArea, BUTTON_SIZE, 4,
                                 /*delete*/ nullptr,
                                 /*power*/ onButton_.get(),
                                 /*multiOut*/ multiOutButton_ ? multiOutButton_.get() : nullptr,
                                 /*sc*/ scButton_ ? scButton_.get() : nullptr,
-                                /*slider*/ isDrumGrid ? nullptr : &gainSlider_, 70,
+                                /*slider*/ isDrumGrid ? nullptr : &gainLabel_, 70,
                                 /*ui*/ uiButton_.get());
 }
 
