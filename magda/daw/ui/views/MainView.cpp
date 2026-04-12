@@ -1362,7 +1362,8 @@ void MainView::mouseDrag(const juce::MouseEvent& event) {
 
         if (newWidth != trackHeaderWidth) {
             trackHeaderWidth = newWidth;
-            resized();  // Trigger layout update
+            resized();
+            repaint();
         }
 
         lastMouseX = event.x;  // Update for next drag event
@@ -1376,7 +1377,8 @@ void MainView::mouseDrag(const juce::MouseEvent& event) {
 
         if (newHeight != masterStripHeight) {
             masterStripHeight = newHeight;
-            resized();  // Trigger layout update
+            resized();
+            repaint();
         }
     }
 }
