@@ -66,6 +66,40 @@ class PanelContent : public juce::Component {
      */
     virtual void onDeactivated() {}
 
+    /**
+     * @brief Whether this content wants the parent panel to show a header bar
+     */
+    virtual bool wantsHeader() const {
+        return false;
+    }
+
+    /**
+     * @brief Reparent header controls into the given header bar component
+     * Called when this content becomes active. Content should call
+     * headerBar.addAndMakeVisible() for each control it wants in the header.
+     */
+    virtual void populateHeader(juce::Component& headerBar) {
+        juce::ignoreUnused(headerBar);
+    }
+
+    /**
+     * @brief Remove header controls from the header bar
+     * Called when this content is about to be deactivated. Content should
+     * reparent controls back to itself via addChildComponent().
+     */
+    virtual void depopulateHeader(juce::Component& headerBar) {
+        juce::ignoreUnused(headerBar);
+    }
+
+    /**
+     * @brief Layout header controls within the given bounds
+     * Called from the parent panel's resized(). Content positions its
+     * controls that were added via populateHeader().
+     */
+    virtual void layoutHeader(juce::Rectangle<int> headerBounds) {
+        juce::ignoreUnused(headerBounds);
+    }
+
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PanelContent)
 };

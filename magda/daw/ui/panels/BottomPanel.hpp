@@ -44,6 +44,12 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // Legacy API for compatibility
     void setCollapsed(bool collapsed);
 
+    // Get the current content type being displayed
+    daw::ui::PanelContentType getActiveContentType() const;
+
+    // Callback for double-click on header — requests optimal panel height
+    std::function<void()> onHeaderDoubleClick;
+
     // ClipManagerListener
     void clipsChanged() override;
     void clipSelectionChanged(ClipId clipId) override;
@@ -65,6 +71,8 @@ class BottomPanel : public daw::ui::TabbedPanel,
   protected:
     juce::Rectangle<int> getTabBarBounds() override;
     juce::Rectangle<int> getContentBounds() override;
+    void onContentWillSwitch(daw::ui::PanelContent* outgoing,
+                             daw::ui::PanelContent* incoming) override;
 
   private:
     void updateContentBasedOnSelection();
@@ -73,9 +81,16 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<SvgButton> pianoRollTab_;
     std::unique_ptr<SvgButton> drumGridTab_;
 
+    // Centralised header bar — content types populate it via populateHeader()
+    class HeaderBar;
+    std::unique_ptr<HeaderBar> headerBar_;
+
+    void addMidiControlsToHeader();
+    void removeMidiControlsFromHeader();
+    void layoutMidiHeaderControls(juce::Rectangle<int> headerBounds);
+
     bool showEditorTabs_ = false;
     bool updatingTabs_ = false;  // Guard against re-entrancy
-    static constexpr int EDITOR_TAB_HEIGHT = 28;
     static constexpr int SIDEBAR_WIDTH = 32;
 
     // Persisted user preference: which MIDI editor view

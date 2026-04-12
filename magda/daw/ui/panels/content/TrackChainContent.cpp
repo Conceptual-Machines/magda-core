@@ -620,29 +620,33 @@ TrackChainContent::TrackChainContent()
     soloButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     addChildComponent(soloButton_);
 
-    // Volume text slider (dB format)
-    volumeSlider_.setRange(-60.0, 6.0, 0.1);
-    volumeSlider_.setValue(0.0, juce::dontSendNotification);  // Unity gain (0 dB)
-    volumeSlider_.onValueChanged = [this](double db) {
+    // Volume label (dB format, draggable)
+    volumeLabel_.setRange(-60.0, 6.0, 0.0);
+    volumeLabel_.setValue(0.0, juce::dontSendNotification);  // Unity gain (0 dB)
+    volumeLabel_.setFontSize(10.0f);
+    volumeLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    volumeLabel_.onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            float gain = dbToGain(static_cast<float>(db));
+            float gain = dbToGain(static_cast<float>(volumeLabel_.getValue()));
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetTrackVolumeCommand>(selectedTrackId_, gain));
         }
     };
-    addChildComponent(volumeSlider_);
+    addChildComponent(volumeLabel_);
 
-    // Pan text slider
-    panSlider_.setRange(-1.0, 1.0, 0.01);
-    panSlider_.setValue(0.0, juce::dontSendNotification);  // Center
-    panSlider_.onValueChanged = [this](double pan) {
+    // Pan label (L/C/R format, draggable)
+    panLabel_.setRange(-1.0, 1.0, 0.0);
+    panLabel_.setValue(0.0, juce::dontSendNotification);  // Center
+    panLabel_.setFontSize(10.0f);
+    panLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
+    panLabel_.onValueChange = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetTrackPanCommand>(selectedTrackId_,
-                                                            static_cast<float>(pan)));
+                std::make_unique<magda::SetTrackPanCommand>(
+                    selectedTrackId_, static_cast<float>(panLabel_.getValue())));
         }
     };
-    addChildComponent(panSlider_);
+    addChildComponent(panLabel_);
 
     // Chain bypass button (power icon - same as device bypass buttons)
     chainBypassButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
@@ -1103,19 +1107,6 @@ void TrackChainContent::paint(juce::Graphics& g) {
     if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
         auto bounds = getLocalBounds();
 
-        // Draw header background - use accent color only when track itself is selected
-        // (not when a chain node is selected)
-        auto headerArea = bounds.removeFromTop(HEADER_HEIGHT);
-        bool trackIsSelected = magda::SelectionManager::getInstance().getSelectionType() ==
-                               magda::SelectionType::Track;
-        g.setColour(trackIsSelected ? DarkTheme::getColour(DarkTheme::ACCENT_CYAN).withAlpha(0.08f)
-                                    : DarkTheme::getColour(DarkTheme::SURFACE));
-        g.fillRect(headerArea);
-
-        // Header bottom border
-        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawHorizontalLine(HEADER_HEIGHT - 1, 0.0f, static_cast<float>(getWidth()));
-
         // Draw panel area borders (panels are child components, they paint themselves)
         int panelAreaWidth = 0;
         if (globalMacrosVisible_)
@@ -1140,14 +1131,11 @@ void TrackChainContent::paint(juce::Graphics& g) {
 }
 
 void TrackChainContent::mouseDown(const juce::MouseEvent& e) {
-    // Alt/Option + click = start zoom drag (works on header)
+    // Alt/Option + click = start zoom drag
     if (e.mods.isAltDown()) {
         isZoomDragging_ = true;
         zoomDragStartX_ = e.x;
         zoomStartLevel_ = zoomLevel_;
-    } else if (selectedTrackId_ != magda::INVALID_TRACK_ID && e.y < HEADER_HEIGHT) {
-        // Click on header area selects the track
-        magda::SelectionManager::getInstance().selectTrack(selectedTrackId_);
     }
 }
 
@@ -1181,57 +1169,9 @@ void TrackChainContent::resized() {
 
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
         noSelectionLabel_.setBounds(bounds);
-        showHeader(false);
+        hideHeaderControls();
     } else {
         noSelectionLabel_.setVisible(false);
-
-        // === HEADER BAR LAYOUT ===
-        // Layout: MOD RACK+ RACK-MB+ ... Name | gain | ON
-        auto headerArea = bounds.removeFromTop(HEADER_HEIGHT).reduced(8, 4);
-
-        // LEFT SIDE - Action buttons
-        macroButton_->setBounds(headerArea.removeFromLeft(20));
-        headerArea.removeFromLeft(2);
-        globalModsButton_->setBounds(headerArea.removeFromLeft(20));
-        headerArea.removeFromLeft(8);
-        addRackButton_->setBounds(headerArea.removeFromLeft(20));
-        headerArea.removeFromLeft(4);
-        treeViewButton_->setBounds(headerArea.removeFromLeft(20));
-        headerArea.removeFromLeft(16);
-
-        // RIGHT SIDE - Track info (from right to left)
-        const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-        bool isMaster = selTrack && selTrack->type == magda::TrackType::Master;
-
-        if (!isMaster) {
-            chainBypassButton_->setBounds(headerArea.removeFromRight(17));
-            headerArea.removeFromRight(4);
-        }
-        if (!isMaster) {
-            panSlider_.setBounds(headerArea.removeFromRight(40));
-            headerArea.removeFromRight(4);
-        }
-        volumeSlider_.setBounds(headerArea.removeFromRight(50));
-        headerArea.removeFromRight(4);
-        if (!isMaster) {
-            soloButton_.setBounds(headerArea.removeFromRight(18));
-            headerArea.removeFromRight(2);
-        }
-        muteButton_.setBounds(headerArea.removeFromRight(18));
-        headerArea.removeFromRight(8);
-        trackNameLabel_.setBounds(headerArea);  // Name takes remaining space
-
-        // Hide solo/pan for master
-        if (isMaster) {
-            soloButton_.setVisible(false);
-            panSlider_.setVisible(false);
-        }
-
-        // Link mode label - centered in header, overlays track name when visible
-        if (linkModeLabel_.isVisible()) {
-            auto linkLabelBounds = getLocalBounds().removeFromTop(HEADER_HEIGHT);
-            linkModeLabel_.setBounds(linkLabelBounds);
-        }
 
         // === GLOBAL PANELS (left side: macros | macro editor | mods | mod editor) ===
         if (globalMacrosVisible_ && globalMacrosPanel_) {
@@ -1347,8 +1287,8 @@ void TrackChainContent::trackPropertyChanged(int trackId) {
             trackNameLabel_.setText(track->name, juce::dontSendNotification);
             muteButton_.setToggleState(track->muted, juce::dontSendNotification);
             soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
-            volumeSlider_.setValue(gainToDb(track->volume), juce::dontSendNotification);
-            panSlider_.setValue(track->pan, juce::dontSendNotification);
+            volumeLabel_.setValue(gainToDb(track->volume), juce::dontSendNotification);
+            panLabel_.setValue(track->pan, juce::dontSendNotification);
         }
     }
 }
@@ -1393,7 +1333,7 @@ void TrackChainContent::macroLinkModeChanged(bool active,
 
 void TrackChainContent::updateFromSelectedTrack() {
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
-        showHeader(false);
+        hideHeaderControls();
         noSelectionLabel_.setVisible(true);
         nodeComponents_.clear();
     } else {
@@ -1407,15 +1347,16 @@ void TrackChainContent::updateFromSelectedTrack() {
 
             // Convert linear gain to dB for volume slider
             float db = gainToDb(track->volume);
-            volumeSlider_.setValue(db, juce::dontSendNotification);
+            volumeLabel_.setValue(db, juce::dontSendNotification);
 
             // Update pan slider
-            panSlider_.setValue(track->pan, juce::dontSendNotification);
+            panLabel_.setValue(track->pan, juce::dontSendNotification);
 
             // Check if any device in the chain is not bypassed
-            bool anyActive = false;
-            for (const auto& element :
-                 magda::TrackManager::getInstance().getChainElements(selectedTrackId_)) {
+            const auto& elements =
+                magda::TrackManager::getInstance().getChainElements(selectedTrackId_);
+            bool anyActive = elements.empty();  // Empty chain = active (not bypassed)
+            for (const auto& element : elements) {
                 if (magda::isDevice(element) && !magda::getDevice(element).bypassed) {
                     anyActive = true;
                     break;
@@ -1428,12 +1369,22 @@ void TrackChainContent::updateFromSelectedTrack() {
             chainBypassButton_->setToggleState(anyActive, juce::dontSendNotification);
             chainBypassButton_->setActive(anyActive);
 
-            showHeader(true);
+            // Show header controls (they're in the header bar via populateHeader)
+            globalModsButton_->setVisible(true);
+            macroButton_->setVisible(true);
+            addRackButton_->setVisible(true);
+            treeViewButton_->setVisible(true);
+            trackNameLabel_.setVisible(true);
+            muteButton_.setVisible(true);
+            soloButton_.setVisible(true);
+            volumeLabel_.setVisible(true);
+            panLabel_.setVisible(true);
+            chainBypassButton_->setVisible(true);
 
             // Hide solo, pan, and chain bypass for master track
             if (track->type == magda::TrackType::Master) {
                 soloButton_.setVisible(false);
-                panSlider_.setVisible(false);
+                panLabel_.setVisible(false);
                 chainBypassButton_->setVisible(false);
             }
 
@@ -1468,7 +1419,7 @@ void TrackChainContent::updateFromSelectedTrack() {
             else
                 hideGlobalMacroEditor();
         } else {
-            showHeader(false);
+            hideHeaderControls();
             noSelectionLabel_.setVisible(true);
             nodeComponents_.clear();
         }
@@ -1478,34 +1429,116 @@ void TrackChainContent::updateFromSelectedTrack() {
     repaint();
 }
 
-void TrackChainContent::showHeader(bool show) {
-    // Left side - action buttons
-    globalModsButton_->setVisible(show);
-    macroButton_->setVisible(show);
-    addRackButton_->setVisible(show);
-    // Hide panels when header is hidden
-    if (!show) {
-        if (globalModsPanel_)
-            globalModsPanel_->setVisible(false);
-        if (globalMacrosPanel_)
-            globalMacrosPanel_->setVisible(false);
-        hideGlobalModEditor();
-        hideGlobalMacroEditor();
-        globalModsVisible_ = false;
-        globalMacrosVisible_ = false;
-        globalModsButton_->setToggleState(false, juce::dontSendNotification);
-        globalModsButton_->setActive(false);
-        macroButton_->setToggleState(false, juce::dontSendNotification);
-        macroButton_->setActive(false);
+void TrackChainContent::populateHeader(juce::Component& headerBar) {
+    // Reparent all header controls into the centralised header bar
+    headerBar.addAndMakeVisible(globalModsButton_.get());
+    headerBar.addAndMakeVisible(macroButton_.get());
+    headerBar.addAndMakeVisible(addRackButton_.get());
+    headerBar.addAndMakeVisible(treeViewButton_.get());
+    headerBar.addAndMakeVisible(trackNameLabel_);
+    headerBar.addAndMakeVisible(muteButton_);
+    headerBar.addAndMakeVisible(soloButton_);
+    headerBar.addAndMakeVisible(volumeLabel_);
+    headerBar.addAndMakeVisible(panLabel_);
+    headerBar.addAndMakeVisible(chainBypassButton_.get());
+    headerBar.addChildComponent(linkModeLabel_);
+
+    // If no track selected, hide controls
+    if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+        hideHeaderControls();
+}
+
+void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
+    // Reparent back to this content (hidden)
+    addChildComponent(globalModsButton_.get());
+    addChildComponent(macroButton_.get());
+    addChildComponent(addRackButton_.get());
+    addChildComponent(treeViewButton_.get());
+    addChildComponent(&trackNameLabel_);
+    addChildComponent(&muteButton_);
+    addChildComponent(&soloButton_);
+    addChildComponent(&volumeLabel_);
+    addChildComponent(&panLabel_);
+    addChildComponent(chainBypassButton_.get());
+    addChildComponent(&linkModeLabel_);
+}
+
+void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
+    if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+        return;
+
+    auto headerArea = headerBounds.reduced(8, 4);
+
+    // LEFT SIDE - Action buttons
+    macroButton_->setBounds(headerArea.removeFromLeft(20));
+    headerArea.removeFromLeft(2);
+    globalModsButton_->setBounds(headerArea.removeFromLeft(20));
+    headerArea.removeFromLeft(8);
+    addRackButton_->setBounds(headerArea.removeFromLeft(20));
+    headerArea.removeFromLeft(4);
+    treeViewButton_->setBounds(headerArea.removeFromLeft(20));
+    headerArea.removeFromLeft(16);
+
+    // RIGHT SIDE - Track info (from right to left)
+    const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    bool isMaster = selTrack && selTrack->type == magda::TrackType::Master;
+
+    if (!isMaster) {
+        chainBypassButton_->setBounds(headerArea.removeFromRight(17));
+        headerArea.removeFromRight(4);
     }
-    treeViewButton_->setVisible(show);
+    if (!isMaster) {
+        panLabel_.setBounds(headerArea.removeFromRight(30));
+        headerArea.removeFromRight(4);
+    }
+    volumeLabel_.setBounds(headerArea.removeFromRight(60));
+    headerArea.removeFromRight(4);
+    if (!isMaster) {
+        soloButton_.setBounds(headerArea.removeFromRight(18));
+        headerArea.removeFromRight(2);
+    }
+    muteButton_.setBounds(headerArea.removeFromRight(18));
+    headerArea.removeFromRight(8);
+    trackNameLabel_.setBounds(headerArea);  // Name takes remaining space
+
+    // Hide solo/pan for master
+    if (isMaster) {
+        soloButton_.setVisible(false);
+        panLabel_.setVisible(false);
+    }
+
+    // Link mode label - centered in header, overlays track name when visible
+    if (linkModeLabel_.isVisible()) {
+        linkModeLabel_.setBounds(headerBounds);
+    }
+}
+
+void TrackChainContent::hideHeaderControls() {
+    // Left side - action buttons
+    globalModsButton_->setVisible(false);
+    macroButton_->setVisible(false);
+    addRackButton_->setVisible(false);
+    treeViewButton_->setVisible(false);
+    // Hide panels
+    if (globalModsPanel_)
+        globalModsPanel_->setVisible(false);
+    if (globalMacrosPanel_)
+        globalMacrosPanel_->setVisible(false);
+    hideGlobalModEditor();
+    hideGlobalMacroEditor();
+    globalModsVisible_ = false;
+    globalMacrosVisible_ = false;
+    globalModsButton_->setToggleState(false, juce::dontSendNotification);
+    globalModsButton_->setActive(false);
+    macroButton_->setToggleState(false, juce::dontSendNotification);
+    macroButton_->setActive(false);
     // Right side - track info
-    trackNameLabel_.setVisible(show);
-    muteButton_.setVisible(show);
-    soloButton_.setVisible(show);
-    volumeSlider_.setVisible(show);
-    panSlider_.setVisible(show);
-    chainBypassButton_->setVisible(show);
+    trackNameLabel_.setVisible(false);
+    muteButton_.setVisible(false);
+    soloButton_.setVisible(false);
+    volumeLabel_.setVisible(false);
+    panLabel_.setVisible(false);
+    chainBypassButton_->setVisible(false);
 }
 
 void TrackChainContent::rebuildNodeComponents() {

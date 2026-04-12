@@ -9,8 +9,8 @@
 #include "core/DeviceInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/components/common/TextSlider.hpp"
 
 namespace tracktion {
 inline namespace engine {
@@ -61,6 +61,14 @@ class TrackChainContent : public PanelContent,
     void onActivated() override;
     void onDeactivated() override;
 
+    // Header bar integration (controls reparented into BottomPanel's header bar)
+    bool wantsHeader() const override {
+        return true;
+    }
+    void populateHeader(juce::Component& headerBar) override;
+    void depopulateHeader(juce::Component& headerBar) override;
+    void layoutHeader(juce::Rectangle<int> headerBounds) override;
+
     // TrackManagerListener
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
@@ -103,11 +111,11 @@ class TrackChainContent : public PanelContent,
 
     // Header bar controls - RIGHT side (track info)
     juce::Label trackNameLabel_;
-    juce::TextButton muteButton_;                            // Track mute
-    juce::TextButton soloButton_;                            // Track solo
-    TextSlider volumeSlider_{TextSlider::Format::Decibels};  // Track volume (dB)
-    TextSlider panSlider_{TextSlider::Format::Pan};          // Track pan (L/R)
-    std::unique_ptr<magda::SvgButton> chainBypassButton_;    // On/off - bypasses entire track chain
+    juce::TextButton muteButton_;  // Track mute
+    juce::TextButton soloButton_;  // Track solo
+    magda::DraggableValueLabel volumeLabel_{magda::DraggableValueLabel::Format::Decibels};
+    magda::DraggableValueLabel panLabel_{magda::DraggableValueLabel::Format::Pan};
+    std::unique_ptr<magda::SvgButton> chainBypassButton_;  // On/off - bypasses entire track chain
 
     // Global mods/macros panel visibility
     bool globalModsVisible_ = false;
@@ -142,7 +150,7 @@ class TrackChainContent : public PanelContent,
     magda::MixerLookAndFeel mixerLookAndFeel_;
 
     void updateFromSelectedTrack();
-    void showHeader(bool show);
+    void hideHeaderControls();
     void rebuildNodeComponents();
     int calculateTotalContentWidth() const;
     void layoutChainContent();
@@ -168,7 +176,6 @@ class TrackChainContent : public PanelContent,
     void onDeviceSlotSelected(magda::DeviceId deviceId);
     void clearDeviceSelection();
 
-    static constexpr int HEADER_HEIGHT = 28;
     static constexpr int MODS_PANEL_WIDTH = 160;
     static constexpr int MIN_CHAIN_HEIGHT = 280;  // Minimum content height before scrolling
 

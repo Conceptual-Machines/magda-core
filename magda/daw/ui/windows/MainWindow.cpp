@@ -158,7 +158,13 @@ class MainWindow::MainComponent::ResizeHandle : public juce::Component {
         }
     }
 
+    void mouseDoubleClick(const juce::MouseEvent&) override {
+        if (onDoubleClick)
+            onDoubleClick();
+    }
+
     std::function<void(int)> onResize;
+    std::function<void()> onDoubleClick;
 
   private:
     Direction direction;
@@ -409,6 +415,28 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         bottomPanelCollapsed = collapsed;
         if (footerBar)
             footerBar->setBottomPanelCollapsed(collapsed);
+        resized();
+    };
+    bottomPanel->onHeaderDoubleClick = [this]() {
+        auto& layout = LayoutConfig::getInstance();
+        int optimalHeight = layout.defaultBottomPanelHeight;
+        auto type = bottomPanel->getActiveContentType();
+        if (type == daw::ui::PanelContentType::PianoRoll ||
+            type == daw::ui::PanelContentType::DrumGridClipView) {
+            optimalHeight = getHeight() / 2;
+        } else if (type == daw::ui::PanelContentType::TrackChain) {
+            optimalHeight = getHeight() / 3;
+        }
+        int maxHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
+        bottomPanelHeight =
+            juce::jlimit(layout.minBottomPanelHeight,
+                         juce::jmax(layout.minBottomPanelHeight, maxHeight), optimalHeight);
+        if (bottomPanelCollapsed) {
+            bottomPanelCollapsed = false;
+            bottomPanel->setCollapsed(false);
+            if (footerBar)
+                footerBar->setBottomPanelCollapsed(false);
+        }
         resized();
     };
     addAndMakeVisible(*bottomPanel);

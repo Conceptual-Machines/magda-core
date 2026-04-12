@@ -212,14 +212,19 @@ void TabbedPanel::updateFromState() {
 }
 
 void TabbedPanel::switchToContent(PanelContentType type) {
+    // Get or create new content before deactivating old
+    auto* incoming = getOrCreateContent(type);
+
+    // Notify subclass (e.g. BottomPanel header population)
+    onContentWillSwitch(activeContent_, incoming);
+
     // Deactivate old content
     if (activeContent_) {
         activeContent_->onDeactivated();
         activeContent_->setVisible(false);
     }
 
-    // Get or create new content
-    activeContent_ = getOrCreateContent(type);
+    activeContent_ = incoming;
 
     // Activate new content
     if (activeContent_) {

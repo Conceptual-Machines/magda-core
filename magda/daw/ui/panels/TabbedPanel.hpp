@@ -94,6 +94,14 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
     }
 
     /**
+     * @brief Hook called just before content switches
+     * Override to manage header population/depopulation.
+     */
+    virtual void onContentWillSwitch(PanelContent* outgoing, PanelContent* incoming) {
+        juce::ignoreUnused(outgoing, incoming);
+    }
+
+    /**
      * @brief Get the bounds for the tab bar
      */
     virtual juce::Rectangle<int> getTabBarBounds();

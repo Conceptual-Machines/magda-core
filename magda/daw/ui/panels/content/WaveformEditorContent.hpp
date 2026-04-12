@@ -48,6 +48,10 @@ class WaveformEditorContent : public PanelContent,
     void onActivated() override;
     void onDeactivated() override;
 
+    bool wantsHeader() const override {
+        return true;
+    }
+
     // Mouse interaction
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
