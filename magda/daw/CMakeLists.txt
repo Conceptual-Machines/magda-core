@@ -899,6 +899,7 @@ target_include_directories(magda_plugin_scanner
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/engine
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 # Copy scanner executable alongside the main app

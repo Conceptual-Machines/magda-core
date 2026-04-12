@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include "version.hpp"
+
 namespace magda {
 
 /**
@@ -40,7 +42,7 @@ struct ProjectInfo {
     int activeView = 1;  // Default to Arrange
 
     // Version tracking
-    juce::String version = "1.0.0";  // Magda version
+    juce::String version = MAGDA_VERSION;  // Magda version
     juce::Time lastModified;
 
     // Default constructor

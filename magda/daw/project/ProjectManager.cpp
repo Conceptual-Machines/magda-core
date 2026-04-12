@@ -9,6 +9,7 @@
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
 #include "serialization/ProjectSerializer.hpp"
+#include "version.hpp"
 
 namespace magda {
 
@@ -30,7 +31,7 @@ ProjectManager& ProjectManager::getInstance() {
 ProjectManager::ProjectManager() {
     // Initialize with default project info
     currentProject_.name = "Untitled";
-    currentProject_.version = "1.0.0";
+    currentProject_.version = MAGDA_VERSION;
 
     // Create temp media directory so recordings/renders have a home even before
     // the user explicitly creates or saves a project.
@@ -69,7 +70,7 @@ bool ProjectManager::newProject() {
     // Reset project state
     currentProject_ = ProjectInfo();
     currentProject_.name = "Untitled";
-    currentProject_.version = "1.0.0";
+    currentProject_.version = MAGDA_VERSION;
     currentFile_ = juce::File();
     isProjectOpen_ = true;
 

@@ -18,6 +18,7 @@
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/windows/MainWindow.hpp"
+#include "version.hpp"
 
 using namespace juce;
 
@@ -49,7 +50,7 @@ class MagdaDAWApplication : public JUCEApplication {
         return "MAGDA";
     }
     const String getApplicationVersion() override {
-        return "1.0.0";
+        return MAGDA_VERSION;
     }
 
     void initialise(const String& commandLine) override {

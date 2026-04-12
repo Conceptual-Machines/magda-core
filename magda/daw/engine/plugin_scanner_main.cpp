@@ -14,6 +14,8 @@
 
 #include <iostream>
 
+#include "version.hpp"
+
 // Global log file for debugging - scanner stdout isn't visible when run as child process
 // Uses juce::FileOutputStream for Unicode-safe paths on Windows
 static std::unique_ptr<juce::FileOutputStream> g_logStream;
@@ -211,7 +213,7 @@ class PluginScannerApplication : public juce::JUCEApplicationBase {
         return "MAGDA Plugin Scanner";
     }
     const juce::String getApplicationVersion() override {
-        return "1.0.0";
+        return MAGDA_VERSION;
     }
     bool moreThanOneInstanceAllowed() override {
         return true;
