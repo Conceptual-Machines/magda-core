@@ -2,6 +2,12 @@
 
 #include "core/Config.hpp"
 
+#if JUCE_LINUX
+    #include <unistd.h>
+
+    #include <climits>
+#endif
+
 namespace magda {
 
 PluginScanCoordinator::PluginScanCoordinator() {
@@ -17,25 +23,56 @@ PluginScanCoordinator::~PluginScanCoordinator() {
 juce::File PluginScanCoordinator::getScannerExecutable() const {
     auto appBundle = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
 
-#if JUCE_MAC
-    auto scanner = appBundle.getChildFile("Contents/MacOS/magda_plugin_scanner");
-    if (scanner.existsAsFile())
-        return scanner;
+    juce::StringArray triedPaths;
+    auto tryCandidate = [&triedPaths](juce::File candidate) -> juce::File {
+        triedPaths.add(candidate.getFullPathName());
+        return candidate.existsAsFile() ? candidate : juce::File();
+    };
 
-    scanner = appBundle.getParentDirectory().getChildFile("magda_plugin_scanner");
-    if (scanner.existsAsFile())
-        return scanner;
+#if JUCE_MAC
+    if (auto found = tryCandidate(appBundle.getChildFile("Contents/MacOS/magda_plugin_scanner"));
+        found != juce::File())
+        return found;
+
+    if (auto found =
+            tryCandidate(appBundle.getParentDirectory().getChildFile("magda_plugin_scanner"));
+        found != juce::File())
+        return found;
 #elif JUCE_WINDOWS
-    auto scanner = appBundle.getParentDirectory().getChildFile("magda_plugin_scanner.exe");
-    if (scanner.existsAsFile())
-        return scanner;
+    if (auto found =
+            tryCandidate(appBundle.getParentDirectory().getChildFile("magda_plugin_scanner.exe"));
+        found != juce::File())
+        return found;
 #else
-    auto scanner = appBundle.getParentDirectory().getChildFile("magda_plugin_scanner");
-    if (scanner.existsAsFile())
-        return scanner;
+    // Resolve /proc/self/exe directly to find the real executable path.
+    // JUCE's currentApplicationFile uses dladdr which on glibc returns argv[0]
+    // for the main program. Inside an AppImage the type-2 runtime sets argv[0]
+    // to the original AppImage path (e.g. "./MAGDA-0.4.3.AppImage") rather than
+    // the mounted executable path (e.g. "/tmp/.mount_MAGDAxxxx/usr/bin/MAGDA"),
+    // so getParentDirectory() would resolve to the user's download folder
+    // instead of the AppImage's internal usr/bin where the scanner lives.
+    char buf[PATH_MAX];
+    auto len = ::readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len > 0) {
+        buf[len] = '\0';
+        juce::File selfExe(juce::String::fromUTF8(buf));
+        if (auto found =
+                tryCandidate(selfExe.getParentDirectory().getChildFile("magda_plugin_scanner"));
+            found != juce::File())
+            return found;
+    } else {
+        triedPaths.add("/proc/self/exe (readlink failed)");
+    }
+
+    // Fallback to JUCE's dladdr-based lookup (works for plain Linux installs).
+    if (auto found =
+            tryCandidate(appBundle.getParentDirectory().getChildFile("magda_plugin_scanner"));
+        found != juce::File())
+        return found;
 #endif
 
-    DBG("[ScanCoordinator] Scanner executable not found!");
+    juce::Logger::writeToLog("[ScanCoordinator] Scanner executable not found. Tried:\n  " +
+                             triedPaths.joinIntoString("\n  "));
     return {};
 }
 
