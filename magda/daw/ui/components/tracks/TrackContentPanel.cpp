@@ -787,12 +787,14 @@ int TrackContentPanel::getTrackIndexAtY(int y) const {
     int currentY = 0;
     for (size_t i = 0; i < trackLanes.size(); ++i) {
         int trackHeight = static_cast<int>(trackLanes[i]->height * verticalZoom);
+        // Only match within the track's own lane area, not automation lanes below it
         if (y >= currentY && y < currentY + trackHeight) {
             return static_cast<int>(i);
         }
-        currentY += trackHeight;
+        // Advance past both the track and its automation lanes
+        currentY += getTrackTotalHeight(static_cast<int>(i));
     }
-    return -1;  // Not in any track
+    return -1;  // Not in any track (or in an automation lane)
 }
 
 bool TrackContentPanel::isOnExistingSelection(int x, int y) const {
