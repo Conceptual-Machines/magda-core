@@ -36,7 +36,7 @@ void NoteComponent::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(bounds.reduced(0.5f), CORNER_RADIUS, strokeWidth);
 
     // Resize handle highlights
-    if (isSelected_) {
+    if (hoverLeftEdge_ || hoverRightEdge_) {
         auto handleColour = juce::Colours::white.withAlpha(0.4f);
         if (hoverLeftEdge_) {
             g.setColour(handleColour);
@@ -375,15 +375,15 @@ void NoteComponent::timerCallback() {
 }
 
 bool NoteComponent::isOnLeftEdge(int x) const {
-    return x < RESIZE_HANDLE_WIDTH && isSelected_;
+    return x < RESIZE_HANDLE_WIDTH;
 }
 
 bool NoteComponent::isOnRightEdge(int x) const {
-    return x > getWidth() - RESIZE_HANDLE_WIDTH && isSelected_;
+    return x > getWidth() - RESIZE_HANDLE_WIDTH;
 }
 
 void NoteComponent::updateCursor() {
-    if (isSelected_ && (hoverLeftEdge_ || hoverRightEdge_)) {
+    if (hoverLeftEdge_ || hoverRightEdge_) {
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
     } else if (isSelected_ && juce::ModifierKeys::currentModifiers.isShiftDown()) {
         setMouseCursor(juce::MouseCursor::CopyingCursor);
