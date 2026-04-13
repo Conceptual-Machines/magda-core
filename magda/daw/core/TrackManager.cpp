@@ -1784,6 +1784,14 @@ void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {
     }
 }
 
+void TrackManager::notifyAudioSidechainTriggered(TrackId sourceTrackId) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->audioSidechainTriggered(sourceTrackId);
+    }
+}
+
 void TrackManager::notifyDevicePropertyChanged(DeviceId deviceId) {
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {

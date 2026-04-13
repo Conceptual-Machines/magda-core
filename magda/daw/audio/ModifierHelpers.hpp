@@ -57,8 +57,9 @@ inline float mapSyncDivision(SyncDivision div) {
  * (rateType=bar/quarter/etc.) depending on whether tempoSync is enabled.
  */
 inline float mapSyncType(const ModInfo& modInfo) {
-    // MIDI trigger → TE note mode (2): resets phase on MIDI note-on
-    if (modInfo.triggerMode == LFOTriggerMode::MIDI)
+    // MIDI and Audio triggers → TE note mode (2): resets phase on triggerNoteOn()
+    // Both are gate-triggered — the only difference is the trigger source.
+    if (modInfo.triggerMode == LFOTriggerMode::MIDI || modInfo.triggerMode == LFOTriggerMode::Audio)
         return 2.0f;
     // Transport trigger or tempo sync both use transport mode (1)
     if (modInfo.tempoSync || modInfo.triggerMode == LFOTriggerMode::Transport)
@@ -93,7 +94,11 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
         lfo->depthParam->setParameter(1.0f, juce::dontSendNotification);
     }
 
-    lfo->rateParam->setParameter(modInfo.rate, juce::dontSendNotification);
+    // In musical mode, TE uses rateParam as a multiplier on the tempo.
+    // Set to 1.0 so the musical division alone controls the LFO period.
+    // In Hz mode, pass the raw rate directly.
+    float teRate = modInfo.tempoSync ? 1.0f : modInfo.rate;
+    lfo->rateParam->setParameter(teRate, juce::dontSendNotification);
     lfo->phaseParam->setParameter(modInfo.phaseOffset, juce::dontSendNotification);
     lfo->syncTypeParam->setParameter(syncType, juce::dontSendNotification);
     lfo->rateTypeParam->setParameter(rateType, juce::dontSendNotification);

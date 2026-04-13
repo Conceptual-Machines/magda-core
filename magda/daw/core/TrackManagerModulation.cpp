@@ -812,9 +812,19 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 }
             }
 
-            // Process trigger first, then stop conditions override
-            // (stop events always get the final say to prevent race conditions)
-            if (shouldTrigger) {
+            // One-shot re-arm: MIDI re-arms on the next note-on so each note
+            // gets its own cycle. Audio re-arms when the gate closes so the
+            // next transient can start a fresh cycle.
+            if (mod.oneShot && mod.oneShotComplete) {
+                if (mod.triggerMode == LFOTriggerMode::MIDI && shouldTrigger)
+                    mod.oneShotComplete = false;
+                else if (mod.triggerMode == LFOTriggerMode::Audio && !mod.audioGateOpen)
+                    mod.oneShotComplete = false;
+            }
+
+            // Process trigger (blocked while one-shot is running or completed)
+            bool triggerBlocked = mod.oneShotComplete || (mod.oneShot && mod.running);
+            if (shouldTrigger && !triggerBlocked) {
                 mod.phase = 0.0f;
                 mod.triggered = true;
                 mod.triggerCount++;
@@ -824,11 +834,15 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             }
 
             // Handle note-off: stop MIDI-triggered LFOs
-            if (mod.triggerMode == LFOTriggerMode::MIDI && midiNoteOff && mod.running)
+            // (skip in one-shot mode — let the curve play through to completion)
+            if (mod.triggerMode == LFOTriggerMode::MIDI && midiNoteOff && mod.running &&
+                !mod.oneShot)
                 mod.running = false;
 
             // Handle audio gate close: stop Audio-triggered LFOs
-            if (mod.triggerMode == LFOTriggerMode::Audio && !mod.audioGateOpen && mod.running)
+            // (skip in one-shot mode — let the curve play through to completion)
+            if (mod.triggerMode == LFOTriggerMode::Audio && !mod.audioGateOpen && mod.running &&
+                !mod.oneShot)
                 mod.running = false;
 
             // Handle transport stop: stop Transport-triggered LFOs and reset phase
@@ -855,6 +869,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                     if (mod.phase >= 1.0f) {
                         mod.phase = 1.0f;
                         mod.running = false;
+                        mod.oneShotComplete = true;
                     }
                 } else {
                     // Loop: wrap at 1.0
@@ -871,28 +886,42 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                     mod.value = ModulatorEngine::generateWaveformForMod(mod, effectivePhase);
                 }
             } else {
-                // Not running: hold oneshot end value, otherwise no output
-                if (!mod.oneShot)
+                // Not running: one-shot holds end value, otherwise no output
+                if (mod.oneShot)
+                    mod.value = ModulatorEngine::generateOneShotEndValue(mod);
+                else
                     mod.value = 0.0f;
             }
         }
         return mod.running != wasRunning;
     };
 
+    // Source tracks that fired audio triggers — need TE LFO retrigger
+    std::set<TrackId> audioTriggeredSources;
+
+    // Helper to check mods for audio triggers after updateMod
+    auto checkAudioTrigger = [&audioTriggeredSources](const ModInfo& mod, TrackId sourceTrackId) {
+        if (mod.triggered && mod.triggerMode == LFOTriggerMode::Audio)
+            audioTriggeredSources.insert(sourceTrackId);
+    };
+
     // Recursive lambda to update mods in chain elements
     // Returns true if any mod's running state changed
-    std::function<bool(ChainElement&, bool, bool, float)> updateElementMods =
-        [&](ChainElement& element, bool midiTriggered, bool midiNoteOff, float audioPeak) -> bool {
+    std::function<bool(ChainElement&, bool, bool, float, TrackId)> updateElementMods =
+        [&](ChainElement& element, bool midiTriggered, bool midiNoteOff, float audioPeak,
+            TrackId ownerTrackId) -> bool {
         bool changed = false;
         if (isDevice(element)) {
             DeviceInfo& device = magda::getDevice(element);
             bool deviceMidiTriggered = midiTriggered;
             bool deviceMidiNoteOff = midiNoteOff;
             float deviceAudioPeak = audioPeak;
+            TrackId audioSource = ownerTrackId;  // default: self-track
 
             // Cross-track sidechain: replace self triggers with source track's
             if (device.sidechain.sourceTrackId != INVALID_TRACK_ID) {
                 auto srcId = device.sidechain.sourceTrackId;
+                audioSource = srcId;
                 // Replace self triggers with source track's MIDI triggers
                 deviceMidiTriggered = midiNoteOnTracks.count(srcId) > 0;
                 deviceMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
@@ -904,16 +933,19 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
             for (auto& mod : device.mods) {
                 changed |= updateMod(mod, deviceMidiTriggered, deviceMidiNoteOff, deviceAudioPeak);
+                checkAudioTrigger(mod, audioSource);
             }
         } else if (isRack(element)) {
             RackInfo& rack = magda::getRack(element);
             bool rackMidiTriggered = midiTriggered;
             bool rackMidiNoteOff = midiNoteOff;
             float rackAudioPeak = audioPeak;
+            TrackId rackAudioSource = ownerTrackId;
 
             // Check rack-level sidechain source — replaces self triggers
             if (rack.sidechain.sourceTrackId != INVALID_TRACK_ID) {
                 auto srcId = rack.sidechain.sourceTrackId;
+                rackAudioSource = srcId;
                 rackMidiTriggered = midiNoteOnTracks.count(srcId) > 0;
                 rackMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
                 if (srcId >= 0 && srcId < kMaxBusTracks)
@@ -927,6 +959,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                         const auto& dev = magda::getDevice(chainElement);
                         if (dev.sidechain.sourceTrackId != INVALID_TRACK_ID) {
                             auto srcId = dev.sidechain.sourceTrackId;
+                            rackAudioSource = srcId;
                             rackMidiTriggered = midiNoteOnTracks.count(srcId) > 0;
                             rackMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
                             if (srcId >= 0 && srcId < kMaxBusTracks)
@@ -938,17 +971,13 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             }
 
             for (auto& mod : rack.mods) {
-                bool wasRunningBefore = mod.running;
                 changed |= updateMod(mod, rackMidiTriggered, rackMidiNoteOff, rackAudioPeak);
-                if (mod.running && !wasRunningBefore)
-                    DBG("updateAllMods: rack mod "
-                        << mod.id << " triggered! rackId=" << rack.id
-                        << " rackMidiTriggered=" << (int)rackMidiTriggered);
+                checkAudioTrigger(mod, rackAudioSource);
             }
             for (auto& chain : rack.chains) {
                 for (auto& chainElement : chain.elements) {
                     changed |= updateElementMods(chainElement, rackMidiTriggered, rackMidiNoteOff,
-                                                 rackAudioPeak);
+                                                 rackAudioPeak, ownerTrackId);
                 }
             }
         }
@@ -968,12 +997,13 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         // Track-level mods (global scope)
         for (auto& mod : track.mods) {
             trackChanged |= updateMod(mod, trackMidiTriggered, trackMidiNoteOff, trackAudioPeak);
+            checkAudioTrigger(mod, track.id);
         }
 
         // Device/rack-level mods
         for (auto& element : track.chainElements) {
-            trackChanged |=
-                updateElementMods(element, trackMidiTriggered, trackMidiNoteOff, trackAudioPeak);
+            trackChanged |= updateElementMods(element, trackMidiTriggered, trackMidiNoteOff,
+                                              trackAudioPeak, track.id);
         }
         if (trackChanged)
             tracksNeedingSync.push_back(track.id);
@@ -982,6 +1012,11 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
     // Notify TE to sync assignment values for tracks where running state changed
     for (auto trackId : tracksNeedingSync) {
         notifyDeviceModifiersChanged(trackId);
+    }
+
+    // Retrigger TE LFOs for audio-triggered mods (same path as MIDI sidechain)
+    for (auto sourceId : audioTriggeredSources) {
+        notifyAudioSidechainTriggered(sourceId);
     }
 }
 

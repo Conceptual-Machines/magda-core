@@ -66,6 +66,11 @@ class TrackManagerListener {
         juce::ignoreUnused(trackId);
     }
 
+    // Called when an audio-triggered mod fires (gate opens) — sourceTrackId is the sidechain source
+    virtual void audioSidechainTriggered(TrackId sourceTrackId) {
+        juce::ignoreUnused(sourceTrackId);
+    }
+
     // Called when a device parameter changes (gain, level, etc.)
     virtual void devicePropertyChanged(DeviceId deviceId) {
         juce::ignoreUnused(deviceId);
@@ -663,6 +668,7 @@ class TrackManager {
     void notifyMasterChannelChanged();
     void notifyTrackSelectionChanged(TrackId trackId);
     void notifyDeviceModifiersChanged(TrackId trackId);
+    void notifyAudioSidechainTriggered(TrackId sourceTrackId);
     void notifyDevicePropertyChanged(DeviceId deviceId);
     void notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue);
     void notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex, float value);

@@ -399,6 +399,12 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     updateMidiRoutingForSelection();
 }
 
+void AudioBridge::audioSidechainTriggered(TrackId sourceTrackId) {
+    // Audio trigger fired — retrigger only Audio-mode TE LFOs (MIDI-mode ones
+    // are triggered on the audio thread by SidechainMonitorPlugin)
+    pluginManager_.triggerSidechainNoteOn(sourceTrackId, LFOTriggerMode::Audio);
+}
+
 void AudioBridge::macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
                                     float value) {
     pluginManager_.setMacroValue(trackId, isRack, id, macroIndex, value);

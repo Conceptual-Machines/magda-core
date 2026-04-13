@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 
 #include "../core/DeviceInfo.hpp"
 #include "../core/TypeIds.hpp"
@@ -337,13 +338,18 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     void triggerLFONoteOn(TrackId trackId);
 
     /**
-     * @brief Trigger note-on on all cached sidechain LFO modifiers for a source track
+     * @brief Trigger note-on on cached sidechain LFO modifiers for a source track
      *
      * Thread-safe: can be called from audio or MIDI thread.
      * Uses a pre-computed cache of LFO modifier pointers, so no TrackManager
      * scan is needed. Handles both self-track and cross-track LFO triggering.
+     *
+     * @param sourceTrackId The sidechain source track
+     * @param modeFilter If set, only trigger LFOs whose MAGDA mod uses this trigger mode.
+     *                   Pass std::nullopt to trigger all (legacy behavior).
      */
-    void triggerSidechainNoteOn(TrackId sourceTrackId);
+    void triggerSidechainNoteOn(TrackId sourceTrackId,
+                                std::optional<LFOTriggerMode> modeFilter = std::nullopt);
 
     /**
      * @brief Gate (zero) all cached LFO values for a track when no notes are held.
@@ -550,6 +556,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
         static constexpr int kMaxLFOs = 64;
         std::array<te::LFOModifier*, kMaxLFOs> lfos{};
         std::array<bool, kMaxLFOs> isCrossTrack{};  // true = sidechain destination on another track
+        std::array<LFOTriggerMode, kMaxLFOs> trigMode{};  // trigger mode of corresponding MAGDA mod
         int count = 0;
     };
     static constexpr int kMaxCacheTracks = 512;

@@ -150,7 +150,7 @@ struct CurveSnapshotHolder {
 
     // One-shot state: audio thread tracks phase to detect cycle completion
     std::atomic<float> previousPhase_{-1.0f};
-    std::atomic<bool> oneShotCompleted_{false};
+    std::atomic<bool> oneShotCompleted_{true};
 
     /**
      * @brief Message thread: copy curve data from ModInfo into the inactive

@@ -77,7 +77,7 @@ void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         if (hasNoteOn) {
             triggerBus.triggerNoteOn(sourceTrackId_);
             if (pluginManager_)
-                pluginManager_->triggerSidechainNoteOn(sourceTrackId_);
+                pluginManager_->triggerSidechainNoteOn(sourceTrackId_, LFOTriggerMode::MIDI);
         }
 
         bus.endBlock(sourceTrackId_);

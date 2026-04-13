@@ -511,6 +511,329 @@ TEST_CASE("Audio trigger - self-track trigger uses own peak", "[sidechain][audio
 // Simulated Drum Pattern Tests
 // ============================================================================
 
+// ============================================================================
+// One-Shot Mode Tests
+// ============================================================================
+
+TEST_CASE("Audio trigger - one-shot plays through once and stops",
+          "[sidechain][audio-trigger][one-shot]") {
+    AudioTriggerFixture f;
+    auto& mod = f.getMod();
+    mod.oneShot = true;
+    mod.rate = 2.0f;  // 2 Hz — completes in 0.5s
+
+    // Trigger with audio
+    f.setPeak(0.5f);
+    f.tick(0.016);
+    REQUIRE(mod.running);
+    REQUIRE(mod.triggerCount == 1);
+
+    // Advance until phase completes (0.5s at 2Hz)
+    for (int i = 0; i < 40; ++i)
+        f.tick(0.016);  // ~640ms total
+
+    REQUIRE(mod.phase == Catch::Approx(1.0f));
+    REQUIRE_FALSE(mod.running);
+    REQUIRE(mod.oneShotComplete);
+}
+
+TEST_CASE("Audio trigger - one-shot does not retrigger while gate is still open",
+          "[sidechain][audio-trigger][one-shot]") {
+    AudioTriggerFixture f;
+    auto& mod = f.getMod();
+    mod.oneShot = true;
+    mod.rate = 10.0f;  // Fast — completes in 0.1s
+
+    // Trigger
+    f.setPeak(0.5f);
+    f.tick(0.016);
+    REQUIRE(mod.triggerCount == 1);
+
+    // Run to completion while gate stays open
+    for (int i = 0; i < 20; ++i)
+        f.tick(0.016);
+
+    REQUIRE(mod.oneShotComplete);
+    REQUIRE(mod.triggerCount == 1);  // No re-trigger
+
+    // Even more ticks with gate still open — still no re-trigger
+    f.setPeak(0.8f);
+    f.tick(0.016);
+    REQUIRE(mod.triggerCount == 1);
+    REQUIRE_FALSE(mod.running);
+}
+
+TEST_CASE("Audio trigger - one-shot re-arms after gate closes and re-opens",
+          "[sidechain][audio-trigger][one-shot]") {
+    AudioTriggerFixture f;
+    auto& mod = f.getMod();
+    mod.oneShot = true;
+    mod.rate = 10.0f;
+
+    // First trigger + complete
+    f.setPeak(0.5f);
+    f.tick(0.016);
+    for (int i = 0; i < 20; ++i)
+        f.tick(0.016);
+    REQUIRE(mod.oneShotComplete);
+    REQUIRE(mod.triggerCount == 1);
+
+    // Gate closes (silence) — re-arms
+    f.setPeak(0.02f);
+    f.tick(0.016);
+    REQUIRE_FALSE(mod.audioGateOpen);
+    REQUIRE_FALSE(mod.oneShotComplete);
+
+    // Second transient — should trigger again
+    f.setPeak(0.6f);
+    f.tick(0.016);
+    REQUIRE(mod.running);
+    REQUIRE(mod.triggerCount == 2);
+    REQUIRE(mod.phase < 0.5f);
+}
+
+TEST_CASE("Audio trigger - one-shot does not retrigger when gate bounces mid-cycle",
+          "[sidechain][audio-trigger][one-shot]") {
+    AudioTriggerFixture f;
+    auto& mod = f.getMod();
+    mod.oneShot = true;
+    mod.rate = 1.0f;  // Slow — 1s cycle
+
+    // Initial trigger
+    f.setPeak(0.5f);
+    f.tick(0.016);
+    REQUIRE(mod.running);
+    REQUIRE(mod.triggerCount == 1);
+    float phaseAfterTrigger = mod.phase;
+
+    // Advance a bit
+    f.tick(0.016);
+    f.tick(0.016);
+    float phaseMidCycle = mod.phase;
+    REQUIRE(phaseMidCycle > phaseAfterTrigger);
+
+    // Gate bounces: audio drops below threshold then comes back
+    f.setPeak(0.02f);
+    f.tick(0.016);  // Gate closes
+    REQUIRE_FALSE(mod.audioGateOpen);
+    REQUIRE(mod.running);  // Still running (one-shot)
+
+    f.setPeak(0.6f);
+    f.tick(0.016);  // Gate re-opens — should NOT retrigger
+    REQUIRE(mod.audioGateOpen);
+    REQUIRE(mod.running);
+    REQUIRE(mod.triggerCount == 1);      // No retrigger!
+    REQUIRE(mod.phase > phaseMidCycle);  // Phase kept advancing, not reset
+}
+
+TEST_CASE("Audio trigger - one-shot continues running after gate closes mid-cycle",
+          "[sidechain][audio-trigger][one-shot]") {
+    AudioTriggerFixture f;
+    auto& mod = f.getMod();
+    mod.oneShot = true;
+    mod.rate = 2.0f;  // Slow — 0.5s cycle
+
+    // Trigger
+    f.setPeak(0.5f);
+    f.tick(0.016);
+    REQUIRE(mod.running);
+
+    // Gate closes mid-cycle — one-shot should keep running
+    f.setPeak(0.02f);
+    f.tick(0.016);
+    REQUIRE_FALSE(mod.audioGateOpen);
+    REQUIRE(mod.running);       // Still running! One-shot plays through
+    REQUIRE(mod.phase < 1.0f);  // Not finished yet
+}
+
+TEST_CASE("Audio trigger - one-shot drum pattern triggers once per hit",
+          "[sidechain][audio-trigger][one-shot][pattern]") {
+    AudioTriggerFixture f;
+    auto& mod = f.getMod();
+    mod.oneShot = true;
+    mod.rate = 4.0f;  // Fast enough to complete between hits
+
+    // Simulate 4 kicks at 120 BPM (500ms apart)
+    constexpr int ticksPerBeat = 31;
+    constexpr int numBeats = 4;
+
+    for (int beat = 0; beat < numBeats; ++beat) {
+        // Kick transient
+        f.setPeak(0.8f);
+        f.tick(0.016);
+
+        // Tail and silence
+        for (int t = 1; t < ticksPerBeat; ++t) {
+            float level = (t < 3) ? 0.15f : 0.02f;
+            f.setPeak(level);
+            f.tick(0.016);
+        }
+    }
+
+    // Each kick triggers one cycle (gate closes between hits, re-arming)
+    REQUIRE(mod.triggerCount == 4);
+}
+
+TEST_CASE("MIDI trigger - one-shot plays through after note-off",
+          "[sidechain][midi-trigger][one-shot]") {
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+    auto& bus = SidechainTriggerBus::getInstance();
+    bus.clearAll();
+
+    TrackId trackId = tm.createTrack();
+    DeviceInfo device;
+    device.name = "Synth";
+    DeviceId deviceId = tm.addDeviceToTrack(trackId, device);
+
+    ChainNodePath devicePath;
+    devicePath.trackId = trackId;
+    devicePath.topLevelDeviceId = deviceId;
+
+    tm.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setDeviceModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
+
+    auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
+    mod.oneShot = true;
+    mod.rate = 2.0f;
+
+    // Note-on triggers
+    bus.triggerNoteOn(trackId);
+    tm.updateAllMods(0.016, 120.0, false, false, false);
+    REQUIRE(mod.running);
+    REQUIRE(mod.triggerCount == 1);
+
+    // Note-off — one-shot should keep running
+    bus.triggerNoteOff(trackId);
+    tm.updateAllMods(0.016, 120.0, false, false, false);
+    REQUIRE(mod.running);  // Still running through one-shot
+
+    // Run to completion
+    for (int i = 0; i < 40; ++i)
+        tm.updateAllMods(0.016, 120.0, false, false, false);
+
+    REQUIRE(mod.oneShotComplete);
+    REQUIRE_FALSE(mod.running);
+    REQUIRE(mod.triggerCount == 1);
+
+    // Cleanup
+    tm.clearAllTracks();
+    bus.clearAll();
+}
+
+TEST_CASE("MIDI trigger - one-shot re-arms and re-triggers on next note-on",
+          "[sidechain][midi-trigger][one-shot]") {
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+    auto& bus = SidechainTriggerBus::getInstance();
+    bus.clearAll();
+
+    TrackId trackId = tm.createTrack();
+    DeviceInfo device;
+    device.name = "Synth";
+    DeviceId deviceId = tm.addDeviceToTrack(trackId, device);
+
+    ChainNodePath devicePath;
+    devicePath.trackId = trackId;
+    devicePath.topLevelDeviceId = deviceId;
+
+    tm.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setDeviceModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
+
+    auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
+    mod.oneShot = true;
+    mod.rate = 10.0f;
+
+    // First note: trigger + complete
+    bus.triggerNoteOn(trackId);
+    tm.updateAllMods(0.016, 120.0, false, false, false);
+    for (int i = 0; i < 20; ++i)
+        tm.updateAllMods(0.016, 120.0, false, false, false);
+    REQUIRE(mod.oneShotComplete);
+
+    // Note-off mid-hold (cycle already done) — does NOT re-arm for MIDI
+    bus.triggerNoteOff(trackId);
+    tm.updateAllMods(0.016, 120.0, false, false, false);
+    REQUIRE(mod.oneShotComplete);  // Still complete — MIDI re-arms on next note-on
+
+    // Second note-on: re-arms AND triggers in the same tick
+    bus.triggerNoteOn(trackId);
+    tm.updateAllMods(0.016, 120.0, false, false, false);
+    REQUIRE_FALSE(mod.oneShotComplete);
+    REQUIRE(mod.running);
+    REQUIRE(mod.triggerCount == 2);
+
+    // Cleanup
+    tm.clearAllTracks();
+    bus.clearAll();
+}
+
+TEST_CASE("MIDI trigger - one-shot triggers every note even without note-off between",
+          "[sidechain][midi-trigger][one-shot]") {
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+    auto& bus = SidechainTriggerBus::getInstance();
+    bus.clearAll();
+
+    TrackId trackId = tm.createTrack();
+    DeviceInfo device;
+    device.name = "Synth";
+    DeviceId deviceId = tm.addDeviceToTrack(trackId, device);
+
+    ChainNodePath devicePath;
+    devicePath.trackId = trackId;
+    devicePath.topLevelDeviceId = deviceId;
+
+    tm.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setDeviceModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
+
+    auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
+    mod.oneShot = true;
+    mod.rate = 10.0f;
+
+    // Simulate 3 rapid note-ons with cycle completing between each
+    for (int note = 0; note < 3; ++note) {
+        bus.triggerNoteOn(trackId);
+        tm.updateAllMods(0.016, 120.0, false, false, false);
+        REQUIRE(mod.running);
+
+        // Run to completion
+        for (int i = 0; i < 20; ++i)
+            tm.updateAllMods(0.016, 120.0, false, false, false);
+        REQUIRE(mod.oneShotComplete);
+    }
+
+    REQUIRE(mod.triggerCount == 3);
+
+    // Cleanup
+    tm.clearAllTracks();
+    bus.clearAll();
+}
+
+TEST_CASE("Audio trigger - looping mode still re-triggers normally (no one-shot flag)",
+          "[sidechain][audio-trigger]") {
+    AudioTriggerFixture f;
+    auto& mod = f.getMod();
+    mod.oneShot = false;  // Explicitly looping
+    mod.rate = 10.0f;
+
+    // Trigger
+    f.setPeak(0.5f);
+    f.tick(0.016);
+    REQUIRE(mod.running);
+
+    // Run past one full cycle — phase should wrap, not clamp
+    for (int i = 0; i < 20; ++i)
+        f.tick(0.016);
+    REQUIRE(mod.phase < 1.0f);  // Wrapped around
+    REQUIRE(mod.running);       // Still running
+    REQUIRE_FALSE(mod.oneShotComplete);
+}
+
+// ============================================================================
+// Simulated Drum Pattern Tests
+// ============================================================================
+
 TEST_CASE("Audio trigger - simulated 4/4 kick pattern triggers on every beat",
           "[sidechain][audio-trigger][pattern]") {
     AudioTriggerFixture f;

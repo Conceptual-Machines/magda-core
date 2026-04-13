@@ -143,7 +143,8 @@ struct ModInfo {
     bool running = false;       // Whether LFO is actively running (for triggered modes)
 
     // Loop/One-shot mode
-    bool oneShot = false;  // If true, play once and hold at end value
+    bool oneShot = false;          // If true, play once and hold at end value
+    bool oneShotComplete = false;  // Runtime: true after one-shot finishes, cleared on gate reset
 
     // MSEG loop region (for Custom waveform)
     bool useLoopRegion = false;  // Enable loop between loopStart and loopEnd
