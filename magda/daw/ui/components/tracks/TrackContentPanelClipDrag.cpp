@@ -131,9 +131,9 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
         return;
     }
 
-    // Check for Alt+drag to duplicate (mark for duplication, created in finishMultiClipDrag)
-    bool altHeld = juce::ModifierKeys::getCurrentModifiers().isAltDown();
-    if (altHeld && !isMultiClipDuplicating_) {
+    // Shift+drag to duplicate (matching single-clip behaviour)
+    bool shiftHeld = juce::ModifierKeys::getCurrentModifiers().isShiftDown();
+    if (shiftHeld && !isMultiClipDuplicating_) {
         isMultiClipDuplicating_ = true;
     }
 
@@ -242,9 +242,10 @@ void TrackContentPanel::finishMultiClipDrag() {
 
     bool hasTrackChange = trackDelta != 0;
     bool isCompound = multiClipDragInfos_.size() > 1 || hasTrackChange;
+    std::unordered_set<ClipId> duplicatedClipIds;
 
     if (isMultiClipDuplicating_) {
-        // Alt+drag duplicate: create duplicates at final positions through undo system
+        // Shift+drag duplicate: create duplicates at final positions through undo system
         if (isCompound) {
             UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
         }
@@ -260,23 +261,17 @@ void TrackContentPanel::finishMultiClipDrag() {
             commands.push_back(std::move(cmd));
         }
 
-        std::unordered_set<ClipId> newClipIds;
         for (auto& cmd : commands) {
             DuplicateClipCommand* cmdPtr = cmd.get();
             UndoManager::getInstance().executeCommand(std::move(cmd));
             ClipId dupId = cmdPtr->getDuplicatedClipId();
             if (dupId != INVALID_CLIP_ID) {
-                newClipIds.insert(dupId);
+                duplicatedClipIds.insert(dupId);
             }
         }
 
         if (isCompound) {
             UndoManager::getInstance().endCompoundOperation();
-        }
-
-        // Select the duplicates
-        if (!newClipIds.empty()) {
-            SelectionManager::getInstance().selectClips(newClipIds);
         }
     } else {
         // Normal move: apply to original clips through undo system
@@ -316,6 +311,11 @@ void TrackContentPanel::finishMultiClipDrag() {
 
     // Refresh positions from ClipManager
     updateClipComponentPositions();
+
+    // Select duplicated clips instead of originals
+    if (!duplicatedClipIds.empty()) {
+        SelectionManager::getInstance().selectClips(duplicatedClipIds);
+    }
 }
 
 void TrackContentPanel::cancelMultiClipDrag() {

@@ -2202,8 +2202,12 @@ void ClipComponent::updateCursor(bool isAltDown, bool isShiftDown) {
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
         }
     } else if (isClipSelected) {
-        // Grab cursor when selected (can drag)
-        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+        // Shift = copy cursor, otherwise grab cursor
+        if (isShiftDown) {
+            setMouseCursor(juce::MouseCursor::CopyingCursor);
+        } else {
+            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+        }
     } else {
         // Normal cursor when not selected (need to click to select first)
         setMouseCursor(juce::MouseCursor::NormalCursor);
