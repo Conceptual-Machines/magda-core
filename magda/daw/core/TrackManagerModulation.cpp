@@ -711,8 +711,9 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
     // Compute per-track MIDI trigger signals for LFOs.
     // Both external MIDI (pendingMidiNoteOns_) and internal MIDI (SidechainTriggerBus)
-    // feed into the trigger signal, but held-note tracking (for gate-close detection)
-    // uses only external MIDI to avoid corruption from imprecise bus note-off counts.
+    // feed into note-on retriggering. For sidechain MIDI, note-off is intentionally
+    // ignored: external sidechain LFOs are note-on-only retriggers, not gated notes.
+    // Held-note tracking remains only for direct external MIDI on the destination track.
     std::set<TrackId> midiNoteOnTracks;
     std::set<TrackId> midiAllNotesOffTracks;
     {
@@ -748,12 +749,9 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 midiAllNotesOffTracks.insert(trackId);
         }
 
-        // Bus gate-close: if bus has note-offs and no external held notes,
-        // treat as gate close
-        for (const auto& [id, count] : busNoteOffsThisTick) {
-            if (count > 0 && midiHeldNotes_[id] == 0 && busNoteOnsThisTick.count(id) == 0)
-                midiAllNotesOffTracks.insert(id);
-        }
+        // Intentionally ignore bus note-offs. Cross-track MIDI sidechain is
+        // note-on-only retriggering, so stopping on sidechain note-off creates
+        // ambiguous edge cases when off/on land in the same mod-timer tick.
     }
 
     // Lambda to update a single mod's phase and value.
