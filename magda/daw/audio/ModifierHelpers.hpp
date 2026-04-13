@@ -118,6 +118,15 @@ inline void triggerLFONoteOnWithReset(te::LFOModifier* lfo, bool forceZeroValue 
     if (holder)
         holder->resetOneShot();
     lfo->triggerNoteOn(forceZeroValue);
+    // Re-assert one-shot reset AFTER triggerNoteOn to handle the race where a
+    // concurrent evaluateCallback (from the destination track's updateStreamTime
+    // on another audio thread) overwrites previousPhase_ between resetOneShot()
+    // and triggerNoteOn(). Without this, the phase jump from mid-cycle to 0
+    // falsely triggers one-shot completion, leaving the LFO stuck at endValue().
+    if (holder) {
+        holder->oneShotCompleted_.store(false, std::memory_order_release);
+        holder->previousPhase_.store(lfo->getCurrentPhase(), std::memory_order_release);
+    }
     float phaseAfter = lfo->getCurrentPhase();
     float valueAfter = lfo->getCurrentValue();
     DBG("[SC-RETRIG] phase: " << phaseBefore << " -> " << phaseAfter << " value: " << valueBefore

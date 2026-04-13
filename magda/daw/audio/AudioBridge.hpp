@@ -436,8 +436,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
         midiActivity_.triggerActivity(trackId);
         // Write to sidechain trigger bus so updateAllMods() picks up live MIDI too
         SidechainTriggerBus::getInstance().triggerNoteOn(trackId);
-        // Trigger all cached sidechain LFOs (self-track + cross-track) via pre-computed cache
-        pluginManager_.triggerSidechainNoteOn(trackId);
+        // LFO retrigger is handled on the audio thread by SidechainMonitorPlugin
+        // (which calls PluginManager::triggerSidechainNoteOn). Calling it here
+        // from the MIDI thread would double-trigger and race with the audio
+        // thread's ramp state (non-atomic floats in TE's Ramp).
     }
 
     /**
