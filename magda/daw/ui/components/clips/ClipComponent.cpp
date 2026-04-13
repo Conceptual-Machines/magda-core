@@ -1644,12 +1644,15 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                                                                       targetTrackId, dupTempo);
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
-                    if (safeThis == nullptr)
-                        return;
+                    // Select the duplicate — must happen before SafePointer check
+                    // because rebuildClipComponents() during execute destroys this
+                    // component, making safeThis null and skipping the selection.
                     ClipId newClipId = cmdPtr->getDuplicatedClipId();
                     if (newClipId != INVALID_CLIP_ID) {
                         SelectionManager::getInstance().selectClip(newClipId);
                     }
+                    if (safeThis == nullptr)
+                        return;
                     // Reset duplication state
                     isDuplicating_ = false;
                     duplicateClipId_ = INVALID_CLIP_ID;
