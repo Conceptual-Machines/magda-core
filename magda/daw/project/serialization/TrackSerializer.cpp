@@ -329,7 +329,6 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("visibleParameters", juce::var(visibleParamsArray));
 
     // Gain stage
-    obj->setProperty("gainParameterIndex", device.gainParameterIndex);
     obj->setProperty("gainValue", device.gainValue);
     obj->setProperty("gainDb", device.gainDb);
 
@@ -444,7 +443,6 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     }
 
     // Gain stage
-    outDevice.gainParameterIndex = obj->getProperty("gainParameterIndex");
     outDevice.gainValue = obj->getProperty("gainValue");
     outDevice.gainDb = obj->getProperty("gainDb");
 
