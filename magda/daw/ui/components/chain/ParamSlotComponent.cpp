@@ -49,7 +49,8 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
                            .onRackMacroLinked = onRackMacroLinked,
                            .onTrackMacroLinked = onTrackMacroLinked,
                            .onRackMacroUnlinked = onRackMacroUnlinked,
-                           .onTrackMacroUnlinked = onTrackMacroUnlinked});
+                           .onTrackMacroUnlinked = onTrackMacroUnlinked,
+                           .onShowAutomationLane = onShowAutomationLane});
     };
     valueSlider_.setRightClickEditsText(false);
 
@@ -398,8 +399,18 @@ void ParamSlotComponent::setFonts(const juce::Font& labelFont, const juce::Font&
 // Painting
 // ============================================================================
 
-void ParamSlotComponent::paint(juce::Graphics& /*g*/) {
-    // Selection highlight is drawn in paintOverChildren()
+void ParamSlotComponent::paint(juce::Graphics& g) {
+    // Draw cell background for toggle/combo widgets (TextSlider draws its own)
+    if ((boolToggle_ && boolToggle_->isVisible()) ||
+        (discreteCombo_ && discreteCombo_->isVisible())) {
+        auto bounds = getLocalBounds();
+        int labelHeight = juce::jmin(12, getHeight() / 3);
+        auto valueBounds = bounds.withTrimmedTop(labelHeight);
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRect(valueBounds);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRect(valueBounds);
+    }
 }
 
 void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
@@ -450,9 +461,11 @@ void ParamSlotComponent::resized() {
     nameLabel_.setBounds(bounds.removeFromTop(labelHeight));
 
     if (discreteCombo_ && discreteCombo_->isVisible()) {
-        discreteCombo_->setBounds(bounds);
+        discreteCombo_->setBounds(bounds.reduced(2));
     } else if (boolToggle_ && boolToggle_->isVisible()) {
-        auto toggleBounds = bounds.withSizeKeepingCentre(bounds.getWidth(), 20);
+        // Centre checkbox in the cell — needs enough space for JUCE tick rendering
+        int size = juce::jmin(28, bounds.getHeight(), bounds.getWidth());
+        auto toggleBounds = bounds.withSizeKeepingCentre(size, size);
         boolToggle_->setBounds(toggleBounds);
     } else {
         valueSlider_.setBounds(bounds);
@@ -495,7 +508,8 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
                            .onRackMacroLinked = onRackMacroLinked,
                            .onTrackMacroLinked = onTrackMacroLinked,
                            .onRackMacroUnlinked = onRackMacroUnlinked,
-                           .onTrackMacroUnlinked = onTrackMacroUnlinked});
+                           .onTrackMacroUnlinked = onTrackMacroUnlinked,
+                           .onShowAutomationLane = onShowAutomationLane});
         return;
     }
 

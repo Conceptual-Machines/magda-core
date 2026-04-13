@@ -41,6 +41,9 @@ class ParamSlotComponent : public juce::Component,
     void setParamIndex(int paramIndex) {
         paramIndex_ = paramIndex;
     }
+    int getParamIndex() const {
+        return paramIndex_;
+    }
 
     // Set the device this param belongs to (for mod/macro lookups)
     void setDeviceId(magda::DeviceId deviceId) {
@@ -124,6 +127,7 @@ class ParamSlotComponent : public juce::Component,
     std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
         onMacroAmountChanged;
     std::function<void(int macroIndex, float value)> onMacroValueChanged;
+    std::function<void()> onShowAutomationLane;
 
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;

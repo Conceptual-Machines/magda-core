@@ -44,6 +44,11 @@ struct ParameterInfo {
     // Discrete values (if scale == Discrete)
     std::vector<juce::String> choices;  // e.g., {"Off", "Low", "High"}
 
+    // Display text lookup table — getText() results at each normalized step.
+    // Index i corresponds to normalized value i/(size-1).
+    // Used by the UI formatter instead of computing from scale/range.
+    std::vector<juce::String> valueTable;
+
     // Modulation constraints
     bool modulatable = true;         // Can mods affect this parameter?
     bool bipolarModulation = false;  // Default unipolar; set true for params that need bipolar

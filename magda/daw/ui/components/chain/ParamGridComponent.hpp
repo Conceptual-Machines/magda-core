@@ -79,6 +79,14 @@ class ParamGridComponent : public juce::Component {
     std::function<void()> onPrevPage;
     std::function<void()> onNextPage;
 
+    // Parameter learn mode
+    void setLearnMode(bool active);
+    bool isLearnMode() const {
+        return learnMode_;
+    }
+    void highlightSlot(int slotIndex);
+    void clearHighlight();
+
     void resized() override;
 
   private:
@@ -88,6 +96,8 @@ class ParamGridComponent : public juce::Component {
     std::unique_ptr<juce::Label> pageLabel_;
     int currentPage_ = 0;
     int totalPages_ = 1;
+    bool learnMode_ = false;
+    int highlightedSlot_ = -1;
 
     static int getParamsPerPage() {
         return PARAMS_PER_ROW * 4;

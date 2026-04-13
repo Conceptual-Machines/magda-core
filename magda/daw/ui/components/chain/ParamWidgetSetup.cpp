@@ -1,10 +1,23 @@
 #include "ParamWidgetSetup.hpp"
 
 #include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
 void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& info) {
+    // If we have a full value table from the plugin, use it directly
+    if (!info.valueTable.empty()) {
+        slider.setValueFormatter([vt = info.valueTable](double normalized) {
+            int idx = juce::jlimit(0, static_cast<int>(vt.size()) - 1,
+                                   static_cast<int>(std::round(normalized * (vt.size() - 1))));
+            return vt[static_cast<size_t>(idx)].trim();
+        });
+        // No parser — editing raw plugin display text doesn't make sense
+        slider.setValueParser(nullptr);
+        return;
+    }
+
     if (info.scale == magda::ParameterScale::Logarithmic && info.unit == "Hz") {
         // Frequency — show as Hz / kHz
         slider.setValueFormatter([info](double normalized) {
@@ -77,14 +90,16 @@ void configureBoolToggle(juce::ToggleButton& toggle, const magda::ParameterInfo&
         }
     };
     toggle.setToggleState(info.currentValue >= 0.5, juce::dontSendNotification);
-    toggle.setButtonText(info.currentValue >= 0.5 ? "On" : "Off");
+    toggle.setButtonText("");
 }
 
 void configureDiscreteCombo(juce::ComboBox& combo, const magda::ParameterInfo& info,
                             std::function<void(double)> onValueChanged) {
-    combo.setColour(juce::ComboBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+    combo.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    combo.setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
     combo.setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    combo.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    combo.setJustificationType(juce::Justification::centred);
 
     int numChoices = static_cast<int>(info.choices.size());
     combo.onChange = [&combo, numChoices, cb = std::move(onValueChanged)]() {

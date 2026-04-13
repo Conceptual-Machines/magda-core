@@ -128,6 +128,10 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
         }
     }
 
+    // Automation
+    menu.addSeparator();
+    menu.addItem(5000, "Show Automation Lane");
+
     // Show full menu
     auto safeAnchor = juce::Component::SafePointer<juce::Component>(anchor);
     auto deviceId = ctx.deviceId;
@@ -186,6 +190,9 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
                                    magda::MacroTarget macroTarget{deviceId, paramIdx};
                                    cbs.onMacroLinked(macroIndex, macroTarget);
                                }
+                           } else if (result == 5000) {
+                               if (cbs.onShowAutomationLane)
+                                   cbs.onShowAutomationLane();
                            }
 
                            if (safeAnchor != nullptr)

@@ -59,7 +59,7 @@ class DeviceSlotComponent : public NodeComponent,
                             public magda::TrackManagerListener,
                             public magda::AutomationManagerListener {
   public:
-    static constexpr int BASE_SLOT_WIDTH = 400;  // Maximum width (8 columns)
+    static constexpr int BASE_SLOT_WIDTH = 450;  // Maximum width (8 columns)
     static constexpr int NUM_PARAMS_PER_PAGE = 32;
     static constexpr int PARAMS_PER_ROW = 8;  // Maximum columns
     static constexpr int PARAM_CELL_WIDTH = 48;
@@ -202,6 +202,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<juce::TextButton> scButton_;        // Sidechain source selector
     std::unique_ptr<magda::SvgButton> multiOutButton_;  // Multi-output routing
     std::unique_ptr<magda::SvgButton> uiButton_;
+    std::unique_ptr<magda::SvgButton> learnButton_;
     std::unique_ptr<magda::SvgButton> onButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
 
@@ -265,6 +266,8 @@ class DeviceSlotComponent : public NodeComponent,
     void readAndPushModMatrix();  // Read FourOsc mod matrix and push to UI
     void setupCustomUILinking();
     void wirePadChainLinkCallbacks();  // Wire link mode on PadDeviceSlot param slots
+
+    void showAutomationLaneForParam(int paramIndex);
 
     // Dynamic layout helpers
     int getVisibleParamCount() const;

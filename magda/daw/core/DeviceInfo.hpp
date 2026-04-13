@@ -95,10 +95,9 @@ struct DeviceInfo {
     // If empty, show first N parameters; otherwise show these specific indices
     std::vector<int> visibleParameters;
 
-    // Gain stage (for the hidden gain stage feature)
-    int gainParameterIndex = -1;  // -1 means no gain stage configured
-    float gainValue = 1.0f;       // Current gain value (linear)
-    float gainDb = 0.0f;          // Current gain in dB for UI
+    // Device volume (gain knob on each device slot)
+    float gainValue = 1.0f;  // Current gain value (linear)
+    float gainDb = 0.0f;     // Current gain in dB for UI
 
     // Macro controls for device-level parameter mapping
     MacroArray macros = createDefaultMacros();

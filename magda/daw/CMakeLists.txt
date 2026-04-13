@@ -28,6 +28,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/menu.svg
     ../../assets/icons/general/chord.svg
     ../../assets/icons/general/funnel.svg
+    ../../assets/icons/general/learn.svg
     ../../assets/icons/general/refresh.svg
     ../../assets/icons/general/send.svg
     ../../assets/icons/general/chevron_left.svg
@@ -208,6 +209,7 @@ set(DAW_CORE_SOURCES
     core/AutomationCommands.cpp
     core/MidiNoteCommands.cpp
     core/ParameterUtils.cpp
+    core/ParameterDetector.cpp
     engine/TracktionEngineWrapper.cpp
     engine/TracktionEngineWrapperInit.cpp
     engine/TracktionEngineWrapperDevices.cpp
@@ -657,6 +659,7 @@ set(DAW_HEADERS
     core/ModInfo.hpp
     # Core - Parameter
     core/ParameterInfo.hpp
+    core/ParameterDetector.hpp
     core/ParameterUtils.hpp
     # Core - Automation
     core/AutomationTypes.hpp
@@ -702,6 +705,21 @@ juce_add_gui_app(magda_daw_app
         <string>MAGDA needs access to your Downloads folder to import audio files.</string>
         <key>NSRemovableVolumesUsageDescription</key>
         <string>MAGDA needs access to external drives to load and save projects and audio files.</string>
+        <key>CFBundleDocumentTypes</key>
+        <array>
+            <dict>
+                <key>CFBundleTypeName</key>
+                <string>MAGDA Project</string>
+                <key>CFBundleTypeRole</key>
+                <string>Editor</string>
+                <key>LSHandlerRank</key>
+                <string>Owner</string>
+                <key>CFBundleTypeExtensions</key>
+                <array>
+                    <string>mgd</string>
+                </array>
+            </dict>
+        </array>
     </dict></plist>"
 )
 

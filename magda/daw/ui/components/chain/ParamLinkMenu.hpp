@@ -23,6 +23,7 @@ struct ParamLinkMenuCallbacks {
     std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroLinked;
     std::function<void(int macroIndex, magda::MacroTarget target)> onRackMacroUnlinked;
     std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroUnlinked;
+    std::function<void()> onShowAutomationLane;
 };
 
 /**

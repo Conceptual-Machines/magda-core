@@ -4,13 +4,50 @@
 
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "core/Config.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
 
 // Static cache of scanned plugin parameters (persists across dialog instances)
-static std::map<juce::String, std::vector<MockParameterInfo>> parameterCache_;
+struct CachedPluginParams {
+    std::vector<MockParameterInfo> parameters;
+    std::vector<magda::ParameterScanInput> scanInputs;
+};
+static std::map<juce::String, CachedPluginParams> parameterCache_;
+
+static juce::String scaleToXmlString(magda::ParameterScale scale) {
+    switch (scale) {
+        case magda::ParameterScale::Linear:
+            return "linear";
+        case magda::ParameterScale::Logarithmic:
+            return "logarithmic";
+        case magda::ParameterScale::Exponential:
+            return "exponential";
+        case magda::ParameterScale::Discrete:
+            return "discrete";
+        case magda::ParameterScale::Boolean:
+            return "boolean";
+        case magda::ParameterScale::FaderDB:
+            return "fader_db";
+    }
+    return "linear";
+}
+
+static magda::ParameterScale xmlStringToScale(const juce::String& str) {
+    if (str == "logarithmic")
+        return magda::ParameterScale::Logarithmic;
+    if (str == "exponential")
+        return magda::ParameterScale::Exponential;
+    if (str == "discrete")
+        return magda::ParameterScale::Discrete;
+    if (str == "boolean")
+        return magda::ParameterScale::Boolean;
+    if (str == "fader_db")
+        return magda::ParameterScale::FaderDB;
+    return magda::ParameterScale::Linear;
+}
 
 //==============================================================================
 // ToggleCell - Checkbox cell for visible/use as gain columns
@@ -29,15 +66,7 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
                 if (column_ == ColumnIds::Visible) {
                     owner_.parameters_[static_cast<size_t>(paramIndex)].isVisible =
                         toggle_.getToggleState();
-                } else if (column_ == ColumnIds::UseAsGain) {
-                    // Uncheck all others first (only one gain stage)
-                    for (auto& p : owner_.parameters_) {
-                        p.useAsGain = false;
-                    }
-                    owner_.parameters_[static_cast<size_t>(paramIndex)].useAsGain =
-                        toggle_.getToggleState();
-                    // Force refresh all cells to update enabled states
-                    owner_.table_.updateContent();
+                    owner_.updateTitle();
                 }
             }
         };
@@ -54,20 +83,6 @@ class ParameterConfigDialog::ToggleCell : public juce::Component {
                 toggle_.setToggleState(param.isVisible, juce::dontSendNotification);
                 toggle_.setEnabled(true);
                 toggle_.setVisible(true);
-            } else if (column_ == ColumnIds::UseAsGain) {
-                toggle_.setToggleState(param.useAsGain, juce::dontSendNotification);
-                // Check if another parameter is already selected as gain
-                bool anotherIsGain = false;
-                for (const auto& p : owner_.parameters_) {
-                    if (p.useAsGain && &p != &param) {
-                        anotherIsGain = true;
-                        break;
-                    }
-                }
-                // Show only if: canBeGain AND (this is the selected one OR none is selected)
-                bool canSelect = param.canBeGain && (!anotherIsGain || param.useAsGain);
-                toggle_.setVisible(canSelect);
-                toggle_.setEnabled(canSelect);
             }
         }
     }
@@ -93,8 +108,12 @@ class ParameterConfigDialog::ComboCell : public juce::Component {
         combo_.addItem("Hz", 2);
         combo_.addItem("dB", 3);
         combo_.addItem("ms", 4);
-        combo_.addItem("semitones", 5);
-        combo_.addItem("custom", 6);
+        combo_.addItem("sec", 5);
+        combo_.addItem("semitones", 6);
+        combo_.addItem("cents", 7);
+        combo_.addItem("BPM", 8);
+        combo_.addItem("discrete", 9);
+        combo_.addItem("boolean", 10);
 
         combo_.setColour(juce::ComboBox::backgroundColourId,
                          DarkTheme::getColour(DarkTheme::SURFACE));
@@ -102,8 +121,9 @@ class ParameterConfigDialog::ComboCell : public juce::Component {
         combo_.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
 
         combo_.onChange = [this]() {
-            if (row_ < static_cast<int>(owner_.parameters_.size())) {
-                owner_.parameters_[row_].unit = combo_.getText();
+            int paramIndex = owner_.getParamIndexForRow(row_);
+            if (paramIndex >= 0 && paramIndex < static_cast<int>(owner_.parameters_.size())) {
+                owner_.parameters_[static_cast<size_t>(paramIndex)].unit = combo_.getText();
             }
         };
         addAndMakeVisible(combo_);
@@ -111,16 +131,22 @@ class ParameterConfigDialog::ComboCell : public juce::Component {
 
     void update(int row) {
         row_ = row;
-        if (row_ < static_cast<int>(owner_.parameters_.size())) {
-            const auto& param = owner_.parameters_[row_];
-            // Find matching item
+        int paramIndex = owner_.getParamIndexForRow(row_);
+        if (paramIndex >= 0 && paramIndex < static_cast<int>(owner_.parameters_.size())) {
+            const auto& param = owner_.parameters_[static_cast<size_t>(paramIndex)];
+            // Find matching item in combo list
+            bool found = false;
             for (int i = 0; i < combo_.getNumItems(); ++i) {
                 if (combo_.getItemText(i) == param.unit) {
                     combo_.setSelectedItemIndex(i, juce::dontSendNotification);
-                    return;
+                    found = true;
+                    break;
                 }
             }
-            combo_.setSelectedId(1, juce::dontSendNotification);  // Default to %
+            if (!found) {
+                // Unit not in the combo list — default to "%"
+                combo_.setSelectedItemIndex(0, juce::dontSendNotification);
+            }
         }
     }
 
@@ -135,43 +161,55 @@ class ParameterConfigDialog::ComboCell : public juce::Component {
 };
 
 //==============================================================================
-// TextCell - Editable text cell for range values
+// RangeCell - Editable text cell for min/max range
 //==============================================================================
-class ParameterConfigDialog::TextCell : public juce::Component {
+class ParameterConfigDialog::RangeCell : public juce::Component {
   public:
-    TextCell(ParameterConfigDialog& owner, int row, int column)
-        : owner_(owner), row_(row), column_(column) {
+    RangeCell(ParameterConfigDialog& owner, int row) : owner_(owner), row_(row) {
         editor_.setColour(juce::TextEditor::backgroundColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
         editor_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
         editor_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
-        editor_.setJustification(juce::Justification::centred);
         editor_.setFont(FontManager::getInstance().getUIFont(11.0f));
+        editor_.setJustification(juce::Justification::centredLeft);
 
-        editor_.onFocusLost = [this]() { commitValue(); };
-        editor_.onReturnKey = [this]() { commitValue(); };
+        editor_.onFocusLost = [this]() { commitEdit(); };
+        editor_.onReturnKey = [this]() { commitEdit(); };
 
         addAndMakeVisible(editor_);
     }
 
-    void update(int row, int column) {
+    void update(int row) {
         row_ = row;
-        column_ = column;
-        if (row_ < static_cast<int>(owner_.parameters_.size())) {
-            const auto& param = owner_.parameters_[row_];
-            float value = 0.0f;
-            switch (column_) {
-                case ColumnIds::RangeMin:
-                    value = param.rangeMin;
-                    break;
-                case ColumnIds::RangeMax:
-                    value = param.rangeMax;
-                    break;
-                case ColumnIds::RangeCenter:
-                    value = param.rangeCenter;
-                    break;
+        int paramIndex = owner_.getParamIndexForRow(row_);
+        if (paramIndex < 0 || paramIndex >= static_cast<int>(owner_.parameters_.size()))
+            return;
+
+        const auto& param = owner_.parameters_[static_cast<size_t>(paramIndex)];
+
+        if (param.scale == magda::ParameterScale::Boolean) {
+            editor_.setText("on / off", false);
+            editor_.setEnabled(false);
+        } else if (param.scale == magda::ParameterScale::Discrete) {
+            juce::String text;
+            for (size_t i = 0; i < param.choices.size(); ++i) {
+                if (i > 0)
+                    text += ", ";
+                text += param.choices[i];
             }
-            editor_.setText(juce::String(value, 2), juce::dontSendNotification);
+            editor_.setText(text, false);
+            editor_.setEnabled(true);
+        } else {
+            auto formatValue = [](float v) -> juce::String {
+                if (std::isinf(v) && v < 0)
+                    return "-inf";
+                if (std::isinf(v))
+                    return "+inf";
+                return juce::String(v, 1);
+            };
+            editor_.setText(formatValue(param.rangeMin) + " — " + formatValue(param.rangeMax),
+                            false);
+            editor_.setEnabled(true);
         }
     }
 
@@ -180,26 +218,68 @@ class ParameterConfigDialog::TextCell : public juce::Component {
     }
 
   private:
-    void commitValue() {
-        if (row_ < static_cast<int>(owner_.parameters_.size())) {
-            float value = editor_.getText().getFloatValue();
-            switch (column_) {
-                case ColumnIds::RangeMin:
-                    owner_.parameters_[row_].rangeMin = value;
-                    break;
-                case ColumnIds::RangeMax:
-                    owner_.parameters_[row_].rangeMax = value;
-                    break;
-                case ColumnIds::RangeCenter:
-                    owner_.parameters_[row_].rangeCenter = value;
-                    break;
+    void commitEdit() {
+        int paramIndex = owner_.getParamIndexForRow(row_);
+        if (paramIndex < 0 || paramIndex >= static_cast<int>(owner_.parameters_.size()))
+            return;
+
+        auto& param = owner_.parameters_[static_cast<size_t>(paramIndex)];
+        if (param.scale == magda::ParameterScale::Boolean)
+            return;
+
+        if (param.scale == magda::ParameterScale::Discrete) {
+            auto text = editor_.getText().trim();
+            auto tokens = juce::StringArray::fromTokens(text, ",", "");
+            param.choices.clear();
+            for (auto& t : tokens) {
+                auto trimmed = t.trim();
+                if (trimmed.isNotEmpty())
+                    param.choices.push_back(trimmed);
             }
+            param.rangeMax =
+                param.choices.empty() ? 0.0f : static_cast<float>(param.choices.size() - 1);
+            return;
+        }
+
+        auto text = editor_.getText().trim();
+        // Parse "min — max" or "min - max" or "min max"
+        juce::String minStr, maxStr;
+        // Look for em-dash separator (U+2014)
+        int sepIdx = text.indexOfChar(0x2014);
+        // Fall back to hyphen, but skip a leading minus sign
+        if (sepIdx < 0)
+            sepIdx = text.indexOf(1, "-");
+        if (sepIdx < 0) {
+            // Try space separation
+            auto tokens = juce::StringArray::fromTokens(text, " ", "");
+            if (tokens.size() >= 2) {
+                minStr = tokens[0];
+                maxStr = tokens[tokens.size() - 1];
+            }
+        } else {
+            minStr = text.substring(0, sepIdx).trim();
+            maxStr = text.substring(sepIdx + 1).trim();
+        }
+
+        if (minStr.isNotEmpty() && maxStr.isNotEmpty()) {
+            float newMin, newMax;
+            if (minStr.toLowerCase() == "-inf")
+                newMin = -std::numeric_limits<float>::infinity();
+            else
+                newMin = minStr.getFloatValue();
+
+            if (maxStr.toLowerCase() == "+inf" || maxStr.toLowerCase() == "inf")
+                newMax = std::numeric_limits<float>::infinity();
+            else
+                newMax = maxStr.getFloatValue();
+
+            param.rangeMin = newMin;
+            param.rangeMax = newMax;
         }
     }
 
     ParameterConfigDialog& owner_;
     int row_;
-    int column_;
     juce::TextEditor editor_;
 };
 
@@ -225,11 +305,8 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     auto& header = table_.getHeader();
     header.addColumn("Parameter", ParamName, 150, 100, 300);
     header.addColumn("Visible", Visible, 60, 60, 60);
-    header.addColumn("Unit", Unit, 80, 60, 100);
-    header.addColumn("Min", RangeMin, 60, 50, 80);
-    header.addColumn("Max", RangeMax, 60, 50, 80);
-    header.addColumn("Center", RangeCenter, 60, 50, 80);
-    header.addColumn("Gain", UseAsGain, 50, 50, 50);
+    header.addColumn("Unit", Unit, 90, 70, 120);
+    header.addColumn("Range", Range, 180, 120, 300);
 
     header.setColour(juce::TableHeaderComponent::backgroundColourId,
                      DarkTheme::getColour(DarkTheme::SURFACE));
@@ -286,6 +363,30 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     deselectAllButton_.onClick = [this]() { deselectAllParameters(); };
     addAndMakeVisible(deselectAllButton_);
 
+    // AI Detect button
+    aiDetectButton_.setButtonText("AI Detect");
+    aiDetectButton_.setColour(juce::TextButton::buttonColourId,
+                              DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    aiDetectButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    aiDetectButton_.onClick = [this]() {
+        if (detecting_) {
+            // Cancel
+            if (cancelFlag_)
+                cancelFlag_->store(true);
+            setDetecting(false);
+            aiStatusLabel_.setText("Cancelled", juce::dontSendNotification);
+        } else {
+            runDetection();
+        }
+    };
+    addAndMakeVisible(aiDetectButton_);
+
+    // AI status label (shows streaming tokens)
+    aiStatusLabel_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    aiStatusLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    aiStatusLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(aiStatusLabel_);
+
     // Search box
     searchLabel_.setText("Search:", juce::dontSendNotification);
     searchLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
@@ -332,6 +433,10 @@ void ParameterConfigDialog::resized() {
     selectAllButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
     deselectAllButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
+    selectionButtonRow.removeFromLeft(selButtonSpacing);
+    aiDetectButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
+    selectionButtonRow.removeFromLeft(selButtonSpacing);
+    aiStatusLabel_.setBounds(selectionButtonRow);
 
     // Buttons at bottom
     auto buttonRow = bounds.removeFromBottom(32);
@@ -381,17 +486,9 @@ void ParameterConfigDialog::paintCell(juce::Graphics& g, int rowNumber, int colu
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
 
     if (columnId == ParamName) {
-        // Draw parameter name with gain indicator if applicable
-        juce::String text = param.name;
-        if (param.canBeGain) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-            if (param.useAsGain) {
-                text = juce::String::fromUTF8("◉ ") + text;
-            }
-        }
-        g.drawText(text, 8, 0, width - 16, height, juce::Justification::centredLeft);
+        g.drawText(param.name, 8, 0, width - 16, height, juce::Justification::centredLeft);
     }
-    // Other columns use custom components
+    // Range column is handled by RangeCell component
 }
 
 juce::Component* ParameterConfigDialog::refreshComponentForCell(int rowNumber, int columnId,
@@ -404,7 +501,7 @@ juce::Component* ParameterConfigDialog::refreshComponentForCell(int rowNumber, i
     if (columnId == ParamName)
         return nullptr;
 
-    if (columnId == Visible || columnId == UseAsGain) {
+    if (columnId == Visible) {
         auto* toggle = dynamic_cast<ToggleCell*>(existingComponent);
         if (toggle == nullptr) {
             toggle = new ToggleCell(*this, rowNumber, columnId);
@@ -422,48 +519,47 @@ juce::Component* ParameterConfigDialog::refreshComponentForCell(int rowNumber, i
         return combo;
     }
 
-    if (columnId == RangeMin || columnId == RangeMax || columnId == RangeCenter) {
-        auto* text = dynamic_cast<TextCell*>(existingComponent);
-        if (text == nullptr) {
-            text = new TextCell(*this, rowNumber, columnId);
+    if (columnId == Range) {
+        auto* rangeCell = dynamic_cast<RangeCell*>(existingComponent);
+        if (rangeCell == nullptr) {
+            rangeCell = new RangeCell(*this, rowNumber);
         }
-        text->update(rowNumber, columnId);
-        return text;
+        rangeCell->update(rowNumber);
+        return rangeCell;
     }
 
     return nullptr;
 }
 
+void ParameterConfigDialog::updateTitle() {
+    int visibleCount = 0;
+    for (const auto& p : parameters_)
+        if (p.isVisible)
+            visibleCount++;
+    titleLabel_.setText(pluginName_ + " - " + juce::String(visibleCount) + " / " +
+                            juce::String(parameters_.size()) + " params visible",
+                        juce::dontSendNotification);
+}
+
 void ParameterConfigDialog::buildMockParameters() {
     // Mock parameters that might be in a typical plugin like FabFilter Pro-Q 3
     parameters_ = {
-        {"Output Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, false, true},
-        {"Mix", 1.0f, true, "%", 0.0f, 100.0f, 50.0f, false, true},
-        {"Band 1 Frequency", 0.3f, true, "Hz", 20.0f, 20000.0f, 1000.0f, false, false},
-        {"Band 1 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, false, true},
-        {"Band 1 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, false, false},
-        {"Band 1 Type", 0.0f, true, "%", 0.0f, 1.0f, 0.5f, false, false},
-        {"Band 2 Frequency", 0.5f, true, "Hz", 20.0f, 20000.0f, 1000.0f, false, false},
-        {"Band 2 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, false, true},
-        {"Band 2 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, false, false},
-        {"Band 3 Frequency", 0.7f, true, "Hz", 20.0f, 20000.0f, 1000.0f, false, false},
-        {"Band 3 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, false, true},
-        {"Band 3 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, false, false},
-        {"Analyzer Mode", 0.0f, false, "%", 0.0f, 1.0f, 0.5f, false, false},
-        {"Auto Gain", 0.0f, true, "%", 0.0f, 1.0f, 0.5f, false, false},
-        {"Master Level", 0.8f, true, "dB", -60.0f, 12.0f, 0.0f, false, true},
+        {"Output Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
+        {"Mix", 1.0f, true, "%", 0.0f, 100.0f, 50.0f, {}, {}},
+        {"Band 1 Frequency", 0.3f, true, "Hz", 20.0f, 20000.0f, 1000.0f, {}, {}},
+        {"Band 1 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
+        {"Band 1 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, {}, {}},
+        {"Band 1 Type", 0.0f, true, "%", 0.0f, 1.0f, 0.5f, {}, {}},
+        {"Band 2 Frequency", 0.5f, true, "Hz", 20.0f, 20000.0f, 1000.0f, {}, {}},
+        {"Band 2 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
+        {"Band 2 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, {}, {}},
+        {"Band 3 Frequency", 0.7f, true, "Hz", 20.0f, 20000.0f, 1000.0f, {}, {}},
+        {"Band 3 Gain", 0.5f, true, "dB", -30.0f, 30.0f, 0.0f, {}, {}},
+        {"Band 3 Q", 0.5f, true, "%", 0.1f, 10.0f, 1.0f, {}, {}},
+        {"Analyzer Mode", 0.0f, false, "%", 0.0f, 1.0f, 0.5f, {}, {}},
+        {"Auto Gain", 0.0f, true, "%", 0.0f, 1.0f, 0.5f, {}, {}},
+        {"Master Level", 0.8f, true, "dB", -60.0f, 12.0f, 0.0f, {}, {}},
     };
-
-    // Run sanity check
-    for (auto& param : parameters_) {
-        param.canBeGain = isLikelyGainParameter(param.name);
-    }
-}
-
-bool ParameterConfigDialog::isLikelyGainParameter(const juce::String& name) {
-    auto lower = name.toLowerCase();
-    return lower.contains("gain") || lower.contains("volume") || lower.contains("output") ||
-           lower.contains("level") || lower.contains("master") || lower.contains("mix");
 }
 
 void ParameterConfigDialog::show(const juce::String& pluginName, juce::Component* /*parent*/) {
@@ -497,6 +593,7 @@ void ParameterConfigDialog::showForPlugin(const juce::String& uniqueId,
 
     // Refresh table to show loaded data
     dialog->table_.updateContent();
+    dialog->updateTitle();
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = "Configure Parameters - " + pluginName;
@@ -514,7 +611,8 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
     auto it = parameterCache_.find(uniqueId);
     if (it != parameterCache_.end()) {
         DBG("Loading cached parameters for " << uniqueId);
-        parameters_ = it->second;
+        parameters_ = it->second.parameters;
+        scanInputs_ = it->second.scanInputs;
         return;
     }
 
@@ -570,18 +668,42 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
 
     // Scan all parameters from the plugin
     parameters_.clear();
+    scanInputs_.clear();
     int numParams = instance->getParameters().size();
+
+    // Sample points for display text extraction
+    const float samplePoints[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
 
     for (int i = 0; i < numParams; ++i) {
         auto* param = instance->getParameters()[i];
         if (!param)
             continue;
 
+        // Match TE's ExternalPlugin filtering: only include automatable params
+        if (!param->isAutomatable())
+            continue;
+
+        auto paramName = param->getName(128);
+        if (paramName.isEmpty())
+            continue;
+
         MockParameterInfo info;
-        info.name = param->getName(128);
+        info.name = paramName;
         info.defaultValue = param->getDefaultValue();
         info.isVisible = true;  // All visible by default
-        info.unit = param->getLabel();
+        // Plugin labels can be messy (e.g. "% [-96.0dB...6.0dB]").
+        // Only keep short, clean labels as the unit; discard the rest.
+        auto rawLabel = param->getLabel().trim();
+        if (rawLabel.length() <= 6 && !rawLabel.contains("[") && !rawLabel.contains("("))
+            info.unit = rawLabel.isEmpty() ? "%" : rawLabel;
+        else
+            info.unit = "%";
+
+        // Build scan input for detection
+        magda::ParameterScanInput scanInput;
+        scanInput.paramIndex = i;
+        scanInput.name = info.name;
+        scanInput.label = rawLabel;  // Pass raw label to detector for heuristics
 
         // Try to get parameter range if it's a RangedAudioParameter
         if (auto* rangedParam = dynamic_cast<juce::RangedAudioParameter*>(param)) {
@@ -589,23 +711,83 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
             info.rangeMin = range.start;
             info.rangeMax = range.end;
             info.rangeCenter = (range.start + range.end) / 2.0f;
+            scanInput.rangeMin = range.start;
+            scanInput.rangeMax = range.end;
         } else {
-            // Use default 0-1 range for non-ranged parameters
             info.rangeMin = 0.0f;
             info.rangeMax = 1.0f;
             info.rangeCenter = 0.5f;
+            scanInput.rangeMin = 0.0f;
+            scanInput.rangeMax = 1.0f;
         }
 
-        info.useAsGain = false;
-        info.canBeGain = isLikelyGainParameter(info.name);
+        // Get state count for discrete detection
+        scanInput.stateCount = param->getNumSteps();
+        // JUCE returns 0x7fffffff for continuous params
+        if (scanInput.stateCount > 1000)
+            scanInput.stateCount = 0;
+
+        // Collect display texts for detection (sampled) and full value table for display.
+        if (scanInput.stateCount > 0 && scanInput.stateCount <= 1000) {
+            // Discrete: get ALL state labels
+            for (int s = 0; s < scanInput.stateCount; ++s) {
+                float norm =
+                    (scanInput.stateCount == 1)
+                        ? 0.0f
+                        : static_cast<float>(s) / static_cast<float>(scanInput.stateCount - 1);
+                auto text = param->getText(norm, 128);
+                scanInput.displayTexts.push_back(text);
+            }
+            info.valueTable = scanInput.displayTexts;
+        } else {
+            // Sample 5 points for detection
+            for (auto sp : samplePoints) {
+                scanInput.displayTexts.push_back(param->getText(sp, 128));
+            }
+
+            // If all sampled texts look like labels (start with a letter),
+            // this is likely a discrete param that JUCE reports as continuous.
+            // Sweep to discover all unique choices.
+            bool allLabels = true;
+            for (const auto& t : scanInput.displayTexts) {
+                auto trimmed = t.trim();
+                if (trimmed.isEmpty() || !((trimmed[0] >= 'A' && trimmed[0] <= 'Z') ||
+                                           (trimmed[0] >= 'a' && trimmed[0] <= 'z'))) {
+                    allLabels = false;
+                    break;
+                }
+            }
+            if (allLabels) {
+                scanInput.displayTexts.clear();
+                std::vector<juce::String> seen;
+                for (int s = 0; s <= 1000; ++s) {
+                    float norm = static_cast<float>(s) / 1000.0f;
+                    auto text = param->getText(norm, 128);
+                    if (seen.empty() || seen.back() != text) {
+                        seen.push_back(text);
+                        scanInput.displayTexts.push_back(text);
+                    }
+                }
+                info.valueTable = scanInput.displayTexts;
+            } else {
+                // Continuous: collect full value table (every 0.1% step)
+                const int tableSize = 1001;
+                info.valueTable.reserve(tableSize);
+                for (int s = 0; s < tableSize; ++s) {
+                    float norm = static_cast<float>(s) / static_cast<float>(tableSize - 1);
+                    info.valueTable.push_back(param->getText(norm, 128));
+                }
+            }
+        }
 
         parameters_.push_back(info);
+        scanInputs_.push_back(std::move(scanInput));
     }
 
     DBG("Scanned " << parameters_.size() << " parameters");
 
     // Cache the results for future use
-    parameterCache_[uniqueId] = parameters_;
+    parameterCache_[uniqueId] = {parameters_, scanInputs_};
 }
 
 void ParameterConfigDialog::selectAllParameters() {
@@ -613,6 +795,7 @@ void ParameterConfigDialog::selectAllParameters() {
         param.isVisible = true;
     }
     table_.updateContent();
+    updateTitle();
 }
 
 void ParameterConfigDialog::deselectAllParameters() {
@@ -620,6 +803,166 @@ void ParameterConfigDialog::deselectAllParameters() {
         param.isVisible = false;
     }
     table_.updateContent();
+    updateTitle();
+}
+
+void ParameterConfigDialog::setDetecting(bool detecting) {
+    detecting_ = detecting;
+
+    // During detection: disable everything except Cancel (repurpose the cancel button)
+    okButton_.setEnabled(!detecting);
+    applyButton_.setEnabled(!detecting);
+    selectAllButton_.setEnabled(!detecting);
+    deselectAllButton_.setEnabled(!detecting);
+    searchBox_.setEnabled(!detecting);
+    table_.setEnabled(!detecting);
+
+    if (detecting) {
+        aiDetectButton_.setButtonText("Cancel");
+        aiDetectButton_.setColour(juce::TextButton::buttonColourId,
+                                  DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        cancelButton_.setEnabled(false);
+        dotCount_ = 0;
+        startTimerHz(3);
+    } else {
+        aiDetectButton_.setButtonText("AI Detect");
+        aiDetectButton_.setColour(juce::TextButton::buttonColourId,
+                                  DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+        cancelButton_.setEnabled(true);
+        stopTimer();
+    }
+}
+
+void ParameterConfigDialog::timerCallback() {
+    dotCount_ = (dotCount_ + 1) % 4;
+    juce::String dots;
+    for (int i = 0; i < dotCount_; ++i)
+        dots += ".";
+    juce::String status = juce::String(aiResolved_) + " / " + juce::String(aiTotal_) + " resolved";
+    aiStatusLabel_.setText(status + dots, juce::dontSendNotification);
+}
+
+void ParameterConfigDialog::runDetection() {
+    if (scanInputs_.empty()) {
+        DBG("No scan inputs available for detection");
+        return;
+    }
+
+    // Filter to only visible parameters
+    std::vector<magda::ParameterScanInput> visibleInputs;
+    for (size_t i = 0; i < scanInputs_.size() && i < parameters_.size(); ++i) {
+        if (parameters_[i].isVisible)
+            visibleInputs.push_back(scanInputs_[i]);
+    }
+
+    if (visibleInputs.empty()) {
+        aiStatusLabel_.setText("No visible params to detect", juce::dontSendNotification);
+        return;
+    }
+
+    DBG("Running detection on " << visibleInputs.size() << " visible params (of "
+                                << scanInputs_.size() << " total)");
+    for (size_t i = 0; i < visibleInputs.size(); ++i) {
+        const auto& vi = visibleInputs[i];
+        juce::String texts;
+        for (const auto& t : vi.displayTexts)
+            texts += t + ", ";
+        DBG("  visibleInput[" << i << "] idx=" << vi.paramIndex << " name='" << vi.name
+                              << "' label='" << vi.label << "' range=[" << vi.rangeMin << ","
+                              << vi.rangeMax << "] states=" << vi.stateCount << " texts=[" << texts
+                              << "]");
+    }
+
+    // Run deterministic detection (instant) — resolves boolean, discrete,
+    // and continuous params where display text gives a clear unit.
+    // Everything else (confidence == 0) goes to AI.
+    auto results = magda::ParameterDetector::detect(visibleInputs);
+
+    int deterministicResolved = 0, ambiguousCount = 0;
+    for (size_t i = 0; i < results.size(); ++i) {
+        if (results[i].confidence > 0.0f) {
+            deterministicResolved++;
+            DBG("  RESOLVED[" << i << "] '" << visibleInputs[i].name << "' unit=" << results[i].unit
+                              << " scale=" << (int)results[i].scale << " range=["
+                              << results[i].minValue << "," << results[i].maxValue << "]");
+        } else {
+            ambiguousCount++;
+            DBG("  AMBIGUOUS[" << i << "] '" << visibleInputs[i].name << "'");
+        }
+    }
+    DBG("Deterministic: " << deterministicResolved << " resolved, " << ambiguousCount
+                          << " ambiguous -> AI");
+
+    // Map results back to the full parameters_ array
+    applyDetectionResults(results);
+
+    if (ambiguousCount > 0) {
+        // Check if LLM is configured
+        auto agentConfig = magda::Config::getInstance().getAgentLLMConfig("command");
+        if (!agentConfig.provider.empty()) {
+            // Freeze UI during AI detection
+            aiTotal_ = ambiguousCount;
+            aiResolved_ = 0;
+            cancelFlag_ = std::make_shared<std::atomic<bool>>(false);
+            setDetecting(true);
+
+            auto safeThis = juce::Component::SafePointer<ParameterConfigDialog>(this);
+
+            magda::ParameterDetector::detectWithAI(
+                pluginName_, visibleInputs, results, 0.5f, cancelFlag_,
+                // onProgress
+                [safeThis](int resolved, int /*total*/) {
+                    if (!safeThis)
+                        return;
+                    safeThis->aiResolved_ = resolved;
+                },
+                // onComplete
+                [safeThis](std::vector<magda::DetectedParameterInfo> aiResults) {
+                    if (!safeThis)
+                        return;
+                    safeThis->applyDetectionResults(aiResults);
+                    safeThis->setDetecting(false);
+                    safeThis->aiStatusLabel_.setText(juce::String(safeThis->aiResolved_) + " / " +
+                                                         juce::String(safeThis->aiTotal_) +
+                                                         " resolved",
+                                                     juce::dontSendNotification);
+                });
+        } else {
+            aiStatusLabel_.setText(juce::String(ambiguousCount) +
+                                       " params need AI (no LLM configured)",
+                                   juce::dontSendNotification);
+        }
+    } else {
+        aiStatusLabel_.setText("All params resolved", juce::dontSendNotification);
+    }
+}
+
+void ParameterConfigDialog::applyDetectionResults(
+    const std::vector<magda::DetectedParameterInfo>& results) {
+    for (const auto& r : results) {
+        if (r.paramIndex < 0 || r.paramIndex >= static_cast<int>(parameters_.size()))
+            continue;
+
+        auto& param = parameters_[static_cast<size_t>(r.paramIndex)];
+        param.scale = r.scale;
+        param.rangeMin = r.minValue;
+        param.rangeMax = r.maxValue;
+        param.rangeCenter = (r.minValue + r.maxValue) / 2.0f;
+        if (!r.choices.empty())
+            param.choices = r.choices;
+
+        // Discrete/boolean params show their scale type instead of a unit.
+        // Continuous params with no detected unit default to "%".
+        if (r.scale == magda::ParameterScale::Discrete) {
+            param.unit = "discrete";
+        } else if (r.scale == magda::ParameterScale::Boolean) {
+            param.unit = "boolean";
+        } else {
+            param.unit = r.unit.isEmpty() ? "%" : r.unit;
+        }
+    }
+    table_.updateContent();
+    table_.repaint();
 }
 
 void ParameterConfigDialog::saveParameterConfiguration() {
@@ -644,24 +987,40 @@ void ParameterConfigDialog::saveParameterConfiguration() {
     juce::XmlElement root("ParameterConfig");
     root.setAttribute("pluginId", pluginUniqueId_);
 
-    // Save visible parameters
-    auto* visibleParams = root.createNewChildElement("VisibleParameters");
+    // Save visible parameters and detection data
+    auto* paramsElem = root.createNewChildElement("Parameters");
     int visibleCount = 0;
     for (size_t i = 0; i < parameters_.size(); ++i) {
-        if (parameters_[i].isVisible) {
-            auto* param = visibleParams->createNewChildElement("Param");
-            param->setAttribute("index", static_cast<int>(i));
-            param->setAttribute("name", parameters_[i].name);
+        const auto& p = parameters_[i];
+        auto* paramElem = paramsElem->createNewChildElement("Param");
+        paramElem->setAttribute("index", static_cast<int>(i));
+        paramElem->setAttribute("name", p.name);
+        paramElem->setAttribute("visible", p.isVisible);
+        paramElem->setAttribute("unit", p.unit);
+        paramElem->setAttribute("scale", scaleToXmlString(p.scale));
+        paramElem->setAttribute("min", static_cast<double>(p.rangeMin));
+        paramElem->setAttribute("max", static_cast<double>(p.rangeMax));
+        paramElem->setAttribute("center", static_cast<double>(p.rangeCenter));
+        // Save discrete choices
+        if (!p.choices.empty()) {
+            auto* choicesElem = paramElem->createNewChildElement("Choices");
+            for (const auto& choice : p.choices) {
+                auto* c = choicesElem->createNewChildElement("Choice");
+                c->setAttribute("label", choice);
+            }
+        }
+        // Save full value table (pipe-separated for compactness)
+        if (!p.valueTable.empty()) {
+            juce::String tableStr;
+            for (size_t j = 0; j < p.valueTable.size(); ++j) {
+                if (j > 0)
+                    tableStr += "|";
+                tableStr += p.valueTable[j];
+            }
+            paramElem->setAttribute("valueTable", tableStr);
+        }
+        if (p.isVisible)
             visibleCount++;
-        }
-    }
-
-    // Save gain parameter index
-    for (size_t i = 0; i < parameters_.size(); ++i) {
-        if (parameters_[i].useAsGain) {
-            root.setAttribute("gainParamIndex", static_cast<int>(i));
-            break;
-        }
     }
 
     if (root.writeTo(configFile)) {
@@ -698,12 +1057,49 @@ void ParameterConfigDialog::loadParameterConfiguration() {
     // First, mark all as invisible
     for (auto& param : parameters_) {
         param.isVisible = false;
-        param.useAsGain = false;
     }
 
-    // Load visible parameters
     int loadedCount = 0;
-    if (auto* visibleParams = xml->getChildByName("VisibleParameters")) {
+
+    // New format: Parameters element with full detection data
+    if (auto* paramsElem = xml->getChildByName("Parameters")) {
+        for (auto* paramElem : paramsElem->getChildIterator()) {
+            int index = paramElem->getIntAttribute("index", -1);
+            if (index >= 0 && index < static_cast<int>(parameters_.size())) {
+                auto& p = parameters_[static_cast<size_t>(index)];
+                p.isVisible = paramElem->getBoolAttribute("visible", false);
+                if (paramElem->hasAttribute("unit"))
+                    p.unit = paramElem->getStringAttribute("unit");
+                if (paramElem->hasAttribute("scale"))
+                    p.scale = xmlStringToScale(paramElem->getStringAttribute("scale"));
+                if (paramElem->hasAttribute("min"))
+                    p.rangeMin = static_cast<float>(paramElem->getDoubleAttribute("min"));
+                if (paramElem->hasAttribute("max"))
+                    p.rangeMax = static_cast<float>(paramElem->getDoubleAttribute("max"));
+                if (paramElem->hasAttribute("center"))
+                    p.rangeCenter = static_cast<float>(paramElem->getDoubleAttribute("center"));
+                // Load discrete choices
+                if (auto* choicesElem = paramElem->getChildByName("Choices")) {
+                    p.choices.clear();
+                    for (auto* c : choicesElem->getChildIterator()) {
+                        p.choices.push_back(c->getStringAttribute("label"));
+                    }
+                }
+                // Load value table
+                if (paramElem->hasAttribute("valueTable")) {
+                    auto tableStr = paramElem->getStringAttribute("valueTable");
+                    p.valueTable.clear();
+                    auto tokens = juce::StringArray::fromTokens(tableStr, "|", "");
+                    for (const auto& t : tokens)
+                        p.valueTable.push_back(t);
+                }
+                if (p.isVisible)
+                    loadedCount++;
+            }
+        }
+    }
+    // Legacy format: VisibleParameters only
+    else if (auto* visibleParams = xml->getChildByName("VisibleParameters")) {
         for (auto* paramElem : visibleParams->getChildIterator()) {
             int index = paramElem->getIntAttribute("index", -1);
             if (index >= 0 && index < static_cast<int>(parameters_.size())) {
@@ -711,12 +1107,6 @@ void ParameterConfigDialog::loadParameterConfiguration() {
                 loadedCount++;
             }
         }
-    }
-
-    // Load gain parameter
-    int gainIndex = xml->getIntAttribute("gainParamIndex", -1);
-    if (gainIndex >= 0 && gainIndex < static_cast<int>(parameters_.size())) {
-        parameters_[static_cast<size_t>(gainIndex)].useAsGain = true;
     }
 
     DBG("Loaded parameter config for " << pluginUniqueId_ << " - " << loadedCount
@@ -747,21 +1137,75 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
         return false;
     }
 
-    // Load visible parameters
+    // Load parameters from new format or legacy format
     device.visibleParameters.clear();
-    if (auto* visibleParams = xml->getChildByName("VisibleParameters")) {
-        for (auto* paramElem : visibleParams->getChildIterator()) {
-            int index = paramElem->getIntAttribute("index", -1);
-            juce::String name = paramElem->getStringAttribute("name");
-            DBG("  Found visible param: index=" << index << " name=" << name);
-            if (index >= 0 && index < static_cast<int>(device.parameters.size())) {
-                device.visibleParameters.push_back(index);
-            }
+
+    // TE prepends synthetic dry/wet params (dryGain, wetGain) to its automatable
+    // list, but the config dialog scans a fresh JUCE instance without them.
+    // Detect the offset by checking if the first device params are dry/wet.
+    int teOffset = 0;
+    if (device.parameters.size() >= 2) {
+        auto p0 = device.parameters[0].name.toLowerCase();
+        auto p1 = device.parameters[1].name.toLowerCase();
+        if ((p0.contains("dry") || p0.contains("wet")) &&
+            (p1.contains("dry") || p1.contains("wet"))) {
+            teOffset = 2;
         }
     }
 
-    // Load gain parameter
-    device.gainParameterIndex = xml->getIntAttribute("gainParamIndex", -1);
+    if (auto* paramsElem = xml->getChildByName("Parameters")) {
+        for (auto* paramElem : paramsElem->getChildIterator()) {
+            int xmlIndex = paramElem->getIntAttribute("index", -1);
+            if (xmlIndex < 0)
+                continue;
+
+            // Map config index to device index (account for TE dry/wet prefix)
+            int deviceIndex = xmlIndex + teOffset;
+
+            auto xmlName = paramElem->getStringAttribute("name");
+            bool visible = paramElem->getBoolAttribute("visible", false);
+
+            if (visible && deviceIndex < static_cast<int>(device.parameters.size())) {
+                device.visibleParameters.push_back(deviceIndex);
+            }
+
+            // Apply detection data to device parameters
+            if (deviceIndex < static_cast<int>(device.parameters.size())) {
+                auto& p = device.parameters[static_cast<size_t>(deviceIndex)];
+                if (paramElem->hasAttribute("unit"))
+                    p.unit = paramElem->getStringAttribute("unit");
+                if (paramElem->hasAttribute("scale"))
+                    p.scale = xmlStringToScale(paramElem->getStringAttribute("scale"));
+                if (paramElem->hasAttribute("min"))
+                    p.minValue = static_cast<float>(paramElem->getDoubleAttribute("min"));
+                if (paramElem->hasAttribute("max"))
+                    p.maxValue = static_cast<float>(paramElem->getDoubleAttribute("max"));
+                // Load discrete choices
+                if (auto* choicesElem = paramElem->getChildByName("Choices")) {
+                    p.choices.clear();
+                    for (auto* c : choicesElem->getChildIterator()) {
+                        p.choices.push_back(c->getStringAttribute("label"));
+                    }
+                }
+                // Load value table
+                if (paramElem->hasAttribute("valueTable")) {
+                    auto tableStr = paramElem->getStringAttribute("valueTable");
+                    p.valueTable.clear();
+                    auto tokens = juce::StringArray::fromTokens(tableStr, "|", "");
+                    for (const auto& t : tokens)
+                        p.valueTable.push_back(t);
+                }
+            }
+        }
+    } else if (auto* visibleParams = xml->getChildByName("VisibleParameters")) {
+        for (auto* paramElem : visibleParams->getChildIterator()) {
+            int index = paramElem->getIntAttribute("index", -1);
+            int deviceIndex = index + teOffset;
+            if (deviceIndex >= 0 && deviceIndex < static_cast<int>(device.parameters.size())) {
+                device.visibleParameters.push_back(deviceIndex);
+            }
+        }
+    }
 
     DBG("Applied parameter config for " << uniqueId << " - " << device.visibleParameters.size()
                                         << " visible params");

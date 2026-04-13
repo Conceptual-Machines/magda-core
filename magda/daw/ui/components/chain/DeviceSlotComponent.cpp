@@ -211,10 +211,33 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 bool isOpen = bridge->togglePluginWindow(device_.id);
                 uiButton_->setToggleState(isOpen, juce::dontSendNotification);
                 uiButton_->setActive(isOpen);
+                learnButton_->setEnabled(isOpen);
+                if (!isOpen && learnButton_->getToggleState()) {
+                    learnButton_->setToggleState(false, juce::dontSendNotification);
+                    learnButton_->setActive(false);
+                    paramGrid_->setLearnMode(false);
+                }
             }
         }
     };
     addAndMakeVisible(*uiButton_);
+
+    // Learn button (parameter pick mode)
+    learnButton_ = std::make_unique<magda::SvgButton>("Learn", BinaryData::learn_svg,
+                                                      BinaryData::learn_svgSize);
+    learnButton_->setIconPadding(2.0f);
+    learnButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    learnButton_->setClickingTogglesState(true);
+    learnButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
+    learnButton_->setActiveColor(juce::Colours::white);
+    learnButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    learnButton_->setEnabled(false);
+    learnButton_->onClick = [this]() {
+        bool active = learnButton_->getToggleState();
+        learnButton_->setActive(active);
+        paramGrid_->setLearnMode(active);
+    };
+    addAndMakeVisible(*learnButton_);
 
     // Bypass/On button (power icon)
     onButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_on_svg,
@@ -562,6 +585,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 if (self)
                     self->updateParamModulation();
             };
+        paramGrid_->getSlot(i)->onShowAutomationLane =
+            [safeThis = juce::Component::SafePointer(this), i]() {
+                if (auto self = safeThis)
+                    if (auto* slot = self->paramGrid_->getSlot(i))
+                        self->showAutomationLaneForParam(slot->getParamIndex());
+            };
     }
 
     // Initialize pagination based on visible parameter count
@@ -590,8 +619,22 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                     device_.id, tempDevice.visibleParameters);
                 // Update our local copy
                 device_.visibleParameters = tempDevice.visibleParameters;
-                device_.gainParameterIndex = tempDevice.gainParameterIndex;
             }
+            // Apply detected parameter metadata (unit, scale, range, choices)
+            device_.parameters = tempDevice.parameters;
+
+            // Recalculate pagination now that visible params have changed
+            int visibleCount = getVisibleParamCount();
+            constexpr int paramsPerPage = NUM_PARAMS_PER_PAGE;
+            int totalPages = (visibleCount + paramsPerPage - 1) / paramsPerPage;
+            if (totalPages < 1)
+                totalPages = 1;
+            int currentPage = device_.currentParameterPage;
+            if (currentPage >= totalPages)
+                currentPage = totalPages - 1;
+            if (currentPage < 0)
+                currentPage = 0;
+            paramGrid_->updatePageControls(currentPage, totalPages);
         }
     }
 
@@ -642,6 +685,12 @@ void DeviceSlotComponent::timerCallback() {
         if (isOpen != currentState) {
             uiButton_->setToggleState(isOpen, juce::dontSendNotification);
             uiButton_->setActive(isOpen);
+            learnButton_->setEnabled(isOpen);
+            if (!isOpen && learnButton_->getToggleState()) {
+                learnButton_->setToggleState(false, juce::dontSendNotification);
+                learnButton_->setActive(false);
+                paramGrid_->setLearnMode(false);
+            }
         }
     }
 
@@ -706,6 +755,31 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
         device_.parameters[static_cast<size_t>(paramIndex)].currentValue = newValue;
     }
 
+    // Learn mode: navigate to the page containing this parameter and highlight it
+    if (paramGrid_->isLearnMode()) {
+        int visibleIndex = paramIndex;
+        if (!device_.visibleParameters.empty()) {
+            visibleIndex = -1;
+            for (int vi = 0; vi < static_cast<int>(device_.visibleParameters.size()); ++vi)
+                if (device_.visibleParameters[static_cast<size_t>(vi)] == paramIndex) {
+                    visibleIndex = vi;
+                    break;
+                }
+        }
+        if (visibleIndex >= 0) {
+            int targetPage = visibleIndex / NUM_PARAMS_PER_PAGE;
+            if (targetPage != paramGrid_->getCurrentPage()) {
+                int totalPages =
+                    (getVisibleParamCount() + NUM_PARAMS_PER_PAGE - 1) / NUM_PARAMS_PER_PAGE;
+                device_.currentParameterPage = targetPage;
+                paramGrid_->updatePageControls(targetPage, juce::jmax(1, totalPages));
+                updateParameterSlots();
+                updateParamModulation();
+            }
+            paramGrid_->highlightSlot(visibleIndex % NUM_PARAMS_PER_PAGE);
+        }
+    }
+
     // Find which param slot (if any) on the current page displays this parameter
     const int paramsPerPage = NUM_PARAMS_PER_PAGE;
     const int currentPage = paramGrid_->getCurrentPage();
@@ -732,6 +806,24 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
             break;
         }
     }
+}
+
+void DeviceSlotComponent::showAutomationLaneForParam(int paramIndex) {
+    auto trackId = nodePath_.trackId;
+    if (trackId == magda::INVALID_TRACK_ID)
+        return;
+    magda::AutomationTarget target;
+    target.type = magda::AutomationTargetType::DeviceParameter;
+    target.trackId = trackId;
+    target.devicePath = nodePath_;
+    target.paramIndex = paramIndex;
+    juce::String pName = "Param " + juce::String(paramIndex);
+    if (paramIndex >= 0 && paramIndex < static_cast<int>(device_.parameters.size()))
+        pName = device_.parameters[static_cast<size_t>(paramIndex)].name;
+    target.paramName = device_.name + " - " + pName;
+    auto& automationMgr = magda::AutomationManager::getInstance();
+    auto laneId = automationMgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
+    automationMgr.setLaneVisible(laneId, true);
 }
 
 void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
@@ -958,8 +1050,9 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
                 magda::TrackManager::getInstance().setDeviceVisibleParameters(
                     device_.id, tempDevice.visibleParameters);
                 device_.visibleParameters = tempDevice.visibleParameters;
-                device_.gainParameterIndex = tempDevice.gainParameterIndex;
             }
+            // Apply detected parameter metadata (unit, scale, range, choices)
+            device_.parameters = tempDevice.parameters;
         }
     }
 
@@ -1429,6 +1522,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // Power must sit immediately to the left of the delete X — clip lives to its left.
     if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
         gainLabel_.setVisible(false);
+        learnButton_->setVisible(false);
         if (scButton_)
             scButton_->setVisible(false);
         onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
@@ -1456,6 +1550,9 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     if (isDrumGrid)
         gainLabel_.setVisible(false);
 
+    // Learn button: visible only for external plugins (not internal/MIDI devices)
+    learnButton_->setVisible(!isInternalDevice());
+
     layoutDeviceSlotHeaderRight(headerArea, BUTTON_SIZE, 4,
                                 /*delete*/ nullptr,
                                 /*power*/ onButton_.get(),
@@ -1463,6 +1560,13 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
                                 /*sc*/ scButton_ ? scButton_.get() : nullptr,
                                 /*slider*/ isDrumGrid ? nullptr : &gainLabel_, 70,
                                 /*ui*/ uiButton_.get());
+
+    // Place learn button to the left of the UI button (headerArea still has remaining central
+    // space)
+    if (learnButton_->isVisible()) {
+        learnButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        headerArea.removeFromRight(4);
+    }
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
@@ -3647,6 +3751,11 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 }
                 if (self)
                     self->updateParamModulation();
+            };
+
+            ps->onShowAutomationLane = [safeThis, pIdx = ps->getParamIndex()]() {
+                if (auto self = safeThis)
+                    self->showAutomationLaneForParam(pIdx);
             };
         }
     };

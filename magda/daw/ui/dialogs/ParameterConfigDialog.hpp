@@ -2,10 +2,13 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <atomic>
 #include <functional>
+#include <memory>
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
+#include "core/ParameterDetector.hpp"
 
 namespace magda::daw::ui {
 
@@ -20,8 +23,9 @@ struct MockParameterInfo {
     float rangeMin = 0.0f;
     float rangeMax = 1.0f;
     float rangeCenter = 0.5f;
-    bool useAsGain = false;
-    bool canBeGain = false;  // Sanity check result
+    magda::ParameterScale scale = magda::ParameterScale::Linear;
+    std::vector<juce::String> choices;     // For discrete params
+    std::vector<juce::String> valueTable;  // Full getText() lookup table
 };
 
 /**
@@ -32,9 +36,10 @@ struct MockParameterInfo {
  * - Visible toggle
  * - Custom unit
  * - Custom range (min/max/center)
- * - Use as gain stage
  */
-class ParameterConfigDialog : public juce::Component, public juce::TableListBoxModel {
+class ParameterConfigDialog : public juce::Component,
+                              public juce::TableListBoxModel,
+                              private juce::Timer {
   public:
     ParameterConfigDialog(const juce::String& pluginName);
     ~ParameterConfigDialog() override = default;
@@ -74,16 +79,30 @@ class ParameterConfigDialog : public juce::Component, public juce::TableListBoxM
     juce::TextButton applyButton_;
     juce::TextButton selectAllButton_;
     juce::TextButton deselectAllButton_;
+    juce::TextButton aiDetectButton_;
+    juce::Label aiStatusLabel_;
+    bool detecting_ = false;
+    int dotCount_ = 0;
+    int aiTotal_ = 0;
+    int aiResolved_ = 0;
+    std::shared_ptr<std::atomic<bool>> cancelFlag_;
     juce::Label titleLabel_;
     juce::TextEditor searchBox_;
     juce::Label searchLabel_;
 
     // Column IDs
-    enum ColumnIds { ParamName = 1, Visible, Unit, RangeMin, RangeMax, RangeCenter, UseAsGain };
+    enum ColumnIds { ParamName = 1, Visible, Unit, Range };
 
+    // Scan inputs cached from loadParameters for detection
+    std::vector<magda::ParameterScanInput> scanInputs_;
+
+    void timerCallback() override;
+    void setDetecting(bool detecting);
+    void updateTitle();
     void buildMockParameters();
     void loadParameters(const juce::String& uniqueId);
-    bool isLikelyGainParameter(const juce::String& name);
+    void runDetection();
+    void applyDetectionResults(const std::vector<magda::DetectedParameterInfo>& results);
     void saveParameterConfiguration();
     void loadParameterConfiguration();
     void selectAllParameters();
@@ -95,7 +114,7 @@ class ParameterConfigDialog : public juce::Component, public juce::TableListBoxM
     // Custom cell components
     class ToggleCell;
     class ComboCell;
-    class TextCell;
+    class RangeCell;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ParameterConfigDialog)
 };

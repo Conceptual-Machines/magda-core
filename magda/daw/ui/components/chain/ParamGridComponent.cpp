@@ -158,6 +158,26 @@ void ParamGridComponent::setPaginationVisible(bool visible) {
     pageLabel_->setVisible(visible);
 }
 
+void ParamGridComponent::setLearnMode(bool active) {
+    learnMode_ = active;
+    if (!active)
+        clearHighlight();
+}
+
+void ParamGridComponent::highlightSlot(int slotIndex) {
+    if (highlightedSlot_ >= 0 && highlightedSlot_ < NUM_PARAMS)
+        paramSlots_[highlightedSlot_]->setSelected(false);
+    highlightedSlot_ = slotIndex;
+    if (slotIndex >= 0 && slotIndex < NUM_PARAMS)
+        paramSlots_[slotIndex]->setSelected(true);
+}
+
+void ParamGridComponent::clearHighlight() {
+    if (highlightedSlot_ >= 0 && highlightedSlot_ < NUM_PARAMS)
+        paramSlots_[highlightedSlot_]->setSelected(false);
+    highlightedSlot_ = -1;
+}
+
 void ParamGridComponent::setSlotFonts(int slotIndex, const juce::Font& labelFont,
                                       const juce::Font& valueFont) {
     jassert(slotIndex >= 0 && slotIndex < NUM_PARAMS);

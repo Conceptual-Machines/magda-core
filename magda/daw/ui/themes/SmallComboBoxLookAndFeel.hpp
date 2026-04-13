@@ -86,6 +86,18 @@ class SmallComboBoxLookAndFeel : public juce::LookAndFeel_V4 {
         juce::ignoreUnused(isTicked, hasSubMenu, shortcutKeyText, icon);
     }
 
+    void getIdealPopupMenuItemSize(const juce::String& text, bool isSeparator,
+                                   int standardMenuItemHeight, int& idealWidth,
+                                   int& idealHeight) override {
+        juce::ignoreUnused(text, standardMenuItemHeight);
+        if (isSeparator) {
+            idealHeight = 6;
+        } else {
+            idealHeight = 20;
+        }
+        idealWidth = 120;
+    }
+
     void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override {
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
         g.fillRect(0, 0, width, height);
