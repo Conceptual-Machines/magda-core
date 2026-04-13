@@ -229,15 +229,11 @@ struct CurveSnapshotHolder {
                 holder->previousPhase_.store(-1.0f, std::memory_order_relaxed);
                 holder->oneShotCompleted_.store(false, std::memory_order_relaxed);
                 holder->evalLogCount_.store(0, std::memory_order_relaxed);
-                DBG("[CURVE-EVAL] oneShot RESET consumed, phase=" << phase);
             }
 
             bool alreadyCompleted = holder->oneShotCompleted_.load(std::memory_order_relaxed);
             if (alreadyCompleted) {
                 float ev = snap->endValue();
-                int c = holder->evalLogCount_.fetch_add(1, std::memory_order_relaxed);
-                if (c % 430 == 0)
-                    DBG("[CURVE-EVAL] oneShot HELD at endValue=" << ev << " phase=" << phase);
                 return ev;
             }
 
@@ -256,23 +252,13 @@ struct CurveSnapshotHolder {
                     holder->cumulativePhase_.store(cum, std::memory_order_relaxed);
                     if (cum >= 1.0f) {
                         holder->oneShotCompleted_.store(true, std::memory_order_relaxed);
-                        float ev = snap->endValue();
-                        DBG("[CURVE-EVAL] oneShot COMPLETED — cum=" << cum << " phase=" << phase
-                                                                    << " endValue=" << ev);
-                        return ev;
+                        return snap->endValue();
                     }
                 }
             }
         }
 
-        float result = snap->evaluate(phase);
-        // Log first eval and then every 430 calls
-        int c = holder->evalLogCount_.fetch_add(1, std::memory_order_relaxed);
-        if (c < 3 || c % 430 == 0)
-            DBG("[CURVE-EVAL] phase=" << phase << " value=" << result
-                                      << " oneShot=" << (int)snap->oneShot << " prevPhase="
-                                      << holder->previousPhase_.load(std::memory_order_relaxed));
-        return result;
+        return snap->evaluate(phase);
     }
 };
 
