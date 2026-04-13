@@ -1941,15 +1941,20 @@ void DeviceSlotComponent::showContextMenu() {
     menu.addItem(1, "Add to New Rack");
 
     // Classification override — let user correct mis-classified plugins
-    if (device_.format != magda::PluginFormat::Internal) {
+    // Read fresh device info (device_ may be stale)
+    auto& tm = magda::TrackManager::getInstance();
+    auto* freshDevice = tm.getDevice(nodePath_.trackId, device_.id);
+    const auto& menuDevice = freshDevice != nullptr ? *freshDevice : device_;
+
+    if (menuDevice.format != magda::PluginFormat::Internal) {
         menu.addSeparator();
         juce::PopupMenu classMenu;
-        classMenu.addItem(200, "Instrument", device_.deviceType != magda::DeviceType::Instrument,
-                          device_.deviceType == magda::DeviceType::Instrument);
-        classMenu.addItem(201, "Effect", device_.deviceType != magda::DeviceType::Effect,
-                          device_.deviceType == magda::DeviceType::Effect);
-        classMenu.addItem(202, "MIDI Effect", device_.deviceType != magda::DeviceType::MIDI,
-                          device_.deviceType == magda::DeviceType::MIDI);
+        classMenu.addItem(200, "Instrument", menuDevice.deviceType != magda::DeviceType::Instrument,
+                          menuDevice.deviceType == magda::DeviceType::Instrument);
+        classMenu.addItem(201, "Effect", menuDevice.deviceType != magda::DeviceType::Effect,
+                          menuDevice.deviceType == magda::DeviceType::Effect);
+        classMenu.addItem(202, "MIDI Effect", menuDevice.deviceType != magda::DeviceType::MIDI,
+                          menuDevice.deviceType == magda::DeviceType::MIDI);
         menu.addSubMenu("Classify as...", classMenu);
     }
 
@@ -1963,7 +1968,7 @@ void DeviceSlotComponent::showContextMenu() {
 
     menu.showMenuAsync(
         juce::PopupMenu::Options(), [safeThis, path, deviceId, callback](int result) {
-            if (result == 0)
+            if (safeThis == nullptr || result == 0)
                 return;
 
             if (result == 1) {

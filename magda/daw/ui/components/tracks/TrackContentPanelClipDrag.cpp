@@ -166,12 +166,14 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
     int currentTrackIndex = getTrackIndexAtY(currentPos.y);
     if (currentTrackIndex >= 0 && multiClipDragAnchorTrackIndex_ >= 0) {
         multiClipDragTrackDelta_ = currentTrackIndex - multiClipDragAnchorTrackIndex_;
+    } else {
+        multiClipDragTrackDelta_ = 0;
     }
 
     int numTracks = static_cast<int>(visibleTrackIds_.size());
 
     if (isMultiClipDuplicating_) {
-        // Alt+drag duplicate: show ghosts at NEW positions, keep originals in place
+        // Shift+drag duplicate: show ghosts at NEW positions, keep originals in place
         for (const auto& dragInfo : multiClipDragInfos_) {
             double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
             int targetTrackIdx = juce::jlimit(
@@ -212,7 +214,9 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
             }
         }
     } else {
-        // Same-track move: update clip component X positions directly
+        // Same-track move: clear any stale cross-track ghosts
+        clearAllClipGhosts();
+        // Update clip component X positions directly
         for (const auto& dragInfo : multiClipDragInfos_) {
             double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
             for (auto& clipComp : clipComponents_) {

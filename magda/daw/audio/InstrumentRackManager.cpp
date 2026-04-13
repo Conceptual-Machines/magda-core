@@ -43,11 +43,12 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
     // MIDI: rack input pin 0 --> synth pin 0
     rackType->addConnection(rackIOId, 0, synthId, 0);
 
-    // MIDI at the rack output: always forward the plugin's MIDI output.
-    // This lets arp/sequencer plugins (which VST3 reports as "Instrument")
-    // pass their transformed MIDI to downstream devices. Real synths that
-    // don't produce meaningful MIDI will just forward what they receive.
-    rackType->addConnection(synthId, 0, rackIOId, 0);
+    // MIDI at the rack output: preserve incoming MIDI via passthrough so
+    // downstream devices still receive it when the plugin consumes MIDI
+    // but doesn't echo it. Also forward the plugin's own MIDI output so
+    // arp/sequencer plugins can emit transformed MIDI downstream.
+    rackType->addConnection(rackIOId, 0, rackIOId, 0);  // input passthrough
+    rackType->addConnection(synthId, 0, rackIOId, 0);   // plugin MIDI out
 
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)
     rackType->addConnection(rackIOId, 1, rackIOId, 1);
@@ -116,8 +117,9 @@ te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(te::Plugin::Ptr in
     // MIDI: rack input pin 0 --> synth pin 0
     rackType->addConnection(rackIOId, 0, synthId, 0);
 
-    // MIDI at the rack output: always forward the plugin's MIDI output
-    rackType->addConnection(synthId, 0, rackIOId, 0);
+    // MIDI at the rack output: passthrough + plugin output (see wrapInstrument)
+    rackType->addConnection(rackIOId, 0, rackIOId, 0);  // input passthrough
+    rackType->addConnection(synthId, 0, rackIOId, 0);   // plugin MIDI out
 
     // Audio passthrough: rack input pin 1 --> rack output pin 1 (left)
     rackType->addConnection(rackIOId, 1, rackIOId, 1);
