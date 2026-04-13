@@ -347,6 +347,11 @@ class TrackContentPanel : public juce::Component,
     std::vector<ClipDragInfo> multiClipDragInfos_;
     juce::Point<int> multiClipDragStartPos_;
     double multiClipDragStartTime_ = 0.0;
+    double multiClipDragDeltaTime_ =
+        0.0;  // Stored during drag, used at commit — no pixel round-trip
+    int multiClipDragAnchorTrackIndex_ = -1;  // Anchor clip's track index at drag start
+    int multiClipDragTrackDelta_ =
+        0;  // Track index offset, stored during drag — no pixel round-trip
 
     // Multi-clip Alt+drag duplicate state
     bool isMultiClipDuplicating_ = false;

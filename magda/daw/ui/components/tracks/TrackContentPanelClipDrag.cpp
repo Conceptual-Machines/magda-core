@@ -94,12 +94,15 @@ void TrackContentPanel::startMultiClipDrag(ClipId anchorClipId, const juce::Poin
     isMovingMultipleClips_ = true;
     anchorClipId_ = anchorClipId;
     multiClipDragStartPos_ = startPos;
+    multiClipDragDeltaTime_ = 0.0;
+    multiClipDragTrackDelta_ = 0;
 
-    // Get the anchor clip's start time
+    // Get the anchor clip's start time and track index
     const auto* anchorClip = ClipManager::getInstance().getClip(anchorClipId);
     if (anchorClip) {
         multiClipDragStartTime_ = anchorClip->startTime;
     }
+    multiClipDragAnchorTrackIndex_ = getTrackIndexAtY(startPos.y);
 
     // Store original positions of all selected clips
     multiClipDragInfos_.clear();
@@ -156,50 +159,66 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
     }
 
     double actualDeltaTime = newAnchorTime - multiClipDragStartTime_;
+    multiClipDragDeltaTime_ =
+        actualDeltaTime;  // Store for finishMultiClipDrag — no pixel round-trip
+
+    // Compute vertical (cross-track) delta from mouse Y
+    int currentTrackIndex = getTrackIndexAtY(currentPos.y);
+    if (currentTrackIndex >= 0 && multiClipDragAnchorTrackIndex_ >= 0) {
+        multiClipDragTrackDelta_ = currentTrackIndex - multiClipDragAnchorTrackIndex_;
+    }
+
+    int numTracks = static_cast<int>(visibleTrackIds_.size());
 
     if (isMultiClipDuplicating_) {
         // Alt+drag duplicate: show ghosts at NEW positions, keep originals in place
         for (const auto& dragInfo : multiClipDragInfos_) {
             double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
+            int targetTrackIdx = juce::jlimit(
+                0, numTracks - 1, dragInfo.originalTrackIndex + multiClipDragTrackDelta_);
 
             const auto* clip = ClipManager::getInstance().getClip(dragInfo.clipId);
             if (clip) {
-                // Find the clip component to get its Y position
-                for (const auto& clipComp : clipComponents_) {
-                    if (clipComp->getClipId() == dragInfo.clipId) {
-                        int ghostX = beatsToPixel(newStartTime * tempoBPM / 60.0);
-                        double ghostBeats = (clip->autoTempo && clip->lengthBeats > 0.0)
-                                                ? clip->lengthBeats
-                                                : clip->length * tempoBPM / 60.0;
-                        int ghostWidth = static_cast<int>(std::round(ghostBeats * currentZoom));
-                        juce::Rectangle<int> ghostBounds(ghostX, clipComp->getY(),
-                                                         juce::jmax(10, ghostWidth),
-                                                         clipComp->getHeight());
-                        setClipGhost(dragInfo.clipId, ghostBounds, clip->colour);
-                        break;
-                    }
-                }
+                int ghostX = beatsToPixel(newStartTime * tempoBPM / 60.0);
+                double ghostBeats = (clip->autoTempo && clip->lengthBeats > 0.0)
+                                        ? clip->lengthBeats
+                                        : clip->length * tempoBPM / 60.0;
+                int ghostWidth = static_cast<int>(std::round(ghostBeats * currentZoom));
+                auto trackArea = getTrackLaneArea(targetTrackIdx);
+                setClipGhost(dragInfo.clipId,
+                             {ghostX, trackArea.getY() + 2, juce::jmax(10, ghostWidth),
+                              trackArea.getHeight() - 4},
+                             clip->colour);
             }
         }
-        // Don't move the original clip components
-    } else {
-        // Normal move: update all clip component positions visually
+    } else if (multiClipDragTrackDelta_ != 0) {
+        // Cross-track move: show ghosts on target track, keep originals in place
         for (const auto& dragInfo : multiClipDragInfos_) {
             double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
-
-            // Find the clip component
+            int targetTrackIdx = juce::jlimit(
+                0, numTracks - 1, dragInfo.originalTrackIndex + multiClipDragTrackDelta_);
+            const auto* clip = ClipManager::getInstance().getClip(dragInfo.clipId);
+            if (clip) {
+                int ghostX = beatsToPixel(newStartTime * tempoBPM / 60.0);
+                double ghostBeats = (clip->autoTempo && clip->lengthBeats > 0.0)
+                                        ? clip->lengthBeats
+                                        : clip->length * tempoBPM / 60.0;
+                int ghostWidth = static_cast<int>(std::round(ghostBeats * currentZoom));
+                auto trackArea = getTrackLaneArea(targetTrackIdx);
+                setClipGhost(dragInfo.clipId,
+                             {ghostX, trackArea.getY() + 2, juce::jmax(10, ghostWidth),
+                              trackArea.getHeight() - 4},
+                             clip->colour);
+            }
+        }
+    } else {
+        // Same-track move: update clip component X positions directly
+        for (const auto& dragInfo : multiClipDragInfos_) {
+            double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
             for (auto& clipComp : clipComponents_) {
                 if (clipComp->getClipId() == dragInfo.clipId) {
-                    const auto* clip = ClipManager::getInstance().getClip(dragInfo.clipId);
-                    if (clip) {
-                        int newX = beatsToPixel(newStartTime * tempoBPM / 60.0);
-                        double clipBeats = (clip->autoTempo && clip->lengthBeats > 0.0)
-                                               ? clip->lengthBeats
-                                               : clip->length * tempoBPM / 60.0;
-                        int clipWidth = static_cast<int>(std::round(clipBeats * currentZoom));
-                        clipComp->setBounds(newX, clipComp->getY(), juce::jmax(10, clipWidth),
-                                            clipComp->getHeight());
-                    }
+                    int newX = beatsToPixel(newStartTime * tempoBPM / 60.0);
+                    clipComp->setTopLeftPosition(newX, clipComp->getY());
                     break;
                 }
             }
@@ -216,72 +235,73 @@ void TrackContentPanel::finishMultiClipDrag() {
     // Clear all ghosts before committing
     clearAllClipGhosts();
 
-    // Get the final anchor position
-    ClipComponent* anchorComp = nullptr;
-    for (auto& clipComp : clipComponents_) {
-        if (clipComp->getClipId() == anchorClipId_) {
-            anchorComp = clipComp.get();
-            break;
+    // Use the deltas stored during updateMultiClipDrag — never re-derive from pixels
+    double actualDeltaTime = multiClipDragDeltaTime_;
+    int trackDelta = multiClipDragTrackDelta_;
+    int numTracks = static_cast<int>(visibleTrackIds_.size());
+
+    bool hasTrackChange = trackDelta != 0;
+    bool isCompound = multiClipDragInfos_.size() > 1 || hasTrackChange;
+
+    if (isMultiClipDuplicating_) {
+        // Alt+drag duplicate: create duplicates at final positions through undo system
+        if (isCompound) {
+            UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
         }
-    }
 
-    if (anchorComp) {
-        // Calculate final delta from anchor's visual position
-        double finalAnchorTime = pixelToTime(anchorComp->getX());
-        if (snapTimeToGrid) {
-            finalAnchorTime = snapTimeToGrid(finalAnchorTime);
+        std::vector<std::unique_ptr<DuplicateClipCommand>> commands;
+        for (const auto& dragInfo : multiClipDragInfos_) {
+            double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
+            int targetIdx =
+                juce::jlimit(0, numTracks - 1, dragInfo.originalTrackIndex + trackDelta);
+            TrackId targetTrackId = visibleTrackIds_[static_cast<size_t>(targetIdx)];
+            auto cmd = std::make_unique<DuplicateClipCommand>(dragInfo.clipId, newStartTime,
+                                                              targetTrackId, getTempo());
+            commands.push_back(std::move(cmd));
         }
-        finalAnchorTime = juce::jmax(0.0, finalAnchorTime);
 
-        double actualDeltaTime = finalAnchorTime - multiClipDragStartTime_;
+        std::unordered_set<ClipId> newClipIds;
+        for (auto& cmd : commands) {
+            DuplicateClipCommand* cmdPtr = cmd.get();
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            ClipId dupId = cmdPtr->getDuplicatedClipId();
+            if (dupId != INVALID_CLIP_ID) {
+                newClipIds.insert(dupId);
+            }
+        }
 
-        if (isMultiClipDuplicating_) {
-            // Alt+drag duplicate: create duplicates at final positions through undo system
-            if (multiClipDragInfos_.size() > 1) {
-                UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
-            }
+        if (isCompound) {
+            UndoManager::getInstance().endCompoundOperation();
+        }
 
-            std::vector<std::unique_ptr<DuplicateClipCommand>> commands;
-            for (const auto& dragInfo : multiClipDragInfos_) {
-                double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
-                auto cmd = std::make_unique<DuplicateClipCommand>(
-                    dragInfo.clipId, newStartTime, dragInfo.originalTrackId, getTempo());
-                commands.push_back(std::move(cmd));
-            }
+        // Select the duplicates
+        if (!newClipIds.empty()) {
+            SelectionManager::getInstance().selectClips(newClipIds);
+        }
+    } else {
+        // Normal move: apply to original clips through undo system
+        if (isCompound) {
+            UndoManager::getInstance().beginCompoundOperation("Move Clips");
+        }
 
-            std::unordered_set<ClipId> newClipIds;
-            for (auto& cmd : commands) {
-                DuplicateClipCommand* cmdPtr = cmd.get();
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-                ClipId dupId = cmdPtr->getDuplicatedClipId();
-                if (dupId != INVALID_CLIP_ID) {
-                    newClipIds.insert(dupId);
-                }
-            }
+        for (const auto& dragInfo : multiClipDragInfos_) {
+            double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
+            auto cmd = std::make_unique<MoveClipCommand>(dragInfo.clipId, newStartTime);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
 
-            if (multiClipDragInfos_.size() > 1) {
-                UndoManager::getInstance().endCompoundOperation();
+            // Move to new track if needed
+            int targetIdx =
+                juce::jlimit(0, numTracks - 1, dragInfo.originalTrackIndex + trackDelta);
+            TrackId targetTrackId = visibleTrackIds_[static_cast<size_t>(targetIdx)];
+            if (targetTrackId != dragInfo.originalTrackId) {
+                auto trackCmd =
+                    std::make_unique<MoveClipToTrackCommand>(dragInfo.clipId, targetTrackId);
+                UndoManager::getInstance().executeCommand(std::move(trackCmd));
             }
+        }
 
-            // Select the duplicates
-            if (!newClipIds.empty()) {
-                SelectionManager::getInstance().selectClips(newClipIds);
-            }
-        } else {
-            // Normal move: apply to original clips through undo system
-            if (multiClipDragInfos_.size() > 1) {
-                UndoManager::getInstance().beginCompoundOperation("Move Clips");
-            }
-
-            for (const auto& dragInfo : multiClipDragInfos_) {
-                double newStartTime = juce::jmax(0.0, dragInfo.originalStartTime + actualDeltaTime);
-                auto cmd = std::make_unique<MoveClipCommand>(dragInfo.clipId, newStartTime);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-            }
-
-            if (multiClipDragInfos_.size() > 1) {
-                UndoManager::getInstance().endCompoundOperation();
-            }
+        if (isCompound) {
+            UndoManager::getInstance().endCompoundOperation();
         }
     }
 
@@ -291,6 +311,8 @@ void TrackContentPanel::finishMultiClipDrag() {
     anchorClipId_ = INVALID_CLIP_ID;
     multiClipDragInfos_.clear();
     multiClipDuplicateIds_.clear();
+    multiClipDragAnchorTrackIndex_ = -1;
+    multiClipDragTrackDelta_ = 0;
 
     // Refresh positions from ClipManager
     updateClipComponentPositions();
@@ -312,6 +334,8 @@ void TrackContentPanel::cancelMultiClipDrag() {
     anchorClipId_ = INVALID_CLIP_ID;
     multiClipDragInfos_.clear();
     multiClipDuplicateIds_.clear();
+    multiClipDragAnchorTrackIndex_ = -1;
+    multiClipDragTrackDelta_ = 0;
 }
 
 // ============================================================================

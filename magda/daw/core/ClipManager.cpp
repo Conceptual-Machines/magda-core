@@ -63,7 +63,6 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
             clip.lengthBeats = 0.0;
         }
         clips_[clip.id] = clip;
-        resolveOverlaps(clip.id);
     } else {
         // Session clips loop by default and follow project tempo
         clip.loopEnabled = true;
@@ -110,7 +109,6 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
 
     if (view == ClipView::Arrangement) {
         clips_[clip.id] = clip;
-        resolveOverlaps(clip.id);
     } else {
         // Session clips loop by default
         clip.loopEnabled = true;
@@ -223,7 +221,6 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
         if (tempo > 0.0)
             newClip.startBeats = startTime * tempo / 60.0;
         clips_[newClip.id] = newClip;
-        resolveOverlaps(newClip.id);
     } else {
         // Session clips always loop
         newClip.startTime = 0.0;
@@ -259,7 +256,6 @@ void ClipManager::moveClip(ClipId clipId, double newStartTime, double tempo) {
             clip->startBeats = clip->startTime * tempo / 60.0;
         // Notes maintain their relative position within the clip (startBeat unchanged)
         // so they move with the clip on the timeline
-        resolveOverlaps(clipId);
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -268,7 +264,6 @@ void ClipManager::moveClipToTrack(ClipId clipId, TrackId newTrackId) {
     if (auto* clip = getClip(clipId)) {
         if (clip->trackId != newTrackId) {
             clip->trackId = newTrackId;
-            resolveOverlaps(clipId);
             notifyClipsChanged();  // Track assignment change affects layout
         }
     }
@@ -293,7 +288,6 @@ void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, do
                 }
             }
         }
-        resolveOverlaps(clipId);
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -1682,7 +1676,8 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     newClip->loopStartBeats = clipData.loopStartBeats;
                     newClip->loopLengthBeats = clipData.loopLengthBeats;
                     newClip->lengthBeats = clipData.lengthBeats;
-                    newClip->startBeats = clipData.startBeats;
+                    // Don't overwrite startBeats — createMidiClip/createAudioClip already
+                    // computed the correct value from newStartTime
                 }
                 if (!crossViewToSession) {
                     newClip->warpEnabled = clipData.warpEnabled;
@@ -1762,7 +1757,6 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                 forceNotifyClipPropertyChanged(newClipId);
             }
 
-            // resolveOverlaps already called by createAudioClip/createMidiClip
             newClips.push_back(newClipId);
         }
     }
