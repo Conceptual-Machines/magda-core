@@ -151,6 +151,7 @@ struct CurveSnapshotHolder {
     // One-shot state: audio thread tracks phase to detect cycle completion
     std::atomic<float> previousPhase_{-1.0f};
     std::atomic<bool> oneShotCompleted_{true};
+    std::atomic<int> evalLogCount_{0};  // throttle DBG spam in evaluateCallback
 
     /**
      * @brief Message thread: copy curve data from ModInfo into the inactive
@@ -209,8 +210,15 @@ struct CurveSnapshotHolder {
         const CurveSnapshot* snap = holder->active.load(std::memory_order_acquire);
 
         if (snap->oneShot) {
-            if (holder->oneShotCompleted_.load(std::memory_order_acquire))
-                return snap->endValue();
+            bool alreadyCompleted = holder->oneShotCompleted_.load(std::memory_order_acquire);
+            if (alreadyCompleted) {
+                float ev = snap->endValue();
+                // Log occasionally to avoid spam (every 430 calls ≈ 5s)
+                int c = holder->evalLogCount_.fetch_add(1, std::memory_order_relaxed);
+                if (c % 430 == 0)
+                    DBG("[CURVE-EVAL] oneShot HELD at endValue=" << ev << " phase=" << phase);
+                return ev;
+            }
 
             float prev = holder->previousPhase_.load(std::memory_order_relaxed);
             holder->previousPhase_.store(phase, std::memory_order_relaxed);
@@ -218,11 +226,22 @@ struct CurveSnapshotHolder {
             // Detect phase wrap-around: phase jumped back significantly
             if (prev >= 0.0f && phase < prev - 0.5f) {
                 holder->oneShotCompleted_.store(true, std::memory_order_release);
-                return snap->endValue();
+                float ev = snap->endValue();
+                DBG("[CURVE-EVAL] oneShot COMPLETED — prev=" << prev << " phase=" << phase
+                                                             << " delta=" << (phase - prev)
+                                                             << " endValue=" << ev);
+                return ev;
             }
         }
 
-        return snap->evaluate(phase);
+        float result = snap->evaluate(phase);
+        // Log first eval and then every 430 calls
+        int c = holder->evalLogCount_.fetch_add(1, std::memory_order_relaxed);
+        if (c < 3 || c % 430 == 0)
+            DBG("[CURVE-EVAL] phase=" << phase << " value=" << result
+                                      << " oneShot=" << (int)snap->oneShot << " prevPhase="
+                                      << holder->previousPhase_.load(std::memory_order_relaxed));
+        return result;
     }
 };
 
