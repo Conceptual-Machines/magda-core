@@ -249,6 +249,7 @@ set(DAW_CORE_SOURCES
     audio/AutomationPlaybackEngine.cpp
     audio/ClipSynchronizer.cpp
     audio/SidechainMonitorPlugin.cpp
+    audio/AudioSidechainMonitorPlugin.cpp
     audio/MidiReceivePlugin.cpp
     audio/MagdaSamplerPlugin.cpp
     audio/DrumGridPlugin.cpp
@@ -564,6 +565,7 @@ set(DAW_HEADERS
     audio/ClipSynchronizer.hpp
     audio/SidechainTriggerBus.hpp
     audio/SidechainMonitorPlugin.hpp
+    audio/AudioSidechainMonitorPlugin.hpp
     audio/MidiBroadcastBus.hpp
     audio/MidiReceivePlugin.hpp
     audio/MagdaSamplerPlugin.hpp

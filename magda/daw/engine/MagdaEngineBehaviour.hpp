@@ -2,6 +2,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "../audio/ArpeggiatorPlugin.hpp"
+#include "../audio/AudioSidechainMonitorPlugin.hpp"
 #include "../audio/DrumGridPlugin.hpp"
 #include "../audio/MagdaSamplerPlugin.hpp"
 #include "../audio/MidiChordEnginePlugin.hpp"
@@ -83,6 +84,10 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == SidechainMonitorPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating SidechainMonitorPlugin");
             return new SidechainMonitorPlugin(info);
+        }
+        if (type == AudioSidechainMonitorPlugin::xmlTypeName) {
+            DBG("MagdaEngineBehaviour::createCustomPlugin - creating AudioSidechainMonitorPlugin");
+            return new AudioSidechainMonitorPlugin(info);
         }
         if (type == MidiReceivePlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");

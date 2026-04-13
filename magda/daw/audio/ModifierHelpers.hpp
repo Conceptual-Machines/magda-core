@@ -111,11 +111,18 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
  * custom waveforms restart from the beginning.
  */
 inline void triggerLFONoteOnWithReset(te::LFOModifier* lfo, bool forceZeroValue = true) {
+    float phaseBefore = lfo->getCurrentPhase();
+    float valueBefore = lfo->getCurrentValue();
     auto* holder =
         static_cast<CurveSnapshotHolder*>(lfo->customWaveUserData.load(std::memory_order_acquire));
     if (holder)
         holder->resetOneShot();
     lfo->triggerNoteOn(forceZeroValue);
+    float phaseAfter = lfo->getCurrentPhase();
+    float valueAfter = lfo->getCurrentValue();
+    DBG("[SC-RETRIG] phase: " << phaseBefore << " -> " << phaseAfter << " value: " << valueBefore
+                              << " -> " << valueAfter << " forceZero=" << (int)forceZeroValue
+                              << " gated=" << (int)lfo->isGated());
 }
 
 /**

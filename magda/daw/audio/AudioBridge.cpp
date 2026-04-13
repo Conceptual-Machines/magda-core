@@ -389,20 +389,20 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     // Modifier properties changed (rate, waveform, sync, trigger mode) - resync only modifiers
     pluginManager_.resyncDeviceModifiers(trackId);
 
-    // Re-check sidechain monitor on this track and all other tracks
+    // Re-check sidechain monitors on this track and all other tracks
     // (a sidechain source change on this track may affect the source track's monitor)
     for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
         pluginManager_.checkSidechainMonitor(track.id);
+        pluginManager_.checkAudioSidechainMonitor(track.id);
     }
 
     // Re-check MIDI routing in case trigger mode changed to/from MIDI
     updateMidiRoutingForSelection();
 }
 
-void AudioBridge::audioSidechainTriggered(TrackId sourceTrackId) {
-    // Audio trigger fired — retrigger only Audio-mode TE LFOs (MIDI-mode ones
-    // are triggered on the audio thread by SidechainMonitorPlugin)
-    pluginManager_.triggerSidechainNoteOn(sourceTrackId, LFOTriggerMode::Audio);
+void AudioBridge::audioSidechainTriggered(TrackId /*sourceTrackId*/) {
+    // Audio sidechain triggering now happens on the audio thread via
+    // AudioSidechainMonitorPlugin — this callback is no longer needed.
 }
 
 void AudioBridge::macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
@@ -501,20 +501,27 @@ void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
                 }
             }
 
-            // MIDI sidechain: ensure MidiReceivePlugin + SidechainMonitorPlugin
-            if (device->sidechain.isActive() &&
-                device->sidechain.type == SidechainConfig::Type::MIDI) {
-                DBG("AudioBridge::devicePropertyChanged - MIDI sidechain set, "
-                    "ensuring MidiReceive + monitor for source track "
+            // Both MIDI and Audio sidechain routes use MidiBroadcastBus + MidiReceivePlugin
+            // for TE's native LFO resync. Audio sidechain generates synthetic MIDI from
+            // AudioSidechainMonitorPlugin; MIDI sidechain uses real MIDI from
+            // SidechainMonitorPlugin.
+            if (device->sidechain.isActive()) {
+                DBG("AudioBridge::devicePropertyChanged - sidechain set (type="
+                    << (int)device->sidechain.type
+                    << "), ensuring MidiReceive + monitors for source track "
                     << device->sidechain.sourceTrackId);
                 pluginManager_.ensureMidiReceive(track.id, device->id,
                                                  device->sidechain.sourceTrackId);
-                pluginManager_.checkSidechainMonitor(device->sidechain.sourceTrackId);
+                if (device->sidechain.type == SidechainConfig::Type::MIDI)
+                    pluginManager_.checkSidechainMonitor(device->sidechain.sourceTrackId);
+                if (device->sidechain.type == SidechainConfig::Type::Audio)
+                    pluginManager_.checkAudioSidechainMonitor(device->sidechain.sourceTrackId);
             } else {
                 pluginManager_.removeMidiReceive(track.id, device->id);
             }
-            // Also re-check the track this device is on (may no longer need monitor)
+            // Re-check monitors on current track (may no longer need them)
             pluginManager_.checkSidechainMonitor(track.id);
+            pluginManager_.checkAudioSidechainMonitor(track.id);
 
             return;
         }

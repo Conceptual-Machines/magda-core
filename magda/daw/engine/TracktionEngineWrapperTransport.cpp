@@ -82,6 +82,11 @@ void TracktionEngineWrapper::stop() {
             sessionRecorder_->setArmed(false);
         }
         currentEdit_->getTransport().stop(false, false);
+
+        // Reset sidechain held-note counts and re-gate triggered LFOs so
+        // the next play session starts clean (prevents note count accumulation).
+        if (audioBridge_)
+            audioBridge_->getPluginManager().resetSidechainState();
     }
 }
 

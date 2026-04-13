@@ -385,6 +385,14 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     void restoreAfterRendering();
 
     /**
+     * @brief Reset sidechain monitor held-note counts and re-gate triggered LFOs.
+     *
+     * Call when transport stops so that held-note counts don't leak into the next
+     * playback session (which would prevent gating from firing).
+     */
+    void resetSidechainState();
+
+    /**
      * @brief Route a macro value change to the appropriate TE infrastructure
      * @param trackId The track containing the macro
      * @param isRack true = rack macro (id is RackId), false = device macro (id is DeviceId)
@@ -429,6 +437,14 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param sourceTrackId The track to remove the monitor from
      */
     void removeSidechainMonitor(TrackId sourceTrackId);
+
+    /**
+     * @brief Check if a track needs an AudioSidechainMonitorPlugin and insert/remove.
+     * @param trackId The track to check
+     */
+    void checkAudioSidechainMonitor(TrackId trackId);
+    void ensureAudioSidechainMonitor(TrackId sourceTrackId);
+    void removeAudioSidechainMonitor(TrackId sourceTrackId);
 
     /**
      * @brief Ensure a MidiReceivePlugin exists before a target device for MIDI sidechain.
@@ -508,9 +524,11 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     std::pair<int, int> computeModLinkFingerprint(TrackId trackId,
                                                   const TrackInfo* trackInfo) const;
 
-    // Check whether a track needs a SidechainMonitorPlugin.
-    // Only MIDI-triggered mods need the monitor (audio peaks come from LevelMeterPlugin).
+    // Check whether a track needs a SidechainMonitorPlugin (MIDI sidechain source).
     bool trackNeedsSidechainMonitor(TrackId trackId) const;
+
+    // Check whether a track needs an AudioSidechainMonitorPlugin (audio sidechain source).
+    bool trackNeedsAudioSidechainMonitor(TrackId trackId) const;
 
     // Per-device consolidated state. All device-scoped data lives here,
     // keyed by DeviceId. Cleanup is a single erase().
@@ -550,8 +568,12 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // Sidechain monitor plugins (sourceTrackId → SidechainMonitorPlugin)
     std::map<TrackId, te::Plugin::Ptr> sidechainMonitors_;
 
+    // Audio sidechain monitor plugins (sourceTrackId → AudioSidechainMonitorPlugin)
+    std::map<TrackId, te::Plugin::Ptr> audioSidechainMonitors_;
+
     // Pre-computed sidechain LFO cache: indexed by source TrackId.
-    // Audio/MIDI threads read under cacheLock_; message thread writes during rebuild.
+    // Double-buffered: message thread writes to inactive buffer then atomically
+    // swaps the pointer. Audio thread reads through the atomic pointer with no lock.
     struct PerTrackEntry {
         static constexpr int kMaxLFOs = 64;
         std::array<te::LFOModifier*, kMaxLFOs> lfos{};
@@ -560,11 +582,17 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
         int count = 0;
     };
     static constexpr int kMaxCacheTracks = 512;
-    std::array<PerTrackEntry, kMaxCacheTracks> sidechainLFOCache_{};
-    juce::SpinLock cacheLock_;
+    struct SidechainCache {
+        std::array<PerTrackEntry, kMaxCacheTracks> entries{};
+    };
+    SidechainCache cacheBuffers_[2];
+    std::atomic<SidechainCache*> activeCache_{&cacheBuffers_[0]};
+    int writeCacheIndex_ =
+        1;  // message thread only — starts at 1 so first write goes to inactive buffer
+    int cacheRebuildLogCount_ = 0;  // throttle DBG spam
 
-    // When true, skip zeroing MIDI-triggered LFO assignments (during offline render)
-    bool renderingActive_ = false;
+    // When true, skip gating during offline render and block full device resync.
+    std::atomic<bool> renderingActive_{false};
 
     // Deferred CurveSnapshotHolder deletion to prevent audio-thread use-after-free.
     // Holders are moved here after clearing LFO callbacks, then drained at the

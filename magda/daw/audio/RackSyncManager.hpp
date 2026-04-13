@@ -187,6 +187,12 @@ class RackSyncManager {
         return renderingActive_;
     }
 
+    /** Un-gate all LFO modifiers inside racks (for offline rendering) */
+    void ungateAllLFOs();
+
+    /** Re-gate note-triggered LFO modifiers inside racks (for transport stop) */
+    void regateTriggeredLFOs();
+
   private:
     bool renderingActive_ = false;
     /**

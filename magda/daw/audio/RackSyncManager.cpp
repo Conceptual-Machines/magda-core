@@ -969,6 +969,26 @@ void RackSyncManager::collectLFOModifiers(TrackId trackId,
     }
 }
 
+void RackSyncManager::ungateAllLFOs() {
+    for (auto& [rackId, synced] : syncedRacks_) {
+        for (auto& [modId, modifier] : synced.innerModifiers) {
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get()))
+                lfo->setGated(false);
+        }
+    }
+}
+
+void RackSyncManager::regateTriggeredLFOs() {
+    for (auto& [rackId, synced] : syncedRacks_) {
+        for (auto& [modId, modifier] : synced.innerModifiers) {
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
+                if (lfo->getSkipNativeResync())
+                    lfo->setGated(true);
+            }
+        }
+    }
+}
+
 void RackSyncManager::triggerLFONoteOn(TrackId trackId) {
     for (auto& [rackId, synced] : syncedRacks_) {
         if (synced.trackId != trackId)
