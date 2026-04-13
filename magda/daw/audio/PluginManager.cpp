@@ -1225,12 +1225,10 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                     snapHolder = std::make_unique<CurveSnapshotHolder>();
 
                 applyLFOProperties(lfo, modInfo, snapHolder.get());
-                // Note-triggered LFO retrigger is handled on the audio thread
-                // by SidechainMonitorPlugin → triggerSidechainNoteOn.
-                // Do NOT call triggerLFONoteOnWithReset here — the message thread
-                // runs asynchronously and would reset the ramp a few ms after the
-                // audio-thread trigger, shifting the LFO phase and causing the
-                // rendered output to differ from playback.
+                // Gate state for MIDI/Audio LFOs is managed on the audio thread:
+                // triggerNoteOn clears gate, gateSidechainLFOs sets it on note-off.
+                // Do NOT re-gate here — the message thread timer would fight with
+                // the audio thread, causing brief modulation dropouts.
             }
 
             // Update assignment values (mod depth) for each link
@@ -1261,16 +1259,7 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                     if (param) {
                         for (auto* assignment : param->getAssignments()) {
                             if (assignment->isForModifierSource(*modifier)) {
-                                float effectiveAmount = link.amount;
-                                if (!renderingActive_ &&
-                                    modInfo.triggerMode != LFOTriggerMode::Free &&
-                                    !modInfo.running) {
-                                    // Gate stopped LFOs, but let completed 1-shot hold
-                                    // at end value (phase clamped at 1.0)
-                                    if (!modInfo.oneShot || modInfo.phase < 1.0f)
-                                        effectiveAmount = 0.0f;
-                                }
-                                assignment->value = effectiveAmount;
+                                assignment->value = link.amount;
                                 assignment->offset = 0.0f;
                                 break;
                             }
@@ -1334,14 +1323,7 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                     if (param) {
                         for (auto* assignment : param->getAssignments()) {
                             if (assignment->isForModifierSource(*modifier)) {
-                                float effectiveAmount = link.amount;
-                                if (!renderingActive_ &&
-                                    modInfo.triggerMode != LFOTriggerMode::Free &&
-                                    !modInfo.running) {
-                                    if (!modInfo.oneShot || modInfo.phase < 1.0f)
-                                        effectiveAmount = 0.0f;
-                                }
-                                assignment->value = effectiveAmount;
+                                assignment->value = link.amount;
                                 assignment->offset = 0.0f;
                                 break;
                             }
@@ -1470,6 +1452,14 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                         // externally via triggerSidechainNoteOn().
                         if (device.sidechain.sourceTrackId != INVALID_TRACK_ID)
                             lfo->setSkipNativeResync(true);
+                        // MIDI/Audio triggered LFOs start gated so getCurrentValue()
+                        // returns 0 (no modulation). The gate is cleared on the audio
+                        // thread by triggerSidechainNoteOn/triggerNoteOn when a real
+                        // trigger fires. This avoids the race where the message-thread
+                        // assignment gating lags behind the audio-thread LFO.
+                        if (modInfo.triggerMode == LFOTriggerMode::MIDI ||
+                            modInfo.triggerMode == LFOTriggerMode::Audio)
+                            lfo->setGated(true);
                     }
                     modifier = lfoMod;
                     break;
@@ -1519,15 +1509,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                     link.target.paramIndex < static_cast<int>(params.size())) {
                     auto* param = params[static_cast<size_t>(link.target.paramIndex)];
                     if (param) {
-                        // Gate triggered LFOs: start with 0 until triggered
-                        float initialAmount = link.amount;
-                        if (!renderingActive_ && modInfo.triggerMode != LFOTriggerMode::Free &&
-                            !modInfo.running) {
-                            // Gate stopped LFOs, but let completed 1-shot hold
-                            if (!modInfo.oneShot || modInfo.phase < 1.0f)
-                                initialAmount = 0.0f;
-                        }
-                        param->addModifier(*modifier, initialAmount);
+                        param->addModifier(*modifier, link.amount);
                     }
                 }
             }
@@ -1596,6 +1578,9 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                             if (!snapHolder)
                                 snapHolder = std::make_unique<CurveSnapshotHolder>();
                             applyLFOProperties(lfo, modInfo, snapHolder.get());
+                            if (modInfo.triggerMode == LFOTriggerMode::MIDI ||
+                                modInfo.triggerMode == LFOTriggerMode::Audio)
+                                lfo->setGated(true);
                         }
                         modifier = lfoMod;
                         break;
@@ -1645,13 +1630,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                         link.target.paramIndex < static_cast<int>(params.size())) {
                         auto* param = params[static_cast<size_t>(link.target.paramIndex)];
                         if (param) {
-                            float initialAmount = link.amount;
-                            if (!renderingActive_ && modInfo.triggerMode != LFOTriggerMode::Free &&
-                                !modInfo.running) {
-                                if (!modInfo.oneShot || modInfo.phase < 1.0f)
-                                    initialAmount = 0.0f;
-                            }
-                            param->addModifier(*modifier, initialAmount);
+                            param->addModifier(*modifier, link.amount);
                         }
                     }
                 }
@@ -1706,7 +1685,8 @@ void PluginManager::triggerLFONoteOn(TrackId trackId) {
 }
 
 // =============================================================================
-void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId) {
+void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId,
+                                           std::optional<LFOTriggerMode> modeFilter) {
     if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks)
         return;
 
@@ -1716,6 +1696,10 @@ void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId) {
 
     auto& entry = sidechainLFOCache_[static_cast<size_t>(sourceTrackId)];
     for (int i = 0; i < entry.count; ++i) {
+        // Filter by trigger mode if specified
+        if (modeFilter.has_value() && entry.trigMode[static_cast<size_t>(i)] != modeFilter.value())
+            continue;
+
         auto* lfo = entry.lfos[static_cast<size_t>(i)];
         bool crossTrack = entry.isCrossTrack[static_cast<size_t>(i)];
         // Cross-track: force value=0 for transient gap.
@@ -1794,7 +1778,30 @@ void PluginManager::rebuildSidechainLFOCache() {
 
         auto& entry = newCache[static_cast<size_t>(track.id)];
         std::vector<te::LFOModifier*> lfos;
+        std::vector<LFOTriggerMode> modes;
         int selfTrackCount = 0;  // track how many are self-track (added first)
+
+        // Helper to collect LFOs from a device's synced modifiers,
+        // pairing each with the trigger mode from the MAGDA ModInfo.
+        auto collectDeviceLFOs = [&](const DeviceInfo& device) {
+            auto it = syncedDevices_.find(device.id);
+            if (it == syncedDevices_.end())
+                return;
+            // TE modifiers are created 1:1 with enabled+linked MAGDA mods
+            size_t teModIdx = 0;
+            for (const auto& modInfo : device.mods) {
+                if (!modInfo.enabled || modInfo.links.empty())
+                    continue;
+                if (teModIdx >= it->second.modifiers.size())
+                    break;
+                auto& mod = it->second.modifiers[teModIdx];
+                if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
+                    lfos.push_back(lfo);
+                    modes.push_back(modInfo.triggerMode);
+                }
+                ++teModIdx;
+            }
+        };
 
         // 1. Self-track LFOs: collect from syncedDevices_ modifiers for this track's devices
         //    Skip devices that have a cross-track sidechain source — those LFOs
@@ -1805,13 +1812,7 @@ void PluginManager::rebuildSidechainLFOCache() {
             const auto& device = getDevice(element);
             if (device.sidechain.sourceTrackId != INVALID_TRACK_ID)
                 continue;  // Has external sidechain — skip self-triggering
-            auto it = syncedDevices_.find(device.id);
-            if (it == syncedDevices_.end())
-                continue;
-            for (auto& mod : it->second.modifiers) {
-                if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get()))
-                    lfos.push_back(lfo);
-            }
+            collectDeviceLFOs(device);
         }
 
         // Also collect from racks on this track (skip racks with external sidechain)
@@ -1838,8 +1839,13 @@ void PluginManager::rebuildSidechainLFOCache() {
                     }
                 }
             }
-            if (!hasRackSidechain)
+            if (!hasRackSidechain) {
+                size_t before = lfos.size();
                 rackSyncManager_.collectLFOModifiers(track.id, lfos);
+                // Rack LFOs default to Free trigger mode (TODO: track per-mod modes)
+                modes.resize(lfos.size(), LFOTriggerMode::Free);
+                juce::ignoreUnused(before);
+            }
         }
 
         selfTrackCount = static_cast<int>(lfos.size());
@@ -1899,16 +1905,15 @@ void PluginManager::rebuildSidechainLFOCache() {
                 // Only collect from devices whose sidechain source is this track
                 if (device.sidechain.sourceTrackId != track.id)
                     continue;
-                auto it = syncedDevices_.find(device.id);
-                if (it == syncedDevices_.end())
-                    continue;
-                for (auto& mod : it->second.modifiers) {
-                    if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get()))
-                        lfos.push_back(lfo);
-                }
+                collectDeviceLFOs(device);
             }
             // TODO: also filter rack LFOs by sidechain source
-            rackSyncManager_.collectLFOModifiers(otherTrack.id, lfos);
+            {
+                size_t before = lfos.size();
+                rackSyncManager_.collectLFOModifiers(otherTrack.id, lfos);
+                modes.resize(lfos.size(), LFOTriggerMode::Free);
+                juce::ignoreUnused(before);
+            }
         }
 
         // Write to cache entry (capped at kMaxLFOs)
@@ -1918,6 +1923,9 @@ void PluginManager::rebuildSidechainLFOCache() {
         for (int i = 0; i < entry.count; ++i) {
             entry.lfos[static_cast<size_t>(i)] = lfos[static_cast<size_t>(i)];
             entry.isCrossTrack[static_cast<size_t>(i)] = (i >= selfTrackCount);
+            entry.trigMode[static_cast<size_t>(i)] = (static_cast<size_t>(i) < modes.size())
+                                                         ? modes[static_cast<size_t>(i)]
+                                                         : LFOTriggerMode::Free;
         }
     }
 
