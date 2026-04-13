@@ -149,8 +149,14 @@ struct CurveSnapshotHolder {
     std::atomic<CurveSnapshot*> active{&buffers[0]};
 
     // One-shot state: cumulative phase tracks how far through the cycle we are.
-    // resetOneShot() zeroes it; evaluateCallback adds phase deltas each block.
+    // evaluateCallback adds phase deltas each block on the destination audio thread.
     // When cumulative >= 1.0 the curve has played once → hold at endValue.
+    //
+    // pendingReset_ is the cross-thread signal: resetOneShot() (source audio thread)
+    // sets it to true; evaluateCallback (destination audio thread) consumes it and
+    // locally zeroes cumulativePhase_/previousPhase_. This avoids the race where a
+    // concurrent evaluateCallback reads stale cumulative and overwrites the zero.
+    std::atomic<bool> pendingReset_{false};
     std::atomic<float> cumulativePhase_{0.0f};
     std::atomic<float> previousPhase_{-1.0f};
     std::atomic<bool> oneShotCompleted_{true};
@@ -192,12 +198,13 @@ struct CurveSnapshotHolder {
      * @brief Reset one-shot state so the LFO plays through one more cycle.
      *
      * Call this alongside LFOModifier::triggerNoteOn() when retriggering.
-     * Safe to call from any thread (uses relaxed atomics).
+     * Safe to call from any thread. Sets a pending flag that evaluateCallback
+     * consumes on the destination audio thread, avoiding cross-thread races
+     * on cumulativePhase_/previousPhase_.
      */
     void resetOneShot() {
         oneShotCompleted_.store(false, std::memory_order_release);
-        cumulativePhase_.store(0.0f, std::memory_order_release);
-        previousPhase_.store(-1.0f, std::memory_order_release);
+        pendingReset_.store(true, std::memory_order_release);
     }
 
     /**
@@ -214,7 +221,18 @@ struct CurveSnapshotHolder {
         const CurveSnapshot* snap = holder->active.load(std::memory_order_acquire);
 
         if (snap->oneShot) {
-            bool alreadyCompleted = holder->oneShotCompleted_.load(std::memory_order_acquire);
+            // Consume pending reset from resetOneShot() on this thread,
+            // so cumulativePhase_/previousPhase_ are only written by one thread.
+            bool wasReset = holder->pendingReset_.exchange(false, std::memory_order_acquire);
+            if (wasReset) {
+                holder->cumulativePhase_.store(0.0f, std::memory_order_relaxed);
+                holder->previousPhase_.store(-1.0f, std::memory_order_relaxed);
+                holder->oneShotCompleted_.store(false, std::memory_order_relaxed);
+                holder->evalLogCount_.store(0, std::memory_order_relaxed);
+                DBG("[CURVE-EVAL] oneShot RESET consumed, phase=" << phase);
+            }
+
+            bool alreadyCompleted = holder->oneShotCompleted_.load(std::memory_order_relaxed);
             if (alreadyCompleted) {
                 float ev = snap->endValue();
                 int c = holder->evalLogCount_.fetch_add(1, std::memory_order_relaxed);
@@ -224,8 +242,6 @@ struct CurveSnapshotHolder {
             }
 
             // Accumulate phase delta to detect when one full cycle has elapsed.
-            // This avoids the cross-thread race of comparing previousPhase_ —
-            // resetOneShot() just zeroes cumulativePhase_ atomically.
             float prev = holder->previousPhase_.load(std::memory_order_relaxed);
             holder->previousPhase_.store(phase, std::memory_order_relaxed);
 
@@ -233,15 +249,13 @@ struct CurveSnapshotHolder {
                 float delta = phase - prev;
                 // Normal forward movement: delta is small positive.
                 // Phase wrap (0.99 → 0.01): delta is ~-1.0, correct to ~+0.01.
-                // Retrigger reset (0.7 → 0.0): delta is ~-0.7, but cumulativePhase_
-                // was zeroed by resetOneShot so this path won't false-complete.
                 if (delta < -0.5f)
                     delta += 1.0f;
                 if (delta > 0.0f) {
                     float cum = holder->cumulativePhase_.load(std::memory_order_relaxed) + delta;
                     holder->cumulativePhase_.store(cum, std::memory_order_relaxed);
                     if (cum >= 1.0f) {
-                        holder->oneShotCompleted_.store(true, std::memory_order_release);
+                        holder->oneShotCompleted_.store(true, std::memory_order_relaxed);
                         float ev = snap->endValue();
                         DBG("[CURVE-EVAL] oneShot COMPLETED — cum=" << cum << " phase=" << phase
                                                                     << " endValue=" << ev);
