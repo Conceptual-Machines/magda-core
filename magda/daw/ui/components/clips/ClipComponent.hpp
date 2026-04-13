@@ -72,6 +72,9 @@ class ClipComponent : public juce::Component, public ClipManagerListener, privat
     bool isCurrentlyDragging() const {
         return isDragging_;
     }
+    void clearDragging() {
+        isDragging_ = false;
+    }
 
     // Callbacks
     std::function<void(ClipId, double)> onClipMoved;          // clipId, newStartTime

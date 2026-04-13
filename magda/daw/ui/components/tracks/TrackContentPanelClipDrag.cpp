@@ -312,8 +312,14 @@ void TrackContentPanel::finishMultiClipDrag() {
     // Refresh positions from ClipManager
     updateClipComponentPositions();
 
-    // Select duplicated clips instead of originals
+    // Select duplicated clips instead of originals.
+    // Must clear isDragging_ on source clips first — clipSelectionChanged
+    // ignores updates while isDragging_ is true, so sources would stay
+    // visually selected.
     if (!duplicatedClipIds.empty()) {
+        for (auto& clipComp : clipComponents_) {
+            clipComp->clearDragging();
+        }
         SelectionManager::getInstance().selectClips(duplicatedClipIds);
     }
 }
