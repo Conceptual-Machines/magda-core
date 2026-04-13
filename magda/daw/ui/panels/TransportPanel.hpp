@@ -30,6 +30,7 @@ class TransportPanel : public juce::Component {
     std::function<void(bool)> onSnapToggle;
     std::function<void(int, int)> onTimeSignatureChange;
     std::function<void(bool, int, int)> onGridQuantizeChange;  // (autoGrid, numerator, denominator)
+    std::function<void(bool)> onAutomationWriteToggle;
 
     // Navigation callbacks
     std::function<void()> onGoHome;
@@ -56,6 +57,8 @@ class TransportPanel : public juce::Component {
     void setGridQuantize(bool autoGrid, int numerator, int denominator, bool isBars = false);
     void setPunchRegion(double startTime, double endTime, bool punchInEnabled,
                         bool punchOutEnabled);
+
+    void setAutomationWriteEnabled(bool enabled);
 
     void mouseDown(const juce::MouseEvent& e) override;
 
@@ -86,6 +89,9 @@ class TransportPanel : public juce::Component {
     std::unique_ptr<SvgButton> homeButton;
     std::unique_ptr<SvgButton> prevButton;
     std::unique_ptr<SvgButton> nextButton;
+
+    // Automation write button
+    std::unique_ptr<SvgButton> automationWriteButton;
 
     // Loop button
     std::unique_ptr<SvgButton> loopButton;
@@ -149,6 +155,7 @@ class TransportPanel : public juce::Component {
     bool isRecording = false;
     bool isPaused = false;
     bool isLooping = false;
+    bool isAutomationWriteEnabled = false;
     bool isSnapEnabled = true;
     bool isAutoGrid = true;
     int gridNumerator = 1;

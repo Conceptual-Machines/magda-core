@@ -806,6 +806,11 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             SetGridQuantizeEvent{autoGrid, numerator, denominator});
     };
 
+    transportPanel->onAutomationWriteToggle = [this](bool enabled) {
+        if (auto* bridge = getAudioEngine()->getAudioBridge())
+            bridge->setAutomationWriteEnabled(enabled);
+    };
+
     // Navigation callbacks
     transportPanel->onGoHome = [this]() {
         mainView->getTimelineController().dispatch(SetEditPositionEvent{0.0});

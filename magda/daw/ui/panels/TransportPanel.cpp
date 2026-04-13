@@ -137,7 +137,8 @@ void TransportPanel::resized() {
     auto timeArea = getTimeDisplayArea();
     auto tempoArea = getTempoQuantizeArea();
 
-    // Transport controls layout — order: Home, Prev, Next, Play, Stop, Rec, Loop, BackToArr
+    // Transport controls layout — order: Home, Prev, Next, Play, Stop, Rec, AutoWrite, Loop,
+    // BackToArr
     auto buttonMargin = 3;
     auto buttonSize = transportArea.getHeight() - buttonMargin * 2;
     auto buttonY = buttonMargin;
@@ -161,6 +162,9 @@ void TransportPanel::resized() {
     x += buttonSize + buttonSpacing;
 
     recordButton->setBounds(x, buttonY, buttonSize, buttonSize);
+    x += buttonSize + buttonSpacing;
+
+    automationWriteButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing;
 
     loopButton->setBounds(x, buttonY, buttonSize, buttonSize);
@@ -266,11 +270,11 @@ void TransportPanel::resized() {
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
-    // 8 square buttons + punch stacked box (boxWidth=130)
+    // 9 square buttons + punch stacked box (boxWidth=130)
     int buttonSize = getHeight() - 6;
     int boxWidth = 130;
-    // 6px left pad + 8 buttons + 7*1px spacing + 3px gap + punch box + 6px right pad
-    int width = 6 + 8 * buttonSize + 7 + 3 + boxWidth + 6;
+    // 6px left pad + 9 buttons + 8*1px spacing + 3px gap + punch box + 6px right pad
+    int width = 6 + 9 * buttonSize + 8 + 3 + boxWidth + 6;
     return getLocalBounds().removeFromLeft(width);
 }
 
@@ -355,6 +359,19 @@ void TransportPanel::setupTransportButtons() {
         repaint();
     };
     addAndMakeVisible(*recordButton);
+
+    // Automation Write button
+    automationWriteButton = std::make_unique<SvgButton>(
+        "Automation Write", BinaryData::automation_off_svg, BinaryData::automation_off_svgSize,
+        BinaryData::automation_on_svg, BinaryData::automation_on_svgSize);
+    automationWriteButton->onClick = [this]() {
+        isAutomationWriteEnabled = !isAutomationWriteEnabled;
+        automationWriteButton->setActive(isAutomationWriteEnabled);
+        if (onAutomationWriteToggle)
+            onAutomationWriteToggle(isAutomationWriteEnabled);
+        repaint();
+    };
+    addAndMakeVisible(*automationWriteButton);
 
     // Pause button
     pauseButton = std::make_unique<SvgButton>(
@@ -935,6 +952,13 @@ void TransportPanel::setTempo(double bpm) {
     setTimeSelection(cachedSelectionStart, cachedSelectionEnd, cachedSelectionActive);
     setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
     setPunchRegion(cachedPunchStart, cachedPunchEnd, cachedPunchInEnabled, cachedPunchOutEnabled);
+}
+
+void TransportPanel::setAutomationWriteEnabled(bool enabled) {
+    if (isAutomationWriteEnabled != enabled) {
+        isAutomationWriteEnabled = enabled;
+        automationWriteButton->setActive(isAutomationWriteEnabled);
+    }
 }
 
 void TransportPanel::setPlaybackState(bool playing) {

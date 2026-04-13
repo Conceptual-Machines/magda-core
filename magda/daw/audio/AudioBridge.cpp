@@ -61,7 +61,8 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
       trackController_(engine, edit),
       pluginManager_(engine, edit, trackController_, pluginWindowBridge_, transportState_),
       clipSynchronizer_(edit, trackController_, warpMarkerManager_),
-      automationPlayback_(*this, edit) {
+      automationPlayback_(*this, edit),
+      automationRecording_(edit) {
     // Wire up async plugin load completion callback to notify UI
     pluginManager_.onAsyncPluginLoaded = [](TrackId trackId) {
         TrackManager::getInstance().notifyTrackDevicesChanged(trackId);
@@ -241,6 +242,9 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             }
         }
     }
+
+    // Forward to automation recording engine
+    automationRecording_.onTrackPropertyChanged(trackId);
 }
 
 void AudioBridge::trackSelectionChanged(TrackId newTrackId) {
@@ -408,6 +412,7 @@ void AudioBridge::audioSidechainTriggered(TrackId /*sourceTrackId*/) {
 void AudioBridge::macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
                                     float value) {
     pluginManager_.setMacroValue(trackId, isRack, id, macroIndex, value);
+    automationRecording_.onMacroValueChanged(trackId, isRack, id, macroIndex, value);
 }
 
 void AudioBridge::masterChannelChanged() {
@@ -458,6 +463,9 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
     } else if (auto* utilityProc = dynamic_cast<UtilityProcessor*>(processor)) {
         utilityProc->setParameterByIndex(paramIndex, newValue);
     }
+
+    // Forward to automation recording engine
+    automationRecording_.onDeviceParameterChanged(deviceId, paramIndex, newValue);
 }
 
 void AudioBridge::devicePropertyChanged(DeviceId deviceId) {
@@ -917,6 +925,9 @@ void AudioBridge::timerCallback() {
     // Automation playback — sample curves at playhead and apply to parameters
     automationPlayback_.process();
 
+    // Automation recording — detect transport transitions, manage recording lifecycle
+    automationRecording_.process();
+
     // Update metering from level measurers (runs at 30 FPS on message thread)
     trackController_.withTrackMapping(
         [this](const std::map<TrackId, te::AudioTrack*>& trackMapping) {
@@ -1007,6 +1018,18 @@ void AudioBridge::timerCallback() {
         masterPeakL_.store(peakL, std::memory_order_relaxed);
         masterPeakR_.store(peakR, std::memory_order_relaxed);
     }
+}
+
+// =============================================================================
+// Automation Recording
+// =============================================================================
+
+void AudioBridge::setAutomationWriteEnabled(bool enabled) {
+    automationRecording_.setWriteEnabled(enabled);
+}
+
+bool AudioBridge::isAutomationWriteEnabled() const {
+    return automationRecording_.isWriteEnabled();
 }
 
 // =============================================================================

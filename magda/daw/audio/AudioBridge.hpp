@@ -11,6 +11,7 @@
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
 #include "AutomationPlaybackEngine.hpp"
+#include "AutomationRecordingEngine.hpp"
 #include "ClipSynchronizer.hpp"
 #include "DeviceMeteringManager.hpp"
 #include "DeviceProcessor.hpp"
@@ -452,6 +453,21 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     }
 
     // =========================================================================
+    // Automation Recording
+    // =========================================================================
+
+    /**
+     * @brief Enable/disable global automation write mode
+     * @param enabled When true, parameter changes during playback are recorded to armed lanes
+     */
+    void setAutomationWriteEnabled(bool enabled);
+
+    /**
+     * @brief Check if automation write mode is enabled
+     */
+    bool isAutomationWriteEnabled() const;
+
+    // =========================================================================
     // Mixer Controls
     // =========================================================================
 
@@ -745,6 +761,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     // Automation playback (samples curves at 30Hz, applies to parameters)
     AutomationPlaybackEngine automationPlayback_;
+
+    // Automation recording (writes parameter changes to armed lanes during playback)
+    AutomationRecordingEngine automationRecording_;
 
     // Per-device metering (LevelMeasurer per device, polled on timer)
     DeviceMeteringManager deviceMetering_;

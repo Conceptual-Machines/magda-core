@@ -79,6 +79,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/transport/punchin_on.svg
     ../../assets/icons/transport/punchout.svg
     ../../assets/icons/transport/punchout_on.svg
+    ../../assets/icons/transport/automation_off.svg
+    ../../assets/icons/transport/automation_on.svg
     # Inspector icons
     ../../assets/icons/inspector/infinito.svg
     ../../assets/icons/inspector/position.svg
@@ -247,6 +249,7 @@ set(DAW_CORE_SOURCES
     audio/InstrumentRackManager.cpp
     audio/RackSyncManager.cpp
     audio/AutomationPlaybackEngine.cpp
+    audio/AutomationRecordingEngine.cpp
     audio/ClipSynchronizer.cpp
     audio/SidechainMonitorPlugin.cpp
     audio/AudioSidechainMonitorPlugin.cpp
