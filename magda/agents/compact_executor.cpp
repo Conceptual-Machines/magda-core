@@ -176,6 +176,27 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
     return true;
 }
 
+bool CompactExecutor::autoCreateClip() {
+    if (currentTrackId_ < 0) {
+        error_ = "No track context — use TRACK first or select a track";
+        return false;
+    }
+
+    // Create a default clip at bar 1, 4 bars long
+    double startTime = barsToTime(1.0);
+    double length = barsToLength(4.0);
+
+    auto clipId = ClipManager::getInstance().createMidiClip(currentTrackId_, startTime, length);
+    if (clipId < 0) {
+        error_ = "Failed to auto-create clip";
+        return false;
+    }
+
+    currentClipId_ = clipId;
+    results_.add("Created MIDI clip at bar 1.00, length 4.00 bars");
+    return true;
+}
+
 // ============================================================================
 // Instruction executors
 // ============================================================================
@@ -625,8 +646,8 @@ bool CompactExecutor::executeSelect(const SelectOp& op) {
 
 bool CompactExecutor::executeArp(const ArpOp& op) {
     if (currentClipId_ < 0) {
-        error_ = "No clip context for ARP";
-        return false;
+        if (!autoCreateClip())
+            return false;
     }
 
     std::vector<int> midiNotes;
@@ -683,8 +704,8 @@ bool CompactExecutor::executeArp(const ArpOp& op) {
 
 bool CompactExecutor::executeChord(const ChordOp& op) {
     if (currentClipId_ < 0) {
-        error_ = "No clip context for CHORD";
-        return false;
+        if (!autoCreateClip())
+            return false;
     }
 
     std::vector<int> midiNotes;
@@ -717,8 +738,8 @@ bool CompactExecutor::executeChord(const ChordOp& op) {
 
 bool CompactExecutor::executeNote(const NoteOp& op) {
     if (currentClipId_ < 0) {
-        error_ = "No clip context for NOTE";
-        return false;
+        if (!autoCreateClip())
+            return false;
     }
 
     int noteNumber = music::parseNoteName(op.pitch.toStdString());

@@ -45,6 +45,9 @@ class CompactExecutor {
     bool executeChord(const ChordOp& op);
     bool executeNote(const NoteOp& op);
 
+    /** Auto-create a MIDI clip on the current track when NOTE/CHORD/ARP lack clip context. */
+    bool autoCreateClip();
+
     /** Apply SET key=value props to a track. */
     void applySetProps(int trackId, const juce::StringPairArray& props);
 
