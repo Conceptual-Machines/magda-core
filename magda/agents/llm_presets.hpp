@@ -10,7 +10,8 @@ namespace magda {
 
 // --- Provider IDs (wire format / credential keys) ---
 namespace provider {
-inline constexpr const char* OPENAI = "openai_chat";
+inline constexpr const char* OPENAI_CHAT = "openai_chat";
+inline constexpr const char* OPENAI_RESPONSES = "openai_responses";
 inline constexpr const char* ANTHROPIC = "anthropic";
 inline constexpr const char* GEMINI = "gemini";
 inline constexpr const char* DEEPSEEK = "deepseek";

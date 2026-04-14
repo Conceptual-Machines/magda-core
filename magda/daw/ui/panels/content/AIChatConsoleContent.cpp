@@ -264,7 +264,8 @@ void AIChatConsoleContent::RequestThread::run() {
 
     // Step 2: Dispatch to agents based on classification
     std::string dslCode;                                // DSL from command agent
-    std::vector<magda::Instruction> musicInstructions;  // compact IR from music agent
+    std::vector<magda::Instruction> musicInstructions;  // IR from music agent
+    std::string musicDescription;                       // description from DSL music agent
     std::string error;
 
     auto agentStart = std::chrono::steady_clock::now();
@@ -294,6 +295,7 @@ void AIChatConsoleContent::RequestThread::run() {
                     error += "\n" + result.error;
             } else {
                 musicInstructions = std::move(result.instructions);
+                musicDescription = std::move(result.description);
             }
         }
     }
@@ -316,7 +318,8 @@ void AIChatConsoleContent::RequestThread::run() {
     // Step 3: Execute on message thread, replacing streamed output
     juce::MessageManager::callAsync(
         [safeThis, dsl = std::move(dslCode), musicIR = std::move(musicInstructions),
-         error = std::move(error), anchor, routerMs, agentMs, totalMs]() {
+         musicDesc = std::move(musicDescription), error = std::move(error), anchor, routerMs,
+         agentMs, totalMs]() {
             if (!safeThis)
                 return;
 
@@ -337,8 +340,13 @@ void AIChatConsoleContent::RequestThread::run() {
                     }
                 }
 
-                // Execute compact IR from music agent
+                // Execute IR from music agent
                 if (!musicIR.empty()) {
+                    if (!musicDesc.empty()) {
+                        if (!response.empty())
+                            response += "\n";
+                        response += musicDesc;
+                    }
                     magda::CompactExecutor executor;
                     if (executor.execute(musicIR)) {
                         auto results = executor.getResults().toStdString();

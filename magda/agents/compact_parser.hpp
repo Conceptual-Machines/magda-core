@@ -95,7 +95,9 @@ struct ArpOp {
     juce::String quality;
     double beat = 0.0;
     double step = 0.5;
-    double beats = -1.0;  // -1 = not specified
+    double beats = -1.0;   // -1 = not specified
+    int inversion = 0;     // 0=root, 1=first, 2=second
+    juce::String pattern;  // "up", "down", "updown" (empty = up)
 };
 
 struct ChordOp {
@@ -104,6 +106,7 @@ struct ChordOp {
     double beat = 0.0;
     double length = 1.0;
     int velocity = -1;  // -1 = not specified
+    int inversion = 0;  // 0=root, 1=first, 2=second
 };
 
 struct NoteOp {

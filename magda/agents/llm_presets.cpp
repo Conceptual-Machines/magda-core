@@ -19,9 +19,9 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             preset::CLOUD_OPENAI,
             "Cloud (OpenAI)",
             {
-                {role::ROUTER, {provider::OPENAI, "", "", model::GPT_4_1}},
-                {role::COMMAND, {provider::OPENAI, "", "", model::GPT_5}},
-                {role::MUSIC, {provider::OPENAI, "", "", model::GPT_5}},
+                {role::ROUTER, {provider::OPENAI_CHAT, "", "", model::GPT_4_1}},
+                {role::COMMAND, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
+                {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
             },
         },
         {
@@ -66,7 +66,7 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             {
                 {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
                 {role::COMMAND, {provider::LLAMA_LOCAL, "", "", ""}},
-                {role::MUSIC, {provider::OPENAI, "", "", model::GPT_5}},
+                {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
             },
         },
         {
@@ -74,8 +74,8 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             "Hybrid - Optimize for Speed",
             {
                 {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
-                {role::COMMAND, {provider::OPENAI, "", "", model::GPT_5}},
-                {role::MUSIC, {provider::OPENAI, "", "", model::GPT_5}},
+                {role::COMMAND, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
+                {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
             },
         },
     };

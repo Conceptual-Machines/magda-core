@@ -15,12 +15,13 @@ namespace magda {
  *
  * Generates: CHORD, NOTE, ARP.
  * Has no knowledge of tracks, clips, plugins, or DAW state.
- * Uses an expensive/capable model (configured via "music" agent config).
+ * Uses compact format for local models, DSL format for frontier models.
  */
 class MusicAgent {
   public:
     struct GenerateResult {
-        std::string compactOutput;
+        std::string rawOutput;
+        std::string description;  // populated by DSL format (frontier models)
         std::vector<Instruction> instructions;
         std::string error;
         bool hasError = false;
@@ -40,7 +41,12 @@ class MusicAgent {
     }
 
   private:
-    static const char* getSystemPrompt();
+    static const char* getCompactSystemPrompt();
+    static const char* getDSLSystemPrompt();
+
+    /** Parse DSL note operations into IR instructions. */
+    std::vector<Instruction> parseDSL(const juce::String& text, std::string& outDescription);
+
     CompactParser parser_;
     std::atomic<bool> shouldStop_{false};
 };

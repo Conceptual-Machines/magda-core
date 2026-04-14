@@ -12,7 +12,7 @@ namespace magda {
     "deepseek" and "openrouter" are OpenAI-compatible services with their own
     credentials and base URLs — they map to the same OpenAIChat wire format. */
 inline llm::Provider providerFromString(const std::string& s) {
-    if (s == "openai_responses")
+    if (s == provider::OPENAI_RESPONSES)
         return llm::Provider::OpenAIResponses;
     if (s == provider::ANTHROPIC)
         return llm::Provider::Anthropic;
@@ -32,6 +32,7 @@ inline juce::String defaultBaseUrl(const std::string& providerStr) {
         return "https://api.anthropic.com/v1";
     if (providerStr == provider::GEMINI)
         return "https://generativelanguage.googleapis.com";
+    // openai_chat and openai_responses share the same base URL
     return "https://api.openai.com/v1";
 }
 
@@ -52,6 +53,10 @@ inline llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& con
         pc.apiKey = juce::String(config.apiKey);
     } else {
         auto credential = Config::getInstance().getAICredential(config.provider);
+
+        // openai_responses shares credentials with openai_chat
+        if (credential.empty() && config.provider == provider::OPENAI_RESPONSES)
+            credential = Config::getInstance().getAICredential(provider::OPENAI_CHAT);
 
         if (!credential.empty()) {
             pc.apiKey = juce::String(credential);
@@ -93,6 +98,12 @@ inline llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& con
     pc.appUrl = "https://magda.dev";
 
     return pc;
+}
+
+/** CFG grammar support is currently wired only for the GPT-5 Responses path. */
+inline bool supportsOpenAICFG(const Config::AgentLLMConfig& config) {
+    auto pc = toLLMProviderConfig(config);
+    return pc.provider == llm::Provider::OpenAIResponses && pc.model.startsWith("gpt-5");
 }
 
 }  // namespace magda

@@ -1251,14 +1251,12 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
         ".add_chord(root=G3, quality=dom7, beat=1, length=1)"
         ".add_chord(root=C4, quality=maj7, beat=2, length=2)";
 
-    // Create LLM client — use Responses API for CFG when on OpenAI direct,
-    // otherwise fall back to the configured provider (local, Anthropic, etc.)
-    bool cfg = agentConfig.provider == magda::provider::OPENAI && agentConfig.baseUrl.empty();
+    // CFG grammar support is currently available only on the GPT-5 Responses path.
+    bool cfg = magda::supportsOpenAICFG(agentConfig);
 
     std::unique_ptr<llm::LLMClient> client;
     if (cfg) {
         auto pc = magda::toLLMProviderConfig(agentConfig, "music");
-        pc.provider = llm::Provider::OpenAIResponses;
         client = llm::LLMClientFactory::create(pc);
     } else {
         client = magda::createLLMClient(agentConfig, "music");

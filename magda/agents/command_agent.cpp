@@ -34,20 +34,13 @@ static std::string extractDSL(const juce::String& raw) {
     return text.toStdString();
 }
 
-/** Check if provider supports CFG grammar (OpenAI Responses API). */
+/** Check if provider supports CFG grammar (OpenAI Responses API, GPT-5+ only). */
 static bool usesCFG(const Config::AgentLLMConfig& config) {
-    // OpenAI direct (no custom baseUrl) — use Responses API with CFG
-    return config.provider == provider::OPENAI && config.baseUrl.empty();
+    return supportsOpenAICFG(config);
 }
 
-/** Build an LLM client for the command agent, routing OpenAI to Responses API. */
+/** Build an LLM client for the command agent. */
 static std::unique_ptr<llm::LLMClient> createCommandClient(const Config::AgentLLMConfig& config) {
-    if (usesCFG(config)) {
-        // Route to OpenAI Responses API for CFG support
-        auto pc = toLLMProviderConfig(config, "command");
-        pc.provider = llm::Provider::OpenAIResponses;
-        return llm::LLMClientFactory::create(pc);
-    }
     return createLLMClient(config, "command");
 }
 

@@ -652,17 +652,31 @@ bool CompactExecutor::executeArp(const ArpOp& op) {
 
     std::vector<int> midiNotes;
     juce::String chordError;
-    if (!music::resolveChordNotes(op.root.toStdString(), op.quality.toStdString(), 0, midiNotes,
-                                  chordError)) {
+    if (!music::resolveChordNotes(op.root.toStdString(), op.quality.toStdString(), op.inversion,
+                                  midiNotes, chordError)) {
         error_ = chordError;
         return false;
     }
 
-    // Sort ascending for pattern
+    // Sort ascending as the canonical starting order
     std::sort(midiNotes.begin(), midiNotes.end());
 
-    // Default pattern: up
-    std::vector<int> ordered = midiNotes;
+    // Apply pattern ordering: up (default), down, updown
+    auto pattern = op.pattern.trim().toLowerCase();
+    std::vector<int> ordered;
+    if (pattern == "down") {
+        ordered.assign(midiNotes.rbegin(), midiNotes.rend());
+    } else if (pattern == "updown" || pattern == "upanddown" || pattern == "up_down") {
+        ordered = midiNotes;
+        if (midiNotes.size() > 2) {
+            // Add descent without repeating the top and bottom notes
+            for (auto it = midiNotes.rbegin() + 1; it + 1 != midiNotes.rend(); ++it)
+                ordered.push_back(*it);
+        }
+    } else {
+        // "up" or empty/unknown — ascending
+        ordered = midiNotes;
+    }
 
     int velocity = 100;
     double noteLength = op.step;
@@ -710,8 +724,8 @@ bool CompactExecutor::executeChord(const ChordOp& op) {
 
     std::vector<int> midiNotes;
     juce::String chordError;
-    if (!music::resolveChordNotes(op.root.toStdString(), op.quality.toStdString(), 0, midiNotes,
-                                  chordError)) {
+    if (!music::resolveChordNotes(op.root.toStdString(), op.quality.toStdString(), op.inversion,
+                                  midiNotes, chordError)) {
         error_ = chordError;
         return false;
     }

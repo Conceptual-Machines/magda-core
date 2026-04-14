@@ -364,6 +364,19 @@ void Config::load() {
                 localLlamaContextSize =
                     static_cast<int>(aiObj->getProperty("localLlamaContextSize"));
 
+            // Migrate: openai_chat + GPT-5 → openai_responses (older configs used wrong provider)
+            for (auto& [role, cfg] : agentConfigs) {
+                if (cfg.provider == "openai_chat" && cfg.baseUrl.empty()) {
+                    if (juce::String(cfg.model).startsWith("gpt-5")) {
+                        cfg.provider = "openai_responses";
+                    } else if (role == "command" || role == "music") {
+                        // Older configs had command/music on gpt-4.1-mini — upgrade
+                        cfg.provider = "openai_responses";
+                        cfg.model = "gpt-5";
+                    }
+                }
+            }
+
             // Load per-provider credentials
             auto credsVar = aiObj->getProperty("credentials");
             if (auto* credsObj = credsVar.getDynamicObject()) {
@@ -389,12 +402,33 @@ void Config::load() {
         if (!musicCfg.model.empty() && musicCfg.model == "gpt-4.1")
             musicCfg.model = getString("openaiModel", musicCfg.model);
 
+        // Only upgrade OpenAI-flavored legacy configs to Responses/GPT-5.
+        // Non-OpenAI providers (anthropic, gemini, deepseek, openrouter, llama_local) are
+        // preserved as-is so the user's prior provider, auth, and model continue to work.
+        const bool isLegacyOpenAI = musicCfg.provider == "openai" ||
+                                    musicCfg.provider == "openai_chat" ||
+                                    musicCfg.provider == "openai_responses";
+
+        if (isLegacyOpenAI && musicCfg.baseUrl.empty()) {
+            musicCfg.provider = "openai_responses";
+            if (!juce::String(musicCfg.model).startsWith("gpt-5"))
+                musicCfg.model = "gpt-5";
+        }
         agentConfigs["music"] = musicCfg;
-        // Command and router default to same provider, cheaper model
-        AgentLLMConfig cheapCfg = musicCfg;
-        cheapCfg.model = "gpt-4.1-mini";
-        agentConfigs["router"] = cheapCfg;
-        agentConfigs["command"] = cheapCfg;
+
+        AgentLLMConfig commandCfg = musicCfg;
+        agentConfigs["command"] = commandCfg;
+
+        AgentLLMConfig routerCfg;
+        if (isLegacyOpenAI && musicCfg.baseUrl.empty()) {
+            routerCfg.provider = "openai_chat";
+            routerCfg.model = "gpt-4.1-mini";
+            routerCfg.apiKey = musicCfg.apiKey;
+        } else {
+            // Mirror the user's existing provider for the router too
+            routerCfg = musicCfg;
+        }
+        agentConfigs["router"] = routerCfg;
     }
 
     browserFilterAudio = getBool("browserFilterAudio", browserFilterAudio);
