@@ -181,28 +181,34 @@ class TrackController {
     // Metering Coordination (for PluginManager)
     // =========================================================================
 
+    struct MeterClientEntry {
+        te::LevelMeasurer::Client client;
+        te::LevelMeasurer* measurer = nullptr;
+    };
+
     /**
-     * @brief Add a meter client for a track (thread-safe)
-     * @param trackId The track ID
-     * @param levelMeter The LevelMeterPlugin to register with
+     * @brief Add a meter client for a track (thread-safe, idempotent)
+     *
+     * If the track already has a client registered with a different measurer,
+     * the old registration is removed and the client is re-registered with the new one.
      */
     void addMeterClient(TrackId trackId, te::LevelMeterPlugin* levelMeter);
 
     /**
-     * @brief Remove meter client for a track (thread-safe)
-     * @param trackId The track ID
-     * @param levelMeter The LevelMeterPlugin to unregister from (optional)
+     * @brief Remove meter client for a track (thread-safe, self-sufficient)
+     *
+     * Uses the stored measurer pointer to unregister — caller does not need
+     * to provide the plugin.
      */
-    void removeMeterClient(TrackId trackId, te::LevelMeterPlugin* levelMeter = nullptr);
+    void removeMeterClient(TrackId trackId);
 
     /**
      * @brief Execute a callback with thread-safe access to meter clients
-     * @param callback Function to execute with const reference to meterClients_
      *
-     * Used by AudioBridge for meter updates in timer thread
+     * Used by AudioBridge for meter updates in timer thread.
+     * Provides mutable access so callers can call getAndClearAudioLevel().
      */
-    void withMeterClients(
-        std::function<void(const std::map<TrackId, te::LevelMeasurer::Client>&)> callback) const;
+    void withMeterClients(std::function<void(std::map<TrackId, MeterClientEntry>&)> callback);
 
   private:
     // References to Tracktion Engine (not owned)
@@ -211,7 +217,7 @@ class TrackController {
 
     // Track mapping and metering state
     std::map<TrackId, te::AudioTrack*> trackMapping_;
-    std::map<TrackId, te::LevelMeasurer::Client> meterClients_;
+    std::map<TrackId, MeterClientEntry> meterClients_;
 
     // Thread safety
     mutable juce::CriticalSection trackLock_;

@@ -55,14 +55,12 @@ void TrackController::removeAudioTrack(TrackId trackId) {
             track = it->second;
 
             // Unregister meter client before removing track
-            if (track) {
-                auto* levelMeter = track->getLevelMeterPlugin();
-                if (levelMeter) {
-                    auto clientIt = meterClients_.find(trackId);
-                    if (clientIt != meterClients_.end()) {
-                        levelMeter->measurer.removeClient(clientIt->second);
-                        meterClients_.erase(clientIt);
-                    }
+            {
+                auto clientIt = meterClients_.find(trackId);
+                if (clientIt != meterClients_.end()) {
+                    if (clientIt->second.measurer)
+                        clientIt->second.measurer->removeClient(clientIt->second.client);
+                    meterClients_.erase(clientIt);
                 }
             }
 
@@ -398,27 +396,37 @@ void TrackController::addMeterClient(TrackId trackId, te::LevelMeterPlugin* leve
     if (!levelMeter)
         return;
 
+    auto* measurer = &levelMeter->measurer;
+
     juce::ScopedLock lock(trackLock_);
     auto [it, inserted] = meterClients_.try_emplace(trackId);
+
     if (inserted) {
-        // New client — register it with the measurer
-        levelMeter->measurer.addClient(it->second);
+        // New entry — register with the measurer
+        it->second.measurer = measurer;
+        measurer->addClient(it->second.client);
+    } else if (it->second.measurer != measurer) {
+        // Measurer changed (e.g. plugin was recreated) — re-register
+        if (it->second.measurer)
+            it->second.measurer->removeClient(it->second.client);
+        it->second.measurer = measurer;
+        measurer->addClient(it->second.client);
     }
+    // else: same measurer, already registered — no-op
 }
 
-void TrackController::removeMeterClient(TrackId trackId, te::LevelMeterPlugin* levelMeter) {
+void TrackController::removeMeterClient(TrackId trackId) {
     juce::ScopedLock lock(trackLock_);
     auto it = meterClients_.find(trackId);
     if (it != meterClients_.end()) {
-        if (levelMeter) {
-            levelMeter->measurer.removeClient(it->second);
-        }
+        if (it->second.measurer)
+            it->second.measurer->removeClient(it->second.client);
         meterClients_.erase(it);
     }
 }
 
 void TrackController::withMeterClients(
-    std::function<void(const std::map<TrackId, te::LevelMeasurer::Client>&)> callback) const {
+    std::function<void(std::map<TrackId, MeterClientEntry>&)> callback) {
     juce::ScopedLock lock(trackLock_);
     callback(meterClients_);
 }

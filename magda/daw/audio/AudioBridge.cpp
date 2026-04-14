@@ -125,12 +125,7 @@ AudioBridge::~AudioBridge() {
         // Unregister all track meter clients (via trackController)
         trackController_.withTrackMapping([this](const auto& trackMapping) {
             for (auto& [trackId, track] : trackMapping) {
-                if (track) {
-                    auto* levelMeter = track->getLevelMeterPlugin();
-                    if (levelMeter) {
-                        trackController_.removeMeterClient(trackId, levelMeter);
-                    }
-                }
+                trackController_.removeMeterClient(trackId);
             }
         });
 
@@ -909,7 +904,7 @@ void AudioBridge::timerCallback() {
     trackController_.withTrackMapping(
         [this](const std::map<TrackId, te::AudioTrack*>& trackMapping) {
             trackController_.withMeterClients(
-                [&](const std::map<TrackId, te::LevelMeasurer::Client>& meterClients) {
+                [&](std::map<TrackId, TrackController::MeterClientEntry>& meterClients) {
                     for (const auto& [trackId, track] : trackMapping) {
                         if (!track)
                             continue;
@@ -919,10 +914,7 @@ void AudioBridge::timerCallback() {
                         if (clientIt == meterClients.end())
                             continue;
 
-                        // Note: getAndClearAudioLevel() mutates the client, but we're accessing
-                        // through const reference. This is safe because the mutation is internal
-                        // to the client's thread-safe implementation.
-                        auto& client = const_cast<te::LevelMeasurer::Client&>(clientIt->second);
+                        auto& client = clientIt->second.client;
 
                         MeterData data;
 

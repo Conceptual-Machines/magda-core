@@ -1007,7 +1007,7 @@ te::Plugin::Ptr PluginManager::addLevelMeterToTrack(TrackId trackId) {
     // Remove any existing LevelMeter plugins (wrong position or duplicates)
     for (int i = plugins.size() - 1; i >= 0; --i) {
         if (auto* levelMeter = dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
-            trackController_.removeMeterClient(trackId, levelMeter);
+            trackController_.removeMeterClient(trackId);
             levelMeter->deleteFromParent();
         }
     }
