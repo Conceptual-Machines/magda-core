@@ -18,22 +18,10 @@
 #include "SidechainMonitorPlugin.hpp"
 #include "StepSequencerPlugin.hpp"
 #include "TrackController.hpp"
+#include "TracktionHelpers.hpp"
 #include "TransportStateManager.hpp"
 
 namespace magda {
-
-namespace {
-
-void stripTracktionIdsRecursive(juce::ValueTree state) {
-    if (!state.isValid())
-        return;
-
-    state.removeProperty(te::IDs::id, nullptr);
-    for (int i = 0; i < state.getNumChildren(); ++i)
-        stripTracktionIdsRecursive(state.getChild(i));
-}
-
-}  // namespace
 
 PluginManager::PluginManager(te::Engine& engine, te::Edit& edit, TrackController& trackController,
                              PluginWindowBridge& pluginWindowBridge,

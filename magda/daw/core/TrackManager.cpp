@@ -412,8 +412,26 @@ TrackId TrackManager::duplicateTrack(TrackId trackId) {
         newTrack.auxBusIndex = nextAuxBusIndex_++;
     }
 
-    // MultiOut links reference the original track's device — clear them
+    // MultiOut links and output pairs reference the original track — clear them
     newTrack.multiOutLink.reset();
+
+    std::function<void(std::vector<ChainElement>&)> clearMultiOutPairs;
+    clearMultiOutPairs = [&](std::vector<ChainElement>& elements) {
+        for (auto& element : elements) {
+            if (magda::isDevice(element)) {
+                auto& device = magda::getDevice(element);
+                for (auto& pair : device.multiOut.outputPairs) {
+                    pair.active = false;
+                    pair.trackId = INVALID_TRACK_ID;
+                }
+            } else if (magda::isRack(element)) {
+                auto& rack = magda::getRack(element);
+                for (auto& chain : rack.chains)
+                    clearMultiOutPairs(chain.elements);
+            }
+        }
+    };
+    clearMultiOutPairs(newTrack.chainElements);
 
     TrackId newId = newTrack.id;
 

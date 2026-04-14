@@ -3,22 +3,10 @@
 #include "CurveSnapshot.hpp"
 #include "ModifierHelpers.hpp"
 #include "PluginManager.hpp"
+#include "TracktionHelpers.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda {
-
-namespace {
-
-void stripTracktionIdsRecursive(juce::ValueTree state) {
-    if (!state.isValid())
-        return;
-
-    state.removeProperty(te::IDs::id, nullptr);
-    for (int i = 0; i < state.getNumChildren(); ++i)
-        stripTracktionIdsRecursive(state.getChild(i));
-}
-
-}  // namespace
 
 RackSyncManager::RackSyncManager(te::Edit& edit, PluginManager& pluginManager)
     : edit_(edit), pluginManager_(pluginManager) {}
