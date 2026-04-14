@@ -906,50 +906,50 @@ void AudioBridge::timerCallback() {
     // NOTE: Window state sync is now handled by PluginWindowManager's timer
 
     // Update metering from level measurers (runs at 30 FPS on message thread)
-    // Use trackController's thread-safe accessors
-    trackController_.withTrackMapping([this](const auto& trackMapping) {
-        trackController_.withMeterClients([&](const auto& meterClients) {
-            // Update track metering
-            for (const auto& [trackId, track] : trackMapping) {
-                if (!track)
-                    continue;
+    trackController_.withTrackMapping(
+        [this](const std::map<TrackId, te::AudioTrack*>& trackMapping) {
+            trackController_.withMeterClients(
+                [&](const std::map<TrackId, te::LevelMeasurer::Client>& meterClients) {
+                    for (const auto& [trackId, track] : trackMapping) {
+                        if (!track)
+                            continue;
 
-                // Get the meter client for this track
-                auto clientIt = meterClients.find(trackId);
-                if (clientIt == meterClients.end())
-                    continue;
+                        // Get the meter client for this track
+                        auto clientIt = meterClients.find(trackId);
+                        if (clientIt == meterClients.end())
+                            continue;
 
-                // Note: getAndClearAudioLevel() mutates the client, but we're accessing
-                // through const reference. This is safe because the mutation is internal
-                // to the client's thread-safe implementation.
-                auto& client = const_cast<te::LevelMeasurer::Client&>(clientIt->second);
+                        // Note: getAndClearAudioLevel() mutates the client, but we're accessing
+                        // through const reference. This is safe because the mutation is internal
+                        // to the client's thread-safe implementation.
+                        auto& client = const_cast<te::LevelMeasurer::Client&>(clientIt->second);
 
-                MeterData data;
+                        MeterData data;
 
-                // Read and clear audio levels from the client (returns DbTimePair)
-                auto levelL = client.getAndClearAudioLevel(0);
-                auto levelR = client.getAndClearAudioLevel(1);
+                        // Read and clear audio levels from the client (returns DbTimePair)
+                        auto levelL = client.getAndClearAudioLevel(0);
+                        auto levelR = client.getAndClearAudioLevel(1);
 
-                // Convert from dB to linear gain (allow > 1.0 for headroom)
-                data.peakL = juce::Decibels::decibelsToGain(levelL.dB);
-                data.peakR = juce::Decibels::decibelsToGain(levelR.dB);
+                        // Convert from dB to linear gain (allow > 1.0 for headroom)
+                        data.peakL = juce::Decibels::decibelsToGain(levelL.dB);
+                        data.peakR = juce::Decibels::decibelsToGain(levelR.dB);
 
-                // Check for clipping
-                data.clipped = data.peakL > 1.0f || data.peakR > 1.0f;
+                        // Check for clipping
+                        data.clipped = data.peakL > 1.0f || data.peakR > 1.0f;
 
-                // RMS would require accumulation over time - simplified for now
-                data.rmsL = data.peakL * 0.7f;  // Rough approximation
-                data.rmsR = data.peakR * 0.7f;
+                        // RMS would require accumulation over time - simplified for now
+                        data.rmsL = data.peakL * 0.7f;  // Rough approximation
+                        data.rmsR = data.peakR * 0.7f;
 
-                meteringBuffer_.pushLevels(trackId, data);
-                recordingMeteringBuffer_.pushLevels(trackId, data);
+                        meteringBuffer_.pushLevels(trackId, data);
+                        recordingMeteringBuffer_.pushLevels(trackId, data);
 
-                // Write audio peak to sidechain bus for Audio-triggered modulators
-                float peak = std::max(data.peakL, data.peakR);
-                SidechainTriggerBus::getInstance().setAudioPeakLevel(trackId, peak);
-            }
+                        // Write audio peak to sidechain bus for Audio-triggered modulators
+                        float peak = std::max(data.peakL, data.peakR);
+                        SidechainTriggerBus::getInstance().setAudioPeakLevel(trackId, peak);
+                    }
+                });
         });
-    });
 
     // Update per-device metering
     deviceMetering_.updateAllClients();

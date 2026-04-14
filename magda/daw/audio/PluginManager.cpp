@@ -22,6 +22,19 @@
 
 namespace magda {
 
+namespace {
+
+void stripTracktionIdsRecursive(juce::ValueTree state) {
+    if (!state.isValid())
+        return;
+
+    state.removeProperty(te::IDs::id, nullptr);
+    for (int i = 0; i < state.getNumChildren(); ++i)
+        stripTracktionIdsRecursive(state.getChild(i));
+}
+
+}  // namespace
+
 PluginManager::PluginManager(te::Engine& engine, te::Edit& edit, TrackController& trackController,
                              PluginWindowBridge& pluginWindowBridge,
                              TransportStateManager& transportState)
@@ -654,18 +667,6 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Ensure LevelMeter is at the end of the plugin chain for metering
     addLevelMeterToTrack(trackId);
 
-    // Debug: dump final plugin list
-    {
-        auto& plugins = teTrack->pluginList;
-        DBG("syncTrackPlugins: FINAL plugin list for track " << trackId << " (" << plugins.size()
-                                                             << " plugins):");
-        for (int i = 0; i < plugins.size(); ++i) {
-            DBG("  [" << i << "] " << plugins[i]->getName().toRawUTF8()
-                      << " enabled=" << (int)plugins[i]->isEnabled()
-                      << " itemID=" << (juce::int64)plugins[i]->itemID.getRawID());
-        }
-    }
-
     // Rebuild sidechain LFO cache so audio/MIDI threads see current state
     rebuildSidechainLFOCache();
 }
@@ -981,28 +982,44 @@ te::Plugin::Ptr PluginManager::addLevelMeterToTrack(TrackId trackId) {
         return nullptr;
     }
 
-    // Remove any existing LevelMeter plugins first to avoid duplicates
     auto& plugins = track->pluginList;
+
+    // Check if a LevelMeterPlugin already exists on this track
+    te::LevelMeterPlugin* existingMeter = nullptr;
+    int existingIndex = -1;
+    int meterCount = 0;
+    for (int i = 0; i < plugins.size(); ++i) {
+        if (auto* lm = dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
+            if (meterCount == 0) {
+                existingMeter = lm;
+                existingIndex = i;
+            }
+            ++meterCount;
+        }
+    }
+    // If exactly one LevelMeterPlugin exists and it's already at the end,
+    // just ensure the meter client is registered and reuse it.
+    if (existingMeter && meterCount == 1 && existingIndex == plugins.size() - 1) {
+        trackController_.addMeterClient(trackId, existingMeter);
+        return existingMeter;
+    }
+
+    // Remove any existing LevelMeter plugins (wrong position or duplicates)
     for (int i = plugins.size() - 1; i >= 0; --i) {
         if (auto* levelMeter = dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
-            // Unregister meter client from the old LevelMeter (thread-safe)
             trackController_.removeMeterClient(trackId, levelMeter);
             levelMeter->deleteFromParent();
         }
     }
 
-    // Now add a fresh LevelMeter at the end
+    // Add a fresh LevelMeter at the end
     auto plugin = loadBuiltInPlugin(trackId, "levelmeter");
 
     // Register meter client with the new LevelMeter (thread-safe)
     if (plugin) {
         if (auto* levelMeter = dynamic_cast<te::LevelMeterPlugin*>(plugin.get())) {
             trackController_.addMeterClient(trackId, levelMeter);
-            DBG("addLevelMeterToTrack: registered meter client for track "
-                << trackId << " itemID=" << (juce::int64)plugin->itemID.getRawID());
         }
-    } else {
-        DBG("addLevelMeterToTrack: WARNING - failed to create LevelMeter for track " << trackId);
     }
 
     return plugin;
@@ -2799,8 +2816,12 @@ void PluginManager::captureAllPluginStates() {
             // TE internal plugin (4osc, EQ, Compressor, etc.):
             // Capture the full ValueTree as XML so non-automatable
             // CachedValues (wave shapes, filter type, etc.) are preserved.
+            // Strip TE ids recursively so duplicated tracks get fresh
+            // EditItemIDs all the way through nested state trees.
             sd.plugin->flushPluginStateToValueTree();
-            if (auto xml = sd.plugin->state.createXml())
+            auto stateCopy = sd.plugin->state.createCopy();
+            stripTracktionIdsRecursive(stateCopy);
+            if (auto xml = stateCopy.createXml())
                 stateStr = xml->toString();
         }
 
@@ -2836,7 +2857,9 @@ void PluginManager::capturePluginState(DeviceId deviceId) {
         DBG("capturePluginState: external plugin, state length=" << stateStr.length());
     } else {
         plugin->flushPluginStateToValueTree();
-        if (auto xml = plugin->state.createXml())
+        auto stateCopy = plugin->state.createCopy();
+        stripTracktionIdsRecursive(stateCopy);
+        if (auto xml = stateCopy.createXml())
             stateStr = xml->toString();
         DBG("capturePluginState: internal plugin, state length=" << stateStr.length());
     }
@@ -3834,6 +3857,7 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
                 << " numProps=" << savedState.getNumProperties()
                 << " numChildren=" << savedState.getNumChildren());
             if (savedState.isValid()) {
+                stripTracktionIdsRecursive(savedState);
                 auto plugin = edit_.getPluginCache().createNewPlugin(savedState);
                 DBG("createInternalPlugin: from saved state -> plugin="
                     << (plugin ? plugin->getName().toRawUTF8() : "NULL")

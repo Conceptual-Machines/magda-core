@@ -400,7 +400,10 @@ void TrackController::addMeterClient(TrackId trackId, te::LevelMeterPlugin* leve
 
     juce::ScopedLock lock(trackLock_);
     auto [it, inserted] = meterClients_.try_emplace(trackId);
-    levelMeter->measurer.addClient(it->second);
+    if (inserted) {
+        // New client — register it with the measurer
+        levelMeter->measurer.addClient(it->second);
+    }
 }
 
 void TrackController::removeMeterClient(TrackId trackId, te::LevelMeterPlugin* levelMeter) {
