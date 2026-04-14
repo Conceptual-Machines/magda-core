@@ -164,10 +164,12 @@ void TrackContentPanel::updateMultiClipDrag(const juce::Point<int>& currentPos) 
 
     // Compute vertical (cross-track) delta from mouse Y
     int currentTrackIndex = getTrackIndexAtY(currentPos.y);
+    if (currentTrackIndex < 0) {
+        // Mouse is below the last track — clamp to last track
+        currentTrackIndex = static_cast<int>(visibleTrackIds_.size()) - 1;
+    }
     if (currentTrackIndex >= 0 && multiClipDragAnchorTrackIndex_ >= 0) {
         multiClipDragTrackDelta_ = currentTrackIndex - multiClipDragAnchorTrackIndex_;
-    } else {
-        multiClipDragTrackDelta_ = 0;
     }
 
     int numTracks = static_cast<int>(visibleTrackIds_.size());
