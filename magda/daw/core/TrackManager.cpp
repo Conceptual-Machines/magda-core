@@ -363,6 +363,33 @@ TrackId TrackManager::duplicateTrack(TrackId trackId) {
     newTrack.name = it->name + " Copy";
     newTrack.childIds.clear();  // Don't duplicate children references
 
+    // Reassign all device/rack/chain IDs so the duplicate gets its own
+    // plugin instances in the audio engine (sharing IDs = no audio).
+    std::function<void(std::vector<ChainElement>&)> reassignIds;
+    reassignIds = [&](std::vector<ChainElement>& elements) {
+        for (auto& element : elements) {
+            if (magda::isDevice(element)) {
+                magda::getDevice(element).id = nextDeviceId_++;
+            } else if (magda::isRack(element)) {
+                auto& rack = magda::getRack(element);
+                rack.id = nextRackId_++;
+                for (auto& chain : rack.chains) {
+                    chain.id = nextChainId_++;
+                    reassignIds(chain.elements);
+                }
+            }
+        }
+    };
+    reassignIds(newTrack.chainElements);
+
+    // Aux tracks need a unique bus index
+    if (newTrack.type == TrackType::Aux) {
+        newTrack.auxBusIndex = nextAuxBusIndex_++;
+    }
+
+    // MultiOut links reference the original track's device — clear them
+    newTrack.multiOutLink.reset();
+
     TrackId newId = newTrack.id;
 
     // Insert after the original
@@ -373,6 +400,14 @@ TrackId TrackManager::duplicateTrack(TrackId trackId) {
     if (newTrack.hasParent()) {
         if (auto* parent = getTrack(newTrack.parentId)) {
             parent->childIds.push_back(newId);
+        }
+    }
+
+    // Set up MIDI monitoring (same as createTrack)
+    if (audioEngine_ && newTrack.type != TrackType::Aux) {
+        if (auto* midiBridge = audioEngine_->getMidiBridge()) {
+            midiBridge->setTrackMidiInput(newId, newTrack.midiInputDevice);
+            midiBridge->startMonitoring(newId);
         }
     }
 
