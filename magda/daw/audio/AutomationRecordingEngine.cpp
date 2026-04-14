@@ -123,50 +123,51 @@ void AutomationRecordingEngine::flushFinalPoints() {
 
 void AutomationRecordingEngine::onDeviceParameterChanged(DeviceId deviceId, int paramIndex,
                                                          float rawValue) {
-    if (!shouldRecord()) {
+    if (!shouldRecord())
         return;
+
+    auto& trackMgr = TrackManager::getInstance();
+    auto devicePath = trackMgr.findDevicePath(deviceId);
+    if (!devicePath.isValid())
+        return;
+
+    // Build target for this device parameter
+    AutomationTarget target;
+    target.type = AutomationTargetType::DeviceParameter;
+    target.trackId = devicePath.trackId;
+    target.devicePath = devicePath;
+    target.paramIndex = paramIndex;
+
+    // Get param name for lane display
+    auto resolved = trackMgr.resolvePath(devicePath);
+    if (resolved.valid && resolved.device) {
+        if (paramIndex >= 0 && paramIndex < (int)resolved.device->parameters.size())
+            target.paramName =
+                resolved.device->name + ": " + resolved.device->parameters[paramIndex].name;
     }
 
     auto& autoMgr = AutomationManager::getInstance();
+    auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
 
-    for (const auto& lane : autoMgr.getLanes()) {
-        if (!lane.armed)
-            continue;
-        if (lane.target.type != AutomationTargetType::DeviceParameter)
-            continue;
-        if (lane.target.devicePath.getDeviceId() != deviceId)
-            continue;
-        if (lane.target.paramIndex != paramIndex)
-            continue;
+    double beatTime = getCurrentBeatTime();
+    ParameterInfo paramInfo = target.getParameterInfo();
+    double normalizedValue =
+        static_cast<double>(ParameterUtils::realToNormalized(rawValue, paramInfo));
 
-        double beatTime = getCurrentBeatTime();
-        double normalizedValue = normalizeDeviceParam(lane.target, rawValue);
+    DBG("[AutoRec] Device param hit: deviceId=" << deviceId << " param=" << paramIndex << " raw="
+                                                << rawValue << " norm=" << normalizedValue
+                                                << " beat=" << beatTime);
 
-        DBG("[AutoRec] Device param hit: deviceId=" << deviceId << " param=" << paramIndex
-                                                    << " raw=" << rawValue << " norm="
-                                                    << normalizedValue << " beat=" << beatTime);
+    if (shouldThinPoint(laneId, beatTime, normalizedValue))
+        return;
 
-        if (shouldThinPoint(lane.id, beatTime, normalizedValue))
-            return;
-
-        recordPoint(lane.id, beatTime, normalizedValue);
-        return;  // One lane per device+param
-    }
+    recordPoint(laneId, beatTime, normalizedValue);
 }
 
 void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     if (!shouldRecord())
         return;
 
-    // Note: we do NOT check AutomationManager::isPlaybackActive() here.
-    // That flag is true for the entire playback session (set by bakeAllLanes),
-    // which would block all recording. Instead, we rely on the volume/pan
-    // change detection below to filter out non-user-initiated changes.
-    // Automation playback drives parameters through TE's native curve system,
-    // which does NOT fire trackPropertyChanged, so user fader moves are the
-    // only source of this callback during playback.
-
-    auto& autoMgr = AutomationManager::getInstance();
     auto tid = static_cast<TrackId>(trackId);
     const auto* track = TrackManager::getInstance().getTrack(tid);
     if (!track)
@@ -183,46 +184,41 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     if (!volumeChanged && !panChanged)
         return;
 
+    auto& autoMgr = AutomationManager::getInstance();
     double beatTime = getCurrentBeatTime();
 
-    for (const auto& lane : autoMgr.getLanes()) {
-        if (!lane.armed)
-            continue;
-        if (lane.target.trackId != tid)
-            continue;
+    if (volumeChanged) {
+        AutomationTarget target;
+        target.type = AutomationTargetType::TrackVolume;
+        target.trackId = tid;
 
-        if (lane.target.type == AutomationTargetType::TrackVolume && volumeChanged) {
-            ParameterInfo paramInfo = lane.target.getParameterInfo();
-            float db = gainToDb(track->volume);
-            double normalizedValue =
-                static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
+        auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+        ParameterInfo paramInfo = target.getParameterInfo();
+        float db = gainToDb(track->volume);
+        double normalizedValue =
+            static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
 
-            DBG("[AutoRec] Volume hit: track=" << (int)tid << " vol=" << track->volume << " norm="
-                                               << normalizedValue << " beat=" << beatTime);
-            if (!shouldThinPoint(lane.id, beatTime, normalizedValue))
-                recordPoint(lane.id, beatTime, normalizedValue);
-        } else if (lane.target.type == AutomationTargetType::TrackPan && panChanged) {
-            ParameterInfo paramInfo = lane.target.getParameterInfo();
-            double normalizedValue =
-                static_cast<double>(ParameterUtils::realToNormalized(track->pan, paramInfo));
-
-            DBG("[AutoRec] Pan hit: track=" << (int)tid << " pan=" << track->pan
-                                            << " norm=" << normalizedValue << " beat=" << beatTime);
-            if (!shouldThinPoint(lane.id, beatTime, normalizedValue))
-                recordPoint(lane.id, beatTime, normalizedValue);
-        }
+        DBG("[AutoRec] Volume hit: track=" << (int)tid << " vol=" << track->volume
+                                           << " norm=" << normalizedValue << " beat=" << beatTime);
+        if (!shouldThinPoint(laneId, beatTime, normalizedValue))
+            recordPoint(laneId, beatTime, normalizedValue);
     }
-}
 
-bool AutomationRecordingEngine::macroScopeMatches(const AutomationTarget& target, bool isRack,
-                                                  int id) {
-    // The lane's devicePath encodes the rack/device that owns the macro.
-    // For rack macros (isRack=true, id=RackId): the path's first rack step must match.
-    // For device macros (isRack=false, id=DeviceId): the path's device must match.
-    if (isRack) {
-        return target.devicePath.getRackId() == id;
+    if (panChanged) {
+        AutomationTarget target;
+        target.type = AutomationTargetType::TrackPan;
+        target.trackId = tid;
+
+        auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+        ParameterInfo paramInfo = target.getParameterInfo();
+        double normalizedValue =
+            static_cast<double>(ParameterUtils::realToNormalized(track->pan, paramInfo));
+
+        DBG("[AutoRec] Pan hit: track=" << (int)tid << " pan=" << track->pan
+                                        << " norm=" << normalizedValue << " beat=" << beatTime);
+        if (!shouldThinPoint(laneId, beatTime, normalizedValue))
+            recordPoint(laneId, beatTime, normalizedValue);
     }
-    return target.devicePath.getDeviceId() == id;
 }
 
 void AutomationRecordingEngine::onMacroValueChanged(TrackId trackId, bool isRack, int id,
@@ -230,30 +226,31 @@ void AutomationRecordingEngine::onMacroValueChanged(TrackId trackId, bool isRack
     if (!shouldRecord())
         return;
 
-    auto& autoMgr = AutomationManager::getInstance();
-    double beatTime = getCurrentBeatTime();
+    // Build target: for rack macros the path points to the rack,
+    // for device macros it points to the device.
+    AutomationTarget target;
+    target.type = AutomationTargetType::Macro;
+    target.trackId = trackId;
+    target.macroIndex = macroIndex;
 
-    for (const auto& lane : autoMgr.getLanes()) {
-        if (!lane.armed)
-            continue;
-        if (lane.target.type != AutomationTargetType::Macro)
-            continue;
-        if (lane.target.trackId != trackId)
-            continue;
-        if (lane.target.macroIndex != macroIndex)
-            continue;
-        if (!macroScopeMatches(lane.target, isRack, id))
-            continue;
-
-        // Macro values are already 0-1 normalized
-        double normalizedValue = static_cast<double>(value);
-
-        if (shouldThinPoint(lane.id, beatTime, normalizedValue))
+    if (isRack) {
+        target.devicePath = ChainNodePath::rack(trackId, static_cast<RackId>(id));
+    } else {
+        target.devicePath = TrackManager::getInstance().findDevicePath(static_cast<DeviceId>(id));
+        if (!target.devicePath.isValid())
             return;
-
-        recordPoint(lane.id, beatTime, normalizedValue);
-        return;  // One lane per macro scope+index
     }
+
+    auto& autoMgr = AutomationManager::getInstance();
+    auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+
+    double beatTime = getCurrentBeatTime();
+    double normalizedValue = static_cast<double>(value);  // Macros are already 0-1
+
+    if (shouldThinPoint(laneId, beatTime, normalizedValue))
+        return;
+
+    recordPoint(laneId, beatTime, normalizedValue);
 }
 
 }  // namespace magda

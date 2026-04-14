@@ -439,6 +439,33 @@ void TrackManager::setDeviceLevel(const ChainNodePath& devicePath, float level) 
     }
 }
 
+ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
+    // Search all tracks for a device by ID and return its full path
+    for (const auto& track : tracks_) {
+        for (const auto& element : track.chainElements) {
+            if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
+                return ChainNodePath::topLevelDevice(track.id, deviceId);
+            if (magda::isRack(element)) {
+                const auto& rack = magda::getRack(element);
+                for (const auto& chain : rack.chains) {
+                    for (const auto& chainElement : chain.elements) {
+                        if (magda::isDevice(chainElement) &&
+                            magda::getDevice(chainElement).id == deviceId)
+                            return ChainNodePath::chainDevice(track.id, rack.id, chain.id,
+                                                              deviceId);
+                    }
+                }
+            }
+        }
+    }
+    // Also check master track
+    for (const auto& element : masterTrack_.chainElements) {
+        if (magda::isDevice(element) && magda::getDevice(element).id == deviceId)
+            return ChainNodePath::topLevelDevice(MASTER_TRACK_ID, deviceId);
+    }
+    return {};  // Not found — returns invalid path
+}
+
 void TrackManager::updateDeviceParameters(DeviceId deviceId,
                                           const std::vector<ParameterInfo>& params) {
     // Check master track first

@@ -306,6 +306,9 @@ class TrackManager {
     void setDeviceGainDb(const ChainNodePath& devicePath, float gainDb);
     void setDeviceLevel(const ChainNodePath& devicePath, float level);  // 0-1 linear
 
+    // Find the ChainNodePath for a device by its ID (searches all tracks recursively)
+    ChainNodePath findDevicePath(DeviceId deviceId) const;
+
     // Update device parameters (called by AudioBridge when processor is created)
     void updateDeviceParameters(DeviceId deviceId, const std::vector<ParameterInfo>& params);
     void setDeviceVisibleParameters(DeviceId deviceId, const std::vector<int>& visibleParams);

@@ -72,9 +72,6 @@ class AutomationRecordingEngine {
     };
     std::unordered_map<int, TrackMixState> lastTrackMixState_;
 
-    // Match a macro callback's (isRack, id) against a lane's devicePath
-    static bool macroScopeMatches(const AutomationTarget& target, bool isRack, int id);
-
     static constexpr double kMinTimeDeltaSeconds = 0.05;  // 50ms thinning threshold
     static constexpr double kMinValueDelta = 0.005;       // 0.5% normalized range
 };
