@@ -327,6 +327,11 @@ bool Params::getBool(const std::string& key, bool def) const {
 Interpreter::Interpreter() {}
 
 bool Interpreter::execute(const char* dslCode) {
+    // Interpreter mutates TrackManager/ClipManager/SelectionManager, all of
+    // which fire listeners that assume the message thread. Callers must
+    // marshal onto the message thread before invoking execute().
+    JUCE_ASSERT_MESSAGE_THREAD;
+
     if (!dslCode || !*dslCode) {
         ctx_.setError("Empty DSL code");
         return false;

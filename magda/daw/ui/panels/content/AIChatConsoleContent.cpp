@@ -219,12 +219,14 @@ void AIChatConsoleContent::RequestThread::run() {
         return;
 
     // streamAnchor marks the text position where streamed output begins,
-    // so we can replace it with execution results later.
-    std::atomic<int> streamAnchor{-1};
+    // so we can replace it with execution results later. Shared ownership so
+    // callAsync lambdas keep it alive even if this thread exits before they
+    // run (capturing by reference to a stack local would be UB).
+    auto streamAnchor = std::make_shared<std::atomic<int>>(-1);
 
     // Helper: replace "Thinking..." with streaming output area
-    auto startStreaming = [safeThis, &streamAnchor]() {
-        juce::MessageManager::callAsync([safeThis, &streamAnchor]() {
+    auto startStreaming = [safeThis, streamAnchor]() {
+        juce::MessageManager::callAsync([safeThis, streamAnchor]() {
             if (!safeThis)
                 return;
             safeThis->stopTimer();
@@ -236,7 +238,7 @@ void AIChatConsoleContent::RequestThread::run() {
                     lineEnd = text.length();
                 text = text.substring(0, thinkingPos) + text.substring(lineEnd + 1);
             }
-            streamAnchor.store(text.length());
+            streamAnchor->store(text.length());
             safeThis->chatHistory_.setText(text);
             safeThis->chatHistory_.moveCaretToEnd();
         });
@@ -321,15 +323,15 @@ void AIChatConsoleContent::RequestThread::run() {
         // prevents the message thread from being buried under hundreds of
         // stale rebuilds while streaming, which caused a visible stall
         // between stream-end and execute-callAsync.
-        auto render = [safeThis, state, &streamAnchor]() {
+        auto render = [safeThis, state, streamAnchor]() {
             bool expected = false;
             if (!state->renderPending.compare_exchange_strong(expected, true))
                 return;
-            juce::MessageManager::callAsync([safeThis, state, &streamAnchor]() {
+            juce::MessageManager::callAsync([safeThis, state, streamAnchor]() {
                 state->renderPending.store(false);
                 if (!safeThis)
                     return;
-                int anchor = streamAnchor.load();
+                int anchor = streamAnchor->load();
                 auto full = safeThis->chatHistory_.getText();
                 if (anchor < 0 || anchor > full.length())
                     return;
@@ -440,7 +442,7 @@ void AIChatConsoleContent::RequestThread::run() {
     if (threadShouldExit())
         return;
 
-    int anchor = streamAnchor.load();
+    int anchor = streamAnchor->load();
 
     // Step 3: Execute on message thread, replacing streamed output
     juce::MessageManager::callAsync(
