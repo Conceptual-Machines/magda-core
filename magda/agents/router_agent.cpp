@@ -43,8 +43,8 @@ RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
     auto client = createLLMClient(agentConfig, "router");
 
     llm::Request request;
-    request.systemPrompt = juce::String(getSystemPrompt());
-    request.userMessage = juce::String(message);
+    request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
+    request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.0f;
 
     auto response = client->sendRequest(request);
@@ -65,8 +65,9 @@ RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
         result.intent = "COMMAND";  // safe default
 
     DBG("MAGDA Router (" + client->getName() + "/" + client->getConfig().model +
-        "): " + juce::String(message) + " -> " + juce::String(result.intent) + " (" +
-        juce::String(result.wallSeconds, 2) + "s)");
+        "): " + juce::String::fromUTF8(message.c_str()) + " -> " +
+        juce::String::fromUTF8(result.intent.c_str()) + " (" + juce::String(result.wallSeconds, 2) +
+        "s)");
 
     return result;
 }

@@ -125,13 +125,13 @@ DAWAgent::GenerateResult DAWAgent::generate(const std::string& message) {
     auto stateJson = dsl::Interpreter::buildStateSnapshot();
 
     // Build the full prompt with system prompt + state
-    auto systemPrompt = juce::String(getCompactSystemPrompt());
+    auto systemPrompt = juce::String::fromUTF8(getCompactSystemPrompt());
     if (stateJson.isNotEmpty())
         systemPrompt += "\n\nCurrent DAW state:\n" + stateJson;
 
     llm::Request request;
     request.systemPrompt = systemPrompt;
-    request.userMessage = juce::String(message);
+    request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.1f;
 
     auto response = client->sendRequest(request);
@@ -144,13 +144,14 @@ DAWAgent::GenerateResult DAWAgent::generate(const std::string& message) {
         return result;
     }
 
-    result.compactOutput = response.text.trim().toStdString();
+    auto trimmedText = response.text.trim();
+    result.compactOutput = trimmedText.toStdString();
 
     DBG("MAGDA DAWAgent (" + client->getName() + "/" + client->getConfig().model + ", " +
-        juce::String(response.wallSeconds, 2) + "s): " + juce::String(result.compactOutput));
+        juce::String(response.wallSeconds, 2) + "s): " + trimmedText);
 
     // Parse into IR
-    result.instructions = parser_.parse(juce::String(result.compactOutput));
+    result.instructions = parser_.parse(trimmedText);
     if (result.instructions.empty() && parser_.getLastError().isNotEmpty()) {
         result.error = "Parse error: " + parser_.getLastError().toStdString();
         result.hasError = true;
@@ -202,15 +203,15 @@ DAWAgent::DSLResult DAWAgent::generateDSL(const std::string& message) {
     auto client = llm::LLMClientFactory::create(pc);
 
     auto stateJson = dsl::Interpreter::buildStateSnapshot();
-    auto systemPrompt = juce::String(dsl::getToolDescription());
+    auto systemPrompt = juce::String::fromUTF8(dsl::getToolDescription());
     if (stateJson.isNotEmpty())
         systemPrompt += "\n\nCurrent DAW state:\n" + stateJson;
 
     llm::Request request;
     request.systemPrompt = systemPrompt;
-    request.userMessage = juce::String(message);
+    request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.1f;
-    request.grammar = juce::String(dsl::getGrammar());
+    request.grammar = juce::String::fromUTF8(dsl::getGrammar());
     request.grammarToolName = "magda_dsl";
     request.grammarToolDescription = systemPrompt;
 

@@ -54,17 +54,17 @@ static std::unique_ptr<llm::LLMClient> createCommandClient(const Config::AgentLL
 /** Build the LLM request, adding CFG grammar when supported. */
 static llm::Request buildRequest(const std::string& message, bool cfg) {
     auto stateJson = dsl::Interpreter::buildStateSnapshot();
-    auto systemPrompt = juce::String(CommandAgent::getSystemPrompt());
+    auto systemPrompt = juce::String::fromUTF8(CommandAgent::getSystemPrompt());
     if (stateJson.isNotEmpty())
         systemPrompt += "\n\nCurrent DAW state:\n" + stateJson;
 
     llm::Request request;
     request.systemPrompt = systemPrompt;
-    request.userMessage = juce::String(message);
+    request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.1f;
 
     if (cfg) {
-        request.grammar = juce::String(dsl::getGrammar());
+        request.grammar = juce::String::fromUTF8(dsl::getGrammar());
         request.grammarToolName = "magda_dsl";
         request.grammarToolDescription = systemPrompt;
     }

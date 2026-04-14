@@ -76,8 +76,8 @@ MusicAgent::GenerateResult MusicAgent::generate(const std::string& message) {
     auto client = createLLMClient(agentConfig, "music");
 
     llm::Request request;
-    request.systemPrompt = juce::String(getSystemPrompt());
-    request.userMessage = juce::String(message);
+    request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
+    request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.3f;  // slightly more creative for music
 
     auto response = client->sendRequest(request);
@@ -88,12 +88,13 @@ MusicAgent::GenerateResult MusicAgent::generate(const std::string& message) {
         return result;
     }
 
-    result.compactOutput = response.text.trim().toStdString();
+    auto trimmedText = response.text.trim();
+    result.compactOutput = trimmedText.toStdString();
 
     DBG("MAGDA MusicAgent (" + client->getName() + ", " + juce::String(response.wallSeconds, 2) +
-        "s): " + juce::String(result.compactOutput));
+        "s): " + trimmedText);
 
-    result.instructions = parser_.parse(juce::String(result.compactOutput));
+    result.instructions = parser_.parse(trimmedText);
     if (result.instructions.empty() && parser_.getLastError().isNotEmpty()) {
         result.error = "Parse error: " + parser_.getLastError().toStdString();
         result.hasError = true;
@@ -126,8 +127,8 @@ MusicAgent::GenerateResult MusicAgent::generateStreaming(const std::string& mess
     auto client = createLLMClient(agentConfig, "music");
 
     llm::Request request;
-    request.systemPrompt = juce::String(getSystemPrompt());
-    request.userMessage = juce::String(message);
+    request.systemPrompt = juce::String::fromUTF8(getSystemPrompt());
+    request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.3f;
 
     auto response = client->sendStreamingRequest(request, [&](const juce::String& token) {
@@ -144,12 +145,13 @@ MusicAgent::GenerateResult MusicAgent::generateStreaming(const std::string& mess
         return result;
     }
 
-    result.compactOutput = response.text.trim().toStdString();
+    auto trimmedText = response.text.trim();
+    result.compactOutput = trimmedText.toStdString();
 
     DBG("MAGDA MusicAgent stream (" + client->getName() + ", " +
-        juce::String(response.wallSeconds, 2) + "s): " + juce::String(result.compactOutput));
+        juce::String(response.wallSeconds, 2) + "s): " + trimmedText);
 
-    result.instructions = parser_.parse(juce::String(result.compactOutput));
+    result.instructions = parser_.parse(trimmedText);
     if (result.instructions.empty() && parser_.getLastError().isNotEmpty()) {
         result.error = "Parse error: " + parser_.getLastError().toStdString();
         result.hasError = true;
