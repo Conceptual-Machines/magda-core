@@ -7,6 +7,19 @@
 
 namespace magda {
 
+namespace {
+
+void stripTracktionIdsRecursive(juce::ValueTree state) {
+    if (!state.isValid())
+        return;
+
+    state.removeProperty(te::IDs::id, nullptr);
+    for (int i = 0; i < state.getNumChildren(); ++i)
+        stripTracktionIdsRecursive(state.getChild(i));
+}
+
+}  // namespace
+
 RackSyncManager::RackSyncManager(te::Edit& edit, PluginManager& pluginManager)
     : edit_(edit), pluginManager_(pluginManager) {}
 
@@ -289,7 +302,7 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
             stateStr = ext->state.getProperty(te::IDs::state).toString();
         } else {
             auto stateCopy = plugin->state.createCopy();
-            stateCopy.removeProperty(te::IDs::id, nullptr);
+            stripTracktionIdsRecursive(stateCopy);
             if (auto xml = stateCopy.createXml())
                 stateStr = xml->toString();
         }

@@ -129,6 +129,13 @@ DuplicateTrackCommand::DuplicateTrackCommand(TrackId sourceTrackId, bool duplica
 void DuplicateTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
 
+    // Capture current plugin state so the duplicate gets the source's live settings
+    if (auto* engine = trackManager.getAudioEngine()) {
+        if (auto* bridge = engine->getAudioBridge()) {
+            bridge->captureAllPluginStates();
+        }
+    }
+
     duplicatedTrackId_ = trackManager.duplicateTrack(sourceTrackId_);
 
     if (duplicateContent_ && duplicatedTrackId_ != INVALID_TRACK_ID) {

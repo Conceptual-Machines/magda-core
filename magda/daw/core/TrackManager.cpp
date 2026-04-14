@@ -382,6 +382,31 @@ TrackId TrackManager::duplicateTrack(TrackId trackId) {
     };
     reassignIds(newTrack.chainElements);
 
+    // Log all device IDs after reassignment
+    DBG("duplicateTrack: original trackId=" << trackId << " -> newTrackId=" << newTrack.id);
+    std::function<void(const std::vector<ChainElement>&, int)> logElements;
+    logElements = [&](const std::vector<ChainElement>& elements, int depth) {
+        for (const auto& element : elements) {
+            juce::String indent;
+            for (int d = 0; d < depth; ++d)
+                indent += "  ";
+            if (magda::isDevice(element)) {
+                const auto& dev = magda::getDevice(element);
+                DBG("  " << indent << "device: " << dev.name << " id=" << dev.id
+                         << " pluginState.len=" << dev.pluginState.length());
+            } else if (magda::isRack(element)) {
+                const auto& rack = magda::getRack(element);
+                DBG("  " << indent << "rack id=" << rack.id
+                         << " chains=" << (int)rack.chains.size());
+                for (const auto& chain : rack.chains) {
+                    DBG("  " << indent << "  chain id=" << chain.id);
+                    logElements(chain.elements, depth + 2);
+                }
+            }
+        }
+    };
+    logElements(newTrack.chainElements, 0);
+
     // Aux tracks need a unique bus index
     if (newTrack.type == TrackType::Aux) {
         newTrack.auxBusIndex = nextAuxBusIndex_++;
