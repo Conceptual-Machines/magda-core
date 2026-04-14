@@ -32,6 +32,29 @@ class CompactExecutor {
         return results_.joinIntoString("\n");
     }
 
+    /** ID of the clip that notes were last written to (or auto-created). -1 if none. */
+    int getCurrentClipId() const {
+        return currentClipId_;
+    }
+
+    /** Whether execute() auto-created a fresh clip (vs. writing into a seeded one). */
+    bool didAutoCreateClip() const {
+        return autoCreatedClip_;
+    }
+
+    /**
+     * Seed the executor with a clip that a prior step (e.g. the command agent's
+     * clip.new) just created. The executor will write notes into that clip
+     * instead of auto-creating a new one. Pass -1 to clear.
+     *
+     * We deliberately do NOT inherit the UI's selected clip: the music agent
+     * should never silently fill a user-selected clip — it should always
+     * produce a new clip unless explicitly handed one.
+     */
+    void setSeedClipId(int clipId) {
+        seedClipId_ = clipId;
+    }
+
   private:
     bool executeTrack(const TrackOp& op);
     bool executeDel(const DelOp& op);
@@ -65,6 +88,8 @@ class CompactExecutor {
 
     int currentTrackId_ = -1;
     int currentClipId_ = -1;
+    int seedClipId_ = -1;
+    bool autoCreatedClip_ = false;
     juce::String error_;
     juce::StringArray results_;
 

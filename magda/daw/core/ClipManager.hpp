@@ -467,6 +467,37 @@ class ClipManager {
     void removeListener(ClipManagerListener* listener);
 
     /**
+     * @brief Suspend and coalesce per-clip property notifications.
+     *
+     * Nestable. While any suspension is active, notifyClipPropertyChanged()
+     * records the clip id into a set instead of firing listeners. When the
+     * outermost suspension ends, a single clipPropertiesChanged(ids) is
+     * fired covering everything that changed during the batch.
+     *
+     * Notes about clipsChanged() (structural changes) are NOT coalesced and
+     * still fire immediately.
+     *
+     * Intended for bulk mutations like AI-driven note generation where
+     * firing per-note would cause O(n) full TE sequence rebuilds plus
+     * O(n) UI repaints.
+     */
+    void beginBatch();
+    void endBatch();
+
+    /// RAII helper for beginBatch/endBatch.
+    class BatchScope {
+      public:
+        BatchScope() {
+            ClipManager::getInstance().beginBatch();
+        }
+        ~BatchScope() {
+            ClipManager::getInstance().endBatch();
+        }
+        BatchScope(const BatchScope&) = delete;
+        BatchScope& operator=(const BatchScope&) = delete;
+    };
+
+    /**
      * @brief Broadcast drag preview event (called during clip drag for real-time updates)
      */
     void notifyClipDragPreview(ClipId clipId, double previewStartTime, double previewLength);
@@ -510,6 +541,11 @@ class ClipManager {
     double noteClipboardMinBeat_ = 0.0;  // Original earliest startBeat before normalisation
 
     std::vector<ClipManagerListener*> listeners_;
+
+    // Batch notification state (see beginBatch/endBatch).
+    int batchDepth_ = 0;
+    std::vector<ClipId> batchedClipIds_;  // kept in insertion order, deduped
+
     int nextClipId_ = 1;
     ClipId selectedClipId_ = INVALID_CLIP_ID;
     ClipId lastTriggeredSessionClipId_ = INVALID_CLIP_ID;

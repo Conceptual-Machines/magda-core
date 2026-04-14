@@ -61,21 +61,21 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             },
         },
         {
-            preset::HYBRID_COST,
-            "Hybrid - Optimize for Cost",
-            {
-                {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
-                {role::COMMAND, {provider::LLAMA_LOCAL, "", "", ""}},
-                {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
-            },
-        },
-        {
             preset::HYBRID_SPEED,
             "Hybrid - Optimize for Speed",
             {
                 {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
-                {role::COMMAND, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
-                {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
+                {role::COMMAND, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_NANO}},
+                {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_MINI}},
+            },
+        },
+        {
+            preset::HYBRID_QUALITY,
+            "Hybrid - Optimize for Quality",
+            {
+                {role::ROUTER, {provider::LLAMA_LOCAL, "", "", ""}},
+                {role::COMMAND, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_MINI}},
+                {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_4}},
             },
         },
     };

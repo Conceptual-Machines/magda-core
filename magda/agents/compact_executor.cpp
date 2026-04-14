@@ -79,9 +79,15 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
     results_.clear();
     currentTrackId_ = -1;
     currentClipId_ = -1;
+    autoCreatedClip_ = false;
     clearActiveSelection();
 
-    // Inherit selected track/clip from UI context
+    // Inherit only the selected track from UI context — intentionally do NOT
+    // inherit the selected clip. The music agent should always produce a fresh
+    // clip unless explicitly seeded by a prior step in the same turn (e.g. the
+    // command agent's clip.new). Using SelectionManager for agent-to-agent
+    // handoff would silently fill whichever clip the user happened to have
+    // selected in the UI.
     auto& sm = SelectionManager::getInstance();
     auto selectedTrack = sm.getSelectedTrack();
 
@@ -89,13 +95,21 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
     if (selectedTrack != INVALID_TRACK_ID && selectedTrack != MASTER_TRACK_ID)
         currentTrackId_ = selectedTrack;
 
-    // Single clip selection
-    auto selectedClip = sm.getSelectedClip();
-    if (selectedClip != INVALID_CLIP_ID) {
-        currentClipId_ = selectedClip;
-        auto* clipInfo = ClipManager::getInstance().getClip(selectedClip);
-        if (clipInfo && clipInfo->trackId != INVALID_TRACK_ID)
-            currentTrackId_ = clipInfo->trackId;
+    // Seeded clip from the command agent (BOTH-intent handoff).
+    // Validate before adopting: a stale/deleted ID would otherwise suppress
+    // auto-creation and cause note commands to silently no-op on a missing
+    // clip while still reporting success.
+    if (seedClipId_ >= 0) {
+        auto* clipInfo = ClipManager::getInstance().getClip(seedClipId_);
+        if (clipInfo) {
+            currentClipId_ = seedClipId_;
+            if (clipInfo->trackId != INVALID_TRACK_ID)
+                currentTrackId_ = clipInfo->trackId;
+        } else {
+            DBG("CompactExecutor: ignoring stale seedClipId=" + juce::String(seedClipId_) +
+                " (clip no longer exists)");
+            seedClipId_ = -1;
+        }
     }
 
     // Multi-clip selection → populate selectedClips_ so SET/DEL apply to all
@@ -207,6 +221,7 @@ bool CompactExecutor::autoCreateClip() {
     DBG("CompactExecutor::autoCreateClip OK: clipId=" + juce::String(clipId));
 
     currentClipId_ = clipId;
+    autoCreatedClip_ = true;
     results_.add("Created MIDI clip at bar 1.00, length 4.00 bars");
     return true;
 }

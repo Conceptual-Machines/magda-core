@@ -1,8 +1,7 @@
 #include "AIChatConsoleContent.hpp"
 
 #include <algorithm>
-#include <array>
-#include <cstring>
+#include <atomic>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -31,67 +30,6 @@
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
-
-namespace {
-
-/** Remove `.notes.add(...)`, `.notes.add_chord(...)`, and `.notes.add_arpeggio(...)`
-    segments from a chained DSL string. Used when the command and music agents both
-    run — the music agent owns note generation, so any note ops the command agent
-    emitted must be dropped before we execute its DSL.
-
-    Respects nested parentheses (e.g. `velocity=random(92, 112)`) and quoted strings. */
-std::string stripNoteOps(const std::string& dsl) {
-    static const std::array<const char*, 3> markers = {".notes.add_arpeggio(", ".notes.add_chord(",
-                                                       ".notes.add("};
-
-    std::string out = dsl;
-    while (true) {
-        size_t hit = std::string::npos;
-        size_t markerLen = 0;
-        for (auto* m : markers) {
-            auto pos = out.find(m);
-            if (pos != std::string::npos && pos < hit) {
-                hit = pos;
-                markerLen = std::strlen(m);
-            }
-        }
-        if (hit == std::string::npos)
-            break;
-
-        // Find matching close paren starting from the '(' at the end of the marker
-        size_t i = hit + markerLen;  // first char inside the '('
-        int depth = 1;
-        bool inStr = false;
-        char strCh = 0;
-        for (; i < out.size() && depth > 0; ++i) {
-            char c = out[i];
-            if (inStr) {
-                if (c == '\\' && i + 1 < out.size()) {
-                    ++i;
-                    continue;
-                }
-                if (c == strCh)
-                    inStr = false;
-            } else {
-                if (c == '"' || c == '\'') {
-                    inStr = true;
-                    strCh = c;
-                } else if (c == '(') {
-                    ++depth;
-                } else if (c == ')') {
-                    --depth;
-                }
-            }
-        }
-        if (depth != 0)
-            break;  // malformed — bail rather than corrupt further
-        // i is now one past the matching ')'
-        out.erase(hit, i - hit);
-    }
-    return out;
-}
-
-}  // namespace
 
 // ============================================================================
 // AutocompletePopup
@@ -304,13 +242,40 @@ void AIChatConsoleContent::RequestThread::run() {
         });
     };
 
-    // Helper: append a token to the chat
-    auto appendToken = [safeThis](const juce::String& token) {
-        juce::MessageManager::callAsync([safeThis, token]() {
+    // Coalesced token buffer for single-intent streaming. Every token would
+    // otherwise post its own callAsync; on a fast stream that buries the
+    // message queue and the final execute-callAsync sits behind hundreds of
+    // stale text appends. We buffer tokens and keep at most one flush
+    // callback in flight at a time.
+    struct SingleStream {
+        std::mutex mu;
+        juce::String pending;
+        std::atomic<bool> flushPending{false};
+    };
+    auto singleState = std::make_shared<SingleStream>();
+
+    auto appendToken = [safeThis, singleState](const juce::String& token) {
+        {
+            std::lock_guard<std::mutex> lk(singleState->mu);
+            singleState->pending += token;
+        }
+        bool expected = false;
+        if (!singleState->flushPending.compare_exchange_strong(expected, true))
+            return;
+        juce::MessageManager::callAsync([safeThis, singleState]() {
+            singleState->flushPending.store(false);
             if (!safeThis)
                 return;
+            juce::String chunk;
+            {
+                std::lock_guard<std::mutex> lk(singleState->mu);
+                chunk = std::move(singleState->pending);
+                singleState->pending.clear();
+            }
+            if (chunk.isEmpty())
+                return;
             auto text = safeThis->chatHistory_.getText();
-            safeThis->chatHistory_.setText(text + token);
+            safeThis->chatHistory_.setText(text + chunk);
             safeThis->chatHistory_.moveCaretToEnd();
         });
     };
@@ -347,11 +312,21 @@ void AIChatConsoleContent::RequestThread::run() {
             std::mutex mu;
             std::string cmdBuf;
             std::string musicBuf;
+            std::atomic<bool> renderPending{false};
         };
         auto state = std::make_shared<DualStream>();
 
+        // Coalesce render posts: if one is already queued, skip — the queued
+        // callback will read the latest buffer contents when it runs. This
+        // prevents the message thread from being buried under hundreds of
+        // stale rebuilds while streaming, which caused a visible stall
+        // between stream-end and execute-callAsync.
         auto render = [safeThis, state, &streamAnchor]() {
+            bool expected = false;
+            if (!state->renderPending.compare_exchange_strong(expected, true))
+                return;
             juce::MessageManager::callAsync([safeThis, state, &streamAnchor]() {
+                state->renderPending.store(false);
                 if (!safeThis)
                     return;
                 int anchor = streamAnchor.load();
@@ -411,7 +386,7 @@ void AIChatConsoleContent::RequestThread::run() {
             if (result.hasError) {
                 error = result.error;
             } else {
-                dslCode = stripNoteOps(result.dslOutput);
+                dslCode = result.dslOutput;
             }
         }
         if (musicFuture.valid()) {
@@ -481,12 +456,21 @@ void AIChatConsoleContent::RequestThread::run() {
             if (!error.empty() && !hasContent) {
                 response = error;
             } else {
+                // Coalesce per-clip property notifications emitted during bulk
+                // note insertion. Without this each AddMidiNoteCommand fires
+                // listeners that fully rewrite the TE MIDI sequence and repaint
+                // the piano-roll, producing O(n^2) work and a visible stall
+                // between stream-end and notes appearing on screen.
+                magda::ClipManager::BatchScope batchScope;
+
                 // Execute DSL from command agent
+                int commandClipId = -1;
                 if (!dsl.empty()) {
                     magda::dsl::Interpreter interpreter;
                     if (interpreter.execute(dsl.c_str())) {
                         auto results = interpreter.getResults().toStdString();
                         response = results.empty() ? "OK" : results;
+                        commandClipId = interpreter.getCurrentClipId();
                     } else {
                         response = "Error: " + std::string(interpreter.getError());
                     }
@@ -500,7 +484,32 @@ void AIChatConsoleContent::RequestThread::run() {
                         response += musicDesc;
                     }
                     magda::CompactExecutor executor;
+                    // Hand the command agent's freshly-created clip (if any)
+                    // explicitly to the music executor. Otherwise it will
+                    // auto-create a new clip — we never want it to silently
+                    // fill whatever clip the user happened to have selected.
+                    executor.setSeedClipId(commandClipId);
                     if (executor.execute(musicIR)) {
+                        // Name the clip after the music agent's description so
+                        // users can see what each generated clip represents.
+                        // Safe to rename unconditionally: the executor no
+                        // longer inherits user-selected clips, so every clip
+                        // it touches is either command-seeded or auto-created
+                        // in this turn (both have default names).
+                        // Truncate to keep track-lane labels readable.
+                        if (!musicDesc.empty() && executor.getCurrentClipId() >= 0) {
+                            constexpr int kMaxClipNameLen = 40;
+                            juce::String clipName(musicDesc);
+                            // Cut at the first sentence/clause boundary if one
+                            // falls before the hard limit.
+                            auto clausePos = clipName.indexOfAnyOf(".,;");
+                            if (clausePos > 0 && clausePos < kMaxClipNameLen)
+                                clipName = clipName.substring(0, clausePos);
+                            if (clipName.length() > kMaxClipNameLen)
+                                clipName = clipName.substring(0, kMaxClipNameLen).trim() + "…";
+                            magda::ClipManager::getInstance().setClipName(
+                                executor.getCurrentClipId(), clipName.trim());
+                        }
                         auto results = executor.getResults().toStdString();
                         if (!response.empty())
                             response += "\n";
@@ -1448,8 +1457,7 @@ bool AIChatConsoleContent::isLocalPreset() const {
     auto preset = config.getAIPreset();
     auto commandCfg = config.getAgentLLMConfig(magda::role::COMMAND);
     return commandCfg.provider == magda::provider::LLAMA_LOCAL ||
-           preset == magda::preset::LOCAL_EMBEDDED || preset == "local" ||
-           preset == magda::preset::HYBRID_COST;
+           preset == magda::preset::LOCAL_EMBEDDED || preset == "local";
 }
 
 void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {

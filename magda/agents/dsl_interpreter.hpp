@@ -163,6 +163,11 @@ class Interpreter {
         return ctx_.results.joinIntoString("\n");
     }
 
+    /** ID of the clip last created or referenced during execution. -1 if none. */
+    int getCurrentClipId() const {
+        return ctx_.currentClipId;
+    }
+
     /**
      * @brief Build a JSON snapshot of current project state for LLM context
      */

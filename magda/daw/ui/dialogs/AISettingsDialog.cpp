@@ -890,7 +890,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             if (presetId == magda::preset::HYBRID_SPEED)
                 savedOptimize_ = "Speed";
             else
-                savedOptimize_ = "Cost";
+                savedOptimize_ = "Quality";
         } else {
             modeCombo_.setSelectedId(2, juce::dontSendNotification);
             // Infer optimize from whether command uses cloud
@@ -963,7 +963,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         } else {
             // Hybrid
             std::string hybridPresetId =
-                optimize == "Speed" ? magda::preset::HYBRID_SPEED : magda::preset::HYBRID_COST;
+                optimize == "Speed" ? magda::preset::HYBRID_SPEED : magda::preset::HYBRID_QUALITY;
             config.setAIPreset(hybridPresetId);
 
             // Router is always local

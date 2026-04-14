@@ -1412,10 +1412,44 @@ void ClipManager::notifyClipsChanged() {
 }
 
 void ClipManager::notifyClipPropertyChanged(ClipId clipId) {
+    if (batchDepth_ > 0) {
+        // Coalesce: record once, fire at end of outermost batch.
+        if (std::find(batchedClipIds_.begin(), batchedClipIds_.end(), clipId) ==
+            batchedClipIds_.end()) {
+            batchedClipIds_.push_back(clipId);
+        }
+        return;
+    }
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
         if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
             listener->clipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::beginBatch() {
+    ++batchDepth_;
+}
+
+void ClipManager::endBatch() {
+    if (batchDepth_ <= 0) {
+        jassertfalse;  // unbalanced endBatch
+        return;
+    }
+    if (--batchDepth_ > 0)
+        return;
+
+    if (batchedClipIds_.empty())
+        return;
+
+    auto ids = std::move(batchedClipIds_);
+    batchedClipIds_.clear();
+
+    auto listenersCopy = listeners_;
+    for (auto* listener : listenersCopy) {
+        if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
+            listener->clipPropertiesChanged(ids);
         }
     }
 }

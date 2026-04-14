@@ -804,6 +804,7 @@ bool Interpreter::executeNewClip(const Params& params) {
     }
 
     ctx_.currentClipId = clipId;
+    SelectionManager::getInstance().selectClip(clipId);
     ctx_.addResult("Created MIDI clip at bar " + juce::String(bar, 2) + ", length " +
                    juce::String(lengthBars, 2) + " bars");
     return true;

@@ -74,20 +74,12 @@ inline llm::ProviderConfig toLLMProviderConfig(const Config::AgentLLMConfig& con
         }
     }
 
-    // GPT-5 does not support temperature, uses reasoning effort instead
+    // GPT-5 does not support temperature, uses reasoning effort instead.
+    // All agents use "low" effort — keeps latency down; quality is steered
+    // by model choice (nano/mini/5/5.4) rather than reasoning depth.
     if (pc.model.startsWith("gpt-5")) {
         pc.noTemperature = true;
-        if (pc.reasoningEffort.isEmpty()) {
-            if (agentName == "router")
-                pc.reasoningEffort = "low";
-            else
-                pc.reasoningEffort = "medium";
-        }
-    }
-
-    // Anthropic output effort — router needs speed, others default
-    if (provider == llm::Provider::Anthropic && pc.reasoningEffort.isEmpty()) {
-        if (agentName == "router")
+        if (pc.reasoningEffort.isEmpty())
             pc.reasoningEffort = "low";
     }
 
