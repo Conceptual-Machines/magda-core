@@ -163,10 +163,15 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
         if (ok) {
             succeeded++;
         } else {
+            DBG("CompactExecutor: instruction " + juce::String(succeeded + failed) +
+                " (opcode=" + juce::String(static_cast<int>(inst.opcode)) + ") FAILED: " + error_);
             results_.add("[!] " + error_);
             failed++;
         }
     }
+
+    DBG("CompactExecutor: execute done — succeeded=" + juce::String(succeeded) +
+        " failed=" + juce::String(failed) + " currentClip=" + juce::String(currentClipId_));
 
     if (succeeded == 0 && failed > 0) {
         error_ = "All " + juce::String(failed) + " instruction(s) failed";
@@ -179,6 +184,7 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
 bool CompactExecutor::autoCreateClip() {
     if (currentTrackId_ < 0) {
         error_ = "No track context — use TRACK first or select a track";
+        DBG("CompactExecutor::autoCreateClip FAIL: " + error_);
         return false;
     }
 
@@ -186,11 +192,19 @@ bool CompactExecutor::autoCreateClip() {
     double startTime = barsToTime(1.0);
     double length = barsToLength(4.0);
 
+    DBG("CompactExecutor::autoCreateClip creating MIDI clip on track " +
+        juce::String(currentTrackId_) + " start=" + juce::String(startTime, 3) +
+        "s len=" + juce::String(length, 3) + "s");
+
     auto clipId = ClipManager::getInstance().createMidiClip(currentTrackId_, startTime, length);
     if (clipId < 0) {
         error_ = "Failed to auto-create clip";
+        DBG("CompactExecutor::autoCreateClip FAIL: createMidiClip returned -1 for track " +
+            juce::String(currentTrackId_));
         return false;
     }
+
+    DBG("CompactExecutor::autoCreateClip OK: clipId=" + juce::String(clipId));
 
     currentClipId_ = clipId;
     results_.add("Created MIDI clip at bar 1.00, length 4.00 bars");

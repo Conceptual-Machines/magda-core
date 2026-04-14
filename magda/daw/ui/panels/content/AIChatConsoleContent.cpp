@@ -1,6 +1,12 @@
 #include "AIChatConsoleContent.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cstring>
+#include <future>
+#include <memory>
+#include <mutex>
+#include <string>
 
 #include "../../../../agents/command_agent.hpp"
 #include "../../../../agents/compact_executor.hpp"
@@ -25,6 +31,67 @@
 #include "engine/TracktionEngineWrapper.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+/** Remove `.notes.add(...)`, `.notes.add_chord(...)`, and `.notes.add_arpeggio(...)`
+    segments from a chained DSL string. Used when the command and music agents both
+    run — the music agent owns note generation, so any note ops the command agent
+    emitted must be dropped before we execute its DSL.
+
+    Respects nested parentheses (e.g. `velocity=random(92, 112)`) and quoted strings. */
+std::string stripNoteOps(const std::string& dsl) {
+    static const std::array<const char*, 3> markers = {".notes.add_arpeggio(", ".notes.add_chord(",
+                                                       ".notes.add("};
+
+    std::string out = dsl;
+    while (true) {
+        size_t hit = std::string::npos;
+        size_t markerLen = 0;
+        for (auto* m : markers) {
+            auto pos = out.find(m);
+            if (pos != std::string::npos && pos < hit) {
+                hit = pos;
+                markerLen = std::strlen(m);
+            }
+        }
+        if (hit == std::string::npos)
+            break;
+
+        // Find matching close paren starting from the '(' at the end of the marker
+        size_t i = hit + markerLen;  // first char inside the '('
+        int depth = 1;
+        bool inStr = false;
+        char strCh = 0;
+        for (; i < out.size() && depth > 0; ++i) {
+            char c = out[i];
+            if (inStr) {
+                if (c == '\\' && i + 1 < out.size()) {
+                    ++i;
+                    continue;
+                }
+                if (c == strCh)
+                    inStr = false;
+            } else {
+                if (c == '"' || c == '\'') {
+                    inStr = true;
+                    strCh = c;
+                } else if (c == '(') {
+                    ++depth;
+                } else if (c == ')') {
+                    --depth;
+                }
+            }
+        }
+        if (depth != 0)
+            break;  // malformed — bail rather than corrupt further
+        // i is now one past the matching ')'
+        out.erase(hit, i - hit);
+    }
+    return out;
+}
+
+}  // namespace
 
 // ============================================================================
 // AutocompletePopup
@@ -270,29 +337,114 @@ void AIChatConsoleContent::RequestThread::run() {
 
     auto agentStart = std::chrono::steady_clock::now();
 
-    if (intent == "COMMAND" || intent == "BOTH") {
-        if (owner_.commandAgent_) {
-            auto result = owner_.commandAgent_->generateStreaming(message, onToken);
+    if (intent == "BOTH") {
+        // Run both agents in parallel, each streaming into its own labeled section.
+        // A shared render callback rebuilds the streaming region from both buffers so
+        // tokens from one agent never interleave into the other's text.
+        startStreaming();  // clear "◆ Thinking" and lock anchor
+
+        struct DualStream {
+            std::mutex mu;
+            std::string cmdBuf;
+            std::string musicBuf;
+        };
+        auto state = std::make_shared<DualStream>();
+
+        auto render = [safeThis, state, &streamAnchor]() {
+            juce::MessageManager::callAsync([safeThis, state, &streamAnchor]() {
+                if (!safeThis)
+                    return;
+                int anchor = streamAnchor.load();
+                auto full = safeThis->chatHistory_.getText();
+                if (anchor < 0 || anchor > full.length())
+                    return;
+                juce::String cmd, music;
+                {
+                    std::lock_guard<std::mutex> lk(state->mu);
+                    cmd = juce::String(state->cmdBuf);
+                    music = juce::String(state->musicBuf);
+                }
+                juce::String section;
+                section << "[command]\n" << cmd << "\n\n[music]\n" << music;
+                safeThis->chatHistory_.setText(full.substring(0, anchor) + section);
+                safeThis->chatHistory_.moveCaretToEnd();
+            });
+        };
+
+        auto cmdOnToken = [this, state, render](const juce::String& t) -> bool {
             if (threadShouldExit())
-                return;
+                return false;
+            {
+                std::lock_guard<std::mutex> lk(state->mu);
+                state->cmdBuf += t.toStdString();
+            }
+            render();
+            return true;
+        };
+        auto musicOnToken = [this, state, render](const juce::String& t) -> bool {
+            if (threadShouldExit())
+                return false;
+            {
+                std::lock_guard<std::mutex> lk(state->mu);
+                state->musicBuf += t.toStdString();
+            }
+            render();
+            return true;
+        };
+
+        std::future<magda::CommandAgent::GenerateResult> commandFuture;
+        std::future<magda::MusicAgent::GenerateResult> musicFuture;
+
+        if (owner_.commandAgent_) {
+            commandFuture = std::async(std::launch::async, [this, &message, cmdOnToken]() {
+                return owner_.commandAgent_->generateStreaming(message, cmdOnToken);
+            });
+        }
+        if (owner_.musicAgent_) {
+            musicFuture = std::async(std::launch::async, [this, &message, musicOnToken]() {
+                return owner_.musicAgent_->generateStreaming(message, musicOnToken);
+            });
+        }
+
+        if (commandFuture.valid()) {
+            auto result = commandFuture.get();
             if (result.hasError) {
                 error = result.error;
             } else {
-                dslCode = result.dslOutput;
+                dslCode = stripNoteOps(result.dslOutput);
             }
         }
-    }
-
-    if (intent == "MUSIC" || intent == "BOTH") {
-        if (owner_.musicAgent_) {
-            auto result = owner_.musicAgent_->generateStreaming(message, onToken);
-            if (threadShouldExit())
-                return;
+        if (musicFuture.valid()) {
+            auto result = musicFuture.get();
             if (result.hasError) {
                 if (error.empty())
                     error = result.error;
                 else
                     error += "\n" + result.error;
+            } else {
+                musicInstructions = std::move(result.instructions);
+                musicDescription = std::move(result.description);
+            }
+        }
+        if (threadShouldExit())
+            return;
+    } else if (intent == "COMMAND") {
+        if (owner_.commandAgent_) {
+            auto result = owner_.commandAgent_->generateStreaming(message, onToken);
+            if (threadShouldExit())
+                return;
+            if (result.hasError)
+                error = result.error;
+            else
+                dslCode = result.dslOutput;
+        }
+    } else if (intent == "MUSIC") {
+        if (owner_.musicAgent_) {
+            auto result = owner_.musicAgent_->generateStreaming(message, onToken);
+            if (threadShouldExit())
+                return;
+            if (result.hasError) {
+                error = result.error;
             } else {
                 musicInstructions = std::move(result.instructions);
                 musicDescription = std::move(result.description);

@@ -446,6 +446,7 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
             auto trackType = parseTrackType(params);
             auto trackId = tm.createTrack(name, trackType);
             ctx_.currentTrackId = trackId;
+            SelectionManager::getInstance().selectTrack(trackId);
             ctx_.addResult("Created track '" + name + "'");
         }
     } else {
@@ -453,6 +454,7 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
         auto trackType = parseTrackType(params);
         auto trackId = tm.createTrack("", trackType);
         ctx_.currentTrackId = trackId;
+        SelectionManager::getInstance().selectTrack(trackId);
         ctx_.addResult("Created track");
     }
 
