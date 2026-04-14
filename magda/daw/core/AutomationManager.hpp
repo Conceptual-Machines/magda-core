@@ -2,6 +2,7 @@
 
 #include <juce_events/juce_events.h>
 
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -132,8 +133,25 @@ class AutomationManager : public TrackManagerListener {
     void setLaneName(AutomationLaneId laneId, const juce::String& name);
     void setLaneVisible(AutomationLaneId laneId, bool visible);
     void setLaneExpanded(AutomationLaneId laneId, bool expanded);
-    void setLaneArmed(AutomationLaneId laneId, bool armed);
     void setLaneBypass(AutomationLaneId laneId, bool bypass);
+
+    /**
+     * @brief Transient touch suppression for a target.
+     *
+     * Called by UI controls on mouseDown / mouseUp during playback so the
+     * playback engine stops writing into the parameter while the user is
+     * dragging it. Looks up the lane by target; no-op if no lane exists.
+     * The flag is not serialized and not surfaced via
+     * automationLanePropertyChanged — listeners that need to react use
+     * setTouchSuppressionListener().
+     */
+    void setTargetTouchSuppressed(const AutomationTarget& target, bool suppressed);
+
+    using TouchSuppressionListener = std::function<void(AutomationLaneId, bool)>;
+    void setTouchSuppressionListener(TouchSuppressionListener listener) {
+        touchSuppressionListener_ = std::move(listener);
+    }
+
     void setLaneSnapTime(AutomationLaneId laneId, bool snap);
     void setLaneSnapValue(AutomationLaneId laneId, bool snap);
     void setLaneHeight(AutomationLaneId laneId, int height);
@@ -390,6 +408,8 @@ class AutomationManager : public TrackManagerListener {
 
     bool playbackActive_ = false;
     bool applyingAutomationWrite_ = false;
+
+    TouchSuppressionListener touchSuppressionListener_;
 
     int nextLaneId_ = 1;
     int nextClipId_ = 1;

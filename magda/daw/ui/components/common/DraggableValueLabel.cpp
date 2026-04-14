@@ -5,6 +5,7 @@
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "core/AutomationManager.hpp"
 
 namespace magda {
 
@@ -282,12 +283,25 @@ void DraggableValueLabel::paint(juce::Graphics& g) {
         }
     }
 
+    // Automated: subtle purple tint behind the fill so the control reads as
+    // "under automation" at a glance. Skip during drag to avoid fighting the
+    // accent highlight.
+    if (automated_ && !isDragging_ && drawBackground_) {
+        g.setColour(juce::Colour(DarkTheme::ACCENT_PURPLE).withAlpha(0.18f * alpha));
+        g.fillRoundedRectangle(bounds, 2.0f);
+    }
+
     // Border
     if (drawBorder_) {
-        g.setColour((isDragging_ ? DarkTheme::getColour(DarkTheme::ACCENT_BLUE)
-                                 : DarkTheme::getColour(DarkTheme::BORDER))
-                        .withMultipliedAlpha(alpha));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
+        juce::Colour borderColour;
+        if (isDragging_)
+            borderColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+        else if (automated_)
+            borderColour = juce::Colour(DarkTheme::ACCENT_PURPLE);
+        else
+            borderColour = DarkTheme::getColour(DarkTheme::BORDER);
+        g.setColour(borderColour.withMultipliedAlpha(alpha));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, automated_ ? 1.5f : 1.0f);
     }
 
     // Text
@@ -313,6 +327,14 @@ void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
     isDragging_ = true;
     dragStartValue_ = value_;
     dragStartY_ = e.y;
+
+    // Let AutomationPlaybackEngine know the user is taking over this lane,
+    // so it stops writing the baked curve into the parameter for the duration
+    // of the gesture (otherwise the fader fights the curve and flickers).
+    if (hasAutomationTarget_ && automated_) {
+        AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_, true);
+    }
+
     repaint();
 }
 
@@ -354,6 +376,13 @@ void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
 void DraggableValueLabel::mouseUp(const juce::MouseEvent& /*e*/) {
     bool wasDragging = isDragging_;
     isDragging_ = false;
+
+    // Release the touch-suppression flag; playback engine will resume writing
+    // the baked curve into the parameter on its next block.
+    if (hasAutomationTarget_ && automated_) {
+        AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_, false);
+    }
+
     repaint();
     if (wasDragging && onDragEnd)
         onDragEnd(dragStartValue_);

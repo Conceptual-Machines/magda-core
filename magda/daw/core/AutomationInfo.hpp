@@ -229,8 +229,12 @@ struct AutomationLaneInfo {
     juce::String name;  // Display name (auto-generated if empty)
     bool visible = true;
     bool expanded = true;
-    bool armed = false;      // Ready to record automation
-    bool bypass = false;     // Ignore baked curve during playback
+    bool bypass = false;  // Ignore baked curve during playback
+    // Transient (not serialized): set while a user is actively touching a
+    // control bound to this target during playback, so AutomationPlaybackEngine
+    // leaves the parameter alone for the duration of the gesture instead of
+    // fighting it every block.
+    bool touchSuppressed = false;
     bool snapTime = true;    // Snap drawn points to time grid
     bool snapValue = false;  // Snap drawn values to parameter's natural ticks
     int height = 60;         // Lane height in pixels

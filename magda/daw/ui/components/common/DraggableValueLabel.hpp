@@ -5,6 +5,8 @@
 #include <functional>
 #include <optional>
 
+#include "core/AutomationInfo.hpp"
+
 namespace magda {
 
 /**
@@ -126,6 +128,30 @@ class DraggableValueLabel : public juce::Component, public juce::SettableTooltip
         repaint();
     }
 
+    // Bind this label to an automation target so mouseDown/mouseUp automatically
+    // toggle the lane's touch-suppression flag (pauses baking so the user's
+    // gesture wins over the curve) and so the label can draw the "automated"
+    // visual state. Containers call setAutomated(true) whenever a lane exists
+    // for this target; pass an invalid target to detach.
+    void setAutomationTarget(const AutomationTarget& target) {
+        automationTarget_ = target;
+        hasAutomationTarget_ = target.isValid();
+    }
+    void clearAutomationTarget() {
+        automationTarget_ = {};
+        hasAutomationTarget_ = false;
+        setAutomated(false);
+    }
+    void setAutomated(bool automated) {
+        if (automated_ == automated)
+            return;
+        automated_ = automated;
+        repaint();
+    }
+    bool isAutomated() const {
+        return automated_;
+    }
+
     // Text override: when set, displays this text instead of the formatted value
     void setTextOverride(const juce::String& text) {
         textOverride_ = text;
@@ -175,6 +201,11 @@ class DraggableValueLabel : public juce::Component, public juce::SettableTooltip
     float fontSize_ = 10.0f;
     juce::Justification justification_ = juce::Justification::centred;
     juce::String textOverride_;
+
+    // Automation state (see setAutomationTarget / setAutomated)
+    AutomationTarget automationTarget_;
+    bool hasAutomationTarget_ = false;
+    bool automated_ = false;
 
   public:
     bool isDragging() const {

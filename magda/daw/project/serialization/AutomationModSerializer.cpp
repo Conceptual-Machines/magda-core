@@ -16,7 +16,6 @@ juce::var ProjectSerializer::serializeAutomationLaneInfo(const AutomationLaneInf
     obj->setProperty("name", lane.name);
     obj->setProperty("visible", lane.visible);
     obj->setProperty("expanded", lane.expanded);
-    obj->setProperty("armed", lane.armed);
     obj->setProperty("bypass", lane.bypass);
     obj->setProperty("snapTime", lane.snapTime);
     obj->setProperty("snapValue", lane.snapValue);
@@ -56,7 +55,6 @@ bool ProjectSerializer::deserializeAutomationLaneInfo(const juce::var& json,
     outLane.name = obj->getProperty("name").toString();
     outLane.visible = obj->getProperty("visible");
     outLane.expanded = obj->getProperty("expanded");
-    outLane.armed = obj->getProperty("armed");
     if (obj->hasProperty("bypass"))
         outLane.bypass = obj->getProperty("bypass");
     if (obj->hasProperty("snapTime"))

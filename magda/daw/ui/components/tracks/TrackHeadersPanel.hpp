@@ -187,8 +187,8 @@ class TrackHeadersPanel : public juce::Component,
     std::vector<TrackId> visibleTrackIds_;  // Track IDs in display order
     std::unordered_map<TrackId, std::vector<AutomationLaneId>> visibleAutomationLanes_;
 
-    // Per-lane header buttons (snap time / snap value / arm / bypass / delete).
-    // All five are custom LaneHeaderButton subclasses defined in the .cpp, but
+    // Per-lane header buttons (snap time / snap value / bypass / delete).
+    // All four are custom LaneHeaderButton subclasses defined in the .cpp, but
     // the struct only needs to hold them as juce::Button base pointers. Real
     // child components — rebuilt on automationLanesChanged and positioned in
     // updateTrackHeaderLayout.
@@ -196,7 +196,6 @@ class TrackHeadersPanel : public juce::Component,
         AutomationLaneId laneId = INVALID_AUTOMATION_LANE_ID;
         std::unique_ptr<juce::Button> snapTimeBtn;
         std::unique_ptr<juce::Button> snapValueBtn;
-        std::unique_ptr<juce::Button> armBtn;
         std::unique_ptr<juce::Button> bypassBtn;
         std::unique_ptr<juce::Button> deleteBtn;
     };

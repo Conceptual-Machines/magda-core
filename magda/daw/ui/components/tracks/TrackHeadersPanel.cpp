@@ -1443,6 +1443,28 @@ void TrackHeadersPanel::syncAutomationLaneVisibility() {
             }
         }
     }
+
+    // Refresh the "automated" visual state on each header's volume/pan labels
+    // so the purple border follows lane existence without a separate listener
+    // path. Cheap: lanesChanged is low-frequency and each track has two labels.
+    for (auto& header : trackHeaders) {
+        if (!header)
+            continue;
+        AutomationTarget volTarget;
+        volTarget.type = AutomationTargetType::TrackVolume;
+        volTarget.trackId = header->trackId;
+        AutomationTarget panTarget;
+        panTarget.type = AutomationTargetType::TrackPan;
+        panTarget.trackId = header->trackId;
+
+        bool volAuto = manager.getLaneForTarget(volTarget) != INVALID_AUTOMATION_LANE_ID;
+        bool panAuto = manager.getLaneForTarget(panTarget) != INVALID_AUTOMATION_LANE_ID;
+
+        if (header->volumeLabel)
+            header->volumeLabel->setAutomated(volAuto);
+        if (header->panLabel)
+            header->panLabel->setAutomated(panAuto);
+    }
 }
 
 void TrackHeadersPanel::automationLanesChanged() {
@@ -1580,6 +1602,20 @@ void TrackHeadersPanel::setupTrackHeader(TrackHeader& header, int trackIndex) {
 }
 
 void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId) {
+    // Bind volume/pan labels to their automation targets so mouseDown/mouseUp
+    // automatically suppress baking for the duration of a user gesture (kills
+    // fader fighting during playback) and so the label can self-paint the
+    // "automated" purple highlight based on AutomationManager state.
+    AutomationTarget volTarget;
+    volTarget.type = AutomationTargetType::TrackVolume;
+    volTarget.trackId = trackId;
+    header.volumeLabel->setAutomationTarget(volTarget);
+
+    AutomationTarget panTarget;
+    panTarget.type = AutomationTargetType::TrackPan;
+    panTarget.trackId = trackId;
+    header.panLabel->setAutomationTarget(panTarget);
+
     // Name label callback - updates TrackManager
     header.nameLabel->onTextChange = [this, trackId]() {
         int index = getVisibleHeaderIndex(trackId);
@@ -3272,14 +3308,6 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
         entry->snapValueBtn->setTooltip("Snap values to parameter grid");
         addAndMakeVisible(*entry->snapValueBtn);
 
-        // Arm: red fill when engaged. Same active colour as the track-header
-        // R button so the user reads "armed for recording" the same way in
-        // both places (context disambiguates track-arm vs automation-arm).
-        entry->armBtn = std::make_unique<TextLaneButton>(
-            "arm", "R", DarkTheme::getColour(DarkTheme::STATUS_ERROR), 10.0f, true);
-        entry->armBtn->setTooltip("Arm for automation recording");
-        addAndMakeVisible(*entry->armBtn);
-
         // Bypass button uses a power glyph, so the "on" visual (cyan fill)
         // represents automation-enabled — not automation-bypassed. Toggle
         // state is the inverse of lane->bypass, and the click handler flips
@@ -3309,11 +3337,6 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
             if (const auto* lane = mgr.getLane(id))
                 mgr.setLaneSnapValue(id, !lane->snapValue);
         };
-        entry->armBtn->onClick = [id]() {
-            auto& mgr = AutomationManager::getInstance();
-            if (const auto* lane = mgr.getLane(id))
-                mgr.setLaneArmed(id, !lane->armed);
-        };
         entry->bypassBtn->onClick = [id]() {
             auto& mgr = AutomationManager::getInstance();
             if (const auto* lane = mgr.getLane(id))
@@ -3334,7 +3357,6 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
             continue;
         entry->snapTimeBtn->setToggleState(lane->snapTime, juce::dontSendNotification);
         entry->snapValueBtn->setToggleState(lane->snapValue, juce::dontSendNotification);
-        entry->armBtn->setToggleState(lane->armed, juce::dontSendNotification);
         // Power glyph: inverted — "on" means automation active, not bypassed.
         entry->bypassBtn->setToggleState(!lane->bypass, juce::dontSendNotification);
     }
@@ -3380,7 +3402,6 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
                 const bool showButtons = lane->expanded;
                 entry->snapTimeBtn->setVisible(showButtons);
                 entry->snapValueBtn->setVisible(showButtons);
-                entry->armBtn->setVisible(showButtons);
                 entry->bypassBtn->setVisible(showButtons);
                 entry->deleteBtn->setVisible(showButtons);
 
@@ -3394,7 +3415,6 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
                     };
                     place(*entry->snapTimeBtn);
                     place(*entry->snapValueBtn);
-                    place(*entry->armBtn);
                     place(*entry->bypassBtn);
                     place(*entry->deleteBtn);
                 }

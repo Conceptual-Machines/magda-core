@@ -5,6 +5,8 @@
 
 #include <functional>
 
+#include "core/AutomationInfo.hpp"
+#include "core/AutomationManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -145,6 +147,28 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
         return isLeftButtonDrag_;
     }
 
+    // Bind this slider to an automation target so mouseDown/mouseUp automatically
+    // pause the lane's baking for the duration of a gesture (kills fader-vs-curve
+    // fighting during playback) and so we can paint the "automated" state.
+    void setAutomationTarget(const magda::AutomationTarget& target) {
+        automationTarget_ = target;
+        hasAutomationTarget_ = target.isValid();
+    }
+    void clearAutomationTarget() {
+        automationTarget_ = {};
+        hasAutomationTarget_ = false;
+        setAutomated(false);
+    }
+    void setAutomated(bool automated) {
+        if (automated_ == automated)
+            return;
+        automated_ = automated;
+        repaint();
+    }
+    bool isAutomated() const {
+        return automated_;
+    }
+
     double getNormalizedValue() const {
         if (maxValue_ <= minValue_)
             return 0.0;
@@ -255,6 +279,17 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
 
             // 0dB tick mark removed - shown on level meters instead
         }
+
+        // Automation highlight: purple tint + border when this slider is bound
+        // to an active automation lane. Drawn last so it sits on top of meter
+        // bars and value fills.
+        if (automated_) {
+            auto boundsF = getLocalBounds().toFloat();
+            g.setColour(juce::Colour(DarkTheme::ACCENT_PURPLE).withAlpha(0.18f));
+            g.fillRect(boundsF);
+            g.setColour(juce::Colour(DarkTheme::ACCENT_PURPLE));
+            g.drawRect(boundsF, 1.5f);
+        }
     }
 
     void resized() override {
@@ -274,6 +309,13 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
             if (isShiftDrag_ && onShiftDragStart) {
                 shiftDragStartValue_ = 0.5f;  // Default start value for new links
                 onShiftDragStart(shiftDragStartValue_);
+            }
+
+            // Pause automation baking on this target while the user is
+            // dragging, so the curve stops fighting the gesture.
+            if (hasAutomationTarget_ && automated_) {
+                magda::AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_,
+                                                                                 true);
             }
         } else {
             isLeftButtonDrag_ = false;
@@ -341,6 +383,13 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     }
 
     void mouseUp(const juce::MouseEvent& e) override {
+        // Release the touch-suppression flag so automation can resume writing
+        // into this param on the next audio block.
+        if (isLeftButtonDrag_ && hasAutomationTarget_ && automated_) {
+            magda::AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_,
+                                                                             false);
+        }
+
         // Handle Shift+drag end
         if (isShiftDrag_) {
             if (hasDragged_ && onShiftDragEnd) {
@@ -472,6 +521,11 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
 
     float meterPeakL_ = 0.f;
     float meterPeakR_ = 0.f;
+
+    // Automation state
+    magda::AutomationTarget automationTarget_;
+    bool hasAutomationTarget_ = false;
+    bool automated_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TextSlider)
 };

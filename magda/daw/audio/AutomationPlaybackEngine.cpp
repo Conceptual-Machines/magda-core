@@ -12,11 +12,31 @@ namespace magda {
 
 AutomationPlaybackEngine::AutomationPlaybackEngine(AudioBridge& bridge, te::Edit& edit)
     : bridge_(bridge), edit_(edit) {
-    AutomationManager::getInstance().addListener(this);
+    auto& mgr = AutomationManager::getInstance();
+    mgr.addListener(this);
+
+    // When a user grabs an automated control, clear the baked curve so TE
+    // stops writing to the parameter; when they release, rebake from the
+    // stored lane data so automation resumes. This is the cheap,
+    // per-gesture equivalent of a "touch" write mode.
+    mgr.setTouchSuppressionListener([this](AutomationLaneId laneId, bool suppressed) {
+        auto* lane = AutomationManager::getInstance().getLane(laneId);
+        if (!lane)
+            return;
+        if (suppressed) {
+            clearLane(*lane);
+            if (auto* param = resolveParameter(lane->target))
+                param->updateStream();
+        } else {
+            bakeLane(*lane);
+        }
+    });
 }
 
 AutomationPlaybackEngine::~AutomationPlaybackEngine() {
-    AutomationManager::getInstance().removeListener(this);
+    auto& mgr = AutomationManager::getInstance();
+    mgr.removeListener(this);
+    mgr.setTouchSuppressionListener({});
 
     // Detach from every TE parameter we were listening on — otherwise the
     // parameter keeps a dangling pointer and will crash on the next value
@@ -174,10 +194,11 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // Clear existing TE automation points
     curve.clear(nullptr);
 
-    // Bypass: leave the curve empty so TE's audio thread falls back to the
-    // parameter's manual/static value. Force iterator rebuild so the change
-    // takes effect on the next audio block rather than after TE's 10ms timer.
-    if (lane.bypass) {
+    // Bypass or live touch-suppression: leave the curve empty so TE's audio
+    // thread falls back to the parameter's manual/static value. Force iterator
+    // rebuild so the change takes effect on the next audio block rather than
+    // after TE's 10ms timer.
+    if (lane.bypass || lane.touchSuppressed) {
         param->updateStream();
         return;
     }

@@ -219,13 +219,6 @@ void AutomationManager::setLaneExpanded(AutomationLaneId laneId, bool expanded) 
     }
 }
 
-void AutomationManager::setLaneArmed(AutomationLaneId laneId, bool armed) {
-    if (auto* lane = getLane(laneId)) {
-        lane->armed = armed;
-        notifyLanePropertyChanged(laneId);
-    }
-}
-
 void AutomationManager::setLaneBypass(AutomationLaneId laneId, bool bypass) {
     if (auto* lane = getLane(laneId)) {
         if (lane->bypass == bypass)
@@ -233,6 +226,19 @@ void AutomationManager::setLaneBypass(AutomationLaneId laneId, bool bypass) {
         lane->bypass = bypass;
         notifyLanePropertyChanged(laneId);
     }
+}
+
+void AutomationManager::setTargetTouchSuppressed(const AutomationTarget& target, bool suppressed) {
+    AutomationLaneId laneId = getLaneForTarget(target);
+    if (laneId == INVALID_AUTOMATION_LANE_ID)
+        return;
+    auto* lane = getLane(laneId);
+    if (!lane || lane->touchSuppressed == suppressed)
+        return;
+    lane->touchSuppressed = suppressed;
+
+    if (touchSuppressionListener_)
+        touchSuppressionListener_(laneId, suppressed);
 }
 
 void AutomationManager::setLaneSnapTime(AutomationLaneId laneId, bool snap) {
