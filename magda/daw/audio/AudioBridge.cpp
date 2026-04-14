@@ -2,6 +2,7 @@
 
 #include <unordered_set>
 
+#include "../core/AutomationManager.hpp"
 #include "../core/ClipOperations.hpp"
 #include "../core/RackInfo.hpp"
 #include "../engine/PluginWindowManager.hpp"
@@ -167,9 +168,18 @@ void AudioBridge::trackPropertyChanged(int trackId) {
                 track->setFrozen(trackInfo->frozen, te::AudioTrack::individualFreeze);
             }
 
-            // Sync volume/pan to VolumeAndPanPlugin
-            setTrackVolume(trackId, trackInfo->volume);
-            setTrackPan(trackId, trackInfo->pan);
+            // Sync volume/pan to VolumeAndPanPlugin.
+            //
+            // Skip only when this callback is re-entering from
+            // AutomationPlaybackEngine echoing a curve value back into
+            // TrackInfo. Pushing that value into TE would race with TE's
+            // own curve evaluation. Manual fader/pan edits on any track —
+            // including tracks without automation — still flow through,
+            // even while transport is playing.
+            if (!AutomationManager::getInstance().isApplyingAutomationWrite()) {
+                setTrackVolume(trackId, trackInfo->volume);
+                setTrackPan(trackId, trackInfo->pan);
+            }
 
             // Sync audio output routing
             trackController_.setTrackAudioOutput(trackId, trackInfo->audioOutputDevice);

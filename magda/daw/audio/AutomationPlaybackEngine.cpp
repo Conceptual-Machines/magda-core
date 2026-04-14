@@ -1,8 +1,11 @@
 #include "AutomationPlaybackEngine.hpp"
 
+#include <cmath>
+
 #include "../core/AutomationManager.hpp"
 #include "../core/ParameterInfo.hpp"
 #include "../core/ParameterUtils.hpp"
+#include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
 
 namespace magda {
@@ -469,8 +472,33 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
     if (it == listenedParams_.end())
         return;
 
-    double normalized = convertFromTEValue(it->second.target, &param, param.getCurrentValue());
+    const auto& target = it->second.target;
+    double normalized = convertFromTEValue(target, &param, param.getCurrentValue());
     AutomationManager::getInstance().notifyValueChanged(it->second.laneId, normalized);
+
+    // Keep MAGDA's TrackInfo cache in sync with what TE just wrote, so any UI
+    // that reads TrackInfo.volume / TrackInfo.pan (track inspector, mixer,
+    // session view) follows the curve without having to subscribe to
+    // AutomationManager directly. AudioBridge::trackPropertyChanged skips
+    // the volume/pan writeback while playback is active, so going through
+    // setTrackVolume/setTrackPan here won't fight TE's automation.
+    if (target.type == AutomationTargetType::TrackVolume ||
+        target.type == AutomationTargetType::TrackPan) {
+        ParameterInfo info = target.getParameterInfo();
+        float real = ParameterUtils::normalizedToReal(static_cast<float>(normalized), info);
+
+        auto& trackMgr = TrackManager::getInstance();
+        // Scope the re-entrancy flag so AudioBridge can distinguish this
+        // automation-driven writeback from user-initiated fader/pan edits.
+        AutomationManager::AutomationWriteScope writeScope;
+        if (target.type == AutomationTargetType::TrackVolume) {
+            // Target param range is in dB; convert back to linear gain.
+            float gain = std::pow(10.0f, real / 20.0f);
+            trackMgr.setTrackVolume(target.trackId, gain);
+        } else {
+            trackMgr.setTrackPan(target.trackId, real);
+        }
+    }
 }
 
 }  // namespace magda

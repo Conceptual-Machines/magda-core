@@ -354,6 +354,32 @@ class AutomationManager : public TrackManagerListener {
         return playbackActive_;
     }
 
+    /**
+     * @brief Re-entrancy flag set only while AutomationPlaybackEngine is echoing
+     *        an automated value back into TrackManager via setTrackVolume /
+     *        setTrackPan. Listeners that would otherwise push the value back
+     *        into the audio engine (AudioBridge) check this to avoid fighting
+     *        TE's own automation curve, while still letting user-initiated
+     *        fader/pan edits on any track reach the engine during playback.
+     *
+     *        Use AutomationWriteScope RAII to toggle — always pair set/unset.
+     *        Single-threaded (message thread) so a plain bool is sufficient.
+     */
+    bool isApplyingAutomationWrite() const {
+        return applyingAutomationWrite_;
+    }
+
+    struct AutomationWriteScope {
+        AutomationWriteScope() {
+            AutomationManager::getInstance().applyingAutomationWrite_ = true;
+        }
+        ~AutomationWriteScope() {
+            AutomationManager::getInstance().applyingAutomationWrite_ = false;
+        }
+        AutomationWriteScope(const AutomationWriteScope&) = delete;
+        AutomationWriteScope& operator=(const AutomationWriteScope&) = delete;
+    };
+
   private:
     AutomationManager();
     ~AutomationManager();
@@ -363,6 +389,7 @@ class AutomationManager : public TrackManagerListener {
     juce::ListenerList<AutomationManagerListener> listeners_;
 
     bool playbackActive_ = false;
+    bool applyingAutomationWrite_ = false;
 
     int nextLaneId_ = 1;
     int nextClipId_ = 1;

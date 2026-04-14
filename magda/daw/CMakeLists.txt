@@ -250,6 +250,7 @@ set(DAW_CORE_SOURCES
     audio/RackSyncManager.cpp
     audio/AutomationPlaybackEngine.cpp
     audio/AutomationRecordingEngine.cpp
+    audio/AutomationCurveSimplifier.cpp
     audio/ClipSynchronizer.cpp
     audio/SidechainMonitorPlugin.cpp
     audio/AudioSidechainMonitorPlugin.cpp

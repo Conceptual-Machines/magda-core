@@ -1,9 +1,13 @@
 #include "AutomationLaneComponent.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
+#include "../../../audio/AutomationCurveSimplifier.hpp"
+#include "../../../core/AutomationCommands.hpp"
 #include "../../../core/ParameterUtils.hpp"
+#include "../../../core/UndoManager.hpp"
 
 namespace magda {
 
@@ -321,20 +325,76 @@ void AutomationLaneComponent::syncSelectionState() {
 void AutomationLaneComponent::showContextMenu() {
     juce::PopupMenu menu;
 
-    // Hide Lane option
-    menu.addItem(1, "Hide Lane");
+    enum MenuItem { HideLane = 1, SimplifyLane = 2 };
 
-    // Show menu
+    menu.addItem(HideLane, "Hide Lane");
+
+    // Only offer Simplify when there's meaningful data to reduce.
+    const auto* lane = getLaneInfo();
+    const bool canSimplify =
+        (lane != nullptr) && lane->isAbsolute() && lane->absolutePoints.size() > 2;
+    menu.addItem(SimplifyLane, "Simplify Lane", canSimplify);
+
     auto options = juce::PopupMenu::Options().withTargetComponent(this);
 
     auto laneId = laneId_;  // Capture for lambda
     menu.showMenuAsync(options, [laneId](int result) {
-        if (result == 1) {
-            // Defer to avoid destroying component during callback
-            juce::MessageManager::callAsync(
-                [laneId]() { AutomationManager::getInstance().setLaneVisible(laneId, false); });
+        switch (result) {
+            case HideLane:
+                juce::MessageManager::callAsync(
+                    [laneId]() { AutomationManager::getInstance().setLaneVisible(laneId, false); });
+                break;
+            case SimplifyLane:
+                juce::MessageManager::callAsync(
+                    [laneId]() { AutomationLaneComponent::simplifyLane(laneId, 0.01); });
+                break;
+            default:
+                break;
         }
     });
+}
+
+void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsilon) {
+    auto& autoMgr = AutomationManager::getInstance();
+    const auto* lane = autoMgr.getLane(laneId);
+    if (lane == nullptr || !lane->isAbsolute() || lane->absolutePoints.size() <= 2)
+        return;
+
+    // Snapshot IDs + (time, value) pairs sorted by time so RDP sees a proper polyline.
+    struct Entry {
+        AutomationPointId id;
+        AutomationCurveSimplifier::Point p;
+    };
+    std::vector<Entry> entries;
+    entries.reserve(lane->absolutePoints.size());
+    for (const auto& pt : lane->absolutePoints)
+        entries.push_back({pt.id, {pt.time, pt.value}});
+    std::sort(entries.begin(), entries.end(),
+              [](const Entry& a, const Entry& b) { return a.p.time < b.p.time; });
+
+    std::vector<AutomationCurveSimplifier::Point> polyline;
+    polyline.reserve(entries.size());
+    for (const auto& e : entries)
+        polyline.push_back(e.p);
+
+    auto keepIdx = AutomationCurveSimplifier::simplify(polyline, epsilon);
+    if (keepIdx.size() == entries.size())
+        return;  // Nothing to drop.
+
+    std::vector<bool> keep(entries.size(), false);
+    for (auto idx : keepIdx)
+        keep[idx] = true;
+
+    auto& undo = UndoManager::getInstance();
+    undo.beginCompoundOperation("Simplify Automation Lane");
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (keep[i])
+            continue;
+        auto cmd = std::make_unique<DeleteAutomationPointCommand>(
+            laneId, INVALID_AUTOMATION_CLIP_ID, entries[i].id);
+        undo.executeCommand(std::move(cmd));
+    }
+    undo.endCompoundOperation();
 }
 
 // Convert real value to normalized position using ParameterInfo

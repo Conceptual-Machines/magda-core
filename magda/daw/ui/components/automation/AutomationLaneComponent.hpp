@@ -80,6 +80,17 @@ class AutomationLaneComponent : public juce::Component,
     // Callbacks for parent coordination
     std::function<void(AutomationLaneId, int)> onHeightChanged;
 
+    /**
+     * @brief Run Ramer–Douglas–Peucker simplification on all points of an
+     *        absolute automation lane, wrapped in a single undoable op.
+     *
+     * @param laneId  Target lane.
+     * @param epsilon Tolerance in normalized value units (e.g. 0.01 = 1% of
+     *                parameter range). Points within epsilon of the linear
+     *                interpolation between retained neighbours are dropped.
+     */
+    static void simplifyLane(AutomationLaneId laneId, double epsilon);
+
   private:
     AutomationLaneId laneId_;
     double pixelsPerSecond_ = 100.0;

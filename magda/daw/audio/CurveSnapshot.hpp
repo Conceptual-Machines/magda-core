@@ -159,7 +159,7 @@ struct CurveSnapshotHolder {
     std::atomic<bool> pendingReset_{false};
     std::atomic<float> cumulativePhase_{0.0f};
     std::atomic<float> previousPhase_{-1.0f};
-    std::atomic<bool> oneShotCompleted_{true};
+    std::atomic<bool> oneShotCompleted_{false};
     std::atomic<int> evalLogCount_{0};  // throttle DBG spam in evaluateCallback
 
     /**

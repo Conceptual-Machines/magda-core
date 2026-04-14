@@ -73,9 +73,14 @@ bool canRetrigger(const ModInfo& mod) {
 
     switch (mod.triggerMode) {
         case LFOTriggerMode::MIDI:
-        case LFOTriggerMode::Audio:
         case LFOTriggerMode::Transport:
             return true;
+        case LFOTriggerMode::Audio:
+            // Audio one-shot: gate bounces mid-cycle should not retrigger.
+            // Re-arm happens in rearmOneShotIfNeeded once the cycle completes
+            // and the gate closes; a fresh trigger then fires via the !running
+            // path in shouldApplyTrigger.
+            return false;
         case LFOTriggerMode::Free:
             return false;
     }

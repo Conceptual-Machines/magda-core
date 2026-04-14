@@ -27,6 +27,11 @@ class AddAutomationPointCommand : public UndoableCommand {
         return "Add Automation Point";
     }
 
+    /// Valid after execute() has run. INVALID_AUTOMATION_POINT_ID otherwise.
+    AutomationPointId getAddedPointId() const {
+        return addedPointId_;
+    }
+
   private:
     AutomationLaneId laneId_;
     AutomationClipId clipId_;
