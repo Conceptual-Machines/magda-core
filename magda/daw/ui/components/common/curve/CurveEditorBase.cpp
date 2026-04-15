@@ -521,8 +521,13 @@ int CurveEditorBase::yToPixel(double y) const {
 }
 
 std::pair<double, double> CurveEditorBase::getEffectivePosition(const CurvePoint& p) const {
-    if (previewPointId_ != INVALID_CURVE_POINT_ID && p.id == previewPointId_) {
-        return {previewX_, previewY_};
+    if (previewPointId_ != INVALID_CURVE_POINT_ID) {
+        if (p.id == previewPointId_)
+            return {previewX_, previewY_};
+        // Multi-point drag: check follower preview positions
+        auto it = multiPreviewPositions_.find(p.id);
+        if (it != multiPreviewPositions_.end())
+            return it->second;
     }
     return {p.x, p.y};
 }
@@ -582,51 +587,106 @@ void CurveEditorBase::rebuildPointComponents() {
             previewPointId_ = INVALID_CURVE_POINT_ID;
 
             // Snap X/Y if enabled
-            if (snapXToGrid) {
+            if (snapXToGrid)
                 newX = snapXToGrid(newX);
-            }
-            if (snapYToGrid) {
+            if (snapYToGrid)
                 newY = snapYToGrid(newY);
+            constrainPointPosition(pointId, newX, newY);
+
+            if (selectedPointIds_.size() > 1 && multiDragStartPositions_.count(pointId)) {
+                // Multi-point drag commit: compute delta from lead point's start,
+                // apply to all selected points, commit as a batch.
+                const auto& leadStart = multiDragStartPositions_.at(pointId);
+                double deltaX = newX - leadStart.first;
+                double deltaY = newY - leadStart.second;
+
+                std::map<uint32_t, std::pair<double, double>> finalPositions;
+                for (const auto& [pid, startPos] : multiDragStartPositions_) {
+                    double fx = std::max(0.0, startPos.first + deltaX);
+                    double fy = juce::jlimit(0.0, 1.0, startPos.second + deltaY);
+                    if (pid != pointId) {
+                        if (snapXToGrid)
+                            fx = snapXToGrid(fx);
+                        if (snapYToGrid)
+                            fy = snapYToGrid(fy);
+                        constrainPointPosition(pid, fx, fy);
+                    } else {
+                        fx = newX;
+                        fy = newY;
+                    }
+                    finalPositions[pid] = {fx, fy};
+                }
+                onSelectedPointsMoved(finalPositions);
+            } else {
+                onPointMoved(pointId, newX, newY);
             }
 
-            // Allow subclass to constrain position (e.g., pin edge points)
-            constrainPointPosition(pointId, newX, newY);
-            onPointMoved(pointId, newX, newY);
+            multiDragStartPositions_.clear();
+            multiPreviewPositions_.clear();
         };
 
         pc->onPointDragPreview = [this](uint32_t pointId, double newX, double newY) {
             // Snap X/Y if enabled
-            if (snapXToGrid) {
+            if (snapXToGrid)
                 newX = snapXToGrid(newX);
-            }
-            if (snapYToGrid) {
+            if (snapYToGrid)
                 newY = snapYToGrid(newY);
-            }
-
-            // Allow subclass to constrain position (e.g., pin edge points)
             constrainPointPosition(pointId, newX, newY);
 
-            // Update preview state directly
+            // On first call for this drag, snapshot start positions of all
+            // selected points so we can move them by the same delta.
+            if (previewPointId_ != pointId) {
+                multiDragStartPositions_.clear();
+                multiPreviewPositions_.clear();
+                for (const auto& p : getPoints()) {
+                    if (selectedPointIds_.count(p.id)) {
+                        multiDragStartPositions_[p.id] = {p.x, p.y};
+                    }
+                }
+            }
+
+            // Update lead point preview
             previewPointId_ = pointId;
             previewX_ = newX;
             previewY_ = newY;
 
-            // Update the point component position
-            for (auto& ptComp : pointComponents_) {
-                if (ptComp->getPointId() == pointId) {
-                    int px = xToPixel(newX);
-                    int py = yToPixel(newY);
-                    ptComp->setCentrePosition(px, py);
-                    break;
+            // If multiple points selected, move followers by the same delta
+            if (selectedPointIds_.size() > 1 && multiDragStartPositions_.count(pointId)) {
+                const auto& leadStart = multiDragStartPositions_.at(pointId);
+                double deltaX = newX - leadStart.first;
+                double deltaY = newY - leadStart.second;
+
+                multiPreviewPositions_.clear();
+                for (auto& ptComp : pointComponents_) {
+                    uint32_t pid = ptComp->getPointId();
+                    if (!selectedPointIds_.count(pid))
+                        continue;
+                    double fx, fy;
+                    if (pid == pointId) {
+                        fx = newX;
+                        fy = newY;
+                    } else if (multiDragStartPositions_.count(pid)) {
+                        const auto& s = multiDragStartPositions_.at(pid);
+                        fx = std::max(0.0, s.first + deltaX);
+                        fy = juce::jlimit(0.0, 1.0, s.second + deltaY);
+                    } else {
+                        continue;
+                    }
+                    multiPreviewPositions_[pid] = {fx, fy};
+                    ptComp->setCentrePosition(xToPixel(fx), yToPixel(fy));
+                }
+            } else {
+                // Single point: just reposition that one component
+                for (auto& ptComp : pointComponents_) {
+                    if (ptComp->getPointId() == pointId) {
+                        ptComp->setCentrePosition(xToPixel(newX), yToPixel(newY));
+                        break;
+                    }
                 }
             }
 
-            // Update tension handle positions that depend on this point
             updateTensionHandlePositions();
-
-            // Notify subclass for fluid preview updates
             onPointDragPreview(pointId, newX, newY);
-
             repaint();
         };
 

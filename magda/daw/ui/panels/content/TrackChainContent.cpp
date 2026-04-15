@@ -1352,6 +1352,17 @@ void TrackChainContent::updateFromSelectedTrack() {
             // Update pan slider
             panLabel_.setValue(track->pan, juce::dontSendNotification);
 
+            // Bind automation targets so these labels mirror the track
+            // header's purple/grey state via the AutomationManager observer.
+            magda::AutomationTarget volTarget;
+            volTarget.type = magda::AutomationTargetType::TrackVolume;
+            volTarget.trackId = selectedTrackId_;
+            volumeLabel_.setAutomationTarget(volTarget);
+            magda::AutomationTarget panTarget;
+            panTarget.type = magda::AutomationTargetType::TrackPan;
+            panTarget.trackId = selectedTrackId_;
+            panLabel_.setAutomationTarget(panTarget);
+
             // Check if any device in the chain is not bypassed
             const auto& elements =
                 magda::TrackManager::getInstance().getChainElements(selectedTrackId_);
@@ -1538,6 +1549,8 @@ void TrackChainContent::hideHeaderControls() {
     soloButton_.setVisible(false);
     volumeLabel_.setVisible(false);
     panLabel_.setVisible(false);
+    volumeLabel_.clearAutomationTarget();
+    panLabel_.clearAutomationTarget();
     chainBypassButton_->setVisible(false);
 }
 

@@ -14,6 +14,19 @@
 namespace magda {
 
 /**
+ * @brief Visual state for a control bound to an automation target.
+ *
+ * Drives the "purple / grey / none" visualisation on faders and value labels.
+ * Computed from lane existence + lane->touchSuppressed so UI code doesn't
+ * re-implement the same if-chain at every paint site.
+ */
+enum class AutomationVisualState {
+    None,        // No lane exists — control paints normally
+    Active,      // Lane exists and is driving the parameter — purple
+    Overridden,  // Lane exists but the user has taken over — grey
+};
+
+/**
  * @brief Bezier handle for smooth curve control
  *
  * Handles are offsets relative to their parent point.

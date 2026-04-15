@@ -3,6 +3,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <unordered_map>
+#include <unordered_set>
 
 #include "../core/AutomationInfo.hpp"
 #include "../core/TypeIds.hpp"
@@ -74,6 +75,13 @@ class AutomationRecordingEngine {
         float pan = -2.0f;  // Sentinel: impossible value means "not yet captured"
     };
     std::unordered_map<int, TrackMixState> lastTrackMixState_;
+
+    // Per-lane beat time at which recording first wrote a point this session.
+    std::unordered_map<int, double> laneRecordingStart_;
+
+    // Snapshot of point IDs that existed before recording started for each lane.
+    // The sweep only deletes from this set so newly recorded points are never erased.
+    std::unordered_map<int, std::unordered_set<AutomationPointId>> lanePreRecordingPoints_;
 
     static constexpr double kMinTimeDeltaSeconds = 0.05;  // 50ms thinning threshold
     static constexpr double kMinValueDelta = 0.005;       // 0.5% normalized range

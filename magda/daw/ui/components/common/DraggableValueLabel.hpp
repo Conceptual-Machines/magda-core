@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "core/AutomationInfo.hpp"
+#include "core/AutomationManager.hpp"
 
 namespace magda {
 
@@ -16,7 +17,9 @@ namespace magda {
  *
  * Supports different value formats: dB, pan (L/C/R), percentage, etc.
  */
-class DraggableValueLabel : public juce::Component, public juce::SettableTooltipClient {
+class DraggableValueLabel : public juce::Component,
+                            public juce::SettableTooltipClient,
+                            public AutomationManagerListener {
   public:
     enum class Format {
         Decibels,    // -60.0 dB to +6.0 dB, shows "-inf" at minimum
@@ -128,28 +131,39 @@ class DraggableValueLabel : public juce::Component, public juce::SettableTooltip
         repaint();
     }
 
-    // Bind this label to an automation target so mouseDown/mouseUp automatically
-    // toggle the lane's touch-suppression flag (pauses baking so the user's
-    // gesture wins over the curve) and so the label can draw the "automated"
-    // visual state. Containers call setAutomated(true) whenever a lane exists
-    // for this target; pass an invalid target to detach.
+    // Bind this label to an automation target. The label subscribes to
+    // AutomationManager and refreshes its own visual state whenever lanes
+    // are added/removed or a lane's properties change — no caller needs to
+    // push updates. Pass an invalid target to detach.
     void setAutomationTarget(const AutomationTarget& target) {
         automationTarget_ = target;
-        hasAutomationTarget_ = target.isValid();
+        const bool nowHas = target.isValid();
+        if (nowHas && !listeningToAutomation_) {
+            AutomationManager::getInstance().addListener(this);
+            listeningToAutomation_ = true;
+        } else if (!nowHas && listeningToAutomation_) {
+            AutomationManager::getInstance().removeListener(this);
+            listeningToAutomation_ = false;
+        }
+        hasAutomationTarget_ = nowHas;
+        refreshAutomationVisualState();
     }
     void clearAutomationTarget() {
-        automationTarget_ = {};
-        hasAutomationTarget_ = false;
-        setAutomated(false);
+        setAutomationTarget({});
     }
-    void setAutomated(bool automated) {
-        if (automated_ == automated)
-            return;
-        automated_ = automated;
-        repaint();
+    AutomationVisualState automationVisualState() const {
+        return automationVisualState_;
     }
     bool isAutomated() const {
-        return automated_;
+        return automationVisualState_ != AutomationVisualState::None;
+    }
+
+    // AutomationManagerListener
+    void automationLanesChanged() override {
+        refreshAutomationVisualState();
+    }
+    void automationLanePropertyChanged(AutomationLaneId /*laneId*/) override {
+        refreshAutomationVisualState();
     }
 
     // Text override: when set, displays this text instead of the formatted value
@@ -202,10 +216,31 @@ class DraggableValueLabel : public juce::Component, public juce::SettableTooltip
     juce::Justification justification_ = juce::Justification::centred;
     juce::String textOverride_;
 
-    // Automation state (see setAutomationTarget / setAutomated)
+    // Automation state (see setAutomationTarget)
     AutomationTarget automationTarget_;
     bool hasAutomationTarget_ = false;
-    bool automated_ = false;
+    bool listeningToAutomation_ = false;
+    AutomationVisualState automationVisualState_ = AutomationVisualState::None;
+
+    void refreshAutomationVisualState() {
+        auto newState = hasAutomationTarget_
+                            ? AutomationManager::getInstance().getVisualState(automationTarget_)
+                            : AutomationVisualState::None;
+        if (automationVisualState_ == newState)
+            return;
+        automationVisualState_ = newState;
+        repaint();
+    }
+
+    // Override used by internal mouseDown path to flip visual state
+    // synchronously — the listener callback fires afterwards and settles on
+    // the same result.
+    void setAutomationVisualState(AutomationVisualState state) {
+        if (automationVisualState_ == state)
+            return;
+        automationVisualState_ = state;
+        repaint();
+    }
 
   public:
     bool isDragging() const {
@@ -215,8 +250,14 @@ class DraggableValueLabel : public juce::Component, public juce::SettableTooltip
   private:
     // Drag state
     bool isDragging_ = false;
+    bool overrideLatchedThisGesture_ = false;
     double dragStartValue_ = 0.0;
     int dragStartY_ = 0;
+
+    // Latches lane bypass + visual override once the gesture is confirmed
+    // as a real edit (drag crossed threshold, text commit changed value, or
+    // double-click reset). No-op if already latched or not automated.
+    void latchAutomationOverride();
 
     // Edit mode
     bool isEditing_ = false;

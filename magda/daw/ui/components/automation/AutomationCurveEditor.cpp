@@ -7,6 +7,8 @@
 #include "core/AutomationCommands.hpp"
 #include "core/ParameterUtils.hpp"
 #include "core/UndoManager.hpp"
+#include "ui/themes/DarkTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda {
 
@@ -16,6 +18,8 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
     // Wire up base class snapping to automation snapping.
     // Gated on the lane's snapTime flag so the user can disable per-lane.
     CurveEditorBase::snapXToGrid = [this](double x) -> double {
+        if (AutomationManager::getInstance().isWriteModeEnabled())
+            return x;
         const auto* lane = AutomationManager::getInstance().getLane(laneId_);
         if (lane && !lane->snapTime)
             return x;
@@ -28,7 +32,13 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
     // Y snap: delegate to ParameterUtils using the lane's parameter info.
     // Wired via the base class so drag-previews jump live instead of
     // only snapping on release.
-    CurveEditorBase::snapYToGrid = [this](double y) -> double { return applyValueSnap(y); };
+    // Disable Y snap during recording so continuous movement is captured without
+    // the snap pulling values to discrete steps and creating false direction changes.
+    CurveEditorBase::snapYToGrid = [this](double y) -> double {
+        if (AutomationManager::getInstance().isWriteModeEnabled())
+            return y;
+        return applyValueSnap(y);
+    };
 
     CurveEditorBase::getGridSpacingX = [this]() -> double {
         if (getGridSpacingBeats) {
@@ -41,7 +51,15 @@ AutomationCurveEditor::AutomationCurveEditor(AutomationLaneId laneId) : laneId_(
     AutomationManager::getInstance().addListener(this);
     SelectionManager::getInstance().addListener(this);
 
+    refreshCurveColour();
     rebuildPointComponents();
+}
+
+void AutomationCurveEditor::refreshCurveColour() {
+    const auto* lane = AutomationManager::getInstance().getLane(laneId_);
+    const bool bypassed = lane && lane->bypass;
+    setCurveColour(bypassed ? DarkTheme::getColour(DarkTheme::TEXT_DISABLED)
+                            : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
 }
 
 AutomationCurveEditor::~AutomationCurveEditor() {
@@ -57,6 +75,7 @@ void AutomationCurveEditor::automationLanesChanged() {
 
 void AutomationCurveEditor::automationLanePropertyChanged(AutomationLaneId laneId) {
     if (laneId == laneId_) {
+        refreshCurveColour();
         repaint();
     }
 }
@@ -257,6 +276,50 @@ void AutomationCurveEditor::mouseUp(const juce::MouseEvent& e) {
     CurveEditorBase::mouseUp(e);
 }
 
+void AutomationCurveEditor::paintOverChildren(juce::Graphics& g) {
+    paintOverrideOverlay(g);
+    CurveEditorBase::paintOverChildren(g);
+}
+
+void AutomationCurveEditor::paintOverrideOverlay(juce::Graphics& g) {
+    const auto* lane = AutomationManager::getInstance().getLane(laneId_);
+    if (!lane || !lane->bypass)
+        return;
+
+    auto currentValue = AutomationManager::getInstance().getCurrentTargetValue(lane->target);
+    if (!currentValue)
+        return;
+
+    const auto content = getContentBounds();
+    if (content.isEmpty())
+        return;
+
+    const int y = yToPixel(*currentValue);
+    const auto overlayColour = DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.65f);
+
+    g.setColour(overlayColour.withAlpha(0.12f));
+    g.fillRect(content.withY(y - 2).withHeight(4));
+
+    g.setColour(overlayColour);
+    g.drawHorizontalLine(y, static_cast<float>(content.getX()),
+                         static_cast<float>(content.getRight()));
+
+    const juce::String label = formatValueLabel(*currentValue);
+    auto font = FontManager::getInstance().getUIFont(10.0f);
+    g.setFont(font);
+    const int textW = font.getStringWidth(label) + 8;
+    const int textH = 14;
+    const int tx = juce::jmax(content.getX(), content.getRight() - textW - 4);
+    const int ty = juce::jlimit(content.getY(), content.getBottom() - textH, y - textH - 4);
+    auto labelRect = juce::Rectangle<int>(tx, ty, textW, textH);
+
+    g.setColour(juce::Colour(0xDD161616));
+    g.fillRoundedRectangle(labelRect.toFloat(), 3.0f);
+    g.setColour(overlayColour.brighter(0.2f));
+    g.drawRoundedRectangle(labelRect.toFloat(), 3.0f, 1.0f);
+    g.drawText(label, labelRect, juce::Justification::centred, false);
+}
+
 void AutomationCurveEditor::showContextMenu() {
     juce::PopupMenu menu;
     enum { SimplifyItem = 1 };
@@ -355,6 +418,23 @@ void AutomationCurveEditor::onPointDragPreview(uint32_t pointId, double newX, do
     // base-class lambda; this notification is purely for audio-side listeners.
     AutomationManager::getInstance().notifyPointDragPreview(
         laneId_, static_cast<AutomationPointId>(pointId), newX, newY);
+}
+
+void AutomationCurveEditor::onSelectedPointsMoved(
+    const std::map<uint32_t, std::pair<double, double>>& finalPositions) {
+    CompoundOperationScope scope("Move Automation Points");
+    for (const auto& [pid, pos] : finalPositions) {
+        auto pointId = static_cast<AutomationPointId>(pid);
+        double x = pos.first;
+        double y = pos.second;
+        if (clipId_ != INVALID_AUTOMATION_CLIP_ID) {
+            UndoManager::getInstance().executeCommand(std::make_unique<MoveAutomationPointCommand>(
+                laneId_, clipId_, pointId, x - clipOffset_, y));
+        } else {
+            UndoManager::getInstance().executeCommand(std::make_unique<MoveAutomationPointCommand>(
+                laneId_, INVALID_AUTOMATION_CLIP_ID, pointId, x, y));
+        }
+    }
 }
 
 void AutomationCurveEditor::onPointMoved(uint32_t pointId, double newX, double newY) {

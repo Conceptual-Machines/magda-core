@@ -35,6 +35,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     // Component
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    void paintOverChildren(juce::Graphics& g) override;
 
     // AutomationManagerListener
     void automationLanesChanged() override;
@@ -46,6 +47,10 @@ class AutomationCurveEditor : public CurveEditorBase,
     // SelectionManagerListener
     void selectionTypeChanged(SelectionType newType) override;
     void automationPointSelectionChanged(const AutomationPointSelection& selection) override;
+
+    // Syncs the curve colour with lane state (purple when active, grey when
+    // bypassed/overridden). Called from listener callbacks — no polling.
+    void refreshCurveColour();
 
     // Configuration
     void setLaneId(AutomationLaneId laneId);
@@ -97,6 +102,8 @@ class AutomationCurveEditor : public CurveEditorBase,
 
   protected:
     // CurveEditorBase data mutation callbacks
+    void onSelectedPointsMoved(
+        const std::map<uint32_t, std::pair<double, double>>& finalPositions) override;
     void onPointAdded(double x, double y, CurveType curveType) override;
     void onPointMoved(uint32_t pointId, double newX, double newY) override;
     void onPointDragPreview(uint32_t pointId, double newX, double newY) override;
@@ -131,6 +138,7 @@ class AutomationCurveEditor : public CurveEditorBase,
     // Shown on right-click anywhere in the curve body, or forwarded from a
     // CurvePointComponent right-click so the menu isn't swallowed by points.
     void showContextMenu();
+    void paintOverrideOverlay(juce::Graphics& g);
 
     // Quantize a normalized value to the parameter's natural grid when
     // the lane's snapValue flag is enabled.

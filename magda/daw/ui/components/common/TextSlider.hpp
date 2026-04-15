@@ -17,7 +17,9 @@ namespace magda::daw::ui {
  *
  * Click to edit, drag to change value. Supports dB and pan formatting.
  */
-class TextSlider : public juce::Component, public juce::Label::Listener {
+class TextSlider : public juce::Component,
+                   public juce::Label::Listener,
+                   public magda::AutomationManagerListener {
   public:
     enum class Format { Decimal, Decibels, Pan };
     enum class Orientation { Horizontal, Vertical };
@@ -41,7 +43,12 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
         updateLabel();
     }
 
-    ~TextSlider() override = default;
+    ~TextSlider() override {
+        if (listeningToAutomation_) {
+            magda::AutomationManager::getInstance().removeListener(this);
+            listeningToAutomation_ = false;
+        }
+    }
 
     void setRange(double min, double max, double interval = 0.01) {
         minValue_ = min;
@@ -152,21 +159,33 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     // fighting during playback) and so we can paint the "automated" state.
     void setAutomationTarget(const magda::AutomationTarget& target) {
         automationTarget_ = target;
-        hasAutomationTarget_ = target.isValid();
+        const bool nowHas = target.isValid();
+        if (nowHas && !listeningToAutomation_) {
+            magda::AutomationManager::getInstance().addListener(this);
+            listeningToAutomation_ = true;
+        } else if (!nowHas && listeningToAutomation_) {
+            magda::AutomationManager::getInstance().removeListener(this);
+            listeningToAutomation_ = false;
+        }
+        hasAutomationTarget_ = nowHas;
+        refreshAutomationVisualState();
     }
     void clearAutomationTarget() {
-        automationTarget_ = {};
-        hasAutomationTarget_ = false;
-        setAutomated(false);
+        setAutomationTarget({});
     }
-    void setAutomated(bool automated) {
-        if (automated_ == automated)
-            return;
-        automated_ = automated;
-        repaint();
+    magda::AutomationVisualState automationVisualState() const {
+        return automationVisualState_;
     }
     bool isAutomated() const {
-        return automated_;
+        return automationVisualState_ != magda::AutomationVisualState::None;
+    }
+
+    // AutomationManagerListener
+    void automationLanesChanged() override {
+        refreshAutomationVisualState();
+    }
+    void automationLanePropertyChanged(magda::AutomationLaneId /*laneId*/) override {
+        refreshAutomationVisualState();
     }
 
     double getNormalizedValue() const {
@@ -280,14 +299,18 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
             // 0dB tick mark removed - shown on level meters instead
         }
 
-        // Automation highlight: purple tint + border when this slider is bound
-        // to an active automation lane. Drawn last so it sits on top of meter
-        // bars and value fills.
-        if (automated_) {
+        // Automation highlight: purple tint when the lane is driving the
+        // parameter, grey when the user has taken over. Drawn last so it
+        // sits on top of meter bars and value fills.
+        if (automationVisualState_ != magda::AutomationVisualState::None) {
             auto boundsF = getLocalBounds().toFloat();
-            g.setColour(juce::Colour(DarkTheme::ACCENT_PURPLE).withAlpha(0.18f));
+            const juce::Colour tint =
+                automationVisualState_ == magda::AutomationVisualState::Overridden
+                    ? juce::Colour(DarkTheme::TEXT_DISABLED)
+                    : juce::Colour(DarkTheme::ACCENT_PURPLE);
+            g.setColour(tint.withAlpha(0.18f));
             g.fillRect(boundsF);
-            g.setColour(juce::Colour(DarkTheme::ACCENT_PURPLE));
+            g.setColour(tint);
             g.drawRect(boundsF, 1.5f);
         }
     }
@@ -302,6 +325,7 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
             dragStartY_ = e.y;
             dragStartX_ = e.x;
             hasDragged_ = false;
+            overrideLatchedThisGesture_ = false;
             isLeftButtonDrag_ = true;
             isShiftDrag_ = e.mods.isShiftDown();
 
@@ -311,9 +335,10 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
                 onShiftDragStart(shiftDragStartValue_);
             }
 
-            // Pause automation baking on this target while the user is
-            // dragging, so the curve stops fighting the gesture.
-            if (hasAutomationTarget_ && automated_) {
+            // Transient touch-suppression so playback doesn't fight the
+            // gesture. The persistent override/bypass only latches once the
+            // drag is confirmed as a real edit (see latchAutomationOverride).
+            if (hasAutomationTarget_ && isAutomated()) {
                 magda::AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_,
                                                                                  true);
             }
@@ -339,6 +364,16 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
         int dy = std::abs(e.y - dragStartY_);
         if (dx > 3 || dy > 3) {
             hasDragged_ = true;
+            // Drag confirmed — latch persistent override on first real motion.
+            // Skipped when write mode is on: the gesture is being recorded
+            // into the lane, not taking over from it.
+            if (!isShiftDrag_ && !overrideLatchedThisGesture_ && hasAutomationTarget_ &&
+                isAutomated() && !magda::AutomationManager::getInstance().isWriteModeEnabled()) {
+                magda::AutomationManager::getInstance().setTargetOverridden(automationTarget_,
+                                                                            true);
+                setAutomationVisualState(magda::AutomationVisualState::Overridden);
+                overrideLatchedThisGesture_ = true;
+            }
         }
 
         if (hasDragged_) {
@@ -390,14 +425,12 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     }
 
     void mouseUp(const juce::MouseEvent& e) override {
-        // Release the touch-suppression flag so automation can resume writing
-        // into this param on the next audio block.
-        if (isLeftButtonDrag_ && hasAutomationTarget_ && automated_) {
-            magda::AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_,
-                                                                             false);
-        }
+        // Release the transient flags; the lane stays in bypass (override)
+        // state until the user explicitly re-enables it from the header.
         if (isLeftButtonDrag_ && hasAutomationTarget_) {
-            magda::AutomationManager::getInstance().setTargetUserTouched(automationTarget_, false);
+            auto& mgr = magda::AutomationManager::getInstance();
+            mgr.setTargetUserTouched(automationTarget_, false);
+            mgr.setTargetTouchSuppressed(automationTarget_, false);
         }
 
         // Handle Shift+drag end
@@ -474,6 +507,7 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     int dragStartX_ = 0;
     int dragStartY_ = 0;
     bool hasDragged_ = false;
+    bool overrideLatchedThisGesture_ = false;
     bool isLeftButtonDrag_ = false;
     bool isShiftDrag_ = false;
     float shiftDragStartValue_ = 0.5f;
@@ -535,7 +569,26 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
     // Automation state
     magda::AutomationTarget automationTarget_;
     bool hasAutomationTarget_ = false;
-    bool automated_ = false;
+    magda::AutomationVisualState automationVisualState_ = magda::AutomationVisualState::None;
+    bool listeningToAutomation_ = false;
+
+    void refreshAutomationVisualState() {
+        auto newState =
+            hasAutomationTarget_
+                ? magda::AutomationManager::getInstance().getVisualState(automationTarget_)
+                : magda::AutomationVisualState::None;
+        if (automationVisualState_ == newState)
+            return;
+        automationVisualState_ = newState;
+        repaint();
+    }
+
+    void setAutomationVisualState(magda::AutomationVisualState state) {
+        if (automationVisualState_ == state)
+            return;
+        automationVisualState_ = state;
+        repaint();
+    }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TextSlider)
 };

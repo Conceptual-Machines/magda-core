@@ -842,6 +842,13 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
     if (lane->target.devicePath.getDeviceId() != device_.id)
         return;
 
+    // Overridden state covers both "user dragging right now" and "user
+    // released and the lane is latched to their value" — either way, skip
+    // the curve write so we don't yank the control back to the curve.
+    if (magda::AutomationManager::getInstance().getVisualState(lane->target) ==
+        magda::AutomationVisualState::Overridden)
+        return;
+
     const int paramIndex = lane->target.paramIndex;
     if (paramIndex < 0 || paramIndex >= static_cast<int>(device_.parameters.size()))
         return;

@@ -92,6 +92,7 @@ class TransportPanel : public juce::Component {
 
     // Automation write button
     std::unique_ptr<SvgButton> automationWriteButton;
+    std::unique_ptr<juce::Label> automationWriteLabel;
 
     // Loop button
     std::unique_ptr<SvgButton> loopButton;

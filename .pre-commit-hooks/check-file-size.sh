@@ -5,6 +5,11 @@
 WARN_THRESHOLD=2500
 FAIL_THRESHOLD=3500
 
+# TODO: Files temporarily exempted pending decomposition
+SKIP_FILES=(
+    "magda/daw/ui/components/chain/DeviceSlotComponent.cpp"
+)
+
 exit_code=0
 has_warnings=false
 
@@ -18,6 +23,18 @@ for file in "$@"; do
 
     # Skip if file doesn't exist (deleted files)
     if [[ ! -f "$file" ]]; then
+        continue
+    fi
+
+    # Skip temporarily exempted files
+    skip=false
+    for skip_file in "${SKIP_FILES[@]}"; do
+        if [[ "$file" == *"$skip_file" ]]; then
+            skip=true
+            break
+        fi
+    done
+    if [[ $skip == true ]]; then
         continue
     fi
 

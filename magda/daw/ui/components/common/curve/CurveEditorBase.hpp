@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <functional>
+#include <map>
 #include <memory>
 #include <set>
 #include <vector>
@@ -147,6 +148,11 @@ class CurveEditorBase : public juce::Component {
     double previewX_ = 0.0;
     double previewY_ = 0.0;
 
+    // Multi-point drag: start positions (snapshotted when drag begins) and
+    // current preview positions for all selected points except the lead.
+    std::map<uint32_t, std::pair<double, double>> multiDragStartPositions_;
+    std::map<uint32_t, std::pair<double, double>> multiPreviewPositions_;
+
     // Tension preview state
     uint32_t tensionPreviewPointId_ = INVALID_CURVE_POINT_ID;
     double tensionPreviewValue_ = 0.0;
@@ -178,6 +184,16 @@ class CurveEditorBase : public juce::Component {
     // Batch delete callback - override in subclasses to execute delete commands
     virtual void onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) {
         juce::ignoreUnused(pointIds);
+    }
+
+    // Batch move callback — called instead of onPointMoved when multiple
+    // points are selected and the user drags any one of them. The map
+    // contains the final {x, y} for every selected point (including the lead).
+    // Default falls back to individual onPointMoved calls for each entry.
+    virtual void onSelectedPointsMoved(
+        const std::map<uint32_t, std::pair<double, double>>& finalPositions) {
+        for (const auto& [id, pos] : finalPositions)
+            onPointMoved(id, pos.first, pos.second);
     }
 
     // Step stamp callback — creates a Serum-style "dip" cell:

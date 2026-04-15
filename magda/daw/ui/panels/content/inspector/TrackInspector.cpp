@@ -692,6 +692,23 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
     selectedTrackIds_.clear();
     selectedTrackId_ = trackId;
 
+    // Bind automation targets so the inspector gain/pan mirror the track
+    // header's purple/grey state automatically via the observer. Skip the
+    // master track (no automation lanes for master volume/pan).
+    if (trackId != magda::INVALID_TRACK_ID && trackId != magda::MASTER_TRACK_ID) {
+        magda::AutomationTarget volTarget;
+        volTarget.type = magda::AutomationTargetType::TrackVolume;
+        volTarget.trackId = trackId;
+        gainLabel_->setAutomationTarget(volTarget);
+        magda::AutomationTarget panTarget;
+        panTarget.type = magda::AutomationTargetType::TrackPan;
+        panTarget.trackId = trackId;
+        panLabel_->setAutomationTarget(panTarget);
+    } else {
+        gainLabel_->clearAutomationTarget();
+        panLabel_->clearAutomationTarget();
+    }
+
     // Restore single-track callbacks if switching from multi-track mode
     if (wasMulti) {
         muteButton_.onClick = [this]() {
@@ -799,6 +816,10 @@ void TrackInspector::setSelectedTracks(const std::unordered_set<magda::TrackId>&
     isMultiTrackMode_ = true;
     selectedTrackIds_ = trackIds;
     selectedTrackId_ = magda::INVALID_TRACK_ID;
+    // Multi-track selection has no single target to mirror, so clear any
+    // binding left from single-track mode.
+    gainLabel_->clearAutomationTarget();
+    panLabel_->clearAutomationTarget();
     updateFromMultiTrackSelection();
 }
 

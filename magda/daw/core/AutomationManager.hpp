@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -154,6 +155,33 @@ class AutomationManager : public TrackManagerListener {
     // active playback — preventing feedback loops that overwrite baked curves.
     void setTargetUserTouched(const AutomationTarget& target, bool touched);
     bool isTargetUserTouched(const AutomationTarget& target) const;
+
+    /**
+     * @brief Compute the visual state for a target's bound control.
+     *
+     * Single source of truth so widgets don't re-derive (lane exists,
+     * bypass, touchSuppressed) logic in their own paint paths.
+     */
+    AutomationVisualState getVisualState(const AutomationTarget& target) const;
+
+    /**
+     * @brief Latch a target's lane into the "overridden" state.
+     *
+     * Called when the user takes over an automated control — bypasses the
+     * lane so playback stops reading the curve. The user re-enables by
+     * toggling the lane's power button (setLaneBypass(laneId, false)).
+     * No-op if no lane exists for the target.
+     */
+    void setTargetOverridden(const AutomationTarget& target, bool overridden);
+
+    // Query the real automation-write mode from AudioBridge so controls don't
+    // depend on a duplicated UI-side cache that can drift out of sync.
+    bool isWriteModeEnabled() const;
+
+    // Current live normalized value for a target, independent of whether its
+    // automation lane is active. Used by overridden lanes to show where the
+    // user-held value sits against the stored curve.
+    std::optional<double> getCurrentTargetValue(const AutomationTarget& target) const;
 
     using TouchSuppressionListener = std::function<void(AutomationLaneId, bool)>;
     void setTouchSuppressionListener(TouchSuppressionListener listener) {

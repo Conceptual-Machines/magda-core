@@ -1444,27 +1444,9 @@ void TrackHeadersPanel::syncAutomationLaneVisibility() {
         }
     }
 
-    // Refresh the "automated" visual state on each header's volume/pan labels
-    // so the purple border follows lane existence without a separate listener
-    // path. Cheap: lanesChanged is low-frequency and each track has two labels.
-    for (auto& header : trackHeaders) {
-        if (!header)
-            continue;
-        AutomationTarget volTarget;
-        volTarget.type = AutomationTargetType::TrackVolume;
-        volTarget.trackId = header->trackId;
-        AutomationTarget panTarget;
-        panTarget.type = AutomationTargetType::TrackPan;
-        panTarget.trackId = header->trackId;
-
-        bool volAuto = manager.getLaneForTarget(volTarget) != INVALID_AUTOMATION_LANE_ID;
-        bool panAuto = manager.getLaneForTarget(panTarget) != INVALID_AUTOMATION_LANE_ID;
-
-        if (header->volumeLabel)
-            header->volumeLabel->setAutomated(volAuto);
-        if (header->panLabel)
-            header->panLabel->setAutomated(panAuto);
-    }
+    // Labels refresh their own automation visual state via the observer
+    // pattern (DraggableValueLabel subscribes to AutomationManager when
+    // bound to a target), so no manual push is needed here.
 }
 
 void TrackHeadersPanel::automationLanesChanged() {
@@ -1493,6 +1475,13 @@ void TrackHeadersPanel::automationValueChanged(AutomationLaneId laneId, double n
 
     if (lane->target.type != AutomationTargetType::TrackVolume &&
         lane->target.type != AutomationTargetType::TrackPan)
+        return;
+
+    // Overridden state covers both "user dragging right now" and "user
+    // released and the lane is latched to their value" — in either case we
+    // must not yank the control back to the curve.
+    if (AutomationManager::getInstance().getVisualState(lane->target) ==
+        AutomationVisualState::Overridden)
         return;
 
     int index = -1;

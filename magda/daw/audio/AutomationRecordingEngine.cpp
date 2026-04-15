@@ -45,6 +45,8 @@ void AutomationRecordingEngine::process() {
         UndoManager::getInstance().endCompoundOperation();
         isRecording_ = false;
         lastRecorded_.clear();
+        laneRecordingStart_.clear();
+        lanePreRecordingPoints_.clear();
     } else if (playing && writeEnabled_ && !isRecording_) {
         DBG("[AutoRec] Write toggled ON mid-playback — begin recording");
         UndoManager::getInstance().beginCompoundOperation("Record Automation");
@@ -57,6 +59,8 @@ void AutomationRecordingEngine::process() {
         UndoManager::getInstance().endCompoundOperation();
         isRecording_ = false;
         lastRecorded_.clear();
+        laneRecordingStart_.clear();
+        lanePreRecordingPoints_.clear();
     }
 
     wasPlaying_ = playing;
@@ -101,6 +105,38 @@ bool AutomationRecordingEngine::shouldThinPoint(AutomationLaneId laneId, double 
 
 void AutomationRecordingEngine::recordPoint(AutomationLaneId laneId, double beatTime,
                                             double normalizedValue) {
+    // Sweep pre-existing automation points in the recorded time range so old
+    // curve data doesn't interleave with the new recording. Only points that
+    // existed before this recording session started are candidates — points
+    // written by the current session are never deleted.
+    auto& autoMgr = AutomationManager::getInstance();
+    const auto* lane = autoMgr.getLane(laneId);
+    if (lane && lane->isAbsolute()) {
+        // On first recorded point for this lane this session, snapshot existing
+        // point IDs and mark the sweep start beat.
+        if (!laneRecordingStart_.count(laneId)) {
+            laneRecordingStart_[laneId] = beatTime;
+            auto& snapshot = lanePreRecordingPoints_[laneId];
+            for (const auto& pt : lane->absolutePoints)
+                snapshot.insert(pt.id);
+        }
+
+        double sweepFrom = laneRecordingStart_.at(laneId);
+        const auto& snapshot = lanePreRecordingPoints_[laneId];
+
+        // Delete only pre-recording points that fall within [sweepFrom, beatTime].
+        std::vector<AutomationPointId> toDelete;
+        for (const auto& pt : lane->absolutePoints) {
+            if (pt.time >= sweepFrom && pt.time <= beatTime && snapshot.count(pt.id))
+                toDelete.push_back(pt.id);
+        }
+        for (auto pid : toDelete) {
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<DeleteAutomationPointCommand>(laneId, INVALID_AUTOMATION_CLIP_ID,
+                                                               pid));
+        }
+    }
+
     auto cmd = std::make_unique<AddAutomationPointCommand>(
         laneId, INVALID_AUTOMATION_CLIP_ID, beatTime, normalizedValue, AutomationCurveType::Linear);
     UndoManager::getInstance().executeCommand(std::move(cmd));
@@ -184,6 +220,12 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     if (!track)
         return;
 
+    // Never record values being written by the playback engine — these are
+    // automation echoes round-tripping through TrackManager, not user gestures.
+    auto& autoMgr = AutomationManager::getInstance();
+    if (autoMgr.isApplyingAutomationWrite())
+        return;
+
     // trackPropertyChanged fires for mute, solo, arm, colour, etc. — not just
     // volume/pan. Only proceed if volume or pan actually changed since last call.
     // Baselines are seeded at record-start in seedBaselines() so the first
@@ -201,7 +243,6 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     // user gesture — otherwise AutomationPlaybackEngine's writes to the TE
     // parameter round-trip back through trackPropertyChanged and we'd re-record
     // the baked curve on every block.
-    auto& autoMgr = AutomationManager::getInstance();
     if (autoMgr.isPlaybackActive()) {
         AutomationTarget volTarget;
         volTarget.type = AutomationTargetType::TrackVolume;

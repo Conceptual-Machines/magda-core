@@ -6,6 +6,8 @@
 #include "ParameterInfo.hpp"
 #include "ParameterUtils.hpp"
 #include "TrackManager.hpp"
+#include "audio/AudioBridge.hpp"
+#include "engine/AudioEngine.hpp"
 
 namespace magda {
 
@@ -18,7 +20,7 @@ static float gainToDb(float gain) {
 }
 
 // Get current normalized value for an automation target
-static double getCurrentTargetValue(const AutomationTarget& target) {
+static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& target) {
     // Get parameter info for proper conversion
     ParameterInfo paramInfo = target.getParameterInfo();
 
@@ -38,8 +40,41 @@ static double getCurrentTargetValue(const AutomationTarget& target) {
             }
             return 0.5;  // Default to center
         }
+        case AutomationTargetType::DeviceParameter: {
+            auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
+            if (!resolved.valid || !resolved.device)
+                return std::nullopt;
+            if (target.paramIndex < 0 ||
+                target.paramIndex >= static_cast<int>(resolved.device->parameters.size())) {
+                return std::nullopt;
+            }
+            return static_cast<double>(ParameterUtils::realToNormalized(
+                resolved.device->parameters[static_cast<size_t>(target.paramIndex)].currentValue,
+                paramInfo));
+        }
+        case AutomationTargetType::Macro: {
+            const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+            if (!track)
+                return std::nullopt;
+
+            if (target.devicePath.isValid()) {
+                auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
+                if (resolved.valid && resolved.rack && target.paramIndex >= 0 &&
+                    target.paramIndex < static_cast<int>(resolved.rack->macros.size())) {
+                    return static_cast<double>(
+                        resolved.rack->macros[static_cast<size_t>(target.paramIndex)].value);
+                }
+            }
+
+            if (target.paramIndex >= 0 &&
+                target.paramIndex < static_cast<int>(track->macros.size())) {
+                return static_cast<double>(
+                    track->macros[static_cast<size_t>(target.paramIndex)].value);
+            }
+            return std::nullopt;
+        }
         default:
-            return 0.5;  // Default for unknown targets
+            return std::nullopt;
     }
 }
 
@@ -88,12 +123,14 @@ void AutomationManager::trackPropertyChanged(int trackId) {
             continue;
 
         // Get current value from track
-        double newValue = getCurrentTargetValue(lane.target);
+        auto newValue = getCurrentTargetValueImpl(lane.target);
+        if (!newValue)
+            continue;
 
         // Update the first point (or all points if single-point lane)
         // This provides real-time feedback when moving faders
         if (lane.absolutePoints.size() == 1) {
-            lane.absolutePoints[0].value = newValue;
+            lane.absolutePoints[0].value = *newValue;
             notifyPointsChanged(lane.id);
         }
     }
@@ -113,7 +150,7 @@ AutomationLaneId AutomationManager::createLane(const AutomationTarget& target,
 
     // For absolute lanes, add an initial point at the current target value
     if (type == AutomationLaneType::Absolute) {
-        double initialValue = getCurrentTargetValue(target);
+        double initialValue = getCurrentTargetValueImpl(target).value_or(0.5);
         AutomationPoint point;
         point.id = nextPointId_++;
         point.time = 0.0;
@@ -241,6 +278,38 @@ void AutomationManager::setTargetUserTouched(const AutomationTarget& target, boo
 bool AutomationManager::isTargetUserTouched(const AutomationTarget& target) const {
     return std::find(userTouchedTargets_.begin(), userTouchedTargets_.end(), target) !=
            userTouchedTargets_.end();
+}
+
+AutomationVisualState AutomationManager::getVisualState(const AutomationTarget& target) const {
+    AutomationLaneId laneId = getLaneForTarget(target);
+    if (laneId == INVALID_AUTOMATION_LANE_ID)
+        return AutomationVisualState::None;
+    const auto* lane = const_cast<AutomationManager*>(this)->getLane(laneId);
+    if (!lane)
+        return AutomationVisualState::None;
+    if (lane->bypass || lane->touchSuppressed)
+        return AutomationVisualState::Overridden;
+    return AutomationVisualState::Active;
+}
+
+void AutomationManager::setTargetOverridden(const AutomationTarget& target, bool overridden) {
+    AutomationLaneId laneId = getLaneForTarget(target);
+    if (laneId == INVALID_AUTOMATION_LANE_ID)
+        return;
+    setLaneBypass(laneId, overridden);
+}
+
+bool AutomationManager::isWriteModeEnabled() const {
+    auto* audioEngine = TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return false;
+    const auto* bridge = audioEngine->getAudioBridge();
+    return bridge && bridge->isAutomationWriteEnabled();
+}
+
+std::optional<double> AutomationManager::getCurrentTargetValue(
+    const AutomationTarget& target) const {
+    return getCurrentTargetValueImpl(target);
 }
 
 void AutomationManager::setTargetTouchSuppressed(const AutomationTarget& target, bool suppressed) {
