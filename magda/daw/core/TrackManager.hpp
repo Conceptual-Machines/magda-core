@@ -200,8 +200,8 @@ class TrackManager {
     // Track property setters (notify listeners)
     void setTrackName(TrackId trackId, const juce::String& name);
     void setTrackColour(TrackId trackId, juce::Colour colour);
-    void setTrackVolume(TrackId trackId, float volume);
-    void setTrackPan(TrackId trackId, float pan);
+    void setTrackVolume(TrackId trackId, float volume, bool fromAutomation = false);
+    void setTrackPan(TrackId trackId, float pan, bool fromAutomation = false);
     void setTrackMuted(TrackId trackId, bool muted);
     void setTrackSoloed(TrackId trackId, bool soloed);
     void setTrackRecordArmed(TrackId trackId, bool armed);

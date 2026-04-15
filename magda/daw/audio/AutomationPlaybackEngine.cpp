@@ -515,9 +515,9 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
         if (target.type == AutomationTargetType::TrackVolume) {
             // Target param range is in dB; convert back to linear gain.
             float gain = std::pow(10.0f, real / 20.0f);
-            trackMgr.setTrackVolume(target.trackId, gain);
+            trackMgr.setTrackVolume(target.trackId, gain, /*fromAutomation=*/true);
         } else {
-            trackMgr.setTrackPan(target.trackId, real);
+            trackMgr.setTrackPan(target.trackId, real, /*fromAutomation=*/true);
         }
     }
 }

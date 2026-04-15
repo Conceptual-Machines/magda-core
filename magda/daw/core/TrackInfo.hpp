@@ -51,6 +51,12 @@ struct TrackInfo {
     // Mixer state
     float volume = 1.0f;  // Volume level (0-1), default is unity gain (0dB)
     float pan = 0.0f;     // Pan position (-1 to 1)
+    // User-set fader positions — updated only by explicit user gestures, never by
+    // automation playback writes. Used as the recording seed so that
+    // seedBaselines() captures the intended position even when automation has
+    // been driving track->volume during a prior playback session.
+    float manualVolume = 1.0f;
+    float manualPan = 0.0f;
     bool muted = false;
     bool soloed = false;
     bool recordArmed = false;

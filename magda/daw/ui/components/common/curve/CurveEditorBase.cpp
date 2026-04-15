@@ -567,15 +567,18 @@ void CurveEditorBase::rebuildPointComponents() {
                     }
                 }
             } else {
-                // Clear others, select only this one
-                selectedPointIds_.clear();
-                for (auto& p : pointComponents_) {
-                    p->setSelected(false);
-                }
-                selectedPointIds_.insert(pointId);
-                for (auto& p : pointComponents_) {
-                    if (p->getPointId() == pointId)
-                        p->setSelected(true);
+                // If clicking a point that's already part of a multi-selection,
+                // keep the selection intact so dragging moves all selected points.
+                if (!selectedPointIds_.count(pointId) || selectedPointIds_.size() == 1) {
+                    selectedPointIds_.clear();
+                    for (auto& p : pointComponents_) {
+                        p->setSelected(false);
+                    }
+                    selectedPointIds_.insert(pointId);
+                    for (auto& p : pointComponents_) {
+                        if (p->getPointId() == pointId)
+                            p->setSelected(true);
+                    }
                 }
             }
 

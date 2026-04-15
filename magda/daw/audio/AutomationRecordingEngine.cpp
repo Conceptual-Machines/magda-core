@@ -24,6 +24,13 @@ AutomationRecordingEngine::AutomationRecordingEngine(te::Edit& edit) : edit_(edi
 void AutomationRecordingEngine::setWriteEnabled(bool enabled) {
     DBG("[AutoRec] setWriteEnabled: " << (enabled ? "ON" : "OFF"));
     writeEnabled_ = enabled;
+    if (enabled) {
+        // Capture track state now — before playback starts and before TE
+        // feeds back automation echoes that would corrupt track->volume.
+        // This snapshot is used as the initial anchor value for any lane
+        // created during the subsequent recording session.
+        seedBaselines();
+    }
 }
 
 bool AutomationRecordingEngine::isWriteEnabled() const {
@@ -149,17 +156,27 @@ void AutomationRecordingEngine::seedBaselines() {
     const auto& tracks = TrackManager::getInstance().getTracks();
     for (const auto& track : tracks) {
         auto& mix = lastTrackMixState_[static_cast<int>(track.id)];
-        mix.volume = track.volume;
-        mix.pan = track.pan;
+        // Use the manual (user-set) values so that automation echoes baked into
+        // track->volume during a prior playback session don't corrupt the anchor.
+        mix.volume = track.manualVolume;
+        mix.pan = track.manualPan;
+        DBG("[AutoRec] seedBaselines track="
+            << (int)track.id << " vol=" << track.volume << " (" << gainToDb(track.volume) << " dB)"
+            << " manualVol=" << track.manualVolume << " (" << gainToDb(track.manualVolume) << " dB)"
+            << " pan=" << track.pan << " manualPan=" << track.manualPan);
     }
 }
 
 void AutomationRecordingEngine::flushFinalPoints() {
-    double beatTime = getCurrentBeatTime();
+    double stopBeat = getCurrentBeatTime();
     for (const auto& [laneId, last] : lastRecorded_) {
-        // Write a final point at the current position with the last known value
+        // Skip if the transport has already rewound past the last recorded point
+        // (e.g. TE returns to loop start on stop). Writing at the rewind position
+        // would create a spurious anchor at the beginning of the timeline.
+        if (stopBeat <= last.beatTime)
+            continue;
         auto cmd = std::make_unique<AddAutomationPointCommand>(
-            laneId, INVALID_AUTOMATION_CLIP_ID, beatTime, last.value, AutomationCurveType::Linear);
+            laneId, INVALID_AUTOMATION_CLIP_ID, stopBeat, last.value, AutomationCurveType::Linear);
         UndoManager::getInstance().executeCommand(std::move(cmd));
     }
 }
@@ -223,8 +240,11 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     // Never record values being written by the playback engine — these are
     // automation echoes round-tripping through TrackManager, not user gestures.
     auto& autoMgr = AutomationManager::getInstance();
-    if (autoMgr.isApplyingAutomationWrite())
+    if (autoMgr.isApplyingAutomationWrite()) {
+        DBG("[AutoRec] trackPropertyChanged SKIPPED (isApplyingAutomationWrite) track="
+            << trackId << " vol=" << track->volume << " (" << gainToDb(track->volume) << " dB)");
         return;
+    }
 
     // trackPropertyChanged fires for mute, solo, arm, colour, etc. — not just
     // volume/pan. Only proceed if volume or pan actually changed since last call.
@@ -233,8 +253,6 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     auto& mix = lastTrackMixState_[tid];
     bool volumeChanged = (track->volume != mix.volume);
     bool panChanged = (track->pan != mix.pan);
-    mix.volume = track->volume;
-    mix.pan = track->pan;
 
     if (!volumeChanged && !panChanged)
         return;
@@ -260,6 +278,20 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
             return;
     }
 
+    // Snapshot the seed values BEFORE overwriting mix state. The anchor
+    // correction below needs the pre-gesture baseline (set by seedBaselines()),
+    // not the automation-driven value we're about to store.
+    float preSeedVolume = mix.volume;
+    float preSeedPan = mix.pan;
+
+    // Update the tracked mix state only for real events we will actually record.
+    // Updating early (before the user-touch gate) would corrupt the seed value
+    // captured in seedBaselines() — automation-driven callbacks that bypass the
+    // isApplyingAutomationWrite guard (e.g. fired by non-volume property changes)
+    // would silently overwrite mix.volume with the automation-driven track->volume.
+    mix.volume = track->volume;
+    mix.pan = track->pan;
+
     double beatTime = getCurrentBeatTime();
 
     if (volumeChanged) {
@@ -267,13 +299,37 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
         target.type = AutomationTargetType::TrackVolume;
         target.trackId = tid;
 
+        bool isNewLane = (autoMgr.getLaneForTarget(target) == INVALID_AUTOMATION_LANE_ID);
         auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+
+        // createLane reads track->volume for the anchor, but by the time the
+        // first user gesture fires, the playback engine may have already written
+        // a different value. Correct the anchor using the value seeded at
+        // recording start, which is captured before TE's async callbacks run.
+        if (isNewLane) {
+            ParameterInfo paramInfo = target.getParameterInfo();
+            float seedDb = gainToDb(preSeedVolume);
+            double seedNorm =
+                static_cast<double>(ParameterUtils::realToNormalized(seedDb, paramInfo));
+            const auto* lane = autoMgr.getLane(laneId);
+            if (lane && !lane->absolutePoints.empty()) {
+                DBG("[AutoRec] New vol lane — anchor was "
+                    << gainToDb(track->volume) << " dB, correcting to seed=" << seedDb << " dB"
+                    << " (track->vol=" << track->volume << " preSeed=" << preSeedVolume << ")");
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<MoveAutomationPointCommand>(laneId, INVALID_AUTOMATION_CLIP_ID,
+                                                                 lane->absolutePoints[0].id, 0.0,
+                                                                 seedNorm));
+            }
+        }
+
         ParameterInfo paramInfo = target.getParameterInfo();
         float db = gainToDb(track->volume);
         double normalizedValue =
             static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
 
-        DBG("[AutoRec] Volume hit: track=" << (int)tid << " vol=" << track->volume
+        DBG("[AutoRec] Volume hit: track=" << (int)tid << " vol=" << track->volume << " (" << db
+                                           << " dB)"
                                            << " norm=" << normalizedValue << " beat=" << beatTime);
         if (!shouldThinPoint(laneId, beatTime, normalizedValue))
             recordPoint(laneId, beatTime, normalizedValue);
@@ -284,7 +340,22 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
         target.type = AutomationTargetType::TrackPan;
         target.trackId = tid;
 
+        bool isNewLane = (autoMgr.getLaneForTarget(target) == INVALID_AUTOMATION_LANE_ID);
         auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+
+        if (isNewLane) {
+            ParameterInfo paramInfo = target.getParameterInfo();
+            double seedNorm =
+                static_cast<double>(ParameterUtils::realToNormalized(preSeedPan, paramInfo));
+            const auto* lane = autoMgr.getLane(laneId);
+            if (lane && !lane->absolutePoints.empty()) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<MoveAutomationPointCommand>(laneId, INVALID_AUTOMATION_CLIP_ID,
+                                                                 lane->absolutePoints[0].id, 0.0,
+                                                                 seedNorm));
+            }
+        }
+
         ParameterInfo paramInfo = target.getParameterInfo();
         double normalizedValue =
             static_cast<double>(ParameterUtils::realToNormalized(track->pan, paramInfo));

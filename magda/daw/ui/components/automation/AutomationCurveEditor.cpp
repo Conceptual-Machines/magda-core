@@ -469,6 +469,10 @@ void AutomationCurveEditor::onPointDeleted(uint32_t pointId) {
 }
 
 void AutomationCurveEditor::onPointSelected(uint32_t pointId) {
+    // If this point is already part of a multi-selection, don't replace the
+    // selection — the user is starting a drag on the group, not re-selecting.
+    if (selectedPointIds_.size() > 1 && selectedPointIds_.count(pointId))
+        return;
     SelectionManager::getInstance().selectAutomationPoint(laneId_, pointId, clipId_);
 }
 
@@ -518,6 +522,7 @@ void AutomationCurveEditor::syncSelectionState() {
                           selection.laneId == laneId_ &&
                           (clipId_ == INVALID_AUTOMATION_CLIP_ID || selection.clipId == clipId_);
 
+    selectedPointIds_.clear();
     for (auto& pc : pointComponents_) {
         bool isSelected = false;
         if (isOurSelection) {
@@ -525,6 +530,8 @@ void AutomationCurveEditor::syncSelectionState() {
                                    pc->getPointId()) != selection.pointIds.end();
         }
         pc->setSelected(isSelected);
+        if (isSelected)
+            selectedPointIds_.insert(pc->getPointId());
     }
 
     repaint();

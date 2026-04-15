@@ -127,7 +127,9 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
 
     // Mixer state
     outTrack.volume = obj->getProperty("volume");
+    outTrack.manualVolume = outTrack.volume;
     outTrack.pan = obj->getProperty("pan");
+    outTrack.manualPan = outTrack.pan;
     outTrack.muted = obj->getProperty("muted");
     outTrack.soloed = obj->getProperty("soloed");
     outTrack.recordArmed = obj->getProperty("recordArmed");
