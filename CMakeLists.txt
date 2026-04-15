@@ -106,6 +106,14 @@ if(APPLE)
     set(GGML_METAL_EMBED_LIBRARY ON CACHE BOOL "" FORCE)
 else()
     set(GGML_METAL OFF CACHE BOOL "" FORCE)
+    # Disable -march=native so the binary runs on CPUs without AVX2/FMA/etc.
+    # Without this, AppImages built on modern CI runners crash with SIGILL
+    # on older CPUs (e.g. pre-Haswell).  Baseline: SSE4.2 + AVX.
+    set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+    set(GGML_AVX2   OFF CACHE BOOL "" FORCE)
+    set(GGML_FMA    OFF CACHE BOOL "" FORCE)
+    set(GGML_F16C   OFF CACHE BOOL "" FORCE)
+    set(GGML_BMI2   OFF CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(third_party/llama.cpp)
 
