@@ -117,6 +117,9 @@ class TrackHeadersPanel : public juce::Component,
     std::function<void(int, float)> onTrackPanChanged;
     std::function<void(TrackId, AutomationLaneId)> onShowAutomationLane;
 
+    // Called by MainView when the per-track lane viewport scrolls in TrackContentPanel
+    void setLaneScrollOffset(TrackId trackId, int scrollY);
+
     // Routing toggle types
     enum class RoutingType { AudioIn, AudioOut, MidiIn, MidiOut };
 
@@ -200,6 +203,8 @@ class TrackHeadersPanel : public juce::Component,
         std::unique_ptr<juce::Button> deleteBtn;
     };
     std::vector<std::unique_ptr<AutoLaneHeaderButtons>> laneHeaderButtons_;
+    std::unordered_map<TrackId, int>
+        laneScrollOffsets_;  // Per-track vertical scroll offset (pixels)
     std::unordered_set<int> selectedTrackIndices_;
     double verticalZoom = 1.0;  // Track height multiplier
     ViewMode currentViewMode_ = ViewMode::Arrange;

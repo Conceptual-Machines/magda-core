@@ -18,6 +18,19 @@
 #include "core/UndoManager.hpp"
 #include "project/ProjectManager.hpp"
 
+namespace {
+// Subclasses juce::Viewport so we can override visibleAreaChanged() and
+// forward scroll notifications to a lambda without a separate listener class.
+class LaneViewport : public juce::Viewport {
+  public:
+    std::function<void(int)> onScrollY;
+    void visibleAreaChanged(const juce::Rectangle<int>& newArea) override {
+        if (onScrollY)
+            onScrollY(newArea.getY());
+    }
+};
+}  // namespace
+
 namespace magda {
 
 TrackContentPanel::TrackContentPanel() {
@@ -2278,7 +2291,7 @@ int TrackContentPanel::getTrackTotalHeight(int trackIndex) const {
     return totalHeight;
 }
 
-int TrackContentPanel::getVisibleAutomationLanesHeight(TrackId trackId) const {
+int TrackContentPanel::getRawAutomationLanesHeight(TrackId trackId) const {
     int totalHeight = 0;
 
     auto it = visibleAutomationLanes_.find(trackId);
@@ -2287,7 +2300,6 @@ int TrackContentPanel::getVisibleAutomationLanesHeight(TrackId trackId) const {
         for (auto laneId : it->second) {
             const auto* lane = manager.getLane(laneId);
             if (lane && lane->visible) {
-                // Apply vertical zoom to automation lane height (header + content + resize handle)
                 int laneHeight = lane->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
                                                    static_cast<int>(lane->height * verticalZoom) +
                                                    AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
@@ -2300,50 +2312,86 @@ int TrackContentPanel::getVisibleAutomationLanesHeight(TrackId trackId) const {
     return totalHeight;
 }
 
+int TrackContentPanel::getVisibleAutomationLanesHeight(TrackId trackId) const {
+    return juce::jmin(getRawAutomationLanesHeight(trackId), kLanesViewportMaxHeight);
+}
+
 void TrackContentPanel::rebuildAutomationLaneComponents() {
+    // Remove old lane components and viewports from the component hierarchy
+    for (auto& entry : automationLaneComponents_)
+        if (entry.component)
+            entry.component->setVisible(false);
     automationLaneComponents_.clear();
+
+    for (auto& [tid, tlv] : laneViewports_) {
+        if (tlv->viewport)
+            removeChildComponent(tlv->viewport.get());
+    }
+    laneViewports_.clear();
 
     auto& manager = AutomationManager::getInstance();
 
-    // Create components for visible automation lanes
     for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
         TrackId trackId = visibleTrackIds_[i];
 
         auto it = visibleAutomationLanes_.find(trackId);
-        if (it == visibleAutomationLanes_.end()) {
+        if (it == visibleAutomationLanes_.end())
             continue;
-        }
 
+        // Count visible lanes for this track
+        int visibleCount = 0;
+        for (auto laneId : it->second) {
+            const auto* l = manager.getLane(laneId);
+            if (l && l->visible)
+                ++visibleCount;
+        }
+        if (visibleCount == 0)
+            continue;
+
+        // Create a per-track viewport + content component
+        auto tlv = std::make_unique<TrackLaneViewport>();
+        tlv->trackId = trackId;
+        tlv->content = std::make_unique<juce::Component>();
+
+        auto laneVp = std::make_unique<LaneViewport>();
+        laneVp->onScrollY = [this, trackId](int scrollY) {
+            if (onLaneScrollChanged)
+                onLaneScrollChanged(trackId, scrollY);
+        };
+        laneVp->setScrollBarsShown(false, false, true, false);  // no bar, wheel scrolls vertically
+        laneVp->setViewedComponent(tlv->content.get(), false);
+        tlv->viewport = std::move(laneVp);
+
+        addAndMakeVisible(*tlv->viewport);
+
+        // Create lane components as children of the content component
         for (auto laneId : it->second) {
             const auto* lane = manager.getLane(laneId);
-            if (!lane || !lane->visible) {
+            if (!lane || !lane->visible)
                 continue;
-            }
 
             AutomationLaneEntry entry;
             entry.trackId = trackId;
             entry.laneId = laneId;
             entry.component = std::make_unique<AutomationLaneComponent>(laneId);
-            // Convert ppb to pps for automation (time-based rendering)
             entry.component->setPixelsPerSecond(currentZoom * tempoBPM / 60.0);
             entry.component->setPixelsPerBeat(currentZoom);
             entry.component->setTempoBPM(tempoBPM);
             entry.component->snapTimeToGrid = snapBeatsToGrid;
             entry.component->getGridSpacingBeats = getGridSpacingBeats;
 
-            // Wire up height change callback for resizing
-            entry.component->onHeightChanged = [this](AutomationLaneId /*changedLaneId*/,
-                                                      int /*newHeight*/) {
-                // Update layout when automation lane is resized
+            entry.component->onHeightChanged = [this](AutomationLaneId, int) {
                 updateAutomationLanePositions();
                 updateClipComponentPositions();
                 resized();
                 repaintVisible();
             };
 
-            addAndMakeVisible(entry.component.get());
+            tlv->content->addAndMakeVisible(entry.component.get());
             automationLaneComponents_.push_back(std::move(entry));
         }
+
+        laneViewports_[trackId] = std::move(tlv);
     }
 
     updateAutomationLanePositions();
@@ -2352,57 +2400,62 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
 void TrackContentPanel::updateAutomationLanePositions() {
     auto& manager = AutomationManager::getInstance();
 
+    // Position each per-track viewport below its track row, then place lane
+    // components inside the viewport's content component at local Y offsets.
+    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
+        TrackId trackId = visibleTrackIds_[i];
+        auto vpIt = laneViewports_.find(trackId);
+        if (vpIt == laneViewports_.end())
+            continue;
+
+        auto& tlv = *vpIt->second;
+
+        // Viewport sits immediately below the track row
+        int trackIndex = static_cast<int>(i);
+        int vpY = getTrackYPosition(trackIndex) +
+                  static_cast<int>(trackLanes[trackIndex]->height * verticalZoom);
+        int rawH = getRawAutomationLanesHeight(trackId);
+        int vpH = juce::jmin(rawH, kLanesViewportMaxHeight);
+        tlv.viewport->setBounds(0, vpY, getWidth(), vpH);
+
+        // Size the content component to the full (uncapped) lane stack
+        tlv.content->setSize(getWidth(), rawH);
+    }
+
+    // Now position each lane component within its content component (local Y)
     for (auto& entry : automationLaneComponents_) {
-        // Find track index for this lane's track
-        int trackIndex = -1;
-        for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-            if (visibleTrackIds_[i] == entry.trackId) {
-                trackIndex = static_cast<int>(i);
-                break;
-            }
-        }
-
-        if (trackIndex < 0) {
+        auto vpIt = laneViewports_.find(entry.trackId);
+        if (vpIt == laneViewports_.end())
             continue;
-        }
 
-        // Calculate Y position: after track + any previous automation lanes for this track
-        int y = getTrackYPosition(trackIndex) +
-                static_cast<int>(trackLanes[trackIndex]->height * verticalZoom);
-
-        // Add height of any previous automation lanes for this same track
-        auto it = visibleAutomationLanes_.find(entry.trackId);
-        if (it != visibleAutomationLanes_.end()) {
-            for (auto prevLaneId : it->second) {
-                if (prevLaneId == entry.laneId) {
-                    break;  // Found our lane, stop adding
-                }
-                const auto* prevLane = manager.getLane(prevLaneId);
-                if (prevLane && prevLane->visible) {
-                    // Apply vertical zoom to automation lane height (header + content + resize
-                    // handle)
-                    y += prevLane->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
-                                               static_cast<int>(prevLane->height * verticalZoom) +
-                                               AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
-                                            : AutomationLaneComponent::HEADER_HEIGHT;
+        // Calculate local Y within the content component
+        int localY = 0;
+        auto laneIt = visibleAutomationLanes_.find(entry.trackId);
+        if (laneIt != visibleAutomationLanes_.end()) {
+            for (auto prevLaneId : laneIt->second) {
+                if (prevLaneId == entry.laneId)
+                    break;
+                const auto* prev = manager.getLane(prevLaneId);
+                if (prev && prev->visible) {
+                    localY += prev->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
+                                                static_cast<int>(prev->height * verticalZoom) +
+                                                AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
+                                             : AutomationLaneComponent::HEADER_HEIGHT;
                 }
             }
         }
 
-        // Get lane info for height
         const auto* lane = manager.getLane(entry.laneId);
-        if (!lane) {
+        if (!lane)
             continue;
-        }
 
-        // Apply vertical zoom to automation lane height (header + content + resize handle)
         int height = lane->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
                                        static_cast<int>(lane->height * verticalZoom) +
                                        AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
                                     : AutomationLaneComponent::HEADER_HEIGHT;
 
-        entry.component->setBounds(0, y, getWidth(), height);
-        // Convert ppb to pps for automation (time-based rendering)
+        // Width = viewport (panel) width; content component is always panel-wide
+        entry.component->setBounds(0, localY, getWidth(), height);
         entry.component->setPixelsPerSecond(currentZoom * tempoBPM / 60.0);
         entry.component->setPixelsPerBeat(currentZoom);
         entry.component->setTempoBPM(tempoBPM);

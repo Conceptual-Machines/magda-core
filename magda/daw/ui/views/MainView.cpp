@@ -1086,6 +1086,11 @@ void MainView::setupTrackSynchronization() {
         updateContentSizes();
     };
 
+    // Sync per-track lane viewport scroll position to the headers panel
+    trackContentPanel->onLaneScrollChanged = [this](TrackId trackId, int scrollY) {
+        trackHeadersPanel->setLaneScrollOffset(trackId, scrollY);
+    };
+
     trackContentPanel->onTrackSelected = [this](int trackIndex) {
         if (!isUpdatingTrackSelection) {
             isUpdatingTrackSelection = true;

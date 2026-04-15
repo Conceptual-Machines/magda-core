@@ -328,6 +328,12 @@ void MixerView::ChannelStrip::setupControls() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetTrackPanCommand>(trackId_, static_cast<float>(val)));
     };
+    if (!isMaster_) {
+        AutomationTarget panTarget;
+        panTarget.type = AutomationTargetType::TrackPan;
+        panTarget.trackId = trackId_;
+        panSlider->setAutomationTarget(panTarget);
+    }
     addAndMakeVisible(*panSlider);
 
     // Level meter
@@ -378,6 +384,12 @@ void MixerView::ChannelStrip::setupControls() {
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetTrackVolumeCommand>(trackId_, gain));
     };
+    if (!isMaster_) {
+        AutomationTarget volTarget;
+        volTarget.type = AutomationTargetType::TrackVolume;
+        volTarget.trackId = trackId_;
+        volumeSlider->setAutomationTarget(volTarget);
+    }
     addAndMakeVisible(*volumeSlider);
 
     // Mute button (square corners, compact)

@@ -73,7 +73,7 @@ class LaneHeaderButton : public juce::Button {
 class SnapIconLaneButton : public LaneHeaderButton {
   public:
     SnapIconLaneButton(const juce::String& name, const void* svgData, int svgSize)
-        : LaneHeaderButton(name, DarkTheme::getColour(DarkTheme::ACCENT_CYAN)) {
+        : LaneHeaderButton(name, DarkTheme::getColour(DarkTheme::ACCENT_BLUE)) {
         setClickingTogglesState(true);
         drawable_ = juce::Drawable::createFromImageData(svgData, svgSize);
     }
@@ -157,7 +157,7 @@ class DeleteLaneButton : public LaneHeaderButton {
 // grey on SURFACE, On = white on cyan — same colour rules as snap toggles.
 class PowerGlyphButton : public LaneHeaderButton {
   public:
-    PowerGlyphButton() : LaneHeaderButton("Bypass", DarkTheme::getColour(DarkTheme::ACCENT_CYAN)) {
+    PowerGlyphButton() : LaneHeaderButton("Bypass", DarkTheme::getColour(DarkTheme::ACCENT_BLUE)) {
         setClickingTogglesState(true);
     }
 
@@ -1427,7 +1427,9 @@ int TrackHeadersPanel::getVisibleAutomationLanesHeight(TrackId trackId) const {
         }
     }
 
-    return totalHeight;
+    // Cap to match the viewport height used in TrackContentPanel
+    constexpr int kLanesViewportMaxHeight = 267;
+    return juce::jmin(totalHeight, kLanesViewportMaxHeight);
 }
 
 void TrackHeadersPanel::syncAutomationLaneVisibility() {
@@ -1448,6 +1450,12 @@ void TrackHeadersPanel::syncAutomationLaneVisibility() {
     // Labels refresh their own automation visual state via the observer
     // pattern (DraggableValueLabel subscribes to AutomationManager when
     // bound to a target), so no manual push is needed here.
+}
+
+void TrackHeadersPanel::setLaneScrollOffset(TrackId trackId, int scrollY) {
+    laneScrollOffsets_[trackId] = scrollY;
+    repaint();
+    positionLaneHeaderButtons();
 }
 
 void TrackHeadersPanel::automationLanesChanged() {
@@ -3111,8 +3119,25 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
     auto& manager = AutomationManager::getInstance();
 
     // Calculate Y position: after track header
-    int y = getTrackYPosition(trackIndex) +
-            static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
+    int vpTop = getTrackYPosition(trackIndex) +
+                static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
+
+    int vpBottom = vpTop + getVisibleAutomationLanesHeight(trackId);
+
+    // Clip painting to the viewport area so lanes that have scrolled out of
+    // view are not visible in the header panel either.
+    juce::Graphics::ScopedSaveState gss(g);
+    g.reduceClipRegion(0, vpTop, getWidth(), vpBottom - vpTop);
+
+    // Apply the scroll offset so lane positions track the content viewport
+    int scrollOffset = 0;
+    {
+        auto sIt = laneScrollOffsets_.find(trackId);
+        if (sIt != laneScrollOffsets_.end())
+            scrollOffset = sIt->second;
+    }
+
+    int y = vpTop - scrollOffset;
 
     for (auto laneId : it->second) {
         const auto* lane = manager.getLane(laneId);
@@ -3355,26 +3380,30 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
 void TrackHeadersPanel::positionLaneHeaderButtons() {
     auto& manager = AutomationManager::getInstance();
 
-    // Buttons live in the lane *content* area (below the header strip), where
-    // there's room to actually see the icons. The header strip itself is too
-    // narrow (24px) and cramming 5 toggles next to the parameter name shrinks
-    // them to illegibility.
     constexpr int kBtnSize = 20;
     constexpr int kBtnGap = 3;
     constexpr int kLeftMargin = 6;
     constexpr int kTopMargin = 4;
 
-    // Walk visible tracks + lanes the same way paintAutomationLaneHeaders does,
-    // computing the Y of each lane header strip and placing that lane's
-    // buttons just below it, inside the content area.
     for (int trackIndex = 0; trackIndex < static_cast<int>(visibleTrackIds_.size()); ++trackIndex) {
         TrackId trackId = visibleTrackIds_[trackIndex];
         auto it = visibleAutomationLanes_.find(trackId);
         if (it == visibleAutomationLanes_.end())
             continue;
 
-        int y = getTrackYPosition(trackIndex) +
-                static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
+        int vpTop = getTrackYPosition(trackIndex) +
+                    static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
+        int vpHeight = getVisibleAutomationLanesHeight(trackId);
+        int vpBottom = vpTop + vpHeight;
+
+        int scrollOffset = 0;
+        {
+            auto sIt = laneScrollOffsets_.find(trackId);
+            if (sIt != laneScrollOffsets_.end())
+                scrollOffset = sIt->second;
+        }
+
+        int y = vpTop - scrollOffset;  // scrolled lane start
 
         for (auto laneId : it->second) {
             const auto* lane = manager.getLane(laneId);
@@ -3387,18 +3416,19 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
                                             : AutomationLaneComponent::HEADER_HEIGHT;
 
             if (auto* entry = findLaneHeaderButtons(laneId)) {
-                // Collapsed lanes have no content area to put the buttons in —
-                // hide them until the user expands the lane.
-                const bool showButtons = lane->expanded;
-                entry->snapTimeBtn->setVisible(showButtons);
-                entry->snapValueBtn->setVisible(showButtons);
-                entry->bypassBtn->setVisible(showButtons);
-                entry->deleteBtn->setVisible(showButtons);
+                int btnY = y + AutomationLaneComponent::HEADER_HEIGHT + kTopMargin;
 
-                if (showButtons) {
-                    int btnY = y + AutomationLaneComponent::HEADER_HEIGHT + kTopMargin;
+                // Show buttons only when expanded AND the content area is within
+                // the visible viewport region (not scrolled out of view).
+                bool inView = lane->expanded && (btnY + kBtnSize > vpTop) && (btnY < vpBottom);
+
+                entry->snapTimeBtn->setVisible(inView);
+                entry->snapValueBtn->setVisible(inView);
+                entry->bypassBtn->setVisible(inView);
+                entry->deleteBtn->setVisible(inView);
+
+                if (inView) {
                     int x = kLeftMargin;
-
                     auto place = [&](juce::Button& b) {
                         b.setBounds(x, btnY, kBtnSize, kBtnSize);
                         x += (kBtnSize + kBtnGap);

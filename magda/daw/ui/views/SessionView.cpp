@@ -816,6 +816,12 @@ class SessionView::MiniChannelStrip : public juce::Component {
             UndoManager::getInstance().executeCommand(
                 std::make_unique<SetTrackVolumeCommand>(trackId_, gain));
         };
+        {
+            AutomationTarget volTarget;
+            volTarget.type = AutomationTargetType::TrackVolume;
+            volTarget.trackId = trackId_;
+            volumeSlider_->setAutomationTarget(volTarget);
+        }
         addAndMakeVisible(*volumeSlider_);
 
         // dB scale labels (between fader and meter)
@@ -933,6 +939,12 @@ class SessionView::MiniChannelStrip : public juce::Component {
             UndoManager::getInstance().executeCommand(
                 std::make_unique<SetTrackPanCommand>(trackId_, static_cast<float>(newValue)));
         };
+        {
+            AutomationTarget panTarget;
+            panTarget.type = AutomationTargetType::TrackPan;
+            panTarget.trackId = trackId_;
+            panSlider_->setAutomationTarget(panTarget);
+        }
         addAndMakeVisible(*panSlider_);
 
         // Listen for mouse events on all children so we can intercept right-clicks
