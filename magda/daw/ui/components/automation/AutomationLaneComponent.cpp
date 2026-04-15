@@ -333,7 +333,7 @@ void AutomationLaneComponent::showContextMenu() {
     const auto* lane = getLaneInfo();
     const bool canSimplify =
         (lane != nullptr) && lane->isAbsolute() && lane->absolutePoints.size() > 2;
-    menu.addItem(SimplifyLane, "Simplify Lane", canSimplify);
+    menu.addItem(SimplifyLane, "Simplify Curve", canSimplify);
 
     auto options = juce::PopupMenu::Options().withTargetComponent(this);
 
@@ -354,21 +354,34 @@ void AutomationLaneComponent::showContextMenu() {
     });
 }
 
-void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsilon) {
+void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsilon,
+                                           const std::vector<AutomationPointId>& pointIdFilter) {
     auto& autoMgr = AutomationManager::getInstance();
     const auto* lane = autoMgr.getLane(laneId);
     if (lane == nullptr || !lane->isAbsolute() || lane->absolutePoints.size() <= 2)
         return;
 
-    // Snapshot IDs + (time, value) pairs sorted by time so RDP sees a proper polyline.
+    // Snapshot IDs + (time, value) pairs sorted by time. When a filter is
+    // supplied we still sort everything by time, but only points inside the
+    // filter are candidates for removal — others are pinned as "keep" so the
+    // user's unselected points survive intact.
     struct Entry {
         AutomationPointId id;
         AutomationCurveSimplifier::Point p;
+        bool inScope;
     };
+
+    std::vector<AutomationPointId> filterSorted(pointIdFilter.begin(), pointIdFilter.end());
+    std::sort(filterSorted.begin(), filterSorted.end());
+    const bool hasFilter = !filterSorted.empty();
+
     std::vector<Entry> entries;
     entries.reserve(lane->absolutePoints.size());
-    for (const auto& pt : lane->absolutePoints)
-        entries.push_back({pt.id, {pt.time, pt.value}});
+    for (const auto& pt : lane->absolutePoints) {
+        bool inScope =
+            !hasFilter || std::binary_search(filterSorted.begin(), filterSorted.end(), pt.id);
+        entries.push_back({pt.id, {pt.time, pt.value}, inScope});
+    }
     std::sort(entries.begin(), entries.end(),
               [](const Entry& a, const Entry& b) { return a.p.time < b.p.time; });
 
@@ -378,15 +391,26 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
         polyline.push_back(e.p);
 
     auto keepIdx = AutomationCurveSimplifier::simplify(polyline, epsilon);
-    if (keepIdx.size() == entries.size())
-        return;  // Nothing to drop.
 
     std::vector<bool> keep(entries.size(), false);
     for (auto idx : keepIdx)
         keep[idx] = true;
+    // Pin out-of-scope points so the filtered variant never deletes them.
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (!entries[i].inScope)
+            keep[i] = true;
+    }
+
+    size_t drops = 0;
+    for (bool k : keep)
+        if (!k)
+            ++drops;
+    if (drops == 0)
+        return;
 
     auto& undo = UndoManager::getInstance();
-    undo.beginCompoundOperation("Simplify Automation Lane");
+    undo.beginCompoundOperation("Simplify Automation Curve");
+    autoMgr.beginNotificationBatch();
     for (size_t i = 0; i < entries.size(); ++i) {
         if (keep[i])
             continue;
@@ -394,6 +418,7 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
             laneId, INVALID_AUTOMATION_CLIP_ID, entries[i].id);
         undo.executeCommand(std::move(cmd));
     }
+    autoMgr.endNotificationBatch();
     undo.endCompoundOperation();
 }
 

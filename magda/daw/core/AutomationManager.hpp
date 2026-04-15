@@ -147,6 +147,14 @@ class AutomationManager : public TrackManagerListener {
      */
     void setTargetTouchSuppressed(const AutomationTarget& target, bool suppressed);
 
+    // Tracks which automation targets the user is actively manipulating via
+    // a mouse/touch gesture. Unlike touchSuppressed, this is set even when no
+    // lane exists yet, so the recording engine can tell "user is touching" from
+    // "playback engine echoed a curve value back into TrackManager" during
+    // active playback — preventing feedback loops that overwrite baked curves.
+    void setTargetUserTouched(const AutomationTarget& target, bool touched);
+    bool isTargetUserTouched(const AutomationTarget& target) const;
+
     using TouchSuppressionListener = std::function<void(AutomationLaneId, bool)>;
     void setTouchSuppressionListener(TouchSuppressionListener listener) {
         touchSuppressionListener_ = std::move(listener);
@@ -305,6 +313,14 @@ class AutomationManager : public TrackManagerListener {
     void addListener(AutomationManagerListener* listener);
     void removeListener(AutomationManagerListener* listener);
 
+    // Coalesce automationPointsChanged notifications across a batch. While
+    // suppression is active, notifyPointsChanged() records the affected lane
+    // IDs and returns without firing. The outermost endBatch() fires one
+    // notification per distinct lane. Nestable via a counter — safe to call
+    // from compound undo ops that themselves wrap other batched work.
+    void beginNotificationBatch();
+    void endNotificationBatch();
+
     /**
      * @brief Broadcast point drag preview event
      */
@@ -409,11 +425,20 @@ class AutomationManager : public TrackManagerListener {
     bool playbackActive_ = false;
     bool applyingAutomationWrite_ = false;
 
+    // Targets under an active user touch gesture (mouseDown..mouseUp on a
+    // DraggableValueLabel / TextSlider bound to this target). Separate from
+    // lane-level touchSuppressed because touches start before a lane exists
+    // — see setTargetUserTouched().
+    std::vector<AutomationTarget> userTouchedTargets_;
+
     TouchSuppressionListener touchSuppressionListener_;
 
     int nextLaneId_ = 1;
     int nextClipId_ = 1;
     int nextPointId_ = 1;
+
+    int notificationBatchDepth_ = 0;
+    std::vector<AutomationLaneId> pendingPointsChangedLanes_;
 
     // Notification helpers
     void notifyLanesChanged();

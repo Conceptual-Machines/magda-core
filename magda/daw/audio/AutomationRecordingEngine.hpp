@@ -51,6 +51,9 @@ class AutomationRecordingEngine {
     bool shouldThinPoint(AutomationLaneId laneId, double beatTime, double value);
     void recordPoint(AutomationLaneId laneId, double beatTime, double normalizedValue);
     void flushFinalPoints();
+    // Populate lastTrackMixState_ from current TrackManager state so the first
+    // trackPropertyChanged callback during recording has an accurate baseline.
+    void seedBaselines();
 
     te::Edit& edit_;
     bool writeEnabled_ = false;

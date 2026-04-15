@@ -284,20 +284,21 @@ void DraggableValueLabel::paint(juce::Graphics& g) {
     }
 
     // Automated: subtle purple tint behind the fill so the control reads as
-    // "under automation" at a glance. Skip during drag to avoid fighting the
-    // accent highlight.
-    if (automated_ && !isDragging_ && drawBackground_) {
+    // "under automation" at a glance. Keep it during drag too — while recording
+    // automation the lane exists and the user needs the "this is automated"
+    // feedback even while their finger is still on the control.
+    if (automated_ && drawBackground_) {
         g.setColour(juce::Colour(DarkTheme::ACCENT_PURPLE).withAlpha(0.18f * alpha));
         g.fillRoundedRectangle(bounds, 2.0f);
     }
 
-    // Border
+    // Border: automated wins over drag so recording automation stays purple.
     if (drawBorder_) {
         juce::Colour borderColour;
-        if (isDragging_)
-            borderColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
-        else if (automated_)
+        if (automated_)
             borderColour = juce::Colour(DarkTheme::ACCENT_PURPLE);
+        else if (isDragging_)
+            borderColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
         else
             borderColour = DarkTheme::getColour(DarkTheme::BORDER);
         g.setColour(borderColour.withMultipliedAlpha(alpha));
@@ -333,6 +334,12 @@ void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
     // of the gesture (otherwise the fader fights the curve and flickers).
     if (hasAutomationTarget_ && automated_) {
         AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_, true);
+    }
+    // Always mark the gesture on the target (even when no lane exists yet) so
+    // AutomationRecordingEngine can distinguish real user touches from playback
+    // engine echo-backs when deciding whether to record a point.
+    if (hasAutomationTarget_) {
+        AutomationManager::getInstance().setTargetUserTouched(automationTarget_, true);
     }
 
     repaint();
@@ -381,6 +388,9 @@ void DraggableValueLabel::mouseUp(const juce::MouseEvent& /*e*/) {
     // the baked curve into the parameter on its next block.
     if (hasAutomationTarget_ && automated_) {
         AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_, false);
+    }
+    if (hasAutomationTarget_) {
+        AutomationManager::getInstance().setTargetUserTouched(automationTarget_, false);
     }
 
     repaint();

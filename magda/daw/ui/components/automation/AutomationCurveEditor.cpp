@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "AutomationLaneComponent.hpp"
 #include "core/AutomationCommands.hpp"
 #include "core/ParameterUtils.hpp"
 #include "core/UndoManager.hpp"
@@ -232,6 +233,59 @@ juce::String AutomationCurveEditor::formatValueLabel(double y) const {
     auto paramInfo = lane->target.getParameterInfo();
     float realValue = ParameterUtils::normalizedToReal(static_cast<float>(y), paramInfo);
     return ParameterUtils::formatValue(realValue, paramInfo);
+}
+
+void AutomationCurveEditor::mouseDown(const juce::MouseEvent& e) {
+    if (e.mods.isPopupMenu()) {
+        isRightClickPending_ = true;
+        showContextMenu();
+        return;
+    }
+    isRightClickPending_ = false;
+    CurveEditorBase::mouseDown(e);
+}
+
+void AutomationCurveEditor::mouseUp(const juce::MouseEvent& e) {
+    // Right-click release must NOT reach CurveEditorBase::mouseUp, which would
+    // treat it as a single click and add a new point at the cursor.
+    // e.mods on mouseUp doesn't reliably reflect the released button, so also
+    // guard with a pending flag set during mouseDown.
+    if (isRightClickPending_ || e.mods.isPopupMenu()) {
+        isRightClickPending_ = false;
+        return;
+    }
+    CurveEditorBase::mouseUp(e);
+}
+
+void AutomationCurveEditor::showContextMenu() {
+    juce::PopupMenu menu;
+    enum { SimplifyItem = 1 };
+
+    const auto& selectedIds = getSelectedPointIds();
+    const auto* lane = AutomationManager::getInstance().getLane(laneId_);
+    const bool hasSelection = !selectedIds.empty();
+    const size_t pointCount = (lane && lane->isAbsolute()) ? lane->absolutePoints.size() : 0;
+    // RDP degenerates below 3 points in the scope we're operating on.
+    const bool canSimplify =
+        lane && lane->isAbsolute() && (hasSelection ? selectedIds.size() > 2 : pointCount > 2);
+
+    juce::String label = hasSelection ? "Simplify Selected Points" : "Simplify Curve";
+    menu.addItem(SimplifyItem, label, canSimplify);
+
+    auto laneId = laneId_;
+    std::set<uint32_t> selectionCopy(selectedIds.begin(), selectedIds.end());
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
+                       [laneId, selectionCopy](int result) {
+                           if (result != SimplifyItem)
+                               return;
+                           juce::MessageManager::callAsync([laneId, selectionCopy]() {
+                               std::vector<AutomationPointId> ids;
+                               ids.reserve(selectionCopy.size());
+                               for (auto id : selectionCopy)
+                                   ids.push_back(static_cast<AutomationPointId>(id));
+                               AutomationLaneComponent::simplifyLane(laneId, 0.01, ids);
+                           });
+                       });
 }
 
 const std::vector<CurvePoint>& AutomationCurveEditor::getPoints() const {

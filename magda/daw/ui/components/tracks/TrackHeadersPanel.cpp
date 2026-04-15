@@ -543,9 +543,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     monitorButton->setTooltip("Input monitoring (Off/In/Auto)");
     applyMonitorButtonState(*monitorButton, InputMonitorMode::Off);
 
-    // Automation button (bezier curve icon)
-    automationButton = std::make_unique<SvgButton>("Automation", BinaryData::bezier_svg,
-                                                   BinaryData::bezier_svgSize);
+    // Automation button
+    automationButton = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
+                                                   BinaryData::automation_svgSize);
     automationButton->setTooltip("Automation");
     automationButton->setEnabled(true);
     automationButton->setColour(juce::TextButton::buttonColourId,

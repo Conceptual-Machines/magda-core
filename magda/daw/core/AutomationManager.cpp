@@ -228,6 +228,21 @@ void AutomationManager::setLaneBypass(AutomationLaneId laneId, bool bypass) {
     }
 }
 
+void AutomationManager::setTargetUserTouched(const AutomationTarget& target, bool touched) {
+    auto it = std::find(userTouchedTargets_.begin(), userTouchedTargets_.end(), target);
+    if (touched) {
+        if (it == userTouchedTargets_.end())
+            userTouchedTargets_.push_back(target);
+    } else if (it != userTouchedTargets_.end()) {
+        userTouchedTargets_.erase(it);
+    }
+}
+
+bool AutomationManager::isTargetUserTouched(const AutomationTarget& target) const {
+    return std::find(userTouchedTargets_.begin(), userTouchedTargets_.end(), target) !=
+           userTouchedTargets_.end();
+}
+
 void AutomationManager::setTargetTouchSuppressed(const AutomationTarget& target, bool suppressed) {
     AutomationLaneId laneId = getLaneForTarget(target);
     if (laneId == INVALID_AUTOMATION_LANE_ID)
@@ -744,7 +759,32 @@ void AutomationManager::notifyClipsChanged(AutomationLaneId laneId) {
 }
 
 void AutomationManager::notifyPointsChanged(AutomationLaneId laneId) {
+    if (notificationBatchDepth_ > 0) {
+        if (std::find(pendingPointsChangedLanes_.begin(), pendingPointsChangedLanes_.end(),
+                      laneId) == pendingPointsChangedLanes_.end()) {
+            pendingPointsChangedLanes_.push_back(laneId);
+        }
+        return;
+    }
     listeners_.call([laneId](AutomationManagerListener& l) { l.automationPointsChanged(laneId); });
+}
+
+void AutomationManager::beginNotificationBatch() {
+    ++notificationBatchDepth_;
+}
+
+void AutomationManager::endNotificationBatch() {
+    if (notificationBatchDepth_ == 0)
+        return;
+    --notificationBatchDepth_;
+    if (notificationBatchDepth_ > 0)
+        return;
+    auto pending = std::move(pendingPointsChangedLanes_);
+    pendingPointsChangedLanes_.clear();
+    for (auto laneId : pending) {
+        listeners_.call(
+            [laneId](AutomationManagerListener& l) { l.automationPointsChanged(laneId); });
+    }
 }
 
 void AutomationManager::notifyValueChanged(AutomationLaneId laneId, double normalizedValue) {

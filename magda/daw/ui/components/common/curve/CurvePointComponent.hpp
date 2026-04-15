@@ -84,6 +84,7 @@ class CurvePointComponent : public juce::Component {
     bool isHovered_ = false;
     bool isDragging_ = false;
     bool handlesVisible_ = false;
+    bool isRightClickPending_ = false;
 
     juce::Point<int> dragStartPos_;
     double dragStartX_ = 0.0;

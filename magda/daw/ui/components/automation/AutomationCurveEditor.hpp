@@ -32,6 +32,10 @@ class AutomationCurveEditor : public CurveEditorBase,
     explicit AutomationCurveEditor(AutomationLaneId laneId);
     ~AutomationCurveEditor() override;
 
+    // Component
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+
     // AutomationManagerListener
     void automationLanesChanged() override;
     void automationLanePropertyChanged(AutomationLaneId laneId) override;
@@ -120,9 +124,13 @@ class AutomationCurveEditor : public CurveEditorBase,
     // Cached curve points (converted from AutomationPoints)
     mutable std::vector<CurvePoint> cachedPoints_;
     mutable bool pointsCacheDirty_ = true;
+    bool isRightClickPending_ = false;
 
     void updatePointsCache() const;
     void deleteSelectedPoints();
+    // Shown on right-click anywhere in the curve body, or forwarded from a
+    // CurvePointComponent right-click so the menu isn't swallowed by points.
+    void showContextMenu();
 
     // Quantize a normalized value to the parameter's natural grid when
     // the lane's snapValue flag is enabled.

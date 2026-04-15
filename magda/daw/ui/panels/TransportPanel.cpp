@@ -340,6 +340,14 @@ void TransportPanel::setupTransportButtons() {
         isRecording = false;
         playButton->setActive(false);
         recordButton->setActive(false);
+        // Pressing stop also disarms automation write mode, matching the
+        // transport-centric mental model (stop = end of pass).
+        if (isAutomationWriteEnabled) {
+            isAutomationWriteEnabled = false;
+            automationWriteButton->setActive(false);
+            if (onAutomationWriteToggle)
+                onAutomationWriteToggle(false);
+        }
         if (onStop)
             onStop();
         repaint();
@@ -369,6 +377,12 @@ void TransportPanel::setupTransportButtons() {
         automationWriteButton->setActive(isAutomationWriteEnabled);
         if (onAutomationWriteToggle)
             onAutomationWriteToggle(isAutomationWriteEnabled);
+        // Enabling automation write with transport stopped: kick off playback
+        // too, so the user doesn't have to press two buttons to start recording.
+        // setPlaybackState() from the engine callback will flip isPlaying when
+        // playback actually starts.
+        if (isAutomationWriteEnabled && !isPlaying && onPlay)
+            onPlay();
         repaint();
     };
     addAndMakeVisible(*automationWriteButton);

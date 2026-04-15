@@ -38,7 +38,7 @@ void AutomationRecordingEngine::process() {
         UndoManager::getInstance().beginCompoundOperation("Record Automation");
         isRecording_ = true;
         lastRecorded_.clear();
-        lastTrackMixState_.clear();
+        seedBaselines();
     } else if (wasPlaying_ && !playing && isRecording_) {
         DBG("[AutoRec] Transport stopped — end recording");
         flushFinalPoints();
@@ -50,6 +50,7 @@ void AutomationRecordingEngine::process() {
         UndoManager::getInstance().beginCompoundOperation("Record Automation");
         isRecording_ = true;
         lastRecorded_.clear();
+        seedBaselines();
     } else if (isRecording_ && !writeEnabled_) {
         DBG("[AutoRec] Write toggled OFF — end recording");
         flushFinalPoints();
@@ -105,6 +106,16 @@ void AutomationRecordingEngine::recordPoint(AutomationLaneId laneId, double beat
     UndoManager::getInstance().executeCommand(std::move(cmd));
 
     lastRecorded_[laneId] = {beatTime, normalizedValue};
+}
+
+void AutomationRecordingEngine::seedBaselines() {
+    lastTrackMixState_.clear();
+    const auto& tracks = TrackManager::getInstance().getTracks();
+    for (const auto& track : tracks) {
+        auto& mix = lastTrackMixState_[static_cast<int>(track.id)];
+        mix.volume = track.volume;
+        mix.pan = track.pan;
+    }
 }
 
 void AutomationRecordingEngine::flushFinalPoints() {
@@ -175,6 +186,8 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
 
     // trackPropertyChanged fires for mute, solo, arm, colour, etc. — not just
     // volume/pan. Only proceed if volume or pan actually changed since last call.
+    // Baselines are seeded at record-start in seedBaselines() so the first
+    // real callback already has accurate prior values to compare against.
     auto& mix = lastTrackMixState_[tid];
     bool volumeChanged = (track->volume != mix.volume);
     bool panChanged = (track->pan != mix.pan);
@@ -184,7 +197,28 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     if (!volumeChanged && !panChanged)
         return;
 
+    // During playback, ignore property changes that weren't initiated by a
+    // user gesture — otherwise AutomationPlaybackEngine's writes to the TE
+    // parameter round-trip back through trackPropertyChanged and we'd re-record
+    // the baked curve on every block.
     auto& autoMgr = AutomationManager::getInstance();
+    if (autoMgr.isPlaybackActive()) {
+        AutomationTarget volTarget;
+        volTarget.type = AutomationTargetType::TrackVolume;
+        volTarget.trackId = tid;
+        AutomationTarget panTarget;
+        panTarget.type = AutomationTargetType::TrackPan;
+        panTarget.trackId = tid;
+
+        if (volumeChanged && !autoMgr.isTargetUserTouched(volTarget))
+            volumeChanged = false;
+        if (panChanged && !autoMgr.isTargetUserTouched(panTarget))
+            panChanged = false;
+
+        if (!volumeChanged && !panChanged)
+            return;
+    }
+
     double beatTime = getCurrentBeatTime();
 
     if (volumeChanged) {

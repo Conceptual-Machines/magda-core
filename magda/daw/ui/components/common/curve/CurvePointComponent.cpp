@@ -83,6 +83,18 @@ void CurvePointComponent::mouseDown(const juce::MouseEvent& e) {
     if (parentEditor_)
         parentEditor_->grabKeyboardFocus();
 
+    // Right-click on a point must not be swallowed — forward to the parent
+    // curve editor so its context menu (e.g. Simplify Curve) appears whether
+    // the user clicked on empty space or directly on a point.
+    if (e.mods.isPopupMenu()) {
+        isRightClickPending_ = true;
+        if (parentEditor_) {
+            parentEditor_->mouseDown(e.getEventRelativeTo(parentEditor_));
+        }
+        return;
+    }
+    isRightClickPending_ = false;
+
     if (e.mods.isLeftButtonDown()) {
         // Handle selection
         if (e.mods.isCommandDown() || e.mods.isShiftDown()) {
@@ -130,6 +142,11 @@ void CurvePointComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void CurvePointComponent::mouseUp(const juce::MouseEvent& e) {
+    if (isRightClickPending_ || e.mods.isPopupMenu()) {
+        isRightClickPending_ = false;
+        return;
+    }
+
     if (isDragging_) {
         isDragging_ = false;
 

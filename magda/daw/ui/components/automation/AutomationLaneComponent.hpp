@@ -81,15 +81,20 @@ class AutomationLaneComponent : public juce::Component,
     std::function<void(AutomationLaneId, int)> onHeightChanged;
 
     /**
-     * @brief Run Ramer–Douglas–Peucker simplification on all points of an
-     *        absolute automation lane, wrapped in a single undoable op.
+     * @brief Run Ramer–Douglas–Peucker simplification on an absolute automation
+     *        lane, wrapped in a single undoable op.
      *
-     * @param laneId  Target lane.
-     * @param epsilon Tolerance in normalized value units (e.g. 0.01 = 1% of
-     *                parameter range). Points within epsilon of the linear
-     *                interpolation between retained neighbours are dropped.
+     * @param laneId         Target lane.
+     * @param epsilon        Tolerance in normalized value units (e.g. 0.01 =
+     *                       1% of parameter range). Points within epsilon of
+     *                       the linear interpolation between retained
+     *                       neighbours are dropped.
+     * @param pointIdFilter  If non-empty, restrict simplification to just
+     *                       these point IDs (all other points are left
+     *                       untouched). Empty means "simplify the whole lane".
      */
-    static void simplifyLane(AutomationLaneId laneId, double epsilon);
+    static void simplifyLane(AutomationLaneId laneId, double epsilon,
+                             const std::vector<AutomationPointId>& pointIdFilter = {});
 
   private:
     AutomationLaneId laneId_;

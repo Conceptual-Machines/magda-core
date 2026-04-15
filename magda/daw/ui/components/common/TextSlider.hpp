@@ -317,6 +317,13 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
                 magda::AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_,
                                                                                  true);
             }
+            // Mark the user gesture even when no lane exists yet, so the
+            // recording engine can distinguish real touches from playback
+            // engine echo-backs.
+            if (hasAutomationTarget_) {
+                magda::AutomationManager::getInstance().setTargetUserTouched(automationTarget_,
+                                                                             true);
+            }
         } else {
             isLeftButtonDrag_ = false;
             isShiftDrag_ = false;
@@ -388,6 +395,9 @@ class TextSlider : public juce::Component, public juce::Label::Listener {
         if (isLeftButtonDrag_ && hasAutomationTarget_ && automated_) {
             magda::AutomationManager::getInstance().setTargetTouchSuppressed(automationTarget_,
                                                                              false);
+        }
+        if (isLeftButtonDrag_ && hasAutomationTarget_) {
+            magda::AutomationManager::getInstance().setTargetUserTouched(automationTarget_, false);
         }
 
         // Handle Shift+drag end
