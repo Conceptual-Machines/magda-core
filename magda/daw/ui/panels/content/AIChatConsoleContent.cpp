@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 
+#include "../../../../agents/automation_agent.hpp"
 #include "../../../../agents/command_agent.hpp"
 #include "../../../../agents/compact_executor.hpp"
 #include "../../../../agents/daw_agent.hpp"
@@ -297,9 +298,10 @@ void AIChatConsoleContent::RequestThread::run() {
     };
 
     // Step 2: Dispatch to agents based on classification
-    std::string dslCode;                                // DSL from command agent
-    std::vector<magda::Instruction> musicInstructions;  // IR from music agent
-    std::string musicDescription;                       // description from DSL music agent
+    std::string dslCode;                                   // DSL from command agent
+    std::vector<magda::Instruction> musicInstructions;     // IR from music agent
+    std::string musicDescription;                          // description from DSL music agent
+    std::vector<magda::AutoInstruction> autoInstructions;  // IR from automation agent
     std::string error;
 
     auto agentStart = std::chrono::steady_clock::now();
@@ -427,6 +429,16 @@ void AIChatConsoleContent::RequestThread::run() {
                 musicDescription = std::move(result.description);
             }
         }
+    } else if (intent == "AUTOMATION") {
+        if (owner_.automationAgent_) {
+            auto result = owner_.automationAgent_->generateStreaming(message, onToken);
+            if (threadShouldExit())
+                return;
+            if (result.hasError)
+                error = result.error;
+            else
+                autoInstructions = std::move(result.instructions);
+        }
     }
 
     agentMs =
@@ -447,13 +459,13 @@ void AIChatConsoleContent::RequestThread::run() {
     // Step 3: Execute on message thread, replacing streamed output
     juce::MessageManager::callAsync(
         [safeThis, dsl = std::move(dslCode), musicIR = std::move(musicInstructions),
-         musicDesc = std::move(musicDescription), error = std::move(error), anchor, routerMs,
-         agentMs, totalMs]() {
+         musicDesc = std::move(musicDescription), autoIR = std::move(autoInstructions),
+         error = std::move(error), anchor, routerMs, agentMs, totalMs]() {
             if (!safeThis)
                 return;
 
             std::string response;
-            bool hasContent = !dsl.empty() || !musicIR.empty();
+            bool hasContent = !dsl.empty() || !musicIR.empty() || !autoIR.empty();
 
             if (!error.empty() && !hasContent) {
                 response = error;
@@ -520,6 +532,21 @@ void AIChatConsoleContent::RequestThread::run() {
                         if (!response.empty())
                             response += "\n";
                         response += "Error: " + executor.getError().toStdString();
+                    }
+                }
+
+                // Execute IR from automation agent
+                if (!autoIR.empty()) {
+                    magda::AutomationExecutor autoExec;
+                    if (autoExec.execute(autoIR)) {
+                        auto results = autoExec.getResults().toStdString();
+                        if (!response.empty())
+                            response += "\n";
+                        response += results.empty() ? "OK" : results;
+                    } else {
+                        if (!response.empty())
+                            response += "\n";
+                        response += "Error: " + autoExec.getError().toStdString();
                     }
                 }
 
@@ -845,6 +872,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     routerAgent_ = std::make_unique<magda::RouterAgent>();
     commandAgent_ = std::make_unique<magda::CommandAgent>();
     musicAgent_ = std::make_unique<magda::MusicAgent>();
+    automationAgent_ = std::make_unique<magda::AutomationAgent>();
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
@@ -867,6 +895,8 @@ AIChatConsoleContent::~AIChatConsoleContent() {
         commandAgent_->requestCancel();
     if (musicAgent_)
         musicAgent_->requestCancel();
+    if (automationAgent_)
+        automationAgent_->requestCancel();
 
     // Stop the background thread with a timeout
     if (requestThread_) {
@@ -950,6 +980,8 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
             commandAgent_->requestCancel();
         if (musicAgent_)
             musicAgent_->requestCancel();
+        if (automationAgent_)
+            automationAgent_->requestCancel();
         requestThread_->signalThreadShouldExit();
         if (!requestThread_->stopThread(2000))
             DBG("AIChatConsole: Warning - previous request thread did not stop within timeout");
@@ -985,6 +1017,8 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
         commandAgent_->resetCancel();
     if (musicAgent_)
         musicAgent_->resetCancel();
+    if (automationAgent_)
+        automationAgent_->resetCancel();
 
     pendingMessage_ = resolvedText;
 
@@ -1008,6 +1042,8 @@ void AIChatConsoleContent::cancelRequest() {
         commandAgent_->requestCancel();
     if (musicAgent_)
         musicAgent_->requestCancel();
+    if (automationAgent_)
+        automationAgent_->requestCancel();
 
     if (requestThread_ && requestThread_->isThreadRunning()) {
         requestThread_->signalThreadShouldExit();

@@ -23,6 +23,12 @@ dsl_grammar.hpp
     command_agent.cpp
     music_agent.hpp
     music_agent.cpp
+    automation_parser.hpp
+    automation_parser.cpp
+    automation_executor.hpp
+    automation_executor.cpp
+    automation_agent.hpp
+    automation_agent.cpp
     router_agent.hpp
     router_agent.cpp
     llama_model_manager.hpp

@@ -14,6 +14,7 @@
 #include "PanelContent.hpp"
 
 namespace magda {
+class AutomationAgent;
 class CommandAgent;
 class DAWAgent;
 class MusicAgent;
@@ -112,6 +113,7 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<magda::RouterAgent> routerAgent_;
     std::unique_ptr<magda::CommandAgent> commandAgent_;
     std::unique_ptr<magda::MusicAgent> musicAgent_;
+    std::unique_ptr<magda::AutomationAgent> automationAgent_;
     std::unique_ptr<RequestThread> requestThread_;
     std::atomic<bool> shouldStop_{false};
     std::atomic<bool> processing_{false};

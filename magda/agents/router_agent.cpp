@@ -14,10 +14,13 @@ Examples: "create a bass track", "delete track 2", "add reverb to vocals", "mute
 MUSIC — Generating musical content: suggest/generate chord progressions, suggest chords, harmonize melodies, generate chord loops.
 Examples: "suggest chords in D minor", "give me a jazz ii-V-I", "generate a blues progression", "harmonize this melody"
 
+AUTOMATION — Drawing automation curves on the currently selected automation lane. Shapes: sine/triangle/saw/square LFOs, exp/log/linear sweeps, custom freeform curves.
+Examples: "automate filter cutoff with a sine wave 4 cycles over 2 bars", "sweep up exponentially over 8 bars", "tremolo on the volume", "draw a saw lfo", "clear the automation", "freeform: start at 0, jump to 1 at beat 2, back to 0 at beat 4"
+
 BOTH — The request requires musical content generation AND project modification. The music agent generates the content, then the command agent executes it.
 Examples: "create a piano track with a jazzy chord progression", "add a blues bass line to track 2", "make a new track and write a neo-soul progression on it"
 
-Respond with ONLY: COMMAND, MUSIC, or BOTH.)PROMPT";
+Respond with ONLY: COMMAND, MUSIC, AUTOMATION, or BOTH.)PROMPT";
 }
 
 RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
@@ -61,7 +64,8 @@ RouterAgent::ClassifyResult RouterAgent::classify(const std::string& message) {
     result.wallSeconds = response.wallSeconds;
 
     // Normalize — accept only valid classifications
-    if (result.intent != "COMMAND" && result.intent != "MUSIC" && result.intent != "BOTH")
+    if (result.intent != "COMMAND" && result.intent != "MUSIC" && result.intent != "AUTOMATION" &&
+        result.intent != "BOTH")
         result.intent = "COMMAND";  // safe default
 
     DBG("MAGDA Router (" + client->getName() + "/" + client->getConfig().model +
