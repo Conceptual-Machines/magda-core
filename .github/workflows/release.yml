@@ -332,6 +332,20 @@ jobs:
           exit 1
         }
 
+    - name: Locate and stage PDB
+      shell: powershell
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        $pdb = Get-ChildItem -Path build -Recurse -Filter "MAGDA.pdb" | Select-Object -First 1
+        if ($pdb) {
+          $pdbName = "MAGDA-$env:VERSION-Windows-x86_64.pdb"
+          Copy-Item $pdb.FullName $pdbName
+          Write-Output "Staged PDB: $pdbName"
+        } else {
+          Write-Warning "MAGDA.pdb not found — crash symbolization unavailable for this release"
+        }
+
     - name: Create installer
       shell: powershell
       env:
@@ -375,6 +389,7 @@ jobs:
         path: |
           MAGDA-*-Windows-x86_64-Setup.exe
           MAGDA-*-Windows-x86_64-Setup.exe.sha256
+          MAGDA-*-Windows-x86_64.pdb
 
     - name: Clean up
       if: always()
@@ -586,5 +601,7 @@ jobs:
         fail_on_unmatched_files: true
         files: |
           macos-release/*
-          windows-x86_64-release/*
+          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe
+          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe.sha256
+          windows-x86_64-release/MAGDA-*-Windows-x86_64.pdb
           linux-release/*

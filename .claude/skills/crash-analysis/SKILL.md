@@ -1,6 +1,6 @@
 ---
 name: crash-analysis
-description: Analyze macOS crash logs for MAGDA. Use when the user reports a crash, provides a crash log, or asks to investigate a crash. Parses .ips and .crash files to extract only the relevant thread.
+description: Analyze MAGDA crash logs and Windows minidumps. Use when the user reports a crash, provides a crash log or .dmp file, or asks to investigate a crash.
 ---
 
 # Crash Analysis
@@ -57,3 +57,64 @@ Crashes in `juce::Timer::TimerThread::callTimers()` often mean a component was d
 
 ### Audio thread crashes
 Crashes in threads named "JUCE Audio" or "Tracktion" are audio-thread issues. Common causes: allocating memory, locking mutexes, or accessing deleted objects from the audio callback.
+
+---
+
+## Windows Crash Analysis (.dmp files)
+
+Windows users send `.dmp` minidump files. Use the scripts below — **never read .dmp files directly**.
+
+### Quick parse (no symbols)
+
+```bash
+python3 .claude/skills/crash-analysis/parse-minidump.py /path/to/file.dmp
+```
+
+### With PDB symbolization (function names + offsets)
+
+From v0.4.6 onwards, each release includes `MAGDA-X.Y.Z-Windows-x86_64.pdb`.
+Download it from the GitHub release assets, then:
+
+```bash
+python3 .claude/skills/crash-analysis/parse-minidump.py file.dmp --pdb MAGDA-X.Y.Z-Windows-x86_64.pdb
+```
+
+### Semi-automated analysis (parse + Claude + optional Linear issue)
+
+Requires: `pip install anthropic`
+
+```bash
+# Parse + Claude analysis (downloads PDB automatically for known versions)
+ANTHROPIC_API_KEY=... GITHUB_TOKEN=... \
+  python3 .claude/skills/crash-analysis/analyze-crash.py \
+    --dump file.dmp --version 0.4.6
+
+# Also create a Linear issue
+ANTHROPIC_API_KEY=... GITHUB_TOKEN=... LINEAR_API_KEY=... LINEAR_TEAM_ID=... \
+  python3 .claude/skills/crash-analysis/analyze-crash.py \
+    --dump file.dmp --version 0.4.6 --create-issue
+
+# With a local PDB (skips download)
+ANTHROPIC_API_KEY=... \
+  python3 .claude/skills/crash-analysis/analyze-crash.py \
+    --dump file.dmp --pdb MAGDA.pdb
+```
+
+### Reading the output
+
+| Field | What to look for |
+|-------|-----------------|
+| Exception code | `0xC0000005` = access violation (most common) |
+| AV address | `0x0` = null deref; `0xFFFFFFFFFFFFFFFF` = sentinel/corruption |
+| Rcx register | In x64, this is `this` — garbage here means the object is corrupt/freed |
+| Stack scan | MAGDA.exe offsets narrow the subsystem; with PDB they resolve to function names |
+
+### Common Windows crash patterns
+
+| Pattern | Likely cause |
+|---------|-------------|
+| AV read at 0x0 | Null pointer dereference |
+| AV read at 0xFFFFFFFFFFFFFFFF | Dangling `std::list` iterator or sentinel value used as pointer |
+| Rcx = ASCII/UTF bytes | String buffer being used as `this` pointer — memory corruption or bad cast |
+| Rbp = small integer (0, 1, 2) | Stack frame pointer corrupted — look for buffer overflows |
+| Crash on project reopen | Serialization/deserialization bug, often with non-ASCII paths on Windows |
