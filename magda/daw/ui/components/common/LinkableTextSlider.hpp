@@ -6,6 +6,7 @@
 #include "core/LinkModeManager.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
+#include "core/ParameterInfo.hpp"
 #include "ui/components/chain/ParamModulationPainter.hpp"
 
 namespace magda::daw::ui {
@@ -30,6 +31,9 @@ class LinkableTextSlider : public juce::Component,
     void setSkewForCentre(double centreValue);
     void setValueFormatter(std::function<juce::String(double)> formatter);
     void setValueParser(std::function<double(const juce::String&)> parser);
+    /** Configure range/skew/formatter/parser from a ParameterInfo in one call.
+        Mirrors TextSlider::setParameterInfo. */
+    void setParameterInfo(const magda::ParameterInfo& info);
     void setRightClickEditsText(bool shouldEdit);
     void setFont(const juce::Font& font);
     void setTextColour(const juce::Colour& colour);

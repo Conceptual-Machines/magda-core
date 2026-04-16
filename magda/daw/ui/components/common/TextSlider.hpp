@@ -7,6 +7,8 @@
 
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
+#include "core/ParameterInfo.hpp"
+#include "core/ParameterUtils.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -66,6 +68,44 @@ class TextSlider : public juce::Component,
             skewFactor_ =
                 std::log(0.5) / std::log((centreValue - minValue_) / (maxValue_ - minValue_));
         }
+    }
+
+    /**
+     * Single-call configuration from ParameterInfo. This is the path consumers
+     * should use — range/skew/formatter/parser are all derived from the
+     * parameter's metadata so the slider, automation lane, playback engine,
+     * and UI echo all compute values via the same ParameterUtils helpers.
+     *
+     * Sets: range, skew (from scaleAnchor if set), valueFormatter and
+     * valueParser (delegating to ParameterUtils::formatValue/parseValue).
+     */
+    void setParameterInfo(const magda::ParameterInfo& info) {
+        setRange(static_cast<double>(info.minValue), static_cast<double>(info.maxValue));
+
+        // Map scaleAnchor into TextSlider's linear-ratio skew so the drag
+        // behaviour lines up with ParameterUtils' anchor handling. Exact
+        // display/parse still goes through ParameterUtils below, so the
+        // slider and the automation lane cannot disagree on values.
+        skewFactor_ = 1.0;
+        if (info.scaleAnchor > info.minValue && info.scaleAnchor < info.maxValue &&
+            info.maxValue > info.minValue) {
+            double linRatio = (info.scaleAnchor - info.minValue) / (info.maxValue - info.minValue);
+            if (linRatio > 0.0 && linRatio < 1.0)
+                skewFactor_ = std::log(0.5) / std::log(linRatio);
+        }
+
+        paramInfoCopy_ = info;
+        hasParamInfo_ = true;
+
+        valueFormatter_ = [this](double real) {
+            return magda::ParameterUtils::formatValue(static_cast<float>(real), paramInfoCopy_);
+        };
+        valueParser_ = [this](const juce::String& text) {
+            auto parsed = magda::ParameterUtils::parseValue(text, paramInfoCopy_);
+            return parsed.has_value() ? static_cast<double>(*parsed) : value_;  // keep on failure
+        };
+
+        updateLabel();
     }
 
     void setValue(double newValue, juce::NotificationType notification = juce::sendNotification) {
@@ -518,7 +558,9 @@ class TextSlider : public juce::Component,
     std::function<juce::String(double)>
         valueFormatter_;  // Custom value formatting (normalized → string)
     std::function<double(const juce::String&)>
-        valueParser_;  // Custom value parsing (string → normalized)
+        valueParser_;                     // Custom value parsing (string → normalized)
+    magda::ParameterInfo paramInfoCopy_;  // Populated by setParameterInfo
+    bool hasParamInfo_ = false;
 
     void updateLabel() {
         // Show empty text instead of value when disabled/empty

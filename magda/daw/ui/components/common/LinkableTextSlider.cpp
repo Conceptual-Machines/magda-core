@@ -161,6 +161,10 @@ void LinkableTextSlider::setValueParser(std::function<double(const juce::String&
     slider_.setValueParser(std::move(parser));
 }
 
+void LinkableTextSlider::setParameterInfo(const magda::ParameterInfo& info) {
+    slider_.setParameterInfo(info);
+}
+
 void LinkableTextSlider::setRightClickEditsText(bool shouldEdit) {
     slider_.setRightClickEditsText(shouldEdit);
 }

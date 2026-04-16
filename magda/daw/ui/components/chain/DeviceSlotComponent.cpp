@@ -3862,6 +3862,11 @@ void DeviceSlotComponent::setupCustomUILinking() {
         int paramIdx = slider->getParamIndex() >= 0 ? slider->getParamIndex() : i;
         // Set link context
         slider->setLinkContext(device_.id, paramIdx, nodePath_);
+        // Single source of truth: the processor-published ParameterInfo drives
+        // range/skew/formatter/parser on the slider. Overrides whatever the
+        // custom UI hardcoded at construction.
+        if (paramIdx >= 0 && paramIdx < static_cast<int>(device_.parameters.size()))
+            slider->setParameterInfo(device_.parameters[static_cast<size_t>(paramIdx)]);
         slider->setAvailableMods(mods);
         slider->setAvailableRackMods(rackMods);
         slider->setAvailableMacros(macros);
