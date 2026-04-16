@@ -56,11 +56,11 @@ struct DelOp {
 };
 
 struct MuteOp {
-    juce::String name;
+    TrackRef target;  // implicit/by-id/by-name — falls back to current track
 };
 
 struct SoloOp {
-    juce::String name;
+    TrackRef target;  // implicit/by-id/by-name — falls back to current track
 };
 
 struct SetOp {

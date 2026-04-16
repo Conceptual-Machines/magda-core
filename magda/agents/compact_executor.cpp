@@ -312,8 +312,9 @@ bool CompactExecutor::executeDel(const DelOp& op) {
 bool CompactExecutor::executeMute(const MuteOp& op) {
     auto& tm = TrackManager::getInstance();
 
-    // If active track selection from SELECT, mute all selected
-    if (!selectedTracks_.empty()) {
+    // If an active track selection from SELECT is present, mute all selected
+    // (unless the caller gave an explicit target, in which case honour that).
+    if (!selectedTracks_.empty() && op.target.isImplicit()) {
         for (auto trackId : selectedTracks_)
             tm.setTrackMuted(trackId, true);
         results_.add("Muted " + juce::String(static_cast<int>(selectedTracks_.size())) +
@@ -321,22 +322,34 @@ bool CompactExecutor::executeMute(const MuteOp& op) {
         return true;
     }
 
-    int count = 0;
-    for (const auto& track : tm.getTracks()) {
-        if (track.name.equalsIgnoreCase(op.name)) {
-            tm.setTrackMuted(track.id, true);
-            count++;
+    // MUTE <name> historically muted ALL tracks whose name matched (the
+    // grammar allows casual "mute drums" to mute every drum-named track).
+    // Preserve that behaviour when target is by-name only.
+    if (!op.target.isImplicit() && !op.target.isById() && op.target.name.isNotEmpty()) {
+        int count = 0;
+        for (const auto& track : tm.getTracks()) {
+            if (track.name.equalsIgnoreCase(op.target.name)) {
+                tm.setTrackMuted(track.id, true);
+                ++count;
+            }
         }
+        results_.add("Muted " + juce::String(count) + " track(s)");
+        return true;
     }
-    results_.add("Muted " + juce::String(count) + " track(s)");
+
+    // Implicit or by-id: resolve to a single track.
+    int trackId = resolveTrackRef(op.target);
+    if (trackId < 0)
+        return false;
+    tm.setTrackMuted(trackId, true);
+    results_.add("Muted 1 track");
     return true;
 }
 
 bool CompactExecutor::executeSolo(const SoloOp& op) {
     auto& tm = TrackManager::getInstance();
 
-    // If active track selection from SELECT, solo all selected
-    if (!selectedTracks_.empty()) {
+    if (!selectedTracks_.empty() && op.target.isImplicit()) {
         for (auto trackId : selectedTracks_)
             tm.setTrackSoloed(trackId, true);
         results_.add("Soloed " + juce::String(static_cast<int>(selectedTracks_.size())) +
@@ -344,14 +357,23 @@ bool CompactExecutor::executeSolo(const SoloOp& op) {
         return true;
     }
 
-    int count = 0;
-    for (const auto& track : tm.getTracks()) {
-        if (track.name.equalsIgnoreCase(op.name)) {
-            tm.setTrackSoloed(track.id, true);
-            count++;
+    if (!op.target.isImplicit() && !op.target.isById() && op.target.name.isNotEmpty()) {
+        int count = 0;
+        for (const auto& track : tm.getTracks()) {
+            if (track.name.equalsIgnoreCase(op.target.name)) {
+                tm.setTrackSoloed(track.id, true);
+                ++count;
+            }
         }
+        results_.add("Soloed " + juce::String(count) + " track(s)");
+        return true;
     }
-    results_.add("Soloed " + juce::String(count) + " track(s)");
+
+    int trackId = resolveTrackRef(op.target);
+    if (trackId < 0)
+        return false;
+    tm.setTrackSoloed(trackId, true);
+    results_.add("Soloed 1 track");
     return true;
 }
 
@@ -590,6 +612,11 @@ bool CompactExecutor::executeSelect(const SelectOp& op) {
         selectedTracks_ = matches;
         selectedClips_.clear();
         sm.selectTracks(matches);
+        // Advance the implicit-context track so follow-up commands
+        // (MUTE/SOLO/SET/CLIP) without an explicit ref target the first
+        // match instead of a stale context from before SELECT ran.
+        if (!matches.empty())
+            currentTrackId_ = *matches.begin();
         results_.add("Selected " + juce::String(static_cast<int>(matches.size())) + " track(s)");
         return true;
     }
@@ -669,6 +696,13 @@ bool CompactExecutor::executeSelect(const SelectOp& op) {
     selectedClips_ = matches;
     selectedTracks_.clear();
     sm.selectClips(matches);
+    // Advance implicit-context track via the first clip's owner so
+    // follow-up commands without an explicit track ref target something
+    // sensible.
+    if (!matches.empty()) {
+        if (const auto* firstClip = cm.getClip(*matches.begin()))
+            currentTrackId_ = firstClip->trackId;
+    }
     results_.add("Selected " + juce::String(static_cast<int>(matches.size())) + " clip(s)");
     return true;
 }

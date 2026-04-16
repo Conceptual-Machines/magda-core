@@ -44,8 +44,8 @@ INSTRUCTIONS:
   TRACK <name>                    - Create new track (becomes current track)
   TRACK FX <alias>                - Create track named after plugin + add plugin
   DEL <id>                        - Delete track by index
-  MUTE <name>                     - Mute tracks by name
-  SOLO <name>                     - Solo tracks by name
+  MUTE [ref]                      - Mute tracks (no ref = current/selected track)
+  SOLO [ref]                      - Solo tracks (no ref = current/selected track)
   SET [id] key=val key=val ...    - Set track props (vol, pan, mute, solo, name)
   CLIP [id] <bar> <length_bars>   - Create clip (becomes current clip)
   FX <fx_alias>                   - Add effect to current track

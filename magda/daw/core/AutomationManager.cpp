@@ -142,6 +142,12 @@ void AutomationManager::trackPropertyChanged(int trackId) {
 
 AutomationLaneId AutomationManager::createLane(const AutomationTarget& target,
                                                AutomationLaneType type) {
+    // Enforce lane singletons: at most one lane per (target) pair. A duplicate
+    // volume/pan/param lane is always a bug — either the caller forgot to
+    // check, or two code paths raced. Return the existing id either way.
+    if (auto existing = getLaneForTarget(target); existing != INVALID_AUTOMATION_LANE_ID)
+        return existing;
+
     AutomationLaneInfo lane;
     lane.id = nextLaneId_++;
     lane.target = target;
@@ -890,6 +896,13 @@ void AutomationManager::clearAll() {
 }
 
 void AutomationManager::restoreLane(AutomationLaneInfo& lane) {
+    // Dedup at restore time too — a saved project with duplicate lanes for
+    // the same target is always corrupt data from a pre-singleton-enforcement
+    // session. Keep the first one and drop the rest. Undo-driven restore is
+    // unaffected: undo restores a lane that was just deleted, so no existing
+    // lane for that target can be present.
+    if (getLaneForTarget(lane.target) != INVALID_AUTOMATION_LANE_ID)
+        return;
     lanes_.push_back(std::move(lane));
     notifyLanesChanged();
 }

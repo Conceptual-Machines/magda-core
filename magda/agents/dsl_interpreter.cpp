@@ -339,8 +339,15 @@ bool Interpreter::execute(const char* dslCode) {
 
     ctx_ = InterpreterContext();
 
-    // Inject selected clip from UI so note operations work without explicit selection
+    // Seed implicit context from the UI selection so a bare statement like
+    // `fx("reverb")` or `note(...)` targets the selected track/clip. Matches
+    // CompactExecutor's behaviour — the two paths must stay in sync or the
+    // same request succeeds in one and fails in the other.
     auto& sm = SelectionManager::getInstance();
+    auto selectedTrack = sm.getSelectedTrack();
+    if (selectedTrack != INVALID_TRACK_ID && selectedTrack != MASTER_TRACK_ID)
+        ctx_.currentTrackId = selectedTrack;
+
     auto selectedClip = sm.getSelectedClip();
     if (selectedClip != INVALID_CLIP_ID)
         ctx_.currentClipId = selectedClip;

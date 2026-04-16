@@ -68,24 +68,31 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
             }
             instructions.push_back({OpCode::Del, DelOp{parseRef(parts[1])}});
         } else if (op == "MUTE") {
-            if (parts.size() < 2) {
-                lastError_ = "MUTE requires a track name";
-                return {};
-            }
+            // MUTE                — implicit (current/selected track)
+            // MUTE <id>           — by 1-based index
+            // MUTE <name>         — by track name (multi-word joined)
             MuteOp payload;
-            payload.name = parts[1];
-            for (int i = 2; i < parts.size(); ++i)
-                payload.name += " " + parts[i];
+            if (parts.size() < 2) {
+                payload.target.implicit = true;
+            } else if (isInteger(parts[1])) {
+                payload.target.id = parts[1].getIntValue();
+            } else {
+                payload.target.name = parts[1];
+                for (int i = 2; i < parts.size(); ++i)
+                    payload.target.name += " " + parts[i];
+            }
             instructions.push_back({OpCode::Mute, payload});
         } else if (op == "SOLO") {
-            if (parts.size() < 2) {
-                lastError_ = "SOLO requires a track name";
-                return {};
-            }
             SoloOp payload;
-            payload.name = parts[1];
-            for (int i = 2; i < parts.size(); ++i)
-                payload.name += " " + parts[i];
+            if (parts.size() < 2) {
+                payload.target.implicit = true;
+            } else if (isInteger(parts[1])) {
+                payload.target.id = parts[1].getIntValue();
+            } else {
+                payload.target.name = parts[1];
+                for (int i = 2; i < parts.size(); ++i)
+                    payload.target.name += " " + parts[i];
+            }
             instructions.push_back({OpCode::Solo, payload});
         } else if (op == "SET") {
             // SET key=val ...          (implicit track)
