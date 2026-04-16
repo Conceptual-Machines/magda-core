@@ -45,6 +45,9 @@ set(TEST_SOURCES
     test_mono_note_processor.cpp
     test_sends_and_track_deletion.cpp
     test_master_track_serialization.cpp
+    test_automation_agent.cpp
+    test_automation_singleton.cpp
+    test_compact_executor_context.cpp
 )
 
 # Create test executable
