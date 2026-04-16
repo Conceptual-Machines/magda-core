@@ -311,9 +311,8 @@ jobs:
     - name: Build
       shell: powershell
       run: |
-        $nproc = (Get-CimInstance Win32_Processor).NumberOfLogicalProcessors
-        Write-Output "Building with $nproc parallel jobs"
-        cmake --build build --config Release -j $nproc
+        # Serial build (-j 1) to avoid C1041 PDB write conflicts with /Zi + sccache
+        cmake --build build --config Release -j 1
 
     - name: Print sccache stats
       shell: powershell
