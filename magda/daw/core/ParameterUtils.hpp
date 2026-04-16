@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -76,20 +77,37 @@ float applyModulations(float baseNormalized,
                        bool bipolar = true);
 
 /**
- * @brief Format a real value for display with appropriate units
+ * @brief Format a REAL parameter value for display.
  *
- * @param realValue Real parameter value
- * @param info Parameter metadata for unit and scale
- * @param decimalPlaces Number of decimal places (default: 1)
- * @return Formatted string (e.g., "440 Hz", "100 ms", "50%")
+ * Dispatches on `info.displayFormat`:
+ *   - Default: dispatch on `info.unit` (Hz/kHz, dB with sign, %, ms/s, bare).
+ *   - Decibels: signed dB with "-inf" at minValue ("+3.0 dB", "-6.0 dB").
+ *   - Pan: -1..+1 → "C", "L25", "R50".
+ *   - Percent: the stored value is treated as a fraction [0..1]; displays "0%".."100%".
+ *   - MidiNote: 0..127 → "C-1".."G9".
+ *   - Beats: "2.25 beats".
+ *   - BarsBeats: "1.1.000" (480 ticks/beat).
+ * Discrete/Boolean scales bypass displayFormat and return choice name / "On"/"Off".
  *
- * Handles special formatting:
- * - Frequency: Shows kHz for values >= 1000 Hz
- * - Time: Shows s for values >= 1000 ms
- * - Discrete: Returns choice name instead of number
- * - Boolean: Returns "On" or "Off"
+ * Never fails — always returns a string.
  */
 juce::String formatValue(float realValue, const ParameterInfo& info, int decimalPlaces = 1);
+
+/**
+ * @brief Parse user text → REAL parameter value.
+ *
+ * Accepts both display-style strings (what formatValue produces) AND raw
+ * numbers. Clamps the result to [info.minValue, info.maxValue]. Returns
+ * nullopt on unparseable input — caller keeps the prior value.
+ *
+ * Format-specific extras:
+ *   - Decibels: "-inf", "inf", trailing "db"/"dB" optional.
+ *   - Pan: "C"/"c"/"center", "L25", "R50", or bare number -100..+100.
+ *   - Percent: trailing "%" optional; a bare number is interpreted as a percent.
+ *   - MidiNote: note names ("C4", "Eb3", "D#5"), or bare MIDI number.
+ *   - Default: trailing unit suffix optional (matches info.unit); "kHz" → x1000.
+ */
+std::optional<float> parseValue(const juce::String& text, const ParameterInfo& info);
 
 /**
  * @brief Get the choice string for a discrete parameter value
