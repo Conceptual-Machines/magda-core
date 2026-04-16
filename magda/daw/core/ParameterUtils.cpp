@@ -370,7 +370,9 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
         case DisplayFormat::Pan:
             return formatPan(realValue);
         case DisplayFormat::Percent:
-            return juce::String(static_cast<int>(std::round(realValue * 100.0f))) + "%";
+            // Stored as 0..100 by convention (matches ParameterPresets::percent).
+            // No scaling; the formatter just tacks on "%".
+            return juce::String(realValue, decimalPlaces) + "%";
         case DisplayFormat::MidiNote:
             return formatMidiNote(realValue);
         case DisplayFormat::Beats:
@@ -441,7 +443,7 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
                 t = t.dropLastCharacters(1).trim();
             if (t.isEmpty())
                 return std::nullopt;
-            return clamp(static_cast<float>(t.getDoubleValue() / 100.0));
+            return clamp(static_cast<float>(t.getDoubleValue()));
         }
         case DisplayFormat::MidiNote:
             return clamp(parseMidiNote(trimmed));

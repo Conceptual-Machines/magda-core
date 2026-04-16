@@ -642,3 +642,186 @@ TEST_CASE("Cutoff modulation example from plan", "[parameter][example]") {
     auto displayStr = ParameterUtils::formatValue(modulatedReal, cutoff);
     REQUIRE((displayStr.contains("Hz") || displayStr.contains("kHz")));
 }
+
+// ============================================================================
+// scaleAnchor — places a chosen real value at normalized 0.5.
+// These pin the invariants the automation lane + sliders rely on.
+// ============================================================================
+
+TEST_CASE("scaleAnchor - Logarithmic with anchor at 1000 Hz", "[parameter][anchor]") {
+    ParameterInfo info;
+    info.minValue = 20.0f;
+    info.maxValue = 20000.0f;
+    info.scale = ParameterScale::Logarithmic;
+    info.scaleAnchor = 1000.0f;  // EQ convention: 1 kHz at slider midpoint
+
+    // Endpoints pinned regardless of anchor.
+    REQUIRE(ParameterUtils::normalizedToReal(0.0f, info) == Catch::Approx(20.0f));
+    REQUIRE(ParameterUtils::normalizedToReal(1.0f, info) == Catch::Approx(20000.0f));
+    // Anchor lands exactly at 0.5.
+    REQUIRE(ParameterUtils::normalizedToReal(0.5f, info) == Catch::Approx(1000.0f).epsilon(0.001f));
+    // Round-trip the anchor.
+    REQUIRE(ParameterUtils::realToNormalized(1000.0f, info) == Catch::Approx(0.5f).epsilon(0.001f));
+}
+
+TEST_CASE("scaleAnchor - round trip across the range", "[parameter][anchor]") {
+    ParameterInfo info;
+    info.minValue = 20.0f;
+    info.maxValue = 20000.0f;
+    info.scale = ParameterScale::Logarithmic;
+    info.scaleAnchor = 1000.0f;
+
+    for (float n : {0.0f, 0.125f, 0.25f, 0.5f, 0.75f, 0.875f, 1.0f}) {
+        float real = ParameterUtils::normalizedToReal(n, info);
+        float back = ParameterUtils::realToNormalized(real, info);
+        REQUIRE(back == Catch::Approx(n).epsilon(0.001f));
+    }
+}
+
+TEST_CASE("scaleAnchor - unset falls back to geometric mean (log)", "[parameter][anchor]") {
+    ParameterInfo info;
+    info.minValue = 20.0f;
+    info.maxValue = 20000.0f;
+    info.scale = ParameterScale::Logarithmic;
+    // scaleAnchor left at 0.0 — pure exponential.
+
+    // norm 0.5 should map to sqrt(20 * 20000) = 632.455 Hz.
+    REQUIRE(ParameterUtils::normalizedToReal(0.5f, info) ==
+            Catch::Approx(std::sqrt(20.0f * 20000.0f)).epsilon(0.001f));
+}
+
+TEST_CASE("scaleAnchor - Linear with bipolar anchor", "[parameter][anchor]") {
+    // An EQ-style gain range where 0 dB is anchored at midpoint even though
+    // the range is asymmetric — e.g. -24..+12 dB.
+    ParameterInfo info;
+    info.minValue = -24.0f;
+    info.maxValue = 12.0f;
+    info.scale = ParameterScale::Linear;
+    info.scaleAnchor = 0.0f;  // would mean "unset" — use a non-zero asymmetry.
+
+    // Override with an explicit anchor.
+    info.scaleAnchor = -6.0f;  // -6 dB at midpoint
+
+    REQUIRE(ParameterUtils::normalizedToReal(0.0f, info) == Catch::Approx(-24.0f));
+    REQUIRE(ParameterUtils::normalizedToReal(1.0f, info) == Catch::Approx(12.0f));
+    REQUIRE(ParameterUtils::normalizedToReal(0.5f, info) == Catch::Approx(-6.0f).epsilon(0.001f));
+}
+
+// ============================================================================
+// formatValue — dispatch on DisplayFormat.
+// ============================================================================
+
+TEST_CASE("formatValue - DisplayFormat Decibels", "[parameter][format]") {
+    ParameterInfo info;
+    info.minValue = -60.0f;
+    info.maxValue = 12.0f;
+    info.displayFormat = DisplayFormat::Decibels;
+
+    REQUIRE(ParameterUtils::formatValue(-60.0f, info) == "-inf");
+    REQUIRE(ParameterUtils::formatValue(0.0f, info) == "0.0 dB");
+    REQUIRE(ParameterUtils::formatValue(3.0f, info) == "+3.0 dB");
+    REQUIRE(ParameterUtils::formatValue(-6.0f, info) == "-6.0 dB");
+}
+
+TEST_CASE("formatValue - DisplayFormat Pan", "[parameter][format]") {
+    ParameterInfo info;
+    info.minValue = -1.0f;
+    info.maxValue = 1.0f;
+    info.displayFormat = DisplayFormat::Pan;
+
+    REQUIRE(ParameterUtils::formatValue(0.0f, info) == "C");
+    REQUIRE(ParameterUtils::formatValue(-0.5f, info) == "L50");
+    REQUIRE(ParameterUtils::formatValue(0.75f, info) == "R75");
+    REQUIRE(ParameterUtils::formatValue(-1.0f, info) == "L100");
+}
+
+TEST_CASE("formatValue - DisplayFormat Percent", "[parameter][format]") {
+    ParameterInfo info;
+    info.minValue = 0.0f;
+    info.maxValue = 100.0f;  // Stored 0..100 (matches ParameterPresets::percent)
+    info.displayFormat = DisplayFormat::Percent;
+
+    REQUIRE(ParameterUtils::formatValue(0.0f, info) == "0.0%");
+    REQUIRE(ParameterUtils::formatValue(50.0f, info) == "50.0%");
+    REQUIRE(ParameterUtils::formatValue(100.0f, info) == "100.0%");
+}
+
+TEST_CASE("formatValue - Default dispatches on Hz unit", "[parameter][format]") {
+    ParameterInfo info;
+    info.minValue = 20.0f;
+    info.maxValue = 20000.0f;
+    info.unit = "Hz";
+
+    REQUIRE(ParameterUtils::formatValue(440.0f, info) == "440.0 Hz");
+    REQUIRE(ParameterUtils::formatValue(1000.0f, info) == "1.0 kHz");
+    REQUIRE(ParameterUtils::formatValue(10000.0f, info) == "10.0 kHz");
+}
+
+// ============================================================================
+// parseValue — strict contract: returns nullopt on unparseable input, clamps
+// to [min, max] otherwise.
+// ============================================================================
+
+TEST_CASE("parseValue - Decibels accepts dB suffix, -inf, bare number", "[parameter][parse]") {
+    ParameterInfo info;
+    info.minValue = -60.0f;
+    info.maxValue = 12.0f;
+    info.displayFormat = DisplayFormat::Decibels;
+
+    // Display-style
+    REQUIRE(ParameterUtils::parseValue("3.0 dB", info).has_value());
+    REQUIRE(*ParameterUtils::parseValue("3.0 dB", info) == Catch::Approx(3.0f));
+    REQUIRE(*ParameterUtils::parseValue("-6", info) == Catch::Approx(-6.0f));
+    // -inf keeps its sign through clamp (jlimit preserves -inf as min).
+    auto negInf = ParameterUtils::parseValue("-inf", info);
+    REQUIRE(negInf.has_value());
+    // Clamp
+    REQUIRE(*ParameterUtils::parseValue("50 dB", info) == Catch::Approx(12.0f));
+    REQUIRE(*ParameterUtils::parseValue("-999 dB", info) == Catch::Approx(-60.0f));
+    // Unparseable
+    REQUIRE(!ParameterUtils::parseValue("", info).has_value());
+    REQUIRE(!ParameterUtils::parseValue("abc", info).has_value());
+}
+
+TEST_CASE("parseValue - Pan accepts C/L/R and bare number", "[parameter][parse]") {
+    ParameterInfo info;
+    info.minValue = -1.0f;
+    info.maxValue = 1.0f;
+    info.displayFormat = DisplayFormat::Pan;
+
+    REQUIRE(*ParameterUtils::parseValue("C", info) == Catch::Approx(0.0f));
+    REQUIRE(*ParameterUtils::parseValue("center", info) == Catch::Approx(0.0f));
+    REQUIRE(*ParameterUtils::parseValue("L25", info) == Catch::Approx(-0.25f));
+    REQUIRE(*ParameterUtils::parseValue("R50", info) == Catch::Approx(0.5f));
+    REQUIRE(*ParameterUtils::parseValue("R100", info) == Catch::Approx(1.0f));
+    REQUIRE(!ParameterUtils::parseValue("", info).has_value());
+}
+
+TEST_CASE("parseValue - Percent with or without sign", "[parameter][parse]") {
+    ParameterInfo info;
+    info.minValue = 0.0f;
+    info.maxValue = 100.0f;  // Stored 0..100
+    info.displayFormat = DisplayFormat::Percent;
+
+    REQUIRE(*ParameterUtils::parseValue("50%", info) == Catch::Approx(50.0f));
+    REQUIRE(*ParameterUtils::parseValue("50", info) == Catch::Approx(50.0f));
+    REQUIRE(*ParameterUtils::parseValue("100%", info) == Catch::Approx(100.0f));
+    // Clamp
+    REQUIRE(*ParameterUtils::parseValue("150%", info) == Catch::Approx(100.0f));
+}
+
+TEST_CASE("parseValue - Hz accepts kHz and bare number", "[parameter][parse]") {
+    ParameterInfo info;
+    info.minValue = 20.0f;
+    info.maxValue = 20000.0f;
+    info.unit = "Hz";
+
+    REQUIRE(*ParameterUtils::parseValue("440 Hz", info) == Catch::Approx(440.0f));
+    REQUIRE(*ParameterUtils::parseValue("1 kHz", info) == Catch::Approx(1000.0f));
+    REQUIRE(*ParameterUtils::parseValue("2.5 kHz", info) == Catch::Approx(2500.0f));
+    REQUIRE(*ParameterUtils::parseValue("1k", info) == Catch::Approx(1000.0f));
+    REQUIRE(*ParameterUtils::parseValue("1000", info) == Catch::Approx(1000.0f));
+    // Clamp
+    REQUIRE(*ParameterUtils::parseValue("50000 Hz", info) == Catch::Approx(20000.0f));
+    REQUIRE(!ParameterUtils::parseValue("", info).has_value());
+}
