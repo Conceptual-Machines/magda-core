@@ -837,10 +837,12 @@ target_include_directories(magda_daw_app
 )
 
 # On MSVC Release builds, generate a PDB for crash symbolization.
-# /Zi is applied here (not globally) so llama.cpp and other third-party targets
-# are not affected and don't hit parallel PDB write conflicts when using sccache.
+# /Z7 embeds debug info in .obj files rather than a shared intermediate .pdb,
+# avoiding C1041 parallel-write conflicts when sccache intercepts cl.exe (/FS
+# serialization doesn't survive the sccache proxy). The linker /DEBUG flag
+# extracts the debug info into a final MAGDA.pdb; the .exe itself is not larger.
 if(MSVC)
-    target_compile_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/Zi>)
+    target_compile_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/Z7>)
     target_link_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/DEBUG /OPT:REF /OPT:ICF>)
 endif()
 
