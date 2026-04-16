@@ -225,6 +225,17 @@ class TrackHeadersPanel : public juce::Component,
     int resizingTrackIndex = -1;
     int resizeStartY = 0;
     int resizeStartHeight = 0;
+
+    // Drag-to-resize an automation lane's height from the headers panel,
+    // mirroring the lane's own resize handle in TrackContentPanel.
+    bool isResizingLane_ = false;
+    AutomationLaneId resizingLaneId_ = INVALID_AUTOMATION_LANE_ID;
+    int laneResizeStartY_ = 0;
+    int laneResizeStartHeight_ = 0;
+
+    // Returns the lane whose bottom-edge resize handle sits under the
+    // given panel-local point, or INVALID_AUTOMATION_LANE_ID if none.
+    AutomationLaneId findLaneResizeHandleAt(juce::Point<int> pos) const;
     static constexpr int RESIZE_HANDLE_HEIGHT = 6;
 
     // Drag-to-reorder state

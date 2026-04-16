@@ -2200,10 +2200,55 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
     positionLaneHeaderButtons();
 }
 
+AutomationLaneId TrackHeadersPanel::findLaneResizeHandleAt(juce::Point<int> pos) const {
+    auto& manager = AutomationManager::getInstance();
+    for (int trackIndex = 0; trackIndex < static_cast<int>(visibleTrackIds_.size()); ++trackIndex) {
+        TrackId trackId = visibleTrackIds_[trackIndex];
+        auto it = visibleAutomationLanes_.find(trackId);
+        if (it == visibleAutomationLanes_.end())
+            continue;
+
+        int y = getTrackYPosition(trackIndex) +
+                static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
+        for (auto laneId : it->second) {
+            const auto* lane = manager.getLane(laneId);
+            if (!lane || !lane->visible)
+                continue;
+            // Only expanded lanes carry a resize handle — collapsed lanes
+            // are just a thin header strip and shouldn't be resizable.
+            int laneHeight = lane->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
+                                               static_cast<int>(lane->height * verticalZoom) +
+                                               AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
+                                            : AutomationLaneComponent::HEADER_HEIGHT;
+            if (lane->expanded) {
+                int handleTop = y + laneHeight - AutomationLaneComponent::RESIZE_HANDLE_HEIGHT;
+                int handleBottom = y + laneHeight;
+                if (pos.y >= handleTop && pos.y < handleBottom)
+                    return laneId;
+            }
+            y += laneHeight;
+        }
+    }
+    return INVALID_AUTOMATION_LANE_ID;
+}
+
 void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
     // Convert to panel coordinates (handles clicks forwarded from children)
     auto localEvent = event.getEventRelativeTo(this);
     auto pos = localEvent.getPosition();
+
+    // Automation lane resize handle takes priority over track resize / selection
+    if (auto laneId = findLaneResizeHandleAt(pos); laneId != INVALID_AUTOMATION_LANE_ID) {
+        const auto* lane = AutomationManager::getInstance().getLane(laneId);
+        if (lane) {
+            isResizingLane_ = true;
+            resizingLaneId_ = laneId;
+            laneResizeStartY_ = localEvent.y;
+            laneResizeStartHeight_ = lane->height;
+            setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+            return;
+        }
+    }
 
     // Handle vertical track height resizing and track selection
     int trackIndex;
@@ -2274,6 +2319,18 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
 }
 
 void TrackHeadersPanel::mouseDrag(const juce::MouseEvent& event) {
+    // Automation lane resize — mirrors AutomationLaneComponent's drag handler
+    // but from the headers panel side. AutomationManager::setLaneHeight
+    // notifies both panels so the lane's content component resizes too.
+    if (isResizingLane_ && resizingLaneId_ != INVALID_AUTOMATION_LANE_ID) {
+        int deltaY = event.y - laneResizeStartY_;
+        int newHeight =
+            juce::jlimit(AutomationLaneComponent::MIN_LANE_HEIGHT,
+                         AutomationLaneComponent::MAX_LANE_HEIGHT, laneResizeStartHeight_ + deltaY);
+        AutomationManager::getInstance().setLaneHeight(resizingLaneId_, newHeight);
+        return;
+    }
+
     // Handle vertical track height resizing
     if (isResizing && resizingTrackIndex >= 0) {
         int deltaY = event.y - resizeStartY;
@@ -2325,6 +2382,14 @@ void TrackHeadersPanel::mouseWheelMove(const juce::MouseEvent& event,
 }
 
 void TrackHeadersPanel::mouseUp(const juce::MouseEvent& /*event*/) {
+    // Lane resize cleanup
+    if (isResizingLane_) {
+        isResizingLane_ = false;
+        resizingLaneId_ = INVALID_AUTOMATION_LANE_ID;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        return;
+    }
+
     // Handle vertical track height resizing cleanup
     if (isResizing) {
         isResizing = false;
@@ -2346,6 +2411,12 @@ void TrackHeadersPanel::mouseUp(const juce::MouseEvent& /*event*/) {
 }
 
 void TrackHeadersPanel::mouseMove(const juce::MouseEvent& event) {
+    // Automation lane resize hover
+    if (findLaneResizeHandleAt(event.getPosition()) != INVALID_AUTOMATION_LANE_ID) {
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        return;
+    }
+
     // Handle vertical track height resizing
     int trackIndex;
     if (isResizeHandleArea(event.getPosition(), trackIndex)) {
