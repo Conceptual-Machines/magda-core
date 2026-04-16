@@ -191,7 +191,7 @@ def build_symbol_map(pdb_path):
                 if section == 1:          # .text section → offset ≈ RVA
                     symbols.append((offset, current_name))
             except ValueError:
-                pass
+                pass  # ignore malformed addr lines in llvm-pdbutil output
             current_name = None
 
     symbols.sort(key=lambda x: x[0])

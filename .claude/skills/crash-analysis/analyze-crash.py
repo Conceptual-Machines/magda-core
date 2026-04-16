@@ -22,12 +22,10 @@ Environment variables required for full automation:
 """
 
 import argparse
-import io
 import os
 import sys
 import subprocess
 import tempfile
-import contextlib
 
 REPO = "Conceptual-Machines/magda-core"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
