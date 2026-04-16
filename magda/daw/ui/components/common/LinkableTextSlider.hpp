@@ -71,6 +71,7 @@ class LinkableTextSlider : public juce::Component,
     std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroUnlinked;
     std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
         onMacroAmountChanged;
+    std::function<void()> onShowAutomationLane;
 
     // === Component overrides ===
     void resized() override;

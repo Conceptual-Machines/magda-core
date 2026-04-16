@@ -3577,6 +3577,13 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 if (self)
                     self->updateParamModulation();
             };
+
+            slider->onShowAutomationLane = [safeThis, slider]() {
+                auto self = safeThis;
+                if (!self || !slider)
+                    return;
+                self->showAutomationLaneForParam(slider->getParamIndex());
+            };
         }
 
         // Wire external plugin ParamSlotComponents
@@ -4085,6 +4092,13 @@ void DeviceSlotComponent::setupCustomUILinking() {
             }
             if (self)
                 self->updateParamModulation();
+        };
+
+        slider->onShowAutomationLane = [safeThis = juce::Component::SafePointer(this), slider]() {
+            auto self = safeThis;
+            if (!self || !slider)
+                return;
+            self->showAutomationLaneForParam(slider->getParamIndex());
         };
     }
 }
