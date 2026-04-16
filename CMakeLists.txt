@@ -50,8 +50,10 @@ endif()
 # Compiler flags
 if(MSVC)
     set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /W3")
-    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Zi /DNDEBUG")
-    # /DEBUG keeps the PDB reference in the EXE; /OPT:REF,ICF preserve release dead-stripping
+    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Z7 /DNDEBUG")
+    # /Z7 embeds debug info in .obj files (avoids parallel PDB write conflicts with sccache)
+    # /DEBUG tells the linker to produce a .pdb from the embedded debug info
+    # /OPT:REF,ICF preserve release dead-stripping
     string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE " /DEBUG /OPT:REF /OPT:ICF")
 else()
     set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra")
