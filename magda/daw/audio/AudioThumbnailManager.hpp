@@ -145,7 +145,7 @@ class AudioThumbnailManager {
 
     // LRU list: front = most recently used, back = least recently used
     std::list<ReaderEntry> readerLru_;
-    // Map path -> iterator into readerLru_ for O(1) lookup
+    // Map path -> iterator into readerLru_ for O(log N) lookup
     std::map<juce::String, std::list<ReaderEntry>::iterator> readerIndex_;
 
     juce::AudioFormatReader* getOrCreateReader(const juce::String& audioFilePath);
