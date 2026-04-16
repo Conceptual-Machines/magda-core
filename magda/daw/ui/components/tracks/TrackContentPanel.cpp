@@ -328,12 +328,18 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
 }
 
 void TrackContentPanel::resized() {
-    // Update size based on zoom (ppb) and timeline length
+    // Size the panel to match its content exactly. Using jmax(contentHeight,
+    // getHeight()) here would be monotonic — when lanes shrink or hide the
+    // panel would stay inflated, producing phantom scrollbar space in the
+    // outer viewport and stale pixels revealed by scrolling into the empty
+    // area. The outer viewport already handles "content smaller than
+    // viewport" by showing the component at its natural size with no
+    // scrollbar.
     double beats = timelineLength * tempoBPM / 60.0;
     int contentWidth = static_cast<int>(std::round(beats * currentZoom));
     int contentHeight = getTotalTracksHeight();
 
-    setSize(juce::jmax(contentWidth, getWidth()), juce::jmax(contentHeight, getHeight()));
+    setSize(contentWidth, contentHeight);
 
     // Re-position lane viewports with the current (possibly updated) width.
     // This is needed because lane viewports are sized to getWidth() which may
