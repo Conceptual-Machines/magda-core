@@ -1048,7 +1048,20 @@ void MainView::scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double new
 
     // Sync track headers viewport and update zoom scroll bar when scrolling vertically
     if (scrollBarThatHasMoved == &trackContentViewport->getVerticalScrollBar()) {
-        // Sync track headers viewport to same vertical position
+        // Sync track headers viewport to same vertical position. Ensure the
+        // two panels are still the same height before syncing: when an
+        // automation lane is added via setLaneVisible (e.g. from a device's
+        // "Show Automation Lane") the content panel self-sizes to the new
+        // total via its resized(), but the headers panel doesn't self-size —
+        // it relies on updateContentSizes. If that hook hasn't run yet, the
+        // headers viewport silently clamps scrollY to (shorter panel height
+        // - viewport height) which presents as "scrolling only works after
+        // you go all the way down and back up". updateContentSizes is
+        // idempotent and cheap; calling it here costs nothing when sizes are
+        // already in sync.
+        if (trackContentPanel->getHeight() != trackHeadersPanel->getHeight())
+            updateContentSizes();
+
         int scrollY = trackContentViewport->getViewPositionY();
         trackHeadersViewport->setViewPosition(0, scrollY);
 
@@ -1079,6 +1092,14 @@ void MainView::setupTrackSynchronization() {
         trackContentPanel->setTrackHeight(trackIndex, newHeight);
         updateContentSizes();
     };
+
+    // Any layout change in the headers panel (automation lanes added/
+    // removed/resized) must re-size BOTH panels so the outer viewports stay
+    // in scroll sync. Without this, opening a lane via setLaneVisible leaves
+    // TrackContentPanel taller than TrackHeadersPanel — the content viewport
+    // can scroll past what the headers viewport can, and the headers stay
+    // pinned at y=0 until the user scrolls all the way down and back.
+    trackHeadersPanel->onLayoutChanged = [this]() { updateContentSizes(); };
 
     trackHeadersPanel->onTrackSelected = [this](int trackIndex) {
         if (!isUpdatingTrackSelection) {

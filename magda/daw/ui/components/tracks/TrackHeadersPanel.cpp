@@ -1455,6 +1455,8 @@ void TrackHeadersPanel::automationLanesChanged() {
     syncAutomationLaneVisibility();
     rebuildLaneHeaderButtons();
     updateTrackHeaderLayout();
+    if (onLayoutChanged)
+        onLayoutChanged();
     repaint();
 }
 
@@ -1462,6 +1464,8 @@ void TrackHeadersPanel::automationLanePropertyChanged(AutomationLaneId /*laneId*
     syncAutomationLaneVisibility();
     rebuildLaneHeaderButtons();
     updateTrackHeaderLayout();
+    if (onLayoutChanged)
+        onLayoutChanged();
     repaint();
 }
 

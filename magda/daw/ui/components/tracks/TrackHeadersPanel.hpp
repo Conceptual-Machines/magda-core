@@ -110,6 +110,11 @@ class TrackHeadersPanel : public juce::Component,
     // Callbacks
     std::function<void(int, int)> onTrackHeightChanged;
     std::function<void(int)> onTrackSelected;
+    // Fires when anything that affects the total tracks height changes
+    // (lane added/removed/resized, lane visibility toggled). MainView uses
+    // this to keep the content panel + headers panel sized together so the
+    // two viewports stay in scroll sync.
+    std::function<void()> onLayoutChanged;
     std::function<void(int, const juce::String&)> onTrackNameChanged;
     std::function<void(int, bool)> onTrackMutedChanged;
     std::function<void(int, bool)> onTrackSoloChanged;
