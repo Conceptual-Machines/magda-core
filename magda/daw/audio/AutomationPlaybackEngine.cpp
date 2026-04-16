@@ -8,6 +8,18 @@
 #include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
 
+// INVARIANT — Parameter value representations across MAGDA:
+//
+//   Stored in AutomationPoint.value:           normalized [0, 1]
+//   Stored in ParameterInfo.min/max/default/currentValue: REAL (Hz, dB, %, …)
+//   Stored on te::AutomatableParameter:        REAL (native parameter units)
+//
+// Conversions use EXCLUSIVELY ParameterUtils::normalizedToReal and
+// ParameterUtils::realToNormalized — both honour info.scale and
+// info.scaleAnchor. Do not add ad-hoc lerps anywhere on this boundary.
+// Violating this invariant manifests as a slider/lane visual mismatch
+// (display reads one value, audio hears another).
+
 namespace magda {
 
 AutomationPlaybackEngine::AutomationPlaybackEngine(AudioBridge& bridge, te::Edit& edit)
@@ -344,15 +356,21 @@ float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
             return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), paramInfo);
         }
         default: {
-            // Device parameters: MAGDA stores 0-1 normalized, TE's parameter
-            // takes the real range (e.g. −24..+24 dB for EQ gain). Map linearly
-            // across the TE param's reported value range — passing raw 0-1
-            // would sit at the bottom of any non-unit range.
-            if (!param)
-                return static_cast<float>(magdaNormalized);
-            auto range = param->getValueRange();
-            return range.getStart() +
-                   static_cast<float>(magdaNormalized) * (range.getEnd() - range.getStart());
+            // Device parameters: convert via the parameter's own ParameterInfo
+            // so log scales, scaleAnchor, and displayFormat all stay consistent
+            // with what the slider and the automation lane display. See the
+            // invariant at the top of this file.
+            ParameterInfo info = target.getParameterInfo();
+            // Fall back to the TE-reported range when ParameterInfo is missing
+            // (e.g. the device hasn't been populated yet).
+            if (info.maxValue <= info.minValue) {
+                if (!param)
+                    return static_cast<float>(magdaNormalized);
+                auto range = param->getValueRange();
+                return range.getStart() +
+                       static_cast<float>(magdaNormalized) * (range.getEnd() - range.getStart());
+            }
+            return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), info);
         }
     }
 }

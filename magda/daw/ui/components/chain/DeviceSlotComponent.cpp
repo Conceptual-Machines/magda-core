@@ -853,14 +853,13 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
     if (paramIndex < 0 || paramIndex >= static_cast<int>(device_.parameters.size()))
         return;
 
-    // MAGDA normalized 0..1 → the parameter's real range, matching the linear
-    // lerp that AutomationPlaybackEngine::convertToTEValue uses for device
-    // params. The UI slot's slider is configured in the real range by
-    // configureSliderFormatting, so we push the real value (same as
-    // deviceParameterChanged) rather than the normalized form.
+    // MAGDA normalized 0..1 → real value via ParameterUtils, honouring the
+    // param's scale and scaleAnchor. This must match the identical conversion
+    // inside AutomationPlaybackEngine::convertToTEValue so the value we echo
+    // to the UI is the same value the engine writes to TE.
     const auto& info = device_.parameters[static_cast<size_t>(paramIndex)];
     float realValue =
-        info.minValue + static_cast<float>(normalizedValue) * (info.maxValue - info.minValue);
+        magda::ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), info);
 
     // Keep the cached value in sync so any non-automation refresh path sees
     // the latest curve value.
