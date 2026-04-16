@@ -530,10 +530,15 @@ ParameterInfo EqualiserProcessor::getParameterInfo(int index) const {
         if (lowerName.contains("gain")) {
             eqInfo.unit = "dB";
             eqInfo.scale = ParameterScale::Linear;
+            eqInfo.displayFormat = DisplayFormat::Decibels;
             eqInfo.bipolarModulation = true;  // gain is symmetric around 0 dB
         } else if (lowerName.contains("freq")) {
             eqInfo.unit = "Hz";
             eqInfo.scale = ParameterScale::Logarithmic;  // frequency sweeps log
+            // Place 1 kHz at the slider's visual midpoint — the EQ convention.
+            // ParameterUtils now applies a log-space skew so the lane's labels
+            // and conversion match this anchor.
+            eqInfo.scaleAnchor = 1000.0f;
         } else if (lowerName.endsWithIgnoreCase("q") || lowerName.contains(" q ") ||
                    lowerName.endsWith(" q")) {
             eqInfo.unit = "";
