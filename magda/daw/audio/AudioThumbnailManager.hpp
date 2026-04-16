@@ -8,8 +8,6 @@
 #include <list>
 #include <map>
 #include <memory>
-#include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace magda {
@@ -148,7 +146,7 @@ class AudioThumbnailManager {
     // LRU list: front = most recently used, back = least recently used
     std::list<ReaderEntry> readerLru_;
     // Map path -> iterator into readerLru_ for O(1) lookup
-    std::unordered_map<std::string, std::list<ReaderEntry>::iterator> readerIndex_;
+    std::map<juce::String, std::list<ReaderEntry>::iterator> readerIndex_;
 
     juce::AudioFormatReader* getOrCreateReader(const juce::String& audioFilePath);
 

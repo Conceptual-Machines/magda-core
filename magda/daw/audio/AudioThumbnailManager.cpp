@@ -241,8 +241,7 @@ void AudioThumbnailManager::clearCachedTransients(const juce::String& filePath) 
 
 juce::AudioFormatReader* AudioThumbnailManager::getOrCreateReader(
     const juce::String& audioFilePath) {
-    auto key = audioFilePath.toStdString();
-    auto it = readerIndex_.find(key);
+    auto it = readerIndex_.find(audioFilePath);
 
     if (it != readerIndex_.end()) {
         // Move to front (most recently used)
@@ -262,12 +261,12 @@ juce::AudioFormatReader* AudioThumbnailManager::getOrCreateReader(
 
     // Insert at front
     readerLru_.push_front({audioFilePath, std::move(reader)});
-    readerIndex_[key] = readerLru_.begin();
+    readerIndex_[audioFilePath] = readerLru_.begin();
 
     // Evict LRU entries if over limit
     while (readerLru_.size() > MAX_CACHED_READERS) {
         auto& back = readerLru_.back();
-        readerIndex_.erase(back.path.toStdString());
+        readerIndex_.erase(back.path);
         readerLru_.pop_back();
     }
 
