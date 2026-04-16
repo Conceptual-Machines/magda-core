@@ -21,6 +21,25 @@ enum class ParameterScale {
 };
 
 /**
+ * @brief How a parameter's value should be formatted for display and parsed from input.
+ *
+ * Decouples presentation from the scale used for value conversion. For example
+ * a volume parameter uses scale=FaderDB and displayFormat=Decibels; a pan uses
+ * scale=Linear and displayFormat=Pan. For Default, ParameterUtils::formatValue
+ * dispatches on `unit` (Hz/kHz, ms, %, dB, bare) — Default is the right choice
+ * for most plugin params.
+ */
+enum class DisplayFormat {
+    Default,   // Dispatch on info.unit (Hz/kHz, dB, %, ms, bare)
+    Decibels,  // dB with "-inf" at minValue, always signed ("+3.0", "-6.0")
+    Pan,       // -1..+1 → "L100".."C".."R100"
+    Percent,   // Treat stored value as 0..1 and display "0%".."100%"
+    MidiNote,  // 0..127 → "C-1".."G9"
+    Beats,     // float beats: "2.25 beats"
+    BarsBeats  // float beats: "1.1.000" bars.beats.ticks (480 ticks/beat)
+};
+
+/**
  * @brief Metadata for a plugin parameter
  *
  * Contains all information needed to convert between normalized (0-1)
@@ -31,15 +50,30 @@ struct ParameterInfo {
     juce::String name;    // "Cutoff", "Resonance", etc.
     juce::String unit;    // "Hz", "ms", "%", "dB", ""
 
-    // Value range
+    // Value range — ALL stored in REAL parameter units (Hz, dB, %, …).
+    // Consumers never see normalized values here; the normalized↔real
+    // conversion lives exclusively in ParameterUtils.
     float minValue = 0.0f;      // Real minimum (e.g., 20.0 for Hz)
     float maxValue = 1.0f;      // Real maximum (e.g., 20000.0 for Hz)
     float defaultValue = 0.5f;  // Real default
-    float currentValue = 0.5f;  // Current value (for UI display and sync)
+    float currentValue = 0.5f;  // Current REAL value (for UI display and sync)
 
     // Scaling
     ParameterScale scale = ParameterScale::Linear;
     float skewFactor = 1.0f;  // For exponential scaling
+
+    /**
+     * The real value that maps to normalized 0.5. 0.0 means "unset" —
+     * ParameterUtils then uses the geometric mean for log scales and the
+     * arithmetic mean for linear scales. Setting this explicitly lets a
+     * parameter place a chosen value at the slider's visual centre
+     * (e.g. 1000 Hz for an EQ freq with range [20, 20000]).
+     */
+    float scaleAnchor = 0.0f;
+
+    // How this parameter's real value is formatted and parsed. Default
+    // dispatches on `unit`; override for bespoke shapes (Pan, MidiNote, …).
+    DisplayFormat displayFormat = DisplayFormat::Default;
 
     // Discrete values (if scale == Discrete)
     std::vector<juce::String> choices;  // e.g., {"Off", "Low", "High"}
@@ -139,6 +173,7 @@ inline ParameterInfo percent(int index, const juce::String& name) {
     info.maxValue = 100.0f;
     info.defaultValue = 50.0f;
     info.scale = ParameterScale::Linear;
+    info.displayFormat = DisplayFormat::Percent;
     return info;
 }
 
@@ -159,6 +194,7 @@ inline ParameterInfo decibels(int index, const juce::String& name, float minDb =
     info.maxValue = maxDb;
     info.defaultValue = 0.0f;  // Unity gain
     info.scale = ParameterScale::Linear;
+    info.displayFormat = DisplayFormat::Decibels;
     return info;
 }
 
@@ -241,6 +277,7 @@ inline ParameterInfo faderVolume(int index, const juce::String& name) {
     info.maxValue = 6.0f;
     info.defaultValue = 0.0f;  // Unity gain
     info.scale = ParameterScale::FaderDB;
+    info.displayFormat = DisplayFormat::Decibels;
     return info;
 }
 
@@ -258,6 +295,7 @@ inline ParameterInfo pan(int index, const juce::String& name) {
     info.maxValue = 1.0f;
     info.defaultValue = 0.0f;  // Center
     info.scale = ParameterScale::Linear;
+    info.displayFormat = DisplayFormat::Pan;
     return info;
 }
 
