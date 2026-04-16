@@ -67,6 +67,12 @@ class PanelContent : public juce::Component {
     virtual void onDeactivated() {}
 
     /**
+     * @brief Called when the parent panel expands from collapsed state
+     * Override to grab focus on a primary input field
+     */
+    virtual void onPanelExpanded() {}
+
+    /**
      * @brief Whether this content wants the parent panel to show a header bar
      */
     virtual bool wantsHeader() const {

@@ -137,7 +137,8 @@ class TrackContentPanel : public juce::Component,
     void hideAutomationLane(TrackId trackId, AutomationLaneId laneId);
     void toggleAutomationLane(TrackId trackId, AutomationLaneId laneId);
     bool isAutomationLaneVisible(TrackId trackId, AutomationLaneId laneId) const;
-    int getTrackTotalHeight(int trackIndex) const;  // Track + visible automation lanes
+    void setLaneScrollPosition(TrackId trackId, int scrollY);  // Drive lane viewport from headers
+    int getTrackTotalHeight(int trackIndex) const;             // Track + visible automation lanes
 
     // Beat/pixel conversion (native domain — zoom is ppb)
     int beatsToPixel(double beats) const;
@@ -229,6 +230,8 @@ class TrackContentPanel : public juce::Component,
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& event,
+                        const juce::MouseWheelDetails& wheel) override;
     void showEmptySpaceContextMenu(const juce::MouseEvent& event);
 
     // Mouse interaction constants and state

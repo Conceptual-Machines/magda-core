@@ -335,6 +335,10 @@ void PluginBrowserContent::onDeactivated() {
     // Could save state here
 }
 
+void PluginBrowserContent::onPanelExpanded() {
+    searchBox_.grabKeyboardFocus();
+}
+
 std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     std::vector<PluginBrowserInfo> list;
     list.push_back(PluginBrowserInfo::createInternal("Test Tone", "tone", false));

@@ -1496,7 +1496,6 @@ void ExternalPluginProcessor::populateParameters(DeviceInfo& info) const {
 
     if (auto* ext = getExternalPlugin()) {
         auto params = ext->getAutomatableParameters();
-        // Load all parameters - UI uses user-selectable visibility and pagination
         int maxParams = static_cast<int>(params.size());
 
         for (int i = 0; i < maxParams; ++i) {

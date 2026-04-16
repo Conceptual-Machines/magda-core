@@ -347,6 +347,11 @@ void TrackContentPanel::resized() {
     int contentHeight = getTotalTracksHeight();
 
     setSize(juce::jmax(contentWidth, getWidth()), juce::jmax(contentHeight, getHeight()));
+
+    // Re-position lane viewports with the current (possibly updated) width.
+    // This is needed because lane viewports are sized to getWidth() which may
+    // change when the panel is first laid out or when the window is resized.
+    updateAutomationLanePositions();
 }
 
 void TrackContentPanel::selectTrack(int index) {
@@ -2393,7 +2398,6 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
 
         laneViewports_[trackId] = std::move(tlv);
     }
-
     updateAutomationLanePositions();
 }
 
@@ -2460,6 +2464,44 @@ void TrackContentPanel::updateAutomationLanePositions() {
         entry.component->setPixelsPerBeat(currentZoom);
         entry.component->setTempoBPM(tempoBPM);
     }
+}
+
+void TrackContentPanel::mouseWheelMove(const juce::MouseEvent& event,
+                                       const juce::MouseWheelDetails& wheel) {
+    // If the cursor is over a lane-viewport area, scroll that viewport directly
+    // (wheel events don't reliably reach the inner juce::Viewport via normal
+    // event bubbling when nested inside the outer timeline viewport).
+    for (auto& [trackId, tlvPtr] : laneViewports_) {
+        if (!tlvPtr || !tlvPtr->viewport)
+            continue;
+
+        auto vpBounds = tlvPtr->viewport->getBounds();  // TrackContentPanel coords
+        if (!vpBounds.contains(event.x, event.y))
+            continue;
+
+        int rawH = getRawAutomationLanesHeight(trackId);
+        int vpH = vpBounds.getHeight();
+
+        if (rawH > vpH) {
+            // Lane stack overflows — scroll the inner viewport
+            int currentY = tlvPtr->viewport->getViewPositionY();
+            int delta = juce::roundToInt(-wheel.deltaY * 40.0f);
+            int newY = juce::jlimit(0, rawH - vpH, currentY + delta);
+            tlvPtr->viewport->setViewPosition(0, newY);
+            // visibleAreaChanged fires → onLaneScrollChanged → header sync
+        }
+        // Consume regardless (prevent outer viewport from scrolling vertically)
+        return;
+    }
+
+    // Not over any lane viewport — propagate to the outer viewport
+    Component::mouseWheelMove(event, wheel);
+}
+
+void TrackContentPanel::setLaneScrollPosition(TrackId trackId, int scrollY) {
+    auto it = laneViewports_.find(trackId);
+    if (it != laneViewports_.end() && it->second && it->second->viewport)
+        it->second->viewport->setViewPosition(0, scrollY);
 }
 
 // =============================================================================

@@ -43,6 +43,9 @@ class MainWindow : public juce::DocumentWindow, public ProjectManagerListener {
     void projectClosed() override;
     void projectDirtyStateChanged(bool isDirty) override;
 
+    /** Open a .mgd project file (used by menu, command line, and OS file association). */
+    void openProjectFile(const juce::File& file);
+
     /** Re-read panel visibility from Config and apply immediately. */
     void applyPanelVisibilityFromConfig();
 

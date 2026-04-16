@@ -605,36 +605,31 @@ void ChainPanel::rebuildElementSlots() {
             safeThis->stopTimer();
 
             int elementCount = static_cast<int>(safeThis->elementSlots_.size());
-            if (safeThis->dragOriginalIndex_ >= 0 && safeThis->dragInsertIndex_ >= 0 &&
-                safeThis->dragOriginalIndex_ != safeThis->dragInsertIndex_) {
-                // Convert insert position to target index
-                int targetIndex = safeThis->dragInsertIndex_;
-                if (safeThis->dragInsertIndex_ > safeThis->dragOriginalIndex_) {
-                    targetIndex = safeThis->dragInsertIndex_ - 1;
-                }
-                targetIndex = juce::jlimit(0, elementCount - 1, targetIndex);
-                if (targetIndex != safeThis->dragOriginalIndex_) {
-                    // Capture chainPath before the move (in case safeThis becomes invalid)
-                    auto chainPath = safeThis->chainPath_;
-                    int fromIndex = safeThis->dragOriginalIndex_;
+            int fromIndex = safeThis->dragOriginalIndex_;
+            int insertIndex = safeThis->dragInsertIndex_;
 
-                    // Clear state before the move (which triggers rebuild)
-                    safeThis->draggedElement_ = nullptr;
-                    safeThis->dragOriginalIndex_ = -1;
-                    safeThis->dragInsertIndex_ = -1;
-
-                    // Perform the move - this may destroy safeThis
-                    magda::TrackManager::getInstance().moveElementInChainByPath(
-                        chainPath, fromIndex, targetIndex);
-                    return;  // Don't access safeThis after this point
-                }
-            }
-
-            // Only reached if no move happened
             safeThis->draggedElement_ = nullptr;
             safeThis->dragOriginalIndex_ = -1;
             safeThis->dragInsertIndex_ = -1;
-            // Re-layout and repaint to remove left padding and indicator
+
+            if (fromIndex >= 0 && insertIndex >= 0 && fromIndex != insertIndex) {
+                int targetIndex = insertIndex;
+                if (insertIndex > fromIndex)
+                    targetIndex = insertIndex - 1;
+                targetIndex = juce::jlimit(0, elementCount - 1, targetIndex);
+                if (targetIndex != fromIndex) {
+                    // Defer the move so the component isn't destroyed
+                    // while its mouseUp handler is still on the call stack
+                    auto chainPath = safeThis->chainPath_;
+                    juce::MessageManager::callAsync([chainPath, fromIndex, targetIndex]() {
+                        magda::TrackManager::getInstance().moveElementInChainByPath(
+                            chainPath, fromIndex, targetIndex);
+                    });
+                    return;
+                }
+            }
+
+            // No move — just re-layout to remove drag indicators
             safeThis->resized();
             safeThis->elementSlotsContainer_->repaint();
         };

@@ -1611,23 +1611,30 @@ void TrackChainContent::rebuildNodeComponents() {
                 stopTimer();
 
                 int nodeCount = static_cast<int>(nodeComponents_.size());
-                if (dragOriginalIndex_ >= 0 && dragInsertIndex_ >= 0 &&
-                    dragOriginalIndex_ != dragInsertIndex_) {
-                    // Convert insert position to target index
-                    int targetIndex = dragInsertIndex_;
-                    if (dragInsertIndex_ > dragOriginalIndex_) {
-                        targetIndex = dragInsertIndex_ - 1;
-                    }
-                    targetIndex = juce::jlimit(0, nodeCount - 1, targetIndex);
-                    if (targetIndex != dragOriginalIndex_) {
-                        magda::TrackManager::getInstance().moveNode(
-                            selectedTrackId_, dragOriginalIndex_, targetIndex);
-                    }
-                }
+                int fromIndex = dragOriginalIndex_;
+                int insertIndex = dragInsertIndex_;
+
                 draggedNode_ = nullptr;
                 dragOriginalIndex_ = -1;
                 dragInsertIndex_ = -1;
-                // Re-layout and repaint to remove left padding and indicator
+
+                if (fromIndex >= 0 && insertIndex >= 0 && fromIndex != insertIndex) {
+                    int targetIndex = insertIndex;
+                    if (insertIndex > fromIndex)
+                        targetIndex = insertIndex - 1;
+                    targetIndex = juce::jlimit(0, nodeCount - 1, targetIndex);
+                    if (targetIndex != fromIndex) {
+                        // Defer the move so the component isn't destroyed
+                        // while its mouseUp handler is still on the call stack
+                        int trackId = selectedTrackId_;
+                        juce::MessageManager::callAsync([trackId, fromIndex, targetIndex]() {
+                            magda::TrackManager::getInstance().moveNode(trackId, fromIndex,
+                                                                        targetIndex);
+                        });
+                        return;
+                    }
+                }
+                // No move — just re-layout to remove drag indicators
                 resized();
                 chainContainer_->repaint();
             };

@@ -346,14 +346,12 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         int screenWidth = display->userArea.getWidth();
         if (screenWidth >= 2560) {  // Large display (1440p+)
             leftPanelWidth = rightPanelWidth = 400;
-            bottomPanelHeight = 380;
         } else if (screenWidth >= 1920) {  // Full HD
             leftPanelWidth = rightPanelWidth = 350;
-            bottomPanelHeight = 350;
         } else {
             leftPanelWidth = rightPanelWidth = layout.defaultLeftPanelWidth;
-            bottomPanelHeight = layout.defaultBottomPanelHeight;
         }
+        bottomPanelHeight = layout.defaultBottomPanelHeight;
     } else {
         leftPanelWidth = rightPanelWidth = layout.defaultLeftPanelWidth;
         bottomPanelHeight = layout.defaultBottomPanelHeight;
@@ -423,9 +421,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         auto type = bottomPanel->getActiveContentType();
         if (type == daw::ui::PanelContentType::PianoRoll ||
             type == daw::ui::PanelContentType::DrumGridClipView) {
-            optimalHeight = getHeight() / 2;
+            optimalHeight = getHeight() * 2 / 3;
         } else if (type == daw::ui::PanelContentType::TrackChain) {
-            optimalHeight = getHeight() / 3;
+            optimalHeight = juce::jmax(360, getHeight() / 3);
         }
         int maxHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
         bottomPanelHeight =

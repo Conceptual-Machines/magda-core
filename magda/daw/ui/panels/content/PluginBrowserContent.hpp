@@ -70,6 +70,7 @@ class PluginBrowserContent : public PanelContent,
 
     void onActivated() override;
     void onDeactivated() override;
+    void onPanelExpanded() override;
 
     /**
      * @brief Set the engine for plugin scanning

@@ -32,6 +32,7 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
 
     // PanelStateListener interface
     void panelStateChanged(PanelLocation location, const PanelState& state) override;

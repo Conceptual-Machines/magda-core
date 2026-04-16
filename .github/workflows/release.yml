@@ -507,11 +507,24 @@ jobs:
           "[Desktop Entry]" \
           "Type=Application" \
           "Name=MAGDA" \
-          "Exec=MAGDA" \
+          "Exec=MAGDA %f" \
           "Icon=magda" \
           "Categories=AudioVideo;Audio;" \
+          "MimeType=application/x-magda-project;" \
           "Comment=MAGDA Digital Audio Workstation" \
           > "$APPDIR/usr/share/applications/magda.desktop"
+
+        # Create MIME type definition for .mgd files
+        mkdir -p "$APPDIR/usr/share/mime/packages"
+        cat > "$APPDIR/usr/share/mime/packages/magda.xml" << 'MIME_EOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+          <mime-type type="application/x-magda-project">
+            <comment>MAGDA Project</comment>
+            <glob pattern="*.mgd"/>
+          </mime-type>
+        </mime-info>
+        MIME_EOF
 
         # Symlinks required by linuxdeploy
         ln -sf usr/share/applications/magda.desktop "$APPDIR/magda.desktop"

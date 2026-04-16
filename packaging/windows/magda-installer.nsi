@@ -52,6 +52,14 @@ Section "Install"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MAGDA" \
         "Publisher" "Conceptual Machines"
     WriteRegStr HKLM "Software\MAGDA" "Install_Dir" "$INSTDIR"
+
+    ; File association for .mgd files
+    WriteRegStr HKCR ".mgd" "" "MAGDA.Project"
+    WriteRegStr HKCR "MAGDA.Project" "" "MAGDA Project"
+    WriteRegStr HKCR "MAGDA.Project\shell\open\command" "" '"$INSTDIR\MAGDA.exe" "%1"'
+
+    ; Notify shell of file association change
+    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 SectionEnd
 
 Section "Uninstall"
@@ -66,4 +74,9 @@ Section "Uninstall"
 
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\MAGDA"
     DeleteRegKey HKLM "Software\MAGDA"
+
+    ; Remove file association
+    DeleteRegKey HKCR ".mgd"
+    DeleteRegKey HKCR "MAGDA.Project"
+    System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 SectionEnd

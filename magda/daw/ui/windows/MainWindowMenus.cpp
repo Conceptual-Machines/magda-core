@@ -24,6 +24,44 @@
 
 namespace magda {
 
+void MainWindow::openProjectFile(const juce::File& file) {
+    if (!file.existsAsFile())
+        return;
+
+    if (mainComponent)
+        mainComponent->showLoadingMessage("Loading project...");
+
+    SelectionManager::getInstance().clearSelection();
+    if (mainComponent && mainComponent->mainView)
+        mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
+
+    auto& projectManager = ProjectManager::getInstance();
+    projectManager.loadProjectAsync(
+        file,
+        [this](const ProjectInfo& info) {
+            if (mainComponent && mainComponent->mainView) {
+                auto& tc = mainComponent->mainView->getTimelineController();
+                tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
+                                       info.timeSignatureDenominator, info.loopEnabled,
+                                       info.loopStartBeats, info.loopEndBeats);
+            }
+        },
+        [this, file](bool success, const juce::String& error) {
+            if (mainComponent)
+                mainComponent->hideLoadingMessage();
+
+            if (!success) {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "Open Project", error);
+            } else {
+                auto& config = Config::getInstance();
+                config.addRecentProject(file.getFullPathName().toStdString());
+                config.save();
+                MenuManager::getInstance().menuItemsChanged();
+            }
+        });
+}
+
 // ============================================================================
 // Menu Callbacks Implementation
 // ============================================================================
@@ -78,42 +116,7 @@ void MainWindow::setupMenuCallbacks() {
             if (!file.existsAsFile())
                 return;  // User cancelled
 
-            // Show loading overlay
-            if (mainComponent)
-                mainComponent->showLoadingMessage("Loading project...");
-
-            SelectionManager::getInstance().clearSelection();
-            if (mainComponent && mainComponent->mainView)
-                mainComponent->mainView->getTimelineController().dispatch(
-                    ClearTimeSelectionEvent{});
-            auto& projectManager = ProjectManager::getInstance();
-            projectManager.loadProjectAsync(
-                file,
-                // onBeforeCommit: set tempo/time sig/loop on the audio engine BEFORE
-                // clips are committed, so clip sync uses the correct BPM.
-                [this](const ProjectInfo& info) {
-                    if (mainComponent && mainComponent->mainView) {
-                        auto& tc = mainComponent->mainView->getTimelineController();
-                        tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
-                                               info.timeSignatureDenominator, info.loopEnabled,
-                                               info.loopStartBeats, info.loopEndBeats);
-                    }
-                },
-                [this, file](bool success, const juce::String& error) {
-                    // Hide loading overlay
-                    if (mainComponent)
-                        mainComponent->hideLoadingMessage();
-
-                    if (!success) {
-                        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                               "Open Project", error);
-                    } else {
-                        auto& config = Config::getInstance();
-                        config.addRecentProject(file.getFullPathName().toStdString());
-                        config.save();
-                        MenuManager::getInstance().menuItemsChanged();
-                    }
-                });
+            openProjectFile(file);
         });
     };
 
@@ -125,38 +128,7 @@ void MainWindow::setupMenuCallbacks() {
             return;
         }
 
-        if (mainComponent)
-            mainComponent->showLoadingMessage("Loading project...");
-
-        SelectionManager::getInstance().clearSelection();
-        if (mainComponent && mainComponent->mainView)
-            mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
-
-        auto& projectManager = ProjectManager::getInstance();
-        projectManager.loadProjectAsync(
-            file,
-            [this](const ProjectInfo& info) {
-                if (mainComponent && mainComponent->mainView) {
-                    auto& tc = mainComponent->mainView->getTimelineController();
-                    tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
-                                           info.timeSignatureDenominator, info.loopEnabled,
-                                           info.loopStartBeats, info.loopEndBeats);
-                }
-            },
-            [this, file](bool success, const juce::String& error) {
-                if (mainComponent)
-                    mainComponent->hideLoadingMessage();
-
-                if (!success) {
-                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                           "Open Recent", error);
-                } else {
-                    auto& config = Config::getInstance();
-                    config.addRecentProject(file.getFullPathName().toStdString());
-                    config.save();
-                    MenuManager::getInstance().menuItemsChanged();
-                }
-            });
+        openProjectFile(file);
     };
 
     callbacks.onCloseProject = [this]() {

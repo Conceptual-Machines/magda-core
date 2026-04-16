@@ -120,6 +120,9 @@ class TrackHeadersPanel : public juce::Component,
     // Called by MainView when the per-track lane viewport scrolls in TrackContentPanel
     void setLaneScrollOffset(TrackId trackId, int scrollY);
 
+    // Fired when the user drags a lane header scrollbar — MainView forwards to TrackContentPanel
+    std::function<void(TrackId, int)> onLaneScrollRequested;
+
     // Routing toggle types
     enum class RoutingType { AudioIn, AudioOut, MidiIn, MidiOut };
 
@@ -205,6 +208,22 @@ class TrackHeadersPanel : public juce::Component,
     std::vector<std::unique_ptr<AutoLaneHeaderButtons>> laneHeaderButtons_;
     std::unordered_map<TrackId, int>
         laneScrollOffsets_;  // Per-track vertical scroll offset (pixels)
+
+    // Per-track scrollbar for the lane header area (shown when lanes overflow 267px)
+    struct LaneScrollBar {
+        TrackId trackId = INVALID_TRACK_ID;
+        std::unique_ptr<juce::ScrollBar> scrollBar;
+        struct Adapter : juce::ScrollBar::Listener {
+            std::function<void(double)> onScrolled;
+            void scrollBarMoved(juce::ScrollBar*, double v) override {
+                if (onScrolled)
+                    onScrolled(v);
+            }
+        };
+        Adapter adapter;
+    };
+    std::unordered_map<TrackId, std::unique_ptr<LaneScrollBar>> laneScrollBars_;
+    bool isScrollSyncing_ = false;
     std::unordered_set<int> selectedTrackIndices_;
     double verticalZoom = 1.0;  // Track height multiplier
     ViewMode currentViewMode_ = ViewMode::Arrange;
@@ -316,6 +335,12 @@ class TrackHeadersPanel : public juce::Component,
     // Automation lane header button management
     void rebuildLaneHeaderButtons();
     void positionLaneHeaderButtons();
+
+    // Automation lane scrollbar management (one scrollbar per track with overflowing lanes)
+    void rebuildLaneScrollBars();
+    static constexpr int kLaneScrollBarX = 2;   // x offset from panel left edge
+    static constexpr int kLaneScrollBarW = 10;  // scrollbar width
+    static constexpr int kLaneHeaderLeftPad = kLaneScrollBarX + kLaneScrollBarW + 2;  // = 14
     AutoLaneHeaderButtons* findLaneHeaderButtons(AutomationLaneId laneId);
 
     // Indentation

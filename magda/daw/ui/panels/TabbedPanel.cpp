@@ -171,8 +171,15 @@ void TabbedPanel::activeTabChanged(PanelLocation location, int /*tabIndex*/,
     }
 }
 
+void TabbedPanel::mouseDoubleClick(const juce::MouseEvent& /*event*/) {
+    if (collapsed_ && location_ != PanelLocation::Bottom) {
+        PanelController::getInstance().setCollapsed(location_, false);
+    }
+}
+
 void TabbedPanel::panelCollapsedChanged(PanelLocation location, bool collapsed) {
     if (location == location_) {
+        bool wasCollapsed = collapsed_;
         collapsed_ = collapsed;
         tabBar_.setCollapseState(collapsed);
 
@@ -182,6 +189,11 @@ void TabbedPanel::panelCollapsedChanged(PanelLocation location, bool collapsed) 
 
         resized();
         repaint();
+
+        // Notify active content when panel expands from collapsed state
+        if (wasCollapsed && !collapsed && activeContent_) {
+            activeContent_->onPanelExpanded();
+        }
     }
 }
 
