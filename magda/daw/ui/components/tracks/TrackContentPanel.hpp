@@ -137,8 +137,7 @@ class TrackContentPanel : public juce::Component,
     void hideAutomationLane(TrackId trackId, AutomationLaneId laneId);
     void toggleAutomationLane(TrackId trackId, AutomationLaneId laneId);
     bool isAutomationLaneVisible(TrackId trackId, AutomationLaneId laneId) const;
-    void setLaneScrollPosition(TrackId trackId, int scrollY);  // Drive lane viewport from headers
-    int getTrackTotalHeight(int trackIndex) const;             // Track + visible automation lanes
+    int getTrackTotalHeight(int trackIndex) const;  // Track + visible automation lanes
 
     // Beat/pixel conversion (native domain — zoom is ppb)
     int beatsToPixel(double beats) const;
@@ -164,9 +163,6 @@ class TrackContentPanel : public juce::Component,
         snapBeatsToGrid;  // Callback to snap beats to grid (for automation, provided by MainView)
     std::function<double()>
         getGridSpacingBeats;  // Returns current grid spacing in beats (for line stamp tool)
-    std::function<void(TrackId, int)>
-        onLaneScrollChanged;  // Fired when a per-track lane viewport scrolls
-
     // Multi-clip drag methods (public for ClipComponent access)
     void startMultiClipDrag(ClipId anchorClipId, const juce::Point<int>& startPos);
     void updateMultiClipDrag(const juce::Point<int>& currentPos);
@@ -230,8 +226,6 @@ class TrackContentPanel : public juce::Component,
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
-    void mouseWheelMove(const juce::MouseEvent& event,
-                        const juce::MouseWheelDetails& wheel) override;
     void showEmptySpaceContextMenu(const juce::MouseEvent& event);
 
     // Mouse interaction constants and state
@@ -305,23 +299,10 @@ class TrackContentPanel : public juce::Component,
     std::vector<AutomationLaneEntry> automationLaneComponents_;
     std::unordered_map<TrackId, std::vector<AutomationLaneId>> visibleAutomationLanes_;
 
-    // Per-track lane viewports (invisible-scrollbar, capped height).
-    // viewport is actually a LaneViewport (file-local subclass in the .cpp).
-    struct TrackLaneViewport {
-        TrackId trackId = INVALID_TRACK_ID;
-        std::unique_ptr<juce::Viewport> viewport;
-        std::unique_ptr<juce::Component> content;
-    };
-    std::unordered_map<TrackId, std::unique_ptr<TrackLaneViewport>> laneViewports_;
-
-    // Maximum visible height for the lane viewport (≈3 default-height expanded lanes)
-    static constexpr int kLanesViewportMaxHeight = 267;
-
     void syncAutomationLaneVisibility();
     void rebuildAutomationLaneComponents();
     void updateAutomationLanePositions();
     int getVisibleAutomationLanesHeight(TrackId trackId) const;
-    int getRawAutomationLanesHeight(TrackId trackId) const;  // uncapped, for content size
 
     // ========================================================================
     // Marquee Selection State

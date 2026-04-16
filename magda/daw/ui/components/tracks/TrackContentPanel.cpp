@@ -18,19 +18,6 @@
 #include "core/UndoManager.hpp"
 #include "project/ProjectManager.hpp"
 
-namespace {
-// Subclasses juce::Viewport so we can override visibleAreaChanged() and
-// forward scroll notifications to a lambda without a separate listener class.
-class LaneViewport : public juce::Viewport {
-  public:
-    std::function<void(int)> onScrollY;
-    void visibleAreaChanged(const juce::Rectangle<int>& newArea) override {
-        if (onScrollY)
-            onScrollY(newArea.getY());
-    }
-};
-}  // namespace
-
 namespace magda {
 
 TrackContentPanel::TrackContentPanel() {
@@ -2206,6 +2193,8 @@ void TrackContentPanel::syncAutomationLaneVisibility() {
     visibleAutomationLanes_.clear();
 
     auto& manager = AutomationManager::getInstance();
+    if (!manager.isGlobalLaneVisibilityEnabled())
+        return;  // Global override: treat all lanes as hidden
 
     for (auto trackId : visibleTrackIds_) {
         auto laneIds = manager.getLanesForTrack(trackId);
@@ -2296,7 +2285,7 @@ int TrackContentPanel::getTrackTotalHeight(int trackIndex) const {
     return totalHeight;
 }
 
-int TrackContentPanel::getRawAutomationLanesHeight(TrackId trackId) const {
+int TrackContentPanel::getVisibleAutomationLanesHeight(TrackId trackId) const {
     int totalHeight = 0;
 
     auto it = visibleAutomationLanes_.find(trackId);
@@ -2317,22 +2306,12 @@ int TrackContentPanel::getRawAutomationLanesHeight(TrackId trackId) const {
     return totalHeight;
 }
 
-int TrackContentPanel::getVisibleAutomationLanesHeight(TrackId trackId) const {
-    return juce::jmin(getRawAutomationLanesHeight(trackId), kLanesViewportMaxHeight);
-}
-
 void TrackContentPanel::rebuildAutomationLaneComponents() {
-    // Remove old lane components and viewports from the component hierarchy
+    // Remove old lane components
     for (auto& entry : automationLaneComponents_)
         if (entry.component)
-            entry.component->setVisible(false);
+            removeChildComponent(entry.component.get());
     automationLaneComponents_.clear();
-
-    for (auto& [tid, tlv] : laneViewports_) {
-        if (tlv->viewport)
-            removeChildComponent(tlv->viewport.get());
-    }
-    laneViewports_.clear();
 
     auto& manager = AutomationManager::getInstance();
 
@@ -2343,33 +2322,6 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
         if (it == visibleAutomationLanes_.end())
             continue;
 
-        // Count visible lanes for this track
-        int visibleCount = 0;
-        for (auto laneId : it->second) {
-            const auto* l = manager.getLane(laneId);
-            if (l && l->visible)
-                ++visibleCount;
-        }
-        if (visibleCount == 0)
-            continue;
-
-        // Create a per-track viewport + content component
-        auto tlv = std::make_unique<TrackLaneViewport>();
-        tlv->trackId = trackId;
-        tlv->content = std::make_unique<juce::Component>();
-
-        auto laneVp = std::make_unique<LaneViewport>();
-        laneVp->onScrollY = [this, trackId](int scrollY) {
-            if (onLaneScrollChanged)
-                onLaneScrollChanged(trackId, scrollY);
-        };
-        laneVp->setScrollBarsShown(false, false, true, false);  // no bar, wheel scrolls vertically
-        laneVp->setViewedComponent(tlv->content.get(), false);
-        tlv->viewport = std::move(laneVp);
-
-        addAndMakeVisible(*tlv->viewport);
-
-        // Create lane components as children of the content component
         for (auto laneId : it->second) {
             const auto* lane = manager.getLane(laneId);
             if (!lane || !lane->visible)
@@ -2392,11 +2344,9 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
                 repaintVisible();
             };
 
-            tlv->content->addAndMakeVisible(entry.component.get());
+            addAndMakeVisible(*entry.component);
             automationLaneComponents_.push_back(std::move(entry));
         }
-
-        laneViewports_[trackId] = std::move(tlv);
     }
     updateAutomationLanePositions();
 }
@@ -2404,104 +2354,41 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
 void TrackContentPanel::updateAutomationLanePositions() {
     auto& manager = AutomationManager::getInstance();
 
-    // Position each per-track viewport below its track row, then place lane
-    // components inside the viewport's content component at local Y offsets.
+    // Position each lane component directly under its track row.
+    // Lanes stack inline; the outer content panel viewport handles scrolling.
     for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
         TrackId trackId = visibleTrackIds_[i];
-        auto vpIt = laneViewports_.find(trackId);
-        if (vpIt == laneViewports_.end())
-            continue;
-
-        auto& tlv = *vpIt->second;
-
-        // Viewport sits immediately below the track row
         int trackIndex = static_cast<int>(i);
-        int vpY = getTrackYPosition(trackIndex) +
-                  static_cast<int>(trackLanes[trackIndex]->height * verticalZoom);
-        int rawH = getRawAutomationLanesHeight(trackId);
-        int vpH = juce::jmin(rawH, kLanesViewportMaxHeight);
-        tlv.viewport->setBounds(0, vpY, getWidth(), vpH);
+        int y = getTrackYPosition(trackIndex) +
+                static_cast<int>(trackLanes[trackIndex]->height * verticalZoom);
 
-        // Size the content component to the full (uncapped) lane stack
-        tlv.content->setSize(getWidth(), rawH);
-    }
-
-    // Now position each lane component within its content component (local Y)
-    for (auto& entry : automationLaneComponents_) {
-        auto vpIt = laneViewports_.find(entry.trackId);
-        if (vpIt == laneViewports_.end())
+        auto laneIt = visibleAutomationLanes_.find(trackId);
+        if (laneIt == visibleAutomationLanes_.end())
             continue;
 
-        // Calculate local Y within the content component
-        int localY = 0;
-        auto laneIt = visibleAutomationLanes_.find(entry.trackId);
-        if (laneIt != visibleAutomationLanes_.end()) {
-            for (auto prevLaneId : laneIt->second) {
-                if (prevLaneId == entry.laneId)
+        for (auto laneId : laneIt->second) {
+            const auto* lane = manager.getLane(laneId);
+            if (!lane || !lane->visible)
+                continue;
+
+            int height = lane->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
+                                           static_cast<int>(lane->height * verticalZoom) +
+                                           AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
+                                        : AutomationLaneComponent::HEADER_HEIGHT;
+
+            for (auto& entry : automationLaneComponents_) {
+                if (entry.trackId == trackId && entry.laneId == laneId) {
+                    entry.component->setBounds(0, y, getWidth(), height);
+                    entry.component->setPixelsPerSecond(currentZoom * tempoBPM / 60.0);
+                    entry.component->setPixelsPerBeat(currentZoom);
+                    entry.component->setTempoBPM(tempoBPM);
                     break;
-                const auto* prev = manager.getLane(prevLaneId);
-                if (prev && prev->visible) {
-                    localY += prev->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
-                                                static_cast<int>(prev->height * verticalZoom) +
-                                                AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
-                                             : AutomationLaneComponent::HEADER_HEIGHT;
                 }
             }
+
+            y += height;
         }
-
-        const auto* lane = manager.getLane(entry.laneId);
-        if (!lane)
-            continue;
-
-        int height = lane->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
-                                       static_cast<int>(lane->height * verticalZoom) +
-                                       AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
-                                    : AutomationLaneComponent::HEADER_HEIGHT;
-
-        // Width = viewport (panel) width; content component is always panel-wide
-        entry.component->setBounds(0, localY, getWidth(), height);
-        entry.component->setPixelsPerSecond(currentZoom * tempoBPM / 60.0);
-        entry.component->setPixelsPerBeat(currentZoom);
-        entry.component->setTempoBPM(tempoBPM);
     }
-}
-
-void TrackContentPanel::mouseWheelMove(const juce::MouseEvent& event,
-                                       const juce::MouseWheelDetails& wheel) {
-    // If the cursor is over a lane-viewport area, scroll that viewport directly
-    // (wheel events don't reliably reach the inner juce::Viewport via normal
-    // event bubbling when nested inside the outer timeline viewport).
-    for (auto& [trackId, tlvPtr] : laneViewports_) {
-        if (!tlvPtr || !tlvPtr->viewport)
-            continue;
-
-        auto vpBounds = tlvPtr->viewport->getBounds();  // TrackContentPanel coords
-        if (!vpBounds.contains(event.x, event.y))
-            continue;
-
-        int rawH = getRawAutomationLanesHeight(trackId);
-        int vpH = vpBounds.getHeight();
-
-        if (rawH > vpH) {
-            // Lane stack overflows — scroll the inner viewport
-            int currentY = tlvPtr->viewport->getViewPositionY();
-            int delta = juce::roundToInt(-wheel.deltaY * 40.0f);
-            int newY = juce::jlimit(0, rawH - vpH, currentY + delta);
-            tlvPtr->viewport->setViewPosition(0, newY);
-            // visibleAreaChanged fires → onLaneScrollChanged → header sync
-        }
-        // Consume regardless (prevent outer viewport from scrolling vertically)
-        return;
-    }
-
-    // Not over any lane viewport — propagate to the outer viewport
-    Component::mouseWheelMove(event, wheel);
-}
-
-void TrackContentPanel::setLaneScrollPosition(TrackId trackId, int scrollY) {
-    auto it = laneViewports_.find(trackId);
-    if (it != laneViewports_.end() && it->second && it->second->viewport)
-        it->second->viewport->setViewPosition(0, scrollY);
 }
 
 // =============================================================================

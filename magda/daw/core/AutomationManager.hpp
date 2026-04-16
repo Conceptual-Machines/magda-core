@@ -136,6 +136,13 @@ class AutomationManager : public TrackManagerListener {
     void setLaneExpanded(AutomationLaneId laneId, bool expanded);
     void setLaneBypass(AutomationLaneId laneId, bool bypass);
 
+    // Global session-only show/hide: when false, all automation lane viewports
+    // are hidden across every track regardless of per-lane `visible` flags.
+    bool isGlobalLaneVisibilityEnabled() const {
+        return globalLaneVisibilityEnabled_;
+    }
+    void setGlobalLaneVisibility(bool enabled);
+
     /**
      * @brief Transient touch suppression for a target.
      *
@@ -467,6 +474,8 @@ class AutomationManager : public TrackManagerListener {
 
     int notificationBatchDepth_ = 0;
     std::vector<AutomationLaneId> pendingPointsChangedLanes_;
+
+    bool globalLaneVisibilityEnabled_ = true;
 
     // Notification helpers
     void notifyLanesChanged();

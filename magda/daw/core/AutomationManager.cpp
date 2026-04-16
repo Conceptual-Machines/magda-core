@@ -249,6 +249,13 @@ void AutomationManager::setLaneVisible(AutomationLaneId laneId, bool visible) {
     }
 }
 
+void AutomationManager::setGlobalLaneVisibility(bool enabled) {
+    if (globalLaneVisibilityEnabled_ == enabled)
+        return;
+    globalLaneVisibilityEnabled_ = enabled;
+    notifyLanesChanged();
+}
+
 void AutomationManager::setLaneExpanded(AutomationLaneId laneId, bool expanded) {
     if (auto* lane = getLane(laneId)) {
         lane->expanded = expanded;

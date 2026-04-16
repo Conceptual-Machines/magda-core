@@ -1139,7 +1139,6 @@ void TrackHeadersPanel::tracksChanged() {
     // Sync automation lane visibility from AutomationManager
     syncAutomationLaneVisibility();
     rebuildLaneHeaderButtons();
-    rebuildLaneScrollBars();
 
     updateTrackHeaderLayout();
     repaint();
@@ -1418,7 +1417,6 @@ int TrackHeadersPanel::getVisibleAutomationLanesHeight(TrackId trackId) const {
         for (auto laneId : it->second) {
             const auto* lane = manager.getLane(laneId);
             if (lane && lane->visible) {
-                // Apply vertical zoom to automation lane height (header + content + resize handle)
                 int laneHeight = lane->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
                                                    static_cast<int>(lane->height * verticalZoom) +
                                                    AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
@@ -1428,15 +1426,15 @@ int TrackHeadersPanel::getVisibleAutomationLanesHeight(TrackId trackId) const {
         }
     }
 
-    // Cap to match the viewport height used in TrackContentPanel
-    constexpr int kLanesViewportMaxHeight = 267;
-    return juce::jmin(totalHeight, kLanesViewportMaxHeight);
+    return totalHeight;
 }
 
 void TrackHeadersPanel::syncAutomationLaneVisibility() {
     visibleAutomationLanes_.clear();
 
     auto& manager = AutomationManager::getInstance();
+    if (!manager.isGlobalLaneVisibilityEnabled())
+        return;  // Global override: treat all lanes as hidden
 
     for (auto trackId : visibleTrackIds_) {
         auto laneIds = manager.getLanesForTrack(trackId);
@@ -1453,23 +1451,9 @@ void TrackHeadersPanel::syncAutomationLaneVisibility() {
     // bound to a target), so no manual push is needed here.
 }
 
-void TrackHeadersPanel::setLaneScrollOffset(TrackId trackId, int scrollY) {
-    laneScrollOffsets_[trackId] = scrollY;
-    repaint();
-    positionLaneHeaderButtons();
-
-    // Sync scrollbar thumb without triggering the listener back
-    isScrollSyncing_ = true;
-    auto it = laneScrollBars_.find(trackId);
-    if (it != laneScrollBars_.end() && it->second && it->second->scrollBar)
-        it->second->scrollBar->setCurrentRangeStart(scrollY);
-    isScrollSyncing_ = false;
-}
-
 void TrackHeadersPanel::automationLanesChanged() {
     syncAutomationLaneVisibility();
     rebuildLaneHeaderButtons();
-    rebuildLaneScrollBars();
     updateTrackHeaderLayout();
     repaint();
 }
@@ -1477,7 +1461,6 @@ void TrackHeadersPanel::automationLanesChanged() {
 void TrackHeadersPanel::automationLanePropertyChanged(AutomationLaneId /*laneId*/) {
     syncAutomationLaneVisibility();
     rebuildLaneHeaderButtons();
-    rebuildLaneScrollBars();
     updateTrackHeaderLayout();
     repaint();
 }
@@ -2929,6 +2912,12 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
     auto& automationManager = AutomationManager::getInstance();
 
     juce::PopupMenu menu;
+
+    // Global show/hide toggle (id 9999) — applies to every track
+    bool globalOn = automationManager.isGlobalLaneVisibilityEnabled();
+    menu.addItem(9999, globalOn ? "Hide All Automation Lanes" : "Show All Automation Lanes");
+    menu.addSeparator();
+
     menu.addSectionHeader("Show Automation Lane");
     menu.addSeparator();
 
@@ -3065,6 +3054,13 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
         auto& automationManager = AutomationManager::getInstance();
 
+        if (result == 9999) {
+            // Global show/hide toggle
+            automationManager.setGlobalLaneVisibility(
+                !automationManager.isGlobalLaneVisibilityEnabled());
+            return;
+        }
+
         if (result >= 1000) {
             // Toggle existing lane visibility
             AutomationLaneId laneId = result - 1000;
@@ -3132,22 +3128,7 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
     int vpTop = getTrackYPosition(trackIndex) +
                 static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
 
-    int vpBottom = vpTop + getVisibleAutomationLanesHeight(trackId);
-
-    // Clip painting to the viewport area so lanes that have scrolled out of
-    // view are not visible in the header panel either.
-    juce::Graphics::ScopedSaveState gss(g);
-    g.reduceClipRegion(0, vpTop, getWidth(), vpBottom - vpTop);
-
-    // Apply the scroll offset so lane positions track the content viewport
-    int scrollOffset = 0;
-    {
-        auto sIt = laneScrollOffsets_.find(trackId);
-        if (sIt != laneScrollOffsets_.end())
-            scrollOffset = sIt->second;
-    }
-
-    int y = vpTop - scrollOffset;
+    int y = vpTop;
 
     for (auto laneId : it->second) {
         const auto* lane = manager.getLane(laneId);
@@ -3174,10 +3155,10 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
         g.drawHorizontalLine(headerArea.getBottom() - 1, static_cast<float>(headerArea.getX()),
                              static_cast<float>(headerArea.getRight()));
 
-        // Parameter name — offset right to clear the scrollbar
+        // Parameter name
         g.setColour(juce::Colour(0xFFCCCCCC));
         g.setFont(11.0f);
-        auto nameArea = headerArea.withLeft(kLaneHeaderLeftPad).reduced(0, 2);
+        auto nameArea = headerArea.reduced(4, 2);
         g.drawText(lane->getDisplayName(), nameArea, juce::Justification::centredLeft);
 
         // Value tick marks and labels in the lane content area
@@ -3392,7 +3373,7 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
 
     constexpr int kBtnSize = 20;
     constexpr int kBtnGap = 3;
-    constexpr int kLeftMargin = kLaneHeaderLeftPad;
+    constexpr int kLeftMargin = 6;
     constexpr int kTopMargin = 4;
 
     for (int trackIndex = 0; trackIndex < static_cast<int>(visibleTrackIds_.size()); ++trackIndex) {
@@ -3401,19 +3382,8 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
         if (it == visibleAutomationLanes_.end())
             continue;
 
-        int vpTop = getTrackYPosition(trackIndex) +
-                    static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
-        int vpHeight = getVisibleAutomationLanesHeight(trackId);
-        int vpBottom = vpTop + vpHeight;
-
-        int scrollOffset = 0;
-        {
-            auto sIt = laneScrollOffsets_.find(trackId);
-            if (sIt != laneScrollOffsets_.end())
-                scrollOffset = sIt->second;
-        }
-
-        int y = vpTop - scrollOffset;  // scrolled lane start
+        int y = getTrackYPosition(trackIndex) +
+                static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
 
         for (auto laneId : it->second) {
             const auto* lane = manager.getLane(laneId);
@@ -3427,10 +3397,7 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
 
             if (auto* entry = findLaneHeaderButtons(laneId)) {
                 int btnY = y + AutomationLaneComponent::HEADER_HEIGHT + kTopMargin;
-
-                // Show buttons only when expanded AND the content area is within
-                // the visible viewport region (not scrolled out of view).
-                bool inView = lane->expanded && (btnY + kBtnSize > vpTop) && (btnY < vpBottom);
+                bool inView = lane->expanded;
 
                 entry->snapTimeBtn->setVisible(inView);
                 entry->snapValueBtn->setVisible(inView);
@@ -3452,84 +3419,6 @@ void TrackHeadersPanel::positionLaneHeaderButtons() {
 
             y += laneHeight;
         }
-
-        // Position (or hide) the scrollbar for this track
-        auto sbIt = laneScrollBars_.find(trackId);
-        if (sbIt != laneScrollBars_.end() && sbIt->second && sbIt->second->scrollBar) {
-            int rawH = 0;
-            if (it != visibleAutomationLanes_.end()) {
-                for (auto laneId : it->second) {
-                    const auto* lane = manager.getLane(laneId);
-                    if (!lane || !lane->visible)
-                        continue;
-                    rawH += lane->expanded ? (AutomationLaneComponent::HEADER_HEIGHT +
-                                              static_cast<int>(lane->height * verticalZoom) +
-                                              AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
-                                           : AutomationLaneComponent::HEADER_HEIGHT;
-                }
-            }
-            sbIt->second->scrollBar->setVisible(true);
-            sbIt->second->scrollBar->setBounds(kLaneScrollBarX, vpTop, kLaneScrollBarW, vpHeight);
-            isScrollSyncing_ = true;
-            sbIt->second->scrollBar->setRangeLimits(0.0, juce::jmax(rawH, vpHeight));
-            sbIt->second->scrollBar->setCurrentRange(scrollOffset, vpHeight);
-            isScrollSyncing_ = false;
-        }
-    }
-}
-
-// =============================================================================
-// Automation Lane Scrollbars
-// =============================================================================
-
-void TrackHeadersPanel::rebuildLaneScrollBars() {
-    auto& manager = AutomationManager::getInstance();
-
-    // Determine which tracks have at least one visible lane
-    std::unordered_set<TrackId> wantedTracks;
-    for (const auto& [trackId, laneIds] : visibleAutomationLanes_) {
-        for (auto laneId : laneIds) {
-            const auto* lane = manager.getLane(laneId);
-            if (lane && lane->visible) {
-                wantedTracks.insert(trackId);
-                break;
-            }
-        }
-    }
-
-    // Remove scrollbars for tracks that no longer have visible lanes
-    for (auto it = laneScrollBars_.begin(); it != laneScrollBars_.end();) {
-        if (wantedTracks.find(it->first) == wantedTracks.end()) {
-            if (it->second && it->second->scrollBar) {
-                it->second->scrollBar->removeListener(&it->second->adapter);
-                removeChildComponent(it->second->scrollBar.get());
-            }
-            it = laneScrollBars_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    // Create scrollbars for newly visible tracks
-    for (TrackId trackId : wantedTracks) {
-        if (laneScrollBars_.count(trackId))
-            continue;
-
-        auto lsb = std::make_unique<LaneScrollBar>();
-        lsb->trackId = trackId;
-        lsb->scrollBar = std::make_unique<juce::ScrollBar>(true);  // vertical
-        lsb->adapter.onScrolled = [this, trackId](double newStart) {
-            if (isScrollSyncing_)
-                return;
-            int scrollY = (int)newStart;
-            setLaneScrollOffset(trackId, scrollY);
-            if (onLaneScrollRequested)
-                onLaneScrollRequested(trackId, scrollY);
-        };
-        lsb->scrollBar->addListener(&lsb->adapter);
-        lsb->scrollBar->setAutoHide(false);
-        addAndMakeVisible(*lsb->scrollBar);
-        laneScrollBars_[trackId] = std::move(lsb);
     }
 }
 
