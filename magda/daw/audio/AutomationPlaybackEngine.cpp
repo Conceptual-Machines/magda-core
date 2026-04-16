@@ -450,8 +450,18 @@ double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& targ
             return ParameterUtils::realToNormalized(teValue, paramInfo);
         }
         default: {
-            // Device parameters: reverse the linear lerp across the TE param's
-            // reported range.
+            // Device parameters: go through ParameterUtils so the reverse
+            // mapping honours info.scale + info.scaleAnchor, matching
+            // convertToTEValue exactly. This keeps the round-trip
+            // (normalized → real → normalized) self-consistent — otherwise
+            // a curve-driven listener writeback snaps the UI to the wrong
+            // normalized value, which the lane then re-maps through the
+            // asymmetric forward path and ends up displaying a different
+            // real value from what was committed.
+            ParameterInfo info = target.getParameterInfo();
+            if (info.maxValue > info.minValue)
+                return ParameterUtils::realToNormalized(teValue, info);
+            // Fall back to the TE-reported range when ParameterInfo is missing.
             if (!param)
                 return teValue;
             auto range = param->getValueRange();
