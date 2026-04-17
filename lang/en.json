@@ -98,6 +98,9 @@
     "input_monitoring.off": "Off",
     "input_monitoring.in": "In",
     "input_monitoring.auto": "Auto",
+    "input_monitoring.tooltip_off": "Input monitoring: Off",
+    "input_monitoring.tooltip_in": "Input monitoring: In",
+    "input_monitoring.tooltip_auto": "Input monitoring: Auto",
     "expand_group": "Expand Group",
     "collapse_group": "Collapse Group",
     "move_to_group": "Move to Group",
@@ -226,5 +229,11 @@
     "pan": "Pan",
     "master": "Master",
     "master_output": "Master Output"
+  },
+
+  "preferences": {
+    "language.header": "Language",
+    "language.label": "UI Language",
+    "language.restart_required": "Restart required for language change to fully apply."
   }
 }

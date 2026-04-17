@@ -197,16 +197,21 @@ class PowerGlyphButton : public LaneHeaderButton {
 // two places the button appears (mixer track header + inspector) read the
 // same way. Glyph changes per mode — "-" / "I" / "A" — and the background
 // turns green when monitoring is active (In or Auto), driven by toggleState.
+// Glyphs are intentionally untranslated: the button is sized for a single
+// character; longer labels would clip. Accessibility/tooltip text is localized.
 void applyMonitorButtonState(juce::TextButton& btn, InputMonitorMode mode) {
     switch (mode) {
         case InputMonitorMode::Off:
             btn.setButtonText("-");
+            btn.setTooltip(tr("tracks.input_monitoring.tooltip_off"));
             break;
         case InputMonitorMode::In:
-            btn.setButtonText(tr("tracks.input_monitoring.in"));
+            btn.setButtonText("I");
+            btn.setTooltip(tr("tracks.input_monitoring.tooltip_in"));
             break;
         case InputMonitorMode::Auto:
-            btn.setButtonText(tr("tracks.input_monitoring.auto"));
+            btn.setButtonText("A");
+            btn.setTooltip(tr("tracks.input_monitoring.tooltip_auto"));
             break;
     }
     btn.setToggleState(mode != InputMonitorMode::Off, juce::dontSendNotification);

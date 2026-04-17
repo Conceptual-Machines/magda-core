@@ -61,20 +61,25 @@ bool StringTable::loadFromString(const juce::String& json) {
     if (!parsed.isObject())
         return false;
 
-    strings_.clear();
-    parseObject(parsed, "");
-    return !strings_.empty();
+    std::unordered_map<juce::String, juce::String> parsedStrings;
+    parseObject(parsed, "", parsedStrings);
+    if (parsedStrings.empty())
+        return false;
+
+    strings_ = std::move(parsedStrings);
+    return true;
 }
 
-void StringTable::parseObject(const juce::var& obj, const juce::String& prefix) {
+void StringTable::parseObject(const juce::var& obj, const juce::String& prefix,
+                              std::unordered_map<juce::String, juce::String>& out) {
     if (auto* dynObj = obj.getDynamicObject()) {
         for (const auto& prop : dynObj->getProperties()) {
             auto key =
                 prefix.isEmpty() ? prop.name.toString() : prefix + "." + prop.name.toString();
             if (prop.value.isObject()) {
-                parseObject(prop.value, key);
+                parseObject(prop.value, key, out);
             } else {
-                strings_[key] = prop.value.toString();
+                out[key] = prop.value.toString();
             }
         }
     }

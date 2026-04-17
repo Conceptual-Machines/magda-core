@@ -204,10 +204,24 @@ class UIPage : public juce::Component {
         setupToggle(*this, showTooltipsToggle, "Show tooltips");
 
         // Language section
-        setupSectionHeader(*this, languageHeader, "Language");
-        setupComboLabel(languageLabel, "UI Language");
+        setupSectionHeader(*this, languageHeader, tr("preferences.language.header"));
+        setupComboLabel(languageLabel, tr("preferences.language.label"));
         styleCombo(languageCombo);
         addAndMakeVisible(languageCombo);
+
+        restartHint.setText(tr("preferences.language.restart_required"),
+                            juce::dontSendNotification);
+        restartHint.setFont(FontManager::getInstance().getUIFont(11.0f));
+        restartHint.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        restartHint.setJustificationType(juce::Justification::centredLeft);
+        restartHint.setVisible(false);
+        addAndMakeVisible(restartHint);
+
+        languageCombo.onChange = [this] {
+            int idx = languageCombo.getSelectedId() - 1;
+            if (idx >= 0 && idx < static_cast<int>(availableLanguages_.size()))
+                restartHint.setVisible(availableLanguages_[idx] != initialLanguage_);
+        };
     }
 
     void resized() override {
@@ -247,6 +261,7 @@ class UIPage : public juce::Component {
         languageHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
         layoutComboRow(bounds, languageLabel, languageCombo, toggleH + 8, labelW);
+        restartHint.setBounds(bounds.removeFromTop(18));
     }
 
     void loadSettings(Config& config) {
@@ -278,6 +293,7 @@ class UIPage : public juce::Component {
             availableLanguages_.push_back("en");
 
         auto currentLang = juce::String(config.getLanguage());
+        initialLanguage_ = currentLang;
         int selectedId = 1;
         for (int i = 0; i < static_cast<int>(availableLanguages_.size()); ++i) {
             languageCombo.addItem(availableLanguages_[i], i + 1);
@@ -285,6 +301,7 @@ class UIPage : public juce::Component {
                 selectedId = i + 1;
         }
         languageCombo.setSelectedId(selectedId, juce::dontSendNotification);
+        restartHint.setVisible(false);
     }
 
     void applySettings(Config& config) {
@@ -337,7 +354,9 @@ class UIPage : public juce::Component {
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, showTooltipsToggle;
     juce::Label languageLabel;
     juce::ComboBox languageCombo;
+    juce::Label restartHint;
     std::vector<juce::String> availableLanguages_;
+    juce::String initialLanguage_;
 };
 
 // ---- Colours tab: Track colour palette ------------------------------------

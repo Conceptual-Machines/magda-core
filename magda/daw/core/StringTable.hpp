@@ -58,7 +58,8 @@ class StringTable {
   private:
     StringTable();
 
-    void parseObject(const juce::var& obj, const juce::String& prefix);
+    static void parseObject(const juce::var& obj, const juce::String& prefix,
+                            std::unordered_map<juce::String, juce::String>& out);
 
     std::unordered_map<juce::String, juce::String> strings_;
     juce::String language_ = "en";

@@ -2,7 +2,7 @@ name: Crowdin Sync
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths: ['lang/en.json']
   schedule:
     - cron: '0 6 * * 1'
@@ -23,11 +23,11 @@ jobs:
           upload_sources: true
           upload_translations: false
           download_translations: true
-          localization_branch_name: l10n_crowdin
+          localization_branch_name: l10n_crowdin_${{ github.ref_name }}
           create_pull_request: true
           pull_request_title: 'i18n: sync translations from Crowdin'
           pull_request_body: 'Automated translation sync from Crowdin.'
-          pull_request_base_branch_name: main
+          pull_request_base_branch_name: ${{ github.ref_name }}
           pull_request_labels: 'i18n,automated'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
