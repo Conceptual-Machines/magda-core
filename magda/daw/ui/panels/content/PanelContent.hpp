@@ -110,70 +110,10 @@ class PanelContent : public juce::Component {
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PanelContent)
 };
 
-/**
- * @brief Helper function to get display name for a content type
- */
-inline juce::String getContentTypeName(PanelContentType type) {
-    switch (type) {
-        case PanelContentType::Empty:
-            return "";
-        case PanelContentType::PluginBrowser:
-            return "Plugins";
-        case PanelContentType::MediaExplorer:
-            return "Samples";
-        case PanelContentType::PresetBrowser:
-            return "Presets";
-        case PanelContentType::Inspector:
-            return "Inspector";
-        case PanelContentType::AIChatConsole:
-            return "AI Chat";
-        case PanelContentType::ScriptingConsole:
-            return "Script";
-        case PanelContentType::TrackChain:
-            return "Track Chain";
-        case PanelContentType::PianoRoll:
-            return "Piano Roll";
-        case PanelContentType::WaveformEditor:
-            return "Waveform";
-        case PanelContentType::DrumGridClipView:
-            return "Drum Grid";
-        case PanelContentType::AudioClipProperties:
-            return "Properties";
-    }
-    return "Unknown";
-}
+/** Get the localized display name for a content type. */
+juce::String getContentTypeName(PanelContentType type);
 
-/**
- * @brief Helper function to get icon name for a content type
- */
-inline juce::String getContentTypeIcon(PanelContentType type) {
-    switch (type) {
-        case PanelContentType::Empty:
-            return "";
-        case PanelContentType::PluginBrowser:
-            return "Plugin";
-        case PanelContentType::MediaExplorer:
-            return "Sample";
-        case PanelContentType::PresetBrowser:
-            return "Preset";
-        case PanelContentType::Inspector:
-            return "Inspector";
-        case PanelContentType::AIChatConsole:
-            return "AIChat";
-        case PanelContentType::ScriptingConsole:
-            return "Script";
-        case PanelContentType::TrackChain:
-            return "Chain";
-        case PanelContentType::PianoRoll:
-            return "PianoRoll";
-        case PanelContentType::WaveformEditor:
-            return "Waveform";
-        case PanelContentType::DrumGridClipView:
-            return "DrumGrid";
-        case PanelContentType::AudioClipProperties:
-            return "Properties";
-    }
-    return "Unknown";
-}
+/** Get the icon name for a content type (not translated). */
+juce::String getContentTypeIcon(PanelContentType type);
 
 }  // namespace magda::daw::ui
