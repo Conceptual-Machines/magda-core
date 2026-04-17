@@ -186,6 +186,13 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     juce::Logger::writeToLog("[MainWindow] MainComponent created");
     setContentOwned(mainComponent, true);  // Window takes ownership
 
+    // Register command manager key mappings on the DocumentWindow so that
+    // shortcuts (Cmd+T, Cmd+Z, etc.) work regardless of which child
+    // component has keyboard focus. Previously this was on MainComponent,
+    // which missed events when a child (e.g. track name label) consumed
+    // focus after track creation.
+    addKeyListener(mainComponent->getCommandManager().getKeyMappings());
+
     // Setup menu bar
     juce::Logger::writeToLog("[MainWindow] Setting up menu bar...");
     setupMenuBar();
@@ -238,6 +245,7 @@ MainWindow::~MainWindow() {
     setMenuBar(nullptr);
 #endif
 
+    removeKeyListener(mainComponent->getCommandManager().getKeyMappings());
     DBG("  [5c] MainWindow::~MainWindow - about to destroy content");
 }
 
