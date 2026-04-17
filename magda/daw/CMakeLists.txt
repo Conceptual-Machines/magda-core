@@ -213,6 +213,7 @@ set(DAW_CORE_SOURCES
     core/MidiNoteCommands.cpp
     core/ParameterInfo.cpp
     core/ParameterUtils.cpp
+    core/StringTable.cpp
     core/ParameterDetector.cpp
     engine/TracktionEngineWrapper.cpp
     engine/TracktionEngineWrapperInit.cpp
