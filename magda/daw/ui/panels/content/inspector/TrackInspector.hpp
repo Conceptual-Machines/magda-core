@@ -7,6 +7,7 @@
 #include "../../mixer/InputTypeSelector.hpp"
 #include "../../mixer/RoutingSelector.hpp"
 #include "BaseInspector.hpp"
+#include "audio/MidiBridge.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda::daw::ui {
@@ -24,6 +25,7 @@ namespace magda::daw::ui {
  */
 class TrackInspector : public BaseInspector,
                        public magda::TrackManagerListener,
+                       public magda::MidiBridge::Listener,
                        public juce::Timer {
   public:
     TrackInspector();
@@ -124,6 +126,9 @@ class TrackInspector : public BaseInspector,
     void populateAudioInputOptions();
     void populateAudioOutputOptions();
     void populateMidiInputOptions();
+
+    // MidiBridge::Listener
+    void midiDeviceListChanged() override;
     void populateMidiOutputOptions();
     void updateRoutingSelectorsFromTrack();
 

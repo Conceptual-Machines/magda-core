@@ -418,7 +418,15 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(latencyValue_);
 }
 
+void TrackInspector::midiDeviceListChanged() {
+    juce::MessageManager::callAsync([this]() { populateMidiInputOptions(); });
+}
+
 TrackInspector::~TrackInspector() {
+    if (audioEngine_) {
+        if (auto* mb = audioEngine_->getMidiBridge())
+            mb->removeMidiDeviceListListener(this);
+    }
     stopTimer();
     magda::TrackManager::getInstance().removeListener(this);
 }
@@ -1406,6 +1414,10 @@ void TrackInspector::showAddSendMenu() {
 void TrackInspector::populateRoutingSelectors() {
     if (!audioEngine_)
         return;
+
+    // Register for device list changes (QWERTY keyboard toggle, etc.)
+    if (auto* mb = audioEngine_->getMidiBridge())
+        mb->addMidiDeviceListListener(this);
 
     // Populate all routing selectors
     populateAudioInputOptions();

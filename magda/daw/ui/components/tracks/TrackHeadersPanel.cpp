@@ -678,15 +678,20 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
 
     // Listen for MIDI device list changes (e.g. QWERTY keyboard toggled)
     if (audioEngine_) {
-        if (auto* mb = audioEngine_->getMidiBridge()) {
-            mb->onMidiDeviceListChanged = [this]() {
-                juce::MessageManager::callAsync([this]() { refreshInputSelectors(); });
-            };
-        }
+        if (auto* mb = audioEngine_->getMidiBridge())
+            mb->addMidiDeviceListListener(this);
     }
 }
 
+void TrackHeadersPanel::midiDeviceListChanged() {
+    juce::MessageManager::callAsync([this]() { refreshInputSelectors(); });
+}
+
 TrackHeadersPanel::~TrackHeadersPanel() {
+    if (audioEngine_) {
+        if (auto* mb = audioEngine_->getMidiBridge())
+            mb->removeMidiDeviceListListener(this);
+    }
     stopTimer();
     TrackManager::getInstance().removeListener(this);
     SelectionManager::getInstance().removeListener(this);
