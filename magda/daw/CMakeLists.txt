@@ -836,6 +836,14 @@ target_include_directories(magda_daw_app
     ${CMAKE_SOURCE_DIR}
 )
 
+# On MSVC Release builds, generate a PDB for crash symbolization.
+# /Zi is applied here (not globally) so llama.cpp and other third-party targets
+# are not affected and don't hit parallel PDB write conflicts when using sccache.
+if(MSVC)
+    target_compile_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/Zi>)
+    target_link_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/DEBUG /OPT:REF /OPT:ICF>)
+endif()
+
 # Install targets
 install(TARGETS magda_daw_app DESTINATION bin)
 install(FILES ${DAW_HEADERS} DESTINATION include/magda/daw)

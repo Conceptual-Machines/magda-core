@@ -51,6 +51,8 @@ endif()
 if(MSVC)
     set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /W3")
     set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
+    # /OPT:REF,ICF preserve release dead-stripping; /Zi + /DEBUG applied per-target (see magda/daw/CMakeLists.txt)
+    string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE " /OPT:REF /OPT:ICF")
 else()
     set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
@@ -106,6 +108,14 @@ if(APPLE)
     set(GGML_METAL_EMBED_LIBRARY ON CACHE BOOL "" FORCE)
 else()
     set(GGML_METAL OFF CACHE BOOL "" FORCE)
+    # Disable -march=native so the binary runs on CPUs without AVX2/FMA/etc.
+    # Without this, AppImages built on modern CI runners crash with SIGILL
+    # on older CPUs (e.g. pre-Haswell).  Baseline: SSE4.2 + AVX.
+    set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+    set(GGML_AVX2   OFF CACHE BOOL "" FORCE)
+    set(GGML_FMA    OFF CACHE BOOL "" FORCE)
+    set(GGML_F16C   OFF CACHE BOOL "" FORCE)
+    set(GGML_BMI2   OFF CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(third_party/llama.cpp)
 
