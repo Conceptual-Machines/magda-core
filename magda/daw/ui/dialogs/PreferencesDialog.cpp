@@ -8,6 +8,7 @@
 #include "../themes/FontManager.hpp"
 #include "../windows/MainWindow.hpp"
 #include "core/Config.hpp"
+#include "core/StringTable.hpp"
 
 // ---------------------------------------------------------------------------
 // Setup helpers — internal linkage, shared by all page classes
@@ -201,6 +202,12 @@ class UIPage : public juce::Component {
         setupToggle(*this, confirmTrackDeleteToggle, "Confirm before deleting tracks");
         setupToggle(*this, autoMonitorToggle, "Auto-monitor selected track");
         setupToggle(*this, showTooltipsToggle, "Show tooltips");
+
+        // Language section
+        setupSectionHeader(*this, languageHeader, "Language");
+        setupComboLabel(languageLabel, "UI Language");
+        styleCombo(languageCombo);
+        addAndMakeVisible(languageCombo);
     }
 
     void resized() override {
@@ -208,6 +215,7 @@ class UIPage : public juce::Component {
         const int toggleH = 24;
         const int headerH = 28;
         const int secGap = 12;
+        const int labelW = 160;
 
         // Panels
         panelsHeader.setBounds(bounds.removeFromTop(headerH));
@@ -234,6 +242,11 @@ class UIPage : public juce::Component {
         bounds.removeFromTop(4);
         showTooltipsToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
         bounds.removeFromTop(secGap);
+
+        // Language
+        languageHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, languageLabel, languageCombo, toggleH + 8, labelW);
     }
 
     void loadSettings(Config& config) {
@@ -250,6 +263,42 @@ class UIPage : public juce::Component {
         autoMonitorToggle.setToggleState(config.getAutoMonitorSelectedTrack(),
                                          juce::dontSendNotification);
         showTooltipsToggle.setToggleState(config.getShowTooltips(), juce::dontSendNotification);
+
+        // Populate language combo from available lang/*.json files
+        languageCombo.clear(juce::dontSendNotification);
+        availableLanguages_.clear();
+
+        auto appDir =
+            juce::File::getSpecialLocation(juce::File::currentApplicationFile).getParentDirectory();
+        for (const auto& langDir :
+             {appDir.getChildFile("lang"), appDir.getChildFile("../Resources/lang"),
+              appDir.getChildFile("../../../../lang")}) {
+            if (!langDir.isDirectory())
+                continue;
+            for (const auto& f : langDir.findChildFiles(juce::File::findFiles, false, "*.json")) {
+                auto code = f.getFileNameWithoutExtension();
+                // Avoid duplicates
+                bool already = false;
+                for (const auto& existing : availableLanguages_)
+                    if (existing == code)
+                        already = true;
+                if (!already)
+                    availableLanguages_.push_back(code);
+            }
+            break;  // Use only the first found directory
+        }
+
+        if (availableLanguages_.empty())
+            availableLanguages_.push_back("en");
+
+        auto currentLang = juce::String(config.getLanguage());
+        int selectedId = 1;
+        for (int i = 0; i < static_cast<int>(availableLanguages_.size()); ++i) {
+            languageCombo.addItem(availableLanguages_[i], i + 1);
+            if (availableLanguages_[i] == currentLang)
+                selectedId = i + 1;
+        }
+        languageCombo.setSelectedId(selectedId, juce::dontSendNotification);
     }
 
     void applySettings(Config& config) {
@@ -260,13 +309,49 @@ class UIPage : public juce::Component {
         config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
         config.setShowTooltips(showTooltipsToggle.getToggleState());
+
+        // Apply language selection
+        int selIdx = languageCombo.getSelectedId() - 1;
+        if (selIdx >= 0 && selIdx < static_cast<int>(availableLanguages_.size())) {
+            auto newLang = availableLanguages_[selIdx];
+            if (newLang != juce::String(config.getLanguage())) {
+                config.setLanguage(newLang.toStdString());
+                StringTable::getInstance().loadLanguage(newLang);
+            }
+        }
     }
 
   private:
-    juce::Label panelsHeader, layoutHeader, behaviorHeader;
+    void setupComboLabel(juce::Label& label, const juce::String& text) {
+        label.setText(text, juce::dontSendNotification);
+        label.setFont(FontManager::getInstance().getUIFont(12.0f));
+        label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        label.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(label);
+    }
+
+    void styleCombo(juce::ComboBox& combo) {
+        combo.setColour(juce::ComboBox::backgroundColourId,
+                        DarkTheme::getColour(DarkTheme::SURFACE));
+        combo.setColour(juce::ComboBox::textColourId,
+                        DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
+    }
+
+    static void layoutComboRow(juce::Rectangle<int>& bounds, juce::Label& label,
+                               juce::ComboBox& combo, int rowH, int labelW) {
+        auto row = bounds.removeFromTop(rowH);
+        label.setBounds(row.removeFromLeft(labelW));
+        combo.setBounds(row.reduced(0, 4));
+    }
+
+    juce::Label panelsHeader, layoutHeader, behaviorHeader, languageHeader;
     juce::ToggleButton showLeftPanelToggle, showRightPanelToggle, showBottomPanelToggle;
     juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, showTooltipsToggle;
+    juce::Label languageLabel;
+    juce::ComboBox languageCombo;
+    std::vector<juce::String> availableLanguages_;
 };
 
 // ---- Colours tab: Track colour palette ------------------------------------

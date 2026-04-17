@@ -40,6 +40,13 @@ class StringTable {
         return language_;
     }
 
+    /**
+     * Load a language by code (e.g. "en", "fr").
+     * Searches the same candidate directories as the constructor.
+     * Returns true if a matching lang/<code>.json was found and loaded.
+     */
+    bool loadLanguage(const juce::String& languageCode);
+
     /** Get the number of loaded strings. */
     int size() const {
         return static_cast<int>(strings_.size());

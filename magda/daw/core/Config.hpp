@@ -557,6 +557,14 @@ class Config {
         previewOutputChannel = channel;
     }
 
+    // Language / Localization
+    std::string getLanguage() const {
+        return language;
+    }
+    void setLanguage(const std::string& lang) {
+        language = lang;
+    }
+
     // Auto-save Configuration
     bool getAutoSaveEnabled() const {
         return autoSaveEnabled;
@@ -682,6 +690,9 @@ class Config {
     std::string preferredOutputDevice = "";  // Preferred output device (empty = system default)
     int preferredInputChannels = 0;   // Preferred input channel count (0 = use device default)
     int preferredOutputChannels = 0;  // Preferred output channel count (0 = use device default)
+
+    // Language
+    std::string language = "en";  // Language code, matches lang/<code>.json
 
     // AI settings
     std::string aiPreset = "local_embedded";

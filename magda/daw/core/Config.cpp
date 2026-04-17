@@ -81,6 +81,9 @@ void Config::save() {
     root->setProperty("rightPanelWidth", rightPanelWidth);
     root->setProperty("bottomPanelHeight", bottomPanelHeight);
 
+    // Language
+    root->setProperty("language", toJuceString(language));
+
     // UI / behaviour
     root->setProperty("scrollbarOnLeft", scrollbarOnLeft);
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
@@ -292,6 +295,7 @@ void Config::load() {
     rightPanelWidth = getInt("rightPanelWidth", rightPanelWidth);
     bottomPanelHeight = getInt("bottomPanelHeight", bottomPanelHeight);
 
+    language = getString("language", language);
     scrollbarOnLeft = getBool("scrollbarOnLeft", scrollbarOnLeft);
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
     showTooltips = getBool("showTooltips", showTooltips);

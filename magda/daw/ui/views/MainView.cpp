@@ -66,6 +66,14 @@ MainView::MainView(AudioEngine* audioEngine)
     // Load configuration
     auto& config = magda::Config::getInstance();
     config.load();
+
+    // Apply language from config (overrides the en.json auto-loaded by StringTable constructor)
+    {
+        auto lang = juce::String(config.getLanguage());
+        if (lang != "en")
+            StringTable::getInstance().loadLanguage(lang);
+    }
+
     timelineLength = config.getDefaultTimelineLengthBars() * 2.0;  // bars → seconds at 120 BPM
 
     DBG("CONFIG: Timeline length=" << config.getDefaultTimelineLengthBars() << " bars ("

@@ -69,4 +69,24 @@ juce::String StringTable::get(const juce::String& key) const {
     return key;  // Fallback: return the key itself so missing translations are visible
 }
 
+bool StringTable::loadLanguage(const juce::String& languageCode) {
+    auto appDir =
+        juce::File::getSpecialLocation(juce::File::currentApplicationFile).getParentDirectory();
+
+    auto filename = languageCode + ".json";
+    for (const auto& candidate : {appDir.getChildFile("lang").getChildFile(filename),
+                                  appDir.getChildFile("../Resources/lang").getChildFile(filename),
+                                  appDir.getChildFile("../../../../lang").getChildFile(filename)}) {
+        if (candidate.existsAsFile()) {
+            if (load(candidate)) {
+                language_ = languageCode;
+                return true;
+            }
+        }
+    }
+
+    DBG("StringTable::loadLanguage: no lang/" << languageCode << ".json found");
+    return false;
+}
+
 }  // namespace magda
