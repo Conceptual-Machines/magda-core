@@ -17,6 +17,7 @@
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
+#include "core/StringTable.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 
@@ -306,7 +307,7 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(*panLabel_);
 
     // Routing section
-    routingSectionLabel_.setText("Routing", juce::dontSendNotification);
+    routingSectionLabel_.setText(tr("inspector.routing"), juce::dontSendNotification);
     routingSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     routingSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(routingSectionLabel_);
@@ -338,13 +339,13 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(*midiOutputSelector_);
 
     // Column header labels for routing selectors
-    audioColumnLabel_.setText("Audio", juce::dontSendNotification);
+    audioColumnLabel_.setText(tr("inspector.audio"), juce::dontSendNotification);
     audioColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     audioColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     audioColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(audioColumnLabel_);
 
-    midiColumnLabel_.setText("MIDI", juce::dontSendNotification);
+    midiColumnLabel_.setText(tr("inspector.midi"), juce::dontSendNotification);
     midiColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     midiColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     midiColumnLabel_.setJustificationType(juce::Justification::centred);
@@ -372,13 +373,13 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(*outputIcon_);
 
     // Send/Receive section
-    sendReceiveSectionLabel_.setText("Sends / Receives", juce::dontSendNotification);
+    sendReceiveSectionLabel_.setText(tr("inspector.sends"), juce::dontSendNotification);
     sendReceiveSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     sendReceiveSectionLabel_.setColour(juce::Label::textColourId,
                                        DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(sendReceiveSectionLabel_);
 
-    addSendButton_.setButtonText("+ Send");
+    addSendButton_.setButtonText(tr("inspector.add_send"));
     addSendButton_.setColour(juce::TextButton::buttonColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     addSendButton_.setColour(juce::TextButton::textColourOffId,
@@ -386,7 +387,7 @@ TrackInspector::TrackInspector() {
     addSendButton_.onClick = [this]() { showAddSendMenu(); };
     addAndMakeVisible(addSendButton_);
 
-    noSendsLabel_.setText("No sends", juce::dontSendNotification);
+    noSendsLabel_.setText(tr("inspector.no_sends"), juce::dontSendNotification);
     noSendsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
     noSendsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(noSendsLabel_);
@@ -898,7 +899,7 @@ void TrackInspector::updateFromSelectedTrack() {
     // Master track — show basic controls from MasterChannelState
     if (selectedTrackId_ == magda::MASTER_TRACK_ID) {
         const auto& master = magda::TrackManager::getInstance().getMasterChannel();
-        trackNameValue_.setText("Master", juce::dontSendNotification);
+        trackNameValue_.setText(tr("common.master"), juce::dontSendNotification);
         speakerButton_->setToggleState(master.muted, juce::dontSendNotification);
         soloButton_.setToggleState(false, juce::dontSendNotification);
         recordButton_.setToggleState(false, juce::dontSendNotification);
