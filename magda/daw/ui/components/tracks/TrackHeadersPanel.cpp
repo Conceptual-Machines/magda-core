@@ -12,6 +12,7 @@
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/RackInfo.hpp"
 #include "../../../core/SelectionManager.hpp"
+#include "../../../core/StringTable.hpp"
 #include "../../../core/TrackCommands.hpp"
 #include "../../../core/TrackPropertyCommands.hpp"
 #include "../../../core/UndoManager.hpp"
@@ -202,10 +203,10 @@ void applyMonitorButtonState(juce::TextButton& btn, InputMonitorMode mode) {
             btn.setButtonText("-");
             break;
         case InputMonitorMode::In:
-            btn.setButtonText("I");
+            btn.setButtonText(tr("tracks.input_monitoring.in"));
             break;
         case InputMonitorMode::Auto:
-            btn.setButtonText("A");
+            btn.setButtonText(tr("tracks.input_monitoring.auto"));
             break;
     }
     btn.setToggleState(mode != InputMonitorMode::Off, juce::dontSendNotification);
@@ -491,7 +492,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     nameLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     nameLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
 
-    muteButton = std::make_unique<juce::TextButton>("M");
+    muteButton = std::make_unique<juce::TextButton>(tr("tracks.mute"));
     muteButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     muteButton->setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
@@ -503,7 +504,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
     muteButton->setClickingTogglesState(true);
 
-    soloButton = std::make_unique<juce::TextButton>("S");
+    soloButton = std::make_unique<juce::TextButton>(tr("tracks.solo"));
     soloButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     soloButton->setColour(juce::TextButton::buttonColourId,
                           DarkTheme::getColour(DarkTheme::SURFACE));
@@ -515,7 +516,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                           DarkTheme::getColour(DarkTheme::BACKGROUND));
     soloButton->setClickingTogglesState(true);
 
-    recordButton = std::make_unique<juce::TextButton>("R");
+    recordButton = std::make_unique<juce::TextButton>(tr("tracks.record"));
     recordButton->setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
     recordButton->setColour(juce::TextButton::buttonColourId,
                             DarkTheme::getColour(DarkTheme::SURFACE));
@@ -540,13 +541,15 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     monitorButton->setColour(juce::TextButton::textColourOnId,
                              DarkTheme::getColour(DarkTheme::BACKGROUND));
-    monitorButton->setTooltip("Input monitoring (Off/In/Auto)");
+    monitorButton->setTooltip(
+        tr("tracks.input_monitoring") + " (" + tr("tracks.input_monitoring.off") + "/" +
+        tr("tracks.input_monitoring.in") + "/" + tr("tracks.input_monitoring.auto") + ")");
     applyMonitorButtonState(*monitorButton, InputMonitorMode::Off);
 
     // Automation button
     automationButton = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
                                                    BinaryData::automation_svgSize);
-    automationButton->setTooltip("Automation");
+    automationButton->setTooltip(tr("tracks.automation"));
     automationButton->setEnabled(true);
     automationButton->setColour(juce::TextButton::buttonColourId,
                                 DarkTheme::getColour(DarkTheme::SURFACE));
@@ -1768,7 +1771,7 @@ void TrackHeadersPanel::rebuildSendLabels(TrackHeader& header, TrackId trackId) 
         // Right-click to remove send
         label->onRightClick = [trackId, busIndex]() {
             juce::PopupMenu menu;
-            menu.addItem(1, "Remove Send");
+            menu.addItem(1, tr("tracks.remove_send_label"));
             menu.showMenuAsync(juce::PopupMenu::Options(), [trackId, busIndex](int result) {
                 if (result == 1) {
                     TrackManager::getInstance().removeSend(trackId, busIndex);
@@ -2531,7 +2534,8 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Group operations
     if (track->isGroup()) {
         // Collapse/expand
-        menu.addItem(1, track->isCollapsedIn(currentViewMode_) ? "Expand Group" : "Collapse Group");
+        menu.addItem(1, track->isCollapsedIn(currentViewMode_) ? tr("tracks.expand_group")
+                                                               : tr("tracks.collapse_group"));
         menu.addSeparator();
     }
 
@@ -2554,12 +2558,12 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     }
 
     if (hasGroups) {
-        menu.addSubMenu("Move to Group", moveToGroupMenu);
+        menu.addSubMenu(tr("tracks.move_to_group"), moveToGroupMenu);
     }
 
     // Remove from group (if track has a parent)
     if (!track->isTopLevel()) {
-        menu.addItem(2, "Remove from Group");
+        menu.addItem(2, tr("tracks.remove_from_group"));
     }
 
     menu.addSeparator();
@@ -2609,7 +2613,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         addSendTargets(TrackType::Audio);
 
         if (hasOptions) {
-            menu.addSubMenu("Add Send", sendMenu);
+            menu.addSubMenu(tr("tracks.add_send"), sendMenu);
         }
 
         // Remove Send submenu (list current sends)
@@ -2620,29 +2624,30 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 juce::String destName = destTrack ? destTrack->name : "Unknown";
                 removeSendMenu.addItem(600 + s.busIndex, destName);
             }
-            menu.addSubMenu("Remove Send", removeSendMenu);
+            menu.addSubMenu(tr("tracks.remove_send"), removeSendMenu);
         }
     }
 
     // Freeze/Unfreeze (for regular tracks only)
     if (track->type == TrackType::Audio) {
         menu.addSeparator();
-        menu.addItem(7, track->frozen ? "Unfreeze Track" : "Freeze Track");
+        menu.addItem(7, track->frozen ? tr("tracks.unfreeze") : tr("tracks.freeze"));
     }
 
     menu.addSeparator();
 
     // Duplicate track
-    menu.addItem(4, "Duplicate Track");
-    menu.addItem(5, "Duplicate Track Without Content");
+    menu.addItem(4, tr("tracks.duplicate"));
+    menu.addItem(5, tr("tracks.duplicate_no_content"));
 
     // Delete track
-    menu.addItem(3, "Delete Track");
+    menu.addItem(3, tr("tracks.delete"));
 
     menu.addSeparator();
 
     // Show/Hide I/O routing
-    menu.addItem(6, header.showIORouting ? "Hide I/O Routing" : "Show I/O Routing");
+    menu.addItem(6, header.showIORouting ? tr("tracks.hide_io_routing")
+                                         : tr("tracks.show_io_routing"));
 
     // Show menu and handle result
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
