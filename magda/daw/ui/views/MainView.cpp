@@ -14,6 +14,7 @@
 #include "core/ClipManager.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/StringTable.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -2090,7 +2091,7 @@ void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
     auto labelArea = bounds.reduced(6, 2).removeFromTop(14);
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
-    g.drawText("Master", labelArea, juce::Justification::centredLeft);
+    g.drawText(tr("common.master"), labelArea, juce::Justification::centredLeft);
 }
 
 void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& /*event*/) {
@@ -2166,7 +2167,7 @@ void MainView::MasterContentPanel::paint(juce::Graphics& g) {
     // Draw a subtle indicator that this is the master output area
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withAlpha(0.3f));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
-    g.drawText("Master Output", getLocalBounds(), juce::Justification::centred);
+    g.drawText(tr("common.master_output"), getLocalBounds(), juce::Justification::centred);
 }
 
 // ===== TrackManagerListener — aux track management =====

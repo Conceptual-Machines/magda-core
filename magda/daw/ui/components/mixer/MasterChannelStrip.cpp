@@ -7,6 +7,7 @@
 #include "../../themes/MixerMetrics.hpp"
 #include "BinaryData.h"
 #include "core/SelectionManager.hpp"
+#include "core/StringTable.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 
@@ -325,7 +326,7 @@ MasterChannelStrip::~MasterChannelStrip() {
 
 void MasterChannelStrip::setupControls() {
     // Title label
-    titleLabel = std::make_unique<juce::Label>("Master", "Master");
+    titleLabel = std::make_unique<juce::Label>("Master", tr("common.master"));
     titleLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     titleLabel->setFont(FontManager::getInstance().getUIFont(12.0f));
     titleLabel->setJustificationType(juce::Justification::centredLeft);

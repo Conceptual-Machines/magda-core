@@ -16,6 +16,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/StringTable.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -228,7 +229,8 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
         repaint();
 
     if (trackLabel) {
-        trackLabel->setText(isMaster_ ? "Master" : track.name, juce::dontSendNotification);
+        trackLabel->setText(isMaster_ ? tr("common.master") : track.name,
+                            juce::dontSendNotification);
     }
     if (volumeSlider && !volumeSlider->isBeingDragged()) {
         float db = gainToDb(track.volume);
@@ -310,7 +312,7 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track) {
 void MixerView::ChannelStrip::setupControls() {
     // Track label
     trackLabel = std::make_unique<juce::Label>();
-    trackLabel->setText(isMaster_ ? "Master" : trackName_, juce::dontSendNotification);
+    trackLabel->setText(isMaster_ ? tr("common.master") : trackName_, juce::dontSendNotification);
     trackLabel->setJustificationType(juce::Justification::centred);
     trackLabel->setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     trackLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
