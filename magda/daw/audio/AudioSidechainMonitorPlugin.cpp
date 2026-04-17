@@ -40,11 +40,6 @@ void AudioSidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& f
     // Transparent passthrough — don't modify audio or MIDI
 
     ++heartbeatCount_;
-    if (heartbeatCount_ == 1 || heartbeatCount_ % 430 == 0) {
-        DBG("[ASC-MON] applyToBuffer srcTrack=" << sourceTrackId_ << " beat=" << heartbeatCount_
-                                                << " envLevel=" << envLevel_
-                                                << " gateOpen=" << (int)gateOpen_);
-    }
 
     if (!fc.destBuffer || fc.bufferNumSamples <= 0)
         return;
@@ -60,21 +55,20 @@ void AudioSidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& f
     // Write peak to SidechainTriggerBus for UI metering
     SidechainTriggerBus::getInstance().setAudioPeakLevel(sourceTrackId_, peak);
 
-    // Envelope follower: smooth the peak level
+    // Envelope follower: smooth the peak level for stable gate behaviour
     if (peak > envLevel_)
         envLevel_ += attackCoeff_ * (peak - envLevel_);
     else
         envLevel_ += releaseCoeff_ * (peak - envLevel_);
 
-    // Threshold-based gate detection
-    if (!gateOpen_ && peak > kThreshold) {
+    // Gate detection uses the smoothed envelope to avoid false triggers
+    // from transient peaks and chattering at the threshold boundary.
+    if (!gateOpen_ && envLevel_ > kThreshold) {
         gateOpen_ = true;
-        DBG("[ASC-MON] gate OPEN srcTrack=" << sourceTrackId_ << " peak=" << peak);
         if (pluginManager_)
             pluginManager_->triggerSidechainNoteOn(sourceTrackId_, LFOTriggerMode::Audio);
-    } else if (gateOpen_ && peak < kThreshold) {
+    } else if (gateOpen_ && envLevel_ < kThreshold) {
         gateOpen_ = false;
-        DBG("[ASC-MON] gate CLOSE srcTrack=" << sourceTrackId_ << " peak=" << peak);
         if (pluginManager_)
             pluginManager_->gateSidechainLFOs(sourceTrackId_);
     }

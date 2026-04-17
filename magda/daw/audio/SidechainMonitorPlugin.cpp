@@ -31,15 +31,7 @@ void SidechainMonitorPlugin::reset() {
 void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // Transparent passthrough — don't modify audio or MIDI
 
-    // Periodic heartbeat counter (no logging — this runs on the audio thread)
     ++heartbeatCount_;
-    // Log first call and then every ~5 seconds (at 44100/512 ≈ 86 blocks/sec)
-    if (heartbeatCount_ == 1 || heartbeatCount_ % 430 == 0) {
-        int midiCount = fc.bufferForMidiMessages ? fc.bufferForMidiMessages->size() : -1;
-        DBG("[SC-MON] applyToBuffer srcTrack=" << sourceTrackId_ << " beat=" << heartbeatCount_
-                                               << " midiMsgs=" << midiCount
-                                               << " heldNotes=" << localHeldNoteCount_);
-    }
 
     // --- MIDI detection + broadcast ---
     if (fc.bufferForMidiMessages) {
@@ -83,7 +75,6 @@ void SidechainMonitorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         }
 
         if (hasNoteOn) {
-            DBG("[SC-MON] noteOn srcTrack=" << sourceTrackId_ << " held=" << localHeldNoteCount_);
             triggerBus.triggerNoteOn(sourceTrackId_);
             if (pluginManager_)
                 pluginManager_->triggerSidechainNoteOn(sourceTrackId_, LFOTriggerMode::MIDI);

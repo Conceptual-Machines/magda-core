@@ -36,19 +36,22 @@ void MainWindow::openProjectFile(const juce::File& file) {
         mainComponent->mainView->getTimelineController().dispatch(ClearTimeSelectionEvent{});
 
     auto& projectManager = ProjectManager::getInstance();
+    auto safeThis = juce::Component::SafePointer<MainWindow>(this);
     projectManager.loadProjectAsync(
         file,
-        [this](const ProjectInfo& info) {
-            if (mainComponent && mainComponent->mainView) {
-                auto& tc = mainComponent->mainView->getTimelineController();
-                tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
-                                       info.timeSignatureDenominator, info.loopEnabled,
-                                       info.loopStartBeats, info.loopEndBeats);
-            }
+        [safeThis](const ProjectInfo& info) {
+            if (!safeThis || !safeThis->mainComponent || !safeThis->mainComponent->mainView)
+                return;
+            auto& tc = safeThis->mainComponent->mainView->getTimelineController();
+            tc.restoreProjectState(info.tempo, info.timeSignatureNumerator,
+                                   info.timeSignatureDenominator, info.loopEnabled,
+                                   info.loopStartBeats, info.loopEndBeats);
         },
-        [this, file](bool success, const juce::String& error) {
-            if (mainComponent)
-                mainComponent->hideLoadingMessage();
+        [safeThis, file](bool success, const juce::String& error) {
+            if (!safeThis)
+                return;
+            if (safeThis->mainComponent)
+                safeThis->mainComponent->hideLoadingMessage();
 
             if (!success) {
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
