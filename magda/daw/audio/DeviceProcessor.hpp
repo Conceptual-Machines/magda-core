@@ -77,6 +77,14 @@ class DeviceProcessor {
     virtual ParameterInfo getParameterInfo(int index) const;
 
     /**
+     * @brief Format a parameter value using the plugin's own display text.
+     * @param index Parameter index
+     * @param normalizedValue 0..1 normalized value
+     * @return Plugin's display text, or empty if not available.
+     */
+    virtual juce::String formatParameterValue(int index, float normalizedValue) const;
+
+    /**
      * @brief Populate DeviceInfo.parameters with current parameter state
      */
     virtual void populateParameters(DeviceInfo& info) const;

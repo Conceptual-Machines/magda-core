@@ -354,6 +354,23 @@ std::optional<float> parseMs(juce::String text) {
 }  // namespace
 
 juce::String formatValue(float realValue, const ParameterInfo& info, int decimalPlaces) {
+    // Live plugin display text — exact, no quantization.
+    if (info.displayText) {
+        auto text = info.displayText->format(realValue);
+        if (text.isNotEmpty())
+            return text;
+    }
+
+    // Sampled value table fallback (from ParameterConfigDialog or legacy).
+    if (!info.valueTable.empty()) {
+        int idx =
+            juce::jlimit(0, static_cast<int>(info.valueTable.size()) - 1,
+                         static_cast<int>(std::round(realValue * (info.valueTable.size() - 1))));
+        auto text = info.valueTable[static_cast<size_t>(idx)].trim();
+        if (text.isNotEmpty())
+            return text;
+    }
+
     // Discrete/Boolean bypass displayFormat — choice names / "On"/"Off".
     switch (info.scale) {
         case ParameterScale::Discrete:

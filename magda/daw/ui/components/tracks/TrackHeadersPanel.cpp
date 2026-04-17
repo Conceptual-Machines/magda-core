@@ -3324,6 +3324,22 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                             juce::String(static_cast<int>(std::round(real))) + paramInfo.unit;
                         gridValues.push_back({norm, label});
                     }
+                } else if (paramInfo.displayText) {
+                    for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
+                        auto text = paramInfo.displayText->format(static_cast<float>(norm));
+                        gridValues.push_back(
+                            {norm, text.isNotEmpty()
+                                       ? text
+                                       : juce::String(static_cast<int>(norm * 100)) + "%"});
+                    }
+                } else if (!paramInfo.valueTable.empty()) {
+                    for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
+                        int idx = juce::jlimit(
+                            0, static_cast<int>(paramInfo.valueTable.size()) - 1,
+                            static_cast<int>(std::round(norm * (paramInfo.valueTable.size() - 1))));
+                        gridValues.push_back(
+                            {norm, paramInfo.valueTable[static_cast<size_t>(idx)].trim()});
+                    }
                 } else {
                     for (int i = 1; i < 10; ++i)
                         gridValues.push_back({i / 10.0, juce::String(i * 10) + "%"});

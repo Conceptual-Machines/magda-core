@@ -211,6 +211,7 @@ set(DAW_CORE_SOURCES
     core/TrackPropertyCommands.cpp
     core/AutomationCommands.cpp
     core/MidiNoteCommands.cpp
+    core/ParameterInfo.cpp
     core/ParameterUtils.cpp
     core/ParameterDetector.cpp
     engine/TracktionEngineWrapper.cpp

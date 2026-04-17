@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <memory>
 #include <vector>
 
 namespace magda {
@@ -82,6 +83,17 @@ struct ParameterInfo {
     // Index i corresponds to normalized value i/(size-1).
     // Used by the UI formatter instead of computing from scale/range.
     std::vector<juce::String> valueTable;
+
+    // Live display text provider — queries the plugin through TrackManager
+    // at call time so the lookup is always safe (returns empty if device is
+    // gone). Preferred over valueTable when set — exact values, no quantization.
+    // Shared so ParameterInfo copies remain cheap.
+    struct DisplayTextProvider {
+        int deviceId = -1;
+        int paramIndex = -1;
+        juce::String format(float normalizedValue) const;
+    };
+    std::shared_ptr<DisplayTextProvider> displayText;
 
     // Modulation constraints
     bool modulatable = true;         // Can mods affect this parameter?

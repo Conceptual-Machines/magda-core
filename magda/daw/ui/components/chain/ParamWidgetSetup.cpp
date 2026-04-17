@@ -1,11 +1,44 @@
 #include "ParamWidgetSetup.hpp"
 
+#include <cmath>
+#include <limits>
+
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
 void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& info) {
+    // Live plugin display text — exact values, no quantization.
+    if (info.displayText) {
+        auto provider = info.displayText;
+        slider.setValueFormatter([provider](double normalized) {
+            return provider->format(static_cast<float>(normalized));
+        });
+        // Reverse-lookup parser: strip unit suffix, parse number, find closest
+        // normalized value by querying the plugin at sample points.
+        slider.setValueParser([provider](const juce::String& text) -> double {
+            auto stripped = text.trim().retainCharacters("0123456789.-+eE");
+            double target = stripped.getDoubleValue();
+            int bestIdx = 0;
+            double bestDist = std::numeric_limits<double>::max();
+            constexpr int kSteps = 128;
+            for (int i = 0; i <= kSteps; ++i) {
+                float norm = static_cast<float>(i) / kSteps;
+                auto numPart = provider->format(norm).trim().retainCharacters("0123456789.-+eE");
+                if (numPart.isEmpty())
+                    continue;
+                double dist = std::abs(numPart.getDoubleValue() - target);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIdx = i;
+                }
+            }
+            return static_cast<double>(bestIdx) / kSteps;
+        });
+        return;
+    }
+
     // If we have a full value table from the plugin, use it directly
     if (!info.valueTable.empty()) {
         slider.setValueFormatter([vt = info.valueTable](double normalized) {
@@ -13,8 +46,26 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
                                    static_cast<int>(std::round(normalized * (vt.size() - 1))));
             return vt[static_cast<size_t>(idx)].trim();
         });
-        // No parser — editing raw plugin display text doesn't make sense
-        slider.setValueParser(nullptr);
+        // Reverse-lookup parser: strip any unit suffix, parse the number,
+        // then find the closest value table entry by numeric distance.
+        slider.setValueParser([vt = info.valueTable](const juce::String& text) -> double {
+            auto stripped = text.trim().retainCharacters("0123456789.-+eE");
+            double target = stripped.getDoubleValue();
+            int bestIdx = 0;
+            double bestDist = std::numeric_limits<double>::max();
+            for (int i = 0; i < static_cast<int>(vt.size()); ++i) {
+                auto numPart =
+                    vt[static_cast<size_t>(i)].trim().retainCharacters("0123456789.-+eE");
+                if (numPart.isEmpty())
+                    continue;
+                double dist = std::abs(numPart.getDoubleValue() - target);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIdx = i;
+                }
+            }
+            return static_cast<double>(bestIdx) / juce::jmax(1, static_cast<int>(vt.size()) - 1);
+        });
         return;
     }
 

@@ -89,9 +89,17 @@ class TextSlider : public juce::Component,
         skewFactor_ = 1.0;
         if (info.scaleAnchor > info.minValue && info.scaleAnchor < info.maxValue &&
             info.maxValue > info.minValue) {
-            double linRatio = (info.scaleAnchor - info.minValue) / (info.maxValue - info.minValue);
-            if (linRatio > 0.0 && linRatio < 1.0)
-                skewFactor_ = std::log(0.5) / std::log(linRatio);
+            // Use log-space anchor ratio for logarithmic params to match
+            // ParameterUtils::normalizedToReal/realToNormalized.
+            double anchorRatio;
+            if (info.scale == magda::ParameterScale::Logarithmic && info.minValue > 0.0f) {
+                anchorRatio = std::log(static_cast<double>(info.scaleAnchor) / info.minValue) /
+                              std::log(static_cast<double>(info.maxValue) / info.minValue);
+            } else {
+                anchorRatio = (info.scaleAnchor - info.minValue) / (info.maxValue - info.minValue);
+            }
+            if (anchorRatio > 0.0 && anchorRatio < 1.0)
+                skewFactor_ = std::log(0.5) / std::log(anchorRatio);
         }
 
         paramInfoCopy_ = info;

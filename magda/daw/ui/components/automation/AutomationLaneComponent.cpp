@@ -499,9 +499,6 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
             drawLabelAtRealValue(static_cast<double>(i), paramInfo.choices[static_cast<size_t>(i)]);
         }
     } else {
-        // Default: scale labels in the parameter's own units. For bipolar
-        // parameters (range straddles zero, e.g. EQ gain ±20 dB) anchor the
-        // labels on the real value so the 0-line lands exactly mid-lane.
         std::vector<double> realValuesForLabels;
 
         if (paramInfo.isBipolar()) {
@@ -531,19 +528,26 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
             if (labelBounds.getBottom() > area.getBottom())
                 labelBounds.setY(area.getBottom() - 10);
 
-            // Show the real value; append the unit when the parameter has one,
-            // otherwise fall back to "%" so unit-less params still read as a
-            // percentage rather than a bare number. For bipolar params show the
-            // sign so +/- is unambiguous.
-            juce::String numberText;
-            if (paramInfo.isBipolar() && std::abs(clamped) > 0.001) {
-                numberText = (clamped > 0 ? "+" : "-") +
-                             juce::String(static_cast<int>(std::round(std::abs(clamped))));
-            } else {
-                numberText = juce::String(static_cast<int>(std::round(clamped)));
+            // Show the real value using the plugin's display text if available,
+            // otherwise unit or fallback percentage.
+            juce::String label;
+            if (!paramInfo.valueTable.empty()) {
+                int idx = juce::jlimit(
+                    0, static_cast<int>(paramInfo.valueTable.size()) - 1,
+                    static_cast<int>(std::round(normValue * (paramInfo.valueTable.size() - 1))));
+                label = paramInfo.valueTable[static_cast<size_t>(idx)].trim();
             }
-            juce::String label =
-                numberText + (paramInfo.unit.isNotEmpty() ? paramInfo.unit : juce::String("%"));
+            if (label.isEmpty()) {
+                juce::String numberText;
+                if (paramInfo.isBipolar() && std::abs(clamped) > 0.001) {
+                    numberText = (clamped > 0 ? "+" : "-") +
+                                 juce::String(static_cast<int>(std::round(std::abs(clamped))));
+                } else {
+                    numberText = juce::String(static_cast<int>(std::round(clamped)));
+                }
+                label =
+                    numberText + (paramInfo.unit.isNotEmpty() ? paramInfo.unit : juce::String("%"));
+            }
 
             g.drawText(label, labelBounds, juce::Justification::centredRight);
             g.drawHorizontalLine(y, static_cast<float>(area.getRight() - 4),
@@ -599,12 +603,33 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
         return "C";
     }
 
+    DBG("[LANE-FMT] norm=" << normalizedValue << " real=" << realValue << " unit='"
+                           << paramInfo.unit << "'"
+                           << " vtSize=" << paramInfo.valueTable.size()
+                           << " scale=" << static_cast<int>(paramInfo.scale)
+                           << " lane=" << lane->getDisplayName());
+
+    // Live plugin display text — exact, no quantization.
+    if (paramInfo.displayText) {
+        auto text = paramInfo.displayText->format(static_cast<float>(normalizedValue));
+        if (text.isNotEmpty())
+            return text;
+    }
+
+    // Value table fallback.
+    if (!paramInfo.valueTable.empty()) {
+        int idx = juce::jlimit(0, static_cast<int>(paramInfo.valueTable.size()) - 1,
+                               static_cast<int>(std::round(static_cast<float>(normalizedValue) *
+                                                           (paramInfo.valueTable.size() - 1))));
+        auto text = paramInfo.valueTable[static_cast<size_t>(idx)].trim();
+        if (text.isNotEmpty())
+            return text;
+    }
+
     // Generic: show the real value in the parameter's unit.
     // Fall back to percentage only for unit-less parameters.
     if (paramInfo.unit.isNotEmpty()) {
         int rounded = static_cast<int>(std::round(realValue));
-        // For bipolar params prepend a '+' on positive values so +/- is
-        // unambiguous (negative already gets a '-' from juce::String).
         juce::String numberText;
         if (paramInfo.isBipolar() && rounded > 0)
             numberText = "+" + juce::String(rounded);

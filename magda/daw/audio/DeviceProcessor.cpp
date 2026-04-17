@@ -28,13 +28,22 @@ ParameterInfo makeInfoFromTeParam(int index, te::AutomatableParameter* param) {
         return info;
 
     info.name = param->getParameterName();
-    info.unit = param->getLabel();
 
     auto range = param->getValueRange();
     info.minValue = range.getStart();
     info.maxValue = range.getEnd();
     info.defaultValue = param->getDefaultValue().value_or(range.getStart());
     info.currentValue = param->getCurrentValue();
+
+    // Only adopt the plugin's unit label when the range is a real range
+    // (not normalized 0..1). External plugins (VST3/AU) often report
+    // labels like "Hz" or "dB" even though their parameter operates in
+    // normalized space. Using that label with a 0..1 range causes the
+    // Hz/dB formatter to produce garbage (e.g. 0 * pow(1/0, x)).
+    bool isNormalizedRange = (info.minValue >= -0.01f && info.minValue <= 0.01f &&
+                              info.maxValue >= 0.99f && info.maxValue <= 1.01f);
+    if (!isNormalizedRange)
+        info.unit = param->getLabel();
 
     // Infer scale from TE's state count: a small state count indicates a
     // discrete/enum parameter (e.g. filter slope), everything else is
@@ -80,6 +89,15 @@ int DeviceProcessor::getParameterCount() const {
 
 ParameterInfo DeviceProcessor::getParameterInfo(int /*index*/) const {
     return {};
+}
+
+juce::String DeviceProcessor::formatParameterValue(int index, float normalizedValue) const {
+    if (!plugin_)
+        return {};
+    auto params = plugin_->getAutomatableParameters();
+    if (index < 0 || index >= static_cast<int>(params.size()))
+        return {};
+    return params[index]->valueToString(normalizedValue);
 }
 
 void DeviceProcessor::populateParameters(DeviceInfo& info) const {
@@ -1493,7 +1511,22 @@ ParameterInfo ExternalPluginProcessor::getParameterInfo(int index) const {
     auto params = ext->getAutomatableParameters();
     if (index < 0 || index >= static_cast<int>(params.size()))
         return {};
-    return makeInfoFromTeParam(index, params[static_cast<size_t>(index)]);
+
+    auto* param = params[static_cast<size_t>(index)];
+    auto info = makeInfoFromTeParam(index, param);
+
+    // Live display text provider: all display paths (param grid, automation
+    // lane, curve tooltip) query the plugin's valueToString() at call time
+    // through a safe TrackManager → AudioBridge → Processor lookup. No
+    // dangling pointers, no stale sampled tables, exact values.
+    if (info.valueTable.empty()) {
+        auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
+        provider->deviceId = getDeviceId();
+        provider->paramIndex = index;
+        info.displayText = std::move(provider);
+    }
+
+    return info;
 }
 
 void ExternalPluginProcessor::populateParameters(DeviceInfo& info) const {
