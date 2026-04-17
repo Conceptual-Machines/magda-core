@@ -708,7 +708,6 @@ te::VirtualMidiInputDevice* AudioBridge::getQwertyMidiDevice() {
         }
 
         if (qwertyMidiDevice_) {
-            qwertyMidiDevice_->setEnabled(true);
             DBG("QWERTY virtual MIDI device ready");
         }
     }

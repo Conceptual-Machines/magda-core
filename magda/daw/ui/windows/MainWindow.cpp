@@ -207,6 +207,15 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
                 addKeyListener(kb);
             else
                 removeKeyListener(kb);
+
+            // Enable/disable the virtual MIDI device so it only appears
+            // in the MIDI input routing menu while the keyboard is active.
+            if (auto* engine = mainComponent->getAudioEngine()) {
+                if (auto* bridge = engine->getAudioBridge()) {
+                    if (auto* vmd = bridge->getQwertyMidiDevice())
+                        vmd->setEnabled(enabled);
+                }
+            }
             DBG("QWERTY keyboard " << (enabled ? "ON" : "OFF"));
         };
     }
