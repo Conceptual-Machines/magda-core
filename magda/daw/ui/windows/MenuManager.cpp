@@ -1,6 +1,7 @@
 #include "MenuManager.hpp"
 
 #include "Config.hpp"
+#include "core/StringTable.hpp"
 #include "core/UndoManager.hpp"
 
 namespace magda {
@@ -43,197 +44,242 @@ void MenuManager::updateMenuStates(bool canUndo, bool canRedo, bool hasSelection
 }
 
 juce::StringArray MenuManager::getMenuBarNames() {
-    return {"File", "Edit", "View", "Transport", "Track", "Settings", "Window", "Help"};
+    return {tr("menu.file"),  tr("menu.edit"),     tr("menu.view"),   tr("menu.transport"),
+            tr("menu.track"), tr("menu.settings"), tr("menu.window"), tr("menu.help")};
 }
 
-juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex, const juce::String& menuName) {
+juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
+                                             const juce::String& /*menuName*/) {
     juce::PopupMenu menu;
 
-    if (menuName == "File") {
-        menu.addItem(NewProject, "New Project", true, false);
-        menu.addSeparator();
-        menu.addItem(OpenProject, "Open Project...", true, false);
-
-        // Open Recent submenu
+    switch (topLevelMenuIndex) {
+        case 0:  // File
         {
-            juce::PopupMenu recentMenu;
-            auto recentPaths = Config::getInstance().getRecentProjects();
-            if (recentPaths.empty()) {
-                recentMenu.addItem(0, "(No Recent Projects)", false, false);
-            } else {
-                int idx = 0;
-                for (const auto& path : recentPaths) {
-                    if (idx >= 10)
-                        break;
-                    auto name = juce::File(juce::String(path)).getFileNameWithoutExtension();
-                    recentMenu.addItem(RecentProjectBase + idx, name, true, false);
-                    ++idx;
+            menu.addItem(NewProject, tr("menu.file.new_project"), true, false);
+            menu.addSeparator();
+            menu.addItem(OpenProject, tr("menu.file.open_project"), true, false);
+
+            // Open Recent submenu
+            {
+                juce::PopupMenu recentMenu;
+                auto recentPaths = Config::getInstance().getRecentProjects();
+                if (recentPaths.empty()) {
+                    recentMenu.addItem(0, tr("menu.file.no_recent"), false, false);
+                } else {
+                    int idx = 0;
+                    for (const auto& path : recentPaths) {
+                        if (idx >= 10)
+                            break;
+                        auto name = juce::File(juce::String(path)).getFileNameWithoutExtension();
+                        recentMenu.addItem(RecentProjectBase + idx, name, true, false);
+                        ++idx;
+                    }
+                    recentMenu.addSeparator();
+                    recentMenu.addItem(RecentProjectBase + 10, tr("menu.file.clear_recent"), true,
+                                       false);
                 }
-                recentMenu.addSeparator();
-                recentMenu.addItem(RecentProjectBase + 10, "Clear Recent Projects", true, false);
+                menu.addSubMenu(tr("menu.file.open_recent"), recentMenu);
             }
-            menu.addSubMenu("Open Recent", recentMenu);
-        }
 
-        menu.addItem(CloseProject, "Close Project", true, false);
-        menu.addSeparator();
-        menu.addItem(SaveProject, "Save Project", true, false);
-        menu.addItem(SaveProjectAs, "Save Project As...", true, false);
-        menu.addSeparator();
-        menu.addItem(ExportAudio, "Export Audio...", true, false);
-        menu.addItem(ExportMidi, "Export MIDI...", true, false);
+            menu.addItem(CloseProject, tr("menu.file.close_project"), true, false);
+            menu.addSeparator();
+            menu.addItem(SaveProject, tr("menu.file.save_project"), true, false);
+            menu.addItem(SaveProjectAs, tr("menu.file.save_project_as"), true, false);
+            menu.addSeparator();
+            menu.addItem(ExportAudio, tr("menu.file.export_audio"), true, false);
+            menu.addItem(ExportMidi, tr("menu.file.export_midi"), true, false);
 
 #if !JUCE_MAC
-        menu.addSeparator();
-        menu.addItem(Quit, "Quit", true, false);
+            menu.addSeparator();
+            menu.addItem(Quit, tr("menu.file.quit"), true, false);
 #endif
-    } else if (menuName == "Edit") {
-        // Get undo/redo state directly from UndoManager for accurate descriptions
-        auto& undoManager = UndoManager::getInstance();
-        bool canUndo = undoManager.canUndo();
-        bool canRedo = undoManager.canRedo();
-
-        // Build undo menu item with description
-        juce::String undoText = "Undo";
-        if (canUndo) {
-            juce::String desc = undoManager.getUndoDescription();
-            if (desc.isNotEmpty()) {
-                undoText = "Undo " + desc;
-            }
+            break;
         }
 
-        // Build redo menu item with description
-        juce::String redoText = "Redo";
-        if (canRedo) {
-            juce::String desc = undoManager.getRedoDescription();
-            if (desc.isNotEmpty()) {
-                redoText = "Redo " + desc;
+        case 1:  // Edit
+        {
+            // Get undo/redo state directly from UndoManager for accurate descriptions
+            auto& undoManager = UndoManager::getInstance();
+            bool canUndo = undoManager.canUndo();
+            bool canRedo = undoManager.canRedo();
+
+            // Build undo menu item with description
+            juce::String undoText = tr("menu.edit.undo");
+            if (canUndo) {
+                juce::String desc = undoManager.getUndoDescription();
+                if (desc.isNotEmpty()) {
+                    undoText = tr("menu.edit.undo") + " " + desc;
+                }
             }
-        }
+
+            // Build redo menu item with description
+            juce::String redoText = tr("menu.edit.redo");
+            if (canRedo) {
+                juce::String desc = undoManager.getRedoDescription();
+                if (desc.isNotEmpty()) {
+                    redoText = tr("menu.edit.redo") + " " + desc;
+                }
+            }
 
 #if JUCE_MAC
-        menu.addItem(Undo, undoText + juce::String::fromUTF8("\t\u2318Z"), canUndo, false);
-        menu.addItem(Redo, redoText + juce::String::fromUTF8("\t\u21E7\u2318Z"), canRedo, false);
-        menu.addSeparator();
-        menu.addItem(Cut, juce::String("Cut") + juce::String::fromUTF8("\t\u2318X"), hasSelection_,
-                     false);
-        menu.addItem(Copy, juce::String("Copy") + juce::String::fromUTF8("\t\u2318C"),
-                     hasSelection_, false);
-        menu.addItem(Paste, juce::String("Paste") + juce::String::fromUTF8("\t\u2318V"), true,
-                     false);
-        menu.addItem(Duplicate, juce::String("Duplicate") + juce::String::fromUTF8("\t\u2318D"),
-                     hasSelection_, false);
-        menu.addItem(Delete, juce::String("Delete") + juce::String::fromUTF8("\t\u232B"),
-                     hasSelection_, false);
-        menu.addSeparator();
-        menu.addItem(SplitOrTrim,
-                     juce::String("Split / Trim") + juce::String::fromUTF8("\t\u2318E"), true,
-                     false);
-        menu.addItem(JoinClips, juce::String("Join Clips") + juce::String::fromUTF8("\t\u2318J"),
-                     hasSelection_, false);
-        menu.addSeparator();
-        menu.addItem(RenderClip,
-                     juce::String("Render Selected Clip(s)") + juce::String::fromUTF8("\t\u2318B"),
-                     hasSelection_, false);
-        menu.addItem(RenderTimeSelection,
-                     juce::String("Render Time Selection") +
-                         juce::String::fromUTF8("\t\u21E7\u2318B"),
-                     true, false);
-        menu.addSeparator();
-        menu.addItem(SelectAll, juce::String("Select All") + juce::String::fromUTF8("\t\u2318A"),
-                     true, false);
+            menu.addItem(Undo, undoText + juce::String::fromUTF8("\t\u2318Z"), canUndo, false);
+            menu.addItem(Redo, redoText + juce::String::fromUTF8("\t\u21E7\u2318Z"), canRedo,
+                         false);
+            menu.addSeparator();
+            menu.addItem(Cut, tr("menu.edit.cut") + juce::String::fromUTF8("\t\u2318X"),
+                         hasSelection_, false);
+            menu.addItem(Copy, tr("menu.edit.copy") + juce::String::fromUTF8("\t\u2318C"),
+                         hasSelection_, false);
+            menu.addItem(Paste, tr("menu.edit.paste") + juce::String::fromUTF8("\t\u2318V"), true,
+                         false);
+            menu.addItem(Duplicate, tr("menu.edit.duplicate") + juce::String::fromUTF8("\t\u2318D"),
+                         hasSelection_, false);
+            menu.addItem(Delete, tr("menu.edit.delete") + juce::String::fromUTF8("\t\u232B"),
+                         hasSelection_, false);
+            menu.addSeparator();
+            menu.addItem(SplitOrTrim,
+                         tr("menu.edit.split_trim") + juce::String::fromUTF8("\t\u2318E"), true,
+                         false);
+            menu.addItem(JoinClips,
+                         tr("menu.edit.join_clips") + juce::String::fromUTF8("\t\u2318J"),
+                         hasSelection_, false);
+            menu.addSeparator();
+            menu.addItem(RenderClip,
+                         tr("menu.edit.render_clip") + juce::String::fromUTF8("\t\u2318B"),
+                         hasSelection_, false);
+            menu.addItem(RenderTimeSelection,
+                         tr("menu.edit.render_time_selection") +
+                             juce::String::fromUTF8("\t\u21E7\u2318B"),
+                         true, false);
+            menu.addSeparator();
+            menu.addItem(SelectAll,
+                         tr("menu.edit.select_all") + juce::String::fromUTF8("\t\u2318A"), true,
+                         false);
 #else
-        menu.addItem(Undo, undoText + "\tCtrl+Z", canUndo, false);
-        menu.addItem(Redo, redoText + "\tCtrl+Shift+Z", canRedo, false);
-        menu.addSeparator();
-        menu.addItem(Cut, "Cut\tCtrl+X", hasSelection_, false);
-        menu.addItem(Copy, "Copy\tCtrl+C", hasSelection_, false);
-        menu.addItem(Paste, "Paste\tCtrl+V", true, false);
-        menu.addItem(Duplicate, "Duplicate\tCtrl+D", hasSelection_, false);
-        menu.addItem(Delete, "Delete\tDelete", hasSelection_, false);
-        menu.addSeparator();
-        menu.addItem(SplitOrTrim, "Split / Trim\tCtrl+E", true, false);
-        menu.addItem(JoinClips, "Join Clips\tCtrl+J", hasSelection_, false);
-        menu.addSeparator();
-        menu.addItem(RenderClip, "Render Selected Clip(s)\tCtrl+B", hasSelection_, false);
-        menu.addItem(RenderTimeSelection, "Render Time Selection\tCtrl+Shift+B", true, false);
-        menu.addSeparator();
-        menu.addItem(SelectAll, "Select All\tCtrl+A", true, false);
+            menu.addItem(Undo, undoText + "\tCtrl+Z", canUndo, false);
+            menu.addItem(Redo, redoText + "\tCtrl+Shift+Z", canRedo, false);
+            menu.addSeparator();
+            menu.addItem(Cut, tr("menu.edit.cut") + "\tCtrl+X", hasSelection_, false);
+            menu.addItem(Copy, tr("menu.edit.copy") + "\tCtrl+C", hasSelection_, false);
+            menu.addItem(Paste, tr("menu.edit.paste") + "\tCtrl+V", true, false);
+            menu.addItem(Duplicate, tr("menu.edit.duplicate") + "\tCtrl+D", hasSelection_, false);
+            menu.addItem(Delete, tr("menu.edit.delete") + "\tDelete", hasSelection_, false);
+            menu.addSeparator();
+            menu.addItem(SplitOrTrim, tr("menu.edit.split_trim") + "\tCtrl+E", true, false);
+            menu.addItem(JoinClips, tr("menu.edit.join_clips") + "\tCtrl+J", hasSelection_, false);
+            menu.addSeparator();
+            menu.addItem(RenderClip, tr("menu.edit.render_clip") + "\tCtrl+B", hasSelection_,
+                         false);
+            menu.addItem(RenderTimeSelection,
+                         tr("menu.edit.render_time_selection") + "\tCtrl+Shift+B", true, false);
+            menu.addSeparator();
+            menu.addItem(SelectAll, tr("menu.edit.select_all") + "\tCtrl+A", true, false);
 #endif
 #if !JUCE_MAC
-        menu.addSeparator();
-        menu.addItem(Preferences, "Preferences...", true, false);
+            menu.addSeparator();
+            menu.addItem(Preferences, tr("menu.settings.preferences"), true, false);
 #endif
-    } else if (menuName == "Settings") {
-        menu.addItem(Preferences, "Preferences...", true, false);
-        menu.addSeparator();
-        menu.addItem(AISettings, "AI Settings...", true, false);
-        menu.addSeparator();
-        menu.addItem(AudioSettings, "Audio/MIDI Settings...", true, false);
-        menu.addSeparator();
-        menu.addItem(PluginSettings, "Plugin Settings...", true, false);
-    } else if (menuName == "View") {
-        menu.addItem(ShowTrackManager, "Track Manager...", true, false);
-        menu.addSeparator();
-        bool headersOnRight = Config::getInstance().getScrollbarOnLeft();
-        menu.addItem(ToggleScrollbarPosition, "Headers on the Right", true, headersOnRight);
-        menu.addSeparator();
-        menu.addItem(ZoomIn, "Zoom In", true, false);
-        menu.addItem(ZoomOut, "Zoom Out", true, false);
-        menu.addItem(ZoomToFit, "Zoom to Fit", true, false);
-        menu.addItem(ZoomLoopToFit, "Zoom Loop to Fit", true, false);
-        menu.addItem(ZoomSelectionToFit, "Zoom Selection to Fit", true, false);
-        menu.addSeparator();
-        menu.addItem(ToggleFullscreen, "Enter Full Screen", true, false);
-    } else if (menuName == "Transport") {
-        menu.addItem(Play, isPlaying_ ? "Pause" : "Play", true, false);
-        menu.addItem(Stop, "Stop", true, false);
-        menu.addItem(Record, "Record", true, isRecording_);
-        menu.addSeparator();
-        menu.addItem(ToggleLoop, "Loop", true, isLooping_);
-        menu.addSeparator();
-        menu.addItem(GoToStart, "Go to Start", true, false);
-        menu.addItem(GoToEnd, "Go to End", true, false);
-    } else if (menuName == "Track") {
+            break;
+        }
+
+        case 2:  // View
+        {
+            menu.addItem(ShowTrackManager, tr("menu.view.track_manager"), true, false);
+            menu.addSeparator();
+            bool headersOnRight = Config::getInstance().getScrollbarOnLeft();
+            menu.addItem(ToggleScrollbarPosition, tr("menu.view.headers_right"), true,
+                         headersOnRight);
+            menu.addSeparator();
+            menu.addItem(ZoomIn, tr("menu.view.zoom_in"), true, false);
+            menu.addItem(ZoomOut, tr("menu.view.zoom_out"), true, false);
+            menu.addItem(ZoomToFit, tr("menu.view.zoom_to_fit"), true, false);
+            menu.addItem(ZoomLoopToFit, tr("menu.view.zoom_loop"), true, false);
+            menu.addItem(ZoomSelectionToFit, tr("menu.view.zoom_selection"), true, false);
+            menu.addSeparator();
+            menu.addItem(ToggleFullscreen, tr("menu.view.fullscreen"), true, false);
+            break;
+        }
+
+        case 3:  // Transport
+        {
+            menu.addItem(Play, isPlaying_ ? tr("menu.transport.pause") : tr("menu.transport.play"),
+                         true, false);
+            menu.addItem(Stop, tr("menu.transport.stop"), true, false);
+            menu.addItem(Record, tr("menu.transport.record"), true, isRecording_);
+            menu.addSeparator();
+            menu.addItem(ToggleLoop, tr("menu.transport.loop"), true, isLooping_);
+            menu.addSeparator();
+            menu.addItem(GoToStart, tr("menu.transport.go_to_start"), true, false);
+            menu.addItem(GoToEnd, tr("menu.transport.go_to_end"), true, false);
+            break;
+        }
+
+        case 4:  // Track
+        {
 #if JUCE_MAC
-        menu.addItem(AddTrack, juce::String("Add Track") + juce::String::fromUTF8("\t\u2318T"),
-                     true, false);
-        menu.addItem(AddGroupTrack,
-                     juce::String("Add Group Track") + juce::String::fromUTF8("\t\u21E7\u2318T"),
-                     true, false);
-        menu.addItem(AddAuxTrack, "Add Aux Track", true, false);
-        menu.addSeparator();
-        menu.addItem(DeleteTrack, juce::String("Delete Track") + juce::String::fromUTF8("\t\u232B"),
-                     true, false);
-        menu.addItem(DuplicateTrack,
-                     juce::String("Duplicate Track") + juce::String::fromUTF8("\t\u2318D"), true,
-                     false);
-        menu.addItem(DuplicateTrackNoContent,
-                     juce::String("Duplicate Track Without Content") +
-                         juce::String::fromUTF8("\t\u21E7\u2318D"),
-                     true, false);
+            menu.addItem(AddTrack, tr("menu.track.add_track") + juce::String::fromUTF8("\t\u2318T"),
+                         true, false);
+            menu.addItem(AddGroupTrack,
+                         tr("menu.track.add_group") + juce::String::fromUTF8("\t\u21E7\u2318T"),
+                         true, false);
+            menu.addItem(AddAuxTrack, tr("menu.track.add_aux"), true, false);
+            menu.addSeparator();
+            menu.addItem(DeleteTrack, tr("menu.track.delete") + juce::String::fromUTF8("\t\u232B"),
+                         true, false);
+            menu.addItem(DuplicateTrack,
+                         tr("menu.track.duplicate") + juce::String::fromUTF8("\t\u2318D"), true,
+                         false);
+            menu.addItem(DuplicateTrackNoContent,
+                         tr("menu.track.duplicate_no_content") +
+                             juce::String::fromUTF8("\t\u21E7\u2318D"),
+                         true, false);
 #else
-        menu.addItem(AddTrack, "Add Track\tCtrl+T", true, false);
-        menu.addItem(AddGroupTrack, "Add Group Track\tCtrl+Shift+T", true, false);
-        menu.addItem(AddAuxTrack, "Add Aux Track", true, false);
-        menu.addSeparator();
-        menu.addItem(DeleteTrack, "Delete Track\tDelete", true, false);
-        menu.addItem(DuplicateTrack, "Duplicate Track\tCtrl+D", true, false);
-        menu.addItem(DuplicateTrackNoContent, "Duplicate Track Without Content\tCtrl+Shift+D", true,
-                     false);
+            menu.addItem(AddTrack, tr("menu.track.add_track") + "\tCtrl+T", true, false);
+            menu.addItem(AddGroupTrack, tr("menu.track.add_group") + "\tCtrl+Shift+T", true, false);
+            menu.addItem(AddAuxTrack, tr("menu.track.add_aux"), true, false);
+            menu.addSeparator();
+            menu.addItem(DeleteTrack, tr("menu.track.delete") + "\tDelete", true, false);
+            menu.addItem(DuplicateTrack, tr("menu.track.duplicate") + "\tCtrl+D", true, false);
+            menu.addItem(DuplicateTrackNoContent,
+                         tr("menu.track.duplicate_no_content") + "\tCtrl+Shift+D", true, false);
 #endif
-        menu.addSeparator();
-        menu.addItem(MuteTrack, "Mute Track\tM", true, false);
-        menu.addItem(SoloTrack, "Solo Track\tS", true, false);
-    } else if (menuName == "Window") {
-        menu.addItem(Minimize, "Minimize", true, false);
-        menu.addItem(Zoom, "Zoom", true, false);
-        menu.addSeparator();
-        menu.addItem(BringAllToFront, "Bring All to Front", true, false);
-    } else if (menuName == "Help") {
-        menu.addItem(OpenManual, "Online Manual", true, false);
-        menu.addSeparator();
-        menu.addItem(About, "About MAGDA", true, false);
+            menu.addSeparator();
+            menu.addItem(MuteTrack, tr("menu.track.mute") + "\tM", true, false);
+            menu.addItem(SoloTrack, tr("menu.track.solo") + "\tS", true, false);
+            break;
+        }
+
+        case 5:  // Settings
+        {
+            menu.addItem(Preferences, tr("menu.settings.preferences"), true, false);
+            menu.addSeparator();
+            menu.addItem(AISettings, tr("menu.settings.ai"), true, false);
+            menu.addSeparator();
+            menu.addItem(AudioSettings, tr("menu.settings.audio_midi"), true, false);
+            menu.addSeparator();
+            menu.addItem(PluginSettings, tr("menu.settings.plugins"), true, false);
+            break;
+        }
+
+        case 6:  // Window
+        {
+            menu.addItem(Minimize, tr("menu.window.minimize"), true, false);
+            menu.addItem(Zoom, tr("menu.window.zoom"), true, false);
+            menu.addSeparator();
+            menu.addItem(BringAllToFront, tr("menu.window.bring_to_front"), true, false);
+            break;
+        }
+
+        case 7:  // Help
+        {
+            menu.addItem(OpenManual, tr("menu.help.manual"), true, false);
+            menu.addSeparator();
+            menu.addItem(About, tr("menu.help.about"), true, false);
+            break;
+        }
+
+        default:
+            break;
     }
 
     return menu;
