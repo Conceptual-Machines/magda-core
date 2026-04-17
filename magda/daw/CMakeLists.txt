@@ -81,6 +81,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/transport/punchout_on.svg
     ../../assets/icons/transport/automation_off.svg
     ../../assets/icons/transport/automation_on.svg
+    ../../assets/icons/transport/midi_qwerty_off.svg
+    ../../assets/icons/transport/midi_qwerty_on.svg
     # Inspector icons
     ../../assets/icons/inspector/infinito.svg
     ../../assets/icons/inspector/position.svg
@@ -234,6 +236,7 @@ set(DAW_CORE_SOURCES
     audio/DeviceMeteringManager.cpp
     audio/DeviceProcessor.cpp
     audio/MidiBridge.cpp
+    audio/QwertyMidiKeyboard.cpp
     audio/SessionClipScheduler.cpp
     audio/SessionClipAudioMonitor.cpp
     audio/SessionMonitorPlugin.cpp

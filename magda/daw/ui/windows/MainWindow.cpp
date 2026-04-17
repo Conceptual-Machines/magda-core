@@ -22,6 +22,7 @@
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
 #include "audio/AudioBridge.hpp"
+#include "audio/QwertyMidiKeyboard.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ModulatorEngine.hpp"
@@ -193,6 +194,23 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     // focus after track creation.
     addKeyListener(mainComponent->getCommandManager().getKeyMappings());
 
+    // Wire QWERTY keyboard toggle to register/unregister on THIS window
+    if (mainComponent->getQwertyKeyboard()) {
+        mainComponent->transportPanel->onQwertyKeyboardToggled = [this](bool enabled) {
+            if (!mainComponent)
+                return;
+            auto* kb = mainComponent->getQwertyKeyboard();
+            if (!kb)
+                return;
+            kb->setEnabled(enabled);
+            if (enabled)
+                addKeyListener(kb);
+            else
+                removeKeyListener(kb);
+            DBG("QWERTY keyboard " << (enabled ? "ON" : "OFF"));
+        };
+    }
+
     // Setup menu bar
     juce::Logger::writeToLog("[MainWindow] Setting up menu bar...");
     setupMenuBar();
@@ -225,6 +243,15 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
 
 MainWindow::~MainWindow() {
     DBG("  [5a] MainWindow::~MainWindow start");
+
+    // Remove QWERTY keyboard listener from this window before content is destroyed
+    if (mainComponent) {
+        if (auto* kb = mainComponent->getQwertyKeyboard()) {
+            removeKeyListener(kb);
+            kb->setEnabled(false);
+        }
+    }
+
     ProjectManager::getInstance().removeListener(this);
 
 #if JUCE_DEBUG
@@ -781,6 +808,18 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     transportPanel->onBackToArrangement = [this]() {
         if (auto* engine = getAudioEngine())
             engine->deactivateAllSessionClips();
+    };
+
+    // QWERTY MIDI keyboard — created here, registered on MainWindow by
+    // MainWindow::finishInitialisation after setContentOwned.
+    if (auto* bridge = engine->getAudioBridge()) {
+        qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>(*bridge);
+    }
+    transportPanel->onQwertyKeyboardToggled = [this](bool enabled) {
+        if (!qwertyKeyboard_)
+            return;
+        qwertyKeyboard_->setEnabled(enabled);
+        DBG("QWERTY keyboard " << (enabled ? "enabled" : "disabled"));
     };
 
     transportPanel->onTempoChange = [this](double bpm) {

@@ -280,8 +280,13 @@ void TransportPanel::resized() {
                                         getHeight());
     }
 
+    // QWERTY keyboard toggle — just left of CPU
+    auto cpuBounds = getCpuArea();
+    qwertyKeyboardButton->setBounds(cpuBounds.getX() - buttonSize - 4, buttonY, buttonSize,
+                                    buttonSize);
+
     // CPU usage — rounded frame: header (20%) + value
-    auto cpuArea = getCpuArea().reduced(4, 3);
+    auto cpuArea = cpuBounds.reduced(4, 3);
     int headerHeight = juce::roundToInt(cpuArea.getHeight() * 0.20f);
     cpuTitleLabel->setBounds(cpuArea.removeFromTop(headerHeight));
     cpuValueLabel->setBounds(cpuArea);
@@ -473,6 +478,18 @@ void TransportPanel::setupTransportButtons() {
             onBackToArrangement();
     };
     addAndMakeVisible(*backToArrangementButton);
+
+    // QWERTY MIDI keyboard toggle
+    qwertyKeyboardButton = std::make_unique<SvgButton>(
+        "QwertyKeyboard", BinaryData::midi_qwerty_off_svg, BinaryData::midi_qwerty_off_svgSize,
+        BinaryData::midi_qwerty_on_svg, BinaryData::midi_qwerty_on_svgSize);
+    qwertyKeyboardButton->onClick = [this]() {
+        bool active = !qwertyKeyboardButton->isActive();
+        qwertyKeyboardButton->setActive(active);
+        if (onQwertyKeyboardToggled)
+            onQwertyKeyboardToggled(active);
+    };
+    addAndMakeVisible(*qwertyKeyboardButton);
 
     // Punch In button (dual-icon: off/on)
     punchInButton =
@@ -995,6 +1012,11 @@ void TransportPanel::setAutomationWriteEnabled(bool enabled) {
         if (automationWriteLabel)
             automationWriteLabel->setVisible(isAutomationWriteEnabled);
     }
+}
+
+void TransportPanel::setQwertyKeyboardEnabled(bool enabled) {
+    if (qwertyKeyboardButton)
+        qwertyKeyboardButton->setActive(enabled);
 }
 
 void TransportPanel::setPlaybackState(bool playing) {
