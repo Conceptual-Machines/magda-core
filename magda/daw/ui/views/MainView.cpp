@@ -1006,11 +1006,21 @@ void MainView::updateContentSizes() {
     auto contentWidth = juce::jmax(baseWidth, minWidth);
 
     // getTotalTracksHeight already applies verticalZoom per track, so do NOT
-    // multiply again. And DON'T jmax with the viewport height — if the two
-    // panels don't end up at the exact same content size they drift on
-    // scroll (track headers can scroll further than content, or vice versa,
-    // producing the overlap artefact on first scroll-down).
+    // multiply again.
+    // Floor to viewport height so both panels cover the full visible area —
+    // needed for DnD (plugin drops hit the panel even below the last track).
+    // Using the viewport widget height (constant for a given window size)
+    // rather than the panel's own height avoids the monotonic-growth bug
+    // that caused phantom scrollbars: when content shrinks the panel shrinks
+    // back to the viewport floor, not its own stale height.
     int contentHeight = trackHeadersPanel->getTotalTracksHeight();
+    int viewportFloor = trackContentViewport->getHeight();
+    contentHeight = juce::jmax(contentHeight, viewportFloor);
+
+    // Tell the content panel the minimum height so its own resized() (which
+    // re-computes content size from zoom/timeline) doesn't shrink below the
+    // viewport — needed for DnD to work in the empty region below tracks.
+    trackContentPanel->setMinHeight(viewportFloor);
 
     // Update timeline size with enhanced content width
     timeline->setSize(contentWidth, getTimelineHeight());

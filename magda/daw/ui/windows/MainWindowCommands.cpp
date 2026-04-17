@@ -166,10 +166,13 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
 
         // Track
         case newAudioTrack:
-            result.setInfo("New Audio Track", "Add a new audio track", "Track", 0);
+            result.setInfo("New Track", "Add a new track", "Track", 0);
+            result.addDefaultKeypress('t', juce::ModifierKeys::commandModifier);
             break;
         case newMidiTrack:
-            result.setInfo("New MIDI Track", "Add a new MIDI track", "Track", 0);
+            result.setInfo("New Group Track", "Add a new group track", "Track", 0);
+            result.addDefaultKeypress('t', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier);
             break;
         case deleteTrack:
             result.setInfo("Delete Track", "Delete selected track", "Track", 0);
@@ -870,6 +873,22 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 mainView->getTimelineController().dispatch(StopPlaybackEvent{});
             return true;
 
+        case newAudioTrack: {
+            TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+            auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, juce::String(),
+                                                            selectedTrack);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            return true;
+        }
+
+        case newMidiTrack: {
+            TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+            auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Group, juce::String(),
+                                                            selectedTrack);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            return true;
+        }
+
         default:
             return false;
     }
@@ -976,25 +995,8 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // Cmd/Ctrl+Shift+T: Add Group Track (through undo system)
-    if (key ==
-        juce::KeyPress('t', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
-                       0)) {
-        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
-        auto cmd =
-            std::make_unique<CreateTrackCommand>(TrackType::Group, juce::String(), selectedTrack);
-        UndoManager::getInstance().executeCommand(std::move(cmd));
-        return true;
-    }
-
-    // Cmd/Ctrl+T: Add Track (through undo system)
-    if (key == juce::KeyPress('t', juce::ModifierKeys::commandModifier, 0)) {
-        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
-        auto cmd =
-            std::make_unique<CreateTrackCommand>(TrackType::Audio, juce::String(), selectedTrack);
-        UndoManager::getInstance().executeCommand(std::move(cmd));
-        return true;
-    }
+    // Cmd+T and Cmd+Shift+T are now handled by the command manager
+    // (newAudioTrack / newMidiTrack) — no raw keyPressed handler needed.
 
     // Delete or Backspace: Delete selected track(s) (through undo system)
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) {

@@ -296,11 +296,7 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
     // Draw marquee selection rectangle on top of everything
     paintMarqueeRect(g);
 
-    // Draw tint overlay for plugin drag-and-drop
-    if (showPluginDropOverlay_) {
-        g.setColour(juce::Colours::white.withAlpha(0.08f));
-        g.fillRect(getLocalBounds());
-    }
+    // Plugin drop: no content-area feedback — the track header highlight is enough
 
     // Draw drop indicator for file drag-and-drop
     if (showDropIndicator_) {
@@ -337,7 +333,7 @@ void TrackContentPanel::resized() {
     // scrollbar.
     double beats = timelineLength * tempoBPM / 60.0;
     int contentWidth = static_cast<int>(std::round(beats * currentZoom));
-    int contentHeight = getTotalTracksHeight();
+    int contentHeight = juce::jmax(getTotalTracksHeight(), minHeight_);
 
     setSize(contentWidth, contentHeight);
 
@@ -2715,22 +2711,28 @@ bool TrackContentPanel::isInterestedInDragSource(const SourceDetails& details) {
     return false;
 }
 
-void TrackContentPanel::itemDragEnter(const SourceDetails& /*details*/) {
+void TrackContentPanel::itemDragEnter(const SourceDetails& details) {
     showPluginDropOverlay_ = true;
+    pluginDropTrackIndex_ = getTrackIndexAtY(details.localPosition.y);
     repaintVisible();
 }
 
-void TrackContentPanel::itemDragMove(const SourceDetails& /*details*/) {
-    // Overlay already shown
+void TrackContentPanel::itemDragMove(const SourceDetails& details) {
+    int prev = pluginDropTrackIndex_;
+    pluginDropTrackIndex_ = getTrackIndexAtY(details.localPosition.y);
+    if (pluginDropTrackIndex_ != prev)
+        repaintVisible();
 }
 
 void TrackContentPanel::itemDragExit(const SourceDetails& /*details*/) {
     showPluginDropOverlay_ = false;
+    pluginDropTrackIndex_ = -1;
     repaintVisible();
 }
 
 void TrackContentPanel::itemDropped(const SourceDetails& details) {
     showPluginDropOverlay_ = false;
+    pluginDropTrackIndex_ = -1;
     repaintVisible();
 
     if (auto* obj = details.description.getDynamicObject()) {

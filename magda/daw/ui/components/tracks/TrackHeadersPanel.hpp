@@ -253,6 +253,7 @@ class TrackHeadersPanel : public juce::Component,
     int dropTargetIndex_ = -1;
 
     // Plugin drop state
+    bool pluginDragActive_ = false;
     int pluginDropTrackIndex_ = -1;  // -1 = empty area (new track), >= 0 = existing track
 
     // Routing device management

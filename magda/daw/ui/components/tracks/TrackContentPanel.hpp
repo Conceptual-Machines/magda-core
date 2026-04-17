@@ -376,7 +376,15 @@ class TrackContentPanel : public juce::Component,
     // Plugin Drag-and-Drop State
     // ========================================================================
     bool showPluginDropOverlay_ = false;
+    int pluginDropTrackIndex_ = -1;  // -1 = empty area (new track)
+    int minHeight_ = 0;              // Floor set by MainView so DnD works below last track
 
+  public:
+    void setMinHeight(int h) {
+        minHeight_ = h;
+    }
+
+  private:
     // ========================================================================
     // File Drag-and-Drop State
     // ========================================================================

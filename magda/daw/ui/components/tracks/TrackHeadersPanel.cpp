@@ -1289,11 +1289,27 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
     paintDragFeedback(g);
 
     // Draw plugin drop highlight
-    if (pluginDropTrackIndex_ >= 0 &&
-        pluginDropTrackIndex_ < static_cast<int>(trackHeaders.size())) {
-        auto area = getTrackHeaderArea(pluginDropTrackIndex_);
-        g.setColour(juce::Colours::white.withAlpha(0.12f));
-        g.fillRect(area);
+    if (pluginDragActive_) {
+        // Always draw a thick yellow border between the last track and
+        // master to show where a "new track" drop will land.
+        int lineY = 0;
+        for (int i = static_cast<int>(trackHeaders.size()) - 1; i >= 0; --i) {
+            if (!trackHeaders[i]->isMaster) {
+                lineY = getTrackHeaderArea(i).getBottom();
+                break;
+            }
+        }
+        g.setColour(juce::Colours::yellow.withAlpha(pluginDropTrackIndex_ < 0 ? 0.9f : 0.4f));
+        g.fillRect(0, lineY, getWidth(), 3);
+
+        if (pluginDropTrackIndex_ >= 0 &&
+            pluginDropTrackIndex_ < static_cast<int>(trackHeaders.size())) {
+            auto area = getTrackHeaderArea(pluginDropTrackIndex_);
+            g.setColour(juce::Colours::yellow.withAlpha(0.12f));
+            g.fillRect(area);
+            g.setColour(juce::Colours::yellow.withAlpha(0.6f));
+            g.drawRect(area, 1);
+        }
     }
 }
 
@@ -3525,8 +3541,11 @@ bool TrackHeadersPanel::isInterestedInDragSource(const SourceDetails& details) {
 }
 
 void TrackHeadersPanel::itemDragEnter(const SourceDetails& details) {
+    pluginDragActive_ = true;
     pluginDropTrackIndex_ = -1;
     for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
+        if (trackHeaders[i]->isMaster)
+            continue;
         if (getTrackHeaderArea(i).contains(details.localPosition)) {
             pluginDropTrackIndex_ = i;
             break;
@@ -3539,6 +3558,8 @@ void TrackHeadersPanel::itemDragMove(const SourceDetails& details) {
     int prev = pluginDropTrackIndex_;
     pluginDropTrackIndex_ = -1;
     for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
+        if (trackHeaders[i]->isMaster)
+            continue;
         if (getTrackHeaderArea(i).contains(details.localPosition)) {
             pluginDropTrackIndex_ = i;
             break;
@@ -3549,11 +3570,13 @@ void TrackHeadersPanel::itemDragMove(const SourceDetails& details) {
 }
 
 void TrackHeadersPanel::itemDragExit(const SourceDetails& /*details*/) {
+    pluginDragActive_ = false;
     pluginDropTrackIndex_ = -1;
     repaint();
 }
 
 void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
+    pluginDragActive_ = false;
     auto* obj = details.description.getDynamicObject();
     if (!obj) {
         pluginDropTrackIndex_ = -1;
@@ -3561,9 +3584,12 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
         return;
     }
 
-    // Determine which track header was dropped on
+    // Determine which track header was dropped on (skip master — dropping
+    // on master area creates a new track, same as empty space)
     int targetIndex = -1;
     for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
+        if (trackHeaders[i]->isMaster)
+            continue;
         if (getTrackHeaderArea(i).contains(details.localPosition)) {
             targetIndex = i;
             break;
