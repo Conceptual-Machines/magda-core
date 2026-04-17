@@ -97,7 +97,21 @@
     "input_monitoring": "Input monitoring",
     "input_monitoring.off": "Off",
     "input_monitoring.in": "In",
-    "input_monitoring.auto": "Auto"
+    "input_monitoring.auto": "Auto",
+    "expand_group": "Expand Group",
+    "collapse_group": "Collapse Group",
+    "move_to_group": "Move to Group",
+    "remove_from_group": "Remove from Group",
+    "add_send": "Add Send",
+    "remove_send": "Remove Send",
+    "freeze": "Freeze Track",
+    "unfreeze": "Unfreeze Track",
+    "duplicate": "Duplicate Track",
+    "duplicate_no_content": "Duplicate Track Without Content",
+    "delete": "Delete Track",
+    "show_io_routing": "Show I/O Routing",
+    "hide_io_routing": "Hide I/O Routing",
+    "remove_send_label": "Remove Send"
   },
 
   "panels": {

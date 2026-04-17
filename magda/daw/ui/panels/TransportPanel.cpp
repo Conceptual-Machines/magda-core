@@ -4,6 +4,7 @@
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "BinaryData.h"
+#include "core/StringTable.hpp"
 
 namespace magda {
 
@@ -13,7 +14,7 @@ TransportPanel::TransportPanel() {
     setupTempoAndQuantize();
 
     // CPU usage — title label + value label stacked
-    cpuTitleLabel = std::make_unique<juce::Label>("cpuTitle", "CPU");
+    cpuTitleLabel = std::make_unique<juce::Label>("cpuTitle", tr("transport.cpu.cpu"));
     cpuTitleLabel->setColour(juce::Label::textColourId,
                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     cpuTitleLabel->setFont(FontManager::getInstance().getUIFont(8.0f));
@@ -1102,22 +1103,25 @@ void TransportPanel::setAudioDeviceInfo(const juce::String& deviceName, double s
 void TransportPanel::updateCpuTooltip() {
     juce::String tip;
     if (audioDeviceName_.isNotEmpty())
-        tip << "Device: " << audioDeviceName_ << "\n";
+        tip << tr("transport.cpu.device") << ": " << audioDeviceName_ << "\n";
     if (audioSampleRate_ > 0)
-        tip << "Sample rate: " << juce::String(audioSampleRate_ / 1000.0, 1) << " kHz\n";
+        tip << tr("transport.cpu.sample_rate") << ": " << juce::String(audioSampleRate_ / 1000.0, 1)
+            << " kHz\n";
     if (audioBufferSize_ > 0) {
         double latencyMs =
             (audioSampleRate_ > 0) ? (audioBufferSize_ / audioSampleRate_) * 1000.0 : 0.0;
-        tip << "Buffer: " << audioBufferSize_ << " samples";
+        tip << tr("transport.cpu.buffer") << ": " << audioBufferSize_ << " samples";
         if (latencyMs > 0)
             tip << " (" << juce::String(latencyMs, 1) << " ms)";
         tip << "\n";
     }
-    tip << "CPU: " << juce::String(juce::roundToInt(currentCpuUsage * 100.0f)) << "%";
+    tip << tr("transport.cpu.cpu") << ": "
+        << juce::String(juce::roundToInt(currentCpuUsage * 100.0f)) << "%";
     if (peakCpuUsage > currentCpuUsage + 0.02f)
-        tip << " (peak " << juce::String(juce::roundToInt(peakCpuUsage * 100.0f)) << "%)";
+        tip << " (" << tr("transport.cpu.peak") << " "
+            << juce::String(juce::roundToInt(peakCpuUsage * 100.0f)) << "%)";
     if (currentXrunCount_ > 0)
-        tip << "\nXruns: " << currentXrunCount_;
+        tip << "\n" << tr("transport.cpu.xruns") << ": " << currentXrunCount_;
     tip = tip.trimEnd();
 
     if (tip == lastTooltip_)
@@ -1138,11 +1142,11 @@ void TransportPanel::mouseDown(const juce::MouseEvent& e) {
 
 void TransportPanel::showCountInMenu() {
     juce::PopupMenu menu;
-    menu.addItem(1, "Off", true, countInMode_ == 0);
-    menu.addItem(5, "1 Beat", true, countInMode_ == 4);
-    menu.addItem(4, "2 Beats", true, countInMode_ == 3);
-    menu.addItem(2, "1 Bar", true, countInMode_ == 1);
-    menu.addItem(3, "2 Bars", true, countInMode_ == 2);
+    menu.addItem(1, tr("transport.count_in.off"), true, countInMode_ == 0);
+    menu.addItem(5, tr("transport.count_in.1_beat"), true, countInMode_ == 4);
+    menu.addItem(4, tr("transport.count_in.2_beats"), true, countInMode_ == 3);
+    menu.addItem(2, tr("transport.count_in.1_bar"), true, countInMode_ == 1);
+    menu.addItem(3, tr("transport.count_in.2_bars"), true, countInMode_ == 2);
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(metronomeButton.get()),
                        [this](int result) {
