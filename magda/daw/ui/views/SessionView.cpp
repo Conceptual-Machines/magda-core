@@ -1293,6 +1293,10 @@ SessionView::SessionView() {
 }
 
 SessionView::~SessionView() {
+    if (audioEngine_) {
+        if (auto* mb = audioEngine_->getMidiBridge())
+            mb->removeMidiDeviceListListener(this);
+    }
     stopTimer();
     TrackManager::getInstance().removeListener(this);
     ClipManager::getInstance().removeListener(this);
@@ -2731,12 +2735,23 @@ void SessionView::setSessionPlayheadPositions(const std::unordered_map<ClipId, d
 // ============================================================================
 
 void SessionView::setAudioEngine(AudioEngine* engine) {
+    // Unregister from old engine
+    if (audioEngine_) {
+        if (auto* mb = audioEngine_->getMidiBridge())
+            mb->removeMidiDeviceListListener(this);
+    }
     audioEngine_ = engine;
     if (audioEngine_) {
+        if (auto* mb = audioEngine_->getMidiBridge())
+            mb->addMidiDeviceListListener(this);
         startTimerHz(30);  // 30Hz meter refresh
     } else {
         stopTimer();
     }
+}
+
+void SessionView::midiDeviceListChanged() {
+    juce::MessageManager::callAsync([this]() { tracksChanged(); });
 }
 
 void SessionView::timerCallback() {

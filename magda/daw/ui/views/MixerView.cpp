@@ -1290,11 +1290,25 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // debugPanel_->onMetricsChanged = [this]() { rebuildChannelStrips(); };
     // addAndMakeVisible(*debugPanel_);
 
+    // Listen for MIDI device list changes
+    if (audioEngine_) {
+        if (auto* mb = audioEngine_->getMidiBridge())
+            mb->addMidiDeviceListListener(this);
+    }
+
     // Start timer for meter animation (30fps)
     startTimer(33);
 }
 
+void MixerView::midiDeviceListChanged() {
+    juce::MessageManager::callAsync([this]() { tracksChanged(); });
+}
+
 MixerView::~MixerView() {
+    if (audioEngine_) {
+        if (auto* mb = audioEngine_->getMidiBridge())
+            mb->removeMidiDeviceListListener(this);
+    }
     stopTimer();
     TrackManager::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);

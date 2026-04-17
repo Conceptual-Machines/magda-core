@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "audio/MidiBridge.hpp"
 #include "core/ClipManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -35,7 +36,8 @@ class SessionView : public juce::Component,
                     public juce::Timer,
                     public TrackManagerListener,
                     public ClipManagerListener,
-                    public ViewModeListener {
+                    public ViewModeListener,
+                    public MidiBridge::Listener {
   public:
     SessionView();
     ~SessionView() override;
@@ -49,6 +51,7 @@ class SessionView : public juce::Component,
 
     // TrackManagerListener
     void tracksChanged() override;
+    void midiDeviceListChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
     void masterChannelChanged() override;
