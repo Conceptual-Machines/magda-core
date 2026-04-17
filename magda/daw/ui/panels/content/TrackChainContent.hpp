@@ -65,6 +65,9 @@ class TrackChainContent : public PanelContent,
     bool wantsHeader() const override {
         return true;
     }
+
+    int getOptimalPanelHeight(int windowHeight) const override;
+
     void populateHeader(juce::Component& headerBar) override;
     void depopulateHeader(juce::Component& headerBar) override;
     void layoutHeader(juce::Rectangle<int> headerBounds) override;

@@ -13,6 +13,7 @@
 #include "../common/SvgButton.hpp"
 #include "../mixer/InputTypeSelector.hpp"
 #include "../mixer/RoutingSelector.hpp"
+#include "audio/MidiBridge.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -29,7 +30,8 @@ class TrackHeadersPanel : public juce::Component,
                           public TrackManagerListener,
                           public SelectionManagerListener,
                           public ViewModeListener,
-                          public AutomationManagerListener {
+                          public AutomationManagerListener,
+                          public MidiBridge::Listener {
   public:
     static constexpr int TRACK_HEADER_WIDTH = 200;
     static constexpr int DEFAULT_TRACK_HEIGHT = 80;
@@ -58,6 +60,9 @@ class TrackHeadersPanel : public juce::Component,
     // AutomationManagerListener
     void automationLanesChanged() override;
     void automationLanePropertyChanged(AutomationLaneId laneId) override;
+
+    // MidiBridge::Listener
+    void midiDeviceListChanged() override;
     void automationValueChanged(AutomationLaneId laneId, double normalizedValue) override;
 
     // DragAndDropTarget implementation (plugin drops)

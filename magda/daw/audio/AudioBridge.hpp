@@ -309,6 +309,12 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
 
     /**
+     * @brief Get (or lazily create) the virtual MIDI input device used by
+     *        the QWERTY keyboard. Returns nullptr if creation fails.
+     */
+    te::VirtualMidiInputDevice* getQwertyMidiDevice();
+
+    /**
      * @brief Create a Tracktion AudioTrack for a MAGDA track
      * @param trackId MAGDA track ID
      * @param name Track name
@@ -733,6 +739,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // References to Tracktion Engine (not owned)
     te::Engine& engine_;
     te::Edit& edit_;
+
+    // Virtual MIDI device for QWERTY keyboard (lazily created)
+    std::shared_ptr<te::MidiInputDevice> qwertyMidiDevice_;
 
     // Bidirectional mappings
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID

@@ -59,6 +59,9 @@ class TransportPanel : public juce::Component {
                         bool punchOutEnabled);
 
     void setAutomationWriteEnabled(bool enabled);
+    void setQwertyKeyboardEnabled(bool enabled);
+
+    std::function<void(bool)> onQwertyKeyboardToggled;
 
     void mouseDown(const juce::MouseEvent& e) override;
 
@@ -99,6 +102,9 @@ class TransportPanel : public juce::Component {
 
     // Back to arrangement button
     std::unique_ptr<SvgButton> backToArrangementButton;
+
+    // QWERTY MIDI keyboard toggle
+    std::unique_ptr<SvgButton> qwertyKeyboardButton;
 
     // Punch in/out button
     std::unique_ptr<SvgButton> punchInButton;

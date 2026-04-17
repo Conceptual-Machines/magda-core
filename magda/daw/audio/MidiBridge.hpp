@@ -72,6 +72,26 @@ class MidiBridge : public juce::MidiInputCallback {
     std::vector<MidiDeviceInfo> getAvailableMidiInputs() const;
 
     /**
+     * @brief Notify listeners that the MIDI device list has changed.
+     * Call after creating/destroying virtual devices so routing selectors refresh.
+     */
+    void notifyMidiDeviceListChanged() {
+        midiDeviceListListeners_.call([](Listener& l) { l.midiDeviceListChanged(); });
+    }
+
+    struct Listener {
+        virtual ~Listener() = default;
+        virtual void midiDeviceListChanged() = 0;
+    };
+
+    void addMidiDeviceListListener(Listener* l) {
+        midiDeviceListListeners_.add(l);
+    }
+    void removeMidiDeviceListListener(Listener* l) {
+        midiDeviceListListeners_.remove(l);
+    }
+
+    /**
      * @brief Get all available MIDI output devices
      * @return Vector of device info
      */
@@ -205,6 +225,8 @@ class MidiBridge : public juce::MidiInputCallback {
     // Shutdown guard: prevents CoreMIDI callbacks from accessing destroyed state
     std::atomic<bool> isShuttingDown_{false};
     std::atomic<int> activeCallbacks_{0};
+
+    juce::ListenerList<Listener> midiDeviceListListeners_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiBridge)
 };

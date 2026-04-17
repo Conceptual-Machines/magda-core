@@ -22,12 +22,15 @@
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
 #include "audio/AudioBridge.hpp"
+#include "audio/MidiBridge.hpp"
+#include "audio/QwertyMidiKeyboard.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ModulatorEngine.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "engine/AudioEngine.hpp"
 #include "engine/PlaybackPositionTimer.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
@@ -193,6 +196,34 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     // focus after track creation.
     addKeyListener(mainComponent->getCommandManager().getKeyMappings());
 
+    // Wire QWERTY keyboard toggle to register/unregister on THIS window
+    if (mainComponent->getQwertyKeyboard()) {
+        mainComponent->transportPanel->onQwertyKeyboardToggled = [this](bool enabled) {
+            if (!mainComponent)
+                return;
+            auto* kb = mainComponent->getQwertyKeyboard();
+            if (!kb)
+                return;
+            kb->setEnabled(enabled);
+            if (enabled)
+                addKeyListener(kb);
+            else
+                removeKeyListener(kb);
+
+            // Enable/disable the virtual MIDI device and notify the
+            // routing selectors to refresh their cached device lists.
+            if (auto* engine = mainComponent->getAudioEngine()) {
+                if (auto* bridge = engine->getAudioBridge()) {
+                    if (auto* vmd = bridge->getQwertyMidiDevice())
+                        vmd->setEnabled(enabled);
+                }
+                if (auto* mb = engine->getMidiBridge())
+                    mb->notifyMidiDeviceListChanged();
+            }
+            DBG("QWERTY keyboard " << (enabled ? "ON" : "OFF"));
+        };
+    }
+
     // Setup menu bar
     juce::Logger::writeToLog("[MainWindow] Setting up menu bar...");
     setupMenuBar();
@@ -225,6 +256,15 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
 
 MainWindow::~MainWindow() {
     DBG("  [5a] MainWindow::~MainWindow start");
+
+    // Remove QWERTY keyboard listener from this window before content is destroyed
+    if (mainComponent) {
+        if (auto* kb = mainComponent->getQwertyKeyboard()) {
+            removeKeyListener(kb);
+            kb->setEnabled(false);
+        }
+    }
+
     ProjectManager::getInstance().removeListener(this);
 
 #if JUCE_DEBUG
@@ -425,14 +465,13 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     };
     bottomPanel->onHeaderDoubleClick = [this]() {
         auto& layout = LayoutConfig::getInstance();
-        int optimalHeight = layout.defaultBottomPanelHeight;
-        auto type = bottomPanel->getActiveContentType();
-        if (type == daw::ui::PanelContentType::PianoRoll ||
-            type == daw::ui::PanelContentType::DrumGridClipView) {
-            optimalHeight = getHeight() * 2 / 3;
-        } else if (type == daw::ui::PanelContentType::TrackChain) {
-            optimalHeight = juce::jmax(360, getHeight() / 3);
-        }
+        // Ask the active content for its preferred height. Falls back to
+        // the layout default if the content returns 0 (no preference).
+        int optimalHeight = 0;
+        if (auto* content = bottomPanel->getActiveContent())
+            optimalHeight = content->getOptimalPanelHeight(getHeight());
+        if (optimalHeight <= 0)
+            optimalHeight = layout.defaultBottomPanelHeight;
         int maxHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
         bottomPanelHeight =
             juce::jlimit(layout.minBottomPanelHeight,
@@ -782,6 +821,14 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         if (auto* engine = getAudioEngine())
             engine->deactivateAllSessionClips();
     };
+
+    // QWERTY MIDI keyboard — created here, wired to MainWindow via the
+    // onQwertyKeyboardToggled callback set in the MainWindow constructor
+    // (after setContentOwned) so the key listener registers on the
+    // DocumentWindow, not on MainComponent.
+    if (auto* bridge = engine->getAudioBridge()) {
+        qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>(*bridge);
+    }
 
     transportPanel->onTempoChange = [this](double bpm) {
         mainView->getTimelineController().dispatch(SetTempoEvent{bpm});

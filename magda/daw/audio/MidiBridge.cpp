@@ -50,18 +50,30 @@ void MidiBridge::stopAllInputs() {
 std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
     std::vector<MidiDeviceInfo> devices;
 
-    // Use JUCE's MidiInput::getAvailableDevices() instead of Tracktion's device manager
-    // This works immediately without waiting for async scan
+    // Use JUCE's MidiInput::getAvailableDevices() for physical MIDI devices
     auto midiInputs = juce::MidiInput::getAvailableDevices();
 
     for (const auto& device : midiInputs) {
         MidiDeviceInfo info;
         info.id = device.identifier;
         info.name = device.name;
-        info.isEnabled = false;  // Input enable state handled separately
+        info.isEnabled = false;
         info.isAvailable = true;
-
         devices.push_back(info);
+    }
+
+    // Include TE virtual MIDI devices only when enabled. The routing
+    // selectors refresh via onMidiDeviceListChanged when the device
+    // state changes, so the filter is effective.
+    for (auto& dev : engine_.getDeviceManager().getMidiInDevices()) {
+        if (dynamic_cast<te::VirtualMidiInputDevice*>(dev.get()) && dev->isEnabled()) {
+            MidiDeviceInfo info;
+            info.id = dev->getDeviceID();
+            info.name = dev->getName();
+            info.isEnabled = dev->isEnabled();
+            info.isAvailable = true;
+            devices.push_back(info);
+        }
     }
 
     return devices;

@@ -13,6 +13,7 @@
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
+#include "audio/MidiBridge.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -33,7 +34,8 @@ class MixerView : public juce::Component,
                   public juce::DragAndDropTarget,
                   public juce::Timer,
                   public TrackManagerListener,
-                  public ViewModeListener {
+                  public ViewModeListener,
+                  public MidiBridge::Listener {
   public:
     explicit MixerView(AudioEngine* audioEngine = nullptr);
     ~MixerView() override;
@@ -55,6 +57,7 @@ class MixerView : public juce::Component,
 
     // TrackManagerListener
     void tracksChanged() override;
+    void midiDeviceListChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
     void masterChannelChanged() override;
