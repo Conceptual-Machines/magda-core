@@ -62,14 +62,15 @@ std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
         devices.push_back(info);
     }
 
-    // Include TE virtual MIDI devices only when enabled (e.g. QWERTY
-    // Keyboard shows in the menu only while the toggle is ON)
+    // Include TE virtual MIDI devices (e.g. QWERTY Keyboard).
+    // Always listed regardless of enabled state — hiding on toggle-off
+    // doesn't work because the routing selector caches its options (#1016).
     for (auto& dev : engine_.getDeviceManager().getMidiInDevices()) {
-        if (dynamic_cast<te::VirtualMidiInputDevice*>(dev.get()) && dev->isEnabled()) {
+        if (dynamic_cast<te::VirtualMidiInputDevice*>(dev.get())) {
             MidiDeviceInfo info;
             info.id = dev->getDeviceID();
             info.name = dev->getName();
-            info.isEnabled = true;
+            info.isEnabled = dev->isEnabled();
             info.isAvailable = true;
             devices.push_back(info);
         }
