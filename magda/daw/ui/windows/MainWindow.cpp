@@ -461,14 +461,13 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     };
     bottomPanel->onHeaderDoubleClick = [this]() {
         auto& layout = LayoutConfig::getInstance();
-        int optimalHeight = layout.defaultBottomPanelHeight;
-        auto type = bottomPanel->getActiveContentType();
-        if (type == daw::ui::PanelContentType::PianoRoll ||
-            type == daw::ui::PanelContentType::DrumGridClipView) {
-            optimalHeight = getHeight() * 2 / 3;
-        } else if (type == daw::ui::PanelContentType::TrackChain) {
-            optimalHeight = juce::jmax(360, getHeight() / 3);
-        }
+        // Ask the active content for its preferred height. Falls back to
+        // the layout default if the content returns 0 (no preference).
+        int optimalHeight = 0;
+        if (auto* content = bottomPanel->getActiveContent())
+            optimalHeight = content->getOptimalPanelHeight(getHeight());
+        if (optimalHeight <= 0)
+            optimalHeight = layout.defaultBottomPanelHeight;
         int maxHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
         bottomPanelHeight =
             juce::jlimit(layout.minBottomPanelHeight,
@@ -819,10 +818,13 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             engine->deactivateAllSessionClips();
     };
 
-    // QWERTY MIDI keyboard — created here, registered on MainWindow by
-    // MainWindow::finishInitialisation after setContentOwned.
+    // QWERTY MIDI keyboard — starts disabled, toggled via transport button.
     if (auto* bridge = engine->getAudioBridge()) {
         qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>(*bridge);
+        // Ensure the virtual device starts disabled (TE persists it from
+        // previous sessions, so it might already be enabled).
+        if (auto* vmd = bridge->getQwertyMidiDevice())
+            vmd->setEnabled(false);
     }
     transportPanel->onQwertyKeyboardToggled = [this](bool enabled) {
         if (!qwertyKeyboard_)

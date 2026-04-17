@@ -106,6 +106,16 @@ class PanelContent : public juce::Component {
         juce::ignoreUnused(headerBounds);
     }
 
+    /**
+     * @brief Get the optimal panel height for the current content/device.
+     * @param windowHeight Total window height for ratio-based calculations.
+     * @return Preferred height in pixels, or 0 if no preference (use panel default).
+     */
+    virtual int getOptimalPanelHeight(int windowHeight) const {
+        juce::ignoreUnused(windowHeight);
+        return 0;
+    }
+
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PanelContent)
 };

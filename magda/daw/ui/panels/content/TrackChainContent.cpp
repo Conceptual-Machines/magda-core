@@ -1259,6 +1259,24 @@ int TrackChainContent::calculateTotalContentWidth() const {
     return totalWidth;
 }
 
+int TrackChainContent::getOptimalPanelHeight(int windowHeight) const {
+    // Check whether the currently selected device has a custom UI that
+    // benefits from more vertical space (chord engine, step sequencer,
+    // sampler, etc.). Otherwise use the default 1/3 height.
+    if (selectedDeviceId_ != magda::INVALID_DEVICE_ID &&
+        selectedTrackId_ != magda::INVALID_TRACK_ID) {
+        if (auto* dev =
+                magda::TrackManager::getInstance().getDevice(selectedTrackId_, selectedDeviceId_)) {
+            auto pid = dev->pluginId.toLowerCase();
+            if (pid.contains("chord") || pid.contains("step_seq") || pid.contains("sampler") ||
+                pid.contains("4osc")) {
+                return windowHeight / 2;
+            }
+        }
+    }
+    return juce::jmax(360, windowHeight / 3);
+}
+
 void TrackChainContent::onActivated() {
     selectedTrackId_ = magda::TrackManager::getInstance().getSelectedTrack();
     updateFromSelectedTrack();

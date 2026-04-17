@@ -71,6 +71,10 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
      */
     void setTimelineController(magda::TimelineController* controller);
 
+    PanelContent* getActiveContent() const {
+        return activeContent_;
+    }
+
   protected:
     /**
      * @brief Override to customize background painting
@@ -86,13 +90,6 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
      * @brief Get the bounds for the content area
      */
     virtual juce::Rectangle<int> getContentBounds();
-
-    /**
-     * @brief Get the currently active content
-     */
-    PanelContent* getActiveContent() const {
-        return activeContent_;
-    }
 
     /**
      * @brief Hook called just before content switches
