@@ -22,6 +22,7 @@
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
 #include "audio/AudioBridge.hpp"
+#include "audio/MidiBridge.hpp"
 #include "audio/QwertyMidiKeyboard.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
@@ -29,6 +30,7 @@
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "engine/AudioEngine.hpp"
 #include "engine/PlaybackPositionTimer.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
@@ -207,6 +209,17 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
                 addKeyListener(kb);
             else
                 removeKeyListener(kb);
+
+            // Enable/disable the virtual MIDI device and notify the
+            // routing selectors to refresh their cached device lists.
+            if (auto* engine = mainComponent->getAudioEngine()) {
+                if (auto* bridge = engine->getAudioBridge()) {
+                    if (auto* vmd = bridge->getQwertyMidiDevice())
+                        vmd->setEnabled(enabled);
+                }
+                if (auto* mb = engine->getMidiBridge())
+                    mb->notifyMidiDeviceListChanged();
+            }
             DBG("QWERTY keyboard " << (enabled ? "ON" : "OFF"));
         };
     }

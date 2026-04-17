@@ -675,6 +675,15 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
 
     // Refresh MIDI selectors immediately (Tracktion Engine loads devices async)
     refreshInputSelectors();
+
+    // Listen for MIDI device list changes (e.g. QWERTY keyboard toggled)
+    if (audioEngine_) {
+        if (auto* mb = audioEngine_->getMidiBridge()) {
+            mb->onMidiDeviceListChanged = [this]() {
+                juce::MessageManager::callAsync([this]() { refreshInputSelectors(); });
+            };
+        }
+    }
 }
 
 TrackHeadersPanel::~TrackHeadersPanel() {

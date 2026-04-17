@@ -72,6 +72,17 @@ class MidiBridge : public juce::MidiInputCallback {
     std::vector<MidiDeviceInfo> getAvailableMidiInputs() const;
 
     /**
+     * @brief Notify listeners that the MIDI device list has changed.
+     * Call after creating/destroying virtual devices so routing selectors refresh.
+     */
+    void notifyMidiDeviceListChanged() {
+        if (onMidiDeviceListChanged)
+            onMidiDeviceListChanged();
+    }
+
+    std::function<void()> onMidiDeviceListChanged;
+
+    /**
      * @brief Get all available MIDI output devices
      * @return Vector of device info
      */
