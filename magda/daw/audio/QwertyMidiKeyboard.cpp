@@ -22,12 +22,12 @@ void QwertyMidiKeyboard::setEnabled(bool enabled) {
     enabled_ = enabled;
 }
 
-// Key mapping: returns semitone offset from C of the base octave, or -1.
-// Lower row (Z..M) = octave N-1, upper row (Q..U) = octave N.
+// Key mapping: returns a MIDI note number for the configured base octave, or -1
+// if the key is not mapped.
+// Base octave (octaveOffset = 0): A=C, S=D, D=E, F=F, G=G, H=A, J=B,
+// with black keys W=C#, E=D#, T=F#, Y=G#, U=A#.
+// Upper extension (octaveOffset = 1): K=C, L=D, with black keys O=C#, P=D#.
 int QwertyMidiKeyboard::keyToNote(int keyCode) const {
-    // Lower row — white keys (C3..B3 at baseOctave_-1 relative)
-    // Z=C, X=D, C=E, V=F, B=G, N=A, M=B
-    // Sharps: S=C#, D=D#, G=F#, H=G#, J=A#
     int semitone = -1;
     int octaveOffset = 0;
 

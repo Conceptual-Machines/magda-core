@@ -272,18 +272,18 @@ void TransportPanel::resized() {
     gridSlashLabel->setBounds(0, 0, 0, 0);
     gridSlashLabel->setVisible(false);
 
-    // Automation write indicator — fills the gap between grid quantize and CPU area
+    // QWERTY keyboard toggle — just left of CPU
+    auto cpuBounds = getCpuArea();
+    int qwertyX = cpuBounds.getX() - buttonSize - 4;
+    qwertyKeyboardButton->setBounds(qwertyX, buttonY, buttonSize, buttonSize);
+
+    // Automation write indicator — fills the gap between grid quantize and QWERTY button
     int autoWriteLeft = gridBtnX + btnWidth + 8;
-    int autoWriteRight = getCpuArea().getX() - 4;
+    int autoWriteRight = qwertyX - 4;
     if (autoWriteRight > autoWriteLeft) {
         automationWriteLabel->setBounds(autoWriteLeft, 0, autoWriteRight - autoWriteLeft,
                                         getHeight());
     }
-
-    // QWERTY keyboard toggle — just left of CPU
-    auto cpuBounds = getCpuArea();
-    qwertyKeyboardButton->setBounds(cpuBounds.getX() - buttonSize - 4, buttonY, buttonSize,
-                                    buttonSize);
 
     // CPU usage — rounded frame: header (20%) + value
     auto cpuArea = cpuBounds.reduced(4, 3);

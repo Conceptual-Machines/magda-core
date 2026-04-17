@@ -684,9 +684,13 @@ DeviceProcessor* AudioBridge::getDeviceProcessor(DeviceId deviceId) const {
 
 te::VirtualMidiInputDevice* AudioBridge::getQwertyMidiDevice() {
     if (!qwertyMidiDevice_) {
-        // Check if it already exists (persisted from a previous session)
+        // Check if it already exists (persisted from a previous session).
+        // Only accept actual VirtualMidiInputDevice instances — a physical
+        // device with the same name would break the cast and leave the
+        // feature silently disabled.
         for (auto& dev : engine_.getDeviceManager().getMidiInDevices()) {
-            if (dev->getName() == "QWERTY Keyboard") {
+            if (dev->getName() == "QWERTY Keyboard" &&
+                dynamic_cast<te::VirtualMidiInputDevice*>(dev.get())) {
                 qwertyMidiDevice_ = dev;
                 break;
             }
@@ -697,7 +701,8 @@ te::VirtualMidiInputDevice* AudioBridge::getQwertyMidiDevice() {
             auto result = engine_.getDeviceManager().createVirtualMidiDevice("QWERTY Keyboard");
             if (result.wasOk()) {
                 for (auto& dev : engine_.getDeviceManager().getMidiInDevices()) {
-                    if (dev->getName() == "QWERTY Keyboard") {
+                    if (dev->getName() == "QWERTY Keyboard" &&
+                        dynamic_cast<te::VirtualMidiInputDevice*>(dev.get())) {
                         qwertyMidiDevice_ = dev;
                         break;
                     }
@@ -707,9 +712,8 @@ te::VirtualMidiInputDevice* AudioBridge::getQwertyMidiDevice() {
             }
         }
 
-        if (qwertyMidiDevice_) {
+        if (qwertyMidiDevice_)
             DBG("QWERTY virtual MIDI device ready");
-        }
     }
     return dynamic_cast<te::VirtualMidiInputDevice*>(qwertyMidiDevice_.get());
 }

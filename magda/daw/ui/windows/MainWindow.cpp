@@ -818,20 +818,15 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             engine->deactivateAllSessionClips();
     };
 
-    // QWERTY MIDI keyboard — starts disabled, toggled via transport button.
+    // QWERTY MIDI keyboard — created here, wired to MainWindow via the
+    // onQwertyKeyboardToggled callback set in the MainWindow constructor
+    // (after setContentOwned) so the key listener registers on the
+    // DocumentWindow, not on MainComponent.
     if (auto* bridge = engine->getAudioBridge()) {
         qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>(*bridge);
-        // Ensure the virtual device starts disabled (TE persists it from
-        // previous sessions, so it might already be enabled).
         if (auto* vmd = bridge->getQwertyMidiDevice())
             vmd->setEnabled(false);
     }
-    transportPanel->onQwertyKeyboardToggled = [this](bool enabled) {
-        if (!qwertyKeyboard_)
-            return;
-        qwertyKeyboard_->setEnabled(enabled);
-        DBG("QWERTY keyboard " << (enabled ? "enabled" : "disabled"));
-    };
 
     transportPanel->onTempoChange = [this](double bpm) {
         mainView->getTimelineController().dispatch(SetTempoEvent{bpm});
