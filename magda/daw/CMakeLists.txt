@@ -957,3 +957,21 @@ else()
         COMMENT "Copying plugin scanner alongside app executable"
     )
 endif()
+
+# Copy lang/ (localization JSON) into the app so StringTable can load it at runtime.
+set(MAGDA_LANG_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../lang")
+if(APPLE)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_LANG_SRC}"
+            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Resources/lang"
+        COMMENT "Copying localization files to app bundle Resources"
+    )
+else()
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_LANG_SRC}"
+            "$<TARGET_FILE_DIR:magda_daw_app>/lang"
+        COMMENT "Copying localization files alongside app executable"
+    )
+endif()

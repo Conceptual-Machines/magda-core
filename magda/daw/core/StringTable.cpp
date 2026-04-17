@@ -8,23 +8,41 @@ StringTable& StringTable::getInstance() {
 }
 
 StringTable::StringTable() {
-    // Try to load the bundled en.json from the app's lang/ directory.
-    // Falls back to empty (all keys return themselves).
-    auto appDir =
-        juce::File::getSpecialLocation(juce::File::currentApplicationFile).getParentDirectory();
+    auto langDir = findLangDirectory();
+    if (langDir.isDirectory()) {
+        auto en = langDir.getChildFile("en.json");
+        if (en.existsAsFile() && load(en))
+            return;
+    }
+    DBG("StringTable: no lang/en.json found, using key fallback");
+}
 
-    // Check several locations: next to the binary, in Resources (macOS bundle),
-    // and in the source tree (for development).
-    for (const auto& candidate :
-         {appDir.getChildFile("lang/en.json"), appDir.getChildFile("../Resources/lang/en.json"),
-          appDir.getChildFile("../../../../lang/en.json")}) {
-        if (candidate.existsAsFile()) {
-            if (load(candidate))
-                return;
+juce::File StringTable::findLangDirectory() {
+    auto appFile = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+
+    // macOS: appFile is the .app bundle itself; resources live inside Contents/Resources.
+    juce::Array<juce::File> candidates;
+#if JUCE_MAC
+    candidates.add(appFile.getChildFile("Contents/Resources/lang"));
+#endif
+    // Next to the binary (Windows/Linux, and macOS portable layout).
+    candidates.add(appFile.getParentDirectory().getChildFile("lang"));
+
+    // Dev-tree fallback: walk up looking for a lang/en.json sibling.
+    auto walk = appFile.getParentDirectory();
+    for (int i = 0; i < 8 && walk.exists(); ++i) {
+        auto maybe = walk.getChildFile("lang");
+        if (maybe.getChildFile("en.json").existsAsFile()) {
+            candidates.add(maybe);
+            break;
         }
+        walk = walk.getParentDirectory();
     }
 
-    DBG("StringTable: no lang/en.json found, using key fallback");
+    for (const auto& c : candidates)
+        if (c.isDirectory())
+            return c;
+    return {};
 }
 
 bool StringTable::load(const juce::File& jsonFile) {
@@ -70,21 +88,14 @@ juce::String StringTable::get(const juce::String& key) const {
 }
 
 bool StringTable::loadLanguage(const juce::String& languageCode) {
-    auto appDir =
-        juce::File::getSpecialLocation(juce::File::currentApplicationFile).getParentDirectory();
-
-    auto filename = languageCode + ".json";
-    for (const auto& candidate : {appDir.getChildFile("lang").getChildFile(filename),
-                                  appDir.getChildFile("../Resources/lang").getChildFile(filename),
-                                  appDir.getChildFile("../../../../lang").getChildFile(filename)}) {
-        if (candidate.existsAsFile()) {
-            if (load(candidate)) {
-                language_ = languageCode;
-                return true;
-            }
+    auto langDir = findLangDirectory();
+    if (langDir.isDirectory()) {
+        auto file = langDir.getChildFile(languageCode + ".json");
+        if (file.existsAsFile() && load(file)) {
+            language_ = languageCode;
+            return true;
         }
     }
-
     DBG("StringTable::loadLanguage: no lang/" << languageCode << ".json found");
     return false;
 }

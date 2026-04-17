@@ -268,24 +268,10 @@ class UIPage : public juce::Component {
         languageCombo.clear(juce::dontSendNotification);
         availableLanguages_.clear();
 
-        auto appDir =
-            juce::File::getSpecialLocation(juce::File::currentApplicationFile).getParentDirectory();
-        for (const auto& langDir :
-             {appDir.getChildFile("lang"), appDir.getChildFile("../Resources/lang"),
-              appDir.getChildFile("../../../../lang")}) {
-            if (!langDir.isDirectory())
-                continue;
-            for (const auto& f : langDir.findChildFiles(juce::File::findFiles, false, "*.json")) {
-                auto code = f.getFileNameWithoutExtension();
-                // Avoid duplicates
-                bool already = false;
-                for (const auto& existing : availableLanguages_)
-                    if (existing == code)
-                        already = true;
-                if (!already)
-                    availableLanguages_.push_back(code);
-            }
-            break;  // Use only the first found directory
+        auto langDir = magda::StringTable::findLangDirectory();
+        if (langDir.isDirectory()) {
+            for (const auto& f : langDir.findChildFiles(juce::File::findFiles, false, "*.json"))
+                availableLanguages_.push_back(f.getFileNameWithoutExtension());
         }
 
         if (availableLanguages_.empty())

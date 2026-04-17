@@ -47,6 +47,9 @@ class StringTable {
      */
     bool loadLanguage(const juce::String& languageCode);
 
+    /** Return the first existing lang/ directory searched by the loader. */
+    static juce::File findLangDirectory();
+
     /** Get the number of loaded strings. */
     int size() const {
         return static_cast<int>(strings_.size());
