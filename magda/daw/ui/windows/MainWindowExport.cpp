@@ -6,6 +6,7 @@
 #include "audio/AudioBridge.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
+#include "core/StringTable.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
@@ -28,14 +29,25 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
                          tracktion::engine::TransportControl& transport,
                          std::function<void()> onComplete, double prerollSeconds = 0.0,
                          double leadInSilence = 0.0)
-        : ThreadWithProgressWindow("Exporting Audio...", true, true),
+        : ThreadWithProgressWindow(tr("export.progress.exporting_audio"), true, true),
           params_(params),
           outputFile_(outputFile),
           reallocationInhibitor_(transport),
           onComplete_(std::move(onComplete)),
           prerollSeconds_(prerollSeconds),
-          leadInSilence_(leadInSilence) {
-        setStatusMessage("Preparing to export...");
+          leadInSilence_(leadInSilence),
+          // Snapshot every string run() needs on the message thread. StringTable
+          // isn't thread-safe and the user can change language mid-export, so
+          // reading it from the background thread would data-race.
+          strRendering_(tr("export.progress.rendering")),
+          strTrimming_(tr("export.progress.trimming")),
+          strComplete_(tr("export.progress.complete")),
+          strFailed_(tr("export.progress.failed")),
+          errTrimFailed_(tr("export.error.trim_failed")),
+          errFileNotCreated_(tr("export.error.file_not_created")),
+          errRenderFailed_(tr("export.error.render_failed")),
+          errCancelled_(tr("export.error.cancelled")) {
+        setStatusMessage(tr("export.progress.preparing"));
     }
 
     void run() override {
@@ -43,7 +55,7 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
         renderTask_ = std::make_unique<tracktion::Renderer::RenderTask>("Export", params_,
                                                                         &progress, nullptr);
 
-        setStatusMessage("Rendering: " + outputFile_.getFileName());
+        setStatusMessage(strRendering_ + " " + outputFile_.getFileName());
 
         while (!threadShouldExit()) {
             auto status = renderTask_->runJob();
@@ -55,21 +67,20 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
                 // Verify the file was actually created
                 if (outputFile_.existsAsFile()) {
                     if (prerollSeconds_ > 0.0) {
-                        setStatusMessage("Trimming preroll...");
+                        setStatusMessage(strTrimming_);
                         if (!trimPreroll()) {
                             success_ = false;
-                            errorMessage_ = "Render succeeded but failed to trim preroll.";
+                            errorMessage_ = errTrimFailed_;
                             break;
                         }
                     }
                     success_ = true;
-                    setStatusMessage("Export complete!");
+                    setStatusMessage(strComplete_);
                     setProgress(1.0);
                 } else {
                     success_ = false;
-                    errorMessage_ = "Render completed but file was not created. The project may be "
-                                    "empty or contain no audio.";
-                    setStatusMessage("Export failed");
+                    errorMessage_ = errFileNotCreated_;
+                    setStatusMessage(strFailed_);
                 }
                 break;
             }
@@ -81,13 +92,13 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
             }
 
             // Error occurred
-            errorMessage_ = "Render job failed";
-            setStatusMessage("Export failed");
+            errorMessage_ = errRenderFailed_;
+            setStatusMessage(strFailed_);
             break;
         }
 
         if (threadShouldExit() && !success_) {
-            errorMessage_ = "Export cancelled by user";
+            errorMessage_ = errCancelled_;
         }
     }
 
@@ -111,15 +122,16 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
                 onComplete();
             if (userPressedCancel) {
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
-                                                       "Export Cancelled", "Export was cancelled.");
+                                                       tr("export.alert.cancelled_title"),
+                                                       tr("export.alert.cancelled_body"));
             } else if (success) {
                 juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::InfoIcon, "Export Complete",
-                    "Audio exported successfully to:\n" + outputFile.getFullPathName());
+                    juce::AlertWindow::InfoIcon, tr("export.alert.complete_title"),
+                    tr("export.alert.audio_success_prefix") + "\n" + outputFile.getFullPathName());
             } else {
                 juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon, "Export Failed",
-                    errorMessage.isEmpty() ? "Unknown error occurred during export" : errorMessage);
+                    juce::AlertWindow::WarningIcon, tr("export.alert.failed_title"),
+                    errorMessage.isEmpty() ? tr("export.error.unknown") : errorMessage);
             }
         });
     }
@@ -188,6 +200,17 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
     double leadInSilence_ = 0.0;
     bool success_ = false;
     juce::String errorMessage_;
+
+    // Translated strings snapshotted at construction — safe for run() to read
+    // from the background thread while the message thread may mutate StringTable.
+    const juce::String strRendering_;
+    const juce::String strTrimming_;
+    const juce::String strComplete_;
+    const juce::String strFailed_;
+    const juce::String errTrimFailed_;
+    const juce::String errFileNotCreated_;
+    const juce::String errRenderFailed_;
+    const juce::String errCancelled_;
 };
 
 }  // namespace
@@ -197,8 +220,9 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
     namespace te = tracktion;
 
     if (!engine || !engine->getEdit()) {
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Export Audio",
-                                               "Cannot export: no Edit loaded");
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               tr("dialogs.export_audio"),
+                                               tr("dialogs.error.export_no_edit"));
         return;
     }
 
@@ -236,8 +260,8 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings,
     juce::File defaultFile = defaultDir.getChildFile(pattern + extension);
 
     // Launch file chooser
-    fileChooser_ =
-        std::make_unique<juce::FileChooser>("Export Audio", defaultFile, "*" + extension, true);
+    fileChooser_ = std::make_unique<juce::FileChooser>(tr("dialogs.export_audio"), defaultFile,
+                                                       "*" + extension, true);
 
     auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
                  juce::FileBrowserComponent::warnAboutOverwriting;
@@ -436,8 +460,9 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
 
     if (rangeEnd <= rangeStart) {
         DBG("No MIDI clips found - rangeEnd <= rangeStart");
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Export MIDI",
-                                               "No MIDI clips to export.");
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               tr("export.alert.midi_title"),
+                                               tr("export.error.no_midi_clips"));
         return;
     }
 
@@ -478,8 +503,9 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     DBG("Track data count: " << trackData.size());
     if (trackData.empty()) {
         DBG("No MIDI clips with notes found");
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Export MIDI",
-                                               "No MIDI clips with notes to export.");
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               tr("export.alert.midi_title"),
+                                               tr("export.error.no_midi_notes"));
         return;
     }
 
@@ -493,7 +519,8 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     auto defaultFile = defaultDir.getChildFile(projName + ".mid");
 
     // Launch file chooser
-    fileChooser_ = std::make_unique<juce::FileChooser>("Export MIDI", defaultFile, "*.mid", true);
+    fileChooser_ = std::make_unique<juce::FileChooser>(tr("export.alert.midi_title"), defaultFile,
+                                                       "*.mid", true);
 
     auto flags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles |
                  juce::FileBrowserComponent::warnAboutOverwriting;
@@ -653,17 +680,18 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
 
             if (written) {
                 juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::InfoIcon, "Export Complete",
-                    "MIDI exported successfully to:\n" + file.getFullPathName());
+                    juce::AlertWindow::InfoIcon, tr("export.alert.complete_title"),
+                    tr("export.alert.midi_success_prefix") + "\n" + file.getFullPathName());
             } else {
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::AlertWindow::WarningIcon, "Export Failed", "Failed to write MIDI file.");
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       tr("export.alert.failed_title"),
+                                                       tr("export.error.midi_write_failed"));
             }
         } else {
             DBG("Failed to open output stream for: " << file.getFullPathName());
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Export Failed",
-                                                   "Could not create output file:\n" +
-                                                       file.getFullPathName());
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, tr("export.alert.failed_title"),
+                tr("export.error.cannot_create_file") + "\n" + file.getFullPathName());
         }
     });
 }

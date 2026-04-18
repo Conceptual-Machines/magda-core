@@ -60,6 +60,15 @@ class FontManager {
     juce::Typeface::Ptr microgrammaBold;
     juce::Typeface::Ptr jetBrainsMonoRegular;
 
+    // CJK fallback (Noto Sans CJK SC Regular — covers zh, ja, ko glyphs that
+    // Inter, Microgramma, and JetBrains Mono all lack).
+    juce::Typeface::Ptr notoSansCJK;
+    juce::String notoSansCJKFamily;
+
+    // Apply the CJK family as a fallback on the given font so characters not
+    // covered by the primary typeface are resolved via Noto Sans CJK.
+    juce::Font withCJKFallback(juce::Font font) const;
+
     // Fallback system font name
     static constexpr const char* FALLBACK_FONT = "Helvetica";
 };

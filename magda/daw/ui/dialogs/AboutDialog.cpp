@@ -1,6 +1,7 @@
 #include "AboutDialog.hpp"
 
 #include "BinaryData.h"
+#include "core/StringTable.hpp"
 #include "magda.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -75,13 +76,12 @@ class AboutDialog::ContentComponent : public juce::Component {
         // Subtitle
         g.setFont(fm.getUIFont(14.0f));
         g.setColour(juce::Colour(DarkTheme::TEXT_SECONDARY));
-        g.drawText("Multi-Agent Digital Audio", bounds.removeFromTop(24),
-                   juce::Justification::centred);
+        g.drawText(tr("about.subtitle"), bounds.removeFromTop(24), juce::Justification::centred);
 
         // Version
         g.setFont(fm.getUIFont(12.0f));
         g.setColour(juce::Colour(DarkTheme::TEXT_DIM));
-        g.drawText(juce::String("Version ") + MAGDA_VERSION, bounds.removeFromTop(20),
+        g.drawText(tr("about.version_prefix") + MAGDA_VERSION, bounds.removeFromTop(20),
                    juce::Justification::centred);
 
         // Credits line
@@ -108,19 +108,24 @@ class AboutDialog::ContentComponent : public juce::Component {
             return juce::roundToInt(ga.getBoundingBox(0, -1, false).getWidth()) + 1;
         };
 
-        int powW = measure("powered by");
-        int teW = measure("Tracktion Engine");
+        const juce::String poweredBy = tr("about.credits.powered_by");
+        const juce::String tracktionName = tr("about.credits.tracktion_engine");
+        const juce::String madeWith = tr("about.credits.made_with");
+        const juce::String juceName = tr("about.credits.juce");
+
+        int powW = measure(poweredBy);
+        int teW = measure(tracktionName);
         int dotW = measure("|");
-        int madeW = measure("made with");
-        int juceW = measure("JUCE");
+        int madeW = measure(madeWith);
+        int juceW = measure(juceName);
 
         int totalW = powW + gap + teW + gap + logoSize + dotGap + dotW + dotGap + madeW + gap +
                      juceW + gap + logoSize;
         auto centred = row.withSizeKeepingCentre(totalW, 20);
 
-        g.drawText("powered by", centred.removeFromLeft(powW), juce::Justification::centred);
+        g.drawText(poweredBy, centred.removeFromLeft(powW), juce::Justification::centred);
         centred.removeFromLeft(gap);
-        g.drawText("Tracktion Engine", centred.removeFromLeft(teW), juce::Justification::centred);
+        g.drawText(tracktionName, centred.removeFromLeft(teW), juce::Justification::centred);
         centred.removeFromLeft(gap);
         if (teLogo_)
             teLogo_->drawWithin(g, centred.removeFromLeft(logoSize).toFloat(),
@@ -128,9 +133,9 @@ class AboutDialog::ContentComponent : public juce::Component {
         centred.removeFromLeft(dotGap);
         g.drawText("|", centred.removeFromLeft(dotW), juce::Justification::centred);
         centred.removeFromLeft(dotGap);
-        g.drawText("made with", centred.removeFromLeft(madeW), juce::Justification::centred);
+        g.drawText(madeWith, centred.removeFromLeft(madeW), juce::Justification::centred);
         centred.removeFromLeft(gap);
-        g.drawText("JUCE", centred.removeFromLeft(juceW), juce::Justification::centred);
+        g.drawText(juceName, centred.removeFromLeft(juceW), juce::Justification::centred);
         centred.removeFromLeft(gap);
         if (juceLogo_)
             juceLogo_->drawWithin(g, centred.removeFromLeft(logoSize).toFloat(),
@@ -171,7 +176,7 @@ class AboutDialog::ContentComponent : public juce::Component {
 // =============================================================================
 
 AboutDialog::AboutDialog()
-    : DialogWindow("About MAGDA", juce::Colour(DarkTheme::PANEL_BACKGROUND), true) {
+    : DialogWindow(tr("dialogs.about"), juce::Colour(DarkTheme::PANEL_BACKGROUND), true) {
     setContentOwned(new ContentComponent(), true);
     setUsingNativeTitleBar(false);
     setResizable(false, false);

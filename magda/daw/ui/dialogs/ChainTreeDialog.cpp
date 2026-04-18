@@ -3,6 +3,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/StringTable.hpp"
 
 namespace magda {
 
@@ -222,8 +223,7 @@ class ChainTreeDialog::ContentComponent : public juce::Component,
         addAndMakeVisible(treeView_);
 
         // Info label
-        infoLabel_.setText("Click an item to select it in the chain view",
-                           juce::dontSendNotification);
+        infoLabel_.setText(tr("chain_tree.label.click_hint"), juce::dontSendNotification);
         infoLabel_.setColour(juce::Label::textColourId,
                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         infoLabel_.setJustificationType(juce::Justification::centred);
@@ -410,7 +410,8 @@ class ChainTreeDialog::ContentComponent : public juce::Component,
 juce::Component::SafePointer<ChainTreeDialog> ChainTreeDialog::currentInstance_;
 
 ChainTreeDialog::ChainTreeDialog(TrackId trackId)
-    : DialogWindow("Chain Tree", DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND), true),
+    : DialogWindow(tr("dialogs.chain_tree"), DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND),
+                   true),
       trackId_(trackId) {
     content_ = std::make_unique<ContentComponent>(trackId);
     setContentOwned(content_.release(), true);
@@ -450,7 +451,7 @@ void ChainTreeDialog::show(TrackId trackId) {
     }
 
     auto* dialog = new ChainTreeDialog(trackId);
-    dialog->setName("Chain Tree - " + track->name);
+    dialog->setName(tr("dialogs.chain_tree") + " - " + track->name);
     dialog->setVisible(true);
     dialog->toFront(true);
     currentInstance_ = dialog;

@@ -51,7 +51,7 @@ bool StringTable::load(const juce::File& jsonFile) {
         return false;
     bool ok = loadFromString(text);
     if (ok)
-        DBG("StringTable: loaded " << strings_.size() << " strings from "
+        DBG("StringTable: loaded " << localized_.size() << " strings from "
                                    << jsonFile.getFileName());
     return ok;
 }
@@ -66,7 +66,12 @@ bool StringTable::loadFromString(const juce::String& json) {
     if (parsedStrings.empty())
         return false;
 
-    strings_ = std::move(parsedStrings);
+    // Treat the first successful load as the English master (the constructor
+    // loads en.json this way). Subsequent loadLanguage() calls overwrite only
+    // the localized_ map, keeping english_ as the fallback source.
+    if (english_.empty())
+        english_ = parsedStrings;
+    localized_ = std::move(parsedStrings);
     return true;
 }
 
@@ -86,13 +91,31 @@ void StringTable::parseObject(const juce::var& obj, const juce::String& prefix,
 }
 
 juce::String StringTable::get(const juce::String& key) const {
-    auto it = strings_.find(key);
-    if (it != strings_.end())
+    // Prefer the active locale, then fall back to English, then finally to the
+    // key itself. That way missing translations stay readable as English rather
+    // than surfacing the raw dotted key to users.
+    if (auto it = localized_.find(key); it != localized_.end())
         return it->second;
-    return key;  // Fallback: return the key itself so missing translations are visible
+    if (auto it = english_.find(key); it != english_.end())
+        return it->second;
+    return key;
 }
 
 bool StringTable::loadLanguage(const juce::String& languageCode) {
+    if (languageCode == "en") {
+        // Reset to English: alias localized_ onto the master table. Returns
+        // false if the English master never loaded (e.g. packaging error),
+        // so callers can surface the failure rather than silently using an
+        // empty string table.
+        if (english_.empty()) {
+            DBG("StringTable::loadLanguage(\"en\"): english_ is empty — en.json not loaded");
+            return false;
+        }
+        localized_ = english_;
+        language_ = "en";
+        return true;
+    }
+
     auto langDir = findLangDirectory();
     if (langDir.isDirectory()) {
         auto file = langDir.getChildFile(languageCode + ".json");

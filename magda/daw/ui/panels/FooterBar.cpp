@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 
 #include "../themes/DarkTheme.hpp"
+#include "core/StringTable.hpp"
 
 namespace magda {
 
@@ -60,13 +61,15 @@ void FooterBar::setupButtons() {
         int size;
         ViewMode mode;
         const char* name;
+        const char* tooltipKey;
     };
 
     const std::array<IconData, NUM_MODES> icons = {{
-        {BinaryData::Session_svg, BinaryData::Session_svgSize, ViewMode::Live, "Session"},
+        {BinaryData::Session_svg, BinaryData::Session_svgSize, ViewMode::Live, "Session",
+         "footer.tooltip.session"},
         {BinaryData::Arrangement_svg, BinaryData::Arrangement_svgSize, ViewMode::Arrange,
-         "Arrangement"},
-        {BinaryData::Mix_svg, BinaryData::Mix_svgSize, ViewMode::Mix, "Mix"},
+         "Arrangement", "footer.tooltip.arrangement"},
+        {BinaryData::Mix_svg, BinaryData::Mix_svgSize, ViewMode::Mix, "Mix", "footer.tooltip.mix"},
     }};
 
     for (size_t i = 0; i < NUM_MODES; ++i) {
@@ -74,7 +77,7 @@ void FooterBar::setupButtons() {
         modeButtons[i] = magda::ManagedChild<SvgButton>::create(icons[i].name, icons[i].data,
                                                                 static_cast<size_t>(icons[i].size));
 
-        modeButtons[i]->setTooltip(icons[i].name);
+        modeButtons[i]->setTooltip(tr(icons[i].tooltipKey));
         modeButtons[i]->setClickingTogglesState(false);
         modeButtons[i]->onClick = [mode = icons[i].mode]() {
             ViewModeController::getInstance().setViewMode(mode);

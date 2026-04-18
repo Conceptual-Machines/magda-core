@@ -29,6 +29,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
+        lfs: true
 
     - name: Cache apt packages
       uses: actions/cache@v5
@@ -148,6 +149,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
+        lfs: true
 
     - name: Cache apt packages
       uses: actions/cache@v5
@@ -300,6 +302,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        lfs: true
 
     - name: Init submodules
       run: git submodule update --init --recursive
@@ -361,6 +365,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
+        lfs: true
 
     - name: Setup MSVC x64
       uses: ilammy/msvc-dev-cmd@v1
