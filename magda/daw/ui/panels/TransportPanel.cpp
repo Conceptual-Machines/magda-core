@@ -1196,6 +1196,13 @@ void TransportPanel::mouseDown(const juce::MouseEvent& e) {
         showCountInMenu();
     } else if (e.originalComponent == qwertyKeyboardButton.get() && e.mods.isRightButtonDown() &&
                qwertyKeyboard_ != nullptr) {
+        // TODO: CallOutBox steals keyboard focus, which silences the
+        // QwertyMidiKeyboard key listener while the popup is visible. The
+        // popup's own setWantsKeyboardFocus(false) + addKeyListener(keyboard_)
+        // don't restore routing — a proper fix probably needs a non-modal
+        // floating window instead of a CallOutBox. For now the popup is
+        // effectively a static layout reference; live key highlighting won't
+        // update while it's open.
         auto popup = std::make_unique<QwertyKeyboardPopup>(*qwertyKeyboard_);
         auto area = qwertyKeyboardButton->getScreenBounds();
         juce::CallOutBox::launchAsynchronously(std::move(popup), area, nullptr);
