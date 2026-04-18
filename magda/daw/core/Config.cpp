@@ -155,6 +155,11 @@ void Config::save() {
         favArray.add(toJuceString(f));
     root->setProperty("browserFavorites", favArray);
 
+    // Auto-update check
+    root->setProperty("autoCheckUpdates", autoCheckUpdates);
+    root->setProperty("lastUpdateCheckTimestamp",
+                      static_cast<juce::int64>(lastUpdateCheckTimestamp));
+
     // Recent projects
     juce::Array<juce::var> recentArray;
     for (const auto& r : recentProjects)
@@ -439,6 +444,12 @@ void Config::load() {
     browserFilterMidi = getBool("browserFilterMidi", browserFilterMidi);
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserFavorites = getStringArray("browserFavorites");
+
+    // Auto-update check
+    autoCheckUpdates = getBool("autoCheckUpdates", autoCheckUpdates);
+    if (obj->hasProperty("lastUpdateCheckTimestamp"))
+        lastUpdateCheckTimestamp = static_cast<int64_t>(
+            static_cast<juce::int64>(obj->getProperty("lastUpdateCheckTimestamp")));
     recentProjects = getStringArray("recentProjects");
     customPluginPaths = getStringArray("customPluginPaths");
     totalPluginCount = getInt("totalPluginCount", totalPluginCount);

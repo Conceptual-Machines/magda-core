@@ -263,6 +263,20 @@ class Config {
         browserFavorites = paths;
     }
 
+    // Auto-update check
+    bool getAutoCheckUpdates() const {
+        return autoCheckUpdates;
+    }
+    void setAutoCheckUpdates(bool enabled) {
+        autoCheckUpdates = enabled;
+    }
+    int64_t getLastUpdateCheckTimestamp() const {
+        return lastUpdateCheckTimestamp;
+    }
+    void setLastUpdateCheckTimestamp(int64_t ms) {
+        lastUpdateCheckTimestamp = ms;
+    }
+
     // Browser filter settings
     bool getBrowserFilterAudio() const {
         return browserFilterAudio;
@@ -670,6 +684,10 @@ class Config {
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;
     std::string browserDefaultDirectory = "";  // empty = user home
+
+    // Auto-update check
+    bool autoCheckUpdates = true;          // Check GitHub for newer releases on startup
+    int64_t lastUpdateCheckTimestamp = 0;  // ms since epoch; rate-limit at 24h
 
     // Export audio settings
     std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC

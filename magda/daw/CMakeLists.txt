@@ -218,6 +218,7 @@ set(DAW_CORE_SOURCES
     command.cpp
     magda.cpp
     core/Config.cpp
+    core/UpdateChecker.cpp
     core/ViewModeController.cpp
     core/TrackManager.cpp
     core/TrackManagerModulation.cpp

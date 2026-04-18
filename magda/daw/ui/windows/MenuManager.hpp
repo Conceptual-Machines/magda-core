@@ -86,6 +86,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         // Help menu
         std::function<void()> onShowHelp;
         std::function<void()> onOpenManual;
+        std::function<void()> onCheckForUpdates;
         std::function<void()> onAbout;
     };
 
@@ -197,6 +198,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         // Help menu (700-799)
         ShowHelp = 700,
         OpenManual,
+        CheckForUpdates,
         About = 799
     };
 

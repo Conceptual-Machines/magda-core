@@ -71,6 +71,7 @@
     "window.bring_to_front": "Bring All to Front",
 
     "help.manual": "Online Manual",
+    "help.check_updates": "Check for Updates...",
     "help.about": "About MAGDA"
   },
 
@@ -216,7 +217,14 @@
     "error.no_audio_track": "No audio track found. Please create an audio track first.",
     "error.import_failed": "No valid audio files could be imported. The selected files may be unsupported or corrupt.",
     "error.export_no_edit": "Cannot export: no Edit loaded",
-    "success.import": "audio file(s) imported successfully"
+    "success.import": "audio file(s) imported successfully",
+    "updates.title": "Check for Updates",
+    "updates.up_to_date": "You're running the latest version of MAGDA.",
+    "updates.available_body_prefix": "A new version of MAGDA is available:",
+    "updates.available_body_suffix": "",
+    "updates.current_label": "Current:",
+    "updates.view_release": "View release",
+    "updates.error_prefix": "Could not check for updates:"
   },
 
   "about": {
