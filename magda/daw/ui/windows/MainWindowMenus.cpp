@@ -1,5 +1,6 @@
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/UpdateChecker.hpp"
 #include "../dialogs/AISettingsDialog.hpp"
 #include "../dialogs/AboutDialog.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
@@ -738,6 +739,34 @@ void MainWindow::setupMenuCallbacks() {
 
     callbacks.onOpenManual = []() {
         juce::URL("https://Conceptual-Machines.github.io/magda-core/").launchInDefaultBrowser();
+    };
+
+    callbacks.onCheckForUpdates = []() {
+        UpdateChecker::checkAsync([](const UpdateChecker::Result& r) {
+            if (!r.success) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon, tr("dialogs.updates.title"),
+                    tr("dialogs.updates.error_prefix") + " " + r.errorMessage);
+                return;
+            }
+            UpdateChecker::markChecked();
+            if (r.updateAvailable) {
+                juce::AlertWindow::showOkCancelBox(
+                    juce::AlertWindow::InfoIcon, tr("dialogs.updates.title"),
+                    tr("dialogs.updates.available_body_prefix") + " " + r.latestVersion + " " +
+                        tr("dialogs.updates.available_body_suffix") + " (" +
+                        tr("dialogs.updates.current_label") + " " + r.currentVersion + ").",
+                    tr("dialogs.updates.view_release"), tr("dialogs.cancel"), nullptr,
+                    juce::ModalCallbackFunction::create([url = r.releaseUrl](int result) {
+                        if (result == 1 && url.isNotEmpty())
+                            juce::URL(url).launchInDefaultBrowser();
+                    }));
+            } else {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::InfoIcon, tr("dialogs.updates.title"),
+                    tr("dialogs.updates.up_to_date") + " (MAGDA " + r.currentVersion + ")");
+            }
+        });
     };
 
     callbacks.onAbout = []() { AboutDialog::show(); };

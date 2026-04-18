@@ -13,6 +13,10 @@
 
 Download the latest release from the [GitHub Releases](https://github.com/Conceptual-Machines/magda-core/releases) page.
 
+### Updates
+
+MAGDA checks the GitHub releases feed at most once every 24 hours on launch and surfaces a dialog only if a newer version is available. You can also trigger the check manually from **Help > Check for Updates…**. No telemetry is sent.
+
 ## Building from Source
 
 MAGDA is built with CMake and requires a C++20 compiler. See the [README](https://github.com/Conceptual-Machines/magda-core#building) for full build instructions.

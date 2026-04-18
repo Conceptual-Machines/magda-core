@@ -41,6 +41,7 @@ nav:
   - Getting Started:
       - Installation: getting-started/installation.md
       - First Session: getting-started/first-session.md
+      - Localization: localization.md
   - Interface Layout:
       - Overview: interface/overview.md
       - Menus: interface/menus.md

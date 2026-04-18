@@ -49,6 +49,15 @@ The corner toolbar provides quick access to:
 
 Drag audio files from the [Media Explorer](panels/browsers.md) directly onto a track to import them as clips.
 
+### Multi-Sample Drag and Drop
+
+You can drag several samples out of the [Media Explorer](panels/browsers.md) at once — ++shift++-click to extend the selection, ++cmd++-click (++ctrl++-click on Windows/Linux) to toggle individual files, then drag any item in the selection.
+
+- **Drop on empty area** — one new track is created per sample. While dragging, ghost track-header previews appear in the correct palette colours each new track will take.
+- **Drop on an existing track** — the samples are appended as sequential clips on that track, in selection order.
+
+Ghost clips shown under the cursor during the drag reflect each sample's actual audio duration, so you can align the drop with the grid before releasing.
+
 ## Timeline Navigation
 
 ### Scrolling
@@ -122,6 +131,7 @@ When a time selection is active (drag on the timeline ruler), operations apply t
 - **Duplicate clips** — ++ctrl+d++ (++cmd+d++) duplicates selected clips
 - **Duplicate track** — ++ctrl+d++ with a track selected duplicates the track and its content
 - **Duplicate track (empty)** — ++ctrl+shift+d++ (++cmd+shift+d++) duplicates the track structure without content
+- **Duplicate track (content only)** — ++ctrl+alt+d++ (++cmd+alt+d++) duplicates the track's clips onto a new track with an empty FX chain
 
 ### Render
 

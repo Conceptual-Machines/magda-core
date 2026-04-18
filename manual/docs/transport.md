@@ -72,6 +72,30 @@ The metronome (click track) can be toggled on or off using the metronome icon in
 
 During count-in, the metronome plays but recording does not begin until the count-in period is complete.
 
+## QWERTY MIDI Keyboard
+
+A small keyboard-icon toggle on the right side of the transport enables the computer-keyboard MIDI input. When on, typing on the QWERTY keyboard sends MIDI notes to the currently selected instrument track.
+
+### Key layout
+
+Two rows of keys cover just over an octave. The lower row maps to the natural notes of the current base octave, the upper row extends one octave above.
+
+| Row | White keys (naturals) | Black keys (sharps) |
+|---|---|---|
+| Lower (base octave) | `A S D F G H J` → C D E F G A B | `W E _ T Y U` → C♯ D♯ F♯ G♯ A♯ |
+| Upper (base +1) | `K L` → C D | `O P` → C♯ D♯ |
+
+Octave shift:
+
+- `Z` — move the base octave down one
+- `X` — move the base octave up one
+
+The base octave defaults to 3, so `A` plays C3. Range is clamped to 0–8.
+
+Modifier combinations (`⌘`, `⌃`, `⌥`) and the spacebar always pass through to regular shortcuts, so transport control and edit shortcuts keep working while the keyboard is on.
+
+The toggle itself is hidden automatically on narrow windows where the transport has to prioritise other controls.
+
 ## Grid & Snap
 
 The grid controls how clips and edits snap to musical divisions.

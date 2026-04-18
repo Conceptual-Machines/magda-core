@@ -55,3 +55,15 @@ The Media Explorer lets you browse files on your system and preview audio before
 - **Drag and drop** — Drag files from the explorer onto a track or clip slot to import
 - Supported audio formats: WAV, AIFF, FLAC, OGG, MP3
 - Supported MIDI formats: .mid files
+
+### Multi-Select
+
+- ++shift++-click to extend the selection to a contiguous range
+- ++cmd++-click (++ctrl++-click on Windows/Linux) to toggle individual files in and out of the selection
+- Drag any file in the selection to drag the whole selection out
+
+Drop targets vary by destination:
+
+- [Arrangement View](../arrangement-view.md#multi-sample-drag-and-drop) — empty area creates one track per sample; existing track appends clips sequentially
+- [Session View](../session-view.md#multi-sample-drag-and-drop) — empty area creates one track per sample stacked into scene rows; existing track stacks clips down consecutive scene slots
+- [Drum Grid](../devices/drum-grid.md#multi-sample-drop) — samples fill consecutive pads from the drop target

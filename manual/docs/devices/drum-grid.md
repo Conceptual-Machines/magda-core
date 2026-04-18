@@ -31,6 +31,10 @@ When a DrumGrid track is expanded in the [Mixer View](../mixer-view.md), each pa
 - Drag audio files from the Media Explorer onto a pad to load a sample
 - Each pad plays one sample at a time
 
+### Multi-Sample Drop
+
+Select several samples in the [Media Explorer](../panels/browsers.md) and drag them onto any pad. Samples fill consecutive pads in selection order, starting from the drop target. While dragging, every pad that will receive a sample lights up so you can see the range before releasing.
+
 ## MIDI Mapping
 
 The default mapping assigns pads to General MIDI drum note numbers (kick = C1, snare = D1, etc.), but pads can be remapped to any MIDI note.

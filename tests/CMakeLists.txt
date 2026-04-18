@@ -18,6 +18,7 @@ set(TEST_SOURCES
     test_modulation.cpp
     test_group_tracks_and_macros.cpp
     test_parameter_utils.cpp
+    test_update_checker.cpp
     test_plugin_loading.cpp
     test_plugin_format.cpp
     test_plugin_window_manager.cpp

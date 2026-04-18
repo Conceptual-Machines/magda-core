@@ -12,6 +12,7 @@
 #include "core/Config.hpp"
 #include "core/ModulatorEngine.hpp"
 #include "core/TrackManager.hpp"
+#include "core/UpdateChecker.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 #include "ui/dialogs/SplashScreen.hpp"
@@ -161,6 +162,30 @@ class MagdaDAWApplication : public JUCEApplication {
         }
 
         juce::Logger::writeToLog("=== MAGDA is ready! ===");
+
+        // Silent GitHub release check. Rate-limited to once per 24h via
+        // Config; never blocks startup and only surfaces UI when an update
+        // is actually available.
+        if (magda::UpdateChecker::shouldAutoCheck()) {
+            magda::UpdateChecker::checkAsync([](const magda::UpdateChecker::Result& r) {
+                if (!r.success) {
+                    juce::Logger::writeToLog("UpdateChecker: " + r.errorMessage);
+                    return;
+                }
+                magda::UpdateChecker::markChecked();
+                if (!r.updateAvailable)
+                    return;
+                juce::AlertWindow::showOkCancelBox(
+                    juce::AlertWindow::InfoIcon, "MAGDA " + r.latestVersion + " available",
+                    "A new version of MAGDA is available (" + r.latestVersion +
+                        "). You're running " + r.currentVersion + ".",
+                    "View release", "Later", nullptr,
+                    juce::ModalCallbackFunction::create([url = r.releaseUrl](int result) {
+                        if (result == 1 && url.isNotEmpty())
+                            juce::URL(url).launchInDefaultBrowser();
+                    }));
+            });
+        }
     }
 
     void shutdown() override {

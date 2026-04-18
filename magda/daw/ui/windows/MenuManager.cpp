@@ -279,6 +279,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
         case 7:  // Help
         {
             menu.addItem(OpenManual, tr("menu.help.manual"), true, false);
+            menu.addItem(CheckForUpdates, tr("menu.help.check_updates"), true, false);
             menu.addSeparator();
             menu.addItem(About, tr("menu.help.about"), true, false);
             break;
@@ -530,6 +531,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case OpenManual:
             if (callbacks_.onOpenManual)
                 callbacks_.onOpenManual();
+            break;
+        case CheckForUpdates:
+            if (callbacks_.onCheckForUpdates)
+                callbacks_.onCheckForUpdates();
             break;
         case About:
             if (callbacks_.onAbout)
