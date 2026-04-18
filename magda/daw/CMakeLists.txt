@@ -14,6 +14,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/fonts/Inter-Bold.ttf
     "../../assets/fonts/Microgramma D Extended Bold.otf"
     ../../assets/fonts/JetBrainsMono-Regular.ttf
+    # CJK fallback — covers Simplified/Traditional Chinese, Japanese, Korean
+    ../../assets/fonts/NotoSansCJKsc-Regular.otf
     # General UI icons
     ../../assets/icons/general/enter.svg
     ../../assets/icons/general/track.svg

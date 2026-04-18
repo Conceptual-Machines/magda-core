@@ -63,6 +63,18 @@ bool FontManager::initialize() {
         success = false;
     }
 
+    // Load Noto Sans CJK SC Regular — fallback for CJK glyphs that Inter doesn't cover.
+    // Missing here is non-fatal; Chinese/Japanese/Korean text will fall back to OS
+    // fonts instead (or render as tofu on systems without any CJK font installed).
+    notoSansCJK = juce::Typeface::createSystemTypefaceFor(BinaryData::NotoSansCJKscRegular_otf,
+                                                          BinaryData::NotoSansCJKscRegular_otfSize);
+    if (notoSansCJK) {
+        notoSansCJKFamily = notoSansCJK->getName();
+        DBG("Noto Sans CJK loaded, family=" << notoSansCJKFamily);
+    } else {
+        DBG("Failed to load Noto Sans CJK — CJK glyphs will use OS fallback");
+    }
+
     initialized = success;
 
     if (initialized) {
@@ -82,7 +94,15 @@ void FontManager::shutdown() {
     interBold = nullptr;
     microgrammaBold = nullptr;
     jetBrainsMonoRegular = nullptr;
+    notoSansCJK = nullptr;
+    notoSansCJKFamily = {};
     initialized = false;
+}
+
+juce::Font FontManager::withCJKFallback(juce::Font font) const {
+    if (notoSansCJKFamily.isNotEmpty())
+        font.setPreferredFallbackFamilies({notoSansCJKFamily});
+    return font;
 }
 
 juce::Font FontManager::getInterFont(float size, Weight weight) const {
@@ -104,7 +124,7 @@ juce::Font FontManager::getInterFont(float size, Weight weight) const {
     }
 
     if (typeface) {
-        return juce::Font(typeface).withHeight(size);
+        return withCJKFallback(juce::Font(typeface).withHeight(size));
     }
 
     // Fallback to system font
@@ -118,7 +138,7 @@ juce::Font FontManager::getInterFont(float size, Weight weight) const {
             break;
     }
 
-    return juce::Font(FALLBACK_FONT, size, style);
+    return withCJKFallback(juce::Font(FALLBACK_FONT, size, style));
 }
 
 juce::Font FontManager::getUIFont(float size) const {
@@ -147,19 +167,21 @@ juce::Font FontManager::getTimeFont(float size) const {
 
 juce::Font FontManager::getMicrogrammaFont(float size) const {
     if (microgrammaBold) {
-        return juce::Font(microgrammaBold).withHeight(size);
+        return withCJKFallback(juce::Font(microgrammaBold).withHeight(size));
     }
 
     // Fallback to monospace font if Microgramma isn't loaded
-    return juce::Font(juce::Font::getDefaultMonospacedFontName(), size, juce::Font::bold);
+    return withCJKFallback(
+        juce::Font(juce::Font::getDefaultMonospacedFontName(), size, juce::Font::bold));
 }
 
 juce::Font FontManager::getMonoFont(float size) const {
     if (jetBrainsMonoRegular) {
-        return juce::Font(jetBrainsMonoRegular).withHeight(size);
+        return withCJKFallback(juce::Font(jetBrainsMonoRegular).withHeight(size));
     }
 
-    return juce::Font(juce::Font::getDefaultMonospacedFontName(), size, juce::Font::plain);
+    return withCJKFallback(
+        juce::Font(juce::Font::getDefaultMonospacedFontName(), size, juce::Font::plain));
 }
 
 }  // namespace magda
