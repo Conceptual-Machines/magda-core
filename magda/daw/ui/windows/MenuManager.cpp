@@ -233,6 +233,10 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          tr("menu.track.duplicate_no_content") +
                              juce::String::fromUTF8("\t\u21E7\u2318D"),
                          true, false);
+            menu.addItem(DuplicateTrackContentOnly,
+                         tr("menu.track.duplicate_content_only") +
+                             juce::String::fromUTF8("\t\u2325\u2318D"),
+                         true, false);
 #else
             menu.addItem(AddTrack, tr("menu.track.add_track") + "\tCtrl+T", true, false);
             menu.addItem(AddGroupTrack, tr("menu.track.add_group") + "\tCtrl+Shift+T", true, false);
@@ -242,6 +246,8 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addItem(DuplicateTrack, tr("menu.track.duplicate") + "\tCtrl+D", true, false);
             menu.addItem(DuplicateTrackNoContent,
                          tr("menu.track.duplicate_no_content") + "\tCtrl+Shift+D", true, false);
+            menu.addItem(DuplicateTrackContentOnly,
+                         tr("menu.track.duplicate_content_only") + "\tCtrl+Alt+D", true, false);
 #endif
             menu.addSeparator();
             menu.addItem(MuteTrack, tr("menu.track.mute") + "\tM", true, false);
@@ -488,6 +494,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case DuplicateTrackNoContent:
             if (callbacks_.onDuplicateTrackNoContent)
                 callbacks_.onDuplicateTrackNoContent();
+            break;
+        case DuplicateTrackContentOnly:
+            if (callbacks_.onDuplicateTrackContentOnly)
+                callbacks_.onDuplicateTrackContentOnly();
             break;
         case MuteTrack:
             if (callbacks_.onMuteTrack)

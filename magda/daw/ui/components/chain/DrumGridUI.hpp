@@ -166,6 +166,9 @@ class DrumGridUI : public juce::Component,
 
     // FileDragAndDropTarget
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
+    void fileDragEnter(const juce::StringArray& files, int x, int y) override;
+    void fileDragMove(const juce::StringArray& files, int x, int y) override;
+    void fileDragExit(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
 
     // DragAndDropTarget (for plugin drops)
@@ -284,6 +287,10 @@ class DrumGridUI : public juce::Component,
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;
+    // File-drag hover preview: first absolute pad + number of audio files
+    // being dragged, so we can highlight every pad that will receive a sample.
+    int fileDropStartPad_ = -1;
+    int fileDropCount_ = 0;
 
     // DrumGridPlugin pointer for trigger polling
     daw::audio::DrumGridPlugin* drumGridPlugin_ = nullptr;

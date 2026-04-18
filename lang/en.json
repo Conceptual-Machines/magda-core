@@ -62,6 +62,7 @@
     "track.delete": "Delete Track",
     "track.duplicate": "Duplicate Track",
     "track.duplicate_no_content": "Duplicate Track Without Content",
+    "track.duplicate_content_only": "Duplicate Track Content Only",
     "track.mute": "Mute Track",
     "track.solo": "Solo Track",
 
@@ -111,6 +112,7 @@
     "unfreeze": "Unfreeze Track",
     "duplicate": "Duplicate Track",
     "duplicate_no_content": "Duplicate Track Without Content",
+    "duplicate_content_only": "Duplicate Track Content Only",
     "delete": "Delete Track",
     "show_io_routing": "Show I/O Routing",
     "hide_io_routing": "Hide I/O Routing",

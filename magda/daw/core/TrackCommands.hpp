@@ -56,12 +56,19 @@ class DeleteTrackCommand : public UndoableCommand {
  */
 class DuplicateTrackCommand : public UndoableCommand {
   public:
-    explicit DuplicateTrackCommand(TrackId sourceTrackId, bool duplicateContent = true);
+    explicit DuplicateTrackCommand(TrackId sourceTrackId, bool duplicateContent = true,
+                                   bool duplicateDevices = true);
 
     void execute() override;
     void undo() override;
     juce::String getDescription() const override {
-        return duplicateContent_ ? "Duplicate Track" : "Duplicate Track Without Content";
+        if (duplicateContent_ && duplicateDevices_)
+            return "Duplicate Track";
+        if (!duplicateContent_ && duplicateDevices_)
+            return "Duplicate Track Without Content";
+        if (duplicateContent_ && !duplicateDevices_)
+            return "Duplicate Track Content Only";
+        return "Duplicate Track (Empty)";
     }
 
     TrackId getDuplicatedTrackId() const {
@@ -71,6 +78,7 @@ class DuplicateTrackCommand : public UndoableCommand {
   private:
     TrackId sourceTrackId_;
     bool duplicateContent_;
+    bool duplicateDevices_;
     TrackId duplicatedTrackId_ = INVALID_TRACK_ID;
     bool executed_ = false;
 };

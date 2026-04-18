@@ -1,6 +1,7 @@
 #include "dsl_interpreter.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -1422,6 +1423,18 @@ double Interpreter::barsToTime(double bar) const {
 // State Snapshot
 // ============================================================================
 
+namespace {
+std::atomic<bool> g_contextEnabled{true};
+}
+
+void Interpreter::setContextEnabled(bool enabled) {
+    g_contextEnabled.store(enabled, std::memory_order_relaxed);
+}
+
+bool Interpreter::isContextEnabled() {
+    return g_contextEnabled.load(std::memory_order_relaxed);
+}
+
 juce::String Interpreter::buildStateSnapshot() {
     auto& tm = TrackManager::getInstance();
 
@@ -1441,7 +1454,12 @@ juce::String Interpreter::buildStateSnapshot() {
     root->setProperty("tracks", tracksArray);
     root->setProperty("track_count", tm.getNumTracks());
 
-    // Current selection context
+    // Selection context — only exposed to the LLM when the UI's context
+    // toggle is enabled. When disabled, the snapshot still lists the tracks
+    // but omits the selection so the LLM has no bias signal.
+    if (!g_contextEnabled.load(std::memory_order_relaxed))
+        return juce::JSON::toString(juce::var(root), true);
+
     auto& sm = SelectionManager::getInstance();
     auto selTrack = sm.getSelectedTrack();
     if (selTrack != INVALID_TRACK_ID) {

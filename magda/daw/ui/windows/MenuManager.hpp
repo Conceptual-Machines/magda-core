@@ -71,6 +71,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onDeleteTrack;
         std::function<void()> onDuplicateTrack;
         std::function<void()> onDuplicateTrackNoContent;
+        std::function<void()> onDuplicateTrackContentOnly;
         std::function<void()> onMuteTrack;
         std::function<void()> onSoloTrack;
 
@@ -184,6 +185,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         DeleteTrack = 510,
         DuplicateTrack,
         DuplicateTrackNoContent,
+        DuplicateTrackContentOnly,
         MuteTrack = 520,
         SoloTrack,
 

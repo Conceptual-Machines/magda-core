@@ -149,6 +149,11 @@ class TrackContentPanel : public juce::Component,
 
     // Callbacks
     std::function<void(int)> onTrackSelected;
+
+    // Fires during file-drag with the list of audio filenames that are about
+    // to spawn new tracks (empty = clear ghost). Wired by MainView to push
+    // ghost-header previews into TrackHeadersPanel.
+    std::function<void(const juce::StringArray&)> onGhostHeadersChanged;
     std::function<void(int, int)> onTrackHeightChanged;
     std::function<void(double, double, std::set<int>)>
         onTimeSelectionChanged;                             // startTime, endTime, trackIndices
@@ -391,6 +396,8 @@ class TrackContentPanel : public juce::Component,
     bool showDropIndicator_ = false;
     double dropInsertTime_ = 0.0;
     int dropTargetTrackIndex_ = -1;
+    juce::StringArray draggedAudioFiles_;        // Audio files currently being dragged over
+    std::vector<double> draggedAudioDurations_;  // Parallel to draggedAudioFiles_
 
     // Group track extent cache — avoids walking all descendants every paint
     struct GroupExtent {

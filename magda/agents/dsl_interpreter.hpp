@@ -169,9 +169,17 @@ class Interpreter {
     }
 
     /**
-     * @brief Build a JSON snapshot of current project state for LLM context
+     * @brief Build a JSON snapshot of current project state for LLM context.
+     *
+     * Includes the user's current track/clip selection by default so the LLM
+     * can target it. Controlled by setContextEnabled(): when false, the
+     * snapshot omits selection info so the LLM has no bias signal.
      */
     static juce::String buildStateSnapshot();
+
+    /** Toggle whether the state snapshot exposes the UI selection to the LLM. */
+    static void setContextEnabled(bool enabled);
+    static bool isContextEnabled();
 
   private:
     // Statement parsing

@@ -857,8 +857,19 @@ AIChatConsoleContent::AIChatConsoleContent() {
 
     updateConfigStatus();
 
-    // Register for selection changes
-    magda::SelectionManager::getInstance().addListener(this);
+    // Register for selection changes and seed the context bar from the
+    // currently-selected track/clip. Without this, opening the panel after
+    // an existing selection leaves the context bar empty until the next
+    // selection event fires.
+    {
+        auto& sm = magda::SelectionManager::getInstance();
+        sm.addListener(this);
+        if (auto clipId = sm.getSelectedClip(); clipId != magda::INVALID_CLIP_ID) {
+            clipSelectionChanged(clipId);
+        } else if (auto trackId = sm.getSelectedTrack(); trackId != magda::INVALID_TRACK_ID) {
+            trackSelectionChanged(trackId);
+        }
+    }
 
     // Register for project lifecycle events
     magda::ProjectManager::getInstance().addListener(this);
@@ -1502,6 +1513,7 @@ void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
     if (event.originalComponent == &contextLabel_ ||
         (event.originalComponent == this && contextIconBounds_.contains(event.getPosition()))) {
         contextEnabled_ = !contextEnabled_;
+        magda::dsl::Interpreter::setContextEnabled(contextEnabled_);
         updateContextBar();
     }
 }

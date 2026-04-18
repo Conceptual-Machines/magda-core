@@ -1310,22 +1310,71 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
     // Draw drag-and-drop feedback on top
     paintDragFeedback(g);
 
-    // Draw plugin drop highlight
-    if (pluginDragActive_) {
-        // Always draw a thick yellow border between the last track and
-        // master to show where a "new track" drop will land.
-        int lineY = 0;
+    // Ghost-header preview (drag-to-create flows — files or devices).
+    // Colours match what TrackManager::createTrack will assign (Config palette
+    // indexed by track count), so the preview is a faithful prediction.
+    if (!ghostHeaderLabels_.isEmpty()) {
+        int topY = 0;
         for (int i = static_cast<int>(trackHeaders.size()) - 1; i >= 0; --i) {
             if (!trackHeaders[i]->isMaster) {
-                lineY = getTrackHeaderArea(i).getBottom();
+                topY = getTrackHeaderArea(i).getBottom();
                 break;
             }
         }
-        g.setColour(juce::Colours::yellow.withAlpha(pluginDropTrackIndex_ < 0 ? 0.9f : 0.4f));
-        g.fillRect(0, lineY, getWidth(), 3);
+        const int ghostHeight = DEFAULT_TRACK_HEIGHT;
+        const int w = getWidth();
+        // Master is stored separately in TrackManager, so `trackHeaders.size()`
+        // would include it and drift by one from the colour index used in
+        // `TrackManager::createTrack`. Use `getNumTracks()` for a faithful match.
+        const int baseIndex = TrackManager::getInstance().getNumTracks();
 
-        if (pluginDropTrackIndex_ >= 0 &&
-            pluginDropTrackIndex_ < static_cast<int>(trackHeaders.size())) {
+        for (int i = 0; i < ghostHeaderLabels_.size(); ++i) {
+            const int y0 = topY + i * ghostHeight;
+            const auto tint = juce::Colour(Config::getDefaultColour(baseIndex + i));
+
+            juce::Rectangle<int> headerRect(0, y0, w, ghostHeight);
+            g.setColour(tint.withAlpha(0.18f));
+            g.fillRect(headerRect);
+            g.setColour(tint.withAlpha(0.7f));
+            g.drawRect(headerRect, 1);
+
+            // Accent stripe on the left so it reads as a track header.
+            g.setColour(tint);
+            g.fillRect(0, y0, 4, ghostHeight);
+
+            g.setColour(tint.brighter(0.4f));
+            g.setFont(juce::Font(juce::FontOptions(13.0f).withStyle("Bold")));
+            g.drawFittedText(ghostHeaderLabels_[i], headerRect.reduced(12, 4),
+                             juce::Justification::centredLeft, 1);
+        }
+    }
+
+    // Draw plugin drop highlight
+    if (pluginDragActive_) {
+        if (pluginDropTrackIndex_ < 0) {
+            // Targeting empty area: ghost header(s) show where the new track
+            // will land. Only fall back to a "line at the bottom" when the
+            // ghost is scrolled out of the visible viewport.
+            int lineY = 0;
+            for (int i = static_cast<int>(trackHeaders.size()) - 1; i >= 0; --i) {
+                if (!trackHeaders[i]->isMaster) {
+                    lineY = getTrackHeaderArea(i).getBottom();
+                    break;
+                }
+            }
+
+            auto* vp = findParentComponentOfClass<juce::Viewport>();
+            const int visibleBottom = vp ? (vp->getViewPositionY() + vp->getHeight()) : getHeight();
+            const bool ghostVisible = !ghostHeaderLabels_.isEmpty() && lineY < visibleBottom;
+
+            if (!ghostVisible) {
+                const int drawY = juce::jmax(0, visibleBottom - 3);
+                g.setColour(juce::Colours::yellow.withAlpha(0.9f));
+                g.fillRect(0, drawY, getWidth(), 3);
+            }
+        } else if (pluginDropTrackIndex_ < static_cast<int>(trackHeaders.size())) {
+            // Targeting an existing track: highlight it. The hovered-track
+            // rectangle is the only indicator — no redundant horizontal line.
             auto area = getTrackHeaderArea(pluginDropTrackIndex_);
             g.setColour(juce::Colours::yellow.withAlpha(0.12f));
             g.fillRect(area);
@@ -1337,6 +1386,13 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
 
 void TrackHeadersPanel::resized() {
     updateTrackHeaderLayout();
+}
+
+void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels) {
+    if (ghostHeaderLabels_ == labels)
+        return;
+    ghostHeaderLabels_ = labels;
+    repaint();
 }
 
 void TrackHeadersPanel::selectTrack(int index) {
@@ -2658,6 +2714,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Duplicate track
     menu.addItem(4, tr("tracks.duplicate"));
     menu.addItem(5, tr("tracks.duplicate_no_content"));
+    menu.addItem(7, tr("tracks.duplicate_content_only"));
 
     // Delete track
     menu.addItem(3, tr("tracks.delete"));
@@ -2669,56 +2726,66 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                                          : tr("tracks.show_io_routing"));
 
     // Show menu and handle result
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-                           localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
-                       [this, trackId = header.trackId, trackIndex](int result) {
-                           if (result == 1) {
-                               // Toggle collapse
-                               handleCollapseToggle(trackId);
-                           } else if (result == 2) {
-                               // Remove from group
-                               TrackManager::getInstance().removeTrackFromGroup(trackId);
-                           } else if (result == 3) {
-                               // Delete track (through undo system)
-                               auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
-                               UndoManager::getInstance().executeCommand(std::move(cmd));
-                           } else if (result == 4) {
-                               // Duplicate track with content
-                               auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, true);
-                               UndoManager::getInstance().executeCommand(std::move(cmd));
-                           } else if (result == 5) {
-                               // Duplicate track without content
-                               auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, false);
-                               UndoManager::getInstance().executeCommand(std::move(cmd));
-                           } else if (result == 6) {
-                               // Toggle I/O routing visibility (per-track)
-                               if (trackIndex >= 0 &&
-                                   trackIndex < static_cast<int>(trackHeaders.size())) {
-                                   trackHeaders[trackIndex]->showIORouting =
-                                       !trackHeaders[trackIndex]->showIORouting;
-                                   resized();
-                               }
-                           } else if (result == 7) {
-                               // Toggle freeze
-                               auto* t = TrackManager::getInstance().getTrack(trackId);
-                               if (t) {
-                                   TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
-                               }
-                           } else if (result >= 600) {
-                               // Remove send (busIndex = result - 600)
-                               int busIndex = result - 600;
-                               TrackManager::getInstance().removeSend(trackId, busIndex);
-                           } else if (result >= 500) {
-                               // Add send (aux trackId = result - 500)
-                               // Note: checked after >= 600 to avoid collision when trackId >= 100
-                               TrackId auxId = result - 500;
-                               TrackManager::getInstance().addSend(trackId, auxId);
-                           } else if (result >= 100) {
-                               // Move to group
-                               TrackId groupId = result - 100;
-                               TrackManager::getInstance().addTrackToGroup(trackId, groupId);
-                           }
-                       });
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetScreenArea(
+            localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
+        [this, trackId = header.trackId, trackIndex](int result) {
+            if (result == 1) {
+                // Toggle collapse
+                handleCollapseToggle(trackId);
+            } else if (result == 2) {
+                // Remove from group
+                TrackManager::getInstance().removeTrackFromGroup(trackId);
+            } else if (result == 3) {
+                // Delete track (through undo system)
+                auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == 4) {
+                // Duplicate track with content + FX chain
+                auto cmd =
+                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/true,
+                                                            /*duplicateDevices=*/true);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == 5) {
+                // Duplicate track without content (FX chain only)
+                auto cmd =
+                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/false,
+                                                            /*duplicateDevices=*/true);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == 7) {
+                // Duplicate track content only (clips, no FX chain)
+                auto cmd =
+                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/true,
+                                                            /*duplicateDevices=*/false);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == 6) {
+                // Toggle I/O routing visibility (per-track)
+                if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
+                    trackHeaders[trackIndex]->showIORouting =
+                        !trackHeaders[trackIndex]->showIORouting;
+                    resized();
+                }
+            } else if (result == 7) {
+                // Toggle freeze
+                auto* t = TrackManager::getInstance().getTrack(trackId);
+                if (t) {
+                    TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
+                }
+            } else if (result >= 600) {
+                // Remove send (busIndex = result - 600)
+                int busIndex = result - 600;
+                TrackManager::getInstance().removeSend(trackId, busIndex);
+            } else if (result >= 500) {
+                // Add send (aux trackId = result - 500)
+                // Note: checked after >= 600 to avoid collision when trackId >= 100
+                TrackId auxId = result - 500;
+                TrackManager::getInstance().addSend(trackId, auxId);
+            } else if (result >= 100) {
+                // Move to group
+                TrackId groupId = result - 100;
+                TrackManager::getInstance().addTrackToGroup(trackId, groupId);
+            }
+        });
 }
 
 void TrackHeadersPanel::toggleRouting(int trackIndex, RoutingType type) {
@@ -3591,6 +3658,20 @@ void TrackHeadersPanel::itemDragEnter(const SourceDetails& details) {
             break;
         }
     }
+
+    // Ghost header for the new track that a drop on empty area would create.
+    if (pluginDropTrackIndex_ < 0) {
+        juce::String label = "New Track";
+        if (auto* obj = details.description.getDynamicObject()) {
+            auto name = obj->getProperty("name").toString();
+            if (name.isNotEmpty())
+                label = name;
+        }
+        setGhostHeaders({label});
+    } else {
+        setGhostHeaders({});
+    }
+
     repaint();
 }
 
@@ -3605,6 +3686,21 @@ void TrackHeadersPanel::itemDragMove(const SourceDetails& details) {
             break;
         }
     }
+
+    if ((prev < 0) != (pluginDropTrackIndex_ < 0)) {
+        if (pluginDropTrackIndex_ < 0) {
+            juce::String label = "New Track";
+            if (auto* obj = details.description.getDynamicObject()) {
+                auto name = obj->getProperty("name").toString();
+                if (name.isNotEmpty())
+                    label = name;
+            }
+            setGhostHeaders({label});
+        } else {
+            setGhostHeaders({});
+        }
+    }
+
     if (pluginDropTrackIndex_ != prev)
         repaint();
 }
@@ -3612,11 +3708,13 @@ void TrackHeadersPanel::itemDragMove(const SourceDetails& details) {
 void TrackHeadersPanel::itemDragExit(const SourceDetails& /*details*/) {
     pluginDragActive_ = false;
     pluginDropTrackIndex_ = -1;
+    setGhostHeaders({});
     repaint();
 }
 
 void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
     pluginDragActive_ = false;
+    setGhostHeaders({});
     auto* obj = details.description.getDynamicObject();
     if (!obj) {
         pluginDropTrackIndex_ = -1;

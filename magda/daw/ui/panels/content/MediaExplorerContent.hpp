@@ -123,6 +123,15 @@ class MediaExplorerContent : public PanelContent,
     juce::Point<int> mouseDownPosition_;
     bool isDraggingFile_ = false;
 
+    // Sticky multi-selection: JUCE's FileListComponent collapses the selection to
+    // the clicked row on plain mouseDown, which makes it impossible to drag a
+    // multi-selection out without a modifier. We remember the last ≥2-file
+    // selection and keep it as the drag payload as long as the user keeps
+    // clicking within that set. We also snapshot the row indices so we can
+    // restore the visual multi-selection after an external drag completes.
+    juce::Array<juce::File> stickySelection_;
+    juce::SparseSet<int> stickyRowSelection_;
+
     // Helper methods
     void timerCallback() override;
     void setupAudioPreview();

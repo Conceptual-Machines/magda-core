@@ -150,6 +150,11 @@ class TransportPanel : public juce::Component {
     juce::Rectangle<int> getTempoQuantizeArea() const;
     juce::Rectangle<int> getCpuArea() const;
 
+    // CPU meter is hidden (and its right-edge slot reclaimed) when the panel
+    // is too narrow to fit it without overlapping the grid-quantize cluster.
+    // Updated in resized() before any area-dependent layout runs.
+    bool cpuVisible_ = true;
+
     // Button styling
     void styleTransportButton(SvgButton& button, juce::Colour accentColor);
     void setupTransportButtons();

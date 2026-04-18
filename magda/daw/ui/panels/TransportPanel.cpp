@@ -98,8 +98,9 @@ void TransportPanel::paint(juce::Graphics& g) {
     drawGroupWrapper(autoGridButton->getBounds().getUnion(snapButton->getBounds()), "",
                      DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
 
-    // CPU frame — rounded rectangle matching transport group wrapper style
-    {
+    // CPU frame — rounded rectangle matching transport group wrapper style.
+    // Skipped entirely when the panel is too narrow to host the meter.
+    if (cpuVisible_) {
         auto cpuArea = getCpuArea().reduced(4, 3);
         auto frameBounds = cpuArea.toFloat();
         g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
@@ -146,6 +147,21 @@ void TransportPanel::paint(juce::Graphics& g) {
 void TransportPanel::resized() {
     auto transportArea = getTransportControlsArea();
     auto timeArea = getTimeDisplayArea();
+
+    // Decide whether the CPU meter fits before any area that depends on
+    // getCpuArea() is computed. It reserves 70px on the right when visible;
+    // we hide it entirely (and reclaim that slot) once the grid-quantize
+    // cluster on the left would otherwise overlap it.
+    {
+        const int fixedLeftWidth = getTransportControlsArea().getWidth() + 106 + 440;
+        const int gridMinWidth = 6 + 30 + 4 + 44;  // pad + numDen + gap + btn
+        const int cpuWidth = 70;
+        const int minGap = 8;
+        cpuVisible_ = getWidth() >= fixedLeftWidth + gridMinWidth + minGap + cpuWidth;
+    }
+    cpuTitleLabel->setVisible(cpuVisible_);
+    cpuValueLabel->setVisible(cpuVisible_);
+
     auto tempoArea = getTempoQuantizeArea();
 
     // Transport controls layout — order: Home, Prev, Next, Play, Stop, Rec, AutoWrite, Loop,
@@ -273,15 +289,29 @@ void TransportPanel::resized() {
     gridSlashLabel->setBounds(0, 0, 0, 0);
     gridSlashLabel->setVisible(false);
 
-    // QWERTY keyboard toggle — just left of CPU
+    // QWERTY keyboard toggle — just left of CPU (or the panel's right edge
+    // when CPU is hidden). Hidden itself when the window is narrow enough
+    // that it would overlap the grid-quantize cluster on the left.
     auto cpuBounds = getCpuArea();
-    int qwertyX = cpuBounds.getX() - buttonSize - 4;
-    qwertyKeyboardButton->setBounds(qwertyX, buttonY, buttonSize, buttonSize);
+    const int rightAnchor = cpuVisible_ ? cpuBounds.getX() : getWidth();
+    const int qwertyX = rightAnchor - buttonSize - 4;
+    const int gridRight = gridBtnX + btnWidth;
+    const int minGapToQwerty = 8;
+    const bool qwertyFits = qwertyX >= gridRight + minGapToQwerty;
 
-    // Automation write indicator — fills the gap between grid quantize and QWERTY button
-    int autoWriteLeft = gridBtnX + btnWidth + 8;
-    int autoWriteRight = qwertyX - 4;
-    if (autoWriteRight > autoWriteLeft) {
+    qwertyKeyboardButton->setVisible(qwertyFits);
+    if (qwertyFits) {
+        qwertyKeyboardButton->setBounds(qwertyX, buttonY, buttonSize, buttonSize);
+    }
+
+    // Automation write indicator — fills whatever gap is left between the grid
+    // quantize cluster and whichever right-side control is currently visible.
+    // Only shown while write mode is actually on.
+    const int autoWriteLeft = gridRight + minGapToQwerty;
+    const int autoWriteRight = (qwertyFits ? qwertyX : rightAnchor) - 4;
+    const bool autoWriteFits = autoWriteRight > autoWriteLeft;
+    automationWriteLabel->setVisible(isAutomationWriteEnabled && autoWriteFits);
+    if (autoWriteFits) {
         automationWriteLabel->setBounds(autoWriteLeft, 0, autoWriteRight - autoWriteLeft,
                                         getHeight());
     }
@@ -322,6 +352,8 @@ juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
 }
 
 juce::Rectangle<int> TransportPanel::getCpuArea() const {
+    if (!cpuVisible_)
+        return {};
     return getLocalBounds().removeFromRight(70);
 }
 

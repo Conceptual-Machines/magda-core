@@ -123,20 +123,26 @@ void DeleteTrackCommand::undo() {
 // DuplicateTrackCommand
 // ============================================================================
 
-DuplicateTrackCommand::DuplicateTrackCommand(TrackId sourceTrackId, bool duplicateContent)
-    : sourceTrackId_(sourceTrackId), duplicateContent_(duplicateContent) {}
+DuplicateTrackCommand::DuplicateTrackCommand(TrackId sourceTrackId, bool duplicateContent,
+                                             bool duplicateDevices)
+    : sourceTrackId_(sourceTrackId),
+      duplicateContent_(duplicateContent),
+      duplicateDevices_(duplicateDevices) {}
 
 void DuplicateTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
 
-    // Capture current plugin state so the duplicate gets the source's live settings
-    if (auto* engine = trackManager.getAudioEngine()) {
-        if (auto* bridge = engine->getAudioBridge()) {
-            bridge->captureAllPluginStates();
+    // Capture current plugin state so the duplicate gets the source's live settings.
+    // Skipped when we're stripping the FX chain anyway — nothing to carry over.
+    if (duplicateDevices_) {
+        if (auto* engine = trackManager.getAudioEngine()) {
+            if (auto* bridge = engine->getAudioBridge()) {
+                bridge->captureAllPluginStates();
+            }
         }
     }
 
-    duplicatedTrackId_ = trackManager.duplicateTrack(sourceTrackId_);
+    duplicatedTrackId_ = trackManager.duplicateTrack(sourceTrackId_, duplicateDevices_);
 
     if (duplicateContent_ && duplicatedTrackId_ != INVALID_TRACK_ID) {
         auto& clipManager = ClipManager::getInstance();

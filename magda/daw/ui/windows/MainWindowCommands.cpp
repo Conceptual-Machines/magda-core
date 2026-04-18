@@ -939,7 +939,23 @@ bool MainWindow::MainComponent::keyPressed(const juce::KeyPress& key) {
                        0)) {
         TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
         if (selectedTrack != INVALID_TRACK_ID) {
-            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, false);
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack,
+                                                               /*duplicateContent=*/false,
+                                                               /*duplicateDevices=*/true);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            return true;
+        }
+        return false;
+    }
+
+    // Cmd/Ctrl+Alt+D: Duplicate selected track content only (clips, no FX chain)
+    if (key == juce::KeyPress(
+                   'd', juce::ModifierKeys::commandModifier | juce::ModifierKeys::altModifier, 0)) {
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack,
+                                                               /*duplicateContent=*/true,
+                                                               /*duplicateDevices=*/false);
             UndoManager::getInstance().executeCommand(std::move(cmd));
             return true;
         }
