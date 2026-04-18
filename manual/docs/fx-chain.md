@@ -24,6 +24,9 @@ The chain can contain:
 - **Click** a device to select it and show its parameters
 - **Right-click** a device for options: bypass, remove, replace, move to rack
 - Each device has **Mod** and **Macro** buttons to toggle the modulation and macro panels
+- Plugin devices have a **Learn** button that maps a control in the plugin's own UI back to the matching parameter slot — see [Plugin Parameters](plugin-parameters.md#learn-mode)
+
+See [Plugin Parameters](plugin-parameters.md) for per-plugin parameter visibility, custom units and ranges, and AI-assisted classification.
 
 ## Racks
 
