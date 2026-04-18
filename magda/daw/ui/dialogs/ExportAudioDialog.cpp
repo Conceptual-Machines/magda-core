@@ -16,10 +16,11 @@ ExportAudioDialog::ExportAudioDialog() {
     formatLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(formatLabel_);
 
-    formatComboBox_.addItem(tr("export_audio.option.wav_16"), 1);
-    formatComboBox_.addItem(tr("export_audio.option.wav_24"), 2);
-    formatComboBox_.addItem(tr("export_audio.option.wav_32_float"), 3);
-    formatComboBox_.addItem(tr("export_audio.option.flac"), 4);
+    // File-format designators — do not translate.
+    formatComboBox_.addItem("WAV 16-bit", 1);
+    formatComboBox_.addItem("WAV 24-bit", 2);
+    formatComboBox_.addItem("WAV 32-bit Float", 3);
+    formatComboBox_.addItem("FLAC", 4);
     // Initialise format from render bit depth preference
     auto& config = Config::getInstance();
     int bd = config.getRenderBitDepth();
