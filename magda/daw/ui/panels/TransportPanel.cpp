@@ -1,5 +1,7 @@
 #include "TransportPanel.hpp"
 
+#include "../../audio/QwertyMidiKeyboard.hpp"
+#include "../components/common/QwertyKeyboardPopup.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
@@ -522,6 +524,7 @@ void TransportPanel::setupTransportButtons() {
         if (onQwertyKeyboardToggled)
             onQwertyKeyboardToggled(active);
     };
+    qwertyKeyboardButton->addMouseListener(this, false);
     addAndMakeVisible(*qwertyKeyboardButton);
 
     // Punch In button (dual-icon: off/on)
@@ -1191,6 +1194,11 @@ void TransportPanel::updateCpuTooltip() {
 void TransportPanel::mouseDown(const juce::MouseEvent& e) {
     if (e.originalComponent == metronomeButton.get() && e.mods.isRightButtonDown()) {
         showCountInMenu();
+    } else if (e.originalComponent == qwertyKeyboardButton.get() && e.mods.isRightButtonDown() &&
+               qwertyKeyboard_ != nullptr) {
+        auto popup = std::make_unique<QwertyKeyboardPopup>(*qwertyKeyboard_);
+        auto area = qwertyKeyboardButton->getScreenBounds();
+        juce::CallOutBox::launchAsynchronously(std::move(popup), area, nullptr);
     }
 }
 
