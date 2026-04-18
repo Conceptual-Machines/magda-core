@@ -10,6 +10,8 @@
 
 namespace magda {
 
+class QwertyMidiKeyboard;
+
 class TransportPanel : public juce::Component {
   public:
     TransportPanel();
@@ -61,6 +63,12 @@ class TransportPanel : public juce::Component {
     void setAutomationWriteEnabled(bool enabled);
     void setQwertyKeyboardEnabled(bool enabled);
 
+    /** Handed in from MainWindow so right-clicking the QWERTY toggle can pop
+     *  up the interactive keyboard layout hint. */
+    void setQwertyKeyboard(QwertyMidiKeyboard* keyboard) {
+        qwertyKeyboard_ = keyboard;
+    }
+
     std::function<void(bool)> onQwertyKeyboardToggled;
 
     void mouseDown(const juce::MouseEvent& e) override;
@@ -105,6 +113,7 @@ class TransportPanel : public juce::Component {
 
     // QWERTY MIDI keyboard toggle
     std::unique_ptr<SvgButton> qwertyKeyboardButton;
+    QwertyMidiKeyboard* qwertyKeyboard_ = nullptr;  // owned by MainWindow
 
     // Punch in/out button
     std::unique_ptr<SvgButton> punchInButton;

@@ -199,6 +199,9 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
 
     // Wire QWERTY keyboard toggle to register/unregister on THIS window
     if (mainComponent->getQwertyKeyboard()) {
+        // Hand the keyboard pointer to the transport panel so right-clicking
+        // its toggle can pop up the keyboard-layout hint.
+        mainComponent->transportPanel->setQwertyKeyboard(mainComponent->getQwertyKeyboard());
         mainComponent->transportPanel->onQwertyKeyboardToggled = [this](bool enabled) {
             if (!mainComponent)
                 return;

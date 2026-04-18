@@ -393,6 +393,7 @@ set(DAW_UI_SOURCES
     ui/components/common/RampCurveDisplay.cpp
     ui/components/common/TimeBendPopup.cpp
     ui/components/common/SvgButton.cpp
+    ui/components/common/QwertyKeyboardPopup.cpp
     ui/components/common/IconSelector.cpp
     ui/components/common/ZoomControls.cpp
     ui/components/common/LayoutDebugPanel.cpp

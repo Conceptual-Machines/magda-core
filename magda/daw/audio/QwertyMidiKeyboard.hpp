@@ -45,6 +45,11 @@ class QwertyMidiKeyboard : public juce::KeyListener {
         return velocity_;
     }
 
+    /** Snapshot of currently held notes, for UI visualisation. */
+    std::unordered_set<int> getHeldNotes() const {
+        return heldNotes_;
+    }
+
     // juce::KeyListener
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
     bool keyStateChanged(bool isKeyDown, juce::Component* originatingComponent) override;
