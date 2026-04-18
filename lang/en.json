@@ -135,7 +135,6 @@
     "track_name": "Track Name",
     "routing": "Routing",
     "audio": "Audio",
-    "midi": "MIDI",
     "input": "Input",
     "output": "Output",
     "sends": "Sends / Receives",
@@ -219,21 +218,15 @@
   },
 
   "about": {
-    "subtitle": "Multi-Agent Digital Audio",
     "version_prefix": "Version ",
     "credits.powered_by": "powered by",
-    "credits.tracktion_engine": "Tracktion Engine",
-    "credits.made_with": "made with",
-    "credits.juce": "JUCE"
+    "credits.made_with": "made with"
   },
 
   "splash": {
-    "subtitle": "Multi-Agent Digital Audio",
     "version_prefix": "Version ",
     "credits.powered_by": "powered by",
-    "credits.tracktion_engine": "Tracktion Engine",
-    "credits.made_with": "made with",
-    "credits.juce": "JUCE"
+    "credits.made_with": "made with"
   },
 
   "chain_tree": {
@@ -254,10 +247,6 @@
     "label.bit_depth": "Bit Depth:",
     "label.lead_in_silence": "Lead-in Silence:",
     "label.export_range": "Export Range:",
-    "option.wav_16": "WAV 16-bit",
-    "option.wav_24": "WAV 24-bit",
-    "option.wav_32_float": "WAV 32-bit Float",
-    "option.flac": "FLAC",
     "option.entire_song": "Entire Song",
     "option.time_selection": "Time Selection",
     "option.loop_region": "Loop Region",

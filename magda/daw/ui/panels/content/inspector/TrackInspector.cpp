@@ -345,7 +345,8 @@ TrackInspector::TrackInspector() {
     audioColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(audioColumnLabel_);
 
-    midiColumnLabel_.setText(tr("inspector.midi"), juce::dontSendNotification);
+    // "MIDI" is a universal technical acronym — do not translate.
+    midiColumnLabel_.setText("MIDI", juce::dontSendNotification);
     midiColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
     midiColumnLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     midiColumnLabel_.setJustificationType(juce::Justification::centred);

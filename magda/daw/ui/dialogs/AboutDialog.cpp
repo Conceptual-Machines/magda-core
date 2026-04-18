@@ -76,7 +76,9 @@ class AboutDialog::ContentComponent : public juce::Component {
         // Subtitle
         g.setFont(fm.getUIFont(14.0f));
         g.setColour(juce::Colour(DarkTheme::TEXT_SECONDARY));
-        g.drawText(tr("about.subtitle"), bounds.removeFromTop(24), juce::Justification::centred);
+        // Brand tagline — MAGDA acronym expansion, do not translate.
+        g.drawText("Multi-Agent Digital Audio", bounds.removeFromTop(24),
+                   juce::Justification::centred);
 
         // Version
         g.setFont(fm.getUIFont(12.0f));
@@ -109,9 +111,9 @@ class AboutDialog::ContentComponent : public juce::Component {
         };
 
         const juce::String poweredBy = tr("about.credits.powered_by");
-        const juce::String tracktionName = tr("about.credits.tracktion_engine");
+        const juce::String tracktionName = "Tracktion Engine";  // brand — do not translate
         const juce::String madeWith = tr("about.credits.made_with");
-        const juce::String juceName = tr("about.credits.juce");
+        const juce::String juceName = "JUCE";  // brand — do not translate
 
         int powW = measure(poweredBy);
         int teW = measure(tracktionName);
