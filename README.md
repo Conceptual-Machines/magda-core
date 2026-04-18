@@ -49,13 +49,18 @@ See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known
 
 - C++20 compiler (GCC 10+, Clang 12+, or Xcode)
 - CMake 3.20+
+- [Git LFS](https://git-lfs.com/) — required to fetch bundled binary assets
+  (CJK font, etc.). Install with `brew install git-lfs` (macOS),
+  `apt install git-lfs` (Debian/Ubuntu), or `choco install git-lfs` (Windows),
+  then run `git lfs install` once per machine.
 
 ### Quick Start
 
 ```bash
-# Clone with submodules
+# Clone with submodules and LFS assets
 git clone --recursive https://github.com/Conceptual-Machines/magda-core.git
 cd magda-core
+git lfs pull  # safety net if git-lfs wasn't installed at clone time
 
 # Setup and build
 make setup

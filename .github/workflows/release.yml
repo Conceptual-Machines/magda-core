@@ -23,6 +23,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
+        lfs: true
 
     - name: Install dependencies
       run: |
@@ -252,6 +253,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: recursive
+        lfs: true
 
     - name: Extract version
       id: version
@@ -403,6 +405,7 @@ jobs:
     - uses: actions/checkout@v6
       with:
         submodules: recursive
+        lfs: true
 
     - name: Extract version
       id: version
