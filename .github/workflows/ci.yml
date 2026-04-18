@@ -4,6 +4,12 @@ on:
   push:
     branches: [ '**' ]
     tags-ignore: [ '**' ]
+    # Skip CI when a push only touches translation files. Crowdin sync PRs
+    # only ever modify lang/**, so they no longer burn a full matrix build.
+    # Any push that mixes lang changes with real code still runs CI because
+    # paths-ignore is AND across all modified files.
+    paths-ignore:
+      - 'lang/**'
   workflow_dispatch:
     inputs:
       skip-cpp-build:
