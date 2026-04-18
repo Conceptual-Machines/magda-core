@@ -35,7 +35,18 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
           reallocationInhibitor_(transport),
           onComplete_(std::move(onComplete)),
           prerollSeconds_(prerollSeconds),
-          leadInSilence_(leadInSilence) {
+          leadInSilence_(leadInSilence),
+          // Snapshot every string run() needs on the message thread. StringTable
+          // isn't thread-safe and the user can change language mid-export, so
+          // reading it from the background thread would data-race.
+          strRendering_(tr("export.progress.rendering")),
+          strTrimming_(tr("export.progress.trimming")),
+          strComplete_(tr("export.progress.complete")),
+          strFailed_(tr("export.progress.failed")),
+          errTrimFailed_(tr("export.error.trim_failed")),
+          errFileNotCreated_(tr("export.error.file_not_created")),
+          errRenderFailed_(tr("export.error.render_failed")),
+          errCancelled_(tr("export.error.cancelled")) {
         setStatusMessage(tr("export.progress.preparing"));
     }
 
@@ -44,7 +55,7 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
         renderTask_ = std::make_unique<tracktion::Renderer::RenderTask>("Export", params_,
                                                                         &progress, nullptr);
 
-        setStatusMessage(tr("export.progress.rendering") + " " + outputFile_.getFileName());
+        setStatusMessage(strRendering_ + " " + outputFile_.getFileName());
 
         while (!threadShouldExit()) {
             auto status = renderTask_->runJob();
@@ -56,20 +67,20 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
                 // Verify the file was actually created
                 if (outputFile_.existsAsFile()) {
                     if (prerollSeconds_ > 0.0) {
-                        setStatusMessage(tr("export.progress.trimming"));
+                        setStatusMessage(strTrimming_);
                         if (!trimPreroll()) {
                             success_ = false;
-                            errorMessage_ = tr("export.error.trim_failed");
+                            errorMessage_ = errTrimFailed_;
                             break;
                         }
                     }
                     success_ = true;
-                    setStatusMessage(tr("export.progress.complete"));
+                    setStatusMessage(strComplete_);
                     setProgress(1.0);
                 } else {
                     success_ = false;
-                    errorMessage_ = tr("export.error.file_not_created");
-                    setStatusMessage(tr("export.progress.failed"));
+                    errorMessage_ = errFileNotCreated_;
+                    setStatusMessage(strFailed_);
                 }
                 break;
             }
@@ -81,13 +92,13 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
             }
 
             // Error occurred
-            errorMessage_ = tr("export.error.render_failed");
-            setStatusMessage(tr("export.progress.failed"));
+            errorMessage_ = errRenderFailed_;
+            setStatusMessage(strFailed_);
             break;
         }
 
         if (threadShouldExit() && !success_) {
-            errorMessage_ = tr("export.error.cancelled");
+            errorMessage_ = errCancelled_;
         }
     }
 
@@ -189,6 +200,17 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
     double leadInSilence_ = 0.0;
     bool success_ = false;
     juce::String errorMessage_;
+
+    // Translated strings snapshotted at construction — safe for run() to read
+    // from the background thread while the message thread may mutate StringTable.
+    const juce::String strRendering_;
+    const juce::String strTrimming_;
+    const juce::String strComplete_;
+    const juce::String strFailed_;
+    const juce::String errTrimFailed_;
+    const juce::String errFileNotCreated_;
+    const juce::String errRenderFailed_;
+    const juce::String errCancelled_;
 };
 
 }  // namespace

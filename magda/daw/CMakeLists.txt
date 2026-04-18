@@ -4,6 +4,28 @@
 # Generate version header from project version
 configure_file(version.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp" @ONLY)
 
+# Safety net: detect git-lfs pointer files before juce_add_binary_data embeds
+# them. Without this, a clone without git-lfs would build successfully but
+# silently ship a ~130-byte pointer in place of the real font, and CJK text
+# would render as tofu at runtime.
+set(LFS_TRACKED_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/fonts/NotoSansCJKsc-Regular.otf"
+)
+foreach(LFS_FILE ${LFS_TRACKED_FILES})
+    if(EXISTS "${LFS_FILE}")
+        file(READ "${LFS_FILE}" _lfs_head LIMIT 64)
+        if(_lfs_head MATCHES "^version https://git-lfs\\.github\\.com/spec/")
+            message(FATAL_ERROR
+                "\n"
+                "Git LFS file not fetched: ${LFS_FILE}\n"
+                "This file is tracked by git-lfs but was checked out as a pointer.\n"
+                "Install git-lfs and pull the real content:\n"
+                "    git lfs install\n"
+                "    git lfs pull\n")
+        endif()
+    endif()
+endforeach()
+
 # Create binary data for fonts and icons
 juce_add_binary_data(MagdaAssets
     SOURCES

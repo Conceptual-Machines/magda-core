@@ -103,8 +103,14 @@ juce::String StringTable::get(const juce::String& key) const {
 
 bool StringTable::loadLanguage(const juce::String& languageCode) {
     if (languageCode == "en") {
-        // Reset to English: alias localized_ onto english_ so get() only hits
-        // the master table.
+        // Reset to English: alias localized_ onto the master table. Returns
+        // false if the English master never loaded (e.g. packaging error),
+        // so callers can surface the failure rather than silently using an
+        // empty string table.
+        if (english_.empty()) {
+            DBG("StringTable::loadLanguage(\"en\"): english_ is empty — en.json not loaded");
+            return false;
+        }
         localized_ = english_;
         language_ = "en";
         return true;
