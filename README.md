@@ -8,6 +8,7 @@
   <a href="https://github.com/Conceptual-Machines/magda-core/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Conceptual-Machines/magda-core/ci.yml?label=Windows&logo=windows" alt="Windows Build"></a>
   <a href="https://github.com/Conceptual-Machines/magda-core/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License"></a>
   <img src="https://img.shields.io/badge/C%2B%2B-20-blue.svg" alt="C++20">
+  <a href="https://crowdin.com/project/magda"><img src="https://badges.crowdin.net/magda/localized.svg" alt="Crowdin"></a>
 </p>
 
 <p align="center">
