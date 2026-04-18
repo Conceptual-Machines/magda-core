@@ -2714,6 +2714,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Duplicate track
     menu.addItem(4, tr("tracks.duplicate"));
     menu.addItem(5, tr("tracks.duplicate_no_content"));
+    menu.addItem(7, tr("tracks.duplicate_content_only"));
 
     // Delete track
     menu.addItem(3, tr("tracks.delete"));
@@ -2725,56 +2726,66 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                                          : tr("tracks.show_io_routing"));
 
     // Show menu and handle result
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-                           localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
-                       [this, trackId = header.trackId, trackIndex](int result) {
-                           if (result == 1) {
-                               // Toggle collapse
-                               handleCollapseToggle(trackId);
-                           } else if (result == 2) {
-                               // Remove from group
-                               TrackManager::getInstance().removeTrackFromGroup(trackId);
-                           } else if (result == 3) {
-                               // Delete track (through undo system)
-                               auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
-                               UndoManager::getInstance().executeCommand(std::move(cmd));
-                           } else if (result == 4) {
-                               // Duplicate track with content
-                               auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, true);
-                               UndoManager::getInstance().executeCommand(std::move(cmd));
-                           } else if (result == 5) {
-                               // Duplicate track without content
-                               auto cmd = std::make_unique<DuplicateTrackCommand>(trackId, false);
-                               UndoManager::getInstance().executeCommand(std::move(cmd));
-                           } else if (result == 6) {
-                               // Toggle I/O routing visibility (per-track)
-                               if (trackIndex >= 0 &&
-                                   trackIndex < static_cast<int>(trackHeaders.size())) {
-                                   trackHeaders[trackIndex]->showIORouting =
-                                       !trackHeaders[trackIndex]->showIORouting;
-                                   resized();
-                               }
-                           } else if (result == 7) {
-                               // Toggle freeze
-                               auto* t = TrackManager::getInstance().getTrack(trackId);
-                               if (t) {
-                                   TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
-                               }
-                           } else if (result >= 600) {
-                               // Remove send (busIndex = result - 600)
-                               int busIndex = result - 600;
-                               TrackManager::getInstance().removeSend(trackId, busIndex);
-                           } else if (result >= 500) {
-                               // Add send (aux trackId = result - 500)
-                               // Note: checked after >= 600 to avoid collision when trackId >= 100
-                               TrackId auxId = result - 500;
-                               TrackManager::getInstance().addSend(trackId, auxId);
-                           } else if (result >= 100) {
-                               // Move to group
-                               TrackId groupId = result - 100;
-                               TrackManager::getInstance().addTrackToGroup(trackId, groupId);
-                           }
-                       });
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetScreenArea(
+            localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
+        [this, trackId = header.trackId, trackIndex](int result) {
+            if (result == 1) {
+                // Toggle collapse
+                handleCollapseToggle(trackId);
+            } else if (result == 2) {
+                // Remove from group
+                TrackManager::getInstance().removeTrackFromGroup(trackId);
+            } else if (result == 3) {
+                // Delete track (through undo system)
+                auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == 4) {
+                // Duplicate track with content + FX chain
+                auto cmd =
+                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/true,
+                                                            /*duplicateDevices=*/true);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == 5) {
+                // Duplicate track without content (FX chain only)
+                auto cmd =
+                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/false,
+                                                            /*duplicateDevices=*/true);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == 7) {
+                // Duplicate track content only (clips, no FX chain)
+                auto cmd =
+                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/true,
+                                                            /*duplicateDevices=*/false);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+            } else if (result == 6) {
+                // Toggle I/O routing visibility (per-track)
+                if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
+                    trackHeaders[trackIndex]->showIORouting =
+                        !trackHeaders[trackIndex]->showIORouting;
+                    resized();
+                }
+            } else if (result == 7) {
+                // Toggle freeze
+                auto* t = TrackManager::getInstance().getTrack(trackId);
+                if (t) {
+                    TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
+                }
+            } else if (result >= 600) {
+                // Remove send (busIndex = result - 600)
+                int busIndex = result - 600;
+                TrackManager::getInstance().removeSend(trackId, busIndex);
+            } else if (result >= 500) {
+                // Add send (aux trackId = result - 500)
+                // Note: checked after >= 600 to avoid collision when trackId >= 100
+                TrackId auxId = result - 500;
+                TrackManager::getInstance().addSend(trackId, auxId);
+            } else if (result >= 100) {
+                // Move to group
+                TrackId groupId = result - 100;
+                TrackManager::getInstance().addTrackToGroup(trackId, groupId);
+            }
+        });
 }
 
 void TrackHeadersPanel::toggleRouting(int trackIndex, RoutingType type) {

@@ -670,7 +670,19 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onDuplicateTrackNoContent = []() {
         TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
         if (selectedTrack != INVALID_TRACK_ID) {
-            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack, false);
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack,
+                                                               /*duplicateContent=*/false,
+                                                               /*duplicateDevices=*/true);
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+        }
+    };
+
+    callbacks.onDuplicateTrackContentOnly = []() {
+        TrackId selectedTrack = SelectionManager::getInstance().getSelectedTrack();
+        if (selectedTrack != INVALID_TRACK_ID) {
+            auto cmd = std::make_unique<DuplicateTrackCommand>(selectedTrack,
+                                                               /*duplicateContent=*/true,
+                                                               /*duplicateDevices=*/false);
             UndoManager::getInstance().executeCommand(std::move(cmd));
         }
     };

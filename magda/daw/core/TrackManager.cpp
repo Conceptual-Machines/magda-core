@@ -350,7 +350,7 @@ void TrackManager::restoreTrack(const TrackInfo& trackInfo) {
     DBG("Restored track: " << trackInfo.name << " (id=" << trackInfo.id << ")");
 }
 
-TrackId TrackManager::duplicateTrack(TrackId trackId) {
+TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
     auto it = std::find_if(tracks_.begin(), tracks_.end(),
                            [trackId](const TrackInfo& t) { return t.id == trackId; });
 
@@ -362,6 +362,11 @@ TrackId TrackManager::duplicateTrack(TrackId trackId) {
     newTrack.id = nextTrackId_++;
     newTrack.name = it->name + " Copy";
     newTrack.childIds.clear();  // Don't duplicate children references
+
+    // Content-only duplication: strip the FX chain so the duplicate starts clean.
+    if (!includeDevices) {
+        newTrack.chainElements.clear();
+    }
 
     // Reassign all device/rack/chain IDs so the duplicate gets its own
     // plugin instances in the audio engine (sharing IDs = no audio).

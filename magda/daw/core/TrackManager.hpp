@@ -159,7 +159,12 @@ class TrackManager {
     TrackId createTrack(const juce::String& name = "", TrackType type = TrackType::Audio);
     TrackId createGroupTrack(const juce::String& name = "");
     void deleteTrack(TrackId trackId);
-    TrackId duplicateTrack(TrackId trackId);
+    /**
+     * Duplicate a track. When `includeDevices` is false, the new track is
+     * created empty (no plugins / racks / chain elements), giving a clean
+     * slate for workflows that want content-only duplication.
+     */
+    TrackId duplicateTrack(TrackId trackId, bool includeDevices = true);
     void restoreTrack(const TrackInfo& trackInfo);  // Used by undo system
     void moveTrack(TrackId trackId, int newIndex);
 
