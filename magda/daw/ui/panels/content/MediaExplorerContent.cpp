@@ -693,6 +693,21 @@ MediaExplorerContent::MediaExplorerContent() {
     fileBrowser_->addMouseListener(this, true);
     addAndMakeVisible(*fileBrowser_);
 
+    // Belt-and-braces: ensure the underlying list honours shift/cmd multi-select and
+    // paints with our theme's highlight colour (FileListComponent::findColour does not
+    // inherit from the parent FileBrowserComponent, so colours must be set here too).
+    if (auto* listComp =
+            dynamic_cast<juce::FileListComponent*>(fileBrowser_->getDisplayComponent())) {
+        listComp->setMultipleSelectionEnabled(true);
+        listComp->setRowSelectedOnMouseDown(true);
+        listComp->setColour(juce::DirectoryContentsDisplayComponent::highlightColourId,
+                            DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+        listComp->setColour(juce::DirectoryContentsDisplayComponent::textColourId,
+                            DarkTheme::getTextColour());
+        listComp->setColour(juce::DirectoryContentsDisplayComponent::highlightedTextColourId,
+                            DarkTheme::getTextColour());
+    }
+
     // Apply LookAndFeel to ComboBox child and hide the filename editor
     for (int i = 0; i < fileBrowser_->getNumChildComponents(); ++i) {
         auto* child = fileBrowser_->getChildComponent(i);
@@ -1096,8 +1111,55 @@ void MediaExplorerContent::onDeactivated() {
 
 // FileBrowserListener implementation
 void MediaExplorerContent::selectionChanged() {
-    // When selection changes, handle preview based on file type
-    auto selectedFile = fileBrowser_->getSelectedFile(0);
+    // Read selection from the underlying list directly (more reliable than
+    // FileBrowserComponent's cached chosenFiles).
+    auto* listComp = dynamic_cast<juce::FileListComponent*>(fileBrowser_->getDisplayComponent());
+    const int numSelected = listComp ? listComp->getNumSelectedFiles() : 0;
+
+    // Maintain sticky selection for drag. Rules:
+    //   * selection size >= 2 → remember this set as the new sticky selection
+    //   * size == 1 AND that single file was in the prior sticky set → keep sticky
+    //     (user clicked within a multi-selection, presumably to drag it out)
+    //   * otherwise → replace sticky with the current selection
+    if (listComp != nullptr) {
+        juce::Array<juce::File> current;
+        for (int i = 0; i < numSelected; ++i)
+            current.add(listComp->getSelectedFile(i));
+
+        if (current.size() >= 2) {
+            stickySelection_ = current;
+            stickyRowSelection_ = listComp->getSelectedRows();
+        } else if (current.size() == 1 && stickySelection_.size() >= 2 &&
+                   stickySelection_.contains(current[0])) {
+            // Keep sticky — user may be about to drag.
+        } else {
+            stickySelection_ = current;
+            stickyRowSelection_ = listComp->getSelectedRows();
+        }
+    }
+
+    // Multi-selection: show a summary in the preview area and stop any ongoing preview.
+    if (numSelected > 1) {
+        stopPreview();
+        transportSource_->setSource(nullptr);
+        readerSource_.reset();
+        playButton_->setEnabled(false);
+
+        juce::int64 totalBytes = 0;
+        for (int i = 0; i < numSelected; ++i)
+            totalBytes += listComp->getSelectedFile(i).getSize();
+
+        fileInfoLabel_.setText(juce::String(numSelected) + " files selected",
+                               juce::dontSendNotification);
+        formatLabel_.setText("Multiple files", juce::dontSendNotification);
+        propertiesLabel_.setText("Total size: " + formatFileSize(totalBytes),
+                                 juce::dontSendNotification);
+        if (thumbnailComponent_)
+            thumbnailComponent_->setFile(juce::File());
+        return;
+    }
+
+    auto selectedFile = listComp ? listComp->getSelectedFile(0) : fileBrowser_->getSelectedFile(0);
 
     if (!selectedFile.existsAsFile()) {
         // No valid file selected - stop preview
@@ -1244,15 +1306,41 @@ void MediaExplorerContent::changeListenerCallback(juce::ChangeBroadcaster* sourc
 
 // MouseListener implementation for drag detection
 void MediaExplorerContent::mouseDrag(const juce::MouseEvent& e) {
-    // Start drag if mouse moved beyond threshold
-    if (!isDraggingFile_ && fileForDrag_.existsAsFile() && e.getDistanceFromDragStart() > 5) {
-        isDraggingFile_ = true;
+    if (isDraggingFile_ || !fileForDrag_.existsAsFile() || e.getDistanceFromDragStart() <= 5)
+        return;
 
-        // Start drag operation (all media types are draggable)
-        if (mediaFileFilter_->isFileSuitable(fileForDrag_)) {
-            juce::DragAndDropContainer::performExternalDragDropOfFiles(
-                juce::StringArray{fileForDrag_.getFullPathName()}, false, this);
+    isDraggingFile_ = true;
+
+    auto* listComp = dynamic_cast<juce::FileListComponent*>(fileBrowser_->getDisplayComponent());
+
+    juce::StringArray paths;
+
+    // Prefer the sticky selection if the drag started from one of its files.
+    if (stickySelection_.size() >= 2 && stickySelection_.contains(fileForDrag_)) {
+        for (const auto& f : stickySelection_) {
+            if (f.existsAsFile() && mediaFileFilter_->isFileSuitable(f))
+                paths.addIfNotAlreadyThere(f.getFullPathName());
         }
+    } else if (listComp != nullptr) {
+        const int numSelected = listComp->getNumSelectedFiles();
+        for (int i = 0; i < numSelected; ++i) {
+            auto f = listComp->getSelectedFile(i);
+            if (f.existsAsFile() && mediaFileFilter_->isFileSuitable(f))
+                paths.addIfNotAlreadyThere(f.getFullPathName());
+        }
+    }
+
+    if (paths.isEmpty() && mediaFileFilter_->isFileSuitable(fileForDrag_))
+        paths.add(fileForDrag_.getFullPathName());
+
+    if (!paths.isEmpty()) {
+        juce::DragAndDropContainer::performExternalDragDropOfFiles(paths, false, this);
+
+        // The ListBox collapsed the visual selection to the clicked row when
+        // the drag started. Restore the sticky multi-selection now that the
+        // external drag has finished so the user keeps their selection.
+        if (stickyRowSelection_.size() >= 2 && listComp != nullptr)
+            listComp->setSelectedRows(stickyRowSelection_);
     }
 }
 

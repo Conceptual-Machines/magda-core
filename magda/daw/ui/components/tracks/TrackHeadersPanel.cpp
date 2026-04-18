@@ -1310,22 +1310,68 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
     // Draw drag-and-drop feedback on top
     paintDragFeedback(g);
 
-    // Draw plugin drop highlight
-    if (pluginDragActive_) {
-        // Always draw a thick yellow border between the last track and
-        // master to show where a "new track" drop will land.
-        int lineY = 0;
+    // Ghost-header preview (drag-to-create flows — files or devices).
+    // Colours match what TrackManager::createTrack will assign (Config palette
+    // indexed by track count), so the preview is a faithful prediction.
+    if (!ghostHeaderLabels_.isEmpty()) {
+        int topY = 0;
         for (int i = static_cast<int>(trackHeaders.size()) - 1; i >= 0; --i) {
             if (!trackHeaders[i]->isMaster) {
-                lineY = getTrackHeaderArea(i).getBottom();
+                topY = getTrackHeaderArea(i).getBottom();
                 break;
             }
         }
-        g.setColour(juce::Colours::yellow.withAlpha(pluginDropTrackIndex_ < 0 ? 0.9f : 0.4f));
-        g.fillRect(0, lineY, getWidth(), 3);
+        const int ghostHeight = DEFAULT_TRACK_HEIGHT;
+        const int w = getWidth();
+        const int baseIndex = static_cast<int>(trackHeaders.size());
 
-        if (pluginDropTrackIndex_ >= 0 &&
-            pluginDropTrackIndex_ < static_cast<int>(trackHeaders.size())) {
+        for (int i = 0; i < ghostHeaderLabels_.size(); ++i) {
+            const int y0 = topY + i * ghostHeight;
+            const auto tint = juce::Colour(Config::getDefaultColour(baseIndex + i));
+
+            juce::Rectangle<int> headerRect(0, y0, w, ghostHeight);
+            g.setColour(tint.withAlpha(0.18f));
+            g.fillRect(headerRect);
+            g.setColour(tint.withAlpha(0.7f));
+            g.drawRect(headerRect, 1);
+
+            // Accent stripe on the left so it reads as a track header.
+            g.setColour(tint);
+            g.fillRect(0, y0, 4, ghostHeight);
+
+            g.setColour(tint.brighter(0.4f));
+            g.setFont(juce::Font(juce::FontOptions(13.0f).withStyle("Bold")));
+            g.drawFittedText(ghostHeaderLabels_[i], headerRect.reduced(12, 4),
+                             juce::Justification::centredLeft, 1);
+        }
+    }
+
+    // Draw plugin drop highlight
+    if (pluginDragActive_) {
+        if (pluginDropTrackIndex_ < 0) {
+            // Targeting empty area: ghost header(s) show where the new track
+            // will land. Only fall back to a "line at the bottom" when the
+            // ghost is scrolled out of the visible viewport.
+            int lineY = 0;
+            for (int i = static_cast<int>(trackHeaders.size()) - 1; i >= 0; --i) {
+                if (!trackHeaders[i]->isMaster) {
+                    lineY = getTrackHeaderArea(i).getBottom();
+                    break;
+                }
+            }
+
+            auto* vp = findParentComponentOfClass<juce::Viewport>();
+            const int visibleBottom = vp ? (vp->getViewPositionY() + vp->getHeight()) : getHeight();
+            const bool ghostVisible = !ghostHeaderLabels_.isEmpty() && lineY < visibleBottom;
+
+            if (!ghostVisible) {
+                const int drawY = juce::jmax(0, visibleBottom - 3);
+                g.setColour(juce::Colours::yellow.withAlpha(0.9f));
+                g.fillRect(0, drawY, getWidth(), 3);
+            }
+        } else if (pluginDropTrackIndex_ < static_cast<int>(trackHeaders.size())) {
+            // Targeting an existing track: highlight it. The hovered-track
+            // rectangle is the only indicator — no redundant horizontal line.
             auto area = getTrackHeaderArea(pluginDropTrackIndex_);
             g.setColour(juce::Colours::yellow.withAlpha(0.12f));
             g.fillRect(area);
@@ -1337,6 +1383,13 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
 
 void TrackHeadersPanel::resized() {
     updateTrackHeaderLayout();
+}
+
+void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels) {
+    if (ghostHeaderLabels_ == labels)
+        return;
+    ghostHeaderLabels_ = labels;
+    repaint();
 }
 
 void TrackHeadersPanel::selectTrack(int index) {
@@ -3591,6 +3644,20 @@ void TrackHeadersPanel::itemDragEnter(const SourceDetails& details) {
             break;
         }
     }
+
+    // Ghost header for the new track that a drop on empty area would create.
+    if (pluginDropTrackIndex_ < 0) {
+        juce::String label = "New Track";
+        if (auto* obj = details.description.getDynamicObject()) {
+            auto name = obj->getProperty("name").toString();
+            if (name.isNotEmpty())
+                label = name;
+        }
+        setGhostHeaders({label});
+    } else {
+        setGhostHeaders({});
+    }
+
     repaint();
 }
 
@@ -3605,6 +3672,21 @@ void TrackHeadersPanel::itemDragMove(const SourceDetails& details) {
             break;
         }
     }
+
+    if ((prev < 0) != (pluginDropTrackIndex_ < 0)) {
+        if (pluginDropTrackIndex_ < 0) {
+            juce::String label = "New Track";
+            if (auto* obj = details.description.getDynamicObject()) {
+                auto name = obj->getProperty("name").toString();
+                if (name.isNotEmpty())
+                    label = name;
+            }
+            setGhostHeaders({label});
+        } else {
+            setGhostHeaders({});
+        }
+    }
+
     if (pluginDropTrackIndex_ != prev)
         repaint();
 }
@@ -3612,11 +3694,13 @@ void TrackHeadersPanel::itemDragMove(const SourceDetails& details) {
 void TrackHeadersPanel::itemDragExit(const SourceDetails& /*details*/) {
     pluginDragActive_ = false;
     pluginDropTrackIndex_ = -1;
+    setGhostHeaders({});
     repaint();
 }
 
 void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
     pluginDragActive_ = false;
+    setGhostHeaders({});
     auto* obj = details.description.getDynamicObject();
     if (!obj) {
         pluginDropTrackIndex_ = -1;

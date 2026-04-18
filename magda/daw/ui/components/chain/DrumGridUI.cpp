@@ -556,22 +556,66 @@ bool DrumGridUI::isInterestedInFileDrag(const juce::StringArray& files) {
     return false;
 }
 
-void DrumGridUI::filesDropped(const juce::StringArray& files, int x, int y) {
-    // Find which pad the file was dropped on
+static int countAudioFilesDG(const juce::StringArray& files) {
+    int n = 0;
+    for (const auto& f : files) {
+        if (f.endsWithIgnoreCase(".wav") || f.endsWithIgnoreCase(".aif") ||
+            f.endsWithIgnoreCase(".aiff") || f.endsWithIgnoreCase(".flac") ||
+            f.endsWithIgnoreCase(".ogg") || f.endsWithIgnoreCase(".mp3"))
+            ++n;
+    }
+    return n;
+}
+
+void DrumGridUI::fileDragEnter(const juce::StringArray& files, int x, int y) {
+    fileDropCount_ = countAudioFilesDG(files);
     int btnIdx = padButtonIndexAtPoint({x, y});
-    if (btnIdx < 0)
+    fileDropStartPad_ = (btnIdx >= 0) ? currentPage_ * kPadsPerPage + btnIdx : -1;
+    repaint();
+}
+
+void DrumGridUI::fileDragMove(const juce::StringArray& /*files*/, int x, int y) {
+    int btnIdx = padButtonIndexAtPoint({x, y});
+    int newStart = (btnIdx >= 0) ? currentPage_ * kPadsPerPage + btnIdx : -1;
+    if (newStart != fileDropStartPad_) {
+        fileDropStartPad_ = newStart;
+        repaint();
+    }
+}
+
+void DrumGridUI::fileDragExit(const juce::StringArray& /*files*/) {
+    fileDropStartPad_ = -1;
+    fileDropCount_ = 0;
+    repaint();
+}
+
+void DrumGridUI::filesDropped(const juce::StringArray& files, int x, int y) {
+    fileDropStartPad_ = -1;
+    fileDropCount_ = 0;
+    repaint();
+
+    int btnIdx = padButtonIndexAtPoint({x, y});
+    if (btnIdx < 0 || !onSampleDropped)
         return;
 
     int padIndex = currentPage_ * kPadsPerPage + btnIdx;
+    int lastAssigned = -1;
 
     for (const auto& f : files) {
-        juce::File file(f);
-        if (file.existsAsFile() && onSampleDropped) {
-            setSelectedPad(padIndex);
-            onSampleDropped(padIndex, file);
+        if (padIndex >= kTotalPads)
             break;
-        }
+
+        juce::File file(f);
+        if (!file.existsAsFile())
+            continue;
+
+        onSampleDropped(padIndex, file);
+        lastAssigned = padIndex;
+        ++padIndex;
     }
+
+    if (lastAssigned >= 0)
+        setSelectedPad(lastAssigned);
 }
 
 // =============================================================================
@@ -637,16 +681,32 @@ void DrumGridUI::PaginationStripBg::paint(juce::Graphics& g) {
 }
 
 void DrumGridUI::paintOverChildren(juce::Graphics& g) {
-    // Drop highlight on pad (painted over children so it's visible on top of PadButton)
-    if (dropHighlightPad_ >= 0) {
+    auto highlightPad = [&](int absolutePadIndex, float alphaFill, float alphaStroke) {
         int pageStart = currentPage_ * kPadsPerPage;
-        int btnIdx = dropHighlightPad_ - pageStart;
-        if (btnIdx >= 0 && btnIdx < kPadsPerPage) {
-            auto padBounds = padButtons_[static_cast<size_t>(btnIdx)].getBounds();
-            g.setColour(juce::Colours::yellow.withAlpha(0.4f));
-            g.fillRoundedRectangle(padBounds.toFloat(), 3.0f);
-            g.setColour(juce::Colours::yellow.withAlpha(0.8f));
-            g.drawRoundedRectangle(padBounds.toFloat().reduced(1.0f), 3.0f, 1.5f);
+        int btnIdx = absolutePadIndex - pageStart;
+        if (btnIdx < 0 || btnIdx >= kPadsPerPage)
+            return;
+        auto padBounds = padButtons_[static_cast<size_t>(btnIdx)].getBounds();
+        g.setColour(juce::Colours::yellow.withAlpha(alphaFill));
+        g.fillRoundedRectangle(padBounds.toFloat(), 3.0f);
+        g.setColour(juce::Colours::yellow.withAlpha(alphaStroke));
+        g.drawRoundedRectangle(padBounds.toFloat().reduced(1.0f), 3.0f, 1.5f);
+    };
+
+    // Plugin/pad drop highlight — single pad under cursor.
+    if (dropHighlightPad_ >= 0)
+        highlightPad(dropHighlightPad_, 0.4f, 0.8f);
+
+    // File-drag preview — every pad that will receive a sample on drop.
+    if (fileDropStartPad_ >= 0 && fileDropCount_ > 0) {
+        for (int i = 0; i < fileDropCount_; ++i) {
+            int pad = fileDropStartPad_ + i;
+            if (pad >= kTotalPads)
+                break;
+            // First pad bright, the rest slightly dimmer so the origin reads.
+            const float f = (i == 0) ? 0.4f : 0.25f;
+            const float s = (i == 0) ? 0.8f : 0.55f;
+            highlightPad(pad, f, s);
         }
     }
 }

@@ -166,6 +166,12 @@ void MainView::setupComponents() {
     // Wire track headers scroll to content viewport
     trackHeadersPanel->setScrollTarget(trackContentViewport.get());
 
+    // Wire file-drag ghost-header previews from content panel → headers panel.
+    trackContentPanel->onGhostHeadersChanged = [this](const juce::StringArray& labels) {
+        if (trackHeadersPanel)
+            trackHeadersPanel->setGhostHeaders(labels);
+    };
+
     // Create grid overlay component (vertical time grid lines - below selection and playhead)
     gridOverlay = std::make_unique<GridOverlayComponent>();
     gridOverlay->setController(timelineController.get());

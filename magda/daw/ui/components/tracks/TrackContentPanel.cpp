@@ -304,7 +304,7 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
 
         if (dropTargetTrackIndex_ >= 0 &&
             dropTargetTrackIndex_ < static_cast<int>(trackLanes.size())) {
-            // Dropping on an existing track — line spans that track
+            // Dropping on an existing track — line spans that track (append mode).
             int trackY = getTrackYPosition(dropTargetTrackIndex_);
             int trackHeight = getTrackHeight(dropTargetTrackIndex_);
 
@@ -312,13 +312,48 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
             g.drawLine(static_cast<float>(dropX), static_cast<float>(trackY),
                        static_cast<float>(dropX), static_cast<float>(trackY + trackHeight), 2.0f);
         } else {
-            // Dropping on empty area — show drop line spanning a phantom track region
-            int topY = getTotalTracksHeight();
-            int bottomY = topY + DEFAULT_TRACK_HEIGHT;
+            // Dropping on empty area — ghost one clip preview per audio file, each
+            // on its own phantom track row below the existing tracks. The ghost
+            // starts at the drop insertion time (never before it) and its width
+            // matches the sample duration so the user can judge layout.
+            const int numGhosts = juce::jmax(1, draggedAudioFiles_.size());
+            const int topY = getTotalTracksHeight();
+            const int ghostHeight = DEFAULT_TRACK_HEIGHT;
+            const int baseIndex = TrackManager::getInstance().getNumTracks();
 
-            g.setColour(juce::Colours::yellow.withAlpha(0.8f));
-            g.drawLine(static_cast<float>(dropX), static_cast<float>(topY),
-                       static_cast<float>(dropX), static_cast<float>(bottomY), 2.0f);
+            for (int i = 0; i < numGhosts; ++i) {
+                const int y0 = topY + i * ghostHeight;
+                const int y1 = y0 + ghostHeight;
+
+                const auto tint = juce::Colour(Config::getDefaultColour(baseIndex + i));
+
+                // Ghost clip: starts at dropX, width derived from sample duration.
+                double duration = (i < static_cast<int>(draggedAudioDurations_.size()))
+                                      ? draggedAudioDurations_[i]
+                                      : 4.0;
+                int clipEndX = timeToPixel(dropInsertTime_ + duration);
+                int clipW = juce::jmax(4, clipEndX - dropX);
+
+                juce::Rectangle<int> clipRect(dropX, y0 + 2, clipW, ghostHeight - 4);
+                g.setColour(tint.withAlpha(0.25f));
+                g.fillRect(clipRect);
+                g.setColour(tint.withAlpha(0.9f));
+                g.drawRect(clipRect, 1);
+
+                // Filename inside the clip (left-aligned, with padding).
+                if (i < draggedAudioFiles_.size()) {
+                    auto name = juce::File(draggedAudioFiles_[i]).getFileNameWithoutExtension();
+                    g.setColour(tint.brighter(0.3f));
+                    g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
+                    g.drawFittedText(name, clipRect.reduced(6, 4), juce::Justification::centredLeft,
+                                     1);
+                }
+
+                // Insertion marker (left edge of the clip).
+                g.setColour(tint.withAlpha(0.9f));
+                g.drawLine(static_cast<float>(dropX), static_cast<float>(y0),
+                           static_cast<float>(dropX), static_cast<float>(y1), 2.0f);
+            }
         }
     }
 }
@@ -2409,13 +2444,47 @@ bool TrackContentPanel::isInterestedInFileDrag(const juce::StringArray& files) {
     return false;
 }
 
-void TrackContentPanel::fileDragEnter(const juce::StringArray& /*files*/, int x, int y) {
+void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int y) {
     dropInsertTime_ = juce::jmax(0.0, pixelToTime(x));
     if (snapTimeToGrid) {
         dropInsertTime_ = snapTimeToGrid(dropInsertTime_);
     }
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
+
+    draggedAudioFiles_.clear();
+    draggedAudioDurations_.clear();
+    juce::AudioFormatManager formatMgr;
+    formatMgr.registerBasicFormats();
+    for (const auto& f : files) {
+        if (f.endsWithIgnoreCase(".wav") || f.endsWithIgnoreCase(".aiff") ||
+            f.endsWithIgnoreCase(".aif") || f.endsWithIgnoreCase(".mp3") ||
+            f.endsWithIgnoreCase(".ogg") || f.endsWithIgnoreCase(".flac")) {
+            draggedAudioFiles_.add(f);
+
+            double duration = 4.0;
+            juce::File audioFile(f);
+            if (auto reader = std::unique_ptr<juce::AudioFormatReader>(
+                    formatMgr.createReaderFor(audioFile))) {
+                if (reader->sampleRate > 0.0)
+                    duration = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+            }
+            draggedAudioDurations_.push_back(duration);
+        }
+    }
+
     showDropIndicator_ = true;
+
+    // Fire ghost-header callback: one phantom header per audio file when the
+    // drop would spawn new tracks (i.e. empty area).
+    if (onGhostHeadersChanged) {
+        juce::StringArray labels;
+        if (dropTargetTrackIndex_ < 0) {
+            for (const auto& f : draggedAudioFiles_)
+                labels.add(juce::File(f).getFileNameWithoutExtension());
+        }
+        onGhostHeadersChanged(labels);
+    }
+
     repaintVisible();
 }
 
@@ -2424,17 +2493,37 @@ void TrackContentPanel::fileDragMove(const juce::StringArray& /*files*/, int x, 
     if (snapTimeToGrid) {
         dropInsertTime_ = snapTimeToGrid(dropInsertTime_);
     }
+    const int prevTarget = dropTargetTrackIndex_;
     dropTargetTrackIndex_ = getTrackIndexAtY(y);
+
+    // Update ghost headers when we cross the empty-area / existing-track boundary.
+    if (onGhostHeadersChanged && (prevTarget < 0) != (dropTargetTrackIndex_ < 0)) {
+        juce::StringArray labels;
+        if (dropTargetTrackIndex_ < 0) {
+            for (const auto& f : draggedAudioFiles_)
+                labels.add(juce::File(f).getFileNameWithoutExtension());
+        }
+        onGhostHeadersChanged(labels);
+    }
+
     repaintVisible();
 }
 
 void TrackContentPanel::fileDragExit(const juce::StringArray& /*files*/) {
     showDropIndicator_ = false;
+    draggedAudioFiles_.clear();
+    draggedAudioDurations_.clear();
+    if (onGhostHeadersChanged)
+        onGhostHeadersChanged({});
     repaintVisible();
 }
 
 void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int y) {
     showDropIndicator_ = false;
+    draggedAudioFiles_.clear();
+    draggedAudioDurations_.clear();
+    if (onGhostHeadersChanged)
+        onGhostHeadersChanged({});
     repaintVisible();
 
     // Determine drop position (clamp to timeline start, snap if enabled)
@@ -2486,43 +2575,74 @@ void TrackContentPanel::filesDropped(const juce::StringArray& files, int x, int 
 
     int importedCount = 0;
 
-    // Import audio files
+    // Import audio files.
+    // Drop target decides the mode:
+    //   * on existing track  → append clips sequentially to that track
+    //   * on empty area      → one new track per sample
     if (!audioFiles.isEmpty()) {
         juce::AudioFormatManager formatManager;
         formatManager.registerBasicFormats();
 
-        double currentTime = dropTime;
+        const bool expand = (targetTrackId == INVALID_TRACK_ID);
         CompoundOperationScope scope("Import Audio Files");
 
-        for (const auto& filePath : audioFiles) {
-            juce::File audioFile(filePath);
-            if (!audioFile.existsAsFile())
-                continue;
+        if (expand) {
+            TrackId insertAfter = INVALID_TRACK_ID;
 
-            if (targetTrackId == INVALID_TRACK_ID) {
+            for (const auto& filePath : audioFiles) {
+                juce::File audioFile(filePath);
+                if (!audioFile.existsAsFile())
+                    continue;
+
                 juce::String trackName = audioFile.getFileNameWithoutExtension();
                 auto createTrackCmd =
-                    std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName);
+                    std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName, insertAfter);
                 auto* createTrackPtr = createTrackCmd.get();
                 UndoManager::getInstance().executeCommand(std::move(createTrackCmd));
-                targetTrackId = createTrackPtr->getCreatedTrackId();
-                if (targetTrackId == INVALID_TRACK_ID)
-                    return;
-                TrackManager::getInstance().setSelectedTrack(targetTrackId);
+                TrackId clipTrackId = createTrackPtr->getCreatedTrackId();
+                if (clipTrackId == INVALID_TRACK_ID)
+                    continue;
+                insertAfter = clipTrackId;
+
+                double fileDuration = 4.0;
+                if (auto reader = std::unique_ptr<juce::AudioFormatReader>(
+                        formatManager.createReaderFor(audioFile))) {
+                    fileDuration =
+                        static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+                }
+
+                auto cmd = std::make_unique<CreateClipCommand>(
+                    ClipType::Audio, clipTrackId, dropTime, fileDuration, filePath.toStdString());
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+                importedCount++;
             }
 
-            double fileDuration = 4.0;
-            if (auto reader = std::unique_ptr<juce::AudioFormatReader>(
-                    formatManager.createReaderFor(audioFile))) {
-                fileDuration = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+            if (importedCount > 0 && insertAfter != INVALID_TRACK_ID)
+                TrackManager::getInstance().setSelectedTrack(insertAfter);
+        } else {
+            // Append to the hovered track: stack clips sequentially on the timeline.
+            double currentTime = dropTime;
+
+            for (const auto& filePath : audioFiles) {
+                juce::File audioFile(filePath);
+                if (!audioFile.existsAsFile())
+                    continue;
+
+                double fileDuration = 4.0;
+                if (auto reader = std::unique_ptr<juce::AudioFormatReader>(
+                        formatManager.createReaderFor(audioFile))) {
+                    fileDuration =
+                        static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+                }
+
+                auto cmd =
+                    std::make_unique<CreateClipCommand>(ClipType::Audio, targetTrackId, currentTime,
+                                                        fileDuration, filePath.toStdString());
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                currentTime += fileDuration + 0.5;
+                importedCount++;
             }
-
-            auto cmd = std::make_unique<CreateClipCommand>(
-                ClipType::Audio, targetTrackId, currentTime, fileDuration, filePath.toStdString());
-            UndoManager::getInstance().executeCommand(std::move(cmd));
-
-            currentTime += fileDuration + 0.5;
-            importedCount++;
         }
     }
 

@@ -2857,99 +2857,121 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
     clearDragHighlight();
     clearDragGhost();
 
-    // Convert screen coordinates to grid viewport coordinates
     auto gridLocalPoint = gridViewport->getLocalPoint(this, juce::Point<int>(x, y));
-
-    // Add viewport scroll offset
     gridLocalPoint +=
         juce::Point<int>(gridViewport->getViewPositionX(), gridViewport->getViewPositionY());
 
-    // Calculate which slot was dropped on
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
-
     int trackIndex = getTrackIndexAtX(gridLocalPoint.getX());
     int sceneIndex = gridLocalPoint.getY() / sceneRowHeight;
 
-    // Validate scene index
     if (sceneIndex < 0 || sceneIndex >= numScenes_)
         return;
 
-    TrackId targetTrackId = INVALID_TRACK_ID;
-
-    if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
-        targetTrackId = visibleTrackIds_[trackIndex];
-    } else {
-        // Dropped past last track — create a new audio track
-        // Derive name from first audio file
-        juce::String trackName = "Audio";
-        for (const auto& f : files) {
-            if (isAudioFile(f)) {
-                trackName = juce::File(f).getFileNameWithoutExtension();
-                break;
-            }
-        }
-        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName);
-        auto* cmdPtr = cmd.get();
-        UndoManager::getInstance().executeCommand(std::move(cmd));
-        targetTrackId = cmdPtr->getCreatedTrackId();
-        if (targetTrackId == INVALID_TRACK_ID)
-            return;
+    juce::StringArray audioFiles;
+    for (const auto& f : files) {
+        if (isAudioFile(f))
+            audioFiles.add(f);
     }
+    if (audioFiles.isEmpty())
+        return;
 
-    // Create clips for each audio file dropped
+    TrackId hoveredTrackId = INVALID_TRACK_ID;
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size()))
+        hoveredTrackId = visibleTrackIds_[trackIndex];
+
+    // Drop target decides: empty area → one new track per sample, existing
+    // track → stack clips down the scene slots of that track.
+    const bool expand = (hoveredTrackId == INVALID_TRACK_ID);
+
     auto& clipManager = ClipManager::getInstance();
-    int currentSceneIndex = sceneIndex;
 
-    // Create format manager once for all dropped files
     juce::AudioFormatManager formatManager;
     formatManager.registerBasicFormats();
 
-    for (const auto& filePath : files) {
-        if (!isAudioFile(filePath))
-            continue;
+    double bpm = 120.0;
+    if (timelineController_)
+        bpm = timelineController_->getState().tempo.bpm;
 
-        // Skip to next empty slot
-        while (currentSceneIndex < numScenes_ &&
-               clipManager.getClipInSlot(targetTrackId, currentSceneIndex) != INVALID_CLIP_ID) {
-            currentSceneIndex++;
-        }
-
-        // Don't exceed scene bounds
-        if (currentSceneIndex >= numScenes_)
-            break;
-
-        // Get audio file duration
+    auto createClipOnTrack = [&](TrackId trackId, int sceneSlot, const juce::String& filePath) {
         juce::File audioFile(filePath);
-        double fileDuration = 4.0;  // fallback
+        double fileDuration = 4.0;
         {
             std::unique_ptr<juce::AudioFormatReader> reader(
                 formatManager.createReaderFor(audioFile));
-            if (reader) {
+            if (reader)
                 fileDuration = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
-            }
         }
 
-        // Create audio clip for session view (not arrangement)
-        double bpm = 120.0;
-        if (timelineController_) {
-            bpm = timelineController_->getState().tempo.bpm;
-        }
-        ClipId newClipId = clipManager.createAudioClip(targetTrackId, 0.0, fileDuration, filePath,
+        ClipId newClipId = clipManager.createAudioClip(trackId, 0.0, fileDuration, filePath,
                                                        ClipView::Session, bpm);
         if (newClipId != INVALID_CLIP_ID) {
             UndoManager::getInstance().executeCommand(std::make_unique<SetClipNameCommand>(
                 newClipId, audioFile.getFileNameWithoutExtension()));
-
-            // Session clips default to looping, with source end matching clip duration
             clipManager.setClipLoopEnabled(newClipId, true, bpm);
-            // Set loopLength to match file duration (source region = entire file)
             clipManager.setLoopLength(newClipId, fileDuration);
+            clipManager.setClipSceneIndex(newClipId, sceneSlot);
+        }
+    };
 
-            // Assign to session view slot (triggers proper notification)
-            clipManager.setClipSceneIndex(newClipId, currentSceneIndex);
+    auto nextEmptySlot = [&](TrackId trackId, int startSlot) {
+        while (startSlot < numScenes_ &&
+               clipManager.getClipInSlot(trackId, startSlot) != INVALID_CLIP_ID) {
+            ++startSlot;
+        }
+        return startSlot;
+    };
+
+    if (expand) {
+        // First sample goes to hovered track (if any); remaining samples each spawn a new track.
+        TrackId insertAfter = hoveredTrackId;
+        bool useHoveredForFirst = (hoveredTrackId != INVALID_TRACK_ID);
+
+        for (int i = 0; i < audioFiles.size(); ++i) {
+            const auto& filePath = audioFiles[i];
+
+            TrackId trackId;
+            if (i == 0 && useHoveredForFirst) {
+                trackId = hoveredTrackId;
+            } else {
+                juce::String trackName = juce::File(filePath).getFileNameWithoutExtension();
+                auto cmd =
+                    std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName, insertAfter);
+                auto* cmdPtr = cmd.get();
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+                trackId = cmdPtr->getCreatedTrackId();
+                if (trackId == INVALID_TRACK_ID)
+                    break;
+            }
+
+            int slot = nextEmptySlot(trackId, sceneIndex);
+            if (slot < numScenes_)
+                createClipOnTrack(trackId, slot, filePath);
+
+            insertAfter = trackId;
+        }
+    } else {
+        // Append mode: stack all clips down the scenes of a single target track.
+        TrackId targetTrackId = hoveredTrackId;
+        if (targetTrackId == INVALID_TRACK_ID) {
+            juce::String trackName = juce::File(audioFiles[0]).getFileNameWithoutExtension();
+            auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName);
+            auto* cmdPtr = cmd.get();
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            targetTrackId = cmdPtr->getCreatedTrackId();
+            if (targetTrackId == INVALID_TRACK_ID)
+                return;
         }
 
-        currentSceneIndex++;  // Move to next scene for multi-file drop
+        int slot = sceneIndex;
+        for (const auto& filePath : audioFiles) {
+            slot = nextEmptySlot(targetTrackId, slot);
+            if (slot >= numScenes_)
+                break;
+
+            createClipOnTrack(targetTrackId, slot, filePath);
+            ++slot;
+        }
     }
 }
 
