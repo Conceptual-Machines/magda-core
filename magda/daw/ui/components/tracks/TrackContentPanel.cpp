@@ -311,12 +311,12 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
             g.setColour(juce::Colours::yellow.withAlpha(0.8f));
             g.drawLine(static_cast<float>(dropX), static_cast<float>(trackY),
                        static_cast<float>(dropX), static_cast<float>(trackY + trackHeight), 2.0f);
-        } else {
-            // Dropping on empty area — ghost one clip preview per audio file, each
-            // on its own phantom track row below the existing tracks. The ghost
-            // starts at the drop insertion time (never before it) and its width
-            // matches the sample duration so the user can judge layout.
-            const int numGhosts = juce::jmax(1, draggedAudioFiles_.size());
+        } else if (!draggedAudioFiles_.isEmpty()) {
+            // Dropping audio on empty area — ghost one clip preview per audio
+            // file, each on its own phantom track row below the existing tracks.
+            // The ghost starts at the drop insertion time (never before it) and
+            // its width matches the sample duration so the user can judge layout.
+            const int numGhosts = draggedAudioFiles_.size();
             const int topY = getTotalTracksHeight();
             const int ghostHeight = DEFAULT_TRACK_HEIGHT;
             const int baseIndex = TrackManager::getInstance().getNumTracks();
@@ -340,20 +340,24 @@ void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
                 g.setColour(tint.withAlpha(0.9f));
                 g.drawRect(clipRect, 1);
 
-                // Filename inside the clip (left-aligned, with padding).
-                if (i < draggedAudioFiles_.size()) {
-                    auto name = juce::File(draggedAudioFiles_[i]).getFileNameWithoutExtension();
-                    g.setColour(tint.brighter(0.3f));
-                    g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
-                    g.drawFittedText(name, clipRect.reduced(6, 4), juce::Justification::centredLeft,
-                                     1);
-                }
+                auto name = juce::File(draggedAudioFiles_[i]).getFileNameWithoutExtension();
+                g.setColour(tint.brighter(0.3f));
+                g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
+                g.drawFittedText(name, clipRect.reduced(6, 4), juce::Justification::centredLeft, 1);
 
                 // Insertion marker (left edge of the clip).
                 g.setColour(tint.withAlpha(0.9f));
                 g.drawLine(static_cast<float>(dropX), static_cast<float>(y0),
                            static_cast<float>(dropX), static_cast<float>(y1), 2.0f);
             }
+        } else {
+            // Non-audio drop on empty area (e.g. MIDI-only) — simple insertion
+            // line only, no clip-shaped ghosts.
+            const int topY = getTotalTracksHeight();
+            const int bottomY = topY + DEFAULT_TRACK_HEIGHT;
+            g.setColour(juce::Colours::yellow.withAlpha(0.8f));
+            g.drawLine(static_cast<float>(dropX), static_cast<float>(topY),
+                       static_cast<float>(dropX), static_cast<float>(bottomY), 2.0f);
         }
     }
 }

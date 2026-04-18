@@ -1323,7 +1323,10 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
         }
         const int ghostHeight = DEFAULT_TRACK_HEIGHT;
         const int w = getWidth();
-        const int baseIndex = static_cast<int>(trackHeaders.size());
+        // Master is stored separately in TrackManager, so `trackHeaders.size()`
+        // would include it and drift by one from the colour index used in
+        // `TrackManager::createTrack`. Use `getNumTracks()` for a faithful match.
+        const int baseIndex = TrackManager::getInstance().getNumTracks();
 
         for (int i = 0; i < ghostHeaderLabels_.size(); ++i) {
             const int y0 = topY + i * ghostHeight;

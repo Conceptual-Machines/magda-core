@@ -2923,26 +2923,18 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
     };
 
     if (expand) {
-        // First sample goes to hovered track (if any); remaining samples each spawn a new track.
-        TrackId insertAfter = hoveredTrackId;
-        bool useHoveredForFirst = (hoveredTrackId != INVALID_TRACK_ID);
+        // Empty-area drop: one new track per sample, inserted in order.
+        TrackId insertAfter = INVALID_TRACK_ID;
 
-        for (int i = 0; i < audioFiles.size(); ++i) {
-            const auto& filePath = audioFiles[i];
-
-            TrackId trackId;
-            if (i == 0 && useHoveredForFirst) {
-                trackId = hoveredTrackId;
-            } else {
-                juce::String trackName = juce::File(filePath).getFileNameWithoutExtension();
-                auto cmd =
-                    std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName, insertAfter);
-                auto* cmdPtr = cmd.get();
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-                trackId = cmdPtr->getCreatedTrackId();
-                if (trackId == INVALID_TRACK_ID)
-                    break;
-            }
+        for (const auto& filePath : audioFiles) {
+            juce::String trackName = juce::File(filePath).getFileNameWithoutExtension();
+            auto cmd =
+                std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName, insertAfter);
+            auto* cmdPtr = cmd.get();
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            TrackId trackId = cmdPtr->getCreatedTrackId();
+            if (trackId == INVALID_TRACK_ID)
+                break;
 
             int slot = nextEmptySlot(trackId, sceneIndex);
             if (slot < numScenes_)
@@ -2951,25 +2943,14 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
             insertAfter = trackId;
         }
     } else {
-        // Append mode: stack all clips down the scenes of a single target track.
-        TrackId targetTrackId = hoveredTrackId;
-        if (targetTrackId == INVALID_TRACK_ID) {
-            juce::String trackName = juce::File(audioFiles[0]).getFileNameWithoutExtension();
-            auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Audio, trackName);
-            auto* cmdPtr = cmd.get();
-            UndoManager::getInstance().executeCommand(std::move(cmd));
-            targetTrackId = cmdPtr->getCreatedTrackId();
-            if (targetTrackId == INVALID_TRACK_ID)
-                return;
-        }
-
+        // Append mode: stack all clips down the scenes of the hovered track.
         int slot = sceneIndex;
         for (const auto& filePath : audioFiles) {
-            slot = nextEmptySlot(targetTrackId, slot);
+            slot = nextEmptySlot(hoveredTrackId, slot);
             if (slot >= numScenes_)
                 break;
 
-            createClipOnTrack(targetTrackId, slot, filePath);
+            createClipOnTrack(hoveredTrackId, slot, filePath);
             ++slot;
         }
     }
