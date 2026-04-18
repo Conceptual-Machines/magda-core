@@ -6,6 +6,7 @@
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
+#include "core/StringTable.hpp"
 #include "engine/PluginScanCoordinator.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 
@@ -133,7 +134,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     excludedTableModel_.entries = &excludedPlugins_;
 
     // System directories section (read-only)
-    setupSectionHeader(systemDirsHeader_, "System Plugin Directories");
+    setupSectionHeader(systemDirsHeader_, tr("plugin_settings.section.system_directories"));
 
     systemDirsList_.setModel(&systemDirListModel_);
     systemDirsList_.setColour(juce::ListBox::backgroundColourId,
@@ -144,7 +145,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     addAndMakeVisible(systemDirsList_);
 
     // Custom directories section
-    setupSectionHeader(directoriesHeader_, "Custom Plugin Directories");
+    setupSectionHeader(directoriesHeader_, tr("plugin_settings.section.custom_directories"));
 
     directoriesList_.setModel(&dirListModel_);
     directoriesList_.setColour(juce::ListBox::backgroundColourId,
@@ -154,9 +155,10 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     directoriesList_.setRowHeight(22);
     addAndMakeVisible(directoriesList_);
 
-    addDirButton_.setButtonText("Add...");
+    addDirButton_.setButtonText(tr("plugin_settings.button.add"));
     addDirButton_.onClick = [this]() {
-        fileChooser_ = std::make_unique<juce::FileChooser>("Select Plugin Directory");
+        fileChooser_ =
+            std::make_unique<juce::FileChooser>(tr("plugin_settings.dialog.select_directory"));
         fileChooser_->launchAsync(
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
             [this](const juce::FileChooser& fc) {
@@ -170,7 +172,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     };
     addAndMakeVisible(addDirButton_);
 
-    removeDirButton_.setButtonText("Remove");
+    removeDirButton_.setButtonText(tr("plugin_settings.button.remove"));
     removeDirButton_.onClick = [this]() {
         int selected = directoriesList_.getSelectedRow();
         if (selected >= 0 && selected < static_cast<int>(customPaths_.size())) {
@@ -182,7 +184,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     addAndMakeVisible(removeDirButton_);
 
     // Scan section
-    scanButton_.setButtonText("Scan for Plugins");
+    scanButton_.setButtonText(tr("plugin_settings.button.scan"));
     scanButton_.onClick = [this]() {
         if (!engine_)
             return;
@@ -191,7 +193,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
 
         setScanningUIEnabled(false);
         scanProgress_ = 0.0;
-        scanStatusLabel_.setText("Starting scan...", juce::dontSendNotification);
+        scanStatusLabel_.setText(tr("plugin_settings.status.starting"), juce::dontSendNotification);
         scanProgressBar_.setVisible(true);
         scanStatusLabel_.setVisible(true);
 
@@ -203,7 +205,8 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                     return;
                 safeThis->scanProgress_ = static_cast<double>(progress);
                 juce::File f(pluginName);
-                safeThis->scanStatusLabel_.setText("Scanning: " + f.getFileName(),
+                safeThis->scanStatusLabel_.setText(tr("plugin_settings.status.scanning") + " " +
+                                                       f.getFileName(),
                                                    juce::dontSendNotification);
             });
         });
@@ -217,17 +220,21 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
                 safeThis->scanProgress_ = -1.0;
                 safeThis->scanProgressBar_.setVisible(false);
                 if (!success) {
-                    juce::String message = "Plugin scan failed";
+                    juce::String message = tr("plugin_settings.status.failed");
                     if (numPlugins > 0)
-                        message += " (" + juce::String(numPlugins) + " found before error)";
+                        message += " (" + juce::String(numPlugins) + " " +
+                                   tr("plugin_settings.status.found_before_error") + ")";
                     if (failedPlugins.size() > 0)
-                        message += ", " + juce::String(failedPlugins.size()) + " plugin(s) failed";
+                        message += ", " + juce::String(failedPlugins.size()) + " " +
+                                   tr("plugin_settings.status.plugins_failed");
                     safeThis->scanStatusLabel_.setText(message, juce::dontSendNotification);
                 } else {
                     safeThis->scanStatusLabel_.setText(
-                        "Found " + juce::String(numPlugins) + " plugins" +
+                        tr("plugin_settings.status.found") + " " + juce::String(numPlugins) + " " +
+                            tr("plugin_settings.status.plugins") +
                             (failedPlugins.size() > 0
-                                 ? ", " + juce::String(failedPlugins.size()) + " failed"
+                                 ? ", " + juce::String(failedPlugins.size()) + " " +
+                                       tr("plugin_settings.status.failed_short")
                                  : ""),
                         juce::dontSendNotification);
                 }
@@ -247,7 +254,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     };
     addAndMakeVisible(scanButton_);
 
-    viewReportButton_.setButtonText("View Scan Report");
+    viewReportButton_.setButtonText(tr("plugin_settings.button.view_report"));
     viewReportButton_.onClick = [this]() {
         if (engine_) {
             auto* coordinator = engine_->getPluginScanCoordinator();
@@ -260,7 +267,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     };
     addAndMakeVisible(viewReportButton_);
 
-    scanOnStartupToggle_.setButtonText("Scan for new plugins on startup");
+    scanOnStartupToggle_.setButtonText(tr("plugin_settings.toggle.scan_on_startup"));
     scanOnStartupToggle_.setToggleState(Config::getInstance().getScanPluginsOnStartup(),
                                         juce::dontSendNotification);
     scanOnStartupToggle_.setColour(juce::ToggleButton::textColourId,
@@ -284,16 +291,16 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     addAndMakeVisible(pluginCountLabel_);
 
     // Excluded plugins section
-    setupSectionHeader(excludedHeader_, "Excluded Plugins");
+    setupSectionHeader(excludedHeader_, tr("plugin_settings.section.excluded"));
 
     excludedTable_.setModel(&excludedTableModel_);
     excludedTable_.setColour(juce::ListBox::backgroundColourId,
                              DarkTheme::getColour(DarkTheme::SURFACE));
     excludedTable_.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
     excludedTable_.setOutlineThickness(1);
-    excludedTable_.getHeader().addColumn("Plugin", 1, 250, 100, 400);
-    excludedTable_.getHeader().addColumn("Reason", 2, 80, 60, 150);
-    excludedTable_.getHeader().addColumn("Date", 3, 150, 80, 250);
+    excludedTable_.getHeader().addColumn(tr("plugin_settings.column.plugin"), 1, 250, 100, 400);
+    excludedTable_.getHeader().addColumn(tr("plugin_settings.column.reason"), 2, 80, 60, 150);
+    excludedTable_.getHeader().addColumn(tr("plugin_settings.column.date"), 3, 150, 80, 250);
     excludedTable_.getHeader().setColour(juce::TableHeaderComponent::backgroundColourId,
                                          DarkTheme::getColour(DarkTheme::SURFACE));
     excludedTable_.getHeader().setColour(juce::TableHeaderComponent::textColourId,
@@ -301,7 +308,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     excludedTable_.setMultipleSelectionEnabled(true);
     addAndMakeVisible(excludedTable_);
 
-    removeSelectedButton_.setButtonText("Remove Selected");
+    removeSelectedButton_.setButtonText(tr("plugin_settings.button.remove_selected"));
     removeSelectedButton_.onClick = [this]() {
         auto selectedRows = excludedTable_.getSelectedRows();
         std::vector<int> indices;
@@ -319,7 +326,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     };
     addAndMakeVisible(removeSelectedButton_);
 
-    resetAllButton_.setButtonText("Reset All");
+    resetAllButton_.setButtonText(tr("plugin_settings.button.reset_all"));
     resetAllButton_.onClick = [this]() {
         excludedPlugins_.clear();
         excludedTable_.updateContent();
@@ -328,7 +335,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     addAndMakeVisible(resetAllButton_);
 
     // OK / Cancel
-    okButton_.setButtonText("OK");
+    okButton_.setButtonText(tr("dialogs.ok"));
     okButton_.onClick = [this]() {
         if (isScanRunning())
             return;
@@ -338,7 +345,7 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     };
     addAndMakeVisible(okButton_);
 
-    cancelButton_.setButtonText("Cancel");
+    cancelButton_.setButtonText(tr("dialogs.cancel"));
     cancelButton_.onClick = [this]() {
         if (isScanRunning())
             return;
@@ -493,7 +500,7 @@ void PluginSettingsDialog::showDialog(TracktionEngineWrapper* engine, juce::Comp
     auto* dialog = new PluginSettingsDialog(engine);
     auto bg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
 
-    auto* window = new PluginSettingsDialogWindow("Plugin Settings", bg, false, dialog);
+    auto* window = new PluginSettingsDialogWindow(tr("dialogs.plugin_settings"), bg, false, dialog);
     window->setContentOwned(dialog, true);
     window->setUsingNativeTitleBar(true);
     window->setResizable(false, false);
@@ -507,12 +514,14 @@ void PluginSettingsDialog::updatePluginCountLabel() {
     int excluded = static_cast<int>(excludedPlugins_.size());
 
     if (count > 0) {
-        juce::String text = juce::String(count) + " plugins available";
+        juce::String text =
+            juce::String(count) + " " + tr("plugin_settings.status.plugins_available");
         if (excluded > 0)
-            text += ", " + juce::String(excluded) + " excluded";
+            text += ", " + juce::String(excluded) + " " + tr("plugin_settings.status.excluded");
         pluginCountLabel_.setText(text, juce::dontSendNotification);
     } else {
-        pluginCountLabel_.setText("No plugins scanned yet", juce::dontSendNotification);
+        pluginCountLabel_.setText(tr("plugin_settings.status.none_scanned"),
+                                  juce::dontSendNotification);
     }
 }
 

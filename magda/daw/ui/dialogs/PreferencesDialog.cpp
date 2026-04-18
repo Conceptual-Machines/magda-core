@@ -86,25 +86,25 @@ namespace magda {
 class GeneralPage : public juce::Component {
   public:
     GeneralPage() {
-        setupSectionHeader(*this, zoomHeader, "Zoom");
-        setupSlider(*this, zoomInSensitivitySlider, zoomInLabel, "Zoom In Sensitivity", 5.0, 100.0,
-                    1.0);
-        setupSlider(*this, zoomOutSensitivitySlider, zoomOutLabel, "Zoom Out Sensitivity", 5.0,
-                    100.0, 1.0);
-        setupSlider(*this, zoomShiftSensitivitySlider, zoomShiftLabel, "Shift+Zoom Sensitivity",
-                    1.0, 50.0, 0.5);
+        setupSectionHeader(*this, zoomHeader, tr("preferences.section.zoom"));
+        setupSlider(*this, zoomInSensitivitySlider, zoomInLabel,
+                    tr("preferences.slider.zoom_in_sensitivity"), 5.0, 100.0, 1.0);
+        setupSlider(*this, zoomOutSensitivitySlider, zoomOutLabel,
+                    tr("preferences.slider.zoom_out_sensitivity"), 5.0, 100.0, 1.0);
+        setupSlider(*this, zoomShiftSensitivitySlider, zoomShiftLabel,
+                    tr("preferences.slider.zoom_shift_sensitivity"), 1.0, 50.0, 0.5);
 
-        setupSectionHeader(*this, timelineHeader, "Timeline");
-        setupSlider(*this, timelineLengthSlider, timelineLengthLabel, "Default Length", 16.0,
-                    4096.0, 1.0, " bars");
+        setupSectionHeader(*this, timelineHeader, tr("preferences.section.timeline"));
+        setupSlider(*this, timelineLengthSlider, timelineLengthLabel,
+                    tr("preferences.slider.default_length"), 16.0, 4096.0, 1.0, " bars");
         timelineLengthSlider.setSkewFactorFromMidPoint(256.0);
-        setupSlider(*this, viewDurationSlider, viewDurationLabel, "Default View", 4.0, 128.0, 1.0,
-                    " bars");
+        setupSlider(*this, viewDurationSlider, viewDurationLabel,
+                    tr("preferences.slider.default_view"), 4.0, 128.0, 1.0, " bars");
 
-        setupSectionHeader(*this, autoSaveHeader, "Auto-Save");
-        setupToggle(*this, autoSaveToggle, "Enable auto-save");
-        setupSlider(*this, autoSaveIntervalSlider, autoSaveIntervalLabel, "Interval", 10.0, 300.0,
-                    10.0, " sec");
+        setupSectionHeader(*this, autoSaveHeader, tr("preferences.section.autosave"));
+        setupToggle(*this, autoSaveToggle, tr("preferences.toggle.enable_autosave"));
+        setupSlider(*this, autoSaveIntervalSlider, autoSaveIntervalLabel,
+                    tr("preferences.slider.interval"), 10.0, 300.0, 10.0, " sec");
     }
 
     void resized() override {
@@ -190,18 +190,18 @@ class GeneralPage : public juce::Component {
 class UIPage : public juce::Component {
   public:
     UIPage() {
-        setupSectionHeader(*this, panelsHeader, "Panels");
-        setupToggle(*this, showLeftPanelToggle, "Expand Left Panel (Browser)");
-        setupToggle(*this, showRightPanelToggle, "Expand Right Panel (Inspector)");
-        setupToggle(*this, showBottomPanelToggle, "Expand Bottom Panel (Mixer)");
+        setupSectionHeader(*this, panelsHeader, tr("preferences.section.panels"));
+        setupToggle(*this, showLeftPanelToggle, tr("preferences.toggle.expand_left_panel"));
+        setupToggle(*this, showRightPanelToggle, tr("preferences.toggle.expand_right_panel"));
+        setupToggle(*this, showBottomPanelToggle, tr("preferences.toggle.expand_bottom_panel"));
 
-        setupSectionHeader(*this, layoutHeader, "Layout");
-        setupToggle(*this, headersOnRightToggle, "Headers on the Right");
+        setupSectionHeader(*this, layoutHeader, tr("preferences.section.layout"));
+        setupToggle(*this, headersOnRightToggle, tr("preferences.toggle.headers_on_right"));
 
-        setupSectionHeader(*this, behaviorHeader, "Behavior");
-        setupToggle(*this, confirmTrackDeleteToggle, "Confirm before deleting tracks");
-        setupToggle(*this, autoMonitorToggle, "Auto-monitor selected track");
-        setupToggle(*this, showTooltipsToggle, "Show tooltips");
+        setupSectionHeader(*this, behaviorHeader, tr("preferences.section.behavior"));
+        setupToggle(*this, confirmTrackDeleteToggle, tr("preferences.toggle.confirm_track_delete"));
+        setupToggle(*this, autoMonitorToggle, tr("preferences.toggle.auto_monitor"));
+        setupToggle(*this, showTooltipsToggle, tr("preferences.toggle.show_tooltips"));
 
         // Language section
         setupSectionHeader(*this, languageHeader, tr("preferences.language.header"));
@@ -366,42 +366,45 @@ class ColoursPage : public juce::Component {
     static constexpr int MAX_PALETTE_SIZE = 16;
 
     ColoursPage() {
-        setupSectionHeader(*this, coloursHeader, "Track Colour Palette");
+        setupSectionHeader(*this, coloursHeader, tr("preferences.section.track_colour_palette"));
 
-        colourHeaderLabel.setText("Colour", juce::dontSendNotification);
+        colourHeaderLabel.setText(tr("preferences.colours.colour"), juce::dontSendNotification);
         colourHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
         colourHeaderLabel.setColour(juce::Label::textColourId,
                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         addAndMakeVisible(colourHeaderLabel);
 
-        hexHeaderLabel.setText("Hex (RGB)", juce::dontSendNotification);
+        hexHeaderLabel.setText(tr("preferences.colours.hex_rgb"), juce::dontSendNotification);
         hexHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
         hexHeaderLabel.setColour(juce::Label::textColourId,
                                  DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         addAndMakeVisible(hexHeaderLabel);
 
-        nameHeaderLabel.setText("Name", juce::dontSendNotification);
+        nameHeaderLabel.setText(tr("preferences.colours.name"), juce::dontSendNotification);
         nameHeaderLabel.setFont(FontManager::getInstance().getUIFont(11.0f));
         nameHeaderLabel.setColour(juce::Label::textColourId,
                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         addAndMakeVisible(nameHeaderLabel);
 
-        addColourButton.setButtonText("+ Add Colour");
-        addColourButton.onClick = [this]() { addColourRow(0xFF808080, "New"); };
+        addColourButton.setButtonText(tr("preferences.button.add_colour"));
+        addColourButton.onClick = [this]() {
+            addColourRow(0xFF808080, tr("preferences.colours.new_default_name").toStdString());
+        };
         addAndMakeVisible(addColourButton);
 
         // Clip colour mode
-        setupSectionHeader(*this, clipColourHeader, "Clip Colours");
+        setupSectionHeader(*this, clipColourHeader, tr("preferences.section.clip_colours"));
 
-        clipColourModeLabel.setText("New clip colour", juce::dontSendNotification);
+        clipColourModeLabel.setText(tr("preferences.label.new_clip_colour"),
+                                    juce::dontSendNotification);
         clipColourModeLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
         clipColourModeLabel.setColour(juce::Label::textColourId,
                                       DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         clipColourModeLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(clipColourModeLabel);
 
-        clipColourModeCombo.addItem("Inherit from track", 1);
-        clipColourModeCombo.addItem("Cycle through palette", 2);
+        clipColourModeCombo.addItem(tr("preferences.option.inherit_from_track"), 1);
+        clipColourModeCombo.addItem(tr("preferences.option.cycle_palette"), 2);
         clipColourModeCombo.setColour(juce::ComboBox::backgroundColourId,
                                       DarkTheme::getColour(DarkTheme::SURFACE));
         clipColourModeCombo.setColour(juce::ComboBox::textColourId,
@@ -481,7 +484,8 @@ class ColoursPage : public juce::Component {
                 static_cast<uint32_t>(hexEditors_[i]->getText().getHexValue64() | 0xFF000000ULL);
             entry.name = nameEditors_[i]->getText().toStdString();
             if (entry.name.empty())
-                entry.name = "Colour " + std::to_string(i + 1);
+                entry.name = tr("preferences.colours.default_name_prefix").toStdString() + " " +
+                             std::to_string(i + 1);
             palette.push_back(entry);
         }
         config.setTrackColourPalette(palette);
@@ -621,25 +625,28 @@ class RenderingPage : public juce::Component {
   public:
     RenderingPage() {
         // --- Output Folder ---
-        setupSectionHeader(*this, renderHeader, "Output");
+        setupSectionHeader(*this, renderHeader, tr("preferences.section.output"));
 
-        renderFolderLabel.setText("Render Output Folder", juce::dontSendNotification);
+        renderFolderLabel.setText(tr("preferences.label.render_output_folder"),
+                                  juce::dontSendNotification);
         renderFolderLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
         renderFolderLabel.setColour(juce::Label::textColourId,
                                     DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         renderFolderLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(renderFolderLabel);
 
-        renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
+        renderFolderValue.setText(tr("preferences.label.default_beside_source"),
+                                  juce::dontSendNotification);
         renderFolderValue.setFont(FontManager::getInstance().getUIFont(12.0f));
         renderFolderValue.setColour(juce::Label::textColourId,
                                     DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         renderFolderValue.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(renderFolderValue);
 
-        renderFolderBrowseButton.setButtonText("Browse...");
+        renderFolderBrowseButton.setButtonText(tr("preferences.button.browse"));
         renderFolderBrowseButton.onClick = [this]() {
-            fileChooser_ = std::make_unique<juce::FileChooser>("Select Render Output Folder");
+            fileChooser_ = std::make_unique<juce::FileChooser>(
+                tr("preferences.dialog.select_render_output_folder"));
             fileChooser_->launchAsync(juce::FileBrowserComponent::openMode |
                                           juce::FileBrowserComponent::canSelectDirectories,
                                       [this](const juce::FileChooser& fc) {
@@ -654,17 +661,18 @@ class RenderingPage : public juce::Component {
         };
         addAndMakeVisible(renderFolderBrowseButton);
 
-        renderFolderClearButton.setButtonText("Clear");
+        renderFolderClearButton.setButtonText(tr("preferences.button.clear"));
         renderFolderClearButton.onClick = [this]() {
             renderFolderPath_.clear();
-            renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
+            renderFolderValue.setText(tr("preferences.label.default_beside_source"),
+                                      juce::dontSendNotification);
         };
         addAndMakeVisible(renderFolderClearButton);
 
         // --- Format ---
-        setupSectionHeader(*this, formatHeader, "Format");
+        setupSectionHeader(*this, formatHeader, tr("preferences.section.format"));
 
-        setupComboLabel(sampleRateLabel, "Sample Rate");
+        setupComboLabel(sampleRateLabel, tr("preferences.label.sample_rate"));
         sampleRateCombo.addItem("44100 Hz", 1);
         sampleRateCombo.addItem("48000 Hz", 2);
         sampleRateCombo.addItem("96000 Hz", 3);
@@ -672,24 +680,24 @@ class RenderingPage : public juce::Component {
         styleCombo(sampleRateCombo);
         addAndMakeVisible(sampleRateCombo);
 
-        setupComboLabel(bitDepthLabel, "Export Bit Depth");
-        bitDepthCombo.addItem("16-bit", 1);
-        bitDepthCombo.addItem("24-bit", 2);
-        bitDepthCombo.addItem("32-bit float", 3);
+        setupComboLabel(bitDepthLabel, tr("preferences.label.export_bit_depth"));
+        bitDepthCombo.addItem(tr("preferences.option.bit_depth_16"), 1);
+        bitDepthCombo.addItem(tr("preferences.option.bit_depth_24"), 2);
+        bitDepthCombo.addItem(tr("preferences.option.bit_depth_32_float"), 3);
         styleCombo(bitDepthCombo);
         addAndMakeVisible(bitDepthCombo);
 
-        setupComboLabel(bounceBitDepthLabel, "Bounce Bit Depth");
-        bounceBitDepthCombo.addItem("16-bit", 1);
-        bounceBitDepthCombo.addItem("24-bit", 2);
-        bounceBitDepthCombo.addItem("32-bit float", 3);
+        setupComboLabel(bounceBitDepthLabel, tr("preferences.label.bounce_bit_depth"));
+        bounceBitDepthCombo.addItem(tr("preferences.option.bit_depth_16"), 1);
+        bounceBitDepthCombo.addItem(tr("preferences.option.bit_depth_24"), 2);
+        bounceBitDepthCombo.addItem(tr("preferences.option.bit_depth_32_float"), 3);
         styleCombo(bounceBitDepthCombo);
         addAndMakeVisible(bounceBitDepthCombo);
 
         // --- File Naming ---
-        setupSectionHeader(*this, namingHeader, "File Naming");
+        setupSectionHeader(*this, namingHeader, tr("preferences.section.file_naming"));
 
-        setupComboLabel(patternLabel, "Export Pattern");
+        setupComboLabel(patternLabel, tr("preferences.label.export_pattern"));
         patternEditor.setFont(FontManager::getInstance().getUIFont(12.0f));
         patternEditor.setColour(juce::TextEditor::backgroundColourId,
                                 DarkTheme::getColour(DarkTheme::SURFACE));
@@ -699,7 +707,7 @@ class RenderingPage : public juce::Component {
                                 DarkTheme::getColour(DarkTheme::BORDER));
         addAndMakeVisible(patternEditor);
 
-        setupComboLabel(bouncePatternLabel, "Bounce Pattern");
+        setupComboLabel(bouncePatternLabel, tr("preferences.label.bounce_pattern"));
         bouncePatternEditor.setFont(FontManager::getInstance().getUIFont(12.0f));
         bouncePatternEditor.setColour(juce::TextEditor::backgroundColourId,
                                       DarkTheme::getColour(DarkTheme::SURFACE));
@@ -709,7 +717,7 @@ class RenderingPage : public juce::Component {
                                       DarkTheme::getColour(DarkTheme::BORDER));
         addAndMakeVisible(bouncePatternEditor);
 
-        patternHint.setText("Tokens: <clip-name> <track-name> <project-name> <date-time>",
+        patternHint.setText(tr("preferences.label.pattern_tokens_hint"),
                             juce::dontSendNotification);
         patternHint.setFont(FontManager::getInstance().getUIFont(10.0f));
         patternHint.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
@@ -771,7 +779,8 @@ class RenderingPage : public juce::Component {
         // Folder
         renderFolderPath_ = config.getRenderFolder();
         if (renderFolderPath_.empty()) {
-            renderFolderValue.setText("Default (beside source file)", juce::dontSendNotification);
+            renderFolderValue.setText(tr("preferences.label.default_beside_source"),
+                                      juce::dontSendNotification);
         } else {
             renderFolderValue.setText(juce::String(renderFolderPath_), juce::dontSendNotification);
         }
@@ -885,20 +894,24 @@ class RenderingPage : public juce::Component {
 class ShortcutsPage : public juce::Component {
   public:
     ShortcutsPage() {
-        setupSectionHeader(*this, shortcutsHeader, "Keyboard Shortcuts");
+        setupSectionHeader(*this, shortcutsHeader, tr("preferences.section.keyboard_shortcuts"));
 #if JUCE_MAC
-        setupShortcutLabel(*this, addTrackShortcut, "Add Track", juce::String::fromUTF8("\u2318T"));
-        setupShortcutLabel(*this, deleteTrackShortcut, "Delete Track",
+        setupShortcutLabel(*this, addTrackShortcut, tr("preferences.shortcut.add_track"),
+                           juce::String::fromUTF8("\u2318T"));
+        setupShortcutLabel(*this, deleteTrackShortcut, tr("preferences.shortcut.delete_track"),
                            juce::String::fromUTF8("\u232B"));
-        setupShortcutLabel(*this, duplicateTrackShortcut, "Duplicate Track",
+        setupShortcutLabel(*this, duplicateTrackShortcut,
+                           tr("preferences.shortcut.duplicate_track"),
                            juce::String::fromUTF8("\u2318D"));
 #else
-        setupShortcutLabel(*this, addTrackShortcut, "Add Track", "Ctrl+T");
-        setupShortcutLabel(*this, deleteTrackShortcut, "Delete Track", "Delete");
-        setupShortcutLabel(*this, duplicateTrackShortcut, "Duplicate Track", "Ctrl+D");
+        setupShortcutLabel(*this, addTrackShortcut, tr("preferences.shortcut.add_track"), "Ctrl+T");
+        setupShortcutLabel(*this, deleteTrackShortcut, tr("preferences.shortcut.delete_track"),
+                           "Delete");
+        setupShortcutLabel(*this, duplicateTrackShortcut,
+                           tr("preferences.shortcut.duplicate_track"), "Ctrl+D");
 #endif
-        setupShortcutLabel(*this, muteTrackShortcut, "Mute Track", "M");
-        setupShortcutLabel(*this, soloTrackShortcut, "Solo Track", "S");
+        setupShortcutLabel(*this, muteTrackShortcut, tr("preferences.shortcut.mute_track"), "M");
+        setupShortcutLabel(*this, soloTrackShortcut, tr("preferences.shortcut.solo_track"), "S");
     }
 
     void resized() override {
@@ -943,14 +956,14 @@ PreferencesDialog::PreferencesDialog() {
     shortcutsPage = std::make_unique<ShortcutsPage>();
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
-    tabbedComponent.addTab("General", tabBg, generalPage.get(), false);
-    tabbedComponent.addTab("UI", tabBg, uiPage.get(), false);
-    tabbedComponent.addTab("Colours", tabBg, coloursPage.get(), false);
-    tabbedComponent.addTab("Rendering", tabBg, renderingPage.get(), false);
-    tabbedComponent.addTab("Shortcuts", tabBg, shortcutsPage.get(), false);
+    tabbedComponent.addTab(tr("preferences.tab.general"), tabBg, generalPage.get(), false);
+    tabbedComponent.addTab(tr("preferences.tab.ui"), tabBg, uiPage.get(), false);
+    tabbedComponent.addTab(tr("preferences.tab.colours"), tabBg, coloursPage.get(), false);
+    tabbedComponent.addTab(tr("preferences.tab.rendering"), tabBg, renderingPage.get(), false);
+    tabbedComponent.addTab(tr("preferences.tab.shortcuts"), tabBg, shortcutsPage.get(), false);
     addAndMakeVisible(tabbedComponent);
 
-    okButton.setButtonText("OK");
+    okButton.setButtonText(tr("dialogs.ok"));
     okButton.onClick = [this]() {
         applySettings();
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
@@ -958,14 +971,14 @@ PreferencesDialog::PreferencesDialog() {
     };
     addAndMakeVisible(okButton);
 
-    cancelButton.setButtonText("Cancel");
+    cancelButton.setButtonText(tr("dialogs.cancel"));
     cancelButton.onClick = [this]() {
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
             dw->exitModalState(0);
     };
     addAndMakeVisible(cancelButton);
 
-    applyButton.setButtonText("Apply");
+    applyButton.setButtonText(tr("dialogs.apply"));
     applyButton.onClick = [this]() { applySettings(); };
     addAndMakeVisible(applyButton);
 
@@ -1048,7 +1061,7 @@ void PreferencesDialog::showDialog(juce::Component* parent) {
     auto* dialog = new PreferencesDialog();
 
     juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = "Preferences";
+    options.dialogTitle = tr("dialogs.preferences");
     options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;

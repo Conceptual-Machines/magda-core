@@ -4,6 +4,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+#include "core/StringTable.hpp"
 
 namespace magda {
 
@@ -11,14 +12,14 @@ ExportAudioDialog::ExportAudioDialog() {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
     // Format selection
-    formatLabel_.setText("Format:", juce::dontSendNotification);
+    formatLabel_.setText(tr("export_audio.label.format"), juce::dontSendNotification);
     formatLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(formatLabel_);
 
-    formatComboBox_.addItem("WAV 16-bit", 1);
-    formatComboBox_.addItem("WAV 24-bit", 2);
-    formatComboBox_.addItem("WAV 32-bit Float", 3);
-    formatComboBox_.addItem("FLAC", 4);
+    formatComboBox_.addItem(tr("export_audio.option.wav_16"), 1);
+    formatComboBox_.addItem(tr("export_audio.option.wav_24"), 2);
+    formatComboBox_.addItem(tr("export_audio.option.wav_32_float"), 3);
+    formatComboBox_.addItem(tr("export_audio.option.flac"), 4);
     // Initialise format from render bit depth preference
     auto& config = Config::getInstance();
     int bd = config.getRenderBitDepth();
@@ -34,7 +35,7 @@ ExportAudioDialog::ExportAudioDialog() {
     addAndMakeVisible(formatComboBox_);
 
     // Sample rate selection
-    sampleRateLabel_.setText("Sample Rate:", juce::dontSendNotification);
+    sampleRateLabel_.setText(tr("export_audio.label.sample_rate"), juce::dontSendNotification);
     sampleRateLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(sampleRateLabel_);
 
@@ -55,7 +56,7 @@ ExportAudioDialog::ExportAudioDialog() {
     addAndMakeVisible(sampleRateComboBox_);
 
     // Bit depth (read-only, updates based on format)
-    bitDepthLabel_.setText("Bit Depth:", juce::dontSendNotification);
+    bitDepthLabel_.setText(tr("export_audio.label.bit_depth"), juce::dontSendNotification);
     bitDepthLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(bitDepthLabel_);
 
@@ -64,17 +65,18 @@ ExportAudioDialog::ExportAudioDialog() {
     updateBitDepthOptions();  // Set label based on restored format
 
     // Normalization option
-    normalizeCheckbox_.setButtonText("Normalize to 0 dB (peak)");
+    normalizeCheckbox_.setButtonText(tr("export_audio.toggle.normalize"));
     normalizeCheckbox_.setToggleState(false, juce::dontSendNotification);
     addAndMakeVisible(normalizeCheckbox_);
 
     // Real-time render option
-    realTimeRenderCheckbox_.setButtonText("Real-time render (slower, avoids plugin glitches)");
+    realTimeRenderCheckbox_.setButtonText(tr("export_audio.toggle.realtime_render"));
     realTimeRenderCheckbox_.setToggleState(false, juce::dontSendNotification);
     addAndMakeVisible(realTimeRenderCheckbox_);
 
     // Lead-in silence
-    leadInSilenceLabel_.setText("Lead-in Silence:", juce::dontSendNotification);
+    leadInSilenceLabel_.setText(tr("export_audio.label.lead_in_silence"),
+                                juce::dontSendNotification);
     leadInSilenceLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(leadInSilenceLabel_);
 
@@ -85,27 +87,27 @@ ExportAudioDialog::ExportAudioDialog() {
     addAndMakeVisible(leadInSilenceSlider_);
 
     // Time range selection
-    timeRangeLabel_.setText("Export Range:", juce::dontSendNotification);
+    timeRangeLabel_.setText(tr("export_audio.label.export_range"), juce::dontSendNotification);
     timeRangeLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(timeRangeLabel_);
 
-    exportEntireSongButton_.setButtonText("Entire Song");
+    exportEntireSongButton_.setButtonText(tr("export_audio.option.entire_song"));
     exportEntireSongButton_.setRadioGroupId(1);
     exportEntireSongButton_.setToggleState(true, juce::dontSendNotification);
     addAndMakeVisible(exportEntireSongButton_);
 
-    exportTimeSelectionButton_.setButtonText("Time Selection");
+    exportTimeSelectionButton_.setButtonText(tr("export_audio.option.time_selection"));
     exportTimeSelectionButton_.setRadioGroupId(1);
     exportTimeSelectionButton_.setEnabled(false);  // Disabled by default
     addAndMakeVisible(exportTimeSelectionButton_);
 
-    exportLoopRegionButton_.setButtonText("Loop Region");
+    exportLoopRegionButton_.setButtonText(tr("export_audio.option.loop_region"));
     exportLoopRegionButton_.setRadioGroupId(1);
     exportLoopRegionButton_.setEnabled(false);  // Disabled by default
     addAndMakeVisible(exportLoopRegionButton_);
 
     // Export button
-    exportButton_.setButtonText("Export");
+    exportButton_.setButtonText(tr("export_audio.button.export"));
     exportButton_.onClick = [this]() {
         if (onExport) {
             auto settings = getSettings();
@@ -128,7 +130,7 @@ ExportAudioDialog::ExportAudioDialog() {
     addAndMakeVisible(exportButton_);
 
     // Cancel button
-    cancelButton_.setButtonText("Cancel");
+    cancelButton_.setButtonText(tr("dialogs.cancel"));
     cancelButton_.onClick = [this]() {
         if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) {
             dw->exitModalState(0);
@@ -294,19 +296,19 @@ void ExportAudioDialog::updateBitDepthOptions() {
 
     switch (formatId) {
         case 1:  // WAV 16-bit
-            bitDepthText = "16-bit";
+            bitDepthText = tr("export_audio.bit_depth.16");
             break;
         case 2:  // WAV 24-bit
-            bitDepthText = "24-bit";
+            bitDepthText = tr("export_audio.bit_depth.24");
             break;
         case 3:  // WAV 32-bit Float
-            bitDepthText = "32-bit Float";
+            bitDepthText = tr("export_audio.bit_depth.32_float");
             break;
         case 4:  // FLAC
-            bitDepthText = "24-bit (FLAC)";
+            bitDepthText = tr("export_audio.bit_depth.24_flac");
             break;
         default:
-            bitDepthText = "24-bit";
+            bitDepthText = tr("export_audio.bit_depth.24");
             break;
     }
 
@@ -322,7 +324,7 @@ void ExportAudioDialog::showDialog(juce::Component* parent,
     dialog->onExport = exportCallback;
 
     juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = "Export Audio";
+    options.dialogTitle = tr("dialogs.export_audio");
     options.dialogBackgroundColour = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     options.content.setOwned(dialog);
     options.escapeKeyTriggersCloseButton = true;

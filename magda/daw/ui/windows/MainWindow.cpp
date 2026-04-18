@@ -27,6 +27,7 @@
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ModulatorEngine.hpp"
+#include "core/StringTable.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -98,7 +99,7 @@ class MainWindow::MainComponent::LoadingOverlay : public juce::Component, privat
     }
 
   private:
-    juce::String message_ = "Initializing...";
+    juce::String message_ = tr("main_window.loading.initializing");
     float alpha_ = 1.0f;
     int spinnerFrame_ = 0;
 
@@ -586,7 +587,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
             if (audioClips.empty())
                 return;
 
-            UndoManager::getInstance().beginCompoundOperation("Render Clips");
+            UndoManager::getInstance().beginCompoundOperation(tr("main_window.undo.render_clips"));
             std::vector<ClipId> newClips;
             for (auto cid : audioClips) {
                 auto cmd = std::make_unique<RenderClipCommand>(cid, engine);
@@ -914,7 +915,7 @@ void MainWindow::MainComponent::setupDeviceLoadingCallback() {
     if (teWrapper) {
         // Show notification and disable transport if devices are still loading
         if (teWrapper->isDevicesLoading()) {
-            loadingOverlay_->setMessage("Scanning audio & MIDI devices...");
+            loadingOverlay_->setMessage(tr("main_window.loading.scanning_devices"));
             loadingOverlay_->showWithFade();
             loadingOverlay_->toFront(false);
             transportPanel->setTransportEnabled(false);

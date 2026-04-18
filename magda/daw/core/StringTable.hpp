@@ -50,9 +50,9 @@ class StringTable {
     /** Return the first existing lang/ directory searched by the loader. */
     static juce::File findLangDirectory();
 
-    /** Get the number of loaded strings. */
+    /** Get the number of loaded strings in the active locale map. */
     int size() const {
-        return static_cast<int>(strings_.size());
+        return static_cast<int>(localized_.size());
     }
 
   private:
@@ -61,7 +61,12 @@ class StringTable {
     static void parseObject(const juce::var& obj, const juce::String& prefix,
                             std::unordered_map<juce::String, juce::String>& out);
 
-    std::unordered_map<juce::String, juce::String> strings_;
+    // `english_` is the master table, loaded from lang/en.json at construction
+    // and never modified afterwards — it's the fallback for any key missing in
+    // the current locale. `localized_` holds the active non-English locale (or
+    // aliases `english_` when the active language is English).
+    std::unordered_map<juce::String, juce::String> english_;
+    std::unordered_map<juce::String, juce::String> localized_;
     juce::String language_ = "en";
 };
 
