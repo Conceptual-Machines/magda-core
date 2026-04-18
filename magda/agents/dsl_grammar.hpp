@@ -197,9 +197,21 @@ BUILT-IN FUNCTIONS:
 - random(min, max) - Returns a random value between min and max (inclusive). Integer if both args are integers, float otherwise.
   Example: .clip.new(length_bars=random(1, 4)) - Create a clip with random length between 1 and 4 bars
 
-NOTE: The DAW state JSON includes "selected_track_id" when a track is selected, and "selected_clip_index" / "selected_clip_track_id" when a clip is selected.
-Use track(id=N) to reference any track. When the user says "this track" or implies the current selection, use the selected_track_id from the state.
-For note operations, use the selected_clip_track_id to reference the track owning the selected clip.
+SELECTED-TRACK TARGETING (IMPORTANT):
+The DAW state JSON includes "selected_track_id" when a track is selected, and
+"selected_clip_index" / "selected_clip_track_id" when a clip is selected.
+
+When "selected_track_id" is present in the state, target that track BY DEFAULT
+for every content operation — clip.new, note.add, fx.add, track.set_*, etc. —
+even if the user does not explicitly say "this track". A verb like "add",
+"put", "write", or "generate" with no explicit target MUST target the selected
+track. Only emit track.new(...) when the user explicitly asks for a NEW track
+(phrases like "new track", "another track", "create a track", "on a new
+track", "on its own track"). When "selected_track_id" is absent, it is
+acceptable to create a new track as needed.
+
+For note operations on the selected clip, target "selected_clip_track_id"
+instead of "selected_track_id".
 
 **CRITICAL: Always generate DSL code. Never generate plain text responses.**
 )DESC";
