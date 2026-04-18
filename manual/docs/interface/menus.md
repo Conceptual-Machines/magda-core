@@ -70,8 +70,9 @@ Each track has a checkbox for each view mode: **Live**, **Arrange**, **Mix**, an
 | Add Group Track | Add a new group track |
 | Add Aux Track | Add a new aux/return track |
 | Delete Track | Delete the selected track |
-| Duplicate Track | Duplicate the selected track with content |
-| Duplicate Track Without Content | Duplicate track structure without content |
+| Duplicate Track | Duplicate the selected track with clips and FX chain (++ctrl+d++ / ++cmd+d++) |
+| Duplicate Track Without Content | Duplicate track structure and FX chain only, no clips (++ctrl+shift+d++ / ++cmd+shift+d++) |
+| Duplicate Track Content Only | Duplicate the track's clips onto a new track with an empty FX chain (++ctrl+alt+d++ / ++cmd+alt+d++) |
 | Mute Track | Toggle mute on the selected track |
 | Solo Track | Toggle solo on the selected track |
 
@@ -97,4 +98,9 @@ Each track has a checkbox for each view mode: **Live**, **Arrange**, **Mix**, an
 | Item | Description |
 |------|-------------|
 | Online Manual | Open this manual in the browser |
+| Check for Updates… | Query GitHub for a newer MAGDA release |
 | About MAGDA | Show version and credits |
+
+### Check for Updates
+
+**Help > Check for Updates…** queries the MAGDA GitHub releases feed and reports whether a newer version is available. MAGDA also runs the same check silently at most once per 24 hours on launch, and only surfaces a dialog if a newer version is found. No telemetry is sent — the check is a plain public-releases request and carries no identifying information.

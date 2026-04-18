@@ -43,3 +43,9 @@ Internal modulation and track-level modulation are independent and can be used t
 ## Linking
 
 Parameters are connected to modulation sources using MAGDA's link mode. See [Linking Parameters](linking.md) for the workflow.
+
+## Automation Lanes
+
+In addition to modulators and macros, any parameter can be automated with a drawn curve on an automation lane below the track in the [Arrangement View](../arrangement-view.md). Automation lanes play back their drawn curves during transport — the parameter follows the lane's value over time, in sync with playback.
+
+Automation is independent of modulators and macros: all three can drive the same parameter at once, with their effects combined.

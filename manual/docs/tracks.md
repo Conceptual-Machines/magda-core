@@ -76,6 +76,18 @@ A common use case is keeping the Arrangement View clean while having full contro
 - Right-click a track header for options: rename, duplicate, delete, freeze
 - Click the track name to rename it
 
+## Duplicating Tracks
+
+MAGDA offers three duplication modes, available from the **Track** menu, the track header right-click menu, and via keyboard:
+
+| Mode | Shortcut | Copies clips | Copies FX chain |
+|------|----------|:---:|:---:|
+| Duplicate Track | ++ctrl+d++ / ++cmd+d++ | yes | yes |
+| Duplicate Track Without Content | ++ctrl+shift+d++ / ++cmd+shift+d++ | no | yes |
+| Duplicate Track Content Only | ++ctrl+alt+d++ / ++cmd+alt+d++ | yes | no |
+
+**Duplicate Track Content Only** is useful when you want the clips on a clean signal path — the new track has the same structure and name, but its FX chain is empty.
+
 ## FX Chain
 
 Each track has an FX chain — an ordered list of audio processors applied to the track's signal. See [FX Chain & Racks](fx-chain.md) for full details.

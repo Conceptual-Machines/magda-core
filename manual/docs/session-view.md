@@ -69,6 +69,13 @@ Optional rows for I/O routing and send levels can be toggled on or off to keep t
 - Drag audio files from the Media Explorer onto a clip slot to import them
 - Drag plugins onto a track header to add effects
 
+### Multi-Sample Drag and Drop
+
+Select multiple samples in the [Media Explorer](panels/browsers.md) (++shift++-click to extend, ++cmd++-click / ++ctrl++-click to toggle) and drag them into the grid:
+
+- **Drop on empty area** — one new track is created per sample, with each clip placed in a separate scene row so the samples stack vertically down the grid.
+- **Drop on an existing track** — clips stack down consecutive scene slots on that track, starting from the drop target.
+
 ## Adding Clips
 
 - Drag and drop audio or MIDI files from the [Media Explorer](panels/browsers.md) onto an empty clip slot

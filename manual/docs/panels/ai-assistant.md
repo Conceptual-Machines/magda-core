@@ -19,6 +19,15 @@ Type a request in natural language and the assistant translates it into actions:
 
 The assistant is **context-aware** — it knows which tracks, clips, and devices exist in your project and what is currently selected.
 
+### Selection Context
+
+At the bottom of the AI panel, a context indicator shows the currently-selected track, clip, or device.
+
+- When the indicator is **on** (orange accent colour), the AI treats your selection as the default target. A request like "add a bassline" with a track selected will target that track instead of creating a new one.
+- Click the indicator to **toggle it off**. The selection is no longer sent to the LLM, and requests are interpreted without a default target.
+
+Creating a new track still works either way — just be explicit in the request ("new track", "another track") when the indicator is on.
+
 ### How It Works
 
 1. You type a natural-language request in the chat

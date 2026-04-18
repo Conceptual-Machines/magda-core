@@ -1,6 +1,6 @@
 # Preferences
 
-Open the Preferences dialog from **Settings > Preferences**. The dialog has six tabs.
+Open the Preferences dialog from **Settings > Preferences**.
 
 ![Preferences](../assets/images/interface/preferences.png)
 
@@ -17,6 +17,7 @@ Open the Preferences dialog from **Settings > Preferences**. The dialog has six 
 
 - **Panel visibility defaults** — Choose which panels are shown on startup
 - **Behavior settings** — Configure UI interaction preferences
+- **Language** — Select the UI language from the dropdown. The list is populated from the locale files (`.json`) shipped in MAGDA's `lang/` folder, so available languages grow as translations are contributed. A restart-required hint appears after switching; the new language takes effect the next time MAGDA launches. See [Localization](../localization.md) for how translations are managed and how to contribute.
 
 ## Colours
 
