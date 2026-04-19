@@ -203,6 +203,13 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
     int laneCount = 0;
     int pointCount = 0;
 
+    // Coalesce listener callbacks across the whole batch. Without this, every
+    // per-point addPoint fires automationPointsChanged synchronously, which
+    // AutomationPlaybackEngine answers with a full bakeLane() — producing
+    // O(n) bakes for an n-point curve and a visible stall between the agent
+    // completing and the curve appearing.
+    AutomationManager::BatchScope batchScope;
+
     for (const auto& inst : instructions) {
         juce::String err;
 
