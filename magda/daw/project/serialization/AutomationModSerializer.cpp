@@ -194,6 +194,7 @@ juce::var ProjectSerializer::serializeAutomationTarget(const AutomationTarget& t
     obj->setProperty("macroIndex", target.macroIndex);
     obj->setProperty("modId", target.modId);
     obj->setProperty("modParamIndex", target.modParamIndex);
+    obj->setProperty("sendBusIndex", target.sendBusIndex);
     if (target.paramName.isNotEmpty())
         obj->setProperty("paramName", target.paramName);
 
@@ -218,6 +219,9 @@ bool ProjectSerializer::deserializeAutomationTarget(const juce::var& json,
     outTarget.macroIndex = obj->getProperty("macroIndex");
     outTarget.modId = obj->getProperty("modId");
     outTarget.modParamIndex = obj->getProperty("modParamIndex");
+    // sendBusIndex is new — default to -1 for projects saved before it existed.
+    outTarget.sendBusIndex =
+        obj->hasProperty("sendBusIndex") ? static_cast<int>(obj->getProperty("sendBusIndex")) : -1;
     if (obj->hasProperty("paramName"))
         outTarget.paramName = obj->getProperty("paramName").toString();
 

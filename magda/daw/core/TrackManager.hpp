@@ -226,7 +226,8 @@ class TrackManager {
     // Send management (track → any track)
     void addSend(TrackId sourceTrackId, TrackId destTrackId);
     void removeSend(TrackId sourceTrackId, int busIndex);
-    void setSendLevel(TrackId sourceTrackId, int busIndex, float level);
+    void setSendLevel(TrackId sourceTrackId, int busIndex, float level,
+                      bool fromAutomation = false);
 
     // View settings
     void setTrackVisible(TrackId trackId, ViewMode mode, bool visible);

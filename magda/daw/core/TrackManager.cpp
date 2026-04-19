@@ -960,7 +960,8 @@ void TrackManager::removeSend(TrackId sourceTrackId, int busIndex) {
     notifyTrackDevicesChanged(sourceTrackId);
 }
 
-void TrackManager::setSendLevel(TrackId sourceTrackId, int busIndex, float level) {
+void TrackManager::setSendLevel(TrackId sourceTrackId, int busIndex, float level,
+                                bool /*fromAutomation*/) {
     auto* source = getTrack(sourceTrackId);
     if (!source) {
         return;

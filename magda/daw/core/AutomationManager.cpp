@@ -54,6 +54,18 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             }
             return 0.5;  // Default to center
         }
+        case AutomationTargetType::SendLevel: {
+            const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+            if (!track)
+                return 0.75;
+            for (const auto& send : track->sends) {
+                if (send.busIndex == target.sendBusIndex) {
+                    float db = gainToDb(send.level);
+                    return static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
+                }
+            }
+            return 0.75;  // Default to unity when bus not found
+        }
         case AutomationTargetType::DeviceParameter: {
             auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
             if (!resolved.valid || !resolved.device)
@@ -127,9 +139,10 @@ void AutomationManager::trackPropertyChanged(int trackId) {
         if (lane.target.trackId != tid)
             continue;
 
-        // Only process volume and pan targets
+        // Only process track-level targets driven from TrackInfo
         if (lane.target.type != AutomationTargetType::TrackVolume &&
-            lane.target.type != AutomationTargetType::TrackPan)
+            lane.target.type != AutomationTargetType::TrackPan &&
+            lane.target.type != AutomationTargetType::SendLevel)
             continue;
 
         // Only update absolute lanes with points

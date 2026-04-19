@@ -68,11 +68,12 @@ class AutomationRecordingEngine {
     };
     std::unordered_map<int, LastRecorded> lastRecorded_;
 
-    // Track last known volume/pan per track to detect actual changes
-    // (trackPropertyChanged fires for mute/solo/arm/etc. too)
+    // Track last known volume/pan/send-levels per track to detect actual
+    // changes (trackPropertyChanged fires for mute/solo/arm/etc. too)
     struct TrackMixState {
         float volume = -1.0f;
         float pan = -2.0f;  // Sentinel: impossible value means "not yet captured"
+        std::unordered_map<int, float> sendLevels;  // busIndex → level
     };
     std::unordered_map<int, TrackMixState> lastTrackMixState_;
 

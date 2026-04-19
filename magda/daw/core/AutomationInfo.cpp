@@ -13,6 +13,13 @@ ParameterInfo AutomationTarget::getParameterInfo() const {
         case AutomationTargetType::TrackPan:
             return ParameterPresets::pan(-1, "Pan");
 
+        case AutomationTargetType::SendLevel: {
+            juce::String name = paramName.isNotEmpty()
+                                    ? paramName
+                                    : juce::String("Send ") + juce::String(sendBusIndex + 1);
+            return ParameterPresets::faderVolume(-1, name);
+        }
+
         case AutomationTargetType::DeviceParameter: {
             // Look up the real ParameterInfo populated by the owning
             // DeviceProcessor so labels/units/ranges come from the actual

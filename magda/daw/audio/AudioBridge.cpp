@@ -187,10 +187,17 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // Sync rack/chain volume and pan
             pluginManager_.syncRackProperties(trackId);
 
-            // Sync send levels to AuxSendPlugins
-            for (const auto& send : trackInfo->sends) {
-                if (auto* auxSend = track->getAuxSendPlugin(send.busIndex)) {
-                    auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+            // Sync send levels to AuxSendPlugins. Skipped while an automation
+            // writeback is in progress so a baked send curve isn't clobbered
+            // by stale TrackInfo values (same invariant as TrackVolume/Pan
+            // above — the AuxSend gain parameter is TE-automated; MAGDA's
+            // TrackInfo::sends[i].level tracks it via setSendLevel and must
+            // not be written back on top of a running curve).
+            if (!AutomationManager::getInstance().isApplyingAutomationWrite()) {
+                for (const auto& send : trackInfo->sends) {
+                    if (auto* auxSend = track->getAuxSendPlugin(send.busIndex)) {
+                        auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
+                    }
                 }
             }
 

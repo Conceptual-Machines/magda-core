@@ -399,8 +399,11 @@ float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
                                                  te::AutomatableParameter* param,
                                                  double magdaNormalized) const {
     switch (target.type) {
-        case AutomationTargetType::TrackVolume: {
-            // MAGDA 0-1 (FaderDB scale) → dB → TE fader position
+        case AutomationTargetType::TrackVolume:
+        case AutomationTargetType::SendLevel: {
+            // MAGDA 0-1 (FaderDB scale) → dB → TE fader position. Same
+            // mapping for both: AuxSendPlugin's `gain` parameter uses
+            // volume-fader-position units just like VolAndPanPlugin.
             auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
             float dB =
                 ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), paramInfo);
@@ -483,6 +486,16 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
             return nullptr;
         }
 
+        case AutomationTargetType::SendLevel: {
+            auto* track = bridge_.getAudioTrack(target.trackId);
+            if (!track)
+                return nullptr;
+            if (auto* auxSend = track->getAuxSendPlugin(target.sendBusIndex)) {
+                return auxSend->gain.get();
+            }
+            return nullptr;
+        }
+
         case AutomationTargetType::DeviceParameter: {
             DeviceId deviceId = target.devicePath.getDeviceId();
             if (deviceId == INVALID_DEVICE_ID)
@@ -510,8 +523,10 @@ double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& targ
                                                     te::AutomatableParameter* param,
                                                     float teValue) const {
     switch (target.type) {
-        case AutomationTargetType::TrackVolume: {
-            // TE fader position → dB → MAGDA 0-1 (FaderDB scale)
+        case AutomationTargetType::TrackVolume:
+        case AutomationTargetType::SendLevel: {
+            // TE fader position → dB → MAGDA 0-1 (FaderDB scale). Mirror of
+            // the forward path; kept identical for TrackVolume and SendLevel.
             auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
             float dB = te::volumeFaderPositionToDB(teValue);
             return ParameterUtils::realToNormalized(dB, paramInfo);
@@ -605,7 +620,8 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
     // the volume/pan writeback while playback is active, so going through
     // setTrackVolume/setTrackPan here won't fight TE's automation.
     if (target.type == AutomationTargetType::TrackVolume ||
-        target.type == AutomationTargetType::TrackPan) {
+        target.type == AutomationTargetType::TrackPan ||
+        target.type == AutomationTargetType::SendLevel) {
         ParameterInfo info = target.getParameterInfo();
         float real = ParameterUtils::normalizedToReal(static_cast<float>(normalized), info);
 
@@ -617,8 +633,13 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
             // Target param range is in dB; convert back to linear gain.
             float gain = std::pow(10.0f, real / 20.0f);
             trackMgr.setTrackVolume(target.trackId, gain, /*fromAutomation=*/true);
-        } else {
+        } else if (target.type == AutomationTargetType::TrackPan) {
             trackMgr.setTrackPan(target.trackId, real, /*fromAutomation=*/true);
+        } else {
+            // SendLevel: same fader-dB → linear-gain mapping as TrackVolume.
+            float gain = std::pow(10.0f, real / 20.0f);
+            trackMgr.setSendLevel(target.trackId, target.sendBusIndex, gain,
+                                  /*fromAutomation=*/true);
         }
     }
 }

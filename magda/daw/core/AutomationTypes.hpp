@@ -38,6 +38,7 @@ enum class AutomationDrawMode {
 enum class AutomationTargetType {
     TrackVolume,      // Track volume fader
     TrackPan,         // Track pan knob
+    SendLevel,        // Aux send level on a track
     DeviceParameter,  // Parameter on a device (synth, effect)
     Macro,            // Macro control on a rack
     ModParameter      // Parameter on a modulator
@@ -97,6 +98,8 @@ inline const char* getTargetTypeName(AutomationTargetType type) {
             return "Track Volume";
         case AutomationTargetType::TrackPan:
             return "Track Pan";
+        case AutomationTargetType::SendLevel:
+            return "Send Level";
         case AutomationTargetType::DeviceParameter:
             return "Parameter";
         case AutomationTargetType::Macro:
