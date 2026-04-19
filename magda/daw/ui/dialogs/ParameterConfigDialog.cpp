@@ -474,9 +474,9 @@ void ParameterConfigDialog::resized() {
     selectionButtonRow.removeFromLeft(selButtonSpacing);
     deselectAllButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
-    resetButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
-    selectionButtonRow.removeFromLeft(selButtonSpacing);
     aiDetectButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
+    selectionButtonRow.removeFromLeft(selButtonSpacing);
+    resetButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
     aiStatusLabel_.setBounds(selectionButtonRow);
 
@@ -865,10 +865,22 @@ void ParameterConfigDialog::resetParameterConfiguration() {
         scanInputs_ = it->second.scanInputs;
     }
 
+    // Auto-run the deterministic heuristic pass (instant, no LLM). This
+    // fills in the cheap unit labels (Hz / dB / ms / semitones / %) that
+    // most well-labelled plugins expose via their own display strings, so
+    // a reset doesn't leave every parameter looking like a generic 0..1
+    // percentage. AI detection still has to be re-triggered manually if
+    // the user wants the ambiguous ones resolved too.
+    if (!scanInputs_.empty()) {
+        auto results = magda::ParameterDetector::detect(scanInputs_);
+        applyDetectionResults(results);
+    }
+
     rebuildFilteredList();
     table_.updateContent();
     updateTitle();
-    aiStatusLabel_.setText("Reset to plugin defaults", juce::dontSendNotification);
+    aiStatusLabel_.setText("Reset to plugin defaults (heuristics re-applied)",
+                           juce::dontSendNotification);
 }
 
 void ParameterConfigDialog::deselectAllParameters() {
