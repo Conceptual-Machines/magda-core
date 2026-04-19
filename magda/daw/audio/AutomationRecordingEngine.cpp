@@ -85,6 +85,15 @@ double AutomationRecordingEngine::getCurrentBeatTime() const {
 double AutomationRecordingEngine::normalizeDeviceParam(const AutomationTarget& target,
                                                        float rawValue) {
     ParameterInfo paramInfo = target.getParameterInfo();
+    const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
+    const bool infoMatchesTeRange = std::abs(paramInfo.minValue - paramInfo.teMinValue) < 1e-6f &&
+                                    std::abs(paramInfo.maxValue - paramInfo.teMaxValue) < 1e-6f;
+
+    if (teSpan > 0.0f && !infoMatchesTeRange) {
+        return juce::jlimit(0.0, 1.0,
+                            static_cast<double>((rawValue - paramInfo.teMinValue) / teSpan));
+    }
+
     return static_cast<double>(ParameterUtils::realToNormalized(rawValue, paramInfo));
 }
 
@@ -214,9 +223,7 @@ void AutomationRecordingEngine::onDeviceParameterChanged(DeviceId deviceId, int 
     auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
 
     double beatTime = getCurrentBeatTime();
-    ParameterInfo paramInfo = target.getParameterInfo();
-    double normalizedValue =
-        static_cast<double>(ParameterUtils::realToNormalized(rawValue, paramInfo));
+    double normalizedValue = normalizeDeviceParam(target, rawValue);
 
     DBG("[AutoRec] Device param hit: deviceId=" << deviceId << " param=" << paramIndex << " raw="
                                                 << rawValue << " norm=" << normalizedValue

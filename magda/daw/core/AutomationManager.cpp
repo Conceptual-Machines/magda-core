@@ -19,6 +19,20 @@ static float gainToDb(float gain) {
     return 20.0f * std::log10(gain);
 }
 
+static double deviceCurrentValueToLaneNormalized(float currentValue,
+                                                 const ParameterInfo& paramInfo) {
+    const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
+    const bool infoMatchesTeRange = std::abs(paramInfo.minValue - paramInfo.teMinValue) < 1e-6f &&
+                                    std::abs(paramInfo.maxValue - paramInfo.teMaxValue) < 1e-6f;
+
+    if (teSpan > 0.0f && !infoMatchesTeRange) {
+        return juce::jlimit(0.0, 1.0,
+                            static_cast<double>((currentValue - paramInfo.teMinValue) / teSpan));
+    }
+
+    return static_cast<double>(ParameterUtils::realToNormalized(currentValue, paramInfo));
+}
+
 // Get current normalized value for an automation target
 static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& target) {
     // Get parameter info for proper conversion
@@ -48,9 +62,9 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
                 target.paramIndex >= static_cast<int>(resolved.device->parameters.size())) {
                 return std::nullopt;
             }
-            return static_cast<double>(ParameterUtils::realToNormalized(
+            return deviceCurrentValueToLaneNormalized(
                 resolved.device->parameters[static_cast<size_t>(target.paramIndex)].currentValue,
-                paramInfo));
+                paramInfo);
         }
         case AutomationTargetType::Macro: {
             const auto* track = TrackManager::getInstance().getTrack(target.trackId);
