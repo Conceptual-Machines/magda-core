@@ -87,6 +87,9 @@ struct AutomationTarget {
     ModId modId = INVALID_MOD_ID;
     int modParamIndex = -1;
 
+    // For SendLevel — TE AuxSend bus number on the source track.
+    int sendBusIndex = -1;
+
     // Display name for the parameter (populated at lane creation time)
     juce::String paramName;
 
@@ -98,6 +101,8 @@ struct AutomationTarget {
             case AutomationTargetType::TrackVolume:
             case AutomationTargetType::TrackPan:
                 return true;  // Only needs valid trackId
+            case AutomationTargetType::SendLevel:
+                return sendBusIndex >= 0;
             case AutomationTargetType::DeviceParameter:
                 return devicePath.isValid() && paramIndex >= 0;
             case AutomationTargetType::Macro:
@@ -116,6 +121,8 @@ struct AutomationTarget {
             case AutomationTargetType::TrackVolume:
             case AutomationTargetType::TrackPan:
                 return true;  // Only type and trackId need to match
+            case AutomationTargetType::SendLevel:
+                return sendBusIndex == other.sendBusIndex;
             case AutomationTargetType::DeviceParameter:
                 return devicePath == other.devicePath && paramIndex == other.paramIndex;
             case AutomationTargetType::Macro:
@@ -139,6 +146,10 @@ struct AutomationTarget {
                 return "Track Volume";
             case AutomationTargetType::TrackPan:
                 return "Track Pan";
+            case AutomationTargetType::SendLevel:
+                if (paramName.isNotEmpty())
+                    return paramName;
+                return "Send " + juce::String(sendBusIndex + 1);
             case AutomationTargetType::DeviceParameter:
                 if (paramName.isNotEmpty())
                     return paramName;

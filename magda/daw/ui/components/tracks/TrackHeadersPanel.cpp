@@ -3129,11 +3129,35 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
     addNewMenu.addItem(2, "Track Pan");
 
     // Build device parameter targets from chain elements
-    // IDs 10+ are indices into deviceParamTargets
+    // IDs 10+ are indices into deviceParamTargets (shared path used for
+    // send-level, device-parameter, and macro entries)
     auto deviceParamTargets = std::make_shared<std::vector<AutomationTarget>>();
     constexpr int kDeviceParamBase = 10;
 
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+
+    // Send levels — one entry per existing aux send on this track.
+    if (trackInfo && !trackInfo->sends.empty()) {
+        addNewMenu.addSeparator();
+        for (const auto& send : trackInfo->sends) {
+            AutomationTarget target;
+            target.type = AutomationTargetType::SendLevel;
+            target.trackId = trackId;
+            target.sendBusIndex = send.busIndex;
+
+            juce::String destName = "Send " + juce::String(send.busIndex + 1);
+            if (auto* destTrack = TrackManager::getInstance().getTrack(send.destTrackId)) {
+                if (!destTrack->name.isEmpty())
+                    destName = "Send: " + destTrack->name;
+            }
+            target.paramName = destName;
+
+            int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+            deviceParamTargets->push_back(target);
+            addNewMenu.addItem(itemId, destName);
+        }
+    }
+
     if (trackInfo) {
         addNewMenu.addSeparator();
 

@@ -19,6 +19,20 @@ static float gainToDb(float gain) {
     return 20.0f * std::log10(gain);
 }
 
+static double deviceCurrentValueToLaneNormalized(float currentValue,
+                                                 const ParameterInfo& paramInfo) {
+    const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
+    const bool infoMatchesTeRange = std::abs(paramInfo.minValue - paramInfo.teMinValue) < 1e-6f &&
+                                    std::abs(paramInfo.maxValue - paramInfo.teMaxValue) < 1e-6f;
+
+    if (teSpan > 0.0f && !infoMatchesTeRange) {
+        return juce::jlimit(0.0, 1.0,
+                            static_cast<double>((currentValue - paramInfo.teMinValue) / teSpan));
+    }
+
+    return static_cast<double>(ParameterUtils::realToNormalized(currentValue, paramInfo));
+}
+
 // Get current normalized value for an automation target
 static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& target) {
     // Get parameter info for proper conversion
@@ -40,6 +54,18 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             }
             return 0.5;  // Default to center
         }
+        case AutomationTargetType::SendLevel: {
+            const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+            if (!track)
+                return 0.75;
+            for (const auto& send : track->sends) {
+                if (send.busIndex == target.sendBusIndex) {
+                    float db = gainToDb(send.level);
+                    return static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
+                }
+            }
+            return 0.75;  // Default to unity when bus not found
+        }
         case AutomationTargetType::DeviceParameter: {
             auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
             if (!resolved.valid || !resolved.device)
@@ -48,9 +74,9 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
                 target.paramIndex >= static_cast<int>(resolved.device->parameters.size())) {
                 return std::nullopt;
             }
-            return static_cast<double>(ParameterUtils::realToNormalized(
+            return deviceCurrentValueToLaneNormalized(
                 resolved.device->parameters[static_cast<size_t>(target.paramIndex)].currentValue,
-                paramInfo));
+                paramInfo);
         }
         case AutomationTargetType::Macro: {
             const auto* track = TrackManager::getInstance().getTrack(target.trackId);
@@ -113,9 +139,10 @@ void AutomationManager::trackPropertyChanged(int trackId) {
         if (lane.target.trackId != tid)
             continue;
 
-        // Only process volume and pan targets
+        // Only process track-level targets driven from TrackInfo
         if (lane.target.type != AutomationTargetType::TrackVolume &&
-            lane.target.type != AutomationTargetType::TrackPan)
+            lane.target.type != AutomationTargetType::TrackPan &&
+            lane.target.type != AutomationTargetType::SendLevel)
             continue;
 
         // Only update absolute lanes with points

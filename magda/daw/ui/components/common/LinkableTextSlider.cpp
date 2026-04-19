@@ -198,6 +198,19 @@ void LinkableTextSlider::setLinkContext(magda::DeviceId deviceId, int paramIndex
     deviceId_ = deviceId;
     paramIndex_ = paramIndex;
     devicePath_ = devicePath;
+
+    // Wire the underlying TextSlider's automation target so the purple
+    // "automated" tint paints when a lane exists for this param, and so
+    // drag gestures trigger the touch/override bookkeeping on the lane.
+    magda::AutomationTarget target;
+    target.type = magda::AutomationTargetType::DeviceParameter;
+    target.trackId = devicePath.trackId;
+    target.devicePath = devicePath;
+    target.paramIndex = paramIndex;
+    if (target.isValid())
+        slider_.setAutomationTarget(target);
+    else
+        slider_.clearAutomationTarget();
 }
 
 void LinkableTextSlider::setAvailableMods(const magda::ModArray* mods) {

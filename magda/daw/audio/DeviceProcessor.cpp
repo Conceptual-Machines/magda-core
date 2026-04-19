@@ -32,6 +32,8 @@ ParameterInfo makeInfoFromTeParam(int index, te::AutomatableParameter* param) {
     auto range = param->getValueRange();
     info.minValue = range.getStart();
     info.maxValue = range.getEnd();
+    info.teMinValue = range.getStart();
+    info.teMaxValue = range.getEnd();
     info.defaultValue = param->getDefaultValue().value_or(range.getStart());
     info.currentValue = param->getCurrentValue();
 
@@ -94,10 +96,19 @@ ParameterInfo DeviceProcessor::getParameterInfo(int /*index*/) const {
 juce::String DeviceProcessor::formatParameterValue(int index, float normalizedValue) const {
     if (!plugin_)
         return {};
-    auto params = plugin_->getAutomatableParameters();
-    if (index < 0 || index >= static_cast<int>(params.size()))
+    // This is a display hot path — lane repaints and automation echoes can
+    // call it thousands of times per second. TE's getAutomatableParameters()
+    // allocates and copies a juce::Array every call, which is roughly O(N)
+    // with the plugin's parameter count; for Vital (~777 params) that alone
+    // beach-balls the UI during playback. Cache the array and refresh it
+    // only when the underlying plugin pointer changes.
+    if (cachedParamsPlugin_ != plugin_.get()) {
+        cachedParamsPlugin_ = plugin_.get();
+        cachedParams_ = plugin_->getAutomatableParameters();
+    }
+    if (index < 0 || index >= cachedParams_.size())
         return {};
-    return params[index]->valueToString(normalizedValue);
+    return cachedParams_[index]->valueToString(normalizedValue);
 }
 
 void DeviceProcessor::populateParameters(DeviceInfo& info) const {
@@ -487,7 +498,26 @@ ParameterInfo FourOscProcessor::getParameterInfo(int index) const {
     auto params = plugin_->getAutomatableParameters();
     if (index < 0 || index >= params.size())
         return {};
-    return makeInfoFromTeParam(index, params[index]);
+    ParameterInfo info = makeInfoFromTeParam(index, params[index]);
+
+    // 4OSC exposes raw values (note number for filter freq, 0..100 for
+    // percentage-shaped params, etc.) and relies on TE's valueToString to
+    // convert them to the correct display text (e.g. "440 Hz" for note 69).
+    // Without a DisplayTextProvider the custom-UI sliders fall through
+    // DeviceSlotComponent::updateSliders -> TextSlider::setParameterInfo,
+    // which replaces the hand-written Hz formatter with the generic
+    // ParameterUtils::formatValue one — and for a linear-scale, empty-unit
+    // parameter that just prints the raw note number. Routing the formatter
+    // through TE keeps the custom UI label correct and matches what users
+    // see in the plugin's native UI.
+    if (info.scale != ParameterScale::Boolean && info.scale != ParameterScale::Discrete &&
+        info.valueTable.empty()) {
+        auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
+        provider->deviceId = getDeviceId();
+        provider->paramIndex = index;
+        info.displayText = std::move(provider);
+    }
+    return info;
 }
 
 void FourOscProcessor::populateParameters(DeviceInfo& info) const {

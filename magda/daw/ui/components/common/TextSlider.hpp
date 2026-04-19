@@ -117,12 +117,21 @@ class TextSlider : public juce::Component,
     }
 
     void setValue(double newValue, juce::NotificationType notification = juce::sendNotification) {
+        setValueWithInterval(newValue, interval_, notification);
+    }
+
+    /** Like setValue() but snaps to a caller-supplied interval instead of the
+     *  configured `interval_`. Used by the drag path to honour fine-tune
+     *  modifiers (Shift/Cmd) — the default interval is coarser than cent-level
+     *  for most plugin parameters. Pass interval <= 0 to skip quantization. */
+    void setValueWithInterval(double newValue, double interval,
+                              juce::NotificationType notification = juce::sendNotification) {
         newValue = juce::jlimit(minValue_, maxValue_, newValue);
-        if (interval_ > 0) {
-            newValue = minValue_ + interval_ * std::round((newValue - minValue_) / interval_);
+        if (interval > 0) {
+            newValue = minValue_ + interval * std::round((newValue - minValue_) / interval);
         }
 
-        if (std::abs(value_ - newValue) > 0.0001) {
+        if (std::abs(value_ - newValue) > 1.0e-9) {
             value_ = newValue;
             updateLabel();
             if (notification != juce::dontSendNotification && onValueChanged) {
@@ -248,7 +257,13 @@ class TextSlider : public juce::Component,
     std::function<void(float)>
         onShiftDragStart;  // Called when Shift+drag starts, param is start value (0-1)
     std::function<void(float)> onShiftDrag;  // Called during Shift+drag with new value (0-1)
-    std::function<void()> onShiftDragEnd;    // Called when Shift+drag ends
+    // Predicate consulted on mouseDown with Shift held. If provided and returns
+    // false, the Shift+drag path is skipped and the gesture runs through the
+    // normal drag (which still honours Shift as a fine-tune modifier).
+    // Callers (e.g. ParamSlotComponent) use this to keep Shift+drag reserved
+    // for mod-amount editing only when a mod is actually selected.
+    std::function<bool()> canStartShiftDrag;
+    std::function<void()> onShiftDragEnd;  // Called when Shift+drag ends
     std::function<void()>
         onRightClicked;  // Called on right-click (when rightClickEditsText_ is false)
 
@@ -375,10 +390,15 @@ class TextSlider : public juce::Component,
             hasDragged_ = false;
             overrideLatchedThisGesture_ = false;
             isLeftButtonDrag_ = true;
-            isShiftDrag_ = e.mods.isShiftDown();
+            // Only enter Shift+drag mode if the owner actually wants to take
+            // the gesture (e.g. a mod is currently selected for amount edit).
+            // Otherwise Shift falls through to the normal drag path so its
+            // fine-tune behaviour still applies.
+            bool ownerTakesShiftDrag = e.mods.isShiftDown() && onShiftDragStart &&
+                                       (!canStartShiftDrag || canStartShiftDrag());
+            isShiftDrag_ = ownerTakesShiftDrag;
 
-            // If Shift is held and we have a callback, notify start
-            if (isShiftDrag_ && onShiftDragStart) {
+            if (isShiftDrag_) {
                 shiftDragStartValue_ = 0.5f;  // Default start value for new links
                 onShiftDragStart(shiftDragStartValue_);
             }
@@ -436,15 +456,22 @@ class TextSlider : public juce::Component,
                 // Normal drag: change the slider value with modifier-based sensitivity
                 // Vertical: component height = full range (fader tracks mouse 1:1)
                 // Horizontal: 200 pixels = full range
-                // Shift: 10x finer, Ctrl/Cmd: 100x finer
+                // Shift: 10x finer, Ctrl/Cmd: 100x finer (both pixel range AND
+                // snap interval, so fine-tune actually lands on finer values —
+                // the default interval is coarser than cent-level for most VST
+                // parameters, so without scaling it here Cmd-drag only slowed
+                // the mouse without changing the reachable value grid).
                 double pixelRange = (orientation_ == Orientation::Vertical)
                                         ? static_cast<double>(getHeight())
                                         : 200.0;
+                double effectiveInterval = interval_;
 
                 if (e.mods.isShiftDown()) {
                     pixelRange *= 10.0;  // Fine control
+                    effectiveInterval *= 0.1;
                 } else if (e.mods.isCommandDown() || e.mods.isCtrlDown()) {
                     pixelRange *= 100.0;  // Very fine control
+                    effectiveInterval *= 0.01;
                 }
 
                 double pixelDelta;
@@ -467,7 +494,7 @@ class TextSlider : public juce::Component,
                     double sensitivity = (maxValue_ - minValue_) / pixelRange;
                     newValue = dragStartValue_ + pixelDelta * sensitivity;
                 }
-                setValue(newValue);
+                setValueWithInterval(newValue, effectiveInterval);
             }
         }
     }

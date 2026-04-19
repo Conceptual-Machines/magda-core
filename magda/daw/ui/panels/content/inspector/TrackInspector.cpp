@@ -15,6 +15,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallButtonLookAndFeel.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
@@ -1311,6 +1312,41 @@ void TrackInspector::rebuildSendsUI() {
             float gain = (db <= -60.0) ? 0.0f : std::pow(10.0f, static_cast<float>(db) / 20.0f);
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetSendLevelCommand>(srcId, busIndex, gain));
+        };
+
+        // Bind automation visual state + right-click menu so the send label
+        // tracks purple/grey like the volume fader and can add/show its lane.
+        magda::AutomationTarget sendTarget;
+        sendTarget.type = magda::AutomationTargetType::SendLevel;
+        sendTarget.trackId = srcId;
+        sendTarget.sendBusIndex = busIndex;
+        levelLabel->setAutomationTarget(sendTarget);
+
+        levelLabel->onRightClick = [srcId, busIndex]() {
+            auto& autoMgr = magda::AutomationManager::getInstance();
+            magda::AutomationTarget target;
+            target.type = magda::AutomationTargetType::SendLevel;
+            target.trackId = srcId;
+            target.sendBusIndex = busIndex;
+
+            auto laneId = autoMgr.getLaneForTarget(target);
+            const bool hasLane = laneId != magda::INVALID_AUTOMATION_LANE_ID;
+
+            juce::PopupMenu menu;
+            menu.addItem(1, hasLane ? "Show Automation Lane" : "Add Automation Lane");
+            if (hasLane)
+                menu.addItem(2, "Delete Automation Lane");
+            menu.showMenuAsync(juce::PopupMenu::Options(), [target](int result) {
+                auto& mgr = magda::AutomationManager::getInstance();
+                if (result == 1) {
+                    auto id = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
+                    mgr.setLaneVisible(id, true);
+                } else if (result == 2) {
+                    auto id = mgr.getLaneForTarget(target);
+                    if (id != magda::INVALID_AUTOMATION_LANE_ID)
+                        mgr.deleteLane(id);
+                }
+            });
         };
         addAndMakeVisible(*levelLabel);
         sendLevelLabels_.push_back(std::move(levelLabel));

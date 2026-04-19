@@ -810,12 +810,6 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         if (busNewNoteOffs > 0)
             busNoteOffsThisTick[track.id] = busNewNoteOffs;
         audioPeakLevels[track.id] = bus.getAudioPeakLevel(track.id);
-
-        if (busNewNoteOns > 0 || busNewNoteOffs > 0) {
-            DBG("[MOD-BUS] track=" << track.id << " busOns=" << busNewNoteOns << " busOffs="
-                                   << busNewNoteOffs << " extHeld=" << midiHeldNotes_[track.id]
-                                   << " peak=" << audioPeakLevels[track.id]);
-        }
     }
 
     // Compute per-track MIDI trigger signals for LFOs.
@@ -869,8 +863,6 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                       transportJustStopped](ModInfo& mod, bool midiTriggered, bool midiNoteOff,
                                             float audioPeakLevel) -> bool {
         bool wasRunning = mod.running;
-        float phaseBefore = mod.phase;
-        float valueBefore = mod.value;
         ModTickInputs inputs{
             midiTriggered, midiNoteOff,          audioPeakLevel,      deltaTime,
             bpm,           transportJustStarted, transportJustLooped, transportJustStopped};
@@ -944,18 +936,6 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 else
                     mod.value = 0.0f;
             }
-
-            if (mod.triggerMode == LFOTriggerMode::MIDI && (midiTriggered || midiNoteOff)) {
-                DBG("[MOD-LFO] trigCount="
-                    << (int)mod.triggerCount << " shouldTrig=" << (int)shouldTrigger
-                    << " midiTrig=" << (int)midiTriggered << " midiOff=" << (int)midiNoteOff
-                    << " running=" << (int)wasRunning << "->" << (int)mod.running
-                    << " phase=" << phaseBefore << "->" << mod.phase << " value=" << valueBefore
-                    << "->" << mod.value << " oneShot=" << (int)mod.oneShot
-                    << " oneShotDone=" << (int)mod.oneShotComplete << " rate=" << mod.rate
-                    << " tempoSync=" << (int)mod.tempoSync
-                    << " changed=" << (int)(mod.running != wasRunning));
-            }
         }
         return mod.running != wasRunning;
     };
@@ -985,14 +965,6 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 // Audio peak from source track (for UI envelope tracking)
                 if (srcId >= 0 && srcId < kMaxBusTracks)
                     deviceAudioPeak = audioPeakLevels[srcId];
-
-                if (deviceMidiTriggered || deviceMidiNoteOff) {
-                    DBG("[MOD-XTRACK-DEV] ownerTrack=" << ownerTrackId << " sourceTrack=" << srcId
-                                                       << " deviceId=" << device.id
-                                                       << " midiTrig=" << (int)deviceMidiTriggered
-                                                       << " midiOff=" << (int)deviceMidiNoteOff
-                                                       << " audioPeak=" << deviceAudioPeak);
-                }
             }
 
             for (auto& mod : device.mods) {
@@ -1011,13 +983,6 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 rackMidiNoteOff = midiAllNotesOffTracks.count(srcId) > 0;
                 if (srcId >= 0 && srcId < kMaxBusTracks)
                     rackAudioPeak = audioPeakLevels[srcId];
-
-                if (rackMidiTriggered || rackMidiNoteOff) {
-                    DBG("[MOD-XTRACK-RACK] ownerTrack="
-                        << ownerTrackId << " sourceTrack=" << srcId << " rackId=" << rack.id
-                        << " midiTrig=" << (int)rackMidiTriggered
-                        << " midiOff=" << (int)rackMidiNoteOff << " audioPeak=" << rackAudioPeak);
-                }
             }
 
             // Check devices inside the rack for sidechain sources — replaces self triggers

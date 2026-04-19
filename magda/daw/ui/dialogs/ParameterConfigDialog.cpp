@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "../themes/DarkTheme.hpp"
+#include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/TrackManager.hpp"
@@ -286,8 +287,18 @@ class ParameterConfigDialog::RangeCell : public juce::Component {
 //==============================================================================
 // ParameterConfigDialog
 //==============================================================================
+ParameterConfigDialog::~ParameterConfigDialog() {
+    setLookAndFeel(nullptr);
+}
+
 ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     : pluginName_(pluginName) {
+    // Use the shared dialog look-and-feel so every button / combo /
+    // text editor in the dialog picks up the theme font (Inter) instead
+    // of JUCE's platform default. Children inherit unless they set their
+    // own LaF.
+    setLookAndFeel(&DialogLookAndFeel::getInstance());
+
     // Title
     titleLabel_.setText("Configure Parameters - " + pluginName_, juce::dontSendNotification);
     titleLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
@@ -363,6 +374,43 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     deselectAllButton_.onClick = [this]() { deselectAllParameters(); };
     addAndMakeVisible(deselectAllButton_);
 
+    // Detect button — run the deterministic heuristic pass (no LLM).
+    // Fast, offline, picks up units/ranges that the plugin's own display
+    // strings give away.
+    detectButton_.setButtonText("Detect");
+    detectButton_.setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    detectButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    detectButton_.onClick = [this]() { runHeuristicDetection(); };
+    addAndMakeVisible(detectButton_);
+
+    // Reset button — wipe all inferred units/ranges and put every parameter
+    // back to a plain 0–100 % view.
+    resetButton_.setButtonText("Reset");
+    resetButton_.setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    resetButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    resetButton_.onClick = [this]() {
+        auto* alert = new juce::AlertWindow(
+            "Reset parameter configuration?",
+            "Discard all inferred units, ranges, and AI-detected values for \"" + pluginName_ +
+                "\" and show every parameter as a plain 0–100 % slider.\n\n"
+                "This cannot be undone.",
+            juce::AlertWindow::QuestionIcon);
+        alert->addButton("Reset", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        juce::Component::SafePointer<ParameterConfigDialog> safeThis(this);
+        alert->enterModalState(true,
+                               juce::ModalCallbackFunction::create([alert, safeThis](int result) {
+                                   std::unique_ptr<juce::AlertWindow> owner(alert);
+                                   if (result != 1 || safeThis == nullptr)
+                                       return;
+                                   safeThis->resetParameterConfiguration();
+                               }),
+                               false);
+    };
+    addAndMakeVisible(resetButton_);
+
     // AI Detect button
     aiDetectButton_.setButtonText("AI Detect");
     aiDetectButton_.setColour(juce::TextButton::buttonColourId,
@@ -434,7 +482,11 @@ void ParameterConfigDialog::resized() {
     selectionButtonRow.removeFromLeft(selButtonSpacing);
     deselectAllButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
+    detectButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
+    selectionButtonRow.removeFromLeft(selButtonSpacing);
     aiDetectButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
+    selectionButtonRow.removeFromLeft(selButtonSpacing);
+    resetButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
     aiStatusLabel_.setBounds(selectionButtonRow);
 
@@ -798,6 +850,82 @@ void ParameterConfigDialog::selectAllParameters() {
     updateTitle();
 }
 
+void ParameterConfigDialog::resetParameterConfiguration() {
+    // Delete the persisted XML so next time the dialog opens (or a project
+    // reloads this plugin) applyConfigToDevice finds nothing and the plugin
+    // keeps its native metadata.
+    if (!pluginUniqueId_.isEmpty()) {
+        auto configFile =
+            juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                .getChildFile("MAGDA")
+                .getChildFile("PluginConfigs")
+                .getChildFile(pluginUniqueId_.replaceCharacters(":/\\,; ", "______") + ".xml");
+        if (configFile.existsAsFile()) {
+            configFile.deleteFile();
+            DBG("Deleted parameter config: " << configFile.getFullPathName());
+        }
+    }
+
+    // Restore scanInputs_ from the pristine cache so Detect / AI Detect can
+    // be re-run later. The user-facing parameters_ list keeps names and
+    // visibility, but every inferred unit/range/scale is wiped back to a
+    // plain normalized percentage.
+    auto it = parameterCache_.find(pluginUniqueId_);
+    if (it != parameterCache_.end()) {
+        scanInputs_ = it->second.scanInputs;
+    }
+
+    for (auto& param : parameters_) {
+        param.unit = "%";
+        param.scale = magda::ParameterScale::Linear;
+        param.rangeMin = 0.0f;
+        param.rangeMax = 1.0f;
+        param.rangeCenter = 0.5f;
+        param.choices.clear();
+    }
+
+    rebuildFilteredList();
+    table_.updateContent();
+    updateTitle();
+    aiStatusLabel_.setText("Reset to 0–100 %", juce::dontSendNotification);
+}
+
+void ParameterConfigDialog::runHeuristicDetection() {
+    if (scanInputs_.empty()) {
+        aiStatusLabel_.setText("No parameters to detect", juce::dontSendNotification);
+        return;
+    }
+
+    std::vector<magda::ParameterScanInput> visibleInputs;
+    for (size_t i = 0; i < scanInputs_.size() && i < parameters_.size(); ++i) {
+        if (parameters_[i].isVisible)
+            visibleInputs.push_back(scanInputs_[i]);
+    }
+
+    if (visibleInputs.empty()) {
+        aiStatusLabel_.setText("No visible params to detect", juce::dontSendNotification);
+        return;
+    }
+
+    auto results = magda::ParameterDetector::detect(visibleInputs);
+
+    int resolved = 0, ambiguous = 0;
+    for (const auto& r : results) {
+        if (r.confidence > 0.0f)
+            resolved++;
+        else
+            ambiguous++;
+    }
+
+    applyDetectionResults(results);
+
+    juce::String status =
+        juce::String(resolved) + " / " + juce::String(visibleInputs.size()) + " resolved";
+    if (ambiguous > 0)
+        status += " — use AI Detect for the rest";
+    aiStatusLabel_.setText(status, juce::dontSendNotification);
+}
+
 void ParameterConfigDialog::deselectAllParameters() {
     for (auto& param : parameters_) {
         param.isVisible = false;
@@ -814,6 +942,8 @@ void ParameterConfigDialog::setDetecting(bool detecting) {
     applyButton_.setEnabled(!detecting);
     selectAllButton_.setEnabled(!detecting);
     deselectAllButton_.setEnabled(!detecting);
+    detectButton_.setEnabled(!detecting);
+    resetButton_.setEnabled(!detecting);
     searchBox_.setEnabled(!detecting);
     table_.setEnabled(!detecting);
 

@@ -85,6 +85,15 @@ double AutomationRecordingEngine::getCurrentBeatTime() const {
 double AutomationRecordingEngine::normalizeDeviceParam(const AutomationTarget& target,
                                                        float rawValue) {
     ParameterInfo paramInfo = target.getParameterInfo();
+    const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
+    const bool infoMatchesTeRange = std::abs(paramInfo.minValue - paramInfo.teMinValue) < 1e-6f &&
+                                    std::abs(paramInfo.maxValue - paramInfo.teMaxValue) < 1e-6f;
+
+    if (teSpan > 0.0f && !infoMatchesTeRange) {
+        return juce::jlimit(0.0, 1.0,
+                            static_cast<double>((rawValue - paramInfo.teMinValue) / teSpan));
+    }
+
     return static_cast<double>(ParameterUtils::realToNormalized(rawValue, paramInfo));
 }
 
@@ -160,6 +169,9 @@ void AutomationRecordingEngine::seedBaselines() {
         // track->volume during a prior playback session don't corrupt the anchor.
         mix.volume = track.manualVolume;
         mix.pan = track.manualPan;
+        mix.sendLevels.clear();
+        for (const auto& send : track.sends)
+            mix.sendLevels[send.busIndex] = send.level;
         DBG("[AutoRec] seedBaselines track="
             << (int)track.id << " vol=" << track.volume << " (" << gainToDb(track.volume) << " dB)"
             << " manualVol=" << track.manualVolume << " (" << gainToDb(track.manualVolume) << " dB)"
@@ -214,9 +226,7 @@ void AutomationRecordingEngine::onDeviceParameterChanged(DeviceId deviceId, int 
     auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
 
     double beatTime = getCurrentBeatTime();
-    ParameterInfo paramInfo = target.getParameterInfo();
-    double normalizedValue =
-        static_cast<double>(ParameterUtils::realToNormalized(rawValue, paramInfo));
+    double normalizedValue = normalizeDeviceParam(target, rawValue);
 
     DBG("[AutoRec] Device param hit: deviceId=" << deviceId << " param=" << paramIndex << " raw="
                                                 << rawValue << " norm=" << normalizedValue
@@ -254,7 +264,23 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     bool volumeChanged = (track->volume != mix.volume);
     bool panChanged = (track->pan != mix.pan);
 
-    if (!volumeChanged && !panChanged)
+    // Detect aux-send level deltas. sendChanges holds (busIndex, newLevel,
+    // preSeedLevel) so the per-send recording block below can correct the
+    // anchor of a freshly-created lane the same way volume/pan do.
+    struct SendDelta {
+        int busIndex;
+        float newLevel;
+        float preSeedLevel;
+    };
+    std::vector<SendDelta> sendChanges;
+    for (const auto& send : track->sends) {
+        auto it = mix.sendLevels.find(send.busIndex);
+        float preSeed = (it == mix.sendLevels.end()) ? send.level : it->second;
+        if (it == mix.sendLevels.end() || it->second != send.level)
+            sendChanges.push_back({send.busIndex, send.level, preSeed});
+    }
+
+    if (!volumeChanged && !panChanged && sendChanges.empty())
         return;
 
     // During playback, ignore property changes that weren't initiated by a
@@ -274,7 +300,18 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
         if (panChanged && !autoMgr.isTargetUserTouched(panTarget))
             panChanged = false;
 
-        if (!volumeChanged && !panChanged)
+        // Filter send changes that came from automation playback, not the user.
+        sendChanges.erase(std::remove_if(sendChanges.begin(), sendChanges.end(),
+                                         [&](const SendDelta& s) {
+                                             AutomationTarget sendTarget;
+                                             sendTarget.type = AutomationTargetType::SendLevel;
+                                             sendTarget.trackId = tid;
+                                             sendTarget.sendBusIndex = s.busIndex;
+                                             return !autoMgr.isTargetUserTouched(sendTarget);
+                                         }),
+                          sendChanges.end());
+
+        if (!volumeChanged && !panChanged && sendChanges.empty())
             return;
     }
 
@@ -291,6 +328,8 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     // would silently overwrite mix.volume with the automation-driven track->volume.
     mix.volume = track->volume;
     mix.pan = track->pan;
+    for (const auto& s : sendChanges)
+        mix.sendLevels[s.busIndex] = s.newLevel;
 
     double beatTime = getCurrentBeatTime();
 
@@ -362,6 +401,38 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
 
         DBG("[AutoRec] Pan hit: track=" << (int)tid << " pan=" << track->pan
                                         << " norm=" << normalizedValue << " beat=" << beatTime);
+        if (!shouldThinPoint(laneId, beatTime, normalizedValue))
+            recordPoint(laneId, beatTime, normalizedValue);
+    }
+
+    for (const auto& s : sendChanges) {
+        AutomationTarget target;
+        target.type = AutomationTargetType::SendLevel;
+        target.trackId = tid;
+        target.sendBusIndex = s.busIndex;
+
+        bool isNewLane = (autoMgr.getLaneForTarget(target) == INVALID_AUTOMATION_LANE_ID);
+        auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+
+        if (isNewLane) {
+            ParameterInfo paramInfo = target.getParameterInfo();
+            float seedDb = gainToDb(s.preSeedLevel);
+            double seedNorm =
+                static_cast<double>(ParameterUtils::realToNormalized(seedDb, paramInfo));
+            const auto* lane = autoMgr.getLane(laneId);
+            if (lane && !lane->absolutePoints.empty()) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<MoveAutomationPointCommand>(laneId, INVALID_AUTOMATION_CLIP_ID,
+                                                                 lane->absolutePoints[0].id, 0.0,
+                                                                 seedNorm));
+            }
+        }
+
+        ParameterInfo paramInfo = target.getParameterInfo();
+        float db = gainToDb(s.newLevel);
+        double normalizedValue =
+            static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
+
         if (!shouldThinPoint(laneId, beatTime, normalizedValue))
             recordPoint(laneId, beatTime, normalizedValue);
     }

@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <unordered_map>
+
 #include "ArpeggiatorUI.hpp"
 #include "ChorusUI.hpp"
 #include "CompressorUI.hpp"
@@ -216,6 +218,15 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<FourOscUI> fourOscUI_;
     static constexpr int NO_PENDING_TAB = -1;
     int pendingCustomUITabIndex_ = NO_PENDING_TAB;
+
+    // Learn-mode debounce: plugins like Vital fire parameterValueChanged for
+    // many crosstalk / display parameters when the user touches a single
+    // control, which makes the highlighted slot jitter. Lock onto the first
+    // param that reports a meaningful change and refuse to switch for a short
+    // window so the highlight stays on what the user actually touched.
+    int learnLockedParamIndex_ = -1;
+    juce::uint32 learnLockTimeMs_ = 0;
+    std::unordered_map<int, float> learnLastValueByParam_;
     std::unique_ptr<EqualiserUI> eqUI_;
     std::unique_ptr<CompressorUI> compressorUI_;
     std::unique_ptr<ReverbUI> reverbUI_;

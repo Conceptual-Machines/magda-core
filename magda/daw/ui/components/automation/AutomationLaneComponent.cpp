@@ -529,9 +529,18 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
                 labelBounds.setY(area.getBottom() - 10);
 
             // Show the real value using the plugin's display text if available,
-            // otherwise unit or fallback percentage.
+            // otherwise unit or fallback percentage. displayText wraps TE's
+            // valueToString, which expects the plugin-native value — project
+            // `clamped` (in info range) back to TE raw via teMin/teMax so it
+            // matches the device-side formatter and the plugin's own UI.
             juce::String label;
-            if (!paramInfo.valueTable.empty()) {
+            if (paramInfo.displayText) {
+                float teRaw =
+                    paramInfo.teMinValue +
+                    static_cast<float>(normValue) * (paramInfo.teMaxValue - paramInfo.teMinValue);
+                label = paramInfo.displayText->format(teRaw);
+            }
+            if (label.isEmpty() && !paramInfo.valueTable.empty()) {
                 int idx = juce::jlimit(
                     0, static_cast<int>(paramInfo.valueTable.size()) - 1,
                     static_cast<int>(std::round(normValue * (paramInfo.valueTable.size() - 1))));
@@ -545,8 +554,16 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
                 } else {
                     numberText = juce::String(static_cast<int>(std::round(clamped)));
                 }
-                label =
-                    numberText + (paramInfo.unit.isNotEmpty() ? paramInfo.unit : juce::String("%"));
+                // Only append "%" when the parameter is actually unit-less AND
+                // on a 0..1 range — otherwise the suffix is misleading (e.g.
+                // 4OSC's filterFreq stores 0..135 as a MIDI note number).
+                juce::String suffix;
+                if (paramInfo.unit.isNotEmpty()) {
+                    suffix = paramInfo.unit;
+                } else if (paramInfo.minValue == 0.0f && paramInfo.maxValue == 1.0f) {
+                    suffix = "%";
+                }
+                label = numberText + suffix;
             }
 
             g.drawText(label, labelBounds, juce::Justification::centredRight);
@@ -603,15 +620,14 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
         return "C";
     }
 
-    DBG("[LANE-FMT] norm=" << normalizedValue << " real=" << realValue << " unit='"
-                           << paramInfo.unit << "'"
-                           << " vtSize=" << paramInfo.valueTable.size()
-                           << " scale=" << static_cast<int>(paramInfo.scale)
-                           << " lane=" << lane->getDisplayName());
-
-    // Live plugin display text — exact, no quantization.
+    // Live plugin display text — single source of truth with the device
+    // slot and the plugin's own UI. Project MAGDA-normalized [0,1] to the
+    // TE-native range (teMinValue/teMaxValue) before handing to the
+    // provider — its format() wraps TE::valueToString which expects raw.
     if (paramInfo.displayText) {
-        auto text = paramInfo.displayText->format(static_cast<float>(normalizedValue));
+        float teRaw = paramInfo.teMinValue + static_cast<float>(normalizedValue) *
+                                                 (paramInfo.teMaxValue - paramInfo.teMinValue);
+        auto text = paramInfo.displayText->format(teRaw);
         if (text.isNotEmpty())
             return text;
     }

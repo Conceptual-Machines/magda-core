@@ -471,6 +471,21 @@ void CurveEditorBase::mouseDoubleClick(const juce::MouseEvent& e) {
 }
 
 void CurveEditorBase::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
+    updateCursorForModifiers(modifiers);
+}
+
+void CurveEditorBase::mouseMove(const juce::MouseEvent& e) {
+    // modifierKeysChanged only fires when this component has keyboard focus;
+    // hovering back in after focus shifted can leave the cursor stuck on
+    // whichever modifier state was last seen. Re-check on every move.
+    updateCursorForModifiers(e.mods);
+}
+
+void CurveEditorBase::mouseEnter(const juce::MouseEvent& e) {
+    updateCursorForModifiers(e.mods);
+}
+
+void CurveEditorBase::updateCursorForModifiers(const juce::ModifierKeys& modifiers) {
     if (modifiers.isShiftDown()) {
         setMouseCursor(juce::MouseCursor::PointingHandCursor);
     } else if (modifiers.isCommandDown()) {

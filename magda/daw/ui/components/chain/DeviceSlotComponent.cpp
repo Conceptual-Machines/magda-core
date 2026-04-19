@@ -236,6 +236,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         bool active = learnButton_->getToggleState();
         learnButton_->setActive(active);
         paramGrid_->setLearnMode(active);
+        // Fresh learn session — clear any stale lock/baselines so the first
+        // touched param wins cleanly.
+        learnLockedParamIndex_ = -1;
+        learnLockTimeMs_ = 0;
+        learnLastValueByParam_.clear();
     };
     addAndMakeVisible(*learnButton_);
 
@@ -757,26 +762,49 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
 
     // Learn mode: navigate to the page containing this parameter and highlight it
     if (paramGrid_->isLearnMode()) {
-        int visibleIndex = paramIndex;
-        if (!device_.visibleParameters.empty()) {
-            visibleIndex = -1;
-            for (int vi = 0; vi < static_cast<int>(device_.visibleParameters.size()); ++vi)
-                if (device_.visibleParameters[static_cast<size_t>(vi)] == paramIndex) {
-                    visibleIndex = vi;
-                    break;
-                }
-        }
-        if (visibleIndex >= 0) {
-            int targetPage = visibleIndex / NUM_PARAMS_PER_PAGE;
-            if (targetPage != paramGrid_->getCurrentPage()) {
-                int totalPages =
-                    (getVisibleParamCount() + NUM_PARAMS_PER_PAGE - 1) / NUM_PARAMS_PER_PAGE;
-                device_.currentParameterPage = targetPage;
-                paramGrid_->updatePageControls(targetPage, juce::jmax(1, totalPages));
-                updateParameterSlots();
-                updateParamModulation();
+        // Filter cascading / crosstalk notifications (many plugins, Vital in
+        // particular, fire parameterValueChanged for several display/mod
+        // params when the user touches one control). Two defences:
+        //   1) ignore changes below a small normalised delta threshold
+        //   2) once we've locked onto a param, keep the highlight there for
+        //      a short window before allowing it to jump to another param
+        constexpr float kLearnDeltaThreshold = 0.0005f;
+        constexpr juce::uint32 kLearnLockMs = 500;
+        auto& lastValue = learnLastValueByParam_[paramIndex];
+        float delta = std::abs(newValue - lastValue);
+        lastValue = newValue;
+        bool hasMeaningfulChange = delta > kLearnDeltaThreshold;
+
+        auto nowMs = juce::Time::getMillisecondCounter();
+        bool lockExpired =
+            learnLockedParamIndex_ == -1 || (nowMs - learnLockTimeMs_) > kLearnLockMs;
+        bool isLockedParam = paramIndex == learnLockedParamIndex_;
+
+        if (hasMeaningfulChange && (isLockedParam || lockExpired)) {
+            learnLockedParamIndex_ = paramIndex;
+            learnLockTimeMs_ = nowMs;
+
+            int visibleIndex = paramIndex;
+            if (!device_.visibleParameters.empty()) {
+                visibleIndex = -1;
+                for (int vi = 0; vi < static_cast<int>(device_.visibleParameters.size()); ++vi)
+                    if (device_.visibleParameters[static_cast<size_t>(vi)] == paramIndex) {
+                        visibleIndex = vi;
+                        break;
+                    }
             }
-            paramGrid_->highlightSlot(visibleIndex % NUM_PARAMS_PER_PAGE);
+            if (visibleIndex >= 0) {
+                int targetPage = visibleIndex / NUM_PARAMS_PER_PAGE;
+                if (targetPage != paramGrid_->getCurrentPage()) {
+                    int totalPages =
+                        (getVisibleParamCount() + NUM_PARAMS_PER_PAGE - 1) / NUM_PARAMS_PER_PAGE;
+                    device_.currentParameterPage = targetPage;
+                    paramGrid_->updatePageControls(targetPage, juce::jmax(1, totalPages));
+                    updateParameterSlots();
+                    updateParamModulation();
+                }
+                paramGrid_->highlightSlot(visibleIndex % NUM_PARAMS_PER_PAGE);
+            }
         }
     }
 
@@ -853,20 +881,36 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
     if (paramIndex < 0 || paramIndex >= static_cast<int>(device_.parameters.size()))
         return;
 
-    // MAGDA normalized 0..1 → real value via ParameterUtils, honouring the
-    // param's scale and scaleAnchor. This must match the identical conversion
-    // inside AutomationPlaybackEngine::convertToTEValue so the value we echo
-    // to the UI is the same value the engine writes to TE.
+    // Convert the lane's MAGDA-normalized [0,1] back to the plugin's NATIVE
+    // range (what te::AutomatableParameter actually stores). For external
+    // VSTs this is always [0,1] regardless of any AI-Detect display range,
+    // so we must NOT go through normalizedToReal here — doing so writes the
+    // display-range value (e.g. -2.49 semitones) into currentValue, which
+    // fights ExternalPluginProcessor::propagateParameterChange — that
+    // listener fires off the same TE param write and stores the native
+    // 0..1 value. The two writers alternate and the slot flickers.
+    //
+    // Using info.teMinValue/teMaxValue (captured once at makeInfoFromTeParam
+    // time, before any AI-Detect override) lets us compute the native value
+    // without a live plugin lookup — the hot-loop-hang trap noted in the
+    // handoff.
     const auto& info = device_.parameters[static_cast<size_t>(paramIndex)];
-    float realValue =
-        magda::ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), info);
+    const float teSpan = info.teMaxValue - info.teMinValue;
+    const float teRaw = info.teMinValue + static_cast<float>(normalizedValue) * teSpan;
 
-    // Keep the cached value in sync so any non-automation refresh path sees
-    // the latest curve value.
-    device_.parameters[static_cast<size_t>(paramIndex)].currentValue = realValue;
+    // Keep the cached value in sync so any non-automation refresh path (and
+    // any custom UI that reads currentValue directly, e.g. FourOscUI) sees
+    // the same native value that propagateParameterChange would store.
+    device_.parameters[static_cast<size_t>(paramIndex)].currentValue = teRaw;
 
     // Push into the param slot (if the matching parameter is on the current
     // page) and into any active custom UI so the on-device knob follows too.
+    //
+    // The generic param-grid slot's slider is a fixed 0..1 range and its
+    // formatter (configureSliderFormatting) was written against a
+    // MAGDA-normalized input, so we pass normalizedValue directly. Using
+    // teRaw would clamp for any parameter whose native range isn't 0..1
+    // (4OSC note-number params, EQ frequency in Hz, …).
     if (paramGrid_) {
         const int paramsPerPage = NUM_PARAMS_PER_PAGE;
         const int currentPage = paramGrid_->getCurrentPage();
@@ -886,7 +930,7 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
             }
             if (actualParamIndex == paramIndex) {
                 if (auto* slot = paramGrid_->getSlot(slotIndex))
-                    slot->setParamValue(realValue);
+                    slot->setParamValue(normalizedValue);
                 break;
             }
         }
