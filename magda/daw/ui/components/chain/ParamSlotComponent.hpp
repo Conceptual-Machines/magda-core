@@ -40,6 +40,7 @@ class ParamSlotComponent : public juce::Component,
     // Set the actual parameter index (mapped from visibility filter)
     void setParamIndex(int paramIndex) {
         paramIndex_ = paramIndex;
+        refreshAutomationTarget();
     }
     int getParamIndex() const {
         return paramIndex_;
@@ -53,8 +54,18 @@ class ParamSlotComponent : public juce::Component,
     // Set the device path (for param selection)
     void setDevicePath(const magda::ChainNodePath& path) {
         devicePath_ = path;
+        refreshAutomationTarget();
     }
 
+  private:
+    // Wire the underlying TextSlider's automation target so the slot paints
+    // the purple "automated" tint when a lane exists for this (device,
+    // param), and drag gestures trigger the touch/override bookkeeping.
+    // Idempotent — safe to call whenever the device path or param index
+    // changes.
+    void refreshAutomationTarget();
+
+  public:
     // Set available mods and macros for linking
     void setAvailableMods(const magda::ModArray* mods) {
         availableMods_ = mods;

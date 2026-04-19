@@ -353,7 +353,24 @@ void ParamSlotComponent::setParamName(const juce::String& name) {
 }
 
 void ParamSlotComponent::setParamValue(double value) {
-    valueSlider_.setValue(value, juce::dontSendNotification);
+    // Bypass the slider's configured step interval (0.01) — that interval is
+    // there to give drags a pleasant coarse feel, but automation echoes push
+    // arbitrary continuous values and snapping them visibly quantizes the
+    // lane readout against the curve. setValueWithInterval(..., 0.0, ...)
+    // writes the exact value and still triggers the label refresh.
+    valueSlider_.setValueWithInterval(value, 0.0, juce::dontSendNotification);
+}
+
+void ParamSlotComponent::refreshAutomationTarget() {
+    magda::AutomationTarget target;
+    target.type = magda::AutomationTargetType::DeviceParameter;
+    target.trackId = devicePath_.trackId;
+    target.devicePath = devicePath_;
+    target.paramIndex = paramIndex_;
+    if (target.isValid())
+        valueSlider_.setAutomationTarget(target);
+    else
+        valueSlider_.clearAutomationTarget();
 }
 
 bool ParamSlotComponent::isBeingDragged() const {

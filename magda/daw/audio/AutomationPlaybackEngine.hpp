@@ -102,6 +102,15 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
     bool wasPlaying_ = false;
     bool needsRebake_ = true;  // Start true so first play triggers initial bake
 
+    // Tracks the last playhead time we pushed to each baked parameter while
+    // stopped. When the user scrubs the transport (or the position changes
+    // in some other way) with no transport active, we need to re-call
+    // updateToFollowCurve so plugin-side state matches the curve at the
+    // new position — otherwise the device UI shows the value from whatever
+    // position we last synced, even though the curve and the lane readout
+    // reflect the new one. Seconds precision is plenty for a 30Hz tick.
+    double lastStoppedPlayheadSeconds_ = -1.0;
+
     // Targets we baked on the previous pass. On the next bake we clear the
     // curve for any target that is no longer present — otherwise a deleted
     // lane's baked values continue driving the parameter on the audio thread.

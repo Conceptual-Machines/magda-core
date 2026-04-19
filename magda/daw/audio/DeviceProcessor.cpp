@@ -32,6 +32,8 @@ ParameterInfo makeInfoFromTeParam(int index, te::AutomatableParameter* param) {
     auto range = param->getValueRange();
     info.minValue = range.getStart();
     info.maxValue = range.getEnd();
+    info.teMinValue = range.getStart();
+    info.teMaxValue = range.getEnd();
     info.defaultValue = param->getDefaultValue().value_or(range.getStart());
     info.currentValue = param->getCurrentValue();
 
@@ -94,10 +96,19 @@ ParameterInfo DeviceProcessor::getParameterInfo(int /*index*/) const {
 juce::String DeviceProcessor::formatParameterValue(int index, float normalizedValue) const {
     if (!plugin_)
         return {};
-    auto params = plugin_->getAutomatableParameters();
-    if (index < 0 || index >= static_cast<int>(params.size()))
+    // This is a display hot path — lane repaints and automation echoes can
+    // call it thousands of times per second. TE's getAutomatableParameters()
+    // allocates and copies a juce::Array every call, which is roughly O(N)
+    // with the plugin's parameter count; for Vital (~777 params) that alone
+    // beach-balls the UI during playback. Cache the array and refresh it
+    // only when the underlying plugin pointer changes.
+    if (cachedParamsPlugin_ != plugin_.get()) {
+        cachedParamsPlugin_ = plugin_.get();
+        cachedParams_ = plugin_->getAutomatableParameters();
+    }
+    if (index < 0 || index >= cachedParams_.size())
         return {};
-    return params[index]->valueToString(normalizedValue);
+    return cachedParams_[index]->valueToString(normalizedValue);
 }
 
 void DeviceProcessor::populateParameters(DeviceInfo& info) const {

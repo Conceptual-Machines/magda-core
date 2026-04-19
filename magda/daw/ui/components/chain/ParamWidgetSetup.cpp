@@ -10,14 +10,26 @@ namespace magda::daw::ui {
 
 void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& info) {
     // Live plugin display text — exact values, no quantization.
+    //
+    // DisplayTextProvider::format is a thin wrapper around TE's
+    // valueToString, so the argument MUST be a plugin-native (TE raw)
+    // value. The generic slot slider operates in MAGDA-normalized 0..1
+    // space, so we project back to the TE range (info.teMinValue /
+    // teMaxValue, captured at makeInfoFromTeParam time and preserved
+    // across AI-Detect overrides). For external VSTs TE range is
+    // [0,1] and this is a no-op; for 4OSC the filterFreq range is
+    // [0,135] so 0.5 → 67.5 → "440 Hz".
     if (info.displayText) {
         auto provider = info.displayText;
-        slider.setValueFormatter([provider](double normalized) {
-            return provider->format(static_cast<float>(normalized));
+        const float teMin = info.teMinValue;
+        const float teSpan = info.teMaxValue - info.teMinValue;
+        slider.setValueFormatter([provider, teMin, teSpan](double normalized) {
+            const float teRaw = teMin + static_cast<float>(normalized) * teSpan;
+            return provider->format(teRaw);
         });
         // Reverse-lookup parser: strip unit suffix, parse number, find closest
         // normalized value by querying the plugin at sample points.
-        slider.setValueParser([provider](const juce::String& text) -> double {
+        slider.setValueParser([provider, teMin, teSpan](const juce::String& text) -> double {
             auto stripped = text.trim().retainCharacters("0123456789.-+eE");
             double target = stripped.getDoubleValue();
             int bestIdx = 0;
@@ -25,7 +37,8 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
             constexpr int kSteps = 128;
             for (int i = 0; i <= kSteps; ++i) {
                 float norm = static_cast<float>(i) / kSteps;
-                auto numPart = provider->format(norm).trim().retainCharacters("0123456789.-+eE");
+                float teRaw = teMin + norm * teSpan;
+                auto numPart = provider->format(teRaw).trim().retainCharacters("0123456789.-+eE");
                 if (numPart.isEmpty())
                     continue;
                 double dist = std::abs(numPart.getDoubleValue() - target);

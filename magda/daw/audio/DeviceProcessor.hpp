@@ -152,6 +152,15 @@ class DeviceProcessor {
 
     // Apply gain to the appropriate plugin parameter
     virtual void applyGain();
+
+  private:
+    // Cached automatable-parameter array so formatParameterValue doesn't
+    // re-copy it on every DisplayTextProvider call. For Vital that array
+    // has ~777 entries and TE's accessor allocates a fresh juce::Array
+    // each call — the lane repaints + slot updates during playback called
+    // it thousands of times per second and the UI would beach-ball.
+    mutable juce::Array<te::AutomatableParameter*> cachedParams_;
+    mutable const te::Plugin* cachedParamsPlugin_ = nullptr;
 };
 
 // =============================================================================

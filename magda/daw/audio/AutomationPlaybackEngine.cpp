@@ -94,6 +94,26 @@ void AutomationPlaybackEngine::process() {
         AutomationManager::getInstance().setPlaybackActive(false);
     }
 
+    // Stopped-state playhead sync: if the user scrubs the transport while
+    // stopped, push the curve value at the new position onto each baked
+    // parameter so the device UI, custom UIs, and the plugin's own UI all
+    // land on the same value the lane readout / scale labels report. Without
+    // this the plugin stays on whatever value we last committed (bake-end,
+    // or an earlier scrub), and the user sees lane-vs-device drift.
+    if (!playing) {
+        const double nowSec = edit_.getTransport().getPosition().inSeconds();
+        if (std::abs(nowSec - lastStoppedPlayheadSeconds_) > 1e-6) {
+            for (auto& [param, info] : listenedParams_) {
+                juce::ignoreUnused(info);
+                if (param != nullptr)
+                    param->updateToFollowCurve(edit_.getTransport().getPosition());
+            }
+            lastStoppedPlayheadSeconds_ = nowSec;
+        }
+    } else {
+        lastStoppedPlayheadSeconds_ = -1.0;
+    }
+
     wasPlaying_ = playing;
     needsRebake_ = false;
 }
@@ -259,7 +279,26 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     double bakeIntervalBeats = kBakeIntervalSeconds * bpm / 60.0;
 
     // Shared converter: maps MAGDA's 0-1 normalized to TE's parameter range.
+    //
+    // Hoisted out of the sample loop — convertToTEValue fetches
+    // target.getParameterInfo() per call, which walks the track /
+    // rack / chain tree to resolve the device and copies a full
+    // ParameterInfo (incl. valueTable, choices, shared_ptrs). With
+    // ~100k loop iterations on a long edit that lookup is enough to
+    // beach-ball the UI on every play / stop bake. Compute the TE
+    // mapping once here and inline the 2 FLOPS in the hot loop.
+    const ParameterInfo bakedInfo = (lane.target.type == AutomationTargetType::DeviceParameter)
+                                        ? lane.target.getParameterInfo()
+                                        : ParameterInfo{};
+    const bool bakedIsDeviceParam = lane.target.type == AutomationTargetType::DeviceParameter;
+    const float bakedTeMin = bakedInfo.teMinValue;
+    const float bakedTeSpan = bakedInfo.teMaxValue - bakedInfo.teMinValue;
+    const bool bakedUseTeRange = bakedIsDeviceParam && bakedTeSpan > 0.0f &&
+                                 (std::abs(bakedInfo.minValue - bakedInfo.teMinValue) > 1e-6f ||
+                                  std::abs(bakedInfo.maxValue - bakedInfo.teMaxValue) > 1e-6f);
     auto convertValue = [&](double magdaNormalized) -> float {
+        if (bakedUseTeRange)
+            return bakedTeMin + static_cast<float>(magdaNormalized) * bakedTeSpan;
         return convertToTEValue(lane.target, param, magdaNormalized);
     };
 
@@ -356,21 +395,36 @@ float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
             return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), paramInfo);
         }
         default: {
-            // Device parameters: convert via the parameter's own ParameterInfo
-            // so log scales, scaleAnchor, and displayFormat all stay consistent
-            // with what the slider and the automation lane display. See the
-            // invariant at the top of this file.
+            // Device parameters: the lane stores MAGDA-normalized [0,1] values.
+            // TE's AutomatableParameter stores plugin-native values —
+            // always [0,1] for external VSTs, the raw native range for
+            // internal plugins (e.g. 0..135 for 4OSC filterFreq).
+            //
+            // When info.min/max match the TE-native range (internal plugins,
+            // or external VSTs before AI-Detect) go through
+            // normalizedToReal so log scales and scaleAnchors are honoured.
+            //
+            // When they differ (external VST with AI-Detect display range)
+            // normalizedToReal would return a display-range value (e.g.
+            // -48..+48 semitones) that TE then clips to its 0..1 param
+            // range — the source of the "curve moves but plugin doesn't"
+            // drift. Fall back to a linear mapping onto the NATIVE TE
+            // range instead, so the lane's normalized [0,1] reaches the
+            // plugin unchanged.
             ParameterInfo info = target.getParameterInfo();
-            // Fall back to the TE-reported range when ParameterInfo is missing
-            // (e.g. the device hasn't been populated yet).
-            if (info.maxValue <= info.minValue) {
+            const float teSpan = info.teMaxValue - info.teMinValue;
+            if (teSpan <= 0.0f) {
                 if (!param)
                     return static_cast<float>(magdaNormalized);
                 auto range = param->getValueRange();
                 return range.getStart() +
                        static_cast<float>(magdaNormalized) * (range.getEnd() - range.getStart());
             }
-            return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), info);
+            const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
+                                            std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
+            if (infoMatchesTeRange && info.maxValue > info.minValue)
+                return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), info);
+            return info.teMinValue + static_cast<float>(magdaNormalized) * teSpan;
         }
     }
 }
@@ -450,25 +504,27 @@ double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& targ
             return ParameterUtils::realToNormalized(teValue, paramInfo);
         }
         default: {
-            // Device parameters: go through ParameterUtils so the reverse
-            // mapping honours info.scale + info.scaleAnchor, matching
-            // convertToTEValue exactly. This keeps the round-trip
-            // (normalized → real → normalized) self-consistent — otherwise
-            // a curve-driven listener writeback snaps the UI to the wrong
-            // normalized value, which the lane then re-maps through the
-            // asymmetric forward path and ends up displaying a different
-            // real value from what was committed.
+            // Inverse of convertToTEValue — keep the two symmetric or the
+            // round-trip (MAGDA normalized -> TE raw -> MAGDA normalized)
+            // will drift and the UI will fight the curve.
             ParameterInfo info = target.getParameterInfo();
-            if (info.maxValue > info.minValue)
+            const float teSpan = info.teMaxValue - info.teMinValue;
+            if (teSpan <= 0.0f) {
+                if (!param)
+                    return teValue;
+                auto range = param->getValueRange();
+                float span = range.getEnd() - range.getStart();
+                if (span <= 0.0f)
+                    return 0.0;
+                return juce::jlimit(0.0, 1.0,
+                                    static_cast<double>((teValue - range.getStart()) / span));
+            }
+            const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
+                                            std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
+            if (infoMatchesTeRange && info.maxValue > info.minValue)
                 return ParameterUtils::realToNormalized(teValue, info);
-            // Fall back to the TE-reported range when ParameterInfo is missing.
-            if (!param)
-                return teValue;
-            auto range = param->getValueRange();
-            float span = range.getEnd() - range.getStart();
-            if (span <= 0.0f)
-                return 0.0;
-            return juce::jlimit(0.0, 1.0, static_cast<double>((teValue - range.getStart()) / span));
+            return juce::jlimit(0.0, 1.0,
+                                static_cast<double>((teValue - info.teMinValue) / teSpan));
         }
     }
 }

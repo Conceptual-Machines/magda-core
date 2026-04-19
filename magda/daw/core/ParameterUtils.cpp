@@ -355,8 +355,18 @@ std::optional<float> parseMs(juce::String text) {
 
 juce::String formatValue(float realValue, const ParameterInfo& info, int decimalPlaces) {
     // Live plugin display text — exact, no quantization.
+    //
+    // DisplayTextProvider wraps TE's valueToString, which expects the
+    // plugin-native TE value. `realValue` is expressed in the info range
+    // (which may be an AI-Detect-declared display range separate from the
+    // native TE range for external VSTs). Project realValue → normalized →
+    // TE raw so the provider sees the argument it expects; for params
+    // where info range == TE range (internal plugins, external VSTs
+    // without AI-Detect) this is an identity and the label is unchanged.
     if (info.displayText) {
-        auto text = info.displayText->format(realValue);
+        float normalized = realToNormalized(realValue, info);
+        float teRaw = info.teMinValue + normalized * (info.teMaxValue - info.teMinValue);
+        auto text = info.displayText->format(teRaw);
         if (text.isNotEmpty())
             return text;
     }

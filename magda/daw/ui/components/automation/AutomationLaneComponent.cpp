@@ -529,10 +529,16 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
                 labelBounds.setY(area.getBottom() - 10);
 
             // Show the real value using the plugin's display text if available,
-            // otherwise unit or fallback percentage.
+            // otherwise unit or fallback percentage. displayText wraps TE's
+            // valueToString, which expects the plugin-native value — project
+            // `clamped` (in info range) back to TE raw via teMin/teMax so it
+            // matches the device-side formatter and the plugin's own UI.
             juce::String label;
             if (paramInfo.displayText) {
-                label = paramInfo.displayText->format(static_cast<float>(clamped));
+                float teRaw =
+                    paramInfo.teMinValue +
+                    static_cast<float>(normValue) * (paramInfo.teMaxValue - paramInfo.teMinValue);
+                label = paramInfo.displayText->format(teRaw);
             }
             if (label.isEmpty() && !paramInfo.valueTable.empty()) {
                 int idx = juce::jlimit(
@@ -614,15 +620,14 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
         return "C";
     }
 
-    DBG("[LANE-FMT] norm=" << normalizedValue << " real=" << realValue << " unit='"
-                           << paramInfo.unit << "'"
-                           << " vtSize=" << paramInfo.valueTable.size()
-                           << " scale=" << static_cast<int>(paramInfo.scale)
-                           << " lane=" << lane->getDisplayName());
-
-    // Live plugin display text — exact, no quantization.
+    // Live plugin display text — single source of truth with the device
+    // slot and the plugin's own UI. Project MAGDA-normalized [0,1] to the
+    // TE-native range (teMinValue/teMaxValue) before handing to the
+    // provider — its format() wraps TE::valueToString which expects raw.
     if (paramInfo.displayText) {
-        auto text = paramInfo.displayText->format(static_cast<float>(normalizedValue));
+        float teRaw = paramInfo.teMinValue + static_cast<float>(normalizedValue) *
+                                                 (paramInfo.teMaxValue - paramInfo.teMinValue);
+        auto text = paramInfo.displayText->format(teRaw);
         if (text.isNotEmpty())
             return text;
     }

@@ -59,6 +59,17 @@ struct ParameterInfo {
     float defaultValue = 0.5f;  // Real default
     float currentValue = 0.5f;  // Current REAL value (for UI display and sync)
 
+    // The native range that the owning te::AutomatableParameter actually
+    // stores. For external VSTs this is ALWAYS [0, 1] because TE wraps VST
+    // parameters in normalized space, regardless of any AI-Detect display
+    // range the user has configured; for built-in plugins it matches
+    // minValue/maxValue. Tracked separately so the automation echo path can
+    // compute the plugin-native value and avoid the flicker caused by
+    // propagateParameterChange (storing native) fighting with a display-
+    // range write from automationValueChanged.
+    float teMinValue = 0.0f;
+    float teMaxValue = 1.0f;
+
     // Scaling
     ParameterScale scale = ParameterScale::Linear;
     float skewFactor = 1.0f;  // For exponential scaling

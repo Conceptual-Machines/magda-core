@@ -881,20 +881,36 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
     if (paramIndex < 0 || paramIndex >= static_cast<int>(device_.parameters.size()))
         return;
 
-    // MAGDA normalized 0..1 → real value via ParameterUtils, honouring the
-    // param's scale and scaleAnchor. This must match the identical conversion
-    // inside AutomationPlaybackEngine::convertToTEValue so the value we echo
-    // to the UI is the same value the engine writes to TE.
+    // Convert the lane's MAGDA-normalized [0,1] back to the plugin's NATIVE
+    // range (what te::AutomatableParameter actually stores). For external
+    // VSTs this is always [0,1] regardless of any AI-Detect display range,
+    // so we must NOT go through normalizedToReal here — doing so writes the
+    // display-range value (e.g. -2.49 semitones) into currentValue, which
+    // fights ExternalPluginProcessor::propagateParameterChange — that
+    // listener fires off the same TE param write and stores the native
+    // 0..1 value. The two writers alternate and the slot flickers.
+    //
+    // Using info.teMinValue/teMaxValue (captured once at makeInfoFromTeParam
+    // time, before any AI-Detect override) lets us compute the native value
+    // without a live plugin lookup — the hot-loop-hang trap noted in the
+    // handoff.
     const auto& info = device_.parameters[static_cast<size_t>(paramIndex)];
-    float realValue =
-        magda::ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), info);
+    const float teSpan = info.teMaxValue - info.teMinValue;
+    const float teRaw = info.teMinValue + static_cast<float>(normalizedValue) * teSpan;
 
-    // Keep the cached value in sync so any non-automation refresh path sees
-    // the latest curve value.
-    device_.parameters[static_cast<size_t>(paramIndex)].currentValue = realValue;
+    // Keep the cached value in sync so any non-automation refresh path (and
+    // any custom UI that reads currentValue directly, e.g. FourOscUI) sees
+    // the same native value that propagateParameterChange would store.
+    device_.parameters[static_cast<size_t>(paramIndex)].currentValue = teRaw;
 
     // Push into the param slot (if the matching parameter is on the current
     // page) and into any active custom UI so the on-device knob follows too.
+    //
+    // The generic param-grid slot's slider is a fixed 0..1 range and its
+    // formatter (configureSliderFormatting) was written against a
+    // MAGDA-normalized input, so we pass normalizedValue directly. Using
+    // teRaw would clamp for any parameter whose native range isn't 0..1
+    // (4OSC note-number params, EQ frequency in Hz, …).
     if (paramGrid_) {
         const int paramsPerPage = NUM_PARAMS_PER_PAGE;
         const int currentPage = paramGrid_->getCurrentPage();
@@ -914,7 +930,7 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
             }
             if (actualParamIndex == paramIndex) {
                 if (auto* slot = paramGrid_->getSlot(slotIndex))
-                    slot->setParamValue(realValue);
+                    slot->setParamValue(normalizedValue);
                 break;
             }
         }

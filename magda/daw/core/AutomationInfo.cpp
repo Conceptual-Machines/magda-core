@@ -28,6 +28,21 @@ ParameterInfo AutomationTarget::getParameterInfo() const {
             if (paramIndex >= static_cast<int>(device->parameters.size()))
                 break;
             ParameterInfo info = device->parameters[static_cast<size_t>(paramIndex)];
+
+            // Backstop: ensure every DeviceParameter info carries a working
+            // DisplayTextProvider so the lane scale labels, hover tooltips,
+            // and the device slot all route display through the plugin's
+            // own valueToString — same source of truth. The field isn't
+            // serialized and paths like the project loader / ParameterConfig
+            // apply can leave it null on the TrackManager-side copy even
+            // when DeviceSlotComponent's local copy has been repopulated.
+            if (!info.displayText && devicePath.getDeviceId() != INVALID_DEVICE_ID) {
+                auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
+                provider->deviceId = devicePath.getDeviceId();
+                provider->paramIndex = paramIndex;
+                info.displayText = std::move(provider);
+            }
+
             // Restore display name if the lane overrode it.
             if (paramName.isNotEmpty())
                 info.name = paramName;
