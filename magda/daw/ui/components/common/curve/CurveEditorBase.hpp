@@ -46,6 +46,8 @@ class CurveEditorBase : public juce::Component {
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseEnter(const juce::MouseEvent& e) override;
     bool keyPressed(const juce::KeyPress& key) override;
     void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
 
@@ -156,6 +158,11 @@ class CurveEditorBase : public juce::Component {
     // Tension preview state
     uint32_t tensionPreviewPointId_ = INVALID_CURVE_POINT_ID;
     double tensionPreviewValue_ = 0.0;
+
+    // Cursor — keep in sync with real modifier state from both keyboard
+    // events and mouse moves (modifierKeysChanged alone is unreliable once
+    // keyboard focus moves to another component).
+    void updateCursorForModifiers(const juce::ModifierKeys& modifiers);
 
     // Rebuild components from data
     virtual void rebuildPointComponents();
