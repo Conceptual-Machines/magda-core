@@ -27,8 +27,6 @@ ParameterInfo AutomationTarget::getParameterInfo() const {
                 break;
             if (paramIndex >= static_cast<int>(device->parameters.size()))
                 break;
-            ParameterInfo info = device->parameters[static_cast<size_t>(paramIndex)];
-
             // Backstop: ensure every DeviceParameter info carries a working
             // DisplayTextProvider so the lane scale labels, hover tooltips,
             // and the device slot all route display through the plugin's
@@ -36,12 +34,19 @@ ParameterInfo AutomationTarget::getParameterInfo() const {
             // serialized and paths like the project loader / ParameterConfig
             // apply can leave it null on the TrackManager-side copy even
             // when DeviceSlotComponent's local copy has been repopulated.
-            if (!info.displayText && devicePath.getDeviceId() != INVALID_DEVICE_ID) {
+            //
+            // Write the provider back into the device so subsequent calls
+            // (and there are MANY on a lane resize drag — paint × scale
+            // labels × frames) see it already set and don't allocate a
+            // fresh shared_ptr on every call.
+            auto& stored = device->parameters[static_cast<size_t>(paramIndex)];
+            if (!stored.displayText && devicePath.getDeviceId() != INVALID_DEVICE_ID) {
                 auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
                 provider->deviceId = devicePath.getDeviceId();
                 provider->paramIndex = paramIndex;
-                info.displayText = std::move(provider);
+                stored.displayText = std::move(provider);
             }
+            ParameterInfo info = stored;
 
             // Restore display name if the lane overrode it.
             if (paramName.isNotEmpty())
