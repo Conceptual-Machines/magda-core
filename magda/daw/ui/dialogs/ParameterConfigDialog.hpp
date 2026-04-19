@@ -42,7 +42,7 @@ class ParameterConfigDialog : public juce::Component,
                               private juce::Timer {
   public:
     ParameterConfigDialog(const juce::String& pluginName);
-    ~ParameterConfigDialog() override = default;
+    ~ParameterConfigDialog() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -80,6 +80,7 @@ class ParameterConfigDialog : public juce::Component,
     juce::TextButton selectAllButton_;
     juce::TextButton deselectAllButton_;
     juce::TextButton aiDetectButton_;
+    juce::TextButton resetButton_;
     juce::Label aiStatusLabel_;
     bool detecting_ = false;
     int dotCount_ = 0;
@@ -107,6 +108,7 @@ class ParameterConfigDialog : public juce::Component,
     void loadParameterConfiguration();
     void selectAllParameters();
     void deselectAllParameters();
+    void resetParameterConfiguration();
     void filterParameters(const juce::String& searchText);
     void rebuildFilteredList();
     int getParamIndexForRow(int row) const;

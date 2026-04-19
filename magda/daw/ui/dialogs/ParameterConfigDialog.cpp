@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "../themes/DarkTheme.hpp"
+#include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/TrackManager.hpp"
@@ -286,8 +287,18 @@ class ParameterConfigDialog::RangeCell : public juce::Component {
 //==============================================================================
 // ParameterConfigDialog
 //==============================================================================
+ParameterConfigDialog::~ParameterConfigDialog() {
+    setLookAndFeel(nullptr);
+}
+
 ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     : pluginName_(pluginName) {
+    // Use the shared dialog look-and-feel so every button / combo /
+    // text editor in the dialog picks up the theme font (Inter) instead
+    // of JUCE's platform default. Children inherit unless they set their
+    // own LaF.
+    setLookAndFeel(&DialogLookAndFeel::getInstance());
+
     // Title
     titleLabel_.setText("Configure Parameters - " + pluginName_, juce::dontSendNotification);
     titleLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
@@ -363,6 +374,35 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     deselectAllButton_.onClick = [this]() { deselectAllParameters(); };
     addAndMakeVisible(deselectAllButton_);
 
+    // Reset button — discard saved customizations and restore the plugin's
+    // pristine parameter metadata (as scanned from the plugin itself).
+    resetButton_.setButtonText("Reset");
+    resetButton_.setColour(juce::TextButton::buttonColourId,
+                           DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    resetButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    resetButton_.onClick = [this]() {
+        auto* alert = new juce::AlertWindow(
+            "Reset parameter configuration?",
+            "Discard all customizations (visible flags, units, ranges, AI-detected "
+            "values) for \"" +
+                pluginName_ +
+                "\" and restore the plugin's native parameter metadata.\n\n"
+                "This cannot be undone.",
+            juce::AlertWindow::QuestionIcon);
+        alert->addButton("Reset", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        juce::Component::SafePointer<ParameterConfigDialog> safeThis(this);
+        alert->enterModalState(true,
+                               juce::ModalCallbackFunction::create([alert, safeThis](int result) {
+                                   std::unique_ptr<juce::AlertWindow> owner(alert);
+                                   if (result != 1 || safeThis == nullptr)
+                                       return;
+                                   safeThis->resetParameterConfiguration();
+                               }),
+                               false);
+    };
+    addAndMakeVisible(resetButton_);
+
     // AI Detect button
     aiDetectButton_.setButtonText("AI Detect");
     aiDetectButton_.setColour(juce::TextButton::buttonColourId,
@@ -433,6 +473,8 @@ void ParameterConfigDialog::resized() {
     selectAllButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
     deselectAllButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
+    selectionButtonRow.removeFromLeft(selButtonSpacing);
+    resetButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
     aiDetectButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
@@ -796,6 +838,37 @@ void ParameterConfigDialog::selectAllParameters() {
     }
     table_.updateContent();
     updateTitle();
+}
+
+void ParameterConfigDialog::resetParameterConfiguration() {
+    // Delete the persisted XML so next time the dialog opens (or a project
+    // reloads this plugin) applyConfigToDevice finds nothing and the plugin
+    // keeps its native metadata.
+    if (!pluginUniqueId_.isEmpty()) {
+        auto configFile =
+            juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                .getChildFile("MAGDA")
+                .getChildFile("PluginConfigs")
+                .getChildFile(pluginUniqueId_.replaceCharacters(":/\\,; ", "______") + ".xml");
+        if (configFile.existsAsFile()) {
+            configFile.deleteFile();
+            DBG("Deleted parameter config: " << configFile.getFullPathName());
+        }
+    }
+
+    // Restore parameters_ to the pristine plugin-scanned state. The cache was
+    // populated once at the end of the initial scan (before any AI-Detect
+    // modifications) so it's the canonical "factory" snapshot.
+    auto it = parameterCache_.find(pluginUniqueId_);
+    if (it != parameterCache_.end()) {
+        parameters_ = it->second.parameters;
+        scanInputs_ = it->second.scanInputs;
+    }
+
+    rebuildFilteredList();
+    table_.updateContent();
+    updateTitle();
+    aiStatusLabel_.setText("Reset to plugin defaults", juce::dontSendNotification);
 }
 
 void ParameterConfigDialog::deselectAllParameters() {
