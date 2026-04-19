@@ -236,6 +236,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         bool active = learnButton_->getToggleState();
         learnButton_->setActive(active);
         paramGrid_->setLearnMode(active);
+        // Fresh learn session — clear any stale lock/baselines so the first
+        // touched param wins cleanly.
+        learnLockedParamIndex_ = -1;
+        learnLockTimeMs_ = 0;
+        learnLastValueByParam_.clear();
     };
     addAndMakeVisible(*learnButton_);
 
@@ -757,26 +762,49 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
 
     // Learn mode: navigate to the page containing this parameter and highlight it
     if (paramGrid_->isLearnMode()) {
-        int visibleIndex = paramIndex;
-        if (!device_.visibleParameters.empty()) {
-            visibleIndex = -1;
-            for (int vi = 0; vi < static_cast<int>(device_.visibleParameters.size()); ++vi)
-                if (device_.visibleParameters[static_cast<size_t>(vi)] == paramIndex) {
-                    visibleIndex = vi;
-                    break;
-                }
-        }
-        if (visibleIndex >= 0) {
-            int targetPage = visibleIndex / NUM_PARAMS_PER_PAGE;
-            if (targetPage != paramGrid_->getCurrentPage()) {
-                int totalPages =
-                    (getVisibleParamCount() + NUM_PARAMS_PER_PAGE - 1) / NUM_PARAMS_PER_PAGE;
-                device_.currentParameterPage = targetPage;
-                paramGrid_->updatePageControls(targetPage, juce::jmax(1, totalPages));
-                updateParameterSlots();
-                updateParamModulation();
+        // Filter cascading / crosstalk notifications (many plugins, Vital in
+        // particular, fire parameterValueChanged for several display/mod
+        // params when the user touches one control). Two defences:
+        //   1) ignore changes below a small normalised delta threshold
+        //   2) once we've locked onto a param, keep the highlight there for
+        //      a short window before allowing it to jump to another param
+        constexpr float kLearnDeltaThreshold = 0.0005f;
+        constexpr juce::uint32 kLearnLockMs = 500;
+        auto& lastValue = learnLastValueByParam_[paramIndex];
+        float delta = std::abs(newValue - lastValue);
+        lastValue = newValue;
+        bool hasMeaningfulChange = delta > kLearnDeltaThreshold;
+
+        auto nowMs = juce::Time::getMillisecondCounter();
+        bool lockExpired =
+            learnLockedParamIndex_ == -1 || (nowMs - learnLockTimeMs_) > kLearnLockMs;
+        bool isLockedParam = paramIndex == learnLockedParamIndex_;
+
+        if (hasMeaningfulChange && (isLockedParam || lockExpired)) {
+            learnLockedParamIndex_ = paramIndex;
+            learnLockTimeMs_ = nowMs;
+
+            int visibleIndex = paramIndex;
+            if (!device_.visibleParameters.empty()) {
+                visibleIndex = -1;
+                for (int vi = 0; vi < static_cast<int>(device_.visibleParameters.size()); ++vi)
+                    if (device_.visibleParameters[static_cast<size_t>(vi)] == paramIndex) {
+                        visibleIndex = vi;
+                        break;
+                    }
             }
-            paramGrid_->highlightSlot(visibleIndex % NUM_PARAMS_PER_PAGE);
+            if (visibleIndex >= 0) {
+                int targetPage = visibleIndex / NUM_PARAMS_PER_PAGE;
+                if (targetPage != paramGrid_->getCurrentPage()) {
+                    int totalPages =
+                        (getVisibleParamCount() + NUM_PARAMS_PER_PAGE - 1) / NUM_PARAMS_PER_PAGE;
+                    device_.currentParameterPage = targetPage;
+                    paramGrid_->updatePageControls(targetPage, juce::jmax(1, totalPages));
+                    updateParameterSlots();
+                    updateParamModulation();
+                }
+                paramGrid_->highlightSlot(visibleIndex % NUM_PARAMS_PER_PAGE);
+            }
         }
     }
 

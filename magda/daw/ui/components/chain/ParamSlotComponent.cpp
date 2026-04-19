@@ -64,6 +64,14 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     amountLabel_.setAlwaysOnTop(true);
     addChildComponent(amountLabel_);
 
+    // Shift+drag: edit mod amount when a mod is selected. Consulted before the
+    // gesture commits so Shift+drag with no mod selected falls through to the
+    // slider's normal (fine-tune) drag path.
+    valueSlider_.canStartShiftDrag = [this]() {
+        return selectedModIndex_ >= 0 && availableMods_ &&
+               selectedModIndex_ < static_cast<int>(availableMods_->size());
+    };
+
     // Shift+drag: edit mod amount when a mod is selected
     valueSlider_.onShiftDragStart = [this](float /*startValue*/) {
         if (selectedModIndex_ < 0 || !availableMods_ ||

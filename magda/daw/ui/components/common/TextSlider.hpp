@@ -257,7 +257,13 @@ class TextSlider : public juce::Component,
     std::function<void(float)>
         onShiftDragStart;  // Called when Shift+drag starts, param is start value (0-1)
     std::function<void(float)> onShiftDrag;  // Called during Shift+drag with new value (0-1)
-    std::function<void()> onShiftDragEnd;    // Called when Shift+drag ends
+    // Predicate consulted on mouseDown with Shift held. If provided and returns
+    // false, the Shift+drag path is skipped and the gesture runs through the
+    // normal drag (which still honours Shift as a fine-tune modifier).
+    // Callers (e.g. ParamSlotComponent) use this to keep Shift+drag reserved
+    // for mod-amount editing only when a mod is actually selected.
+    std::function<bool()> canStartShiftDrag;
+    std::function<void()> onShiftDragEnd;  // Called when Shift+drag ends
     std::function<void()>
         onRightClicked;  // Called on right-click (when rightClickEditsText_ is false)
 
@@ -384,10 +390,15 @@ class TextSlider : public juce::Component,
             hasDragged_ = false;
             overrideLatchedThisGesture_ = false;
             isLeftButtonDrag_ = true;
-            isShiftDrag_ = e.mods.isShiftDown();
+            // Only enter Shift+drag mode if the owner actually wants to take
+            // the gesture (e.g. a mod is currently selected for amount edit).
+            // Otherwise Shift falls through to the normal drag path so its
+            // fine-tune behaviour still applies.
+            bool ownerTakesShiftDrag = e.mods.isShiftDown() && onShiftDragStart &&
+                                       (!canStartShiftDrag || canStartShiftDrag());
+            isShiftDrag_ = ownerTakesShiftDrag;
 
-            // If Shift is held and we have a callback, notify start
-            if (isShiftDrag_ && onShiftDragStart) {
+            if (isShiftDrag_) {
                 shiftDragStartValue_ = 0.5f;  // Default start value for new links
                 onShiftDragStart(shiftDragStartValue_);
             }
