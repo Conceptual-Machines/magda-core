@@ -374,8 +374,18 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     deselectAllButton_.onClick = [this]() { deselectAllParameters(); };
     addAndMakeVisible(deselectAllButton_);
 
-    // Reset button — discard saved customizations and restore the plugin's
-    // pristine parameter metadata (as scanned from the plugin itself).
+    // Detect button — run the deterministic heuristic pass (no LLM).
+    // Fast, offline, picks up units/ranges that the plugin's own display
+    // strings give away.
+    detectButton_.setButtonText("Detect");
+    detectButton_.setColour(juce::TextButton::buttonColourId,
+                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    detectButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getTextColour());
+    detectButton_.onClick = [this]() { runHeuristicDetection(); };
+    addAndMakeVisible(detectButton_);
+
+    // Reset button — wipe all inferred units/ranges and put every parameter
+    // back to a plain 0–100 % view.
     resetButton_.setButtonText("Reset");
     resetButton_.setColour(juce::TextButton::buttonColourId,
                            DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
@@ -383,10 +393,8 @@ ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
     resetButton_.onClick = [this]() {
         auto* alert = new juce::AlertWindow(
             "Reset parameter configuration?",
-            "Discard all customizations (visible flags, units, ranges, AI-detected "
-            "values) for \"" +
-                pluginName_ +
-                "\" and restore the plugin's native parameter metadata.\n\n"
+            "Discard all inferred units, ranges, and AI-detected values for \"" + pluginName_ +
+                "\" and show every parameter as a plain 0–100 % slider.\n\n"
                 "This cannot be undone.",
             juce::AlertWindow::QuestionIcon);
         alert->addButton("Reset", 1, juce::KeyPress(juce::KeyPress::returnKey));
@@ -473,6 +481,8 @@ void ParameterConfigDialog::resized() {
     selectAllButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
     deselectAllButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
+    selectionButtonRow.removeFromLeft(selButtonSpacing);
+    detectButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
     aiDetectButton_.setBounds(selectionButtonRow.removeFromLeft(selButtonWidth));
     selectionButtonRow.removeFromLeft(selButtonSpacing);
@@ -856,31 +866,64 @@ void ParameterConfigDialog::resetParameterConfiguration() {
         }
     }
 
-    // Restore parameters_ to the pristine plugin-scanned state. The cache was
-    // populated once at the end of the initial scan (before any AI-Detect
-    // modifications) so it's the canonical "factory" snapshot.
+    // Restore scanInputs_ from the pristine cache so Detect / AI Detect can
+    // be re-run later. The user-facing parameters_ list keeps names and
+    // visibility, but every inferred unit/range/scale is wiped back to a
+    // plain normalized percentage.
     auto it = parameterCache_.find(pluginUniqueId_);
     if (it != parameterCache_.end()) {
-        parameters_ = it->second.parameters;
         scanInputs_ = it->second.scanInputs;
     }
 
-    // Auto-run the deterministic heuristic pass (instant, no LLM). This
-    // fills in the cheap unit labels (Hz / dB / ms / semitones / %) that
-    // most well-labelled plugins expose via their own display strings, so
-    // a reset doesn't leave every parameter looking like a generic 0..1
-    // percentage. AI detection still has to be re-triggered manually if
-    // the user wants the ambiguous ones resolved too.
-    if (!scanInputs_.empty()) {
-        auto results = magda::ParameterDetector::detect(scanInputs_);
-        applyDetectionResults(results);
+    for (auto& param : parameters_) {
+        param.unit = "%";
+        param.scale = magda::ParameterScale::Linear;
+        param.rangeMin = 0.0f;
+        param.rangeMax = 1.0f;
+        param.rangeCenter = 0.5f;
+        param.choices.clear();
     }
 
     rebuildFilteredList();
     table_.updateContent();
     updateTitle();
-    aiStatusLabel_.setText("Reset to plugin defaults (heuristics re-applied)",
-                           juce::dontSendNotification);
+    aiStatusLabel_.setText("Reset to 0–100 %", juce::dontSendNotification);
+}
+
+void ParameterConfigDialog::runHeuristicDetection() {
+    if (scanInputs_.empty()) {
+        aiStatusLabel_.setText("No parameters to detect", juce::dontSendNotification);
+        return;
+    }
+
+    std::vector<magda::ParameterScanInput> visibleInputs;
+    for (size_t i = 0; i < scanInputs_.size() && i < parameters_.size(); ++i) {
+        if (parameters_[i].isVisible)
+            visibleInputs.push_back(scanInputs_[i]);
+    }
+
+    if (visibleInputs.empty()) {
+        aiStatusLabel_.setText("No visible params to detect", juce::dontSendNotification);
+        return;
+    }
+
+    auto results = magda::ParameterDetector::detect(visibleInputs);
+
+    int resolved = 0, ambiguous = 0;
+    for (const auto& r : results) {
+        if (r.confidence > 0.0f)
+            resolved++;
+        else
+            ambiguous++;
+    }
+
+    applyDetectionResults(results);
+
+    juce::String status =
+        juce::String(resolved) + " / " + juce::String(visibleInputs.size()) + " resolved";
+    if (ambiguous > 0)
+        status += " — use AI Detect for the rest";
+    aiStatusLabel_.setText(status, juce::dontSendNotification);
 }
 
 void ParameterConfigDialog::deselectAllParameters() {
@@ -899,6 +942,8 @@ void ParameterConfigDialog::setDetecting(bool detecting) {
     applyButton_.setEnabled(!detecting);
     selectAllButton_.setEnabled(!detecting);
     deselectAllButton_.setEnabled(!detecting);
+    detectButton_.setEnabled(!detecting);
+    resetButton_.setEnabled(!detecting);
     searchBox_.setEnabled(!detecting);
     table_.setEnabled(!detecting);
 

@@ -79,6 +79,7 @@ class ParameterConfigDialog : public juce::Component,
     juce::TextButton applyButton_;
     juce::TextButton selectAllButton_;
     juce::TextButton deselectAllButton_;
+    juce::TextButton detectButton_;
     juce::TextButton aiDetectButton_;
     juce::TextButton resetButton_;
     juce::Label aiStatusLabel_;
@@ -102,6 +103,7 @@ class ParameterConfigDialog : public juce::Component,
     void updateTitle();
     void buildMockParameters();
     void loadParameters(const juce::String& uniqueId);
+    void runHeuristicDetection();
     void runDetection();
     void applyDetectionResults(const std::vector<magda::DetectedParameterInfo>& results);
     void saveParameterConfiguration();
