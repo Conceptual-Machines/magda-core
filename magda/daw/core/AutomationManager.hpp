@@ -356,6 +356,19 @@ class AutomationManager : public TrackManagerListener {
     void beginNotificationBatch();
     void endNotificationBatch();
 
+    /// RAII helper for beginNotificationBatch/endNotificationBatch.
+    class BatchScope {
+      public:
+        BatchScope() {
+            AutomationManager::getInstance().beginNotificationBatch();
+        }
+        ~BatchScope() {
+            AutomationManager::getInstance().endNotificationBatch();
+        }
+        BatchScope(const BatchScope&) = delete;
+        BatchScope& operator=(const BatchScope&) = delete;
+    };
+
     /**
      * @brief Broadcast point drag preview event
      */
