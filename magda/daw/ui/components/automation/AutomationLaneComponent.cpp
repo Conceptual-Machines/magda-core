@@ -531,7 +531,10 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
             // Show the real value using the plugin's display text if available,
             // otherwise unit or fallback percentage.
             juce::String label;
-            if (!paramInfo.valueTable.empty()) {
+            if (paramInfo.displayText) {
+                label = paramInfo.displayText->format(static_cast<float>(clamped));
+            }
+            if (label.isEmpty() && !paramInfo.valueTable.empty()) {
                 int idx = juce::jlimit(
                     0, static_cast<int>(paramInfo.valueTable.size()) - 1,
                     static_cast<int>(std::round(normValue * (paramInfo.valueTable.size() - 1))));
@@ -545,8 +548,16 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
                 } else {
                     numberText = juce::String(static_cast<int>(std::round(clamped)));
                 }
-                label =
-                    numberText + (paramInfo.unit.isNotEmpty() ? paramInfo.unit : juce::String("%"));
+                // Only append "%" when the parameter is actually unit-less AND
+                // on a 0..1 range — otherwise the suffix is misleading (e.g.
+                // 4OSC's filterFreq stores 0..135 as a MIDI note number).
+                juce::String suffix;
+                if (paramInfo.unit.isNotEmpty()) {
+                    suffix = paramInfo.unit;
+                } else if (paramInfo.minValue == 0.0f && paramInfo.maxValue == 1.0f) {
+                    suffix = "%";
+                }
+                label = numberText + suffix;
             }
 
             g.drawText(label, labelBounds, juce::Justification::centredRight);

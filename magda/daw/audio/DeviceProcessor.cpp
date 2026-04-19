@@ -487,7 +487,26 @@ ParameterInfo FourOscProcessor::getParameterInfo(int index) const {
     auto params = plugin_->getAutomatableParameters();
     if (index < 0 || index >= params.size())
         return {};
-    return makeInfoFromTeParam(index, params[index]);
+    ParameterInfo info = makeInfoFromTeParam(index, params[index]);
+
+    // 4OSC exposes raw values (note number for filter freq, 0..100 for
+    // percentage-shaped params, etc.) and relies on TE's valueToString to
+    // convert them to the correct display text (e.g. "440 Hz" for note 69).
+    // Without a DisplayTextProvider the custom-UI sliders fall through
+    // DeviceSlotComponent::updateSliders -> TextSlider::setParameterInfo,
+    // which replaces the hand-written Hz formatter with the generic
+    // ParameterUtils::formatValue one — and for a linear-scale, empty-unit
+    // parameter that just prints the raw note number. Routing the formatter
+    // through TE keeps the custom UI label correct and matches what users
+    // see in the plugin's native UI.
+    if (info.scale != ParameterScale::Boolean && info.scale != ParameterScale::Discrete &&
+        info.valueTable.empty()) {
+        auto provider = std::make_shared<ParameterInfo::DisplayTextProvider>();
+        provider->deviceId = getDeviceId();
+        provider->paramIndex = index;
+        info.displayText = std::move(provider);
+    }
+    return info;
 }
 
 void FourOscProcessor::populateParameters(DeviceInfo& info) const {
