@@ -48,4 +48,6 @@ Parameters are connected to modulation sources using MAGDA's link mode. See [Lin
 
 In addition to modulators and macros, any parameter can be automated with a drawn curve on an automation lane below the track in the [Arrangement View](../arrangement-view.md). Automation lanes play back their drawn curves during transport — the parameter follows the lane's value over time, in sync with playback.
 
+![A track-volume automation lane below an audio clip, with a hand-drawn curve dipping from 0 dB down to about -27 dB and back up to -6 dB across seven bars.](../assets/images/modulation/automation-lane.png)
+
 Automation is independent of modulators and macros: all three can drive the same parameter at once, with their effects combined.
