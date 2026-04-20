@@ -272,6 +272,7 @@ bool CompactExecutor::executeTrack(const TrackOp& op) {
     auto trackId = tm.createTrack(op.name, TrackType::Audio);
     currentTrackId_ = trackId;
     results_.add("Created track '" + op.name + "'");
+
     return true;
 }
 

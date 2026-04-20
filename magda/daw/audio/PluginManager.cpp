@@ -6,6 +6,7 @@
 
 #include "../core/RackInfo.hpp"
 #include "../core/TrackManager.hpp"
+#include "../core/aliases/AutoAliasGenerator.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "ArpeggiatorPlugin.hpp"
 #include "AudioSidechainMonitorPlugin.hpp"
@@ -3644,6 +3645,7 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
         DeviceInfo tempInfo;
         extProc->populateParameters(tempInfo);
         TrackManager::getInstance().updateDeviceParameters(deviceId, tempInfo.parameters);
+        AutoAliasGenerator::regenerateForDevice(deviceId);
 
         processor = std::move(extProc);
     } else if (dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
@@ -3685,6 +3687,7 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
         DeviceInfo tempInfo;
         processor->populateParameters(tempInfo);
         TrackManager::getInstance().updateDeviceParameters(deviceId, tempInfo.parameters);
+        AutoAliasGenerator::regenerateForDevice(deviceId);
 
         juce::ScopedLock lock(pluginLock_);
         syncedDevices_[deviceId].processor = std::move(processor);
@@ -3996,6 +3999,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             DeviceInfo tempInfo;
             processor->populateParameters(tempInfo);
             TrackManager::getInstance().updateDeviceParameters(device.id, tempInfo.parameters);
+            AutoAliasGenerator::regenerateForDevice(device.id);
 
             syncedDevices_[device.id].processor = std::move(processor);
         }

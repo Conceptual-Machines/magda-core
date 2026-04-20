@@ -56,8 +56,7 @@ Token Tokenizer::readIdentifier() {
     int startCol = col_;
     const char* start = pos_;
 
-    while (*pos_ &&
-           (std::isalnum(static_cast<unsigned char>(*pos_)) || *pos_ == '_' || *pos_ == '#')) {
+    while (*pos_ && (std::isalnum(static_cast<unsigned char>(*pos_)) || *pos_ == '_')) {
         pos_++;
         col_++;
     }
@@ -234,7 +233,7 @@ Token Tokenizer::next() {
         (c == '-' && std::isdigit(static_cast<unsigned char>(*(pos_ + 1)))))
         return readNumber();
 
-    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_' || c == '#')
+    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_')
         return readIdentifier();
 
     // Unknown character - skip it
@@ -698,7 +697,27 @@ bool Interpreter::parseValue(Tokenizer& tok, std::string& outValue) {
             tok.next();  // consume '('
             return evaluateFunction(t.value, tok, outValue);
         }
+
         outValue = t.value;
+        return true;
+    }
+
+    // '@' produces its own AT token; handle it as a sigil prefix.
+    if (t.type == TokenType::AT) {
+        // Consume pluginKey.paramKey as "@pluginKey.paramKey"
+        Token pluginTok = tok.next();
+        if (pluginTok.type != TokenType::IDENTIFIER) {
+            ctx_.setError("Expected identifier after '@'");
+            return false;
+        }
+        std::string sigilStr = "@" + pluginTok.value;
+        if (tok.peek().is(TokenType::DOT)) {
+            tok.next();  // consume '.'
+            Token paramTok = tok.next();
+            if (paramTok.type == TokenType::IDENTIFIER)
+                sigilStr += "." + paramTok.value;
+        }
+        outValue = sigilStr;
         return true;
     }
 

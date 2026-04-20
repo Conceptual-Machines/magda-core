@@ -192,6 +192,10 @@ void Config::save() {
     }
     root->setProperty("trackColourPalette", paletteArray);
 
+    // Parameter aliases (user-global layer)
+    if (!paramAliases_.isVoid())
+        root->setProperty("paramAliases", paramAliases_);
+
     // Write to disk
     auto configFile = getConfigFile();
     configFile.getParentDirectory().createDirectory();
@@ -474,6 +478,10 @@ void Config::load() {
             }
         }
     }
+
+    // Parameter aliases (user-global layer)
+    if (obj->hasProperty("paramAliases"))
+        paramAliases_ = obj->getProperty("paramAliases");
 
     DBG("Config::load - " + configFile.getFullPathName());
 }

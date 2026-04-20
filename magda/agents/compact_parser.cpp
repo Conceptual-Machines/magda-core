@@ -49,6 +49,7 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
                 return {};
             }
             TrackOp payload;
+
             // TRACK FX <alias> — create track named after plugin + add plugin
             if (parts[1].toUpperCase() == "FX" && parts.size() >= 3) {
                 payload.fxAlias = parts[2];
@@ -183,23 +184,19 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
                 return {};
             }
             FxOp payload;
+
             if (parts.size() == 2) {
-                // Single arg → implicit track, arg is the fx name
+                // Single arg -> implicit track, arg is the fx name
                 payload.target.implicit = true;
                 payload.fxName = parts[1];
             } else if (isInteger(parts[1])) {
-                // Numeric first arg → explicit track by index
+                // Numeric first arg -> explicit track by index
                 payload.target = parseRef(parts[1]);
                 payload.fxName = parts[2];
                 for (int i = 3; i < parts.size(); ++i)
                     payload.fxName += " " + parts[i];
             } else {
-                // Ambiguous: could be "FX TrackName fx_name" or "FX fx_name_with_spaces"
-                // If there's exactly 2 remaining tokens and last one looks like an alias (has
-                // underscore or is a known keyword), treat first as ref. Otherwise treat all as fx
-                // name implicitly. For safety, treat single-word first arg as ref, rest as fx name
-                // (old behavior with explicit ref) but mark that we need at least 2 non-op tokens
-                // for explicit ref.
+                // All args are the fx name (implicit track)
                 payload.target.implicit = true;
                 payload.fxName = parts[1];
                 for (int i = 2; i < parts.size(); ++i)

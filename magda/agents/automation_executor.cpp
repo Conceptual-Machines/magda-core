@@ -4,6 +4,11 @@
 
 #include "../daw/core/AutomationManager.hpp"
 #include "../daw/core/SelectionManager.hpp"
+#include "../daw/core/aliases/AliasRegistry.hpp"
+#include "../daw/core/aliases/ChainContext.hpp"
+#include "../daw/core/aliases/ParamSigilParser.hpp"
+#include "../daw/core/aliases/ResolverRegistry.hpp"
+#include "../daw/core/aliases/TargetResolver.hpp"
 
 namespace magda {
 
@@ -88,6 +93,29 @@ AutomationLaneId resolveTarget(const AutoTarget& target, juce::String& err) {
             AutomationTarget t;
             t.type = AutomationTargetType::TrackPan;
             t.trackId = trackId;
+            return ensureLaneForTarget(t);
+        }
+        case AutoTarget::Kind::Alias: {
+            auto sigil = tryParse(target.aliasToken);
+            if (!sigil.has_value()) {
+                err = "Invalid alias token: " + target.aliasToken;
+                return INVALID_AUTOMATION_LANE_ID;
+            }
+            DefaultChainContext ctx;
+            TargetResolver resolver(AliasRegistry::getInstance(), ResolverRegistry::getInstance(),
+                                    ctx);
+            auto resolved = resolver.resolveSigil(*sigil);
+            if (!resolved.ok()) {
+                err =
+                    "Could not resolve alias '" + target.aliasToken + "': " + resolved.sourceLabel;
+                return INVALID_AUTOMATION_LANE_ID;
+            }
+            AutomationTarget t;
+            t.type = AutomationTargetType::DeviceParameter;
+            t.devicePath = resolved.devicePath;
+            t.paramIndex = resolved.paramIndex;
+            // Derive track id from device path
+            t.trackId = resolved.devicePath.trackId;
             return ensureLaneForTarget(t);
         }
     }
