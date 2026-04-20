@@ -64,6 +64,9 @@ set(TEST_SOURCES
     test_automation_alias_targets.cpp
     # Controller data model tests (issue #1050 -- Phase A)
     test_binding_transform.cpp
+    # Controller registry tests (issue #1050 -- Phase B)
+    test_controller_registry.cpp
+    test_binding_registry.cpp
 )
 
 # Create test executable

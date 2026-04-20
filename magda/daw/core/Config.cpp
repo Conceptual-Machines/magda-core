@@ -196,6 +196,14 @@ void Config::save() {
     if (!paramAliases_.isVoid())
         root->setProperty("paramAliases", paramAliases_);
 
+    // Controller devices
+    if (!controllers_.isVoid())
+        root->setProperty("controllers", controllers_);
+
+    // Global bindings
+    if (!globalBindings_.isVoid())
+        root->setProperty("globalBindings", globalBindings_);
+
     // Write to disk
     auto configFile = getConfigFile();
     configFile.getParentDirectory().createDirectory();
@@ -482,6 +490,14 @@ void Config::load() {
     // Parameter aliases (user-global layer)
     if (obj->hasProperty("paramAliases"))
         paramAliases_ = obj->getProperty("paramAliases");
+
+    // Controller devices
+    if (obj->hasProperty("controllers"))
+        controllers_ = obj->getProperty("controllers");
+
+    // Global bindings
+    if (obj->hasProperty("globalBindings"))
+        globalBindings_ = obj->getProperty("globalBindings");
 
     DBG("Config::load - " + configFile.getFullPathName());
 }

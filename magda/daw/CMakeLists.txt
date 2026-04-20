@@ -264,6 +264,9 @@ set(DAW_CORE_SOURCES
     core/controllers/Controller.cpp
     core/controllers/Binding.cpp
     core/controllers/BindingTransform.cpp
+    # Controller registries (issue #1050 -- Phase B)
+    core/controllers/ControllerRegistry.cpp
+    core/controllers/BindingRegistry.cpp
     engine/TracktionEngineWrapper.cpp
     engine/TracktionEngineWrapperInit.cpp
     engine/TracktionEngineWrapperDevices.cpp

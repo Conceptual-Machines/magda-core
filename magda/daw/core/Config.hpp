@@ -604,6 +604,22 @@ class Config {
         paramAliases_ = aliases;
     }
 
+    // Controllers (serialized to/from config.json "controllers" key)
+    juce::var getControllers() const {
+        return controllers_;
+    }
+    void setControllers(const juce::var& c) {
+        controllers_ = c;
+    }
+
+    // Global bindings (serialized to/from config.json "globalBindings" key)
+    juce::var getGlobalBindings() const {
+        return globalBindings_;
+    }
+    void setGlobalBindings(const juce::var& b) {
+        globalBindings_ = b;
+    }
+
     // Save/load to platform-appropriate location:
     //   macOS  ~/Library/Application Support/MAGDA/config.json
     //   Windows  %APPDATA%\MAGDA\config.json
@@ -741,6 +757,12 @@ class Config {
 
     // User-global parameter aliases (opaque JSON blob, managed by AliasRegistry)
     juce::var paramAliases_;
+
+    // Controller devices (opaque JSON blob, managed by ControllerRegistry)
+    juce::var controllers_;
+
+    // Global bindings (opaque JSON blob, managed by BindingRegistry)
+    juce::var globalBindings_;
 };
 
 }  // namespace magda
