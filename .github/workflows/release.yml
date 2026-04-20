@@ -283,7 +283,8 @@ jobs:
         # flakes (HTTP 499) intermittently and blocks the release otherwise.
         $nsisPath = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
         $needNinja = -not (Get-Command ninja -ErrorAction SilentlyContinue)
-        $needNsis  = -not (Test-Path $nsisPath)
+        $needNsis  = -not (Test-Path $nsisPath) `
+                     -and -not (Get-Command makensis -ErrorAction SilentlyContinue)
 
         if ($needNinja -or $needNsis) {
           $packages = @()
@@ -291,11 +292,26 @@ jobs:
           if ($needNsis)  { $packages += "nsis" }
           Write-Output "Installing via Chocolatey: $($packages -join ', ')"
           choco install $packages -y
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Chocolatey install failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
         } else {
           Write-Output "Ninja and NSIS already present; skipping Chocolatey"
         }
 
-        echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
+        # Export the resolved NSIS directory so later steps find makensis
+        # regardless of whether ProgramFiles(x86) is on C: or elsewhere.
+        $makensis = Get-Command makensis -ErrorAction SilentlyContinue
+        if ($makensis) {
+          $nsisDir = Split-Path -Parent $makensis.Source
+        } elseif (Test-Path $nsisPath) {
+          $nsisDir = Split-Path -Parent $nsisPath
+        } else {
+          Write-Error "NSIS not found after install attempt"
+          exit 1
+        }
+        echo "$nsisDir" >> $env:GITHUB_PATH
 
     - name: Install sccache
       shell: powershell
