@@ -49,6 +49,8 @@ set(TEST_SOURCES
     test_automation_agent.cpp
     test_automation_singleton.cpp
     test_compact_executor_context.cpp
+    # Parameter alias system tests (PR 6 -- DSL/IR sigils and $-bindings)
+    test_compact_executor_bindings.cpp
     # Parameter alias system tests (PR 1)
     test_param_name_normalize.cpp
     test_alias_parser.cpp

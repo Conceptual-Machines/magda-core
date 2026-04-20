@@ -7,6 +7,7 @@
 
 #include "../daw/core/ClipTypes.hpp"
 #include "../daw/core/TypeIds.hpp"
+#include "../daw/core/aliases/LocalBindings.hpp"
 #include "compact_parser.hpp"
 
 namespace magda {
@@ -55,6 +56,11 @@ class CompactExecutor {
         seedClipId_ = clipId;
     }
 
+    /** Read-only access to plan-local $-variable bindings after execute(). */
+    const LocalBindings& getBindings() const {
+        return bindings_;
+    }
+
   private:
     bool executeTrack(const TrackOp& op);
     bool executeDel(const DelOp& op);
@@ -92,6 +98,9 @@ class CompactExecutor {
     bool autoCreatedClip_ = false;
     juce::String error_;
     juce::StringArray results_;
+
+    // Plan-local $-variable bindings; reset at the start of each execute() call.
+    LocalBindings bindings_;
 
     // Active selection from SELECT — consumed by subsequent instructions
     std::unordered_set<TrackId> selectedTracks_;
