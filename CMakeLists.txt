@@ -167,3 +167,8 @@ install(TARGETS magda_daw_app
     BUNDLE DESTINATION .
     RUNTIME DESTINATION bin
 )
+if(NOT APPLE)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lang"
+        DESTINATION bin
+    )
+endif()
