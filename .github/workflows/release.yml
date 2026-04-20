@@ -381,6 +381,13 @@ jobs:
         Copy-Item -Recurse "lang" "$stage\lang"
         Write-Output "Staged lang/ for installer"
 
+        # Guard against a regression where lang/ stops being bundled - 0.5
+        # shipped with missing translations because staging silently dropped it.
+        if (-not (Test-Path "$stage\lang\en.json")) {
+          Write-Error "lang/en.json missing from installer staging"
+          exit 1
+        }
+
         & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" /DVERSION=$env:VERSION "$stage\magda-installer.nsi"
 
         $installerName = "MAGDA-$env:VERSION-Windows-x86_64-Setup.exe"
@@ -521,8 +528,13 @@ jobs:
           echo "Warning: magda_plugin_scanner not found"
         fi
 
-        # Localization JSON — StringTable looks for lang/ next to the binary
+        # Localization JSON - StringTable looks for lang/ next to the binary
         cp -r lang "$APPDIR/usr/bin/lang"
+
+        # Guard against a regression where lang/ stops being bundled - 0.5
+        # shipped with missing translations because staging silently dropped it.
+        test -f "$APPDIR/usr/bin/lang/en.json" \
+          || { echo "lang/en.json missing from AppDir staging"; exit 1; }
 
         # Copy icon
         cp assets/app_icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/magda.png"
