@@ -267,6 +267,9 @@ set(DAW_CORE_SOURCES
     # Controller registries (issue #1050 -- Phase B)
     core/controllers/ControllerRegistry.cpp
     core/controllers/BindingRegistry.cpp
+    # Controller router + param writer (issue #1050 -- Phase C)
+    audio/ControllerParamWriter.cpp
+    audio/ControllerRouter.cpp
     engine/TracktionEngineWrapper.cpp
     engine/TracktionEngineWrapperInit.cpp
     engine/TracktionEngineWrapperDevices.cpp

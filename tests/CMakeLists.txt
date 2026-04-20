@@ -67,6 +67,8 @@ set(TEST_SOURCES
     # Controller registry tests (issue #1050 -- Phase B)
     test_controller_registry.cpp
     test_binding_registry.cpp
+    # Controller router tests (issue #1050 -- Phase C)
+    test_controller_router.cpp
 )
 
 # Create test executable
