@@ -75,8 +75,11 @@ class ControllerRouter : public ControllerRegistryListener,
      * @brief Inject a MIDI message as if it arrived from the given port.
      *
      * Thread-safe: may be called from any thread (mimics the real MIDI callback).
+     * portName defaults to empty; supply it to exercise the identifier-vs-name
+     * match fallback.
      */
-    void injectMessageForTest(const juce::String& portId, const juce::MidiMessage& msg);
+    void injectMessageForTest(const juce::String& portId, const juce::MidiMessage& msg,
+                              const juce::String& portName = {});
 
     // ========================================================================
     // Dependency injection (tests)
@@ -103,11 +106,16 @@ class ControllerRouter : public ControllerRegistryListener,
      * @brief Called when a raw MIDI message arrives from a controller port.
      *
      * Must be safe to call from the MIDI thread (lock-free read path + callAsync hop).
+     * Accepts both the OS-native identifier and the display name so that stored
+     * Controller.inputPort values written as either form resolve consistently
+     * via magda::midi::matches.
      */
-    void onMidiFromControllerPort(const juce::String& portId, const juce::MidiMessage& msg);
+    void onMidiFromControllerPort(const juce::String& portId, const juce::String& portName,
+                                  const juce::MidiMessage& msg);
 
     // RawMidiListener implementation (wired via setMidiBridge)
-    void onRawMidi(const juce::String& deviceId, const juce::MidiMessage& msg) override;
+    void onRawMidi(const juce::String& deviceId, const juce::String& deviceName,
+                   const juce::MidiMessage& msg) override;
 
   private:
     ControllerRouter() = default;

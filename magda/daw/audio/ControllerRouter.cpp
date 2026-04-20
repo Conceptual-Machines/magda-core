@@ -87,25 +87,29 @@ void ControllerRouter::bindingRegistryChanged(BindingScope /*scope*/) {
 // ============================================================================
 
 void ControllerRouter::injectMessageForTest(const juce::String& portId,
-                                            const juce::MidiMessage& msg) {
-    onMidiFromControllerPort(portId, msg);
+                                            const juce::MidiMessage& msg,
+                                            const juce::String& portName) {
+    onMidiFromControllerPort(portId, portName, msg);
 }
 
 // ============================================================================
 // RawMidiListener implementation
 // ============================================================================
 
-void ControllerRouter::onRawMidi(const juce::String& deviceId, const juce::MidiMessage& msg) {
+void ControllerRouter::onRawMidi(const juce::String& deviceId, const juce::String& deviceName,
+                                 const juce::MidiMessage& msg) {
     // Called on the MIDI callback thread.
-    // Filter by controller port before dispatching.
-    bool isController = ControllerRegistry::getInstance().isControllerInputPort(deviceId);
+    // Filter by controller port before dispatching. Matching accepts either the
+    // stored identifier or the display name (see magda::midi::matches).
+    bool isController =
+        ControllerRegistry::getInstance().isControllerInputPort(deviceId, deviceName);
     if (msg.isController() || msg.isNoteOnOrOff() || msg.isPitchWheel()) {
         DBG("ControllerRouter: raw midi from '"
-            << deviceId << "' isController=" << (isController ? "yes" : "no") << " "
-            << msg.getDescription());
+            << deviceId << "' (name='" << deviceName
+            << "') isController=" << (isController ? "yes" : "no") << " " << msg.getDescription());
     }
     if (isController)
-        onMidiFromControllerPort(deviceId, msg);
+        onMidiFromControllerPort(deviceId, deviceName, msg);
 }
 
 // ============================================================================
@@ -113,13 +117,16 @@ void ControllerRouter::onRawMidi(const juce::String& deviceId, const juce::MidiM
 // ============================================================================
 
 void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
+                                                const juce::String& portName,
                                                 const juce::MidiMessage& msg) {
     // Only handle messages from registered controller ports
-    if (!ControllerRegistry::getInstance().isControllerInputPort(portId))
+    if (!ControllerRegistry::getInstance().isControllerInputPort(portId, portName))
         return;
 
-    // Find the controller for this port (via atomic snapshot read)
+    // Find the controller for this port (accepts either identifier or name).
     auto controllerOpt = ControllerRegistry::getInstance().findByInputPort(portId);
+    if (!controllerOpt.has_value())
+        controllerOpt = ControllerRegistry::getInstance().findByInputPort(portName);
     if (!controllerOpt.has_value() || !controllerOpt->enabled)
         return;
 

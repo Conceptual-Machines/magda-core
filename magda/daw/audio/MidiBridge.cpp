@@ -213,8 +213,11 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
         return;
     }
 
-    // Get the device ID for this input
+    // Get both identifier (OS-native, stable per-machine) and display name
+    // (stable across machines / OSes) for this input — listeners use both via
+    // magda::midi::matches to support name-based fallback.
     juce::String sourceDeviceId = source->getIdentifier();
+    juce::String sourceDeviceName = source->getName();
 
     // Notify raw MIDI listeners FIRST (before routing logic).
     // These run on the MIDI callback thread; implementations must be lock-free.
@@ -222,7 +225,7 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
         juce::ScopedLock lock(rawMidiListenersLock_);
         for (auto* listener : rawMidiListeners_)
             if (listener)
-                listener->onRawMidi(sourceDeviceId, message);
+                listener->onRawMidi(sourceDeviceId, sourceDeviceName, message);
     }
 
     // Push event to global queue for MIDI monitor

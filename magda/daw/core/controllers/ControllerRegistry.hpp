@@ -76,6 +76,18 @@ class ControllerRegistry {
      */
     bool isControllerInputPort(const juce::String& portId) const;
 
+    /**
+     * @brief Overload matching a live MIDI device by identifier OR display name.
+     *
+     * Matching is done via magda::midi::matches so a stored entry that holds
+     * the device name (e.g. after moving a project between machines or OSes
+     * where JUCE identifier formats differ) still resolves correctly.
+     *
+     * Thread-safe: reads from atomic snapshot.
+     */
+    bool isControllerInputPort(const juce::String& liveIdentifier,
+                               const juce::String& liveName) const;
+
     // ========================================================================
     // Persistence
     // ========================================================================

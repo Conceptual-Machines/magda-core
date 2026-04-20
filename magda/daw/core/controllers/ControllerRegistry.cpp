@@ -1,5 +1,7 @@
 #include "ControllerRegistry.hpp"
 
+#include "../../audio/MidiDeviceMatch.hpp"
+
 namespace magda {
 
 ControllerRegistry& ControllerRegistry::getInstance() {
@@ -87,6 +89,18 @@ bool ControllerRegistry::isControllerInputPort(const juce::String& portId) const
         return false;
     for (const auto& c : *snap)
         if (c.enabled && c.inputPort == portId)
+            return true;
+    return false;
+}
+
+bool ControllerRegistry::isControllerInputPort(const juce::String& liveIdentifier,
+                                               const juce::String& liveName) const {
+    // Reads from atomic snapshot -- safe on any thread
+    auto snap = std::atomic_load(&snapshot_);
+    if (!snap)
+        return false;
+    for (const auto& c : *snap)
+        if (c.enabled && magda::midi::matches(c.inputPort, liveIdentifier, liveName))
             return true;
     return false;
 }

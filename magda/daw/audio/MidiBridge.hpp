@@ -44,7 +44,11 @@ class AudioBridge;
  */
 struct RawMidiListener {
     virtual ~RawMidiListener() = default;
-    virtual void onRawMidi(const juce::String& deviceId, const juce::MidiMessage& msg) = 0;
+    // deviceId: JUCE identifier (opaque, OS-specific format).
+    // deviceName: human-readable display name (also provided so listeners can
+    //             match via magda::midi::matches without a separate lookup).
+    virtual void onRawMidi(const juce::String& deviceId, const juce::String& deviceName,
+                           const juce::MidiMessage& msg) = 0;
 };
 
 // ============================================================================
