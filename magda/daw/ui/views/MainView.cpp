@@ -19,6 +19,8 @@
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
+#include "core/aliases/AliasRegistry.hpp"
+#include "core/aliases/CuratedAliasLoader.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 
@@ -66,6 +68,10 @@ MainView::MainView(AudioEngine* audioEngine)
     // Load configuration
     auto& config = magda::Config::getInstance();
     config.load();
+
+    // Load parameter alias layers
+    CuratedAliasLoader::loadFromBinary();
+    AliasRegistry::getInstance().loadUserGlobal(config.getParamAliases());
 
     // Apply language from config (overrides the en.json auto-loaded by StringTable constructor)
     {

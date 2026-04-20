@@ -211,6 +211,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/cloud_providers/openrouter.svg
     # App logo
     ../../assets/magda-lisa.svg
+    # Curated alias dictionaries
+    ../../assets/aliases/curated_index.json
+    ../../assets/aliases/curated_eq.json
+    ../../assets/aliases/curated_compressor.json
 )
 
 # DAW Core sources
@@ -254,6 +258,8 @@ set(DAW_CORE_SOURCES
     core/aliases/TargetResolver.cpp
     # Parameter alias system (PR 4 -- AutoAliasGenerator)
     core/aliases/AutoAliasGenerator.cpp
+    # Parameter alias system (PR 5 -- CuratedAliasLoader)
+    core/aliases/CuratedAliasLoader.cpp
     engine/TracktionEngineWrapper.cpp
     engine/TracktionEngineWrapperInit.cpp
     engine/TracktionEngineWrapperDevices.cpp

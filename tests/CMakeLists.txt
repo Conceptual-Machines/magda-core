@@ -58,6 +58,8 @@ set(TEST_SOURCES
     test_alias_resolver.cpp
     # Parameter alias system tests (PR 4 -- AutoAliasGenerator)
     test_alias_auto_gen.cpp
+    # Parameter alias system tests (PR 5 -- CuratedAliasLoader)
+    test_curated_alias_loader.cpp
 )
 
 # Create test executable
