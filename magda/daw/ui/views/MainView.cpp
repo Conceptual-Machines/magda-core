@@ -10,6 +10,7 @@
 #include "../themes/FontManager.hpp"
 #include "Config.hpp"
 #include "audio/AudioBridge.hpp"
+#include "audio/ControllerParamWriter.hpp"
 #include "audio/ControllerRouter.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipManager.hpp"
@@ -80,6 +81,9 @@ MainView::MainView(AudioEngine* audioEngine)
     ControllerRegistry::getInstance().loadFromConfig(config.getControllers());
     BindingRegistry::getInstance().loadGlobal(config.getGlobalBindings());
     ControllerRouter::getInstance().reconfigure();
+    if (auto* audioBridge = audioEngine_->getAudioBridge())
+        ControllerRouter::getInstance().setParamWriter(
+            std::make_unique<DefaultControllerParamWriter>(*audioBridge));
     if (auto* midiBridge = audioEngine_->getMidiBridge())
         ControllerRouter::getInstance().setMidiBridge(midiBridge);
 

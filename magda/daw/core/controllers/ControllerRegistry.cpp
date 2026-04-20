@@ -112,12 +112,29 @@ bool ControllerRegistry::isControllerInputPort(const juce::String& liveIdentifie
 void ControllerRegistry::loadFromConfig(const juce::var& json) {
     controllers_.clear();
 
+    DBG("ControllerRegistry::loadFromConfig — input isArray="
+        << (json.isArray() ? "yes" : "no") << " isVoid=" << (json.isVoid() ? "yes" : "no")
+        << " dump=" << juce::JSON::toString(json, true));
+
     if (json.isArray()) {
+        int index = 0;
         for (const auto& item : *json.getArray()) {
-            if (auto c = decodeController(item))
+            auto c = decodeController(item);
+            if (c) {
                 controllers_.push_back(*c);
+                DBG("ControllerRegistry:   [" << index << "] loaded name='" << c->name
+                                              << "' inputPort='" << c->inputPort
+                                              << "' enabled=" << (c->enabled ? "yes" : "no"));
+            } else {
+                DBG("ControllerRegistry:   ["
+                    << index << "] FAILED to decode entry: " << juce::JSON::toString(item, true));
+            }
+            ++index;
         }
     }
+
+    DBG("ControllerRegistry::loadFromConfig — " << (int)controllers_.size()
+                                                << " controller(s) loaded");
 
     rebuildSnapshot();
     notifyListeners();

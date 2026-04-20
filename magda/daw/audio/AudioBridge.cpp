@@ -1230,19 +1230,19 @@ void AudioBridge::enableAllMidiInputDevices() {
     for (const auto& d : juce::MidiInput::getAvailableDevices())
         nameToJuceId[d.name] = d.identifier;
 
+    // Controller ports are NOT excluded from instrument routing. A typical
+    // MIDI keyboard (e.g. Launchkey Mini) exposes a single MIDI port for both
+    // note messages AND control-change knobs; excluding the whole port would
+    // break note playback. The ControllerRouter intercepts only the specific
+    // CC numbers that have bindings; everything else passes through to TE
+    // tracks. A future "surface-only" flag can opt specific ports (MCU, etc.)
+    // out of track routing when the controller is truly control-only.
     for (auto& midiInput : dm.getMidiInDevices()) {
         if (!midiInput)
             continue;
-        const juce::String liveName = midiInput->getName();
-        auto it = nameToJuceId.find(liveName);
-        const juce::String liveId = (it != nameToJuceId.end()) ? it->second : juce::String{};
-        if (ControllerRegistry::getInstance().isControllerInputPort(liveId, liveName)) {
-            DBG("Skipping controller port for instrument routing: " << liveName);
-            continue;
-        }
         if (!midiInput->isEnabled()) {
             midiInput->setEnabled(true);
-            DBG("Enabled MIDI input device: " << liveName);
+            DBG("Enabled MIDI input device: " << midiInput->getName());
         }
     }
 
@@ -1298,11 +1298,6 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
             teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
         }
 
-        // Build name→JUCE identifier map for controller port exclusion
-        std::unordered_map<juce::String, juce::String> nameToJuceIdAll;
-        for (const auto& d : juce::MidiInput::getAvailableDevices())
-            nameToJuceIdAll[d.name] = d.identifier;
-
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
             // Check if this is a MIDI input device
             if (auto* midiDevice =
@@ -1313,18 +1308,10 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                 if (midiDevice->getName() == "All MIDI Ins")
                     continue;
 
-                // Skip controller ports — they're reserved for ControllerRouter.
-                // Match by identifier OR name via the unified matcher.
-                {
-                    const juce::String liveName = midiDevice->getName();
-                    auto it = nameToJuceIdAll.find(liveName);
-                    const juce::String liveId =
-                        (it != nameToJuceIdAll.end()) ? it->second : juce::String{};
-                    if (ControllerRegistry::getInstance().isControllerInputPort(liveId, liveName)) {
-                        DBG("  -> Skipping controller port for track routing: " << liveName);
-                        continue;
-                    }
-                }
+                // Controller ports are NOT excluded from track routing — a
+                // typical MIDI keyboard exposes a single port for both notes
+                // and knob CCs. ControllerRouter intercepts only bound CC
+                // numbers; everything else reaches the track.
 
                 // Make sure the device is enabled
                 if (!midiDevice->isEnabled()) {

@@ -24,7 +24,13 @@ void DefaultControllerParamWriter::write(const ResolvedTarget& resolved, float v
     if (!param)
         return;
 
-    param->setParameter(value, juce::sendNotificationSync);
+    // 'value' is normalized 0..1 (what BindingTransform produces). Map to the
+    // parameter's actual value range before writing — te::AutomatableParameter::
+    // setParameter expects raw, not normalized.
+    const auto range = param->getValueRange();
+    const float clamped = juce::jlimit(0.0f, 1.0f, value);
+    const float raw = static_cast<float>(range.getStart() + clamped * range.getLength());
+    param->setParameter(raw, juce::sendNotificationSync);
 }
 
 }  // namespace magda
