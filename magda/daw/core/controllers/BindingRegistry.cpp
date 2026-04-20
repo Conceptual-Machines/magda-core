@@ -1,5 +1,10 @@
 #include "BindingRegistry.hpp"
 
+#include "../aliases/AliasRegistry.hpp"
+#include "../aliases/ChainContext.hpp"
+#include "../aliases/ResolverRegistry.hpp"
+#include "../aliases/TargetResolver.hpp"
+
 namespace magda {
 
 BindingRegistry& BindingRegistry::getInstance() {
@@ -94,6 +99,51 @@ std::vector<Binding> BindingRegistry::findForSource(const ControllerId& controll
         result.push_back(b);
     }
     return result;
+}
+
+// ============================================================================
+// Target reverse queries
+// ============================================================================
+
+std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& devicePath,
+                                                    int paramIndex) const {
+    std::vector<Binding> results;
+
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+
+    auto checkScope = [&](const std::vector<Binding>& vec) {
+        for (const auto& b : vec) {
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex)
+                results.push_back(b);
+        }
+    };
+
+    checkScope(globalBindings_);
+    checkScope(projectBindings_);
+
+    return results;
+}
+
+int BindingRegistry::removeForTarget(const ChainNodePath& devicePath, int paramIndex) {
+    auto toRemove = findForTarget(devicePath, paramIndex);
+
+    for (const auto& b : toRemove) {
+        // Determine scope by checking which vector contains this binding
+        bool inGlobal = false;
+        for (const auto& gb : globalBindings_) {
+            if (gb.id == b.id) {
+                inGlobal = true;
+                break;
+            }
+        }
+        remove(inGlobal ? BindingScope::Global : BindingScope::Project, b.id);
+    }
+
+    return static_cast<int>(toRemove.size());
 }
 
 // ============================================================================

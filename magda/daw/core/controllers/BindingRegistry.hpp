@@ -6,6 +6,7 @@
 #include <optional>
 #include <vector>
 
+#include "../aliases/Target.hpp"
 #include "Binding.hpp"
 
 namespace magda {
@@ -81,6 +82,28 @@ class BindingRegistry {
      */
     std::vector<Binding> findForSource(const ControllerId& controllerId, BindingMsgType msgType,
                                        int channel, int number) const;
+
+    /**
+     * @brief Find all bindings whose target resolves to a given (devicePath, paramIndex).
+     *
+     * Resolves each binding's target using a DefaultChainContext + TargetResolver.
+     * Must be called on the message thread.
+     *
+     * @param devicePath   Concrete device path to match.
+     * @param paramIndex   Parameter index to match.
+     * @return All matching bindings from both Global and Project scopes.
+     */
+    std::vector<Binding> findForTarget(const ChainNodePath& devicePath, int paramIndex) const;
+
+    /**
+     * @brief Remove all bindings whose target resolves to a given (devicePath, paramIndex).
+     *
+     * Convenience wrapper: calls findForTarget, then removes each match from its scope.
+     * Must be called on the message thread.
+     *
+     * @return Number of bindings removed.
+     */
+    int removeForTarget(const ChainNodePath& devicePath, int paramIndex);
 
     // ========================================================================
     // Persistence

@@ -71,6 +71,8 @@ set(TEST_SOURCES
     test_controller_router.cpp
     # MIDI device identifier matcher tests (issue #1050)
     test_midi_device_match.cpp
+    # MIDI Learn session tests (issue #924)
+    test_midi_learn.cpp
 )
 
 # Create test executable

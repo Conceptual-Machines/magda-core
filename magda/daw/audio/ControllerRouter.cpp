@@ -83,6 +83,35 @@ void ControllerRouter::bindingRegistryChanged(BindingScope /*scope*/) {
 }
 
 // ============================================================================
+// MIDI Learn
+// ============================================================================
+
+void ControllerRouter::beginLearnSession(LearnSessionConfig cfg, LearnCallback onCaptured) {
+    juce::ScopedLock sl(learnLock_);
+    // Discard any existing session (active or completed but not yet cleaned up)
+    learn_ = std::make_unique<LearnState>();
+    learn_->cfg = cfg;
+    learn_->cb = std::move(onCaptured);
+    learn_->armedAtMs = juce::Time::currentTimeMillis();
+    learn_->active.store(true, std::memory_order_release);
+    DBG("ControllerRouter: learn session armed");
+}
+
+void ControllerRouter::cancelLearnSession() {
+    juce::ScopedLock sl(learnLock_);
+    if (learn_) {
+        learn_->active.store(false, std::memory_order_release);
+        learn_.reset();
+        DBG("ControllerRouter: learn session cancelled");
+    }
+}
+
+bool ControllerRouter::isLearning() const {
+    juce::ScopedLock sl(learnLock_);
+    return learn_ && learn_->active.load(std::memory_order_acquire);
+}
+
+// ============================================================================
 // Injection entry point (test + Phase D bridge)
 // ============================================================================
 
@@ -119,6 +148,73 @@ void ControllerRouter::onRawMidi(const juce::String& deviceId, const juce::Strin
 void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
                                                 const juce::String& portName,
                                                 const juce::MidiMessage& msg) {
+    // ---- MIDI Learn intercept (checked before normal routing) ----
+    {
+        juce::ScopedLock sl(learnLock_);
+        if (learn_ && learn_->active.load(std::memory_order_acquire)) {
+            // Only capture qualifying message types
+            const bool isNoteOn = msg.isNoteOn();
+            const bool isNoteOff = msg.isNoteOff();
+            const bool isCC = msg.isController();
+            const bool isPW = msg.isPitchWheel();
+
+            if (isNoteOff) {
+                // Suppress Note-off within debounce window of the last Note-on
+                juce::int64 nowMs = juce::Time::currentTimeMillis();
+                if ((nowMs - learn_->lastNoteOnMs) < learn_->cfg.captureDebounceMs) {
+                    return;  // drop this Note-off; stay armed
+                }
+                // Note-off outside debounce — let normal routing handle it
+            } else if (isCC || isNoteOn || isPW) {
+                // Build capture
+                LearnCapture capture;
+                capture.portId = portId;
+                capture.portName = portName;
+                capture.channel = msg.getChannel();
+
+                // Try to find the controller; use a default ControllerId if unknown
+                auto ctrlOpt = ControllerRegistry::getInstance().findByInputPort(portId);
+                if (!ctrlOpt.has_value())
+                    ctrlOpt = ControllerRegistry::getInstance().findByInputPort(portName);
+                if (ctrlOpt.has_value())
+                    capture.controllerId = ctrlOpt->id;
+
+                if (isCC) {
+                    capture.msgType = BindingMsgType::CC;
+                    capture.number = msg.getControllerNumber();
+                    capture.rawValue = msg.getControllerValue();
+                } else if (isNoteOn) {
+                    capture.msgType = BindingMsgType::Note;
+                    capture.number = msg.getNoteNumber();
+                    capture.rawValue = msg.getVelocity();
+                    learn_->lastNoteOnMs = juce::Time::currentTimeMillis();
+                } else {
+                    capture.msgType = BindingMsgType::PitchBend;
+                    capture.number = 0;
+                    capture.rawValue = msg.getPitchWheelValue();
+                }
+
+                // Mark session as done and fire callback on message thread
+                learn_->active.store(false, std::memory_order_release);
+                LearnCallback cb = std::move(learn_->cb);
+                learn_.reset();
+
+                DBG("ControllerRouter: learn captured " << msg.getDescription());
+
+                // Deliver on message thread (or synchronously if already there)
+                auto* mm = juce::MessageManager::getInstanceWithoutCreating();
+                if (mm == nullptr || mm->isThisTheMessageThread()) {
+                    cb(capture);
+                } else {
+                    juce::MessageManager::callAsync(
+                        [cb = std::move(cb), capture]() mutable { cb(capture); });
+                }
+                return;  // do NOT fall through to normal routing
+            }
+            // Non-qualifying messages (program change, etc.) — stay armed, fall through
+        }
+    }
+
     // Only handle messages from registered controller ports
     if (!ControllerRegistry::getInstance().isControllerInputPort(portId, portName))
         return;

@@ -252,6 +252,8 @@ set(DAW_CORE_SOURCES
     core/aliases/ParamSigilParser.cpp
     # Parameter alias system (PR 2 -- AliasRegistry and persistence)
     core/aliases/AliasRegistry.cpp
+    # MIDI Learn reverse index helpers
+    core/aliases/AliasReverseIndex.cpp
     # Parameter alias system (PR 3 -- ResolverRegistry, ChainContext, TargetResolver)
     core/aliases/ChainContext.cpp
     core/aliases/ResolverRegistry.cpp

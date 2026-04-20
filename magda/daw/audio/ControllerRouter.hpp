@@ -2,6 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include <atomic>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 
@@ -11,6 +13,7 @@
 #include "ControllerFeedback.hpp"
 #include "ControllerParamWriter.hpp"
 #include "MidiBridge.hpp"
+#include "MidiLearnSession.hpp"
 
 namespace magda {
 
@@ -92,6 +95,35 @@ class ControllerRouter : public ControllerRegistryListener,
     void setFeedbackSink(std::unique_ptr<ControllerFeedbackSink> sink);
 
     // ========================================================================
+    // MIDI Learn session
+    // ========================================================================
+
+    /** Callback type fired on the message thread when a qualifying message is captured. */
+    using LearnCallback = std::function<void(const LearnCapture&)>;
+
+    /**
+     * @brief Start a MIDI learn session.
+     *
+     * Any in-progress session is cancelled first. The next qualifying MIDI
+     * message (CC, Note-on, or Pitch-wheel) fires onCaptured on the message
+     * thread. Note-off messages arriving within captureDebounceMs of the
+     * corresponding Note-on are silently discarded.
+     *
+     * May be called from any thread.
+     */
+    void beginLearnSession(LearnSessionConfig cfg, LearnCallback onCaptured);
+
+    /**
+     * @brief Cancel any active learn session without firing the callback.
+     *
+     * Safe to call even when no session is active. May be called from any thread.
+     */
+    void cancelLearnSession();
+
+    /** Returns true when a learn session is currently active. Thread-safe. */
+    bool isLearning() const;
+
+    // ========================================================================
     // Registry listener callbacks
     // ========================================================================
 
@@ -121,6 +153,18 @@ class ControllerRouter : public ControllerRegistryListener,
     ControllerRouter() = default;
 
     MidiBridge* midiBridge_ = nullptr;
+
+    // ---- MIDI Learn ----
+    struct LearnState {
+        LearnSessionConfig cfg;
+        LearnCallback cb;
+        std::atomic<bool> active{false};
+        juce::int64 armedAtMs = 0;     // Time beginLearnSession was called
+        juce::int64 lastNoteOnMs = 0;  // Time of last Note-on captured
+    };
+
+    std::unique_ptr<LearnState> learn_;
+    juce::CriticalSection learnLock_;  // guards learn_ pointer swap
 
     // Per-binding runtime state (message-thread only after callAsync hop)
     struct BindingRuntimeState {
