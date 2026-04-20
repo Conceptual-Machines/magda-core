@@ -31,6 +31,11 @@ Section "Install"
     File "MAGDA.exe"
     File /nonfatal "magda_plugin_scanner.exe"
 
+    ; Localization JSON files — StringTable looks for them next to MAGDA.exe
+    SetOutPath "$INSTDIR\lang"
+    File /r "lang\*.*"
+    SetOutPath $INSTDIR
+
     ; Create uninstaller
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -66,6 +71,7 @@ Section "Uninstall"
     Delete "$INSTDIR\MAGDA.exe"
     Delete "$INSTDIR\magda_plugin_scanner.exe"
     Delete "$INSTDIR\Uninstall.exe"
+    RMDir /r "$INSTDIR\lang"
     RMDir "$INSTDIR"
 
     Delete "$SMPROGRAMS\MAGDA\*.*"

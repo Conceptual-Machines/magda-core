@@ -45,12 +45,15 @@ jobs:
         echo "Version: $VERSION"
 
     - name: Configure CMake (Universal Binary)
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
       run: |
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
           -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0" \
           -DMAGDA_BUILD_TESTS=OFF \
+          -DMAGDA_FULL_VERSION="$VERSION" \
           -DCMAKE_C_COMPILER_LAUNCHER=sccache \
           -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
@@ -302,11 +305,14 @@ jobs:
 
     - name: Configure CMake
       shell: powershell
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
       run: |
         cmake -B build -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
           -DCMAKE_SYSTEM_PROCESSOR=x64 `
           -DMAGDA_BUILD_TESTS=OFF `
+          -DMAGDA_FULL_VERSION="$env:VERSION" `
           -DCMAKE_C_COMPILER_LAUNCHER=sccache `
           -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
@@ -365,6 +371,12 @@ jobs:
           Write-Warning "magda_plugin_scanner.exe not found at $scanner"
         }
 
+        # Stage lang/ so NSIS can bundle it into the installer
+        $langStaging = Join-Path $stagingDir "lang"
+        if (Test-Path $langStaging) { Remove-Item -Recurse -Force $langStaging }
+        Copy-Item -Recurse "lang" $langStaging
+        Write-Output "Staged lang/ for installer"
+
         & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" /DVERSION=$env:VERSION "$stagingDir\magda-installer.nsi"
 
         $installerName = "MAGDA-$env:VERSION-Windows-x86_64-Setup.exe"
@@ -398,6 +410,8 @@ jobs:
       run: |
         Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
         Remove-Item -Force "packaging\windows\MAGDA.exe" -ErrorAction SilentlyContinue
+        Remove-Item -Force "packaging\windows\magda_plugin_scanner.exe" -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force "packaging\windows\lang" -ErrorAction SilentlyContinue
 
   build-linux:
     runs-on: ubuntu-latest
@@ -460,11 +474,14 @@ jobs:
         sccache --version
 
     - name: Configure CMake
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
       run: |
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=/usr \
           -DMAGDA_BUILD_TESTS=OFF \
+          -DMAGDA_FULL_VERSION="$VERSION" \
           -DCMAKE_C_COMPILER_LAUNCHER=sccache \
           -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
@@ -501,6 +518,9 @@ jobs:
         else
           echo "Warning: magda_plugin_scanner not found"
         fi
+
+        # Localization JSON — StringTable looks for lang/ next to the binary
+        cp -r lang "$APPDIR/usr/bin/lang"
 
         # Copy icon
         cp assets/app_icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/magda.png"

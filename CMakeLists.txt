@@ -7,19 +7,22 @@ endif()
 
 project(Magda VERSION 0.1.0 LANGUAGES C CXX)
 
-# Derive display version from git tags (e.g. "0.1.0-rc2" or "0.1.0-rc2-15-g1391223")
-execute_process(
-    COMMAND git describe --tags --always
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE MAGDA_GIT_VERSION
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-    RESULT_VARIABLE GIT_DESCRIBE_RESULT
-)
-if(GIT_DESCRIBE_RESULT EQUAL 0 AND MAGDA_GIT_VERSION MATCHES "^v?(.+)$")
-    set(MAGDA_FULL_VERSION "${CMAKE_MATCH_1}")
-else()
-    set(MAGDA_FULL_VERSION "${PROJECT_VERSION}")
+# Display version: prefer explicit -DMAGDA_FULL_VERSION (set by release CI), else
+# derive from git tags (e.g. "0.1.0-rc2" or "0.1.0-rc2-15-g1391223").
+if(NOT DEFINED MAGDA_FULL_VERSION OR MAGDA_FULL_VERSION STREQUAL "")
+    execute_process(
+        COMMAND git describe --tags --always
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE MAGDA_GIT_VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE GIT_DESCRIBE_RESULT
+    )
+    if(GIT_DESCRIBE_RESULT EQUAL 0 AND MAGDA_GIT_VERSION MATCHES "^v?(.+)$")
+        set(MAGDA_FULL_VERSION "${CMAKE_MATCH_1}")
+    else()
+        set(MAGDA_FULL_VERSION "${PROJECT_VERSION}")
+    endif()
 endif()
 
 # ccache disabled - causes unnecessary rebuilds with Ninja
