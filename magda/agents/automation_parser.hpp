@@ -35,7 +35,7 @@ struct AutoTarget {
         LaneId,       // direct lane id
         TrackVolume,  // currently-selected track's volume lane (create if needed)
         TrackPan,     // currently-selected track's pan lane (create if needed)
-        Alias,        // sigil token (@plugin.param, #device.param, $var.param)
+        Alias,        // sigil token (@plugin.param)
     };
     Kind kind = Kind::Selected;
     AutomationLaneId laneId = INVALID_AUTOMATION_LANE_ID;

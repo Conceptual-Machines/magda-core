@@ -71,6 +71,15 @@ class ChainContext {
     };
 
     virtual std::vector<DeviceWithPath> devicesInFocusedChain() const = 0;
+
+    /**
+     * @brief Get all top-level devices on the given track, in chain order.
+     *
+     * Returns empty when the track does not exist or has no devices.
+     * Used by TargetResolver to prefer devices in the selected-track chain
+     * when resolving '@name.param' with a track selected.
+     */
+    virtual std::vector<DeviceWithPath> devicesForTrack(TrackId trackId) const = 0;
 };
 
 // ============================================================================
@@ -87,6 +96,7 @@ class DefaultChainContext : public ChainContext {
     ChainNodePath focusedDevice() const override;
     const DeviceInfo* deviceAt(const ChainNodePath& path) const override;
     std::vector<DeviceWithPath> devicesInFocusedChain() const override;
+    std::vector<DeviceWithPath> devicesForTrack(TrackId trackId) const override;
 };
 
 // ============================================================================
@@ -140,6 +150,14 @@ class FixedChainContext : public ChainContext {
     }
     std::vector<DeviceWithPath> devicesInFocusedChain() const override {
         return devices_;
+    }
+    std::vector<DeviceWithPath> devicesForTrack(TrackId trackId) const override {
+        std::vector<DeviceWithPath> result;
+        for (const auto& dw : devices_) {
+            if (dw.path.trackId == trackId)
+                result.push_back(dw);
+        }
+        return result;
     }
 
   private:

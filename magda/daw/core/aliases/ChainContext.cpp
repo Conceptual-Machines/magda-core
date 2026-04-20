@@ -67,4 +67,24 @@ std::vector<ChainContext::DeviceWithPath> DefaultChainContext::devicesInFocusedC
     return result;
 }
 
+std::vector<ChainContext::DeviceWithPath> DefaultChainContext::devicesForTrack(
+    TrackId trackId) const {
+    std::vector<DeviceWithPath> result;
+
+    auto& tm = TrackManager::getInstance();
+    const auto* track = tm.getTrack(trackId);
+    if (track == nullptr)
+        return result;
+
+    for (const auto& element : track->chainElements) {
+        if (isDevice(element)) {
+            const auto& dev = getDevice(element);
+            ChainNodePath devPath = ChainNodePath::topLevelDevice(trackId, dev.id);
+            result.push_back({&dev, devPath});
+        }
+    }
+
+    return result;
+}
+
 }  // namespace magda

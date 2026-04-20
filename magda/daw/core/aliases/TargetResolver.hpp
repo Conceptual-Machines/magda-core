@@ -6,7 +6,6 @@
 
 #include "AliasRegistry.hpp"
 #include "ChainContext.hpp"
-#include "LocalBindings.hpp"
 #include "ParamSigilParser.hpp"
 #include "ResolverRegistry.hpp"
 #include "Target.hpp"
@@ -47,16 +46,23 @@ struct ResolvedTarget {
  * @brief Resolves any Target variant or ParsedSigil to a concrete ResolvedTarget.
  *
  * Holds non-owning references; callers are responsible for lifetime.
- * LocalBindings pointer may be nullptr ($ sigil will always fail gracefully).
+ *
+ * Resolution order for '@name.param':
+ *   1. If ChainContext::selectedTrack() is valid, scan that track's chain
+ *      devices for a device whose normalised name matches 'name'.  If found,
+ *      resolve to that device's concrete paramKey.
+ *   2. Otherwise look up AliasRegistry walking layers
+ *      (UserProject > UserGlobal > Curated > AutoGen).
+ *   3. Scoped forms (@focused.*, @selected.*, @master.*) route through
+ *      ResolverRegistry.
  */
 class TargetResolver {
   public:
     TargetResolver(AliasRegistry& aliasRegistry, ResolverRegistry& resolverRegistry,
-                   ChainContext& chainContext, LocalBindings* localBindings = nullptr)
+                   ChainContext& chainContext)
         : aliasRegistry_(aliasRegistry),
           resolverRegistry_(resolverRegistry),
-          chainContext_(chainContext),
-          localBindings_(localBindings) {}
+          chainContext_(chainContext) {}
 
     // ========================================================================
     // Primary API
@@ -68,15 +74,10 @@ class TargetResolver {
     ResolvedTarget resolve(const Target& target) const;
 
     /**
-     * @brief Resolve a parsed sigil token.
+     * @brief Resolve a parsed '@'-sigil token.
      *
-     * Dispatch rules:
-     *   @  -> lookup in AliasRegistry; if path absent, scan focused chain
-     *         for a device matching pluginTypeKey; apply drift fallback.
-     *   #  -> scan devicesInFocusedChain() for the Nth matching device;
-     *         return failure if no chain focused.
-     *   $  -> look up in LocalBindings; return failure if not bound or
-     *         LocalBindings is null.
+     * Only '@'-sigil ParsedSigils are accepted. '#' and '$' tokens are
+     * rejected at the parser level and will never reach this function.
      */
     ResolvedTarget resolveSigil(const ParsedSigil& sigil) const;
 
@@ -84,19 +85,12 @@ class TargetResolver {
     // ---- @ sigil implementation ----
     ResolvedTarget resolveAt(const ParsedSigil& sigil) const;
 
-    // ---- # sigil implementation ----
-    ResolvedTarget resolveHash(const ParsedSigil& sigil) const;
-
-    // ---- $ sigil implementation ----
-    ResolvedTarget resolveDollar(const ParsedSigil& sigil) const;
-
     // ---- helpers ----
 
-    // Given a list of devices, find the Nth device (0-based) whose normalised
-    // plugin name or user device name contains pluginKey. Returns nullptr if not found.
-    static const ChainContext::DeviceWithPath* findNthMatchingDevice(
-        const std::vector<ChainContext::DeviceWithPath>& devices, const juce::String& pluginKey,
-        int instanceIndex);
+    // Given a list of devices, find the first device whose normalised plugin
+    // name or user device name matches pluginKey. Returns nullptr if not found.
+    static const ChainContext::DeviceWithPath* findFirstMatchingDevice(
+        const std::vector<ChainContext::DeviceWithPath>& devices, const juce::String& pluginKey);
 
     // Given a device, find a param by name (case-insensitive normalised key).
     static int findParamByKey(const DeviceInfo& device, const juce::String& paramKey);
@@ -104,7 +98,6 @@ class TargetResolver {
     AliasRegistry& aliasRegistry_;
     ResolverRegistry& resolverRegistry_;
     ChainContext& chainContext_;
-    LocalBindings* localBindings_;
 };
 
 }  // namespace magda

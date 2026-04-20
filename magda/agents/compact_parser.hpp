@@ -49,8 +49,6 @@ struct TrackRef {
 struct TrackOp {
     juce::String name;
     juce::String fxAlias;  // non-empty = create track + add this plugin, name from plugin
-    juce::String
-        bindName;  // non-empty = bind result to this $-variable name (e.g. "b" for "as $b")
 };
 
 struct DelOp {
@@ -80,7 +78,6 @@ struct ClipOp {
 struct FxOp {
     TrackRef target;  // may be implicit (use current track)
     juce::String fxName;
-    juce::String bindName;  // non-empty = bind device to this $-variable name (e.g. "eq")
 };
 
 struct SelectOp {

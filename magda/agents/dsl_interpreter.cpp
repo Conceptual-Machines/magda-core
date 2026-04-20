@@ -56,8 +56,7 @@ Token Tokenizer::readIdentifier() {
     int startCol = col_;
     const char* start = pos_;
 
-    while (*pos_ && (std::isalnum(static_cast<unsigned char>(*pos_)) || *pos_ == '_' ||
-                     *pos_ == '#' || *pos_ == '$')) {
+    while (*pos_ && (std::isalnum(static_cast<unsigned char>(*pos_)) || *pos_ == '_')) {
         pos_++;
         col_++;
     }
@@ -234,7 +233,7 @@ Token Tokenizer::next() {
         (c == '-' && std::isdigit(static_cast<unsigned char>(*(pos_ + 1)))))
         return readNumber();
 
-    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_' || c == '#' || c == '$')
+    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_')
         return readIdentifier();
 
     // Unknown character - skip it
@@ -697,26 +696,6 @@ bool Interpreter::parseValue(Tokenizer& tok, std::string& outValue) {
         if (tok.peek().is(TokenType::LPAREN)) {
             tok.next();  // consume '('
             return evaluateFunction(t.value, tok, outValue);
-        }
-
-        // Sigil tokens: identifiers that start with '#' or '$' are
-        // instance-scoped (#) or plan-local ($) param references.
-        // They may be followed by '.paramKey' which was consumed into the
-        // identifier already (readIdentifier allows # and $), or the '.'
-        // may arrive as a separate DOT token.
-        const char firstChar = t.value.empty() ? '\0' : t.value[0];
-        if (firstChar == '#' || firstChar == '$') {
-            std::string sigilStr = t.value;
-            // If the identifier didn't consume a '.paramKey' suffix, consume it now.
-            if (sigilStr.find('.') == std::string::npos && tok.peek().is(TokenType::DOT)) {
-                tok.next();  // consume '.'
-                Token paramTok = tok.next();
-                if (paramTok.type == TokenType::IDENTIFIER)
-                    sigilStr += "." + paramTok.value;
-            }
-            // Validate as a sigil token (best-effort, store as-is for executor).
-            outValue = sigilStr;
-            return true;
         }
 
         outValue = t.value;

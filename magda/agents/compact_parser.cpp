@@ -50,27 +50,15 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
             }
             TrackOp payload;
 
-            // Scan for trailing "as $name" before parsing the main args.
-            juce::String bindName;
-            int argsEnd = parts.size();
-            if (parts.size() >= 3) {
-                int asIdx = parts.size() - 2;
-                if (parts[asIdx].toUpperCase() == "AS" && parts[asIdx + 1].startsWith("$")) {
-                    bindName = parts[asIdx + 1].substring(1);  // strip leading '$'
-                    argsEnd = asIdx;
-                }
-            }
-            payload.bindName = bindName;
-
             // TRACK FX <alias> — create track named after plugin + add plugin
-            if (parts[1].toUpperCase() == "FX" && argsEnd >= 3) {
+            if (parts[1].toUpperCase() == "FX" && parts.size() >= 3) {
                 payload.fxAlias = parts[2];
-                for (int i = 3; i < argsEnd; ++i)
+                for (int i = 3; i < parts.size(); ++i)
                     payload.fxAlias += " " + parts[i];
                 // name left empty — executor will resolve from plugin
             } else {
                 payload.name = parts[1];
-                for (int i = 2; i < argsEnd; ++i)
+                for (int i = 2; i < parts.size(); ++i)
                     payload.name += " " + parts[i];
             }
             instructions.push_back({OpCode::Track, payload});
@@ -197,38 +185,21 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
             }
             FxOp payload;
 
-            // Scan for trailing "as $name" before parsing the main args.
-            juce::String fxBindName;
-            int fxArgsEnd = parts.size();
-            if (parts.size() >= 3) {
-                int asIdx = parts.size() - 2;
-                if (parts[asIdx].toUpperCase() == "AS" && parts[asIdx + 1].startsWith("$")) {
-                    fxBindName = parts[asIdx + 1].substring(1);  // strip leading '$'
-                    fxArgsEnd = asIdx;
-                }
-            }
-            payload.bindName = fxBindName;
-
-            if (fxArgsEnd == 2) {
-                // Single arg → implicit track, arg is the fx name
+            if (parts.size() == 2) {
+                // Single arg -> implicit track, arg is the fx name
                 payload.target.implicit = true;
                 payload.fxName = parts[1];
-            } else if (fxArgsEnd > 2 && isInteger(parts[1])) {
-                // Numeric first arg → explicit track by index
+            } else if (isInteger(parts[1])) {
+                // Numeric first arg -> explicit track by index
                 payload.target = parseRef(parts[1]);
                 payload.fxName = parts[2];
-                for (int i = 3; i < fxArgsEnd; ++i)
+                for (int i = 3; i < parts.size(); ++i)
                     payload.fxName += " " + parts[i];
             } else {
-                // Ambiguous: could be "FX TrackName fx_name" or "FX fx_name_with_spaces"
-                // If there's exactly 2 remaining tokens and last one looks like an alias (has
-                // underscore or is a known keyword), treat first as ref. Otherwise treat all as fx
-                // name implicitly. For safety, treat single-word first arg as ref, rest as fx name
-                // (old behavior with explicit ref) but mark that we need at least 2 non-op tokens
-                // for explicit ref.
+                // All args are the fx name (implicit track)
                 payload.target.implicit = true;
                 payload.fxName = parts[1];
-                for (int i = 2; i < fxArgsEnd; ++i)
+                for (int i = 2; i < parts.size(); ++i)
                     payload.fxName += " " + parts[i];
             }
             instructions.push_back({OpCode::Fx, payload});

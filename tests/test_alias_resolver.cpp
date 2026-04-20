@@ -2,7 +2,6 @@
 
 #include "../magda/daw/core/aliases/AliasRegistry.hpp"
 #include "../magda/daw/core/aliases/ChainContext.hpp"
-#include "../magda/daw/core/aliases/LocalBindings.hpp"
 #include "../magda/daw/core/aliases/ResolverRegistry.hpp"
 #include "../magda/daw/core/aliases/TargetResolver.hpp"
 
@@ -134,86 +133,53 @@ TEST_CASE("TargetResolver - resolve unknown ResolverRef kind fails", "[aliases][
 }
 
 // ============================================================================
-// # sigil
+// @ sigil - selected-chain device preference
 // ============================================================================
 
-TEST_CASE("TargetResolver::resolveSigil - # first device match", "[aliases][resolver]") {
-    // Build context with two devices: Serum and Surge XT
+TEST_CASE("@ resolution prefers selected-chain devices over registry", "[aliases][resolver]") {
+    // A device named "Serum" lives on the selected track (track 1).
+    // The AliasRegistry also has a type-level alias for "serum.cutoff" pointing
+    // to a different path. The resolver must return the concrete chain device,
+    // NOT the registry alias.
     DeviceInfo serum = makeDevice(10, "Serum", {"Filter Cutoff", "Resonance", "Env Attack"});
-    DeviceInfo surge = makeDevice(11, "Surge XT", {"OSC1 Pitch", "Filter Cutoff"});
+    auto serumPath = makePath(1, 10);
 
     FixedChainContext ctx;
-    ctx.addDevice(makePath(1, 10), serum);
-    ctx.addDevice(makePath(1, 11), surge);
+    ctx.setSelectedTrack(1);
+    ctx.addDevice(serumPath, serum);
 
     auto& reg = AliasRegistry::getInstance();
     reg.clearLayer(AliasLayer::UserProject);
     reg.clearLayer(AliasLayer::UserGlobal);
     reg.clearLayer(AliasLayer::Curated);
     reg.clearLayer(AliasLayer::AutoGen);
+
+    // Register a type-level alias pointing to a *different* device path
+    StoredAlias alias;
+    alias.pluginTypeKey = "serum";
+    alias.paramIndex = 0;
+    alias.path = makePath(99, 99);  // different path
+    reg.set(AliasLayer::UserGlobal, "serum.cutoff", alias);
+
     auto& resolvers = ResolverRegistry::getInstance();
     TargetResolver resolver{reg, resolvers, ctx};
 
-    auto parsed = tryParse("#serum.filter_cutoff");
+    auto parsed = tryParse("@serum.filter_cutoff");
     REQUIRE(parsed.has_value());
 
     auto result = resolver.resolveSigil(*parsed);
     REQUIRE(result.ok());
-    REQUIRE(result.devicePath == makePath(1, 10));
+    // Must resolve to the concrete chain device, not the registry alias path
+    REQUIRE(result.devicePath == serumPath);
     REQUIRE(result.paramIndex == 0);  // "Filter Cutoff" is index 0
 }
 
-TEST_CASE("TargetResolver::resolveSigil - # instance index selects Nth device",
-          "[aliases][resolver]") {
-    DeviceInfo serum1 = makeDevice(10, "Serum", {"Filter Cutoff"});
-    DeviceInfo serum2 = makeDevice(11, "Serum", {"Filter Cutoff"});
+TEST_CASE("@ resolution falls back to registry when no track selected", "[aliases][resolver]") {
+    // No track selected — resolution must fall through to AliasRegistry.
+    DeviceInfo serum = makeDevice(10, "Serum", {"Filter Cutoff"});
 
     FixedChainContext ctx;
-    ctx.addDevice(makePath(1, 10), serum1);
-    ctx.addDevice(makePath(1, 11), serum2);
-
-    auto& reg = AliasRegistry::getInstance();
-    reg.clearLayer(AliasLayer::UserProject);
-    reg.clearLayer(AliasLayer::UserGlobal);
-    reg.clearLayer(AliasLayer::Curated);
-    reg.clearLayer(AliasLayer::AutoGen);
-    auto& resolvers = ResolverRegistry::getInstance();
-    TargetResolver resolver{reg, resolvers, ctx};
-
-    // #serum_2.filter_cutoff -> second Serum (index 1)
-    auto parsed = tryParse("#serum_2.filter_cutoff");
-    REQUIRE(parsed.has_value());
-
-    auto result = resolver.resolveSigil(*parsed);
-    REQUIRE(result.ok());
-    REQUIRE(result.devicePath == makePath(1, 11));
-}
-
-TEST_CASE("TargetResolver::resolveSigil - # no chain focused returns failure",
-          "[aliases][resolver]") {
-    FixedChainContext ctx;  // empty context
-
-    auto& reg = AliasRegistry::getInstance();
-    reg.clearLayer(AliasLayer::UserProject);
-    reg.clearLayer(AliasLayer::UserGlobal);
-    reg.clearLayer(AliasLayer::Curated);
-    reg.clearLayer(AliasLayer::AutoGen);
-    auto& resolvers = ResolverRegistry::getInstance();
-    TargetResolver resolver{reg, resolvers, ctx};
-
-    auto parsed = tryParse("#serum.cutoff");
-    REQUIRE(parsed.has_value());
-
-    auto result = resolver.resolveSigil(*parsed);
-    REQUIRE_FALSE(result.ok());
-    REQUIRE(result.sourceLabel.isNotEmpty());
-}
-
-TEST_CASE("TargetResolver::resolveSigil - # param not found returns failure",
-          "[aliases][resolver]") {
-    DeviceInfo serum = makeDevice(10, "Serum", {"Filter Cutoff", "Resonance"});
-
-    FixedChainContext ctx;
+    // No setSelectedTrack — selectedTrack() returns INVALID_TRACK_ID
     ctx.addDevice(makePath(1, 10), serum);
 
     auto& reg = AliasRegistry::getInstance();
@@ -221,103 +187,23 @@ TEST_CASE("TargetResolver::resolveSigil - # param not found returns failure",
     reg.clearLayer(AliasLayer::UserGlobal);
     reg.clearLayer(AliasLayer::Curated);
     reg.clearLayer(AliasLayer::AutoGen);
+
+    StoredAlias alias;
+    alias.pluginTypeKey = "serum";
+    alias.paramIndex = 5;
+    alias.path = makePath(2, 20);  // some concrete registry path
+    reg.set(AliasLayer::UserGlobal, "serum.cutoff", alias);
+
     auto& resolvers = ResolverRegistry::getInstance();
     TargetResolver resolver{reg, resolvers, ctx};
 
-    auto parsed = tryParse("#serum.nonexistent_param");
-    REQUIRE(parsed.has_value());
-
-    auto result = resolver.resolveSigil(*parsed);
-    REQUIRE_FALSE(result.ok());
-}
-
-TEST_CASE("TargetResolver::resolveSigil - # no matching device returns failure",
-          "[aliases][resolver]") {
-    DeviceInfo surge = makeDevice(11, "Surge XT", {"OSC1 Pitch"});
-
-    FixedChainContext ctx;
-    ctx.addDevice(makePath(1, 11), surge);
-
-    auto& reg = AliasRegistry::getInstance();
-    reg.clearLayer(AliasLayer::UserProject);
-    reg.clearLayer(AliasLayer::UserGlobal);
-    reg.clearLayer(AliasLayer::Curated);
-    reg.clearLayer(AliasLayer::AutoGen);
-    auto& resolvers = ResolverRegistry::getInstance();
-    TargetResolver resolver{reg, resolvers, ctx};
-
-    auto parsed = tryParse("#serum.cutoff");  // Serum not in chain
-    REQUIRE(parsed.has_value());
-
-    auto result = resolver.resolveSigil(*parsed);
-    REQUIRE_FALSE(result.ok());
-}
-
-// ============================================================================
-// $ sigil
-// ============================================================================
-
-TEST_CASE("TargetResolver::resolveSigil - $ finds bound device param", "[aliases][resolver]") {
-    DeviceInfo synth = makeDevice(20, "MySynth", {"Cutoff", "Resonance", "Volume"});
-    auto path = makePath(1, 20);
-
-    FixedChainContext ctx;
-    ctx.addDevice(path, synth);
-
-    LocalBindings bindings;
-    bindings.bindDevice("mysynth", path);
-
-    auto& reg = AliasRegistry::getInstance();
-    reg.clearLayer(AliasLayer::UserProject);
-    reg.clearLayer(AliasLayer::UserGlobal);
-    reg.clearLayer(AliasLayer::Curated);
-    reg.clearLayer(AliasLayer::AutoGen);
-    auto& resolvers = ResolverRegistry::getInstance();
-    TargetResolver resolver{reg, resolvers, ctx, &bindings};
-
-    auto parsed = tryParse("$mysynth.volume");
+    auto parsed = tryParse("@serum.cutoff");
     REQUIRE(parsed.has_value());
 
     auto result = resolver.resolveSigil(*parsed);
     REQUIRE(result.ok());
-    REQUIRE(result.devicePath == path);
-    REQUIRE(result.paramIndex == 2);  // "Volume" is at index 2
-}
-
-TEST_CASE("TargetResolver::resolveSigil - $ unbound name fails", "[aliases][resolver]") {
-    FixedChainContext ctx;
-    LocalBindings bindings;  // nothing bound
-
-    auto& reg = AliasRegistry::getInstance();
-    reg.clearLayer(AliasLayer::UserProject);
-    reg.clearLayer(AliasLayer::UserGlobal);
-    reg.clearLayer(AliasLayer::Curated);
-    reg.clearLayer(AliasLayer::AutoGen);
-    auto& resolvers = ResolverRegistry::getInstance();
-    TargetResolver resolver{reg, resolvers, ctx, &bindings};
-
-    auto parsed = tryParse("$mysynth.cutoff");
-    REQUIRE(parsed.has_value());
-
-    auto result = resolver.resolveSigil(*parsed);
-    REQUIRE_FALSE(result.ok());
-}
-
-TEST_CASE("TargetResolver::resolveSigil - $ null LocalBindings fails", "[aliases][resolver]") {
-    FixedChainContext ctx;
-    auto& reg = AliasRegistry::getInstance();
-    reg.clearLayer(AliasLayer::UserProject);
-    reg.clearLayer(AliasLayer::UserGlobal);
-    reg.clearLayer(AliasLayer::Curated);
-    reg.clearLayer(AliasLayer::AutoGen);
-    auto& resolvers = ResolverRegistry::getInstance();
-    TargetResolver resolver{reg, resolvers, ctx, nullptr};
-
-    auto parsed = tryParse("$mysynth.cutoff");
-    REQUIRE(parsed.has_value());
-
-    auto result = resolver.resolveSigil(*parsed);
-    REQUIRE_FALSE(result.ok());
+    REQUIRE(result.devicePath == makePath(2, 20));
+    REQUIRE(result.paramIndex == 5);
 }
 
 // ============================================================================

@@ -78,7 +78,6 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
     error_ = {};
     results_.clear();
     currentTrackId_ = -1;
-    bindings_.clear();
     currentClipId_ = -1;
     autoCreatedClip_ = false;
     clearActiveSelection();
@@ -261,10 +260,6 @@ bool CompactExecutor::executeTrack(const TrackOp& op) {
         currentTrackId_ = trackId;
         results_.add("Created track '" + trackName + "'");
 
-        // Bind to $-variable if requested
-        if (op.bindName.isNotEmpty())
-            bindings_.bindTrack(op.bindName, static_cast<TrackId>(trackId));
-
         fxOp.target.implicit = true;
         if (!executeFx(fxOp)) {
             results_.add("[!] Could not add FX '" + op.fxAlias + "': " + error_);
@@ -277,10 +272,6 @@ bool CompactExecutor::executeTrack(const TrackOp& op) {
     auto trackId = tm.createTrack(op.name, TrackType::Audio);
     currentTrackId_ = trackId;
     results_.add("Created track '" + op.name + "'");
-
-    // Bind to $-variable if requested (e.g. "TRACK Bass as $b")
-    if (op.bindName.isNotEmpty())
-        bindings_.bindTrack(op.bindName, static_cast<TrackId>(trackId));
 
     return true;
 }
@@ -518,9 +509,6 @@ bool CompactExecutor::executeFx(const FxOp& op) {
             return false;
         }
         results_.add("Added FX '" + op.fxName + "'");
-        // Bind device to $-variable if requested
-        if (op.bindName.isNotEmpty())
-            bindings_.bindDevice(op.bindName, ChainNodePath::topLevelDevice(trackId, deviceId));
         return true;
     }
 
@@ -581,9 +569,6 @@ bool CompactExecutor::executeFx(const FxOp& op) {
     }
 
     results_.add("Added plugin '" + matchedName + "' by " + device.manufacturer);
-    // Bind device to $-variable if requested
-    if (op.bindName.isNotEmpty())
-        bindings_.bindDevice(op.bindName, ChainNodePath::topLevelDevice(trackId, deviceId));
     return true;
 }
 

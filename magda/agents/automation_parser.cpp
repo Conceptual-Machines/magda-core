@@ -41,7 +41,7 @@ bool parseTarget(const juce::String& value, AutoTarget& out, juce::String& err) 
         }
         return true;
     }
-    // Sigil token: @plugin.param, #device.param, $var.param
+    // Sigil token: @plugin.param
     if (isSigilToken(v)) {
         out.kind = AutoTarget::Kind::Alias;
         out.aliasToken = v;

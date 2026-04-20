@@ -33,8 +33,6 @@ enum class TokenType {
     LESS_EQUALS,     // <=
     SEMICOLON,       // ;
     AT,              // @
-    HASH,            // # (instance-scoped param reference sigil)
-    DOLLAR,          // $ (plan-local binding sigil)
     END_OF_INPUT,
     ERROR
 };

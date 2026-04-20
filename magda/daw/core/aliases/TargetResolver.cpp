@@ -88,15 +88,7 @@ ResolvedTarget TargetResolver::resolve(const Target& target) const {
 // ============================================================================
 
 ResolvedTarget TargetResolver::resolveSigil(const ParsedSigil& sigil) const {
-    switch (sigil.sigil) {
-        case Sigil::At:
-            return resolveAt(sigil);
-        case Sigil::Hash:
-            return resolveHash(sigil);
-        case Sigil::Dollar:
-            return resolveDollar(sigil);
-    }
-    return ResolvedTarget::failure("Unknown sigil");
+    return resolveAt(sigil);
 }
 
 // ============================================================================
@@ -170,7 +162,26 @@ ResolvedTarget TargetResolver::resolveAt(const ParsedSigil& sigil) const {
         return ResolvedTarget::failure("Unknown scope: " + sigil.pluginKey);
     }
 
-    // Non-scoped @ -> look up AliasRegistry
+    // Non-scoped @name.param
+    // Step 1: If a track is selected, scan its chain devices first.
+    auto selTrack = chainContext_.selectedTrack();
+    if (selTrack != INVALID_TRACK_ID) {
+        auto devices = chainContext_.devicesForTrack(selTrack);
+        const auto* match = findFirstMatchingDevice(devices, sigil.pluginKey);
+        if (match != nullptr && match->device != nullptr) {
+            int paramIdx = findParamByKey(*match->device, normalizeParamName(sigil.paramKey));
+            if (paramIdx >= 0) {
+                ResolvedTarget r;
+                r.devicePath = match->path;
+                r.paramIndex = paramIdx;
+                r.sourceLabel = "@" + sigil.pluginKey + "." + sigil.paramKey + " (selected chain)";
+                r.resolved = true;
+                return r;
+            }
+        }
+    }
+
+    // Step 2: Fall through to AliasRegistry.
     auto stored =
         aliasRegistry_.lookupStored(sigil.pluginKey + "." + sigil.paramKey, sigil.pluginKey);
     if (!stored.has_value()) {
@@ -216,91 +227,22 @@ ResolvedTarget TargetResolver::resolveAt(const ParsedSigil& sigil) const {
 }
 
 // ============================================================================
-// # sigil
-// ============================================================================
-
-ResolvedTarget TargetResolver::resolveHash(const ParsedSigil& sigil) const {
-    auto devices = chainContext_.devicesInFocusedChain();
-    if (devices.empty())
-        return ResolvedTarget::failure("#" + sigil.pluginKey + "." + sigil.paramKey +
-                                       ": no chain focused or chain is empty");
-
-    const auto* match = findNthMatchingDevice(devices, sigil.pluginKey, sigil.instanceIndex);
-
-    if (match == nullptr)
-        return ResolvedTarget::failure("#" + sigil.pluginKey + ": no matching device (instance " +
-                                       juce::String(sigil.instanceIndex) + ") in focused chain");
-
-    const auto* device = match->device;
-    int paramIdx = findParamByKey(*device, normalizeParamName(sigil.paramKey));
-    if (paramIdx < 0)
-        return ResolvedTarget::failure("#" + sigil.pluginKey + "." + sigil.paramKey +
-                                       ": param not found on matched device");
-
-    ResolvedTarget r;
-    r.devicePath = match->path;
-    r.paramIndex = paramIdx;
-    r.sourceLabel =
-        "#" + sigil.pluginKey + "_" + juce::String(sigil.instanceIndex + 1) + "." + sigil.paramKey;
-    r.resolved = true;
-    return r;
-}
-
-// ============================================================================
-// $ sigil
-// ============================================================================
-
-ResolvedTarget TargetResolver::resolveDollar(const ParsedSigil& sigil) const {
-    if (localBindings_ == nullptr)
-        return ResolvedTarget::failure("$" + sigil.pluginKey + ": no LocalBindings available");
-
-    auto maybePath = localBindings_->lookupDevice(sigil.pluginKey);
-    if (!maybePath.has_value())
-        return ResolvedTarget::failure("$" + sigil.pluginKey + ": binding not found");
-
-    const auto* device = chainContext_.deviceAt(*maybePath);
-    if (device == nullptr)
-        return ResolvedTarget::failure("$" + sigil.pluginKey + ": bound device not found at path");
-
-    int paramIdx = findParamByKey(*device, normalizeParamName(sigil.paramKey));
-    if (paramIdx < 0)
-        return ResolvedTarget::failure("$" + sigil.pluginKey + "." + sigil.paramKey +
-                                       ": param not found on bound device");
-
-    ResolvedTarget r;
-    r.devicePath = *maybePath;
-    r.paramIndex = paramIdx;
-    r.sourceLabel = "$" + sigil.pluginKey + "." + sigil.paramKey;
-    r.resolved = true;
-    return r;
-}
-
-// ============================================================================
-// findNthMatchingDevice
+// findFirstMatchingDevice
 // ============================================================================
 
 // static
-const ChainContext::DeviceWithPath* TargetResolver::findNthMatchingDevice(
-    const std::vector<ChainContext::DeviceWithPath>& devices, const juce::String& pluginKey,
-    int instanceIndex) {
-    int matchCount = 0;
+const ChainContext::DeviceWithPath* TargetResolver::findFirstMatchingDevice(
+    const std::vector<ChainContext::DeviceWithPath>& devices, const juce::String& pluginKey) {
     for (const auto& dw : devices) {
         if (dw.device == nullptr)
             continue;
 
-        // Match against normalised plugin alias OR user-given device name
+        // Match against normalised plugin alias OR normalised device name
         auto alias = pluginNameToAlias(dw.device->name);
-        bool nameMatch = (alias == pluginKey) || (pluginNameToAlias(dw.device->name) == pluginKey);
+        bool nameMatch = (alias == pluginKey) || (normalizeParamName(dw.device->name) == pluginKey);
 
-        // Also check if the raw device name (normalised) matches
-        if (!nameMatch)
-            nameMatch = (normalizeParamName(dw.device->name) == pluginKey);
-
-        if (nameMatch) {
-            if (matchCount == instanceIndex)
-                return &dw;
-            ++matchCount;
-        }
+        if (nameMatch)
+            return &dw;
     }
     return nullptr;
 }

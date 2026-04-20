@@ -53,27 +53,6 @@ TEST_CASE("AutomationParser: @plugin.param sets Kind::Alias with aliasToken",
     REQUIRE(op.target.aliasToken == "@eq.low_shelf_freq");
 }
 
-TEST_CASE("AutomationParser: #device.param sets Kind::Alias with aliasToken",
-          "[automation][alias]") {
-    AutomationParser p;
-    auto ir = parseOrFail(p, "AUTO line start=0 end=4 from=0 to=1 target=#serum.filter_cutoff");
-
-    REQUIRE(ir.size() == 1);
-    const auto& op = std::get<AutoShapeOp>(ir[0].payload);
-    REQUIRE(op.target.kind == AutoTarget::Kind::Alias);
-    REQUIRE(op.target.aliasToken == "#serum.filter_cutoff");
-}
-
-TEST_CASE("AutomationParser: $var.param sets Kind::Alias with aliasToken", "[automation][alias]") {
-    AutomationParser p;
-    auto ir = parseOrFail(p, "AUTO sin start=0 end=8 min=0 max=1 target=$eq.low_shelf_freq");
-
-    REQUIRE(ir.size() == 1);
-    const auto& op = std::get<AutoShapeOp>(ir[0].payload);
-    REQUIRE(op.target.kind == AutoTarget::Kind::Alias);
-    REQUIRE(op.target.aliasToken == "$eq.low_shelf_freq");
-}
-
 TEST_CASE("AutomationParser: freeform with alias target", "[automation][alias]") {
     AutomationParser p;
     auto ir = parseOrFail(p, "AUTO freeform points=(0,0.1)(4,0.9) target=@compressor.threshold");
@@ -131,18 +110,6 @@ TEST_CASE("AutomationExecutor: unresolvable @alias target fails gracefully",
 
     // No registry entry for @ghost.param, no chain context — resolution fails.
     auto ir = parseOrFail(parser, "AUTO sin start=0 end=4 min=0 max=1 target=@ghost.param");
-    REQUIRE_FALSE(exec.execute(ir));
-    REQUIRE(exec.getError().isNotEmpty());
-}
-
-TEST_CASE("AutomationExecutor: unresolvable $var.param target fails gracefully",
-          "[automation][alias]") {
-    resetState();
-
-    AutomationParser parser;
-    AutomationExecutor exec;
-
-    auto ir = parseOrFail(parser, "AUTO sin start=0 end=4 min=0 max=1 target=$unbound.param");
     REQUIRE_FALSE(exec.execute(ir));
     REQUIRE(exec.getError().isNotEmpty());
 }

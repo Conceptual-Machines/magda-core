@@ -9,20 +9,19 @@ using namespace magda;
 // isSigilToken
 // ============================================================================
 
-TEST_CASE("isSigilToken - valid sigil tokens", "[aliases][parser]") {
+TEST_CASE("isSigilToken - valid @ sigil tokens", "[aliases][parser]") {
     REQUIRE(isSigilToken("@serum.filter_1"));
-    REQUIRE(isSigilToken("#serum.cutoff"));
-    REQUIRE(isSigilToken("$mysynth.volume"));
     REQUIRE(isSigilToken("@focused.macro_1"));
     REQUIRE(isSigilToken("@master.pan"));
-    REQUIRE(isSigilToken("#serum_1.filter_1"));
+    REQUIRE(isSigilToken("@selected.volume"));
 }
 
 TEST_CASE("isSigilToken - invalid tokens", "[aliases][parser]") {
     REQUIRE_FALSE(isSigilToken(""));
-    REQUIRE_FALSE(isSigilToken("serum.filter"));  // no sigil
-    REQUIRE_FALSE(isSigilToken("@serum"));        // no dot
-    REQUIRE_FALSE(isSigilToken("#serum"));        // no dot
+    REQUIRE_FALSE(isSigilToken("serum.filter"));     // no sigil
+    REQUIRE_FALSE(isSigilToken("@serum"));           // no dot
+    REQUIRE_FALSE(isSigilToken("#serum.cutoff"));    // # is not accepted
+    REQUIRE_FALSE(isSigilToken("$mysynth.volume"));  // $ is not accepted
     REQUIRE_FALSE(isSigilToken("plain_string"));
 }
 
@@ -33,17 +32,14 @@ TEST_CASE("isSigilToken - invalid tokens", "[aliases][parser]") {
 TEST_CASE("tryParse - @ basic", "[aliases][parser]") {
     auto result = tryParse("@serum.filter_1");
     REQUIRE(result.has_value());
-    REQUIRE(result->sigil == Sigil::At);
     REQUIRE(result->pluginKey == "serum");
     REQUIRE(result->paramKey == "filter_1");
-    REQUIRE(result->instanceIndex == -1);
     REQUIRE_FALSE(result->isScoped);
 }
 
 TEST_CASE("tryParse - @ scoped: focused", "[aliases][parser]") {
     auto result = tryParse("@focused.macro_1");
     REQUIRE(result.has_value());
-    REQUIRE(result->sigil == Sigil::At);
     REQUIRE(result->pluginKey == "focused");
     REQUIRE(result->paramKey == "macro_1");
     REQUIRE(result->isScoped);
@@ -66,64 +62,18 @@ TEST_CASE("tryParse - @ scoped: master", "[aliases][parser]") {
 }
 
 // ============================================================================
-// tryParse -- '#' sigil
+// tryParse -- '#' and '$' are rejected as malformed
 // ============================================================================
 
-TEST_CASE("tryParse - # no suffix (first instance)", "[aliases][parser]") {
-    auto result = tryParse("#serum.cutoff");
-    REQUIRE(result.has_value());
-    REQUIRE(result->sigil == Sigil::Hash);
-    REQUIRE(result->pluginKey == "serum");
-    REQUIRE(result->paramKey == "cutoff");
-    REQUIRE(result->instanceIndex == 0);
-    REQUIRE_FALSE(result->isScoped);
+TEST_CASE("tryParse - # is rejected as malformed", "[aliases][parser]") {
+    REQUIRE_FALSE(tryParse("#serum.cutoff").has_value());
+    REQUIRE_FALSE(tryParse("#serum_1.filter_1").has_value());
+    REQUIRE_FALSE(tryParse("#serum_2.cutoff").has_value());
 }
 
-TEST_CASE("tryParse - # with instance suffix _1 (index 0)", "[aliases][parser]") {
-    auto result = tryParse("#serum_1.filter_1");
-    REQUIRE(result.has_value());
-    REQUIRE(result->sigil == Sigil::Hash);
-    REQUIRE(result->pluginKey == "serum");
-    REQUIRE(result->instanceIndex == 0);
-    REQUIRE(result->paramKey == "filter_1");
-}
-
-TEST_CASE("tryParse - # with instance suffix _2 (index 1)", "[aliases][parser]") {
-    auto result = tryParse("#serum_2.cutoff");
-    REQUIRE(result.has_value());
-    REQUIRE(result->sigil == Sigil::Hash);
-    REQUIRE(result->pluginKey == "serum");
-    REQUIRE(result->instanceIndex == 1);
-}
-
-TEST_CASE("tryParse - # plugin with underscore in name", "[aliases][parser]") {
-    // surge_xt has no numeric suffix -> instance 0
-    auto result = tryParse("#surge_xt.osc_pitch");
-    REQUIRE(result.has_value());
-    REQUIRE(result->sigil == Sigil::Hash);
-    REQUIRE(result->pluginKey == "surge_xt");
-    REQUIRE(result->instanceIndex == 0);
-    REQUIRE(result->paramKey == "osc_pitch");
-}
-
-TEST_CASE("tryParse - # invalid instance suffix 0", "[aliases][parser]") {
-    // _0 suffix is invalid (instances numbered from 1)
-    auto result = tryParse("#serum_0.cutoff");
-    REQUIRE_FALSE(result.has_value());
-}
-
-// ============================================================================
-// tryParse -- '$' sigil
-// ============================================================================
-
-TEST_CASE("tryParse - $ basic", "[aliases][parser]") {
-    auto result = tryParse("$mysynth.filter_1");
-    REQUIRE(result.has_value());
-    REQUIRE(result->sigil == Sigil::Dollar);
-    REQUIRE(result->pluginKey == "mysynth");
-    REQUIRE(result->paramKey == "filter_1");
-    REQUIRE(result->instanceIndex == -1);
-    REQUIRE_FALSE(result->isScoped);
+TEST_CASE("tryParse - $ is rejected as malformed", "[aliases][parser]") {
+    REQUIRE_FALSE(tryParse("$mysynth.filter_1").has_value());
+    REQUIRE_FALSE(tryParse("$var.param").has_value());
 }
 
 // ============================================================================
