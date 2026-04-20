@@ -278,7 +278,23 @@ jobs:
     - name: Install Ninja and NSIS
       shell: powershell
       run: |
-        choco install ninja nsis -y
+        # Both tools are typically pre-installed on windows-latest runners;
+        # only fall back to Chocolatey if missing, since the community feed
+        # flakes (HTTP 499) intermittently and blocks the release otherwise.
+        $nsisPath = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+        $needNinja = -not (Get-Command ninja -ErrorAction SilentlyContinue)
+        $needNsis  = -not (Test-Path $nsisPath)
+
+        if ($needNinja -or $needNsis) {
+          $packages = @()
+          if ($needNinja) { $packages += "ninja" }
+          if ($needNsis)  { $packages += "nsis" }
+          Write-Output "Installing via Chocolatey: $($packages -join ', ')"
+          choco install $packages -y
+        } else {
+          Write-Output "Ninja and NSIS already present; skipping Chocolatey"
+        }
+
         echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
 
     - name: Install sccache
