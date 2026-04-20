@@ -1,5 +1,7 @@
 #include "automation_parser.hpp"
 
+#include "../daw/core/aliases/ParamSigilParser.hpp"
+
 namespace magda {
 
 namespace {
@@ -37,6 +39,12 @@ bool parseTarget(const juce::String& value, AutoTarget& out, juce::String& err) 
             err = "Invalid laneId: " + v;
             return false;
         }
+        return true;
+    }
+    // Sigil token: @plugin.param
+    if (isSigilToken(v)) {
+        out.kind = AutoTarget::Kind::Alias;
+        out.aliasToken = v;
         return true;
     }
     err = "Unknown target: " + v;

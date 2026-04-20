@@ -1,5 +1,7 @@
 #pragma once
 
+#include <juce_core/juce_core.h>
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -594,6 +596,14 @@ class Config {
         autoSaveIntervalSeconds = std::max(10, seconds);
     }
 
+    // Parameter aliases (user-global layer, serialized to/from config.json)
+    juce::var getParamAliases() const {
+        return paramAliases_;
+    }
+    void setParamAliases(const juce::var& aliases) {
+        paramAliases_ = aliases;
+    }
+
     // Save/load to platform-appropriate location:
     //   macOS  ~/Library/Application Support/MAGDA/config.json
     //   Windows  %APPDATA%\MAGDA\config.json
@@ -728,6 +738,9 @@ class Config {
     int localLlamaContextSize = 4096;
 
     std::vector<ConfigListener*> listeners_;
+
+    // User-global parameter aliases (opaque JSON blob, managed by AliasRegistry)
+    juce::var paramAliases_;
 };
 
 }  // namespace magda

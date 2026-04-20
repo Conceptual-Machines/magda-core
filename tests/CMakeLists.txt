@@ -49,6 +49,19 @@ set(TEST_SOURCES
     test_automation_agent.cpp
     test_automation_singleton.cpp
     test_compact_executor_context.cpp
+    # Parameter alias system tests (PR 1)
+    test_param_name_normalize.cpp
+    test_alias_parser.cpp
+    # Parameter alias system tests (PR 2)
+    test_alias_registry.cpp
+    # Parameter alias system tests (PR 3)
+    test_alias_resolver.cpp
+    # Parameter alias system tests (PR 4 -- AutoAliasGenerator)
+    test_alias_auto_gen.cpp
+    # Parameter alias system tests (PR 5 -- CuratedAliasLoader)
+    test_curated_alias_loader.cpp
+    # Parameter alias system tests (PR 7 -- Automation alias targets)
+    test_automation_alias_targets.cpp
 )
 
 # Create test executable
