@@ -1560,6 +1560,7 @@
 <p>You can override or extend the inferred configuration in the dialog described below.</p>
 <h2 id="configure-parameters-dialog">Configure Parameters Dialog<a class="headerlink" href="#configure-parameters-dialog" title="Permanent link">&para;</a></h2>
 <p>Open the dialog from the <a href="../panels/browsers/#plugin-browser">Plugin Browser</a>: right-click a plugin and choose <strong>Configure Parameters…</strong>.</p>
+<p><img alt="Configure Parameters dialog for the Vital synth, showing the Parameter / Visible / Unit / Range columns and the Select All, Deselect All, Detect, AI Detect, and Reset buttons." src="../assets/images/devices/configure-parameters.png" /></p>
 <p>The dialog shows one row per parameter with the following columns:</p>
 <table>
 <thead>
@@ -1594,19 +1595,22 @@
 <h3 id="actions">Actions<a class="headerlink" href="#actions" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Select All / Deselect All</strong> — Toggle visibility across the whole list.</li>
-<li><strong>AI Detect</strong> — Ask the AI agent to classify the entire parameter set (see below).</li>
+<li><strong>Detect</strong> — Run the deterministic heuristic pass (instant, offline). Picks up units and ranges that the plugin's own display strings give away.</li>
+<li><strong>AI Detect</strong> — Run the heuristic pass and then send anything it couldn't resolve to the configured LLM (see below).</li>
+<li><strong>Reset</strong> — Discard all inferred units, ranges, and AI-detected values for this plugin and put every parameter back to a plain 0–100 % view.</li>
 <li><strong>Apply</strong> — Save changes without closing the dialog.</li>
 <li><strong>OK / Cancel</strong> — Save and close, or discard.</li>
 </ul>
 <h2 id="ai-detect">AI Detect<a class="headerlink" href="#ai-detect" title="Permanent link">&para;</a></h2>
-<p>Typing units and ranges by hand for a plugin with dozens of parameters is tedious. The <strong>AI Detect</strong> button asks the configured AI agent to classify each parameter based on its name and populate units, ranges, centres, and scales in one pass.</p>
+<p>Typing units and ranges by hand for a plugin with dozens of parameters is tedious. <strong>AI Detect</strong> runs the heuristic pass first, then sends each remaining parameter — name plus a sample of display values — to the configured LLM, which returns a unit, range, and scale.</p>
 <p>The results populate the dialog so you can review them before applying — tweak anything you disagree with and hit <strong>Apply</strong>.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>AI Detect uses whichever provider is configured in <a href="../interface/preferences/">Preferences &gt; AI</a>. It works with both cloud providers and local inference.</p>
 </div>
 <h2 id="learn-mode">Learn Mode<a class="headerlink" href="#learn-mode" title="Permanent link">&para;</a></h2>
-<p>Even with units sorted out, plugin parameter names rarely match the labels printed on the plugin's own UI — a knob labelled "Drive" in the GUI might be parameter #24 called <code>Saturation</code>. Learn mode closes that gap.</p>
+<p>Big plugins can have hundreds of parameters spread across many pages in the device slot. Finding the one you want is tedious. Learn mode lets you point at a control in the plugin's own window and have MAGDA jump straight to its slot.</p>
+<p><img alt="MAGDA's device slot for Vital next to the plugin's own window — Learn mode jumps the slot to whichever parameter you click in the plugin GUI." src="../assets/images/devices/learn-mode.png" /></p>
 <p>On any plugin device slot in the <a href="../fx-chain/">FX chain</a>:</p>
 <ol>
 <li>Open the plugin's own window.</li>
@@ -1614,10 +1618,10 @@
 <li>Touch any control in the plugin's window.</li>
 <li>MAGDA navigates to the parameter page that contains the matching parameter and highlights its slot.</li>
 </ol>
-<p>Click Learn again to exit. This is the fastest way to map an unfamiliar plugin, or to find the right parameter before setting up automation, modulation, or a macro link.</p>
+<p>Click Learn again to exit. Use it to find the right parameter before setting up automation, modulation, or a macro link.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Learn is only enabled while the plugin's own window is open, and is hidden for MAGDA's built-in devices (their parameter names already match the UI).</p>
+<p>Learn is only enabled while the plugin's own window is open, and is hidden for MAGDA's built-in devices.</p>
 </div>
 
 
