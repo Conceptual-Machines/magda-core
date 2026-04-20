@@ -10,6 +10,7 @@
 #include "../core/controllers/ControllerRegistry.hpp"
 #include "ControllerFeedback.hpp"
 #include "ControllerParamWriter.hpp"
+#include "MidiBridge.hpp"
 
 namespace magda {
 
@@ -33,7 +34,9 @@ namespace magda {
  * Phase C: real MidiBridge hook is added in Phase D. Use
  * injectMessageForTest() as the primary entry point.
  */
-class ControllerRouter : public ControllerRegistryListener, public BindingRegistryListener {
+class ControllerRouter : public ControllerRegistryListener,
+                         public BindingRegistryListener,
+                         public RawMidiListener {
   public:
     static ControllerRouter& getInstance();
 
@@ -42,18 +45,25 @@ class ControllerRouter : public ControllerRegistryListener, public BindingRegist
     // ========================================================================
 
     /**
-     * @brief Prepare the router.
+     * @brief Prepare the router (Phase C: no MidiBridge wiring).
      *
-     * Subscribes to registries for reconfiguration. In Phase D this will
-     * also subscribe to MidiBridge as a RawMidiListener.
+     * Subscribes to registries for reconfiguration.
      */
     void reconfigure();
 
     /**
+     * @brief Wire to MidiBridge for real MIDI input (Phase D).
+     *
+     * Registers as a RawMidiListener on the bridge. Call after reconfigure().
+     * Passing nullptr unsubscribes from any previously set bridge.
+     */
+    void setMidiBridge(MidiBridge* bridge);
+
+    /**
      * @brief Cleanly shut down the router.
      *
-     * Unregisters from MidiBridge (Phase D). Must be called before MidiBridge
-     * is destroyed.
+     * Unregisters from MidiBridge and registry listeners. Must be called before
+     * MidiBridge is destroyed.
      */
     void shutdown();
 
@@ -96,8 +106,13 @@ class ControllerRouter : public ControllerRegistryListener, public BindingRegist
      */
     void onMidiFromControllerPort(const juce::String& portId, const juce::MidiMessage& msg);
 
+    // RawMidiListener implementation (wired via setMidiBridge)
+    void onRawMidi(const juce::String& deviceId, const juce::MidiMessage& msg) override;
+
   private:
     ControllerRouter() = default;
+
+    MidiBridge* midiBridge_ = nullptr;
 
     // Per-binding runtime state (message-thread only after callAsync hop)
     struct BindingRuntimeState {

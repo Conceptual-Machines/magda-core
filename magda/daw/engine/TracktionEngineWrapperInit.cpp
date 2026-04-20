@@ -1,9 +1,11 @@
 #include "../audio/AudioBridge.hpp"
+#include "../audio/ControllerRouter.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/SessionClipScheduler.hpp"
 #include "../audio/SessionRecorder.hpp"
 #include "../core/Config.hpp"
 #include "../core/ViewModeController.hpp"
+#include "../core/controllers/BindingRegistry.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
 #include "../ui/state/TimelineEvents.hpp"
@@ -343,6 +345,10 @@ void TracktionEngineWrapper::createEditAndBridges() {
         auto viewMode = ViewModeController::getInstance().getViewMode();
         ProjectManager::getInstance().getMutableProjectInfo().activeView =
             static_cast<int>(viewMode);
+
+        // Capture project-scoped bindings
+        ProjectManager::getInstance().getMutableProjectInfo().projectBindings =
+            BindingRegistry::getInstance().saveProject();
     };
 
     // Wire up state restore after project load
@@ -350,6 +356,9 @@ void TracktionEngineWrapper::createEditAndBridges() {
         // Restore active view mode
         auto viewMode = static_cast<ViewMode>(info.activeView);
         ViewModeController::getInstance().setViewMode(viewMode);
+
+        // Restore project-scoped bindings
+        BindingRegistry::getInstance().loadProject(info.projectBindings);
 
         // Restore zoom/scroll state
         if (info.horizontalZoom > 0.0) {
@@ -509,6 +518,9 @@ void TracktionEngineWrapper::shutdown() {
     // which unregisters CoreMIDI callbacks. This must happen while the MIDI
     // devices still exist, but after playback is stopped.
     if (midiBridge_) {
+        // Shut down ControllerRouter before stopping MIDI inputs so it can
+        // unsubscribe from MidiBridge cleanly.
+        ControllerRouter::getInstance().shutdown();
         DBG("Stopping MIDI inputs...");
         midiBridge_->stopAllInputs();
         DBG("Destroying MidiBridge...");

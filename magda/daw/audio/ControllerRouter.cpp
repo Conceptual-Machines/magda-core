@@ -30,13 +30,23 @@ void ControllerRouter::reconfigure() {
     // Phase D: subscribe to MidiBridge here
 }
 
+void ControllerRouter::setMidiBridge(MidiBridge* bridge) {
+    if (midiBridge_ == bridge)
+        return;
+    if (midiBridge_)
+        midiBridge_->removeRawMidiListener(this);
+    midiBridge_ = bridge;
+    if (midiBridge_)
+        midiBridge_->addRawMidiListener(this);
+}
+
 void ControllerRouter::shutdown() {
+    setMidiBridge(nullptr);  // unsubscribe from MidiBridge
     if (configured_) {
         ControllerRegistry::getInstance().removeListener(this);
         BindingRegistry::getInstance().removeListener(this);
         configured_ = false;
     }
-    // Phase D: unsubscribe from MidiBridge here
 }
 
 // ============================================================================
@@ -70,6 +80,17 @@ void ControllerRouter::bindingRegistryChanged(BindingScope /*scope*/) {
 void ControllerRouter::injectMessageForTest(const juce::String& portId,
                                             const juce::MidiMessage& msg) {
     onMidiFromControllerPort(portId, msg);
+}
+
+// ============================================================================
+// RawMidiListener implementation
+// ============================================================================
+
+void ControllerRouter::onRawMidi(const juce::String& deviceId, const juce::MidiMessage& msg) {
+    // Called on the MIDI callback thread.
+    // Filter by controller port before dispatching.
+    if (ControllerRegistry::getInstance().isControllerInputPort(deviceId))
+        onMidiFromControllerPort(deviceId, msg);
 }
 
 // ============================================================================

@@ -5,6 +5,7 @@
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipOperations.hpp"
 #include "../core/RackInfo.hpp"
+#include "../core/controllers/ControllerRegistry.hpp"
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
@@ -1221,9 +1222,28 @@ juce::String AudioBridge::getTrackAudioInput(TrackId trackId) const {
 void AudioBridge::enableAllMidiInputDevices() {
     auto& dm = engine_.getDeviceManager();
 
-    // Enable all MIDI input devices at the engine level
+    // Build a name->identifier map from JUCE's available MIDI devices so we
+    // can match TE's MidiInputDevice (by name) to its JUCE identifier.
+    // This is needed to check ControllerRegistry::isControllerInputPort()
+    // which uses the JUCE identifier (same as MidiBridge).
+    std::unordered_map<juce::String, juce::String> nameToJuceId;
+    for (const auto& d : juce::MidiInput::getAvailableDevices())
+        nameToJuceId[d.name] = d.identifier;
+
+    // Enable all MIDI input devices at the engine level,
+    // skipping ports claimed by ControllerRegistry (controller-only ports
+    // should not be treated as instrument MIDI inputs by Tracktion Engine).
     for (auto& midiInput : dm.getMidiInDevices()) {
-        if (midiInput && !midiInput->isEnabled()) {
+        if (!midiInput)
+            continue;
+        auto it = nameToJuceId.find(midiInput->getName());
+        if (it != nameToJuceId.end()) {
+            if (ControllerRegistry::getInstance().isControllerInputPort(it->second)) {
+                DBG("Skipping controller port for instrument routing: " << midiInput->getName());
+                continue;
+            }
+        }
+        if (!midiInput->isEnabled()) {
             midiInput->setEnabled(true);
             DBG("Enabled MIDI input device: " << midiInput->getName());
         }
@@ -1281,6 +1301,11 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
             teMonitorMode = toTeMonitorMode(trackInfo->inputMonitor);
         }
 
+        // Build name→JUCE identifier map for controller port exclusion
+        std::unordered_map<juce::String, juce::String> nameToJuceIdAll;
+        for (const auto& d : juce::MidiInput::getAvailableDevices())
+            nameToJuceIdAll[d.name] = d.identifier;
+
         for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
             // Check if this is a MIDI input device
             if (auto* midiDevice =
@@ -1290,6 +1315,17 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                 // duplicate every MIDI message.
                 if (midiDevice->getName() == "All MIDI Ins")
                     continue;
+
+                // Skip controller ports — they're reserved for ControllerRouter
+                {
+                    auto it = nameToJuceIdAll.find(midiDevice->getName());
+                    if (it != nameToJuceIdAll.end() &&
+                        ControllerRegistry::getInstance().isControllerInputPort(it->second)) {
+                        DBG("  -> Skipping controller port for track routing: "
+                            << midiDevice->getName());
+                        continue;
+                    }
+                }
 
                 // Make sure the device is enabled
                 if (!midiDevice->isEnabled()) {
