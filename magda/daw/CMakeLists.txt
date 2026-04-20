@@ -246,6 +246,8 @@ set(DAW_CORE_SOURCES
     core/aliases/Target.cpp
     core/aliases/ParamNameNormalize.cpp
     core/aliases/ParamSigilParser.cpp
+    # Parameter alias system (PR 2 -- AliasRegistry and persistence)
+    core/aliases/AliasRegistry.cpp
     engine/TracktionEngineWrapper.cpp
     engine/TracktionEngineWrapperInit.cpp
     engine/TracktionEngineWrapperDevices.cpp
