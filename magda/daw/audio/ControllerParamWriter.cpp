@@ -1,5 +1,6 @@
 #include "ControllerParamWriter.hpp"
 
+#include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
 
 namespace magda {
@@ -31,6 +32,14 @@ void DefaultControllerParamWriter::write(const ResolvedTarget& resolved, float v
     const float clamped = juce::jlimit(0.0f, 1.0f, value);
     const float raw = static_cast<float>(range.getStart() + clamped * range.getLength());
     param->setParameter(raw, juce::sendNotificationSync);
+
+    // Mirror the write into DeviceInfo and notify MAGDA listeners so param
+    // sliders / inspector UIs update. Same path the plugin's native UI uses
+    // when a knob is dragged on the plugin window.
+    DBG("ControllerParamWriter: notifying UI — deviceId=" << deviceId << " paramIndex="
+                                                          << resolved.paramIndex << " raw=" << raw);
+    TrackManager::getInstance().setDeviceParameterValueFromPlugin(resolved.devicePath,
+                                                                  resolved.paramIndex, raw);
 }
 
 }  // namespace magda
