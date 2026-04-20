@@ -313,50 +313,27 @@ jobs:
         }
         echo "$nsisDir" >> $env:GITHUB_PATH
 
-    - name: Install sccache
-      shell: powershell
-      run: |
-        $sccacheDir = "$env:USERPROFILE\.sccache\bin"
-        if (-not (Test-Path "$sccacheDir\sccache.exe")) {
-          Write-Output "Installing sccache..."
-          New-Item -ItemType Directory -Force -Path $sccacheDir | Out-Null
-          Invoke-WebRequest -Uri "https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-x86_64-pc-windows-msvc.zip" -OutFile "$env:TEMP\sccache.zip"
-          Expand-Archive "$env:TEMP\sccache.zip" -DestinationPath "$env:TEMP\sccache" -Force
-          Copy-Item "$env:TEMP\sccache\sccache-v0.8.1-x86_64-pc-windows-msvc\sccache.exe" "$sccacheDir\"
-        }
-        echo "$sccacheDir" >> $env:GITHUB_PATH
-        & "$sccacheDir\sccache.exe" --version
-
-    - name: Cache sccache
-      uses: actions/cache@v5
-      with:
-        path: ~\AppData\Local\Mozilla\sccache
-        key: sccache-windows-release-${{ hashFiles('CMakeLists.txt', 'magda/daw/CMakeLists.txt') }}
-        restore-keys: |
-          sccache-windows-release-
-
     - name: Configure CMake
       shell: powershell
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
+        # /FS serialises PDB writes across parallel cl.exe workers so we keep
+        # /Zi (separate PDB shipped with the binary) and can build in parallel.
+        # sccache is deliberately NOT used here: release builds rarely hit the
+        # cache (cold after most merges) and sccache's .obj interposition
+        # bypasses /FS coordination, reintroducing C1041 PDB races.
         cmake -B build -G Ninja `
           -DCMAKE_BUILD_TYPE=Release `
           -DCMAKE_SYSTEM_PROCESSOR=x64 `
           -DMAGDA_BUILD_TESTS=OFF `
           -DMAGDA_FULL_VERSION="$env:VERSION" `
-          -DCMAKE_C_COMPILER_LAUNCHER=sccache `
-          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          -DCMAKE_C_FLAGS="/FS" `
+          -DCMAKE_CXX_FLAGS="/FS"
 
     - name: Build
       shell: powershell
-      run: |
-        # Serial build (-j 1) to avoid C1041 PDB write conflicts with /Zi + sccache
-        cmake --build build --config Release -j 1
-
-    - name: Print sccache stats
-      shell: powershell
-      run: sccache --show-stats
+      run: cmake --build build --config Release
 
     - name: Locate MAGDA.exe
       id: locate
