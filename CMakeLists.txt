@@ -54,6 +54,11 @@ endif()
 if(MSVC)
     set(CMAKE_CXX_FLAGS_DEBUG "/Zi /Od /W3")
     set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
+    # /FS serialises PDB writes across parallel cl.exe workers (required with
+    # /Zi when the build runs with -j >1). Added via add_compile_options so it
+    # composes with CMake's default MSVC init flags (/DWIN32 /_WINDOWS /EHsc etc.)
+    # instead of replacing them like a top-level -DCMAKE_CXX_FLAGS would.
+    add_compile_options(/FS)
     # /OPT:REF,ICF preserve release dead-stripping; /Zi + /DEBUG applied per-target (see magda/daw/CMakeLists.txt)
     string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE " /OPT:REF /OPT:ICF")
 else()

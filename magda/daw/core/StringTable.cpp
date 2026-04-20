@@ -29,11 +29,12 @@ juce::File StringTable::findLangDirectory() {
 #if JUCE_MAC
     candidates.add(appFile.getChildFile("Contents/Resources/lang"));
 #endif
-#if JUCE_LINUX || JUCE_BSD
+#if JUCE_LINUX
     // Under an AppImage, JUCE's currentApplicationFile returns the outer
     // .AppImage launcher path (via argv[0]/dladdr), so `lang` ends up looked
     // for next to the launcher instead of inside the mount. /proc/self/exe
     // always resolves to the real binary inside the AppImage mount.
+    // Linux-only: BSD would need /proc/curproc/file and procfs isn't guaranteed.
     if (auto real = juce::File("/proc/self/exe").getLinkedTarget(); real.exists())
         candidates.add(real.getParentDirectory().getChildFile("lang"));
 #endif
