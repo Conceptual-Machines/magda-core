@@ -27,7 +27,15 @@ void ControllerRouter::reconfigure() {
         BindingRegistry::getInstance().addListener(this);
         configured_ = true;
     }
-    // Phase D: subscribe to MidiBridge here
+    DBG("ControllerRouter: reconfigure — "
+        << ControllerRegistry::getInstance().all().size() << " controller(s), "
+        << BindingRegistry::getInstance().bindings(BindingScope::Global).size()
+        << " global binding(s), "
+        << BindingRegistry::getInstance().bindings(BindingScope::Project).size()
+        << " project binding(s)");
+    for (const auto& c : ControllerRegistry::getInstance().all())
+        DBG("ControllerRouter:   controller name='" << c.name << "' inputPort='" << c.inputPort
+                                                    << "' enabled=" << (c.enabled ? "yes" : "no"));
 }
 
 void ControllerRouter::setMidiBridge(MidiBridge* bridge) {
@@ -38,6 +46,7 @@ void ControllerRouter::setMidiBridge(MidiBridge* bridge) {
     midiBridge_ = bridge;
     if (midiBridge_)
         midiBridge_->addRawMidiListener(this);
+    DBG("ControllerRouter: MidiBridge " << (bridge ? "attached" : "detached"));
 }
 
 void ControllerRouter::shutdown() {
@@ -89,7 +98,13 @@ void ControllerRouter::injectMessageForTest(const juce::String& portId,
 void ControllerRouter::onRawMidi(const juce::String& deviceId, const juce::MidiMessage& msg) {
     // Called on the MIDI callback thread.
     // Filter by controller port before dispatching.
-    if (ControllerRegistry::getInstance().isControllerInputPort(deviceId))
+    bool isController = ControllerRegistry::getInstance().isControllerInputPort(deviceId);
+    if (msg.isController() || msg.isNoteOnOrOff() || msg.isPitchWheel()) {
+        DBG("ControllerRouter: raw midi from '"
+            << deviceId << "' isController=" << (isController ? "yes" : "no") << " "
+            << msg.getDescription());
+    }
+    if (isController)
         onMidiFromControllerPort(deviceId, msg);
 }
 
@@ -135,6 +150,10 @@ void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
     // Look up bindings (lock-free snapshot read)
     auto bindings =
         BindingRegistry::getInstance().findForSource(controllerOpt->id, msgType, channel, number);
+
+    DBG("ControllerRouter: port='" << portId << "' controller='" << controllerOpt->name
+                                   << "' ch=" << channel << " num=" << number << " raw=" << rawValue
+                                   << " -> " << bindings.size() << " binding(s) matched");
 
     for (const auto& binding : bindings) {
         // Always schedule with raw value; executeWrite handles all mode logic
@@ -219,16 +238,23 @@ void ControllerRouter::executeWrite(const BindingId& bindingId, int rawValue, in
     }
 
     // Resolve target and write
-    if (!paramWriter_)
+    if (!paramWriter_) {
+        DBG("ControllerRouter: no paramWriter_ set — dropping write for binding "
+            << bindingId.toDashedString());
         return;
+    }
 
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
     auto resolved = resolver.resolve(binding.target);
 
-    if (!resolved.ok())
+    if (!resolved.ok()) {
+        DBG("ControllerRouter: target resolve FAILED (" << resolved.sourceLabel << ") for binding "
+                                                        << bindingId.toDashedString());
         return;
+    }
 
+    DBG("ControllerRouter: WRITE value=" << finalValue << " to " << resolved.sourceLabel);
     paramWriter_->write(resolved, finalValue);
 
     // Emit feedback
