@@ -62,6 +62,8 @@ set(TEST_SOURCES
     test_curated_alias_loader.cpp
     # Parameter alias system tests (PR 7 -- Automation alias targets)
     test_automation_alias_targets.cpp
+    # Controller data model tests (issue #1050 -- Phase A)
+    test_binding_transform.cpp
 )
 
 # Create test executable

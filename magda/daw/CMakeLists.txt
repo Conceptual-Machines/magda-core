@@ -260,6 +260,10 @@ set(DAW_CORE_SOURCES
     core/aliases/AutoAliasGenerator.cpp
     # Parameter alias system (PR 5 -- CuratedAliasLoader)
     core/aliases/CuratedAliasLoader.cpp
+    # Controller data model (issue #1050 -- Phase A)
+    core/controllers/Controller.cpp
+    core/controllers/Binding.cpp
+    core/controllers/BindingTransform.cpp
     engine/TracktionEngineWrapper.cpp
     engine/TracktionEngineWrapperInit.cpp
     engine/TracktionEngineWrapperDevices.cpp
