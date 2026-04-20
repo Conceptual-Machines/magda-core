@@ -14,6 +14,8 @@ You can override or extend the inferred configuration in the dialog described be
 
 Open the dialog from the [Plugin Browser](panels/browsers.md#plugin-browser): right-click a plugin and choose **Configure Parameters…**.
 
+![Configure Parameters dialog for the Vital synth, showing the Parameter / Visible / Unit / Range columns and the Select All, Deselect All, Detect, AI Detect, and Reset buttons.](assets/images/devices/configure-parameters.png)
+
 The dialog shows one row per parameter with the following columns:
 
 | Column | Description |
@@ -27,13 +29,15 @@ The dialog shows one row per parameter with the following columns:
 ### Actions
 
 - **Select All / Deselect All** — Toggle visibility across the whole list.
-- **AI Detect** — Ask the AI agent to classify the entire parameter set (see below).
+- **Detect** — Run the deterministic heuristic pass (instant, offline). Picks up units and ranges that the plugin's own display strings give away.
+- **AI Detect** — Run the heuristic pass and then send anything it couldn't resolve to the configured LLM (see below).
+- **Reset** — Discard all inferred units, ranges, and AI-detected values for this plugin and put every parameter back to a plain 0–100 % view.
 - **Apply** — Save changes without closing the dialog.
 - **OK / Cancel** — Save and close, or discard.
 
 ## AI Detect
 
-Typing units and ranges by hand for a plugin with dozens of parameters is tedious. The **AI Detect** button asks the configured AI agent to classify each parameter based on its name and populate units, ranges, centres, and scales in one pass.
+Typing units and ranges by hand for a plugin with dozens of parameters is tedious. **AI Detect** runs the heuristic pass first, then sends each remaining parameter — name plus a sample of display values — to the configured LLM, which returns a unit, range, and scale.
 
 The results populate the dialog so you can review them before applying — tweak anything you disagree with and hit **Apply**.
 
@@ -42,7 +46,9 @@ The results populate the dialog so you can review them before applying — tweak
 
 ## Learn Mode
 
-Even with units sorted out, plugin parameter names rarely match the labels printed on the plugin's own UI — a knob labelled "Drive" in the GUI might be parameter #24 called `Saturation`. Learn mode closes that gap.
+Big plugins can have hundreds of parameters spread across many pages in the device slot. Finding the one you want is tedious. Learn mode lets you point at a control in the plugin's own window and have MAGDA jump straight to its slot.
+
+![MAGDA's device slot for Vital next to the plugin's own window — Learn mode jumps the slot to whichever parameter you click in the plugin GUI.](assets/images/devices/learn-mode.png)
 
 On any plugin device slot in the [FX chain](fx-chain.md):
 
@@ -51,7 +57,7 @@ On any plugin device slot in the [FX chain](fx-chain.md):
 3. Touch any control in the plugin's window.
 4. MAGDA navigates to the parameter page that contains the matching parameter and highlights its slot.
 
-Click Learn again to exit. This is the fastest way to map an unfamiliar plugin, or to find the right parameter before setting up automation, modulation, or a macro link.
+Click Learn again to exit. Use it to find the right parameter before setting up automation, modulation, or a macro link.
 
 !!! note
-    Learn is only enabled while the plugin's own window is open, and is hidden for MAGDA's built-in devices (their parameter names already match the UI).
+    Learn is only enabled while the plugin's own window is open, and is hidden for MAGDA's built-in devices.
