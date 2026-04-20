@@ -242,6 +242,10 @@ set(DAW_CORE_SOURCES
     core/ParameterUtils.cpp
     core/StringTable.cpp
     core/ParameterDetector.cpp
+    # Parameter alias system (PR 1 -- data model and normalisation)
+    core/aliases/Target.cpp
+    core/aliases/ParamNameNormalize.cpp
+    core/aliases/ParamSigilParser.cpp
     engine/TracktionEngineWrapper.cpp
     engine/TracktionEngineWrapperInit.cpp
     engine/TracktionEngineWrapperDevices.cpp
