@@ -252,6 +252,8 @@ set(DAW_CORE_SOURCES
     core/aliases/ChainContext.cpp
     core/aliases/ResolverRegistry.cpp
     core/aliases/TargetResolver.cpp
+    # Parameter alias system (PR 4 -- AutoAliasGenerator)
+    core/aliases/AutoAliasGenerator.cpp
     engine/TracktionEngineWrapper.cpp
     engine/TracktionEngineWrapperInit.cpp
     engine/TracktionEngineWrapperDevices.cpp

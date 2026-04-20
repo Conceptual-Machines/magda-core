@@ -146,6 +146,24 @@ void AliasRegistry::replaceLayer(AliasLayer layer,
     notifyListeners(layer);
 }
 
+void AliasRegistry::replaceAutoForDevice(const ChainNodePath& devicePath,
+                                         std::map<juce::String, StoredAlias> newEntries) {
+    // Remove existing AutoGen entries for this device path.
+    auto it = autoGenLayer_.begin();
+    while (it != autoGenLayer_.end()) {
+        if (it->second.path.has_value() && *it->second.path == devicePath)
+            it = autoGenLayer_.erase(it);
+        else
+            ++it;
+    }
+
+    // Insert new entries.
+    for (auto& [name, alias] : newEntries)
+        autoGenLayer_[name] = std::move(alias);
+
+    notifyListeners(AliasLayer::AutoGen);
+}
+
 // ============================================================================
 // Drift fallback helper
 // ============================================================================

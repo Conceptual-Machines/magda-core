@@ -124,6 +124,17 @@ class AliasRegistry {
     void clearLayer(AliasLayer layer);
     void replaceLayer(AliasLayer layer, const std::map<juce::String, StoredAlias>& entries);
 
+    /**
+     * @brief Replace all AutoGen entries for a specific device path.
+     *
+     * Removes every existing AutoGen entry whose StoredAlias.path matches
+     * devicePath, then inserts the new entries. This keeps per-device
+     * auto-generated aliases isolated so re-scanning one plugin does not
+     * clobber aliases from other plugins.
+     */
+    void replaceAutoForDevice(const ChainNodePath& devicePath,
+                              std::map<juce::String, StoredAlias> newEntries);
+
     /** Read-only view of a layer (for serialisation helpers). */
     const std::map<juce::String, StoredAlias>& layerEntries(AliasLayer layer) const;
 

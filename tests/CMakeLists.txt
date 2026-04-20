@@ -56,6 +56,8 @@ set(TEST_SOURCES
     test_alias_registry.cpp
     # Parameter alias system tests (PR 3)
     test_alias_resolver.cpp
+    # Parameter alias system tests (PR 4 -- AutoAliasGenerator)
+    test_alias_auto_gen.cpp
 )
 
 # Create test executable
