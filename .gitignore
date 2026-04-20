@@ -8,9 +8,6 @@ cmake-build-*/
 build/
 Build/
 
-# Windows installer staging (populated by release CI or local install tests)
-packaging/windows/lang/
-
 # IDE files
 .vscode/
 .idea/

@@ -28,12 +28,14 @@ Unicode True
 
 Section "Install"
     SetOutPath $INSTDIR
-    File "MAGDA.exe"
-    File /nonfatal "magda_plugin_scanner.exe"
+    ; ${__FILEDIR__} resolves to the directory of this .nsi at compile time, so
+    ; the installer builds correctly regardless of makensis's working directory.
+    File "${__FILEDIR__}\MAGDA.exe"
+    File /nonfatal "${__FILEDIR__}\magda_plugin_scanner.exe"
 
-    ; Localization JSON files — StringTable looks for them next to MAGDA.exe
+    ; Localization JSON files - StringTable looks for them next to MAGDA.exe
     SetOutPath "$INSTDIR\lang"
-    File /r "lang\*.*"
+    File /r "${__FILEDIR__}\lang\*.*"
     SetOutPath $INSTDIR
 
     ; Create uninstaller

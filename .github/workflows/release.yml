@@ -358,29 +358,33 @@ jobs:
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
-        $stagingDir = "packaging\windows"
-        Copy-Item "${{ steps.locate.outputs.exe_path }}" "$stagingDir\MAGDA.exe"
+        # Stage installer inputs into an ephemeral directory outside the source
+        # tree so the checkout stays clean and every shipped artifact appears
+        # here explicitly. The .nsi uses ${__FILEDIR__} and finds files next to
+        # itself, so staging and makensis invocation agree without chdir.
+        $stage = Join-Path $env:RUNNER_TEMP "magda-installer-stage"
+        if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+        New-Item -ItemType Directory -Path $stage | Out-Null
 
-        # Copy plugin scanner executable alongside MAGDA.exe
+        Copy-Item "packaging\windows\magda-installer.nsi" "$stage\"
+        Copy-Item "${{ steps.locate.outputs.exe_path }}" "$stage\MAGDA.exe"
+
         $exeDir = Split-Path "${{ steps.locate.outputs.exe_path }}"
         $scanner = Join-Path $exeDir "magda_plugin_scanner.exe"
         if (Test-Path $scanner) {
-          Copy-Item $scanner "$stagingDir\magda_plugin_scanner.exe"
+          Copy-Item $scanner "$stage\magda_plugin_scanner.exe"
           Write-Output "Copied plugin scanner to staging"
         } else {
           Write-Warning "magda_plugin_scanner.exe not found at $scanner"
         }
 
-        # Stage lang/ so NSIS can bundle it into the installer
-        $langStaging = Join-Path $stagingDir "lang"
-        if (Test-Path $langStaging) { Remove-Item -Recurse -Force $langStaging }
-        Copy-Item -Recurse "lang" $langStaging
+        Copy-Item -Recurse "lang" "$stage\lang"
         Write-Output "Staged lang/ for installer"
 
-        & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" /DVERSION=$env:VERSION "$stagingDir\magda-installer.nsi"
+        & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" /DVERSION=$env:VERSION "$stage\magda-installer.nsi"
 
         $installerName = "MAGDA-$env:VERSION-Windows-x86_64-Setup.exe"
-        Move-Item "$stagingDir\MAGDA-$env:VERSION-Windows-Setup.exe" $installerName
+        Move-Item "$stage\MAGDA-$env:VERSION-Windows-Setup.exe" $installerName
 
         Write-Output "Installer created: $installerName"
         Get-ChildItem $installerName
@@ -409,9 +413,7 @@ jobs:
       shell: powershell
       run: |
         Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
-        Remove-Item -Force "packaging\windows\MAGDA.exe" -ErrorAction SilentlyContinue
-        Remove-Item -Force "packaging\windows\magda_plugin_scanner.exe" -ErrorAction SilentlyContinue
-        Remove-Item -Recurse -Force "packaging\windows\lang" -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force (Join-Path $env:RUNNER_TEMP "magda-installer-stage") -ErrorAction SilentlyContinue
 
   build-linux:
     runs-on: ubuntu-latest
