@@ -11,10 +11,14 @@ StringTable::StringTable() {
     auto langDir = findLangDirectory();
     if (langDir.isDirectory()) {
         auto en = langDir.getChildFile("en.json");
-        if (en.existsAsFile() && load(en))
+        if (en.existsAsFile() && load(en)) {
+            DBG("StringTable: loaded en.json from " << langDir.getFullPathName());
             return;
+        }
     }
-    DBG("StringTable: no lang/en.json found, using key fallback");
+    auto appFile = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+    DBG("StringTable: no lang/en.json found near " << appFile.getFullPathName()
+                                                   << ", using key fallback");
 }
 
 juce::File StringTable::findLangDirectory() {
