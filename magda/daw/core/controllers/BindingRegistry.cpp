@@ -1,5 +1,6 @@
 #include "BindingRegistry.hpp"
 
+#include "../../audio/MidiDeviceMatch.hpp"
 #include "../aliases/AliasRegistry.hpp"
 #include "../aliases/ChainContext.hpp"
 #include "../aliases/ResolverRegistry.hpp"
@@ -94,6 +95,31 @@ std::vector<Binding> BindingRegistry::findForSource(const ControllerId& controll
         if (b.source.number != number)
             continue;
         // channel == 0 on binding means "any channel"
+        if (b.source.channel != 0 && b.source.channel != channel)
+            continue;
+        result.push_back(b);
+    }
+    return result;
+}
+
+std::vector<Binding> BindingRegistry::findForPort(const juce::String& liveIdentifier,
+                                                  const juce::String& liveName,
+                                                  BindingMsgType msgType, int channel,
+                                                  int number) const {
+    auto snap = std::atomic_load(&snapshot_);
+    std::vector<Binding> result;
+    if (!snap)
+        return result;
+
+    for (const auto& b : *snap) {
+        if (b.source.portKey.isEmpty())
+            continue;
+        if (!magda::midi::matches(b.source.portKey, liveIdentifier, liveName))
+            continue;
+        if (b.source.msgType != msgType)
+            continue;
+        if (b.source.number != number)
+            continue;
         if (b.source.channel != 0 && b.source.channel != channel)
             continue;
         result.push_back(b);

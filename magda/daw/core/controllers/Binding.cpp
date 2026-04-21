@@ -7,8 +7,8 @@ namespace magda {
 // ============================================================================
 
 bool BindingSource::operator==(const BindingSource& other) const {
-    return controllerId == other.controllerId && msgType == other.msgType &&
-           channel == other.channel && number == other.number;
+    return portKey == other.portKey && controllerId == other.controllerId &&
+           msgType == other.msgType && channel == other.channel && number == other.number;
 }
 
 // ============================================================================
@@ -16,7 +16,10 @@ bool BindingSource::operator==(const BindingSource& other) const {
 // ============================================================================
 
 bool Binding::isValid() const {
-    return !id.isNull() && !source.controllerId.isNull();
+    // A source needs an addressable key: a port (Learn-created) or a
+    // registered Controller (scripted-surface-created).
+    const bool hasAddress = source.portKey.isNotEmpty() || !source.controllerId.isNull();
+    return !id.isNull() && hasAddress;
 }
 
 // ============================================================================
@@ -113,6 +116,8 @@ juce::var encodeBinding(const Binding& b) {
 
     // Source
     auto* srcObj = new juce::DynamicObject();
+    if (b.source.portKey.isNotEmpty())
+        srcObj->setProperty("portKey", b.source.portKey);
     srcObj->setProperty("controllerId", b.source.controllerId.toDashedString());
     srcObj->setProperty("msgType", msgTypeToString(b.source.msgType));
     srcObj->setProperty("channel", b.source.channel);
@@ -161,6 +166,8 @@ std::optional<Binding> decodeBinding(const juce::var& v) {
     if (!srcObj)
         return std::nullopt;
 
+    if (srcObj->hasProperty("portKey"))
+        b.source.portKey = srcObj->getProperty("portKey").toString();
     b.source.controllerId = juce::Uuid(srcObj->getProperty("controllerId").toString());
     b.source.msgType = msgTypeFromString(srcObj->getProperty("msgType").toString());
     b.source.channel = static_cast<int>(srcObj->getProperty("channel"));

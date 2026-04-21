@@ -1,5 +1,7 @@
 #include "ControllerRouter.hpp"
 
+#include <algorithm>
+
 #include "../core/SelectionManager.hpp"
 #include "../core/aliases/AliasRegistry.hpp"
 #include "../core/aliases/ChainContext.hpp"
@@ -129,17 +131,17 @@ void ControllerRouter::injectMessageForTest(const juce::String& portId,
 void ControllerRouter::onRawMidi(const juce::String& deviceId, const juce::String& deviceName,
                                  const juce::MidiMessage& msg) {
     // Called on the MIDI callback thread.
-    // Filter by controller port before dispatching. Matching accepts either the
-    // stored identifier or the display name (see magda::midi::matches).
-    bool isController =
-        ControllerRegistry::getInstance().isControllerInputPort(deviceId, deviceName);
+    // Forward every MIDI message; dispatch decides whether a Learn session is
+    // armed or a binding matches. ControllerRegistry is consulted only for
+    // scripted-surface bindings; MIDI Learn bindings attach directly to a port.
     if (msg.isController() || msg.isNoteOnOrOff() || msg.isPitchWheel()) {
+        const bool isController =
+            ControllerRegistry::getInstance().isControllerInputPort(deviceId, deviceName);
         DBG("ControllerRouter: raw midi from '"
             << deviceId << "' (name='" << deviceName
             << "') isController=" << (isController ? "yes" : "no") << " " << msg.getDescription());
     }
-    if (isController)
-        onMidiFromControllerPort(deviceId, deviceName, msg);
+    onMidiFromControllerPort(deviceId, deviceName, msg);
 }
 
 // ============================================================================
@@ -216,17 +218,6 @@ void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
         }
     }
 
-    // Only handle messages from registered controller ports
-    if (!ControllerRegistry::getInstance().isControllerInputPort(portId, portName))
-        return;
-
-    // Find the controller for this port (accepts either identifier or name).
-    auto controllerOpt = ControllerRegistry::getInstance().findByInputPort(portId);
-    if (!controllerOpt.has_value())
-        controllerOpt = ControllerRegistry::getInstance().findByInputPort(portName);
-    if (!controllerOpt.has_value() || !controllerOpt->enabled)
-        return;
-
     // Determine message type and raw value
     BindingMsgType msgType;
     int channel = msg.getChannel();  // 1..16
@@ -251,13 +242,36 @@ void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
         return;  // other message types not handled
     }
 
-    // Look up bindings (lock-free snapshot read)
-    auto bindings =
-        BindingRegistry::getInstance().findForSource(controllerOpt->id, msgType, channel, number);
+    auto& bindingReg = BindingRegistry::getInstance();
 
-    DBG("ControllerRouter: port='" << portId << "' controller='" << controllerOpt->name
-                                   << "' ch=" << channel << " num=" << number << " raw=" << rawValue
-                                   << " -> " << bindings.size() << " binding(s) matched");
+    // Port-addressed bindings: MIDI Learn gestures attach directly to a live
+    // port (display name or identifier) with no ControllerRegistry dependency.
+    auto bindings = bindingReg.findForPort(portId, portName, msgType, channel, number);
+
+    // Controller-addressed bindings: if the port maps to a registered
+    // scripted surface, also match bindings keyed by its ControllerId. Each
+    // binding ID is only dispatched once even if both lookups return it.
+    auto& controllerReg = ControllerRegistry::getInstance();
+    if (controllerReg.isControllerInputPort(portId, portName)) {
+        auto controllerOpt = controllerReg.findByInputPort(portId);
+        if (!controllerOpt.has_value())
+            controllerOpt = controllerReg.findByInputPort(portName);
+        if (controllerOpt.has_value() && controllerOpt->enabled) {
+            auto controllerBindings =
+                bindingReg.findForSource(controllerOpt->id, msgType, channel, number);
+            for (const auto& cb : controllerBindings) {
+                const bool alreadyIncluded =
+                    std::any_of(bindings.begin(), bindings.end(),
+                                [&cb](const Binding& b) { return b.id == cb.id; });
+                if (!alreadyIncluded)
+                    bindings.push_back(cb);
+            }
+        }
+    }
+
+    DBG("ControllerRouter: port='" << portId << "' name='" << portName << "' ch=" << channel
+                                   << " num=" << number << " raw=" << rawValue << " -> "
+                                   << bindings.size() << " binding(s) matched");
 
     for (const auto& binding : bindings) {
         // Always schedule with raw value; executeWrite handles all mode logic

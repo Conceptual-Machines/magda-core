@@ -162,7 +162,11 @@ void MidiLearnCoordinator::onCapture(const LearnCapture& capture) {
     }
 
     // ---- Build source ----
+    // Prefer port-based addressing (display name is stable across machines).
+    // controllerId stays set only when Learn arrived via a registered scripted
+    // surface; ordinary user gestures don't go through ControllerRegistry.
     BindingSource source;
+    source.portKey = capture.portName.isNotEmpty() ? capture.portName : capture.portId;
     source.controllerId = capture.controllerId;
     source.msgType = capture.msgType;
     source.channel = 0;  // any channel (lockChannel is false in default config)

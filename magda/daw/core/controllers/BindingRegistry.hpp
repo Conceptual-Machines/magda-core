@@ -84,6 +84,20 @@ class BindingRegistry {
                                        int channel, int number) const;
 
     /**
+     * @brief Find all bindings whose source.portKey matches a live MIDI port.
+     *
+     * Matching uses magda::midi::matches so a stored portKey holding either
+     * a JUCE identifier or a display name resolves against the live device.
+     * This is the MIDI Learn dispatch path — bindings attach directly to a
+     * port without needing a ControllerRegistry entry.
+     *
+     * Thread-safe: reads from atomic snapshot -- safe to call from the MIDI thread.
+     */
+    std::vector<Binding> findForPort(const juce::String& liveIdentifier,
+                                     const juce::String& liveName, BindingMsgType msgType,
+                                     int channel, int number) const;
+
+    /**
      * @brief Find all bindings whose target resolves to a given (devicePath, paramIndex).
      *
      * Resolves each binding's target using a DefaultChainContext + TargetResolver.

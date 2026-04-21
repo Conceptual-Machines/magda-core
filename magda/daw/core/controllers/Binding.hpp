@@ -42,9 +42,24 @@ enum class BindingCurve {
 /**
  * @brief Identifies which MIDI message on which controller triggers a binding.
  *
+ * A source can be addressed two ways:
+ *
+ *  - portKey: a live MIDI input identifier or display name (matched via
+ *    magda::midi::matches). Used by MIDI Learn — project-scoped bindings
+ *    created by user gestures attach to a concrete port and require no
+ *    ControllerRegistry entry.
+ *
+ *  - controllerId: a UUID pointing into ControllerRegistry. Used by
+ *    controller scripts / surfaces (MCU, Lua, …) where the binding is
+ *    logically owned by a registered control surface rather than a raw port.
+ *
+ * Exactly one is normally populated, but both may be set for scripted
+ * surfaces that also want a port-specific fallback.
+ *
  * channel: 1..16, or 0 = any channel.
  */
 struct BindingSource {
+    juce::String portKey;  // live MIDI identifier or display name (Learn path)
     ControllerId controllerId;
     BindingMsgType msgType = BindingMsgType::CC;
     int channel = 0;  // 1..16, 0 = any
