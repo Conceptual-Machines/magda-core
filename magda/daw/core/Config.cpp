@@ -204,6 +204,14 @@ void Config::save() {
     if (!globalBindings_.isVoid())
         root->setProperty("globalBindings", globalBindings_);
 
+    // MIDI Learn settings
+    {
+        auto* mlObj = new juce::DynamicObject();
+        mlObj->setProperty("defaultScope", midiLearnDefaultScope_ == 0 ? juce::String("global")
+                                                                       : juce::String("project"));
+        root->setProperty("midiLearn", juce::var(mlObj));
+    }
+
     // Write to disk
     auto configFile = getConfigFile();
     configFile.getParentDirectory().createDirectory();
@@ -498,6 +506,15 @@ void Config::load() {
     // Global bindings
     if (obj->hasProperty("globalBindings"))
         globalBindings_ = obj->getProperty("globalBindings");
+
+    // MIDI Learn settings
+    if (obj->hasProperty("midiLearn")) {
+        auto mlVar = obj->getProperty("midiLearn");
+        if (auto* mlObj = mlVar.getDynamicObject()) {
+            auto scopeStr = mlObj->getProperty("defaultScope").toString();
+            midiLearnDefaultScope_ = (scopeStr == "global") ? 0 : 1;
+        }
+    }
 
     DBG("Config::load - " + configFile.getFullPathName());
 }

@@ -4,10 +4,12 @@
 
 #include "../magda/daw/audio/ControllerRouter.hpp"
 #include "../magda/daw/audio/MidiLearnSession.hpp"
+#include "../magda/daw/core/Config.hpp"
 #include "../magda/daw/core/aliases/AliasRegistry.hpp"
 #include "../magda/daw/core/aliases/AliasReverseIndex.hpp"
 #include "../magda/daw/core/controllers/BindingRegistry.hpp"
 #include "../magda/daw/core/controllers/ControllerRegistry.hpp"
+#include "../magda/daw/core/controllers/MidiLearnCoordinator.hpp"
 
 using namespace magda;
 
@@ -390,4 +392,204 @@ TEST_CASE("BindingRegistry - removeForTarget removes all matching bindings",
     REQUIRE(remaining.empty());
 
     clearAll();
+}
+
+// ============================================================================
+// Tests: MidiLearnCoordinator
+// ============================================================================
+
+// Fake listener that records all callback invocations
+struct FakeCoordinatorListener : public MidiLearnCoordinatorListener {
+    struct StateChange {
+        ChainNodePath path;
+        int paramIndex;
+        bool learning;
+    };
+    struct Completion {
+        ChainNodePath path;
+        int paramIndex;
+        Binding binding;
+    };
+    struct Cleared {
+        ChainNodePath path;
+        int paramIndex;
+        int numRemoved;
+    };
+
+    std::vector<StateChange> stateChanges;
+    std::vector<Completion> completions;
+    std::vector<Cleared> clears;
+
+    void midiLearnStateChanged(const ChainNodePath& path, int paramIndex, bool learning) override {
+        stateChanges.push_back({path, paramIndex, learning});
+    }
+    void midiLearnCompleted(const ChainNodePath& path, int paramIndex,
+                            const Binding& binding) override {
+        completions.push_back({path, paramIndex, binding});
+    }
+    void midiLearnCleared(const ChainNodePath& path, int paramIndex, int numRemoved) override {
+        clears.push_back({path, paramIndex, numRemoved});
+    }
+};
+
+struct CoordinatorFixture {
+    CoordinatorFixture() {
+        clearAll();
+        auto& router = ControllerRouter::getInstance();
+        router.shutdown();
+        router.setParamWriter(std::make_unique<NullWriter>());
+        router.reconfigure();
+
+        auto& coord = MidiLearnCoordinator::getInstance();
+        coord.attach(router);
+        coord.setScope(BindingScope::Project);
+        coord.addListener(&listener);
+    }
+
+    ~CoordinatorFixture() {
+        MidiLearnCoordinator::getInstance().cancelLearn();
+        MidiLearnCoordinator::getInstance().removeListener(&listener);
+        ControllerRouter::getInstance().shutdown();
+        clearAll();
+    }
+
+    FakeCoordinatorListener listener;
+};
+
+TEST_CASE(
+    "MidiLearnCoordinator - beginLearn + capture creates binding with AliasRef when alias exists",
+    "[midi-learn][coordinator]") {
+    CoordinatorFixture fix;
+
+    auto c = makeController("coord_port_1");
+    ControllerRegistry::getInstance().add(c);
+
+    ChainNodePath path = ChainNodePath::topLevelDevice(10, 100);
+    int paramIdx = 5;
+
+    // Seed an AutoGen alias for this path/param
+    StoredAlias alias;
+    alias.pluginTypeKey = "serum";
+    alias.paramIndex = paramIdx;
+    alias.paramNameAtSetTime = "Filter Cutoff";
+    alias.path = path;
+    AliasRegistry::getInstance().set(AliasLayer::AutoGen, "serum.filter_cutoff", alias);
+
+    auto& coord = MidiLearnCoordinator::getInstance();
+    coord.beginLearn(path, paramIdx, "Filter Cutoff");
+
+    REQUIRE(coord.isLearning(path, paramIdx));
+    REQUIRE(fix.listener.stateChanges.size() == 1);
+    REQUIRE(fix.listener.stateChanges[0].learning == true);
+
+    // Inject CC
+    auto msg = juce::MidiMessage::controllerEvent(1, 21, 64);
+    ControllerRouter::getInstance().injectMessageForTest("coord_port_1", msg);
+
+    // Coordinator should have fired completion
+    REQUIRE(!coord.isLearning(path, paramIdx));
+    REQUIRE(fix.listener.completions.size() == 1);
+
+    // The binding target should be an AliasRef (alias was found)
+    const auto& binding = fix.listener.completions[0].binding;
+    REQUIRE(std::holds_alternative<AliasRef>(binding.target));
+    auto& aliasRef = std::get<AliasRef>(binding.target);
+    REQUIRE(aliasRef.name == "serum.filter_cutoff");
+    REQUIRE(aliasRef.pluginType == "serum");
+
+    // Final state change should be learning=false
+    REQUIRE(fix.listener.stateChanges.back().learning == false);
+
+    clearAll();
+}
+
+TEST_CASE("MidiLearnCoordinator - StaticTarget used when no alias exists",
+          "[midi-learn][coordinator]") {
+    CoordinatorFixture fix;
+
+    auto c = makeController("coord_port_2");
+    ControllerRegistry::getInstance().add(c);
+
+    ChainNodePath path = ChainNodePath::topLevelDevice(11, 110);
+    int paramIdx = 3;
+    // No alias registered
+
+    MidiLearnCoordinator::getInstance().beginLearn(path, paramIdx, "My Param");
+
+    auto msg = juce::MidiMessage::controllerEvent(1, 7, 100);
+    ControllerRouter::getInstance().injectMessageForTest("coord_port_2", msg);
+
+    REQUIRE(fix.listener.completions.size() == 1);
+    const auto& binding = fix.listener.completions[0].binding;
+    REQUIRE(std::holds_alternative<StaticTarget>(binding.target));
+    auto& st = std::get<StaticTarget>(binding.target);
+    REQUIRE(st.devicePath == path);
+    REQUIRE(st.paramIndex == paramIdx);
+
+    clearAll();
+}
+
+TEST_CASE("MidiLearnCoordinator - second beginLearn cancels first", "[midi-learn][coordinator]") {
+    CoordinatorFixture fix;
+
+    auto c = makeController("coord_port_3");
+    ControllerRegistry::getInstance().add(c);
+
+    ChainNodePath path1 = ChainNodePath::topLevelDevice(20, 200);
+    ChainNodePath path2 = ChainNodePath::topLevelDevice(21, 210);
+
+    auto& coord = MidiLearnCoordinator::getInstance();
+    coord.beginLearn(path1, 0, "Param A");
+    coord.beginLearn(path2, 1, "Param B");
+
+    // path1 should have been cancelled: state false for path1
+    bool cancelledA = false;
+    for (const auto& sc : fix.listener.stateChanges) {
+        if (sc.path == path1 && !sc.learning)
+            cancelledA = true;
+    }
+    REQUIRE(cancelledA);
+    REQUIRE(coord.isLearning(path2, 1));
+
+    coord.cancelLearn();
+}
+
+TEST_CASE("MidiLearnCoordinator - clearMappings removes bindings and notifies",
+          "[midi-learn][coordinator]") {
+    CoordinatorFixture fix;
+
+    ChainNodePath path = ChainNodePath::topLevelDevice(30, 300);
+    int paramIdx = 2;
+
+    auto c = makeController("coord_port_4");
+    ControllerRegistry::getInstance().add(c);
+
+    // Add a binding manually
+    auto b = makeStaticBinding(c.id, BindingMsgType::CC, 0, 99, path, paramIdx);
+    BindingRegistry::getInstance().add(BindingScope::Project, b);
+
+    int removed = MidiLearnCoordinator::getInstance().clearMappings(path, paramIdx);
+    REQUIRE(removed == 1);
+    REQUIRE(fix.listener.clears.size() == 1);
+    REQUIRE(fix.listener.clears[0].numRemoved == 1);
+}
+
+// ============================================================================
+// Tests: Config::getMidiLearnDefaultScope round-trip
+// ============================================================================
+
+TEST_CASE("Config - midiLearnDefaultScope raw getter/setter round-trip", "[midi-learn][config]") {
+    auto& cfg = Config::getInstance();
+
+    // Default is Project (1)
+    REQUIRE(cfg.getMidiLearnDefaultScopeRaw() == 1);
+
+    // Set to Global (0) and read back
+    cfg.setMidiLearnDefaultScopeRaw(0);
+    REQUIRE(cfg.getMidiLearnDefaultScopeRaw() == 0);
+    REQUIRE(static_cast<BindingScope>(cfg.getMidiLearnDefaultScopeRaw()) == BindingScope::Global);
+
+    // Restore
+    cfg.setMidiLearnDefaultScopeRaw(1);
+    REQUIRE(static_cast<BindingScope>(cfg.getMidiLearnDefaultScopeRaw()) == BindingScope::Project);
 }

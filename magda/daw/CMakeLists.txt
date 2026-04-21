@@ -272,6 +272,8 @@ set(DAW_CORE_SOURCES
     # Controller router + param writer (issue #1050 -- Phase C)
     audio/ControllerParamWriter.cpp
     audio/ControllerRouter.cpp
+    # MIDI Learn coordinator (issue #924)
+    core/controllers/MidiLearnCoordinator.cpp
     # Platform-neutral MIDI device identifier matcher (issue #1050)
     audio/MidiDeviceMatch.cpp
     engine/TracktionEngineWrapper.cpp
