@@ -16,6 +16,7 @@ namespace magda::daw::ui {
 LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(format) {
     magda::LinkModeManager::getInstance().addListener(this);
     magda::MidiLearnCoordinator::getInstance().addListener(this);
+    magda::BindingRegistry::getInstance().addListener(this);
 
     setInterceptsMouseClicks(true, true);
 
@@ -145,6 +146,7 @@ LinkableTextSlider::~LinkableTextSlider() {
         magda::MidiLearnCoordinator::getInstance().cancelLearn();
     }
     magda::MidiLearnCoordinator::getInstance().removeListener(this);
+    magda::BindingRegistry::getInstance().removeListener(this);
     magda::LinkModeManager::getInstance().removeListener(this);
 }
 
@@ -213,6 +215,7 @@ void LinkableTextSlider::setLinkContext(magda::DeviceId deviceId, int paramIndex
     deviceId_ = deviceId;
     paramIndex_ = paramIndex;
     devicePath_ = devicePath;
+    refreshMidiBindingState();
 
     // Wire the underlying TextSlider's automation target so the purple
     // "automated" tint paints when a lane exists for this param, and so
@@ -337,6 +340,30 @@ void LinkableTextSlider::midiLearnStateChanged(const magda::ChainNodePath& path,
     repaint();
 }
 
+void LinkableTextSlider::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                                            const magda::Binding&) {
+    if (path == devicePath_ && paramIndex == paramIndex_)
+        refreshMidiBindingState();
+}
+
+void LinkableTextSlider::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex, int) {
+    if (path == devicePath_ && paramIndex == paramIndex_)
+        refreshMidiBindingState();
+}
+
+void LinkableTextSlider::bindingRegistryChanged(magda::BindingScope) {
+    refreshMidiBindingState();
+}
+
+void LinkableTextSlider::refreshMidiBindingState() {
+    bool newState =
+        !magda::BindingRegistry::getInstance().findForTarget(devicePath_, paramIndex_).empty();
+    if (newState != hasMidiBinding_) {
+        hasMidiBinding_ = newState;
+        repaint();
+    }
+}
+
 // ============================================================================
 // Layout & painting
 // ============================================================================
@@ -352,6 +379,12 @@ void LinkableTextSlider::paintOverChildren(juce::Graphics& g) {
                          : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.15f);
         g.setColour(color);
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
+    }
+
+    // Persistent MIDI-mapped badge. Learn-mode pulse overrides when both set.
+    if (hasMidiBinding_ && !isInMidiLearnMode_) {
+        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.55f));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 2.0f, 1.0f);
     }
 
     // MIDI Learn pulsing border

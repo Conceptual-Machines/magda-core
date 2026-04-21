@@ -21,6 +21,7 @@ namespace magda::daw::ui {
 class LinkableTextSlider : public juce::Component,
                            public magda::LinkModeManagerListener,
                            public magda::MidiLearnCoordinatorListener,
+                           public magda::BindingRegistryListener,
                            public juce::Timer {
   public:
     LinkableTextSlider(TextSlider::Format format = TextSlider::Format::Decimal);
@@ -99,6 +100,15 @@ class LinkableTextSlider : public juce::Component,
     // === MidiLearnCoordinatorListener ===
     void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
                                bool learning) override;
+    void midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                            const magda::Binding&) override;
+    void midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
+                          int numRemoved) override;
+
+    // === BindingRegistryListener ===
+    void bindingRegistryChanged(magda::BindingScope scope) override;
+
+    void refreshMidiBindingState();
 
     // === Timer ===
     void timerCallback() override;
@@ -126,6 +136,7 @@ class LinkableTextSlider : public juce::Component,
 
     // MIDI Learn state
     bool isInMidiLearnMode_ = false;
+    bool hasMidiBinding_ = false;  // Persistent badge for already-mapped params
 
     // Link mode drag state
     bool isLinkModeDrag_ = false;

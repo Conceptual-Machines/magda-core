@@ -27,6 +27,7 @@ class ParamSlotComponent : public juce::Component,
                            public juce::DragAndDropTarget,
                            public magda::LinkModeManagerListener,
                            public magda::MidiLearnCoordinatorListener,
+                           public magda::BindingRegistryListener,
                            private juce::Timer {
   public:
     ParamSlotComponent(int paramIndex);
@@ -43,6 +44,7 @@ class ParamSlotComponent : public juce::Component,
     void setParamIndex(int paramIndex) {
         paramIndex_ = paramIndex;
         refreshAutomationTarget();
+        refreshMidiBindingState();
     }
     int getParamIndex() const {
         return paramIndex_;
@@ -57,6 +59,7 @@ class ParamSlotComponent : public juce::Component,
     void setDevicePath(const magda::ChainNodePath& path) {
         devicePath_ = path;
         refreshAutomationTarget();
+        refreshMidiBindingState();
     }
 
   private:
@@ -172,6 +175,16 @@ class ParamSlotComponent : public juce::Component,
     // MidiLearnCoordinatorListener implementation
     void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
                                bool learning) override;
+    void midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                            const magda::Binding&) override;
+    void midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
+                          int numRemoved) override;
+
+    // BindingRegistryListener implementation
+    void bindingRegistryChanged(magda::BindingScope scope) override;
+
+    // Refresh hasMidiBinding_ from the registry + repaint if changed.
+    void refreshMidiBindingState();
 
     // Timer callback for animating LFO modulation bars and MIDI learn pulsing
     void timerCallback() override;
@@ -215,6 +228,7 @@ class ParamSlotComponent : public juce::Component,
 
     // MIDI Learn state
     bool isInMidiLearnMode_ = false;
+    bool hasMidiBinding_ = false;  // Persistent badge for already-mapped params
 
     // Link mode drag state (for setting modulation amount via drag)
     bool isLinkModeDrag_ = false;

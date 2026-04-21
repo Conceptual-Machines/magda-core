@@ -176,10 +176,12 @@ void MidiLearnCoordinator::onCapture(const LearnCapture& capture) {
     binding.mode = BindingMode::Absolute;
     binding.range = BindingRange{0.0f, 1.0f, BindingCurve::Linear};
 
-    BindingRegistry::getInstance().add(scope_, binding);
+    // Learn always stores at Project scope. Global-scope bindings are reserved
+    // for future controller templates/scripts that are driven by the hardware
+    // layer, not by user-level "map this knob" gestures.
+    BindingRegistry::getInstance().add(BindingScope::Project, binding);
 
-    DBG("MidiLearnCoordinator: binding created, scope="
-        << (scope_ == BindingScope::Global ? "Global" : "Project"));
+    DBG("MidiLearnCoordinator: project binding created");
 
     // ---- Notify listeners ----
     auto copyListeners = listeners_;

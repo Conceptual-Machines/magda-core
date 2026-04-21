@@ -17,6 +17,7 @@ namespace magda::daw::ui {
 ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex) {
     magda::LinkModeManager::getInstance().addListener(this);
     magda::MidiLearnCoordinator::getInstance().addListener(this);
+    magda::BindingRegistry::getInstance().addListener(this);
 
     setInterceptsMouseClicks(true, true);
 
@@ -171,6 +172,7 @@ ParamSlotComponent::~ParamSlotComponent() {
         magda::MidiLearnCoordinator::getInstance().cancelLearn();
     }
     magda::MidiLearnCoordinator::getInstance().removeListener(this);
+    magda::BindingRegistry::getInstance().removeListener(this);
     magda::LinkModeManager::getInstance().removeListener(this);
 }
 
@@ -264,6 +266,31 @@ void ParamSlotComponent::midiLearnStateChanged(const magda::ChainNodePath& path,
     bool isMe = (path == devicePath_ && paramIndex == paramIndex_);
     isInMidiLearnMode_ = learning && isMe;
     repaint();
+}
+
+void ParamSlotComponent::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                                            const magda::Binding&) {
+    if (path == devicePath_ && paramIndex == paramIndex_)
+        refreshMidiBindingState();
+}
+
+void ParamSlotComponent::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex, int) {
+    if (path == devicePath_ && paramIndex == paramIndex_)
+        refreshMidiBindingState();
+}
+
+void ParamSlotComponent::bindingRegistryChanged(magda::BindingScope) {
+    // Any change to any scope could add/remove a binding for this param.
+    refreshMidiBindingState();
+}
+
+void ParamSlotComponent::refreshMidiBindingState() {
+    bool newState =
+        !magda::BindingRegistry::getInstance().findForTarget(devicePath_, paramIndex_).empty();
+    if (newState != hasMidiBinding_) {
+        hasMidiBinding_ = newState;
+        repaint();
+    }
 }
 
 // ============================================================================
@@ -486,6 +513,13 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     } else if (selected_) {
         g.setColour(juce::Colour(0xff888888));
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 2.0f, 2.0f);
+    }
+
+    // Persistent MIDI-mapped badge (solid thin border, quieter than the
+    // pulsing learn state). Learn mode takes precedence when both are set.
+    if (hasMidiBinding_ && !isInMidiLearnMode_) {
+        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.55f));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 2.0f, 1.0f);
     }
 
     // MIDI Learn pulsing border
