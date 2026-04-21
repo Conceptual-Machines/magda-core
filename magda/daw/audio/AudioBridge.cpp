@@ -719,8 +719,20 @@ te::VirtualMidiInputDevice* AudioBridge::getQwertyMidiDevice() {
             }
         }
 
-        if (qwertyMidiDevice_)
+        if (qwertyMidiDevice_) {
             DBG("QWERTY virtual MIDI device ready");
+            // #1054: After creating a virtual MIDI device, the live playback
+            // context's InputDeviceInstance list is stale — the device exists
+            // in DeviceManager but has no instance in the context, so later
+            // setTarget() calls can't find one and track routing silently
+            // fails on Windows/Linux (macOS happens to refresh implicitly).
+            // Force a rebuild so the new device gets its instance and
+            // subsequent setTrackMidiInput calls can wire it to a track.
+            if (auto* ctx = edit_.getCurrentPlaybackContext();
+                ctx && ctx->isPlaybackGraphAllocated()) {
+                ctx->reallocate();
+            }
+        }
     }
     return dynamic_cast<te::VirtualMidiInputDevice*>(qwertyMidiDevice_.get());
 }
