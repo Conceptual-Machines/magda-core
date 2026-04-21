@@ -115,6 +115,12 @@ class TransportPanel : public juce::Component {
     std::unique_ptr<SvgButton> qwertyKeyboardButton;
     QwertyMidiKeyboard* qwertyKeyboard_ = nullptr;  // owned by MainWindow
 
+    // Overflow menu button — pinned right, hosts items that don't fit on narrow
+    // panels (QWERTY toggle, automation write, etc.). Always visible when any
+    // collapsible item is hidden; hidden when everything fits.
+    std::unique_ptr<SvgButton> overflowButton;
+    void showOverflowMenu();
+
     // Punch in/out button
     std::unique_ptr<SvgButton> punchInButton;
     std::unique_ptr<SvgButton> punchOutButton;
@@ -159,10 +165,29 @@ class TransportPanel : public juce::Component {
     juce::Rectangle<int> getTempoQuantizeArea() const;
     juce::Rectangle<int> getCpuArea() const;
 
-    // CPU meter is hidden (and its right-edge slot reclaimed) when the panel
-    // is too narrow to fit it without overlapping the grid-quantize cluster.
-    // Updated in resized() before any area-dependent layout runs.
+    // Visibility state computed in resized() from available width. Items
+    // collapse into the overflow menu in priority order: CPU → automation
+    // write indicator → QWERTY toggle. cpuVisible_ gates the CPU meter's slot
+    // on the right edge and must be set before any getCpuArea()-dependent
+    // layout runs.
     bool cpuVisible_ = true;
+    bool qwertyVisible_ = true;
+    bool autoWriteFits_ = true;  // inline indicator (separate from toggle button)
+    bool overflowVisible_ = false;
+    // Collapsible section flags (false = section is hidden and its actions
+    // are reachable from the overflow menu).
+    bool navButtonsVisible_ = true;    // home, prev, next
+    bool loopBackVisible_ = true;      // loop, back-to-arrangement
+    bool punchVisible_ = true;         // punch in/out stacked box
+    bool selLoopTimesVisible_ = true;  // selection + loop time groups
+    bool gridVisible_ = true;          // grid quantize cluster
+
+    // Right-edge X of each major section, computed every resized(). paint()
+    // reads these for vertical separators and the area getters return
+    // rectangles built from them.
+    int transportRight_ = 0;
+    int metroRight_ = 0;
+    int timeRight_ = 0;
 
     // Button styling
     void styleTransportButton(SvgButton& button, juce::Colour accentColor);

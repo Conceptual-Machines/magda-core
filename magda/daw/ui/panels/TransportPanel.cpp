@@ -39,6 +39,16 @@ TransportPanel::TransportPanel() {
     automationWriteLabel->setFont(FontManager::getInstance().getUIFont(10.0f).boldened());
     automationWriteLabel->setJustificationType(juce::Justification::centredRight);
     addChildComponent(*automationWriteLabel);
+
+    // Overflow menu button — hosts items that don't fit at narrow widths.
+    overflowButton =
+        std::make_unique<SvgButton>("More", BinaryData::menu_svg, BinaryData::menu_svgSize);
+    overflowButton->setNormalColor(DarkTheme::getSecondaryTextColour());
+    overflowButton->setActiveColor(juce::Colours::white);
+    overflowButton->setActiveBackgroundColor(
+        DarkTheme::getColour(DarkTheme::ACCENT_BLUE).darker(0.6f));
+    overflowButton->onClick = [this]() { showOverflowMenu(); };
+    addChildComponent(*overflowButton);
 }
 
 TransportPanel::~TransportPanel() {
@@ -79,26 +89,33 @@ void TransportPanel::paint(juce::Graphics& g) {
                    juce::Justification::topRight, false);
     };
 
-    drawGroupWrapper(selectionStartLabel->getBounds().getUnion(selectionEndLabel->getBounds()),
-                     "SEL", DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-    drawGroupWrapper(loopStartLabel->getBounds().getUnion(loopEndLabel->getBounds()), "LOOP",
-                     DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    if (selLoopTimesVisible_) {
+        drawGroupWrapper(selectionStartLabel->getBounds().getUnion(selectionEndLabel->getBounds()),
+                         "SEL", DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        drawGroupWrapper(loopStartLabel->getBounds().getUnion(loopEndLabel->getBounds()), "LOOP",
+                         DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+    }
     drawGroupWrapper(playheadPositionLabel->getBounds().getUnion(editCursorLabel->getBounds()),
                      "CUR", DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    drawGroupWrapper(punchInButton->getBounds()
-                         .getUnion(punchStartLabel->getBounds())
-                         .getUnion(punchOutButton->getBounds())
-                         .getUnion(punchEndLabel->getBounds()),
-                     "", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    if (punchVisible_) {
+        drawGroupWrapper(punchInButton->getBounds()
+                             .getUnion(punchStartLabel->getBounds())
+                             .getUnion(punchOutButton->getBounds())
+                             .getUnion(punchEndLabel->getBounds()),
+                         "", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    }
     drawGroupWrapper(tempoLabel->getBounds()
                          .getUnion(timeSigNumeratorLabel->getBounds())
                          .getUnion(timeSigDenominatorLabel->getBounds())
                          .getUnion(metronomeButton->getBounds()),
                      "", DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
-    drawGroupWrapper(gridNumeratorLabel->getBounds().getUnion(gridDenominatorLabel->getBounds()),
-                     "", DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
-    drawGroupWrapper(autoGridButton->getBounds().getUnion(snapButton->getBounds()), "",
-                     DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    if (gridVisible_) {
+        drawGroupWrapper(
+            gridNumeratorLabel->getBounds().getUnion(gridDenominatorLabel->getBounds()), "",
+            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+        drawGroupWrapper(autoGridButton->getBounds().getUnion(snapButton->getBounds()), "",
+                         DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    }
 
     // CPU frame — rounded rectangle matching transport group wrapper style.
     // Skipped entirely when the panel is too narrow to host the meter.
@@ -147,208 +164,283 @@ void TransportPanel::paint(juce::Graphics& g) {
 }
 
 void TransportPanel::resized() {
-    auto transportArea = getTransportControlsArea();
-    auto timeArea = getTimeDisplayArea();
+    // Flow layout: sections lay out left-to-right, right cluster from the
+    // right edge inward. When total required width exceeds panel width,
+    // sections collapse into the overflow popup in priority order.
+    //
+    // Priority (first-collapsed → last): right cluster (CPU + QWERTY),
+    // grid quantize, punch box, loop/back-to-arr, navigation buttons
+    // (home/prev/next), selection+loop time groups. Play/stop/record/
+    // auto-write, tempo/BPM, and the playhead/edit cursor group are always
+    // visible. Time displays are the most informative part of the panel so
+    // they collapse last.
 
-    // Decide whether the CPU meter fits before any area that depends on
-    // getCpuArea() is computed. It reserves 70px on the right when visible;
-    // we hide it entirely (and reclaim that slot) once the grid-quantize
-    // cluster on the left would otherwise overlap it.
-    {
-        const int fixedLeftWidth = getTransportControlsArea().getWidth() + 106 + 440;
-        const int gridMinWidth = 6 + 30 + 4 + 44;  // pad + numDen + gap + btn
-        const int cpuWidth = 70;
-        const int minGap = 8;
-        cpuVisible_ = getWidth() >= fixedLeftWidth + gridMinWidth + minGap + cpuWidth;
+    const int W = getWidth();
+    const int H = getHeight();
+
+    const int buttonMargin = 3;
+    const int buttonSize = juce::jmax(24, H - buttonMargin * 2);
+    const int buttonY = buttonMargin;
+    const int buttonSpacing = 1;
+    const int rowHeight = (buttonSize - 4) / 2;
+    const int rowY1 = buttonY + 1;
+    const int rowY2 = rowY1 + rowHeight + 2;
+    const int minGap = 8;
+
+    auto lerpi = [](int lo, int hi, int inLo, int inHi, int x) {
+        if (x <= inLo)
+            return lo;
+        if (x >= inHi)
+            return hi;
+        return lo + ((hi - lo) * (x - inLo)) / (inHi - inLo);
+    };
+
+    // Elastic time-box width + group spacing.
+    const int boxWidth = lerpi(100, 130, 1100, 1280, W);
+    const int groupSpacing = lerpi(4, 8, 1100, 1280, W);
+
+    // Section width estimates (left-to-right flow).
+    const int navGroupW =
+        6 + 3 * buttonSize + 2 * buttonSpacing + buttonSpacing;            // home/prev/next + 6 pad
+    const int coreGroupW = 4 * buttonSize + 3 * buttonSpacing;             // play/stop/rec/auto
+    const int loopBackW = 2 * buttonSize + buttonSpacing + buttonSpacing;  // loop + backToArr
+    const int punchSectionW = 3 + boxWidth + 3;                            // 3 pre/post padding
+    const int metroSectionW = 90;
+    const int timeGroupW = boxWidth + groupSpacing;
+    const int cursorGroupW = 10 + boxWidth + 24;
+    const int gridSectionW = 6 + 30 + 4 + 44;
+    const int cpuW = 70;
+    const int qwertyW = buttonSize;
+    const int overflowW = buttonSize;
+    // Right cluster when both visible: CPU + gap + QWERTY + 4 trailing.
+    const int rightClusterW = cpuW + minGap + qwertyW + 4;
+    // When collapsed the overflow button sits in place of the cluster.
+    const int overflowSlotW = overflowW + 4;
+
+    // Decide which sections fit. Total width needed = sum of every visible
+    // section. Starts with full layout, then drops sections one tier at a
+    // time until it fits.
+    int required = navGroupW + coreGroupW + loopBackW + punchSectionW + metroSectionW +
+                   2 * timeGroupW + cursorGroupW + gridSectionW + rightClusterW;
+
+    bool rightClusterFits = (W >= required);
+    if (!rightClusterFits) {
+        required = required - rightClusterW + overflowSlotW;
     }
+    gridVisible_ = (W >= required);
+    if (!gridVisible_)
+        required -= gridSectionW;
+    punchVisible_ = (W >= required);
+    if (!punchVisible_)
+        required -= punchSectionW;
+    loopBackVisible_ = (W >= required);
+    if (!loopBackVisible_)
+        required -= loopBackW;
+    navButtonsVisible_ = (W >= required);
+    if (!navButtonsVisible_)
+        required -= navGroupW;
+    selLoopTimesVisible_ = (W >= required);
+    if (!selLoopTimesVisible_)
+        required -= 2 * timeGroupW;
+
+    cpuVisible_ = rightClusterFits;
+    qwertyVisible_ = rightClusterFits;
+    overflowVisible_ = !rightClusterFits || !gridVisible_ || !punchVisible_ ||
+                       !selLoopTimesVisible_ || !loopBackVisible_ || !navButtonsVisible_;
+
+    // Sync component visibility (bounds are skipped for hidden items so
+    // toFront / z-order calls below don't touch stale rectangles).
     cpuTitleLabel->setVisible(cpuVisible_);
     cpuValueLabel->setVisible(cpuVisible_);
+    qwertyKeyboardButton->setVisible(qwertyVisible_);
+    overflowButton->setVisible(overflowVisible_);
+    homeButton->setVisible(navButtonsVisible_);
+    prevButton->setVisible(navButtonsVisible_);
+    nextButton->setVisible(navButtonsVisible_);
+    loopButton->setVisible(loopBackVisible_);
+    backToArrangementButton->setVisible(loopBackVisible_);
+    punchStartLabel->setVisible(punchVisible_);
+    punchEndLabel->setVisible(punchVisible_);
+    punchInButton->setVisible(punchVisible_);
+    punchOutButton->setVisible(punchVisible_);
+    selectionStartLabel->setVisible(selLoopTimesVisible_);
+    selectionEndLabel->setVisible(selLoopTimesVisible_);
+    loopStartLabel->setVisible(selLoopTimesVisible_);
+    loopEndLabel->setVisible(selLoopTimesVisible_);
+    gridNumeratorLabel->setVisible(gridVisible_);
+    gridDenominatorLabel->setVisible(gridVisible_);
+    autoGridButton->setVisible(gridVisible_);
+    snapButton->setVisible(gridVisible_);
 
-    auto tempoArea = getTempoQuantizeArea();
+    // ---- Left-to-right flow ----
+    int x = 0;
 
-    // Transport controls layout — order: Home, Prev, Next, Play, Stop, Rec, AutoWrite, Loop,
-    // BackToArr
-    auto buttonMargin = 3;
-    auto buttonSize = transportArea.getHeight() - buttonMargin * 2;
-    auto buttonY = buttonMargin;
-    auto buttonSpacing = 1;
+    // Navigation group
+    if (navButtonsVisible_) {
+        x += 6;
+        homeButton->setBounds(x, buttonY, buttonSize, buttonSize);
+        x += buttonSize + buttonSpacing;
+        prevButton->setBounds(x, buttonY, buttonSize, buttonSize);
+        x += buttonSize + buttonSpacing;
+        nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
+        x += buttonSize + buttonSpacing;
+    } else {
+        x += 6;
+    }
 
-    auto x = transportArea.getX() + 6;
-
-    homeButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
-
-    prevButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
-
-    nextButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
-
+    // Core transport group — always visible
     playButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing;
-
     stopButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing;
-
     recordButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing;
-
     automationWriteButton->setBounds(x, buttonY, buttonSize, buttonSize);
     x += buttonSize + buttonSpacing;
 
-    loopButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing;
+    // Loop + BackToArrangement
+    if (loopBackVisible_) {
+        loopButton->setBounds(x, buttonY, buttonSize, buttonSize);
+        x += buttonSize + buttonSpacing;
+        backToArrangementButton->setBounds(x, buttonY, buttonSize, buttonSize);
+        x += buttonSize + buttonSpacing + 3;
+    } else {
+        x += 3;
+    }
 
-    backToArrangementButton->setBounds(x, buttonY, buttonSize, buttonSize);
-    x += buttonSize + buttonSpacing + 3;  // extra gap before punch group
+    // Punch box
+    if (punchVisible_) {
+        const int punchIconSize = rowHeight / 2 + 2;
+        punchStartLabel->setBounds(x, rowY1, boxWidth, rowHeight);
+        punchEndLabel->setBounds(x, rowY2, boxWidth, rowHeight);
+        const int btnX = x + boxWidth - punchIconSize - 4;
+        punchInButton->setBounds(btnX, rowY1 + (rowHeight - punchIconSize) / 2, punchIconSize,
+                                 punchIconSize);
+        punchOutButton->setBounds(btnX, rowY2 + (rowHeight - punchIconSize) / 2, punchIconSize,
+                                  punchIconSize);
+        punchInButton->toFront(false);
+        punchOutButton->toFront(false);
+        x += boxWidth + 3;
+    }
 
-    // Stacked row metrics (shared by punch group and time display groups)
-    int boxWidth = 130;
-    int rowHeight = (buttonSize - 4) / 2;  // 1px top + 1px bottom padding
-    int rowY1 = buttonY + 1;               // 1px top padding
-    int rowY2 = rowY1 + rowHeight + 2;     // 2px gap between rows
-
-    // Punch in/out — stacked box with labels + icon buttons overlapping right edge
-    int punchIconSize = rowHeight / 2 + 2;
-
-    punchStartLabel->setBounds(x, rowY1, boxWidth, rowHeight);
-    punchEndLabel->setBounds(x, rowY2, boxWidth, rowHeight);
-
-    // Place buttons overlapping the right side of labels, then raise z-order
-    int btnX = x + boxWidth - punchIconSize - 4;
-    punchInButton->setBounds(btnX, rowY1 + (rowHeight - punchIconSize) / 2, punchIconSize,
-                             punchIconSize);
-    punchOutButton->setBounds(btnX, rowY2 + (rowHeight - punchIconSize) / 2, punchIconSize,
-                              punchIconSize);
-    punchInButton->toFront(false);
-    punchOutButton->toFront(false);
-
-    // Pause button — hidden but still functional via callbacks
+    // Pause button — hidden but kept in tree for callback access
     pauseButton->setBounds(0, 0, 0, 0);
     pauseButton->setVisible(false);
 
-    // Time display boxes layout — 3 stacked groups with 1px top/bottom padding
-    int groupSpacing = 8;
+    transportRight_ = x;
 
-    int startX = timeArea.getX() + 10;
+    // Metronome + BPM section (always visible — tempo is essential)
+    {
+        const int metroBoxWidth = 70;
+        const int metroX = x + (metroSectionW - metroBoxWidth) / 2;
+        const int metroIconSize = rowHeight;
+        tempoLabel->setBounds(metroX, rowY1, metroBoxWidth, rowHeight);
 
-    // Group 1 — Selection: start (top), end (bottom)
-    selectionStartLabel->setBounds(startX, rowY1, boxWidth, rowHeight);
-    selectionEndLabel->setBounds(startX, rowY2, boxWidth, rowHeight);
+        const int tsNumWidth = 24;
+        const int tsDenWidth = 18;
+        const int tsOverlap = 4;
+        const int tsTotal = tsNumWidth + tsDenWidth - tsOverlap;
+        const int tsX = metroX + (metroBoxWidth - tsTotal) / 2;
+        timeSigNumeratorLabel->setBounds(tsX, rowY2, tsNumWidth, rowHeight);
+        timeSigDenominatorLabel->setBounds(tsX + tsNumWidth - tsOverlap, rowY2, tsDenWidth,
+                                           rowHeight);
 
-    int loopX = startX + boxWidth + groupSpacing;
+        const int metroBtnX = metroX + metroBoxWidth - metroIconSize;
+        metronomeButton->setBounds(metroBtnX, rowY2 + (rowHeight - metroIconSize) / 2,
+                                   metroIconSize, metroIconSize);
+        metronomeButton->setAlpha(0.6f);
+        metronomeButton->toFront(false);
+        x += metroSectionW;
+    }
+    metroRight_ = x;
 
-    // Group 2 — Loop: start (top), end (bottom)
-    loopStartLabel->setBounds(loopX, rowY1, boxWidth, rowHeight);
-    loopEndLabel->setBounds(loopX, rowY2, boxWidth, rowHeight);
+    // Time display groups
+    x += 10;  // start pad
+    if (selLoopTimesVisible_) {
+        selectionStartLabel->setBounds(x, rowY1, boxWidth, rowHeight);
+        selectionEndLabel->setBounds(x, rowY2, boxWidth, rowHeight);
+        x += boxWidth + groupSpacing;
 
-    int cursorX = loopX + boxWidth + groupSpacing;
+        loopStartLabel->setBounds(x, rowY1, boxWidth, rowHeight);
+        loopEndLabel->setBounds(x, rowY2, boxWidth, rowHeight);
+        x += boxWidth + groupSpacing;
+    }
+    // Cursor group — always visible (playhead is essential)
+    playheadPositionLabel->setBounds(x, rowY1, boxWidth, rowHeight);
+    editCursorLabel->setBounds(x, rowY2, boxWidth, rowHeight);
+    x += boxWidth + 24;  // trailing pad
+    timeRight_ = x;
 
-    // Group 3 — Cursors: playhead (top), edit cursor (bottom)
-    playheadPositionLabel->setBounds(cursorX, rowY1, boxWidth, rowHeight);
-    editCursorLabel->setBounds(cursorX, rowY2, boxWidth, rowHeight);
+    // Grid quantize cluster
+    int gridRight = x;
+    if (gridVisible_) {
+        const int numDenWidth = 30;
+        const int gridGap = 4;
+        const int btnWidth = 44;
+        int gridX = x + 6;
+        gridNumeratorLabel->setBounds(gridX, rowY1, numDenWidth, rowHeight);
+        gridDenominatorLabel->setBounds(gridX, rowY2, numDenWidth, rowHeight);
+        const int gridBtnX = gridX + numDenWidth + gridGap;
+        autoGridButton->setBounds(gridBtnX, rowY1, btnWidth, rowHeight);
+        snapButton->setBounds(gridBtnX, rowY2, btnWidth, rowHeight);
+        gridRight = gridBtnX + btnWidth;
+    }
 
-    // Metronome + BPM — stacked box: tempo (top), time sig + metronome icon (bottom)
-    auto metroBpmArea = getMetronomeBpmArea();
-    int metroBoxWidth = 70;
-    int metroX = metroBpmArea.getX() + (metroBpmArea.getWidth() - metroBoxWidth) / 2;
-    int metroIconSize = rowHeight;
-
-    tempoLabel->setBounds(metroX, rowY1, metroBoxWidth, rowHeight);
-
-    // Time signature: [num/][den] in bottom row
-    // Overlap by 4px to eliminate the internal padding gap (2px each side)
-    int tsNumWidth = 24;
-    int tsDenWidth = 18;
-    int tsOverlap = 4;
-    int tsTotal = tsNumWidth + tsDenWidth - tsOverlap;
-    int tsX = metroX + (metroBoxWidth - tsTotal) / 2;
-    timeSigNumeratorLabel->setBounds(tsX, rowY2, tsNumWidth, rowHeight);
-    timeSigDenominatorLabel->setBounds(tsX + tsNumWidth - tsOverlap, rowY2, tsDenWidth, rowHeight);
-
-    int metroBtnX = metroX + metroBoxWidth - metroIconSize;
-    metronomeButton->setBounds(metroBtnX, rowY2 + (rowHeight - metroIconSize) / 2, metroIconSize,
-                               metroIconSize);
-    metronomeButton->setAlpha(0.6f);
-    metronomeButton->toFront(false);
-
-    // Grid quantize layout — two stacked boxes side by side
-    int gridX = tempoArea.getX() + 6;
-    int numDenWidth = 30;
-    int gridGap = 4;
-    int btnWidth = 44;
-
-    // Left box: numerator (top) / denominator (bottom)
-    gridNumeratorLabel->setBounds(gridX, rowY1, numDenWidth, rowHeight);
-    gridDenominatorLabel->setBounds(gridX, rowY2, numDenWidth, rowHeight);
-
-    // Right box: AUTO (top) / SNAP (bottom)
-    int gridBtnX = gridX + numDenWidth + gridGap;
-    autoGridButton->setBounds(gridBtnX, rowY1, btnWidth, rowHeight);
-    snapButton->setBounds(gridBtnX, rowY2, btnWidth, rowHeight);
-
-    // Hide slash label (no longer needed in this layout)
     gridSlashLabel->setBounds(0, 0, 0, 0);
     gridSlashLabel->setVisible(false);
 
-    // QWERTY keyboard toggle — just left of CPU (or the panel's right edge
-    // when CPU is hidden). Hidden itself when the window is narrow enough
-    // that it would overlap the grid-quantize cluster on the left.
-    auto cpuBounds = getCpuArea();
-    const int rightAnchor = cpuVisible_ ? cpuBounds.getX() : getWidth();
-    const int qwertyX = rightAnchor - buttonSize - 4;
-    const int gridRight = gridBtnX + btnWidth;
-    const int minGapToQwerty = 8;
-    const bool qwertyFits = qwertyX >= gridRight + minGapToQwerty;
-
-    qwertyKeyboardButton->setVisible(qwertyFits);
-    if (qwertyFits) {
-        qwertyKeyboardButton->setBounds(qwertyX, buttonY, buttonSize, buttonSize);
+    // ---- Right-to-left cluster ----
+    int rightCursor = W;
+    if (overflowVisible_) {
+        rightCursor -= overflowW + 4;
+        overflowButton->setBounds(rightCursor, buttonY, overflowW, buttonSize);
     }
 
-    // Automation write indicator — fills whatever gap is left between the grid
-    // quantize cluster and whichever right-side control is currently visible.
-    // Only shown while write mode is actually on.
-    const int autoWriteLeft = gridRight + minGapToQwerty;
-    const int autoWriteRight = (qwertyFits ? qwertyX : rightAnchor) - 4;
-    const bool autoWriteFits = autoWriteRight > autoWriteLeft;
-    automationWriteLabel->setVisible(isAutomationWriteEnabled && autoWriteFits);
-    if (autoWriteFits) {
+    auto cpuBounds = getCpuArea();  // empty when !cpuVisible_
+    if (cpuVisible_) {
+        rightCursor = cpuBounds.getX();
+    }
+
+    if (qwertyVisible_) {
+        rightCursor -= qwertyW + 4;
+        qwertyKeyboardButton->setBounds(rightCursor, buttonY, qwertyW, buttonSize);
+    }
+
+    // Automation write indicator fills the gap between grid cluster (or
+    // playhead if grid hidden) and the leftmost right-cluster item.
+    const int autoWriteLeft = gridRight + minGap;
+    const int autoWriteRight = rightCursor - 4;
+    autoWriteFits_ = autoWriteRight > autoWriteLeft;
+    automationWriteLabel->setVisible(isAutomationWriteEnabled && autoWriteFits_);
+    if (autoWriteFits_) {
         automationWriteLabel->setBounds(autoWriteLeft, 0, autoWriteRight - autoWriteLeft,
                                         getHeight());
     }
 
-    // CPU usage — rounded frame: header (20%) + value
-    auto cpuArea = cpuBounds.reduced(4, 3);
-    int headerHeight = juce::roundToInt(cpuArea.getHeight() * 0.20f);
-    cpuTitleLabel->setBounds(cpuArea.removeFromTop(headerHeight));
-    cpuValueLabel->setBounds(cpuArea);
+    // CPU frame interior
+    if (cpuVisible_) {
+        auto cpuArea = cpuBounds.reduced(4, 3);
+        int headerHeight = juce::roundToInt(cpuArea.getHeight() * 0.20f);
+        cpuTitleLabel->setBounds(cpuArea.removeFromTop(headerHeight));
+        cpuValueLabel->setBounds(cpuArea);
+    }
 }
 
 juce::Rectangle<int> TransportPanel::getTransportControlsArea() const {
-    // 9 square buttons + punch stacked box (boxWidth=130)
-    int buttonSize = getHeight() - 6;
-    int boxWidth = 130;
-    // 6px left pad + 9 buttons + 8*1px spacing + 3px gap + punch box + 6px right pad
-    int width = 6 + 9 * buttonSize + 8 + 3 + boxWidth + 6;
-    return getLocalBounds().removeFromLeft(width);
+    return getLocalBounds().withWidth(transportRight_);
 }
 
 juce::Rectangle<int> TransportPanel::getMetronomeBpmArea() const {
-    auto bounds = getLocalBounds();
-    bounds.removeFromLeft(getTransportControlsArea().getWidth());
-    return bounds.removeFromLeft(90);
+    return juce::Rectangle<int>(transportRight_, 0, metroRight_ - transportRight_, getHeight());
 }
 
 juce::Rectangle<int> TransportPanel::getTimeDisplayArea() const {
-    auto bounds = getLocalBounds();
-    bounds.removeFromLeft(getTransportControlsArea().getWidth() + 106);
-    return bounds.removeFromLeft(440);
+    return juce::Rectangle<int>(metroRight_, 0, timeRight_ - metroRight_, getHeight());
 }
 
 juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
     auto bounds = getLocalBounds();
-    bounds.removeFromLeft(getTransportControlsArea().getWidth() + 106 + 440);
+    bounds.removeFromLeft(timeRight_);
     bounds.removeFromRight(getCpuArea().getWidth());
     return bounds;
 }
@@ -356,7 +448,109 @@ juce::Rectangle<int> TransportPanel::getTempoQuantizeArea() const {
 juce::Rectangle<int> TransportPanel::getCpuArea() const {
     if (!cpuVisible_)
         return {};
-    return getLocalBounds().removeFromRight(70);
+    // When the overflow button is visible it sits to the right of the CPU
+    // meter; push the CPU slot inward to leave room for it.
+    auto bounds = getLocalBounds();
+    if (overflowVisible_) {
+        const int overflowWidth = juce::jmax(24, getHeight() - 6);
+        bounds.removeFromRight(overflowWidth + 4);
+    }
+    return bounds.removeFromRight(70);
+}
+
+void TransportPanel::showOverflowMenu() {
+    juce::PopupMenu menu;
+
+    enum MenuId {
+        IdQwerty = 1,
+        IdLoop,
+        IdBackToArr,
+        IdPunchIn,
+        IdPunchOut,
+        IdAutoGrid,
+        IdSnap,
+        IdHome,
+        IdPrev,
+        IdNext,
+    };
+
+    // Always offered while overflow button is visible — right cluster always
+    // collapses first so QWERTY and CPU are in the menu whenever it exists.
+    menu.addItem(IdQwerty, "Virtual MIDI Keyboard", true, qwertyKeyboardButton->isActive());
+    const juce::String cpuText =
+        "CPU " + juce::String(juce::roundToInt(currentCpuUsage * 100.0f)) + "%";
+    menu.addItem(99, cpuText, false, false);
+
+    if (!loopBackVisible_) {
+        menu.addSeparator();
+        menu.addItem(IdLoop, "Loop", true, isLooping);
+        menu.addItem(IdBackToArr, "Back to Arrangement");
+    }
+    if (!punchVisible_) {
+        menu.addSeparator();
+        menu.addItem(IdPunchIn, "Punch In", true, isPunchInEnabled);
+        menu.addItem(IdPunchOut, "Punch Out", true, isPunchOutEnabled);
+    }
+    if (!gridVisible_) {
+        menu.addSeparator();
+        menu.addItem(IdAutoGrid, "Auto Grid", true, isAutoGrid);
+        menu.addItem(IdSnap, "Snap", true, isSnapEnabled);
+    }
+    if (!navButtonsVisible_) {
+        menu.addSeparator();
+        menu.addItem(IdHome, "Go Home");
+        menu.addItem(IdPrev, "Previous");
+        menu.addItem(IdNext, "Next");
+    }
+
+    auto fire = [](SvgButton* b) {
+        if (b && b->onClick)
+            b->onClick();
+    };
+    auto fireTb = [](juce::TextButton* b) {
+        if (b && b->onClick)
+            b->onClick();
+    };
+
+    overflowButton->setActive(true);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(overflowButton.get()),
+                       [this, fire, fireTb](int result) {
+                           overflowButton->setActive(false);
+                           switch (result) {
+                               case IdQwerty:
+                                   fire(qwertyKeyboardButton.get());
+                                   break;
+                               case IdLoop:
+                                   fire(loopButton.get());
+                                   break;
+                               case IdBackToArr:
+                                   fire(backToArrangementButton.get());
+                                   break;
+                               case IdPunchIn:
+                                   fire(punchInButton.get());
+                                   break;
+                               case IdPunchOut:
+                                   fire(punchOutButton.get());
+                                   break;
+                               case IdAutoGrid:
+                                   fireTb(autoGridButton.get());
+                                   break;
+                               case IdSnap:
+                                   fireTb(snapButton.get());
+                                   break;
+                               case IdHome:
+                                   fire(homeButton.get());
+                                   break;
+                               case IdPrev:
+                                   fire(prevButton.get());
+                                   break;
+                               case IdNext:
+                                   fire(nextButton.get());
+                                   break;
+                               default:
+                                   break;
+                           }
+                       });
 }
 
 void TransportPanel::setupTransportButtons() {
