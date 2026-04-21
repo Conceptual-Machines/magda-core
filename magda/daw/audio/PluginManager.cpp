@@ -1283,11 +1283,11 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
         }
     }
 
-    // Update device-level macro assignment values in-place. The in-place path
-    // exists because fingerprint-based rebuild skips "value-only" changes (amount
-    // / bipolar), and a full rebuild destroys TE's modifier graph. Without this
-    // macro loop, adjusting a macro link amount silently kept the old modifier
-    // assignment value.
+    // Update device-level macro assignment values in-place. The structural
+    // fingerprint (mod count, link count, bipolar count) covers add/remove
+    // and bipolar flips, but amount is NOT in it — so amount-only edits take
+    // the in-place branch instead of a rebuild, and without this macro loop
+    // they silently kept the previous TE modifier assignment value.
     for (const auto& element : trackInfo->chainElements) {
         if (!isDevice(element))
             continue;

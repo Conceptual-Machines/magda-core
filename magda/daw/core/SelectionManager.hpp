@@ -1182,6 +1182,13 @@ class SelectionManager {
     SelectionManager();
     ~SelectionManager() = default;
 
+    // Collapse any prior multi-track selection to the given single track,
+    // align anchor and TrackManager, and mirror selectTrack's auto-monitor
+    // handling when the primary id actually changes. Returns true iff the
+    // primary track id changed (caller uses this to decide whether to
+    // notifyTrackSelectionChanged). No-op for INVALID_TRACK_ID.
+    bool alignPrimaryTrackToOwner(TrackId trackId);
+
     SelectionType selectionType_ = SelectionType::None;
     TrackId selectedTrackId_ = INVALID_TRACK_ID;
     std::unordered_set<TrackId> selectedTrackIds_;  // For multi-track selection

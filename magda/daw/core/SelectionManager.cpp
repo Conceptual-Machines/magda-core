@@ -19,6 +19,44 @@ SelectionManager::SelectionManager() {
 }
 
 // ============================================================================
+// Primary-track alignment helper (shared by selectDevice / selectChainNode)
+// ============================================================================
+
+bool SelectionManager::alignPrimaryTrackToOwner(TrackId trackId) {
+    if (trackId == INVALID_TRACK_ID)
+        return false;
+
+    const bool needsCollapse =
+        (selectedTrackIds_.size() != 1 || selectedTrackIds_.count(trackId) == 0);
+    const bool primaryChanged = (selectedTrackId_ != trackId);
+
+    if (!primaryChanged && !needsCollapse)
+        return false;
+
+    const TrackId oldTrackId = selectedTrackId_;
+
+    selectedTrackId_ = trackId;
+    anchorTrackId_ = trackId;
+    selectedTrackIds_.clear();
+    selectedTrackIds_.insert(trackId);
+    TrackManager::getInstance().setSelectedTrack(trackId);
+
+    // Mirror selectTrack()'s auto-monitor bookkeeping when the primary track
+    // id actually changed. Collapsing an already-primary track's set doesn't
+    // move monitoring off anything, so skip it in that case.
+    if (primaryChanged && Config::getInstance().getAutoMonitorSelectedTrack()) {
+        if (oldTrackId != INVALID_TRACK_ID) {
+            TrackManager::getInstance().setTrackInputMonitor(oldTrackId, InputMonitorMode::Off);
+        }
+        if (trackId != MASTER_TRACK_ID) {
+            TrackManager::getInstance().setTrackInputMonitor(trackId, InputMonitorMode::Auto);
+        }
+    }
+
+    return primaryChanged;
+}
+
+// ============================================================================
 // Track Selection
 // ============================================================================
 
@@ -542,19 +580,12 @@ void SelectionManager::selectDevice(TrackId trackId, RackId rackId, ChainId chai
     deviceSelection_.chainId = chainId;
     deviceSelection_.deviceId = deviceId;
 
-    // Align primary track selection with the device's owning track. Without
-    // this the track stays at whatever was last selected (often the master,
-    // which is the startup default) and downstream consumers like the
-    // ControllerRouter contextual-firing gate see a stale selection.
-    bool trackChanged = false;
-    if (trackId != INVALID_TRACK_ID && selectedTrackId_ != trackId) {
-        selectedTrackId_ = trackId;
-        anchorTrackId_ = trackId;
-        selectedTrackIds_.clear();
-        selectedTrackIds_.insert(trackId);
-        TrackManager::getInstance().setSelectedTrack(trackId);
-        trackChanged = true;
-    }
+    // Align primary track selection with the device's owning track. Handles
+    // collapsing multi-track sets, anchor reset, TrackManager sync, and
+    // auto-monitor bookkeeping. Without this, downstream consumers like the
+    // ControllerRouter contextual-firing gate or multi-track commands see
+    // stale state after clicking a device.
+    const bool trackChanged = alignPrimaryTrackToOwner(trackId);
 
     // Sync with managers (clear clip selection)
     ClipManager::getInstance().clearClipSelection();
@@ -756,19 +787,10 @@ void SelectionManager::selectChainNode(const ChainNodePath& path, const juce::St
     chainNodeDisplayName_ = displayName;
     chainNodeDisplayType_ = displayType;
 
-    // Align primary track selection with the chain node's owning track, for
-    // the same reason as selectDevice(): downstream consumers read
-    // getSelectedTrack() to decide whether the user is "on" this track.
-    bool trackChanged = false;
-    const TrackId pathTrackId = path.trackId;
-    if (pathTrackId != INVALID_TRACK_ID && selectedTrackId_ != pathTrackId) {
-        selectedTrackId_ = pathTrackId;
-        anchorTrackId_ = pathTrackId;
-        selectedTrackIds_.clear();
-        selectedTrackIds_.insert(pathTrackId);
-        TrackManager::getInstance().setSelectedTrack(pathTrackId);
-        trackChanged = true;
-    }
+    // Align primary track selection with the chain node's owning track; see
+    // alignPrimaryTrackToOwner() for the full rationale (collapses multi-
+    // track sets, runs auto-monitor, keeps TrackManager in sync).
+    const bool trackChanged = alignPrimaryTrackToOwner(path.trackId);
 
     // Sync with managers
     ClipManager::getInstance().clearClipSelection();
