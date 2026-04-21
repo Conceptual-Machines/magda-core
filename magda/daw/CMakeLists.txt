@@ -434,6 +434,7 @@ set(DAW_UI_SOURCES
     ui/components/common/MixerDebugPanel.cpp
     ui/components/common/GridOverlayComponent.cpp
     ui/components/common/LinkableTextSlider.cpp
+    ui/components/common/Toast.cpp
     ui/components/common/DraggableValueLabel.cpp
     ui/components/common/BarsBeatsTicksLabel.cpp
     # Components - Timeline

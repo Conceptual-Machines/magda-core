@@ -6,6 +6,7 @@
 #include "../core/Config.hpp"
 #include "../core/ViewModeController.hpp"
 #include "../core/controllers/BindingRegistry.hpp"
+#include "../core/controllers/MidiLearnCoordinator.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
 #include "../ui/state/TimelineEvents.hpp"
@@ -518,6 +519,8 @@ void TracktionEngineWrapper::shutdown() {
     // which unregisters CoreMIDI callbacks. This must happen while the MIDI
     // devices still exist, but after playback is stopped.
     if (midiBridge_) {
+        // Cancel any active MIDI Learn session before shutting down the router.
+        MidiLearnCoordinator::getInstance().cancelLearn();
         // Shut down ControllerRouter before stopping MIDI inputs so it can
         // unsubscribe from MidiBridge cleanly.
         ControllerRouter::getInstance().shutdown();

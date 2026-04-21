@@ -15,6 +15,7 @@ namespace magda::daw::ui {
 
 LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(format) {
     magda::LinkModeManager::getInstance().addListener(this);
+    magda::MidiLearnCoordinator::getInstance().addListener(this);
 
     setInterceptsMouseClicks(true, true);
 
@@ -120,9 +121,19 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
                                .onTrackMacroLinked = onTrackMacroLinked,
                                .onRackMacroUnlinked = onRackMacroUnlinked,
                                .onTrackMacroUnlinked = onTrackMacroUnlinked,
-                               .onShowAutomationLane = onShowAutomationLane});
+                               .onShowAutomationLane = onShowAutomationLane,
+                               .onMidiLearn = onMidiLearn,
+                               .onMidiClear = onMidiClear});
         }
     };
+    // Default MIDI Learn wiring: delegate to MidiLearnCoordinator singleton
+    onMidiLearn = [](magda::ChainNodePath path, int paramIdx, juce::String paramName) {
+        magda::MidiLearnCoordinator::getInstance().beginLearn(path, paramIdx, paramName);
+    };
+    onMidiClear = [](magda::ChainNodePath path, int paramIdx) {
+        magda::MidiLearnCoordinator::getInstance().clearMappings(path, paramIdx);
+    };
+
     addAndMakeVisible(slider_);
 }
 
@@ -130,6 +141,10 @@ LinkableTextSlider::~LinkableTextSlider() {
     if (amountLabel_.isOnDesktop()) {
         amountLabel_.removeFromDesktop();
     }
+    if (isInMidiLearnMode_) {
+        magda::MidiLearnCoordinator::getInstance().cancelLearn();
+    }
+    magda::MidiLearnCoordinator::getInstance().removeListener(this);
     magda::LinkModeManager::getInstance().removeListener(this);
 }
 
@@ -312,6 +327,17 @@ void LinkableTextSlider::macroLinkModeChanged(bool active, const magda::MacroSel
 }
 
 // ============================================================================
+// MidiLearnCoordinatorListener
+// ============================================================================
+
+void LinkableTextSlider::midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
+                                               bool learning) {
+    bool isMe = (path == devicePath_ && paramIndex == paramIndex_);
+    isInMidiLearnMode_ = learning && isMe;
+    repaint();
+}
+
+// ============================================================================
 // Layout & painting
 // ============================================================================
 
@@ -326,6 +352,15 @@ void LinkableTextSlider::paintOverChildren(juce::Graphics& g) {
                          : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.15f);
         g.setColour(color);
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
+    }
+
+    // MIDI Learn pulsing border
+    if (isInMidiLearnMode_) {
+        float phase =
+            std::fmod(static_cast<float>(juce::Time::getMillisecondCounterHiRes() * 0.003), 1.0f);
+        float alpha = 0.4f + 0.6f * std::sin(phase * juce::MathConstants<float>::twoPi);
+        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(alpha));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 2.0f, 2.0f);
     }
 
     // Modulation indicator bars
@@ -373,7 +408,9 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
                            .onTrackMacroLinked = onTrackMacroLinked,
                            .onRackMacroUnlinked = onRackMacroUnlinked,
                            .onTrackMacroUnlinked = onTrackMacroUnlinked,
-                           .onShowAutomationLane = onShowAutomationLane});
+                           .onShowAutomationLane = onShowAutomationLane,
+                           .onMidiLearn = onMidiLearn,
+                           .onMidiClear = onMidiClear});
         return;
     }
 
@@ -559,7 +596,7 @@ void LinkableTextSlider::timerCallback() {
 }
 
 void LinkableTextSlider::updateModTimerState() {
-    if (hasActiveLinks(buildLinkContext())) {
+    if (hasActiveLinks(buildLinkContext()) || isInMidiLearnMode_) {
         if (!isTimerRunning()) {
             startTimer(33);  // ~30 FPS
         }

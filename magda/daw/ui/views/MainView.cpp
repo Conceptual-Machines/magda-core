@@ -25,6 +25,7 @@
 #include "core/aliases/CuratedAliasLoader.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
+#include "core/controllers/MidiLearnCoordinator.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 
@@ -86,6 +87,11 @@ MainView::MainView(AudioEngine* audioEngine)
             std::make_unique<DefaultControllerParamWriter>(*audioBridge));
     if (auto* midiBridge = audioEngine_->getMidiBridge())
         ControllerRouter::getInstance().setMidiBridge(midiBridge);
+
+    // Attach MIDI Learn coordinator to the router and seed scope from config
+    magda::MidiLearnCoordinator::getInstance().attach(ControllerRouter::getInstance());
+    magda::MidiLearnCoordinator::getInstance().setScope(
+        static_cast<magda::BindingScope>(config.getMidiLearnDefaultScopeRaw()));
 
     // Apply language from config (overrides the en.json auto-loaded by StringTable constructor)
     {
