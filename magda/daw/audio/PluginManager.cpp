@@ -1330,26 +1330,14 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                 if (!param)
                     continue;
 
-                bool matched = false;
                 for (auto* assignment : param->getAssignments()) {
                     if (assignment->isForModifierSource(*macroParam)) {
                         const float offset = link.bipolar ? -link.amount : 0.0f;
                         const float value = link.bipolar ? link.amount * 2.0f : link.amount;
-                        DBG("[MACRO-ASSIGN] update (device): devId="
-                            << device.id << " macroIdx=" << macroIdx << " paramIdx="
-                            << link.target.paramIndex << " linkAmount=" << link.amount
-                            << " bipolar=" << (link.bipolar ? "yes" : "no")
-                            << " prevValue=" << assignment->value << " newValue=" << value);
                         assignment->value = value;
                         assignment->offset = offset;
-                        matched = true;
                         break;
                     }
-                }
-                if (!matched) {
-                    DBG("[MACRO-ASSIGN] no assignment found (device): devId="
-                        << device.id << " macroIdx=" << macroIdx << " paramIdx="
-                        << link.target.paramIndex << " — macro amount change will NOT take effect");
                 }
             }
         }
@@ -1457,28 +1445,14 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
                 if (!param)
                     continue;
 
-                bool matched = false;
                 for (auto* assignment : param->getAssignments()) {
                     if (assignment->isForModifierSource(*macroParam)) {
                         const float offset = link.bipolar ? -link.amount : 0.0f;
                         const float value = link.bipolar ? link.amount * 2.0f : link.amount;
-                        DBG("[MACRO-ASSIGN] update (track): trackId="
-                            << trackId << " macroIdx=" << macroIdx << " targetDevId="
-                            << link.target.deviceId << " paramIdx=" << link.target.paramIndex
-                            << " linkAmount=" << link.amount
-                            << " bipolar=" << (link.bipolar ? "yes" : "no")
-                            << " prevValue=" << assignment->value << " newValue=" << value);
                         assignment->value = value;
                         assignment->offset = offset;
-                        matched = true;
                         break;
                     }
-                }
-                if (!matched) {
-                    DBG("[MACRO-ASSIGN] no assignment found (track): trackId="
-                        << trackId << " macroIdx=" << macroIdx << " targetDevId="
-                        << link.target.deviceId << " paramIdx=" << link.target.paramIndex
-                        << " — macro amount change will NOT take effect");
                 }
             }
         }
