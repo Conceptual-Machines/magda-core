@@ -1283,6 +1283,66 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
         }
     }
 
+    // Update device-level macro assignment values in-place. The in-place path
+    // exists because fingerprint-based rebuild skips "value-only" changes (amount
+    // / bipolar), and a full rebuild destroys TE's modifier graph. Without this
+    // macro loop, adjusting a macro link amount silently kept the old modifier
+    // assignment value.
+    for (const auto& element : trackInfo->chainElements) {
+        if (!isDevice(element))
+            continue;
+        const auto& device = getDevice(element);
+        auto sdIt = syncedDevices_.find(device.id);
+        if (sdIt == syncedDevices_.end())
+            continue;
+
+        for (int macroIdx = 0; macroIdx < static_cast<int>(device.macros.size()); ++macroIdx) {
+            auto mpIt = sdIt->second.macroParams.find(macroIdx);
+            if (mpIt == sdIt->second.macroParams.end() || mpIt->second == nullptr)
+                continue;
+            auto* macroParam = mpIt->second;
+
+            const auto& macroInfo = device.macros[static_cast<size_t>(macroIdx)];
+            for (const auto& link : macroInfo.links) {
+                if (!link.target.isValid())
+                    continue;
+
+                te::Plugin::Ptr linkTarget;
+                {
+                    juce::ScopedLock lock(pluginLock_);
+                    auto pit = syncedDevices_.find(link.target.deviceId);
+                    if (pit != syncedDevices_.end())
+                        linkTarget = pit->second.plugin;
+                }
+                if (!linkTarget) {
+                    auto* inner = instrumentRackManager_.getInnerPlugin(link.target.deviceId);
+                    if (inner)
+                        linkTarget = inner;
+                }
+                if (!linkTarget)
+                    continue;
+
+                auto params = linkTarget->getAutomatableParameters();
+                if (link.target.paramIndex < 0 ||
+                    link.target.paramIndex >= static_cast<int>(params.size()))
+                    continue;
+                auto* param = params[static_cast<size_t>(link.target.paramIndex)];
+                if (!param)
+                    continue;
+
+                for (auto* assignment : param->getAssignments()) {
+                    if (assignment->isForModifierSource(*macroParam)) {
+                        const float offset = link.bipolar ? -link.amount : 0.0f;
+                        const float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                        assignment->value = value;
+                        assignment->offset = offset;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     // Update track-level mod properties in-place
     auto tmIt = trackModStates_.find(trackId);
     if (tmIt != trackModStates_.end()) {
@@ -1344,6 +1404,57 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
             }
 
             ++modIdx;
+        }
+    }
+
+    // Track-level macro assignment values — mirror of the device-macro loop
+    // above, but walks trackMacroParams_ keyed by (trackId, macroIdx).
+    auto trackMacroIt = trackMacroParams_.find(trackId);
+    if (trackMacroIt != trackMacroParams_.end()) {
+        for (int macroIdx = 0; macroIdx < static_cast<int>(trackInfo->macros.size()); ++macroIdx) {
+            auto pIt = trackMacroIt->second.find(macroIdx);
+            if (pIt == trackMacroIt->second.end() || pIt->second == nullptr)
+                continue;
+            auto* macroParam = pIt->second;
+
+            const auto& macroInfo = trackInfo->macros[static_cast<size_t>(macroIdx)];
+            for (const auto& link : macroInfo.links) {
+                if (!link.target.isValid())
+                    continue;
+
+                te::Plugin::Ptr linkTarget;
+                {
+                    juce::ScopedLock lock(pluginLock_);
+                    auto pit = syncedDevices_.find(link.target.deviceId);
+                    if (pit != syncedDevices_.end())
+                        linkTarget = pit->second.plugin;
+                }
+                if (!linkTarget) {
+                    auto* inner = instrumentRackManager_.getInnerPlugin(link.target.deviceId);
+                    if (inner)
+                        linkTarget = inner;
+                }
+                if (!linkTarget)
+                    continue;
+
+                auto params = linkTarget->getAutomatableParameters();
+                if (link.target.paramIndex < 0 ||
+                    link.target.paramIndex >= static_cast<int>(params.size()))
+                    continue;
+                auto* param = params[static_cast<size_t>(link.target.paramIndex)];
+                if (!param)
+                    continue;
+
+                for (auto* assignment : param->getAssignments()) {
+                    if (assignment->isForModifierSource(*macroParam)) {
+                        const float offset = link.bipolar ? -link.amount : 0.0f;
+                        const float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                        assignment->value = value;
+                        assignment->offset = offset;
+                        break;
+                    }
+                }
+            }
         }
     }
 }
