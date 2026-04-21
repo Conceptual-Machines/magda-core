@@ -515,11 +515,17 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 2.0f, 2.0f);
     }
 
-    // Persistent MIDI-mapped badge (solid thin border, quieter than the
-    // pulsing learn state). Learn mode takes precedence when both are set.
+    // Persistent MIDI-mapped badge: a small dot inside the value slider area,
+    // top-right corner. Kept tiny so it doesn't compete with automation/macro
+    // link indicators. Learn-mode pulse below takes precedence when both are set.
     if (hasMidiBinding_ && !isInMidiLearnMode_) {
-        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.55f));
-        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 2.0f, 1.0f);
+        constexpr float dotSize = 5.0f;
+        constexpr float margin = 3.0f;
+        auto slider = valueSlider_.getBounds().toFloat();
+        juce::Rectangle<float> dot(slider.getRight() - margin - dotSize, slider.getY() + margin,
+                                   dotSize, dotSize);
+        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.85f));
+        g.fillEllipse(dot);
     }
 
     // MIDI Learn pulsing border

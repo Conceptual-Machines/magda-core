@@ -381,10 +381,16 @@ void LinkableTextSlider::paintOverChildren(juce::Graphics& g) {
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
     }
 
-    // Persistent MIDI-mapped badge. Learn-mode pulse overrides when both set.
+    // Persistent MIDI-mapped badge: a small dot at the top-right corner.
+    // Learn-mode pulse overrides when both are set.
     if (hasMidiBinding_ && !isInMidiLearnMode_) {
-        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.55f));
-        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 2.0f, 1.0f);
+        constexpr float dotSize = 5.0f;
+        constexpr float margin = 3.0f;
+        auto r = getLocalBounds().toFloat();
+        juce::Rectangle<float> dot(r.getRight() - margin - dotSize, r.getY() + margin, dotSize,
+                                   dotSize);
+        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.85f));
+        g.fillEllipse(dot);
     }
 
     // MIDI Learn pulsing border
