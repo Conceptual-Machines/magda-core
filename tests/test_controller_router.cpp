@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "../magda/daw/audio/ControllerRouter.hpp"
+#include "../magda/daw/core/SelectionManager.hpp"
 #include "../magda/daw/core/aliases/AliasRegistry.hpp"
 #include "../magda/daw/core/aliases/ChainContext.hpp"
 #include "../magda/daw/core/controllers/BindingRegistry.hpp"
@@ -95,6 +96,11 @@ struct RouterFixture {
         auto& router = ControllerRouter::getInstance();
         router.shutdown();
 
+        // Select the track that test targets are pinned to (track 1).
+        // ControllerRouter::executeWrite gates track-pinned bindings on the
+        // selected track via SelectionManager.
+        SelectionManager::getInstance().selectTrack(1);
+
         writer = new FakeParamWriter();
         router.setParamWriter(std::unique_ptr<ControllerParamWriter>(writer));
         router.reconfigure();
@@ -102,6 +108,7 @@ struct RouterFixture {
 
     ~RouterFixture() {
         ControllerRouter::getInstance().shutdown();
+        SelectionManager::getInstance().selectTrack(INVALID_TRACK_ID);
         // writer is owned by router now; don't delete
         clearRegistries();
     }
