@@ -542,6 +542,20 @@ void SelectionManager::selectDevice(TrackId trackId, RackId rackId, ChainId chai
     deviceSelection_.chainId = chainId;
     deviceSelection_.deviceId = deviceId;
 
+    // Align primary track selection with the device's owning track. Without
+    // this the track stays at whatever was last selected (often the master,
+    // which is the startup default) and downstream consumers like the
+    // ControllerRouter contextual-firing gate see a stale selection.
+    bool trackChanged = false;
+    if (trackId != INVALID_TRACK_ID && selectedTrackId_ != trackId) {
+        selectedTrackId_ = trackId;
+        anchorTrackId_ = trackId;
+        selectedTrackIds_.clear();
+        selectedTrackIds_.insert(trackId);
+        TrackManager::getInstance().setSelectedTrack(trackId);
+        trackChanged = true;
+    }
+
     // Sync with managers (clear clip selection)
     ClipManager::getInstance().clearClipSelection();
 
@@ -550,6 +564,9 @@ void SelectionManager::selectDevice(TrackId trackId, RackId rackId, ChainId chai
     }
     if (deviceChanged) {
         notifyDeviceSelectionChanged(deviceSelection_);
+    }
+    if (trackChanged) {
+        notifyTrackSelectionChanged(selectedTrackId_);
     }
 }
 
@@ -739,6 +756,20 @@ void SelectionManager::selectChainNode(const ChainNodePath& path, const juce::St
     chainNodeDisplayName_ = displayName;
     chainNodeDisplayType_ = displayType;
 
+    // Align primary track selection with the chain node's owning track, for
+    // the same reason as selectDevice(): downstream consumers read
+    // getSelectedTrack() to decide whether the user is "on" this track.
+    bool trackChanged = false;
+    const TrackId pathTrackId = path.trackId;
+    if (pathTrackId != INVALID_TRACK_ID && selectedTrackId_ != pathTrackId) {
+        selectedTrackId_ = pathTrackId;
+        anchorTrackId_ = pathTrackId;
+        selectedTrackIds_.clear();
+        selectedTrackIds_.insert(pathTrackId);
+        TrackManager::getInstance().setSelectedTrack(pathTrackId);
+        trackChanged = true;
+    }
+
     // Sync with managers
     ClipManager::getInstance().clearClipSelection();
 
@@ -747,6 +778,9 @@ void SelectionManager::selectChainNode(const ChainNodePath& path, const juce::St
     }
     // Always notify so all components can update their visual state
     notifyChainNodeSelectionChanged(selectedChainNode_);
+    if (trackChanged) {
+        notifyTrackSelectionChanged(selectedTrackId_);
+    }
 }
 
 void SelectionManager::clearChainNodeSelection() {
