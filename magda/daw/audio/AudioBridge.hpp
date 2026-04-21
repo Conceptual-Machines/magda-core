@@ -740,8 +740,14 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     te::Engine& engine_;
     te::Edit& edit_;
 
-    // Virtual MIDI device for QWERTY keyboard (lazily created)
+    // Virtual MIDI device for QWERTY keyboard (lazily created).
+    // qwertyNeedsContextRefresh_ is set when the device is freshly created
+    // during this session — the live playback context's InputDeviceInstance
+    // list needs a rebuild before the device can route to tracks. Cleared
+    // on the first getQwertyMidiDevice() call after the graph is allocated.
+    // See #1054.
     std::shared_ptr<te::MidiInputDevice> qwertyMidiDevice_;
+    bool qwertyNeedsContextRefresh_ = false;
 
     // Bidirectional mappings
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
