@@ -209,25 +209,17 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
             if (!kb)
                 return;
             kb->setEnabled(enabled);
-            if (enabled) {
+            if (enabled)
                 addKeyListener(kb);
-                DBG("[QWERTY] key listener registered on MainWindow");
-            } else {
+            else
                 removeKeyListener(kb);
-                DBG("[QWERTY] key listener removed from MainWindow");
-            }
 
             // Enable/disable the virtual MIDI device and notify the
             // routing selectors to refresh their cached device lists.
             if (auto* engine = mainComponent->getAudioEngine()) {
                 if (auto* bridge = engine->getAudioBridge()) {
-                    if (auto* vmd = bridge->getQwertyMidiDevice()) {
+                    if (auto* vmd = bridge->getQwertyMidiDevice())
                         vmd->setEnabled(enabled);
-                        DBG("[QWERTY] virtual MIDI device setEnabled("
-                            << (enabled ? "true" : "false") << ")");
-                    } else {
-                        DBG("[QWERTY] toggle: getQwertyMidiDevice() returned null");
-                    }
                 }
                 if (auto* mb = engine->getMidiBridge())
                     mb->notifyMidiDeviceListChanged();
