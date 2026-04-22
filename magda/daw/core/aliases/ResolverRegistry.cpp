@@ -56,6 +56,9 @@ std::optional<StaticTarget> FocusedDeviceMacroResolver::resolve(const juce::Stri
     t.devicePath = devicePath;
     t.paramIndex = macroIndex;
     t.owner = StaticTarget::Owner::DeviceMacro;
+    DBG("[AUTOMAP] FocusedDeviceMacroResolver: returning StaticTarget macroIndex="
+        << macroIndex << " owner=DeviceMacro trackId=" << devicePath.trackId
+        << " deviceId=" << devicePath.getDeviceId());
     return t;
 }
 

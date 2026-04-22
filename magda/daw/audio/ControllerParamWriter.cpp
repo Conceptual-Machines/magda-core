@@ -6,10 +6,15 @@
 namespace magda {
 
 void DefaultControllerParamWriter::write(const ResolvedTarget& resolved, float value) {
-    if (!resolved.ok())
+    if (!resolved.ok()) {
+        DBG("[AUTOMAP] Writer::write — resolved.ok()=false, dropping");
         return;
+    }
 
     const float clamped = juce::jlimit(0.0f, 1.0f, value);
+    DBG("[AUTOMAP] Writer::write — dispatching owner="
+        << (resolved.owner == StaticTarget::Owner::DeviceMacro ? "DeviceMacro" : "PluginParam")
+        << " paramIndex=" << resolved.paramIndex << " value=" << clamped);
 
     switch (resolved.owner) {
         case StaticTarget::Owner::PluginParam:
@@ -55,11 +60,12 @@ void DefaultControllerParamWriter::writePluginParam(const ResolvedTarget& resolv
 }
 
 void DefaultControllerParamWriter::writeDeviceMacro(const ResolvedTarget& resolved, float clamped) {
-    // Macros are normalized 0..1 on the data side; no range scaling needed.
-    DBG("ControllerParamWriter: device macro — macroIndex=" << resolved.paramIndex
-                                                            << " value=" << clamped);
+    DBG("[AUTOMAP] writeDeviceMacro — calling TrackManager::setDeviceMacroValue trackId="
+        << resolved.devicePath.trackId << " deviceId=" << resolved.devicePath.getDeviceId()
+        << " macroIndex=" << resolved.paramIndex << " value=" << clamped);
     TrackManager::getInstance().setDeviceMacroValue(resolved.devicePath, resolved.paramIndex,
                                                     clamped);
+    DBG("[AUTOMAP] writeDeviceMacro — returned from setDeviceMacroValue");
 }
 
 }  // namespace magda

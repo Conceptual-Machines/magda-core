@@ -1324,6 +1324,31 @@ void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
     }
 }
 
+void TrackChainContent::macroValueChanged(magda::TrackId trackId, bool isRack, int id,
+                                          int /*macroIndex*/, float /*value*/) {
+    if (trackId != selectedTrackId_)
+        return;
+
+    if (isRack) {
+        // Rack macros: refresh all node components whose path matches the rack id.
+        for (auto& node : nodeComponents_) {
+            if (node && node->getNodePath().getRackId() == id)
+                node->updateMacroPanel();
+        }
+        // Global (track-level) rack macros panel — cheap full refresh.
+        updateGlobalMacrosPanel();
+        return;
+    }
+
+    // Device macros: id is DeviceId. Refresh the node whose path terminates at
+    // that device so the MacroKnobComponent slider picks up the new value.
+    const magda::DeviceId deviceId = id;
+    for (auto& node : nodeComponents_) {
+        if (node && node->getNodePath().getDeviceId() == deviceId)
+            node->updateMacroPanel();
+    }
+}
+
 void TrackChainContent::selectionTypeChanged(magda::SelectionType /*newType*/) {
     // Repaint header when selection type changes (Track vs ChainNode)
     // to update the header background color

@@ -315,8 +315,14 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     // Mod/Macro panel management
     void initializeModsMacrosPanels();
     void updateModsPanel();
+
+  public:
+    // Public so external TrackManagerListener callbacks (e.g. controller writes)
+    // can force a redraw when the macro value was mutated externally — the knob
+    // slider only auto-updates on local mouse interaction.
     void updateMacroPanel();
 
+  private:
     // Editor panel management
     void showModulatorEditor(int modIndex);
     void hideModulatorEditor();

@@ -98,26 +98,34 @@ class BindingRegistry {
                                      int channel, int number) const;
 
     /**
-     * @brief Find all bindings whose target resolves to a given (devicePath, paramIndex).
+     * @brief Find all bindings whose target resolves to a given (devicePath, paramIndex, owner).
      *
      * Resolves each binding's target using a DefaultChainContext + TargetResolver.
      * Must be called on the message thread.
      *
+     * Owner-filtered so a macro-targeted binding at (path, 0, DeviceMacro) does NOT
+     * match a plugin-param query at (path, 0, PluginParam). Default owner is
+     * PluginParam to preserve pre-owner-field behaviour for existing callers.
+     *
      * @param devicePath   Concrete device path to match.
      * @param paramIndex   Parameter index to match.
+     * @param owner        Target owner kind to match (default: PluginParam).
      * @return All matching bindings from both Global and Project scopes.
      */
-    std::vector<Binding> findForTarget(const ChainNodePath& devicePath, int paramIndex) const;
+    std::vector<Binding> findForTarget(
+        const ChainNodePath& devicePath, int paramIndex,
+        StaticTarget::Owner owner = StaticTarget::Owner::PluginParam) const;
 
     /**
-     * @brief Remove all bindings whose target resolves to a given (devicePath, paramIndex).
+     * @brief Remove all bindings whose target resolves to a given (devicePath, paramIndex, owner).
      *
      * Convenience wrapper: calls findForTarget, then removes each match from its scope.
      * Must be called on the message thread.
      *
      * @return Number of bindings removed.
      */
-    int removeForTarget(const ChainNodePath& devicePath, int paramIndex);
+    int removeForTarget(const ChainNodePath& devicePath, int paramIndex,
+                        StaticTarget::Owner owner = StaticTarget::Owner::PluginParam);
 
     // ========================================================================
     // Persistence
