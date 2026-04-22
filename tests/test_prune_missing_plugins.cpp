@@ -8,6 +8,20 @@ using magda::TracktionEngineWrapper;
 
 namespace {
 
+// Build a platform-correct absolute path that is guaranteed not to exist.
+// Hard-coded "/foo/bar" style paths are NOT absolute on Windows
+// (juce::File::isAbsolutePath needs a drive letter or leading backslash),
+// so the prune helper would skip them and the test would falsely pass on
+// Unix while reporting 0 removals on Windows.
+juce::String makeAbsentAbsolutePath(const juce::String& filename) {
+    auto path = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("magda_prune_test_does_not_exist")
+                    .getChildFile(filename);
+    REQUIRE(juce::File::isAbsolutePath(path.getFullPathName()));
+    REQUIRE_FALSE(path.exists());
+    return path.getFullPathName();
+}
+
 juce::PluginDescription makeDesc(const juce::String& name, const juce::String& fileOrId,
                                  const juce::String& format = "VST3") {
     juce::PluginDescription d;
@@ -37,7 +51,7 @@ TEST_CASE("pruneMissingPlugins removes only missing absolute-path entries", "[pl
 
     juce::KnownPluginList list;
     list.addType(makeDesc("Existing", temp.getFile().getFullPathName()));
-    list.addType(makeDesc("Missing", "/definitely/not/a/real/path/Missing.vst3"));
+    list.addType(makeDesc("Missing", makeAbsentAbsolutePath("Missing.vst3")));
     list.addType(makeDesc("AURelative", "AudioUnit:Apple:fooo,fooo,fooo", "AudioUnit"));
 
     REQUIRE(list.getNumTypes() == 3);
