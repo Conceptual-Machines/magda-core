@@ -83,8 +83,8 @@ void ControllersDialog::ProfileListModel::paintListBoxItem(int rowNumber, juce::
     // Line 2: profile id + connection status — muted
     juce::String line2 = profile.id;
     if (!generic)
-        line2 += connected ? juce::String("  \xc2\xb7  ") + tr("controllers.connected")
-                           : juce::String("  \xc2\xb7  ") + tr("controllers.not_connected");
+        line2 += "  \xc2\xb7  " +
+                 (connected ? tr("controllers.connected") : tr("controllers.not_connected"));
 
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
