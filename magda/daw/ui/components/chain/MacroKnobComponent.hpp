@@ -8,6 +8,7 @@
 #include "core/LinkModeManager.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/controllers/BindingRegistry.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
@@ -28,7 +29,10 @@ namespace magda::daw::ui {
  * Clicking the main area opens the macro editor side panel.
  * Clicking the link button enters link mode for this macro.
  */
-class MacroKnobComponent : public juce::Component, public magda::LinkModeManagerListener {
+class MacroKnobComponent : public juce::Component,
+                           public magda::LinkModeManagerListener,
+                           public magda::BindingRegistryListener,
+                           public magda::SelectionManagerListener {
   public:
     explicit MacroKnobComponent(int macroIndex);
     ~MacroKnobComponent() override;
@@ -82,12 +86,29 @@ class MacroKnobComponent : public juce::Component, public magda::LinkModeManager
     // LinkModeManagerListener implementation
     void macroLinkModeChanged(bool active, const magda::MacroSelection& selection) override;
 
+    // BindingRegistryListener
+    void bindingRegistryChanged(magda::BindingScope) override {
+        refreshAutomapState();
+    }
+
+    // SelectionManagerListener (only care about chain-node focus changes)
+    void selectionTypeChanged(magda::SelectionType) override {}
+    void chainNodeSelectionChanged(const magda::ChainNodePath&) override {
+        refreshAutomapState();
+    }
+    void chainNodeReselected(const magda::ChainNodePath&) override {
+        refreshAutomapState();
+    }
+
+    void refreshAutomapState();
+
     void showLinkMenu();
     void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);
     void onNameLabelEdited();
     void onLinkButtonClicked();
 
     int macroIndex_;
+    bool hasAutomap_ = false;
     juce::Label nameLabel_;
     TextSlider valueSlider_{TextSlider::Format::Decimal};
     std::unique_ptr<magda::SvgButton> linkButton_;

@@ -190,6 +190,52 @@ TEST_CASE("BindingRegistry - orphan binding survives round-trip",
 // JSON round-trip
 // ============================================================================
 
+// ============================================================================
+// hasBindingForDevice
+// ============================================================================
+
+TEST_CASE("BindingRegistry - hasBindingForDevice distinguishes PluginParam from DeviceMacro",
+          "[controllers][binding_registry]") {
+    clearRegistry();
+    auto& reg = BindingRegistry::getInstance();
+
+    ChainNodePath devicePath = ChainNodePath::topLevelDevice(1, 10);
+    ChainNodePath otherPath = ChainNodePath::topLevelDevice(1, 20);
+    ControllerId cid = juce::Uuid();
+
+    // Build a PluginParam binding for devicePath
+    Binding bParam = makeBinding(cid, BindingMsgType::CC, 1, 7);
+    StaticTarget stParam;
+    stParam.devicePath = devicePath;
+    stParam.paramIndex = 2;
+    stParam.owner = StaticTarget::Owner::PluginParam;
+    bParam.target = Target{stParam};
+    reg.add(BindingScope::Global, bParam);
+
+    // Build a DeviceMacro binding for devicePath (project scope)
+    Binding bMacro = makeBinding(cid, BindingMsgType::CC, 1, 8);
+    bMacro.id = juce::Uuid();  // fresh id
+    StaticTarget stMacro;
+    stMacro.devicePath = devicePath;
+    stMacro.paramIndex = 0;
+    stMacro.owner = StaticTarget::Owner::DeviceMacro;
+    bMacro.target = Target{stMacro};
+    reg.add(BindingScope::Project, bMacro);
+
+    // devicePath should have both
+    REQUIRE(reg.hasBindingForDevice(devicePath, StaticTarget::Owner::PluginParam));
+    REQUIRE(reg.hasBindingForDevice(devicePath, StaticTarget::Owner::DeviceMacro));
+
+    // otherPath has neither
+    REQUIRE_FALSE(reg.hasBindingForDevice(otherPath, StaticTarget::Owner::PluginParam));
+    REQUIRE_FALSE(reg.hasBindingForDevice(otherPath, StaticTarget::Owner::DeviceMacro));
+
+    // Remove DeviceMacro binding - DeviceMacro should now be false for devicePath
+    reg.remove(BindingScope::Project, bMacro.id);
+    REQUIRE(reg.hasBindingForDevice(devicePath, StaticTarget::Owner::PluginParam));
+    REQUIRE_FALSE(reg.hasBindingForDevice(devicePath, StaticTarget::Owner::DeviceMacro));
+}
+
 TEST_CASE("BindingRegistry - JSON round-trip for project bindings",
           "[controllers][binding_registry]") {
     clearRegistry();

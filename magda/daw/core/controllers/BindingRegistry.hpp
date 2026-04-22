@@ -127,6 +127,18 @@ class BindingRegistry {
     int removeForTarget(const ChainNodePath& devicePath, int paramIndex,
                         StaticTarget::Owner owner = StaticTarget::Owner::PluginParam);
 
+    /**
+     * @brief Return true if any binding (Global + Project) resolves to a target
+     * on this devicePath with the given owner kind.
+     *
+     * Used by device-header indicators to answer "does this device have any
+     * controller wiring of this kind?" without requiring the caller to
+     * enumerate paramIndex values.
+     *
+     * Must be called on the message thread.
+     */
+    bool hasBindingForDevice(const ChainNodePath& devicePath, StaticTarget::Owner owner) const;
+
     // ========================================================================
     // Persistence
     // ========================================================================

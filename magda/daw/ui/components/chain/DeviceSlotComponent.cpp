@@ -40,6 +40,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // edits and playback without polling.
     magda::AutomationManager::getInstance().addListener(this);
 
+    // Register for binding registry changes (controller indicator dots)
+    magda::BindingRegistry::getInstance().addListener(this);
+
     // Custom name and font for drum grid (MPC-style with Microgramma)
     isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
     isChordEngine_ =
@@ -669,6 +672,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 DeviceSlotComponent::~DeviceSlotComponent() {
     magda::TrackManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
+    magda::BindingRegistry::getInstance().removeListener(this);
     stopTimer();
 }
 
@@ -1252,6 +1256,34 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
         g.drawText("MDG2000", textStartX, textY, availableWidth, textHeight,
                    juce::Justification::centredLeft, false);
+    }
+}
+
+void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
+    // Call base class (bypass dim overlay + selection border)
+    NodeComponent::paintOverChildren(g);
+
+    // Controller indicator dots in the header area (paint-only, no layout space)
+    // Stacked vertically at the far-left edge of the header.
+    if ((hasPinnedBindings_ || hasAutomapBindings_) && getHeaderHeight() > 0) {
+        constexpr float dotSize = 5.0f;
+        constexpr float margin = 2.0f;
+        float headerTop = static_cast<float>(getLocalBounds().getY());
+
+        int dotCount = (hasPinnedBindings_ ? 1 : 0) + (hasAutomapBindings_ ? 1 : 0);
+        float totalHeight = dotCount * dotSize + (dotCount - 1) * 2.0f;
+        float startY = headerTop + (static_cast<float>(getHeaderHeight()) - totalHeight) * 0.5f;
+        float currentY = startY;
+
+        if (hasPinnedBindings_) {
+            g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.85f));
+            g.fillEllipse(margin, currentY, dotSize, dotSize);
+            currentY += dotSize + 2.0f;
+        }
+        if (hasAutomapBindings_) {
+            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.9f));
+            g.fillEllipse(margin, currentY, dotSize, dotSize);
+        }
     }
 }
 
@@ -2086,6 +2118,21 @@ void DeviceSlotComponent::paramSelectionChanged(const magda::ParamSelection& sel
         bool isSelected =
             selection.isValid() && selection.devicePath == nodePath_ && selection.paramIndex == i;
         paramGrid_->setSlotSelected(i, isSelected);
+    }
+}
+
+// =============================================================================
+// Controller Indicators
+// =============================================================================
+
+void DeviceSlotComponent::refreshControllerIndicators() {
+    auto& reg = magda::BindingRegistry::getInstance();
+    bool pinned = reg.hasBindingForDevice(nodePath_, magda::StaticTarget::Owner::PluginParam);
+    bool automap = reg.hasBindingForDevice(nodePath_, magda::StaticTarget::Owner::DeviceMacro);
+    if (pinned != hasPinnedBindings_ || automap != hasAutomapBindings_) {
+        hasPinnedBindings_ = pinned;
+        hasAutomapBindings_ = automap;
+        repaint();
     }
 }
 

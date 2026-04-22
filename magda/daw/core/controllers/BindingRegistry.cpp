@@ -155,6 +155,25 @@ std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& deviceP
     return results;
 }
 
+bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
+                                          StaticTarget::Owner owner) const {
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+
+    auto check = [&](const std::vector<Binding>& vec) -> bool {
+        for (const auto& b : vec) {
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.devicePath == devicePath && resolved.owner == owner)
+                return true;
+        }
+        return false;
+    };
+
+    return check(globalBindings_) || check(projectBindings_);
+}
+
 int BindingRegistry::removeForTarget(const ChainNodePath& devicePath, int paramIndex,
                                      StaticTarget::Owner owner) {
     auto toRemove = findForTarget(devicePath, paramIndex, owner);
