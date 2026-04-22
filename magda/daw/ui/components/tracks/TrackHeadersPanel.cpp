@@ -2730,6 +2730,13 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         juce::PopupMenu::Options().withTargetScreenArea(
             localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
         [this, trackId = header.trackId, trackIndex](int result) {
+            // Force-dismiss the menu synchronously. JUCE's item-click path only
+            // exits modal state and relies on async component destruction, which
+            // leaves the popup visually lingering on screen until the next input
+            // event. dismissAllActiveMenus() routes through hide(nullptr, true)
+            // which calls setVisible(false) immediately.
+            juce::PopupMenu::dismissAllActiveMenus();
+
             if (result == 1) {
                 // Toggle collapse
                 handleCollapseToggle(trackId);
@@ -2737,16 +2744,15 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 // Remove from group
                 TrackManager::getInstance().removeTrackFromGroup(trackId);
             } else if (result == 3) {
-                // Delete track (through undo system). Defer so the popup fully
-                // dismisses before tracksChanged() rebuilds the headers — otherwise
-                // the synchronous rebuild starves the menu's close paint on Linux.
+                // Delete track (through undo system). Deferred so tracksChanged()
+                // rebuilds headers on a fresh message loop iteration, matching
+                // the pattern in AutomationLaneComponent.
                 juce::MessageManager::callAsync([trackId]() {
                     auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
                     UndoManager::getInstance().executeCommand(std::move(cmd));
                 });
             } else if (result == 4) {
-                // Duplicate track with content + FX chain. Deferred for the same
-                // reason as Delete above — avoids starving the popup close paint.
+                // Duplicate track with content + FX chain
                 juce::MessageManager::callAsync([trackId]() {
                     auto cmd = std::make_unique<DuplicateTrackCommand>(
                         trackId, /*duplicateContent=*/true, /*duplicateDevices=*/true);
