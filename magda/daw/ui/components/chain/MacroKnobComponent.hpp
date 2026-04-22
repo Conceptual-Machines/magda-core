@@ -40,6 +40,11 @@ class MacroKnobComponent : public juce::Component,
     // Set macro info from data model
     void setMacroInfo(const magda::MacroInfo& macro);
 
+    // Lightweight value-only update — avoids the full setMacroInfo teardown so
+    // high-rate controller writes don't congest the message thread rebuilding
+    // name labels, link menus, etc. Use when only the knob position changed.
+    void setValueOnly(float value);
+
     // Set available devices for linking (name and deviceId pairs)
     void setAvailableTargets(const std::vector<std::pair<magda::DeviceId, juce::String>>& devices);
 
@@ -50,6 +55,7 @@ class MacroKnobComponent : public juce::Component,
     // Set parent path for drag-and-drop identification
     void setParentPath(const magda::ChainNodePath& path) {
         parentPath_ = path;
+        refreshAutomapState();  // compute initial dot visibility now that path is known
     }
     const magda::ChainNodePath& getParentPath() const {
         return parentPath_;

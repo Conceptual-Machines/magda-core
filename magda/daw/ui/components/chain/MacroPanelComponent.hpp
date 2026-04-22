@@ -37,6 +37,11 @@ class MacroPanelComponent : public PagedControlPanel {
     // Set macros from rack/chain data
     void setMacros(const magda::MacroArray& macros);
 
+    // Lightweight update — only refresh one knob's displayed value, leaving
+    // labels / link menus / bindings alone. Use for high-rate external writes
+    // (e.g. a hardware controller driving a macro via automap).
+    void updateMacroValueDisplay(int macroIndex, float value);
+
     // Set available devices for linking (devices in this rack/chain)
     void setAvailableDevices(const std::vector<std::pair<magda::DeviceId, juce::String>>& devices);
 

@@ -877,7 +877,14 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
                 bool wasAlreadySelected = selected_;
                 bool wasCollapsed = collapsed_;
 
+                // selectChainNode fans out to every SelectionManagerListener —
+                // some listener paths can trigger rebuildNodeComponents, which
+                // would delete *this* while we're still inside mouseUp. Guard
+                // with a SafePointer and bail if we got destroyed mid-dispatch.
+                juce::Component::SafePointer<NodeComponent> safeThis(this);
                 magda::SelectionManager::getInstance().selectChainNode(nodePath_);
+                if (safeThis == nullptr)
+                    return;
 
                 // If was already selected, toggle collapse — but only when collapsed
                 // (to expand) or when the click is on the header bar (to collapse)
@@ -1219,6 +1226,11 @@ void NodeComponent::updateModsPanel() {
 
     auto devices = getAvailableDevices();
     modsPanel_->setAvailableDevices(devices);
+}
+
+void NodeComponent::updateMacroValueDisplay(int macroIndex, float value) {
+    if (macroPanel_)
+        macroPanel_->updateMacroValueDisplay(macroIndex, value);
 }
 
 void NodeComponent::updateMacroPanel() {

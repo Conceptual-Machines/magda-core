@@ -385,7 +385,12 @@ void ControllersDialog::onEnableClicked() {
     for (const auto& b : mat.bindings)
         BindingRegistry::getInstance().add(BindingScope::Global, b);
 
-    Config::getInstance().save();
+    // Persist: push registry state into Config before save. The registries
+    // own the live state; Config is just the on-disk mirror.
+    auto& cfg = Config::getInstance();
+    cfg.setControllers(ControllerRegistry::getInstance().saveToConfig());
+    cfg.setGlobalBindings(BindingRegistry::getInstance().saveGlobal());
+    cfg.save();
     rebuildControllerList();
 }
 
@@ -417,7 +422,11 @@ void ControllersDialog::onRemoveClicked(int rowIndex) {
             }
 
             ControllerRegistry::getInstance().remove(id);
-            Config::getInstance().save();
+
+            auto& cfg = Config::getInstance();
+            cfg.setControllers(ControllerRegistry::getInstance().saveToConfig());
+            cfg.setGlobalBindings(BindingRegistry::getInstance().saveGlobal());
+            cfg.save();
             rebuildControllerList();
         }));
 }

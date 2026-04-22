@@ -62,10 +62,14 @@ MacroKnobComponent::~MacroKnobComponent() {
 }
 
 void MacroKnobComponent::refreshAutomapState() {
-    bool newState =
-        !magda::BindingRegistry::getInstance()
-             .findForTarget(parentPath_, macroIndex_, magda::StaticTarget::Owner::DeviceMacro)
-             .empty();
+    auto matches = magda::BindingRegistry::getInstance().findForTarget(
+        parentPath_, macroIndex_, magda::StaticTarget::Owner::DeviceMacro);
+    bool newState = !matches.empty();
+    DBG("[AUTOMAP-DOT] MacroKnob idx="
+        << macroIndex_ << " parentPath.trackId=" << parentPath_.trackId << " parentPath.deviceId="
+        << parentPath_.getDeviceId() << " parentPath.isValid=" << (parentPath_.isValid() ? 1 : 0)
+        << " matches=" << static_cast<int>(matches.size()) << " newState=" << (newState ? 1 : 0)
+        << " prev=" << (hasAutomap_ ? 1 : 0));
     if (newState != hasAutomap_) {
         hasAutomap_ = newState;
         repaint();
@@ -77,6 +81,12 @@ void MacroKnobComponent::setMacroInfo(const magda::MacroInfo& macro) {
     nameLabel_.setText(macro.name, juce::dontSendNotification);
     valueSlider_.setValue(macro.value, juce::dontSendNotification);
     repaint();  // Update link indicator
+}
+
+void MacroKnobComponent::setValueOnly(float value) {
+    currentMacro_.value = value;
+    valueSlider_.setValue(value, juce::dontSendNotification);
+    repaint();  // paint() draws the arc from currentMacro_.value
 }
 
 void MacroKnobComponent::setAvailableTargets(

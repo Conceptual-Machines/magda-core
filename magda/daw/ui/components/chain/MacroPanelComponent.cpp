@@ -79,6 +79,13 @@ void MacroPanelComponent::setMacros(const magda::MacroArray& macros) {
     repaint();
 }
 
+void MacroPanelComponent::updateMacroValueDisplay(int macroIndex, float value) {
+    if (macroIndex < 0 || macroIndex >= static_cast<int>(knobs_.size()))
+        return;
+    if (knobs_[static_cast<size_t>(macroIndex)])
+        knobs_[static_cast<size_t>(macroIndex)]->setValueOnly(value);
+}
+
 void MacroPanelComponent::setAvailableDevices(
     const std::vector<std::pair<magda::DeviceId, juce::String>>& devices) {
     availableDevices_ = devices;

@@ -1325,27 +1325,27 @@ void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
 }
 
 void TrackChainContent::macroValueChanged(magda::TrackId trackId, bool isRack, int id,
-                                          int /*macroIndex*/, float /*value*/) {
+                                          int macroIndex, float value) {
     if (trackId != selectedTrackId_)
         return;
 
     if (isRack) {
-        // Rack macros: refresh all node components whose path matches the rack id.
+        // Rack macros: targeted value update per matching node.
         for (auto& node : nodeComponents_) {
             if (node && node->getNodePath().getRackId() == id)
-                node->updateMacroPanel();
+                node->updateMacroValueDisplay(macroIndex, value);
         }
-        // Global (track-level) rack macros panel — cheap full refresh.
-        updateGlobalMacrosPanel();
         return;
     }
 
-    // Device macros: id is DeviceId. Refresh the node whose path terminates at
-    // that device so the MacroKnobComponent slider picks up the new value.
+    // Device macros: id is DeviceId. Targeted single-knob update — avoid the
+    // full updateMacroPanel rebuild (setMacros + setAvailableDevices +
+    // setDeviceParamNames) that was congesting the message thread under
+    // high-rate controller writes.
     const magda::DeviceId deviceId = id;
     for (auto& node : nodeComponents_) {
         if (node && node->getNodePath().getDeviceId() == deviceId)
-            node->updateMacroPanel();
+            node->updateMacroValueDisplay(macroIndex, value);
     }
 }
 

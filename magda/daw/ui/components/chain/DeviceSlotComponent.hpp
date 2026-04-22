@@ -174,10 +174,12 @@ class DeviceSlotComponent : public NodeComponent,
     void modSelectionChanged(const magda::ModSelection& selection) override;
     void macroSelectionChanged(const magda::MacroSelection& selection) override;
     void paramSelectionChanged(const magda::ParamSelection& selection) override;
-    void chainNodeSelectionChanged(const magda::ChainNodePath&) override {
+    void chainNodeSelectionChanged(const magda::ChainNodePath& path) override {
+        NodeComponent::chainNodeSelectionChanged(path);  // preserve base setSelected()
         refreshControllerIndicators();
     }
-    void chainNodeReselected(const magda::ChainNodePath&) override {
+    void chainNodeReselected(const magda::ChainNodePath& path) override {
+        NodeComponent::chainNodeReselected(path);
         refreshControllerIndicators();
     }
 
