@@ -86,7 +86,11 @@ run: debug
 .PHONY: run-console
 run-console: debug
 	@echo "🎵 Running MAGDA DAW (console mode)..."
-	"$(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA"
+	@if [ "$$(uname -s)" = "Darwin" ]; then \
+		"$(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA"; \
+	else \
+		"$(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA"; \
+	fi
 
 # Run with profiling enabled
 .PHONY: run-profile
