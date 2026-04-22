@@ -17,6 +17,7 @@ QwertyMidiKeyboard::~QwertyMidiKeyboard() {
 void QwertyMidiKeyboard::setEnabled(bool enabled) {
     if (enabled_ == enabled)
         return;
+    DBG("[QWERTY] setEnabled(" << (enabled ? "true" : "false") << ")");
     if (!enabled)
         allNotesOff();
     enabled_ = enabled;
@@ -100,8 +101,12 @@ int QwertyMidiKeyboard::keyToNote(int keyCode) const {
 
 void QwertyMidiKeyboard::sendNoteOn(int note) {
     auto* vmd = bridge_.getQwertyMidiDevice();
-    if (!vmd)
+    if (!vmd) {
+        DBG("[QWERTY] sendNoteOn(" << note << ") aborted: no virtual MIDI device");
         return;
+    }
+    DBG("[QWERTY] sendNoteOn note=" << note << " vel=" << velocity_
+                                    << " vmdEnabled=" << (vmd->isEnabled() ? "yes" : "no"));
     auto msg = juce::MidiMessage::noteOn(1, note, static_cast<juce::uint8>(velocity_));
     vmd->handleIncomingMidiMessage(msg, te::MPESourceID{});
 
@@ -109,13 +114,18 @@ void QwertyMidiKeyboard::sendNoteOn(int note) {
     if (trackId != INVALID_TRACK_ID) {
         bridge_.triggerMidiActivity(trackId);
         TrackManager::getInstance().triggerMidiNoteOn(trackId);
+    } else {
+        DBG("[QWERTY] sendNoteOn: no selected track — metering/activity skipped");
     }
 }
 
 void QwertyMidiKeyboard::sendNoteOff(int note) {
     auto* vmd = bridge_.getQwertyMidiDevice();
-    if (!vmd)
+    if (!vmd) {
+        DBG("[QWERTY] sendNoteOff(" << note << ") aborted: no virtual MIDI device");
         return;
+    }
+    DBG("[QWERTY] sendNoteOff note=" << note);
     auto msg = juce::MidiMessage::noteOff(1, note);
     vmd->handleIncomingMidiMessage(msg, te::MPESourceID{});
 
@@ -131,22 +141,33 @@ void QwertyMidiKeyboard::allNotesOff() {
 }
 
 bool QwertyMidiKeyboard::keyPressed(const juce::KeyPress& key, juce::Component*) {
-    if (!enabled_)
+    // Normalize ASCII letter keys to uppercase. JUCE returns the char-level
+    // code from getKeyCode(): uppercase on macOS but lowercase on Linux/X11
+    // for unshifted letters, which would otherwise miss our A-Z switch.
+    int keyCode = key.getKeyCode();
+    if (keyCode >= 'a' && keyCode <= 'z')
+        keyCode = keyCode - 'a' + 'A';
+    if (!enabled_) {
+        DBG("[QWERTY] keyPressed ignored: disabled (keyCode=" << keyCode << ")");
         return false;
+    }
 
     // Always pass through modifier combos
     auto mods = key.getModifiers();
-    if (mods.isCommandDown() || mods.isCtrlDown() || mods.isAltDown())
+    if (mods.isCommandDown() || mods.isCtrlDown() || mods.isAltDown()) {
+        DBG("[QWERTY] keyPressed pass-through: modifier held (keyCode=" << keyCode << ")");
         return false;
+    }
 
     // Octave shift: Z down, X up
-    int keyCode = key.getKeyCode();
     if (keyCode == 'Z') {
         setBaseOctave(baseOctave_ - 1);
+        DBG("[QWERTY] octave down -> " << baseOctave_);
         return true;
     }
     if (keyCode == 'X') {
         setBaseOctave(baseOctave_ + 1);
+        DBG("[QWERTY] octave up -> " << baseOctave_);
         return true;
     }
 
@@ -155,10 +176,13 @@ bool QwertyMidiKeyboard::keyPressed(const juce::KeyPress& key, juce::Component*)
         return false;
 
     int note = keyToNote(keyCode);
-    if (note < 0)
+    if (note < 0) {
+        DBG("[QWERTY] keyPressed: unmapped key (keyCode=" << keyCode << ")");
         return false;
+    }
 
     if (heldNotes_.find(note) == heldNotes_.end()) {
+        DBG("[QWERTY] keyPressed: keyCode=" << keyCode << " -> note=" << note);
         heldNotes_.insert(note);
         sendNoteOn(note);
     }
@@ -181,7 +205,13 @@ bool QwertyMidiKeyboard::keyStateChanged(bool /*isKeyDown*/, juce::Component*) {
         // Build reverse map inline — check each key that maps to this note
         for (int kc :
              {'A', 'S', 'D', 'F', 'G', 'H', 'J', 'W', 'E', 'T', 'Y', 'U', 'K', 'L', 'O', 'P'}) {
-            if (keyToNote(kc) == note && juce::KeyPress::isKeyCurrentlyDown(kc)) {
+            if (keyToNote(kc) != note)
+                continue;
+            // Linux/X11 reports letter keys as lowercase — check both so held
+            // notes release correctly across platforms.
+            int lower = kc - 'A' + 'a';
+            if (juce::KeyPress::isKeyCurrentlyDown(kc) ||
+                juce::KeyPress::isKeyCurrentlyDown(lower)) {
                 stillDown = true;
                 break;
             }
