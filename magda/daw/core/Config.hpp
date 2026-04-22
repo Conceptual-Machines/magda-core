@@ -604,6 +604,33 @@ class Config {
         paramAliases_ = aliases;
     }
 
+    // Controllers (serialized to/from config.json "controllers" key)
+    juce::var getControllers() const {
+        return controllers_;
+    }
+    void setControllers(const juce::var& c) {
+        controllers_ = c;
+    }
+
+    // Global bindings (serialized to/from config.json "globalBindings" key)
+    juce::var getGlobalBindings() const {
+        return globalBindings_;
+    }
+    void setGlobalBindings(const juce::var& b) {
+        globalBindings_ = b;
+    }
+
+    // MIDI Learn default scope ("project" or "global"; default is Project).
+    // Stored in config.json under "midiLearn" -> "defaultScope".
+    // Returns 0 for Global, 1 for Project (mirrors BindingScope enum order).
+    // Callers that need the typed enum: cast with static_cast<BindingScope>(raw).
+    int getMidiLearnDefaultScopeRaw() const {
+        return midiLearnDefaultScope_;
+    }
+    void setMidiLearnDefaultScopeRaw(int scope) {
+        midiLearnDefaultScope_ = scope;
+    }
+
     // Save/load to platform-appropriate location:
     //   macOS  ~/Library/Application Support/MAGDA/config.json
     //   Windows  %APPDATA%\MAGDA\config.json
@@ -739,8 +766,18 @@ class Config {
 
     std::vector<ConfigListener*> listeners_;
 
+    // MIDI Learn default scope: 0 = Global, 1 = Project
+    // Default is Project (1) to keep bindings per-song by default.
+    int midiLearnDefaultScope_ = 1;
+
     // User-global parameter aliases (opaque JSON blob, managed by AliasRegistry)
     juce::var paramAliases_;
+
+    // Controller devices (opaque JSON blob, managed by ControllerRegistry)
+    juce::var controllers_;
+
+    // Global bindings (opaque JSON blob, managed by BindingRegistry)
+    juce::var globalBindings_;
 };
 
 }  // namespace magda

@@ -52,6 +52,22 @@ struct StoredAlias {
 };
 
 // ============================================================================
+// ReverseMatch
+// ============================================================================
+
+/**
+ * @brief Result of a reverse-lookup in the AliasRegistry.
+ *
+ * Returned by findByPath() when an alias maps back to a concrete
+ * (devicePath, paramIndex) pair.
+ */
+struct ReverseMatch {
+    juce::String canonicalName;  // The alias key (e.g. "@serum.filter_cutoff")
+    StoredAlias alias;           // The full stored alias entry
+    AliasLayer layer;            // Which layer this alias lives in
+};
+
+// ============================================================================
 // AliasRegistry listener
 // ============================================================================
 
@@ -137,6 +153,24 @@ class AliasRegistry {
 
     /** Read-only view of a layer (for serialisation helpers). */
     const std::map<juce::String, StoredAlias>& layerEntries(AliasLayer layer) const;
+
+    // ========================================================================
+    // Reverse lookup
+    // ========================================================================
+
+    /**
+     * @brief Find all aliases that resolve to a given (devicePath, paramIndex).
+     *
+     * Walks all four layers and returns every entry whose StoredAlias.path
+     * matches devicePath and whose paramIndex matches.
+     *
+     * @param devicePath   Concrete device path to search for.
+     * @param paramIndex   Parameter index within the device.
+     * @param autoGenOnly  When true (default) only the AutoGen layer is searched.
+     *                     When false, all layers are searched.
+     */
+    std::vector<ReverseMatch> findByPath(const ChainNodePath& devicePath, int paramIndex,
+                                         bool autoGenOnly = true) const;
 
     // ========================================================================
     // Persistence

@@ -15,6 +15,8 @@ namespace magda::daw::ui {
 
 LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(format) {
     magda::LinkModeManager::getInstance().addListener(this);
+    magda::MidiLearnCoordinator::getInstance().addListener(this);
+    magda::BindingRegistry::getInstance().addListener(this);
 
     setInterceptsMouseClicks(true, true);
 
@@ -120,9 +122,19 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
                                .onTrackMacroLinked = onTrackMacroLinked,
                                .onRackMacroUnlinked = onRackMacroUnlinked,
                                .onTrackMacroUnlinked = onTrackMacroUnlinked,
-                               .onShowAutomationLane = onShowAutomationLane});
+                               .onShowAutomationLane = onShowAutomationLane,
+                               .onMidiLearn = onMidiLearn,
+                               .onMidiClear = onMidiClear});
         }
     };
+    // Default MIDI Learn wiring: delegate to MidiLearnCoordinator singleton
+    onMidiLearn = [](magda::ChainNodePath path, int paramIdx, juce::String paramName) {
+        magda::MidiLearnCoordinator::getInstance().beginLearn(path, paramIdx, paramName);
+    };
+    onMidiClear = [](magda::ChainNodePath path, int paramIdx) {
+        magda::MidiLearnCoordinator::getInstance().clearMappings(path, paramIdx);
+    };
+
     addAndMakeVisible(slider_);
 }
 
@@ -130,6 +142,11 @@ LinkableTextSlider::~LinkableTextSlider() {
     if (amountLabel_.isOnDesktop()) {
         amountLabel_.removeFromDesktop();
     }
+    if (isInMidiLearnMode_) {
+        magda::MidiLearnCoordinator::getInstance().cancelLearn();
+    }
+    magda::MidiLearnCoordinator::getInstance().removeListener(this);
+    magda::BindingRegistry::getInstance().removeListener(this);
     magda::LinkModeManager::getInstance().removeListener(this);
 }
 
@@ -198,6 +215,7 @@ void LinkableTextSlider::setLinkContext(magda::DeviceId deviceId, int paramIndex
     deviceId_ = deviceId;
     paramIndex_ = paramIndex;
     devicePath_ = devicePath;
+    refreshMidiBindingState();
 
     // Wire the underlying TextSlider's automation target so the purple
     // "automated" tint paints when a lane exists for this param, and so
@@ -312,6 +330,41 @@ void LinkableTextSlider::macroLinkModeChanged(bool active, const magda::MacroSel
 }
 
 // ============================================================================
+// MidiLearnCoordinatorListener
+// ============================================================================
+
+void LinkableTextSlider::midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
+                                               bool learning) {
+    bool isMe = (path == devicePath_ && paramIndex == paramIndex_);
+    isInMidiLearnMode_ = learning && isMe;
+    repaint();
+}
+
+void LinkableTextSlider::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                                            const magda::Binding&) {
+    if (path == devicePath_ && paramIndex == paramIndex_)
+        refreshMidiBindingState();
+}
+
+void LinkableTextSlider::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex, int) {
+    if (path == devicePath_ && paramIndex == paramIndex_)
+        refreshMidiBindingState();
+}
+
+void LinkableTextSlider::bindingRegistryChanged(magda::BindingScope) {
+    refreshMidiBindingState();
+}
+
+void LinkableTextSlider::refreshMidiBindingState() {
+    bool newState =
+        !magda::BindingRegistry::getInstance().findForTarget(devicePath_, paramIndex_).empty();
+    if (newState != hasMidiBinding_) {
+        hasMidiBinding_ = newState;
+        repaint();
+    }
+}
+
+// ============================================================================
 // Layout & painting
 // ============================================================================
 
@@ -326,6 +379,28 @@ void LinkableTextSlider::paintOverChildren(juce::Graphics& g) {
                          : DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.15f);
         g.setColour(color);
         g.fillRoundedRectangle(getLocalBounds().toFloat(), 2.0f);
+    }
+
+    // Persistent MIDI-mapped badge: a small dot at the top-right corner.
+    // Learn-mode pulse overrides when both are set.
+    if (hasMidiBinding_ && !isInMidiLearnMode_) {
+        constexpr float dotSize = 5.0f;
+        constexpr float margin = 3.0f;
+        auto r = getLocalBounds().toFloat();
+        juce::Rectangle<float> dot(r.getRight() - margin - dotSize, r.getY() + margin, dotSize,
+                                   dotSize);
+        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.85f));
+        g.fillEllipse(dot);
+    }
+
+    // MIDI Learn pulsing border
+    if (isInMidiLearnMode_) {
+        float phase =
+            std::fmod(static_cast<float>(juce::Time::getMillisecondCounterHiRes() * 0.003), 1.0f);
+        // 0.7 + 0.3*sin keeps alpha in [0.4, 1.0]; 0.4 + 0.6*sin went negative.
+        float alpha = 0.7f + 0.3f * std::sin(phase * juce::MathConstants<float>::twoPi);
+        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(alpha));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 2.0f, 2.0f);
     }
 
     // Modulation indicator bars
@@ -373,7 +448,9 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
                            .onTrackMacroLinked = onTrackMacroLinked,
                            .onRackMacroUnlinked = onRackMacroUnlinked,
                            .onTrackMacroUnlinked = onTrackMacroUnlinked,
-                           .onShowAutomationLane = onShowAutomationLane});
+                           .onShowAutomationLane = onShowAutomationLane,
+                           .onMidiLearn = onMidiLearn,
+                           .onMidiClear = onMidiClear});
         return;
     }
 
@@ -559,7 +636,7 @@ void LinkableTextSlider::timerCallback() {
 }
 
 void LinkableTextSlider::updateModTimerState() {
-    if (hasActiveLinks(buildLinkContext())) {
+    if (hasActiveLinks(buildLinkContext()) || isInMidiLearnMode_) {
         if (!isTimerRunning()) {
             startTimer(33);  // ~30 FPS
         }

@@ -1,5 +1,7 @@
 #include "ParamLinkMenu.hpp"
 
+#include "core/controllers/MidiLearnCoordinator.hpp"
+
 namespace magda::daw::ui {
 
 void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
@@ -132,72 +134,106 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
     menu.addSeparator();
     menu.addItem(5000, "Show Automation Lane");
 
+    // MIDI section
+    menu.addSeparator();
+    {
+        bool isLearning =
+            magda::MidiLearnCoordinator::getInstance().isLearning(ctx.devicePath, ctx.paramIndex);
+        int mappingCount = static_cast<int>(magda::BindingRegistry::getInstance()
+                                                .findForTarget(ctx.devicePath, ctx.paramIndex)
+                                                .size());
+
+        juce::String learnLabel = isLearning ? "Cancel MIDI Learn" : "Learn MIDI";
+        menu.addItem(6000, learnLabel);
+        menu.addItem(6001,
+                     "Clear MIDI Mapping" +
+                         (mappingCount > 0 ? " (" + juce::String(mappingCount) + ")" : ""),
+                     mappingCount > 0);
+        menu.addItem(6002, "Edit MIDI Mapping...", false);  // greyed out (no-op)
+    }
+
     // Show full menu
     auto safeAnchor = juce::Component::SafePointer<juce::Component>(anchor);
     auto deviceId = ctx.deviceId;
     auto paramIdx = ctx.paramIndex;
+    auto devicePath = ctx.devicePath;
     auto cbs = callbacks;
 
-    menu.showMenuAsync(juce::PopupMenu::Options(),
-                       [safeAnchor, deviceId, paramIdx, cbs](int result) {
-                           if (safeAnchor == nullptr || result == 0) {
-                               return;
-                           }
+    menu.showMenuAsync(
+        juce::PopupMenu::Options(), [safeAnchor, deviceId, paramIdx, devicePath, cbs](int result) {
+            if (safeAnchor == nullptr || result == 0) {
+                return;
+            }
 
-                           magda::ModTarget target{deviceId, paramIdx};
+            magda::ModTarget target{deviceId, paramIdx};
 
-                           if (result >= 1700 && result < 1800) {
-                               int modIndex = result - 1700;
-                               if (cbs.onTrackModUnlinked)
-                                   cbs.onTrackModUnlinked(modIndex, target);
-                           } else if (result >= 1500 && result < 1700) {
-                               int modIndex = (result >= 1600) ? result - 1600 : result - 1500;
-                               if (cbs.onModUnlinked)
-                                   cbs.onModUnlinked(modIndex, target);
-                           } else if (result >= 2200 && result < 2300) {
-                               int macroIndex = result - 2200;
-                               magda::MacroTarget macroTarget{deviceId, paramIdx};
-                               if (cbs.onTrackMacroUnlinked)
-                                   cbs.onTrackMacroUnlinked(macroIndex, macroTarget);
-                           } else if (result >= 2100 && result < 2200) {
-                               int macroIndex = result - 2100;
-                               magda::MacroTarget macroTarget{deviceId, paramIdx};
-                               if (cbs.onRackMacroUnlinked)
-                                   cbs.onRackMacroUnlinked(macroIndex, macroTarget);
-                           } else if (result >= 2000 && result < 2100) {
-                               int macroIndex = result - 2000;
-                               magda::MacroTarget macroTarget{deviceId, paramIdx};
-                               if (cbs.onMacroUnlinked)
-                                   cbs.onMacroUnlinked(macroIndex, macroTarget);
-                           } else if (result >= 3000 && result < 4000) {
-                               int modIndex = result - 3000;
-                               if (cbs.onModLinkedWithAmount) {
-                                   cbs.onModLinkedWithAmount(modIndex, target, 0.0f);
-                               }
-                           } else if (result >= 4200 && result < 4300) {
-                               int macroIndex = result - 4200;
-                               magda::MacroTarget macroTarget{deviceId, paramIdx};
-                               if (cbs.onTrackMacroLinked)
-                                   cbs.onTrackMacroLinked(macroIndex, macroTarget);
-                           } else if (result >= 4100 && result < 4200) {
-                               int macroIndex = result - 4100;
-                               magda::MacroTarget macroTarget{deviceId, paramIdx};
-                               if (cbs.onRackMacroLinked)
-                                   cbs.onRackMacroLinked(macroIndex, macroTarget);
-                           } else if (result >= 4000 && result < 4100) {
-                               int macroIndex = result - 4000;
-                               if (cbs.onMacroLinked) {
-                                   magda::MacroTarget macroTarget{deviceId, paramIdx};
-                                   cbs.onMacroLinked(macroIndex, macroTarget);
-                               }
-                           } else if (result == 5000) {
-                               if (cbs.onShowAutomationLane)
-                                   cbs.onShowAutomationLane();
-                           }
+            if (result >= 1700 && result < 1800) {
+                int modIndex = result - 1700;
+                if (cbs.onTrackModUnlinked)
+                    cbs.onTrackModUnlinked(modIndex, target);
+            } else if (result >= 1500 && result < 1700) {
+                int modIndex = (result >= 1600) ? result - 1600 : result - 1500;
+                if (cbs.onModUnlinked)
+                    cbs.onModUnlinked(modIndex, target);
+            } else if (result >= 2200 && result < 2300) {
+                int macroIndex = result - 2200;
+                magda::MacroTarget macroTarget{deviceId, paramIdx};
+                if (cbs.onTrackMacroUnlinked)
+                    cbs.onTrackMacroUnlinked(macroIndex, macroTarget);
+            } else if (result >= 2100 && result < 2200) {
+                int macroIndex = result - 2100;
+                magda::MacroTarget macroTarget{deviceId, paramIdx};
+                if (cbs.onRackMacroUnlinked)
+                    cbs.onRackMacroUnlinked(macroIndex, macroTarget);
+            } else if (result >= 2000 && result < 2100) {
+                int macroIndex = result - 2000;
+                magda::MacroTarget macroTarget{deviceId, paramIdx};
+                if (cbs.onMacroUnlinked)
+                    cbs.onMacroUnlinked(macroIndex, macroTarget);
+            } else if (result >= 3000 && result < 4000) {
+                int modIndex = result - 3000;
+                if (cbs.onModLinkedWithAmount) {
+                    cbs.onModLinkedWithAmount(modIndex, target, 0.0f);
+                }
+            } else if (result >= 4200 && result < 4300) {
+                int macroIndex = result - 4200;
+                magda::MacroTarget macroTarget{deviceId, paramIdx};
+                if (cbs.onTrackMacroLinked)
+                    cbs.onTrackMacroLinked(macroIndex, macroTarget);
+            } else if (result >= 4100 && result < 4200) {
+                int macroIndex = result - 4100;
+                magda::MacroTarget macroTarget{deviceId, paramIdx};
+                if (cbs.onRackMacroLinked)
+                    cbs.onRackMacroLinked(macroIndex, macroTarget);
+            } else if (result >= 4000 && result < 4100) {
+                int macroIndex = result - 4000;
+                if (cbs.onMacroLinked) {
+                    magda::MacroTarget macroTarget{deviceId, paramIdx};
+                    cbs.onMacroLinked(macroIndex, macroTarget);
+                }
+            } else if (result == 5000) {
+                if (cbs.onShowAutomationLane)
+                    cbs.onShowAutomationLane();
+            } else if (result == 6000) {
+                bool isCurrentlyLearning =
+                    magda::MidiLearnCoordinator::getInstance().isLearning(devicePath, paramIdx);
+                if (isCurrentlyLearning) {
+                    magda::MidiLearnCoordinator::getInstance().cancelLearn();
+                } else {
+                    if (cbs.onMidiLearn)
+                        cbs.onMidiLearn(devicePath, paramIdx, {});
+                }
+            } else if (result == 6001) {
+                if (cbs.onMidiClear)
+                    cbs.onMidiClear(devicePath, paramIdx);
+            } else if (result == 6002) {
+                if (cbs.onMidiEdit)
+                    cbs.onMidiEdit(devicePath, paramIdx);
+            }
 
-                           if (safeAnchor != nullptr)
-                               safeAnchor->repaint();
-                       });
+            if (safeAnchor != nullptr)
+                safeAnchor->repaint();
+        });
 }
 
 }  // namespace magda::daw::ui

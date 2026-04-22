@@ -7,6 +7,7 @@
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/ParameterInfo.hpp"
+#include "core/controllers/MidiLearnCoordinator.hpp"
 #include "ui/components/chain/ParamModulationPainter.hpp"
 
 namespace magda::daw::ui {
@@ -19,6 +20,8 @@ namespace magda::daw::ui {
  */
 class LinkableTextSlider : public juce::Component,
                            public magda::LinkModeManagerListener,
+                           public magda::MidiLearnCoordinatorListener,
+                           public magda::BindingRegistryListener,
                            public juce::Timer {
   public:
     LinkableTextSlider(TextSlider::Format format = TextSlider::Format::Decimal);
@@ -77,6 +80,10 @@ class LinkableTextSlider : public juce::Component,
         onMacroAmountChanged;
     std::function<void()> onShowAutomationLane;
 
+    // MIDI Learn callbacks (wired to MidiLearnCoordinator by this component)
+    std::function<void(magda::ChainNodePath, int paramIndex, juce::String paramName)> onMidiLearn;
+    std::function<void(magda::ChainNodePath, int paramIndex)> onMidiClear;
+
     // === Component overrides ===
     void resized() override;
     void paintOverChildren(juce::Graphics& g) override;
@@ -89,6 +96,19 @@ class LinkableTextSlider : public juce::Component,
     // === LinkModeManagerListener ===
     void modLinkModeChanged(bool active, const magda::ModSelection& selection) override;
     void macroLinkModeChanged(bool active, const magda::MacroSelection& selection) override;
+
+    // === MidiLearnCoordinatorListener ===
+    void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
+                               bool learning) override;
+    void midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                            const magda::Binding&) override;
+    void midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
+                          int numRemoved) override;
+
+    // === BindingRegistryListener ===
+    void bindingRegistryChanged(magda::BindingScope scope) override;
+
+    void refreshMidiBindingState();
 
     // === Timer ===
     void timerCallback() override;
@@ -113,6 +133,10 @@ class LinkableTextSlider : public juce::Component,
     bool isInLinkMode_ = false;
     magda::ModSelection activeMod_;
     magda::MacroSelection activeMacro_;
+
+    // MIDI Learn state
+    bool isInMidiLearnMode_ = false;
+    bool hasMidiBinding_ = false;  // Persistent badge for already-mapped params
 
     // Link mode drag state
     bool isLinkModeDrag_ = false;

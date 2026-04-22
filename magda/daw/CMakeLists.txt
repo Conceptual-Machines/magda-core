@@ -252,6 +252,8 @@ set(DAW_CORE_SOURCES
     core/aliases/ParamSigilParser.cpp
     # Parameter alias system (PR 2 -- AliasRegistry and persistence)
     core/aliases/AliasRegistry.cpp
+    # MIDI Learn reverse index helpers
+    core/aliases/AliasReverseIndex.cpp
     # Parameter alias system (PR 3 -- ResolverRegistry, ChainContext, TargetResolver)
     core/aliases/ChainContext.cpp
     core/aliases/ResolverRegistry.cpp
@@ -260,6 +262,20 @@ set(DAW_CORE_SOURCES
     core/aliases/AutoAliasGenerator.cpp
     # Parameter alias system (PR 5 -- CuratedAliasLoader)
     core/aliases/CuratedAliasLoader.cpp
+    # Controller data model (issue #1050 -- Phase A)
+    core/controllers/Controller.cpp
+    core/controllers/Binding.cpp
+    core/controllers/BindingTransform.cpp
+    # Controller registries (issue #1050 -- Phase B)
+    core/controllers/ControllerRegistry.cpp
+    core/controllers/BindingRegistry.cpp
+    # Controller router + param writer (issue #1050 -- Phase C)
+    audio/ControllerParamWriter.cpp
+    audio/ControllerRouter.cpp
+    # MIDI Learn coordinator (issue #924)
+    core/controllers/MidiLearnCoordinator.cpp
+    # Platform-neutral MIDI device identifier matcher (issue #1050)
+    audio/MidiDeviceMatch.cpp
     engine/TracktionEngineWrapper.cpp
     engine/TracktionEngineWrapperInit.cpp
     engine/TracktionEngineWrapperDevices.cpp
@@ -418,6 +434,7 @@ set(DAW_UI_SOURCES
     ui/components/common/MixerDebugPanel.cpp
     ui/components/common/GridOverlayComponent.cpp
     ui/components/common/LinkableTextSlider.cpp
+    ui/components/common/Toast.cpp
     ui/components/common/DraggableValueLabel.cpp
     ui/components/common/BarsBeatsTicksLabel.cpp
     # Components - Timeline

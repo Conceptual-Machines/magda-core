@@ -10,6 +10,8 @@
 #include "../themes/FontManager.hpp"
 #include "Config.hpp"
 #include "audio/AudioBridge.hpp"
+#include "audio/ControllerParamWriter.hpp"
+#include "audio/ControllerRouter.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipManager.hpp"
 #include "core/LinkModeManager.hpp"
@@ -21,6 +23,9 @@
 #include "core/UndoManager.hpp"
 #include "core/aliases/AliasRegistry.hpp"
 #include "core/aliases/CuratedAliasLoader.hpp"
+#include "core/controllers/BindingRegistry.hpp"
+#include "core/controllers/ControllerRegistry.hpp"
+#include "core/controllers/MidiLearnCoordinator.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 
@@ -72,6 +77,21 @@ MainView::MainView(AudioEngine* audioEngine)
     // Load parameter alias layers
     CuratedAliasLoader::loadFromBinary();
     AliasRegistry::getInstance().loadUserGlobal(config.getParamAliases());
+
+    // Load controller + binding state and start the MIDI dispatch router
+    ControllerRegistry::getInstance().loadFromConfig(config.getControllers());
+    BindingRegistry::getInstance().loadGlobal(config.getGlobalBindings());
+    ControllerRouter::getInstance().reconfigure();
+    if (auto* audioBridge = audioEngine_->getAudioBridge())
+        ControllerRouter::getInstance().setParamWriter(
+            std::make_unique<DefaultControllerParamWriter>(*audioBridge));
+    if (auto* midiBridge = audioEngine_->getMidiBridge())
+        ControllerRouter::getInstance().setMidiBridge(midiBridge);
+
+    // Attach MIDI Learn coordinator to the router and seed scope from config
+    magda::MidiLearnCoordinator::getInstance().attach(ControllerRouter::getInstance());
+    magda::MidiLearnCoordinator::getInstance().setScope(
+        static_cast<magda::BindingScope>(config.getMidiLearnDefaultScopeRaw()));
 
     // Apply language from config (overrides the en.json auto-loaded by StringTable constructor)
     {

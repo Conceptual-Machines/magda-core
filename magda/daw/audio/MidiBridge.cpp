@@ -213,8 +213,20 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
         return;
     }
 
-    // Get the device ID for this input
+    // Get both identifier (OS-native, stable per-machine) and display name
+    // (stable across machines / OSes) for this input — listeners use both via
+    // magda::midi::matches to support name-based fallback.
     juce::String sourceDeviceId = source->getIdentifier();
+    juce::String sourceDeviceName = source->getName();
+
+    // Notify raw MIDI listeners FIRST (before routing logic).
+    // These run on the MIDI callback thread; implementations must be lock-free.
+    {
+        juce::ScopedLock lock(rawMidiListenersLock_);
+        for (auto* listener : rawMidiListeners_)
+            if (listener)
+                listener->onRawMidi(sourceDeviceId, sourceDeviceName, message);
+    }
 
     // Push event to global queue for MIDI monitor
     {
@@ -310,6 +322,16 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
 void MidiBridge::setRecordingQueue(RecordingNoteQueue* queue, std::atomic<double>* transportPos) {
     recordingQueue_ = queue;
     transportPosition_ = transportPos;
+}
+
+void MidiBridge::addRawMidiListener(RawMidiListener* listener) {
+    juce::ScopedLock lock(rawMidiListenersLock_);
+    rawMidiListeners_.addIfNotAlreadyThere(listener);
+}
+
+void MidiBridge::removeRawMidiListener(RawMidiListener* listener) {
+    juce::ScopedLock lock(rawMidiListenersLock_);
+    rawMidiListeners_.removeAllInstancesOf(listener);
 }
 
 void MidiBridge::startMonitoring(TrackId trackId) {

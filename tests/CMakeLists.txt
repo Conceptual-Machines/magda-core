@@ -63,6 +63,17 @@ set(TEST_SOURCES
     test_curated_alias_loader.cpp
     # Parameter alias system tests (PR 7 -- Automation alias targets)
     test_automation_alias_targets.cpp
+    # Controller data model tests (issue #1050 -- Phase A)
+    test_binding_transform.cpp
+    # Controller registry tests (issue #1050 -- Phase B)
+    test_controller_registry.cpp
+    test_binding_registry.cpp
+    # Controller router tests (issue #1050 -- Phase C)
+    test_controller_router.cpp
+    # MIDI device identifier matcher tests (issue #1050)
+    test_midi_device_match.cpp
+    # MIDI Learn session tests (issue #924)
+    test_midi_learn.cpp
 )
 
 # Create test executable

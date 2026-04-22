@@ -29,6 +29,32 @@ class AudioBridge;
  *
  * Similar to AudioBridge, but for MIDI.
  */
+// ============================================================================
+// RawMidiListener
+// ============================================================================
+
+/**
+ * @brief Receives raw MIDI messages from every open input device.
+ *
+ * Called at the top of MidiBridge::handleIncomingMidiMessage, before routing
+ * or monitoring logic. Intended for ControllerRouter to tap controller ports
+ * without interfering with the existing track-routing pipeline.
+ *
+ * Called from the MIDI callback thread -- implementations must be lock-free.
+ */
+struct RawMidiListener {
+    virtual ~RawMidiListener() = default;
+    // deviceId: JUCE identifier (opaque, OS-specific format).
+    // deviceName: human-readable display name (also provided so listeners can
+    //             match via magda::midi::matches without a separate lookup).
+    virtual void onRawMidi(const juce::String& deviceId, const juce::String& deviceName,
+                           const juce::MidiMessage& msg) = 0;
+};
+
+// ============================================================================
+// MidiBridge
+// ============================================================================
+
 class MidiBridge : public juce::MidiInputCallback {
   public:
     explicit MidiBridge(te::Engine& engine);
@@ -190,6 +216,19 @@ class MidiBridge : public juce::MidiInputCallback {
 
     void setRecordingQueue(RecordingNoteQueue* queue, std::atomic<double>* transportPos);
 
+    // =========================================================================
+    // Raw MIDI listener (for ControllerRouter)
+    // =========================================================================
+
+    /**
+     * @brief Subscribe to raw MIDI from every open input device.
+     *
+     * Thread-safe. The listener is called from the MIDI callback thread;
+     * implementations must be lock-free.
+     */
+    void addRawMidiListener(RawMidiListener* listener);
+    void removeRawMidiListener(RawMidiListener* listener);
+
   private:
     // MidiInputCallback implementation
     void handleIncomingMidiMessage(juce::MidiInput* source,
@@ -227,6 +266,10 @@ class MidiBridge : public juce::MidiInputCallback {
     std::atomic<int> activeCallbacks_{0};
 
     juce::ListenerList<Listener> midiDeviceListListeners_;
+
+    // Raw MIDI listeners (for ControllerRouter)
+    juce::Array<RawMidiListener*> rawMidiListeners_;
+    juce::CriticalSection rawMidiListenersLock_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiBridge)
 };

@@ -165,6 +165,38 @@ void AliasRegistry::replaceAutoForDevice(const ChainNodePath& devicePath,
 }
 
 // ============================================================================
+// Reverse lookup
+// ============================================================================
+
+std::vector<ReverseMatch> AliasRegistry::findByPath(const ChainNodePath& devicePath, int paramIndex,
+                                                    bool autoGenOnly) const {
+    std::vector<ReverseMatch> results;
+
+    auto searchLayer = [&](const std::map<juce::String, StoredAlias>& layerMap, AliasLayer layer) {
+        for (const auto& [name, alias] : layerMap) {
+            if (!alias.path.has_value())
+                continue;
+            if (*alias.path != devicePath)
+                continue;
+            if (alias.paramIndex != paramIndex)
+                continue;
+            results.push_back({name, alias, layer});
+        }
+    };
+
+    if (autoGenOnly) {
+        searchLayer(autoGenLayer_, AliasLayer::AutoGen);
+    } else {
+        searchLayer(userProjectLayer_, AliasLayer::UserProject);
+        searchLayer(userGlobalLayer_, AliasLayer::UserGlobal);
+        searchLayer(curatedLayer_, AliasLayer::Curated);
+        searchLayer(autoGenLayer_, AliasLayer::AutoGen);
+    }
+
+    return results;
+}
+
+// ============================================================================
 // Drift fallback helper
 // ============================================================================
 
