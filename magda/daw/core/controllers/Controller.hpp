@@ -30,6 +30,7 @@ struct Controller {
     juce::String inputPort;   // JUCE MIDI input device identifier
     juce::String outputPort;  // optional MIDI output identifier
     juce::String script;      // empty for 0.6.0
+    juce::String profileId;   // optional: references a ControllerProfile id; empty = no profile
     bool enabled = true;
 
     /** Returns true when the controller has a non-default id and a non-empty inputPort. */
