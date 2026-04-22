@@ -12,8 +12,12 @@ juce::String toDebugString(const Target& target) {
             using T = std::decay_t<decltype(t)>;
 
             if constexpr (std::is_same_v<T, StaticTarget>) {
-                return "StaticTarget{path=" + t.devicePath.toString() +
-                       ", paramIndex=" + juce::String(t.paramIndex) + "}";
+                juce::String s = "StaticTarget{path=" + t.devicePath.toString() +
+                                 ", paramIndex=" + juce::String(t.paramIndex);
+                if (t.owner != StaticTarget::Owner::PluginParam)
+                    s += ", owner=device_macro";
+                s += "}";
+                return s;
             } else if constexpr (std::is_same_v<T, AliasRef>) {
                 juce::String s = "AliasRef{name=" + t.name;
                 if (t.pluginType.isNotEmpty())
@@ -45,6 +49,10 @@ juce::String encodeTarget(const Target& target) {
             if constexpr (std::is_same_v<T, StaticTarget>) {
                 obj->setProperty("kind", juce::String("static"));
                 obj->setProperty("paramIndex", t.paramIndex);
+
+                // Encode owner (omit when default to keep old JSON compact)
+                if (t.owner == StaticTarget::Owner::DeviceMacro)
+                    obj->setProperty("owner", juce::String("device_macro"));
 
                 // Encode ChainNodePath inline
                 auto* pathObj = new juce::DynamicObject();
@@ -101,6 +109,21 @@ std::optional<Target> decodeTarget(const juce::String& json) {
     if (kind == "static") {
         StaticTarget t;
         t.paramIndex = static_cast<int>(obj->getProperty("paramIndex"));
+
+        // Decode owner; default to PluginParam when absent (backward-compat).
+        // Unknown values also default to PluginParam with a log.
+        if (obj->hasProperty("owner")) {
+            auto ownerStr = obj->getProperty("owner").toString();
+            if (ownerStr == "device_macro") {
+                t.owner = StaticTarget::Owner::DeviceMacro;
+            } else if (ownerStr == "plugin_param" || ownerStr.isEmpty()) {
+                t.owner = StaticTarget::Owner::PluginParam;
+            } else {
+                DBG("decodeTarget: unknown owner value '" + ownerStr +
+                    "', defaulting to PluginParam");
+                t.owner = StaticTarget::Owner::PluginParam;
+            }
+        }
 
         auto pathVar = obj->getProperty("path");
         if (!pathVar.isObject())

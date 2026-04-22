@@ -50,16 +50,12 @@ std::optional<StaticTarget> FocusedDeviceMacroResolver::resolve(const juce::Stri
     if (!devicePath.isValid())
         return std::nullopt;
 
-    int macroIndex = 0;
-    auto macroIndexStr = args.getValue("macroIndex", "0");
-    if (macroIndexStr.isNotEmpty())
-        macroIndex = macroIndexStr.getIntValue();
+    int macroIndex = args.getValue("macroIndex", "0").getIntValue();
 
-    // Map macro index to a well-known param index convention
-    // (Macro 0 = paramIndex 0, etc.)
     StaticTarget t;
     t.devicePath = devicePath;
     t.paramIndex = macroIndex;
+    t.owner = StaticTarget::Owner::DeviceMacro;
     return t;
 }
 

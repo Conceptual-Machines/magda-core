@@ -3,6 +3,7 @@
 #include "../magda/daw/core/aliases/AliasRegistry.hpp"
 #include "../magda/daw/core/aliases/ChainContext.hpp"
 #include "../magda/daw/core/aliases/ResolverRegistry.hpp"
+#include "../magda/daw/core/aliases/Target.hpp"
 #include "../magda/daw/core/aliases/TargetResolver.hpp"
 
 using namespace magda;
@@ -343,4 +344,107 @@ TEST_CASE("ResolverRegistry - custom resolver can be registered", "[aliases][res
     auto& reg = ResolverRegistry::getInstance();
     reg.registerResolver(std::make_unique<DummyResolver>());
     REQUIRE(reg.findResolver("dummy.test_resolver") != nullptr);
+}
+
+// ============================================================================
+// Owner / DeviceMacro tests (automap fix)
+// ============================================================================
+
+TEST_CASE("FocusedDeviceMacroResolver returns DeviceMacro owner", "[aliases][resolver][owner]") {
+    auto path = makePath(1, 42);
+    FixedChainContext ctx;
+    ctx.setFocusedDevice(path);
+
+    auto& resolvers = ResolverRegistry::getInstance();
+    const auto* resolver = resolvers.findResolver("focused_device_macro");
+    REQUIRE(resolver != nullptr);
+
+    juce::StringPairArray args;
+    args.set("macroIndex", "3");
+    auto result = resolver->resolve(args, ctx);
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->owner == StaticTarget::Owner::DeviceMacro);
+    REQUIRE(result->paramIndex == 3);
+    REQUIRE(result->devicePath == path);
+}
+
+TEST_CASE("StaticTarget JSON round-trip preserves DeviceMacro owner",
+          "[aliases][resolver][owner]") {
+    StaticTarget st;
+    st.devicePath = makePath(2, 99);
+    st.paramIndex = 2;
+    st.owner = StaticTarget::Owner::DeviceMacro;
+
+    auto encoded = encodeTarget(Target{st});
+    auto decoded = decodeTarget(encoded);
+
+    REQUIRE(decoded.has_value());
+    auto* dst = std::get_if<StaticTarget>(&*decoded);
+    REQUIRE(dst != nullptr);
+    REQUIRE(dst->owner == StaticTarget::Owner::DeviceMacro);
+    REQUIRE(dst->paramIndex == 2);
+    REQUIRE(dst->devicePath == st.devicePath);
+}
+
+TEST_CASE("StaticTarget JSON decode defaults to PluginParam when owner field absent",
+          "[aliases][resolver][owner]") {
+    // Hand-crafted JSON without an "owner" key -- simulates old bindings
+    juce::String json = "{\"kind\":\"static\",\"paramIndex\":5,"
+                        "\"path\":{\"trackId\":1,\"topLevelDeviceId\":10,\"isTrackLevel\":false,"
+                        "\"steps\":[]}}";
+
+    auto decoded = decodeTarget(json);
+    REQUIRE(decoded.has_value());
+    auto* dst = std::get_if<StaticTarget>(&*decoded);
+    REQUIRE(dst != nullptr);
+    REQUIRE(dst->owner == StaticTarget::Owner::PluginParam);
+    REQUIRE(dst->paramIndex == 5);
+}
+
+TEST_CASE("TargetResolver propagates DeviceMacro owner from StaticTarget",
+          "[aliases][resolver][owner]") {
+    FixedChainContext ctx;
+    auto& reg = AliasRegistry::getInstance();
+    reg.clearLayer(AliasLayer::UserProject);
+    reg.clearLayer(AliasLayer::UserGlobal);
+    reg.clearLayer(AliasLayer::Curated);
+    reg.clearLayer(AliasLayer::AutoGen);
+    auto& resolvers = ResolverRegistry::getInstance();
+    TargetResolver resolver{reg, resolvers, ctx};
+
+    StaticTarget st;
+    st.devicePath = makePath(1, 10);
+    st.paramIndex = 1;
+    st.owner = StaticTarget::Owner::DeviceMacro;
+
+    auto result = resolver.resolve(Target{st});
+    REQUIRE(result.ok());
+    REQUIRE(result.owner == StaticTarget::Owner::DeviceMacro);
+    REQUIRE(result.paramIndex == 1);
+}
+
+TEST_CASE("TargetResolver propagates DeviceMacro owner from ResolverRef via FocusedDeviceMacro",
+          "[aliases][resolver][owner]") {
+    auto path = makePath(3, 77);
+    FixedChainContext ctx;
+    ctx.setFocusedDevice(path);
+
+    auto& reg = AliasRegistry::getInstance();
+    reg.clearLayer(AliasLayer::UserProject);
+    reg.clearLayer(AliasLayer::UserGlobal);
+    reg.clearLayer(AliasLayer::Curated);
+    reg.clearLayer(AliasLayer::AutoGen);
+    auto& resolvers = ResolverRegistry::getInstance();
+    TargetResolver resolver{reg, resolvers, ctx};
+
+    ResolverRef rr;
+    rr.kind = "focused_device_macro";
+    rr.args.set("macroIndex", "0");
+
+    auto result = resolver.resolve(Target{rr});
+    REQUIRE(result.ok());
+    REQUIRE(result.owner == StaticTarget::Owner::DeviceMacro);
+    REQUIRE(result.paramIndex == 0);
+    REQUIRE(result.devicePath == path);
 }
