@@ -48,6 +48,8 @@ void ControllersDialog::ProfileListModel::paintListBoxItem(int rowNumber, juce::
         return;
 
     const auto& profile = (*profiles)[static_cast<size_t>(rowNumber)];
+    const bool connected = isConnected ? isConnected(profile) : true;
+    const bool generic = profile.portMatchPattern.isEmpty();
 
     if (rowIsSelected) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
@@ -55,19 +57,38 @@ void ControllersDialog::ProfileListModel::paintListBoxItem(int rowNumber, juce::
     }
 
     const int pad = 6;
+    const int dotSize = 8;
+    const int dotX = pad;
+    const int textX = dotX + dotSize + 8;
     const int lineH = (height - 2 * pad) / 2;
 
-    // Line 1: "Vendor  .  Name" — bold
+    // Status dot — green if connected, dim if not, none for generic profiles
+    if (!generic) {
+        const int dotY = (height - dotSize) / 2;
+        g.setColour(connected ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN)
+                              : DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.fillEllipse(static_cast<float>(dotX), static_cast<float>(dotY),
+                      static_cast<float>(dotSize), static_cast<float>(dotSize));
+    }
+
+    // Line 1: "Vendor  .  Name" — bold, dimmed when not connected
     juce::String line1 =
         profile.vendor.isEmpty() ? profile.name : profile.vendor + "  \xc2\xb7  " + profile.name;
-    g.setColour(DarkTheme::getTextColour());
+    g.setColour(connected || generic ? DarkTheme::getTextColour()
+                                     : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFontBold(12.0f));
-    g.drawText(line1, pad, pad, width - 2 * pad, lineH, juce::Justification::centredLeft, true);
+    g.drawText(line1, textX, pad, width - textX - pad, lineH, juce::Justification::centredLeft,
+               true);
 
-    // Line 2: profile id — muted
+    // Line 2: profile id + connection status — muted
+    juce::String line2 = profile.id;
+    if (!generic)
+        line2 += connected ? juce::String("  \xc2\xb7  ") + tr("controllers.connected")
+                           : juce::String("  \xc2\xb7  ") + tr("controllers.not_connected");
+
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.drawText(profile.id, pad, pad + lineH, width - 2 * pad, lineH,
+    g.drawText(line2, textX, pad + lineH, width - textX - pad, lineH,
                juce::Justification::centredLeft, true);
 }
 
@@ -138,10 +159,17 @@ ControllersDialog::ControllersDialog() {
     setupSectionLabel(availableLabel_, tr("controllers.available_profiles"));
 
     profileListModel_.profiles = &availableProfiles_;
+    profileListModel_.isConnected = [this](const ControllerProfile& p) {
+        if (p.portMatchPattern.isEmpty())
+            return true;  // generic profile — always "available"
+        for (const auto& dev : liveInputs_)
+            if (dev.name.containsIgnoreCase(p.portMatchPattern))
+                return true;
+        return false;
+    };
     profileListModel_.onRowSelected = [this](int row) {
         selectedProfileIndex_ = row;
         refreshPortComboBox();
-        enableButton_.setEnabled(selectedProfileIndex_ >= 0);
     };
 
     profileList_ = std::make_unique<juce::ListBox>("profiles", &profileListModel_);
@@ -192,17 +220,17 @@ ControllersDialog::ControllersDialog() {
     };
     addAndMakeVisible(closeButton_);
 
+    portComboBox_.onChange = [this]() {
+        enableButton_.setEnabled(selectedProfileIndex_ >= 0 && portComboBox_.getSelectedId() >= 2);
+    };
+
+    // Populate MIDI inputs (must be available before rebuildProfileList paints dots)
+    liveInputs_ = juce::MidiInput::getAvailableDevices();
+
     // Load data
     rebuildProfileList();
     rebuildControllerList();
-
-    // Populate MIDI inputs
-    liveInputs_ = juce::MidiInput::getAvailableDevices();
-    portComboBox_.addItem(tr("controllers.select_port"), 1);
-    portComboBox_.setSelectedId(1);
-
-    for (int i = 0; i < liveInputs_.size(); ++i)
-        portComboBox_.addItem(liveInputs_[i].name, i + 2);
+    refreshPortComboBox();
 
     // Register for registry updates
     ControllerRegistry::getInstance().addListener(this);
@@ -290,28 +318,48 @@ void ControllersDialog::rebuildControllerList() {
 }
 
 void ControllersDialog::refreshPortComboBox() {
-    if (selectedProfileIndex_ < 0 ||
-        selectedProfileIndex_ >= static_cast<int>(availableProfiles_.size())) {
-        portComboBox_.setSelectedId(1);  // placeholder
+    portComboBox_.clear(juce::dontSendNotification);
+
+    const bool haveProfile = selectedProfileIndex_ >= 0 &&
+                             selectedProfileIndex_ < static_cast<int>(availableProfiles_.size());
+
+    if (!haveProfile) {
+        portComboBox_.addItem(tr("controllers.select_port"), 1);
+        portComboBox_.setSelectedId(1, juce::dontSendNotification);
+        portComboBox_.setEnabled(false);
+        enableButton_.setEnabled(false);
         return;
     }
 
     const auto& profile = availableProfiles_[static_cast<size_t>(selectedProfileIndex_)];
+    portComboBox_.setEnabled(true);
 
-    if (profile.portMatchPattern.isEmpty()) {
-        portComboBox_.setSelectedId(1);
+    // Build the visible port list: filtered to matches if the profile specifies
+    // a pattern, otherwise all live inputs (generic profile).
+    juce::Array<int> visibleIndices;
+    for (int i = 0; i < liveInputs_.size(); ++i) {
+        if (profile.portMatchPattern.isEmpty() ||
+            liveInputs_[i].name.containsIgnoreCase(profile.portMatchPattern))
+            visibleIndices.add(i);
+    }
+
+    if (visibleIndices.isEmpty()) {
+        portComboBox_.addItem(tr("controllers.no_matching_device"), 1);
+        portComboBox_.setSelectedId(1, juce::dontSendNotification);
+        portComboBox_.setEnabled(false);
+        enableButton_.setEnabled(false);
         return;
     }
 
-    // Substring match against live device names
-    for (int i = 0; i < liveInputs_.size(); ++i) {
-        if (liveInputs_[i].name.containsIgnoreCase(profile.portMatchPattern)) {
-            portComboBox_.setSelectedId(i + 2);
-            return;
-        }
-    }
+    portComboBox_.addItem(tr("controllers.select_port"), 1);
+    // Encode liveInputs_ index into combo id: id = liveIndex + 2
+    for (int liveIndex : visibleIndices)
+        portComboBox_.addItem(liveInputs_[liveIndex].name, liveIndex + 2);
 
-    portComboBox_.setSelectedId(1);
+    // Auto-pick the first match when the profile has a specific pattern
+    const int autoPickId = !profile.portMatchPattern.isEmpty() ? visibleIndices.getFirst() + 2 : 1;
+    portComboBox_.setSelectedId(autoPickId, juce::dontSendNotification);
+    enableButton_.setEnabled(portComboBox_.getSelectedId() >= 2);
 }
 
 // -----------------------------------------------------------------------------
@@ -325,22 +373,12 @@ void ControllersDialog::onEnableClicked() {
 
     const auto& profile = availableProfiles_[static_cast<size_t>(selectedProfileIndex_)];
 
-    // Get selected port identifier
     const int cbId = portComboBox_.getSelectedId();
-    juce::String portId;
-    juce::String portName;
-    if (cbId >= 2 && cbId - 2 < liveInputs_.size()) {
-        portId = liveInputs_[cbId - 2].identifier;
-        portName = liveInputs_[cbId - 2].name;
-    }
+    if (cbId < 2 || cbId - 2 >= liveInputs_.size())
+        return;  // guard — button should be disabled in this state
 
-    if (portId.isEmpty() && portName.isEmpty()) {
-        // Nothing selected; use placeholder text so the user knows what's stored
-        portId = portComboBox_.getText();
-    }
-
-    // Materialise
-    auto mat = materialiseControllerFromProfile(profile, portId.isEmpty() ? portName : portId, {});
+    const auto& dev = liveInputs_[cbId - 2];
+    auto mat = materialiseControllerFromProfile(profile, dev.identifier, {});
 
     // Add to registries
     ControllerRegistry::getInstance().add(mat.controller);

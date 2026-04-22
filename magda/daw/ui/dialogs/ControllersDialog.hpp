@@ -41,6 +41,9 @@ class ControllersDialog : public juce::Component, private ControllerRegistryList
     // -------------------------------------------------------------------------
     struct ProfileListModel : public juce::ListBoxModel {
         std::vector<ControllerProfile>* profiles = nullptr;
+        // Predicate: returns true if the profile has a matching live MIDI input.
+        // For profiles with an empty portMatchPattern, should return true (generic).
+        std::function<bool(const ControllerProfile&)> isConnected;
         std::function<void(int)> onRowSelected;
 
         int getNumRows() override {

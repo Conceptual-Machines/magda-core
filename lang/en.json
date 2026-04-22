@@ -448,6 +448,9 @@
     "no_profiles": "No profiles loaded.",
     "no_controllers": "No controllers enabled.",
     "select_port": "(select port)",
-    "port_label": "Port:"
+    "port_label": "Port:",
+    "connected": "Connected",
+    "not_connected": "Not connected",
+    "no_matching_device": "(device not connected)"
   }
 }
