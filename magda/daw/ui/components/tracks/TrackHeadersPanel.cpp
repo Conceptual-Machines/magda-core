@@ -2706,7 +2706,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Freeze/Unfreeze (for regular tracks only)
     if (track->type == TrackType::Audio) {
         menu.addSeparator();
-        menu.addItem(7, track->frozen ? tr("tracks.unfreeze") : tr("tracks.freeze"));
+        menu.addItem(8, track->frozen ? tr("tracks.unfreeze") : tr("tracks.freeze"));
     }
 
     menu.addSeparator();
@@ -2737,27 +2737,35 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 // Remove from group
                 TrackManager::getInstance().removeTrackFromGroup(trackId);
             } else if (result == 3) {
-                // Delete track (through undo system)
-                auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
+                // Delete track (through undo system). Defer so the popup fully
+                // dismisses before tracksChanged() rebuilds the headers — otherwise
+                // the synchronous rebuild starves the menu's close paint on Linux.
+                juce::MessageManager::callAsync([trackId]() {
+                    auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                });
             } else if (result == 4) {
-                // Duplicate track with content + FX chain
-                auto cmd =
-                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/true,
-                                                            /*duplicateDevices=*/true);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
+                // Duplicate track with content + FX chain. Deferred for the same
+                // reason as Delete above — avoids starving the popup close paint.
+                juce::MessageManager::callAsync([trackId]() {
+                    auto cmd = std::make_unique<DuplicateTrackCommand>(
+                        trackId, /*duplicateContent=*/true, /*duplicateDevices=*/true);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                });
             } else if (result == 5) {
                 // Duplicate track without content (FX chain only)
-                auto cmd =
-                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/false,
-                                                            /*duplicateDevices=*/true);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
+                juce::MessageManager::callAsync([trackId]() {
+                    auto cmd = std::make_unique<DuplicateTrackCommand>(
+                        trackId, /*duplicateContent=*/false, /*duplicateDevices=*/true);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                });
             } else if (result == 7) {
                 // Duplicate track content only (clips, no FX chain)
-                auto cmd =
-                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/true,
-                                                            /*duplicateDevices=*/false);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
+                juce::MessageManager::callAsync([trackId]() {
+                    auto cmd = std::make_unique<DuplicateTrackCommand>(
+                        trackId, /*duplicateContent=*/true, /*duplicateDevices=*/false);
+                    UndoManager::getInstance().executeCommand(std::move(cmd));
+                });
             } else if (result == 6) {
                 // Toggle I/O routing visibility (per-track)
                 if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
@@ -2765,12 +2773,14 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                         !trackHeaders[trackIndex]->showIORouting;
                     resized();
                 }
-            } else if (result == 7) {
+            } else if (result == 8) {
                 // Toggle freeze
-                auto* t = TrackManager::getInstance().getTrack(trackId);
-                if (t) {
-                    TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
-                }
+                juce::MessageManager::callAsync([trackId]() {
+                    auto* t = TrackManager::getInstance().getTrack(trackId);
+                    if (t) {
+                        TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
+                    }
+                });
             } else if (result >= 600) {
                 // Remove send (busIndex = result - 600)
                 int busIndex = result - 600;
