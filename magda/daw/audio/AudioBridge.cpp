@@ -455,6 +455,8 @@ void AudioBridge::deviceParameterChanged(DeviceId deviceId, int paramIndex, floa
     // Use setParameterByIndex for efficient single-param sync
     if (auto* extProcessor = dynamic_cast<ExternalPluginProcessor*>(processor)) {
         extProcessor->setParameterByIndex(paramIndex, newValue);
+    } else if (auto* toneProc = dynamic_cast<ToneGeneratorProcessor*>(processor)) {
+        toneProc->setParameterByIndex(paramIndex, newValue);
     } else if (auto* samplerProc = dynamic_cast<MagdaSamplerProcessor*>(processor)) {
         samplerProc->setParameterByIndex(paramIndex, newValue);
     } else if (auto* fourOscProc = dynamic_cast<FourOscProcessor*>(processor)) {

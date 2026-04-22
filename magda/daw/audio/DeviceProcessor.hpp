@@ -170,10 +170,12 @@ class DeviceProcessor {
 /**
  * @brief Processor for the built-in Tone Generator device
  *
- * Parameters:
- * - frequency: Tone frequency in Hz (20-20000)
- * - level: Output level (0-1 linear, maps to amplitude)
- * - oscType: Oscillator type (0=sine, 1=square, 2=saw, 3=noise)
+ * Parameter indexing matches TE's ToneGeneratorPlugin::getAutomatableParameters()
+ * so that mod/macro links resolve to the correct TE parameter:
+ * - 0: oscType  (discrete, 0=Sine .. 5=Noise — matches te::ToneGeneratorPlugin::OscType)
+ * - 1: bandLimit (discrete, 0=Aliased, 1=Band Limited — not shown in MAGDA UI)
+ * - 2: frequency (Hz, 20-20000, logarithmic)
+ * - 3: level     (dB in UI, linear 0-1 on the plugin)
  */
 class ToneGeneratorProcessor : public DeviceProcessor {
   public:
@@ -185,6 +187,9 @@ class ToneGeneratorProcessor : public DeviceProcessor {
     int getParameterCount() const override;
     ParameterInfo getParameterInfo(int index) const override;
 
+    // Single-parameter sync from DeviceInfo (values in real units: TE osc enum / bandLimit / Hz / dB)
+    void setParameterByIndex(int paramIndex, float value);
+
     // Initialize with default values - call after processor is fully set up
     void initializeDefaults();
 
@@ -195,8 +200,11 @@ class ToneGeneratorProcessor : public DeviceProcessor {
     void setLevel(float level);  // 0-1 linear
     float getLevel() const;
 
-    void setOscType(int type);  // 0=sine, 1=noise
+    void setOscType(int teOscType);  // TE enum: 0=sin,1=triangle,2=sawUp,3=sawDown,4=square,5=noise
     int getOscType() const;
+
+    void setBandLimit(bool bandLimited);
+    bool getBandLimit() const;
 
   protected:
     void applyGain() override;
