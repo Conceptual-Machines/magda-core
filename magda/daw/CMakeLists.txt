@@ -365,6 +365,7 @@ set(DAW_UI_SOURCES
     ui/windows/MainWindowExport.cpp
     ui/windows/MenuManager.cpp
     # Dialogs
+    ui/dialogs/ControllersDialog.cpp
     ui/dialogs/AISettingsDialog.cpp
     ui/dialogs/AudioSettingsDialog.cpp
     ui/dialogs/ChainTreeDialog.cpp

@@ -263,6 +263,8 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addSeparator();
             menu.addItem(AudioSettings, tr("menu.settings.audio_midi"), true, false);
             menu.addSeparator();
+            menu.addItem(ControllerSettings, tr("menu.settings.controllers"), true, false);
+            menu.addSeparator();
             menu.addItem(PluginSettings, tr("menu.settings.plugins"), true, false);
             break;
         }
@@ -397,6 +399,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case PluginSettings:
             if (callbacks_.onPluginSettings)
                 callbacks_.onPluginSettings();
+            break;
+        case ControllerSettings:
+            if (callbacks_.onControllerSettings)
+                callbacks_.onControllerSettings();
             break;
 
         // View menu
