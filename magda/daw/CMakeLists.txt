@@ -269,6 +269,9 @@ set(DAW_CORE_SOURCES
     # Controller registries (issue #1050 -- Phase B)
     core/controllers/ControllerRegistry.cpp
     core/controllers/BindingRegistry.cpp
+    # Controller profiles (issue #1052 -- hardware profile layer)
+    core/controllers/ControllerProfile.cpp
+    core/controllers/ControllerProfileRegistry.cpp
     # Controller router + param writer (issue #1050 -- Phase C)
     audio/ControllerParamWriter.cpp
     audio/ControllerRouter.cpp
@@ -1034,5 +1037,24 @@ else()
             "${MAGDA_LANG_SRC}"
             "$<TARGET_FILE_DIR:magda_daw_app>/lang"
         COMMENT "Copying localization files alongside app executable"
+    )
+endif()
+
+# Copy resources/controllers/ (hardware profile JSON) into the app so
+# ControllerProfileRegistry can load profiles at runtime.
+set(MAGDA_CONTROLLERS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../resources/controllers")
+if(APPLE)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_CONTROLLERS_SRC}"
+            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Resources/controllers"
+        COMMENT "Copying controller profiles to app bundle Resources"
+    )
+else()
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_CONTROLLERS_SRC}"
+            "$<TARGET_FILE_DIR:magda_daw_app>/controllers"
+        COMMENT "Copying controller profiles alongside app executable"
     )
 endif()

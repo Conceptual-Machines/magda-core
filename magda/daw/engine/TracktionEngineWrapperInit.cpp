@@ -6,6 +6,7 @@
 #include "../core/Config.hpp"
 #include "../core/ViewModeController.hpp"
 #include "../core/controllers/BindingRegistry.hpp"
+#include "../core/controllers/ControllerProfileRegistry.hpp"
 #include "../core/controllers/MidiLearnCoordinator.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
@@ -415,6 +416,10 @@ bool TracktionEngineWrapper::initialize() {
         // Load config early so preferred device settings are available
         juce::Logger::writeToLog("[Init] Loading config...");
         magda::Config::getInstance().load();
+
+        // Load hardware controller profiles (bundled + user)
+        juce::Logger::writeToLog("[Init] Loading controller profiles...");
+        magda::ControllerProfileRegistry::getInstance().load();
 
         // Initialize plugin formats and load plugin list
         juce::Logger::writeToLog("[Init] initializePluginFormats()...");

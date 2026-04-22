@@ -179,4 +179,7 @@ if(NOT APPLE)
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lang"
         DESTINATION bin
     )
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/resources/controllers"
+        DESTINATION bin
+    )
 endif()
