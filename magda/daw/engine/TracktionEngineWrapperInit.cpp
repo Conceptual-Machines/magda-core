@@ -35,7 +35,14 @@ void TracktionEngineWrapper::initializePluginFormats() {
 
     // Drop entries whose files have been uninstalled. Unconditional —
     // the scan-on-startup flag only governs detecting *new* plugins.
-    pruneMissingPlugins();
+    // Persist + resync the cached count so PluginSettingsDialog doesn't
+    // show a stale total after the prune.
+    auto& knownPlugins = pluginManager.knownPluginList;
+    if (pruneMissingPlugins(knownPlugins) > 0) {
+        savePluginList();
+        Config::getInstance().setTotalPluginCount(knownPlugins.getNumTypes());
+        Config::getInstance().save();
+    }
 
     // Auto-detect newly installed plugins (if enabled)
     if (Config::getInstance().getScanPluginsOnStartup())

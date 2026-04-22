@@ -22,6 +22,7 @@ set(TEST_SOURCES
     test_plugin_loading.cpp
     test_plugin_format.cpp
     test_plugin_window_manager.cpp
+    test_prune_missing_plugins.cpp
     test_device_parameter_pagination.cpp
     test_waveform_editor_absolute_mode.cpp
     test_clip_commands.cpp
