@@ -2600,6 +2600,24 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     if (!track)
         return;
 
+    // Stable IDs for menu items. The *Base values are offsets for dynamic
+    // entries (move-to-group adds the group trackId, sends add the dest
+    // trackId or bus index). Keep static IDs strictly below MoveToGroupBase.
+    enum MenuId : int {
+        CollapseToggle = 1,
+        RemoveFromGroup = 2,
+        DeleteTrack = 3,
+        DuplicateWithContent = 4,
+        DuplicateNoContent = 5,
+        ToggleIORouting = 6,
+        DuplicateContentOnly = 7,
+        ToggleFreeze = 8,
+
+        MoveToGroupBase = 100,
+        AddSendBase = 500,
+        RemoveSendBase = 600,
+    };
+
     juce::PopupMenu menu;
 
     // Track type info
@@ -2609,8 +2627,9 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Group operations
     if (track->isGroup()) {
         // Collapse/expand
-        menu.addItem(1, track->isCollapsedIn(currentViewMode_) ? tr("tracks.expand_group")
-                                                               : tr("tracks.collapse_group"));
+        menu.addItem(CollapseToggle, track->isCollapsedIn(currentViewMode_)
+                                         ? tr("tracks.expand_group")
+                                         : tr("tracks.collapse_group"));
         menu.addSeparator();
     }
 
@@ -2627,7 +2646,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
                     continue;
             }
-            moveToGroupMenu.addItem(100 + t.id, t.name);
+            moveToGroupMenu.addItem(MoveToGroupBase + t.id, t.name);
             hasGroups = true;
         }
     }
@@ -2638,7 +2657,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 
     // Remove from group (if track has a parent)
     if (!track->isTopLevel()) {
-        menu.addItem(2, tr("tracks.remove_from_group"));
+        menu.addItem(RemoveFromGroup, tr("tracks.remove_from_group"));
     }
 
     menu.addSeparator();
@@ -2647,7 +2666,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     {
         juce::PopupMenu sendMenu;
         const auto& allTracks = trackManager.getTracks();
-        int sendItemId = 500;
+        int sendItemId = AddSendBase;
         bool hasOptions = false;
 
         // Collect descendants to prevent routing cycles
@@ -2697,7 +2716,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
             for (const auto& s : track->sends) {
                 const auto* destTrack = trackManager.getTrack(s.destTrackId);
                 juce::String destName = destTrack ? destTrack->name : "Unknown";
-                removeSendMenu.addItem(600 + s.busIndex, destName);
+                removeSendMenu.addItem(RemoveSendBase + s.busIndex, destName);
             }
             menu.addSubMenu(tr("tracks.remove_send"), removeSendMenu);
         }
@@ -2706,86 +2725,81 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     // Freeze/Unfreeze (for regular tracks only)
     if (track->type == TrackType::Audio) {
         menu.addSeparator();
-        menu.addItem(7, track->frozen ? tr("tracks.unfreeze") : tr("tracks.freeze"));
+        menu.addItem(ToggleFreeze, track->frozen ? tr("tracks.unfreeze") : tr("tracks.freeze"));
     }
 
     menu.addSeparator();
 
     // Duplicate track
-    menu.addItem(4, tr("tracks.duplicate"));
-    menu.addItem(5, tr("tracks.duplicate_no_content"));
-    menu.addItem(7, tr("tracks.duplicate_content_only"));
+    menu.addItem(DuplicateWithContent, tr("tracks.duplicate"));
+    menu.addItem(DuplicateNoContent, tr("tracks.duplicate_no_content"));
+    menu.addItem(DuplicateContentOnly, tr("tracks.duplicate_content_only"));
 
     // Delete track
-    menu.addItem(3, tr("tracks.delete"));
+    menu.addItem(DeleteTrack, tr("tracks.delete"));
 
     menu.addSeparator();
 
     // Show/Hide I/O routing
-    menu.addItem(6, header.showIORouting ? tr("tracks.hide_io_routing")
-                                         : tr("tracks.show_io_routing"));
+    menu.addItem(ToggleIORouting, header.showIORouting ? tr("tracks.hide_io_routing")
+                                                       : tr("tracks.show_io_routing"));
 
     // Show menu and handle result
-    menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetScreenArea(
-            localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
-        [this, trackId = header.trackId, trackIndex](int result) {
-            if (result == 1) {
-                // Toggle collapse
-                handleCollapseToggle(trackId);
-            } else if (result == 2) {
-                // Remove from group
-                TrackManager::getInstance().removeTrackFromGroup(trackId);
-            } else if (result == 3) {
-                // Delete track (through undo system)
-                auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-            } else if (result == 4) {
-                // Duplicate track with content + FX chain
-                auto cmd =
-                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/true,
-                                                            /*duplicateDevices=*/true);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-            } else if (result == 5) {
-                // Duplicate track without content (FX chain only)
-                auto cmd =
-                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/false,
-                                                            /*duplicateDevices=*/true);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-            } else if (result == 7) {
-                // Duplicate track content only (clips, no FX chain)
-                auto cmd =
-                    std::make_unique<DuplicateTrackCommand>(trackId, /*duplicateContent=*/true,
-                                                            /*duplicateDevices=*/false);
-                UndoManager::getInstance().executeCommand(std::move(cmd));
-            } else if (result == 6) {
-                // Toggle I/O routing visibility (per-track)
-                if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
-                    trackHeaders[trackIndex]->showIORouting =
-                        !trackHeaders[trackIndex]->showIORouting;
-                    resized();
-                }
-            } else if (result == 7) {
-                // Toggle freeze
-                auto* t = TrackManager::getInstance().getTrack(trackId);
-                if (t) {
-                    TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
-                }
-            } else if (result >= 600) {
-                // Remove send (busIndex = result - 600)
-                int busIndex = result - 600;
-                TrackManager::getInstance().removeSend(trackId, busIndex);
-            } else if (result >= 500) {
-                // Add send (aux trackId = result - 500)
-                // Note: checked after >= 600 to avoid collision when trackId >= 100
-                TrackId auxId = result - 500;
-                TrackManager::getInstance().addSend(trackId, auxId);
-            } else if (result >= 100) {
-                // Move to group
-                TrackId groupId = result - 100;
-                TrackManager::getInstance().addTrackToGroup(trackId, groupId);
-            }
-        });
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                           localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
+                       [this, trackId = header.trackId, trackIndex](int result) {
+                           // Force-dismiss the menu synchronously. JUCE's item-click path only
+                           // exits modal state and relies on async component destruction, which
+                           // leaves the popup visually lingering until the next input event.
+                           // dismissAllActiveMenus() routes through hide(nullptr, true) which
+                           // calls setVisible(false) immediately, so subsequent mutations that
+                           // rebuild the headers won't race the menu's close paint.
+                           juce::PopupMenu::dismissAllActiveMenus();
+
+                           if (result == CollapseToggle) {
+                               handleCollapseToggle(trackId);
+                           } else if (result == RemoveFromGroup) {
+                               TrackManager::getInstance().removeTrackFromGroup(trackId);
+                           } else if (result == DeleteTrack) {
+                               auto cmd = std::make_unique<DeleteTrackCommand>(trackId);
+                               UndoManager::getInstance().executeCommand(std::move(cmd));
+                           } else if (result == DuplicateWithContent) {
+                               auto cmd = std::make_unique<DuplicateTrackCommand>(
+                                   trackId, /*duplicateContent=*/true, /*duplicateDevices=*/true);
+                               UndoManager::getInstance().executeCommand(std::move(cmd));
+                           } else if (result == DuplicateNoContent) {
+                               auto cmd = std::make_unique<DuplicateTrackCommand>(
+                                   trackId, /*duplicateContent=*/false, /*duplicateDevices=*/true);
+                               UndoManager::getInstance().executeCommand(std::move(cmd));
+                           } else if (result == DuplicateContentOnly) {
+                               auto cmd = std::make_unique<DuplicateTrackCommand>(
+                                   trackId, /*duplicateContent=*/true, /*duplicateDevices=*/false);
+                               UndoManager::getInstance().executeCommand(std::move(cmd));
+                           } else if (result == ToggleIORouting) {
+                               if (trackIndex >= 0 &&
+                                   trackIndex < static_cast<int>(trackHeaders.size())) {
+                                   trackHeaders[trackIndex]->showIORouting =
+                                       !trackHeaders[trackIndex]->showIORouting;
+                                   resized();
+                               }
+                           } else if (result == ToggleFreeze) {
+                               auto* t = TrackManager::getInstance().getTrack(trackId);
+                               if (t) {
+                                   TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
+                               }
+                           } else if (result >= RemoveSendBase) {
+                               int busIndex = result - RemoveSendBase;
+                               TrackManager::getInstance().removeSend(trackId, busIndex);
+                           } else if (result >= AddSendBase) {
+                               // Checked after RemoveSendBase to avoid collision when trackId
+                               // pushes the value past 600.
+                               TrackId auxId = result - AddSendBase;
+                               TrackManager::getInstance().addSend(trackId, auxId);
+                           } else if (result >= MoveToGroupBase) {
+                               TrackId groupId = result - MoveToGroupBase;
+                               TrackManager::getInstance().addTrackToGroup(trackId, groupId);
+                           }
+                       });
 }
 
 void TrackHeadersPanel::toggleRouting(int trackIndex, RoutingType type) {
