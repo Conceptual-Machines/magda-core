@@ -33,7 +33,11 @@ void TracktionEngineWrapper::initializePluginFormats() {
     // Load saved plugin list from persistent storage
     loadPluginList();
 
-    // Auto-detect newly installed (or removed) plugins (if enabled)
+    // Drop entries whose files have been uninstalled. Unconditional —
+    // the scan-on-startup flag only governs detecting *new* plugins.
+    pruneMissingPlugins();
+
+    // Auto-detect newly installed plugins (if enabled)
     if (Config::getInstance().getScanPluginsOnStartup())
         detectNewPlugins(onPluginScanStatus);
 

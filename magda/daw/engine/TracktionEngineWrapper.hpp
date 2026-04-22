@@ -326,6 +326,15 @@ class TracktionEngineWrapper : public AudioEngine,
     void detectNewPlugins(std::function<void(const juce::String&)> statusCallback = nullptr);
 
     /**
+     * @brief Remove entries from the known plugin list whose file no longer
+     * exists on disk. Cheap (stat-only, no plugin scanning) and safe to call
+     * unconditionally — e.g. on every startup, regardless of the
+     * scan-plugins-on-startup config flag. Saves the list if anything was
+     * pruned.
+     */
+    void pruneMissingPlugins();
+
+    /**
      * @brief Clear the plugin list and delete the saved file
      * Use this before a fresh rescan
      */
