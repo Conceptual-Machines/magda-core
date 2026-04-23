@@ -15,7 +15,7 @@ namespace {
 // falsely pass on Unix while reporting 0 removals on Windows.
 juce::String makeAbsentAbsolutePath(const juce::String& filename) {
     auto path = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                    .getChildFile("magda_prune_test_does_not_exist")
+                    .getChildFile("magda_prune_test_does_not_exist_" + juce::Uuid().toString())
                     .getChildFile(filename);
     REQUIRE(juce::File::isAbsolutePath(path.getFullPathName()));
     REQUIRE_FALSE(path.exists());
