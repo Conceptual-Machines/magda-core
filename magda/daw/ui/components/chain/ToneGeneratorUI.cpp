@@ -23,23 +23,10 @@ ToneGeneratorUI::ToneGeneratorUI() {
     };
     addAndMakeVisible(waveformSelector_);
 
-    // Frequency slider (20 Hz - 20 kHz, log-scaled drag). Param index 2 in TE's ordering.
+    // Frequency slider — range, skew, and Hz/kHz format/parse are populated by
+    // DeviceSlotComponent via setParameterInfo() from the processor's ParameterInfo
+    // (unit="Hz", scale=Logarithmic, scaleAnchor=1000). Param index 2 in TE's ordering.
     frequencySlider_.setParamIndex(2);
-    frequencySlider_.setRange(20.0, 20000.0, 0.1);
-    frequencySlider_.setSkewForCentre(1000.0);
-    frequencySlider_.setValue(440.0, juce::dontSendNotification);
-    frequencySlider_.setValueFormatter(
-        [this](double value) { return formatFrequency(static_cast<float>(value)); });
-    frequencySlider_.setValueParser([](const juce::String& text) {
-        juce::String trimmed = text.trim();
-        if (trimmed.endsWithIgnoreCase("khz")) {
-            float kHz = trimmed.dropLastCharacters(3).trim().getFloatValue();
-            return static_cast<double>(kHz * 1000.0f);
-        } else if (trimmed.endsWithIgnoreCase("hz")) {
-            return static_cast<double>(trimmed.dropLastCharacters(2).trim().getFloatValue());
-        }
-        return static_cast<double>(trimmed.getFloatValue());
-    });
     frequencySlider_.onValueChanged = [this](double value) {
         if (onParameterChanged) {
             onParameterChanged(2, static_cast<float>(value));
@@ -47,10 +34,9 @@ ToneGeneratorUI::ToneGeneratorUI() {
     };
     addAndMakeVisible(frequencySlider_);
 
-    // Level slider (-60 to 0 dB). Param index 3 in TE's ordering.
+    // Level slider — range and dB formatting come from the processor's ParameterInfo
+    // via setParameterInfo(). Param index 3 in TE's ordering.
     levelSlider_.setParamIndex(3);
-    levelSlider_.setRange(-60.0, 0.0, 0.1);
-    levelSlider_.setValue(-12.0, juce::dontSendNotification);
     levelSlider_.onValueChanged = [this](double value) {
         if (onParameterChanged) {
             onParameterChanged(3, static_cast<float>(value));
@@ -97,22 +83,8 @@ void ToneGeneratorUI::resized() {
 }
 
 std::vector<LinkableTextSlider*> ToneGeneratorUI::getLinkableSliders() {
-    // ParamIndex: 0=frequency, 1=level (waveform is a combo, not a slider)
+    // Sliders carry their TE param index via setParamIndex (2 = frequency, 3 = level).
     return {&frequencySlider_, &levelSlider_};
-}
-
-juce::String ToneGeneratorUI::formatFrequency(float hz) const {
-    if (hz >= 1000.0f) {
-        float kHz = hz / 1000.0f;
-        if (kHz >= 10.0f) {
-            return juce::String(kHz, 1) + " kHz";
-        }
-        return juce::String(kHz, 2) + " kHz";
-    }
-    if (hz >= 100.0f) {
-        return juce::String(static_cast<int>(hz)) + " Hz";
-    }
-    return juce::String(hz, 1) + " Hz";
 }
 
 }  // namespace magda::daw::ui

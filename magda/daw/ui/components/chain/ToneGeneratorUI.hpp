@@ -53,9 +53,6 @@ class ToneGeneratorUI : public juce::Component {
     // Level slider (-60 to 0 dB)
     LinkableTextSlider levelSlider_{TextSlider::Format::Decibels};
 
-    // Convert frequency to display string (for formatter)
-    juce::String formatFrequency(float hz) const;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ToneGeneratorUI)
 };
 

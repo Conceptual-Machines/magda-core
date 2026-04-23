@@ -247,6 +247,8 @@ ParameterInfo ToneGeneratorProcessor::getParameterInfo(int index) const {
             info.unit = "";
             info.minValue = 0.0f;
             info.maxValue = 5.0f;
+            info.teMinValue = 0.0f;
+            info.teMaxValue = 5.0f;
             info.defaultValue = 0.0f;
             info.currentValue = static_cast<float>(getOscType());
             info.scale = ParameterScale::Discrete;
@@ -258,30 +260,39 @@ ParameterInfo ToneGeneratorProcessor::getParameterInfo(int index) const {
             info.unit = "";
             info.minValue = 0.0f;
             info.maxValue = 1.0f;
+            info.teMinValue = 0.0f;
+            info.teMaxValue = 1.0f;
             info.defaultValue = 0.0f;
             info.currentValue = getBandLimit() ? 1.0f : 0.0f;
-            info.scale = ParameterScale::Discrete;
+            info.scale = ParameterScale::Boolean;
+            info.modulatable = false;
             info.choices = {"Aliased", "Band Limited"};
             break;
 
-        case 2: {  // Frequency
+        case 2: {  // Frequency (log sweep, 1 kHz at visual midpoint)
             info.name = "Frequency";
             info.unit = "Hz";
             info.minValue = 20.0f;
             info.maxValue = 20000.0f;
+            info.teMinValue = 20.0f;
+            info.teMaxValue = 20000.0f;
             info.defaultValue = 440.0f;
             info.scale = ParameterScale::Logarithmic;
+            info.scaleAnchor = 1000.0f;
             info.currentValue = juce::jlimit(20.0f, 20000.0f, getFrequency());
             break;
         }
 
-        case 3: {  // Level - display as dB
+        case 3: {  // Level — UI is in dB; plugin-native is linear, converted at the bridge
             info.name = "Level";
             info.unit = "dB";
             info.minValue = -60.0f;
             info.maxValue = 0.0f;
+            info.teMinValue = -60.0f;
+            info.teMaxValue = 0.0f;
             info.defaultValue = -12.0f;  // 0.25 linear ≈ -12 dB
             info.scale = ParameterScale::Linear;
+            info.displayFormat = DisplayFormat::Decibels;
             float level = getLevel();
             float db = level > 0.0f ? juce::Decibels::gainToDecibels(level, -60.0f) : -60.0f;
             info.currentValue = juce::jlimit(-60.0f, 0.0f, db);
