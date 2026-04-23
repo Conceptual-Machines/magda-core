@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cmath>
 #include <cstdlib>
 
 #include "Config.hpp"
@@ -28,6 +29,12 @@ double autoScaleForDpi(double dpi) {
 
 }  // namespace
 
+double dpiOnlyAutoScale() {
+    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        return autoScaleForDpi(d->dpi);
+    return 1.0;
+}
+
 double resolveStartupScale() {
     if (const char* env = std::getenv("MAGDA_UI_SCALE")) {
         char* end = nullptr;
@@ -39,16 +46,16 @@ double resolveStartupScale() {
     if (configured > 0.0)
         return clampScale(configured);
 
-    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
-        return autoScaleForDpi(d->dpi);
-    return 1.0;
+    return dpiOnlyAutoScale();
 }
 
-void applyUIScale(double scale) {
+void applyUIScale(double scale, bool persist) {
     scale = clampScale(scale);
     juce::Desktop::getInstance().setGlobalScaleFactor(static_cast<float>(scale));
-    Config::getInstance().setUIScale(scale);
-    Config::getInstance().save();
+    if (persist) {
+        Config::getInstance().setUIScale(scale);
+        Config::getInstance().save();
+    }
 
     // Force every top-level window to re-lay-out and repaint. setGlobalScaleFactor
     // updates the peer's scale, but cached child layouts won't reflect it until

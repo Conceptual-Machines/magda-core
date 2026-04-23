@@ -20,10 +20,18 @@ inline constexpr double kMaxUIScale = 4.0;
 // exists (will fall back to 1.0 if no display is queryable).
 double resolveStartupScale();
 
-// Apply a scale factor at runtime. Calls juce::Desktop::setGlobalScaleFactor,
-// persists to Config, and triggers a top-level repaint so existing components
-// pick up the new scale immediately.
-void applyUIScale(double scale);
+// Auto scale derived purely from the primary display's DPI — ignores env var
+// and Config. Use when the user explicitly picked "Auto" in the UI and expects
+// DPI-based behavior, not the startup precedence chain.
+double dpiOnlyAutoScale();
+
+// Apply a scale factor at runtime. Calls juce::Desktop::setGlobalScaleFactor
+// and triggers a top-level repaint so existing components pick up the new
+// scale immediately. When `persist` is true (default), also writes the value
+// to Config and saves. Pass `persist=false` when the caller wants to manage
+// Config writes itself (e.g. the "Auto" path that needs to store 0 as a
+// sentinel rather than the resolved value).
+void applyUIScale(double scale, bool persist = true);
 
 // Pick the next/previous step from kUIScaleSteps relative to the current
 // global scale factor. direction = +1 increases, -1 decreases. Clamped to the

@@ -346,16 +346,14 @@ class UIPage : public juce::Component {
             }
         }
 
-        // Apply UI scale live. For "Auto", resolve from DPI now so something
-        // visible happens; the stored config value stays 0 so the next launch
-        // re-resolves automatically.
+        // Apply UI scale live. "Auto" resolves from display DPI only (ignoring
+        // env var / config) so the user sees the actual auto-detected value,
+        // and we persist 0 as the Auto sentinel in a single config write.
         double newScale = scaleValueForId(scaleCombo.getSelectedId());
         if (newScale > 0.0) {
             applyUIScale(newScale);
         } else {
-            config.setUIScale(0.0);
-            applyUIScale(resolveStartupScale());
-            // applyUIScale persisted the resolved value — restore the Auto sentinel.
+            applyUIScale(dpiOnlyAutoScale(), /*persist=*/false);
             config.setUIScale(0.0);
             config.save();
         }
