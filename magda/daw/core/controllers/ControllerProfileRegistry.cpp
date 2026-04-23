@@ -1,7 +1,5 @@
 #include "ControllerProfileRegistry.hpp"
 
-#include <algorithm>
-
 namespace magda {
 
 ControllerProfileRegistry& ControllerProfileRegistry::getInstance() {
@@ -61,21 +59,43 @@ juce::File ControllerProfileRegistry::userControllersDirectory() {
 void ControllerProfileRegistry::load() {
     profiles_.clear();
 
-    auto bundledDir = findBundledControllersDirectory();
-    if (bundledDir.isDirectory()) {
-        loadFromDirectory(bundledDir, false);
-    } else {
-        DBG("ControllerProfileRegistry: bundled controllers directory not found");
-    }
-
     auto userDir = userControllersDirectory();
-    if (userDir.isDirectory()) {
-        loadFromDirectory(userDir, true);
-    }
-    // (No log if user dir doesn't exist -- that's normal on first run)
+
+    // First-launch seed: if the user dir doesn't exist yet, copy the bundled
+    // starter profiles in. Deletion is durable — once seeded, the bundled
+    // dir is never consulted again.
+    if (!userDir.isDirectory())
+        seedUserDirectory(userDir);
+
+    if (userDir.isDirectory())
+        loadFromDirectory(userDir);
 }
 
-void ControllerProfileRegistry::loadFromDirectory(const juce::File& dir, bool isUser) {
+void ControllerProfileRegistry::seedUserDirectory(const juce::File& userDir) {
+    auto bundledDir = findBundledControllersDirectory();
+    if (!bundledDir.isDirectory()) {
+        DBG("ControllerProfileRegistry: bundled controllers directory not found, "
+            "skipping first-launch seed");
+        return;
+    }
+
+    if (auto res = userDir.createDirectory(); res.failed()) {
+        DBG("ControllerProfileRegistry: failed to create user dir "
+            << userDir.getFullPathName() << ": " << res.getErrorMessage());
+        return;
+    }
+
+    auto files = bundledDir.findChildFiles(juce::File::findFiles, false, "*.json");
+    for (const auto& src : files) {
+        auto dest = userDir.getChildFile(src.getFileName());
+        if (!src.copyFileTo(dest))
+            DBG("ControllerProfileRegistry: failed to seed " << dest.getFullPathName());
+    }
+    DBG("ControllerProfileRegistry: seeded " << files.size() << " profile(s) into "
+                                             << userDir.getFullPathName());
+}
+
+void ControllerProfileRegistry::loadFromDirectory(const juce::File& dir) {
     auto files = dir.findChildFiles(juce::File::findFiles, false, "*.json");
     for (const auto& file : files) {
         juce::String jsonText = file.loadFileAsString();
@@ -92,24 +112,9 @@ void ControllerProfileRegistry::loadFromDirectory(const juce::File& dir, bool is
             continue;
         }
 
-        auto& profile = *profileOpt;
-
-        if (isUser) {
-            // User profile wins on id collision: replace existing entry.
-            auto it = std::find_if(profiles_.begin(), profiles_.end(),
-                                   [&](const ControllerProfile& p) { return p.id == profile.id; });
-            if (it != profiles_.end()) {
-                DBG("ControllerProfileRegistry: user profile '"
-                    << profile.id << "' replaces bundled entry (from " << file.getFullPathName()
-                    << ")");
-                *it = profile;
-                continue;
-            }
-        }
-
-        DBG("ControllerProfileRegistry: loaded profile '" << profile.id << "' from "
+        DBG("ControllerProfileRegistry: loaded profile '" << profileOpt->id << "' from "
                                                           << file.getFullPathName());
-        profiles_.push_back(profile);
+        profiles_.push_back(*profileOpt);
     }
 }
 

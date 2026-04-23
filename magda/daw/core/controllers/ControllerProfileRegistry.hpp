@@ -30,7 +30,10 @@ class ControllerProfileRegistry {
     static ControllerProfileRegistry& getInstance();
 
     /**
-     * @brief Load profiles from bundled and user directories.
+     * @brief Load profiles from the user directory, seeding from bundled on first launch.
+     *
+     * If the user directory does not yet exist, bundled starter profiles are copied in
+     * once. After that, deletion is durable — bundled files are never re-read at runtime.
      *
      * Safe to call multiple times (re-loads on each call, replacing existing data).
      */
@@ -55,8 +58,11 @@ class ControllerProfileRegistry {
     /** ~/Library/Application Support/MAGDA/controllers (or platform equivalent). */
     static juce::File userControllersDirectory();
 
-    /** Load all .json files from dir into profiles_, user=true means user-wins-on-collision. */
-    void loadFromDirectory(const juce::File& dir, bool isUser);
+    /** Load all .json files from dir into profiles_. */
+    void loadFromDirectory(const juce::File& dir);
+
+    /** Copy every bundled *.json into userDir (creates userDir if missing). */
+    void seedUserDirectory(const juce::File& userDir);
 
     std::vector<ControllerProfile> profiles_;
 };
