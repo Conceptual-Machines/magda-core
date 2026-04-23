@@ -82,9 +82,10 @@ void ControllersDialog::ProfileListModel::paintListBoxItem(int rowNumber, juce::
 
     // Line 2: profile id + connection status — muted
     juce::String line2 = profile.id;
-    if (!generic)
-        line2 += "  \xc2\xb7  " +
-                 (connected ? tr("controllers.connected") : tr("controllers.not_connected"));
+    if (!generic) {
+        line2 += juce::String::fromUTF8("  \xc2\xb7  ");
+        line2 += connected ? tr("controllers.connected") : tr("controllers.not_connected");
+    }
 
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -469,11 +470,26 @@ void ControllersDialog::setupSectionLabel(juce::Label& label, const juce::String
 // showDialog
 // =============================================================================
 
+namespace {
+// Self-deleting DialogWindow: the native title-bar X routes through
+// closeButtonPressed; default impl only works for modal windows, so provide
+// one that deletes the non-modal window asynchronously.
+class SelfClosingDialogWindow : public juce::DialogWindow {
+  public:
+    SelfClosingDialogWindow(const juce::String& title, juce::Colour bg)
+        : juce::DialogWindow(title, bg, false, true) {}
+
+    void closeButtonPressed() override {
+        juce::MessageManager::callAsync([self = this]() { delete self; });
+    }
+};
+}  // namespace
+
 void ControllersDialog::showDialog(juce::Component* /*parent*/) {
     auto* dialog = new ControllersDialog();
     auto bg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
 
-    auto* window = new juce::DialogWindow(tr("controllers.title"), bg, false, true);
+    auto* window = new SelfClosingDialogWindow(tr("controllers.title"), bg);
     window->setContentOwned(dialog, true);
     window->setUsingNativeTitleBar(true);
     window->setResizable(true, false);
