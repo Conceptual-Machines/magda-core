@@ -95,19 +95,20 @@ void TracktionEngineWrapper::startPluginScan(
             }
         },
         // Completion callback
-        [this, &knownPlugins](bool success, const juce::Array<juce::PluginDescription>& plugins,
-                              const juce::StringArray& failedPlugins) {
+        [this, &knownPlugins, &formatManager](bool success,
+                                              const juce::Array<juce::PluginDescription>& plugins,
+                                              const juce::StringArray& failedPlugins) {
             // Add found plugins to KnownPluginList
             for (const auto& desc : plugins) {
                 knownPlugins.addType(desc);
             }
 
-            // Remove entries whose files are no longer on disk (e.g. the
+            // Remove entries whose plugins are no longer installed (e.g. the
             // plugin was uninstalled between the last scan and this one).
             // The unconditional savePluginList() + Config update below covers
             // persistence for both the additions and the pruning, so we
             // don't pay for an extra save here.
-            pruneMissingPlugins(knownPlugins);
+            pruneMissingPlugins(knownPlugins, formatManager);
 
             int numPlugins = knownPlugins.getNumTypes();
             DBG("Plugin scan complete. Found " << numPlugins << " plugins.");
@@ -230,14 +231,14 @@ void TracktionEngineWrapper::loadPluginList() {
     }
 }
 
-int TracktionEngineWrapper::pruneMissingPlugins(juce::KnownPluginList& knownPlugins) {
+int TracktionEngineWrapper::pruneMissingPlugins(juce::KnownPluginList& knownPlugins,
+                                                juce::AudioPluginFormatManager& formatManager) {
     juce::Array<juce::PluginDescription> stalePlugins;
     for (int i = 0; i < knownPlugins.getNumTypes(); ++i) {
         auto* desc = knownPlugins.getType(i);
-        if (!desc || !juce::File::isAbsolutePath(desc->fileOrIdentifier))
+        if (!desc)
             continue;
-        juce::File pluginFile(desc->fileOrIdentifier);
-        if (!pluginFile.exists())
+        if (!formatManager.doesPluginStillExist(*desc))
             stalePlugins.add(*desc);
     }
 

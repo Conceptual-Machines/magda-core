@@ -38,7 +38,7 @@ void TracktionEngineWrapper::initializePluginFormats() {
     // Persist + resync the cached count so PluginSettingsDialog doesn't
     // show a stale total after the prune.
     auto& knownPlugins = pluginManager.knownPluginList;
-    if (pruneMissingPlugins(knownPlugins) > 0) {
+    if (pruneMissingPlugins(knownPlugins, pluginManager.pluginFormatManager) > 0) {
         savePluginList();
         Config::getInstance().setTotalPluginCount(knownPlugins.getNumTypes());
         Config::getInstance().save();

@@ -326,15 +326,16 @@ class TracktionEngineWrapper : public AudioEngine,
     void detectNewPlugins(std::function<void(const juce::String&)> statusCallback = nullptr);
 
     /**
-     * @brief Remove entries from the given known-plugin list whose absolute
-     * fileOrIdentifier no longer exists on disk. Cheap (stat-only, no plugin
-     * scanning, no disk writes). Returns the number of entries removed so the
-     * caller can decide whether to persist and update Config.
-     *
-     * Static and self-contained so it can be unit-tested without spinning up
-     * an Engine.
+     * @brief Remove entries from the given known-plugin list whose plugins
+     * are no longer installed. Delegates per-entry to
+     * AudioPluginFormatManager::doesPluginStillExist so each format decides
+     * correctly — VST/VST3 stat the file path, AU queries AudioComponentFindNext
+     * on the identifier (a plain File::exists() skips every AU entry because
+     * their fileOrIdentifier is "AudioUnit:..." and not an absolute path).
+     * Returns the number of entries removed.
      */
-    static int pruneMissingPlugins(juce::KnownPluginList& knownPlugins);
+    static int pruneMissingPlugins(juce::KnownPluginList& knownPlugins,
+                                   juce::AudioPluginFormatManager& formatManager);
 
     /**
      * @brief Clear the plugin list and delete the saved file
