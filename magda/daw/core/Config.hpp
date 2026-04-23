@@ -178,6 +178,15 @@ class Config {
         scrollbarOnLeft = onLeft;
     }
 
+    // UI scale factor for HiDPI displays.
+    // 0 = Auto (pick from primary display DPI at startup); >0 = explicit factor (e.g. 1.5).
+    double getUIScale() const {
+        return uiScale;
+    }
+    void setUIScale(double scale) {
+        uiScale = scale;
+    }
+
     // Audio Device Configuration
     std::string getPreferredAudioDevice() const {
         return preferredAudioDevice;
@@ -661,6 +670,9 @@ class Config {
 
     // Layout settings
     bool scrollbarOnLeft = false;  // Scrollbar on right by default
+
+    // UI scale: 0 = Auto (pick from display DPI), otherwise an explicit factor (1.0, 1.25, …)
+    double uiScale = 0.0;
 
     // Recent projects (most recent first, max 10)
     std::vector<std::string> recentProjects;

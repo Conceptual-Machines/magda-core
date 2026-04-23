@@ -42,6 +42,8 @@ enum {
     // View menu
     zoom = 0x4000,
     toggleArrangeSession = 0x4001,
+    uiScaleUp = 0x4002,    // Cmd+= / Cmd++: increase global UI scale
+    uiScaleDown = 0x4003,  // Cmd+- / Cmd+_: decrease global UI scale
 
     // Help menu
     showHelp = 0x5000,
