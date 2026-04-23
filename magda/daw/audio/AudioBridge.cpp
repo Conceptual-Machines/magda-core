@@ -5,6 +5,7 @@
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipOperations.hpp"
 #include "../core/RackInfo.hpp"
+#include "../core/controllers/ControllerRegistry.hpp"
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
@@ -1221,9 +1222,25 @@ juce::String AudioBridge::getTrackAudioInput(TrackId trackId) const {
 void AudioBridge::enableAllMidiInputDevices() {
     auto& dm = engine_.getDeviceManager();
 
-    // Enable all MIDI input devices at the engine level
+    // Build a name->identifier map once so we can pass BOTH identifier and
+    // display name into ControllerRegistry's matcher — stored entries may use
+    // either form (see magda::midi::matches). TE's MidiInputDevice exposes the
+    // display name; the JUCE identifier comes from getAvailableDevices().
+    std::unordered_map<juce::String, juce::String> nameToJuceId;
+    for (const auto& d : juce::MidiInput::getAvailableDevices())
+        nameToJuceId[d.name] = d.identifier;
+
+    // Controller ports are NOT excluded from instrument routing. A typical
+    // MIDI keyboard (e.g. Launchkey Mini) exposes a single MIDI port for both
+    // note messages AND control-change knobs; excluding the whole port would
+    // break note playback. The ControllerRouter intercepts only the specific
+    // CC numbers that have bindings; everything else passes through to TE
+    // tracks. A future "surface-only" flag can opt specific ports (MCU, etc.)
+    // out of track routing when the controller is truly control-only.
     for (auto& midiInput : dm.getMidiInDevices()) {
-        if (midiInput && !midiInput->isEnabled()) {
+        if (!midiInput)
+            continue;
+        if (!midiInput->isEnabled()) {
             midiInput->setEnabled(true);
             DBG("Enabled MIDI input device: " << midiInput->getName());
         }
@@ -1290,6 +1307,11 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                 // duplicate every MIDI message.
                 if (midiDevice->getName() == "All MIDI Ins")
                     continue;
+
+                // Controller ports are NOT excluded from track routing — a
+                // typical MIDI keyboard exposes a single port for both notes
+                // and knob CCs. ControllerRouter intercepts only bound CC
+                // numbers; everything else reaches the track.
 
                 // Make sure the device is enabled
                 if (!midiDevice->isEnabled()) {

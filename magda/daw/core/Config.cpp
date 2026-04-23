@@ -193,6 +193,26 @@ void Config::save() {
     }
     root->setProperty("trackColourPalette", paletteArray);
 
+    // Parameter aliases (user-global layer)
+    if (!paramAliases_.isVoid())
+        root->setProperty("paramAliases", paramAliases_);
+
+    // Controller devices
+    if (!controllers_.isVoid())
+        root->setProperty("controllers", controllers_);
+
+    // Global bindings
+    if (!globalBindings_.isVoid())
+        root->setProperty("globalBindings", globalBindings_);
+
+    // MIDI Learn settings
+    {
+        auto* mlObj = new juce::DynamicObject();
+        mlObj->setProperty("defaultScope", midiLearnDefaultScope_ == 0 ? juce::String("global")
+                                                                       : juce::String("project"));
+        root->setProperty("midiLearn", juce::var(mlObj));
+    }
+
     // Write to disk
     auto configFile = getConfigFile();
     configFile.getParentDirectory().createDirectory();
@@ -474,6 +494,27 @@ void Config::load() {
                     trackColourPalette.push_back(entry);
                 }
             }
+        }
+    }
+
+    // Parameter aliases (user-global layer)
+    if (obj->hasProperty("paramAliases"))
+        paramAliases_ = obj->getProperty("paramAliases");
+
+    // Controller devices
+    if (obj->hasProperty("controllers"))
+        controllers_ = obj->getProperty("controllers");
+
+    // Global bindings
+    if (obj->hasProperty("globalBindings"))
+        globalBindings_ = obj->getProperty("globalBindings");
+
+    // MIDI Learn settings
+    if (obj->hasProperty("midiLearn")) {
+        auto mlVar = obj->getProperty("midiLearn");
+        if (auto* mlObj = mlVar.getDynamicObject()) {
+            auto scopeStr = mlObj->getProperty("defaultScope").toString();
+            midiLearnDefaultScope_ = (scopeStr == "global") ? 0 : 1;
         }
     }
 

@@ -16,6 +16,8 @@ namespace magda::daw::ui {
 
 ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex) {
     magda::LinkModeManager::getInstance().addListener(this);
+    magda::MidiLearnCoordinator::getInstance().addListener(this);
+    magda::BindingRegistry::getInstance().addListener(this);
 
     setInterceptsMouseClicks(true, true);
 
@@ -50,7 +52,9 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
                            .onTrackMacroLinked = onTrackMacroLinked,
                            .onRackMacroUnlinked = onRackMacroUnlinked,
                            .onTrackMacroUnlinked = onTrackMacroUnlinked,
-                           .onShowAutomationLane = onShowAutomationLane});
+                           .onShowAutomationLane = onShowAutomationLane,
+                           .onMidiLearn = onMidiLearn,
+                           .onMidiClear = onMidiClear});
     };
     valueSlider_.setRightClickEditsText(false);
 
@@ -146,6 +150,15 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
 
     addAndMakeVisible(valueSlider_);
 
+    // Default MIDI Learn wiring: delegate to MidiLearnCoordinator singleton
+    onMidiLearn = [this](magda::ChainNodePath path, int paramIdx, juce::String paramName) {
+        juce::String displayName = paramName.isNotEmpty() ? paramName : nameLabel_.getText();
+        magda::MidiLearnCoordinator::getInstance().beginLearn(path, paramIdx, displayName);
+    };
+    onMidiClear = [](magda::ChainNodePath path, int paramIdx) {
+        magda::MidiLearnCoordinator::getInstance().clearMappings(path, paramIdx);
+    };
+
     setInterceptsMouseClicks(true, true);
 }
 
@@ -155,6 +168,11 @@ ParamSlotComponent::~ParamSlotComponent() {
     if (amountLabel_.isOnDesktop()) {
         amountLabel_.removeFromDesktop();
     }
+    if (isInMidiLearnMode_) {
+        magda::MidiLearnCoordinator::getInstance().cancelLearn();
+    }
+    magda::MidiLearnCoordinator::getInstance().removeListener(this);
+    magda::BindingRegistry::getInstance().removeListener(this);
     magda::LinkModeManager::getInstance().removeListener(this);
 }
 
@@ -237,6 +255,42 @@ void ParamSlotComponent::macroLinkModeChanged(bool active, const magda::MacroSel
     }
 
     repaint();
+}
+
+// ============================================================================
+// MidiLearnCoordinatorListener
+// ============================================================================
+
+void ParamSlotComponent::midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
+                                               bool learning) {
+    bool isMe = (path == devicePath_ && paramIndex == paramIndex_);
+    isInMidiLearnMode_ = learning && isMe;
+    repaint();
+}
+
+void ParamSlotComponent::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                                            const magda::Binding&) {
+    if (path == devicePath_ && paramIndex == paramIndex_)
+        refreshMidiBindingState();
+}
+
+void ParamSlotComponent::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex, int) {
+    if (path == devicePath_ && paramIndex == paramIndex_)
+        refreshMidiBindingState();
+}
+
+void ParamSlotComponent::bindingRegistryChanged(magda::BindingScope) {
+    // Any change to any scope could add/remove a binding for this param.
+    refreshMidiBindingState();
+}
+
+void ParamSlotComponent::refreshMidiBindingState() {
+    bool newState =
+        !magda::BindingRegistry::getInstance().findForTarget(devicePath_, paramIndex_).empty();
+    if (newState != hasMidiBinding_) {
+        hasMidiBinding_ = newState;
+        repaint();
+    }
 }
 
 // ============================================================================
@@ -461,6 +515,29 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 2.0f, 2.0f);
     }
 
+    // Persistent MIDI-mapped badge: a small dot inside the value slider area,
+    // top-right corner. Kept tiny so it doesn't compete with automation/macro
+    // link indicators. Learn-mode pulse below takes precedence when both are set.
+    if (hasMidiBinding_ && !isInMidiLearnMode_) {
+        constexpr float dotSize = 5.0f;
+        constexpr float margin = 3.0f;
+        auto slider = valueSlider_.getBounds().toFloat();
+        juce::Rectangle<float> dot(slider.getRight() - margin - dotSize, slider.getY() + margin,
+                                   dotSize, dotSize);
+        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.85f));
+        g.fillEllipse(dot);
+    }
+
+    // MIDI Learn pulsing border
+    if (isInMidiLearnMode_) {
+        float phase =
+            std::fmod(static_cast<float>(juce::Time::getMillisecondCounterHiRes() * 0.003), 1.0f);
+        // 0.7 + 0.3*sin keeps alpha in [0.4, 1.0]; 0.4 + 0.6*sin went negative.
+        float alpha = 0.7f + 0.3f * std::sin(phase * juce::MathConstants<float>::twoPi);
+        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(alpha));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 2.0f, 2.0f);
+    }
+
     // Modulation indicator bars — delegated to free function
     ModulationPaintContext paintCtx;
     paintCtx.sliderBounds = valueSlider_.getBounds();
@@ -534,7 +611,9 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
                            .onTrackMacroLinked = onTrackMacroLinked,
                            .onRackMacroUnlinked = onRackMacroUnlinked,
                            .onTrackMacroUnlinked = onTrackMacroUnlinked,
-                           .onShowAutomationLane = onShowAutomationLane});
+                           .onShowAutomationLane = onShowAutomationLane,
+                           .onMidiLearn = onMidiLearn,
+                           .onMidiClear = onMidiClear});
         return;
     }
 
@@ -771,7 +850,7 @@ void ParamSlotComponent::timerCallback() {
 }
 
 void ParamSlotComponent::updateModTimerState() {
-    if (hasActiveLinks(buildLinkContext())) {
+    if (hasActiveLinks(buildLinkContext()) || isInMidiLearnMode_) {
         if (!isTimerRunning()) {
             startTimer(33);  // ~30 FPS
         }

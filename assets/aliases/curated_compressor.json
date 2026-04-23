@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "pluginKey": "compressor",
+  "aliases": {
+    "threshold": { "paramIndex": 0 },
+    "ratio": { "paramIndex": 1 },
+    "attack": { "paramIndex": 2 },
+    "release": { "paramIndex": 3 },
+    "makeup_gain": { "paramIndex": 4 }
+  },
+  "aliasesByName": {
+    "threshold": ["Threshold"],
+    "ratio": ["Ratio"],
+    "attack": ["Attack"],
+    "release": ["Release"],
+    "makeup_gain": ["Output gain", "Makeup Gain"]
+  }
+}

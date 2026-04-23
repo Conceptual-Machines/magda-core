@@ -9,6 +9,7 @@
 #include "core/ParameterInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TypeIds.hpp"
+#include "core/controllers/MidiLearnCoordinator.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
@@ -25,6 +26,8 @@ namespace magda::daw::ui {
 class ParamSlotComponent : public juce::Component,
                            public juce::DragAndDropTarget,
                            public magda::LinkModeManagerListener,
+                           public magda::MidiLearnCoordinatorListener,
+                           public magda::BindingRegistryListener,
                            private juce::Timer {
   public:
     ParamSlotComponent(int paramIndex);
@@ -41,6 +44,7 @@ class ParamSlotComponent : public juce::Component,
     void setParamIndex(int paramIndex) {
         paramIndex_ = paramIndex;
         refreshAutomationTarget();
+        refreshMidiBindingState();
     }
     int getParamIndex() const {
         return paramIndex_;
@@ -55,6 +59,7 @@ class ParamSlotComponent : public juce::Component,
     void setDevicePath(const magda::ChainNodePath& path) {
         devicePath_ = path;
         refreshAutomationTarget();
+        refreshMidiBindingState();
     }
 
   private:
@@ -140,6 +145,10 @@ class ParamSlotComponent : public juce::Component,
     std::function<void(int macroIndex, float value)> onMacroValueChanged;
     std::function<void()> onShowAutomationLane;
 
+    // MIDI Learn callbacks (wired to MidiLearnCoordinator by this component)
+    std::function<void(magda::ChainNodePath, int paramIndex, juce::String paramName)> onMidiLearn;
+    std::function<void(magda::ChainNodePath, int paramIndex)> onMidiClear;
+
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
@@ -163,7 +172,21 @@ class ParamSlotComponent : public juce::Component,
     void modLinkModeChanged(bool active, const magda::ModSelection& selection) override;
     void macroLinkModeChanged(bool active, const magda::MacroSelection& selection) override;
 
-    // Timer callback for animating LFO modulation bars
+    // MidiLearnCoordinatorListener implementation
+    void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
+                               bool learning) override;
+    void midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                            const magda::Binding&) override;
+    void midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
+                          int numRemoved) override;
+
+    // BindingRegistryListener implementation
+    void bindingRegistryChanged(magda::BindingScope scope) override;
+
+    // Refresh hasMidiBinding_ from the registry + repaint if changed.
+    void refreshMidiBindingState();
+
+    // Timer callback for animating LFO modulation bars and MIDI learn pulsing
     void timerCallback() override;
 
     // Update timer state based on whether there are active mod links
@@ -202,6 +225,10 @@ class ParamSlotComponent : public juce::Component,
     bool isInLinkMode_ = false;
     magda::ModSelection activeMod_;
     magda::MacroSelection activeMacro_;
+
+    // MIDI Learn state
+    bool isInMidiLearnMode_ = false;
+    bool hasMidiBinding_ = false;  // Persistent badge for already-mapped params
 
     // Link mode drag state (for setting modulation amount via drag)
     bool isLinkModeDrag_ = false;

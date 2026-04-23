@@ -206,6 +206,14 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             }
         }
 
+        // Parameter aliases (UserProject layer -- opaque pass-through to AliasRegistry)
+        if (obj->hasProperty("paramAliases"))
+            outData.info.paramAliases = obj->getProperty("paramAliases");
+
+        // Project-scope bindings (opaque pass-through to BindingRegistry)
+        if (obj->hasProperty("projectBindings"))
+            outData.info.projectBindings = obj->getProperty("projectBindings");
+
         return true;
 
     } catch (const std::exception& e) {
@@ -302,6 +310,14 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     if (masterTrack && !masterTrack->chainElements.empty()) {
         obj->setProperty("masterTrack", serializeTrackInfo(*masterTrack));
     }
+
+    // Parameter aliases (UserProject layer -- opaque pass-through)
+    if (!info.paramAliases.isVoid())
+        obj->setProperty("paramAliases", info.paramAliases);
+
+    // Project-scope bindings (opaque pass-through)
+    if (!info.projectBindings.isVoid())
+        obj->setProperty("projectBindings", info.projectBindings);
 
     return juce::var(obj);
 }

@@ -45,6 +45,12 @@ struct ProjectInfo {
     juce::String version = MAGDA_VERSION;  // Magda version
     juce::Time lastModified;
 
+    // Parameter aliases (UserProject layer, opaque JSON blob managed by AliasRegistry)
+    juce::var paramAliases;
+
+    // Project-scope bindings (opaque JSON blob managed by BindingRegistry)
+    juce::var projectBindings;
+
     // Default constructor
     ProjectInfo() : lastModified(juce::Time::getCurrentTime()) {}
 

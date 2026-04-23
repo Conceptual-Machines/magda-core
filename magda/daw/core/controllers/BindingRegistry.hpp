@@ -1,0 +1,170 @@
+#pragma once
+
+#include <juce_core/juce_core.h>
+
+#include <memory>
+#include <optional>
+#include <vector>
+
+#include "../aliases/Target.hpp"
+#include "Binding.hpp"
+
+namespace magda {
+
+// ============================================================================
+// BindingScope
+// ============================================================================
+
+/**
+ * @brief Scope for binding storage.
+ *
+ * Global bindings are saved in the user config file.
+ * Project bindings are saved in the .mgd project file.
+ */
+enum class BindingScope { Global, Project };
+
+// ============================================================================
+// BindingRegistryListener
+// ============================================================================
+
+class BindingRegistry;
+
+class BindingRegistryListener {
+  public:
+    virtual ~BindingRegistryListener() = default;
+    virtual void bindingRegistryChanged(BindingScope scope) = 0;
+};
+
+// ============================================================================
+// BindingRegistry
+// ============================================================================
+
+/**
+ * @brief Singleton registry of controller-to-parameter bindings.
+ *
+ * Two scopes: Global (persisted in config) and Project (persisted in .mgd).
+ *
+ * Thread-safety: mutations happen on the message thread; reads from the MIDI
+ * thread are served via an atomic snapshot that is swapped on every mutation
+ * across both scopes.
+ */
+class BindingRegistry {
+  public:
+    static BindingRegistry& getInstance();
+
+    // ========================================================================
+    // CRUD (per scope)
+    // ========================================================================
+
+    /** Add a binding to the given scope (updates if id already exists). */
+    void add(BindingScope scope, const Binding& b);
+
+    /** Update a binding in the given scope. No-op if not found. */
+    void update(BindingScope scope, const Binding& b);
+
+    /** Remove a binding from the given scope. No-op if not found. */
+    void remove(BindingScope scope, const BindingId& id);
+
+    // ========================================================================
+    // Queries (message-thread)
+    // ========================================================================
+
+    /** Return all bindings in a scope. */
+    std::vector<Binding> bindings(BindingScope scope) const;
+
+    /**
+     * @brief Find all bindings that match a given source.
+     *
+     * When a stored binding has channel == 0, it matches any channel.
+     * When channel is specified (1..16), it matches only that channel.
+     *
+     * Thread-safe: reads from atomic snapshot -- safe to call from the MIDI thread.
+     */
+    std::vector<Binding> findForSource(const ControllerId& controllerId, BindingMsgType msgType,
+                                       int channel, int number) const;
+
+    /**
+     * @brief Find all bindings whose source.portKey matches a live MIDI port.
+     *
+     * Matching uses magda::midi::matches so a stored portKey holding either
+     * a JUCE identifier or a display name resolves against the live device.
+     * This is the MIDI Learn dispatch path — bindings attach directly to a
+     * port without needing a ControllerRegistry entry.
+     *
+     * Thread-safe: reads from atomic snapshot -- safe to call from the MIDI thread.
+     */
+    std::vector<Binding> findForPort(const juce::String& liveIdentifier,
+                                     const juce::String& liveName, BindingMsgType msgType,
+                                     int channel, int number) const;
+
+    /**
+     * @brief Find all bindings whose target resolves to a given (devicePath, paramIndex).
+     *
+     * Resolves each binding's target using a DefaultChainContext + TargetResolver.
+     * Must be called on the message thread.
+     *
+     * @param devicePath   Concrete device path to match.
+     * @param paramIndex   Parameter index to match.
+     * @return All matching bindings from both Global and Project scopes.
+     */
+    std::vector<Binding> findForTarget(const ChainNodePath& devicePath, int paramIndex) const;
+
+    /**
+     * @brief Remove all bindings whose target resolves to a given (devicePath, paramIndex).
+     *
+     * Convenience wrapper: calls findForTarget, then removes each match from its scope.
+     * Must be called on the message thread.
+     *
+     * @return Number of bindings removed.
+     */
+    int removeForTarget(const ChainNodePath& devicePath, int paramIndex);
+
+    // ========================================================================
+    // Persistence
+    // ========================================================================
+
+    /** Load Global scope from config "globalBindings" juce::var array. */
+    void loadGlobal(const juce::var& json);
+
+    /** Serialize Global scope to a juce::var array. */
+    juce::var saveGlobal() const;
+
+    /** Load Project scope from project "projectBindings" juce::var array. */
+    void loadProject(const juce::var& json);
+
+    /** Serialize Project scope to a juce::var array. */
+    juce::var saveProject() const;
+
+    /** Clear all project-scope bindings (called on project close). */
+    void clearProject();
+
+    // ========================================================================
+    // Listeners
+    // ========================================================================
+
+    void addListener(BindingRegistryListener* l);
+    void removeListener(BindingRegistryListener* l);
+
+  private:
+    BindingRegistry() = default;
+
+    static std::vector<Binding> decodeArray(const juce::var& json);
+    static juce::var encodeArray(const std::vector<Binding>& bindings);
+
+    void rebuildSnapshot();
+    void notifyListeners(BindingScope scope);
+
+    // Message-thread storage
+    std::vector<Binding> globalBindings_;
+    std::vector<Binding> projectBindings_;
+
+    // Lock-free read snapshot combining both scopes for MIDI thread.
+    // Use std::atomic_store/atomic_load free functions (C++11/14) since
+    // std::atomic<std::shared_ptr<T>> requires C++20.
+    std::shared_ptr<const std::vector<Binding>> snapshot_{
+        std::make_shared<const std::vector<Binding>>()};
+
+    std::vector<BindingRegistryListener*> listeners_;
+};
+
+}  // namespace magda

@@ -760,6 +760,11 @@ void DeviceSlotComponent::deviceParameterChanged(magda::DeviceId deviceId, int p
         device_.parameters[static_cast<size_t>(paramIndex)].currentValue = newValue;
     }
 
+    // Push the fresh cache into any active plugin-specific custom UI so its
+    // sliders track external writes (controller, automation playback, etc.)
+    // without waiting for the next timer tick.
+    refreshCustomUIParameterValues();
+
     // Learn mode: navigate to the page containing this parameter and highlight it
     if (paramGrid_->isLearnMode()) {
         // Filter cascading / crosstalk notifications (many plugins, Vital in

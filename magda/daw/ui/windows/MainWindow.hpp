@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "../../core/SelectionManager.hpp"
+#include "../components/common/Toast.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/ExportMidiDialog.hpp"
 #include "../layout/LayoutConfig.hpp"
@@ -13,6 +14,7 @@
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 #include "core/ViewModeState.hpp"
+#include "core/controllers/MidiLearnCoordinator.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda {
@@ -79,7 +81,8 @@ class MainWindow::MainComponent : public juce::Component,
                                   public juce::ApplicationCommandTarget,
                                   public ViewModeListener,
                                   public SelectionManagerListener,
-                                  public TrackManagerListener {
+                                  public TrackManagerListener,
+                                  public magda::MidiLearnCoordinatorListener {
   public:
     MainComponent(AudioEngine* externalEngine = nullptr);
     ~MainComponent() override;
@@ -105,6 +108,14 @@ class MainWindow::MainComponent : public juce::Component,
     // TrackManagerListener
     void tracksChanged() override {}
     void trackPropertyChanged(int trackId) override;
+
+    // MidiLearnCoordinatorListener
+    void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
+                               bool learning) override;
+    void midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                            const magda::Binding& binding) override;
+    void midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
+                          int numRemoved) override;
 
     // Command manager access
     juce::ApplicationCommandManager& getCommandManager() {
@@ -178,6 +189,9 @@ class MainWindow::MainComponent : public juce::Component,
 
     // Tooltip support — enabled via Config::getShowTooltips()
     std::unique_ptr<juce::TooltipWindow> tooltipWindow_;
+
+    // Toast notification overlay (top-right corner)
+    std::unique_ptr<daw::ui::Toast> toast_;
 
     // Setup helpers
     void setupResizeHandles();

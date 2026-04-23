@@ -24,6 +24,11 @@ struct ParamLinkMenuCallbacks {
     std::function<void(int macroIndex, magda::MacroTarget target)> onRackMacroUnlinked;
     std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroUnlinked;
     std::function<void()> onShowAutomationLane;
+
+    // MIDI Learn callbacks (item IDs 6000-6009)
+    std::function<void(magda::ChainNodePath, int paramIndex, juce::String paramName)> onMidiLearn;
+    std::function<void(magda::ChainNodePath, int paramIndex)> onMidiClear;
+    std::function<void(magda::ChainNodePath, int paramIndex)> onMidiEdit;  // greyed out for now
 };
 
 /**
