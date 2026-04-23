@@ -184,9 +184,10 @@ void ToneGeneratorProcessor::initializeDefaults() {
         return;
 
     // Set default values using the proper setters (they handle null checks internally)
+    setOscType(0);  // TE sine
+    setBandLimit(false);
     setFrequency(440.0f);
     setLevel(0.25f);
-    setOscType(0);  // Sine wave
 
     initialized_ = true;
 }
@@ -196,45 +197,44 @@ te::ToneGeneratorPlugin* ToneGeneratorProcessor::getTonePlugin() const {
 }
 
 void ToneGeneratorProcessor::setParameter(const juce::String& paramName, float value) {
-    if (paramName.equalsIgnoreCase("frequency") || paramName.equalsIgnoreCase("freq")) {
-        // Value is actual Hz (20-20000)
+    if (paramName.equalsIgnoreCase("oscType") || paramName.equalsIgnoreCase("type") ||
+        paramName.equalsIgnoreCase("waveform")) {
+        setOscType(static_cast<int>(std::round(value)));
+    } else if (paramName.equalsIgnoreCase("bandLimit")) {
+        setBandLimit(value >= 0.5f);
+    } else if (paramName.equalsIgnoreCase("frequency") || paramName.equalsIgnoreCase("freq")) {
         setFrequency(value);
     } else if (paramName.equalsIgnoreCase("level") || paramName.equalsIgnoreCase("gain") ||
                paramName.equalsIgnoreCase("volume")) {
-        // Value is actual dB (-60 to +6)
-        float level = juce::Decibels::decibelsToGain(value, -60.0f);
-        setLevel(level);
-    } else if (paramName.equalsIgnoreCase("oscType") || paramName.equalsIgnoreCase("type") ||
-               paramName.equalsIgnoreCase("waveform")) {
-        // Value is actual choice index (0 or 1)
-        int type = static_cast<int>(std::round(value));
-        setOscType(type);
+        // Value is dB; convert to linear for the plugin
+        setLevel(juce::Decibels::decibelsToGain(value, -60.0f));
     }
 }
 
 float ToneGeneratorProcessor::getParameter(const juce::String& paramName) const {
-    if (paramName.equalsIgnoreCase("frequency") || paramName.equalsIgnoreCase("freq")) {
-        // Return actual Hz (20-20000)
+    if (paramName.equalsIgnoreCase("oscType") || paramName.equalsIgnoreCase("type") ||
+        paramName.equalsIgnoreCase("waveform")) {
+        return static_cast<float>(getOscType());
+    } else if (paramName.equalsIgnoreCase("bandLimit")) {
+        return getBandLimit() ? 1.0f : 0.0f;
+    } else if (paramName.equalsIgnoreCase("frequency") || paramName.equalsIgnoreCase("freq")) {
         return getFrequency();
     } else if (paramName.equalsIgnoreCase("level") || paramName.equalsIgnoreCase("gain") ||
                paramName.equalsIgnoreCase("volume")) {
-        // Return actual dB (-60 to 0)
         float level = getLevel();
         return juce::Decibels::gainToDecibels(level, -60.0f);
-    } else if (paramName.equalsIgnoreCase("oscType") || paramName.equalsIgnoreCase("type") ||
-               paramName.equalsIgnoreCase("waveform")) {
-        // Return actual choice index (0 or 1)
-        return static_cast<float>(getOscType());
     }
     return 0.0f;
 }
 
 std::vector<juce::String> ToneGeneratorProcessor::getParameterNames() const {
-    return {"frequency", "level", "oscType"};
+    // Order matches te::ToneGeneratorPlugin::getAutomatableParameters() so
+    // mod/macro links resolve to the correct TE parameter.
+    return {"oscType", "bandLimit", "frequency", "level"};
 }
 
 int ToneGeneratorProcessor::getParameterCount() const {
-    return 3;  // frequency, level, oscType
+    return 4;
 }
 
 ParameterInfo ToneGeneratorProcessor::getParameterInfo(int index) const {
@@ -242,49 +242,87 @@ ParameterInfo ToneGeneratorProcessor::getParameterInfo(int index) const {
     info.paramIndex = index;
 
     switch (index) {
-        case 0: {  // Frequency
+        case 0:  // Oscillator Type (TE enum 0-5)
+            info.name = "Waveform";
+            info.unit = "";
+            info.minValue = 0.0f;
+            info.maxValue = 5.0f;
+            info.teMinValue = 0.0f;
+            info.teMaxValue = 5.0f;
+            info.defaultValue = 0.0f;
+            info.currentValue = static_cast<float>(getOscType());
+            info.scale = ParameterScale::Discrete;
+            info.choices = {"Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Noise"};
+            break;
+
+        case 1:  // Band Limit
+            info.name = "Band Limit";
+            info.unit = "";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.teMinValue = 0.0f;
+            info.teMaxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.currentValue = getBandLimit() ? 1.0f : 0.0f;
+            info.scale = ParameterScale::Boolean;
+            info.modulatable = false;
+            info.choices = {"Aliased", "Band Limited"};
+            break;
+
+        case 2: {  // Frequency (log sweep, 1 kHz at visual midpoint)
             info.name = "Frequency";
             info.unit = "Hz";
             info.minValue = 20.0f;
             info.maxValue = 20000.0f;
+            info.teMinValue = 20.0f;
+            info.teMaxValue = 20000.0f;
             info.defaultValue = 440.0f;
             info.scale = ParameterScale::Logarithmic;
-            // Store actual value in Hz
+            info.scaleAnchor = 1000.0f;
             info.currentValue = juce::jlimit(20.0f, 20000.0f, getFrequency());
             break;
         }
 
-        case 1: {  // Level - display as dB
+        case 3: {  // Level — UI is in dB; plugin-native is linear, converted at the bridge
             info.name = "Level";
             info.unit = "dB";
             info.minValue = -60.0f;
             info.maxValue = 0.0f;
+            info.teMinValue = -60.0f;
+            info.teMaxValue = 0.0f;
             info.defaultValue = -12.0f;  // 0.25 linear ≈ -12 dB
             info.scale = ParameterScale::Linear;
-            // Store actual value in dB
+            info.displayFormat = DisplayFormat::Decibels;
             float level = getLevel();
             float db = level > 0.0f ? juce::Decibels::gainToDecibels(level, -60.0f) : -60.0f;
             info.currentValue = juce::jlimit(-60.0f, 0.0f, db);
             break;
         }
 
-        case 2:  // Oscillator Type
-            info.name = "Waveform";
-            info.unit = "";
-            info.minValue = 0.0f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.0f;
-            // Store actual value (choice index)
-            info.currentValue = static_cast<float>(getOscType());  // 0 or 1
-            info.scale = ParameterScale::Discrete;
-            info.choices = {"Sine", "Noise"};
-            break;
-
         default:
             break;
     }
 
     return info;
+}
+
+void ToneGeneratorProcessor::setParameterByIndex(int paramIndex, float value) {
+    switch (paramIndex) {
+        case 0:  // Oscillator type (TE enum 0-5)
+            setOscType(static_cast<int>(std::round(value)));
+            break;
+        case 1:  // Band limit
+            setBandLimit(value >= 0.5f);
+            break;
+        case 2:  // Frequency (Hz)
+            setFrequency(value);
+            break;
+        case 3:  // Level (dB from UI, convert to linear for plugin)
+            setLevel(juce::Decibels::decibelsToGain(value, -60.0f));
+            break;
+        default:
+            break;
+    }
 }
 
 void ToneGeneratorProcessor::setFrequency(float hz) {
@@ -323,13 +361,10 @@ float ToneGeneratorProcessor::getLevel() const {
     return 0.25f;
 }
 
-void ToneGeneratorProcessor::setOscType(int type) {
+void ToneGeneratorProcessor::setOscType(int teOscType) {
     if (auto* tone = getTonePlugin()) {
-        // Map our 0/1 (sine/noise) to TE's 0/5 (sin/noise)
         // TE enum: 0=sin, 1=triangle, 2=sawUp, 3=sawDown, 4=square, 5=noise
-        float teType = (type == 0) ? 0.0f : 5.0f;  // 0→sin, 1→noise
-
-        // Set via AutomatableParameter - proper Tracktion Engine way
+        float teType = static_cast<float>(juce::jlimit(0, 5, teOscType));
         if (tone->oscTypeParam) {
             tone->oscTypeParam->setParameter(teType, juce::dontSendNotification);
         }
@@ -338,11 +373,25 @@ void ToneGeneratorProcessor::setOscType(int type) {
 
 int ToneGeneratorProcessor::getOscType() const {
     if (auto* tone = getTonePlugin()) {
-        // Map TE's 0/5 back to our 0/1
-        int teType = static_cast<int>(tone->oscType);
-        return (teType == 5) ? 1 : 0;  // noise→1, everything else→0 (sine)
+        return juce::jlimit(0, 5, static_cast<int>(tone->oscType));
     }
-    return 0;  // Sine
+    return 0;
+}
+
+void ToneGeneratorProcessor::setBandLimit(bool bandLimited) {
+    if (auto* tone = getTonePlugin()) {
+        if (tone->bandLimitParam) {
+            tone->bandLimitParam->setParameter(bandLimited ? 1.0f : 0.0f,
+                                               juce::dontSendNotification);
+        }
+    }
+}
+
+bool ToneGeneratorProcessor::getBandLimit() const {
+    if (auto* tone = getTonePlugin()) {
+        return static_cast<float>(tone->bandLimit) >= 0.5f;
+    }
+    return false;
 }
 
 void ToneGeneratorProcessor::applyGain() {

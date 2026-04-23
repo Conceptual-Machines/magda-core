@@ -990,10 +990,12 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         float level = -12.0f;
         int waveform = 0;
 
-        if (device.parameters.size() >= 3) {
-            frequency = device.parameters[0].currentValue;
-            level = device.parameters[1].currentValue;
-            waveform = static_cast<int>(device.parameters[2].currentValue);
+        // ToneGeneratorProcessor exposes params in TE order: 0=oscType, 1=bandLimit,
+        // 2=frequency, 3=level. Match that here.
+        if (device.parameters.size() >= 4) {
+            waveform = static_cast<int>(device.parameters[0].currentValue);
+            frequency = device.parameters[2].currentValue;
+            level = device.parameters[3].currentValue;
         }
 
         toneGeneratorUI_->updateParameters(frequency, level, waveform);

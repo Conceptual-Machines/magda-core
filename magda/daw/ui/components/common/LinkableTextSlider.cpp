@@ -193,6 +193,10 @@ bool LinkableTextSlider::isBeingDragged() const {
 // Linking context setters
 // ============================================================================
 
+void LinkableTextSlider::setParamIndex(int paramIndex) {
+    paramIndex_ = paramIndex;
+}
+
 void LinkableTextSlider::setLinkContext(magda::DeviceId deviceId, int paramIndex,
                                         const magda::ChainNodePath& devicePath) {
     deviceId_ = deviceId;

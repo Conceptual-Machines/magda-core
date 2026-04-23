@@ -3195,21 +3195,16 @@ void DeviceSlotComponent::refreshCustomUIParameterValues() {
 
 void DeviceSlotComponent::updateCustomUI() {
     if (toneGeneratorUI_ && device_.pluginId.containsIgnoreCase("tone")) {
-        // Extract parameters from device (stored as actual values)
         float frequency = 440.0f;
         float level = -12.0f;
         int waveform = 0;
 
-        // Read from device parameters if available
-        if (device_.parameters.size() >= 3) {
-            // Param 0: Frequency (actual Hz)
-            frequency = device_.parameters[0].currentValue;
-
-            // Param 1: Level (actual dB)
-            level = device_.parameters[1].currentValue;
-
-            // Param 2: Waveform (actual choice index: 0 or 1)
-            waveform = static_cast<int>(device_.parameters[2].currentValue);
+        // ToneGeneratorProcessor exposes params in TE order:
+        // 0=oscType (TE enum 0-5), 1=bandLimit, 2=frequency (Hz), 3=level (dB).
+        if (device_.parameters.size() >= 4) {
+            waveform = static_cast<int>(device_.parameters[0].currentValue);
+            frequency = device_.parameters[2].currentValue;
+            level = device_.parameters[3].currentValue;
         }
 
         toneGeneratorUI_->updateParameters(frequency, level, waveform);
