@@ -23,7 +23,6 @@ juce::var encodeControllerProfile(const ControllerProfile& p) {
     obj->setProperty("id", p.id);
     obj->setProperty("vendor", p.vendor);
     obj->setProperty("name", p.name);
-    obj->setProperty("portMatchPattern", p.portMatchPattern);
 
     juce::Array<juce::var> controlsArr;
     for (const auto& ctrl : p.controls) {
@@ -78,7 +77,6 @@ std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v) {
         return std::nullopt;
 
     p.vendor = obj->getProperty("vendor").toString();
-    p.portMatchPattern = obj->getProperty("portMatchPattern").toString();
 
     // Decode controls
     auto controlsVar = obj->getProperty("controls");
@@ -148,13 +146,15 @@ std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v) {
 
 MaterialisedController materialiseControllerFromProfile(const ControllerProfile& profile,
                                                         const juce::String& inputPort,
-                                                        const juce::String& outputPort) {
+                                                        const juce::String& outputPort,
+                                                        const juce::String& inputPortName) {
     MaterialisedController result;
 
     result.controller.id = juce::Uuid();
     result.controller.name = profile.name;
     result.controller.vendor = profile.vendor;
     result.controller.inputPort = inputPort;
+    result.controller.inputPortName = inputPortName;
     result.controller.outputPort = outputPort;
     result.controller.profileId = profile.id;
     result.controller.enabled = true;

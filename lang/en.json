@@ -441,20 +441,16 @@
 
   "controllers": {
     "title": "Controllers",
-    "available_profiles": "Available profiles",
     "my_controllers": "My controllers",
-    "midi_input_port": "MIDI input port:",
-    "enable": "Enable",
+    "add_profile": "+ Add profile",
     "remove": "Remove",
-    "close": "Close",
     "remove_confirm_title": "Remove controller?",
     "remove_confirm_message": "Remove \"{0}\" and its bindings?",
     "no_profiles": "No profiles loaded.",
-    "no_controllers": "No controllers enabled.",
-    "select_port": "(select port)",
-    "port_label": "Port:",
+    "no_controllers": "No controllers.",
+    "no_midi_inputs": "No MIDI inputs available.",
     "connected": "Connected",
     "not_connected": "Not connected",
-    "no_matching_device": "(device not connected)"
+    "disabled": "Disabled"
   }
 }

@@ -12,17 +12,18 @@
 namespace magda {
 
 /**
- * Dialog that lets the user enable bundled/user controller profiles and
- * manage currently-active controllers.
+ * Dialog that lets the user manage controller instances. Users click
+ * [+ Add profile] to pick a bundled profile and assign a MIDI port;
+ * click a row to toggle enabled; right-click a row to remove.
  *
  * Layout:
- *   Top list   - available profiles
- *   ComboBox   - MIDI input port
- *   Enable btn - materialise profile into ControllerRegistry + BindingRegistry
- *   Bottom list - enabled controllers with per-row Remove button
- *   Close btn
+ *   Section header + [+ Add profile] button
+ *   Controllers list (click to toggle enabled, right-click to remove)
+ *   Close button
  */
-class ControllersDialog : public juce::Component, private ControllerRegistryListener {
+class ControllersDialog : public juce::Component,
+                          private ControllerRegistryListener,
+                          private juce::Timer {
   public:
     ControllersDialog();
     ~ControllersDialog() override;
@@ -35,88 +36,60 @@ class ControllersDialog : public juce::Component, private ControllerRegistryList
     // ControllerRegistryListener
     void controllerRegistryChanged() override;
 
+    // juce::Timer
+    void timerCallback() override;
+
   private:
     // -------------------------------------------------------------------------
-    // Inner ListBoxModel for available profiles
-    // -------------------------------------------------------------------------
-    struct ProfileListModel : public juce::ListBoxModel {
-        std::vector<ControllerProfile>* profiles = nullptr;
-        // Predicate: returns true if the profile has a matching live MIDI input.
-        // For profiles with an empty portMatchPattern, should return true (generic).
-        std::function<bool(const ControllerProfile&)> isConnected;
-        std::function<void(int)> onRowSelected;
-
-        int getNumRows() override {
-            return profiles ? static_cast<int>(profiles->size()) : 0;
-        }
-        void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height,
-                              bool rowIsSelected) override;
-        void listBoxItemClicked(int row, const juce::MouseEvent&) override {
-            if (onRowSelected)
-                onRowSelected(row);
-        }
-    };
-
-    // -------------------------------------------------------------------------
-    // Inner ListBoxModel for enabled controllers
+    // Inner ListBoxModel
     // -------------------------------------------------------------------------
     struct ControllerListModel : public juce::ListBoxModel {
         std::vector<Controller>* controllers = nullptr;
-        std::function<void(int)> onRemoveClicked;
+        // Returns true when the controller's inputPort matches a live MIDI input.
+        std::function<bool(const Controller&)> isConnected;
+        std::function<void(int, const juce::MouseEvent&)> onRowClicked;
 
         int getNumRows() override {
             return controllers ? static_cast<int>(controllers->size()) : 0;
         }
         void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height,
                               bool rowIsSelected) override;
-        juce::Component* refreshComponentForRow(int rowNumber, bool isRowSelected,
-                                                juce::Component* existingComponent) override;
+        void listBoxItemClicked(int row, const juce::MouseEvent& e) override {
+            if (onRowClicked)
+                onRowClicked(row, e);
+        }
     };
 
     // -------------------------------------------------------------------------
     // Data
     // -------------------------------------------------------------------------
-    std::vector<ControllerProfile> availableProfiles_;
-    std::vector<Controller> enabledControllers_;
-
-    // Stable MIDI device list: identifier -> display name
+    std::vector<Controller> controllers_;
     juce::Array<juce::MidiDeviceInfo> liveInputs_;
-
-    int selectedProfileIndex_ = -1;
 
     // -------------------------------------------------------------------------
     // UI components
     // -------------------------------------------------------------------------
-    juce::Label availableLabel_;
-    ProfileListModel profileListModel_;
-    std::unique_ptr<juce::ListBox> profileList_;
-
-    juce::Label portLabel_;
-    juce::ComboBox portComboBox_;
-    juce::TextButton enableButton_;
-
-    juce::Label enabledLabel_;
-    ControllerListModel controllerListModel_;
-    std::unique_ptr<juce::ListBox> controllerList_;
-
-    juce::TextButton closeButton_;
+    juce::Label sectionLabel_;
+    juce::TextButton addButton_;
+    ControllerListModel listModel_;
+    std::unique_ptr<juce::ListBox> list_;
 
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
-    void rebuildProfileList();
-    void rebuildControllerList();
-    void refreshPortComboBox();
-    void onEnableClicked();
-    void onRemoveClicked(int rowIndex);
+    void refreshLiveInputs();
+    void rebuildList();
+    void persist();
 
-    /** Returns the MIDI device identifier for the selected ComboBox item, or empty. */
-    juce::String selectedPortIdentifier() const;
+    void onAddClicked();
+    void onProfilePicked(const ControllerProfile& profile);
+    void onPortPicked(const ControllerProfile& profile, const juce::MidiDeviceInfo& dev);
 
-    /** Returns display name for a port identifier, or the identifier itself if not found. */
-    juce::String portDisplayName(const juce::String& identifier) const;
+    void onRowClicked(int row, const juce::MouseEvent& e);
+    void onRowToggled(int row);
+    void onRowRemoveRequested(int row);
 
-    void setupSectionLabel(juce::Label& label, const juce::String& text);
+    bool isControllerConnected(const Controller& c) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ControllersDialog)
 };

@@ -54,7 +54,6 @@ struct ControllerProfile {
     juce::String id;  // stable string id, e.g. "novation.launchkey_mk3_37"
     juce::String vendor;
     juce::String name;
-    juce::String portMatchPattern;  // substring match against device display name
     std::vector<ControllerProfileControl> controls;
     std::vector<ControllerProfileDefaultBinding> defaultBindings;
 
@@ -63,8 +62,7 @@ struct ControllerProfile {
 
     bool operator==(const ControllerProfile& other) const {
         return id == other.id && vendor == other.vendor && name == other.name &&
-               portMatchPattern == other.portMatchPattern && controls == other.controls &&
-               defaultBindings == other.defaultBindings;
+               controls == other.controls && defaultBindings == other.defaultBindings;
     }
 };
 
@@ -106,6 +104,7 @@ struct MaterialisedController {
  */
 MaterialisedController materialiseControllerFromProfile(const ControllerProfile& profile,
                                                         const juce::String& inputPort,
-                                                        const juce::String& outputPort = {});
+                                                        const juce::String& outputPort = {},
+                                                        const juce::String& inputPortName = {});
 
 }  // namespace magda

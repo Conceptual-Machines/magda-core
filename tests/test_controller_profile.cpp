@@ -14,7 +14,6 @@ static ControllerProfile makeTestProfile() {
     p.id = "test.profile_1";
     p.vendor = "TestVendor";
     p.name = "Test Profile";
-    p.portMatchPattern = "Test Device";
 
     ControllerProfileControl ctrl1;
     ctrl1.controlId = "knob_1";
@@ -63,7 +62,6 @@ TEST_CASE("ControllerProfile - encode/decode round-trip", "[controller_profile]"
     CHECK(decoded->id == original.id);
     CHECK(decoded->vendor == original.vendor);
     CHECK(decoded->name == original.name);
-    CHECK(decoded->portMatchPattern == original.portMatchPattern);
 
     REQUIRE(decoded->controls.size() == original.controls.size());
     CHECK(decoded->controls[0].controlId == original.controls[0].controlId);

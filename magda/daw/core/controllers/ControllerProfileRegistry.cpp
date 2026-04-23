@@ -128,15 +128,4 @@ std::optional<ControllerProfile> ControllerProfileRegistry::findById(const juce:
     return std::nullopt;
 }
 
-std::optional<ControllerProfile> ControllerProfileRegistry::findByPortName(
-    const juce::String& deviceName) const {
-    for (const auto& p : profiles_) {
-        if (p.portMatchPattern.isEmpty())
-            continue;
-        if (deviceName.containsIgnoreCase(p.portMatchPattern))
-            return p;
-    }
-    return std::nullopt;
-}
-
 }  // namespace magda

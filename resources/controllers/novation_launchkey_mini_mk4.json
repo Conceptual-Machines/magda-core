@@ -2,7 +2,6 @@
   "id": "novation.launchkey_mini_mk4",
   "vendor": "Novation",
   "name": "Launchkey Mini MK4",
-  "portMatchPattern": "Launchkey Mini MK4 25 MIDI",
   "controls": [
     { "controlId": "knob_1", "kind": "knob", "cc": 21, "channel": 1 },
     { "controlId": "knob_2", "kind": "knob", "cc": 22, "channel": 1 },

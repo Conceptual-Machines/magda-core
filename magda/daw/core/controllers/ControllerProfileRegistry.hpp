@@ -46,14 +46,6 @@ class ControllerProfileRegistry {
     /** Find a profile by stable id string. Returns nullopt if not found. */
     std::optional<ControllerProfile> findById(const juce::String& id) const;
 
-    /**
-     * @brief Find a profile whose portMatchPattern is a substring of deviceName.
-     *
-     * Match is case-insensitive. Returns the first matching profile.
-     * Profiles with an empty portMatchPattern never match.
-     */
-    std::optional<ControllerProfile> findByPortName(const juce::String& deviceName) const;
-
   private:
     ControllerProfileRegistry() = default;
 

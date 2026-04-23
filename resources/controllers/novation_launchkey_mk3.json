@@ -2,7 +2,6 @@
   "id": "novation.launchkey_mk3_37",
   "vendor": "Novation",
   "name": "Launchkey MK3 37",
-  "portMatchPattern": "Launchkey MK3",
   "controls": [
     { "controlId": "knob_1", "kind": "knob", "cc": 21, "channel": 1 },
     { "controlId": "knob_2", "kind": "knob", "cc": 22, "channel": 1 },

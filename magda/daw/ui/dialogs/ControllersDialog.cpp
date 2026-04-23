@@ -11,87 +11,11 @@
 
 namespace magda {
 
-// =============================================================================
-// RemoveRowButton — small button embedded in each enabled-controller row
-// =============================================================================
+namespace {
 
-class RemoveRowButton : public juce::Component {
-  public:
-    std::function<void()> onClick;
+constexpr int kPollIntervalMs = 2000;
 
-    RemoveRowButton() {
-        button_.setButtonText(tr("controllers.remove"));
-        button_.onClick = [this]() {
-            if (onClick)
-                onClick();
-        };
-        addAndMakeVisible(button_);
-    }
-
-    void resized() override {
-        button_.setBounds(getLocalBounds());
-    }
-
-    void paint(juce::Graphics&) override {}
-
-    juce::TextButton button_;
-};
-
-// =============================================================================
-// ProfileListModel
-// =============================================================================
-
-void ControllersDialog::ProfileListModel::paintListBoxItem(int rowNumber, juce::Graphics& g,
-                                                           int width, int height,
-                                                           bool rowIsSelected) {
-    if (!profiles || rowNumber < 0 || rowNumber >= static_cast<int>(profiles->size()))
-        return;
-
-    const auto& profile = (*profiles)[static_cast<size_t>(rowNumber)];
-    const bool connected = isConnected ? isConnected(profile) : true;
-    const bool generic = profile.portMatchPattern.isEmpty();
-
-    if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
-        g.fillRect(0, 0, width, height);
-    }
-
-    const int pad = 6;
-    const int dotSize = 8;
-    const int dotX = pad;
-    const int textX = dotX + dotSize + 8;
-    const int lineH = (height - 2 * pad) / 2;
-
-    // Status dot — green if connected, dim if not, none for generic profiles
-    if (!generic) {
-        const int dotY = (height - dotSize) / 2;
-        g.setColour(connected ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN)
-                              : DarkTheme::getColour(DarkTheme::TEXT_DIM));
-        g.fillEllipse(static_cast<float>(dotX), static_cast<float>(dotY),
-                      static_cast<float>(dotSize), static_cast<float>(dotSize));
-    }
-
-    // Line 1: "Vendor  .  Name" — bold, dimmed when not connected
-    juce::String line1 =
-        profile.vendor.isEmpty() ? profile.name : profile.vendor + "  \xc2\xb7  " + profile.name;
-    g.setColour(connected || generic ? DarkTheme::getTextColour()
-                                     : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    g.setFont(FontManager::getInstance().getUIFontBold(12.0f));
-    g.drawText(line1, textX, pad, width - textX - pad, lineH, juce::Justification::centredLeft,
-               true);
-
-    // Line 2: profile id + connection status — muted
-    juce::String line2 = profile.id;
-    if (!generic) {
-        line2 += juce::String::fromUTF8("  \xc2\xb7  ");
-        line2 += connected ? tr("controllers.connected") : tr("controllers.not_connected");
-    }
-
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-    g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.drawText(line2, textX, pad + lineH, width - textX - pad, lineH,
-               juce::Justification::centredLeft, true);
-}
+}  // namespace
 
 // =============================================================================
 // ControllerListModel
@@ -104,49 +28,51 @@ void ControllersDialog::ControllerListModel::paintListBoxItem(int rowNumber, juc
         return;
 
     const auto& c = (*controllers)[static_cast<size_t>(rowNumber)];
+    const bool connected = isConnected ? isConnected(c) : false;
+    const bool active = c.enabled && connected;
 
     if (rowIsSelected) {
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.35f));
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.20f));
         g.fillRect(0, 0, width, height);
     }
 
     const int pad = 6;
-    const int btnW = 70;
-    const int textW = width - 2 * pad - btnW - 8;
+    const int dotSize = 8;
+    const int dotX = pad;
+    const int textX = dotX + dotSize + 8;
     const int lineH = (height - 2 * pad) / 2;
 
-    // Line 1: controller name — bold
-    g.setColour(DarkTheme::getTextColour());
+    // Status dot: green when enabled + connected, dim otherwise
+    const int dotY = (height - dotSize) / 2;
+    g.setColour(active ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN)
+                       : DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    g.fillEllipse(static_cast<float>(dotX), static_cast<float>(dotY), static_cast<float>(dotSize),
+                  static_cast<float>(dotSize));
+
+    // Line 1: "Vendor  .  Name" — full opacity when active, dimmed otherwise
+    juce::String line1 = c.vendor.isEmpty() ? c.name : c.vendor + "  \xc2\xb7  " + c.name;
+    g.setColour(active ? DarkTheme::getTextColour()
+                       : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFontBold(12.0f));
-    g.drawText(c.name, pad, pad, textW, lineH, juce::Justification::centredLeft, true);
+    g.drawText(line1, textX, pad, width - textX - pad, lineH, juce::Justification::centredLeft,
+               true);
 
-    // Line 2: port display name — muted
-    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    // Line 2: port name · status
+    juce::String status;
+    if (!c.enabled)
+        status = tr("controllers.disabled");
+    else if (connected)
+        status = tr("controllers.connected");
+    else
+        status = tr("controllers.not_connected");
+
+    juce::String portText = c.inputPortName.isNotEmpty() ? c.inputPortName : c.inputPort;
+    juce::String line2 = portText + juce::String::fromUTF8("  \xc2\xb7  ") + status;
+
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    juce::String portLine = tr("controllers.port_label") + " " + c.inputPort;
-    g.drawText(portLine, pad, pad + lineH, textW, lineH, juce::Justification::centredLeft, true);
-}
-
-juce::Component* ControllersDialog::ControllerListModel::refreshComponentForRow(
-    int rowNumber, bool /*isRowSelected*/, juce::Component* existingComponent) {
-    if (!controllers || rowNumber < 0 || rowNumber >= static_cast<int>(controllers->size())) {
-        delete existingComponent;
-        return nullptr;
-    }
-
-    auto* btn = dynamic_cast<RemoveRowButton*>(existingComponent);
-    if (!btn) {
-        delete existingComponent;
-        btn = new RemoveRowButton();
-    }
-
-    const int capturedRow = rowNumber;
-    btn->onClick = [this, capturedRow]() {
-        if (onRemoveClicked)
-            onRemoveClicked(capturedRow);
-    };
-
-    return btn;
+    g.drawText(line2, textX, pad + lineH, width - textX - pad, lineH,
+               juce::Justification::centredLeft, true);
 }
 
 // =============================================================================
@@ -156,314 +82,264 @@ juce::Component* ControllersDialog::ControllerListModel::refreshComponentForRow(
 ControllersDialog::ControllersDialog() {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
-    // Available profiles section
-    setupSectionLabel(availableLabel_, tr("controllers.available_profiles"));
+    // Section header
+    sectionLabel_.setText(tr("controllers.my_controllers"), juce::dontSendNotification);
+    sectionLabel_.setColour(juce::Label::textColourId,
+                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    sectionLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    sectionLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(sectionLabel_);
 
-    profileListModel_.profiles = &availableProfiles_;
-    profileListModel_.isConnected = [this](const ControllerProfile& p) {
-        if (p.portMatchPattern.isEmpty())
-            return true;  // generic profile — always "available"
-        for (const auto& dev : liveInputs_)
-            if (dev.name.containsIgnoreCase(p.portMatchPattern))
-                return true;
-        return false;
-    };
-    profileListModel_.onRowSelected = [this](int row) {
-        selectedProfileIndex_ = row;
-        refreshPortComboBox();
-    };
+    addButton_.setButtonText(tr("controllers.add_profile"));
+    addButton_.onClick = [this]() { onAddClicked(); };
+    addAndMakeVisible(addButton_);
 
-    profileList_ = std::make_unique<juce::ListBox>("profiles", &profileListModel_);
-    profileList_->setColour(juce::ListBox::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    profileList_->setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
-    profileList_->setOutlineThickness(1);
-    profileList_->setRowHeight(46);
-    addAndMakeVisible(*profileList_);
+    // Controllers list
+    listModel_.controllers = &controllers_;
+    listModel_.isConnected = [this](const Controller& c) { return isControllerConnected(c); };
+    listModel_.onRowClicked = [this](int row, const juce::MouseEvent& e) { onRowClicked(row, e); };
 
-    // Port selection row
-    portLabel_.setText(tr("controllers.midi_input_port"), juce::dontSendNotification);
-    portLabel_.setColour(juce::Label::textColourId,
-                         DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    portLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    addAndMakeVisible(portLabel_);
+    list_ = std::make_unique<juce::ListBox>("controllers", &listModel_);
+    list_->setColour(juce::ListBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+    list_->setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+    list_->setOutlineThickness(1);
+    list_->setRowHeight(46);
+    addAndMakeVisible(*list_);
 
-    portComboBox_.setColour(juce::ComboBox::backgroundColourId,
-                            DarkTheme::getColour(DarkTheme::SURFACE));
-    portComboBox_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    portComboBox_.setColour(juce::ComboBox::outlineColourId, DarkTheme::getBorderColour());
-    addAndMakeVisible(portComboBox_);
+    refreshLiveInputs();
 
-    enableButton_.setButtonText(tr("controllers.enable"));
-    enableButton_.setEnabled(false);
-    enableButton_.onClick = [this]() { onEnableClicked(); };
-    addAndMakeVisible(enableButton_);
+    // Adopt the registry on first show: rematch any stale identifiers against
+    // the current live input list, then pick up the data.
+    if (ControllerRegistry::getInstance().rematchInputPorts(liveInputs_))
+        persist();
+    rebuildList();
 
-    // Enabled controllers section
-    setupSectionLabel(enabledLabel_, tr("controllers.my_controllers"));
-
-    controllerListModel_.controllers = &enabledControllers_;
-    controllerListModel_.onRemoveClicked = [this](int row) { onRemoveClicked(row); };
-
-    controllerList_ = std::make_unique<juce::ListBox>("controllers", &controllerListModel_);
-    controllerList_->setColour(juce::ListBox::backgroundColourId,
-                               DarkTheme::getColour(DarkTheme::SURFACE));
-    controllerList_->setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
-    controllerList_->setOutlineThickness(1);
-    controllerList_->setRowHeight(46);
-    addAndMakeVisible(*controllerList_);
-
-    // Close button
-    closeButton_.setButtonText(tr("controllers.close"));
-    closeButton_.onClick = [this]() {
-        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            juce::MessageManager::callAsync([dw]() { delete dw; });
-    };
-    addAndMakeVisible(closeButton_);
-
-    portComboBox_.onChange = [this]() {
-        enableButton_.setEnabled(selectedProfileIndex_ >= 0 && portComboBox_.getSelectedId() >= 2);
-    };
-
-    // Populate MIDI inputs (must be available before rebuildProfileList paints dots)
-    liveInputs_ = juce::MidiInput::getAvailableDevices();
-
-    // Load data
-    rebuildProfileList();
-    rebuildControllerList();
-    refreshPortComboBox();
-
-    // Register for registry updates
     ControllerRegistry::getInstance().addListener(this);
+    startTimer(kPollIntervalMs);
 
-    setSize(560, 500);
+    setSize(560, 440);
 }
 
 ControllersDialog::~ControllersDialog() {
+    stopTimer();
     ControllerRegistry::getInstance().removeListener(this);
     setLookAndFeel(nullptr);
-    profileList_->setModel(nullptr);
-    controllerList_->setModel(nullptr);
+    if (list_)
+        list_->setModel(nullptr);
 }
 
 void ControllersDialog::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-
-    // Horizontal divider between the two sections
-    auto bounds = getLocalBounds().reduced(16);
-    // Approximate divider position: below the enable button area
-    // We'll draw it at fixed Y for simplicity; layout matches resized()
-    const int dividerY = 16 + 24 + 6 + 184 + 8 + 20 + 8 + 28 + 12;
-    g.setColour(DarkTheme::getBorderColour());
-    g.drawHorizontalLine(dividerY, static_cast<float>(bounds.getX()),
-                         static_cast<float>(bounds.getRight()));
 }
 
 void ControllersDialog::resized() {
     auto bounds = getLocalBounds().reduced(16);
     const int labelH = 24;
-    const int spacing = 8;
-    const int buttonH = 28;
-    const int buttonW = 90;
-    const int portRowH = 28;
+    const int addBtnW = 120;
 
-    // Available profiles section
-    availableLabel_.setBounds(bounds.removeFromTop(labelH));
+    // Section header row: label on the left, add button on the right
+    auto headerRow = bounds.removeFromTop(labelH);
+    addButton_.setBounds(headerRow.removeFromRight(addBtnW));
+    sectionLabel_.setBounds(headerRow);
     bounds.removeFromTop(6);
 
-    profileList_->setBounds(bounds.removeFromTop(184));
-    bounds.removeFromTop(spacing);
-
-    // Port row
-    auto portRow = bounds.removeFromTop(portRowH);
-    portLabel_.setBounds(portRow.removeFromLeft(120));
-    portRow.removeFromLeft(6);
-    portComboBox_.setBounds(portRow);
-    bounds.removeFromTop(spacing);
-
-    // Enable button
-    enableButton_.setBounds(bounds.removeFromTop(buttonH).removeFromLeft(buttonW));
-    bounds.removeFromTop(12);
-
-    // Divider space is handled in paint(); just skip a little
-    bounds.removeFromTop(4);
-
-    // Enabled controllers section
-    enabledLabel_.setBounds(bounds.removeFromTop(labelH));
-    bounds.removeFromTop(6);
-
-    // Reserve close button at bottom
-    auto bottomRow = bounds.removeFromBottom(buttonH);
-    bounds.removeFromBottom(spacing);
-
-    controllerList_->setBounds(bounds);
-
-    // Close button — right-aligned
-    closeButton_.setBounds(bottomRow.removeFromRight(buttonW));
+    list_->setBounds(bounds);
 }
 
 // -----------------------------------------------------------------------------
 // Data helpers
 // -----------------------------------------------------------------------------
 
-void ControllersDialog::rebuildProfileList() {
-    availableProfiles_ = ControllerProfileRegistry::getInstance().all();
-    if (profileList_)
-        profileList_->updateContent();
+void ControllersDialog::refreshLiveInputs() {
+    liveInputs_ = juce::MidiInput::getAvailableDevices();
 }
 
-void ControllersDialog::rebuildControllerList() {
-    enabledControllers_ = ControllerRegistry::getInstance().all();
-    if (controllerList_)
-        controllerList_->updateContent();
+void ControllersDialog::rebuildList() {
+    controllers_ = ControllerRegistry::getInstance().all();
+    if (list_)
+        list_->updateContent();
+    repaint();
 }
 
-void ControllersDialog::refreshPortComboBox() {
-    portComboBox_.clear(juce::dontSendNotification);
-
-    const bool haveProfile = selectedProfileIndex_ >= 0 &&
-                             selectedProfileIndex_ < static_cast<int>(availableProfiles_.size());
-
-    if (!haveProfile) {
-        portComboBox_.addItem(tr("controllers.select_port"), 1);
-        portComboBox_.setSelectedId(1, juce::dontSendNotification);
-        portComboBox_.setEnabled(false);
-        enableButton_.setEnabled(false);
-        return;
-    }
-
-    const auto& profile = availableProfiles_[static_cast<size_t>(selectedProfileIndex_)];
-    portComboBox_.setEnabled(true);
-
-    // Build the visible port list: filtered to matches if the profile specifies
-    // a pattern, otherwise all live inputs (generic profile).
-    juce::Array<int> visibleIndices;
-    for (int i = 0; i < liveInputs_.size(); ++i) {
-        if (profile.portMatchPattern.isEmpty() ||
-            liveInputs_[i].name.containsIgnoreCase(profile.portMatchPattern))
-            visibleIndices.add(i);
-    }
-
-    if (visibleIndices.isEmpty()) {
-        portComboBox_.addItem(tr("controllers.no_matching_device"), 1);
-        portComboBox_.setSelectedId(1, juce::dontSendNotification);
-        portComboBox_.setEnabled(false);
-        enableButton_.setEnabled(false);
-        return;
-    }
-
-    portComboBox_.addItem(tr("controllers.select_port"), 1);
-    // Encode liveInputs_ index into combo id: id = liveIndex + 2
-    for (int liveIndex : visibleIndices)
-        portComboBox_.addItem(liveInputs_[liveIndex].name, liveIndex + 2);
-
-    // Auto-pick the first match when the profile has a specific pattern
-    const int autoPickId = !profile.portMatchPattern.isEmpty() ? visibleIndices.getFirst() + 2 : 1;
-    portComboBox_.setSelectedId(autoPickId, juce::dontSendNotification);
-    enableButton_.setEnabled(portComboBox_.getSelectedId() >= 2);
-}
-
-// -----------------------------------------------------------------------------
-// Enable flow
-// -----------------------------------------------------------------------------
-
-void ControllersDialog::onEnableClicked() {
-    if (selectedProfileIndex_ < 0 ||
-        selectedProfileIndex_ >= static_cast<int>(availableProfiles_.size()))
-        return;
-
-    const auto& profile = availableProfiles_[static_cast<size_t>(selectedProfileIndex_)];
-
-    const int cbId = portComboBox_.getSelectedId();
-    if (cbId < 2 || cbId - 2 >= liveInputs_.size())
-        return;  // guard — button should be disabled in this state
-
-    const auto& dev = liveInputs_[cbId - 2];
-    auto mat = materialiseControllerFromProfile(profile, dev.identifier, {});
-
-    // Add to registries
-    ControllerRegistry::getInstance().add(mat.controller);
-    for (const auto& b : mat.bindings)
-        BindingRegistry::getInstance().add(BindingScope::Global, b);
-
-    // Persist: push registry state into Config before save. The registries
-    // own the live state; Config is just the on-disk mirror.
+void ControllersDialog::persist() {
     auto& cfg = Config::getInstance();
     cfg.setControllers(ControllerRegistry::getInstance().saveToConfig());
     cfg.setGlobalBindings(BindingRegistry::getInstance().saveGlobal());
     cfg.save();
-    rebuildControllerList();
+}
+
+bool ControllersDialog::isControllerConnected(const Controller& c) const {
+    for (const auto& dev : liveInputs_)
+        if (dev.identifier == c.inputPort)
+            return true;
+    return false;
 }
 
 // -----------------------------------------------------------------------------
-// Remove flow
+// Add flow
 // -----------------------------------------------------------------------------
 
-void ControllersDialog::onRemoveClicked(int rowIndex) {
-    if (rowIndex < 0 || rowIndex >= static_cast<int>(enabledControllers_.size()))
+void ControllersDialog::onAddClicked() {
+    auto profiles = ControllerProfileRegistry::getInstance().all();
+    if (profiles.empty()) {
+        juce::AlertWindow::showMessageBox(juce::AlertWindow::InfoIcon,
+                                          tr("controllers.add_profile"),
+                                          tr("controllers.no_profiles"));
+        return;
+    }
+
+    juce::PopupMenu menu;
+    for (size_t i = 0; i < profiles.size(); ++i) {
+        const auto& p = profiles[i];
+        juce::String label = p.vendor.isEmpty() ? p.name : p.vendor + "  \xc2\xb7  " + p.name;
+        menu.addItem(static_cast<int>(i) + 1, label);
+    }
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addButton_),
+                       [this, profiles](int result) {
+                           if (result <= 0)
+                               return;
+                           size_t idx = static_cast<size_t>(result - 1);
+                           if (idx >= profiles.size())
+                               return;
+                           onProfilePicked(profiles[idx]);
+                       });
+}
+
+void ControllersDialog::onProfilePicked(const ControllerProfile& profile) {
+    refreshLiveInputs();
+
+    if (liveInputs_.isEmpty()) {
+        juce::AlertWindow::showMessageBox(juce::AlertWindow::WarningIcon,
+                                          tr("controllers.add_profile"),
+                                          tr("controllers.no_midi_inputs"));
+        return;
+    }
+
+    juce::PopupMenu menu;
+    for (int i = 0; i < liveInputs_.size(); ++i)
+        menu.addItem(i + 1, liveInputs_[i].name);
+
+    auto devicesCopy = liveInputs_;
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addButton_),
+                       [this, profile, devicesCopy](int result) {
+                           if (result <= 0)
+                               return;
+                           int idx = result - 1;
+                           if (idx < 0 || idx >= devicesCopy.size())
+                               return;
+                           onPortPicked(profile, devicesCopy[idx]);
+                       });
+}
+
+void ControllersDialog::onPortPicked(const ControllerProfile& profile,
+                                     const juce::MidiDeviceInfo& dev) {
+    auto mat = materialiseControllerFromProfile(profile, dev.identifier, {}, dev.name);
+
+    ControllerRegistry::getInstance().add(mat.controller);
+    for (const auto& b : mat.bindings)
+        BindingRegistry::getInstance().add(BindingScope::Global, b);
+
+    persist();
+    rebuildList();
+}
+
+// -----------------------------------------------------------------------------
+// Row interaction
+// -----------------------------------------------------------------------------
+
+void ControllersDialog::onRowClicked(int row, const juce::MouseEvent& e) {
+    if (row < 0 || row >= static_cast<int>(controllers_.size()))
         return;
 
-    const auto& c = enabledControllers_[static_cast<size_t>(rowIndex)];
+    if (e.mods.isPopupMenu() || e.mods.isRightButtonDown() || e.mods.isCtrlDown()) {
+        onRowRemoveRequested(row);
+        return;
+    }
 
-    const juce::String title = tr("controllers.remove_confirm_title");
-    juce::String msg = tr("controllers.remove_confirm_message");
-    msg = msg.replace("{0}", c.name);
+    onRowToggled(row);
+}
 
-    juce::AlertWindow::showOkCancelBox(
-        juce::AlertWindow::QuestionIcon, title, msg, tr("dialogs.ok"), tr("dialogs.cancel"),
-        nullptr, juce::ModalCallbackFunction::create([this, id = c.id](int result) {
+void ControllersDialog::onRowToggled(int row) {
+    if (row < 0 || row >= static_cast<int>(controllers_.size()))
+        return;
+
+    const auto& c = controllers_[static_cast<size_t>(row)];
+    ControllerRegistry::getInstance().setEnabled(c.id, !c.enabled);
+    persist();
+    rebuildList();
+}
+
+void ControllersDialog::onRowRemoveRequested(int row) {
+    if (row < 0 || row >= static_cast<int>(controllers_.size()))
+        return;
+
+    const auto& c = controllers_[static_cast<size_t>(row)];
+
+    juce::PopupMenu menu;
+    menu.addItem(1, tr("controllers.remove"));
+
+    const auto id = c.id;
+    const auto name = c.name;
+
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(list_.get()), [this, id, name](int result) {
             if (result != 1)
                 return;
 
-            // Remove all global bindings owned by this controller
-            auto bindings = BindingRegistry::getInstance().bindings(BindingScope::Global);
-            for (const auto& b : bindings) {
-                if (b.source.controllerId == id)
-                    BindingRegistry::getInstance().remove(BindingScope::Global, b.id);
-            }
+            juce::String title = tr("controllers.remove_confirm_title");
+            juce::String msg = tr("controllers.remove_confirm_message");
+            msg = msg.replace("{0}", name);
 
-            ControllerRegistry::getInstance().remove(id);
+            juce::AlertWindow::showOkCancelBox(
+                juce::AlertWindow::QuestionIcon, title, msg, tr("dialogs.ok"), tr("dialogs.cancel"),
+                nullptr, juce::ModalCallbackFunction::create([this, id](int result2) {
+                    if (result2 != 1)
+                        return;
 
-            auto& cfg = Config::getInstance();
-            cfg.setControllers(ControllerRegistry::getInstance().saveToConfig());
-            cfg.setGlobalBindings(BindingRegistry::getInstance().saveGlobal());
-            cfg.save();
-            rebuildControllerList();
-        }));
+                    auto bindings = BindingRegistry::getInstance().bindings(BindingScope::Global);
+                    for (const auto& b : bindings) {
+                        if (b.source.controllerId == id)
+                            BindingRegistry::getInstance().remove(BindingScope::Global, b.id);
+                    }
+
+                    ControllerRegistry::getInstance().remove(id);
+                    persist();
+                    rebuildList();
+                }));
+        });
 }
 
 // -----------------------------------------------------------------------------
-// ControllerRegistryListener
+// Listeners
 // -----------------------------------------------------------------------------
 
 void ControllersDialog::controllerRegistryChanged() {
-    rebuildControllerList();
+    rebuildList();
 }
 
-// -----------------------------------------------------------------------------
-// Misc helpers
-// -----------------------------------------------------------------------------
+void ControllersDialog::timerCallback() {
+    auto previous = liveInputs_;
+    refreshLiveInputs();
 
-juce::String ControllersDialog::selectedPortIdentifier() const {
-    const int cbId = portComboBox_.getSelectedId();
-    if (cbId >= 2 && cbId - 2 < liveInputs_.size())
-        return liveInputs_[cbId - 2].identifier;
-    return {};
-}
+    // Has the device set changed?
+    bool changed = previous.size() != liveInputs_.size();
+    if (!changed) {
+        for (int i = 0; i < liveInputs_.size(); ++i) {
+            if (previous[i].identifier != liveInputs_[i].identifier ||
+                previous[i].name != liveInputs_[i].name) {
+                changed = true;
+                break;
+            }
+        }
+    }
 
-juce::String ControllersDialog::portDisplayName(const juce::String& identifier) const {
-    for (const auto& dev : liveInputs_)
-        if (dev.identifier == identifier)
-            return dev.name;
-    return identifier;
-}
+    if (!changed)
+        return;
 
-void ControllersDialog::setupSectionLabel(juce::Label& label, const juce::String& text) {
-    label.setText(text, juce::dontSendNotification);
-    label.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    label.setFont(FontManager::getInstance().getUIFontBold(14.0f));
-    label.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(label);
+    if (ControllerRegistry::getInstance().rematchInputPorts(liveInputs_))
+        persist();
+    rebuildList();
 }
 
 // =============================================================================
@@ -471,9 +347,6 @@ void ControllersDialog::setupSectionLabel(juce::Label& label, const juce::String
 // =============================================================================
 
 namespace {
-// Self-deleting DialogWindow: the native title-bar X routes through
-// closeButtonPressed; default impl only works for modal windows, so provide
-// one that deletes the non-modal window asynchronously.
 class SelfClosingDialogWindow : public juce::DialogWindow {
   public:
     SelfClosingDialogWindow(const juce::String& title, juce::Colour bg)
