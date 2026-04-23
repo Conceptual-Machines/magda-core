@@ -364,6 +364,9 @@
     "language.label": "UI Language",
     "language.restart_required": "Restart required for language change to fully apply.",
 
+    "scale.label": "UI Scale",
+    "scale.auto": "Auto (from display DPI)",
+
     "tab.general": "General",
     "tab.ui": "UI",
     "tab.colours": "Colours",
@@ -376,6 +379,7 @@
     "section.panels": "Panels",
     "section.layout": "Layout",
     "section.behavior": "Behavior",
+    "section.scale": "Display Scale",
     "section.track_colour_palette": "Track Colour Palette",
     "section.clip_colours": "Clip Colours",
     "section.output": "Output",

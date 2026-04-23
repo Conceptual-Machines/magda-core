@@ -38,6 +38,7 @@ set(TEST_SOURCES
     test_drum_grid_plugin.cpp
     test_velocity_lane_utils.cpp
     test_grid_constants.cpp
+    test_ui_scale.cpp
     test_multi_out_tracks.cpp
     test_freeze_track.cpp
     test_dsl_add_chord.cpp

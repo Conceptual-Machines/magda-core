@@ -6,6 +6,7 @@
 #include "../../core/TrackCommands.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/TrackPropertyCommands.hpp"
+#include "../../core/UIScale.hpp"
 #include "../../core/UndoManager.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../state/TimelineController.hpp"
@@ -38,7 +39,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         // Track
         newAudioTrack, newMidiTrack, deleteTrack,
         // View
-        zoom, toggleArrangeSession,
+        zoom, toggleArrangeSession, uiScaleUp, uiScaleDown,
         // Help
         showHelp, about};
 
@@ -185,6 +186,18 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case toggleArrangeSession:
             result.setInfo("Toggle Arrange/Session", "Switch between arrange and session view",
                            "View", 0);
+            break;
+        case uiScaleUp:
+            result.setInfo("Increase UI Scale", "Make the UI larger", "View", 0);
+            result.addDefaultKeypress('=', juce::ModifierKeys::commandModifier);
+            result.addDefaultKeypress('+', juce::ModifierKeys::commandModifier |
+                                              juce::ModifierKeys::shiftModifier);
+            break;
+        case uiScaleDown:
+            result.setInfo("Decrease UI Scale", "Make the UI smaller", "View", 0);
+            result.addDefaultKeypress('-', juce::ModifierKeys::commandModifier);
+            result.addDefaultKeypress('_', juce::ModifierKeys::commandModifier |
+                                              juce::ModifierKeys::shiftModifier);
             break;
 
         // Help
@@ -886,6 +899,15 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Group, juce::String(),
                                                             selectedTrack);
             UndoManager::getInstance().executeCommand(std::move(cmd));
+            return true;
+        }
+
+        case uiScaleUp:
+        case uiScaleDown: {
+            const double current =
+                static_cast<double>(juce::Desktop::getInstance().getGlobalScaleFactor());
+            const int direction = (info.commandID == uiScaleUp) ? +1 : -1;
+            applyUIScale(stepUIScale(current, direction));
             return true;
         }
 

@@ -86,6 +86,7 @@ void Config::save() {
 
     // UI / behaviour
     root->setProperty("scrollbarOnLeft", scrollbarOnLeft);
+    root->setProperty("uiScale", uiScale);
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
@@ -322,6 +323,7 @@ void Config::load() {
 
     language = getString("language", language);
     scrollbarOnLeft = getBool("scrollbarOnLeft", scrollbarOnLeft);
+    uiScale = getDouble("uiScale", uiScale);
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
