@@ -1,5 +1,7 @@
 #include "PreferencesDialog.hpp"
 
+#include <cmath>
+
 #include "../../project/ProjectManager.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
@@ -9,6 +11,7 @@
 #include "../windows/MainWindow.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/UIScale.hpp"
 
 // ---------------------------------------------------------------------------
 // Setup helpers — internal linkage, shared by all page classes
@@ -222,6 +225,18 @@ class UIPage : public juce::Component {
             if (idx >= 0 && idx < static_cast<int>(availableLanguages_.size()))
                 restartHint.setVisible(availableLanguages_[idx] != initialLanguage_);
         };
+
+        // UI scale section (HiDPI / accessibility)
+        setupSectionHeader(*this, scaleHeader, tr("preferences.section.scale"));
+        setupComboLabel(scaleLabel, tr("preferences.scale.label"));
+        styleCombo(scaleCombo);
+        scaleCombo.addItem(tr("preferences.scale.auto"), 1);
+        scaleCombo.addItem("100%", 2);
+        scaleCombo.addItem("125%", 3);
+        scaleCombo.addItem("150%", 4);
+        scaleCombo.addItem("175%", 5);
+        scaleCombo.addItem("200%", 6);
+        addAndMakeVisible(scaleCombo);
     }
 
     void resized() override {
@@ -262,6 +277,12 @@ class UIPage : public juce::Component {
         bounds.removeFromTop(4);
         layoutComboRow(bounds, languageLabel, languageCombo, toggleH + 8, labelW);
         restartHint.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(secGap);
+
+        // UI scale
+        scaleHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        layoutComboRow(bounds, scaleLabel, scaleCombo, toggleH + 8, labelW);
     }
 
     void loadSettings(Config& config) {
@@ -302,6 +323,8 @@ class UIPage : public juce::Component {
         }
         languageCombo.setSelectedId(selectedId, juce::dontSendNotification);
         restartHint.setVisible(false);
+
+        scaleCombo.setSelectedId(scaleIdForValue(config.getUIScale()), juce::dontSendNotification);
     }
 
     void applySettings(Config& config) {
@@ -321,6 +344,18 @@ class UIPage : public juce::Component {
                 config.setLanguage(newLang.toStdString());
                 StringTable::getInstance().loadLanguage(newLang);
             }
+        }
+
+        // Apply UI scale live. "Auto" resolves from display DPI only (ignoring
+        // env var / config) so the user sees the actual auto-detected value,
+        // and we persist 0 as the Auto sentinel in a single config write.
+        double newScale = scaleValueForId(scaleCombo.getSelectedId());
+        if (newScale > 0.0) {
+            applyUIScale(newScale);
+        } else {
+            applyUIScale(dpiOnlyAutoScale(), /*persist=*/false);
+            config.setUIScale(0.0);
+            config.save();
         }
     }
 
@@ -348,7 +383,36 @@ class UIPage : public juce::Component {
         combo.setBounds(row.reduced(0, 4));
     }
 
-    juce::Label panelsHeader, layoutHeader, behaviorHeader, languageHeader;
+    // UI-scale combo: ID 1=Auto(0), 2=100%(1.0), 3=125%(1.25), 4=150%(1.5),
+    // 5=175%(1.75), 6=200%(2.0). Anything else falls back to Auto.
+    static int scaleIdForValue(double v) {
+        if (v <= 0.0)
+            return 1;
+        if (std::abs(v - 1.0) < 0.01)
+            return 2;
+        if (std::abs(v - 1.25) < 0.01)
+            return 3;
+        if (std::abs(v - 1.5) < 0.01)
+            return 4;
+        if (std::abs(v - 1.75) < 0.01)
+            return 5;
+        if (std::abs(v - 2.0) < 0.01)
+            return 6;
+        return 1;
+    }
+
+    static double scaleValueForId(int id) {
+        switch (id) {
+            case 2: return 1.0;
+            case 3: return 1.25;
+            case 4: return 1.5;
+            case 5: return 1.75;
+            case 6: return 2.0;
+            default: return 0.0;  // Auto
+        }
+    }
+
+    juce::Label panelsHeader, layoutHeader, behaviorHeader, languageHeader, scaleHeader;
     juce::ToggleButton showLeftPanelToggle, showRightPanelToggle, showBottomPanelToggle;
     juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, showTooltipsToggle;
@@ -357,6 +421,8 @@ class UIPage : public juce::Component {
     juce::Label restartHint;
     std::vector<juce::String> availableLanguages_;
     juce::String initialLanguage_;
+    juce::Label scaleLabel;
+    juce::ComboBox scaleCombo;
 };
 
 // ---- Colours tab: Track colour palette ------------------------------------

@@ -12,6 +12,7 @@
 #include "core/Config.hpp"
 #include "core/ModulatorEngine.hpp"
 #include "core/TrackManager.hpp"
+#include "core/UIScale.hpp"
 #include "core/UpdateChecker.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
@@ -86,6 +87,14 @@ class MagdaDAWApplication : public JUCEApplication {
         lookAndFeel_ = std::make_unique<juce::LookAndFeel_V4>();
         magda::DarkTheme::applyToLookAndFeel(*lookAndFeel_);
         juce::LookAndFeel::setDefaultLookAndFeel(lookAndFeel_.get());
+
+        // 2a. Apply HiDPI scale before any window is created.
+        // setGlobalScaleFactor must run before TopLevelWindows exist for clean
+        // sizing; see juce_TopLevelWindow.cpp.
+        magda::Config::getInstance().load();
+        const double uiScale = magda::resolveStartupScale();
+        juce::Desktop::getInstance().setGlobalScaleFactor(static_cast<float>(uiScale));
+        juce::Logger::writeToLog("UI scale: " + juce::String(uiScale, 2) + "x");
 
         // 2b. Show splash screen
         splashScreen_ = magda::SplashScreen::create();
