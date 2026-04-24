@@ -3454,8 +3454,17 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                         gridValues.push_back({norm, label});
                     }
                 } else if (paramInfo.displayText) {
+                    // displayText wraps TE's valueToString, which expects a
+                    // plugin-native value, NOT normalized [0,1]. Project the
+                    // sampled norm back onto the TE-native range (teMin..teMax)
+                    // so parameters whose raw range isn't 0..1 — e.g. 4OSC's
+                    // filterFreq on 0..135 — produce labels that actually span
+                    // the parameter rather than five collisions near the
+                    // bottom of the scale.
+                    const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
                     for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
-                        auto text = paramInfo.displayText->format(static_cast<float>(norm));
+                        float teRaw = paramInfo.teMinValue + static_cast<float>(norm) * teSpan;
+                        auto text = paramInfo.displayText->format(teRaw);
                         gridValues.push_back(
                             {norm, text.isNotEmpty()
                                        ? text
