@@ -147,6 +147,65 @@ AudioBridge::~AudioBridge() {
 void AudioBridge::tracksChanged() {
     // Tracks were added/removed/reordered - sync all
     syncAll();
+
+    // Post-load record-arm sync: TrackInfo::recordArmed is persisted across
+    // project save/load, but trackPropertyChanged only runs when the *value*
+    // changes. Without this pass, a project saved with an armed track reopens
+    // with the flag set but TE's InputDeviceInstance destinations still have
+    // recordEnabled=N, and transport.record() silently produces no clip. Also
+    // covers the add/remove/reorder paths — cheap and idempotent.
+    syncAllArmedTracksToTE();
+}
+
+void AudioBridge::syncAllArmedTracksToTE() {
+    // Iterate *every* track (not just armed ones) so TE's destination
+    // recordEnabled flags reconcile in both directions. syncRecordArmedToTE
+    // no-ops while the transport is playing; on stop we need to push the
+    // current TrackInfo::recordArmed state — including Ns — so TE doesn't
+    // keep a stale recordEnabled=Y on a now-disarmed track and silently
+    // record into it.
+    for (const auto& trackInfo : TrackManager::getInstance().getTracks())
+        syncRecordArmedToTE(trackInfo.id);
+}
+
+void AudioBridge::syncRecordArmedToTE(TrackId trackId) {
+    auto* track = getAudioTrack(trackId);
+    if (!track)
+        return;
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (!trackInfo)
+        return;
+
+    // Only sync when transport is stopped — if the transport is already
+    // playing (e.g. session clips running), calling setRecordingEnabled()
+    // causes TE to start recording immediately, capturing the session
+    // clip's own MIDI output as "ghost notes". The armed state is stored in
+    // TrackInfo and will be picked up when transport.record() is called.
+    auto* playbackContext = edit_.getCurrentPlaybackContext();
+    if (!playbackContext || edit_.getTransport().isPlaying())
+        return;
+
+    bool foundAnyDest = false;
+    for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+        auto targets = inputDeviceInstance->getTargets();
+        for (auto targetID : targets) {
+            if (targetID == track->itemID) {
+                inputDeviceInstance->setRecordingEnabled(track->itemID, trackInfo->recordArmed);
+                juce::Logger::writeToLog(
+                    "[Arm] set recordEnabled=" + juce::String(trackInfo->recordArmed ? "Y" : "N") +
+                    " on device '" + inputDeviceInstance->owner.getName() + "' for track " +
+                    juce::String(trackId));
+                foundAnyDest = true;
+                break;
+            }
+        }
+    }
+    if (!foundAnyDest) {
+        juce::Logger::writeToLog("[Arm] WARNING: No input device destination found for track " +
+                                 juce::String(trackId) +
+                                 " - recordArmed=" + juce::String(trackInfo->recordArmed ? 1 : 0) +
+                                 " will NOT be synced to TE!");
+    }
 }
 
 void AudioBridge::trackPropertyChanged(int trackId) {
@@ -222,41 +281,7 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // (armed tracks should receive MIDI even when not selected)
             updateMidiRoutingForSelection();
 
-            // Sync recordArmed state to InputDeviceInstance.
-            // Only sync when transport is stopped — if the transport is already
-            // playing (e.g. session clips running), calling setRecordingEnabled()
-            // causes TE to start recording immediately, capturing the session
-            // clip's own MIDI output as "ghost notes".  The armed state is
-            // stored in TrackInfo and will be picked up when transport.record()
-            // is called explicitly.
-            auto* playbackContext = edit_.getCurrentPlaybackContext();
-            if (playbackContext && !edit_.getTransport().isPlaying()) {
-                bool foundAnyDest = false;
-                // Find any input device instances (MIDI or audio) routed to this track
-                for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-                    auto targets = inputDeviceInstance->getTargets();
-                    for (auto targetID : targets) {
-                        if (targetID == track->itemID) {
-                            inputDeviceInstance->setRecordingEnabled(track->itemID,
-                                                                     trackInfo->recordArmed);
-                            juce::Logger::writeToLog(
-                                "[Arm] set recordEnabled=" +
-                                juce::String(trackInfo->recordArmed ? "Y" : "N") + " on device '" +
-                                inputDeviceInstance->owner.getName() + "' for track " +
-                                juce::String(trackId));
-                            foundAnyDest = true;
-                            break;
-                        }
-                    }
-                }
-                if (!foundAnyDest) {
-                    juce::Logger::writeToLog(
-                        "[Arm] WARNING: No input device destination found for track " +
-                        juce::String(trackId) +
-                        " - recordArmed=" + juce::String(trackInfo->recordArmed ? 1 : 0) +
-                        " will NOT be synced to TE!");
-                }
-            }
+            syncRecordArmedToTE(trackId);
         }
     }
 

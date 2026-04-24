@@ -312,6 +312,41 @@ void MidiBridge::setRecordingQueue(RecordingNoteQueue* queue, std::atomic<double
     transportPosition_ = transportPos;
 }
 
+void MidiBridge::broadcastSynthesizedNote(const juce::String& sourceDeviceId, int noteNumber,
+                                          int velocity, bool isNoteOn) {
+    juce::ScopedLock lock(routingLock_);
+
+    for (const auto& [trackId, deviceId] : trackMidiInputs_) {
+        const bool matches = (deviceId == sourceDeviceId || deviceId == "all");
+        if (!matches)
+            continue;
+
+        // UI activity fires regardless of arm — same as physical MIDI.
+        if (isNoteOn) {
+            if (audioBridge_)
+                audioBridge_->triggerMidiActivity(trackId);
+            TrackManager::getInstance().triggerMidiNoteOn(trackId);
+        } else {
+            TrackManager::getInstance().triggerMidiNoteOff(trackId);
+        }
+
+        // Preview queue push is armed-only.
+        if (!recordingQueue_ || !transportPosition_)
+            continue;
+        auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+        if (!trackInfo || !trackInfo->recordArmed)
+            continue;
+
+        RecordingNoteEvent evt;
+        evt.trackId = trackId;
+        evt.noteNumber = noteNumber;
+        evt.velocity = velocity;
+        evt.isNoteOn = isNoteOn;
+        evt.transportSeconds = transportPosition_->load(std::memory_order_relaxed);
+        recordingQueue_->push(evt);
+    }
+}
+
 void MidiBridge::startMonitoring(TrackId trackId) {
     juce::ScopedLock lock(routingLock_);
     monitoredTracks_.insert(trackId);

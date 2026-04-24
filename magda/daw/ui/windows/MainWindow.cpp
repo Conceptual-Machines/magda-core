@@ -831,7 +831,7 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     // (after setContentOwned) so the key listener registers on the
     // DocumentWindow, not on MainComponent.
     if (auto* bridge = engine->getAudioBridge()) {
-        qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>(*bridge);
+        qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>(*bridge, engine->getMidiBridge());
     }
 
     transportPanel->onTempoChange = [this](double bpm) {

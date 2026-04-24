@@ -190,6 +190,21 @@ class MidiBridge : public juce::MidiInputCallback {
 
     void setRecordingQueue(RecordingNoteQueue* queue, std::atomic<double>* transportPos);
 
+    /**
+     * @brief Fan a QWERTY-synthesized note out to the UI layer.
+     *
+     * Mirrors the physical-MIDI fan-out in handleIncomingMidiMessage:
+     *   - Fires MIDI activity + note-on/off UI on EVERY track whose MIDI
+     *     input routes this virtual device (or "all"), regardless of
+     *     record-arm state.
+     *   - Pushes to the recording preview queue ONLY for armed tracks.
+     *
+     * @param sourceDeviceId TE device ID of the virtual device that produced
+     *                       the note (typically the QWERTY keyboard).
+     */
+    void broadcastSynthesizedNote(const juce::String& sourceDeviceId, int noteNumber, int velocity,
+                                  bool isNoteOn);
+
   private:
     // MidiInputCallback implementation
     void handleIncomingMidiMessage(juce::MidiInput* source,
