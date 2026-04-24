@@ -3498,6 +3498,28 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
 
                 g.setFont(8.0f);
                 constexpr int labelH = 10;
+                // Thin labels to what vertically fits, always keeping the
+                // endpoints and centre so short lanes read as min / centre /
+                // max while tall lanes show every sample. Spacing ~= labelH
+                // + 6 matches the minimum gap before adjacent 8pt labels
+                // start to touch.
+                constexpr int labelSpacing = labelH + 6;
+                int maxLabels = juce::jmax(1, contentHeight / labelSpacing);
+                if (maxLabels < static_cast<int>(gridValues.size())) {
+                    std::vector<std::pair<double, juce::String>> thinned;
+                    thinned.reserve(static_cast<size_t>(maxLabels));
+                    if (maxLabels == 1) {
+                        thinned.push_back(gridValues[gridValues.size() / 2]);
+                    } else {
+                        const double srcMax = static_cast<double>(gridValues.size() - 1);
+                        for (int i = 0; i < maxLabels; ++i) {
+                            int srcIdx = static_cast<int>(
+                                std::round(static_cast<double>(i) * srcMax / (maxLabels - 1)));
+                            thinned.push_back(gridValues[static_cast<size_t>(srcIdx)]);
+                        }
+                    }
+                    gridValues = std::move(thinned);
+                }
                 for (const auto& [norm, label] : gridValues) {
                     int tickY = contentTop + static_cast<int>((1.0 - norm) * contentHeight);
                     // Tick
