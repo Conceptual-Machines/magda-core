@@ -17,6 +17,7 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
     magda::LinkModeManager::getInstance().addListener(this);
     magda::MidiLearnCoordinator::getInstance().addListener(this);
     magda::BindingRegistry::getInstance().addListener(this);
+    magda::ControllerRegistry::getInstance().addListener(this);
 
     setInterceptsMouseClicks(true, true);
 
@@ -147,6 +148,7 @@ LinkableTextSlider::~LinkableTextSlider() {
     }
     magda::MidiLearnCoordinator::getInstance().removeListener(this);
     magda::BindingRegistry::getInstance().removeListener(this);
+    magda::ControllerRegistry::getInstance().removeListener(this);
     magda::LinkModeManager::getInstance().removeListener(this);
 }
 
@@ -357,7 +359,7 @@ void LinkableTextSlider::bindingRegistryChanged(magda::BindingScope) {
 
 void LinkableTextSlider::refreshMidiBindingState() {
     bool newState =
-        !magda::BindingRegistry::getInstance().findForTarget(devicePath_, paramIndex_).empty();
+        magda::BindingRegistry::getInstance().hasActiveBindingForTarget(devicePath_, paramIndex_);
     if (newState != hasMidiBinding_) {
         hasMidiBinding_ = newState;
         repaint();

@@ -7,6 +7,7 @@
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/ParameterInfo.hpp"
+#include "core/controllers/ControllerRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
 #include "ui/components/chain/ParamModulationPainter.hpp"
 
@@ -22,6 +23,7 @@ class LinkableTextSlider : public juce::Component,
                            public magda::LinkModeManagerListener,
                            public magda::MidiLearnCoordinatorListener,
                            public magda::BindingRegistryListener,
+                           public magda::ControllerRegistryListener,
                            public juce::Timer {
   public:
     LinkableTextSlider(TextSlider::Format format = TextSlider::Format::Decimal);
@@ -107,6 +109,11 @@ class LinkableTextSlider : public juce::Component,
 
     // === BindingRegistryListener ===
     void bindingRegistryChanged(magda::BindingScope scope) override;
+
+    // === ControllerRegistryListener ===
+    void controllerRegistryChanged() override {
+        refreshMidiBindingState();
+    }
 
     void refreshMidiBindingState();
 

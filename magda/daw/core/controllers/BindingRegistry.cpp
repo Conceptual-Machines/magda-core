@@ -5,6 +5,7 @@
 #include "../aliases/ChainContext.hpp"
 #include "../aliases/ResolverRegistry.hpp"
 #include "../aliases/TargetResolver.hpp"
+#include "ControllerRegistry.hpp"
 
 namespace magda {
 
@@ -169,6 +170,21 @@ std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& deviceP
     return results;
 }
 
+namespace {
+
+// Shared by indicator queries — a binding counts as "active" when its source
+// controller is either absent from the registry (port-only Learn bindings) or
+// present and enabled. Matches ControllerRouter's runtime filter so indicators
+// agree with actual MIDI routing.
+bool isSourceControllerActive(const Binding& b) {
+    if (b.source.controllerId.isNull())
+        return true;
+    auto c = ControllerRegistry::getInstance().find(b.source.controllerId);
+    return !c.has_value() || c->enabled;
+}
+
+}  // namespace
+
 bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
                                           StaticTarget::Owner owner) const {
     DefaultChainContext ctx;
@@ -176,10 +192,34 @@ bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
 
     auto check = [&](const std::vector<Binding>& vec) -> bool {
         for (const auto& b : vec) {
+            if (!isSourceControllerActive(b))
+                continue;
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
             if (resolved.devicePath == devicePath && resolved.owner == owner)
+                return true;
+        }
+        return false;
+    };
+
+    return check(globalBindings_) || check(projectBindings_);
+}
+
+bool BindingRegistry::hasActiveBindingForTarget(const ChainNodePath& devicePath, int paramIndex,
+                                                StaticTarget::Owner owner) const {
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+
+    auto check = [&](const std::vector<Binding>& vec) -> bool {
+        for (const auto& b : vec) {
+            if (!isSourceControllerActive(b))
+                continue;
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
+                resolved.owner == owner)
                 return true;
         }
         return false;

@@ -43,6 +43,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Register for binding registry changes (controller indicator dots)
     magda::BindingRegistry::getInstance().addListener(this);
 
+    // Register for controller registry changes so the indicator reacts to a
+    // controller being enabled/disabled (not just bindings being added or
+    // removed).
+    magda::ControllerRegistry::getInstance().addListener(this);
+
     // Custom name and font for drum grid (MPC-style with Microgramma)
     isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
     isChordEngine_ =
@@ -674,6 +679,7 @@ DeviceSlotComponent::~DeviceSlotComponent() {
     magda::TrackManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
     magda::BindingRegistry::getInstance().removeListener(this);
+    magda::ControllerRegistry::getInstance().removeListener(this);
     stopTimer();
 }
 

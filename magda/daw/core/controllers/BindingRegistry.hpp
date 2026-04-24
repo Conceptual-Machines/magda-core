@@ -137,15 +137,33 @@ class BindingRegistry {
 
     /**
      * @brief Return true if any binding (Global + Project) resolves to a target
-     * on this devicePath with the given owner kind.
+     * on this devicePath with the given owner kind AND has an active source.
      *
-     * Used by device-header indicators to answer "does this device have any
-     * controller wiring of this kind?" without requiring the caller to
-     * enumerate paramIndex values.
+     * Used by device-header indicators to answer "is this device actively
+     * being driven by a controller?". Bindings whose source controller is
+     * registered but disabled are skipped so the indicator matches the
+     * ControllerRouter's actual routing behavior. Port-only bindings (no
+     * controllerId, from the Learn path) always count.
      *
      * Must be called on the message thread.
      */
     bool hasBindingForDevice(const ChainNodePath& devicePath, StaticTarget::Owner owner) const;
+
+    /**
+     * @brief Return true if any active binding (Global + Project) resolves to a
+     * specific (devicePath, paramIndex, owner) target.
+     *
+     * Same "active" semantics as hasBindingForDevice — bindings whose source
+     * controller is registered but disabled are skipped. Use this for
+     * per-parameter indicators (macro knobs, param slots, linkable sliders)
+     * instead of `!findForTarget(...).empty()` so the indicator disappears
+     * when the binding's controller is disabled.
+     *
+     * Must be called on the message thread.
+     */
+    bool hasActiveBindingForTarget(
+        const ChainNodePath& devicePath, int paramIndex,
+        StaticTarget::Owner owner = StaticTarget::Owner::PluginParam) const;
 
     // ========================================================================
     // Persistence
