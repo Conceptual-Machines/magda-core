@@ -211,13 +211,16 @@ void TrackContentPanel::timelineStateChanged(const TimelineState& state, ChangeF
     }
 
     // Playhead advancing during recording drives the live preview animation.
-    // paintRecordingPreviews self-schedules the next repaint once it runs,
-    // but it needs a first wakeup — the panel wasn't listening to the
-    // Playhead flag at all. Bounded to recordingPreviews so this is a no-op
-    // during normal playback.
-    if (hasFlag(changes, ChangeFlags::Playhead) && state.playhead.isRecording && audioEngine_ &&
-        !audioEngine_->getRecordingPreviews().empty()) {
-        repaintVisible();
+    // paintRecordingPreviews self-schedules the next repaint via a bounded
+    // previewUnion rect once it runs, so we only need a one-shot wake when
+    // previews first become active. Repainting on every Playhead tick while
+    // recording would invalidate the whole viewport unnecessarily.
+    if (hasFlag(changes, ChangeFlags::Playhead)) {
+        const bool hasRecordingPreviews = state.playhead.isRecording && audioEngine_ &&
+                                          !audioEngine_->getRecordingPreviews().empty();
+        if (hasRecordingPreviews && !recordingPreviewWakeIssued_)
+            repaintVisible();
+        recordingPreviewWakeIssued_ = hasRecordingPreviews;
     }
 
     // Edit cursor position changed — repaint immediately (bounded to cursor strip)

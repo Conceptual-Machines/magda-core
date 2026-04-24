@@ -277,6 +277,11 @@ class TrackContentPanel : public juce::Component,
 
     // Edit cursor blink state
     bool editCursorBlinkVisible_ = true;
+
+    // One-shot flag: true once the recording-preview paint loop has been
+    // kicked off for the current record session. paintRecordingPreviews
+    // self-schedules subsequent repaints, so we only need a single wake.
+    bool recordingPreviewWakeIssued_ = false;
     static constexpr int EDIT_CURSOR_BLINK_MS = 500;  // Blink interval
 
     // Timer callback for edit cursor blinking

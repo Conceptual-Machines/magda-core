@@ -158,10 +158,14 @@ void AudioBridge::tracksChanged() {
 }
 
 void AudioBridge::syncAllArmedTracksToTE() {
-    for (const auto& trackInfo : TrackManager::getInstance().getTracks()) {
-        if (trackInfo.recordArmed)
-            syncRecordArmedToTE(trackInfo.id);
-    }
+    // Iterate *every* track (not just armed ones) so TE's destination
+    // recordEnabled flags reconcile in both directions. syncRecordArmedToTE
+    // no-ops while the transport is playing; on stop we need to push the
+    // current TrackInfo::recordArmed state — including Ns — so TE doesn't
+    // keep a stale recordEnabled=Y on a now-disarmed track and silently
+    // record into it.
+    for (const auto& trackInfo : TrackManager::getInstance().getTracks())
+        syncRecordArmedToTE(trackInfo.id);
 }
 
 void AudioBridge::syncRecordArmedToTE(TrackId trackId) {
