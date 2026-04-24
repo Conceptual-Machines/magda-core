@@ -78,7 +78,9 @@ std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v) {
 
     p.vendor = obj->getProperty("vendor").toString();
 
-    // Decode controls
+    // Decode controls — skip entries with missing required fields or out-of-range
+    // MIDI values. Without this, a profile with partial fields loads as "cc=0 on
+    // channel 'any'" and silently captures all CC0 traffic.
     auto controlsVar = obj->getProperty("controls");
     if (controlsVar.isArray()) {
         for (int i = 0; i < controlsVar.size(); ++i) {
@@ -89,8 +91,30 @@ std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v) {
             ControllerProfileControl ctrl;
             ctrl.controlId = co->getProperty("controlId").toString();
             ctrl.kind = co->getProperty("kind").toString();
+
+            if (ctrl.controlId.isEmpty() || ctrl.kind.isEmpty()) {
+                DBG("ControllerProfile: skipping control missing controlId or kind");
+                continue;
+            }
+            if (!co->hasProperty("cc") || !co->hasProperty("channel")) {
+                DBG("ControllerProfile: skipping control '" << ctrl.controlId
+                                                            << "' missing cc or channel");
+                continue;
+            }
+
             ctrl.cc = static_cast<int>(co->getProperty("cc"));
             ctrl.channel = static_cast<int>(co->getProperty("channel"));
+            if (ctrl.cc < 0 || ctrl.cc > 127) {
+                DBG("ControllerProfile: skipping control '" << ctrl.controlId
+                                                            << "' cc out of range: " << ctrl.cc);
+                continue;
+            }
+            if (ctrl.channel != -1 && (ctrl.channel < 1 || ctrl.channel > 16)) {
+                DBG("ControllerProfile: skipping control '"
+                    << ctrl.controlId << "' channel out of range: " << ctrl.channel);
+                continue;
+            }
+
             if (co->hasProperty("feedbackCc"))
                 ctrl.feedbackCc = static_cast<int>(co->getProperty("feedbackCc"));
             p.controls.push_back(ctrl);

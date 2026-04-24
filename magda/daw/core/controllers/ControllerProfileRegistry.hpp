@@ -16,14 +16,17 @@ namespace magda {
 /**
  * @brief Singleton read-only registry of hardware controller profiles.
  *
- * Loaded once at app startup from bundled JSON files and (optionally) from
- * user-supplied JSON files in the user data directory. No mutations after load.
+ * At runtime the registry reads only from the user directory
+ * (~/Library/Application Support/MAGDA/controllers/ on macOS, or the platform
+ * equivalent). Bundled JSON files under resources/controllers/ are copied in
+ * once on first launch when the user directory doesn't exist — after that,
+ * deletion of a profile is durable and bundled files are never consulted again.
  *
- * Bundled profiles live in resources/controllers/ (next to the binary or inside
- * Contents/Resources/controllers on macOS).
- * User profiles live in ~/Library/Application Support/MAGDA/controllers/
- * (or the platform equivalent). User profiles with the same id as a bundled
- * profile replace the bundled entry.
+ * Two files in the user directory that share an "id" field resolve last-wins:
+ * the later file overrides the earlier entry so findById stays deterministic.
+ *
+ * All mutation happens by writing new JSON files to the user directory and
+ * calling load() again.
  */
 class ControllerProfileRegistry {
   public:
@@ -43,7 +46,7 @@ class ControllerProfileRegistry {
     // Queries
     // ========================================================================
 
-    /** Return all profiles (bundled + user). User profiles win on id collision. */
+    /** Return all profiles loaded from the user directory. */
     std::vector<ControllerProfile> all() const;
 
     /** Find a profile by stable id string. Returns nullopt if not found. */

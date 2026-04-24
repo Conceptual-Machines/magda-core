@@ -24,7 +24,6 @@ Field rules:
     "kind": one of "knob", "button", "encoder".
     "cc": MIDI CC number, 0-127.
     "channel": MIDI channel 1-16 (use 1 when unknown).
-    "feedbackCc": optional — only set when the device echoes state on a different CC.
 - "defaultBindings": sensible starter bindings that will activate when the user enables
   the profile. For each knob or encoder, bind to a device macro by adding:
     { "controlId": "<id>", "resolverKind": "focused_device_macro",
@@ -55,7 +54,9 @@ juce::var ControllerProfileAgent::buildSchema() {
 
     auto defaultBinding = Schema::object({
         {"controlId", Schema::string()},
-        {"resolverKind", Schema::string()},
+        // Constrain to the resolvers that actually exist in ResolverRegistry —
+        // anything else would silently fail to materialise.
+        {"resolverKind", Schema::oneOf({"focused_device_macro"})},
         {"args", argsObj},
     });
 

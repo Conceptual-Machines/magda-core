@@ -70,6 +70,20 @@ void BindingRegistry::remove(BindingScope scope, const BindingId& id) {
     }
 }
 
+int BindingRegistry::removeAllForController(BindingScope scope, const ControllerId& controllerId) {
+    auto& vec = scopeVec(scope, globalBindings_, projectBindings_);
+    auto it = std::remove_if(vec.begin(), vec.end(), [&controllerId](const Binding& b) {
+        return b.source.controllerId == controllerId;
+    });
+    if (it == vec.end())
+        return 0;
+    int removed = static_cast<int>(std::distance(it, vec.end()));
+    vec.erase(it, vec.end());
+    rebuildSnapshot();
+    notifyListeners(scope);
+    return removed;
+}
+
 // ============================================================================
 // Queries
 // ============================================================================

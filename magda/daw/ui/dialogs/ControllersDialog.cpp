@@ -320,12 +320,7 @@ void ControllersDialog::onRowRemoveRequested(int row) {
                     if (result2 != 1)
                         return;
 
-                    auto bindings = BindingRegistry::getInstance().bindings(BindingScope::Global);
-                    for (const auto& b : bindings) {
-                        if (b.source.controllerId == id)
-                            BindingRegistry::getInstance().remove(BindingScope::Global, b.id);
-                    }
-
+                    BindingRegistry::getInstance().removeAllForController(BindingScope::Global, id);
                     ControllerRegistry::getInstance().remove(id);
                     persist();
                     rebuildList();

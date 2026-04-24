@@ -65,6 +65,14 @@ class BindingRegistry {
     /** Remove a binding from the given scope. No-op if not found. */
     void remove(BindingScope scope, const BindingId& id);
 
+    /**
+     * @brief Remove all bindings in a scope whose source.controllerId matches.
+     *
+     * Single snapshot rebuild + listener notification for the batch, rather
+     * than once per binding. Returns the number removed.
+     */
+    int removeAllForController(BindingScope scope, const ControllerId& controllerId);
+
     // ========================================================================
     // Queries (message-thread)
     // ========================================================================

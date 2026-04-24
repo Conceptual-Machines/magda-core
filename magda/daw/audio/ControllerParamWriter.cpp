@@ -6,15 +6,10 @@
 namespace magda {
 
 void DefaultControllerParamWriter::write(const ResolvedTarget& resolved, float value) {
-    if (!resolved.ok()) {
-        DBG("[AUTOMAP] Writer::write — resolved.ok()=false, dropping");
+    if (!resolved.ok())
         return;
-    }
 
     const float clamped = juce::jlimit(0.0f, 1.0f, value);
-    DBG("[AUTOMAP] Writer::write — dispatching owner="
-        << (resolved.owner == StaticTarget::Owner::DeviceMacro ? "DeviceMacro" : "PluginParam")
-        << " paramIndex=" << resolved.paramIndex << " value=" << clamped);
 
     switch (resolved.owner) {
         case StaticTarget::Owner::PluginParam:
@@ -53,19 +48,13 @@ void DefaultControllerParamWriter::writePluginParam(const ResolvedTarget& resolv
     // Mirror the write into DeviceInfo and notify MAGDA listeners so param
     // sliders / inspector UIs update. Same path the plugin's native UI uses
     // when a knob is dragged on the plugin window.
-    DBG("ControllerParamWriter: plugin param — deviceId=" << deviceId << " paramIndex="
-                                                          << resolved.paramIndex << " raw=" << raw);
     TrackManager::getInstance().setDeviceParameterValueFromPlugin(resolved.devicePath,
                                                                   resolved.paramIndex, raw);
 }
 
 void DefaultControllerParamWriter::writeDeviceMacro(const ResolvedTarget& resolved, float clamped) {
-    DBG("[AUTOMAP] writeDeviceMacro — calling TrackManager::setDeviceMacroValue trackId="
-        << resolved.devicePath.trackId << " deviceId=" << resolved.devicePath.getDeviceId()
-        << " macroIndex=" << resolved.paramIndex << " value=" << clamped);
     TrackManager::getInstance().setDeviceMacroValue(resolved.devicePath, resolved.paramIndex,
                                                     clamped);
-    DBG("[AUTOMAP] writeDeviceMacro — returned from setDeviceMacroValue");
 }
 
 }  // namespace magda

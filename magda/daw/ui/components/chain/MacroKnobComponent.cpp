@@ -65,11 +65,6 @@ void MacroKnobComponent::refreshAutomapState() {
     auto matches = magda::BindingRegistry::getInstance().findForTarget(
         parentPath_, macroIndex_, magda::StaticTarget::Owner::DeviceMacro);
     bool newState = !matches.empty();
-    DBG("[AUTOMAP-DOT] MacroKnob idx="
-        << macroIndex_ << " parentPath.trackId=" << parentPath_.trackId << " parentPath.deviceId="
-        << parentPath_.getDeviceId() << " parentPath.isValid=" << (parentPath_.isValid() ? 1 : 0)
-        << " matches=" << static_cast<int>(matches.size()) << " newState=" << (newState ? 1 : 0)
-        << " prev=" << (hasAutomap_ ? 1 : 0));
     if (newState != hasAutomap_) {
         hasAutomap_ = newState;
         repaint();

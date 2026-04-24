@@ -2146,10 +2146,6 @@ void DeviceSlotComponent::refreshControllerIndicators() {
     auto& reg = magda::BindingRegistry::getInstance();
     bool pinned = reg.hasBindingForDevice(nodePath_, magda::StaticTarget::Owner::PluginParam);
     bool automap = reg.hasBindingForDevice(nodePath_, magda::StaticTarget::Owner::DeviceMacro);
-    DBG("[AUTOMAP-DOT] DeviceHeader name='"
-        << device_.name << "' nodePath.trackId=" << nodePath_.trackId << " nodePath.deviceId="
-        << nodePath_.getDeviceId() << " nodePath.isValid=" << (nodePath_.isValid() ? 1 : 0)
-        << " pinned=" << (pinned ? 1 : 0) << " automap=" << (automap ? 1 : 0));
     if (pinned != hasPinnedBindings_ || automap != hasAutomapBindings_) {
         hasPinnedBindings_ = pinned;
         hasAutomapBindings_ = automap;

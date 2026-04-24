@@ -1,5 +1,7 @@
 #include "ControllerProfileRegistry.hpp"
 
+#include <algorithm>
+
 namespace magda {
 
 ControllerProfileRegistry& ControllerProfileRegistry::getInstance() {
@@ -53,7 +55,9 @@ juce::File ControllerProfileRegistry::userControllersDirectory() {
 }
 
 juce::String ControllerProfileRegistry::filenameForProfileId(const juce::String& id) {
-    return id.replaceCharacters(" /\\:?<>|\"*", "_________") + ".json";
+    // replaceCharacters requires the source and replacement strings to be the
+    // same length — 10 chars to sanitise, 10 underscores.
+    return id.replaceCharacters(" /\\:?<>|\"*", "__________") + ".json";
 }
 
 juce::File ControllerProfileRegistry::userFileForProfileId(const juce::String& id) {
@@ -104,6 +108,8 @@ void ControllerProfileRegistry::seedUserDirectory(const juce::File& userDir) {
 }
 
 void ControllerProfileRegistry::loadFromDirectory(const juce::File& dir) {
+    // Last-wins on id collision — two files with the same "id" (easy to
+    // produce by copying a JSON) otherwise make findById non-deterministic.
     auto files = dir.findChildFiles(juce::File::findFiles, false, "*.json");
     for (const auto& file : files) {
         juce::String jsonText = file.loadFileAsString();
@@ -120,9 +126,19 @@ void ControllerProfileRegistry::loadFromDirectory(const juce::File& dir) {
             continue;
         }
 
-        DBG("ControllerProfileRegistry: loaded profile '" << profileOpt->id << "' from "
-                                                          << file.getFullPathName());
-        profiles_.push_back(*profileOpt);
+        auto existing =
+            std::find_if(profiles_.begin(), profiles_.end(),
+                         [&id = profileOpt->id](const ControllerProfile& p) { return p.id == id; });
+        if (existing != profiles_.end()) {
+            DBG("ControllerProfileRegistry: duplicate id '" << profileOpt->id << "' in "
+                                                            << file.getFullPathName()
+                                                            << " — replacing earlier entry");
+            *existing = *profileOpt;
+        } else {
+            DBG("ControllerProfileRegistry: loaded profile '" << profileOpt->id << "' from "
+                                                              << file.getFullPathName());
+            profiles_.push_back(*profileOpt);
+        }
     }
 }
 

@@ -1052,20 +1052,13 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 void TrackManager::setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex,
                                        float value) {
     auto* device = getDeviceInChainByPath(devicePath);
-    DBG("[AUTOMAP] TrackManager::setDeviceMacroValue entry — trackId="
-        << devicePath.trackId << " macroIndex=" << macroIndex << " value=" << value
-        << " deviceFound=" << (device ? "yes" : "NO"));
-    if (device) {
-        if (macroIndex < 0 || macroIndex >= static_cast<int>(device->macros.size())) {
-            DBG("[AUTOMAP]   macroIndex out of range, device has "
-                << static_cast<int>(device->macros.size()) << " macros");
-            return;
-        }
-        float clampedValue = juce::jlimit(0.0f, 1.0f, value);
-        device->macros[macroIndex].value = clampedValue;
-        DBG("[AUTOMAP]   wrote value=" << clampedValue << " notifying listeners");
-        notifyMacroValueChanged(devicePath.trackId, false, device->id, macroIndex, clampedValue);
-    }
+    if (!device)
+        return;
+    if (macroIndex < 0 || macroIndex >= static_cast<int>(device->macros.size()))
+        return;
+    float clampedValue = juce::jlimit(0.0f, 1.0f, value);
+    device->macros[macroIndex].value = clampedValue;
+    notifyMacroValueChanged(devicePath.trackId, false, device->id, macroIndex, clampedValue);
 }
 
 void TrackManager::setDeviceMacroTarget(const ChainNodePath& devicePath, int macroIndex,
