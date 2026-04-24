@@ -3377,7 +3377,7 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
 
         // Parameter name
         g.setColour(juce::Colour(0xFFCCCCCC));
-        g.setFont(11.0f);
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
         auto nameArea = headerArea.reduced(4, 2);
         g.drawText(lane->getDisplayName(), nameArea, juce::Justification::centredLeft);
 
@@ -3496,7 +3496,7 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                         gridValues.push_back({i / 10.0, juce::String(i * 10) + "%"});
                 }
 
-                g.setFont(8.0f);
+                g.setFont(FontManager::getInstance().getUIFont(8.0f));
                 constexpr int labelH = 10;
                 // Thin labels to what vertically fits, always keeping the
                 // endpoints and centre so short lanes read as min / centre /
