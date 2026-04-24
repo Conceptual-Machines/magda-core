@@ -6,6 +6,25 @@ BUILD_DIR = cmake-build-debug
 BUILD_DIR_RELEASE = cmake-build-release
 BUILD_DIR_ASAN = cmake-build-asan
 
+# Platform-specific binary layout.
+# macOS: JUCE wraps the exe in a .app bundle (MAGDA.app/Contents/MacOS/MAGDA)
+#        and we launch bundles with `open`.
+# Linux: plain exe at the artefacts root, launched directly.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+    APP_BINARY_DEBUG   := $(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA
+    APP_BINARY_ASAN    := $(BUILD_DIR_ASAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA
+    APP_BUNDLE_DEBUG   := $(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app
+    APP_BUNDLE_RELEASE := $(BUILD_DIR_RELEASE)/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app
+    LAUNCH             := open
+else
+    APP_BINARY_DEBUG   := $(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
+    APP_BINARY_ASAN    := $(BUILD_DIR_ASAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA
+    APP_BUNDLE_DEBUG   := $(APP_BINARY_DEBUG)
+    APP_BUNDLE_RELEASE := $(BUILD_DIR_RELEASE)/magda/daw/magda_daw_app_artefacts/Release/MAGDA
+    LAUNCH             :=
+endif
+
 # Default target
 .PHONY: all
 all: debug
@@ -52,7 +71,7 @@ release:
 .PHONY: run-release
 run-release: release
 	@echo "🚀 Running MAGDA DAW (Release)..."
-	open "$(BUILD_DIR_RELEASE)/magda/daw/magda_daw_app_artefacts/Release/MAGDA.app"
+	$(LAUNCH) "$(APP_BUNDLE_RELEASE)"
 
 # ASAN (AddressSanitizer) build
 .PHONY: asan
@@ -74,23 +93,19 @@ asan:
 .PHONY: run-asan
 run-asan: asan
 	@echo "🔬 Running MAGDA DAW with AddressSanitizer..."
-	"$(BUILD_DIR_ASAN)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA"
+	"$(APP_BINARY_ASAN)"
 
 # Run the application
 .PHONY: run
 run: debug
 	@echo "🎵 Running MAGDA DAW..."
-	open "$(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app"
+	$(LAUNCH) "$(APP_BUNDLE_DEBUG)"
 
 # Run the application from console (shows debug output)
 .PHONY: run-console
 run-console: debug
 	@echo "🎵 Running MAGDA DAW (console mode)..."
-	@if [ "$$(uname -s)" = "Darwin" ]; then \
-		"$(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA"; \
-	else \
-		"$(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA"; \
-	fi
+	"$(APP_BINARY_DEBUG)"
 
 # Run with profiling enabled
 .PHONY: run-profile
@@ -99,7 +114,7 @@ run-profile: debug
 	@echo "Performance data will be saved to:"
 	@echo "  ~/Library/Application Support/MAGDA/Benchmarks/"
 	@echo ""
-	MAGDA_ENABLE_PROFILING=1 "$(BUILD_DIR)/magda/daw/magda_daw_app_artefacts/Debug/MAGDA.app/Contents/MacOS/MAGDA"
+	MAGDA_ENABLE_PROFILING=1 "$(APP_BINARY_DEBUG)"
 
 # Build tests
 .PHONY: test-build
