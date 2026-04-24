@@ -12,21 +12,25 @@ void TracktionEngineWrapper::recordingAboutToStart(tracktion::InputDeviceInstanc
         << instance.owner.getName() << "' targetID=" << targetID.getRawID()
         << " instance.isRecording()=" << (int)instance.isRecording());
 
-    // Store recording start time per track (first device wins)
-    // Use intendedRecordPosition_ (set before count-in) rather than getCurrentPosition()
-    // which may reflect the pre-roll position.
+    // Store recording start time per track (first device wins) and ensure the
+    // paint-only preview exists. TE can fire a phantom finished→aboutToStart
+    // pair on every input instance after it reallocates the playback graph at
+    // the top of a record session, so the preview add is NOT gated on
+    // recordingStartTimes_ — it must survive (or re-appear after) those
+    // graph-churn finishes.
     if (audioBridge_) {
         TrackId trackId = audioBridge_->getTrackIdForTeTrack(targetID);
-        if (trackId != INVALID_TRACK_ID && recordingStartTimes_.count(trackId) == 0) {
-            double startTime = intendedRecordPosition_;
-            recordingStartTimes_[trackId] = startTime;
-            DBG("  -> stored recording start time " << startTime << " for track " << trackId);
+        if (trackId != INVALID_TRACK_ID) {
+            if (recordingStartTimes_.count(trackId) == 0) {
+                recordingStartTimes_[trackId] = intendedRecordPosition_;
+                DBG("  -> stored recording start time " << intendedRecordPosition_ << " for track "
+                                                        << trackId);
+            }
 
-            // Create recording preview (no ClipManager clip — paint-only overlay)
             if (recordingPreviews_.count(trackId) == 0) {
                 RecordingPreview preview;
                 preview.trackId = trackId;
-                preview.startTime = startTime;
+                preview.startTime = recordingStartTimes_[trackId];
                 preview.currentLength = 0.0;
 
                 const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
@@ -240,8 +244,13 @@ void TracktionEngineWrapper::recordingFinished(
             audioBridge_->syncClipToEngine(clipId);
     }
 
-    // Clear recording preview for this track — the real clip is now visible
-    recordingPreviews_.erase(trackId);
+    // Clear recording preview for this track — but only if this finish came
+    // with a real clip (the user pressed stop and TE produced the final
+    // recording). 0-clip finishes are TE tearing an input instance down for
+    // a graph reallocation; another aboutToStart will fire immediately and
+    // the preview must still be there to animate.
+    if (!recordedClips.isEmpty())
+        recordingPreviews_.erase(trackId);
 
     // Reset synths to prevent stuck notes
     if (trackId != INVALID_TRACK_ID) {

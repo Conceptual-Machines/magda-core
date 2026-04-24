@@ -102,6 +102,12 @@ void TracktionEngineWrapper::record() {
     }
 
     if (currentEdit_) {
+        // Push TrackInfo::recordArmed onto TE's destinations right before asking
+        // TE to record. Covers the project-load case where a persisted armed
+        // track never saw a trackPropertyChanged arm sync (value didn't change).
+        if (audioBridge_)
+            audioBridge_->syncAllArmedTracksToTE();
+
         // Dump all input device instances and their record-enabled state
         if (auto* ctx = currentEdit_->getCurrentPlaybackContext()) {
             juce::Logger::writeToLog("[Record] input devices before record:");
