@@ -1,5 +1,7 @@
 #include "ControllersDialog.hpp"
 
+#include <map>
+
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
@@ -189,9 +191,18 @@ void ControllersDialog::onAddClicked() {
     }
 
     juce::PopupMenu menu;
+    // Disambiguate entries sharing the same vendor·name by appending the id.
+    std::map<juce::String, int> nameCounts;
+    for (const auto& p : profiles) {
+        juce::String key = p.vendor + "\x1f" + p.name;
+        nameCounts[key]++;
+    }
     for (size_t i = 0; i < profiles.size(); ++i) {
         const auto& p = profiles[i];
         juce::String label = p.vendor.isEmpty() ? p.name : p.vendor + "  \xc2\xb7  " + p.name;
+        juce::String key = p.vendor + "\x1f" + p.name;
+        if (nameCounts[key] > 1)
+            label += "  (" + p.id + ")";
         menu.addItem(static_cast<int>(i) + 1, label);
     }
 
@@ -277,13 +288,25 @@ void ControllersDialog::onRowRemoveRequested(int row) {
     const auto& c = controllers_[static_cast<size_t>(row)];
 
     juce::PopupMenu menu;
+    const bool haveProfile = c.profileId.isNotEmpty();
+    if (haveProfile)
+        menu.addItem(2, tr("controllers.show_in_finder"));
     menu.addItem(1, tr("controllers.remove"));
 
     const auto id = c.id;
     const auto name = c.name;
+    const auto profileId = c.profileId;
 
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(list_.get()), [this, id, name](int result) {
+        juce::PopupMenu::Options().withTargetComponent(list_.get()),
+        [this, id, name, profileId](int result) {
+            if (result == 2) {
+                auto file = ControllerProfileRegistry::userFileForProfileId(profileId);
+                if (file.existsAsFile())
+                    file.revealToUser();
+                return;
+            }
+
             if (result != 1)
                 return;
 

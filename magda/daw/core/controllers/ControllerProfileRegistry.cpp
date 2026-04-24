@@ -52,6 +52,14 @@ juce::File ControllerProfileRegistry::userControllersDirectory() {
         .getChildFile("controllers");
 }
 
+juce::String ControllerProfileRegistry::filenameForProfileId(const juce::String& id) {
+    return id.replaceCharacters(" /\\:?<>|\"*", "_________") + ".json";
+}
+
+juce::File ControllerProfileRegistry::userFileForProfileId(const juce::String& id) {
+    return userControllersDirectory().getChildFile(filenameForProfileId(id));
+}
+
 // ============================================================================
 // Load
 // ============================================================================

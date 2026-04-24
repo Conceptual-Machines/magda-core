@@ -10,6 +10,7 @@
 #include "../../../../agents/automation_agent.hpp"
 #include "../../../../agents/command_agent.hpp"
 #include "../../../../agents/compact_executor.hpp"
+#include "../../../../agents/controller_profile_agent.hpp"
 #include "../../../../agents/daw_agent.hpp"
 #include "../../../../agents/dsl_interpreter.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
@@ -20,6 +21,9 @@
 #include "../../../core/Config.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackManager.hpp"
+#include "../../../core/controllers/BindingRegistry.hpp"
+#include "../../../core/controllers/ControllerProfileRegistry.hpp"
+#include "../../../core/controllers/ControllerRegistry.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -884,6 +888,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     commandAgent_ = std::make_unique<magda::CommandAgent>();
     musicAgent_ = std::make_unique<magda::MusicAgent>();
     automationAgent_ = std::make_unique<magda::AutomationAgent>();
+    controllerAgent_ = std::make_unique<magda::ControllerProfileAgent>();
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
@@ -908,6 +913,8 @@ AIChatConsoleContent::~AIChatConsoleContent() {
         musicAgent_->requestCancel();
     if (automationAgent_)
         automationAgent_->requestCancel();
+    if (controllerAgent_)
+        controllerAgent_->requestCancel();
 
     // Stop the background thread with a timeout
     if (requestThread_) {
@@ -915,6 +922,13 @@ AIChatConsoleContent::~AIChatConsoleContent() {
         if (!requestThread_->stopThread(5000))
             DBG("AIChatConsole: Warning - request thread did not stop within timeout");
         requestThread_.reset();
+    }
+
+    if (controllerThread_) {
+        controllerThread_->signalThreadShouldExit();
+        if (!controllerThread_->stopThread(5000))
+            DBG("AIChatConsole: Warning - controller thread did not stop within timeout");
+        controllerThread_.reset();
     }
 
     if (agent_)
@@ -979,6 +993,23 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
         inputBox_.clear();
         return;
+    }
+
+    // /controller <description> — generate a controller profile from NL description
+    {
+        auto trimmed = text.trimStart();
+        if (trimmed.startsWithIgnoreCase("/controller ")) {
+            auto description = trimmed.substring(12).trim();
+            appendToChat(juce::String::charToString(0x25CF) + " " + text);
+            inputBox_.clear();
+            if (description.isEmpty()) {
+                appendToChat(juce::String::charToString(0x25C6) +
+                             " Usage: /controller <device description>");
+                return;
+            }
+            startControllerGeneration(description);
+            return;
+        }
     }
 
     // If a previous request thread is still around, stop it before starting a new one
@@ -1704,6 +1735,7 @@ bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component
 void AIChatConsoleContent::buildSlashCommands() {
     slashCommands_ = {
         {"groove", "Create or apply swing/groove timing templates"},
+        {"controller", "Generate a controller profile from a description"},
     };
 }
 
@@ -1744,6 +1776,245 @@ void AIChatConsoleContent::insertSlashCommand(const juce::String& command) {
 
     hideAutocomplete();
     inputBox_.grabKeyboardFocus();
+}
+
+// ============================================================================
+// /controller → /enable two-step flow
+// ============================================================================
+
+AIChatConsoleContent::ControllerRequestThread::ControllerRequestThread(
+    AIChatConsoleContent& owner, juce::String description, std::vector<std::string> livePortNames)
+    : juce::Thread("MAGDA-ControllerAgent"),
+      owner_(owner),
+      description_(std::move(description)),
+      livePortNames_(std::move(livePortNames)) {}
+
+void AIChatConsoleContent::ControllerRequestThread::run() {
+    auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(&owner_);
+
+    if (threadShouldExit() || !owner_.controllerAgent_)
+        return;
+
+    auto result = owner_.controllerAgent_->generate(description_.toStdString(), livePortNames_);
+
+    if (threadShouldExit())
+        return;
+
+    // Copy result pieces into message-thread-friendly values before callAsync.
+    bool success = !result.hasError && result.profile.has_value();
+    juce::String errorOrJson = success ? result.rawJson : juce::String(result.error);
+    juce::String profileId = success ? result.profile->id : juce::String();
+    juce::String profileName =
+        success ? (result.profile->vendor.isEmpty()
+                       ? result.profile->name
+                       : result.profile->vendor + " \xc2\xb7 " + result.profile->name)
+                : juce::String();
+
+    juce::MessageManager::callAsync([safeThis, success, errorOrJson, profileId, profileName]() {
+        if (!safeThis)
+            return;
+        safeThis->finishControllerGeneration(success, errorOrJson, profileId, profileName);
+    });
+}
+
+void AIChatConsoleContent::startControllerGeneration(const juce::String& description) {
+    // Cancel any previous controller thread
+    if (controllerThread_ && controllerThread_->isThreadRunning()) {
+        if (controllerAgent_)
+            controllerAgent_->requestCancel();
+        controllerThread_->signalThreadShouldExit();
+        controllerThread_->stopThread(2000);
+        controllerThread_.reset();
+    }
+    if (controllerAgent_)
+        controllerAgent_->resetCancel();
+
+    appendToChat(juce::String::charToString(0x25C6) + " Generating controller profile...");
+
+    // Snapshot live MIDI input names on the message thread — JUCE asserts
+    // getAvailableDevices() elsewhere on some platforms.
+    auto liveInputs = juce::MidiInput::getAvailableDevices();
+    std::vector<std::string> portNames;
+    portNames.reserve(static_cast<size_t>(liveInputs.size()));
+    for (const auto& dev : liveInputs)
+        portNames.push_back(dev.name.toStdString());
+
+    controllerThread_ =
+        std::make_unique<ControllerRequestThread>(*this, description, std::move(portNames));
+    controllerThread_->startThread();
+}
+
+namespace {
+
+/** Return baseId if free in registry, else baseId-2, baseId-3, ... */
+juce::String findUniqueProfileId(const juce::String& baseId) {
+    auto& reg = magda::ControllerProfileRegistry::getInstance();
+    if (!reg.findById(baseId).has_value())
+        return baseId;
+    for (int i = 2; i < 1000; ++i) {
+        auto candidate = baseId + "-" + juce::String(i);
+        if (!reg.findById(candidate).has_value())
+            return candidate;
+    }
+    return baseId + "-" + juce::Uuid().toDashedString().substring(0, 8);
+}
+
+/** Replace the top-level "id" field in a JSON profile string. */
+juce::String rewriteProfileIdInJson(const juce::String& json, const juce::String& newId) {
+    auto parsed = juce::JSON::parse(json);
+    if (auto* obj = parsed.getDynamicObject()) {
+        obj->setProperty("id", newId);
+        return juce::JSON::toString(parsed, true);
+    }
+    return json;
+}
+
+}  // namespace
+
+void AIChatConsoleContent::finishControllerGeneration(bool success, const juce::String& errorOrJson,
+                                                      juce::String profileId,
+                                                      juce::String profileName) {
+    if (!success) {
+        appendToChat(juce::String::charToString(0x25C6) + " Error: " + errorOrJson);
+        return;
+    }
+
+    auto userDir = magda::ControllerProfileRegistry::userControllersDirectory();
+    if (!userDir.isDirectory()) {
+        if (auto res = userDir.createDirectory(); res.failed()) {
+            appendToChat(juce::String::charToString(0x25C6) +
+                         " Error: could not create user controllers dir (" + res.getErrorMessage() +
+                         ")");
+            return;
+        }
+    }
+
+    auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(this);
+
+    // Reusable continuation: write JSON at the resolved id, reload, prompt for port.
+    auto writeAndPromptPort = [safeThis, userDir](juce::String finalJson, juce::String finalId,
+                                                  juce::String displayName) {
+        if (!safeThis)
+            return;
+        auto destFile =
+            userDir.getChildFile(magda::ControllerProfileRegistry::filenameForProfileId(finalId));
+        if (!destFile.replaceWithText(finalJson)) {
+            safeThis->appendToChat(juce::String::charToString(0x25C6) +
+                                   " Error: could not write profile file " +
+                                   destFile.getFullPathName());
+            return;
+        }
+
+        magda::ControllerProfileRegistry::getInstance().load();
+
+        safeThis->appendToChat(juce::String::charToString(0x25C6) + " Generated: " + displayName +
+                               " (" + finalId + ")");
+        safeThis->appendToChat("    " + destFile.getFullPathName());
+
+        // Print a readable mapping summary so the user can verify what the LLM produced.
+        if (auto profileOpt = magda::ControllerProfileRegistry::getInstance().findById(finalId)) {
+            juce::String summary = "    Controls:\n";
+            for (const auto& ctrl : profileOpt->controls) {
+                juce::String line = "      " + ctrl.controlId.paddedRight(' ', 12) + ctrl.kind +
+                                    " CC " + juce::String(ctrl.cc) + " ch" +
+                                    juce::String(ctrl.channel);
+                // Find default binding for this control
+                for (const auto& db : profileOpt->defaultBindings) {
+                    if (db.controlId == ctrl.controlId) {
+                        line += "  -> " + db.resolverKind;
+                        auto keys = db.args.getAllKeys();
+                        for (int k = 0; k < keys.size(); ++k)
+                            line += " " + keys[k] + "=" + db.args.getAllValues()[k];
+                        break;
+                    }
+                }
+                summary += line + "\n";
+            }
+            safeThis->appendToChat(summary.trimEnd());
+        }
+
+        auto ports = juce::MidiInput::getAvailableDevices();
+        if (ports.isEmpty()) {
+            safeThis->appendToChat(
+                juce::String::charToString(0x25C6) +
+                " No MIDI inputs connected. Open the Controllers dialog to enable it later.");
+            return;
+        }
+
+        juce::PopupMenu menu;
+        menu.addSectionHeader("Enable " + displayName + " on:");
+        for (int i = 0; i < ports.size(); ++i)
+            menu.addItem(i + 1, ports[i].name);
+        menu.addSeparator();
+        menu.addItem(9999, "Skip");
+
+        menu.showMenuAsync(
+            juce::PopupMenu::Options().withTargetComponent(&safeThis->inputBox_),
+            [safeThis, finalId, displayName, ports](int result) {
+                if (!safeThis || result <= 0 || result == 9999)
+                    return;
+                int idx = result - 1;
+                if (idx < 0 || idx >= ports.size())
+                    return;
+
+                auto profileOpt = magda::ControllerProfileRegistry::getInstance().findById(finalId);
+                if (!profileOpt.has_value()) {
+                    safeThis->appendToChat(juce::String::charToString(0x25C6) +
+                                           " Profile disappeared — cannot enable.");
+                    return;
+                }
+
+                const auto& dev = ports[idx];
+                auto mat = magda::materialiseControllerFromProfile(*profileOpt, dev.identifier, {},
+                                                                   dev.name);
+
+                magda::ControllerRegistry::getInstance().add(mat.controller);
+                for (const auto& b : mat.bindings)
+                    magda::BindingRegistry::getInstance().add(magda::BindingScope::Global, b);
+
+                auto& cfg = magda::Config::getInstance();
+                cfg.setControllers(magda::ControllerRegistry::getInstance().saveToConfig());
+                cfg.setGlobalBindings(magda::BindingRegistry::getInstance().saveGlobal());
+                cfg.save();
+
+                safeThis->appendToChat(juce::String::charToString(0x25C6) + " Enabled " +
+                                       displayName + " on " + dev.name);
+            });
+    };
+
+    // Collision: ask the user whether to replace, create as a unique variant, or cancel.
+    if (magda::ControllerProfileRegistry::getInstance().findById(profileId).has_value()) {
+        juce::PopupMenu menu;
+        menu.addSectionHeader("Profile '" + profileId + "' already exists");
+        menu.addItem(1, "Replace existing");
+        menu.addItem(2, "Create as new (" + findUniqueProfileId(profileId) + ")");
+        menu.addSeparator();
+        menu.addItem(9999, "Cancel");
+
+        auto rawJson = errorOrJson;  // contains the JSON when success == true
+        auto baseId = profileId;
+        auto displayName = profileName;
+
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&inputBox_),
+                           [safeThis, writeAndPromptPort, rawJson, baseId, displayName](int r) {
+                               if (!safeThis || r <= 0 || r == 9999) {
+                                   if (safeThis)
+                                       safeThis->appendToChat(juce::String::charToString(0x25C6) +
+                                                              " Cancelled.");
+                                   return;
+                               }
+                               if (r == 1) {
+                                   writeAndPromptPort(rawJson, baseId, displayName);
+                               } else if (r == 2) {
+                                   auto newId = findUniqueProfileId(baseId);
+                                   auto rewritten = rewriteProfileIdInJson(rawJson, newId);
+                                   writeAndPromptPort(rewritten, newId, displayName);
+                               }
+                           });
+        return;
+    }
+
+    writeAndPromptPort(errorOrJson, profileId, profileName);
 }
 
 }  // namespace magda::daw::ui

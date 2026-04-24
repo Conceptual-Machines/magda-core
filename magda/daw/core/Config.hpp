@@ -767,6 +767,7 @@ class Config {
         {"router", {"llama_local", "", "", ""}},
         {"command", {"llama_local", "", "", ""}},
         {"music", {"llama_local", "", "", ""}},
+        {"controller", {"llama_local", "", "", ""}},
     };
     std::map<std::string, std::string> aiCredentials;  // provider → API key
     std::string localLlamaUrl = "http://127.0.0.1:8080/v1";

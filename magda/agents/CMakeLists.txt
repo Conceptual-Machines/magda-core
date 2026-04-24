@@ -31,6 +31,8 @@ dsl_grammar.hpp
     automation_agent.cpp
     router_agent.hpp
     router_agent.cpp
+    controller_profile_agent.hpp
+    controller_profile_agent.cpp
     llama_model_manager.hpp
     llama_model_manager.cpp
     llama_local_client.hpp

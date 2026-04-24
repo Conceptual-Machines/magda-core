@@ -49,14 +49,20 @@ class ControllerProfileRegistry {
     /** Find a profile by stable id string. Returns nullopt if not found. */
     std::optional<ControllerProfile> findById(const juce::String& id) const;
 
+    /** ~/Library/Application Support/MAGDA/controllers (or platform equivalent). */
+    static juce::File userControllersDirectory();
+
+    /** Derive the on-disk filename for a profile id (sanitised + ".json"). */
+    static juce::String filenameForProfileId(const juce::String& id);
+
+    /** Full path to a profile's JSON file in the user directory. */
+    static juce::File userFileForProfileId(const juce::String& id);
+
   private:
     ControllerProfileRegistry() = default;
 
     /** Mirror of StringTable::findLangDirectory() substituting "controllers" for "lang". */
     static juce::File findBundledControllersDirectory();
-
-    /** ~/Library/Application Support/MAGDA/controllers (or platform equivalent). */
-    static juce::File userControllersDirectory();
 
     /** Load all .json files from dir into profiles_. */
     void loadFromDirectory(const juce::File& dir);

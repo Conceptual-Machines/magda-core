@@ -444,6 +444,7 @@
     "my_controllers": "My controllers",
     "add_profile": "+ Add profile",
     "remove": "Remove",
+    "show_in_finder": "Show profile in Finder",
     "remove_confirm_title": "Remove controller?",
     "remove_confirm_message": "Remove \"{0}\" and its bindings?",
     "no_profiles": "No profiles loaded.",
