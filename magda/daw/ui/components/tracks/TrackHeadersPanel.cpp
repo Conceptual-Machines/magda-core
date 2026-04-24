@@ -3497,16 +3497,18 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                 }
 
                 g.setFont(8.0f);
+                constexpr int labelH = 10;
                 for (const auto& [norm, label] : gridValues) {
-                    if (norm <= 0.01 || norm >= 0.99)
-                        continue;
                     int tickY = contentTop + static_cast<int>((1.0 - norm) * contentHeight);
                     // Tick
                     g.setColour(juce::Colour(0x66FFFFFF));
                     g.drawHorizontalLine(tickY, rightEdge - tickLen, rightEdge);
-                    // Label
+                    // Label — clamp vertically so min/max labels flush against
+                    // the lane edges instead of clipping against the header /
+                    // resize handle.
                     g.setColour(juce::Colour(0xFF777777));
-                    auto labelBounds = juce::Rectangle<int>(2, tickY - 5, getWidth() - 10, 10);
+                    int labelTop = juce::jlimit(contentTop, contentBottom - labelH, tickY - 5);
+                    auto labelBounds = juce::Rectangle<int>(2, labelTop, getWidth() - 10, labelH);
                     g.drawText(label, labelBounds, juce::Justification::centredRight);
                 }
             }
