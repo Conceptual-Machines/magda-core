@@ -3498,11 +3498,12 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
 
                 g.setFont(FontManager::getInstance().getUIFont(8.0f));
                 constexpr int labelH = 10;
-                // Thin labels to what vertically fits, always keeping the
-                // endpoints and centre so short lanes read as min / centre /
-                // max while tall lanes show every sample. Spacing ~= labelH
-                // + 6 matches the minimum gap before adjacent 8pt labels
-                // start to touch.
+                // Thin labels to what vertically fits. Very short lanes
+                // collapse to a single centre label; otherwise evenly spaced
+                // samples are picked across the range (endpoints included
+                // whenever at least two labels fit), while tall lanes show
+                // every sample. Spacing ~= labelH + 6 matches the minimum
+                // gap before adjacent 8pt labels start to touch.
                 constexpr int labelSpacing = labelH + 6;
                 int maxLabels = juce::jmax(1, contentHeight / labelSpacing);
                 if (maxLabels < static_cast<int>(gridValues.size())) {
