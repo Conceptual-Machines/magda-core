@@ -312,6 +312,22 @@ void MidiBridge::setRecordingQueue(RecordingNoteQueue* queue, std::atomic<double
     transportPosition_ = transportPos;
 }
 
+void MidiBridge::pushPreviewNote(TrackId trackId, int noteNumber, int velocity, bool isNoteOn) {
+    if (!recordingQueue_ || !transportPosition_)
+        return;
+    auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+    if (!trackInfo || !trackInfo->recordArmed)
+        return;
+
+    RecordingNoteEvent evt;
+    evt.trackId = trackId;
+    evt.noteNumber = noteNumber;
+    evt.velocity = velocity;
+    evt.isNoteOn = isNoteOn;
+    evt.transportSeconds = transportPosition_->load(std::memory_order_relaxed);
+    recordingQueue_->push(evt);
+}
+
 void MidiBridge::startMonitoring(TrackId trackId) {
     juce::ScopedLock lock(routingLock_);
     monitoredTracks_.insert(trackId);

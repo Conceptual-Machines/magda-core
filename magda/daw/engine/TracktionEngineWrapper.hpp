@@ -5,6 +5,7 @@
 #include <functional>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "../audio/RecordingNoteQueue.hpp"
 #include "../command.hpp"
@@ -452,6 +453,17 @@ class TracktionEngineWrapper : public AudioEngine,
     // Per-track dedup during recordingFinished (multiple devices per track).
     // Populated in recordingFinished, cleared after transport stop.
     std::unordered_map<int, int> activeRecordingClips_;
+
+    // Deferred MIDI recording finalization. TE can produce up to N clips per
+    // track (one per input device) during stopRecording; with mergeRecordings=
+    // true each subsequent device's events are merged into the first clip via
+    // track->mergeInMidiSequence. We track the first TE MidiClip we see per
+    // trackId and, after all synchronous recordingFinished callbacks settle,
+    // extract its final (merged) state once via callAsync. Remove-on-the-spot
+    // caused QWERTY's merge target to vanish, dropping its notes.
+    std::unordered_map<TrackId, tracktion::MidiClip::Ptr> pendingMidiRecordings_;
+    std::unordered_set<TrackId> pendingFinalizeMidi_;
+    void finalizeMidiRecording(TrackId trackId);
 
     // Track recording start time per track (populated in recordingAboutToStart)
     std::unordered_map<int, double> recordingStartTimes_;

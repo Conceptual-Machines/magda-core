@@ -21,9 +21,11 @@ class AudioBridge;
  *   White keys: A S D F G H J   K L
  *   Octave:     Z (down) / X (up)
  */
+class MidiBridge;
+
 class QwertyMidiKeyboard : public juce::KeyListener {
   public:
-    explicit QwertyMidiKeyboard(AudioBridge& bridge);
+    QwertyMidiKeyboard(AudioBridge& bridge, MidiBridge* midiBridge);
     ~QwertyMidiKeyboard() override;
 
     void setEnabled(bool enabled);
@@ -61,6 +63,7 @@ class QwertyMidiKeyboard : public juce::KeyListener {
     void allNotesOff();
 
     AudioBridge& bridge_;
+    MidiBridge* midiBridge_ = nullptr;
     bool enabled_ = false;
     int baseOctave_ = 3;
     int velocity_ = 100;

@@ -2,13 +2,14 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
-#include "../core/SelectionManager.hpp"
 #include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
+#include "MidiBridge.hpp"
 
 namespace magda {
 
-QwertyMidiKeyboard::QwertyMidiKeyboard(AudioBridge& bridge) : bridge_(bridge) {}
+QwertyMidiKeyboard::QwertyMidiKeyboard(AudioBridge& bridge, MidiBridge* midiBridge)
+    : bridge_(bridge), midiBridge_(midiBridge) {}
 
 QwertyMidiKeyboard::~QwertyMidiKeyboard() {
     allNotesOff();
@@ -102,13 +103,22 @@ void QwertyMidiKeyboard::sendNoteOn(int note) {
     auto* vmd = bridge_.getQwertyMidiDevice();
     if (!vmd)
         return;
-    auto msg = juce::MidiMessage::noteOn(1, note, static_cast<juce::uint8>(velocity_));
-    vmd->handleIncomingMidiMessage(msg, te::MPESourceID{});
+    // Canonical programmatic injection: MidiInputDevice is registered as a
+    // listener on its own keyboardState, so this dispatches via
+    // handleNoteOn → handleIncomingMidiMessage(msg, midiSourceID) with the
+    // device's own source ID, which is what TE's recording pipeline keys off.
+    vmd->keyboardState.noteOn(1, note, static_cast<float>(velocity_) / 127.0f);
 
-    auto trackId = SelectionManager::getInstance().getSelectedTrack();
-    if (trackId != INVALID_TRACK_ID) {
-        bridge_.triggerMidiActivity(trackId);
-        TrackManager::getInstance().triggerMidiNoteOn(trackId);
+    // QWERTY routes to every MIDI-listening track (it's enumerated in the
+    // "all" MIDI-input fan-out), so fire UI activity + preview for every
+    // armed track — same behaviour as physical MIDI via MidiBridge.
+    for (const auto& trackInfo : TrackManager::getInstance().getTracks()) {
+        if (!trackInfo.recordArmed)
+            continue;
+        bridge_.triggerMidiActivity(trackInfo.id);
+        TrackManager::getInstance().triggerMidiNoteOn(trackInfo.id);
+        if (midiBridge_)
+            midiBridge_->pushPreviewNote(trackInfo.id, note, velocity_, /*isNoteOn=*/true);
     }
 }
 
@@ -116,12 +126,15 @@ void QwertyMidiKeyboard::sendNoteOff(int note) {
     auto* vmd = bridge_.getQwertyMidiDevice();
     if (!vmd)
         return;
-    auto msg = juce::MidiMessage::noteOff(1, note);
-    vmd->handleIncomingMidiMessage(msg, te::MPESourceID{});
+    vmd->keyboardState.noteOff(1, note, 0.0f);
 
-    auto trackId = SelectionManager::getInstance().getSelectedTrack();
-    if (trackId != INVALID_TRACK_ID)
-        TrackManager::getInstance().triggerMidiNoteOff(trackId);
+    for (const auto& trackInfo : TrackManager::getInstance().getTracks()) {
+        if (!trackInfo.recordArmed)
+            continue;
+        TrackManager::getInstance().triggerMidiNoteOff(trackInfo.id);
+        if (midiBridge_)
+            midiBridge_->pushPreviewNote(trackInfo.id, note, 0, /*isNoteOn=*/false);
+    }
 }
 
 void QwertyMidiKeyboard::allNotesOff() {

@@ -386,8 +386,10 @@ void TracktionEngineWrapper::onTransportStop(double returnPosition) {
                 audioBridge_->resetSynthsOnTrack(trackId);
             }
 
-            // Skip if TE already created a clip for this track
-            if (activeRecordingClips_.count(trackId) > 0) {
+            // Skip if TE already created a clip for this track, or if an async
+            // finalize is pending (it will create the MAGDA clip).
+            if (activeRecordingClips_.count(trackId) > 0 ||
+                pendingMidiRecordings_.count(trackId) > 0) {
                 continue;
             }
 
