@@ -60,6 +60,34 @@ void ControllerRegistry::setEnabled(const ControllerId& id, bool enabled) {
     }
 }
 
+bool ControllerRegistry::rematchInputPorts(const juce::Array<juce::MidiDeviceInfo>& liveInputs) {
+    bool changed = false;
+    for (auto& c : controllers_) {
+        bool identifierLive = false;
+        for (const auto& dev : liveInputs) {
+            if (dev.identifier == c.inputPort) {
+                identifierLive = true;
+                break;
+            }
+        }
+        if (identifierLive || c.inputPortName.isEmpty())
+            continue;
+
+        for (const auto& dev : liveInputs) {
+            if (dev.name == c.inputPortName) {
+                c.inputPort = dev.identifier;
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (changed) {
+        rebuildSnapshot();
+        notifyListeners();
+    }
+    return changed;
+}
+
 // ============================================================================
 // Queries
 // ============================================================================

@@ -8,8 +8,9 @@ bool Controller::isValid() const {
 
 bool Controller::operator==(const Controller& other) const {
     return id == other.id && name == other.name && vendor == other.vendor &&
-           inputPort == other.inputPort && outputPort == other.outputPort &&
-           script == other.script && enabled == other.enabled;
+           inputPort == other.inputPort && inputPortName == other.inputPortName &&
+           outputPort == other.outputPort && script == other.script &&
+           profileId == other.profileId && enabled == other.enabled;
 }
 
 // ============================================================================
@@ -22,8 +23,12 @@ juce::var encodeController(const Controller& c) {
     obj->setProperty("name", c.name);
     obj->setProperty("vendor", c.vendor);
     obj->setProperty("inputPort", c.inputPort);
+    if (c.inputPortName.isNotEmpty())
+        obj->setProperty("inputPortName", c.inputPortName);
     obj->setProperty("outputPort", c.outputPort);
     obj->setProperty("script", c.script);
+    if (c.profileId.isNotEmpty())
+        obj->setProperty("profileId", c.profileId);
     obj->setProperty("enabled", c.enabled);
     return juce::var(obj);
 }
@@ -48,8 +53,10 @@ std::optional<Controller> decodeController(const juce::var& v) {
     c.name = obj->getProperty("name").toString();
     c.vendor = obj->getProperty("vendor").toString();
     c.inputPort = obj->getProperty("inputPort").toString();
+    c.inputPortName = obj->getProperty("inputPortName").toString();  // optional
     c.outputPort = obj->getProperty("outputPort").toString();
     c.script = obj->getProperty("script").toString();
+    c.profileId = obj->getProperty("profileId").toString();  // optional, defaults to empty
     c.enabled = obj->hasProperty("enabled") ? static_cast<bool>(obj->getProperty("enabled")) : true;
 
     return c;

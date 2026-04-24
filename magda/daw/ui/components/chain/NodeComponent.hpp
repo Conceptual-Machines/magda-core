@@ -315,8 +315,19 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     // Mod/Macro panel management
     void initializeModsMacrosPanels();
     void updateModsPanel();
+
+  public:
+    // Public so external TrackManagerListener callbacks (e.g. controller writes)
+    // can force a redraw when the macro value was mutated externally — the knob
+    // slider only auto-updates on local mouse interaction.
     void updateMacroPanel();
 
+    // Lightweight variant for high-rate external writes (e.g. controller
+    // automap) — updates just one knob's displayed value without rebuilding
+    // the panel, available-devices list, or param-name map.
+    void updateMacroValueDisplay(int macroIndex, float value);
+
+  private:
     // Editor panel management
     void showModulatorEditor(int modIndex);
     void hideModulatorEditor();
@@ -328,6 +339,13 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     // Width calculations for editor panels
     int getModulatorEditorWidth() const;
     int getMacroEditorWidth() const;
+
+  protected:
+    // Accessors so subclasses (e.g. DeviceSlotComponent) can paint badges
+    // positioned relative to header controls without accessing the raw members.
+    const juce::Label& getNameLabel() const {
+        return nameLabel_;
+    }
 
   private:
     // Header controls

@@ -75,6 +75,8 @@ set(TEST_SOURCES
     test_midi_device_match.cpp
     # MIDI Learn session tests (issue #924)
     test_midi_learn.cpp
+    # Controller profile tests (issue #1052)
+    test_controller_profile.cpp
 )
 
 # Create test executable

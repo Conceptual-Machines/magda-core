@@ -53,6 +53,9 @@ class DefaultControllerParamWriter : public ControllerParamWriter {
     void write(const ResolvedTarget& resolved, float value) override;
 
   private:
+    void writePluginParam(const ResolvedTarget& resolved, float clamped);
+    void writeDeviceMacro(const ResolvedTarget& resolved, float clamped);
+
     AudioBridge& bridge_;
 };
 

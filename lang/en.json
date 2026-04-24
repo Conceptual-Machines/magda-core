@@ -38,6 +38,7 @@
     "settings.ai": "AI Settings...",
     "settings.audio_midi": "Audio/MIDI Settings...",
     "settings.plugins": "Plugin Settings...",
+    "settings.controllers": "Controllers...",
 
     "view.track_manager": "Track Manager...",
     "view.headers_right": "Headers on the Right",
@@ -436,5 +437,21 @@
     "shortcut.duplicate_track": "Duplicate Track",
     "shortcut.mute_track": "Mute Track",
     "shortcut.solo_track": "Solo Track"
+  },
+
+  "controllers": {
+    "title": "Controllers",
+    "my_controllers": "My controllers",
+    "add_profile": "+ Add profile",
+    "remove": "Remove",
+    "show_in_finder": "Show profile in Finder",
+    "remove_confirm_title": "Remove controller?",
+    "remove_confirm_message": "Remove \"{0}\" and its bindings?",
+    "no_profiles": "No profiles loaded.",
+    "no_controllers": "No controllers.",
+    "no_midi_inputs": "No MIDI inputs available.",
+    "connected": "Connected",
+    "not_connected": "Not connected",
+    "disabled": "Disabled"
   }
 }

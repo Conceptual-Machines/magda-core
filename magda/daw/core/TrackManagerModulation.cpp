@@ -1051,14 +1051,14 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
 void TrackManager::setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex,
                                        float value) {
-    if (auto* device = getDeviceInChainByPath(devicePath)) {
-        if (macroIndex < 0 || macroIndex >= static_cast<int>(device->macros.size())) {
-            return;
-        }
-        float clampedValue = juce::jlimit(0.0f, 1.0f, value);
-        device->macros[macroIndex].value = clampedValue;
-        notifyMacroValueChanged(devicePath.trackId, false, device->id, macroIndex, clampedValue);
-    }
+    auto* device = getDeviceInChainByPath(devicePath);
+    if (!device)
+        return;
+    if (macroIndex < 0 || macroIndex >= static_cast<int>(device->macros.size()))
+        return;
+    float clampedValue = juce::jlimit(0.0f, 1.0f, value);
+    device->macros[macroIndex].value = clampedValue;
+    notifyMacroValueChanged(devicePath.trackId, false, device->id, macroIndex, clampedValue);
 }
 
 void TrackManager::setDeviceMacroTarget(const ChainNodePath& devicePath, int macroIndex,

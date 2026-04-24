@@ -22,6 +22,7 @@ namespace magda {
 struct ResolvedTarget {
     ChainNodePath devicePath;
     int paramIndex = -1;
+    StaticTarget::Owner owner = StaticTarget::Owner::PluginParam;
     juce::String sourceLabel;  // Human-readable provenance (for error messages)
     bool resolved = false;
 

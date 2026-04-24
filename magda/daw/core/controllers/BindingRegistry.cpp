@@ -70,6 +70,20 @@ void BindingRegistry::remove(BindingScope scope, const BindingId& id) {
     }
 }
 
+int BindingRegistry::removeAllForController(BindingScope scope, const ControllerId& controllerId) {
+    auto& vec = scopeVec(scope, globalBindings_, projectBindings_);
+    auto it = std::remove_if(vec.begin(), vec.end(), [&controllerId](const Binding& b) {
+        return b.source.controllerId == controllerId;
+    });
+    if (it == vec.end())
+        return 0;
+    int removed = static_cast<int>(std::distance(it, vec.end()));
+    vec.erase(it, vec.end());
+    rebuildSnapshot();
+    notifyListeners(scope);
+    return removed;
+}
+
 // ============================================================================
 // Queries
 // ============================================================================
@@ -131,8 +145,8 @@ std::vector<Binding> BindingRegistry::findForPort(const juce::String& liveIdenti
 // Target reverse queries
 // ============================================================================
 
-std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& devicePath,
-                                                    int paramIndex) const {
+std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& devicePath, int paramIndex,
+                                                    StaticTarget::Owner owner) const {
     std::vector<Binding> results;
 
     DefaultChainContext ctx;
@@ -143,7 +157,8 @@ std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& deviceP
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex)
+            if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
+                resolved.owner == owner)
                 results.push_back(b);
         }
     };
@@ -154,8 +169,28 @@ std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& deviceP
     return results;
 }
 
-int BindingRegistry::removeForTarget(const ChainNodePath& devicePath, int paramIndex) {
-    auto toRemove = findForTarget(devicePath, paramIndex);
+bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
+                                          StaticTarget::Owner owner) const {
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+
+    auto check = [&](const std::vector<Binding>& vec) -> bool {
+        for (const auto& b : vec) {
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.devicePath == devicePath && resolved.owner == owner)
+                return true;
+        }
+        return false;
+    };
+
+    return check(globalBindings_) || check(projectBindings_);
+}
+
+int BindingRegistry::removeForTarget(const ChainNodePath& devicePath, int paramIndex,
+                                     StaticTarget::Owner owner) {
+    auto toRemove = findForTarget(devicePath, paramIndex, owner);
 
     for (const auto& b : toRemove) {
         // Determine scope by checking which vector contains this binding

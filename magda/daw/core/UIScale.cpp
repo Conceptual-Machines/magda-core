@@ -19,6 +19,7 @@ double clampScale(double s) {
     return s;
 }
 
+#if !JUCE_MAC
 double autoScaleForDpi(double dpi) {
     if (dpi < 140.0)
         return 1.0;
@@ -26,13 +27,20 @@ double autoScaleForDpi(double dpi) {
         return 1.5;
     return 2.0;
 }
+#endif
 
 }  // namespace
 
 double dpiOnlyAutoScale() {
+#if JUCE_MAC
+    // macOS handles HiDPI via the backing store; setGlobalScaleFactor
+    // stacks on top of that, doubling UI size on Retina displays.
+    return 1.0;
+#else
     if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
         return autoScaleForDpi(d->dpi);
     return 1.0;
+#endif
 }
 
 double resolveStartupScale() {

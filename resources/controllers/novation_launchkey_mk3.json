@@ -1,0 +1,33 @@
+{
+  "id": "novation.launchkey_mk3_37",
+  "vendor": "Novation",
+  "name": "Launchkey MK3 37",
+  "controls": [
+    { "controlId": "knob_1", "kind": "knob", "cc": 21, "channel": 1 },
+    { "controlId": "knob_2", "kind": "knob", "cc": 22, "channel": 1 },
+    { "controlId": "knob_3", "kind": "knob", "cc": 23, "channel": 1 },
+    { "controlId": "knob_4", "kind": "knob", "cc": 24, "channel": 1 },
+    { "controlId": "knob_5", "kind": "knob", "cc": 25, "channel": 1 },
+    { "controlId": "knob_6", "kind": "knob", "cc": 26, "channel": 1 },
+    { "controlId": "knob_7", "kind": "knob", "cc": 27, "channel": 1 },
+    { "controlId": "knob_8", "kind": "knob", "cc": 28, "channel": 1 },
+    { "controlId": "pad_1", "kind": "button", "cc": 36, "channel": 1 },
+    { "controlId": "pad_2", "kind": "button", "cc": 37, "channel": 1 },
+    { "controlId": "pad_3", "kind": "button", "cc": 38, "channel": 1 },
+    { "controlId": "pad_4", "kind": "button", "cc": 39, "channel": 1 },
+    { "controlId": "pad_5", "kind": "button", "cc": 40, "channel": 1 },
+    { "controlId": "pad_6", "kind": "button", "cc": 41, "channel": 1 },
+    { "controlId": "pad_7", "kind": "button", "cc": 42, "channel": 1 },
+    { "controlId": "pad_8", "kind": "button", "cc": 43, "channel": 1 }
+  ],
+  "defaultBindings": [
+    { "controlId": "knob_1", "resolverKind": "focused_device_macro", "args": { "macroIndex": "0" } },
+    { "controlId": "knob_2", "resolverKind": "focused_device_macro", "args": { "macroIndex": "1" } },
+    { "controlId": "knob_3", "resolverKind": "focused_device_macro", "args": { "macroIndex": "2" } },
+    { "controlId": "knob_4", "resolverKind": "focused_device_macro", "args": { "macroIndex": "3" } },
+    { "controlId": "knob_5", "resolverKind": "focused_device_macro", "args": { "macroIndex": "4" } },
+    { "controlId": "knob_6", "resolverKind": "focused_device_macro", "args": { "macroIndex": "5" } },
+    { "controlId": "knob_7", "resolverKind": "focused_device_macro", "args": { "macroIndex": "6" } },
+    { "controlId": "knob_8", "resolverKind": "focused_device_macro", "args": { "macroIndex": "7" } }
+  ]
+}

@@ -21,15 +21,31 @@ namespace magda {
  * This is the "materialized" form -- all alias resolution ends here.
  */
 struct StaticTarget {
+    /**
+     * @brief Identifies which value domain paramIndex belongs to.
+     *
+     * PluginParam  -- paramIndex is an index into plugin->getAutomatableParameters()
+     * DeviceMacro  -- paramIndex is a macro index on the device (0-based)
+     *
+     * Defaulting to PluginParam preserves backward compatibility for all
+     * existing targets that do not carry an explicit owner field.
+     */
+    enum class Owner {
+        PluginParam,  // default
+        DeviceMacro,
+    };
+
     ChainNodePath devicePath;
     int paramIndex = -1;
+    Owner owner = Owner::PluginParam;
 
     bool isValid() const {
         return devicePath.isValid() && paramIndex >= 0;
     }
 
     bool operator==(const StaticTarget& other) const {
-        return devicePath == other.devicePath && paramIndex == other.paramIndex;
+        return devicePath == other.devicePath && paramIndex == other.paramIndex &&
+               owner == other.owner;
     }
 
     bool operator!=(const StaticTarget& other) const {

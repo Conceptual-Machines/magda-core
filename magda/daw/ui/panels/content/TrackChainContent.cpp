@@ -1324,6 +1324,31 @@ void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
     }
 }
 
+void TrackChainContent::macroValueChanged(magda::TrackId trackId, bool isRack, int id,
+                                          int macroIndex, float value) {
+    if (trackId != selectedTrackId_)
+        return;
+
+    if (isRack) {
+        // Rack macros: targeted value update per matching node.
+        for (auto& node : nodeComponents_) {
+            if (node && node->getNodePath().getRackId() == id)
+                node->updateMacroValueDisplay(macroIndex, value);
+        }
+        return;
+    }
+
+    // Device macros: id is DeviceId. Targeted single-knob update — avoid the
+    // full updateMacroPanel rebuild (setMacros + setAvailableDevices +
+    // setDeviceParamNames) that was congesting the message thread under
+    // high-rate controller writes.
+    const magda::DeviceId deviceId = id;
+    for (auto& node : nodeComponents_) {
+        if (node && node->getNodePath().getDeviceId() == deviceId)
+            node->updateMacroValueDisplay(macroIndex, value);
+    }
+}
+
 void TrackChainContent::selectionTypeChanged(magda::SelectionType /*newType*/) {
     // Repaint header when selection type changes (Track vs ChainNode)
     // to update the header background color

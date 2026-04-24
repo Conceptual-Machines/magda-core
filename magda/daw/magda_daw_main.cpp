@@ -14,6 +14,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UIScale.hpp"
 #include "core/UpdateChecker.hpp"
+#include "core/controllers/ControllerProfileRegistry.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 #include "project/ProjectManager.hpp"
 #include "ui/dialogs/SplashScreen.hpp"

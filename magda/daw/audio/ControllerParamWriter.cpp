@@ -9,6 +9,19 @@ void DefaultControllerParamWriter::write(const ResolvedTarget& resolved, float v
     if (!resolved.ok())
         return;
 
+    const float clamped = juce::jlimit(0.0f, 1.0f, value);
+
+    switch (resolved.owner) {
+        case StaticTarget::Owner::PluginParam:
+            writePluginParam(resolved, clamped);
+            break;
+        case StaticTarget::Owner::DeviceMacro:
+            writeDeviceMacro(resolved, clamped);
+            break;
+    }
+}
+
+void DefaultControllerParamWriter::writePluginParam(const ResolvedTarget& resolved, float clamped) {
     DeviceId deviceId = resolved.devicePath.getDeviceId();
     if (deviceId == INVALID_DEVICE_ID)
         return;
@@ -25,21 +38,23 @@ void DefaultControllerParamWriter::write(const ResolvedTarget& resolved, float v
     if (!param)
         return;
 
-    // 'value' is normalized 0..1 (what BindingTransform produces). Map to the
+    // 'clamped' is normalized 0..1 (what BindingTransform produces). Map to the
     // parameter's actual value range before writing — te::AutomatableParameter::
     // setParameter expects raw, not normalized.
     const auto range = param->getValueRange();
-    const float clamped = juce::jlimit(0.0f, 1.0f, value);
     const float raw = static_cast<float>(range.getStart() + clamped * range.getLength());
     param->setParameter(raw, juce::sendNotificationSync);
 
     // Mirror the write into DeviceInfo and notify MAGDA listeners so param
     // sliders / inspector UIs update. Same path the plugin's native UI uses
     // when a knob is dragged on the plugin window.
-    DBG("ControllerParamWriter: notifying UI — deviceId=" << deviceId << " paramIndex="
-                                                          << resolved.paramIndex << " raw=" << raw);
     TrackManager::getInstance().setDeviceParameterValueFromPlugin(resolved.devicePath,
                                                                   resolved.paramIndex, raw);
+}
+
+void DefaultControllerParamWriter::writeDeviceMacro(const ResolvedTarget& resolved, float clamped) {
+    TrackManager::getInstance().setDeviceMacroValue(resolved.devicePath, resolved.paramIndex,
+                                                    clamped);
 }
 
 }  // namespace magda

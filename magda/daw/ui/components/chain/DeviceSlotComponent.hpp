@@ -29,6 +29,7 @@
 #include "core/AutomationManager.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
+#include "core/controllers/BindingRegistry.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -59,7 +60,8 @@ namespace magda::daw::ui {
 class DeviceSlotComponent : public NodeComponent,
                             public juce::Timer,
                             public magda::TrackManagerListener,
-                            public magda::AutomationManagerListener {
+                            public magda::AutomationManagerListener,
+                            public magda::BindingRegistryListener {
   public:
     static constexpr int BASE_SLOT_WIDTH = 450;  // Maximum width (8 columns)
     static constexpr int NUM_PARAMS_PER_PAGE = 32;
@@ -97,6 +99,7 @@ class DeviceSlotComponent : public NodeComponent,
 
   protected:
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
@@ -171,6 +174,19 @@ class DeviceSlotComponent : public NodeComponent,
     void modSelectionChanged(const magda::ModSelection& selection) override;
     void macroSelectionChanged(const magda::MacroSelection& selection) override;
     void paramSelectionChanged(const magda::ParamSelection& selection) override;
+    void chainNodeSelectionChanged(const magda::ChainNodePath& path) override {
+        NodeComponent::chainNodeSelectionChanged(path);  // preserve base setSelected()
+        refreshControllerIndicators();
+    }
+    void chainNodeReselected(const magda::ChainNodePath& path) override {
+        NodeComponent::chainNodeReselected(path);
+        refreshControllerIndicators();
+    }
+
+    // BindingRegistryListener
+    void bindingRegistryChanged(magda::BindingScope) override {
+        refreshControllerIndicators();
+    }
 
     // Mouse handling
     void mouseDown(const juce::MouseEvent& e) override;
@@ -250,6 +266,11 @@ class DeviceSlotComponent : public NodeComponent,
     daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
     std::array<int, 32> lastChordNotes_{};
     int lastChordCount_ = 0;
+
+    // Controller indicator state (repainted in paintOverChildren via NodeComponent)
+    bool hasPinnedBindings_ = false;   // Any PluginParam binding targets this device
+    bool hasAutomapBindings_ = false;  // Any DeviceMacro binding targets this device
+    void refreshControllerIndicators();
 
     void updateParamModulation();  // Update mod/macro pointers for params
     void updateParameterSlots();   // Reload parameter data for current page

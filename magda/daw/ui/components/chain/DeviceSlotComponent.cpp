@@ -40,6 +40,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // edits and playback without polling.
     magda::AutomationManager::getInstance().addListener(this);
 
+    // Register for binding registry changes (controller indicator dots)
+    magda::BindingRegistry::getInstance().addListener(this);
+
     // Custom name and font for drum grid (MPC-style with Microgramma)
     isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
     isChordEngine_ =
@@ -434,7 +437,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 return;
             self->updateParamModulation();
 
-            // Auto-expand macros panel and select the linked macro
+            // Auto-expand macros panel — but keep the device selected so the
+            // user stays in context. Previously we called selectMacro here,
+            // which replaced the chain-node selection with a macro-only one.
             if (target.isValid()) {
                 auto activeMacroSelection =
                     magda::LinkModeManager::getInstance().getMacroInLinkMode();
@@ -445,7 +450,6 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                         self->macroButton_->setActive(true);
                         self->setParamPanelVisible(true);
                     }
-                    magda::SelectionManager::getInstance().selectMacro(self->nodePath_, macroIndex);
                 }
             }
         };
@@ -472,7 +476,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                     self->macroButton_->setActive(true);
                     self->setParamPanelVisible(true);
                 }
-                magda::SelectionManager::getInstance().selectMacro(nodePath, macroIndex);
+                // Keep device selection — don't switch to macro selection.
             } else if (activeMacroSelection.isValid() &&
                        activeMacroSelection.parentPath.getType() == magda::ChainNodeType::Track) {
                 // Track-level macro
@@ -669,6 +673,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 DeviceSlotComponent::~DeviceSlotComponent() {
     magda::TrackManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
+    magda::BindingRegistry::getInstance().removeListener(this);
     stopTimer();
 }
 
@@ -948,6 +953,11 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
     // Now that nodePath_ is valid, update param slots with the device path
     updateParamModulation();
+
+    // Initial compute for the controller indicator dots — listeners only fire
+    // on change, so a slot built after the binding was added wouldn't otherwise
+    // pick up the current state.
+    refreshControllerIndicators();
 
     // Update chord engine UI with the now-valid trackId (createCustomUI runs before setNodePath)
     if (chordEngineUI_ && nodePath_.trackId != magda::INVALID_TRACK_ID) {
@@ -1252,6 +1262,45 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
         g.drawText("MDG2000", textStartX, textY, availableWidth, textHeight,
                    juce::Justification::centredLeft, false);
+    }
+}
+
+void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
+    // Call base class (bypass dim overlay + selection border)
+    NodeComponent::paintOverChildren(g);
+
+    if (!hasPinnedBindings_ && !hasAutomapBindings_)
+        return;
+
+    // Position: [Macro][Mod] [Name text][● dot(s)] ... [vol][on][x]
+    // The name label fills the middle of the header, but the text inside it
+    // is left-aligned and shorter — measure the rendered text width so the
+    // dots sit right next to the text, not at the end of the label area.
+    const auto& label = getNameLabel();
+    if (!label.isVisible())
+        return;
+
+    auto labelBounds = label.getBounds();
+    juce::GlyphArrangement glyphs;
+    glyphs.addLineOfText(label.getFont(), label.getText(), 0.0f, 0.0f);
+    float textWidth = glyphs.getBoundingBox(0, -1, true).getWidth();
+
+    constexpr float dotSize = 6.0f;
+    constexpr float gapAfterText = 12.0f;
+    constexpr float gapBetweenDots = 5.0f;
+
+    float x = static_cast<float>(labelBounds.getX()) + textWidth + gapAfterText;
+    float y = static_cast<float>(labelBounds.getCentreY()) - dotSize * 0.5f;
+
+    // Two dots side-by-side when both present: automap (green) then pinned (red).
+    if (hasAutomapBindings_) {
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.95f));
+        g.fillEllipse(x, y, dotSize, dotSize);
+        x += dotSize + gapBetweenDots;
+    }
+    if (hasPinnedBindings_) {
+        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.9f));
+        g.fillEllipse(x, y, dotSize, dotSize);
     }
 }
 
@@ -2086,6 +2135,21 @@ void DeviceSlotComponent::paramSelectionChanged(const magda::ParamSelection& sel
         bool isSelected =
             selection.isValid() && selection.devicePath == nodePath_ && selection.paramIndex == i;
         paramGrid_->setSlotSelected(i, isSelected);
+    }
+}
+
+// =============================================================================
+// Controller Indicators
+// =============================================================================
+
+void DeviceSlotComponent::refreshControllerIndicators() {
+    auto& reg = magda::BindingRegistry::getInstance();
+    bool pinned = reg.hasBindingForDevice(nodePath_, magda::StaticTarget::Owner::PluginParam);
+    bool automap = reg.hasBindingForDevice(nodePath_, magda::StaticTarget::Owner::DeviceMacro);
+    if (pinned != hasPinnedBindings_ || automap != hasAutomapBindings_) {
+        hasPinnedBindings_ = pinned;
+        hasAutomapBindings_ = automap;
+        repaint();
     }
 }
 
@@ -4032,7 +4096,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
                     self->macroButton_->setActive(true);
                     self->setParamPanelVisible(true);
                 }
-                magda::SelectionManager::getInstance().selectMacro(nodePath, macroIndex);
+                // Keep device selection — don't switch to macro selection.
             } else if (activeMacroSelection.isValid() &&
                        activeMacroSelection.parentPath.getType() == magda::ChainNodeType::Track) {
                 auto trackId = activeMacroSelection.parentPath.trackId;

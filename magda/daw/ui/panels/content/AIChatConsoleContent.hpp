@@ -1,9 +1,11 @@
 #pragma once
 
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "../../../../agents/llama_model_manager.hpp"
@@ -16,6 +18,7 @@
 namespace magda {
 class AutomationAgent;
 class CommandAgent;
+class ControllerProfileAgent;
 class DAWAgent;
 class MusicAgent;
 class RouterAgent;
@@ -114,7 +117,27 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<magda::CommandAgent> commandAgent_;
     std::unique_ptr<magda::MusicAgent> musicAgent_;
     std::unique_ptr<magda::AutomationAgent> automationAgent_;
+    std::unique_ptr<magda::ControllerProfileAgent> controllerAgent_;
     std::unique_ptr<RequestThread> requestThread_;
+
+    // Dedicated thread for the controller profile agent (kept separate from
+    // the main RequestThread so the two flows don't interfere).
+    class ControllerRequestThread : public juce::Thread {
+      public:
+        ControllerRequestThread(AIChatConsoleContent& owner, juce::String description,
+                                std::vector<std::string> livePortNames);
+        void run() override;
+
+      private:
+        AIChatConsoleContent& owner_;
+        juce::String description_;
+        std::vector<std::string> livePortNames_;
+    };
+    std::unique_ptr<ControllerRequestThread> controllerThread_;
+
+    void startControllerGeneration(const juce::String& description);
+    void finishControllerGeneration(bool success, const juce::String& errorOrRawJson,
+                                    juce::String profileId, juce::String profileName);
     std::atomic<bool> shouldStop_{false};
     std::atomic<bool> processing_{false};
     juce::String pendingMessage_;

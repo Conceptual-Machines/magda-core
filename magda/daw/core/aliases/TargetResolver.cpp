@@ -21,6 +21,7 @@ ResolvedTarget TargetResolver::resolve(const Target& target) const {
                 ResolvedTarget r;
                 r.devicePath = t.devicePath;
                 r.paramIndex = t.paramIndex;
+                r.owner = t.owner;
                 r.sourceLabel = "static";
                 r.resolved = true;
                 return r;
@@ -75,8 +76,13 @@ ResolvedTarget TargetResolver::resolve(const Target& target) const {
                 ResolvedTarget r;
                 r.devicePath = result->devicePath;
                 r.paramIndex = result->paramIndex;
+                r.owner = result->owner;
                 r.sourceLabel = "resolver:" + t.kind;
                 r.resolved = true;
+                DBG("[AUTOMAP] TargetResolver(ResolverRef): kind="
+                    << t.kind << " -> paramIndex=" << r.paramIndex << " owner="
+                    << (r.owner == StaticTarget::Owner::DeviceMacro ? "DeviceMacro"
+                                                                    : "PluginParam"));
                 return r;
             }
         },

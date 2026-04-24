@@ -2,6 +2,8 @@
 
 #include "BinaryData.h"
 #include "core/LinkModeManager.hpp"
+#include "core/SelectionManager.hpp"
+#include "core/controllers/BindingRegistry.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -47,10 +49,26 @@ MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex)
 
     // Register for link mode notifications
     magda::LinkModeManager::getInstance().addListener(this);
+
+    // Register for binding registry and selection changes (automap dot)
+    magda::BindingRegistry::getInstance().addListener(this);
+    magda::SelectionManager::getInstance().addListener(this);
 }
 
 MacroKnobComponent::~MacroKnobComponent() {
     magda::LinkModeManager::getInstance().removeListener(this);
+    magda::BindingRegistry::getInstance().removeListener(this);
+    magda::SelectionManager::getInstance().removeListener(this);
+}
+
+void MacroKnobComponent::refreshAutomapState() {
+    auto matches = magda::BindingRegistry::getInstance().findForTarget(
+        parentPath_, macroIndex_, magda::StaticTarget::Owner::DeviceMacro);
+    bool newState = !matches.empty();
+    if (newState != hasAutomap_) {
+        hasAutomap_ = newState;
+        repaint();
+    }
 }
 
 void MacroKnobComponent::setMacroInfo(const magda::MacroInfo& macro) {
@@ -58,6 +76,12 @@ void MacroKnobComponent::setMacroInfo(const magda::MacroInfo& macro) {
     nameLabel_.setText(macro.name, juce::dontSendNotification);
     valueSlider_.setValue(macro.value, juce::dontSendNotification);
     repaint();  // Update link indicator
+}
+
+void MacroKnobComponent::setValueOnly(float value) {
+    currentMacro_.value = value;
+    valueSlider_.setValue(value, juce::dontSendNotification);
+    repaint();  // paint() draws the arc from currentMacro_.value
 }
 
 void MacroKnobComponent::setAvailableTargets(
@@ -149,6 +173,17 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
 
     g.setColour(DarkTheme::getTextColour());
     g.drawLine(knobRect.getCentreX(), knobRect.getCentreY(), pointerX, pointerY, 1.5f);
+
+    // Automap dot: green badge at top-right corner when a controller binding targets this macro
+    if (hasAutomap_) {
+        constexpr float dotSize = 6.0f;
+        constexpr float margin = 3.0f;
+        auto r = getLocalBounds().toFloat();
+        juce::Rectangle<float> dot(r.getRight() - margin - dotSize, r.getY() + margin, dotSize,
+                                   dotSize);
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.9f));
+        g.fillEllipse(dot);
+    }
 }
 
 void MacroKnobComponent::resized() {

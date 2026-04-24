@@ -1,5 +1,6 @@
 #pragma once
 
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_core/juce_core.h>
 
 #include <memory>
@@ -52,6 +53,17 @@ class ControllerRegistry {
 
     /** Enable or disable a controller by id. No-op if not found. */
     void setEnabled(const ControllerId& id, bool enabled);
+
+    /**
+     * @brief Re-resolve stored inputPort identifiers against a live MIDI input list.
+     *
+     * For each controller whose inputPort is not in the live list, try to match its
+     * inputPortName against a live device display name and rewrite inputPort to the
+     * current identifier. Returns true if any controller was updated.
+     *
+     * Caller should persist (saveToConfig → Config::save) when this returns true.
+     */
+    bool rematchInputPorts(const juce::Array<juce::MidiDeviceInfo>& liveInputs);
 
     // ========================================================================
     // Queries (message-thread)

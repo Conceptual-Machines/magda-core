@@ -134,13 +134,6 @@ void ControllerRouter::onRawMidi(const juce::String& deviceId, const juce::Strin
     // Forward every MIDI message; dispatch decides whether a Learn session is
     // armed or a binding matches. ControllerRegistry is consulted only for
     // scripted-surface bindings; MIDI Learn bindings attach directly to a port.
-    if (msg.isController() || msg.isNoteOnOrOff() || msg.isPitchWheel()) {
-        const bool isController =
-            ControllerRegistry::getInstance().isControllerInputPort(deviceId, deviceName);
-        DBG("ControllerRouter: raw midi from '"
-            << deviceId << "' (name='" << deviceName
-            << "') isController=" << (isController ? "yes" : "no") << " " << msg.getDescription());
-    }
     onMidiFromControllerPort(deviceId, deviceName, msg);
 }
 
@@ -268,10 +261,6 @@ void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
             }
         }
     }
-
-    DBG("ControllerRouter: port='" << portId << "' name='" << portName << "' ch=" << channel
-                                   << " num=" << number << " raw=" << rawValue << " -> "
-                                   << bindings.size() << " binding(s) matched");
 
     for (const auto& binding : bindings) {
         // Always schedule with raw value; executeWrite handles all mode logic
