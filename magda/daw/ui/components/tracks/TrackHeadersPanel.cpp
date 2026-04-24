@@ -3455,15 +3455,28 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                     }
                 } else if (paramInfo.displayText) {
                     // displayText wraps TE's valueToString, which expects a
-                    // plugin-native value, NOT normalized [0,1]. Project the
-                    // sampled norm back onto the TE-native range (teMin..teMax)
-                    // so parameters whose raw range isn't 0..1 — e.g. 4OSC's
-                    // filterFreq on 0..135 — produce labels that actually span
-                    // the parameter rather than five collisions near the
-                    // bottom of the scale.
+                    // plugin-native value — NOT normalized [0,1]. Sample the
+                    // REAL value at each visual position so any scaleAnchor
+                    // skew is honoured (e.g. 4OSC's filterFreq pins A4 / 440
+                    // Hz to the visual centre), then project from info-range
+                    // onto the TE-native range so the provider sees what it
+                    // expects. For params whose raw range isn't 0..1 this
+                    // prevents the five-way collision (4OSC filterFreq's note
+                    // range 0..135.076 previously produced "8Hz" five times
+                    // from raw norm values); for anchored params it puts the
+                    // anchor value dead centre.
                     const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
+                    const float infoSpan = paramInfo.maxValue - paramInfo.minValue;
                     for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
-                        float teRaw = paramInfo.teMinValue + static_cast<float>(norm) * teSpan;
+                        float teRaw;
+                        if (infoSpan > 0.0f) {
+                            float real = ParameterUtils::normalizedToReal(static_cast<float>(norm),
+                                                                          paramInfo);
+                            float normInInfo = (real - paramInfo.minValue) / infoSpan;
+                            teRaw = paramInfo.teMinValue + normInInfo * teSpan;
+                        } else {
+                            teRaw = paramInfo.teMinValue + static_cast<float>(norm) * teSpan;
+                        }
                         auto text = paramInfo.displayText->format(teRaw);
                         gridValues.push_back(
                             {norm, text.isNotEmpty()

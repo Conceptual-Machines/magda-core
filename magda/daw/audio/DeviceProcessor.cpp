@@ -547,7 +547,18 @@ ParameterInfo FourOscProcessor::getParameterInfo(int index) const {
     auto params = plugin_->getAutomatableParameters();
     if (index < 0 || index >= params.size())
         return {};
-    ParameterInfo info = makeInfoFromTeParam(index, params[index]);
+    auto* param = params[index];
+    ParameterInfo info = makeInfoFromTeParam(index, param);
+
+    // filterFreq stores a MIDI note in 0..135.076 that TE turns into Hz via
+    // valueToString. The custom UI pins A4 (note 69, 440 Hz) to the visual
+    // centre with setSkewForCentre(69.0); mirror that on the shared
+    // ParameterInfo so the automation lane, generic slot slider, and curve
+    // playback all agree with the plugin UI's skew. Without this, visual
+    // centre lands on note 67.5 / ~404 Hz, which doesn't match what a user
+    // dragging the FREQ knob sees.
+    if (param && param->paramID == "filterFreq")
+        info.scaleAnchor = 69.0f;
 
     // 4OSC exposes raw values (note number for filter freq, 0..100 for
     // percentage-shaped params, etc.) and relies on TE's valueToString to
