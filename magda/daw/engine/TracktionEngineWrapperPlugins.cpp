@@ -88,6 +88,15 @@ void TracktionEngineWrapper::startPluginScan(
         pluginScanCoordinator_ = std::make_unique<PluginScanCoordinator>();
     }
 
+    // "Scan All Plugins" means really all of them — bust the exclusion
+    // cache so previously-failing plugins get another chance. A plugin
+    // that genuinely still crashes will be re-added to the list during
+    // this scan; a plugin that the user has fixed (un-quarantined,
+    // updated, installed a missing dependency) will succeed and stay.
+    // Without this step a plugin that ever fails once is excluded
+    // forever, even after the underlying problem is gone (#1005).
+    pluginScanCoordinator_->clearExclusions();
+
     // Start scanning using the out-of-process coordinator
     pluginScanCoordinator_->startScan(
         formatManager,
