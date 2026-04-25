@@ -183,6 +183,45 @@ bool isSourceControllerActive(const Binding& b) {
     return !c.has_value() || c->enabled;
 }
 
+// True when two binding sources would receive the same incoming MIDI event:
+// matching msgType + number, compatible channel (either side 0 = any), and
+// either a shared controllerId or a portKey match via magda::midi::matches.
+bool sourcesOverlap(const BindingSource& a, const BindingSource& b) {
+    if (a.msgType != b.msgType)
+        return false;
+    if (a.number != b.number)
+        return false;
+    if (a.channel != 0 && b.channel != 0 && a.channel != b.channel)
+        return false;
+
+    bool ctrlMatch = !a.controllerId.isNull() && a.controllerId == b.controllerId;
+    bool portMatch = a.portKey.isNotEmpty() && b.portKey.isNotEmpty() &&
+                     magda::midi::matches(a.portKey, b.portKey, b.portKey);
+    return ctrlMatch || portMatch;
+}
+
+bool isFocusedDeviceMacroResolver(const Target& t) {
+    if (auto* rr = std::get_if<ResolverRef>(&t))
+        return rr->kind == "focused_device_macro";
+    return false;
+}
+
+// True for explicit user mappings to a plugin parameter — i.e. anything that
+// represents a Learn or hand-edited binding rather than an automap profile
+// default. StaticTarget{PluginParam} is the obvious case; AliasRef is also
+// included because MidiLearnCoordinator prefers an alias target whenever a
+// canonical alias exists for the param (e.g. "4osc.filter_freq"), and aliases
+// always resolve to a plugin parameter in this codebase. ResolverRef bindings
+// (focused_device_macro and any future kinds) are profile-driven defaults and
+// do not count.
+bool isExplicitPluginParamTarget(const Target& t) {
+    if (auto* st = std::get_if<StaticTarget>(&t))
+        return st->owner == StaticTarget::Owner::PluginParam;
+    if (std::holds_alternative<AliasRef>(t))
+        return true;
+    return false;
+}
+
 }  // namespace
 
 bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
@@ -226,6 +265,95 @@ bool BindingRegistry::hasActiveBindingForTarget(const ChainNodePath& devicePath,
     };
 
     return check(globalBindings_) || check(projectBindings_);
+}
+
+bool BindingRegistry::isAutomapShadowedForMacro(const ChainNodePath& devicePath,
+                                                int macroIndex) const {
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+
+    // 1. Collect sources of focused-device-macro resolver bindings that
+    //    currently resolve to (devicePath, macroIndex, DeviceMacro).
+    std::vector<BindingSource> automapSources;
+    auto collect = [&](const std::vector<Binding>& vec) {
+        for (const auto& b : vec) {
+            if (!isFocusedDeviceMacroResolver(b.target))
+                continue;
+            if (!isSourceControllerActive(b))
+                continue;
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.devicePath == devicePath && resolved.paramIndex == macroIndex &&
+                resolved.owner == StaticTarget::Owner::DeviceMacro)
+                automapSources.push_back(b.source);
+        }
+    };
+    collect(globalBindings_);
+    collect(projectBindings_);
+    if (automapSources.empty())
+        return false;
+
+    // 2. Look for an active static PluginParam binding whose source overlaps.
+    auto hasOverride = [&](const std::vector<Binding>& vec) {
+        for (const auto& b : vec) {
+            if (!isExplicitPluginParamTarget(b.target))
+                continue;
+            if (!isSourceControllerActive(b))
+                continue;
+            for (const auto& s : automapSources)
+                if (sourcesOverlap(b.source, s))
+                    return true;
+        }
+        return false;
+    };
+    return hasOverride(globalBindings_) || hasOverride(projectBindings_);
+}
+
+bool BindingRegistry::isPluginParamOverridingMacro(const ChainNodePath& devicePath,
+                                                   int paramIndex) const {
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+
+    // 1. Collect sources of static PluginParam bindings that resolve to
+    //    (devicePath, paramIndex, PluginParam).
+    std::vector<BindingSource> staticSources;
+    auto collect = [&](const std::vector<Binding>& vec) {
+        for (const auto& b : vec) {
+            if (!isExplicitPluginParamTarget(b.target))
+                continue;
+            if (!isSourceControllerActive(b))
+                continue;
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
+                resolved.owner == StaticTarget::Owner::PluginParam)
+                staticSources.push_back(b.source);
+        }
+    };
+    collect(globalBindings_);
+    collect(projectBindings_);
+    if (staticSources.empty())
+        return false;
+
+    // 2. Look for an active focused-device-macro resolver binding with an
+    //    overlapping source. The resolver does not need to currently resolve —
+    //    its presence with a matching CC means the override is in effect for
+    //    whichever device is focused.
+    auto hasShadowed = [&](const std::vector<Binding>& vec) {
+        for (const auto& b : vec) {
+            if (!isFocusedDeviceMacroResolver(b.target))
+                continue;
+            if (!isSourceControllerActive(b))
+                continue;
+            for (const auto& s : staticSources)
+                if (sourcesOverlap(b.source, s))
+                    return true;
+        }
+        return false;
+    };
+    return hasShadowed(globalBindings_) || hasShadowed(projectBindings_);
 }
 
 int BindingRegistry::removeForTarget(const ChainNodePath& devicePath, int paramIndex,

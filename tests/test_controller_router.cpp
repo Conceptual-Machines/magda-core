@@ -251,3 +251,101 @@ TEST_CASE("ControllerRouter - Toggle rising edge fires only once", "[controllers
     REQUIRE(fix.writer->writes.size() > beforeRearm);
     REQUIRE(fix.writer->writes.back().value == Approx(0.0f));
 }
+
+TEST_CASE("ControllerRouter - static PluginParam shadows focused-device-macro resolver on same CC",
+          "[controllers][router]") {
+    RouterFixture fix;
+
+    auto c = makeController("test_port_shadow");
+    ControllerRegistry::getInstance().add(c);
+
+    // Focus a device so the focused_device_macro resolver actually resolves.
+    auto devicePath = ChainNodePath::topLevelDevice(1, 10);
+    SelectionManager::getInstance().selectChainNode(devicePath);
+
+    // Profile-style binding: CC 21 -> @focused.macro_0 (macro target)
+    Binding bMacro = makeBinding(c.id, BindingMsgType::CC, 1, 21);
+    ResolverRef rr;
+    rr.kind = "focused_device_macro";
+    rr.args.set("macroIndex", "0");
+    bMacro.target = Target{rr};
+    BindingRegistry::getInstance().add(BindingScope::Project, bMacro);
+
+    // Learn-style binding: CC 21 -> static PluginParam on the same controller
+    Binding bParam = makeBinding(c.id, BindingMsgType::CC, 1, 21);
+    StaticTarget st;
+    st.devicePath = devicePath;
+    st.paramIndex = 5;
+    st.owner = StaticTarget::Owner::PluginParam;
+    bParam.target = Target{st};
+    BindingRegistry::getInstance().add(BindingScope::Project, bParam);
+
+    auto msg = juce::MidiMessage::controllerEvent(1, 21, 100);
+    ControllerRouter::getInstance().injectMessageForTest("test_port_shadow", msg);
+    pumpMessages();
+
+    // Only the static PluginParam binding should fire.
+    REQUIRE(fix.writer->writes.size() == 1);
+    REQUIRE(fix.writer->writes[0].target.owner == StaticTarget::Owner::PluginParam);
+    REQUIRE(fix.writer->writes[0].target.paramIndex == 5);
+
+    SelectionManager::getInstance().clearChainNodeSelection();
+}
+
+TEST_CASE("BindingRegistry - shadow + override queries flag both sides of conflict",
+          "[controllers][binding_registry]") {
+    // Reset registry state so this test is self-contained alongside the router fixtures.
+    {
+        auto& cr = ControllerRegistry::getInstance();
+        for (const auto& c : cr.all())
+            cr.remove(c.id);
+        auto& br = BindingRegistry::getInstance();
+        for (const auto& b : br.bindings(BindingScope::Global))
+            br.remove(BindingScope::Global, b.id);
+        br.clearProject();
+    }
+
+    auto c = makeController("test_port_override");
+    ControllerRegistry::getInstance().add(c);
+
+    auto devicePath = ChainNodePath::topLevelDevice(1, 10);
+    SelectionManager::getInstance().selectTrack(1);
+    SelectionManager::getInstance().selectChainNode(devicePath);
+
+    auto& reg = BindingRegistry::getInstance();
+
+    // Profile binding: CC 21 -> @focused.macro_0
+    Binding bMacro = makeBinding(c.id, BindingMsgType::CC, 1, 21);
+    ResolverRef rr;
+    rr.kind = "focused_device_macro";
+    rr.args.set("macroIndex", "0");
+    bMacro.target = Target{rr};
+    reg.add(BindingScope::Project, bMacro);
+
+    // No conflict yet.
+    REQUIRE_FALSE(reg.isAutomapShadowedForMacro(devicePath, 0));
+    REQUIRE_FALSE(reg.isPluginParamOverridingMacro(devicePath, 5));
+
+    // Add the Learn override: CC 21 -> static PluginParam on the same controller.
+    Binding bParam = makeBinding(c.id, BindingMsgType::CC, 1, 21);
+    StaticTarget st;
+    st.devicePath = devicePath;
+    st.paramIndex = 5;
+    st.owner = StaticTarget::Owner::PluginParam;
+    bParam.target = Target{st};
+    reg.add(BindingScope::Project, bParam);
+
+    REQUIRE(reg.isAutomapShadowedForMacro(devicePath, 0));
+    REQUIRE(reg.isPluginParamOverridingMacro(devicePath, 5));
+
+    // Unrelated macroIndex is unaffected.
+    REQUIRE_FALSE(reg.isAutomapShadowedForMacro(devicePath, 1));
+    REQUIRE_FALSE(reg.isPluginParamOverridingMacro(devicePath, 6));
+
+    // Removing the Learn override clears both flags.
+    reg.remove(BindingScope::Project, bParam.id);
+    REQUIRE_FALSE(reg.isAutomapShadowedForMacro(devicePath, 0));
+    REQUIRE_FALSE(reg.isPluginParamOverridingMacro(devicePath, 5));
+
+    SelectionManager::getInstance().clearChainNodeSelection();
+}
