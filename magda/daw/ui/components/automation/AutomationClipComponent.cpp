@@ -1,6 +1,7 @@
 #include "AutomationClipComponent.hpp"
 
 #include "AutomationLaneComponent.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda {
 
@@ -52,7 +53,7 @@ void AutomationClipComponent::paint(juce::Graphics& g) {
 
     // Draw clip name
     g.setColour(juce::Colour(0xFFFFFFFF));
-    g.setFont(10.0f);
+    g.setFont(FontManager::getInstance().getUIFont(10.0f));
     auto textBounds = bounds.reduced(4).removeFromTop(14);
     g.drawText(clip->name, textBounds, juce::Justification::centredLeft, true);
 

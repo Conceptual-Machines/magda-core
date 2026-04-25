@@ -17,6 +17,7 @@
 #include "core/MacroInfo.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/ModInfo.hpp"
+#include "core/ParameterUtils.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -898,21 +899,32 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
         return;
 
     // Convert the lane's MAGDA-normalized [0,1] back to the plugin's NATIVE
-    // range (what te::AutomatableParameter actually stores). For external
-    // VSTs this is always [0,1] regardless of any AI-Detect display range,
-    // so we must NOT go through normalizedToReal here — doing so writes the
-    // display-range value (e.g. -2.49 semitones) into currentValue, which
-    // fights ExternalPluginProcessor::propagateParameterChange — that
-    // listener fires off the same TE param write and stores the native
-    // 0..1 value. The two writers alternate and the slot flickers.
+    // range (what te::AutomatableParameter actually stores).
     //
-    // Using info.teMinValue/teMaxValue (captured once at makeInfoFromTeParam
-    // time, before any AI-Detect override) lets us compute the native value
-    // without a live plugin lookup — the hot-loop-hang trap noted in the
-    // handoff.
+    // When info.min/max match the TE-native range (internal plugins; external
+    // VSTs before any AI-Detect override) go through normalizedToReal so log
+    // scales and scaleAnchors are honoured — the audio path
+    // (AutomationPlaybackEngine) and record path do the same, and anything
+    // less makes the cached currentValue drift from what TE actually stores
+    // (e.g. 4OSC filterFreq with scaleAnchor=69 picks note 69 / 440 Hz at
+    // norm 0.5, not the linear midpoint note 67.5 / 404 Hz).
+    //
+    // When info min/max differ from TE range (external VST with an AI-Detect
+    // display range) fall back to a linear mapping onto the native TE range.
+    // normalizedToReal would return a display-range value (e.g. -2.49 st) and
+    // fight ExternalPluginProcessor::propagateParameterChange, which writes
+    // the native 0..1 via its listener — the two writers alternate and the
+    // slot flickers. teMin/teMax were captured at makeInfoFromTeParam time
+    // (before any AI-Detect override) so this projection is safe without a
+    // live plugin lookup.
     const auto& info = device_.parameters[static_cast<size_t>(paramIndex)];
     const float teSpan = info.teMaxValue - info.teMinValue;
-    const float teRaw = info.teMinValue + static_cast<float>(normalizedValue) * teSpan;
+    const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
+                                    std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
+    const float teRaw =
+        (infoMatchesTeRange && info.maxValue > info.minValue)
+            ? magda::ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), info)
+            : info.teMinValue + static_cast<float>(normalizedValue) * teSpan;
 
     // Keep the cached value in sync so any non-automation refresh path (and
     // any custom UI that reads currentValue directly, e.g. FourOscUI) sees
@@ -3270,21 +3282,16 @@ void DeviceSlotComponent::refreshCustomUIParameterValues() {
 
 void DeviceSlotComponent::updateCustomUI() {
     if (toneGeneratorUI_ && device_.pluginId.containsIgnoreCase("tone")) {
-        // Extract parameters from device (stored as actual values)
         float frequency = 440.0f;
         float level = -12.0f;
         int waveform = 0;
 
-        // Read from device parameters if available
-        if (device_.parameters.size() >= 3) {
-            // Param 0: Frequency (actual Hz)
-            frequency = device_.parameters[0].currentValue;
-
-            // Param 1: Level (actual dB)
-            level = device_.parameters[1].currentValue;
-
-            // Param 2: Waveform (actual choice index: 0 or 1)
-            waveform = static_cast<int>(device_.parameters[2].currentValue);
+        // ToneGeneratorProcessor exposes params in TE order:
+        // 0=oscType (TE enum 0-5), 1=bandLimit, 2=frequency (Hz), 3=level (dB).
+        if (device_.parameters.size() >= 4) {
+            waveform = static_cast<int>(device_.parameters[0].currentValue);
+            frequency = device_.parameters[2].currentValue;
+            level = device_.parameters[3].currentValue;
         }
 
         toneGeneratorUI_->updateParameters(frequency, level, waveform);

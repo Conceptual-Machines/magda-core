@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 
+#include "core/ParameterUtils.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
@@ -14,22 +15,36 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
     // DisplayTextProvider::format is a thin wrapper around TE's
     // valueToString, so the argument MUST be a plugin-native (TE raw)
     // value. The generic slot slider operates in MAGDA-normalized 0..1
-    // space, so we project back to the TE range (info.teMinValue /
-    // teMaxValue, captured at makeInfoFromTeParam time and preserved
-    // across AI-Detect overrides). For external VSTs TE range is
-    // [0,1] and this is a no-op; for 4OSC the filterFreq range is
-    // [0,135] so 0.5 → 67.5 → "440 Hz".
+    // space; project back to the TE range, honouring any scaleAnchor /
+    // log skew when info.min/max match the TE range (internal plugins
+    // and VSTs without AI-Detect). For external VSTs with an AI-Detect
+    // display range the info differs from TE, in which case
+    // normalizedToReal would return a display-range value — fall back
+    // to a linear projection onto TE there so the provider still sees
+    // the native value. This mirrors
+    // AutomationPlaybackEngine::convertMagdaNormalizedToTeRaw and
+    // DeviceSlotComponent::automationValueChanged.
     if (info.displayText) {
         auto provider = info.displayText;
+        const magda::ParameterInfo infoCopy = info;
         const float teMin = info.teMinValue;
         const float teSpan = info.teMaxValue - info.teMinValue;
-        slider.setValueFormatter([provider, teMin, teSpan](double normalized) {
-            const float teRaw = teMin + static_cast<float>(normalized) * teSpan;
-            return provider->format(teRaw);
+        const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
+                                        std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
+        auto projectToTe = [provider, infoCopy, teMin, teSpan,
+                            infoMatchesTeRange](double normalized) -> float {
+            if (infoMatchesTeRange && infoCopy.maxValue > infoCopy.minValue) {
+                return magda::ParameterUtils::normalizedToReal(static_cast<float>(normalized),
+                                                               infoCopy);
+            }
+            return teMin + static_cast<float>(normalized) * teSpan;
+        };
+        slider.setValueFormatter([provider, projectToTe](double normalized) {
+            return provider->format(projectToTe(normalized));
         });
         // Reverse-lookup parser: strip unit suffix, parse number, find closest
         // normalized value by querying the plugin at sample points.
-        slider.setValueParser([provider, teMin, teSpan](const juce::String& text) -> double {
+        slider.setValueParser([provider, projectToTe](const juce::String& text) -> double {
             auto stripped = text.trim().retainCharacters("0123456789.-+eE");
             double target = stripped.getDoubleValue();
             int bestIdx = 0;
@@ -37,7 +52,7 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
             constexpr int kSteps = 128;
             for (int i = 0; i <= kSteps; ++i) {
                 float norm = static_cast<float>(i) / kSteps;
-                float teRaw = teMin + norm * teSpan;
+                float teRaw = projectToTe(static_cast<double>(norm));
                 auto numPart = provider->format(teRaw).trim().retainCharacters("0123456789.-+eE");
                 if (numPart.isEmpty())
                     continue;

@@ -25,14 +25,15 @@ class ToneGeneratorUI : public juce::Component {
      * @brief Update UI from device parameters
      * @param frequency Frequency in Hz (20-20000)
      * @param level Level in dB (-60 to 0)
-     * @param waveform Waveform type (0=Sine, 1=Noise)
+     * @param waveform TE oscType enum (0=Sine, 1=Triangle, 2=Saw Up, 3=Saw Down, 4=Square, 5=Noise)
      */
     void updateParameters(float frequency, float level, int waveform);
 
     /**
      * @brief Callback when a parameter changes (paramIndex, actualValue)
-     * ParamIndex: 0=frequency, 1=level, 2=waveform
-     * Values are in real units (Hz, dB, choice index)
+     * ParamIndex matches TE's ToneGeneratorPlugin ordering:
+     *   0=oscType (TE enum 0-5), 2=frequency (Hz), 3=level (dB)
+     * bandLimit (index 1) is not exposed in this UI.
      */
     std::function<void(int paramIndex, float actualValue)> onParameterChanged;
 
@@ -51,9 +52,6 @@ class ToneGeneratorUI : public juce::Component {
 
     // Level slider (-60 to 0 dB)
     LinkableTextSlider levelSlider_{TextSlider::Format::Decibels};
-
-    // Convert frequency to display string (for formatter)
-    juce::String formatFrequency(float hz) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ToneGeneratorUI)
 };

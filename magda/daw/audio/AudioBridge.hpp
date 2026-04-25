@@ -384,6 +384,27 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     void syncTrackPlugins(TrackId trackId);
 
+    /**
+     * @brief Push TrackInfo::recordArmed onto TE's InputDeviceInstance destinations.
+     *
+     * Called from trackPropertyChanged (arm toggle) and from tracksChanged
+     * (post-load, add/remove/reorder). Post-load is the critical path: a
+     * project saved with recordArmed=true restores TrackInfo with the flag
+     * already true, so trackPropertyChanged doesn't fire — and without this
+     * call TE's destinations stay at recordEnabled=N, silently swallowing
+     * record attempts.
+     */
+    void syncRecordArmedToTE(TrackId trackId);
+
+    /**
+     * @brief Sync every armed track to TE.
+     *
+     * Belt-and-braces companion to syncRecordArmedToTE — called right before
+     * transport.record() to guarantee destinations are current regardless of
+     * when the playback context became available during project load.
+     */
+    void syncAllArmedTracksToTE();
+
     // =========================================================================
     // Audio Callback Support
     // =========================================================================
