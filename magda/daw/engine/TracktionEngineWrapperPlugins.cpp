@@ -375,61 +375,65 @@ void TracktionEngineWrapper::detectNewPlugins(
             return;
 
         juce::WeakReference<TracktionEngineWrapper> weakThis(this);
-        juce::MessageManager::callAsync(
-            [weakThis, alive, newPlugins = std::move(newPlugins), statusCallback]() mutable {
-                auto* self = weakThis.get();
-                if (!self || !*alive || !self->engine_)
-                    return;
+        juce::MessageManager::callAsync([weakThis, alive, newPlugins = std::move(newPlugins),
+                                         statusCallback]() mutable {
+            auto* self = weakThis.get();
+            if (!self || !*alive || !self->engine_)
+                return;
 
-                auto& pm = self->engine_->getPluginManager();
-                auto& kp = pm.knownPluginList;
-                auto& fm = pm.pluginFormatManager;
+            auto& pm = self->engine_->getPluginManager();
+            auto& kp = pm.knownPluginList;
+            auto& fm = pm.pluginFormatManager;
 
-                if (newPlugins.empty()) {
-                    auto msg = "Plugins up to date (" + juce::String(kp.getNumTypes()) + " loaded)";
-                    juce::Logger::writeToLog("[AutoDetect] " + msg);
-                    if (statusCallback)
-                        statusCallback(msg);
-                    return;
-                }
-
-                auto msg = "Scanning " + juce::String(static_cast<int>(newPlugins.size())) +
-                           " new plugin(s)...";
+            if (newPlugins.empty()) {
+                auto msg = "Plugins up to date (" + juce::String(kp.getNumTypes()) + " loaded)";
                 juce::Logger::writeToLog("[AutoDetect] " + msg);
                 if (statusCallback)
                     statusCallback(msg);
+                if (self->onPluginScanComplete)
+                    self->onPluginScanComplete(true, kp.getNumTypes(), {});
+                return;
+            }
 
-                self->isScanning_ = true;
+            auto msg = "Scanning " + juce::String(static_cast<int>(newPlugins.size())) +
+                       " new plugin(s)...";
+            juce::Logger::writeToLog("[AutoDetect] " + msg);
+            if (statusCallback)
+                statusCallback(msg);
 
-                self->pluginScanCoordinator_->startIncrementalScan(
-                    fm, newPlugins,
-                    [statusCallback](float, const juce::String& currentPlugin) {
-                        if (statusCallback) {
-                            auto name = juce::File(currentPlugin).getFileNameWithoutExtension();
-                            statusCallback("Scanning: " + name + "...");
-                        }
-                    },
-                    [weakThis, alive](bool /*success*/,
-                                      const juce::Array<juce::PluginDescription>& plugins,
-                                      const juce::StringArray& failedPlugins) {
-                        auto* s = weakThis.get();
-                        if (!s || !*alive || !s->engine_)
-                            return;
-                        auto& kpl = s->engine_->getPluginManager().knownPluginList;
-                        for (const auto& desc : plugins)
-                            kpl.addType(desc);
+            self->isScanning_ = true;
 
-                        auto msg = "[AutoDetect] Incremental scan complete: " +
-                                   juce::String(plugins.size()) + " new plugin(s) added" +
-                                   (failedPlugins.size() > 0
-                                        ? ", " + juce::String(failedPlugins.size()) + " failed"
-                                        : "");
-                        DBG(msg);
-                        juce::Logger::writeToLog(msg);
-                        s->savePluginList();
-                        s->isScanning_ = false;
-                    });
-            });
+            self->pluginScanCoordinator_->startIncrementalScan(
+                fm, newPlugins,
+                [statusCallback](float, const juce::String& currentPlugin) {
+                    if (statusCallback) {
+                        auto name = juce::File(currentPlugin).getFileNameWithoutExtension();
+                        statusCallback("Scanning: " + name + "...");
+                    }
+                },
+                [weakThis, alive](bool success, const juce::Array<juce::PluginDescription>& plugins,
+                                  const juce::StringArray& failedPlugins) {
+                    auto* s = weakThis.get();
+                    if (!s || !*alive || !s->engine_)
+                        return;
+                    auto& kpl = s->engine_->getPluginManager().knownPluginList;
+                    for (const auto& desc : plugins)
+                        kpl.addType(desc);
+
+                    auto msg =
+                        "[AutoDetect] Incremental scan complete: " + juce::String(plugins.size()) +
+                        " new plugin(s) added" +
+                        (failedPlugins.size() > 0
+                             ? ", " + juce::String(failedPlugins.size()) + " failed"
+                             : "");
+                    DBG(msg);
+                    juce::Logger::writeToLog(msg);
+                    s->savePluginList();
+                    s->isScanning_ = false;
+                    if (s->onPluginScanComplete)
+                        s->onPluginScanComplete(success, kpl.getNumTypes(), failedPlugins);
+                });
+        });
     });
 }
 
