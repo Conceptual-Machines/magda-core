@@ -52,13 +52,25 @@ AutomationPlaybackEngine::~AutomationPlaybackEngine() {
 
     // Detach from every TE parameter we were listening on — otherwise the
     // parameter keeps a dangling pointer and will crash on the next value
-    // change notification.
+    // change notification. Done first so the curve clears below don't
+    // trigger callbacks back at us.
     for (auto& [param, info] : listenedParams_) {
         juce::ignoreUnused(info);
         if (param != nullptr)
             param->removeListener(this);
     }
     listenedParams_.clear();
+
+    // Clear all baked curves while the Edit is still alive. If we don't,
+    // MacroParameters and Modifier AutomatableParameters get destroyed with
+    // a populated curve → their AutomationCurveSource holds a live
+    // ScopedActiveParameter → its destructor decrements
+    // automatableEditElement.numActiveParameters which can have already
+    // been zeroed during teardown (TE's per-edit-element bookkeeping
+    // interleaves with macro/mod parameter destruction order). Plugin
+    // params don't hit this because their AutomatableEditElement (the
+    // plugin) lives at least as long as the parameter's TE objects.
+    clearAllLanes();
 }
 
 void AutomationPlaybackEngine::process() {
@@ -643,6 +655,30 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
             float gain = std::pow(10.0f, real / 20.0f);
             trackMgr.setSendLevel(target.trackId, target.sendBusIndex, gain,
                                   /*fromAutomation=*/true);
+        }
+    } else if (target.type == AutomationTargetType::Macro) {
+        // Mirror the curve value back into MacroInfo.value so the knob UI
+        // (which reads from TrackManager) follows the curve. AudioBridge
+        // gates the re-push to TE on AutomationWriteScope so we don't fight
+        // the curve TE just evaluated.
+        auto& trackMgr = TrackManager::getInstance();
+        AutomationManager::AutomationWriteScope writeScope;
+        const float value = static_cast<float>(normalized);
+        if (target.devicePath.isValid()) {
+            switch (target.devicePath.getType()) {
+                case ChainNodeType::Rack:
+                    trackMgr.setRackMacroValue(target.devicePath, target.macroIndex, value);
+                    break;
+                case ChainNodeType::TopLevelDevice:
+                case ChainNodeType::Device:
+                    trackMgr.setDeviceMacroValue(target.devicePath, target.macroIndex, value);
+                    break;
+                default:
+                    trackMgr.setTrackMacroValue(target.trackId, target.macroIndex, value);
+                    break;
+            }
+        } else {
+            trackMgr.setTrackMacroValue(target.trackId, target.macroIndex, value);
         }
     }
 }

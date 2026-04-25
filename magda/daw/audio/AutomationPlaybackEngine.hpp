@@ -68,11 +68,17 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
     void curveHasChanged(te::AutomatableParameter&) override {}
     void currentValueChanged(te::AutomatableParameter&) override;
 
+    // Clear every baked TE curve. Public so AudioBridge can call it during
+    // its own destructor BEFORE pluginManager_.clearAllMappings() — once the
+    // PluginManager state is gone, target resolution returns nullptr and
+    // macro/mod curves can't be cleared, leaving them populated when the
+    // Edit tears down (which trips a TE assert in MacroParameter teardown).
+    void clearAllLanes();
+
   private:
     static constexpr double kBakeIntervalSeconds = 0.01;  // 10ms between baked points
 
     void bakeAllLanes();
-    void clearAllLanes();
 
     void bakeLane(const AutomationLaneInfo& lane);
     void clearLane(const AutomationLaneInfo& lane);

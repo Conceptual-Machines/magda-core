@@ -57,7 +57,8 @@ class MacroKnobComponent : public juce::Component,
     // Set parent path for drag-and-drop identification
     void setParentPath(const magda::ChainNodePath& path) {
         parentPath_ = path;
-        refreshAutomapState();  // compute initial dot visibility now that path is known
+        refreshAutomapState();     // compute initial dot visibility now that path is known
+        updateAutomationTarget();  // wire valueSlider_ to AutomationManager for the highlight
     }
     const magda::ChainNodePath& getParentPath() const {
         return parentPath_;
@@ -115,6 +116,7 @@ class MacroKnobComponent : public juce::Component,
     }
 
     void refreshAutomapState();
+    void updateAutomationTarget();
 
     void showLinkMenu();
     void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);

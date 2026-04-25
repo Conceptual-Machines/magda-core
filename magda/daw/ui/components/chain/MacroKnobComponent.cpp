@@ -1,6 +1,7 @@
 #include "MacroKnobComponent.hpp"
 
 #include "BinaryData.h"
+#include "core/AutomationInfo.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
@@ -61,6 +62,24 @@ MacroKnobComponent::~MacroKnobComponent() {
     magda::BindingRegistry::getInstance().removeListener(this);
     magda::ControllerRegistry::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
+}
+
+void MacroKnobComponent::updateAutomationTarget() {
+    // Build the AutomationTarget for this macro so TextSlider can listen to
+    // AutomationManager and paint the standard purple highlight when a lane
+    // exists. Mirrors the way plugin-param sliders register themselves.
+    if (parentPath_.trackId == magda::INVALID_TRACK_ID || macroIndex_ < 0) {
+        valueSlider_.clearAutomationTarget();
+        return;
+    }
+
+    magda::AutomationTarget target;
+    target.type = magda::AutomationTargetType::Macro;
+    target.trackId = parentPath_.trackId;
+    target.devicePath = parentPath_;
+    target.macroIndex = macroIndex_;
+    target.paramName = currentMacro_.name;
+    valueSlider_.setAutomationTarget(target);
 }
 
 void MacroKnobComponent::refreshAutomapState() {

@@ -133,6 +133,13 @@ AudioBridge::~AudioBridge() {
             }
         });
 
+        // Clear baked automation curves BEFORE PluginManager mappings are
+        // wiped. Once mappings are gone, target resolution can't find any
+        // macro/mod parameter, so the curves would stay populated and trip
+        // a TE assert when MacroParameters / Modifiers destruct in Edit
+        // teardown.
+        automationPlayback_.clearAllLanes();
+
         // Clear all mappings - safe now as timer is stopped and lock is held
         trackController_.clearAllMappings();
         pluginManager_.clearAllMappings();
@@ -454,7 +461,12 @@ void AudioBridge::audioSidechainTriggered(TrackId /*sourceTrackId*/) {
 
 void AudioBridge::macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
                                     float value) {
-    pluginManager_.setMacroValue(trackId, isRack, id, macroIndex, value);
+    // Skip the TE writeback when this notify is the playback engine echoing
+    // a baked curve value back into MAGDA state — TE already drove the
+    // MacroParameter on the audio thread, re-pushing fights its own curve.
+    // Manual user edits (no AutomationWriteScope) still flow through.
+    if (!AutomationManager::getInstance().isApplyingAutomationWrite())
+        pluginManager_.setMacroValue(trackId, isRack, id, macroIndex, value);
     automationRecording_.onMacroValueChanged(trackId, isRack, id, macroIndex, value);
 }
 
