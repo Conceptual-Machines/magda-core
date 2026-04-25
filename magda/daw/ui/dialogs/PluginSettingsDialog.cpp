@@ -269,49 +269,77 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
 
         auto safeThis = juce::Component::SafePointer<PluginSettingsDialog>(this);
 
-        engine_->onPluginScanComplete = [safeThis](bool success, int numPlugins,
-                                                   const juce::StringArray& failedPlugins) {
-            juce::MessageManager::callAsync([safeThis, success, numPlugins, failedPlugins]() {
-                if (safeThis == nullptr)
-                    return;
-                safeThis->setScanningUIEnabled(true);
-                safeThis->scanProgress_ = -1.0;
-                safeThis->scanProgressBar_.setVisible(false);
-                if (!success) {
-                    juce::String message = tr("plugin_settings.status.failed");
-                    if (failedPlugins.size() > 0)
-                        message += ", " + juce::String(failedPlugins.size()) + " " +
-                                   tr("plugin_settings.status.plugins_failed");
-                    safeThis->scanStatusLabel_.setText(message, juce::dontSendNotification);
-                } else {
-                    safeThis->scanStatusLabel_.setText(
-                        tr("plugin_settings.status.found") + " " + juce::String(numPlugins) + " " +
-                            tr("plugin_settings.status.plugins") +
-                            (failedPlugins.size() > 0
-                                 ? ", " + juce::String(failedPlugins.size()) + " " +
-                                       tr("plugin_settings.status.failed_short")
-                                 : ""),
-                        juce::dontSendNotification);
-                }
-                safeThis->updatePluginCountLabel();
+        engine_->detectNewPlugins(
+            [safeThis](TracktionEngineWrapper::IncrementalScanPhase phase,
+                       const juce::String& currentPlugin) {
+                juce::MessageManager::callAsync([safeThis, phase, currentPlugin]() {
+                    if (safeThis == nullptr)
+                        return;
+                    using Phase = TracktionEngineWrapper::IncrementalScanPhase;
+                    switch (phase) {
+                        case Phase::Discovering:
+                            safeThis->scanStatusLabel_.setText(
+                                tr("plugin_settings.status.checking_new"),
+                                juce::dontSendNotification);
+                            break;
+                        case Phase::UpToDate:
+                            // Final message for the no-new-plugins path; the
+                            // completion callback runs right after but keeps
+                            // this text rather than overwriting it.
+                            safeThis->scanStatusLabel_.setText(
+                                tr("plugin_settings.status.up_to_date"),
+                                juce::dontSendNotification);
+                            break;
+                        case Phase::Scanning:
+                            safeThis->scanStatusLabel_.setText(
+                                tr("plugin_settings.status.scanning") + " " +
+                                    juce::File(currentPlugin).getFileName(),
+                                juce::dontSendNotification);
+                            break;
+                    }
+                });
+            },
+            [safeThis](bool success, int addedCount, int totalCount,
+                       const juce::StringArray& failedPlugins) {
+                juce::MessageManager::callAsync([safeThis, success, addedCount, totalCount,
+                                                 failedPlugins]() {
+                    if (safeThis == nullptr)
+                        return;
+                    safeThis->setScanningUIEnabled(true);
+                    safeThis->scanProgress_ = -1.0;
+                    safeThis->scanProgressBar_.setVisible(false);
 
-                if (safeThis->engine_) {
-                    auto* coordinator = safeThis->engine_->getPluginScanCoordinator();
-                    if (coordinator)
-                        safeThis->excludedPlugins_ = coordinator->getExcludedPlugins();
-                    safeThis->excludedTable_.updateContent();
-                    safeThis->excludedTable_.repaint();
-                }
-            });
-        };
+                    if (!success) {
+                        juce::String message = tr("plugin_settings.status.failed");
+                        if (failedPlugins.size() > 0)
+                            message += ", " + juce::String(failedPlugins.size()) + " " +
+                                       tr("plugin_settings.status.plugins_failed");
+                        safeThis->scanStatusLabel_.setText(message, juce::dontSendNotification);
+                    } else if (addedCount > 0) {
+                        safeThis->scanStatusLabel_.setText(
+                            tr("plugin_settings.status.added") + " " + juce::String(addedCount) +
+                                " " + tr("plugin_settings.status.new_plugins") +
+                                (failedPlugins.size() > 0
+                                     ? ", " + juce::String(failedPlugins.size()) + " " +
+                                           tr("plugin_settings.status.failed_short")
+                                     : ""),
+                            juce::dontSendNotification);
+                    }
+                    // addedCount == 0 → leave the "Plugins up to date"
+                    // message that the status callback already set.
 
-        engine_->detectNewPlugins([safeThis](const juce::String& status) {
-            juce::MessageManager::callAsync([safeThis, status]() {
-                if (safeThis == nullptr)
-                    return;
-                safeThis->scanStatusLabel_.setText(status, juce::dontSendNotification);
+                    juce::ignoreUnused(totalCount);
+                    safeThis->updatePluginCountLabel();
+
+                    if (safeThis->engine_) {
+                        auto* coordinator = safeThis->engine_->getPluginScanCoordinator();
+                        if (coordinator)
+                            safeThis->excludedPlugins_ = coordinator->getExcludedPlugins();
+                        safeThis->excludedTable_.updateContent();
+                        safeThis->excludedTable_.repaint();
+                    }
+                });
             });
-        });
     };
     addAndMakeVisible(scanNewButton_);
 

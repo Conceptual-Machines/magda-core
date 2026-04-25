@@ -328,7 +328,8 @@ void TracktionEngineWrapper::clearPluginList() {
 }
 
 void TracktionEngineWrapper::detectNewPlugins(
-    std::function<void(const juce::String&)> statusCallback) {
+    std::function<void(IncrementalScanPhase, const juce::String&)> statusCallback,
+    std::function<void(bool, int, int, const juce::StringArray&)> completionCallback) {
     if (!engine_) {
         DBG("[AutoDetect] Engine not initialized");
         return;
@@ -336,7 +337,7 @@ void TracktionEngineWrapper::detectNewPlugins(
 
     juce::Logger::writeToLog("[AutoDetect] Checking for new plugins...");
     if (statusCallback)
-        statusCallback("Checking for new plugins...");
+        statusCallback(IncrementalScanPhase::Discovering, {});
 
     // Snapshot all data needed by the background thread while on the message thread
     auto& pluginManager = engine_->getPluginManager();
@@ -365,7 +366,7 @@ void TracktionEngineWrapper::detectNewPlugins(
         pluginDiscoveryThread_.join();
 
     pluginDiscoveryThread_ = std::thread([this, &formatManager, knownPaths, excludedPaths,
-                                          customPaths, statusCallback]() {
+                                          customPaths, statusCallback, completionCallback]() {
         // Discover all plugin files on disk (expensive recursive dir traversal)
         // Using snapshots of excluded/custom paths to avoid data races
         auto allPlugins =
@@ -385,7 +386,7 @@ void TracktionEngineWrapper::detectNewPlugins(
 
         juce::WeakReference<TracktionEngineWrapper> weakThis(this);
         juce::MessageManager::callAsync([weakThis, alive, newPlugins = std::move(newPlugins),
-                                         statusCallback]() mutable {
+                                         statusCallback, completionCallback]() mutable {
             auto* self = weakThis.get();
             if (!self || !*alive || !self->engine_)
                 return;
@@ -395,33 +396,30 @@ void TracktionEngineWrapper::detectNewPlugins(
             auto& fm = pm.pluginFormatManager;
 
             if (newPlugins.empty()) {
-                auto msg = "Plugins up to date (" + juce::String(kp.getNumTypes()) + " loaded)";
-                juce::Logger::writeToLog("[AutoDetect] " + msg);
+                juce::Logger::writeToLog("[AutoDetect] Plugins up to date (" +
+                                         juce::String(kp.getNumTypes()) + " loaded)");
                 if (statusCallback)
-                    statusCallback(msg);
-                if (self->onPluginScanComplete)
-                    self->onPluginScanComplete(true, kp.getNumTypes(), {});
+                    statusCallback(IncrementalScanPhase::UpToDate, {});
+                if (completionCallback)
+                    completionCallback(true, 0, kp.getNumTypes(), {});
                 return;
             }
 
-            auto msg = "Scanning " + juce::String(static_cast<int>(newPlugins.size())) +
-                       " new plugin(s)...";
-            juce::Logger::writeToLog("[AutoDetect] " + msg);
-            if (statusCallback)
-                statusCallback(msg);
+            juce::Logger::writeToLog("[AutoDetect] Scanning " +
+                                     juce::String(static_cast<int>(newPlugins.size())) +
+                                     " new plugin(s)...");
 
             self->isScanning_ = true;
 
             self->pluginScanCoordinator_->startIncrementalScan(
                 fm, newPlugins,
                 [statusCallback](float, const juce::String& currentPlugin) {
-                    if (statusCallback) {
-                        auto name = juce::File(currentPlugin).getFileNameWithoutExtension();
-                        statusCallback("Scanning: " + name + "...");
-                    }
+                    if (statusCallback)
+                        statusCallback(IncrementalScanPhase::Scanning, currentPlugin);
                 },
-                [weakThis, alive](bool success, const juce::Array<juce::PluginDescription>& plugins,
-                                  const juce::StringArray& failedPlugins) {
+                [weakThis, alive, completionCallback](
+                    bool success, const juce::Array<juce::PluginDescription>& plugins,
+                    const juce::StringArray& failedPlugins) {
                     auto* s = weakThis.get();
                     if (!s || !*alive || !s->engine_)
                         return;
@@ -439,8 +437,9 @@ void TracktionEngineWrapper::detectNewPlugins(
                     juce::Logger::writeToLog(msg);
                     s->savePluginList();
                     s->isScanning_ = false;
-                    if (s->onPluginScanComplete)
-                        s->onPluginScanComplete(success, kpl.getNumTypes(), failedPlugins);
+                    if (completionCallback)
+                        completionCallback(success, plugins.size(), kpl.getNumTypes(),
+                                           failedPlugins);
                 });
         });
     });
