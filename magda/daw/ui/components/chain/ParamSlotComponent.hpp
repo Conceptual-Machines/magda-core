@@ -9,6 +9,7 @@
 #include "core/ParameterInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TypeIds.hpp"
+#include "core/controllers/ControllerRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
@@ -28,6 +29,7 @@ class ParamSlotComponent : public juce::Component,
                            public magda::LinkModeManagerListener,
                            public magda::MidiLearnCoordinatorListener,
                            public magda::BindingRegistryListener,
+                           public magda::ControllerRegistryListener,
                            private juce::Timer {
   public:
     ParamSlotComponent(int paramIndex);
@@ -182,6 +184,12 @@ class ParamSlotComponent : public juce::Component,
 
     // BindingRegistryListener implementation
     void bindingRegistryChanged(magda::BindingScope scope) override;
+
+    // ControllerRegistryListener — toggling a controller's enabled state flips
+    // whether its bindings count as active, so the indicator must refresh.
+    void controllerRegistryChanged() override {
+        refreshMidiBindingState();
+    }
 
     // Refresh hasMidiBinding_ from the registry + repaint if changed.
     void refreshMidiBindingState();

@@ -18,6 +18,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     magda::LinkModeManager::getInstance().addListener(this);
     magda::MidiLearnCoordinator::getInstance().addListener(this);
     magda::BindingRegistry::getInstance().addListener(this);
+    magda::ControllerRegistry::getInstance().addListener(this);
 
     setInterceptsMouseClicks(true, true);
 
@@ -173,6 +174,7 @@ ParamSlotComponent::~ParamSlotComponent() {
     }
     magda::MidiLearnCoordinator::getInstance().removeListener(this);
     magda::BindingRegistry::getInstance().removeListener(this);
+    magda::ControllerRegistry::getInstance().removeListener(this);
     magda::LinkModeManager::getInstance().removeListener(this);
 }
 
@@ -286,7 +288,7 @@ void ParamSlotComponent::bindingRegistryChanged(magda::BindingScope) {
 
 void ParamSlotComponent::refreshMidiBindingState() {
     bool newState =
-        !magda::BindingRegistry::getInstance().findForTarget(devicePath_, paramIndex_).empty();
+        magda::BindingRegistry::getInstance().hasActiveBindingForTarget(devicePath_, paramIndex_);
     if (newState != hasMidiBinding_) {
         hasMidiBinding_ = newState;
         repaint();

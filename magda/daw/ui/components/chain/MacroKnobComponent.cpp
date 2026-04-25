@@ -52,19 +52,20 @@ MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex)
 
     // Register for binding registry and selection changes (automap dot)
     magda::BindingRegistry::getInstance().addListener(this);
+    magda::ControllerRegistry::getInstance().addListener(this);
     magda::SelectionManager::getInstance().addListener(this);
 }
 
 MacroKnobComponent::~MacroKnobComponent() {
     magda::LinkModeManager::getInstance().removeListener(this);
     magda::BindingRegistry::getInstance().removeListener(this);
+    magda::ControllerRegistry::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
 }
 
 void MacroKnobComponent::refreshAutomapState() {
-    auto matches = magda::BindingRegistry::getInstance().findForTarget(
+    bool newState = magda::BindingRegistry::getInstance().hasActiveBindingForTarget(
         parentPath_, macroIndex_, magda::StaticTarget::Owner::DeviceMacro);
-    bool newState = !matches.empty();
     if (newState != hasAutomap_) {
         hasAutomap_ = newState;
         repaint();

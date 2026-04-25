@@ -9,6 +9,7 @@
 #include "core/MacroInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
+#include "core/controllers/ControllerRegistry.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
@@ -32,6 +33,7 @@ namespace magda::daw::ui {
 class MacroKnobComponent : public juce::Component,
                            public magda::LinkModeManagerListener,
                            public magda::BindingRegistryListener,
+                           public magda::ControllerRegistryListener,
                            public magda::SelectionManagerListener {
   public:
     explicit MacroKnobComponent(int macroIndex);
@@ -94,6 +96,12 @@ class MacroKnobComponent : public juce::Component,
 
     // BindingRegistryListener
     void bindingRegistryChanged(magda::BindingScope) override {
+        refreshAutomapState();
+    }
+
+    // ControllerRegistryListener — a controller's enabled state flip changes
+    // which bindings count as active, so the indicator must refresh.
+    void controllerRegistryChanged() override {
         refreshAutomapState();
     }
 
