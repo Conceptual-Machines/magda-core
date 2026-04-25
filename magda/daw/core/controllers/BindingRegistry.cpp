@@ -206,9 +206,19 @@ bool isFocusedDeviceMacroResolver(const Target& t) {
     return false;
 }
 
-bool isStaticPluginParam(const Target& t) {
+// True for explicit user mappings to a plugin parameter — i.e. anything that
+// represents a Learn or hand-edited binding rather than an automap profile
+// default. StaticTarget{PluginParam} is the obvious case; AliasRef is also
+// included because MidiLearnCoordinator prefers an alias target whenever a
+// canonical alias exists for the param (e.g. "4osc.filter_freq"), and aliases
+// always resolve to a plugin parameter in this codebase. ResolverRef bindings
+// (focused_device_macro and any future kinds) are profile-driven defaults and
+// do not count.
+bool isExplicitPluginParamTarget(const Target& t) {
     if (auto* st = std::get_if<StaticTarget>(&t))
         return st->owner == StaticTarget::Owner::PluginParam;
+    if (std::holds_alternative<AliasRef>(t))
+        return true;
     return false;
 }
 
@@ -287,7 +297,7 @@ bool BindingRegistry::isAutomapShadowedForMacro(const ChainNodePath& devicePath,
     // 2. Look for an active static PluginParam binding whose source overlaps.
     auto hasOverride = [&](const std::vector<Binding>& vec) {
         for (const auto& b : vec) {
-            if (!isStaticPluginParam(b.target))
+            if (!isExplicitPluginParamTarget(b.target))
                 continue;
             if (!isSourceControllerActive(b))
                 continue;
@@ -310,7 +320,7 @@ bool BindingRegistry::isPluginParamOverridingMacro(const ChainNodePath& devicePa
     std::vector<BindingSource> staticSources;
     auto collect = [&](const std::vector<Binding>& vec) {
         for (const auto& b : vec) {
-            if (!isStaticPluginParam(b.target))
+            if (!isExplicitPluginParamTarget(b.target))
                 continue;
             if (!isSourceControllerActive(b))
                 continue;

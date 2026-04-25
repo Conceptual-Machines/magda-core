@@ -358,12 +358,10 @@ void LinkableTextSlider::bindingRegistryChanged(magda::BindingScope) {
 }
 
 void LinkableTextSlider::refreshMidiBindingState() {
-    auto& reg = magda::BindingRegistry::getInstance();
-    bool bound = reg.hasActiveBindingForTarget(devicePath_, paramIndex_);
-    bool overrides = bound && reg.isPluginParamOverridingMacro(devicePath_, paramIndex_);
-    if (bound != hasMidiBinding_ || overrides != overridesMacro_) {
-        hasMidiBinding_ = bound;
-        overridesMacro_ = overrides;
+    bool newState =
+        magda::BindingRegistry::getInstance().hasActiveBindingForTarget(devicePath_, paramIndex_);
+    if (newState != hasMidiBinding_) {
+        hasMidiBinding_ = newState;
         repaint();
     }
 }
@@ -386,16 +384,17 @@ void LinkableTextSlider::paintOverChildren(juce::Graphics& g) {
     }
 
     // Persistent MIDI-mapped badge: a small dot at the top-right corner.
-    // Learn-mode pulse overrides when both are set. Red when this binding
-    // overrides a focused-device-macro automap binding, orange otherwise.
+    // Learn-mode pulse overrides when both are set. Same colour as the
+    // device-header binding dot — the override case is communicated by the
+    // corresponding macro's automap dot greying out, not by a different
+    // colour here.
     if (hasMidiBinding_ && !isInMidiLearnMode_) {
         constexpr float dotSize = 5.0f;
         constexpr float margin = 3.0f;
         auto r = getLocalBounds().toFloat();
         juce::Rectangle<float> dot(r.getRight() - margin - dotSize, r.getY() + margin, dotSize,
                                    dotSize);
-        auto colour = overridesMacro_ ? juce::Colour(0xFFE53935) : juce::Colour(0xFFFF6B35);
-        g.setColour(colour.withAlpha(0.85f));
+        g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.85f));
         g.fillEllipse(dot);
     }
 
