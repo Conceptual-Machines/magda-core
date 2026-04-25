@@ -2324,6 +2324,93 @@ void PluginManager::setDeviceMacroValue(DeviceId deviceId, int macroIndex, float
     }
 }
 
+te::AutomatableParameter* PluginManager::findMacroParameterForAutomation(
+    TrackId trackId, const ChainNodePath& devicePath, int macroIndex) const {
+    if (macroIndex < 0)
+        return nullptr;
+
+    if (devicePath.isValid()) {
+        switch (devicePath.getType()) {
+            case ChainNodeType::Rack:
+                return rackSyncManager_.findRackMacroParameter(devicePath.getRackId(), macroIndex);
+            case ChainNodeType::TopLevelDevice:
+            case ChainNodeType::Device: {
+                auto it = syncedDevices_.find(devicePath.getDeviceId());
+                if (it == syncedDevices_.end())
+                    return nullptr;
+                auto macroIt = it->second.macroParams.find(macroIndex);
+                if (macroIt == it->second.macroParams.end() || macroIt->second == nullptr)
+                    return nullptr;
+                return macroIt->second;
+            }
+            default:
+                break;
+        }
+    }
+
+    // Track-scope macro fallback.
+    auto tmIt = trackMacroParams_.find(trackId);
+    if (tmIt != trackMacroParams_.end()) {
+        auto macroIt = tmIt->second.find(macroIndex);
+        if (macroIt != tmIt->second.end() && macroIt->second != nullptr)
+            return macroIt->second;
+    }
+    return nullptr;
+}
+
+te::AutomatableParameter* PluginManager::findModifierParameterForAutomation(
+    TrackId trackId, const ChainNodePath& devicePath, ModId modId, int modParamIndex) const {
+    if (modId == INVALID_MOD_ID || modParamIndex < 0)
+        return nullptr;
+
+    // ModId is a per-array slot index, not globally unique. Pick the right
+    // owner from the path before matching modId.
+    auto resolveFromVector =
+        [&](const std::vector<ModInfo>& mods,
+            const std::vector<te::Modifier::Ptr>& teMods) -> te::AutomatableParameter* {
+        for (size_t i = 0; i < mods.size() && i < teMods.size(); ++i) {
+            if (mods[i].id != modId || !teMods[i])
+                continue;
+            auto params = teMods[i]->getAutomatableParameters();
+            if (modParamIndex >= static_cast<int>(params.size()))
+                return nullptr;
+            return params[static_cast<size_t>(modParamIndex)];
+        }
+        return nullptr;
+    };
+
+    auto& tm = TrackManager::getInstance();
+
+    if (devicePath.isValid()) {
+        switch (devicePath.getType()) {
+            case ChainNodeType::Rack:
+                return rackSyncManager_.findRackModifierParameter(devicePath.getRackId(), modId,
+                                                                  modParamIndex);
+            case ChainNodeType::TopLevelDevice:
+            case ChainNodeType::Device: {
+                auto it = syncedDevices_.find(devicePath.getDeviceId());
+                if (it == syncedDevices_.end())
+                    return nullptr;
+                DeviceInfo* device = tm.getDevice(it->second.trackId, it->first);
+                if (!device)
+                    return nullptr;
+                return resolveFromVector(device->mods, it->second.modifiers);
+            }
+            default:
+                break;
+        }
+    }
+
+    // Track-scope modifier (no devicePath / track-level path).
+    auto modIt = trackModStates_.find(trackId);
+    if (modIt == trackModStates_.end())
+        return nullptr;
+    const TrackInfo* track = tm.getTrack(trackId);
+    if (!track)
+        return nullptr;
+    return resolveFromVector(track->mods, modIt->second.modifiers);
+}
+
 void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
     if (!trackInfo || !teTrack)

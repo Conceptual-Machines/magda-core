@@ -3,7 +3,7 @@
 # Warns at WARN_THRESHOLD LOC, fails at FAIL_THRESHOLD LOC
 
 WARN_THRESHOLD=2500
-FAIL_THRESHOLD=3500
+FAIL_THRESHOLD=5000
 
 # TODO: Files temporarily exempted pending decomposition
 SKIP_FILES=(

@@ -147,6 +147,21 @@ class RackSyncManager {
     void setMacroValue(RackId rackId, int macroIndex, float value);
 
     /**
+     * @brief Find a rack macro's TE AutomatableParameter for automation playback.
+     * Returns nullptr if the rack or macro index isn't found.
+     */
+    te::AutomatableParameter* findRackMacroParameter(RackId rackId, int macroIndex) const;
+
+    /**
+     * @brief Find a modifier living inside a specific rack and return one of
+     * its TE AutomatableParameters by index. modId is the per-rack slot index;
+     * scope is identified by rackId. Returns nullptr if the rack isn't synced
+     * or the modifier isn't present.
+     */
+    te::AutomatableParameter* findRackModifierParameter(RackId rackId, ModId modId,
+                                                        int paramIndex) const;
+
+    /**
      * @brief Resync only modifiers for all racks on a track (full rebuild)
      */
     void resyncAllModifiers(TrackId trackId);

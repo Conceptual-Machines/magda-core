@@ -511,9 +511,12 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
         }
 
         case AutomationTargetType::Macro:
+            return bridge_.getPluginManager().findMacroParameterForAutomation(
+                target.trackId, target.devicePath, target.macroIndex);
+
         case AutomationTargetType::ModParameter:
-            // TODO: resolve macro/mod parameters to TE AutomatableParameters
-            return nullptr;
+            return bridge_.getPluginManager().findModifierParameterForAutomation(
+                target.trackId, target.devicePath, target.modId, target.modParamIndex);
     }
 
     return nullptr;

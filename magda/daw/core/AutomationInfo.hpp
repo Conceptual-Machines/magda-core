@@ -128,7 +128,8 @@ struct AutomationTarget {
             case AutomationTargetType::Macro:
                 return devicePath == other.devicePath && macroIndex == other.macroIndex;
             case AutomationTargetType::ModParameter:
-                return modId == other.modId && modParamIndex == other.modParamIndex;
+                return devicePath == other.devicePath && modId == other.modId &&
+                       modParamIndex == other.modParamIndex;
         }
         return false;
     }

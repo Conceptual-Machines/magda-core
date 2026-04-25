@@ -350,6 +350,33 @@ void RackSyncManager::setMacroValue(RackId rackId, int macroIndex, float value) 
     }
 }
 
+te::AutomatableParameter* RackSyncManager::findRackMacroParameter(RackId rackId,
+                                                                  int macroIndex) const {
+    auto it = syncedRacks_.find(rackId);
+    if (it == syncedRacks_.end())
+        return nullptr;
+    auto macroIt = it->second.innerMacroParams.find(macroIndex);
+    if (macroIt == it->second.innerMacroParams.end() || macroIt->second == nullptr)
+        return nullptr;
+    return macroIt->second;
+}
+
+te::AutomatableParameter* RackSyncManager::findRackModifierParameter(RackId rackId, ModId modId,
+                                                                     int paramIndex) const {
+    if (paramIndex < 0)
+        return nullptr;
+    auto rackIt = syncedRacks_.find(rackId);
+    if (rackIt == syncedRacks_.end())
+        return nullptr;
+    auto modIt = rackIt->second.innerModifiers.find(modId);
+    if (modIt == rackIt->second.innerModifiers.end() || !modIt->second)
+        return nullptr;
+    auto params = modIt->second->getAutomatableParameters();
+    if (paramIndex >= static_cast<int>(params.size()))
+        return nullptr;
+    return params[static_cast<size_t>(paramIndex)];
+}
+
 void RackSyncManager::resyncAllModifiers(TrackId trackId) {
     auto& tm = TrackManager::getInstance();
     for (auto& [rackId, synced] : syncedRacks_) {
