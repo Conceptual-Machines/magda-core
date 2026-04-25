@@ -1051,14 +1051,23 @@ void NodeComponent::initializeModsMacrosPanels() {
             return;
 
         const auto& sidechain = device ? device->sidechain : rack->sidechain;
+        const auto& mods = device ? device->mods : rack->mods;
+
+        // Pick sidechain type from the selected modulator's trigger mode.
+        // Advanced is only enabled in MIDI/Audio modes, so the fallback is fine.
+        const bool isAudioMode =
+            (selectedModIndex_ >= 0 && selectedModIndex_ < (int)mods.size() &&
+             mods[(size_t)selectedModIndex_].triggerMode == magda::LFOTriggerMode::Audio);
+        const auto sidechainType =
+            isAudioMode ? magda::SidechainConfig::Type::Audio : magda::SidechainConfig::Type::MIDI;
 
         juce::PopupMenu menu;
 
-        bool hasMidiSidechain = sidechain.type == magda::SidechainConfig::Type::MIDI &&
-                                sidechain.sourceTrackId != magda::INVALID_TRACK_ID;
+        bool hasSidechain =
+            sidechain.type == sidechainType && sidechain.sourceTrackId != magda::INVALID_TRACK_ID;
 
-        menu.addSectionHeader("MIDI Trigger Source");
-        menu.addItem(1, "Self", true, !hasMidiSidechain);
+        menu.addSectionHeader(isAudioMode ? "Audio Trigger Source" : "MIDI Trigger Source");
+        menu.addItem(1, "Self", true, !hasSidechain);
         menu.addSeparator();
 
         struct TrackEntry {
@@ -1070,7 +1079,7 @@ void NodeComponent::initializeModsMacrosPanels() {
         for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
             if (track.id == nodePath_.trackId)
                 continue;
-            bool isCurrent = hasMidiSidechain && sidechain.sourceTrackId == track.id;
+            bool isCurrent = hasSidechain && sidechain.sourceTrackId == track.id;
             menu.addItem(itemId, track.name, true, isCurrent);
             trackEntries->push_back({track.id, track.name});
             itemId++;
@@ -1081,7 +1090,8 @@ void NodeComponent::initializeModsMacrosPanels() {
         auto deviceId = device ? device->id : magda::INVALID_DEVICE_ID;
         auto rackPath = nodePath_;
         menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, isDeviceTarget, deviceId,
-                                                        rackPath, trackEntries](int result) {
+                                                        rackPath, trackEntries,
+                                                        sidechainType](int result) {
             if (!safeThis || result == 0)
                 return;
             if (result == 1) {
@@ -1094,12 +1104,10 @@ void NodeComponent::initializeModsMacrosPanels() {
                 if (index >= 0 && index < (int)trackEntries->size()) {
                     if (isDeviceTarget) {
                         magda::TrackManager::getInstance().setSidechainSource(
-                            deviceId, (*trackEntries)[index].id,
-                            magda::SidechainConfig::Type::MIDI);
+                            deviceId, (*trackEntries)[index].id, sidechainType);
                     } else {
                         magda::TrackManager::getInstance().setRackSidechainSource(
-                            rackPath, (*trackEntries)[index].id,
-                            magda::SidechainConfig::Type::MIDI);
+                            rackPath, (*trackEntries)[index].id, sidechainType);
                     }
                 }
             }
