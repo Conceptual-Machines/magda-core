@@ -3,6 +3,48 @@
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
 #include "ui/themes/DarkTheme.hpp"
+
+namespace {
+// Stepped slider order — slow to fast. Multi-bar lengths first, then 1 Bar,
+// then for each note (Half, Quarter, Eighth): dotted → normal → triplet,
+// then 1/16 and 1/32. Matches the labels used in valueFormatter.
+constexpr magda::SyncDivision kSyncDivisionOrder[] = {
+    magda::SyncDivision::SixteenBars,     // 16 Bars
+    magda::SyncDivision::EightBars,       // 8 Bars
+    magda::SyncDivision::FourBars,        // 4 Bars
+    magda::SyncDivision::TwoBars,         // 2 Bars
+    magda::SyncDivision::Whole,           // 1 Bar
+    magda::SyncDivision::DottedHalf,      // 1/2.
+    magda::SyncDivision::Half,            // 1/2
+    magda::SyncDivision::TripletHalf,     // 1/2T
+    magda::SyncDivision::DottedQuarter,   // 1/4.
+    magda::SyncDivision::Quarter,         // 1/4
+    magda::SyncDivision::TripletQuarter,  // 1/4T
+    magda::SyncDivision::DottedEighth,    // 1/8.
+    magda::SyncDivision::Eighth,          // 1/8
+    magda::SyncDivision::TripletEighth,   // 1/8T
+    magda::SyncDivision::Sixteenth,       // 1/16
+    magda::SyncDivision::ThirtySecond     // 1/32
+};
+
+int syncDivisionToIndex(magda::SyncDivision d) {
+    for (int i = 0; i < static_cast<int>(std::size(kSyncDivisionOrder)); ++i)
+        if (kSyncDivisionOrder[i] == d)
+            return i;
+    // Quarter — find its position dynamically so this stays correct if the
+    // order array is reshuffled.
+    for (int i = 0; i < static_cast<int>(std::size(kSyncDivisionOrder)); ++i)
+        if (kSyncDivisionOrder[i] == magda::SyncDivision::Quarter)
+            return i;
+    return 0;
+}
+
+magda::SyncDivision indexToSyncDivision(int idx) {
+    if (idx < 0 || idx >= static_cast<int>(std::size(kSyncDivisionOrder)))
+        return magda::SyncDivision::Quarter;
+    return kSyncDivisionOrder[idx];
+}
+}  // namespace
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
@@ -242,7 +284,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
                     safeThis->syncToggle_.setToggleState(synced, juce::dontSendNotification);
                     safeThis->syncToggle_.setButtonText(synced ? "Sync" : "Free");
                     safeThis->rateSlider_.setVisible(!synced);
-                    safeThis->syncDivisionCombo_.setVisible(synced);
+                    safeThis->syncDivisionSlider_.setVisible(synced);
                     if (safeThis->onTempoSyncChanged) {
                         safeThis->onTempoSyncChanged(synced);
                     }
@@ -251,8 +293,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
                 };
             curveEditorWindow_->onSyncDivisionChanged = [this](magda::SyncDivision div) {
                 currentMod_.syncDivision = div;
-                syncDivisionCombo_.setSelectedId(static_cast<int>(div) + 100,
-                                                 juce::dontSendNotification);
+                syncDivisionSlider_.setValue(static_cast<double>(syncDivisionToIndex(div)),
+                                             juce::dontSendNotification);
                 if (onSyncDivisionChanged) {
                     onSyncDivisionChanged(div);
                 }
@@ -341,7 +383,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
         safeThis->syncToggle_.setButtonText(synced ? "Sync" : "Free");
         // Show/hide appropriate control
         safeThis->rateSlider_.setVisible(!synced);
-        safeThis->syncDivisionCombo_.setVisible(synced);
+        safeThis->syncDivisionSlider_.setVisible(synced);
         if (safeThis->onTempoSyncChanged) {
             safeThis->onTempoSyncChanged(synced);
         }
@@ -350,39 +392,31 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     };
     addAndMakeVisible(syncToggle_);
 
-    // Sync division combo box
-    syncDivisionCombo_.addItem("1 Bar", static_cast<int>(magda::SyncDivision::Whole) + 100);
-    syncDivisionCombo_.addItem("1/2", static_cast<int>(magda::SyncDivision::Half) + 100);
-    syncDivisionCombo_.addItem("1/4", static_cast<int>(magda::SyncDivision::Quarter) + 100);
-    syncDivisionCombo_.addItem("1/8", static_cast<int>(magda::SyncDivision::Eighth) + 100);
-    syncDivisionCombo_.addItem("1/16", static_cast<int>(magda::SyncDivision::Sixteenth) + 100);
-    syncDivisionCombo_.addItem("1/32", static_cast<int>(magda::SyncDivision::ThirtySecond) + 100);
-    syncDivisionCombo_.addItem("1/2.", static_cast<int>(magda::SyncDivision::DottedHalf) + 100);
-    syncDivisionCombo_.addItem("1/4.", static_cast<int>(magda::SyncDivision::DottedQuarter) + 100);
-    syncDivisionCombo_.addItem("1/8.", static_cast<int>(magda::SyncDivision::DottedEighth) + 100);
-    syncDivisionCombo_.addItem("1/2T", static_cast<int>(magda::SyncDivision::TripletHalf) + 100);
-    syncDivisionCombo_.addItem("1/4T", static_cast<int>(magda::SyncDivision::TripletQuarter) + 100);
-    syncDivisionCombo_.addItem("1/8T", static_cast<int>(magda::SyncDivision::TripletEighth) + 100);
-    syncDivisionCombo_.setSelectedId(static_cast<int>(magda::SyncDivision::Quarter) + 100,
-                                     juce::dontSendNotification);
-    syncDivisionCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                 DarkTheme::getColour(DarkTheme::SURFACE));
-    syncDivisionCombo_.setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    syncDivisionCombo_.setColour(juce::ComboBox::outlineColourId,
-                                 DarkTheme::getColour(DarkTheme::BORDER));
-    syncDivisionCombo_.setJustificationType(juce::Justification::centredLeft);
-    syncDivisionCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
-    syncDivisionCombo_.onChange = [this]() {
-        int id = syncDivisionCombo_.getSelectedId();
-        if (id >= 100) {
-            auto division = static_cast<magda::SyncDivision>(id - 100);
-            currentMod_.syncDivision = division;
-            if (onSyncDivisionChanged) {
-                onSyncDivisionChanged(division);
-            }
-        }
+    // Sync division stepped slider — 12 musical divisions, indexed 0..11.
+    // Stepped (interval=1) so each drag click steps to the next division.
+    // valueFormatter renders the index as "1 Bar", "1/4", etc.
+    constexpr int kNumDivisions = static_cast<int>(std::size(kSyncDivisionOrder));
+    syncDivisionSlider_.setRange(0.0, static_cast<double>(kNumDivisions - 1), 1.0);
+    syncDivisionSlider_.setValue(
+        static_cast<double>(syncDivisionToIndex(magda::SyncDivision::Quarter)),
+        juce::dontSendNotification);
+    syncDivisionSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    syncDivisionSlider_.setValueFormatter([](double v) {
+        int idx = juce::jlimit(0, kNumDivisions - 1, static_cast<int>(std::round(v)));
+        // Order matches kSyncDivisionOrder above (slow → fast, grouped per note).
+        static const char* const kLabels[] = {
+            "16 Bars", "8 Bars", "4 Bars", "2 Bars", "1 Bar", "1/2.", "1/2",  "1/2T",
+            "1/4.",    "1/4",    "1/4T",   "1/8.",   "1/8",   "1/8T", "1/16", "1/32"};
+        return juce::String(kLabels[idx]);
+    });
+    syncDivisionSlider_.onValueChanged = [this](double value) {
+        int idx = juce::jlimit(0, kNumDivisions - 1, static_cast<int>(std::round(value)));
+        auto division = indexToSyncDivision(idx);
+        currentMod_.syncDivision = division;
+        if (onSyncDivisionChanged)
+            onSyncDivisionChanged(division);
     };
-    addChildComponent(syncDivisionCombo_);  // Hidden by default (shown when sync enabled)
+    addChildComponent(syncDivisionSlider_);  // Hidden by default (shown when sync enabled)
 
     // Rate slider
     rateSlider_.setRange(0.05, 20.0, 0.01);
@@ -532,7 +566,7 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
         nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
         waveformCombo_.setEnabled(false);
         syncToggle_.setEnabled(false);
-        syncDivisionCombo_.setEnabled(false);
+        syncDivisionSlider_.setEnabled(false);
         rateSlider_.setEnabled(false);
         triggerModeCombo_.setEnabled(false);
         audioAttackSlider_.setEnabled(false);
@@ -541,7 +575,7 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
     } else {
         waveformCombo_.setEnabled(true);
         syncToggle_.setEnabled(true);
-        syncDivisionCombo_.setEnabled(true);
+        syncDivisionSlider_.setEnabled(true);
         rateSlider_.setEnabled(true);
         triggerModeCombo_.setEnabled(true);
         audioAttackSlider_.setEnabled(true);
@@ -579,13 +613,13 @@ void ModulatorEditorPanel::updateFromMod() {
     // Tempo sync controls
     syncToggle_.setToggleState(currentMod_.tempoSync, juce::dontSendNotification);
     syncToggle_.setButtonText(currentMod_.tempoSync ? "Sync" : "Free");
-    syncDivisionCombo_.setSelectedId(static_cast<int>(currentMod_.syncDivision) + 100,
-                                     juce::dontSendNotification);
+    syncDivisionSlider_.setValue(static_cast<double>(syncDivisionToIndex(currentMod_.syncDivision)),
+                                 juce::dontSendNotification);
     rateSlider_.setValue(currentMod_.rate, juce::dontSendNotification);
 
     // Show/hide rate vs division based on sync state
     rateSlider_.setVisible(!currentMod_.tempoSync);
-    syncDivisionCombo_.setVisible(currentMod_.tempoSync);
+    syncDivisionSlider_.setVisible(currentMod_.tempoSync);
 
     // Trigger mode
     triggerModeCombo_.setSelectedId(static_cast<int>(currentMod_.triggerMode) + 1,
@@ -742,7 +776,7 @@ void ModulatorEditorPanel::resized() {
 
     // Rate slider or division combo takes remaining space (same position, shown alternately)
     rateSlider_.setBounds(rateRow);
-    syncDivisionCombo_.setBounds(rateRow);
+    syncDivisionSlider_.setBounds(rateRow);
     bounds.removeFromTop(8);
 
     // Trigger row: [dropdown] [advanced button]

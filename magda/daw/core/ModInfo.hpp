@@ -45,7 +45,11 @@ enum class SyncDivision {
     DottedEighth = 12,    // 1/8 + 1/16
     TripletHalf = 33,     // 1/2 triplet
     TripletQuarter = 66,  // 1/4 triplet
-    TripletEighth = 132   // 1/8 triplet
+    TripletEighth = 132,  // 1/8 triplet
+    TwoBars = 200,        // 2 bars (8 beats)
+    FourBars = 400,       // 4 bars (16 beats)
+    EightBars = 800,      // 8 bars (32 beats)
+    SixteenBars = 1600    // 16 bars (64 beats)
 };
 
 /**

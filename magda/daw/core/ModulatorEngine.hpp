@@ -84,6 +84,14 @@ class ModulatorEngine {
         double beatsPerSecond = bpm / 60.0;
 
         switch (division) {
+            case SyncDivision::SixteenBars:  // 64 beats
+                return static_cast<float>(beatsPerSecond / 64.0);
+            case SyncDivision::EightBars:  // 32 beats
+                return static_cast<float>(beatsPerSecond / 32.0);
+            case SyncDivision::FourBars:  // 16 beats
+                return static_cast<float>(beatsPerSecond / 16.0);
+            case SyncDivision::TwoBars:  // 8 beats
+                return static_cast<float>(beatsPerSecond / 8.0);
             case SyncDivision::Whole:  // 4 beats
                 return static_cast<float>(beatsPerSecond / 4.0);
             case SyncDivision::Half:  // 2 beats

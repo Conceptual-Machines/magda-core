@@ -250,7 +250,7 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     juce::ComboBox curvePresetCombo_;                          // Preset selector for curve mode
     std::unique_ptr<magda::SvgButton> savePresetButton_;       // Save preset button
     juce::TextButton syncToggle_;
-    juce::ComboBox syncDivisionCombo_;
+    TextSlider syncDivisionSlider_{TextSlider::Format::Decimal};
     TextSlider rateSlider_{TextSlider::Format::Decimal};
     juce::ComboBox triggerModeCombo_;
     std::unique_ptr<magda::SvgButton> advancedButton_;
