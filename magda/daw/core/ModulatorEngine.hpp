@@ -116,6 +116,14 @@ class ModulatorEngine {
                 return static_cast<float>(beatsPerSecond / (2.0 / 3.0));
             case SyncDivision::TripletEighth:  // 1/3 beat
                 return static_cast<float>(beatsPerSecond / (1.0 / 3.0));
+            case SyncDivision::DottedSixteenth:  // 3/8 beat
+                return static_cast<float>(beatsPerSecond / (3.0 / 8.0));
+            case SyncDivision::TripletSixteenth:  // 1/6 beat
+                return static_cast<float>(beatsPerSecond / (1.0 / 6.0));
+            case SyncDivision::DottedThirtySecond:  // 3/16 beat
+                return static_cast<float>(beatsPerSecond / (3.0 / 16.0));
+            case SyncDivision::TripletThirtySecond:  // 1/12 beat
+                return static_cast<float>(beatsPerSecond / (1.0 / 12.0));
             default:
                 return static_cast<float>(beatsPerSecond);  // Default to quarter note
         }

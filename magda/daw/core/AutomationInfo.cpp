@@ -80,6 +80,37 @@ ParameterInfo AutomationTarget::getParameterInfo() const {
                 info.defaultValue = 1.0f;
                 return info;
             }
+            if (modParamIndex == 1) {
+                // Sync division. TE's RateType enum is ordered slow → fast
+                // (hertz=0, sixteenBars=1, ..., sixtyFourthT=23). MAGDA's
+                // slider exposes 16 Bars..1/32T (TE ordinals 1..20) and
+                // doesn't expose Hertz as a sync division — Hz is the rate
+                // parameter (modParamIndex 0), not a sync setting. The lane
+                // therefore drops the TE-ordinal-0 ("Hertz") slot and stores
+                // a 0-based display index instead; the manager / playback
+                // writeback shift by ±1 at the TE boundary so the lane never
+                // resolves "Hertz" at the bottom edge. labelTicks names only
+                // the plain divisions to keep the axis legible — dotted /
+                // triplet still appear in value→string lookup via `choices`.
+                ParameterInfo info;
+                info.paramIndex = 1;
+                info.name = paramName.isNotEmpty() ? paramName : juce::String("Sync Division");
+                info.unit = "";
+                info.minValue = 0.0f;
+                info.maxValue = 19.0f;
+                info.teMinValue = 1.0f;
+                info.teMaxValue = 20.0f;
+                info.defaultValue = 9.0f;  // quarter (TE ordinal 10 - 1)
+                info.scale = ParameterScale::Discrete;
+                info.displayFormat = DisplayFormat::Default;
+                info.choices = {"16 Bars", "8 Bars", "4 Bars", "2 Bars", "1 Bar", "1/2.", "1/2",
+                                "1/2T",    "1/4.",   "1/4",    "1/4T",   "1/8.",  "1/8",  "1/8T",
+                                "1/16.",   "1/16",   "1/16T",  "1/32.",  "1/32",  "1/32T"};
+                info.labelTicks = {{0.0f, "16 Bars"}, {2.0f, "4 Bars"}, {4.0f, "1 Bar"},
+                                   {6.0f, "1/2"},     {9.0f, "1/4"},    {12.0f, "1/8"},
+                                   {15.0f, "1/16"},   {18.0f, "1/32"}};
+                return info;
+            }
             break;
         }
 

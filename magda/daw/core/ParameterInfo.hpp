@@ -90,6 +90,13 @@ struct ParameterInfo {
     // Discrete values (if scale == Discrete)
     std::vector<juce::String> choices;  // e.g., {"Off", "Low", "High"}
 
+    // Curated tick labels for the automation lane axis. When non-empty (and
+    // scale==Discrete), the lane uses these (realValue, label) pairs for tick
+    // marks instead of striding evenly through `choices`. Lets a parameter
+    // expose a dense TE-aligned `choices` for value→string lookup while only
+    // labelling a sparse, musically meaningful subset on the axis.
+    std::vector<std::pair<float, juce::String>> labelTicks;
+
     // Display text lookup table — getText() results at each normalized step.
     // Index i corresponds to normalized value i/(size-1).
     // Used by the UI formatter instead of computing from scale/range.

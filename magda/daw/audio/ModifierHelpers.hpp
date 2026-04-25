@@ -32,6 +32,10 @@ inline float mapWaveform(LFOWaveform waveform) {
 inline float mapSyncDivision(SyncDivision div) {
     using RT = te::ModifierCommon::RateType;
     static const std::unordered_map<SyncDivision, RT> mapping = {
+        {SyncDivision::SixteenBars, RT::sixteenBars},
+        {SyncDivision::EightBars, RT::eightBars},
+        {SyncDivision::FourBars, RT::fourBars},
+        {SyncDivision::TwoBars, RT::twoBars},
         {SyncDivision::Whole, RT::bar},
         {SyncDivision::Half, RT::half},
         {SyncDivision::Quarter, RT::quarter},
@@ -41,9 +45,13 @@ inline float mapSyncDivision(SyncDivision div) {
         {SyncDivision::DottedHalf, RT::halfD},
         {SyncDivision::DottedQuarter, RT::quarterD},
         {SyncDivision::DottedEighth, RT::eighthD},
+        {SyncDivision::DottedSixteenth, RT::sixteenthD},
+        {SyncDivision::DottedThirtySecond, RT::thirtySecondD},
         {SyncDivision::TripletHalf, RT::halfT},
         {SyncDivision::TripletQuarter, RT::quarterT},
         {SyncDivision::TripletEighth, RT::eighthT},
+        {SyncDivision::TripletSixteenth, RT::sixteenthT},
+        {SyncDivision::TripletThirtySecond, RT::thirtySecondT},
     };
     auto it = mapping.find(div);
     return static_cast<float>(it != mapping.end() ? it->second : RT::quarter);

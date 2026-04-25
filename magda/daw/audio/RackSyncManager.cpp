@@ -366,8 +366,9 @@ te::AutomatableParameter* RackSyncManager::findRackModifierParameter(RackId rack
     if (paramIndex < 0)
         return nullptr;
     static const char* const kSemanticParamID[] = {
-        "rate",   // 0
-        "depth",  // 1
+        "rate",      // 0 — Hz value
+        "rateType",  // 1 — sync division
+        "depth",     // 2
     };
     if (paramIndex >= static_cast<int>(std::size(kSemanticParamID)))
         return nullptr;

@@ -3214,25 +3214,32 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                             deviceMenu.addSubMenu("Params", paramsMenu);
                         }
 
-                        // Mods submenu (device-scope MAGDA modifiers)
+                        // Mods submenu (device-scope MAGDA modifiers).
+                        // Each mod gets its own sub-submenu with Rate +
+                        // Sync Division entries (semantic indices 0 / 1).
                         {
                             juce::PopupMenu modsMenu;
                             bool any = false;
                             for (const auto& mod : device.mods) {
                                 if (!mod.enabled)
                                     continue;
-                                AutomationTarget target;
-                                target.type = AutomationTargetType::ModParameter;
-                                target.trackId = trackId;
-                                target.devicePath = devicePath;
-                                target.modId = mod.id;
-                                target.modParamIndex = 0;  // rate
-                                target.paramName = device.name + ": " + mod.name + " Rate";
-
-                                int itemId =
-                                    kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
-                                deviceParamTargets->push_back(target);
-                                modsMenu.addItem(itemId, mod.name + " Rate");
+                                juce::PopupMenu modSub;
+                                auto addParam = [&](int paramIdx, const juce::String& label) {
+                                    AutomationTarget target;
+                                    target.type = AutomationTargetType::ModParameter;
+                                    target.trackId = trackId;
+                                    target.devicePath = devicePath;
+                                    target.modId = mod.id;
+                                    target.modParamIndex = paramIdx;
+                                    target.paramName = device.name + ": " + mod.name + " " + label;
+                                    int itemId = kDeviceParamBase +
+                                                 static_cast<int>(deviceParamTargets->size());
+                                    deviceParamTargets->push_back(target);
+                                    modSub.addItem(itemId, label);
+                                };
+                                addParam(0, "Rate");
+                                addParam(1, "Sync Division");
+                                modsMenu.addSubMenu(mod.name, modSub);
                                 any = true;
                             }
                             if (any)
@@ -3271,25 +3278,31 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                         juce::PopupMenu rackMenu;
                         auto rackPath = ChainNodePath::rack(trackId, rack.id);
 
-                        // Mods submenu (rack-scope modifiers)
+                        // Mods submenu (rack-scope modifiers) — Rate + Sync
+                        // Division per modifier, mirroring the device path.
                         {
                             juce::PopupMenu modsMenu;
                             bool any = false;
                             for (const auto& mod : rack.mods) {
                                 if (!mod.enabled)
                                     continue;
-                                AutomationTarget target;
-                                target.type = AutomationTargetType::ModParameter;
-                                target.trackId = trackId;
-                                target.devicePath = rackPath;
-                                target.modId = mod.id;
-                                target.modParamIndex = 0;  // rate
-                                target.paramName = rack.name + ": " + mod.name + " Rate";
-
-                                int itemId =
-                                    kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
-                                deviceParamTargets->push_back(target);
-                                modsMenu.addItem(itemId, mod.name + " Rate");
+                                juce::PopupMenu modSub;
+                                auto addParam = [&](int paramIdx, const juce::String& label) {
+                                    AutomationTarget target;
+                                    target.type = AutomationTargetType::ModParameter;
+                                    target.trackId = trackId;
+                                    target.devicePath = rackPath;
+                                    target.modId = mod.id;
+                                    target.modParamIndex = paramIdx;
+                                    target.paramName = rack.name + ": " + mod.name + " " + label;
+                                    int itemId = kDeviceParamBase +
+                                                 static_cast<int>(deviceParamTargets->size());
+                                    deviceParamTargets->push_back(target);
+                                    modSub.addItem(itemId, label);
+                                };
+                                addParam(0, "Rate");
+                                addParam(1, "Sync Division");
+                                modsMenu.addSubMenu(mod.name, modSub);
                                 any = true;
                             }
                             if (any)
@@ -3348,25 +3361,31 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
         ChainNodePath rootPath = ChainNodePath::trackLevel(trackId);
         buildMenu(trackInfo->chainElements, rootPath, addNewMenu);
 
-        // Track-scope modifier rate entries — siblings of the chain content,
-        // grouped under a "Track Modulators" submenu when present.
+        // Track-scope modifier entries — siblings of the chain content,
+        // grouped under a "Track Modulators" submenu when present. Each mod
+        // gets a sub-submenu with Rate + Sync Division entries.
         if (!trackInfo->mods.empty()) {
             juce::PopupMenu trackModsMenu;
             bool any = false;
             for (const auto& mod : trackInfo->mods) {
                 if (!mod.enabled)
                     continue;
-                AutomationTarget target;
-                target.type = AutomationTargetType::ModParameter;
-                target.trackId = trackId;
-                target.devicePath = rootPath;  // track-level
-                target.modId = mod.id;
-                target.modParamIndex = 0;  // rate
-                target.paramName = mod.name + " Rate";
-
-                int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
-                deviceParamTargets->push_back(target);
-                trackModsMenu.addItem(itemId, mod.name + " Rate");
+                juce::PopupMenu modSub;
+                auto addParam = [&](int paramIdx, const juce::String& label) {
+                    AutomationTarget target;
+                    target.type = AutomationTargetType::ModParameter;
+                    target.trackId = trackId;
+                    target.devicePath = rootPath;  // track-level
+                    target.modId = mod.id;
+                    target.modParamIndex = paramIdx;
+                    target.paramName = mod.name + " " + label;
+                    int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                    deviceParamTargets->push_back(target);
+                    modSub.addItem(itemId, label);
+                };
+                addParam(0, "Rate");
+                addParam(1, "Sync Division");
+                trackModsMenu.addSubMenu(mod.name, modSub);
                 any = true;
             }
             if (any)
@@ -3556,6 +3575,30 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                             label = juce::String(rounded);
                         label += paramInfo.unit;
                         gridValues.push_back({static_cast<double>(norm), label});
+                    }
+                } else if (paramInfo.scale == ParameterScale::Discrete &&
+                           !paramInfo.choices.empty()) {
+                    // Discrete: use the choices array as label source. Each
+                    // index maps to a real value (0..N-1) — sample evenly so
+                    // the lane shows musical labels (e.g. "1 Bar", "1/4",
+                    // "1/8") instead of falling through to the 10% fallback.
+                    // If the parameter curated a sparse labelTicks set (e.g.
+                    // sync division skipping the triplet/dotted entries that
+                    // snap on playback), use it directly so the thinner can't
+                    // re-introduce the labels we deliberately excluded.
+                    if (!paramInfo.labelTicks.empty()) {
+                        for (const auto& [realValue, label] : paramInfo.labelTicks) {
+                            float norm = ParameterUtils::realToNormalized(realValue, paramInfo);
+                            gridValues.push_back({static_cast<double>(norm), label});
+                        }
+                    } else {
+                        int numChoices = static_cast<int>(paramInfo.choices.size());
+                        for (int i = 0; i < numChoices; ++i) {
+                            float norm =
+                                ParameterUtils::realToNormalized(static_cast<float>(i), paramInfo);
+                            gridValues.push_back({static_cast<double>(norm),
+                                                  paramInfo.choices[static_cast<size_t>(i)]});
+                        }
                     }
                 } else if (paramInfo.unit.isNotEmpty()) {
                     // Unipolar with unit: evenly spaced in normalized space,

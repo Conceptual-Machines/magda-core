@@ -491,13 +491,23 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
         drawLabelAtRealValue(0.0, "C");
         drawLabelAtRealValue(-1.0, "L");
     } else if (paramInfo.scale == ParameterScale::Discrete && !paramInfo.choices.empty()) {
-        // Discrete choices
-        int numChoices = static_cast<int>(paramInfo.choices.size());
-        int maxLabels = juce::jmin(numChoices, area.getHeight() >= 80 ? 5 : 3);
-        int step = juce::jmax(1, numChoices / maxLabels);
+        if (!paramInfo.labelTicks.empty()) {
+            // Curated subset — use the parameter's hand-picked tick set so a
+            // dense `choices` array (e.g., TE-ordinal aligned sync divisions)
+            // can keep its full value→string lookup while the axis only shows
+            // the meaningful musical divisions.
+            for (const auto& [realValue, label] : paramInfo.labelTicks) {
+                drawLabelAtRealValue(static_cast<double>(realValue), label);
+            }
+        } else {
+            int numChoices = static_cast<int>(paramInfo.choices.size());
+            int maxLabels = juce::jmin(numChoices, area.getHeight() >= 80 ? 5 : 3);
+            int step = juce::jmax(1, numChoices / maxLabels);
 
-        for (int i = 0; i < numChoices; i += step) {
-            drawLabelAtRealValue(static_cast<double>(i), paramInfo.choices[static_cast<size_t>(i)]);
+            for (int i = 0; i < numChoices; i += step) {
+                drawLabelAtRealValue(static_cast<double>(i),
+                                     paramInfo.choices[static_cast<size_t>(i)]);
+            }
         }
     } else {
         std::vector<double> realValuesForLabels;

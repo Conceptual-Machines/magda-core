@@ -2368,8 +2368,9 @@ te::AutomatableParameter* PluginManager::findModifierParameterForAutomation(
     // for LFOModifier the rate is at TE index 2 (after wave + syncType) —
     // so look up by paramID rather than positional index.
     static const char* const kSemanticParamID[] = {
-        "rate",   // 0
-        "depth",  // 1
+        "rate",      // 0 — Hz value (free mode)
+        "rateType",  // 1 — sync division (sync mode)
+        "depth",     // 2
     };
     if (modParamIndex >= static_cast<int>(std::size(kSemanticParamID)))
         return nullptr;

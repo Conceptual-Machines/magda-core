@@ -6,25 +6,29 @@
 
 namespace {
 // Stepped slider order — slow to fast. Multi-bar lengths first, then 1 Bar,
-// then for each note (Half, Quarter, Eighth): dotted → normal → triplet,
-// then 1/16 and 1/32. Matches the labels used in valueFormatter.
+// then for each note (Half, Quarter, Eighth, Sixteenth, ThirtySecond):
+// dotted → normal → triplet. Matches the labels used in valueFormatter.
 constexpr magda::SyncDivision kSyncDivisionOrder[] = {
-    magda::SyncDivision::SixteenBars,     // 16 Bars
-    magda::SyncDivision::EightBars,       // 8 Bars
-    magda::SyncDivision::FourBars,        // 4 Bars
-    magda::SyncDivision::TwoBars,         // 2 Bars
-    magda::SyncDivision::Whole,           // 1 Bar
-    magda::SyncDivision::DottedHalf,      // 1/2.
-    magda::SyncDivision::Half,            // 1/2
-    magda::SyncDivision::TripletHalf,     // 1/2T
-    magda::SyncDivision::DottedQuarter,   // 1/4.
-    magda::SyncDivision::Quarter,         // 1/4
-    magda::SyncDivision::TripletQuarter,  // 1/4T
-    magda::SyncDivision::DottedEighth,    // 1/8.
-    magda::SyncDivision::Eighth,          // 1/8
-    magda::SyncDivision::TripletEighth,   // 1/8T
-    magda::SyncDivision::Sixteenth,       // 1/16
-    magda::SyncDivision::ThirtySecond     // 1/32
+    magda::SyncDivision::SixteenBars,         // 16 Bars
+    magda::SyncDivision::EightBars,           // 8 Bars
+    magda::SyncDivision::FourBars,            // 4 Bars
+    magda::SyncDivision::TwoBars,             // 2 Bars
+    magda::SyncDivision::Whole,               // 1 Bar
+    magda::SyncDivision::DottedHalf,          // 1/2.
+    magda::SyncDivision::Half,                // 1/2
+    magda::SyncDivision::TripletHalf,         // 1/2T
+    magda::SyncDivision::DottedQuarter,       // 1/4.
+    magda::SyncDivision::Quarter,             // 1/4
+    magda::SyncDivision::TripletQuarter,      // 1/4T
+    magda::SyncDivision::DottedEighth,        // 1/8.
+    magda::SyncDivision::Eighth,              // 1/8
+    magda::SyncDivision::TripletEighth,       // 1/8T
+    magda::SyncDivision::DottedSixteenth,     // 1/16.
+    magda::SyncDivision::Sixteenth,           // 1/16
+    magda::SyncDivision::TripletSixteenth,    // 1/16T
+    magda::SyncDivision::DottedThirtySecond,  // 1/32.
+    magda::SyncDivision::ThirtySecond,        // 1/32
+    magda::SyncDivision::TripletThirtySecond  // 1/32T
 };
 
 int syncDivisionToIndex(magda::SyncDivision d) {
@@ -392,7 +396,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     };
     addAndMakeVisible(syncToggle_);
 
-    // Sync division stepped slider — 12 musical divisions, indexed 0..11.
+    // Sync division stepped slider — N musical divisions, indexed 0..N-1.
     // Stepped (interval=1) so each drag click steps to the next division.
     // valueFormatter renders the index as "1 Bar", "1/4", etc.
     constexpr int kNumDivisions = static_cast<int>(std::size(kSyncDivisionOrder));
@@ -404,9 +408,10 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     syncDivisionSlider_.setValueFormatter([](double v) {
         int idx = juce::jlimit(0, kNumDivisions - 1, static_cast<int>(std::round(v)));
         // Order matches kSyncDivisionOrder above (slow → fast, grouped per note).
-        static const char* const kLabels[] = {
-            "16 Bars", "8 Bars", "4 Bars", "2 Bars", "1 Bar", "1/2.", "1/2",  "1/2T",
-            "1/4.",    "1/4",    "1/4T",   "1/8.",   "1/8",   "1/8T", "1/16", "1/32"};
+        static const char* const kLabels[] = {"16 Bars", "8 Bars", "4 Bars", "2 Bars", "1 Bar",
+                                              "1/2.",    "1/2",    "1/2T",   "1/4.",   "1/4",
+                                              "1/4T",    "1/8.",   "1/8",    "1/8T",   "1/16.",
+                                              "1/16",    "1/16T",  "1/32.",  "1/32",   "1/32T"};
         return juce::String(kLabels[idx]);
     });
     syncDivisionSlider_.onValueChanged = [this](double value) {
@@ -548,16 +553,26 @@ void ModulatorEditorPanel::setOwnerPath(magda::TrackId trackId,
 void ModulatorEditorPanel::updateRateAutomationTarget() {
     if (ownerTrackId_ == magda::INVALID_TRACK_ID || currentMod_.id == magda::INVALID_MOD_ID) {
         rateSlider_.clearAutomationTarget();
+        syncDivisionSlider_.clearAutomationTarget();
         return;
     }
-    magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::ModParameter;
-    target.trackId = ownerTrackId_;
-    target.devicePath = ownerDevicePath_;
-    target.modId = currentMod_.id;
-    target.modParamIndex = 0;  // rate
-    target.paramName = currentMod_.name + " Rate";
-    rateSlider_.setAutomationTarget(target);
+    magda::AutomationTarget rateTarget;
+    rateTarget.type = magda::AutomationTargetType::ModParameter;
+    rateTarget.trackId = ownerTrackId_;
+    rateTarget.devicePath = ownerDevicePath_;
+    rateTarget.modId = currentMod_.id;
+    rateTarget.modParamIndex = 0;  // rate
+    rateTarget.paramName = currentMod_.name + " Rate";
+    rateSlider_.setAutomationTarget(rateTarget);
+
+    magda::AutomationTarget syncTarget;
+    syncTarget.type = magda::AutomationTargetType::ModParameter;
+    syncTarget.trackId = ownerTrackId_;
+    syncTarget.devicePath = ownerDevicePath_;
+    syncTarget.modId = currentMod_.id;
+    syncTarget.modParamIndex = 1;  // sync division
+    syncTarget.paramName = currentMod_.name + " Sync Division";
+    syncDivisionSlider_.setAutomationTarget(syncTarget);
 }
 
 void ModulatorEditorPanel::setSelectedModIndex(int index) {
@@ -881,6 +896,17 @@ void ModulatorEditorPanel::timerCallback() {
         std::abs(liveMod->rate - currentMod_.rate) > 1e-4f) {
         currentMod_.rate = liveMod->rate;
         rateSlider_.setValue(liveMod->rate, juce::dontSendNotification);
+    }
+
+    // Same dance for sync division — an automation lane targeting paramIndex
+    // 1 will write back via setRack/Device/TrackModSyncDivision, so the
+    // stepped slider follows whichever division the curve picks.
+    if (liveMod && !syncDivisionSlider_.isBeingDragged() &&
+        liveMod->syncDivision != currentMod_.syncDivision) {
+        currentMod_.syncDivision = liveMod->syncDivision;
+        syncDivisionSlider_.setValue(
+            static_cast<double>(syncDivisionToIndex(liveMod->syncDivision)),
+            juce::dontSendNotification);
     }
 
     repaint();
