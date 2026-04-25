@@ -165,6 +165,30 @@ class BindingRegistry {
         const ChainNodePath& devicePath, int paramIndex,
         StaticTarget::Owner owner = StaticTarget::Owner::PluginParam) const;
 
+    /**
+     * @brief Return true when an automap profile binding (focused-device-macro
+     * resolver) targeting this (devicePath, macroIndex) is shadowed by an
+     * overlapping static PluginParam binding — i.e. a MIDI Learn override is
+     * stealing the CC and the green automap dot should drop.
+     *
+     * Must be called on the message thread.
+     */
+    bool isAutomapShadowedForMacro(const ChainNodePath& devicePath, int macroIndex) const;
+
+    /**
+     * @brief Return true when a static PluginParam binding at (devicePath,
+     * paramIndex) is overriding an overlapping focused-device-macro resolver
+     * binding — i.e. the param is stealing the CC from a profile-mapped macro
+     * and should paint a red override dot.
+     *
+     * The resolver-side binding is matched by its declared kind, regardless of
+     * whether it currently resolves to a focused device, so the indicator is
+     * stable across focus changes.
+     *
+     * Must be called on the message thread.
+     */
+    bool isPluginParamOverridingMacro(const ChainNodePath& devicePath, int paramIndex) const;
+
     // ========================================================================
     // Persistence
     // ========================================================================

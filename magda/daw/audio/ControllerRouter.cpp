@@ -262,6 +262,28 @@ void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
         }
     }
 
+    // Preference rule: an explicit static PluginParam binding (MIDI Learn)
+    // shadows any focused-device-macro resolver binding (automap profile)
+    // matched by the same MIDI event. Only the static target fires so the
+    // user's Learn override wins over the profile default. Static DeviceMacro
+    // bindings (explicit per-device macro mappings) are left alone — they are
+    // also explicit user intent.
+    const bool hasStaticPluginParam =
+        std::any_of(bindings.begin(), bindings.end(), [](const Binding& b) {
+            if (auto* st = std::get_if<StaticTarget>(&b.target))
+                return st->owner == StaticTarget::Owner::PluginParam;
+            return false;
+        });
+    if (hasStaticPluginParam) {
+        bindings.erase(std::remove_if(bindings.begin(), bindings.end(),
+                                      [](const Binding& b) {
+                                          if (auto* rr = std::get_if<ResolverRef>(&b.target))
+                                              return rr->kind == "focused_device_macro";
+                                          return false;
+                                      }),
+                       bindings.end());
+    }
+
     for (const auto& binding : bindings) {
         // Always schedule with raw value; executeWrite handles all mode logic
         // on the message thread (where per-binding state lives).

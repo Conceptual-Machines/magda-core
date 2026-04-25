@@ -64,10 +64,12 @@ MacroKnobComponent::~MacroKnobComponent() {
 }
 
 void MacroKnobComponent::refreshAutomapState() {
-    bool newState = magda::BindingRegistry::getInstance().hasActiveBindingForTarget(
-        parentPath_, macroIndex_, magda::StaticTarget::Owner::DeviceMacro);
-    if (newState != hasAutomap_) {
-        hasAutomap_ = newState;
+    auto& reg = magda::BindingRegistry::getInstance();
+    bool active = reg.hasActiveBindingForTarget(parentPath_, macroIndex_,
+                                                magda::StaticTarget::Owner::DeviceMacro) &&
+                  !reg.isAutomapShadowedForMacro(parentPath_, macroIndex_);
+    if (active != hasAutomap_) {
+        hasAutomap_ = active;
         repaint();
     }
 }

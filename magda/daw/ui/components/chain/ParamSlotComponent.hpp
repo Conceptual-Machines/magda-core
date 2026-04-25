@@ -237,6 +237,9 @@ class ParamSlotComponent : public juce::Component,
     // MIDI Learn state
     bool isInMidiLearnMode_ = false;
     bool hasMidiBinding_ = false;  // Persistent badge for already-mapped params
+    bool overridesMacro_ = false;  // True when this PluginParam binding shadows
+                                   // a focused-device-macro automap binding —
+                                   // paints a red override dot instead of orange.
 
     // Link mode drag state (for setting modulation amount via drag)
     bool isLinkModeDrag_ = false;
