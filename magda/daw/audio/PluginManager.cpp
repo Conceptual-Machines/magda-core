@@ -2363,6 +2363,18 @@ te::AutomatableParameter* PluginManager::findModifierParameterForAutomation(
     if (modId == INVALID_MOD_ID || modParamIndex < 0)
         return nullptr;
 
+    // MAGDA's modParamIndex is a SEMANTIC index (0 = rate, 1 = depth, ...).
+    // TE's getAutomatableParameters() ordering varies per modifier type —
+    // for LFOModifier the rate is at TE index 2 (after wave + syncType) —
+    // so look up by paramID rather than positional index.
+    static const char* const kSemanticParamID[] = {
+        "rate",   // 0
+        "depth",  // 1
+    };
+    if (modParamIndex >= static_cast<int>(std::size(kSemanticParamID)))
+        return nullptr;
+    const juce::String wantedID(kSemanticParamID[modParamIndex]);
+
     // ModId is a per-array slot index, not globally unique. Pick the right
     // owner from the path before matching modId.
     auto resolveFromVector =
@@ -2371,10 +2383,11 @@ te::AutomatableParameter* PluginManager::findModifierParameterForAutomation(
         for (size_t i = 0; i < mods.size() && i < teMods.size(); ++i) {
             if (mods[i].id != modId || !teMods[i])
                 continue;
-            auto params = teMods[i]->getAutomatableParameters();
-            if (modParamIndex >= static_cast<int>(params.size()))
-                return nullptr;
-            return params[static_cast<size_t>(modParamIndex)];
+            for (auto* p : teMods[i]->getAutomatableParameters()) {
+                if (p && p->paramID == wantedID)
+                    return p;
+            }
+            return nullptr;
         }
         return nullptr;
     };

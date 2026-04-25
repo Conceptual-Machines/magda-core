@@ -365,16 +365,25 @@ te::AutomatableParameter* RackSyncManager::findRackModifierParameter(RackId rack
                                                                      int paramIndex) const {
     if (paramIndex < 0)
         return nullptr;
+    static const char* const kSemanticParamID[] = {
+        "rate",   // 0
+        "depth",  // 1
+    };
+    if (paramIndex >= static_cast<int>(std::size(kSemanticParamID)))
+        return nullptr;
+    const juce::String wantedID(kSemanticParamID[paramIndex]);
+
     auto rackIt = syncedRacks_.find(rackId);
     if (rackIt == syncedRacks_.end())
         return nullptr;
     auto modIt = rackIt->second.innerModifiers.find(modId);
     if (modIt == rackIt->second.innerModifiers.end() || !modIt->second)
         return nullptr;
-    auto params = modIt->second->getAutomatableParameters();
-    if (paramIndex >= static_cast<int>(params.size()))
-        return nullptr;
-    return params[static_cast<size_t>(paramIndex)];
+    for (auto* p : modIt->second->getAutomatableParameters()) {
+        if (p && p->paramID == wantedID)
+            return p;
+    }
+    return nullptr;
 }
 
 void RackSyncManager::resyncAllModifiers(TrackId trackId) {

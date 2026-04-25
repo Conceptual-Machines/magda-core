@@ -61,8 +61,31 @@ ParameterInfo AutomationTarget::getParameterInfo() const {
             return info;
         }
 
+        case AutomationTargetType::ModParameter: {
+            // Modifier rate (paramIndex 0): keep the lane's normalized [0,1]
+            // mapping aligned with the TE rateParam's actual range so a
+            // recorded value round-trips through bake → curve eval without
+            // collapsing into the percent [0,100] band. Other modParamIndex
+            // values fall through to the generic percent fallback below
+            // until per-param ranges are wired.
+            if (modParamIndex == 0) {
+                ParameterInfo info;
+                info.paramIndex = 0;
+                info.name = paramName.isNotEmpty() ? paramName : juce::String("Rate");
+                info.unit = "Hz";
+                info.minValue = 0.01f;
+                info.maxValue = 20.0f;
+                info.teMinValue = 0.01f;
+                info.teMaxValue = 20.0f;
+                info.defaultValue = 1.0f;
+                info.scale = ParameterScale::Linear;
+                info.displayFormat = DisplayFormat::Default;
+                return info;
+            }
+            break;
+        }
+
         case AutomationTargetType::Macro:
-        case AutomationTargetType::ModParameter:
             break;
     }
 
