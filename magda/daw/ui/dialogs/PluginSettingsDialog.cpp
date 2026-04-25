@@ -254,6 +254,95 @@ PluginSettingsDialog::PluginSettingsDialog(TracktionEngineWrapper* engine)
     };
     addAndMakeVisible(scanButton_);
 
+    scanNewButton_.setButtonText(tr("plugin_settings.button.scan_new"));
+    scanNewButton_.onClick = [this]() {
+        if (!engine_)
+            return;
+        applySettings();
+
+        setScanningUIEnabled(false);
+        scanProgress_ = -1.0;  // detectNewPlugins doesn't report fractional progress
+        scanStatusLabel_.setText(tr("plugin_settings.status.checking_new"),
+                                 juce::dontSendNotification);
+        scanProgressBar_.setVisible(true);
+        scanStatusLabel_.setVisible(true);
+
+        auto safeThis = juce::Component::SafePointer<PluginSettingsDialog>(this);
+
+        engine_->detectNewPlugins(
+            [safeThis](TracktionEngineWrapper::IncrementalScanPhase phase,
+                       const juce::String& currentPlugin) {
+                juce::MessageManager::callAsync([safeThis, phase, currentPlugin]() {
+                    if (safeThis == nullptr)
+                        return;
+                    using Phase = TracktionEngineWrapper::IncrementalScanPhase;
+                    switch (phase) {
+                        case Phase::Discovering:
+                            safeThis->scanStatusLabel_.setText(
+                                tr("plugin_settings.status.checking_new"),
+                                juce::dontSendNotification);
+                            break;
+                        case Phase::UpToDate:
+                            // Final message for the no-new-plugins path; the
+                            // completion callback runs right after but keeps
+                            // this text rather than overwriting it.
+                            safeThis->scanStatusLabel_.setText(
+                                tr("plugin_settings.status.up_to_date"),
+                                juce::dontSendNotification);
+                            break;
+                        case Phase::Scanning:
+                            safeThis->scanStatusLabel_.setText(
+                                tr("plugin_settings.status.scanning") + " " +
+                                    juce::File(currentPlugin).getFileName(),
+                                juce::dontSendNotification);
+                            break;
+                    }
+                });
+            },
+            [safeThis](bool success, int addedCount, int totalCount,
+                       const juce::StringArray& failedPlugins) {
+                juce::MessageManager::callAsync([safeThis, success, addedCount, totalCount,
+                                                 failedPlugins]() {
+                    if (safeThis == nullptr)
+                        return;
+                    safeThis->setScanningUIEnabled(true);
+                    safeThis->scanProgress_ = -1.0;
+                    safeThis->scanProgressBar_.setVisible(false);
+
+                    if (!success) {
+                        juce::String message = tr("plugin_settings.status.failed");
+                        if (failedPlugins.size() > 0)
+                            message += ", " + juce::String(failedPlugins.size()) + " " +
+                                       tr("plugin_settings.status.plugins_failed");
+                        safeThis->scanStatusLabel_.setText(message, juce::dontSendNotification);
+                    } else if (addedCount > 0) {
+                        safeThis->scanStatusLabel_.setText(
+                            tr("plugin_settings.status.added") + " " + juce::String(addedCount) +
+                                " " + tr("plugin_settings.status.new_plugins") +
+                                (failedPlugins.size() > 0
+                                     ? ", " + juce::String(failedPlugins.size()) + " " +
+                                           tr("plugin_settings.status.failed_short")
+                                     : ""),
+                            juce::dontSendNotification);
+                    }
+                    // addedCount == 0 → leave the "Plugins up to date"
+                    // message that the status callback already set.
+
+                    juce::ignoreUnused(totalCount);
+                    safeThis->updatePluginCountLabel();
+
+                    if (safeThis->engine_) {
+                        auto* coordinator = safeThis->engine_->getPluginScanCoordinator();
+                        if (coordinator)
+                            safeThis->excludedPlugins_ = coordinator->getExcludedPlugins();
+                        safeThis->excludedTable_.updateContent();
+                        safeThis->excludedTable_.repaint();
+                    }
+                });
+            });
+    };
+    addAndMakeVisible(scanNewButton_);
+
     viewReportButton_.setButtonText(tr("plugin_settings.button.view_report"));
     viewReportButton_.onClick = [this]() {
         if (engine_) {
@@ -401,6 +490,8 @@ void PluginSettingsDialog::resized() {
     auto scanRow = bounds.removeFromTop(buttonHeight);
     scanButton_.setBounds(scanRow.removeFromLeft(140));
     scanRow.removeFromLeft(spacing);
+    scanNewButton_.setBounds(scanRow.removeFromLeft(130));
+    scanRow.removeFromLeft(spacing);
     viewReportButton_.setBounds(scanRow.removeFromLeft(130));
     scanRow.removeFromLeft(spacing);
     scanProgressBar_.setBounds(scanRow);
@@ -449,6 +540,7 @@ void PluginSettingsDialog::setScanningUIEnabled(bool enabled) {
     addDirButton_.setEnabled(enabled);
     removeDirButton_.setEnabled(enabled);
     scanButton_.setEnabled(enabled);
+    scanNewButton_.setEnabled(enabled);
     viewReportButton_.setEnabled(enabled);
     removeSelectedButton_.setEnabled(enabled);
     resetAllButton_.setEnabled(enabled);

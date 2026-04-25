@@ -8,6 +8,7 @@
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/UndoManager.hpp"
+#include "../../themes/FontManager.hpp"
 
 namespace magda {
 
@@ -449,7 +450,7 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
     ParameterInfo paramInfo = lane->target.getParameterInfo();
 
     g.setColour(juce::Colour(0xFF888888));
-    g.setFont(9.0f);
+    g.setFont(FontManager::getInstance().getUIFont(9.0f));
 
     // Helper lambda to draw a label at a real value position
     auto drawLabelAtRealValue = [&](double realValue, const juce::String& label) {

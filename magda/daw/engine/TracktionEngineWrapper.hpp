@@ -5,6 +5,7 @@
 #include <functional>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "../audio/RecordingNoteQueue.hpp"
 #include "../command.hpp"
@@ -318,23 +319,67 @@ class TracktionEngineWrapper : public AudioEngine,
     void loadPluginList();
 
     /**
-     * @brief Detect and scan newly installed plugins on startup
-     * Compares plugin directories against the cached list and incrementally
-     * scans any new files not already known.
-     * @param statusCallback Optional callback for progress updates (e.g. splash screen)
+     * @brief Phases reported by detectNewPlugins's status callback. Callers
+     * format their own user-facing strings so the engine doesn't bake in
+     * English text that bypasses localization.
      */
-    void detectNewPlugins(std::function<void(const juce::String&)> statusCallback = nullptr);
+    enum class IncrementalScanPhase {
+        Discovering,  ///< Walking plugin directories. currentPlugin is empty.
+        UpToDate,     ///< No new plugins found; no scan will run. currentPlugin is empty.
+        Scanning,     ///< A worker is scanning currentPlugin (full path).
+    };
 
     /**
-     * @brief Remove entries from the given known-plugin list whose absolute
-     * fileOrIdentifier no longer exists on disk. Cheap (stat-only, no plugin
-     * scanning, no disk writes). Returns the number of entries removed so the
-     * caller can decide whether to persist and update Config.
+     * @brief Detect and scan newly installed plugins.
      *
-     * Static and self-contained so it can be unit-tested without spinning up
-     * an Engine.
+     * Compares plugin directories against the cached list and incrementally
+     * scans any new files not already known. Skips plugins on the exclusion
+     * list (use startPluginScan for an exhaustive rescan).
+     *
+     * @param statusCallback Optional progress reporter; receives a phase enum
+     * and the plugin path being scanned (empty for non-Scanning phases).
+     * @param completionCallback Optional one-shot callback fired when the
+     * operation finishes. addedCount is the number of new plugins added
+     * this run (zero in the up-to-date case); totalCount is the size of the
+     * known plugin list after the run.
      */
-    static int pruneMissingPlugins(juce::KnownPluginList& knownPlugins);
+    void detectNewPlugins(
+        std::function<void(IncrementalScanPhase phase, const juce::String& currentPlugin)>
+            statusCallback = nullptr,
+        std::function<void(bool success, int addedCount, int totalCount,
+                           const juce::StringArray& failedPlugins)>
+            completionCallback = nullptr);
+
+    /**
+     * @brief Remove entries from the given known-plugin list whose plugins
+     * are no longer installed. Delegates per-entry to
+     * AudioPluginFormatManager::doesPluginStillExist so each format decides
+     * correctly — VST/VST3 stat the file path, AU queries AudioComponentFindNext
+     * on the identifier (a plain File::exists() skips every AU entry because
+     * their fileOrIdentifier is "AudioUnit:..." and not an absolute path).
+     * Returns the number of entries removed.
+     */
+    static int pruneMissingPlugins(juce::KnownPluginList& knownPlugins,
+                                   juce::AudioPluginFormatManager& formatManager);
+
+    /**
+     * @brief Remove entries that share (path, format) with a freshly-scanned
+     * descriptor but whose uid is not in the fresh scan's results.
+     *
+     * Vendors bump VST3 uniqueIds across major versions; JUCE keys
+     * KnownPluginList by (path, deprecatedUid, uniqueId) so the old and new
+     * entries coexist on the same .vst3 file and the user sees a duplicate
+     * row even though only one binary is installed (#1005). Multi-component
+     * VST3s (Vital, Kontakt, MeldaProduction bundles) legitimately expose
+     * several uids per path, so we keep every uid the current scan returned
+     * and only drop ones that didn't.
+     *
+     * Entries whose (path, format) wasn't seen this scan (excluded plugins,
+     * formats not enabled this run) are left untouched. Returns the number
+     * of entries removed.
+     */
+    static int removeSupersededEntries(juce::KnownPluginList& knownPlugins,
+                                       const juce::Array<juce::PluginDescription>& freshScan);
 
     /**
      * @brief Clear the plugin list and delete the saved file
@@ -451,6 +496,17 @@ class TracktionEngineWrapper : public AudioEngine,
     // Per-track dedup during recordingFinished (multiple devices per track).
     // Populated in recordingFinished, cleared after transport stop.
     std::unordered_map<int, int> activeRecordingClips_;
+
+    // Deferred MIDI recording finalization. TE can produce up to N clips per
+    // track (one per input device) during stopRecording; with mergeRecordings=
+    // true each subsequent device's events are merged into the first clip via
+    // track->mergeInMidiSequence. We track the first TE MidiClip we see per
+    // trackId and, after all synchronous recordingFinished callbacks settle,
+    // extract its final (merged) state once via callAsync. Remove-on-the-spot
+    // caused QWERTY's merge target to vanish, dropping its notes.
+    std::unordered_map<TrackId, tracktion::MidiClip::Ptr> pendingMidiRecordings_;
+    std::unordered_set<TrackId> pendingFinalizeMidi_;
+    void finalizeMidiRecording(TrackId trackId);
 
     // Track recording start time per track (populated in recordingAboutToStart)
     std::unordered_map<int, double> recordingStartTimes_;

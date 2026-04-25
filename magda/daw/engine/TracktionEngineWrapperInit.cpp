@@ -42,15 +42,34 @@ void TracktionEngineWrapper::initializePluginFormats() {
     // Persist + resync the cached count so PluginSettingsDialog doesn't
     // show a stale total after the prune.
     auto& knownPlugins = pluginManager.knownPluginList;
-    if (pruneMissingPlugins(knownPlugins) > 0) {
+    if (pruneMissingPlugins(knownPlugins, pluginManager.pluginFormatManager) > 0) {
         savePluginList();
         Config::getInstance().setTotalPluginCount(knownPlugins.getNumTypes());
         Config::getInstance().save();
     }
 
-    // Auto-detect newly installed plugins (if enabled)
-    if (Config::getInstance().getScanPluginsOnStartup())
-        detectNewPlugins(onPluginScanStatus);
+    // Auto-detect newly installed plugins (if enabled). The splash screen
+    // wants a flat string; format the phase here.
+    if (Config::getInstance().getScanPluginsOnStartup()) {
+        auto splashStatus = onPluginScanStatus;
+        detectNewPlugins(
+            [splashStatus](IncrementalScanPhase phase, const juce::String& currentPlugin) {
+                if (!splashStatus)
+                    return;
+                switch (phase) {
+                    case IncrementalScanPhase::Discovering:
+                        splashStatus("Checking for new plugins...");
+                        break;
+                    case IncrementalScanPhase::UpToDate:
+                        splashStatus("Plugins up to date");
+                        break;
+                    case IncrementalScanPhase::Scanning:
+                        splashStatus("Scanning: " +
+                                     juce::File(currentPlugin).getFileNameWithoutExtension());
+                        break;
+                }
+            });
+    }
 
     // Log registered plugin formats
     auto& formatManager = pluginManager.pluginFormatManager;

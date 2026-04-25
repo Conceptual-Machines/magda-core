@@ -11,11 +11,11 @@ namespace {
 // Build a platform-correct absolute path that is guaranteed not to exist.
 // Hard-coded "/foo/bar" style paths are NOT absolute on Windows
 // (juce::File::isAbsolutePath needs a drive letter or leading backslash),
-// so the prune helper would skip them and the test would falsely pass on
-// Unix while reporting 0 removals on Windows.
+// so a path-based existence check would skip them and the test would
+// falsely pass on Unix while reporting 0 removals on Windows.
 juce::String makeAbsentAbsolutePath(const juce::String& filename) {
     auto path = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                    .getChildFile("magda_prune_test_does_not_exist")
+                    .getChildFile("magda_prune_test_does_not_exist_" + juce::Uuid().toString())
                     .getChildFile(filename);
     REQUIRE(juce::File::isAbsolutePath(path.getFullPathName()));
     REQUIRE_FALSE(path.exists());
@@ -42,45 +42,67 @@ bool listContainsName(const juce::KnownPluginList& list, const juce::String& nam
     return false;
 }
 
+// Build a format manager with the formats we actually ship. The tracktion
+// fork deletes addDefaultFormats(), so each format is registered explicitly.
+void registerTestFormats(juce::AudioPluginFormatManager& fm) {
+#if JUCE_PLUGINHOST_VST3
+    fm.addFormat(std::make_unique<juce::VST3PluginFormat>());
+#endif
+#if JUCE_PLUGINHOST_AU && JUCE_MAC
+    fm.addFormat(std::make_unique<juce::AudioUnitPluginFormat>());
+#endif
+}
+
 }  // namespace
 
-TEST_CASE("pruneMissingPlugins removes only missing absolute-path entries", "[plugin][prune]") {
-    // Create a real temp file to stand in for an existing plugin.
+TEST_CASE("pruneMissingPlugins removes stale entries across formats", "[plugin][prune]") {
+    // Real temp file stands in for an installed VST3.
     juce::TemporaryFile temp(".vst3");
     REQUIRE(temp.getFile().create().wasOk());
 
+    juce::AudioPluginFormatManager formatManager;
+    registerTestFormats(formatManager);
+
     juce::KnownPluginList list;
-    list.addType(makeDesc("Existing", temp.getFile().getFullPathName()));
-    list.addType(makeDesc("Missing", makeAbsentAbsolutePath("Missing.vst3")));
-    list.addType(makeDesc("AURelative", "AudioUnit:Apple:fooo,fooo,fooo", "AudioUnit"));
+    list.addType(makeDesc("ExistingVST3", temp.getFile().getFullPathName()));
+    list.addType(makeDesc("MissingVST3", makeAbsentAbsolutePath("Missing.vst3")));
+    // Bogus AU identifier: AudioComponentFindNext returns null for
+    // unregistered OSTypes, so this must be pruned on macOS. On platforms
+    // without AU support the format isn't registered and the entry is
+    // treated as missing, which is the correct outcome either way.
+    list.addType(makeDesc("MissingAU", "AudioUnit:Effects/fooo,fooo,fooo", "AudioUnit"));
 
     REQUIRE(list.getNumTypes() == 3);
 
-    const int removed = TracktionEngineWrapper::pruneMissingPlugins(list);
+    const int removed = TracktionEngineWrapper::pruneMissingPlugins(list, formatManager);
 
-    CHECK(removed == 1);
-    CHECK(list.getNumTypes() == 2);
-    CHECK(listContainsName(list, "Existing"));
-    CHECK_FALSE(listContainsName(list, "Missing"));
-    CHECK(listContainsName(list, "AURelative"));
+    CHECK(removed == 2);
+    CHECK(list.getNumTypes() == 1);
+    CHECK(listContainsName(list, "ExistingVST3"));
+    CHECK_FALSE(listContainsName(list, "MissingVST3"));
+    CHECK_FALSE(listContainsName(list, "MissingAU"));
 }
 
 TEST_CASE("pruneMissingPlugins is a no-op when nothing is stale", "[plugin][prune]") {
     juce::TemporaryFile temp(".vst3");
     REQUIRE(temp.getFile().create().wasOk());
 
+    juce::AudioPluginFormatManager formatManager;
+    registerTestFormats(formatManager);
+
     juce::KnownPluginList list;
     list.addType(makeDesc("Existing", temp.getFile().getFullPathName()));
-    list.addType(makeDesc("AURelative", "AudioUnit:Apple:fooo,fooo,fooo", "AudioUnit"));
 
-    const int removed = TracktionEngineWrapper::pruneMissingPlugins(list);
+    const int removed = TracktionEngineWrapper::pruneMissingPlugins(list, formatManager);
 
     CHECK(removed == 0);
-    CHECK(list.getNumTypes() == 2);
+    CHECK(list.getNumTypes() == 1);
 }
 
 TEST_CASE("pruneMissingPlugins handles an empty list", "[plugin][prune]") {
+    juce::AudioPluginFormatManager formatManager;
+    registerTestFormats(formatManager);
     juce::KnownPluginList list;
-    CHECK(TracktionEngineWrapper::pruneMissingPlugins(list) == 0);
+    CHECK(TracktionEngineWrapper::pruneMissingPlugins(list, formatManager) == 0);
     CHECK(list.getNumTypes() == 0);
 }
