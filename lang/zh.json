@@ -35,6 +35,7 @@
     "settings.ai": "AI 设置…",
     "settings.audio_midi": "音频/MIDI设置…",
     "settings.plugins": "插件设置…",
+    "settings.controllers": "控制器…",
     "view.track_manager": "轨道管理器…",
     "view.headers_right": "轨道头右置",
     "view.zoom_in": "放大",
@@ -339,6 +340,8 @@
     "language.header": "语言",
     "language.label": "界面语言",
     "language.restart_required": "更改语言后需要重启软件才能完全生效。",
+    "scale.label": "界面缩放",
+    "scale.auto": "自动（根据显示 DPI）",
     "tab.general": "通用",
     "tab.ui": "界面",
     "tab.colours": "颜色",
@@ -350,6 +353,7 @@
     "section.panels": "面板",
     "section.layout": "布局",
     "section.behavior": "行为",
+    "section.scale": "显示缩放",
     "section.track_colour_palette": "轨道调色板",
     "section.clip_colours": "片段颜色",
     "section.output": "输出",
@@ -398,5 +402,20 @@
     "shortcut.duplicate_track": "复制轨道",
     "shortcut.mute_track": "静音轨道",
     "shortcut.solo_track": "独奏轨道"
+  },
+  "controllers": {
+    "title": "控制器",
+    "my_controllers": "我的控制器",
+    "add_profile": "+ 添加配置文件",
+    "remove": "移除",
+    "show_in_finder": "在 Finder 中显示配置文件",
+    "remove_confirm_title": "移除控制器？",
+    "remove_confirm_message": "移除「{0}」及其绑定？",
+    "no_profiles": "未加载任何配置文件。",
+    "no_controllers": "无控制器。",
+    "no_midi_inputs": "没有可用的 MIDI 输入。",
+    "connected": "已连接",
+    "not_connected": "未连接",
+    "disabled": "已禁用"
   }
 }
