@@ -519,7 +519,10 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
 
     // Persistent MIDI-mapped badge: a small dot inside the value slider area,
     // top-right corner. Kept tiny so it doesn't compete with automation/macro
-    // link indicators. Learn-mode pulse below takes precedence when both are set.
+    // link indicators. Learn-mode pulse below takes precedence when both are
+    // set. Same colour as the device-header binding dot — the override case
+    // is communicated by the corresponding macro's automap dot greying out,
+    // not by a different colour here.
     if (hasMidiBinding_ && !isInMidiLearnMode_) {
         constexpr float dotSize = 5.0f;
         constexpr float margin = 3.0f;

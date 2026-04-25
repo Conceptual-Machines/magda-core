@@ -123,6 +123,9 @@ class MacroKnobComponent : public juce::Component,
 
     int macroIndex_;
     bool hasAutomap_ = false;
+    bool automapShadowed_ = false;  // automap binding exists but a Learn
+                                    // override on the same CC is in effect —
+                                    // dot paints grey instead of green.
     juce::Label nameLabel_;
     TextSlider valueSlider_{TextSlider::Format::Decimal};
     std::unique_ptr<magda::SvgButton> linkButton_;
