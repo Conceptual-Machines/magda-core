@@ -69,17 +69,15 @@ ParameterInfo AutomationTarget::getParameterInfo() const {
             // values fall through to the generic percent fallback below
             // until per-param ranges are wired.
             if (modParamIndex == 0) {
-                ParameterInfo info;
-                info.paramIndex = 0;
-                info.name = paramName.isNotEmpty() ? paramName : juce::String("Rate");
-                info.unit = "Hz";
-                info.minValue = 0.01f;
-                info.maxValue = 20.0f;
-                info.teMinValue = 0.01f;
+                // Logarithmic Hz scale, range chosen so the geometric centre
+                // (sqrt(min*max)) lands on 1 Hz — the natural musical mid for
+                // an LFO. 0.05..20 means lane mid = 1 Hz; the slider uses the
+                // same range so the slider position and lane curve agree.
+                ParameterInfo info = ParameterPresets::frequency(
+                    0, paramName.isNotEmpty() ? paramName : juce::String("Rate"), 0.05f, 20.0f);
+                info.teMinValue = 0.05f;
                 info.teMaxValue = 20.0f;
                 info.defaultValue = 1.0f;
-                info.scale = ParameterScale::Linear;
-                info.displayFormat = DisplayFormat::Default;
                 return info;
             }
             break;

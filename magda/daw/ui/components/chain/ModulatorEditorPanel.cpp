@@ -385,7 +385,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     addChildComponent(syncDivisionCombo_);  // Hidden by default (shown when sync enabled)
 
     // Rate slider
-    rateSlider_.setRange(0.01, 20.0, 0.01);
+    rateSlider_.setRange(0.05, 20.0, 0.01);
     rateSlider_.setValue(1.0, juce::dontSendNotification);
     rateSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
     rateSlider_.onValueChanged = [this](double value) {
@@ -838,6 +838,17 @@ void ModulatorEditorPanel::timerCallback() {
                 modMatrixContent_.repaint();
         }
     }
+
+    // Pull external rate writes (automation playback / curve drag preview)
+    // back into the slider position. Skip while the user is actively driving
+    // the slider with the mouse — the in-flight round trip TrackManager
+    // → liveMod can briefly trail the local edit.
+    if (liveMod && !rateSlider_.isBeingDragged() &&
+        std::abs(liveMod->rate - currentMod_.rate) > 1e-4f) {
+        currentMod_.rate = liveMod->rate;
+        rateSlider_.setValue(liveMod->rate, juce::dontSendNotification);
+    }
+
     repaint();
 }
 

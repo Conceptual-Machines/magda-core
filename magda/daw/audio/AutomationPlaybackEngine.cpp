@@ -473,6 +473,60 @@ void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneI
     // The stored lane points are untouched; on mouseUp the real commit runs
     // through automationPointsChanged → bakeLane as usual.
     AutomationManager::getInstance().notifyValueChanged(laneId, previewValue);
+
+    // For Macro / ModParameter targets the slider reads from MAGDA state
+    // (MacroInfo.value / ModInfo.rate), not the TE parameter — so without
+    // a state writeback the slider stays stuck during a drag while
+    // stopped. Mirror the writeback that currentValueChanged does on the
+    // playback side. Wrapped in AutomationWriteScope so the corresponding
+    // resync paths (deviceModifiersChanged / macroValueChanged) skip
+    // pushing back into TE while the user is editing the curve.
+    auto* lane = AutomationManager::getInstance().getLane(laneId);
+    if (!lane)
+        return;
+    const auto& target = lane->target;
+    if (target.type == AutomationTargetType::Macro) {
+        auto& trackMgr = TrackManager::getInstance();
+        AutomationManager::AutomationWriteScope writeScope;
+        const float value = static_cast<float>(previewValue);
+        if (target.devicePath.isValid()) {
+            switch (target.devicePath.getType()) {
+                case ChainNodeType::Rack:
+                    trackMgr.setRackMacroValue(target.devicePath, target.macroIndex, value);
+                    break;
+                case ChainNodeType::TopLevelDevice:
+                case ChainNodeType::Device:
+                    trackMgr.setDeviceMacroValue(target.devicePath, target.macroIndex, value);
+                    break;
+                default:
+                    trackMgr.setTrackMacroValue(target.trackId, target.macroIndex, value);
+                    break;
+            }
+        } else {
+            trackMgr.setTrackMacroValue(target.trackId, target.macroIndex, value);
+        }
+    } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 0) {
+        ParameterInfo info = target.getParameterInfo();
+        float real = ParameterUtils::normalizedToReal(static_cast<float>(previewValue), info);
+        auto& trackMgr = TrackManager::getInstance();
+        AutomationManager::AutomationWriteScope writeScope;
+        if (target.devicePath.isValid()) {
+            switch (target.devicePath.getType()) {
+                case ChainNodeType::Rack:
+                    trackMgr.setRackModRate(target.devicePath, target.modId, real);
+                    break;
+                case ChainNodeType::TopLevelDevice:
+                case ChainNodeType::Device:
+                    trackMgr.setDeviceModRate(target.devicePath, target.modId, real);
+                    break;
+                default:
+                    trackMgr.setTrackModRate(target.trackId, target.modId, real);
+                    break;
+            }
+        } else {
+            trackMgr.setTrackModRate(target.trackId, target.modId, real);
+        }
+    }
 }
 
 te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
