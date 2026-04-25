@@ -44,6 +44,8 @@ class AutomationRecordingEngine {
     void onDeviceParameterChanged(DeviceId deviceId, int paramIndex, float rawValue);
     void onTrackPropertyChanged(int trackId);
     void onMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex, float value);
+    void onModParameterValueChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
+                                    int paramIndex, float value);
 
   private:
     bool shouldRecord() const;

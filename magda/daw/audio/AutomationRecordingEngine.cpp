@@ -438,6 +438,35 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     }
 }
 
+void AutomationRecordingEngine::onModParameterValueChanged(TrackId trackId,
+                                                           const ChainNodePath& devicePath,
+                                                           ModId modId, int paramIndex,
+                                                           float value) {
+    if (!shouldRecord())
+        return;
+
+    AutomationTarget target;
+    target.type = AutomationTargetType::ModParameter;
+    target.trackId = trackId;
+    target.devicePath = devicePath;
+    target.modId = modId;
+    target.modParamIndex = paramIndex;
+
+    auto& autoMgr = AutomationManager::getInstance();
+    auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+
+    // Convert raw rate (Hz, etc.) to normalized 0..1 using the lane's stored
+    // ParameterInfo so curve points are stored in the same space as draws.
+    ParameterInfo info = target.getParameterInfo();
+    double normalizedValue = static_cast<double>(ParameterUtils::realToNormalized(value, info));
+
+    double beatTime = getCurrentBeatTime();
+    if (shouldThinPoint(laneId, beatTime, normalizedValue))
+        return;
+
+    recordPoint(laneId, beatTime, normalizedValue);
+}
+
 void AutomationRecordingEngine::onMacroValueChanged(TrackId trackId, bool isRack, int id,
                                                     int macroIndex, float value) {
     if (!shouldRecord())

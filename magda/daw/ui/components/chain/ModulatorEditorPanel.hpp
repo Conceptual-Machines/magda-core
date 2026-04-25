@@ -191,6 +191,11 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     void setModInfo(const magda::ModInfo& mod, const magda::ModInfo* liveMod = nullptr,
                     std::function<const magda::ModInfo*()> liveModGetter = nullptr);
 
+    // Identify the mod's owning scope so the rate slider can register an
+    // AutomationTarget with AutomationManager — drives the standard purple
+    // highlight + touch-suppression that plugin-param sliders already use.
+    void setOwnerPath(magda::TrackId trackId, const magda::ChainNodePath& devicePath);
+
     // Set a resolver for getting parameter names from device/param IDs
     void setParamNameResolver(std::function<juce::String(magda::DeviceId, int)> resolver) {
         paramNameResolver_ = std::move(resolver);
@@ -228,6 +233,9 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
   private:
     int selectedModIndex_ = -1;
     magda::ModInfo currentMod_;
+    magda::TrackId ownerTrackId_ = magda::INVALID_TRACK_ID;
+    magda::ChainNodePath ownerDevicePath_;
+    void updateRateAutomationTarget();
     const magda::ModInfo* liveModPtr_ = nullptr;  // Pointer to live mod for waveform animation
     std::function<const magda::ModInfo*()> liveModGetter_;  // Safe getter for timer callback
 

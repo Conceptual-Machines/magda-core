@@ -466,6 +466,15 @@ void AudioBridge::audioSidechainTriggered(TrackId /*sourceTrackId*/) {
     // AudioSidechainMonitorPlugin — this callback is no longer needed.
 }
 
+void AudioBridge::modParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
+                                      int paramIndex, float value) {
+    // Skip recording when this notify is the playback engine echoing a baked
+    // curve back into MAGDA state — it would create circular lane writes.
+    if (AutomationManager::getInstance().isApplyingAutomationWrite())
+        return;
+    automationRecording_.onModParameterValueChanged(trackId, devicePath, modId, paramIndex, value);
+}
+
 void AudioBridge::macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
                                     float value) {
     // Skip the TE writeback when this notify is the playback engine echoing

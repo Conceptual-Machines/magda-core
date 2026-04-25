@@ -1,6 +1,7 @@
 #include "ModulatorEditorPanel.hpp"
 
 #include "BinaryData.h"
+#include "core/AutomationInfo.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -394,6 +395,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
         }
     };
     addAndMakeVisible(rateSlider_);
+    updateRateAutomationTarget();
 
     // Trigger mode combo box
     triggerModeCombo_.addItem("Free", static_cast<int>(magda::LFOTriggerMode::Free) + 1);
@@ -499,6 +501,29 @@ void ModulatorEditorPanel::setModInfo(const magda::ModInfo& mod, const magda::Mo
     // Use live mod pointer if available (for animation), otherwise use local copy
     waveformDisplay_.setModInfo(liveMod ? liveMod : &currentMod_);
     updateFromMod();
+    updateRateAutomationTarget();
+}
+
+void ModulatorEditorPanel::setOwnerPath(magda::TrackId trackId,
+                                        const magda::ChainNodePath& devicePath) {
+    ownerTrackId_ = trackId;
+    ownerDevicePath_ = devicePath;
+    updateRateAutomationTarget();
+}
+
+void ModulatorEditorPanel::updateRateAutomationTarget() {
+    if (ownerTrackId_ == magda::INVALID_TRACK_ID || currentMod_.id == magda::INVALID_MOD_ID) {
+        rateSlider_.clearAutomationTarget();
+        return;
+    }
+    magda::AutomationTarget target;
+    target.type = magda::AutomationTargetType::ModParameter;
+    target.trackId = ownerTrackId_;
+    target.devicePath = ownerDevicePath_;
+    target.modId = currentMod_.id;
+    target.modParamIndex = 0;  // rate
+    target.paramName = currentMod_.name + " Rate";
+    rateSlider_.setAutomationTarget(target);
 }
 
 void ModulatorEditorPanel::setSelectedModIndex(int index) {

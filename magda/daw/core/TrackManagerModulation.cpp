@@ -320,6 +320,8 @@ void TrackManager::setRackModRate(const ChainNodePath& rackPath, int modIndex, f
         }
         rack->mods[modIndex].rate = rate;
         notifyDeviceModifiersChanged(rackPath.trackId);
+        notifyModParameterChanged(rackPath.trackId, rackPath, rack->mods[modIndex].id,
+                                  /*paramIndex=*/0, rate);
     }
 }
 
@@ -583,6 +585,7 @@ void TrackManager::setDeviceModRate(const ChainNodePath& devicePath, int modInde
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         mod->rate = rate;
         notifyDeviceModifiersChanged(devicePath.trackId);
+        notifyModParameterChanged(devicePath.trackId, devicePath, mod->id, /*paramIndex=*/0, rate);
     }
 }
 
@@ -1253,6 +1256,8 @@ void TrackManager::setTrackModRate(TrackId trackId, int modIndex, float rate) {
     if (auto* mod = getTrackMod(trackId, modIndex)) {
         mod->rate = rate;
         notifyDeviceModifiersChanged(trackId);
+        notifyModParameterChanged(trackId, ChainNodePath::trackLevel(trackId), mod->id,
+                                  /*paramIndex=*/0, rate);
     }
 }
 
