@@ -1,4 +1,7 @@
+#include <map>
+#include <set>
 #include <thread>
+#include <utility>
 
 #include "PluginScanCoordinator.hpp"
 #include "TracktionEngineWrapper.hpp"
@@ -85,6 +88,15 @@ void TracktionEngineWrapper::startPluginScan(
         pluginScanCoordinator_ = std::make_unique<PluginScanCoordinator>();
     }
 
+    // "Scan All Plugins" means really all of them — bust the exclusion
+    // cache so previously-failing plugins get another chance. A plugin
+    // that genuinely still crashes will be re-added to the list during
+    // this scan; a plugin that the user has fixed (un-quarantined,
+    // updated, installed a missing dependency) will succeed and stay.
+    // Without this step a plugin that ever fails once is excluded
+    // forever, even after the underlying problem is gone (#1005).
+    pluginScanCoordinator_->clearExclusions();
+
     // Start scanning using the out-of-process coordinator
     pluginScanCoordinator_->startScan(
         formatManager,
@@ -95,19 +107,26 @@ void TracktionEngineWrapper::startPluginScan(
             }
         },
         // Completion callback
-        [this, &knownPlugins](bool success, const juce::Array<juce::PluginDescription>& plugins,
-                              const juce::StringArray& failedPlugins) {
+        [this, &knownPlugins, &formatManager](bool success,
+                                              const juce::Array<juce::PluginDescription>& plugins,
+                                              const juce::StringArray& failedPlugins) {
+            // Drop entries whose (path, format) was rescanned but whose uid
+            // is not in the fresh results — the vendor bumped the VST3
+            // uniqueId across a version update and the old row would
+            // otherwise survive forever as a phantom duplicate (#1005).
+            removeSupersededEntries(knownPlugins, plugins);
+
             // Add found plugins to KnownPluginList
             for (const auto& desc : plugins) {
                 knownPlugins.addType(desc);
             }
 
-            // Remove entries whose files are no longer on disk (e.g. the
+            // Remove entries whose plugins are no longer installed (e.g. the
             // plugin was uninstalled between the last scan and this one).
             // The unconditional savePluginList() + Config update below covers
             // persistence for both the additions and the pruning, so we
             // don't pay for an extra save here.
-            pruneMissingPlugins(knownPlugins);
+            pruneMissingPlugins(knownPlugins, formatManager);
 
             int numPlugins = knownPlugins.getNumTypes();
             DBG("Plugin scan complete. Found " << numPlugins << " plugins.");
@@ -230,14 +249,50 @@ void TracktionEngineWrapper::loadPluginList() {
     }
 }
 
-int TracktionEngineWrapper::pruneMissingPlugins(juce::KnownPluginList& knownPlugins) {
+int TracktionEngineWrapper::removeSupersededEntries(
+    juce::KnownPluginList& knownPlugins, const juce::Array<juce::PluginDescription>& freshScan) {
+    using Key = std::pair<juce::String, juce::String>;
+    using UidPair = std::pair<int, int>;
+    std::map<Key, std::set<UidPair>> validUids;
+    for (const auto& desc : freshScan) {
+        validUids[{desc.fileOrIdentifier, desc.pluginFormatName}].insert(
+            {desc.deprecatedUid, desc.uniqueId});
+    }
+
+    juce::Array<juce::PluginDescription> superseded;
+    for (int i = 0; i < knownPlugins.getNumTypes(); ++i) {
+        auto* desc = knownPlugins.getType(i);
+        if (!desc)
+            continue;
+        const Key key{desc->fileOrIdentifier, desc->pluginFormatName};
+        auto it = validUids.find(key);
+        if (it == validUids.end())
+            continue;  // path/format wasn't scanned this run; leave it alone
+        if (it->second.count({desc->deprecatedUid, desc->uniqueId}) == 0)
+            superseded.add(*desc);
+    }
+
+    for (const auto& desc : superseded) {
+        DBG("Removing superseded plugin entry: " << desc.name << " uid=0x"
+                                                 << juce::String::toHexString(desc.uniqueId) << " ("
+                                                 << desc.fileOrIdentifier << ")");
+        knownPlugins.removeType(desc);
+    }
+
+    if (!superseded.isEmpty())
+        DBG("Removed " << superseded.size() << " superseded plugin entry/entries");
+
+    return superseded.size();
+}
+
+int TracktionEngineWrapper::pruneMissingPlugins(juce::KnownPluginList& knownPlugins,
+                                                juce::AudioPluginFormatManager& formatManager) {
     juce::Array<juce::PluginDescription> stalePlugins;
     for (int i = 0; i < knownPlugins.getNumTypes(); ++i) {
         auto* desc = knownPlugins.getType(i);
-        if (!desc || !juce::File::isAbsolutePath(desc->fileOrIdentifier))
+        if (!desc)
             continue;
-        juce::File pluginFile(desc->fileOrIdentifier);
-        if (!pluginFile.exists())
+        if (!formatManager.doesPluginStillExist(*desc))
             stalePlugins.add(*desc);
     }
 
@@ -273,7 +328,8 @@ void TracktionEngineWrapper::clearPluginList() {
 }
 
 void TracktionEngineWrapper::detectNewPlugins(
-    std::function<void(const juce::String&)> statusCallback) {
+    std::function<void(IncrementalScanPhase, const juce::String&)> statusCallback,
+    std::function<void(bool, int, int, const juce::StringArray&)> completionCallback) {
     if (!engine_) {
         DBG("[AutoDetect] Engine not initialized");
         return;
@@ -281,7 +337,7 @@ void TracktionEngineWrapper::detectNewPlugins(
 
     juce::Logger::writeToLog("[AutoDetect] Checking for new plugins...");
     if (statusCallback)
-        statusCallback("Checking for new plugins...");
+        statusCallback(IncrementalScanPhase::Discovering, {});
 
     // Snapshot all data needed by the background thread while on the message thread
     auto& pluginManager = engine_->getPluginManager();
@@ -310,7 +366,7 @@ void TracktionEngineWrapper::detectNewPlugins(
         pluginDiscoveryThread_.join();
 
     pluginDiscoveryThread_ = std::thread([this, &formatManager, knownPaths, excludedPaths,
-                                          customPaths, statusCallback]() {
+                                          customPaths, statusCallback, completionCallback]() {
         // Discover all plugin files on disk (expensive recursive dir traversal)
         // Using snapshots of excluded/custom paths to avoid data races
         auto allPlugins =
@@ -329,61 +385,63 @@ void TracktionEngineWrapper::detectNewPlugins(
             return;
 
         juce::WeakReference<TracktionEngineWrapper> weakThis(this);
-        juce::MessageManager::callAsync(
-            [weakThis, alive, newPlugins = std::move(newPlugins), statusCallback]() mutable {
-                auto* self = weakThis.get();
-                if (!self || !*alive || !self->engine_)
-                    return;
+        juce::MessageManager::callAsync([weakThis, alive, newPlugins = std::move(newPlugins),
+                                         statusCallback, completionCallback]() mutable {
+            auto* self = weakThis.get();
+            if (!self || !*alive || !self->engine_)
+                return;
 
-                auto& pm = self->engine_->getPluginManager();
-                auto& kp = pm.knownPluginList;
-                auto& fm = pm.pluginFormatManager;
+            auto& pm = self->engine_->getPluginManager();
+            auto& kp = pm.knownPluginList;
+            auto& fm = pm.pluginFormatManager;
 
-                if (newPlugins.empty()) {
-                    auto msg = "Plugins up to date (" + juce::String(kp.getNumTypes()) + " loaded)";
-                    juce::Logger::writeToLog("[AutoDetect] " + msg);
-                    if (statusCallback)
-                        statusCallback(msg);
-                    return;
-                }
-
-                auto msg = "Scanning " + juce::String(static_cast<int>(newPlugins.size())) +
-                           " new plugin(s)...";
-                juce::Logger::writeToLog("[AutoDetect] " + msg);
+            if (newPlugins.empty()) {
+                juce::Logger::writeToLog("[AutoDetect] Plugins up to date (" +
+                                         juce::String(kp.getNumTypes()) + " loaded)");
                 if (statusCallback)
-                    statusCallback(msg);
+                    statusCallback(IncrementalScanPhase::UpToDate, {});
+                if (completionCallback)
+                    completionCallback(true, 0, kp.getNumTypes(), {});
+                return;
+            }
 
-                self->isScanning_ = true;
+            juce::Logger::writeToLog("[AutoDetect] Scanning " +
+                                     juce::String(static_cast<int>(newPlugins.size())) +
+                                     " new plugin(s)...");
 
-                self->pluginScanCoordinator_->startIncrementalScan(
-                    fm, newPlugins,
-                    [statusCallback](float, const juce::String& currentPlugin) {
-                        if (statusCallback) {
-                            auto name = juce::File(currentPlugin).getFileNameWithoutExtension();
-                            statusCallback("Scanning: " + name + "...");
-                        }
-                    },
-                    [weakThis, alive](bool /*success*/,
-                                      const juce::Array<juce::PluginDescription>& plugins,
-                                      const juce::StringArray& failedPlugins) {
-                        auto* s = weakThis.get();
-                        if (!s || !*alive || !s->engine_)
-                            return;
-                        auto& kpl = s->engine_->getPluginManager().knownPluginList;
-                        for (const auto& desc : plugins)
-                            kpl.addType(desc);
+            self->isScanning_ = true;
 
-                        auto msg = "[AutoDetect] Incremental scan complete: " +
-                                   juce::String(plugins.size()) + " new plugin(s) added" +
-                                   (failedPlugins.size() > 0
-                                        ? ", " + juce::String(failedPlugins.size()) + " failed"
-                                        : "");
-                        DBG(msg);
-                        juce::Logger::writeToLog(msg);
-                        s->savePluginList();
-                        s->isScanning_ = false;
-                    });
-            });
+            self->pluginScanCoordinator_->startIncrementalScan(
+                fm, newPlugins,
+                [statusCallback](float, const juce::String& currentPlugin) {
+                    if (statusCallback)
+                        statusCallback(IncrementalScanPhase::Scanning, currentPlugin);
+                },
+                [weakThis, alive, completionCallback](
+                    bool success, const juce::Array<juce::PluginDescription>& plugins,
+                    const juce::StringArray& failedPlugins) {
+                    auto* s = weakThis.get();
+                    if (!s || !*alive || !s->engine_)
+                        return;
+                    auto& kpl = s->engine_->getPluginManager().knownPluginList;
+                    for (const auto& desc : plugins)
+                        kpl.addType(desc);
+
+                    auto msg =
+                        "[AutoDetect] Incremental scan complete: " + juce::String(plugins.size()) +
+                        " new plugin(s) added" +
+                        (failedPlugins.size() > 0
+                             ? ", " + juce::String(failedPlugins.size()) + " failed"
+                             : "");
+                    DBG(msg);
+                    juce::Logger::writeToLog(msg);
+                    s->savePluginList();
+                    s->isScanning_ = false;
+                    if (completionCallback)
+                        completionCallback(success, plugins.size(), kpl.getNumTypes(),
+                                           failedPlugins);
+                });
+        });
     });
 }
 

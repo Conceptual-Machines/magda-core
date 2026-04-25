@@ -6,66 +6,51 @@
 namespace magda::daw::ui {
 
 ToneGeneratorUI::ToneGeneratorUI() {
-    // Waveform selector
+    // Waveform selector — IDs are TE oscType + 1 so (selectedId - 1) is the TE enum value.
+    // TE enum: 0=Sine, 1=Triangle, 2=Saw Up, 3=Saw Down, 4=Square, 5=Noise
     waveformSelector_.addItem("Sine", 1);
-    waveformSelector_.addItem("Noise", 2);
+    waveformSelector_.addItem("Triangle", 2);
+    waveformSelector_.addItem("Saw Up", 3);
+    waveformSelector_.addItem("Saw Down", 4);
+    waveformSelector_.addItem("Square", 5);
+    waveformSelector_.addItem("Noise", 6);
     waveformSelector_.setSelectedId(1, juce::dontSendNotification);
     waveformSelector_.onChange = [this]() {
-        int waveform = waveformSelector_.getSelectedId() - 1;  // 0=Sine, 1=Noise
+        int teValue = waveformSelector_.getSelectedId() - 1;
         if (onParameterChanged) {
-            // Send actual choice index (0 or 1)
-            onParameterChanged(2, static_cast<float>(waveform));
+            onParameterChanged(0, static_cast<float>(teValue));  // Param 0 = oscType (TE enum)
         }
     };
     addAndMakeVisible(waveformSelector_);
 
-    // Frequency slider (20 Hz - 20 kHz, log-scaled drag)
-    frequencySlider_.setRange(20.0, 20000.0, 0.1);
-    frequencySlider_.setSkewForCentre(1000.0);
-    frequencySlider_.setValue(440.0, juce::dontSendNotification);
-    // Custom formatter to display Hz/kHz
-    frequencySlider_.setValueFormatter(
-        [this](double value) { return formatFrequency(static_cast<float>(value)); });
-    // Custom parser to read Hz/kHz input
-    frequencySlider_.setValueParser([](const juce::String& text) {
-        juce::String trimmed = text.trim();
-        // Remove "Hz" or "kHz" suffix
-        if (trimmed.endsWithIgnoreCase("khz")) {
-            float kHz = trimmed.dropLastCharacters(3).trim().getFloatValue();
-            return static_cast<double>(kHz * 1000.0f);
-        } else if (trimmed.endsWithIgnoreCase("hz")) {
-            return static_cast<double>(trimmed.dropLastCharacters(2).trim().getFloatValue());
-        }
-        return static_cast<double>(trimmed.getFloatValue());
-    });
+    // Frequency slider — range, skew, and Hz/kHz format/parse are populated by
+    // DeviceSlotComponent via setParameterInfo() from the processor's ParameterInfo
+    // (unit="Hz", scale=Logarithmic, scaleAnchor=1000). Param index 2 in TE's ordering.
+    frequencySlider_.setParamIndex(2);
     frequencySlider_.onValueChanged = [this](double value) {
         if (onParameterChanged) {
-            // Send actual Hz value (20-20000)
-            onParameterChanged(0, static_cast<float>(value));  // Param 0 = frequency
+            onParameterChanged(2, static_cast<float>(value));
         }
     };
     addAndMakeVisible(frequencySlider_);
 
-    // Level slider (-60 to 0 dB)
-    levelSlider_.setRange(-60.0, 0.0, 0.1);
-    levelSlider_.setValue(-12.0, juce::dontSendNotification);
+    // Level slider — range and dB formatting come from the processor's ParameterInfo
+    // via setParameterInfo(). Param index 3 in TE's ordering.
+    levelSlider_.setParamIndex(3);
     levelSlider_.onValueChanged = [this](double value) {
         if (onParameterChanged) {
-            // Send actual dB value (-60 to 0)
-            onParameterChanged(1, static_cast<float>(value));  // Param 1 = level
+            onParameterChanged(3, static_cast<float>(value));
         }
     };
     addAndMakeVisible(levelSlider_);
 }
 
 void ToneGeneratorUI::updateParameters(float frequency, float level, int waveform) {
-    // Update waveform selector
-    waveformSelector_.setSelectedId(waveform + 1, juce::dontSendNotification);
+    // waveform is the TE enum value (0-5); combo IDs are TE value + 1
+    int teValue = juce::jlimit(0, 5, waveform);
+    waveformSelector_.setSelectedId(teValue + 1, juce::dontSendNotification);
 
-    // Update frequency slider
     frequencySlider_.setValue(frequency, juce::dontSendNotification);
-
-    // Update level slider
     levelSlider_.setValue(level, juce::dontSendNotification);
 }
 
@@ -98,22 +83,8 @@ void ToneGeneratorUI::resized() {
 }
 
 std::vector<LinkableTextSlider*> ToneGeneratorUI::getLinkableSliders() {
-    // ParamIndex: 0=frequency, 1=level (waveform is a combo, not a slider)
+    // Sliders carry their TE param index via setParamIndex (2 = frequency, 3 = level).
     return {&frequencySlider_, &levelSlider_};
-}
-
-juce::String ToneGeneratorUI::formatFrequency(float hz) const {
-    if (hz >= 1000.0f) {
-        float kHz = hz / 1000.0f;
-        if (kHz >= 10.0f) {
-            return juce::String(kHz, 1) + " kHz";
-        }
-        return juce::String(kHz, 2) + " kHz";
-    }
-    if (hz >= 100.0f) {
-        return juce::String(static_cast<int>(hz)) + " Hz";
-    }
-    return juce::String(hz, 1) + " Hz";
 }
 
 }  // namespace magda::daw::ui

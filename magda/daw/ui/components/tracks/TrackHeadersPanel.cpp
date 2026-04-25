@@ -3377,7 +3377,7 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
 
         // Parameter name
         g.setColour(juce::Colour(0xFFCCCCCC));
-        g.setFont(11.0f);
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
         auto nameArea = headerArea.reduced(4, 2);
         g.drawText(lane->getDisplayName(), nameArea, juce::Justification::centredLeft);
 
@@ -3454,8 +3454,30 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                         gridValues.push_back({norm, label});
                     }
                 } else if (paramInfo.displayText) {
+                    // displayText wraps TE's valueToString, which expects a
+                    // plugin-native value — NOT normalized [0,1]. Sample the
+                    // REAL value at each visual position so any scaleAnchor
+                    // skew is honoured (e.g. 4OSC's filterFreq pins A4 / 440
+                    // Hz to the visual centre), then project from info-range
+                    // onto the TE-native range so the provider sees what it
+                    // expects. For params whose raw range isn't 0..1 this
+                    // prevents the five-way collision (4OSC filterFreq's note
+                    // range 0..135.076 previously produced "8Hz" five times
+                    // from raw norm values); for anchored params it puts the
+                    // anchor value dead centre.
+                    const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
+                    const float infoSpan = paramInfo.maxValue - paramInfo.minValue;
                     for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
-                        auto text = paramInfo.displayText->format(static_cast<float>(norm));
+                        float teRaw;
+                        if (infoSpan > 0.0f) {
+                            float real = ParameterUtils::normalizedToReal(static_cast<float>(norm),
+                                                                          paramInfo);
+                            float normInInfo = (real - paramInfo.minValue) / infoSpan;
+                            teRaw = paramInfo.teMinValue + normInInfo * teSpan;
+                        } else {
+                            teRaw = paramInfo.teMinValue + static_cast<float>(norm) * teSpan;
+                        }
+                        auto text = paramInfo.displayText->format(teRaw);
                         gridValues.push_back(
                             {norm, text.isNotEmpty()
                                        ? text
@@ -3474,17 +3496,42 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                         gridValues.push_back({i / 10.0, juce::String(i * 10) + "%"});
                 }
 
-                g.setFont(8.0f);
+                g.setFont(FontManager::getInstance().getUIFont(8.0f));
+                constexpr int labelH = 10;
+                // Thin labels to what vertically fits. Very short lanes
+                // collapse to a single centre label; otherwise evenly spaced
+                // samples are picked across the range (endpoints included
+                // whenever at least two labels fit), while tall lanes show
+                // every sample. Spacing ~= labelH + 6 matches the minimum
+                // gap before adjacent 8pt labels start to touch.
+                constexpr int labelSpacing = labelH + 6;
+                int maxLabels = juce::jmax(1, contentHeight / labelSpacing);
+                if (maxLabels < static_cast<int>(gridValues.size())) {
+                    std::vector<std::pair<double, juce::String>> thinned;
+                    thinned.reserve(static_cast<size_t>(maxLabels));
+                    if (maxLabels == 1) {
+                        thinned.push_back(gridValues[gridValues.size() / 2]);
+                    } else {
+                        const double srcMax = static_cast<double>(gridValues.size() - 1);
+                        for (int i = 0; i < maxLabels; ++i) {
+                            int srcIdx = static_cast<int>(
+                                std::round(static_cast<double>(i) * srcMax / (maxLabels - 1)));
+                            thinned.push_back(gridValues[static_cast<size_t>(srcIdx)]);
+                        }
+                    }
+                    gridValues = std::move(thinned);
+                }
                 for (const auto& [norm, label] : gridValues) {
-                    if (norm <= 0.01 || norm >= 0.99)
-                        continue;
                     int tickY = contentTop + static_cast<int>((1.0 - norm) * contentHeight);
                     // Tick
                     g.setColour(juce::Colour(0x66FFFFFF));
                     g.drawHorizontalLine(tickY, rightEdge - tickLen, rightEdge);
-                    // Label
+                    // Label — clamp vertically so min/max labels flush against
+                    // the lane edges instead of clipping against the header /
+                    // resize handle.
                     g.setColour(juce::Colour(0xFF777777));
-                    auto labelBounds = juce::Rectangle<int>(2, tickY - 5, getWidth() - 10, 10);
+                    int labelTop = juce::jlimit(contentTop, contentBottom - labelH, tickY - 5);
+                    auto labelBounds = juce::Rectangle<int>(2, labelTop, getWidth() - 10, labelH);
                     g.drawText(label, labelBounds, juce::Justification::centredRight);
                 }
             }

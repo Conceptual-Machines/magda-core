@@ -357,15 +357,29 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
     // Live plugin display text — exact, no quantization.
     //
     // DisplayTextProvider wraps TE's valueToString, which expects the
-    // plugin-native TE value. `realValue` is expressed in the info range
-    // (which may be an AI-Detect-declared display range separate from the
-    // native TE range for external VSTs). Project realValue → normalized →
-    // TE raw so the provider sees the argument it expects; for params
-    // where info range == TE range (internal plugins, external VSTs
-    // without AI-Detect) this is an identity and the label is unchanged.
+    // plugin-native TE value. For internal plugins (and external VSTs
+    // without an AI-Detect display range) info.min/max match the TE
+    // range, so `realValue` IS the TE-native value and we must hand it
+    // to the provider unchanged. Projecting via realToNormalized → linear
+    // remap is only an identity when no skew is applied; with a
+    // scaleAnchor (e.g. 4OSC filterFreq anchored at note 69) the round
+    // trip collapses to the linear midpoint and mis-labels the knob
+    // (note 69 / 440 Hz round-tripped back to note 67.5 / 404 Hz).
+    //
+    // When the info range differs from the TE range (external VST with
+    // AI-Detect) realValue is in the display range and we project it to
+    // the TE range via normalized so the provider sees the native value.
     if (info.displayText) {
-        float normalized = realToNormalized(realValue, info);
-        float teRaw = info.teMinValue + normalized * (info.teMaxValue - info.teMinValue);
+        const float teSpan = info.teMaxValue - info.teMinValue;
+        const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
+                                        std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
+        float teRaw;
+        if (infoMatchesTeRange || teSpan <= 0.0f) {
+            teRaw = realValue;
+        } else {
+            float normalized = realToNormalized(realValue, info);
+            teRaw = info.teMinValue + normalized * teSpan;
+        }
         auto text = info.displayText->format(teRaw);
         if (text.isNotEmpty())
             return text;
