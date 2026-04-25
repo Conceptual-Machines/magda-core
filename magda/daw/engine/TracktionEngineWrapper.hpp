@@ -339,6 +339,25 @@ class TracktionEngineWrapper : public AudioEngine,
                                    juce::AudioPluginFormatManager& formatManager);
 
     /**
+     * @brief Remove entries that share (path, format) with a freshly-scanned
+     * descriptor but whose uid is not in the fresh scan's results.
+     *
+     * Vendors bump VST3 uniqueIds across major versions; JUCE keys
+     * KnownPluginList by (path, deprecatedUid, uniqueId) so the old and new
+     * entries coexist on the same .vst3 file and the user sees a duplicate
+     * row even though only one binary is installed (#1005). Multi-component
+     * VST3s (Vital, Kontakt, MeldaProduction bundles) legitimately expose
+     * several uids per path, so we keep every uid the current scan returned
+     * and only drop ones that didn't.
+     *
+     * Entries whose (path, format) wasn't seen this scan (excluded plugins,
+     * formats not enabled this run) are left untouched. Returns the number
+     * of entries removed.
+     */
+    static int removeSupersededEntries(juce::KnownPluginList& knownPlugins,
+                                       const juce::Array<juce::PluginDescription>& freshScan);
+
+    /**
      * @brief Clear the plugin list and delete the saved file
      * Use this before a fresh rescan
      */

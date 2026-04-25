@@ -186,3 +186,93 @@ TEST_CASE("addType treats path case differences as distinct on a case-sensitive 
 
     CHECK(list.getNumTypes() == 2);
 }
+
+// =============================================================================
+// removeSupersededEntries — the actual #1005 fix
+// =============================================================================
+
+TEST_CASE("removeSupersededEntries drops old uid when vendor bumps it", "[plugin][duplicates]") {
+    // Same .vst3 path, vendor shipped a new release with a different
+    // uniqueId. After a rescan we want only the fresh uid to remain.
+    juce::KnownPluginList list;
+    const juce::String path = "/Library/Audio/Plug-Ins/VST3/Nebula De-Esser.vst3";
+    list.addType(makeDesc("Nebula De-Esser", path, 0xAAAA));  // old install
+
+    juce::Array<juce::PluginDescription> freshScan;
+    freshScan.add(makeDesc("Nebula De-Esser", path, 0xBBBB));  // new install
+
+    const int removed = magda::TracktionEngineWrapper::removeSupersededEntries(list, freshScan);
+
+    CHECK(removed == 1);
+    CHECK(list.getNumTypes() == 0);  // fresh entry isn't added by this helper
+}
+
+TEST_CASE("removeSupersededEntries keeps multi-component VST3 entries", "[plugin][duplicates]") {
+    // Vital exposes two uids from one .vst3 bundle. Both must survive a
+    // rescan — they're not duplicates, they're separate entry points.
+    juce::KnownPluginList list;
+    const juce::String path = "/Library/Audio/Plug-Ins/VST3/Vital.vst3";
+    list.addType(makeDesc("Vital", path, 0x1111));
+    list.addType(makeDesc("Vital", path, 0x2222));
+
+    juce::Array<juce::PluginDescription> freshScan;
+    freshScan.add(makeDesc("Vital", path, 0x1111));
+    freshScan.add(makeDesc("Vital", path, 0x2222));
+
+    const int removed = magda::TracktionEngineWrapper::removeSupersededEntries(list, freshScan);
+
+    CHECK(removed == 0);
+    CHECK(list.getNumTypes() == 2);
+}
+
+TEST_CASE("removeSupersededEntries keeps system + user installs", "[plugin][duplicates]") {
+    // Two genuinely separate .vst3 files on disk — different paths, same
+    // name. Both surface in the fresh scan and both must remain.
+    juce::KnownPluginList list;
+    list.addType(makeDesc("Serum", "/Library/Audio/Plug-Ins/VST3/Serum.vst3", 0xAAAA));
+    list.addType(makeDesc("Serum", "/Users/me/Library/Audio/Plug-Ins/VST3/Serum.vst3", 0xAAAA));
+
+    juce::Array<juce::PluginDescription> freshScan;
+    freshScan.add(makeDesc("Serum", "/Library/Audio/Plug-Ins/VST3/Serum.vst3", 0xAAAA));
+    freshScan.add(makeDesc("Serum", "/Users/me/Library/Audio/Plug-Ins/VST3/Serum.vst3", 0xAAAA));
+
+    const int removed = magda::TracktionEngineWrapper::removeSupersededEntries(list, freshScan);
+
+    CHECK(removed == 0);
+    CHECK(list.getNumTypes() == 2);
+}
+
+TEST_CASE("removeSupersededEntries keeps cross-format VST3 + AU entries", "[plugin][duplicates]") {
+    // Same plugin shipped as VST3 and AU. Different (path, format) keys, so
+    // each is independent.
+    juce::KnownPluginList list;
+    list.addType(makeDesc("Massive X", "/Library/Audio/Plug-Ins/VST3/Massive X.vst3", 0xAAAA));
+    list.addType(makeDesc("Massive X", "AudioUnit:Effects/aumu,MaXX,NIcm", 0xAAAA, "AudioUnit"));
+
+    juce::Array<juce::PluginDescription> freshScan;
+    freshScan.add(makeDesc("Massive X", "/Library/Audio/Plug-Ins/VST3/Massive X.vst3", 0xAAAA));
+    freshScan.add(makeDesc("Massive X", "AudioUnit:Effects/aumu,MaXX,NIcm", 0xAAAA, "AudioUnit"));
+
+    const int removed = magda::TracktionEngineWrapper::removeSupersededEntries(list, freshScan);
+
+    CHECK(removed == 0);
+    CHECK(list.getNumTypes() == 2);
+}
+
+TEST_CASE("removeSupersededEntries leaves entries whose path was not rescanned",
+          "[plugin][duplicates]") {
+    // Excluded plugins, or formats not enabled this run, won't appear in
+    // freshScan. Their entries must survive — we only collapse paths the
+    // current scan actually visited.
+    juce::KnownPluginList list;
+    list.addType(makeDesc("Serum", "/Library/Audio/Plug-Ins/VST3/Serum.vst3", 0xAAAA));
+    list.addType(makeDesc("Excluded", "/Library/Audio/Plug-Ins/VST3/Excluded.vst3", 0xBBBB));
+
+    juce::Array<juce::PluginDescription> freshScan;
+    freshScan.add(makeDesc("Serum", "/Library/Audio/Plug-Ins/VST3/Serum.vst3", 0xAAAA));
+
+    const int removed = magda::TracktionEngineWrapper::removeSupersededEntries(list, freshScan);
+
+    CHECK(removed == 0);
+    CHECK(list.getNumTypes() == 2);
+}

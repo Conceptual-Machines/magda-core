@@ -1,4 +1,7 @@
+#include <map>
+#include <set>
 #include <thread>
+#include <utility>
 
 #include "PluginScanCoordinator.hpp"
 #include "TracktionEngineWrapper.hpp"
@@ -98,6 +101,12 @@ void TracktionEngineWrapper::startPluginScan(
         [this, &knownPlugins, &formatManager](bool success,
                                               const juce::Array<juce::PluginDescription>& plugins,
                                               const juce::StringArray& failedPlugins) {
+            // Drop entries whose (path, format) was rescanned but whose uid
+            // is not in the fresh results — the vendor bumped the VST3
+            // uniqueId across a version update and the old row would
+            // otherwise survive forever as a phantom duplicate (#1005).
+            removeSupersededEntries(knownPlugins, plugins);
+
             // Add found plugins to KnownPluginList
             for (const auto& desc : plugins) {
                 knownPlugins.addType(desc);
@@ -229,6 +238,42 @@ void TracktionEngineWrapper::loadPluginList() {
         DBG("Plugins will need to be scanned manually via the Plugin Browser");
         knownPlugins.clear();
     }
+}
+
+int TracktionEngineWrapper::removeSupersededEntries(
+    juce::KnownPluginList& knownPlugins, const juce::Array<juce::PluginDescription>& freshScan) {
+    using Key = std::pair<juce::String, juce::String>;
+    using UidPair = std::pair<int, int>;
+    std::map<Key, std::set<UidPair>> validUids;
+    for (const auto& desc : freshScan) {
+        validUids[{desc.fileOrIdentifier, desc.pluginFormatName}].insert(
+            {desc.deprecatedUid, desc.uniqueId});
+    }
+
+    juce::Array<juce::PluginDescription> superseded;
+    for (int i = 0; i < knownPlugins.getNumTypes(); ++i) {
+        auto* desc = knownPlugins.getType(i);
+        if (!desc)
+            continue;
+        const Key key{desc->fileOrIdentifier, desc->pluginFormatName};
+        auto it = validUids.find(key);
+        if (it == validUids.end())
+            continue;  // path/format wasn't scanned this run; leave it alone
+        if (it->second.count({desc->deprecatedUid, desc->uniqueId}) == 0)
+            superseded.add(*desc);
+    }
+
+    for (const auto& desc : superseded) {
+        DBG("Removing superseded plugin entry: " << desc.name << " uid=0x"
+                                                 << juce::String::toHexString(desc.uniqueId) << " ("
+                                                 << desc.fileOrIdentifier << ")");
+        knownPlugins.removeType(desc);
+    }
+
+    if (!superseded.isEmpty())
+        DBG("Removed " << superseded.size() << " superseded plugin entry/entries");
+
+    return superseded.size();
 }
 
 int TracktionEngineWrapper::pruneMissingPlugins(juce::KnownPluginList& knownPlugins,
