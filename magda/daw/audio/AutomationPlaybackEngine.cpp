@@ -680,6 +680,32 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
         } else {
             trackMgr.setTrackMacroValue(target.trackId, target.macroIndex, value);
         }
+    } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 0) {
+        // Mirror the curve value back into ModInfo.rate so the modulator UI
+        // tracks the curve. modParamIndex 0 == rate; other indices (depth,
+        // shape, etc.) require their own setters and aren't wired yet.
+        // AudioBridge::deviceModifiersChanged checks AutomationWriteScope
+        // and skips its resync to avoid fighting the live TE curve.
+        ParameterInfo info = target.getParameterInfo();
+        float real = ParameterUtils::normalizedToReal(static_cast<float>(normalized), info);
+        auto& trackMgr = TrackManager::getInstance();
+        AutomationManager::AutomationWriteScope writeScope;
+        if (target.devicePath.isValid()) {
+            switch (target.devicePath.getType()) {
+                case ChainNodeType::Rack:
+                    trackMgr.setRackModRate(target.devicePath, target.modId, real);
+                    break;
+                case ChainNodeType::TopLevelDevice:
+                case ChainNodeType::Device:
+                    trackMgr.setDeviceModRate(target.devicePath, target.modId, real);
+                    break;
+                default:
+                    trackMgr.setTrackModRate(target.trackId, target.modId, real);
+                    break;
+            }
+        } else {
+            trackMgr.setTrackModRate(target.trackId, target.modId, real);
+        }
     }
 }
 

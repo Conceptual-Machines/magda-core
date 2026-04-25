@@ -440,6 +440,13 @@ void AudioBridge::trackDevicesChanged(TrackId trackId) {
 }
 
 void AudioBridge::deviceModifiersChanged(TrackId trackId) {
+    // Skip the modifier resync when this notify is the playback engine
+    // echoing a baked curve value (e.g. LFO rate) back into MAGDA state.
+    // TE already drove the modifier param on the audio thread; resyncing
+    // would just push the same value back through and fight the curve.
+    if (AutomationManager::getInstance().isApplyingAutomationWrite())
+        return;
+
     // Modifier properties changed (rate, waveform, sync, trigger mode) - resync only modifiers
     pluginManager_.resyncDeviceModifiers(trackId);
 

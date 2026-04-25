@@ -3183,7 +3183,8 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                 for (const auto& element : elements) {
                     if (isDevice(element)) {
                         const auto& device = getDevice(element);
-                        if (device.parameters.empty())
+                        if (device.parameters.empty() && device.mods.empty() &&
+                            device.macros.empty())
                             continue;
 
                         juce::PopupMenu deviceMenu;
@@ -3192,21 +3193,77 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                               ? ChainNodePath::topLevelDevice(trackId, device.id)
                                               : parentPath.withDevice(device.id);
 
-                        for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i) {
-                            AutomationTarget target;
-                            target.type = AutomationTargetType::DeviceParameter;
-                            target.trackId = trackId;
-                            target.devicePath = devicePath;
-                            target.paramIndex = i;
-                            target.paramName =
-                                device.name + ": " + device.parameters[static_cast<size_t>(i)].name;
+                        // Params submenu
+                        if (!device.parameters.empty()) {
+                            juce::PopupMenu paramsMenu;
+                            for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i) {
+                                AutomationTarget target;
+                                target.type = AutomationTargetType::DeviceParameter;
+                                target.trackId = trackId;
+                                target.devicePath = devicePath;
+                                target.paramIndex = i;
+                                target.paramName = device.name + ": " +
+                                                   device.parameters[static_cast<size_t>(i)].name;
 
-                            int itemId =
-                                kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
-                            deviceParamTargets->push_back(target);
-                            deviceMenu.addItem(itemId,
-                                               device.parameters[static_cast<size_t>(i)].name);
+                                int itemId =
+                                    kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                deviceParamTargets->push_back(target);
+                                paramsMenu.addItem(itemId,
+                                                   device.parameters[static_cast<size_t>(i)].name);
+                            }
+                            deviceMenu.addSubMenu("Params", paramsMenu);
                         }
+
+                        // Mods submenu (device-scope MAGDA modifiers)
+                        {
+                            juce::PopupMenu modsMenu;
+                            bool any = false;
+                            for (const auto& mod : device.mods) {
+                                if (!mod.enabled)
+                                    continue;
+                                AutomationTarget target;
+                                target.type = AutomationTargetType::ModParameter;
+                                target.trackId = trackId;
+                                target.devicePath = devicePath;
+                                target.modId = mod.id;
+                                target.modParamIndex = 0;  // rate
+                                target.paramName = device.name + ": " + mod.name + " Rate";
+
+                                int itemId =
+                                    kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                deviceParamTargets->push_back(target);
+                                modsMenu.addItem(itemId, mod.name + " Rate");
+                                any = true;
+                            }
+                            if (any)
+                                deviceMenu.addSubMenu("Mods", modsMenu);
+                        }
+
+                        // Macros submenu (device-scope macros)
+                        {
+                            juce::PopupMenu macrosMenu;
+                            bool any = false;
+                            for (int m = 0; m < static_cast<int>(device.macros.size()); ++m) {
+                                const auto& macro = device.macros[static_cast<size_t>(m)];
+                                if (macro.name.isEmpty())
+                                    continue;
+                                AutomationTarget target;
+                                target.type = AutomationTargetType::Macro;
+                                target.trackId = trackId;
+                                target.devicePath = devicePath;
+                                target.macroIndex = m;
+                                target.paramName = device.name + ": " + macro.name;
+
+                                int itemId =
+                                    kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                deviceParamTargets->push_back(target);
+                                macrosMenu.addItem(itemId, macro.name);
+                                any = true;
+                            }
+                            if (any)
+                                deviceMenu.addSubMenu("Macros", macrosMenu);
+                        }
+
                         parentMenu.addSubMenu(device.name, deviceMenu);
 
                     } else if (isRack(element)) {
@@ -3214,22 +3271,54 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                         juce::PopupMenu rackMenu;
                         auto rackPath = ChainNodePath::rack(trackId, rack.id);
 
-                        // Add macro entries
-                        for (int m = 0; m < static_cast<int>(rack.macros.size()); ++m) {
-                            if (!rack.macros[static_cast<size_t>(m)].name.isEmpty()) {
+                        // Mods submenu (rack-scope modifiers)
+                        {
+                            juce::PopupMenu modsMenu;
+                            bool any = false;
+                            for (const auto& mod : rack.mods) {
+                                if (!mod.enabled)
+                                    continue;
+                                AutomationTarget target;
+                                target.type = AutomationTargetType::ModParameter;
+                                target.trackId = trackId;
+                                target.devicePath = rackPath;
+                                target.modId = mod.id;
+                                target.modParamIndex = 0;  // rate
+                                target.paramName = rack.name + ": " + mod.name + " Rate";
+
+                                int itemId =
+                                    kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                deviceParamTargets->push_back(target);
+                                modsMenu.addItem(itemId, mod.name + " Rate");
+                                any = true;
+                            }
+                            if (any)
+                                rackMenu.addSubMenu("Mods", modsMenu);
+                        }
+
+                        // Macros submenu (rack-scope macros)
+                        {
+                            juce::PopupMenu macrosMenu;
+                            bool any = false;
+                            for (int m = 0; m < static_cast<int>(rack.macros.size()); ++m) {
+                                const auto& macro = rack.macros[static_cast<size_t>(m)];
+                                if (macro.name.isEmpty())
+                                    continue;
                                 AutomationTarget target;
                                 target.type = AutomationTargetType::Macro;
                                 target.trackId = trackId;
                                 target.devicePath = rackPath;
                                 target.macroIndex = m;
-                                target.paramName =
-                                    rack.name + ": " + rack.macros[static_cast<size_t>(m)].name;
+                                target.paramName = rack.name + ": " + macro.name;
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                                 deviceParamTargets->push_back(target);
-                                rackMenu.addItem(itemId, rack.macros[static_cast<size_t>(m)].name);
+                                macrosMenu.addItem(itemId, macro.name);
+                                any = true;
                             }
+                            if (any)
+                                rackMenu.addSubMenu("Macros", macrosMenu);
                         }
 
                         // Add chain device parameters
@@ -3258,6 +3347,31 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
         ChainNodePath rootPath = ChainNodePath::trackLevel(trackId);
         buildMenu(trackInfo->chainElements, rootPath, addNewMenu);
+
+        // Track-scope modifier rate entries — siblings of the chain content,
+        // grouped under a "Track Modulators" submenu when present.
+        if (!trackInfo->mods.empty()) {
+            juce::PopupMenu trackModsMenu;
+            bool any = false;
+            for (const auto& mod : trackInfo->mods) {
+                if (!mod.enabled)
+                    continue;
+                AutomationTarget target;
+                target.type = AutomationTargetType::ModParameter;
+                target.trackId = trackId;
+                target.devicePath = rootPath;  // track-level
+                target.modId = mod.id;
+                target.modParamIndex = 0;  // rate
+                target.paramName = mod.name + " Rate";
+
+                int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                deviceParamTargets->push_back(target);
+                trackModsMenu.addItem(itemId, mod.name + " Rate");
+                any = true;
+            }
+            if (any)
+                addNewMenu.addSubMenu("Track Modulators", trackModsMenu);
+        }
     }
 
     menu.addSubMenu("Add New Lane...", addNewMenu);
