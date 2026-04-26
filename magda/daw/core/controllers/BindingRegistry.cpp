@@ -172,11 +172,22 @@ std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& deviceP
 
 namespace {
 
-// Shared by indicator queries — a binding counts as "active" when its source
-// controller is either absent from the registry (port-only Learn bindings) or
-// present and enabled. Matches ControllerRouter's runtime filter so indicators
-// agree with actual MIDI routing.
+// Shared by indicator queries — a binding counts as "active" when it will
+// actually fire on incoming MIDI. ControllerRouter routes via two paths:
+//   1. findForPort: port-based dispatch — fires whenever the live port matches
+//      the binding's portKey, INDEPENDENT of whether a registered controller
+//      is enabled. Pure Learn'd bindings always come this way.
+//   2. findForSource (controller-addressed): only used when the registered
+//      controller is enabled.
+// So a binding fires when (portKey is set) OR (controllerId is null) OR
+// (controllerId is set AND that controller is enabled). Earlier this helper
+// only checked the controller-side, which made indicators disappear for
+// Learn'd bindings whose source carries both a portKey AND a controllerId
+// pointing at a controller the user has toggled off — even though the
+// binding still routes via the port.
 bool isSourceControllerActive(const Binding& b) {
+    if (b.source.portKey.isNotEmpty())
+        return true;  // port-based routing — fires regardless of controller enabled
     if (b.source.controllerId.isNull())
         return true;
     auto c = ControllerRegistry::getInstance().find(b.source.controllerId);

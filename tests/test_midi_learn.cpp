@@ -597,6 +597,10 @@ TEST_CASE("MidiLearnCoordinator - macro Learn capture builds DeviceMacro StaticT
     REQUIRE(st.devicePath == path);
     REQUIRE(st.paramIndex == macroIndex);
 
+    // The dot-painting query must agree — this is what flips the macro knob's
+    // indicator from green (automap) to orange (Learn'd).
+    REQUIRE(BindingRegistry::getInstance().hasActiveStaticBindingForMacro(path, macroIndex));
+
     clearAll();
 }
 
