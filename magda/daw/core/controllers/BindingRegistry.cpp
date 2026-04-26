@@ -278,6 +278,46 @@ bool BindingRegistry::hasActiveBindingForTarget(const ChainNodePath& devicePath,
     return check(globalBindings_) || check(projectBindings_);
 }
 
+bool BindingRegistry::hasResolverBindingForDevice(const ChainNodePath& devicePath) const {
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+    auto check = [&](const std::vector<Binding>& vec) -> bool {
+        for (const auto& b : vec) {
+            if (!std::holds_alternative<ResolverRef>(b.target))
+                continue;
+            if (!isSourceControllerActive(b))
+                continue;
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.devicePath == devicePath)
+                return true;
+        }
+        return false;
+    };
+    return check(globalBindings_) || check(projectBindings_);
+}
+
+bool BindingRegistry::hasUserMappingForDevice(const ChainNodePath& devicePath) const {
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+    auto check = [&](const std::vector<Binding>& vec) -> bool {
+        for (const auto& b : vec) {
+            if (std::holds_alternative<ResolverRef>(b.target))
+                continue;  // resolver bindings are profile defaults, not user mappings
+            if (!isSourceControllerActive(b))
+                continue;
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.devicePath == devicePath)
+                return true;
+        }
+        return false;
+    };
+    return check(globalBindings_) || check(projectBindings_);
+}
+
 bool BindingRegistry::hasActiveStaticBindingForMacro(const ChainNodePath& devicePath,
                                                      int macroIndex) const {
     auto check = [&](const std::vector<Binding>& vec) -> bool {

@@ -2162,8 +2162,11 @@ void DeviceSlotComponent::paramSelectionChanged(const magda::ParamSelection& sel
 
 void DeviceSlotComponent::refreshControllerIndicators() {
     auto& reg = magda::BindingRegistry::getInstance();
-    bool pinned = reg.hasBindingForDevice(nodePath_, magda::StaticTarget::Owner::PluginParam);
-    bool automap = reg.hasBindingForDevice(nodePath_, magda::StaticTarget::Owner::DeviceMacro);
+    // pinned (orange): any user-mapped binding (Static or Alias) — covers
+    // Learn'd plugin params AND Learn'd macros / mod-rates on this device.
+    // automap (green): only resolver bindings — i.e. profile-level defaults.
+    bool pinned = reg.hasUserMappingForDevice(nodePath_);
+    bool automap = reg.hasResolverBindingForDevice(nodePath_);
     if (pinned != hasPinnedBindings_ || automap != hasAutomapBindings_) {
         hasPinnedBindings_ = pinned;
         hasAutomapBindings_ = automap;

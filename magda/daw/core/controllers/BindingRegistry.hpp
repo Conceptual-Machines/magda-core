@@ -162,6 +162,20 @@ class BindingRegistry {
     bool hasBindingForDevice(const ChainNodePath& devicePath, StaticTarget::Owner owner) const;
 
     /**
+     * @brief Return true if any active focused-device-macro resolver binding
+     * currently resolves to this device — i.e. the device has automap-profile
+     * coverage, regardless of any user Learn'd bindings on top.
+     */
+    bool hasResolverBindingForDevice(const ChainNodePath& devicePath) const;
+
+    /**
+     * @brief Return true if any active explicit user mapping (StaticTarget or
+     * AliasRef) targets a parameter / macro / mod on this device. Excludes
+     * resolver-based automap-profile bindings.
+     */
+    bool hasUserMappingForDevice(const ChainNodePath& devicePath) const;
+
+    /**
      * @brief Return true if any active binding (Global + Project) resolves to a
      * specific (devicePath, paramIndex, owner) target.
      *
