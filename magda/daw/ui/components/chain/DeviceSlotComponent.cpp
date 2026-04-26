@@ -8,6 +8,7 @@
 #include "ParamGridComponent.hpp"
 #include "ParamSlotComponent.hpp"
 #include "audio/ArpeggiatorPlugin.hpp"
+#include "audio/FaustPlugin.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
@@ -1151,7 +1152,8 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Create custom UI if this is an internal device and we don't have one yet
     if (isInternalDevice() && !toneGeneratorUI_ && !samplerUI_ && !drumGridUI_ && !fourOscUI_ &&
         !eqUI_ && !compressorUI_ && !reverbUI_ && !delayUI_ && !chorusUI_ && !phaserUI_ &&
-        !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_ && !utilityUI_ && !chordEngineUI_) {
+        !filterUI_ && !pitchShiftUI_ && !impulseResponseUI_ && !utilityUI_ && !faustUI_ &&
+        !chordEngineUI_) {
         createCustomUI();
         setupCustomUILinking();
     }
@@ -1159,7 +1161,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Update custom UI if available
     if (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
         reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-        impulseResponseUI_ || utilityUI_ || chordEngineUI_) {
+        impulseResponseUI_ || utilityUI_ || faustUI_ || chordEngineUI_) {
         updateCustomUI();
     }
 
@@ -1329,8 +1331,8 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         if (!isInternalDevice() ||
             !(toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ ||
               compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
-              pitchShiftUI_ || impulseResponseUI_ || utilityUI_ || chordEngineUI_ ||
-              arpeggiatorUI_ || stepSequencerUI_)) {
+              pitchShiftUI_ || impulseResponseUI_ || utilityUI_ || faustUI_ ||
+              chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_)) {
             int paginationBottom = headerBottom + PAGINATION_HEIGHT + 4;
             g.drawHorizontalLine(paginationBottom, left, right);
         }
@@ -1482,7 +1484,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     if (isInternalDevice() &&
         (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
          reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-         impulseResponseUI_ || utilityUI_ || chordEngineUI_ || arpeggiatorUI_ ||
+         impulseResponseUI_ || utilityUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ ||
          stepSequencerUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
@@ -1542,6 +1544,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             utilityUI_->setBounds(contentArea.reduced(4));
             utilityUI_->setVisible(true);
         }
+        if (faustUI_) {
+            faustUI_->setBounds(contentArea.reduced(4));
+            faustUI_->setVisible(true);
+        }
         if (chordEngineUI_) {
             chordEngineUI_->setBounds(contentArea.reduced(4));
             chordEngineUI_->setVisible(true);
@@ -1587,6 +1593,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             impulseResponseUI_->setVisible(false);
         if (utilityUI_)
             utilityUI_->setVisible(false);
+        if (faustUI_)
+            faustUI_->setVisible(false);
         if (chordEngineUI_)
             chordEngineUI_->setVisible(false);
         if (arpeggiatorUI_)
@@ -3137,6 +3145,21 @@ void DeviceSlotComponent::createCustomUI() {
         };
         addAndMakeVisible(*utilityUI_);
         updateCustomUI();
+    } else if (device_.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
+        faustUI_ = std::make_unique<FaustUI>();
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device_.id);
+                auto* fp = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get());
+                DBG("[FaustUI] DSC::createCustomUI deviceId=" << (int)device_.id
+                    << " plugin=" << (plugin.get() ? "ok" : "NULL")
+                    << " cast=" << (fp ? "ok" : "FAILED")
+                    << " numParams=" << (fp ? fp->getAutomatableParameters().size() : -1));
+                if (fp)
+                    faustUI_->setPlugin(fp);
+            }
+        }
+        addAndMakeVisible(*faustUI_);
     } else if (device_.pluginId.containsIgnoreCase(
                    daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
         chordEngineUI_ = std::make_unique<ChordPanelContent>();

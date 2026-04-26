@@ -25,10 +25,15 @@ void FaustUI::setPlugin(magda::daw::audio::FaustPlugin* plugin) {
 
 void FaustUI::rebuildFromPlugin() {
     slots_.clear();
-    if (!plugin_)
+    if (!plugin_) {
+        DBG("[FaustUI] rebuildFromPlugin: plugin_ is null");
         return;
+    }
 
-    for (auto p : plugin_->getAutomatableParameters()) {
+    auto params = plugin_->getAutomatableParameters();
+    DBG("[FaustUI] rebuildFromPlugin: found " << params.size() << " params, bounds=("
+        << getWidth() << "x" << getHeight() << ")");
+    for (auto p : params) {
         auto slot = std::make_unique<ParamSlot>();
         slot->param = p;
 

@@ -936,17 +936,6 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
 
         parent->addAndMakeVisible(*impulseResponseUI_);
         update(device);
-    } else if (device.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
-        faustUI_ = std::make_unique<FaustUI>();
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(device.id);
-                if (auto* fp = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get())) {
-                    faustUI_->setPlugin(fp);
-                }
-            }
-        }
-        parent->addAndMakeVisible(*faustUI_);
     } else if (device.pluginId.containsIgnoreCase("utility")) {
         utilityUI_ = std::make_unique<UtilityUI>();
         utilityUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {

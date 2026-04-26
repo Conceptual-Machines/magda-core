@@ -23,6 +23,7 @@
 #include "StepSequencerUI.hpp"
 #include "ToneGeneratorUI.hpp"
 #include "UtilityUI.hpp"
+#include "FaustUI.hpp"
 #include "audio/ArpeggiatorPlugin.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
 #include "audio/StepSequencerPlugin.hpp"
@@ -254,6 +255,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<PitchShiftUI> pitchShiftUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
     std::unique_ptr<UtilityUI> utilityUI_;
+    std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;
