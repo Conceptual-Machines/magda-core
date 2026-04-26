@@ -685,6 +685,119 @@ void ModulatorEditorPanel::updateFromMod() {
     resized();
 }
 
+void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
+    // Modulation overlay on the visible rate slider — same purple-top /
+    // orange-bottom bar convention used by ParamModulationPainter on regular
+    // device-param sliders. Painted in paintOverChildren so the slider's own
+    // paint doesn't cover it.
+    if (currentMod_.id == magda::INVALID_MOD_ID || ownerTrackId_ == magda::INVALID_TRACK_ID)
+        return;
+
+    // Locate the same-scope macros / mods (track, rack, or device-level).
+    const auto& tm = magda::TrackManager::getInstance();
+    const auto* track = tm.getTrack(ownerTrackId_);
+    if (!track)
+        return;
+    const std::vector<magda::MacroInfo>* macros = nullptr;
+    const std::vector<magda::ModInfo>* mods = nullptr;
+    if (ownerDevicePath_.isValid()) {
+        auto resolved = tm.resolvePath(ownerDevicePath_);
+        if (resolved.valid && resolved.rack) {
+            macros = &resolved.rack->macros;
+            mods = &resolved.rack->mods;
+        } else if (resolved.valid && resolved.device) {
+            macros = &resolved.device->macros;
+            mods = &resolved.device->mods;
+        }
+    }
+    if (!macros)
+        macros = &track->macros;
+    if (!mods)
+        mods = &track->mods;
+
+    // Sum macro and mod contributions to rate (modParamIndex 0). Mirrors
+    // ParamLinkResolver::computeTotalMacroModulation / computeTotalModModulation
+    // shape: per link, offset = bipolar ? value*2-1 : value; total += offset * amount.
+    float macroTotal = 0.0f;
+    for (const auto& m : *macros) {
+        for (const auto& l : m.links) {
+            if (l.target.kind != magda::MacroTarget::Kind::ModParam ||
+                l.target.modId != currentMod_.id || l.target.modParamIndex != 0)
+                continue;
+            float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;
+            macroTotal += offset * l.amount;
+        }
+    }
+    float modTotal = 0.0f;
+    for (const auto& m : *mods) {
+        if (m.id == currentMod_.id)
+            continue;
+        for (const auto& l : m.links) {
+            if (l.target.kind != magda::ModTarget::Kind::ModParam ||
+                l.target.modId != currentMod_.id || l.target.modParamIndex != 0)
+                continue;
+            float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;
+            modTotal += offset * l.amount;
+        }
+    }
+
+    if (macroTotal == 0.0f && modTotal == 0.0f)
+        return;
+
+    auto& visibleSlider = currentMod_.tempoSync ? syncDivisionSlider_ : rateSlider_;
+    auto sb = visibleSlider.getBounds();
+    if (sb.isEmpty())
+        return;
+
+    // Current normalized value of the slider — bar starts here and extends by
+    // the modulation total, signed.
+    // The rate slider uses different ranges in Hz vs sync mode (Hz: 0.05..20,
+    // sync: 0..N divisions). TextSlider exposes getValue but not min/max, so
+    // hard-code per visible mode — both ranges are panel-owned constants.
+    float currentNorm = 0.0f;
+    if (currentMod_.tempoSync) {
+        constexpr float kSyncMin = 0.0f;
+        const float kSyncMax = static_cast<float>(std::size(kSyncDivisionOrder) - 1);
+        if (kSyncMax > kSyncMin)
+            currentNorm = juce::jlimit(0.0f, 1.0f,
+                                       (static_cast<float>(visibleSlider.getValue()) - kSyncMin) /
+                                           (kSyncMax - kSyncMin));
+    } else {
+        constexpr float kHzMin = 0.05f;
+        constexpr float kHzMax = 20.0f;
+        currentNorm = juce::jlimit(0.0f, 1.0f,
+                                   (static_cast<float>(visibleSlider.getValue()) - kHzMin) /
+                                       (kHzMax - kHzMin));
+    }
+
+    const int maxWidth = sb.getWidth();
+    const int leftX = sb.getX();
+    const int barHeight = 5;  // Matches ParamModulationPainter "movement bar"
+
+    auto drawBar = [&](float total, int y, juce::Colour colour) {
+        if (total == 0.0f)
+            return;
+        int startX = leftX + static_cast<int>(maxWidth * currentNorm);
+        int barWidth = static_cast<int>(maxWidth * total);
+        g.setColour(colour);
+        if (barWidth > 0)
+            g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
+                                   static_cast<float>(juce::jmax(1, barWidth)),
+                                   static_cast<float>(barHeight), 1.0f);
+        else
+            g.fillRoundedRectangle(static_cast<float>(startX + barWidth), static_cast<float>(y),
+                                   static_cast<float>(juce::jmax(1, -barWidth)),
+                                   static_cast<float>(barHeight), 1.0f);
+    };
+
+    // Macro bar at top (purple), mod bar at bottom (orange) — same convention
+    // as ParamModulationPainter on every other parameter slider in MAGDA.
+    drawBar(macroTotal, sb.getY() + 2,
+            DarkTheme::getColour(DarkTheme::ACCENT_PURPLE).withAlpha(0.6f));
+    drawBar(modTotal, sb.getBottom() - barHeight - 2,
+            DarkTheme::getColour(DarkTheme::ACCENT_ORANGE).withAlpha(0.6f));
+}
+
 void ModulatorEditorPanel::paint(juce::Graphics& g) {
     // Background
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.03f));

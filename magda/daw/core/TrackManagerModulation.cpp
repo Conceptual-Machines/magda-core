@@ -867,9 +867,14 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
     // Lambda to update a single mod's phase and value.
     // Returns true if 'running' state changed (needs TE assignment sync).
+    // scopeMacros / scopeMods are the SAME-scope macros / mods that may
+    // target this mod's rate via a ModParam-kind link — used to compute the
+    // effective rate so the UI animation matches what the audio LFO does.
     auto updateMod = [deltaTime, bpm, transportJustStarted, transportJustLooped,
                       transportJustStopped](ModInfo& mod, bool midiTriggered, bool midiNoteOff,
-                                            float audioPeakLevel) -> bool {
+                                            float audioPeakLevel,
+                                            const std::vector<MacroInfo>& scopeMacros,
+                                            const std::vector<ModInfo>& scopeMods) -> bool {
         bool wasRunning = mod.running;
         ModTickInputs inputs{
             midiTriggered, midiNoteOff,          audioPeakLevel,      deltaTime,
@@ -912,6 +917,44 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 float effectiveRate = mod.rate;
                 if (mod.tempoSync) {
                     effectiveRate = ModulatorEngine::calculateSyncRateHz(mod.syncDivision, bpm);
+                }
+
+                // Apply incoming ModParam-kind modulation from same-scope
+                // macros / mods so the UI animation matches what the audio
+                // LFO actually does. TE drives the audio side via its own
+                // modifier graph; here we mirror it on MAGDA's parallel
+                // visual sim by summing each link's offset * amount and
+                // applying it as a multiplicative shift on the rate (the
+                // rate slider is logarithmic 0.05..20 Hz, so a normalized
+                // unit covers ~8.6 octaves — multiplying by 20/0.05 to the
+                // power of total matches the slider's perceptual mapping
+                // and what the user hears).
+                float modTotal = 0.0f;
+                for (const auto& m : scopeMacros) {
+                    for (const auto& l : m.links) {
+                        if (l.target.kind != MacroTarget::Kind::ModParam ||
+                            l.target.modId != mod.id || l.target.modParamIndex != 0)
+                            continue;
+                        float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;
+                        modTotal += offset * l.amount;
+                    }
+                }
+                for (const auto& m : scopeMods) {
+                    if (m.id == mod.id)
+                        continue;
+                    for (const auto& l : m.links) {
+                        if (l.target.kind != ModTarget::Kind::ModParam ||
+                            l.target.modId != mod.id || l.target.modParamIndex != 0)
+                            continue;
+                        float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;
+                        modTotal += offset * l.amount;
+                    }
+                }
+                if (modTotal != 0.0f) {
+                    // 20 / 0.05 = 400 = ~8.64 octaves over normalized [-1, 1]
+                    constexpr float kRateRangeRatio = 20.0f / 0.05f;
+                    effectiveRate *= std::pow(kRateRangeRatio, modTotal);
+                    effectiveRate = juce::jlimit(0.05f, 20.0f, effectiveRate);
                 }
 
                 // Update phase
@@ -976,7 +1019,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             }
 
             for (auto& mod : device.mods) {
-                changed |= updateMod(mod, deviceMidiTriggered, deviceMidiNoteOff, deviceAudioPeak);
+                changed |= updateMod(mod, deviceMidiTriggered, deviceMidiNoteOff, deviceAudioPeak,
+                                     device.macros, device.mods);
             }
         } else if (isRack(element)) {
             RackInfo& rack = magda::getRack(element);
@@ -1011,7 +1055,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             }
 
             for (auto& mod : rack.mods) {
-                changed |= updateMod(mod, rackMidiTriggered, rackMidiNoteOff, rackAudioPeak);
+                changed |= updateMod(mod, rackMidiTriggered, rackMidiNoteOff, rackAudioPeak,
+                                     rack.macros, rack.mods);
             }
             for (auto& chain : rack.chains) {
                 for (auto& chainElement : chain.elements) {
@@ -1035,7 +1080,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
         // Track-level mods (global scope)
         for (auto& mod : track.mods) {
-            trackChanged |= updateMod(mod, trackMidiTriggered, trackMidiNoteOff, trackAudioPeak);
+            trackChanged |= updateMod(mod, trackMidiTriggered, trackMidiNoteOff, trackAudioPeak,
+                                      track.macros, track.mods);
         }
 
         // Device/rack-level mods

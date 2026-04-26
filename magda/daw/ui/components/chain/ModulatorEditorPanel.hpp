@@ -223,6 +223,7 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     std::function<void(int modIndex, magda::ModTarget target, float amount)> onModLinkAmountChanged;
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
