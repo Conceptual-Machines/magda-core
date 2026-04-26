@@ -172,6 +172,19 @@ class AutomationManager : public TrackManagerListener {
     // active playback — preventing feedback loops that overwrite baked curves.
     void setTargetUserTouched(const AutomationTarget& target, bool touched);
     bool isTargetUserTouched(const AutomationTarget& target) const;
+    // Snapshot of all currently touched targets, used by AutomationRecordingEngine
+    // to detect release transitions for Latch mode.
+    std::vector<AutomationTarget> getUserTouchedTargets() const;
+
+    // Touch baseline: the parameter's normalized value (0..1) just before the
+    // user started a gesture. AutomationRecordingEngine reads this on the
+    // first record event of a Touch gesture and writes it back as a
+    // bounce-back point on release. Set by sliders in mouseDown, cleared on
+    // mouseUp. Track volume / pan have their own engine-internal baseline
+    // (via seedBaselines / mix state) and don't rely on this map.
+    void setTouchBaseline(const AutomationTarget& target, double normalizedValue);
+    std::optional<double> getTouchBaseline(const AutomationTarget& target) const;
+    void clearTouchBaseline(const AutomationTarget& target);
 
     /**
      * @brief Compute the visual state for a target's bound control.
@@ -488,6 +501,9 @@ class AutomationManager : public TrackManagerListener {
     // lane-level touchSuppressed because touches start before a lane exists
     // — see setTargetUserTouched().
     std::vector<AutomationTarget> userTouchedTargets_;
+    // Per-target normalized baseline captured at touch start; see
+    // setTouchBaseline.
+    std::vector<std::pair<AutomationTarget, double>> touchBaselines_;
 
     TouchSuppressionListener touchSuppressionListener_;
 

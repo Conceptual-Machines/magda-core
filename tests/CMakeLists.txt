@@ -50,6 +50,7 @@ set(TEST_SOURCES
     test_sends_and_track_deletion.cpp
     test_master_track_serialization.cpp
     test_automation_agent.cpp
+    test_automation_modes.cpp
     test_automation_singleton.cpp
     test_compact_executor_context.cpp
     # Parameter alias system tests (PR 1)
@@ -124,6 +125,7 @@ target_sources(magda_juce_tests PRIVATE
     # test_export_no_assertion_juce.cpp  # Disabled - see issue #611 (generator device export)
     test_midi_recording_juce.cpp
     test_clip_sync_integration_juce.cpp
+    test_automation_modes_juce.cpp
 )
 
 # Link required libraries for JUCE tests
