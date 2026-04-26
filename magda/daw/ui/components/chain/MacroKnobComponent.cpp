@@ -6,6 +6,7 @@
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
+#include "core/controllers/MidiLearnCoordinator.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -432,16 +433,61 @@ void MacroKnobComponent::showLinkMenu() {
         menu.addItem(clearAllId, "Clear All Links");
     }
 
+    // MIDI Learn / Clear — same pattern as plugin params (ParamLinkMenu).
+    // Operates on the macro target (parentPath, macroIndex, owner=DeviceMacro).
+    constexpr int kLearnId = 50000;
+    constexpr int kClearMidiId = 50001;
+    if (parentPath_.isValid()) {
+        auto& reg = magda::BindingRegistry::getInstance();
+        auto& learn = magda::MidiLearnCoordinator::getInstance();
+        const bool isLearning = learn.isLearningMacro(parentPath_, macroIndex_);
+        const int mappingCount = static_cast<int>(
+            reg.findForTarget(parentPath_, macroIndex_, magda::StaticTarget::Owner::DeviceMacro)
+                .size());
+
+        menu.addSeparator();
+        menu.addItem(kLearnId, isLearning ? "Cancel MIDI Learn" : "Learn MIDI");
+        menu.addItem(kClearMidiId,
+                     "Clear MIDI Mapping" +
+                         (mappingCount > 0 ? " (" + juce::String(mappingCount) + ")" : ""),
+                     mappingCount > 0);
+    }
+
     // Show menu and handle selection
     auto safeThis = juce::Component::SafePointer<MacroKnobComponent>(this);
     auto targets = availableTargets_;      // Capture by value for async safety
     auto paramNames = deviceParamNames_;   // Capture by value for async safety
     auto modifiers = availableModifiers_;  // Capture by value for async safety
+    auto parentPath = parentPath_;
+    auto macroIndex = macroIndex_;
+    auto displayName = currentMacro_.name;
 
     menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, targets, paramNames, modifiers,
                                                     unlinkBaseId, unlinkTargets, clearAllId,
-                                                    kModRateBaseId](int result) {
+                                                    kModRateBaseId, parentPath, macroIndex,
+                                                    displayName](int result) {
         if (safeThis == nullptr || result == 0) {
+            return;
+        }
+
+        // MIDI Learn / Clear — keep this branch above the device/param walks so
+        // the high-numbered IDs don't get re-interpreted as device-param items.
+        constexpr int kLearnId = 50000;
+        constexpr int kClearMidiId = 50001;
+        if (result == kLearnId) {
+            auto& learn = magda::MidiLearnCoordinator::getInstance();
+            if (learn.isLearningMacro(parentPath, macroIndex)) {
+                learn.cancelLearn();
+            } else {
+                juce::String name = displayName.isNotEmpty()
+                                        ? displayName
+                                        : "Macro " + juce::String(macroIndex + 1);
+                learn.beginLearnMacro(parentPath, macroIndex, name);
+            }
+            return;
+        }
+        if (result == kClearMidiId) {
+            magda::MidiLearnCoordinator::getInstance().clearMacroMappings(parentPath, macroIndex);
             return;
         }
 

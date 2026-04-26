@@ -23,11 +23,20 @@ struct ResolvedTarget {
     ChainNodePath devicePath;
     int paramIndex = -1;
     StaticTarget::Owner owner = StaticTarget::Owner::PluginParam;
+
+    // Populated only when owner == ModParam.
+    ModId modId = INVALID_MOD_ID;
+    int modParamIndex = -1;
+
     juce::String sourceLabel;  // Human-readable provenance (for error messages)
     bool resolved = false;
 
     bool ok() const {
-        return resolved && devicePath.isValid() && paramIndex >= 0;
+        if (!resolved || !devicePath.isValid())
+            return false;
+        if (owner == StaticTarget::Owner::ModParam)
+            return modId != INVALID_MOD_ID && modParamIndex >= 0;
+        return paramIndex >= 0;
     }
 
     /** Convenience factory for failure results. */

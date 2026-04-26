@@ -5,6 +5,8 @@
 #include "core/AutomationManager.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/TrackManager.hpp"
+#include "core/controllers/BindingRegistry.hpp"
+#include "core/controllers/MidiLearnCoordinator.hpp"
 #include "ui/components/chain/ParamLinkResolver.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
@@ -674,49 +676,88 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
         }
     }
 
+    // MIDI Learn / Clear — same shape as ParamLinkMenu, scoped to this mod's
+    // rate (ownerDevicePath_, modId, modParamIndex=0). The path is the scope
+    // hosting the modifier (track / rack / device), matching the AutomationTarget
+    // built above.
+    constexpr int kLearnId = 200;
+    constexpr int kClearMidiId = 201;
+    {
+        auto& reg = magda::BindingRegistry::getInstance();
+        auto& learn = magda::MidiLearnCoordinator::getInstance();
+        const bool isLearning =
+            learn.isLearningModParam(ownerDevicePath_, currentMod_.id, /*modParamIndex=*/0);
+        const int mappingCount = static_cast<int>(
+            reg.findForModParam(ownerDevicePath_, currentMod_.id, /*modParamIndex=*/0).size());
+
+        menu.addSeparator();
+        menu.addItem(kLearnId, isLearning ? "Cancel MIDI Learn" : "Learn MIDI");
+        menu.addItem(kClearMidiId,
+                     "Clear MIDI Mapping" +
+                         (mappingCount > 0 ? " (" + juce::String(mappingCount) + ")" : ""),
+                     mappingCount > 0);
+    }
+
     auto safeThis = juce::Component::SafePointer<ModulatorEditorPanel>(this);
     auto rateModId = currentMod_.id;
-    menu.showMenuAsync(
-        juce::PopupMenu::Options(), [safeThis, target, unlinks, rateModId](int result) {
-            if (safeThis == nullptr || result == 0)
-                return;
-            if (result == kShowLaneId) {
-                auto& mgr = magda::AutomationManager::getInstance();
-                auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
-                mgr.setLaneVisible(laneId, true);
-                return;
-            }
-            int unlinkIdx = result - kUnlinkBaseId;
-            if (unlinkIdx < 0 || unlinkIdx >= static_cast<int>(unlinks.size()))
-                return;
-            const auto& e = unlinks[static_cast<size_t>(unlinkIdx)];
-            auto& tmgr = magda::TrackManager::getInstance();
-            if (e.kind == SrcKind::Macro) {
-                magda::MacroTarget t;
-                t.kind = magda::MacroTarget::Kind::ModParam;
-                t.modId = rateModId;
-                t.modParamIndex = 0;
-                if (e.parentPath.isTrackLevel) {
-                    tmgr.removeTrackMacroLink(e.parentPath.trackId, e.index, t);
-                } else if (e.parentPath.getType() == magda::ChainNodeType::Rack) {
-                    tmgr.removeRackMacroLink(e.parentPath, e.index, t);
-                } else {
-                    tmgr.removeDeviceMacroLink(e.parentPath, e.index, t);
-                }
+    auto learnPath = ownerDevicePath_;
+    auto learnDisplayName = currentMod_.name + " Rate";
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, target, unlinks, rateModId, learnPath,
+                                                    learnDisplayName](int result) {
+        if (safeThis == nullptr || result == 0)
+            return;
+        if (result == kShowLaneId) {
+            auto& mgr = magda::AutomationManager::getInstance();
+            auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
+            mgr.setLaneVisible(laneId, true);
+            return;
+        }
+        if (result == kLearnId) {
+            auto& learn = magda::MidiLearnCoordinator::getInstance();
+            if (learn.isLearningModParam(learnPath, rateModId, /*modParamIndex=*/0)) {
+                learn.cancelLearn();
             } else {
-                magda::ModTarget t;
-                t.kind = magda::ModTarget::Kind::ModParam;
-                t.modId = rateModId;
-                t.modParamIndex = 0;
-                if (e.parentPath.isTrackLevel) {
-                    tmgr.removeTrackModLink(e.parentPath.trackId, e.index, t);
-                } else if (e.parentPath.getType() == magda::ChainNodeType::Rack) {
-                    tmgr.removeRackModLink(e.parentPath, e.index, t);
-                } else {
-                    tmgr.removeDeviceModLink(e.parentPath, e.index, t);
-                }
+                learn.beginLearnModParam(learnPath, rateModId, /*modParamIndex=*/0,
+                                         learnDisplayName);
             }
-        });
+            return;
+        }
+        if (result == kClearMidiId) {
+            magda::MidiLearnCoordinator::getInstance().clearModParamMappings(learnPath, rateModId,
+                                                                             /*modParamIndex=*/0);
+            return;
+        }
+        int unlinkIdx = result - kUnlinkBaseId;
+        if (unlinkIdx < 0 || unlinkIdx >= static_cast<int>(unlinks.size()))
+            return;
+        const auto& e = unlinks[static_cast<size_t>(unlinkIdx)];
+        auto& tmgr = magda::TrackManager::getInstance();
+        if (e.kind == SrcKind::Macro) {
+            magda::MacroTarget t;
+            t.kind = magda::MacroTarget::Kind::ModParam;
+            t.modId = rateModId;
+            t.modParamIndex = 0;
+            if (e.parentPath.isTrackLevel) {
+                tmgr.removeTrackMacroLink(e.parentPath.trackId, e.index, t);
+            } else if (e.parentPath.getType() == magda::ChainNodeType::Rack) {
+                tmgr.removeRackMacroLink(e.parentPath, e.index, t);
+            } else {
+                tmgr.removeDeviceMacroLink(e.parentPath, e.index, t);
+            }
+        } else {
+            magda::ModTarget t;
+            t.kind = magda::ModTarget::Kind::ModParam;
+            t.modId = rateModId;
+            t.modParamIndex = 0;
+            if (e.parentPath.isTrackLevel) {
+                tmgr.removeTrackModLink(e.parentPath.trackId, e.index, t);
+            } else if (e.parentPath.getType() == magda::ChainNodeType::Rack) {
+                tmgr.removeRackModLink(e.parentPath, e.index, t);
+            } else {
+                tmgr.removeDeviceModLink(e.parentPath, e.index, t);
+            }
+        }
+    });
 }
 
 void ModulatorEditorPanel::setSelectedModIndex(int index) {

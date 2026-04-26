@@ -554,6 +554,122 @@ TEST_CASE("MidiLearnCoordinator - second beginLearn cancels first", "[midi-learn
     coord.cancelLearn();
 }
 
+TEST_CASE("MidiLearnCoordinator - macro Learn capture builds DeviceMacro StaticTarget",
+          "[midi-learn][coordinator]") {
+    CoordinatorFixture fix;
+
+    auto c = makeController("coord_port_macro");
+    ControllerRegistry::getInstance().add(c);
+
+    // Track-level macro path — exercises the broader macro coverage.
+    ChainNodePath path = ChainNodePath::trackLevel(40);
+    int macroIndex = 3;
+
+    // Seed an alias for (path, macroIndex) — Learn must NOT prefer it for macros.
+    StoredAlias alias;
+    alias.pluginTypeKey = "synth";
+    alias.paramIndex = macroIndex;
+    alias.path = path;
+    AliasRegistry::getInstance().set(AliasLayer::AutoGen, "synth.macro", alias);
+
+    auto& coord = MidiLearnCoordinator::getInstance();
+    coord.beginLearnMacro(path, macroIndex, "Macro 4");
+
+    REQUIRE(coord.isLearningMacro(path, macroIndex));
+    // The plugin-param overload must NOT match — owner kinds are distinct.
+    REQUIRE_FALSE(coord.isLearning(path, macroIndex));
+
+    auto msg = juce::MidiMessage::controllerEvent(1, 50, 64);
+    ControllerRouter::getInstance().injectMessageForTest("coord_port_macro", msg);
+
+    REQUIRE(!coord.isLearningMacro(path, macroIndex));
+    REQUIRE(fix.listener.completions.size() == 1);
+
+    const auto& binding = fix.listener.completions[0].binding;
+    REQUIRE(std::holds_alternative<StaticTarget>(binding.target));
+    const auto& st = std::get<StaticTarget>(binding.target);
+    REQUIRE(st.owner == StaticTarget::Owner::DeviceMacro);
+    REQUIRE(st.devicePath == path);
+    REQUIRE(st.paramIndex == macroIndex);
+
+    clearAll();
+}
+
+TEST_CASE("MidiLearnCoordinator - mod-param Learn capture builds ModParam StaticTarget",
+          "[midi-learn][coordinator]") {
+    CoordinatorFixture fix;
+
+    auto c = makeController("coord_port_modparam");
+    ControllerRegistry::getInstance().add(c);
+
+    ChainNodePath path = ChainNodePath::trackLevel(50);
+    ModId modId = 7;
+    int modParamIndex = 0;
+
+    auto& coord = MidiLearnCoordinator::getInstance();
+    coord.beginLearnModParam(path, modId, modParamIndex, "LFO 1 Rate");
+
+    REQUIRE(coord.isLearningModParam(path, modId, modParamIndex));
+    REQUIRE_FALSE(coord.isLearningModParam(path, modId + 1, modParamIndex));
+    REQUIRE_FALSE(coord.isLearning(path, modParamIndex));
+
+    auto msg = juce::MidiMessage::controllerEvent(1, 71, 100);
+    ControllerRouter::getInstance().injectMessageForTest("coord_port_modparam", msg);
+
+    REQUIRE(!coord.isLearningModParam(path, modId, modParamIndex));
+    REQUIRE(fix.listener.completions.size() == 1);
+
+    const auto& binding = fix.listener.completions[0].binding;
+    REQUIRE(std::holds_alternative<StaticTarget>(binding.target));
+    const auto& st = std::get<StaticTarget>(binding.target);
+    REQUIRE(st.owner == StaticTarget::Owner::ModParam);
+    REQUIRE(st.devicePath == path);
+    REQUIRE(st.modId == modId);
+    REQUIRE(st.modParamIndex == modParamIndex);
+
+    clearAll();
+}
+
+TEST_CASE("MidiLearnCoordinator - clearModParamMappings removes only matching bindings",
+          "[midi-learn][coordinator]") {
+    CoordinatorFixture fix;
+
+    auto c = makeController("coord_port_modclear");
+    ControllerRegistry::getInstance().add(c);
+
+    ChainNodePath path = ChainNodePath::trackLevel(60);
+    ModId modId = 3;
+
+    auto makeModParamBinding = [&](int number, ModId mid, int mpIdx) {
+        Binding b;
+        b.id = juce::Uuid();
+        b.source.controllerId = c.id;
+        b.source.msgType = BindingMsgType::CC;
+        b.source.number = number;
+        StaticTarget st;
+        st.devicePath = path;
+        st.owner = StaticTarget::Owner::ModParam;
+        st.modId = mid;
+        st.modParamIndex = mpIdx;
+        b.target = Target{st};
+        b.mode = BindingMode::Absolute;
+        b.range = BindingRange{0.0f, 1.0f, BindingCurve::Linear};
+        return b;
+    };
+
+    auto& reg = BindingRegistry::getInstance();
+    reg.add(BindingScope::Project, makeModParamBinding(1, modId, 0));
+    reg.add(BindingScope::Project, makeModParamBinding(2, modId, 0));
+    reg.add(BindingScope::Project, makeModParamBinding(3, modId + 1, 0));  // different mod
+
+    int removed = MidiLearnCoordinator::getInstance().clearModParamMappings(path, modId, 0);
+    REQUIRE(removed == 2);
+    // The unrelated binding remains
+    REQUIRE(reg.findForModParam(path, modId + 1, 0).size() == 1);
+
+    clearAll();
+}
+
 TEST_CASE("MidiLearnCoordinator - clearMappings removes bindings and notifies",
           "[midi-learn][coordinator]") {
     CoordinatorFixture fix;

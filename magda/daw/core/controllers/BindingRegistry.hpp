@@ -136,6 +136,18 @@ class BindingRegistry {
                         StaticTarget::Owner owner = StaticTarget::Owner::PluginParam);
 
     /**
+     * @brief Find/remove bindings whose target is a ModParam (path, modId, modParamIndex).
+     *
+     * ModParam targets carry their identity in (modId, modParamIndex), not paramIndex,
+     * so the regular paramIndex-keyed overloads can't match them.
+     */
+    std::vector<Binding> findForModParam(const ChainNodePath& devicePath, ModId modId,
+                                         int modParamIndex) const;
+    int removeForModParam(const ChainNodePath& devicePath, ModId modId, int modParamIndex);
+    bool hasActiveBindingForModParam(const ChainNodePath& devicePath, ModId modId,
+                                     int modParamIndex) const;
+
+    /**
      * @brief Return true if any binding (Global + Project) resolves to a target
      * on this devicePath with the given owner kind AND has an active source.
      *

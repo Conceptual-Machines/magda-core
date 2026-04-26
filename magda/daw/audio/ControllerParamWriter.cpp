@@ -2,6 +2,7 @@
 
 #include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
+#include "PluginManager.hpp"
 
 namespace magda {
 
@@ -16,7 +17,10 @@ void DefaultControllerParamWriter::write(const ResolvedTarget& resolved, float v
             writePluginParam(resolved, clamped);
             break;
         case StaticTarget::Owner::DeviceMacro:
-            writeDeviceMacro(resolved, clamped);
+            writeMacro(resolved, clamped);
+            break;
+        case StaticTarget::Owner::ModParam:
+            writeModParam(resolved, clamped);
             break;
     }
 }
@@ -52,9 +56,34 @@ void DefaultControllerParamWriter::writePluginParam(const ResolvedTarget& resolv
                                                                   resolved.paramIndex, raw);
 }
 
-void DefaultControllerParamWriter::writeDeviceMacro(const ResolvedTarget& resolved, float clamped) {
-    TrackManager::getInstance().setDeviceMacroValue(resolved.devicePath, resolved.paramIndex,
-                                                    clamped);
+void DefaultControllerParamWriter::writeMacro(const ResolvedTarget& resolved, float clamped) {
+    auto& tm = TrackManager::getInstance();
+    switch (resolved.devicePath.getType()) {
+        case ChainNodeType::Track:
+            tm.setTrackMacroValue(resolved.devicePath.trackId, resolved.paramIndex, clamped);
+            break;
+        case ChainNodeType::Rack:
+            tm.setRackMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
+            break;
+        case ChainNodeType::TopLevelDevice:
+        case ChainNodeType::Device:
+            tm.setDeviceMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
+            break;
+        default:
+            break;
+    }
+}
+
+void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved, float clamped) {
+    // Resolve the modifier's TE parameter (rate / rateType depending on tempoSync).
+    auto* param = bridge_.getPluginManager().findModifierParameterForAutomation(
+        resolved.devicePath.trackId, resolved.devicePath, resolved.modId, resolved.modParamIndex);
+    if (!param)
+        return;
+
+    const auto range = param->getValueRange();
+    const float raw = static_cast<float>(range.getStart() + clamped * range.getLength());
+    param->setParameterFromHost(raw, juce::sendNotificationSync);
 }
 
 }  // namespace magda

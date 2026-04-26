@@ -375,6 +375,54 @@ int BindingRegistry::removeForTarget(const ChainNodePath& devicePath, int paramI
     return static_cast<int>(toRemove.size());
 }
 
+std::vector<Binding> BindingRegistry::findForModParam(const ChainNodePath& devicePath, ModId modId,
+                                                      int modParamIndex) const {
+    std::vector<Binding> results;
+
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+
+    auto checkScope = [&](const std::vector<Binding>& vec) {
+        for (const auto& b : vec) {
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.owner == StaticTarget::Owner::ModParam &&
+                resolved.devicePath == devicePath && resolved.modId == modId &&
+                resolved.modParamIndex == modParamIndex)
+                results.push_back(b);
+        }
+    };
+
+    checkScope(globalBindings_);
+    checkScope(projectBindings_);
+
+    return results;
+}
+
+int BindingRegistry::removeForModParam(const ChainNodePath& devicePath, ModId modId,
+                                       int modParamIndex) {
+    auto toRemove = findForModParam(devicePath, modId, modParamIndex);
+    for (const auto& b : toRemove) {
+        bool inGlobal = false;
+        for (const auto& gb : globalBindings_) {
+            if (gb.id == b.id) {
+                inGlobal = true;
+                break;
+            }
+        }
+        remove(inGlobal ? BindingScope::Global : BindingScope::Project, b.id);
+    }
+    return static_cast<int>(toRemove.size());
+}
+
+bool BindingRegistry::hasActiveBindingForModParam(const ChainNodePath& devicePath, ModId modId,
+                                                  int modParamIndex) const {
+    auto matches = findForModParam(devicePath, modId, modParamIndex);
+    return std::any_of(matches.begin(), matches.end(),
+                       [](const Binding& b) { return isSourceControllerActive(b); });
+}
+
 // ============================================================================
 // Persistence
 // ============================================================================

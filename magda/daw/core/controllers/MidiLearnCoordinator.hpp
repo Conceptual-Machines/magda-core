@@ -98,16 +98,30 @@ class MidiLearnCoordinator {
     // ========================================================================
 
     /**
-     * @brief Start a MIDI learn session for a parameter.
+     * @brief Start a MIDI learn session for a plugin parameter.
      *
-     * If a session is already active (for any parameter), it is cancelled first.
+     * If a session is already active (for any target), it is cancelled first.
      * Notifies listeners with midiLearnStateChanged(true) for the new param.
-     *
-     * @param path        Device path of the target parameter.
-     * @param paramIndex  Parameter index within the device.
-     * @param displayName Human-readable name used in toast messages.
      */
     void beginLearn(const ChainNodePath& path, int paramIndex, const juce::String& displayName);
+
+    /**
+     * @brief Start a MIDI learn session for a macro (track / rack / device).
+     *
+     * The owning scope is implied by path.getType(): Track / Rack / Device.
+     */
+    void beginLearnMacro(const ChainNodePath& path, int macroIndex,
+                         const juce::String& displayName);
+
+    /**
+     * @brief Start a MIDI learn session for a modifier parameter (e.g. LFO Rate).
+     *
+     * @param path           Scope hosting the modifier (track / rack / device).
+     * @param modId          Modifier id within that scope.
+     * @param modParamIndex  0 = Rate (only kind today).
+     */
+    void beginLearnModParam(const ChainNodePath& path, ModId modId, int modParamIndex,
+                            const juce::String& displayName);
 
     /**
      * @brief Cancel any active learn session without creating a binding.
@@ -117,18 +131,38 @@ class MidiLearnCoordinator {
     void cancelLearn();
 
     /**
-     * @brief Return true if there is an active learn session for (path, paramIndex).
+     * @brief Return true if there is an active plugin-param learn session for (path, paramIndex).
      */
     bool isLearning(const ChainNodePath& path, int paramIndex) const;
 
     /**
-     * @brief Remove all bindings mapping to (path, paramIndex).
+     * @brief Return true if there is an active macro learn session for (path, macroIndex).
+     */
+    bool isLearningMacro(const ChainNodePath& path, int macroIndex) const;
+
+    /**
+     * @brief Return true if there is an active mod-param learn session.
+     */
+    bool isLearningModParam(const ChainNodePath& path, ModId modId, int modParamIndex) const;
+
+    /**
+     * @brief Remove all plugin-param bindings mapping to (path, paramIndex).
      *
      * Calls BindingRegistry::removeForTarget() and notifies listeners.
      *
      * @return Number of bindings removed.
      */
     int clearMappings(const ChainNodePath& path, int paramIndex);
+
+    /**
+     * @brief Remove all macro bindings mapping to (path, macroIndex).
+     */
+    int clearMacroMappings(const ChainNodePath& path, int macroIndex);
+
+    /**
+     * @brief Remove all mod-param bindings mapping to (path, modId, modParamIndex).
+     */
+    int clearModParamMappings(const ChainNodePath& path, ModId modId, int modParamIndex);
 
     // ========================================================================
     // Scope
@@ -161,7 +195,14 @@ class MidiLearnCoordinator {
     bool armed_ = false;
     ChainNodePath armedPath_;
     int armedParam_ = -1;
+    StaticTarget::Owner armedOwner_ = StaticTarget::Owner::PluginParam;
+    ModId armedModId_ = INVALID_MOD_ID;
+    int armedModParamIndex_ = -1;
     juce::String armedDisplayName_;
+
+    // Internal helpers ---------------------------------------------------
+    void armSession(const ChainNodePath& path, int paramIndex, StaticTarget::Owner owner,
+                    ModId modId, int modParamIndex, const juce::String& displayName);
 
     BindingScope scope_ = BindingScope::Project;
 
