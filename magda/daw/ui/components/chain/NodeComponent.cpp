@@ -1220,6 +1220,22 @@ void NodeComponent::initializeModsMacrosPanels() {
             }
             return "P" + juce::String(paramIndex);
         });
+    macroEditorPanel_->setModNameResolver(
+        [this](magda::ModId modId, int modParamIndex) -> juce::String {
+            // Same scope as the macro — pull the mod list from this node and
+            // format "<modName> Rate" / "<modName> Depth" for the link row.
+            const auto* mods = getModsData();
+            if (!mods)
+                return {};
+            for (const auto& m : *mods) {
+                if (m.id == modId) {
+                    juce::String paramLabel =
+                        modParamIndex == 0 ? "Rate" : "P" + juce::String(modParamIndex);
+                    return m.name + " " + paramLabel;
+                }
+            }
+            return {};
+        });
     addChildComponent(*macroEditorPanel_);
 }
 
@@ -1234,6 +1250,18 @@ void NodeComponent::updateModsPanel() {
 
     auto devices = getAvailableDevices();
     modsPanel_->setAvailableDevices(devices);
+
+    // Same-scope modifiers — each knob's "Link to Modulator" submenu
+    // can target another mod's rate. Skip the knob's own ModId is done
+    // inside the knob (it knows its own currentMod_.id).
+    std::vector<std::pair<magda::ModId, juce::String>> modList;
+    if (mods) {
+        modList.reserve(mods->size());
+        for (const auto& m : *mods)
+            if (m.enabled)
+                modList.emplace_back(m.id, m.name);
+    }
+    modsPanel_->setAvailableModifiers(modList);
 }
 
 void NodeComponent::updateMacroValueDisplay(int macroIndex, float value) {
@@ -1253,6 +1281,17 @@ void NodeComponent::updateMacroPanel() {
     auto devices = getAvailableDevices();
     macroPanel_->setAvailableDevices(devices);
     macroPanel_->setDeviceParamNames(getDeviceParamNames());
+
+    // Same-scope modifiers — let the macro link picker offer "Modulators →
+    // <mod> → Rate" entries that resolve to the LFO's rate / rateType param.
+    std::vector<std::pair<magda::ModId, juce::String>> mods;
+    if (const auto* modsData = getModsData()) {
+        mods.reserve(modsData->size());
+        for (const auto& m : *modsData)
+            if (m.enabled)
+                mods.emplace_back(m.id, m.name);
+    }
+    macroPanel_->setAvailableModifiers(mods);
 }
 
 // === Modulator Editor Panel ===

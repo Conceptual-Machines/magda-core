@@ -320,6 +320,9 @@ juce::var ProjectSerializer::serializeMacroInfo(const MacroInfo& macro) {
     auto* targetObj = new juce::DynamicObject();
     targetObj->setProperty("deviceId", macro.target.deviceId);
     targetObj->setProperty("paramIndex", macro.target.paramIndex);
+    targetObj->setProperty("kind", static_cast<int>(macro.target.kind));
+    targetObj->setProperty("modId", macro.target.modId);
+    targetObj->setProperty("modParamIndex", macro.target.modParamIndex);
     obj->setProperty("target", juce::var(targetObj));
 
     // Links
@@ -344,12 +347,21 @@ bool ProjectSerializer::deserializeMacroInfo(const juce::var& json, MacroInfo& o
     outMacro.name = obj->getProperty("name").toString();
     outMacro.value = obj->getProperty("value");
 
-    // Legacy target
+    // Legacy target. New fields (kind, modId, modParamIndex) default to
+    // DeviceParam / INVALID values when absent so projects saved before the
+    // ModParam target kind existed deserialize unchanged.
     auto targetVar = obj->getProperty("target");
     if (targetVar.isObject()) {
         auto* targetObj = targetVar.getDynamicObject();
         outMacro.target.deviceId = targetObj->getProperty("deviceId");
         outMacro.target.paramIndex = targetObj->getProperty("paramIndex");
+        if (targetObj->hasProperty("kind"))
+            outMacro.target.kind =
+                static_cast<MacroTarget::Kind>(static_cast<int>(targetObj->getProperty("kind")));
+        if (targetObj->hasProperty("modId"))
+            outMacro.target.modId = targetObj->getProperty("modId");
+        if (targetObj->hasProperty("modParamIndex"))
+            outMacro.target.modParamIndex = targetObj->getProperty("modParamIndex");
     }
 
     // Links
@@ -412,6 +424,9 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     auto* targetObj = new juce::DynamicObject();
     targetObj->setProperty("deviceId", mod.target.deviceId);
     targetObj->setProperty("paramIndex", mod.target.paramIndex);
+    targetObj->setProperty("kind", static_cast<int>(mod.target.kind));
+    targetObj->setProperty("modId", mod.target.modId);
+    targetObj->setProperty("modParamIndex", mod.target.modParamIndex);
     obj->setProperty("target", juce::var(targetObj));
     obj->setProperty("amount", mod.amount);
 
@@ -474,12 +489,20 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
         }
     }
 
-    // Legacy target/amount
+    // Legacy target/amount. New ModParam fields default to DeviceParam /
+    // INVALID values when missing so older project files round-trip cleanly.
     auto targetVar = obj->getProperty("target");
     if (targetVar.isObject()) {
         auto* targetObj = targetVar.getDynamicObject();
         outMod.target.deviceId = targetObj->getProperty("deviceId");
         outMod.target.paramIndex = targetObj->getProperty("paramIndex");
+        if (targetObj->hasProperty("kind"))
+            outMod.target.kind =
+                static_cast<ModTarget::Kind>(static_cast<int>(targetObj->getProperty("kind")));
+        if (targetObj->hasProperty("modId"))
+            outMod.target.modId = targetObj->getProperty("modId");
+        if (targetObj->hasProperty("modParamIndex"))
+            outMod.target.modParamIndex = targetObj->getProperty("modParamIndex");
     }
     outMod.amount = obj->getProperty("amount");
 
@@ -566,6 +589,9 @@ juce::var ProjectSerializer::serializeMacroLink(const MacroLink& data) {
     auto* targetObj = new juce::DynamicObject();
     targetObj->setProperty("deviceId", data.target.deviceId);
     targetObj->setProperty("paramIndex", data.target.paramIndex);
+    targetObj->setProperty("kind", static_cast<int>(data.target.kind));
+    targetObj->setProperty("modId", data.target.modId);
+    targetObj->setProperty("modParamIndex", data.target.modParamIndex);
     obj->setProperty("target", juce::var(targetObj));
     SER(amount);
     SER(bipolar);
@@ -578,12 +604,20 @@ bool ProjectSerializer::deserializeMacroLink(const juce::var& json, MacroLink& d
         return false;
     }
     auto* obj = json.getDynamicObject();
-    // Nested target stays manual
+    // Nested target stays manual. Missing kind / modId / modParamIndex default
+    // to DeviceParam / INVALID for backward compat with pre-ModParam projects.
     auto targetVar = obj->getProperty("target");
     if (targetVar.isObject()) {
         auto* targetObj = targetVar.getDynamicObject();
         data.target.deviceId = targetObj->getProperty("deviceId");
         data.target.paramIndex = targetObj->getProperty("paramIndex");
+        if (targetObj->hasProperty("kind"))
+            data.target.kind =
+                static_cast<MacroTarget::Kind>(static_cast<int>(targetObj->getProperty("kind")));
+        if (targetObj->hasProperty("modId"))
+            data.target.modId = targetObj->getProperty("modId");
+        if (targetObj->hasProperty("modParamIndex"))
+            data.target.modParamIndex = targetObj->getProperty("modParamIndex");
     }
     DESER(amount);
     DESER(bipolar);
@@ -596,6 +630,9 @@ juce::var ProjectSerializer::serializeModLink(const ModLink& data) {
     auto* targetObj = new juce::DynamicObject();
     targetObj->setProperty("deviceId", data.target.deviceId);
     targetObj->setProperty("paramIndex", data.target.paramIndex);
+    targetObj->setProperty("kind", static_cast<int>(data.target.kind));
+    targetObj->setProperty("modId", data.target.modId);
+    targetObj->setProperty("modParamIndex", data.target.modParamIndex);
     obj->setProperty("target", juce::var(targetObj));
     SER(amount);
     SER(bipolar);
@@ -608,12 +645,20 @@ bool ProjectSerializer::deserializeModLink(const juce::var& json, ModLink& data)
         return false;
     }
     auto* obj = json.getDynamicObject();
-    // Nested target stays manual
+    // Nested target stays manual. Missing kind / modId / modParamIndex default
+    // to DeviceParam / INVALID for backward compat with pre-ModParam projects.
     auto targetVar = obj->getProperty("target");
     if (targetVar.isObject()) {
         auto* targetObj = targetVar.getDynamicObject();
         data.target.deviceId = targetObj->getProperty("deviceId");
         data.target.paramIndex = targetObj->getProperty("paramIndex");
+        if (targetObj->hasProperty("kind"))
+            data.target.kind =
+                static_cast<ModTarget::Kind>(static_cast<int>(targetObj->getProperty("kind")));
+        if (targetObj->hasProperty("modId"))
+            data.target.modId = targetObj->getProperty("modId");
+        if (targetObj->hasProperty("modParamIndex"))
+            data.target.modParamIndex = targetObj->getProperty("modParamIndex");
     }
     DESER(amount);
     DESER(bipolar);

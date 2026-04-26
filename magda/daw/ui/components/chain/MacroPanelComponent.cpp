@@ -62,6 +62,7 @@ void MacroPanelComponent::ensureKnobCount(int count) {
         };
 
         knob->setAvailableTargets(availableDevices_);
+        knob->setAvailableModifiers(availableModifiers_);
         knob->setParentPath(parentPath_);
         addAndMakeVisible(*knob);
         knobs_.push_back(std::move(knob));
@@ -98,6 +99,14 @@ void MacroPanelComponent::setDeviceParamNames(
     const std::map<magda::DeviceId, std::vector<juce::String>>& paramNames) {
     for (auto& knob : knobs_) {
         knob->setDeviceParamNames(paramNames);
+    }
+}
+
+void MacroPanelComponent::setAvailableModifiers(
+    const std::vector<std::pair<magda::ModId, juce::String>>& mods) {
+    availableModifiers_ = mods;
+    for (auto& knob : knobs_) {
+        knob->setAvailableModifiers(mods);
     }
 }
 

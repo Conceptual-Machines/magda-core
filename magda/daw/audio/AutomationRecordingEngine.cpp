@@ -23,10 +23,14 @@ AutomationRecordingEngine::AutomationRecordingEngine(te::Edit& edit) : edit_(edi
 
 static const char* modeName(AutomationMode m) {
     switch (m) {
-        case AutomationMode::Off:   return "OFF";
-        case AutomationMode::Write: return "WRITE";
-        case AutomationMode::Touch: return "TOUCH";
-        case AutomationMode::Latch: return "LATCH";
+        case AutomationMode::Off:
+            return "OFF";
+        case AutomationMode::Write:
+            return "WRITE";
+        case AutomationMode::Touch:
+            return "TOUCH";
+        case AutomationMode::Latch:
+            return "LATCH";
     }
     return "?";
 }
@@ -96,8 +100,7 @@ void AutomationRecordingEngine::process() {
         clearLatchState();
     }
 
-    if (isRecording_ &&
-        (mode_ == AutomationMode::Touch || mode_ == AutomationMode::Latch)) {
+    if (isRecording_ && (mode_ == AutomationMode::Touch || mode_ == AutomationMode::Latch)) {
         processReleaseTransitions();
         if (mode_ == AutomationMode::Latch)
             continueLatchedWrites();
@@ -113,8 +116,7 @@ void AutomationRecordingEngine::processReleaseTransitions() {
     auto current = autoMgr.getUserTouchedTargets();
 
     for (const auto& prev : previouslyTouched_) {
-        bool stillTouched =
-            std::find(current.begin(), current.end(), prev) != current.end();
+        bool stillTouched = std::find(current.begin(), current.end(), prev) != current.end();
         if (stillTouched)
             continue;
 

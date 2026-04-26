@@ -54,6 +54,11 @@ class MacroKnobComponent : public juce::Component,
     void setDeviceParamNames(
         const std::map<magda::DeviceId, std::vector<juce::String>>& paramNames);
 
+    // Set the modifiers (LFOs etc.) the macro can target via the "Modulators"
+    // submenu in the link picker. Same scope as the macro itself — the parent
+    // that owns this knob populates this from its track/rack/device mods list.
+    void setAvailableModifiers(const std::vector<std::pair<magda::ModId, juce::String>>& mods);
+
     // Set parent path for drag-and-drop identification
     void setParentPath(const magda::ChainNodePath& path) {
         parentPath_ = path;
@@ -134,6 +139,7 @@ class MacroKnobComponent : public juce::Component,
     magda::MacroInfo currentMacro_;
     std::vector<std::pair<magda::DeviceId, juce::String>> availableTargets_;
     std::map<magda::DeviceId, std::vector<juce::String>> deviceParamNames_;
+    std::vector<std::pair<magda::ModId, juce::String>> availableModifiers_;
     bool selected_ = false;
     magda::ChainNodePath parentPath_;  // For drag-and-drop identification
 

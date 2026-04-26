@@ -25,6 +25,53 @@
 
 namespace magda {
 
+namespace {
+
+// Resolve the TE param for a macro/mod link whose target is another modifier
+// on the same scope (device or track). modParamIndex 0 == Rate; we pick the
+// LFO's `rate` param when tempoSync is off and `rateType` when it's on, so
+// the link drives whichever param the unified Rate lane writes to.
+//
+// `scopeMods` is the MAGDA ModInfo vector for the scope the source lives on
+// (device.mods or trackInfo->mods); `scopeTeMods` is the parallel TE
+// modifier vector (syncedDevices_[id].modifiers or trackModStates_[id].modifiers).
+// Same-scope only — cross-device / cross-rack mod targeting isn't supported
+// yet; return nullptr if the modId isn't found in this scope.
+//
+// scopeMods includes disabled mods; scopeTeMods is built from enabled ones
+// only (syncDeviceModifiers / syncTrackModifiers skip disabled). So the two
+// are NOT 1:1 indexable — we have to walk the MAGDA list and advance the
+// TE-side index only over enabled entries to keep them aligned.
+template <typename Link>
+te::AutomatableParameter* resolveSameScopeModParam(
+    const Link& link, const std::vector<ModInfo>& scopeMods,
+    const std::vector<te::Modifier::Ptr>& scopeTeMods) {
+    if (link.target.kind != decltype(link.target.kind)::ModParam)
+        return nullptr;
+
+    size_t teIdx = 0;
+    for (size_t i = 0; i < scopeMods.size(); ++i) {
+        if (!scopeMods[i].enabled)
+            continue;
+        if (teIdx >= scopeTeMods.size())
+            break;
+        if (scopeMods[i].id == link.target.modId && scopeTeMods[teIdx]) {
+            const bool sync = scopeMods[i].tempoSync;
+            const juce::String wantedID =
+                link.target.modParamIndex == 0 ? (sync ? "rateType" : "rate") : "depth";
+            for (auto* p : scopeTeMods[teIdx]->getAutomatableParameters()) {
+                if (p && p->paramID == wantedID)
+                    return p;
+            }
+            return nullptr;
+        }
+        ++teIdx;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
 PluginManager::PluginManager(te::Engine& engine, te::Edit& edit, TrackController& trackController,
                              PluginWindowBridge& pluginWindowBridge,
                              TransportStateManager& transportState)
@@ -1214,7 +1261,10 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
         size_t modIdx = 0;
 
         for (const auto& modInfo : device.mods) {
-            if (!modInfo.enabled || modInfo.links.empty())
+            // Match the gate used by syncModifiers — enabled is enough; an
+            // LFO with no own outgoing links is still kept in the TE graph
+            // so it can be the target of a ModParam-kind macro/mod link.
+            if (!modInfo.enabled)
                 continue;
 
             if (modIdx >= existingMods.size())
@@ -1350,7 +1400,10 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
         auto& trackModState = tmIt->second;
         size_t modIdx = 0;
         for (const auto& modInfo : trackInfo->mods) {
-            if (!modInfo.enabled || modInfo.links.empty())
+            // Match the gate used by syncModifiers — enabled is enough; an
+            // LFO with no own outgoing links is still kept in the TE graph
+            // so it can be the target of a ModParam-kind macro/mod link.
+            if (!modInfo.enabled)
                 continue;
             if (modIdx >= trackModState.modifiers.size())
                 break;
@@ -1472,11 +1525,14 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
 
         const auto& device = getDevice(element);
 
-        // Check if any mod has active links AND device is not bypassed
+        // Any enabled mod keeps the TE side alive — even one without outgoing
+        // links can still be the TARGET of an incoming ModParam macro/mod
+        // link, and pass-2 needs the TE modifier to exist for the link to
+        // attach. Bypassed devices skip the modifier graph entirely.
         bool hasActiveMods = false;
         if (!device.bypassed) {
             for (const auto& mod : device.mods) {
-                if (mod.enabled && !mod.links.empty()) {
+                if (mod.enabled) {
                     hasActiveMods = true;
                     break;
                 }
@@ -1551,9 +1607,23 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
         if (!targetPlugin)
             continue;
 
-        // Create TE modifiers for each active mod
+        // Create TE modifiers for each active mod. Skip only on disabled —
+        // an enabled mod with no outgoing links is still kept around so a
+        // macro / other mod can target ITS rate via a ModParam-kind link.
+        //
+        // Two-pass: create all modifiers first (pass 1), then wire links
+        // (pass 2). Cross-mod links (target.kind == ModParam) need the
+        // target modifier to exist before the source's link is wired —
+        // doing both in one pass would silently drop links to mods that
+        // come later in the iteration order.
+        struct CreatedMod {
+            te::Modifier::Ptr modifier;
+            const ModInfo* info;
+        };
+        std::vector<CreatedMod> created;
+
         for (const auto& modInfo : device.mods) {
-            if (!modInfo.enabled || modInfo.links.empty())
+            if (!modInfo.enabled)
                 continue;
 
             te::Modifier::Ptr modifier;
@@ -1606,11 +1676,26 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                 continue;
 
             existingMods.push_back(modifier);
+            created.push_back({modifier, &modInfo});
+        }
 
-            // Create modifier assignments for each link
+        // Pass 2: wire link assignments, now that every TE modifier exists.
+        for (const auto& cm : created) {
+            const auto& modInfo = *cm.info;
             for (const auto& link : modInfo.links) {
                 if (!link.isValid())
                     continue;
+
+                // Mod-on-mod: target another modifier on the same device.
+                // Self-target is a feedback loop with no useful semantics.
+                if (link.target.kind == ModTarget::Kind::ModParam) {
+                    if (link.target.modId == modInfo.id)
+                        continue;
+                    if (auto* targetParam = resolveSameScopeModParam(
+                            link, device.mods, syncedDevices_[device.id].modifiers))
+                        targetParam->addModifier(*cm.modifier, link.amount);
+                    continue;
+                }
 
                 // Device-level mods target parameters on the same device
                 // (link.target.deviceId should match device.id)
@@ -1630,7 +1715,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                     link.target.paramIndex < static_cast<int>(params.size())) {
                     auto* param = params[static_cast<size_t>(link.target.paramIndex)];
                     if (param) {
-                        param->addModifier(*modifier, link.amount);
+                        param->addModifier(*cm.modifier, link.amount);
                         DBG("[MOD-ASSIGN] created: devId="
                             << device.id << " paramIdx=" << link.target.paramIndex << " paramName="
                             << param->getParameterName() << " linkAmount=" << link.amount
@@ -1676,19 +1761,34 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
     }
     trackModState.modifiers.clear();
 
-    // Check if any track-level mod has active links
+    // Check if any track-level mod is enabled. Used to be gated on having
+    // outgoing links, but a "dead" LFO is still a valid TARGET for a macro
+    // or other mod via a ModParam-kind link, so we keep the TE modifier
+    // around as long as the mod is enabled.
     bool hasActiveTrackMods = false;
     for (const auto& modInfo : trackInfo->mods) {
-        if (modInfo.enabled && !modInfo.links.empty()) {
+        if (modInfo.enabled) {
             hasActiveTrackMods = true;
+            break;
         }
     }
 
     if (hasActiveTrackMods) {
         auto* trackModList = teTrack->getModifierList();
         if (trackModList) {
+            // Two-pass — same reason as the device path above: cross-mod
+            // links need the target modifier to exist before the source's
+            // link is wired.
+            struct CreatedMod {
+                te::Modifier::Ptr modifier;
+                const ModInfo* info;
+            };
+            std::vector<CreatedMod> created;
+
             for (const auto& modInfo : trackInfo->mods) {
-                if (!modInfo.enabled || modInfo.links.empty())
+                // Same as device-mods: enabled is enough; an LFO with no
+                // outgoing links can still be the TARGET of a ModParam link.
+                if (!modInfo.enabled)
                     continue;
 
                 te::Modifier::Ptr modifier;
@@ -1727,11 +1827,24 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                     continue;
 
                 trackModState.modifiers.push_back(modifier);
+                created.push_back({modifier, &modInfo});
+            }
 
-                // Create assignments — track mods can target any device on the track
+            // Pass 2: wire link assignments now that every TE modifier exists.
+            for (const auto& cm : created) {
+                const auto& modInfo = *cm.info;
                 for (const auto& link : modInfo.links) {
                     if (!link.isValid())
                         continue;
+
+                    if (link.target.kind == ModTarget::Kind::ModParam) {
+                        if (link.target.modId == modInfo.id)
+                            continue;  // Self-target — see device-mod path.
+                        if (auto* targetParam = resolveSameScopeModParam(link, trackInfo->mods,
+                                                                         trackModState.modifiers))
+                            targetParam->addModifier(*cm.modifier, link.amount);
+                        continue;
+                    }
 
                     te::Plugin::Ptr linkTarget;
                     {
@@ -1754,7 +1867,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                         link.target.paramIndex < static_cast<int>(params.size())) {
                         auto* param = params[static_cast<size_t>(link.target.paramIndex)];
                         if (param) {
-                            param->addModifier(*modifier, link.amount);
+                            param->addModifier(*cm.modifier, link.amount);
                         }
                     }
                 }
@@ -2503,6 +2616,17 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
                 if (!link.target.isValid())
                     continue;
 
+                // Macro-on-mod: target another modifier on the same device.
+                if (link.target.kind == MacroTarget::Kind::ModParam) {
+                    if (auto* targetParam = resolveSameScopeModParam(
+                            link, device.mods, syncedDevices_[device.id].modifiers)) {
+                        float offset = link.bipolar ? -link.amount : 0.0f;
+                        float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                        targetParam->addModifier(*macroParam, value, offset);
+                    }
+                    continue;
+                }
+
                 // Find the TE plugin for the link target device
                 te::Plugin::Ptr linkTarget;
                 {
@@ -2605,6 +2729,17 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
         for (const auto& link : macroInfo.links) {
             if (!link.target.isValid())
                 continue;
+
+            // Macro-on-mod: target another modifier on the same track.
+            if (link.target.kind == MacroTarget::Kind::ModParam) {
+                if (auto* targetParam = resolveSameScopeModParam(
+                        link, trackInfo->mods, trackModStates_[trackId].modifiers)) {
+                    float offset = link.bipolar ? -link.amount : 0.0f;
+                    float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                    targetParam->addModifier(*macroParam, value, offset);
+                }
+                continue;
+            }
 
             te::Plugin::Ptr linkTarget;
             {

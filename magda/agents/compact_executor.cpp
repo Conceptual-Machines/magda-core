@@ -14,6 +14,7 @@
 #include "../daw/core/UndoManager.hpp"
 #include "../daw/engine/AudioEngine.hpp"
 #include "../daw/engine/TracktionEngineWrapper.hpp"
+#include "../daw/project/ProjectManager.hpp"
 #include "music_helpers.hpp"
 
 namespace magda {
@@ -68,6 +69,15 @@ double CompactExecutor::barsToLength(double bars) const {
     if (engine)
         bpm = engine->getTempo();
     return bars * 4.0 * 60.0 / bpm;
+}
+
+double CompactExecutor::barsToBeats(double bars) const {
+    // Use the project's time-signature numerator. Hard-coding 4 here was
+    // the source of the seconds↔beats round-trip drift under non-4/4 sigs.
+    int beatsPerBar = ProjectManager::getInstance().getCurrentProjectInfo().timeSignatureNumerator;
+    if (beatsPerBar <= 0)
+        beatsPerBar = 4;
+    return bars * static_cast<double>(beatsPerBar);
 }
 
 // ============================================================================
@@ -202,15 +212,18 @@ bool CompactExecutor::autoCreateClip() {
         return false;
     }
 
-    // Create a default clip at bar 1, 4 bars long
-    double startTime = barsToTime(1.0);
-    double length = barsToLength(4.0);
+    // Create a default clip at bar 1, 4 bars long. Beats-authoritative: pass
+    // beats directly so the clip's musical position survives tempo / time-sig
+    // changes and skips the seconds↔beats round-trip.
+    double startBeats = barsToBeats(0.0);  // bar 1 == beat 0
+    double lengthBeats = barsToBeats(4.0);
 
     DBG("CompactExecutor::autoCreateClip creating MIDI clip on track " +
-        juce::String(currentTrackId_) + " start=" + juce::String(startTime, 3) +
-        "s len=" + juce::String(length, 3) + "s");
+        juce::String(currentTrackId_) + " startBeats=" + juce::String(startBeats, 3) +
+        " lenBeats=" + juce::String(lengthBeats, 3));
 
-    auto clipId = ClipManager::getInstance().createMidiClip(currentTrackId_, startTime, length);
+    auto clipId =
+        ClipManager::getInstance().createMidiClipBeats(currentTrackId_, startBeats, lengthBeats);
     if (clipId < 0) {
         error_ = "Failed to auto-create clip";
         DBG("CompactExecutor::autoCreateClip FAIL: createMidiClip returned -1 for track " +
@@ -445,11 +458,13 @@ bool CompactExecutor::executeClip(const ClipOp& op) {
 
     currentTrackId_ = trackId;
 
-    double startTime = barsToTime(op.bar);
-    double length = barsToTime(op.bar + op.lengthBars) - startTime;
+    // Beats-authoritative: convert bars to beats once via the project time
+    // signature; do NOT round-trip through seconds.
+    double startBeats = barsToBeats(op.bar - 1.0);
+    double lengthBeats = barsToBeats(op.lengthBars);
 
     auto& cm = ClipManager::getInstance();
-    auto clipId = cm.createMidiClip(trackId, startTime, length);
+    auto clipId = cm.createMidiClipBeats(trackId, startBeats, lengthBeats);
 
     if (clipId < 0) {
         error_ = "Failed to create clip";

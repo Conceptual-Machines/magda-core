@@ -112,6 +112,14 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     // Set available devices for linking (name and deviceId pairs)
     void setAvailableTargets(const std::vector<std::pair<magda::DeviceId, juce::String>>& devices);
 
+    // Set available modifiers in the same scope so the right-click menu can
+    // expose mod->mod-rate links. The parent should filter out THIS mod
+    // (same id) before passing to avoid offering a self-target.
+    void setAvailableModifiers(
+        const std::vector<std::pair<magda::ModId, juce::String>>& modifiers) {
+        availableModifiers_ = modifiers;
+    }
+
     // Set parent path for drag-and-drop identification
     void setParentPath(const magda::ChainNodePath& path) {
         parentPath_ = path;
@@ -169,6 +177,7 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     magda::ModInfo currentMod_;
     const magda::ModInfo* liveModPtr_ = nullptr;  // Pointer to live mod for animation
     std::vector<std::pair<magda::DeviceId, juce::String>> availableTargets_;
+    std::vector<std::pair<magda::ModId, juce::String>> availableModifiers_;
     bool selected_ = false;
     magda::ChainNodePath parentPath_;  // For drag-and-drop identification
 

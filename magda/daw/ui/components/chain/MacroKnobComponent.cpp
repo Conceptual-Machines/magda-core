@@ -118,6 +118,11 @@ void MacroKnobComponent::setDeviceParamNames(
     deviceParamNames_ = paramNames;
 }
 
+void MacroKnobComponent::setAvailableModifiers(
+    const std::vector<std::pair<magda::ModId, juce::String>>& mods) {
+    availableModifiers_ = mods;
+}
+
 void MacroKnobComponent::setSelected(bool selected) {
     if (selected_ != selected) {
         selected_ = selected;
@@ -344,6 +349,28 @@ void MacroKnobComponent::showLinkMenu() {
     menu.addSectionHeader("Link to Parameter...");
     menu.addSeparator();
 
+    // Modulators submenu — macro can drive an LFO's Rate. Only shown when
+    // the parent populated availableModifiers_; offset 40000 keeps the IDs
+    // out of the way of the device-param items below (start at 1) and the
+    // unlink/clear/show-lane items further down.
+    constexpr int kModRateBaseId = 40000;
+    if (!availableModifiers_.empty()) {
+        juce::PopupMenu modsMenu;
+        for (size_t mi = 0; mi < availableModifiers_.size(); ++mi) {
+            const auto& [modId, modName] = availableModifiers_[mi];
+            juce::PopupMenu perModMenu;
+            magda::MacroTarget t;
+            t.kind = magda::MacroTarget::Kind::ModParam;
+            t.modId = modId;
+            t.modParamIndex = 0;  // Rate
+            const bool isCurrentTarget = currentMacro_.getLink(t) != nullptr;
+            perModMenu.addItem(kModRateBaseId + static_cast<int>(mi), "Rate", true,
+                               isCurrentTarget);
+            modsMenu.addSubMenu(modName, perModMenu);
+        }
+        menu.addSubMenu("Modulators", modsMenu);
+    }
+
     // Add submenu for each available device
     int itemId = 1;
     for (const auto& [deviceId, deviceName] : availableTargets_) {
@@ -407,12 +434,29 @@ void MacroKnobComponent::showLinkMenu() {
 
     // Show menu and handle selection
     auto safeThis = juce::Component::SafePointer<MacroKnobComponent>(this);
-    auto targets = availableTargets_;     // Capture by value for async safety
-    auto paramNames = deviceParamNames_;  // Capture by value for async safety
+    auto targets = availableTargets_;      // Capture by value for async safety
+    auto paramNames = deviceParamNames_;   // Capture by value for async safety
+    auto modifiers = availableModifiers_;  // Capture by value for async safety
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, targets, paramNames, unlinkBaseId,
-                                                    unlinkTargets, clearAllId](int result) {
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, targets, paramNames, modifiers,
+                                                    unlinkBaseId, unlinkTargets, clearAllId,
+                                                    kModRateBaseId](int result) {
         if (safeThis == nullptr || result == 0) {
+            return;
+        }
+
+        // Modulator-rate link selection. The parent's onTargetChanged routes
+        // through TrackManager::setXxxMacroTarget, which materialises the
+        // link (with an audible default amount for ModParam kind) and
+        // triggers a refresh — so we don't need to mutate currentMacro_.
+        int modSlot = result - kModRateBaseId;
+        if (modSlot >= 0 && modSlot < static_cast<int>(modifiers.size())) {
+            magda::MacroTarget t;
+            t.kind = magda::MacroTarget::Kind::ModParam;
+            t.modId = modifiers[static_cast<size_t>(modSlot)].first;
+            t.modParamIndex = 0;  // Rate
+            if (safeThis->onTargetChanged)
+                safeThis->onTargetChanged(t);
             return;
         }
 

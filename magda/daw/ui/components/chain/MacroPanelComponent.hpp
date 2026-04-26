@@ -49,6 +49,10 @@ class MacroPanelComponent : public PagedControlPanel {
     void setDeviceParamNames(
         const std::map<magda::DeviceId, std::vector<juce::String>>& paramNames);
 
+    // Modifiers (LFOs etc.) on the macro's scope, exposed in the link menu
+    // under "Modulators" so a macro can drive an LFO's Rate.
+    void setAvailableModifiers(const std::vector<std::pair<magda::ModId, juce::String>>& mods);
+
     // Set which macro is selected (purple highlight)
     void setSelectedMacroIndex(int macroIndex);
 
@@ -74,6 +78,7 @@ class MacroPanelComponent : public PagedControlPanel {
   private:
     std::vector<std::unique_ptr<MacroKnobComponent>> knobs_;
     std::vector<std::pair<magda::DeviceId, juce::String>> availableDevices_;
+    std::vector<std::pair<magda::ModId, juce::String>> availableModifiers_;
     magda::ChainNodePath parentPath_;
 
     void ensureKnobCount(int count);

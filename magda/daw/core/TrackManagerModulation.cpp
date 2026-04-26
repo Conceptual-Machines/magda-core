@@ -132,6 +132,18 @@ void TrackManager::setRackMacroTarget(const ChainNodePath& rackPath, int macroIn
         if (macroIndex < 0 || macroIndex >= static_cast<int>(rack->macros.size())) {
             return;
         }
+        // ModParam targets are only meaningful through the links vector — the
+        // legacy single-target field has no rendering path for cross-mod links.
+        if (target.kind == MacroTarget::Kind::ModParam) {
+            if (!rack->macros[macroIndex].getLink(target)) {
+                MacroLink newLink;
+                newLink.target = target;
+                newLink.amount = 1.0f;
+                rack->macros[macroIndex].links.push_back(newLink);
+                notifyDeviceModifiersChanged(rackPath.trackId);
+            }
+            return;
+        }
         rack->macros[macroIndex].target = target;
         notifyTrackDevicesChanged(rackPath.trackId);
     }
@@ -166,8 +178,10 @@ void TrackManager::setRackMacroLinkAmount(const ChainNodePath& rackPath, int mac
             rack->macros[macroIndex].links.push_back(newLink);
             created = true;
         }
-        // Notify when a new link is created (needs TE modifier assignment)
-        if (created) {
+        // Notify when a new link is created (needs TE modifier assignment).
+        // ModParam targets don't change device topology — keep the lighter
+        // notification so an open mod editor doesn't get torn down.
+        if (created && target.kind != MacroTarget::Kind::ModParam) {
             notifyTrackDevicesChanged(rackPath.trackId);
         } else {
             // Existing link amount changed — resync TE assignments
@@ -232,6 +246,18 @@ void TrackManager::setRackModAmount(const ChainNodePath& rackPath, int modIndex,
 void TrackManager::setRackModTarget(const ChainNodePath& rackPath, int modIndex, ModTarget target) {
     if (auto* rack = getRackByPath(rackPath)) {
         if (modIndex < 0 || modIndex >= static_cast<int>(rack->mods.size())) {
+            return;
+        }
+        // ModParam targets are only meaningful through the links vector — the
+        // legacy single-target field has no rendering path for cross-mod links.
+        if (target.kind == ModTarget::Kind::ModParam) {
+            if (!rack->mods[modIndex].getLink(target)) {
+                ModLink newLink;
+                newLink.target = target;
+                newLink.amount = 1.0f;
+                rack->mods[modIndex].links.push_back(newLink);
+                notifyDeviceModifiersChanged(rackPath.trackId);
+            }
             return;
         }
         rack->mods[modIndex].target = target;
@@ -513,9 +539,13 @@ void TrackManager::setDeviceModTarget(const ChainNodePath& devicePath, int modIn
                                       ModTarget target) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         if (target.isValid()) {
-            mod->addLink(target, 0.0f);
+            // ModParam picks come from a menu (no drag), so 0.0 would be silent —
+            // give the link an audible default amount the user can dial down.
+            const float defaultAmount = target.kind == ModTarget::Kind::ModParam ? 1.0f : 0.0f;
+            mod->addLink(target, defaultAmount);
         }
-        mod->target = target;
+        if (target.kind != ModTarget::Kind::ModParam)
+            mod->target = target;
         // Use modifier-only notify to avoid full UI rebuild (panel stays open)
         notifyDeviceModifiersChanged(devicePath.trackId);
     }
@@ -867,9 +897,14 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
     // Lambda to update a single mod's phase and value.
     // Returns true if 'running' state changed (needs TE assignment sync).
+    // scopeMacros / scopeMods are the SAME-scope macros / mods that may
+    // target this mod's rate via a ModParam-kind link — used to compute the
+    // effective rate so the UI animation matches what the audio LFO does.
     auto updateMod = [deltaTime, bpm, transportJustStarted, transportJustLooped,
                       transportJustStopped](ModInfo& mod, bool midiTriggered, bool midiNoteOff,
-                                            float audioPeakLevel) -> bool {
+                                            float audioPeakLevel,
+                                            const std::vector<MacroInfo>& scopeMacros,
+                                            const std::vector<ModInfo>& scopeMods) -> bool {
         bool wasRunning = mod.running;
         ModTickInputs inputs{
             midiTriggered, midiNoteOff,          audioPeakLevel,      deltaTime,
@@ -912,6 +947,44 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 float effectiveRate = mod.rate;
                 if (mod.tempoSync) {
                     effectiveRate = ModulatorEngine::calculateSyncRateHz(mod.syncDivision, bpm);
+                }
+
+                // Apply incoming ModParam-kind modulation from same-scope
+                // macros / mods so the UI animation matches what the audio
+                // LFO actually does. TE drives the audio side via its own
+                // modifier graph; here we mirror it on MAGDA's parallel
+                // visual sim by summing each link's offset * amount and
+                // applying it as a multiplicative shift on the rate (the
+                // rate slider is logarithmic 0.05..20 Hz, so a normalized
+                // unit covers ~8.6 octaves — multiplying by 20/0.05 to the
+                // power of total matches the slider's perceptual mapping
+                // and what the user hears).
+                float modTotal = 0.0f;
+                for (const auto& m : scopeMacros) {
+                    for (const auto& l : m.links) {
+                        if (l.target.kind != MacroTarget::Kind::ModParam ||
+                            l.target.modId != mod.id || l.target.modParamIndex != 0)
+                            continue;
+                        float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;
+                        modTotal += offset * l.amount;
+                    }
+                }
+                for (const auto& m : scopeMods) {
+                    if (m.id == mod.id)
+                        continue;
+                    for (const auto& l : m.links) {
+                        if (l.target.kind != ModTarget::Kind::ModParam ||
+                            l.target.modId != mod.id || l.target.modParamIndex != 0)
+                            continue;
+                        float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;
+                        modTotal += offset * l.amount;
+                    }
+                }
+                if (modTotal != 0.0f) {
+                    // 20 / 0.05 = 400 = ~8.64 octaves over normalized [-1, 1]
+                    constexpr float kRateRangeRatio = 20.0f / 0.05f;
+                    effectiveRate *= std::pow(kRateRangeRatio, modTotal);
+                    effectiveRate = juce::jlimit(0.05f, 20.0f, effectiveRate);
                 }
 
                 // Update phase
@@ -976,7 +1049,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             }
 
             for (auto& mod : device.mods) {
-                changed |= updateMod(mod, deviceMidiTriggered, deviceMidiNoteOff, deviceAudioPeak);
+                changed |= updateMod(mod, deviceMidiTriggered, deviceMidiNoteOff, deviceAudioPeak,
+                                     device.macros, device.mods);
             }
         } else if (isRack(element)) {
             RackInfo& rack = magda::getRack(element);
@@ -1011,7 +1085,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             }
 
             for (auto& mod : rack.mods) {
-                changed |= updateMod(mod, rackMidiTriggered, rackMidiNoteOff, rackAudioPeak);
+                changed |= updateMod(mod, rackMidiTriggered, rackMidiNoteOff, rackAudioPeak,
+                                     rack.macros, rack.mods);
             }
             for (auto& chain : rack.chains) {
                 for (auto& chainElement : chain.elements) {
@@ -1035,7 +1110,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
         // Track-level mods (global scope)
         for (auto& mod : track.mods) {
-            trackChanged |= updateMod(mod, trackMidiTriggered, trackMidiNoteOff, trackAudioPeak);
+            trackChanged |= updateMod(mod, trackMidiTriggered, trackMidiNoteOff, trackAudioPeak,
+                                      track.macros, track.mods);
         }
 
         // Device/rack-level mods
@@ -1080,7 +1156,10 @@ void TrackManager::setDeviceMacroTarget(const ChainNodePath& devicePath, int mac
         if (!device->macros[macroIndex].getLink(target)) {
             MacroLink newLink;
             newLink.target = target;
-            newLink.amount = 0.3f;    // Default amount (30% — adjustable via overlay)
+            // ModParam picks come from a menu (no drag overlay yet); 100% so
+            // the link is immediately audible. Knob-target picks default to
+            // 30% to leave headroom for the overlay drag.
+            newLink.amount = target.kind == MacroTarget::Kind::ModParam ? 1.0f : 0.3f;
             newLink.bipolar = false;  // Default unipolar
             device->macros[macroIndex].links.push_back(newLink);
             // Use lighter notification — adding a macro link doesn't change device
@@ -1130,7 +1209,9 @@ void TrackManager::setDeviceMacroLinkAmount(const ChainNodePath& devicePath, int
             device->macros[macroIndex].links.push_back(newLink);
             created = true;
         }
-        if (created) {
+        // ModParam links don't change device topology — keep the lighter
+        // notification so an open mod editor isn't torn down.
+        if (created && target.kind != MacroTarget::Kind::ModParam) {
             notifyTrackDevicesChanged(devicePath.trackId);
         } else {
             // Existing link amount changed — resync TE assignments
@@ -1200,9 +1281,13 @@ void TrackManager::setTrackModAmount(TrackId trackId, int modIndex, float amount
 void TrackManager::setTrackModTarget(TrackId trackId, int modIndex, ModTarget target) {
     if (auto* mod = getTrackMod(trackId, modIndex)) {
         if (target.isValid()) {
-            mod->addLink(target, 0.0f);
+            // ModParam picks come from a menu (no drag), so 0.0 would be silent —
+            // give the link an audible default amount the user can dial down.
+            const float defaultAmount = target.kind == ModTarget::Kind::ModParam ? 1.0f : 0.0f;
+            mod->addLink(target, defaultAmount);
         }
-        mod->target = target;
+        if (target.kind != ModTarget::Kind::ModParam)
+            mod->target = target;
         notifyDeviceModifiersChanged(trackId);
     }
 }
@@ -1424,7 +1509,10 @@ void TrackManager::setTrackMacroTarget(TrackId trackId, int macroIndex, MacroTar
     if (!track->macros[macroIndex].getLink(target)) {
         MacroLink newLink;
         newLink.target = target;
-        newLink.amount = 0.3f;
+        // ModParam picks come from a menu (no drag overlay yet); 100% so
+        // the link is immediately audible. Knob-target picks default to
+        // 30% to leave headroom for the overlay drag.
+        newLink.amount = target.kind == MacroTarget::Kind::ModParam ? 1.0f : 0.3f;
         track->macros[macroIndex].links.push_back(newLink);
         notifyDeviceModifiersChanged(trackId);
     }
@@ -1447,7 +1535,11 @@ void TrackManager::setTrackMacroLinkAmount(TrackId trackId, int macroIndex, Macr
         track->macros[macroIndex].links.push_back(newLink);
         created = true;
     }
-    if (created) {
+    if (created && target.kind != MacroTarget::Kind::ModParam) {
+        // ModParam links don't change device topology — only the modifier
+        // attachment graph. The lighter resync covers that and avoids
+        // collapsing any open mod editor (which lives inside a NodeComponent
+        // that trackDevicesChanged would rebuild).
         notifyTrackDevicesChanged(trackId);
     } else {
         notifyDeviceModifiersChanged(trackId);

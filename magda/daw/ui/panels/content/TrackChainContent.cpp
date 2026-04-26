@@ -964,6 +964,25 @@ void TrackChainContent::initGlobalMacrosPanel() {
             auto name = findParam(track->chainElements);
             return name.isNotEmpty() ? name : ("P" + juce::String(paramIndex));
         });
+    globalMacroEditorPanel_->setModNameResolver(
+        [this](magda::ModId modId, int modParamIndex) -> juce::String {
+            // Same scope as the macro itself — track-level mods. Look up the
+            // mod by id and append a label for the targeted param. Only Rate
+            // (modParamIndex 0) is wired today.
+            if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+                return {};
+            const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+            if (!track)
+                return {};
+            for (const auto& m : track->mods) {
+                if (m.id == modId) {
+                    juce::String paramLabel =
+                        modParamIndex == 0 ? "Rate" : "P" + juce::String(modParamIndex);
+                    return m.name + " " + paramLabel;
+                }
+            }
+            return {};
+        });
     addChildComponent(*globalMacroEditorPanel_);
 }
 
@@ -976,6 +995,17 @@ void TrackChainContent::updateGlobalModsPanel() {
 
     auto trackPath = magda::ChainNodePath::trackLevel(selectedTrackId_);
     globalModsPanel_->setParentPath(trackPath);
+
+    // Track-level mods can target other track-level mods' rate via the
+    // right-click "Link to Modulator" submenu. Pass the same-scope list;
+    // each knob filters out its own ModId before populating its menu.
+    std::vector<std::pair<magda::ModId, juce::String>> trackModsList;
+    trackModsList.reserve(track->mods.size());
+    for (const auto& m : track->mods)
+        if (m.enabled)
+            trackModsList.emplace_back(m.id, m.name);
+    globalModsPanel_->setAvailableModifiers(trackModsList);
+
     globalModsPanel_->setMods(track->mods);
 
     // Update editor if visible
@@ -1031,6 +1061,16 @@ void TrackChainContent::updateGlobalMacrosPanel() {
     globalMacrosPanel_->setParentPath(trackPath);
     globalMacrosPanel_->setAvailableDevices(allDevices);
     globalMacrosPanel_->setDeviceParamNames(allDeviceParams);
+
+    // Track-level macros can target track-level modifiers — populate the
+    // "Modulators" submenu in the link picker with the same-scope mods.
+    std::vector<std::pair<magda::ModId, juce::String>> trackMods;
+    trackMods.reserve(track->mods.size());
+    for (const auto& m : track->mods)
+        if (m.enabled)
+            trackMods.emplace_back(m.id, m.name);
+    globalMacrosPanel_->setAvailableModifiers(trackMods);
+
     globalMacrosPanel_->setMacros(track->macros);
 
     // Update editor if visible
@@ -1050,6 +1090,11 @@ void TrackChainContent::showGlobalModEditor(int modIndex) {
     if (auto* t = magda::TrackManager::getInstance().getTrack(selectedTrackId_))
         t->selectedGlobalModIndex = modIndex;
     auto trackId = selectedTrackId_;
+    // OwnerPath drives the rate-slider's link-mode scope check + the
+    // automation target — pass the track-level path so cross-scope macros/mods
+    // can drive this LFO's rate via the click-to-link flow.
+    globalModEditorPanel_->setOwnerPath(selectedTrackId_,
+                                        magda::ChainNodePath::trackLevel(selectedTrackId_));
     globalModEditorPanel_->setSelectedModIndex(modIndex);
     globalModEditorPanel_->setModInfo(track->mods[modIndex], &track->mods[modIndex],
                                       [trackId, modIndex]() -> const magda::ModInfo* {

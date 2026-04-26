@@ -203,18 +203,53 @@ enum class LFOTriggerMode {
 };
 
 /**
- * @brief Target for a mod link (which device parameter it modulates)
+ * @brief Target for a mod link.
+ *
+ * Two kinds:
+ *  - DeviceParam: modifier drives a device's automatable parameter (deviceId +
+ *    paramIndex). The original / only kind before mod-on-mod addressing.
+ *  - ModParam:    modifier drives ANOTHER modifier's parameter (modId +
+ *    modParamIndex, typically Rate at index 0). The owning scope is inferred
+ *    from the modifier's parent path at resolution time. A modifier never
+ *    targets itself — UI filters that out before creating the link.
+ *
+ * Default kind is DeviceParam so legacy serialized targets without an
+ * explicit kind round-trip unchanged.
  */
 struct ModTarget {
-    DeviceId deviceId = INVALID_DEVICE_ID;
-    int paramIndex = -1;  // Which parameter on the device
+    enum class Kind { DeviceParam, ModParam };
+
+    // Field order intentionally puts the legacy DeviceParam fields first so
+    // existing positional aggregate-init (ModTarget{deviceId, paramIndex})
+    // in tests and call sites keeps compiling without modification.
+    DeviceId deviceId = INVALID_DEVICE_ID;  // DeviceParam: target device
+    int paramIndex = -1;                    // DeviceParam: parameter on the device
+
+    ModId modId = INVALID_MOD_ID;  // ModParam: target modifier
+    int modParamIndex = -1;        // ModParam: 0 = Rate (only kind today)
+
+    Kind kind = Kind::DeviceParam;
 
     bool isValid() const {
-        return deviceId != INVALID_DEVICE_ID && paramIndex >= 0;
+        switch (kind) {
+            case Kind::DeviceParam:
+                return deviceId != INVALID_DEVICE_ID && paramIndex >= 0;
+            case Kind::ModParam:
+                return modId != INVALID_MOD_ID && modParamIndex >= 0;
+        }
+        return false;
     }
 
     bool operator==(const ModTarget& other) const {
-        return deviceId == other.deviceId && paramIndex == other.paramIndex;
+        if (kind != other.kind)
+            return false;
+        switch (kind) {
+            case Kind::DeviceParam:
+                return deviceId == other.deviceId && paramIndex == other.paramIndex;
+            case Kind::ModParam:
+                return modId == other.modId && modParamIndex == other.modParamIndex;
+        }
+        return false;
     }
 
     bool operator!=(const ModTarget& other) const {

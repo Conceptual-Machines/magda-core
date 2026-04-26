@@ -153,9 +153,21 @@ void ModsPanelComponent::ensureKnobCount(int count) {
         };
 
         knob->setAvailableTargets(availableDevices_);
+        // Modifier list is shared verbatim; the knob skips its own ModId
+        // when building the menu (it has currentMod_.id; the parent panel
+        // doesn't, since the knob owns its ModInfo).
+        knob->setAvailableModifiers(availableModifiers_);
         knob->setParentPath(parentPath_);
         addAndMakeVisible(*knob);
         knobs_.push_back(std::move(knob));
+    }
+}
+
+void ModsPanelComponent::setAvailableModifiers(
+    const std::vector<std::pair<magda::ModId, juce::String>>& modifiers) {
+    availableModifiers_ = modifiers;
+    for (auto& knob : knobs_) {
+        knob->setAvailableModifiers(modifiers);
     }
 }
 

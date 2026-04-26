@@ -86,6 +86,9 @@ class CompactExecutor {
     /** Convert bar count to duration in seconds. */
     double barsToLength(double bars) const;
 
+    /** Convert bar count to duration in beats (uses project time signature). */
+    double barsToBeats(double bars) const;
+
     int currentTrackId_ = -1;
     int currentClipId_ = -1;
     int seedClipId_ = -1;

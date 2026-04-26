@@ -245,30 +245,77 @@ void ModKnobComponent::showContextMenu() {
 
     menu.addSeparator();
 
+    // Modulators submenu — mirror of MacroKnobComponent's Modulators picker:
+    // a mod can drive another mod's Rate. Skip THIS mod's own id to avoid
+    // a self-link. Offset 40000 keeps IDs out of the way of the
+    // Enable/Remove items above.
+    constexpr int kModRateBaseId = 40000;
+    bool addedAnyModItem = false;
+    juce::PopupMenu modsMenu;
+    for (size_t mi = 0; mi < availableModifiers_.size(); ++mi) {
+        const auto& [modId, modName] = availableModifiers_[mi];
+        if (modId == currentMod_.id)
+            continue;  // Skip self
+        juce::PopupMenu perModMenu;
+        magda::ModTarget t;
+        t.kind = magda::ModTarget::Kind::ModParam;
+        t.modId = modId;
+        t.modParamIndex = 0;  // Rate
+        const bool isCurrentTarget = currentMod_.getLink(t) != nullptr;
+        perModMenu.addItem(kModRateBaseId + static_cast<int>(mi), "Rate", true, isCurrentTarget);
+        modsMenu.addSubMenu(modName, perModMenu);
+        addedAnyModItem = true;
+    }
+    if (addedAnyModItem) {
+        menu.addSubMenu("Link to Modulator", modsMenu);
+        menu.addSeparator();
+    }
+
     // Remove option (Delete key works when selected)
     menu.addItem(2, "Remove");
 
     // Show menu and handle selection
     auto safeThis = juce::Component::SafePointer<ModKnobComponent>(this);
     bool capturedEnabled = isEnabled;
+    auto modifiers = availableModifiers_;  // Capture by value for async safety
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, capturedEnabled](int result) {
-        if (safeThis == nullptr || result == 0) {
-            return;
-        }
+    menu.showMenuAsync(juce::PopupMenu::Options(),
+                       [safeThis, capturedEnabled, modifiers, kModRateBaseId](int result) {
+                           if (safeThis == nullptr || result == 0) {
+                               return;
+                           }
 
-        if (result == 1) {
-            // Toggle enable/disable
-            if (safeThis->onEnableToggled) {
-                safeThis->onEnableToggled(!capturedEnabled);
-            }
-        } else if (result == 2) {
-            // Remove
-            if (safeThis->onRemoveRequested) {
-                safeThis->onRemoveRequested();
-            }
-        }
-    });
+                           if (result == 1) {
+                               // Toggle enable/disable
+                               if (safeThis->onEnableToggled) {
+                                   safeThis->onEnableToggled(!capturedEnabled);
+                               }
+                               return;
+                           }
+                           if (result == 2) {
+                               // Remove
+                               if (safeThis->onRemoveRequested) {
+                                   safeThis->onRemoveRequested();
+                               }
+                               return;
+                           }
+
+                           // Modulator-rate link selection. The parent's
+                           // onTargetChanged routes through TrackManager::
+                           // setXxxModTarget, which materialises the link
+                           // (with an audible default amount for ModParam
+                           // kind) and triggers a refresh — so we don't
+                           // need to mutate currentMod_ here.
+                           int modSlot = result - kModRateBaseId;
+                           if (modSlot >= 0 && modSlot < static_cast<int>(modifiers.size())) {
+                               magda::ModTarget t;
+                               t.kind = magda::ModTarget::Kind::ModParam;
+                               t.modId = modifiers[static_cast<size_t>(modSlot)].first;
+                               t.modParamIndex = 0;  // Rate
+                               if (safeThis->onTargetChanged)
+                                   safeThis->onTargetChanged(t);
+                           }
+                       });
 }
 
 void ModKnobComponent::onNameLabelEdited() {
