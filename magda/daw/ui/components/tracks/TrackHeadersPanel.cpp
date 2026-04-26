@@ -2359,7 +2359,22 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
             if (getTrackHeaderArea(i).contains(pos)) {
                 TrackId trackId = trackHeaders[i]->trackId;
 
-                if (event.mods.isCommandDown() && !event.mods.isPopupMenu()) {
+                // Clicks bubbled up from child components (mute / solo /
+                // automation button, name label, selectors, etc.) skip the
+                // selection branch — those controls have their own purpose
+                // and shouldn't drag focus onto a track the user wasn't
+                // intentionally selecting. Without this, e.g., clicking the
+                // automation button on track B switches the chain panel to
+                // track B and tears down any device editor open on track A.
+                // Direct clicks on the panel (originalComponent == this) still
+                // select normally; the right-click context menu below already
+                // uses the same gate.
+                const bool fromChild = event.originalComponent != this;
+                if (fromChild) {
+                    // Skip the selection branches entirely — fall through to
+                    // the right-click / drag-record block, both of which
+                    // already gate on originalComponent.
+                } else if (event.mods.isCommandDown() && !event.mods.isPopupMenu()) {
                     // Cmd+click: toggle track in multi-selection
                     SelectionManager::getInstance().toggleTrackSelection(trackId);
                     grabKeyboardFocus();
