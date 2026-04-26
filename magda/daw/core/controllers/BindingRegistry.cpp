@@ -267,6 +267,26 @@ bool BindingRegistry::hasActiveBindingForTarget(const ChainNodePath& devicePath,
     return check(globalBindings_) || check(projectBindings_);
 }
 
+bool BindingRegistry::hasActiveStaticBindingForMacro(const ChainNodePath& devicePath,
+                                                     int macroIndex) const {
+    auto check = [&](const std::vector<Binding>& vec) -> bool {
+        for (const auto& b : vec) {
+            auto* st = std::get_if<StaticTarget>(&b.target);
+            if (st == nullptr)
+                continue;
+            if (st->owner != StaticTarget::Owner::DeviceMacro)
+                continue;
+            if (st->devicePath != devicePath || st->paramIndex != macroIndex)
+                continue;
+            if (!isSourceControllerActive(b))
+                continue;
+            return true;
+        }
+        return false;
+    };
+    return check(globalBindings_) || check(projectBindings_);
+}
+
 bool BindingRegistry::isAutomapShadowedForMacro(const ChainNodePath& devicePath,
                                                 int macroIndex) const {
     DefaultChainContext ctx;

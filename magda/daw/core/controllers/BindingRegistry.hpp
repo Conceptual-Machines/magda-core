@@ -178,6 +178,16 @@ class BindingRegistry {
         StaticTarget::Owner owner = StaticTarget::Owner::PluginParam) const;
 
     /**
+     * @brief Return true if any active binding (Global + Project) for this macro
+     * is an explicit static target (StaticTarget owner=DeviceMacro) — i.e. came
+     * from a user MIDI Learn gesture, not an automap profile resolver.
+     *
+     * Used to paint the macro indicator orange (Learn override) vs green (profile
+     * default). Same "active" semantics as hasActiveBindingForTarget.
+     */
+    bool hasActiveStaticBindingForMacro(const ChainNodePath& devicePath, int macroIndex) const;
+
+    /**
      * @brief Return true when an automap profile binding (focused-device-macro
      * resolver) targeting this (devicePath, macroIndex) is shadowed by an
      * overlapping static PluginParam binding — i.e. a MIDI Learn override is

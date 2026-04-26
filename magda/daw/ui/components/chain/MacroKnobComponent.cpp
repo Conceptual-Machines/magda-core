@@ -89,9 +89,11 @@ void MacroKnobComponent::refreshAutomapState() {
     bool active = reg.hasActiveBindingForTarget(parentPath_, macroIndex_,
                                                 magda::StaticTarget::Owner::DeviceMacro);
     bool shadowed = active && reg.isAutomapShadowedForMacro(parentPath_, macroIndex_);
-    if (active != hasAutomap_ || shadowed != automapShadowed_) {
+    bool learned = reg.hasActiveStaticBindingForMacro(parentPath_, macroIndex_);
+    if (active != hasAutomap_ || shadowed != automapShadowed_ || learned != hasLearnedBinding_) {
         hasAutomap_ = active;
         automapShadowed_ = shadowed;
+        hasLearnedBinding_ = learned;
         repaint();
     }
 }
@@ -204,20 +206,26 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
     g.setColour(DarkTheme::getTextColour());
     g.drawLine(knobRect.getCentreX(), knobRect.getCentreY(), pointerX, pointerY, 1.5f);
 
-    // Automap dot: green badge at top-right corner when a controller binding
-    // targets this macro. Greyed out when the binding is shadowed by an
-    // explicit MIDI Learn override on the same CC — keeps the user aware that
-    // the macro still has profile-level wiring even though the CC currently
-    // routes elsewhere.
-    if (hasAutomap_) {
+    // Binding indicator dot at top-right.
+    //   Orange — explicit MIDI Learn binding on this macro (user-mapped).
+    //   Green  — automap profile binding only (factory default).
+    //   Grey   — automap binding exists but is shadowed by a Learn override
+    //            on a plugin param sharing the same CC.
+    // The Learn'd colour wins over green so the user can tell at a glance
+    // which macros they've personally mapped vs profile defaults.
+    if (hasAutomap_ || hasLearnedBinding_) {
         constexpr float dotSize = 6.0f;
         constexpr float margin = 3.0f;
         auto r = getLocalBounds().toFloat();
         juce::Rectangle<float> dot(r.getRight() - margin - dotSize, r.getY() + margin, dotSize,
                                    dotSize);
-        auto colour = automapShadowed_
-                          ? juce::Colour(DarkTheme::TEXT_DIM).withAlpha(0.55f)
-                          : DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.9f);
+        juce::Colour colour;
+        if (hasLearnedBinding_)
+            colour = juce::Colour(0xFFFF6B35).withAlpha(0.9f);  // matches plugin-param dot
+        else if (automapShadowed_)
+            colour = juce::Colour(DarkTheme::TEXT_DIM).withAlpha(0.55f);
+        else
+            colour = DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.9f);
         g.setColour(colour);
         g.fillEllipse(dot);
     }

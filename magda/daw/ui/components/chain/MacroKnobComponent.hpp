@@ -130,9 +130,13 @@ class MacroKnobComponent : public juce::Component,
 
     int macroIndex_;
     bool hasAutomap_ = false;
-    bool automapShadowed_ = false;  // automap binding exists but a Learn
-                                    // override on the same CC is in effect —
-                                    // dot paints grey instead of green.
+    bool automapShadowed_ = false;    // automap binding exists but a Learn
+                                      // override on the same CC is in effect —
+                                      // dot paints grey instead of green.
+    bool hasLearnedBinding_ = false;  // user-mapped (StaticTarget DeviceMacro)
+                                      // binding for this macro — paints orange
+                                      // instead of green to flag "your mapping,
+                                      // not a profile default".
     juce::Label nameLabel_;
     TextSlider valueSlider_{TextSlider::Format::Decimal};
     std::unique_ptr<magda::SvgButton> linkButton_;
