@@ -1,5 +1,6 @@
 #include "ControllerProfile.hpp"
 
+#include <set>
 #include <unordered_map>
 
 #include "../aliases/ResolverRegistry.hpp"
@@ -162,6 +163,38 @@ std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v) {
     }
 
     return p;
+}
+
+// ============================================================================
+// Cross-field validation
+// ============================================================================
+
+std::vector<juce::String> validateControllerProfile(const ControllerProfile& p) {
+    std::vector<juce::String> issues;
+
+    // Duplicate controlIds — surface every offender exactly once.
+    std::set<juce::String> seen;
+    std::set<juce::String> reported;
+    for (const auto& c : p.controls) {
+        if (!seen.insert(c.controlId).second && reported.insert(c.controlId).second)
+            issues.push_back("Duplicate controlId: " + c.controlId);
+    }
+
+    // defaultBindings must reference an existing control.
+    for (const auto& db : p.defaultBindings) {
+        bool found = false;
+        for (const auto& c : p.controls) {
+            if (c.controlId == db.controlId) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            issues.push_back("defaultBinding references unknown controlId: " + db.controlId);
+        }
+    }
+
+    return issues;
 }
 
 // ============================================================================

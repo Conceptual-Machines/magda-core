@@ -81,6 +81,19 @@ juce::var encodeControllerProfile(const ControllerProfile& p);
  */
 std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v);
 
+/**
+ * @brief Run cross-field consistency checks on an already-decoded profile.
+ *
+ * decodeControllerProfile catches structural problems; this catches semantic
+ * ones a community-uploaded profile is likely to contain:
+ *   - Duplicate controlId within controls[].
+ *   - defaultBindings[*].controlId that doesn't appear in controls[].
+ *
+ * Returns a list of human-readable issues; an empty list means the profile is
+ * internally consistent.
+ */
+std::vector<juce::String> validateControllerProfile(const ControllerProfile& p);
+
 // ============================================================================
 // Materialisation
 // ============================================================================

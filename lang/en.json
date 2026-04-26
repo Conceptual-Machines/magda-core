@@ -448,6 +448,7 @@
     "title": "Controllers",
     "my_controllers": "My controllers",
     "add_profile": "+ Add profile",
+    "upload_profile": "Upload profile…",
     "remove": "Remove",
     "show_in_finder": "Show profile in Finder",
     "remove_confirm_title": "Remove controller?",
@@ -457,6 +458,12 @@
     "no_midi_inputs": "No MIDI inputs available.",
     "connected": "Connected",
     "not_connected": "Not connected",
-    "disabled": "Disabled"
+    "disabled": "Disabled",
+    "upload_invalid_json": "That file isn't valid JSON.",
+    "upload_invalid_profile": "That JSON isn't a valid controller profile.",
+    "upload_validation_failed": "The profile has issues that need fixing first:",
+    "upload_overwrite": "A profile with id \"{0}\" already exists. Replace it?",
+    "upload_copy_failed": "Couldn't copy the profile into your controllers folder.",
+    "upload_success": "Imported profile \"{0}\"."
   }
 }

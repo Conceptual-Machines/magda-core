@@ -7,6 +7,7 @@
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
 #include "../dialogs/AudioSettingsDialog.hpp"
+#include "../dialogs/ControllersDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
@@ -498,6 +499,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         footerBar->setBottomPanelCollapsed(bottomPanelCollapsed);
         resized();
     };
+    footerBar->onControllersClicked = [this]() { ControllersDialog::showDialog(this); };
     addAndMakeVisible(*footerBar);
 
     // Create views (now audioEngine is valid - use externalEngine which points to either external

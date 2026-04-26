@@ -84,8 +84,12 @@ void TransportPanel::paintOverChildren(juce::Graphics& g) {
         btnBounds.removeFromBottom(btnBounds.getHeight() * kModeLetterStripPercent / 100);
     labelArea.translate(1, -3);
 
+    // When active, the button background fills with the purple from
+    // automation_on.svg — drawing the letter in ACCENT_PURPLE made it
+    // invisible against that fill. Use white in the active state to match
+    // the icon foreground.
     juce::Colour textColour = isAutomationWriteEnabled
-                                  ? DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+                                  ? juce::Colours::white
                                   : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
 
     g.setColour(textColour);

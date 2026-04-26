@@ -71,8 +71,10 @@ class ControllersDialog : public juce::Component,
     // -------------------------------------------------------------------------
     juce::Label sectionLabel_;
     juce::TextButton addButton_;
+    juce::TextButton uploadButton_;
     ControllerListModel listModel_;
     std::unique_ptr<juce::ListBox> list_;
+    std::unique_ptr<juce::FileChooser> uploadChooser_;
 
     // -------------------------------------------------------------------------
     // Helpers
@@ -82,6 +84,8 @@ class ControllersDialog : public juce::Component,
     void persist();
 
     void onAddClicked();
+    void onUploadClicked();
+    void importProfileFile(const juce::File& file, const juce::String& title);
     void onProfilePicked(const ControllerProfile& profile);
     void onPortPicked(const ControllerProfile& profile, const juce::MidiDeviceInfo& dev);
 

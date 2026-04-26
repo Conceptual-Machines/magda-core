@@ -15,7 +15,12 @@ Open from **Settings > Controllers**.
 
 The dialog lists every controller MAGDA knows about. Each row shows the manufacturer and model, the live MIDI input port the controller is connected to, and a connection-status indicator (green dot when the named port is currently available).
 
-Click **+ Add profile** to register a new controller. Click an existing row to edit it (rename, reassign profile, toggle enabled, remove).
+Two buttons sit in the header:
+
+- **+ Add profile** — register a new controller using one of the profiles already in your [controllers directory](#profiles-directory). Pops a menu of available profiles, then asks which MIDI input the controller is connected to.
+- **Upload profile…** — pick a `.json` profile from disk and import it. Validates the JSON, copies it into the controllers directory, and refreshes the registry. After upload, the new profile is available to **+ Add profile**.
+
+Right-click a row to **Show profile in Finder** (reveals the JSON file) or **Remove** (deletes the controller and its bindings).
 
 Bindings created by MIDI Learn against a removed controller's port still work — they attach to the live MIDI port name, not to the controller registry entry.
 
