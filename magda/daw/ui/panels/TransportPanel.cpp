@@ -80,7 +80,7 @@ void TransportPanel::paintOverChildren(juce::Graphics& g) {
     // Bottom strip of the button, nudged upward — the original SVG glyph sat
     // a touch high inside the icon and looked better that way.
     auto labelArea = btnBounds.removeFromBottom(btnBounds.getHeight() * 27 / 100);
-    labelArea.translate(0, -3);
+    labelArea.translate(1, -3);
 
     juce::Colour textColour = isAutomationWriteEnabled
                                   ? DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
