@@ -1031,6 +1031,16 @@ void TrackChainContent::updateGlobalMacrosPanel() {
     globalMacrosPanel_->setParentPath(trackPath);
     globalMacrosPanel_->setAvailableDevices(allDevices);
     globalMacrosPanel_->setDeviceParamNames(allDeviceParams);
+
+    // Track-level macros can target track-level modifiers — populate the
+    // "Modulators" submenu in the link picker with the same-scope mods.
+    std::vector<std::pair<magda::ModId, juce::String>> trackMods;
+    trackMods.reserve(track->mods.size());
+    for (const auto& m : track->mods)
+        if (m.enabled)
+            trackMods.emplace_back(m.id, m.name);
+    globalMacrosPanel_->setAvailableModifiers(trackMods);
+
     globalMacrosPanel_->setMacros(track->macros);
 
     // Update editor if visible

@@ -1253,6 +1253,17 @@ void NodeComponent::updateMacroPanel() {
     auto devices = getAvailableDevices();
     macroPanel_->setAvailableDevices(devices);
     macroPanel_->setDeviceParamNames(getDeviceParamNames());
+
+    // Same-scope modifiers — let the macro link picker offer "Modulators →
+    // <mod> → Rate" entries that resolve to the LFO's rate / rateType param.
+    std::vector<std::pair<magda::ModId, juce::String>> mods;
+    if (const auto* modsData = getModsData()) {
+        mods.reserve(modsData->size());
+        for (const auto& m : *modsData)
+            if (m.enabled)
+                mods.emplace_back(m.id, m.name);
+    }
+    macroPanel_->setAvailableModifiers(mods);
 }
 
 // === Modulator Editor Panel ===
