@@ -19,6 +19,17 @@ Open the Preferences dialog from **Settings > Preferences**.
 - **Behavior settings** — Configure UI interaction preferences
 - **Language** — Select the UI language from the dropdown. The list is populated from the locale files (`.json`) shipped in MAGDA's `lang/` folder, so available languages grow as translations are contributed. A restart-required hint appears after switching; the new language takes effect the next time MAGDA launches. See [Localization](../localization.md) for how translations are managed and how to contribute.
 
+### UI Scale
+
+Pick a global scale factor for the whole interface. Useful on HiDPI / 4K screens where MAGDA looks too small at native resolution, or on the opposite end where you want more screen real estate.
+
+| Setting | Behavior |
+|---|---|
+| **Auto** | Scale is derived from the display's reported DPI. |
+| **100% – 200%** | Fixed multiplier, ignoring DPI auto-detection. Common picks: 125% on a regular 4K monitor, 150% on a Retina laptop with external scaling, 200% if you want to see fewer rows from across the room. |
+
+Changes apply live — no restart required. The shortcuts ++cmd+plus++ and ++cmd+minus++ also bump the scale up and down by one preset.
+
 ## Colours
 
 - **Custom colour palette** — Define a custom set of colours for tracks and clips
