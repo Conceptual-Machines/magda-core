@@ -62,10 +62,18 @@ void TransportPanel::paintOverChildren(juce::Graphics& g) {
 
     juce::String letter;
     switch (automationMode_) {
-        case AutomationMode::Write: letter = "W"; break;
-        case AutomationMode::Touch: letter = "T"; break;
-        case AutomationMode::Latch: letter = "L"; break;
-        case AutomationMode::Off:   letter = "W"; break;  // shouldn't happen — Off is disarmed
+        case AutomationMode::Write:
+            letter = "W";
+            break;
+        case AutomationMode::Touch:
+            letter = "T";
+            break;
+        case AutomationMode::Latch:
+            letter = "L";
+            break;
+        case AutomationMode::Off:
+            letter = "W";
+            break;  // shouldn't happen — Off is disarmed
     }
 
     auto btnBounds = automationWriteButton->getBounds();
@@ -74,13 +82,12 @@ void TransportPanel::paintOverChildren(juce::Graphics& g) {
     auto labelArea = btnBounds.removeFromBottom(btnBounds.getHeight() * 27 / 100);
     labelArea.translate(0, -3);
 
-    juce::Colour textColour =
-        isAutomationWriteEnabled
-            ? juce::Colours::white
-            : DarkTheme::getSecondaryTextColour();
+    juce::Colour textColour = isAutomationWriteEnabled
+                                  ? DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+                                  : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
 
     g.setColour(textColour);
-    g.setFont(FontManager::getInstance().getUIFontBold(7.5f));
+    g.setFont(FontManager::getInstance().getUIFontBold(6.0f));
     g.drawText(letter, labelArea, juce::Justification::centred);
 }
 
@@ -1419,8 +1426,7 @@ void TransportPanel::updateCpuTooltip() {
 void TransportPanel::mouseDown(const juce::MouseEvent& e) {
     if (e.originalComponent == metronomeButton.get() && e.mods.isRightButtonDown()) {
         showCountInMenu();
-    } else if (e.originalComponent == automationWriteButton.get() &&
-               e.mods.isRightButtonDown()) {
+    } else if (e.originalComponent == automationWriteButton.get() && e.mods.isRightButtonDown()) {
         showAutomationModeMenu();
     } else if (e.originalComponent == qwertyKeyboardButton.get() && e.mods.isRightButtonDown() &&
                qwertyKeyboard_ != nullptr) {
@@ -1472,31 +1478,37 @@ void TransportPanel::showAutomationModeMenu() {
     addModeItem(3, "Latch", AutomationMode::Latch);
 
     juce::Component::SafePointer<TransportPanel> safeThis(this);
-    menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(automationWriteButton.get()),
-        [safeThis](int result) {
-            // The async callback can fire after the panel is destroyed (e.g. on
-            // window close); SafePointer guards against the dangling-this race.
-            auto* self = safeThis.getComponent();
-            if (self == nullptr || result <= 0)
-                return;
-            AutomationMode picked = AutomationMode::Write;
-            switch (result) {
-                case 1: picked = AutomationMode::Write; break;
-                case 2: picked = AutomationMode::Touch; break;
-                case 3: picked = AutomationMode::Latch; break;
-                default: return;
-            }
-            if (picked == self->automationMode_)
-                return;
-            self->automationMode_ = picked;
-            self->updateAutomationLabelText();
-            // Live-update the engine if currently armed; otherwise the choice
-            // becomes effective the next time the user arms.
-            if (self->isAutomationWriteEnabled)
-                self->emitCurrentAutomationMode();
-            self->repaint();
-        });
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(automationWriteButton.get()),
+                       [safeThis](int result) {
+                           // The async callback can fire after the panel is destroyed (e.g. on
+                           // window close); SafePointer guards against the dangling-this race.
+                           auto* self = safeThis.getComponent();
+                           if (self == nullptr || result <= 0)
+                               return;
+                           AutomationMode picked = AutomationMode::Write;
+                           switch (result) {
+                               case 1:
+                                   picked = AutomationMode::Write;
+                                   break;
+                               case 2:
+                                   picked = AutomationMode::Touch;
+                                   break;
+                               case 3:
+                                   picked = AutomationMode::Latch;
+                                   break;
+                               default:
+                                   return;
+                           }
+                           if (picked == self->automationMode_)
+                               return;
+                           self->automationMode_ = picked;
+                           self->updateAutomationLabelText();
+                           // Live-update the engine if currently armed; otherwise the choice
+                           // becomes effective the next time the user arms.
+                           if (self->isAutomationWriteEnabled)
+                               self->emitCurrentAutomationMode();
+                           self->repaint();
+                       });
 }
 
 void TransportPanel::setAutomationMode(AutomationMode mode) {
@@ -1509,8 +1521,7 @@ void TransportPanel::setAutomationMode(AutomationMode mode) {
 
 void TransportPanel::emitCurrentAutomationMode() {
     if (onAutomationModeChanged)
-        onAutomationModeChanged(isAutomationWriteEnabled ? automationMode_
-                                                          : AutomationMode::Off);
+        onAutomationModeChanged(isAutomationWriteEnabled ? automationMode_ : AutomationMode::Off);
 }
 
 void TransportPanel::updateAutomationLabelText() {
@@ -1518,10 +1529,18 @@ void TransportPanel::updateAutomationLabelText() {
         return;
     juce::String suffix;
     switch (automationMode_) {
-        case AutomationMode::Write: suffix = "WRITE"; break;
-        case AutomationMode::Touch: suffix = "TOUCH"; break;
-        case AutomationMode::Latch: suffix = "LATCH"; break;
-        case AutomationMode::Off:   suffix = "WRITE"; break;  // shouldn't happen — Off implies disarmed
+        case AutomationMode::Write:
+            suffix = "WRITE";
+            break;
+        case AutomationMode::Touch:
+            suffix = "TOUCH";
+            break;
+        case AutomationMode::Latch:
+            suffix = "LATCH";
+            break;
+        case AutomationMode::Off:
+            suffix = "WRITE";
+            break;  // shouldn't happen — Off implies disarmed
     }
     automationWriteLabel->setText("AUTOMATION " + suffix, juce::dontSendNotification);
 }
