@@ -1471,10 +1471,14 @@ void TransportPanel::showAutomationModeMenu() {
     addModeItem(2, "Touch", AutomationMode::Touch);
     addModeItem(3, "Latch", AutomationMode::Latch);
 
+    juce::Component::SafePointer<TransportPanel> safeThis(this);
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetComponent(automationWriteButton.get()),
-        [this](int result) {
-            if (result <= 0)
+        [safeThis](int result) {
+            // The async callback can fire after the panel is destroyed (e.g. on
+            // window close); SafePointer guards against the dangling-this race.
+            auto* self = safeThis.getComponent();
+            if (self == nullptr || result <= 0)
                 return;
             AutomationMode picked = AutomationMode::Write;
             switch (result) {
@@ -1483,15 +1487,15 @@ void TransportPanel::showAutomationModeMenu() {
                 case 3: picked = AutomationMode::Latch; break;
                 default: return;
             }
-            if (picked == automationMode_)
+            if (picked == self->automationMode_)
                 return;
-            automationMode_ = picked;
-            updateAutomationLabelText();
+            self->automationMode_ = picked;
+            self->updateAutomationLabelText();
             // Live-update the engine if currently armed; otherwise the choice
             // becomes effective the next time the user arms.
-            if (isAutomationWriteEnabled)
-                emitCurrentAutomationMode();
-            repaint();
+            if (self->isAutomationWriteEnabled)
+                self->emitCurrentAutomationMode();
+            self->repaint();
         });
 }
 

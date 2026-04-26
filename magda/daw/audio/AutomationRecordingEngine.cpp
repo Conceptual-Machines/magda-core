@@ -36,6 +36,10 @@ void AutomationRecordingEngine::setMode(AutomationMode mode) {
         return;
     DBG("[AutoRec] setMode: " << modeName(mode_) << " -> " << modeName(mode));
     mode_ = mode;
+    // Drop per-gesture state from the previous mode so a Touch ↔ Latch
+    // transition (or any switch out of Touch / Latch) doesn't resume from
+    // stale latched entries or baselines on the next gesture.
+    clearLatchState();
     if (mode_ != AutomationMode::Off) {
         // Capture track state now — before playback starts and before TE
         // feeds back automation echoes that would corrupt track->volume.
@@ -166,6 +170,10 @@ void AutomationRecordingEngine::continueLatchedWrites() {
 }
 
 void AutomationRecordingEngine::clearLatchState() {
+    // Clears all per-gesture Touch / Latch state in one shot:
+    // - latched_ (Latch held values)
+    // - previouslyTouched_ (release-detection diff buffer)
+    // - laneTouchBaseline_ (Touch bounce-back baselines)
     latched_.clear();
     previouslyTouched_.clear();
     laneTouchBaseline_.clear();
@@ -403,8 +411,9 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     // During playback, ignore property changes that weren't initiated by a
     // user gesture — otherwise AutomationPlaybackEngine's writes to the TE
     // parameter round-trip back through trackPropertyChanged and we'd re-record
-    // the baked curve on every block. Touch / Latch always require this gate
-    // even outside playback, since their semantics demand a physical hold.
+    // the baked curve on every block. Touch / Latch require this gate
+    // unconditionally (even when no automation is being baked back), since
+    // their semantics demand a physical hold to record.
     if (autoMgr.isPlaybackActive() || requiresUserTouched()) {
         AutomationTarget volTarget;
         volTarget.type = AutomationTargetType::TrackVolume;
