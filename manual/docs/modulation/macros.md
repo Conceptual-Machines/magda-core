@@ -28,8 +28,20 @@ To connect a macro to a parameter:
 
 A single macro can control multiple parameters simultaneously — for example, one "Brightness" knob could increase filter cutoff, reduce reverb wet, and boost high-shelf EQ gain at the same time.
 
+## Driving Modulators
+
+A macro can also target a modulator's **Rate** instead of a device parameter — turn the macro and you turn the LFO speed. Same workflow:
+
+1. Right-click the macro and pick the modulator from **Link to Parameter… → Modulators**, or
+2. Use link mode and click the modulator's Rate slider as the target.
+
+![Macro 1 mapped to LFO 1 Rate](../assets/images/modulation/macro-to-mod.png)
+
+In the screenshot, **Macro 1** at 0.20 is dialling **LFO 1**'s Rate down. As the macro turns, the LFO speed follows. Combine with traditional parameter links and a single knob can sweep filter cutoff, reduce reverb send, *and* slow the LFO that's wobbling the pitch — all at once.
+
 ## Use Cases
 
 - Map the most important synth parameters to a few knobs for live performance
 - Create unified controls that coordinate multiple effects at once
 - Expose simple controls for complex multi-device setups
+- Use a macro as a "tempo" or "intensity" control that drives an LFO's rate alongside the parameters it modulates
