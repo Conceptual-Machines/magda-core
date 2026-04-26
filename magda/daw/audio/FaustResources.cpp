@@ -1,0 +1,50 @@
+#include "FaustResources.hpp"
+
+#include <BinaryData.h>
+
+namespace magda::daw::audio {
+
+namespace {
+
+juce::String readBinaryDspAsString(const char* resourceName) {
+    int size = 0;
+    if (auto* data = BinaryData::getNamedResource(resourceName, size); data && size > 0)
+        return juce::String::fromUTF8(data, size);
+    return {};
+}
+
+}  // namespace
+
+juce::File getFaustLibrariesPath() {
+    auto exe = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+#if JUCE_MAC
+    // currentApplicationFile is the .app bundle on macOS. Libraries live in
+    // Contents/Resources/faustlibraries (matches CMake's POST_BUILD copy).
+    return exe.getChildFile("Contents/Resources/faustlibraries");
+#else
+    // On Windows/Linux, libraries sit next to the executable.
+    return exe.getParentDirectory().getChildFile("faustlibraries");
+#endif
+}
+
+std::vector<StarterDsp> getBundledStarterDsps() {
+    // Resource names follow juce_add_binary_data's slugifier: dots → underscores.
+    static const struct {
+        const char* displayName;
+        const char* filename;
+        const char* resourceName;
+    } kStarters[] = {
+        {"Drive",    "magda_drive.dsp",    "magda_drive_dsp"},
+        {"Tremolo",  "magda_tremolo.dsp",  "magda_tremolo_dsp"},
+    };
+
+    std::vector<StarterDsp> out;
+    for (const auto& s : kStarters) {
+        auto src = readBinaryDspAsString(s.resourceName);
+        if (src.isNotEmpty())
+            out.push_back({juce::String(s.displayName), juce::String(s.filename), src});
+    }
+    return out;
+}
+
+}  // namespace magda::daw::audio

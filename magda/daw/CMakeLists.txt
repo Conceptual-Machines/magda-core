@@ -215,6 +215,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/aliases/curated_index.json
     ../../assets/aliases/curated_eq.json
     ../../assets/aliases/curated_compressor.json
+    # Bundled Faust starter DSPs — embedded so users always have something
+    # in the loader picker even on a fresh install.
+    audio/faust_dsp/magda_drive.dsp
+    audio/faust_dsp/magda_tremolo.dsp
 )
 
 # DAW Core sources
@@ -325,6 +329,7 @@ set(DAW_CORE_SOURCES
     audio/SidechainMonitorPlugin.cpp
     audio/AudioSidechainMonitorPlugin.cpp
     audio/FaustPlugin.cpp
+    audio/FaustResources.cpp
     audio/MidiReceivePlugin.cpp
     audio/MagdaSamplerPlugin.cpp
     audio/DrumGridPlugin.cpp
@@ -499,6 +504,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/ImpulseResponseUI.cpp
     ui/components/chain/UtilityUI.cpp
     ui/components/chain/FaustUI.cpp
+    ui/components/chain/FaustCodeEditorWindow.cpp
     ui/components/chain/FourOscUI.cpp
     ui/components/chain/ArpeggiatorUI.cpp
     ui/components/chain/StepSequencerUI.cpp
@@ -649,7 +655,7 @@ set(DAW_HEADERS
     audio/SidechainMonitorPlugin.hpp
     audio/AudioSidechainMonitorPlugin.hpp
     audio/FaustPlugin.hpp
-    audio/faust_dsp/magda_drive_generated.hpp
+    audio/FaustResources.hpp
     audio/MidiBroadcastBus.hpp
     audio/MidiReceivePlugin.hpp
     audio/MagdaSamplerPlugin.hpp
@@ -726,6 +732,7 @@ set(DAW_HEADERS
     ui/components/chain/ImpulseResponseUI.hpp
     ui/components/chain/UtilityUI.hpp
     ui/components/chain/FaustUI.hpp
+    ui/components/chain/FaustCodeEditorWindow.hpp
     ui/components/chain/FourOscUI.hpp
     ui/components/chain/ArpeggiatorUI.hpp
     ui/components/chain/StepSequencerUI.hpp
@@ -827,6 +834,8 @@ target_link_libraries(magda_daw
     tracktion::tracktion_engine
     juce_llm
     MagdaAssets
+    PRIVATE
+    faust::libfaust
     # Link GTK/WebKit and curl dependencies on Linux
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
@@ -916,7 +925,7 @@ target_include_directories(magda_daw
     ${CMAKE_CURRENT_BINARY_DIR}/generated
     PRIVATE
     ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/third_party/faust-runtime
+    ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
 )
 
 # Include directories for DAW application
@@ -1067,5 +1076,25 @@ else()
             "${MAGDA_CONTROLLERS_SRC}"
             "$<TARGET_FILE_DIR:magda_daw_app>/controllers"
         COMMENT "Copying controller profiles alongside app executable"
+    )
+endif()
+
+# Copy faustlibraries (stdfaust.lib + dependencies) into the app so libfaust's
+# `import("stdfaust.lib")` resolves at runtime. FaustPlugin passes this dir as
+# `-I` argv to the interpreter compiler. Submodule path: third_party/faust/libraries.
+set(MAGDA_FAUST_LIBS_SRC "${CMAKE_SOURCE_DIR}/third_party/faust/libraries")
+if(APPLE)
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_FAUST_LIBS_SRC}"
+            "$<TARGET_BUNDLE_CONTENT_DIR:magda_daw_app>/Resources/faustlibraries"
+        COMMENT "Copying Faust standard libraries to app bundle Resources"
+    )
+else()
+    add_custom_command(TARGET magda_daw_app POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${MAGDA_FAUST_LIBS_SRC}"
+            "$<TARGET_FILE_DIR:magda_daw_app>/faustlibraries"
+        COMMENT "Copying Faust standard libraries alongside app executable"
     )
 endif()
