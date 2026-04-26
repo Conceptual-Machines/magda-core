@@ -92,19 +92,22 @@ void AutomationRecordingEngine::process() {
         clearLatchState();
     }
 
-    if (isRecording_ && mode_ == AutomationMode::Latch)
-        processLatch();
-    else if (!latched_.empty() || !previouslyTouched_.empty())
+    if (isRecording_ &&
+        (mode_ == AutomationMode::Touch || mode_ == AutomationMode::Latch)) {
+        processReleaseTransitions();
+        if (mode_ == AutomationMode::Latch)
+            continueLatchedWrites();
+    } else if (!latched_.empty() || !previouslyTouched_.empty() || !laneTouchBaseline_.empty()) {
         clearLatchState();
+    }
 
     wasPlaying_ = playing;
 }
 
-void AutomationRecordingEngine::processLatch() {
+void AutomationRecordingEngine::processReleaseTransitions() {
     auto& autoMgr = AutomationManager::getInstance();
     auto current = autoMgr.getUserTouchedTargets();
 
-    // Detect release: targets in previouslyTouched_ but not in current.
     for (const auto& prev : previouslyTouched_) {
         bool stillTouched =
             std::find(current.begin(), current.end(), prev) != current.end();
@@ -114,36 +117,58 @@ void AutomationRecordingEngine::processLatch() {
         auto laneId = autoMgr.getLaneForTarget(prev);
         if (laneId == INVALID_AUTOMATION_LANE_ID)
             continue;
-        auto it = lastRecorded_.find(laneId);
-        if (it == lastRecorded_.end())
-            continue;
-        latched_[laneId] = LatchEntry{prev, it->second.value};
-        DBG("[AutoRec] Latch captured lane=" << laneId << " value=" << it->second.value);
-    }
 
-    // Re-touch: drop entries the user has taken back over.
-    for (const auto& cur : current) {
-        auto laneId = autoMgr.getLaneForTarget(cur);
-        if (laneId != INVALID_AUTOMATION_LANE_ID && latched_.erase(laneId) > 0) {
-            DBG("[AutoRec] Latch released (user re-touched) lane=" << laneId);
+        if (mode_ == AutomationMode::Touch) {
+            // Bounce back: write a point at the current beat using the
+            // pre-touch baseline so the lane stops holding the last drag
+            // value. Without this, a freshly-created lane would pin the
+            // parameter at the released value forever.
+            auto baselineIt = laneTouchBaseline_.find(laneId);
+            if (baselineIt != laneTouchBaseline_.end()) {
+                double beatTime = getCurrentBeatTime();
+                double baseline = baselineIt->second;
+                DBG("[AutoRec] Touch bounce-back lane=" << laneId << " baseline=" << baseline);
+                recordPoint(laneId, beatTime, baseline);
+                laneTouchBaseline_.erase(baselineIt);
+            }
+        } else {
+            // Latch: capture the last recorded value so continueLatchedWrites
+            // can keep re-recording it until the user re-touches or stops.
+            auto it = lastRecorded_.find(laneId);
+            if (it != lastRecorded_.end()) {
+                latched_[laneId] = LatchEntry{prev, it->second.value};
+                DBG("[AutoRec] Latch captured lane=" << laneId << " value=" << it->second.value);
+            }
         }
     }
 
-    // Continue writing each latched value at the current beat — recordPoint's
-    // existing sweep deletes any pre-existing curve in the held range, so the
-    // lane stays flat at the held value until the user re-touches or stops.
-    double beatTime = getCurrentBeatTime();
-    for (const auto& [laneId, entry] : latched_) {
-        if (!shouldThinPoint(laneId, beatTime, entry.value))
-            recordPoint(laneId, beatTime, entry.value);
+    // Re-touch: drop any latch entries the user has taken back over so the
+    // continuous writes stop and recording proceeds normally during the new
+    // gesture. (Touch doesn't accumulate state to drop here.)
+    if (mode_ == AutomationMode::Latch) {
+        for (const auto& cur : current) {
+            auto laneId = autoMgr.getLaneForTarget(cur);
+            if (laneId != INVALID_AUTOMATION_LANE_ID && latched_.erase(laneId) > 0) {
+                DBG("[AutoRec] Latch released (user re-touched) lane=" << laneId);
+            }
+        }
     }
 
     previouslyTouched_ = std::move(current);
 }
 
+void AutomationRecordingEngine::continueLatchedWrites() {
+    double beatTime = getCurrentBeatTime();
+    for (const auto& [laneId, entry] : latched_) {
+        if (!shouldThinPoint(laneId, beatTime, entry.value))
+            recordPoint(laneId, beatTime, entry.value);
+    }
+}
+
 void AutomationRecordingEngine::clearLatchState() {
     latched_.clear();
     previouslyTouched_.clear();
+    laneTouchBaseline_.clear();
 }
 
 bool AutomationRecordingEngine::shouldRecord() const {
@@ -426,6 +451,16 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
         bool isNewLane = (autoMgr.getLaneForTarget(target) == INVALID_AUTOMATION_LANE_ID);
         auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
 
+        // Capture pre-touch baseline once per gesture for Touch's bounce-back
+        // on release. preSeedVolume is the value before this callback fired,
+        // which on the first event of a gesture is the genuine pre-touch value.
+        if (mode_ == AutomationMode::Touch && !laneTouchBaseline_.count(laneId)) {
+            ParameterInfo paramInfo = target.getParameterInfo();
+            float seedDb = gainToDb(preSeedVolume);
+            laneTouchBaseline_[laneId] =
+                static_cast<double>(ParameterUtils::realToNormalized(seedDb, paramInfo));
+        }
+
         // createLane reads track->volume for the anchor, but by the time the
         // first user gesture fires, the playback engine may have already written
         // a different value. Correct the anchor using the value seeded at
@@ -466,6 +501,12 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
 
         bool isNewLane = (autoMgr.getLaneForTarget(target) == INVALID_AUTOMATION_LANE_ID);
         auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+
+        if (mode_ == AutomationMode::Touch && !laneTouchBaseline_.count(laneId)) {
+            ParameterInfo paramInfo = target.getParameterInfo();
+            laneTouchBaseline_[laneId] =
+                static_cast<double>(ParameterUtils::realToNormalized(preSeedPan, paramInfo));
+        }
 
         if (isNewLane) {
             ParameterInfo paramInfo = target.getParameterInfo();

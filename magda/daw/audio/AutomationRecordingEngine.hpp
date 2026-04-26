@@ -108,6 +108,14 @@ class AutomationRecordingEngine {
     // Per-lane beat time at which recording first wrote a point this session.
     std::unordered_map<int, double> laneRecordingStart_;
 
+    // Per-lane normalized value the parameter held just before the user's
+    // first edit of this gesture. Used by Touch mode to write a "bounce-back"
+    // point at release time so the lane returns to where it was before the
+    // touch (instead of holding the last drag value forever). Only populated
+    // for target types that expose a pre-gesture value (TrackVolume/TrackPan
+    // via the existing seed-baseline mechanism).
+    std::unordered_map<int, double> laneTouchBaseline_;
+
     // Latch state: targets the user touched and released without re-touching.
     // While the transport rolls in Latch mode, each entry's value is re-written
     // to its lane on every process() tick so the lane stays flat at the held
@@ -121,7 +129,13 @@ class AutomationRecordingEngine {
     // diff against the current tick's set is how we detect release for Latch.
     std::vector<AutomationTarget> previouslyTouched_;
 
-    void processLatch();
+    // Detect release transitions (targets in previouslyTouched_ but not in
+    // the current touched set) and emit per-mode actions: Touch writes a
+    // bounce-back point; Latch captures the last value into latched_.
+    void processReleaseTransitions();
+    // Latch only: re-record the held value at the current beat for every
+    // entry in latched_. Called after processReleaseTransitions() each tick.
+    void continueLatchedWrites();
     void clearLatchState();
 
     // Snapshot of point IDs that existed before recording started for each lane.
