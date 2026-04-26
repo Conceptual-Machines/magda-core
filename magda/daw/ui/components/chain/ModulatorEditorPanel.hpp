@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "core/DeviceInfo.hpp"
+#include "core/LinkModeManager.hpp"
 #include "core/ModInfo.hpp"
 #include "core/ModulatorEngine.hpp"
 #include "ui/components/chain/LFOCurveEditor.hpp"
@@ -181,7 +182,9 @@ class ModMatrixContent : public juce::Component {
  * |   Param Name     |
  * +------------------+
  */
-class ModulatorEditorPanel : public juce::Component, private juce::Timer {
+class ModulatorEditorPanel : public juce::Component,
+                             public magda::LinkModeManagerListener,
+                             private juce::Timer {
   public:
     ModulatorEditorPanel();
     ~ModulatorEditorPanel() override;
@@ -228,6 +231,12 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
 
+    // LinkModeManagerListener — drives the link-mode click-to-link flow on
+    // the rate slider, mirroring how ParamSlotComponent participates in
+    // macro / mod link mode for device parameters.
+    void macroLinkModeChanged(bool active, const magda::MacroSelection& sel) override;
+    void modLinkModeChanged(bool active, const magda::ModSelection& sel) override;
+
     // Preferred width for this panel
     static constexpr int PREFERRED_WIDTH = 150;
 
@@ -238,6 +247,13 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     magda::ChainNodePath ownerDevicePath_;
     void updateRateAutomationTarget();
     void showRateSliderContextMenu();
+
+    // Apply / clear link-mode click handling on the rate sliders. When a
+    // link-mode source (macro or mod) is active, clicking the visible rate
+    // slider creates a ModParam-kind link from the source to this mod's rate.
+    void applyLinkModeToRateSliders();
+    void createLinkFromActiveSourceToRate();
+    bool linkModeActiveAndInScope_ = false;
     const magda::ModInfo* liveModPtr_ = nullptr;  // Pointer to live mod for waveform animation
     std::function<const magda::ModInfo*()> liveModGetter_;  // Safe getter for timer callback
 

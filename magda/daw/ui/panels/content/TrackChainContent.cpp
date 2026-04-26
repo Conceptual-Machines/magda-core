@@ -1079,6 +1079,11 @@ void TrackChainContent::showGlobalModEditor(int modIndex) {
     if (auto* t = magda::TrackManager::getInstance().getTrack(selectedTrackId_))
         t->selectedGlobalModIndex = modIndex;
     auto trackId = selectedTrackId_;
+    // OwnerPath drives the rate-slider's link-mode scope check + the
+    // automation target — pass the track-level path so cross-scope macros/mods
+    // can drive this LFO's rate via the click-to-link flow.
+    globalModEditorPanel_->setOwnerPath(selectedTrackId_,
+                                        magda::ChainNodePath::trackLevel(selectedTrackId_));
     globalModEditorPanel_->setSelectedModIndex(modIndex);
     globalModEditorPanel_->setModInfo(track->mods[modIndex], &track->mods[modIndex],
                                       [trackId, modIndex]() -> const magda::ModInfo* {

@@ -3,6 +3,9 @@
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
+#include "core/LinkModeManager.hpp"
+#include "core/TrackManager.hpp"
+#include "ui/components/chain/ParamLinkResolver.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace {
@@ -180,6 +183,10 @@ void ModMatrixContent::mouseUp(const juce::MouseEvent&) {
 ModulatorEditorPanel::ModulatorEditorPanel() {
     // Intercept mouse clicks to prevent propagation to parent
     setInterceptsMouseClicks(true, true);
+
+    // Listen for link-mode toggles so the rate slider can act as a click
+    // target when a macro/mod is in link mode (Bitwig-style).
+    magda::LinkModeManager::getInstance().addListener(this);
 
     startTimer(33);  // 30 FPS for waveform animation
 
@@ -534,6 +541,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
 }
 
 ModulatorEditorPanel::~ModulatorEditorPanel() {
+    magda::LinkModeManager::getInstance().removeListener(this);
     stopTimer();
 }
 
@@ -969,12 +977,115 @@ void ModulatorEditorPanel::resized() {
     }
 }
 
-void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& /*e*/) {
-    // Consume mouse events to prevent propagation to parent
+void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
+    // While link-mode is active and in scope, the rate sliders below have
+    // their click-intercept disabled — so a click that lands on the slider
+    // bubbles up here. Treat that click as "create link from active source
+    // to this mod's rate".
+    if (linkModeActiveAndInScope_ && e.mods.isLeftButtonDown()) {
+        auto& visibleSlider = currentMod_.tempoSync ? syncDivisionSlider_ : rateSlider_;
+        if (visibleSlider.getBounds().contains(e.getPosition())) {
+            createLinkFromActiveSourceToRate();
+            return;
+        }
+    }
+    // Otherwise consume to prevent propagation to parent.
 }
 
 void ModulatorEditorPanel::mouseUp(const juce::MouseEvent& /*e*/) {
     // Consume mouse events to prevent propagation to parent
+}
+
+// ============================================================================
+// LinkModeManagerListener
+// ============================================================================
+
+void ModulatorEditorPanel::macroLinkModeChanged(bool active,
+                                                const magda::MacroSelection& selection) {
+    // Owner-scope path: device path if set, otherwise the track-level path —
+    // global mod editor instances don't carry a device path.
+    auto ownerScope = ownerDevicePath_.isValid() ? ownerDevicePath_
+                                                 : magda::ChainNodePath::trackLevel(ownerTrackId_);
+    bool inScope = active && ownerScope.isValid() &&
+                   magda::daw::ui::isInScopeOf(ownerScope, selection.parentPath);
+    linkModeActiveAndInScope_ = inScope;
+    applyLinkModeToRateSliders();
+    repaint();
+}
+
+void ModulatorEditorPanel::modLinkModeChanged(bool active, const magda::ModSelection& selection) {
+    auto ownerScope = ownerDevicePath_.isValid() ? ownerDevicePath_
+                                                 : magda::ChainNodePath::trackLevel(ownerTrackId_);
+    // A mod can't drive its own rate — skip this case so we don't create a
+    // self-loop link from clicking the rate slider while the mod itself is
+    // in link mode.
+    bool isSelf = (selection.parentPath == ownerDevicePath_) &&
+                  (selection.modIndex >= 0 && selectedModIndex_ == selection.modIndex);
+    bool inScope = active && !isSelf && ownerScope.isValid() &&
+                   magda::daw::ui::isInScopeOf(ownerScope, selection.parentPath);
+    linkModeActiveAndInScope_ = inScope;
+    applyLinkModeToRateSliders();
+    repaint();
+}
+
+void ModulatorEditorPanel::applyLinkModeToRateSliders() {
+    // When link mode is active, drop the slider's click intercept so the
+    // panel's mouseDown receives the click (and routes it to link
+    // creation). Otherwise restore normal slider behavior.
+    bool intercept = !linkModeActiveAndInScope_;
+    rateSlider_.setInterceptsMouseClicks(intercept, intercept);
+    syncDivisionSlider_.setInterceptsMouseClicks(intercept, intercept);
+    auto cursor = linkModeActiveAndInScope_ ? juce::MouseCursor::PointingHandCursor
+                                            : juce::MouseCursor::NormalCursor;
+    rateSlider_.setMouseCursor(cursor);
+    syncDivisionSlider_.setMouseCursor(cursor);
+}
+
+void ModulatorEditorPanel::createLinkFromActiveSourceToRate() {
+    if (currentMod_.id == magda::INVALID_MOD_ID)
+        return;
+
+    auto& lmm = magda::LinkModeManager::getInstance();
+    auto& tm = magda::TrackManager::getInstance();
+
+    if (lmm.getLinkModeType() == magda::LinkModeType::Macro) {
+        const auto& sel = lmm.getMacroInLinkMode();
+        if (!sel.isValid())
+            return;
+        magda::MacroTarget target;
+        target.kind = magda::MacroTarget::Kind::ModParam;
+        target.modId = currentMod_.id;
+        target.modParamIndex = 0;  // Rate
+
+        // Dispatch to the right scope — the link lives on the source side.
+        if (sel.parentPath.isTrackLevel) {
+            tm.setTrackMacroTarget(sel.parentPath.trackId, sel.macroIndex, target);
+        } else if (sel.parentPath.getType() == magda::ChainNodeType::Rack) {
+            tm.setRackMacroTarget(sel.parentPath, sel.macroIndex, target);
+        } else {
+            tm.setDeviceMacroTarget(sel.parentPath, sel.macroIndex, target);
+        }
+    } else if (lmm.getLinkModeType() == magda::LinkModeType::Mod) {
+        const auto& sel = lmm.getModInLinkMode();
+        if (!sel.isValid())
+            return;
+        magda::ModTarget target;
+        target.kind = magda::ModTarget::Kind::ModParam;
+        target.modId = currentMod_.id;
+        target.modParamIndex = 0;  // Rate
+
+        if (sel.parentPath.isTrackLevel) {
+            tm.setTrackModTarget(sel.parentPath.trackId, sel.modIndex, target);
+        } else if (sel.parentPath.getType() == magda::ChainNodeType::Rack) {
+            tm.setRackModTarget(sel.parentPath, sel.modIndex, target);
+        } else {
+            tm.setDeviceModTarget(sel.parentPath, sel.modIndex, target);
+        }
+    }
+
+    // Exit link mode after a successful link, mirroring the param-slot flow
+    // where one click completes the link gesture.
+    lmm.exitAllLinkModes();
 }
 
 void ModulatorEditorPanel::updateModMatrix() {
