@@ -1,7 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "SharedTestEngine.hpp"
-#include "magda/daw/audio/AutomationRecordingEngine.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
@@ -9,9 +7,10 @@
 
 using namespace magda;
 
-// Pure-state unit tests for the automation-modes work in #1039.
-// Behavioral coverage of Touch / Latch (which require the transport to roll)
-// belongs in an integration suite.
+// Pure-state unit tests for the AutomationManager API additions in #1039.
+// Tests that construct an AutomationRecordingEngine (which needs a te::Edit)
+// live in test_automation_modes_juce.cpp so they run inside magda_juce_tests
+// where the shared TE engine is properly managed.
 
 namespace {
 
@@ -37,54 +36,6 @@ AutomationTarget panTarget(TrackId id) {
 }
 
 }  // namespace
-
-TEST_CASE("AutomationMode: setMode / getMode round-trips every value",
-          "[automation][modes]") {
-    auto& engine = magda::test::getSharedEngine();
-    AutomationRecordingEngine rec(*engine.getEdit());
-
-    REQUIRE(rec.getMode() == AutomationMode::Off);
-    rec.setMode(AutomationMode::Write);
-    REQUIRE(rec.getMode() == AutomationMode::Write);
-    rec.setMode(AutomationMode::Touch);
-    REQUIRE(rec.getMode() == AutomationMode::Touch);
-    rec.setMode(AutomationMode::Latch);
-    REQUIRE(rec.getMode() == AutomationMode::Latch);
-    rec.setMode(AutomationMode::Off);
-    REQUIRE(rec.getMode() == AutomationMode::Off);
-}
-
-TEST_CASE("AutomationMode: setWriteEnabled is a thin shim over setMode",
-          "[automation][modes]") {
-    auto& engine = magda::test::getSharedEngine();
-    AutomationRecordingEngine rec(*engine.getEdit());
-
-    rec.setWriteEnabled(true);
-    REQUIRE(rec.getMode() == AutomationMode::Write);
-    REQUIRE(rec.isWriteEnabled());
-
-    rec.setWriteEnabled(false);
-    REQUIRE(rec.getMode() == AutomationMode::Off);
-    REQUIRE_FALSE(rec.isWriteEnabled());
-}
-
-TEST_CASE("AutomationMode: isWriteEnabled is true for any non-Off mode",
-          "[automation][modes]") {
-    // Important for the existing UI surface — the transport "armed" indicator
-    // and AutomationManager::isWriteModeEnabled keep working unchanged when
-    // the user picks Touch or Latch.
-    auto& engine = magda::test::getSharedEngine();
-    AutomationRecordingEngine rec(*engine.getEdit());
-
-    rec.setMode(AutomationMode::Off);
-    REQUIRE_FALSE(rec.isWriteEnabled());
-    rec.setMode(AutomationMode::Write);
-    REQUIRE(rec.isWriteEnabled());
-    rec.setMode(AutomationMode::Touch);
-    REQUIRE(rec.isWriteEnabled());
-    rec.setMode(AutomationMode::Latch);
-    REQUIRE(rec.isWriteEnabled());
-}
 
 TEST_CASE("AutomationManager touch baseline: set / get / clear round-trip",
           "[automation][modes][touch-baseline]") {
