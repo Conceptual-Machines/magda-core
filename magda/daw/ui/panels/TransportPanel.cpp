@@ -69,9 +69,10 @@ void TransportPanel::paintOverChildren(juce::Graphics& g) {
     }
 
     auto btnBounds = automationWriteButton->getBounds();
-    // Bottom strip of the button — same y-band the original SVG used for its W
-    // (rows 42..47 of a 56-tall icon, ≈75–84%).
+    // Bottom strip of the button, nudged upward — the original SVG glyph sat
+    // a touch high inside the icon and looked better that way.
     auto labelArea = btnBounds.removeFromBottom(btnBounds.getHeight() * 27 / 100);
+    labelArea.translate(0, -3);
 
     juce::Colour textColour =
         isAutomationWriteEnabled
@@ -79,8 +80,7 @@ void TransportPanel::paintOverChildren(juce::Graphics& g) {
             : DarkTheme::getSecondaryTextColour();
 
     g.setColour(textColour);
-    // Bold ~9pt matches the visual weight of the original glyph at 56-px icon.
-    g.setFont(FontManager::getInstance().getUIFont(9.0f).boldened());
+    g.setFont(FontManager::getInstance().getUIFontBold(7.5f));
     g.drawText(letter, labelArea, juce::Justification::centred);
 }
 
