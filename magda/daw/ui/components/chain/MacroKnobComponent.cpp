@@ -2,6 +2,7 @@
 
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
@@ -336,6 +337,10 @@ void MacroKnobComponent::paintLinkIndicator(juce::Graphics& g, juce::Rectangle<i
 void MacroKnobComponent::showLinkMenu() {
     juce::PopupMenu menu;
 
+    constexpr int kShowAutomationLaneId = 30000;
+    menu.addItem(kShowAutomationLaneId, "Show Automation Lane");
+    menu.addSeparator();
+
     menu.addSectionHeader("Link to Parameter...");
     menu.addSeparator();
 
@@ -408,6 +413,22 @@ void MacroKnobComponent::showLinkMenu() {
     menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, targets, paramNames, unlinkBaseId,
                                                     unlinkTargets, clearAllId](int result) {
         if (safeThis == nullptr || result == 0) {
+            return;
+        }
+
+        // Show automation lane for this macro
+        constexpr int kShowAutomationLaneId = 30000;
+        if (result == kShowAutomationLaneId) {
+            magda::AutomationTarget target;
+            target.type = magda::AutomationTargetType::Macro;
+            target.trackId = safeThis->parentPath_.trackId;
+            target.devicePath = safeThis->parentPath_;
+            target.macroIndex = safeThis->macroIndex_;
+            if (safeThis->currentMacro_.name.isNotEmpty())
+                target.paramName = safeThis->currentMacro_.name;
+            auto& mgr = magda::AutomationManager::getInstance();
+            auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
+            mgr.setLaneVisible(laneId, true);
             return;
         }
 

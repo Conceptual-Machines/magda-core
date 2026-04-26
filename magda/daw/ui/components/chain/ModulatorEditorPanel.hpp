@@ -236,6 +236,7 @@ class ModulatorEditorPanel : public juce::Component, private juce::Timer {
     magda::TrackId ownerTrackId_ = magda::INVALID_TRACK_ID;
     magda::ChainNodePath ownerDevicePath_;
     void updateRateAutomationTarget();
+    void showRateSliderContextMenu();
     const magda::ModInfo* liveModPtr_ = nullptr;  // Pointer to live mod for waveform animation
     std::function<const magda::ModInfo*()> liveModGetter_;  // Safe getter for timer callback
 

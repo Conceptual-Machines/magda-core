@@ -2,6 +2,7 @@
 
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
+#include "core/AutomationManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace {
@@ -421,6 +422,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
         if (onSyncDivisionChanged)
             onSyncDivisionChanged(division);
     };
+    syncDivisionSlider_.setRightClickEditsText(false);
+    syncDivisionSlider_.onRightClicked = [this]() { showRateSliderContextMenu(); };
     addChildComponent(syncDivisionSlider_);  // Hidden by default (shown when sync enabled)
 
     // Rate slider
@@ -433,6 +436,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
             onRateChanged(currentMod_.rate);
         }
     };
+    rateSlider_.setRightClickEditsText(false);
+    rateSlider_.onRightClicked = [this]() { showRateSliderContextMenu(); };
     addAndMakeVisible(rateSlider_);
     updateRateAutomationTarget();
 
@@ -556,23 +561,42 @@ void ModulatorEditorPanel::updateRateAutomationTarget() {
         syncDivisionSlider_.clearAutomationTarget();
         return;
     }
-    magda::AutomationTarget rateTarget;
-    rateTarget.type = magda::AutomationTargetType::ModParameter;
-    rateTarget.trackId = ownerTrackId_;
-    rateTarget.devicePath = ownerDevicePath_;
-    rateTarget.modId = currentMod_.id;
-    rateTarget.modParamIndex = 0;  // rate
-    rateTarget.paramName = currentMod_.name + " Rate";
-    rateSlider_.setAutomationTarget(rateTarget);
+    // Both sliders point at the same unified Rate lane (modParamIndex 0); the
+    // lane's scale and the slider visible to the user both follow tempoSync.
+    magda::AutomationTarget target;
+    target.type = magda::AutomationTargetType::ModParameter;
+    target.trackId = ownerTrackId_;
+    target.devicePath = ownerDevicePath_;
+    target.modId = currentMod_.id;
+    target.modParamIndex = 0;
+    target.paramName = currentMod_.name + " Rate";
+    rateSlider_.setAutomationTarget(target);
+    syncDivisionSlider_.setAutomationTarget(target);
+}
 
-    magda::AutomationTarget syncTarget;
-    syncTarget.type = magda::AutomationTargetType::ModParameter;
-    syncTarget.trackId = ownerTrackId_;
-    syncTarget.devicePath = ownerDevicePath_;
-    syncTarget.modId = currentMod_.id;
-    syncTarget.modParamIndex = 1;  // sync division
-    syncTarget.paramName = currentMod_.name + " Sync Division";
-    syncDivisionSlider_.setAutomationTarget(syncTarget);
+void ModulatorEditorPanel::showRateSliderContextMenu() {
+    if (ownerTrackId_ == magda::INVALID_TRACK_ID || currentMod_.id == magda::INVALID_MOD_ID)
+        return;
+
+    magda::AutomationTarget target;
+    target.type = magda::AutomationTargetType::ModParameter;
+    target.trackId = ownerTrackId_;
+    target.devicePath = ownerDevicePath_;
+    target.modId = currentMod_.id;
+    target.modParamIndex = 0;
+    target.paramName = currentMod_.name + " Rate";
+
+    juce::PopupMenu menu;
+    menu.addItem(1, "Show Automation Lane");
+
+    auto safeThis = juce::Component::SafePointer<ModulatorEditorPanel>(this);
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, target](int result) {
+        if (safeThis == nullptr || result != 1)
+            return;
+        auto& mgr = magda::AutomationManager::getInstance();
+        auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
+        mgr.setLaneVisible(laneId, true);
+    });
 }
 
 void ModulatorEditorPanel::setSelectedModIndex(int index) {
