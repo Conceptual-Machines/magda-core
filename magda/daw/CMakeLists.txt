@@ -324,6 +324,7 @@ set(DAW_CORE_SOURCES
     audio/ClipSynchronizer.cpp
     audio/SidechainMonitorPlugin.cpp
     audio/AudioSidechainMonitorPlugin.cpp
+    audio/FaustPlugin.cpp
     audio/MidiReceivePlugin.cpp
     audio/MagdaSamplerPlugin.cpp
     audio/DrumGridPlugin.cpp
@@ -497,6 +498,7 @@ set(DAW_UI_SOURCES
     ui/components/chain/PitchShiftUI.cpp
     ui/components/chain/ImpulseResponseUI.cpp
     ui/components/chain/UtilityUI.cpp
+    ui/components/chain/FaustUI.cpp
     ui/components/chain/FourOscUI.cpp
     ui/components/chain/ArpeggiatorUI.cpp
     ui/components/chain/StepSequencerUI.cpp
@@ -646,6 +648,8 @@ set(DAW_HEADERS
     audio/SidechainTriggerBus.hpp
     audio/SidechainMonitorPlugin.hpp
     audio/AudioSidechainMonitorPlugin.hpp
+    audio/FaustPlugin.hpp
+    audio/faust_dsp/magda_drive_generated.hpp
     audio/MidiBroadcastBus.hpp
     audio/MidiReceivePlugin.hpp
     audio/MagdaSamplerPlugin.hpp
@@ -721,6 +725,7 @@ set(DAW_HEADERS
     ui/components/chain/PitchShiftUI.hpp
     ui/components/chain/ImpulseResponseUI.hpp
     ui/components/chain/UtilityUI.hpp
+    ui/components/chain/FaustUI.hpp
     ui/components/chain/FourOscUI.hpp
     ui/components/chain/ArpeggiatorUI.hpp
     ui/components/chain/StepSequencerUI.hpp
@@ -911,6 +916,7 @@ target_include_directories(magda_daw
     ${CMAKE_CURRENT_BINARY_DIR}/generated
     PRIVATE
     ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/third_party/faust-runtime
 )
 
 # Include directories for DAW application

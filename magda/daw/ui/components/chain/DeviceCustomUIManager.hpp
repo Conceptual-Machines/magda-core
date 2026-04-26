@@ -8,6 +8,7 @@
 #include "DelayUI.hpp"
 #include "DrumGridUI.hpp"
 #include "EqualiserUI.hpp"
+#include "FaustUI.hpp"
 #include "FilterUI.hpp"
 #include "FourOscUI.hpp"
 #include "ImpulseResponseUI.hpp"
@@ -178,6 +179,7 @@ class DeviceCustomUIManager {
     std::unique_ptr<PitchShiftUI> pitchShiftUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
     std::unique_ptr<UtilityUI> utilityUI_;
+    std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;

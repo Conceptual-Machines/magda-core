@@ -2,6 +2,7 @@
 
 #include "audio/AudioBridge.hpp"
 #include "audio/DrumGridPlugin.hpp"
+#include "audio/FaustPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/SelectionManager.hpp"
@@ -45,6 +46,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return impulseResponseUI_.get();
     if (utilityUI_)
         return utilityUI_.get();
+    if (faustUI_)
+        return faustUI_.get();
     if (chordEngineUI_)
         return chordEngineUI_.get();
     if (arpeggiatorUI_)
@@ -91,7 +94,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 bool DeviceCustomUIManager::hasAnyUI() const {
     return toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
            reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-           impulseResponseUI_ || utilityUI_ || chordEngineUI_ || arpeggiatorUI_ || stepSequencerUI_;
+           impulseResponseUI_ || utilityUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ ||
+           stepSequencerUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -932,6 +936,17 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
 
         parent->addAndMakeVisible(*impulseResponseUI_);
         update(device);
+    } else if (device.pluginId.equalsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
+        faustUI_ = std::make_unique<FaustUI>();
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
+            if (auto* bridge = audioEngine->getAudioBridge()) {
+                auto plugin = bridge->getPlugin(device.id);
+                if (auto* fp = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get())) {
+                    faustUI_->setPlugin(fp);
+                }
+            }
+        }
+        parent->addAndMakeVisible(*faustUI_);
     } else if (device.pluginId.containsIgnoreCase("utility")) {
         utilityUI_ = std::make_unique<UtilityUI>();
         utilityUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {

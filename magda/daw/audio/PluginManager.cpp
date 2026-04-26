@@ -9,6 +9,7 @@
 #include "../core/aliases/AutoAliasGenerator.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "ArpeggiatorPlugin.hpp"
+#include "FaustPlugin.hpp"
 #include "AudioSidechainMonitorPlugin.hpp"
 #include "CurveSnapshot.hpp"
 #include "DrumGridPlugin.hpp"
@@ -3448,6 +3449,13 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(TrackId trackId, const DeviceI
             if (plugin) {
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
                 processor = std::make_unique<UtilityProcessor>(device.id, plugin);
+            }
+        } else if (device.pluginId.containsIgnoreCase(daw::audio::FaustPlugin::xmlTypeName)) {
+            plugin = createInternalPlugin(daw::audio::FaustPlugin::xmlTypeName, device.pluginState);
+            if (plugin) {
+                track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
+                // Stage 1 POC: no DeviceProcessor yet — parameter access happens
+                // through the plugin's AutomatableParameters directly.
             }
         }
     } else {

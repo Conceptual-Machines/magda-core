@@ -4,6 +4,7 @@
 #include "../audio/ArpeggiatorPlugin.hpp"
 #include "../audio/AudioSidechainMonitorPlugin.hpp"
 #include "../audio/DrumGridPlugin.hpp"
+#include "../audio/FaustPlugin.hpp"
 #include "../audio/MagdaSamplerPlugin.hpp"
 #include "../audio/MidiChordEnginePlugin.hpp"
 #include "../audio/MidiReceivePlugin.hpp"
@@ -88,6 +89,10 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
         if (type == AudioSidechainMonitorPlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating AudioSidechainMonitorPlugin");
             return new AudioSidechainMonitorPlugin(info);
+        }
+        if (type == daw::audio::FaustPlugin::xmlTypeName) {
+            DBG("MagdaEngineBehaviour::createCustomPlugin - creating FaustPlugin");
+            return new daw::audio::FaustPlugin(info);
         }
         if (type == MidiReceivePlugin::xmlTypeName) {
             DBG("MagdaEngineBehaviour::createCustomPlugin - creating MidiReceivePlugin");
