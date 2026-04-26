@@ -67,6 +67,7 @@ void MidiLearnCoordinator::armSession(const ChainNodePath& path, int paramIndex,
     if (armed_) {
         ChainNodePath prevPath = armedPath_;
         int prevParam = armedParam_;
+        StaticTarget::Owner prevOwner = armedOwner_;
         armed_ = false;
         armedPath_ = {};
         armedParam_ = -1;
@@ -76,7 +77,7 @@ void MidiLearnCoordinator::armSession(const ChainNodePath& path, int paramIndex,
         armedDisplayName_ = {};
         if (router_)
             router_->cancelLearnSession();
-        notifyStateChanged(prevPath, prevParam, false);
+        notifyStateChanged(prevPath, prevParam, prevOwner, false);
     }
 
     // Arm the new session
@@ -88,7 +89,7 @@ void MidiLearnCoordinator::armSession(const ChainNodePath& path, int paramIndex,
     armedModParamIndex_ = modParamIndex;
     armedDisplayName_ = displayName;
 
-    notifyStateChanged(path, paramIndex, true);
+    notifyStateChanged(path, paramIndex, owner, true);
 
     if (router_) {
         LearnSessionConfig cfg;
@@ -107,6 +108,7 @@ void MidiLearnCoordinator::cancelLearn() {
 
     ChainNodePath path = armedPath_;
     int param = armedParam_;
+    StaticTarget::Owner owner = armedOwner_;
     armed_ = false;
     armedPath_ = {};
     armedParam_ = -1;
@@ -118,7 +120,7 @@ void MidiLearnCoordinator::cancelLearn() {
     if (router_)
         router_->cancelLearnSession();
 
-    notifyStateChanged(path, param, false);
+    notifyStateChanged(path, param, owner, false);
     DBG("MidiLearnCoordinator: cancelled");
 }
 
@@ -147,7 +149,7 @@ int MidiLearnCoordinator::clearMappings(const ChainNodePath& path, int paramInde
         auto copyListeners = listeners_;
         for (auto* l : copyListeners)
             if (l)
-                l->midiLearnCleared(path, paramIndex, removed);
+                l->midiLearnCleared(path, paramIndex, StaticTarget::Owner::PluginParam, removed);
     }
     return removed;
 }
@@ -162,7 +164,7 @@ int MidiLearnCoordinator::clearMacroMappings(const ChainNodePath& path, int macr
         auto copyListeners = listeners_;
         for (auto* l : copyListeners)
             if (l)
-                l->midiLearnCleared(path, macroIndex, removed);
+                l->midiLearnCleared(path, macroIndex, StaticTarget::Owner::DeviceMacro, removed);
     }
     return removed;
 }
@@ -179,7 +181,7 @@ int MidiLearnCoordinator::clearModParamMappings(const ChainNodePath& path, ModId
             if (l)
                 // Existing listener API is keyed by paramIndex; pass modParamIndex so
                 // anyone observing a specific mod-param can match by (path, modParamIndex).
-                l->midiLearnCleared(path, modParamIndex, removed);
+                l->midiLearnCleared(path, modParamIndex, StaticTarget::Owner::ModParam, removed);
     }
     return removed;
 }
@@ -283,12 +285,15 @@ void MidiLearnCoordinator::onCapture(const LearnCapture& capture) {
     DBG("MidiLearnCoordinator: project binding created");
 
     // ---- Notify listeners ----
+    // For ModParam, the listener-facing paramIndex carries modParamIndex so listeners
+    // keyed on (path, paramIndex, owner) can disambiguate modifier targets within a scope.
+    const int notifyParam = owner == StaticTarget::Owner::ModParam ? modParamIndex : paramIndex;
     auto copyListeners = listeners_;
     for (auto* l : copyListeners)
         if (l)
-            l->midiLearnCompleted(path, paramIndex, binding);
+            l->midiLearnCompleted(path, notifyParam, owner, binding);
 
-    notifyStateChanged(path, paramIndex, false);
+    notifyStateChanged(path, notifyParam, owner, false);
 }
 
 // ============================================================================
@@ -296,11 +301,11 @@ void MidiLearnCoordinator::onCapture(const LearnCapture& capture) {
 // ============================================================================
 
 void MidiLearnCoordinator::notifyStateChanged(const ChainNodePath& path, int paramIndex,
-                                              bool learning) {
+                                              StaticTarget::Owner owner, bool learning) {
     auto copyListeners = listeners_;
     for (auto* l : copyListeners)
         if (l)
-            l->midiLearnStateChanged(path, paramIndex, learning);
+            l->midiLearnStateChanged(path, paramIndex, owner, learning);
 }
 
 }  // namespace magda

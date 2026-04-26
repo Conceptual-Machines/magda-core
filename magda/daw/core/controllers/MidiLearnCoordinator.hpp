@@ -30,11 +30,15 @@ class MidiLearnCoordinatorListener {
      * @brief Called when a learn session starts or ends for a specific parameter.
      *
      * @param path       Device path of the parameter being learned (or that was learned).
-     * @param paramIndex Parameter index within the device.
+     * @param paramIndex Parameter / macro / mod-param index — see owner for what this means.
+     * @param owner      Target owner kind. Listeners interested in plugin params should
+     *                   ignore events with owner != PluginParam, etc. The (path, paramIndex)
+     *                   tuple alone is ambiguous because a macro index can collide with a
+     *                   plugin-param index on the same device path.
      * @param learning   true = session started; false = session ended (captured or cancelled).
      */
     virtual void midiLearnStateChanged(const ChainNodePath& path, int paramIndex,
-                                       bool learning) = 0;
+                                       StaticTarget::Owner owner, bool learning) = 0;
 
     /**
      * @brief Called when a learn session completes and a binding was created.
@@ -42,7 +46,7 @@ class MidiLearnCoordinatorListener {
      * The binding has already been added to BindingRegistry at this point.
      */
     virtual void midiLearnCompleted(const ChainNodePath& /*path*/, int /*paramIndex*/,
-                                    const Binding& /*binding*/) {}
+                                    StaticTarget::Owner /*owner*/, const Binding& /*binding*/) {}
 
     /**
      * @brief Called when clearMappings() removes one or more bindings.
@@ -50,7 +54,7 @@ class MidiLearnCoordinatorListener {
      * @param numRemoved Number of bindings removed (always >= 1 when called).
      */
     virtual void midiLearnCleared(const ChainNodePath& /*path*/, int /*paramIndex*/,
-                                  int /*numRemoved*/) {}
+                                  StaticTarget::Owner /*owner*/, int /*numRemoved*/) {}
 };
 
 // ============================================================================
@@ -187,7 +191,8 @@ class MidiLearnCoordinator {
     // Called from router's callAsync (message thread) when a MIDI event is captured.
     void onCapture(const LearnCapture& capture);
 
-    void notifyStateChanged(const ChainNodePath& path, int paramIndex, bool learning);
+    void notifyStateChanged(const ChainNodePath& path, int paramIndex, StaticTarget::Owner owner,
+                            bool learning);
 
     ControllerRouter* router_ = nullptr;
 

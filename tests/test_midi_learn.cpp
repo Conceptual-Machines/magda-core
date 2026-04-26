@@ -403,16 +403,19 @@ struct FakeCoordinatorListener : public MidiLearnCoordinatorListener {
     struct StateChange {
         ChainNodePath path;
         int paramIndex;
+        StaticTarget::Owner owner;
         bool learning;
     };
     struct Completion {
         ChainNodePath path;
         int paramIndex;
+        StaticTarget::Owner owner;
         Binding binding;
     };
     struct Cleared {
         ChainNodePath path;
         int paramIndex;
+        StaticTarget::Owner owner;
         int numRemoved;
     };
 
@@ -420,15 +423,17 @@ struct FakeCoordinatorListener : public MidiLearnCoordinatorListener {
     std::vector<Completion> completions;
     std::vector<Cleared> clears;
 
-    void midiLearnStateChanged(const ChainNodePath& path, int paramIndex, bool learning) override {
-        stateChanges.push_back({path, paramIndex, learning});
+    void midiLearnStateChanged(const ChainNodePath& path, int paramIndex, StaticTarget::Owner owner,
+                               bool learning) override {
+        stateChanges.push_back({path, paramIndex, owner, learning});
     }
-    void midiLearnCompleted(const ChainNodePath& path, int paramIndex,
+    void midiLearnCompleted(const ChainNodePath& path, int paramIndex, StaticTarget::Owner owner,
                             const Binding& binding) override {
-        completions.push_back({path, paramIndex, binding});
+        completions.push_back({path, paramIndex, owner, binding});
     }
-    void midiLearnCleared(const ChainNodePath& path, int paramIndex, int numRemoved) override {
-        clears.push_back({path, paramIndex, numRemoved});
+    void midiLearnCleared(const ChainNodePath& path, int paramIndex, StaticTarget::Owner owner,
+                          int numRemoved) override {
+        clears.push_back({path, paramIndex, owner, numRemoved});
     }
 };
 
@@ -628,6 +633,28 @@ TEST_CASE("MidiLearnCoordinator - mod-param Learn capture builds ModParam Static
     REQUIRE(st.modParamIndex == modParamIndex);
 
     clearAll();
+}
+
+TEST_CASE("MidiLearnCoordinator - macro Learn does not stage plugin-param listener on same path",
+          "[midi-learn][coordinator]") {
+    CoordinatorFixture fix;
+
+    // Same path (a 4osc-style device path), same index — but different owner kinds.
+    // A macro-Learn at (path, 0, DeviceMacro) must NOT pulse a plugin-param at
+    // (path, 0, PluginParam). This is the regression that caused OSC1 Tune to light
+    // up when the user clicked Learn on macro 0.
+    ChainNodePath path = ChainNodePath::topLevelDevice(70, 700);
+
+    MidiLearnCoordinator::getInstance().beginLearnMacro(path, 0, "Macro 1");
+
+    REQUIRE(fix.listener.stateChanges.size() == 1);
+    const auto& sc = fix.listener.stateChanges[0];
+    REQUIRE(sc.path == path);
+    REQUIRE(sc.paramIndex == 0);
+    REQUIRE(sc.owner == StaticTarget::Owner::DeviceMacro);
+    REQUIRE(sc.learning == true);
+
+    MidiLearnCoordinator::getInstance().cancelLearn();
 }
 
 TEST_CASE("MidiLearnCoordinator - clearModParamMappings removes only matching bindings",

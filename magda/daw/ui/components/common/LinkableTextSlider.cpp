@@ -340,19 +340,27 @@ void LinkableTextSlider::macroLinkModeChanged(bool active, const magda::MacroSel
 // ============================================================================
 
 void LinkableTextSlider::midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
-                                               bool learning) {
+                                               magda::StaticTarget::Owner owner, bool learning) {
+    if (owner != magda::StaticTarget::Owner::PluginParam)
+        return;
     bool isMe = (path == devicePath_ && paramIndex == paramIndex_);
     isInMidiLearnMode_ = learning && isMe;
     repaint();
 }
 
 void LinkableTextSlider::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                                            magda::StaticTarget::Owner owner,
                                             const magda::Binding&) {
+    if (owner != magda::StaticTarget::Owner::PluginParam)
+        return;
     if (path == devicePath_ && paramIndex == paramIndex_)
         refreshMidiBindingState();
 }
 
-void LinkableTextSlider::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex, int) {
+void LinkableTextSlider::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
+                                          magda::StaticTarget::Owner owner, int) {
+    if (owner != magda::StaticTarget::Owner::PluginParam)
+        return;
     if (path == devicePath_ && paramIndex == paramIndex_)
         refreshMidiBindingState();
 }
