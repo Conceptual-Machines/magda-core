@@ -83,6 +83,12 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
     void bakeLane(const AutomationLaneInfo& lane);
     void clearLane(const AutomationLaneInfo& lane);
 
+    // Clear a now-stale TE curve and, where MAGDA tracks a manual user value
+    // (TrackVolume / TrackPan), push that manual value back into TE so the
+    // audio matches what the fader UI is showing. Without this, deleting a
+    // lane mid-song leaves TE's parameter pinned at the last automated value.
+    void clearStaleTarget(const AutomationTarget& target);
+
     te::AutomatableParameter* resolveParameter(const AutomationTarget& target);
 
     // Maps a MAGDA 0..1 normalized value to the TE parameter's real range,
