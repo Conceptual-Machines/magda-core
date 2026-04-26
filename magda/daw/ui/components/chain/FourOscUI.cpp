@@ -239,18 +239,26 @@ FourOscUI::OscTab::OscTab(FourOscUI& owner) : owner_(owner) {
         };
         addAndMakeVisible(row.tuneSlider);
 
-        // Fine tune (-100 to 100 cents)
+        // Fine tune (-100 to 100 cents) — TE prints 3 decimals; one is plenty
+        // for cents.
         row.fineSlider.setRange(-100.0, 100.0, 0.1);
         row.fineSlider.setValue(0.0, juce::dontSendNotification);
+        row.fineSlider.setValueFormatter([](double v) { return juce::String(v, 1); });
         row.fineSlider.onValueChanged = [this, idx = oscBase + 1](double v) {
             if (owner_.onParameterChanged)
                 owner_.onParameterChanged(idx, static_cast<float>(v));
         };
         addAndMakeVisible(row.fineSlider);
 
-        // Level (-100 to 0 dB)
+        // Level (-100 to 0 dB) — TE prints 3 decimals after "dB"; collapse to
+        // 1 decimal to match the rest of MAGDA's dB readouts.
         row.levelSlider.setRange(-100.0, 0.0, 0.1);
         row.levelSlider.setValue(-100.0, juce::dontSendNotification);
+        row.levelSlider.setValueFormatter([](double v) -> juce::String {
+            if (v <= -60.0)
+                return "-inf";
+            return juce::String(v, 1) + "dB";
+        });
         row.levelSlider.onValueChanged = [this, idx = oscBase + 2](double v) {
             if (owner_.onParameterChanged)
                 owner_.onParameterChanged(idx, static_cast<float>(v));
@@ -284,9 +292,17 @@ FourOscUI::OscTab::OscTab(FourOscUI& owner) : owner_(owner) {
         };
         addAndMakeVisible(row.spreadSlider);
 
-        // Pan (-1 to 1)
+        // Pan (-1 to 1) — TE's native getParameterText labels centre as "0R",
+        // which reads like a noisy mistake. Show a clean "0" at centre and
+        // standard "L50"/"R50" elsewhere. (Sticky against setParameterInfo.)
         row.panSlider.setRange(-1.0, 1.0, 0.01);
         row.panSlider.setValue(0.0, juce::dontSendNotification);
+        row.panSlider.setValueFormatter([](double v) -> juce::String {
+            if (std::abs(v) < 0.005)
+                return "0";
+            int amount = static_cast<int>(std::round(std::abs(v) * 100.0));
+            return (v < 0 ? "L" : "R") + juce::String(amount);
+        });
         row.panSlider.onValueChanged = [this, idx = oscBase + 6](double v) {
             if (owner_.onParameterChanged)
                 owner_.onParameterChanged(idx, static_cast<float>(v));

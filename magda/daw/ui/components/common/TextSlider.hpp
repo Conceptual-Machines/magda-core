@@ -105,9 +105,14 @@ class TextSlider : public juce::Component,
         paramInfoCopy_ = info;
         hasParamInfo_ = true;
 
-        valueFormatter_ = [this](double real) {
-            return magda::ParameterUtils::formatValue(static_cast<float>(real), paramInfoCopy_);
-        };
+        // A custom UI may have called setValueFormatter to override per-param
+        // formatting (e.g. 4OSC pan wants "0" at centre, not the plugin's
+        // native "0R"). Don't clobber an explicit formatter.
+        if (!hasExplicitFormatter_) {
+            valueFormatter_ = [this](double real) {
+                return magda::ParameterUtils::formatValue(static_cast<float>(real), paramInfoCopy_);
+            };
+        }
         valueParser_ = [this](const juce::String& text) {
             auto parsed = magda::ParameterUtils::parseValue(text, paramInfoCopy_);
             return parsed.has_value() ? static_cast<double>(*parsed) : value_;  // keep on failure
@@ -175,9 +180,12 @@ class TextSlider : public juce::Component,
         updateLabel();
     }
 
-    // Custom value formatter - takes normalized value (0-1), returns display string
+    // Custom value formatter - takes the slider's real value, returns display string.
+    // This override sticks: setParameterInfo will not replace it with the generic
+    // ParameterUtils formatter, so plugin-UI-specific formatting wins.
     void setValueFormatter(std::function<juce::String(double)> formatter) {
         valueFormatter_ = std::move(formatter);
+        hasExplicitFormatter_ = static_cast<bool>(valueFormatter_);
         updateLabel();
     }
 
@@ -612,6 +620,8 @@ class TextSlider : public juce::Component,
         valueParser_;                     // Custom value parsing (string → normalized)
     magda::ParameterInfo paramInfoCopy_;  // Populated by setParameterInfo
     bool hasParamInfo_ = false;
+    bool hasExplicitFormatter_ =
+        false;  // setValueFormatter override; sticky across setParameterInfo
 
     void updateLabel() {
         // Show empty text instead of value when disabled/empty
