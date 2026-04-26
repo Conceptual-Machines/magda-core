@@ -855,6 +855,17 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
     }
     synced.innerModifiers.clear();
 
+    // Two-pass: create all TE modifiers first, then wire link assignments.
+    // Cross-mod ModParam links resolve via synced.innerModifiers — if the
+    // target mod isn't in the map yet (because it's later in the iteration
+    // order), the link is silently dropped. Splitting the passes guarantees
+    // the map is fully populated before any link is wired.
+    struct CreatedMod {
+        te::Modifier::Ptr modifier;
+        const ModInfo* info;
+    };
+    std::vector<CreatedMod> created;
+
     for (const auto& modInfo : rackInfo.mods) {
         // Create the TE modifier as soon as the modifier is enabled, even if
         // it has no outgoing links yet. This lets a macro or another mod
@@ -916,8 +927,12 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
             continue;
 
         synced.innerModifiers[modInfo.id] = modifier;
+        created.push_back({modifier, &modInfo});
+    }
 
-        // Create modifier assignments for each link
+    // Pass 2: wire link assignments now that every TE modifier exists.
+    for (const auto& cm : created) {
+        const auto& modInfo = *cm.info;
         for (const auto& link : modInfo.links) {
             if (!link.isValid())
                 continue;
@@ -930,7 +945,7 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                 if (link.target.modId == modInfo.id)
                     continue;
                 if (auto* targetParam = resolveModParamTargetInRack(link, synced, rackInfo))
-                    targetParam->addModifier(*modifier, link.amount);
+                    targetParam->addModifier(*cm.modifier, link.amount);
                 continue;
             }
 
@@ -943,7 +958,7 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                 link.target.paramIndex < static_cast<int>(params.size())) {
                 auto* param = params[static_cast<size_t>(link.target.paramIndex)];
                 if (param) {
-                    param->addModifier(*modifier, link.amount);
+                    param->addModifier(*cm.modifier, link.amount);
                 }
             }
         }
