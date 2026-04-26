@@ -507,6 +507,27 @@ void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneI
         }
     } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 0) {
         writeModRateFromCurve(target, previewValue);
+
+        // The MAGDA-side writeback above is wrapped in AutomationWriteScope
+        // to prevent the deviceModifiersChanged → resync path from fighting
+        // the baked curve. As a side-effect TE's LFO never sees the new rate
+        // until mouse-up, so the user hears no change while dragging. Push
+        // the dragged value directly to the active TE param (rateParam in Hz
+        // mode, rateTypeParam in sync mode — findModifierParameterForAutomation
+        // picks the right one) so audio tracks the drag in real time.
+        if (auto* teParam = bridge_.getPluginManager().findModifierParameterForAutomation(
+                target.trackId, target.devicePath, target.modId, 0)) {
+            ParameterInfo info = target.getParameterInfo();
+            float real = ParameterUtils::normalizedToReal(static_cast<float>(previewValue), info);
+            // Sync mode lane stores 0-based display index; the TE rateType
+            // param expects a 1-based ordinal, so shift by +1 there. In Hz
+            // mode the lane stores the Hz value directly.
+            float teValue = info.scale == ParameterScale::Discrete
+                                ? static_cast<float>(
+                                      juce::jlimit(1, 23, static_cast<int>(std::round(real)) + 1))
+                                : real;
+            teParam->setParameterFromHost(teValue, juce::dontSendNotification);
+        }
     }
 }
 
