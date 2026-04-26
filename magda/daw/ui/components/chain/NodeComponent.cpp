@@ -1250,6 +1250,18 @@ void NodeComponent::updateModsPanel() {
 
     auto devices = getAvailableDevices();
     modsPanel_->setAvailableDevices(devices);
+
+    // Same-scope modifiers — each knob's "Link to Modulator" submenu
+    // can target another mod's rate. Skip the knob's own ModId is done
+    // inside the knob (it knows its own currentMod_.id).
+    std::vector<std::pair<magda::ModId, juce::String>> modList;
+    if (mods) {
+        modList.reserve(mods->size());
+        for (const auto& m : *mods)
+            if (m.enabled)
+                modList.emplace_back(m.id, m.name);
+    }
+    modsPanel_->setAvailableModifiers(modList);
 }
 
 void NodeComponent::updateMacroValueDisplay(int macroIndex, float value) {

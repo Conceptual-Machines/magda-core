@@ -995,6 +995,17 @@ void TrackChainContent::updateGlobalModsPanel() {
 
     auto trackPath = magda::ChainNodePath::trackLevel(selectedTrackId_);
     globalModsPanel_->setParentPath(trackPath);
+
+    // Track-level mods can target other track-level mods' rate via the
+    // right-click "Link to Modulator" submenu. Pass the same-scope list;
+    // each knob filters out its own ModId before populating its menu.
+    std::vector<std::pair<magda::ModId, juce::String>> trackModsList;
+    trackModsList.reserve(track->mods.size());
+    for (const auto& m : track->mods)
+        if (m.enabled)
+            trackModsList.emplace_back(m.id, m.name);
+    globalModsPanel_->setAvailableModifiers(trackModsList);
+
     globalModsPanel_->setMods(track->mods);
 
     // Update editor if visible

@@ -63,6 +63,11 @@ class ModsPanelComponent : public PagedControlPanel {
     // Set available devices for linking (devices in this rack/chain)
     void setAvailableDevices(const std::vector<std::pair<magda::DeviceId, juce::String>>& devices);
 
+    // Set available modifiers in the same scope so each knob's right-click
+    // menu can offer mod->mod-rate links. Each knob filters out itself
+    // before populating its own menu.
+    void setAvailableModifiers(const std::vector<std::pair<magda::ModId, juce::String>>& modifiers);
+
     // Set parent path for drag-and-drop (propagates to all knobs)
     void setParentPath(const magda::ChainNodePath& path);
 
@@ -99,6 +104,7 @@ class ModsPanelComponent : public PagedControlPanel {
     std::vector<std::unique_ptr<ModKnobComponent>> knobs_;
     std::vector<std::unique_ptr<AddModButton>> addButtons_;
     std::vector<std::pair<magda::DeviceId, juce::String>> availableDevices_;
+    std::vector<std::pair<magda::ModId, juce::String>> availableModifiers_;
     magda::ChainNodePath parentPath_;
     int currentModCount_ = 0;  // Track how many actual mods exist
     int allocatedPages_ = 1;   // Track how many pages of slots are allocated (UI only)
