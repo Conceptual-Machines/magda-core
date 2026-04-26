@@ -90,26 +90,27 @@ inline void applyLFOProperties(te::LFOModifier* lfo, const ModInfo& modInfo,
     if (modInfo.waveform == LFOWaveform::Custom && holder) {
         // Custom waveform: update double-buffered curve data, wire callback
         holder->update(modInfo);
-        lfo->waveParam->setParameter(static_cast<float>(te::LFOModifier::waveCustomCallback),
-                                     juce::dontSendNotification);
+        lfo->waveParam->setParameterFromHost(
+            static_cast<float>(te::LFOModifier::waveCustomCallback), juce::dontSendNotification);
         lfo->customWaveFunction.store(&CurveSnapshotHolder::evaluateCallback,
                                       std::memory_order_release);
         lfo->customWaveUserData.store(holder, std::memory_order_release);
-        lfo->depthParam->setParameter(1.0f, juce::dontSendNotification);
+        lfo->depthParam->setParameterFromHost(1.0f, juce::dontSendNotification);
     } else {
-        lfo->waveParam->setParameter(mapWaveform(modInfo.waveform), juce::dontSendNotification);
+        lfo->waveParam->setParameterFromHost(mapWaveform(modInfo.waveform),
+                                             juce::dontSendNotification);
         lfo->customWaveFunction.store(nullptr, std::memory_order_release);
-        lfo->depthParam->setParameter(1.0f, juce::dontSendNotification);
+        lfo->depthParam->setParameterFromHost(1.0f, juce::dontSendNotification);
     }
 
     // In musical mode, TE uses rateParam as a multiplier on the tempo.
     // Set to 1.0 so the musical division alone controls the LFO period.
     // In Hz mode, pass the raw rate directly.
     float teRate = modInfo.tempoSync ? 1.0f : modInfo.rate;
-    lfo->rateParam->setParameter(teRate, juce::dontSendNotification);
-    lfo->phaseParam->setParameter(modInfo.phaseOffset, juce::dontSendNotification);
-    lfo->syncTypeParam->setParameter(syncType, juce::dontSendNotification);
-    lfo->rateTypeParam->setParameter(rateType, juce::dontSendNotification);
+    lfo->rateParam->setParameterFromHost(teRate, juce::dontSendNotification);
+    lfo->phaseParam->setParameterFromHost(modInfo.phaseOffset, juce::dontSendNotification);
+    lfo->syncTypeParam->setParameterFromHost(syncType, juce::dontSendNotification);
+    lfo->rateTypeParam->setParameterFromHost(rateType, juce::dontSendNotification);
 }
 
 /**

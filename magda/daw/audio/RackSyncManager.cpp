@@ -346,7 +346,7 @@ void RackSyncManager::setMacroValue(RackId rackId, int macroIndex, float value) 
     auto& synced = it->second;
     auto macroIt = synced.innerMacroParams.find(macroIndex);
     if (macroIt != synced.innerMacroParams.end() && macroIt->second != nullptr) {
-        macroIt->second->setParameter(value, juce::sendNotificationSync);
+        macroIt->second->setParameterFromHost(value, juce::sendNotificationSync);
     }
 }
 
@@ -751,20 +751,20 @@ void RackSyncManager::applyBypassState(SyncedRack& synced, const RackInfo& rackI
 
     if (rackInfo.bypassed) {
         // Bypass: dry signal only
-        rackInstance->wetGain->setParameter(0.0f, juce::dontSendNotification);
-        rackInstance->dryGain->setParameter(1.0f, juce::dontSendNotification);
+        rackInstance->wetGain->setParameterFromHost(0.0f, juce::dontSendNotification);
+        rackInstance->dryGain->setParameterFromHost(1.0f, juce::dontSendNotification);
     } else {
         // Normal: wet signal only (processed through rack)
-        rackInstance->wetGain->setParameter(1.0f, juce::dontSendNotification);
-        rackInstance->dryGain->setParameter(0.0f, juce::dontSendNotification);
+        rackInstance->wetGain->setParameterFromHost(1.0f, juce::dontSendNotification);
+        rackInstance->dryGain->setParameterFromHost(0.0f, juce::dontSendNotification);
     }
 
     // Apply rack output volume/pan via the RackInstance's output level parameters
-    rackInstance->leftOutDb->setParameter(
+    rackInstance->leftOutDb->setParameterFromHost(
         static_cast<float>(juce::jlimit(te::RackInstance::rackMinDb, te::RackInstance::rackMaxDb,
                                         static_cast<double>(rackInfo.volume))),
         juce::dontSendNotification);
-    rackInstance->rightOutDb->setParameter(
+    rackInstance->rightOutDb->setParameterFromHost(
         static_cast<float>(juce::jlimit(te::RackInstance::rackMinDb, te::RackInstance::rackMaxDb,
                                         static_cast<double>(rackInfo.volume))),
         juce::dontSendNotification);
@@ -913,7 +913,7 @@ void RackSyncManager::syncMacros(SyncedRack& synced, const RackInfo& rackInfo) {
             continue;
 
         macroParam->macroName = macroInfo.name;
-        macroParam->setParameter(macroInfo.value, juce::dontSendNotification);
+        macroParam->setParameterFromHost(macroInfo.value, juce::dontSendNotification);
 
         synced.innerMacroParams[i] = macroParam;
 

@@ -932,7 +932,7 @@ void AudioBridge::processParameterChanges() {
 
             auto params = plugin->getAutomatableParameters();
             if (change.paramIndex >= 0 && change.paramIndex < static_cast<int>(params.size())) {
-                params[static_cast<size_t>(change.paramIndex)]->setParameter(
+                params[static_cast<size_t>(change.paramIndex)]->setParameterFromHost(
                     change.value, juce::sendNotificationSync);
             }
         }

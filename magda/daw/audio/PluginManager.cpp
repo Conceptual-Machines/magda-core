@@ -2304,7 +2304,7 @@ void PluginManager::setMacroValue(TrackId trackId, bool isRack, int id, int macr
         if (tmIt != trackMacroParams_.end()) {
             auto macroIt = tmIt->second.find(macroIndex);
             if (macroIt != tmIt->second.end() && macroIt->second != nullptr) {
-                macroIt->second->setParameter(value, juce::sendNotificationSync);
+                macroIt->second->setParameterFromHost(value, juce::sendNotificationSync);
                 return;
             }
         }
@@ -2320,7 +2320,7 @@ void PluginManager::setDeviceMacroValue(DeviceId deviceId, int macroIndex, float
 
     auto macroIt = it->second.macroParams.find(macroIndex);
     if (macroIt != it->second.macroParams.end() && macroIt->second != nullptr) {
-        macroIt->second->setParameter(value, juce::sendNotificationSync);
+        macroIt->second->setParameterFromHost(value, juce::sendNotificationSync);
     }
 }
 
@@ -2498,7 +2498,7 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
                 continue;
 
             macroParam->macroName = macroInfo.name;
-            macroParam->setParameter(macroInfo.value, juce::dontSendNotification);
+            macroParam->setParameterFromHost(macroInfo.value, juce::dontSendNotification);
 
             syncedDevices_[device.id].macroParams[i] = macroParam;
 
@@ -2602,7 +2602,7 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
             continue;
 
         macroParam->macroName = macroInfo.name;
-        macroParam->setParameter(macroInfo.value, juce::dontSendNotification);
+        macroParam->setParameterFromHost(macroInfo.value, juce::dontSendNotification);
 
         existingTrackMacros[i] = macroParam;
 

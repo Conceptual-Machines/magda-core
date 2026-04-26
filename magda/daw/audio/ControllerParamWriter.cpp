@@ -43,7 +43,7 @@ void DefaultControllerParamWriter::writePluginParam(const ResolvedTarget& resolv
     // setParameter expects raw, not normalized.
     const auto range = param->getValueRange();
     const float raw = static_cast<float>(range.getStart() + clamped * range.getLength());
-    param->setParameter(raw, juce::sendNotificationSync);
+    param->setParameterFromHost(raw, juce::sendNotificationSync);
 
     // Mirror the write into DeviceInfo and notify MAGDA listeners so param
     // sliders / inspector UIs update. Same path the plugin's native UI uses

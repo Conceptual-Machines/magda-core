@@ -1053,9 +1053,9 @@ void DrumGridPlugin::syncParamFromChain(int chainIndex) {
     float pan = chainTree.getProperty(padPanId, 0.0f);
 
     if (levelParams_[idx] != nullptr)
-        levelParams_[idx]->setParameter(level, juce::dontSendNotification);
+        levelParams_[idx]->setParameterFromHost(level, juce::dontSendNotification);
     if (panParams_[idx] != nullptr)
-        panParams_[idx]->setParameter(pan, juce::dontSendNotification);
+        panParams_[idx]->setParameterFromHost(pan, juce::dontSendNotification);
 }
 
 void DrumGridPlugin::valueTreePropertyChanged(juce::ValueTree& tree,
@@ -1073,10 +1073,10 @@ void DrumGridPlugin::valueTreePropertyChanged(juce::ValueTree& tree,
 
     if (property == padLevelId && levelParams_[idx] != nullptr) {
         float val = tree.getProperty(padLevelId, 0.0f);
-        levelParams_[idx]->setParameter(val, juce::dontSendNotification);
+        levelParams_[idx]->setParameterFromHost(val, juce::dontSendNotification);
     } else if (property == padPanId && panParams_[idx] != nullptr) {
         float val = tree.getProperty(padPanId, 0.0f);
-        panParams_[idx]->setParameter(val, juce::dontSendNotification);
+        panParams_[idx]->setParameterFromHost(val, juce::dontSendNotification);
     }
 }
 

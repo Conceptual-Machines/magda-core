@@ -56,17 +56,20 @@ ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : MidiD
     fixedVelParam = addParam("fixedvel", "Fixed Velocity", {1.0f, 127.0f, 1.0f});
 
     // Initialize automatable params from CachedValues
-    patternParam->setParameter(static_cast<float>(pattern.get()), juce::dontSendNotification);
-    rateParam->setParameter(static_cast<float>(rate.get()), juce::dontSendNotification);
-    octavesParam->setParameter(static_cast<float>(octaveRange.get()), juce::dontSendNotification);
-    gateParam->setParameter(gate.get(), juce::dontSendNotification);
-    swingParam->setParameter(swing.get(), juce::dontSendNotification);
-    rampParam->setParameter(ramp.get(), juce::dontSendNotification);
-    skewParam->setParameter(skew.get(), juce::dontSendNotification);
-    latchParam->setParameter(latch.get() ? 1.0f : 0.0f, juce::dontSendNotification);
-    velModeParam->setParameter(static_cast<float>(velocityMode.get()), juce::dontSendNotification);
-    fixedVelParam->setParameter(static_cast<float>(fixedVelocity.get()),
-                                juce::dontSendNotification);
+    patternParam->setParameterFromHost(static_cast<float>(pattern.get()),
+                                       juce::dontSendNotification);
+    rateParam->setParameterFromHost(static_cast<float>(rate.get()), juce::dontSendNotification);
+    octavesParam->setParameterFromHost(static_cast<float>(octaveRange.get()),
+                                       juce::dontSendNotification);
+    gateParam->setParameterFromHost(gate.get(), juce::dontSendNotification);
+    swingParam->setParameterFromHost(swing.get(), juce::dontSendNotification);
+    rampParam->setParameterFromHost(ramp.get(), juce::dontSendNotification);
+    skewParam->setParameterFromHost(skew.get(), juce::dontSendNotification);
+    latchParam->setParameterFromHost(latch.get() ? 1.0f : 0.0f, juce::dontSendNotification);
+    velModeParam->setParameterFromHost(static_cast<float>(velocityMode.get()),
+                                       juce::dontSendNotification);
+    fixedVelParam->setParameterFromHost(static_cast<float>(fixedVelocity.get()),
+                                        juce::dontSendNotification);
 
     // Listen for CachedValue changes (from UI) to sync to AutomatableParams
     state.addListener(&paramSyncListener_);
@@ -80,28 +83,29 @@ ArpeggiatorPlugin::~ArpeggiatorPlugin() {
 void ArpeggiatorPlugin::syncParamFromProperty(const juce::Identifier& property) {
     // Push CachedValue changes to AutomatableParam base values
     if (property == ArpIDs::pattern && patternParam)
-        patternParam->setParameter(static_cast<float>(pattern.get()), juce::dontSendNotification);
+        patternParam->setParameterFromHost(static_cast<float>(pattern.get()),
+                                           juce::dontSendNotification);
     else if (property == ArpIDs::rate && rateParam)
-        rateParam->setParameter(static_cast<float>(rate.get()), juce::dontSendNotification);
+        rateParam->setParameterFromHost(static_cast<float>(rate.get()), juce::dontSendNotification);
     else if (property == ArpIDs::octaveRange && octavesParam)
-        octavesParam->setParameter(static_cast<float>(octaveRange.get()),
-                                   juce::dontSendNotification);
+        octavesParam->setParameterFromHost(static_cast<float>(octaveRange.get()),
+                                           juce::dontSendNotification);
     else if (property == ArpIDs::gate && gateParam)
-        gateParam->setParameter(gate.get(), juce::dontSendNotification);
+        gateParam->setParameterFromHost(gate.get(), juce::dontSendNotification);
     else if (property == ArpIDs::swing && swingParam)
-        swingParam->setParameter(swing.get(), juce::dontSendNotification);
+        swingParam->setParameterFromHost(swing.get(), juce::dontSendNotification);
     else if (property == ArpIDs::ramp && rampParam)
-        rampParam->setParameter(ramp.get(), juce::dontSendNotification);
+        rampParam->setParameterFromHost(ramp.get(), juce::dontSendNotification);
     else if (property == ArpIDs::skew && skewParam)
-        skewParam->setParameter(skew.get(), juce::dontSendNotification);
+        skewParam->setParameterFromHost(skew.get(), juce::dontSendNotification);
     else if (property == ArpIDs::latch && latchParam)
-        latchParam->setParameter(latch.get() ? 1.0f : 0.0f, juce::dontSendNotification);
+        latchParam->setParameterFromHost(latch.get() ? 1.0f : 0.0f, juce::dontSendNotification);
     else if (property == ArpIDs::velocityMode && velModeParam)
-        velModeParam->setParameter(static_cast<float>(velocityMode.get()),
-                                   juce::dontSendNotification);
+        velModeParam->setParameterFromHost(static_cast<float>(velocityMode.get()),
+                                           juce::dontSendNotification);
     else if (property == ArpIDs::fixedVelocity && fixedVelParam)
-        fixedVelParam->setParameter(static_cast<float>(fixedVelocity.get()),
-                                    juce::dontSendNotification);
+        fixedVelParam->setParameterFromHost(static_cast<float>(fixedVelocity.get()),
+                                            juce::dontSendNotification);
 }
 
 void ArpeggiatorPlugin::initialise(const te::PluginInitialisationInfo& info) {
