@@ -166,8 +166,10 @@ void TrackManager::setRackMacroLinkAmount(const ChainNodePath& rackPath, int mac
             rack->macros[macroIndex].links.push_back(newLink);
             created = true;
         }
-        // Notify when a new link is created (needs TE modifier assignment)
-        if (created) {
+        // Notify when a new link is created (needs TE modifier assignment).
+        // ModParam targets don't change device topology — keep the lighter
+        // notification so an open mod editor doesn't get torn down.
+        if (created && target.kind != MacroTarget::Kind::ModParam) {
             notifyTrackDevicesChanged(rackPath.trackId);
         } else {
             // Existing link amount changed — resync TE assignments
@@ -1176,7 +1178,9 @@ void TrackManager::setDeviceMacroLinkAmount(const ChainNodePath& devicePath, int
             device->macros[macroIndex].links.push_back(newLink);
             created = true;
         }
-        if (created) {
+        // ModParam links don't change device topology — keep the lighter
+        // notification so an open mod editor isn't torn down.
+        if (created && target.kind != MacroTarget::Kind::ModParam) {
             notifyTrackDevicesChanged(devicePath.trackId);
         } else {
             // Existing link amount changed — resync TE assignments
@@ -1493,7 +1497,11 @@ void TrackManager::setTrackMacroLinkAmount(TrackId trackId, int macroIndex, Macr
         track->macros[macroIndex].links.push_back(newLink);
         created = true;
     }
-    if (created) {
+    if (created && target.kind != MacroTarget::Kind::ModParam) {
+        // ModParam links don't change device topology — only the modifier
+        // attachment graph. The lighter resync covers that and avoids
+        // collapsing any open mod editor (which lives inside a NodeComponent
+        // that trackDevicesChanged would rebuild).
         notifyTrackDevicesChanged(trackId);
     } else {
         notifyDeviceModifiersChanged(trackId);

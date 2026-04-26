@@ -595,16 +595,124 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
     target.paramName = currentMod_.name + " Rate";
 
     juce::PopupMenu menu;
-    menu.addItem(1, "Show Automation Lane");
+    constexpr int kShowLaneId = 1;
+    constexpr int kUnlinkBaseId = 100;
+    menu.addItem(kShowLaneId, "Show Automation Lane");
+
+    // Walk every macro / mod scope that could host an incoming link to this
+    // mod's rate, collect the ones that actually do, and add an "Unlink"
+    // item for each. Unlinks are stored as concrete (scopePath, kind, index,
+    // displayName) tuples so the async callback can dispatch without
+    // re-walking the data.
+    enum class SrcKind { Macro, Mod };
+    struct UnlinkEntry {
+        SrcKind kind;
+        magda::ChainNodePath parentPath;
+        int index;
+    };
+    std::vector<UnlinkEntry> unlinks;
+
+    const auto& tm = magda::TrackManager::getInstance();
+    const auto* track = tm.getTrack(ownerTrackId_);
+    if (track) {
+        auto modId = currentMod_.id;
+        auto considerMacros = [&](const std::vector<magda::MacroInfo>& macros,
+                                  const magda::ChainNodePath& parent) {
+            for (size_t i = 0; i < macros.size(); ++i) {
+                for (const auto& l : macros[i].links) {
+                    if (l.target.kind == magda::MacroTarget::Kind::ModParam &&
+                        l.target.modId == modId && l.target.modParamIndex == 0) {
+                        UnlinkEntry e{SrcKind::Macro, parent, static_cast<int>(i)};
+                        unlinks.push_back(e);
+                        juce::String name = macros[i].name.isNotEmpty()
+                                                ? macros[i].name
+                                                : "Macro " + juce::String(i + 1);
+                        menu.addItem(kUnlinkBaseId + static_cast<int>(unlinks.size() - 1),
+                                     "Unlink " + name);
+                        break;  // one link per (macro → this rate) at most
+                    }
+                }
+            }
+        };
+        auto considerMods = [&](const std::vector<magda::ModInfo>& mods,
+                                const magda::ChainNodePath& parent) {
+            for (size_t i = 0; i < mods.size(); ++i) {
+                if (mods[i].id == modId)
+                    continue;  // Skip self
+                for (const auto& l : mods[i].links) {
+                    if (l.target.kind == magda::ModTarget::Kind::ModParam &&
+                        l.target.modId == modId && l.target.modParamIndex == 0) {
+                        UnlinkEntry e{SrcKind::Mod, parent, static_cast<int>(i)};
+                        unlinks.push_back(e);
+                        juce::String name =
+                            mods[i].name.isNotEmpty() ? mods[i].name : "Mod " + juce::String(i + 1);
+                        menu.addItem(kUnlinkBaseId + static_cast<int>(unlinks.size() - 1),
+                                     "Unlink " + name);
+                        break;
+                    }
+                }
+            }
+        };
+
+        // Track-level scope is always in scope of any mod on the track.
+        considerMacros(track->macros, magda::ChainNodePath::trackLevel(ownerTrackId_));
+        considerMods(track->mods, magda::ChainNodePath::trackLevel(ownerTrackId_));
+        // Same scope as the editor's owner — rack or device.
+        if (ownerDevicePath_.isValid()) {
+            auto resolved = tm.resolvePath(ownerDevicePath_);
+            if (resolved.valid && resolved.rack) {
+                considerMacros(resolved.rack->macros, ownerDevicePath_);
+                considerMods(resolved.rack->mods, ownerDevicePath_);
+            } else if (resolved.valid && resolved.device) {
+                considerMacros(resolved.device->macros, ownerDevicePath_);
+                considerMods(resolved.device->mods, ownerDevicePath_);
+            }
+        }
+    }
 
     auto safeThis = juce::Component::SafePointer<ModulatorEditorPanel>(this);
-    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, target](int result) {
-        if (safeThis == nullptr || result != 1)
-            return;
-        auto& mgr = magda::AutomationManager::getInstance();
-        auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
-        mgr.setLaneVisible(laneId, true);
-    });
+    auto rateModId = currentMod_.id;
+    menu.showMenuAsync(
+        juce::PopupMenu::Options(), [safeThis, target, unlinks, rateModId](int result) {
+            if (safeThis == nullptr || result == 0)
+                return;
+            if (result == kShowLaneId) {
+                auto& mgr = magda::AutomationManager::getInstance();
+                auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
+                mgr.setLaneVisible(laneId, true);
+                return;
+            }
+            int unlinkIdx = result - kUnlinkBaseId;
+            if (unlinkIdx < 0 || unlinkIdx >= static_cast<int>(unlinks.size()))
+                return;
+            const auto& e = unlinks[static_cast<size_t>(unlinkIdx)];
+            auto& tmgr = magda::TrackManager::getInstance();
+            if (e.kind == SrcKind::Macro) {
+                magda::MacroTarget t;
+                t.kind = magda::MacroTarget::Kind::ModParam;
+                t.modId = rateModId;
+                t.modParamIndex = 0;
+                if (e.parentPath.isTrackLevel) {
+                    tmgr.removeTrackMacroLink(e.parentPath.trackId, e.index, t);
+                } else if (e.parentPath.getType() == magda::ChainNodeType::Rack) {
+                    tmgr.removeRackMacroLink(e.parentPath, e.index, t);
+                } else {
+                    tmgr.removeDeviceMacroLink(e.parentPath, e.index, t);
+                }
+            } else {
+                magda::ModTarget t;
+                t.kind = magda::ModTarget::Kind::ModParam;
+                t.modId = rateModId;
+                t.modParamIndex = 0;
+                if (e.parentPath.isTrackLevel) {
+                    tmgr.removeTrackModLink(e.parentPath.trackId, e.index, t);
+                } else if (e.parentPath.getType() == magda::ChainNodeType::Rack) {
+                    tmgr.removeRackModLink(e.parentPath, e.index, t);
+                } else {
+                    tmgr.removeDeviceModLink(e.parentPath, e.index, t);
+                }
+            }
+        });
 }
 
 void ModulatorEditorPanel::setSelectedModIndex(int index) {
@@ -694,6 +802,23 @@ void ModulatorEditorPanel::updateFromMod() {
 }
 
 void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
+    // Link-mode highlight on the visible rate slider — translucent fill in the
+    // active source's accent (purple = macro, orange = mod), matching the
+    // convention ParamSlotComponent uses on every other parameter slot.
+    if (linkModeActiveAndInScope_) {
+        auto& visSlider = currentMod_.tempoSync ? syncDivisionSlider_ : rateSlider_;
+        auto sb = visSlider.getBounds();
+        if (!sb.isEmpty()) {
+            auto& lmm = magda::LinkModeManager::getInstance();
+            bool macro = (lmm.getLinkModeType() == magda::LinkModeType::Macro);
+            auto colour = (macro ? DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+                                 : DarkTheme::getColour(DarkTheme::ACCENT_ORANGE))
+                              .withAlpha(0.18f);
+            g.setColour(colour);
+            g.fillRoundedRectangle(sb.toFloat(), 2.0f);
+        }
+    }
+
     // Modulation overlay on the visible rate slider — same purple-top /
     // orange-bottom bar convention used by ParamModulationPainter on regular
     // device-param sliders. Painted in paintOverChildren so the slider's own
@@ -980,20 +1105,148 @@ void ModulatorEditorPanel::resized() {
 void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
     // While link-mode is active and in scope, the rate sliders below have
     // their click-intercept disabled — so a click that lands on the slider
-    // bubbles up here. Treat that click as "create link from active source
-    // to this mod's rate".
+    // bubbles up here. Treat that click as "begin a link-mode drag", same
+    // gesture ParamSlotComponent uses for device parameters: vertical drag
+    // sets the link amount, mouseUp finalizes without leaving link mode.
     if (linkModeActiveAndInScope_ && e.mods.isLeftButtonDown()) {
         auto& visibleSlider = currentMod_.tempoSync ? syncDivisionSlider_ : rateSlider_;
         if (visibleSlider.getBounds().contains(e.getPosition())) {
-            createLinkFromActiveSourceToRate();
+            // Look up existing link amount on the source side (if any) so we
+            // edit in place instead of resetting to a default.
+            auto& lmm = magda::LinkModeManager::getInstance();
+            auto& tm = magda::TrackManager::getInstance();
+            float initialAmount = 0.3f;
+
+            // Walk source path → macros/mods array, look up the existing
+            // link amount so this drag edits in place instead of resetting
+            // to default. Track-level uses Track*; rack/device-level uses
+            // resolvePath.
+            auto findMacrosAt =
+                [&](const magda::ChainNodePath& p) -> const std::vector<magda::MacroInfo>* {
+                if (p.isTrackLevel) {
+                    if (const auto* t = tm.getTrack(p.trackId))
+                        return &t->macros;
+                    return nullptr;
+                }
+                auto r = tm.resolvePath(p);
+                if (!r.valid)
+                    return nullptr;
+                if (r.rack)
+                    return &r.rack->macros;
+                if (r.device)
+                    return &r.device->macros;
+                return nullptr;
+            };
+            auto findModsAt =
+                [&](const magda::ChainNodePath& p) -> const std::vector<magda::ModInfo>* {
+                if (p.isTrackLevel) {
+                    if (const auto* t = tm.getTrack(p.trackId))
+                        return &t->mods;
+                    return nullptr;
+                }
+                auto r = tm.resolvePath(p);
+                if (!r.valid)
+                    return nullptr;
+                if (r.rack)
+                    return &r.rack->mods;
+                if (r.device)
+                    return &r.device->mods;
+                return nullptr;
+            };
+
+            if (lmm.getLinkModeType() == magda::LinkModeType::Macro) {
+                const auto& sel = lmm.getMacroInLinkMode();
+                if (auto* macros = findMacrosAt(sel.parentPath)) {
+                    if (sel.macroIndex >= 0 && sel.macroIndex < static_cast<int>(macros->size())) {
+                        magda::MacroTarget t;
+                        t.kind = magda::MacroTarget::Kind::ModParam;
+                        t.modId = currentMod_.id;
+                        t.modParamIndex = 0;
+                        if (auto* link = (*macros)[static_cast<size_t>(sel.macroIndex)].getLink(t))
+                            initialAmount = link->amount;
+                    }
+                }
+            } else if (lmm.getLinkModeType() == magda::LinkModeType::Mod) {
+                const auto& sel = lmm.getModInLinkMode();
+                if (auto* mods = findModsAt(sel.parentPath)) {
+                    if (sel.modIndex >= 0 && sel.modIndex < static_cast<int>(mods->size())) {
+                        magda::ModTarget t;
+                        t.kind = magda::ModTarget::Kind::ModParam;
+                        t.modId = currentMod_.id;
+                        t.modParamIndex = 0;
+                        if (auto* link = (*mods)[static_cast<size_t>(sel.modIndex)].getLink(t))
+                            initialAmount = link->amount;
+                    }
+                }
+            }
+
+            isLinkModeDrag_ = true;
+            linkModeDragStartAmount_ = initialAmount;
+            linkModeDragCurrentAmount_ = initialAmount;
+            linkModeDragStartY_ = e.getMouseDownY();
+
+            // Set up the floating amount label FIRST. Writing the link below
+            // can fire notifyTrackDevicesChanged → chain rebuild → destruction
+            // of this panel. Doing label work first means we never touch a
+            // freed `this` after the link write.
+            bool macroSrc = (lmm.getLinkModeType() == magda::LinkModeType::Macro);
+            auto bg = (macroSrc ? DarkTheme::getColour(DarkTheme::ACCENT_PURPLE)
+                                : DarkTheme::getColour(DarkTheme::ACCENT_ORANGE))
+                          .withAlpha(0.95f);
+            int percent = static_cast<int>(std::round(initialAmount * 100.0f));
+            linkModeAmountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
+            linkModeAmountLabel_.setColour(juce::Label::backgroundColourId, bg);
+            linkModeAmountLabel_.setColour(juce::Label::textColourId,
+                                           DarkTheme::getColour(DarkTheme::BACKGROUND));
+            linkModeAmountLabel_.setJustificationType(juce::Justification::centred);
+            linkModeAmountLabel_.setFont(FontManager::getInstance().getUIFontBold(9.0f));
+            if (!linkModeAmountLabel_.isOnDesktop()) {
+                linkModeAmountLabel_.addToDesktop(juce::ComponentPeer::windowIsTemporary |
+                                                  juce::ComponentPeer::windowIgnoresMouseClicks);
+            }
+            auto screenBounds = visibleSlider.getScreenBounds();
+            linkModeAmountLabel_.setBounds(screenBounds.getX(), screenBounds.getY() - 22,
+                                           screenBounds.getWidth(), 20);
+            linkModeAmountLabel_.setVisible(true);
+            linkModeAmountLabel_.toFront(true);
+            repaint();
+
+            // Write the link LAST and guard against synchronous destruction.
+            // Creating a brand-new link can trigger notifyTrackDevicesChanged
+            // which rebuilds the device chain UI and may delete this panel.
+            juce::Component::SafePointer<ModulatorEditorPanel> safeThis(this);
+            writeLinkAmountFromActiveSource(initialAmount);
+            (void)safeThis;  // No more `this` access after this line.
             return;
         }
     }
     // Otherwise consume to prevent propagation to parent.
 }
 
+void ModulatorEditorPanel::mouseDrag(const juce::MouseEvent& e) {
+    if (!isLinkModeDrag_)
+        return;
+    int deltaY = linkModeDragStartY_ - e.getPosition().y;
+    constexpr float sensitivity = 0.005f;
+    float newAmount = juce::jlimit(-1.0f, 1.0f, linkModeDragStartAmount_ + (deltaY * sensitivity));
+    if (newAmount == linkModeDragCurrentAmount_)
+        return;
+    linkModeDragCurrentAmount_ = newAmount;
+    int percent = static_cast<int>(std::round(newAmount * 100.0f));
+    linkModeAmountLabel_.setText(juce::String(percent) + "%", juce::dontSendNotification);
+    writeLinkAmountFromActiveSource(newAmount);
+    repaint();
+}
+
 void ModulatorEditorPanel::mouseUp(const juce::MouseEvent& /*e*/) {
-    // Consume mouse events to prevent propagation to parent
+    if (isLinkModeDrag_) {
+        isLinkModeDrag_ = false;
+        linkModeAmountLabel_.setVisible(false);
+        if (linkModeAmountLabel_.isOnDesktop())
+            linkModeAmountLabel_.removeFromDesktop();
+        repaint();
+    }
+    // Stay in link mode — only the user (link button or ESC) exits.
 }
 
 // ============================================================================
@@ -1041,7 +1294,7 @@ void ModulatorEditorPanel::applyLinkModeToRateSliders() {
     syncDivisionSlider_.setMouseCursor(cursor);
 }
 
-void ModulatorEditorPanel::createLinkFromActiveSourceToRate() {
+void ModulatorEditorPanel::writeLinkAmountFromActiveSource(float amount) {
     if (currentMod_.id == magda::INVALID_MOD_ID)
         return;
 
@@ -1057,13 +1310,14 @@ void ModulatorEditorPanel::createLinkFromActiveSourceToRate() {
         target.modId = currentMod_.id;
         target.modParamIndex = 0;  // Rate
 
-        // Dispatch to the right scope — the link lives on the source side.
+        // setXxxMacroLinkAmount creates the link if missing, otherwise
+        // updates its amount — same single-call semantics across scopes.
         if (sel.parentPath.isTrackLevel) {
-            tm.setTrackMacroTarget(sel.parentPath.trackId, sel.macroIndex, target);
+            tm.setTrackMacroLinkAmount(sel.parentPath.trackId, sel.macroIndex, target, amount);
         } else if (sel.parentPath.getType() == magda::ChainNodeType::Rack) {
-            tm.setRackMacroTarget(sel.parentPath, sel.macroIndex, target);
+            tm.setRackMacroLinkAmount(sel.parentPath, sel.macroIndex, target, amount);
         } else {
-            tm.setDeviceMacroTarget(sel.parentPath, sel.macroIndex, target);
+            tm.setDeviceMacroLinkAmount(sel.parentPath, sel.macroIndex, target, amount);
         }
     } else if (lmm.getLinkModeType() == magda::LinkModeType::Mod) {
         const auto& sel = lmm.getModInLinkMode();
@@ -1075,17 +1329,13 @@ void ModulatorEditorPanel::createLinkFromActiveSourceToRate() {
         target.modParamIndex = 0;  // Rate
 
         if (sel.parentPath.isTrackLevel) {
-            tm.setTrackModTarget(sel.parentPath.trackId, sel.modIndex, target);
+            tm.setTrackModLinkAmount(sel.parentPath.trackId, sel.modIndex, target, amount);
         } else if (sel.parentPath.getType() == magda::ChainNodeType::Rack) {
-            tm.setRackModTarget(sel.parentPath, sel.modIndex, target);
+            tm.setRackModLinkAmount(sel.parentPath, sel.modIndex, target, amount);
         } else {
-            tm.setDeviceModTarget(sel.parentPath, sel.modIndex, target);
+            tm.setDeviceModLinkAmount(sel.parentPath, sel.modIndex, target, amount);
         }
     }
-
-    // Exit link mode after a successful link, mirroring the param-slot flow
-    // where one click completes the link gesture.
-    lmm.exitAllLinkModes();
 }
 
 void ModulatorEditorPanel::updateModMatrix() {

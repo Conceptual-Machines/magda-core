@@ -229,6 +229,7 @@ class ModulatorEditorPanel : public juce::Component,
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
 
     // LinkModeManagerListener — drives the link-mode click-to-link flow on
@@ -252,8 +253,16 @@ class ModulatorEditorPanel : public juce::Component,
     // link-mode source (macro or mod) is active, clicking the visible rate
     // slider creates a ModParam-kind link from the source to this mod's rate.
     void applyLinkModeToRateSliders();
-    void createLinkFromActiveSourceToRate();
+    // Push a new amount for the link from the active source to this mod's
+    // rate — creates the link on first call (with the given amount), updates
+    // it on subsequent calls. Mirrors ParamSlotComponent's link-mode-drag.
+    void writeLinkAmountFromActiveSource(float amount);
     bool linkModeActiveAndInScope_ = false;
+    bool isLinkModeDrag_ = false;
+    float linkModeDragStartAmount_ = 0.0f;
+    float linkModeDragCurrentAmount_ = 0.0f;
+    int linkModeDragStartY_ = 0;
+    juce::Label linkModeAmountLabel_;
     const magda::ModInfo* liveModPtr_ = nullptr;  // Pointer to live mod for waveform animation
     std::function<const magda::ModInfo*()> liveModGetter_;  // Safe getter for timer callback
 
