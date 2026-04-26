@@ -496,6 +496,16 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     bool isAutomationWriteEnabled() const;
 
+    /**
+     * @brief Set the active automation mode (Off / Write / Touch / Latch).
+     *
+     * Off disarms recording. Write records any user-driven change while transport
+     * rolls. Touch records only while a control is held. Latch records while held
+     * and continues writing the held value after release until the transport stops.
+     */
+    void setAutomationMode(AutomationMode mode);
+    AutomationMode getAutomationMode() const;
+
     // =========================================================================
     // Mixer Controls
     // =========================================================================

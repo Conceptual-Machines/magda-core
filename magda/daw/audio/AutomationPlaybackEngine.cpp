@@ -35,6 +35,9 @@ AutomationPlaybackEngine::AutomationPlaybackEngine(AudioBridge& bridge, te::Edit
         auto* lane = AutomationManager::getInstance().getLane(laneId);
         if (!lane)
             return;
+        DBG("[AutoPb] touchSuppressionListener lane=" << laneId
+                                                       << " suppressed=" << (int)suppressed
+                                                       << " bypass=" << (int)lane->bypass);
         if (suppressed) {
             clearLane(*lane);
             if (auto* param = resolveParameter(lane->target))
@@ -136,6 +139,26 @@ void AutomationPlaybackEngine::process() {
 
 void AutomationPlaybackEngine::automationLanesChanged() {
     needsRebake_ = true;
+
+    // Immediate cleanup of any baked targets whose lane was just deleted (or
+    // emptied of points). Without this the deleted lane's last-baked value
+    // keeps driving TE's parameter until the next bakeAllLanes() — which only
+    // runs on transport start. The fader UI shows the user's manual value but
+    // TE plays the stale automated one.
+    auto& autoMgr = AutomationManager::getInstance();
+    std::vector<AutomationTarget> live;
+    live.reserve(bakedTargets_.size());
+    for (const auto& lane : autoMgr.getLanes()) {
+        if (lane.hasData())
+            live.push_back(lane.target);
+    }
+    for (const auto& old : bakedTargets_) {
+        bool stillActive = std::any_of(live.begin(), live.end(),
+                                       [&](const AutomationTarget& t) { return t == old; });
+        if (!stillActive)
+            clearStaleTarget(old);
+    }
+    bakedTargets_ = std::move(live);
 }
 
 void AutomationPlaybackEngine::automationPointsChanged(AutomationLaneId laneId) {
@@ -197,12 +220,8 @@ void AutomationPlaybackEngine::bakeAllLanes() {
     for (const auto& old : bakedTargets_) {
         bool stillActive = std::any_of(newTargets.begin(), newTargets.end(),
                                        [&](const AutomationTarget& t) { return t == old; });
-        if (stillActive)
-            continue;
-        if (auto* param = resolveParameter(old)) {
-            param->getCurve().clear(nullptr);
-            param->updateStream();
-        }
+        if (!stillActive)
+            clearStaleTarget(old);
     }
     bakedTargets_ = std::move(newTargets);
 
@@ -225,6 +244,30 @@ void AutomationPlaybackEngine::clearAllLanes() {
     }
 
     autoMgr.setPlaybackActive(false);
+}
+
+void AutomationPlaybackEngine::clearStaleTarget(const AutomationTarget& target) {
+    auto* param = resolveParameter(target);
+    if (!param)
+        return;
+
+    param->getCurve().clear(nullptr);
+
+    // Restore the user's manual value where MAGDA tracks one separately. For
+    // device parameters / macros / sends there's no separate manual store, so
+    // we just clear the curve and leave the parameter at whatever TE last had.
+    const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+    if (track) {
+        if (target.type == AutomationTargetType::TrackVolume) {
+            float manualDb = juce::Decibels::gainToDecibels(track->manualVolume);
+            param->setParameter(te::decibelsToVolumeFaderPosition(manualDb),
+                                juce::sendNotificationSync);
+        } else if (target.type == AutomationTargetType::TrackPan) {
+            param->setParameter(track->manualPan, juce::sendNotificationSync);
+        }
+    }
+
+    param->updateStream();
 }
 
 void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {

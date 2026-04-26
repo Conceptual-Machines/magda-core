@@ -1177,6 +1177,14 @@ bool AudioBridge::isAutomationWriteEnabled() const {
     return automationRecording_.isWriteEnabled();
 }
 
+void AudioBridge::setAutomationMode(AutomationMode mode) {
+    automationRecording_.setMode(mode);
+}
+
+AutomationMode AudioBridge::getAutomationMode() const {
+    return automationRecording_.getMode();
+}
+
 // =============================================================================
 // Mixer Controls
 // =============================================================================

@@ -6,6 +6,8 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/AutomationManager.hpp"
+#include "core/ParameterInfo.hpp"
+#include "core/ParameterUtils.hpp"
 
 namespace magda {
 
@@ -349,6 +351,13 @@ void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
     // engine echo-backs when deciding whether to record a point.
     if (hasAutomationTarget_) {
         AutomationManager::getInstance().setTargetUserTouched(automationTarget_, true);
+        // Capture pre-drag value as the Touch-mode bounce-back baseline. Same
+        // mechanism TextSlider uses; needed here for any DraggableValueLabel
+        // wired to a Macro / ModParameter / device target.
+        ParameterInfo info = automationTarget_.getParameterInfo();
+        double normalized = static_cast<double>(
+            ParameterUtils::realToNormalized(static_cast<float>(dragStartValue_), info));
+        AutomationManager::getInstance().setTouchBaseline(automationTarget_, normalized);
     }
 
     repaint();
@@ -420,6 +429,7 @@ void DraggableValueLabel::mouseUp(const juce::MouseEvent& /*e*/) {
         auto& mgr = AutomationManager::getInstance();
         mgr.setTargetUserTouched(automationTarget_, false);
         mgr.setTargetTouchSuppressed(automationTarget_, false);
+        mgr.clearTouchBaseline(automationTarget_);
     }
 
     repaint();
