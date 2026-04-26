@@ -1220,6 +1220,22 @@ void NodeComponent::initializeModsMacrosPanels() {
             }
             return "P" + juce::String(paramIndex);
         });
+    macroEditorPanel_->setModNameResolver(
+        [this](magda::ModId modId, int modParamIndex) -> juce::String {
+            // Same scope as the macro — pull the mod list from this node and
+            // format "<modName> Rate" / "<modName> Depth" for the link row.
+            const auto* mods = getModsData();
+            if (!mods)
+                return {};
+            for (const auto& m : *mods) {
+                if (m.id == modId) {
+                    juce::String paramLabel =
+                        modParamIndex == 0 ? "Rate" : "P" + juce::String(modParamIndex);
+                    return m.name + " " + paramLabel;
+                }
+            }
+            return {};
+        });
     addChildComponent(*macroEditorPanel_);
 }
 

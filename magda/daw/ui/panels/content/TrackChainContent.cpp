@@ -964,6 +964,25 @@ void TrackChainContent::initGlobalMacrosPanel() {
             auto name = findParam(track->chainElements);
             return name.isNotEmpty() ? name : ("P" + juce::String(paramIndex));
         });
+    globalMacroEditorPanel_->setModNameResolver(
+        [this](magda::ModId modId, int modParamIndex) -> juce::String {
+            // Same scope as the macro itself — track-level mods. Look up the
+            // mod by id and append a label for the targeted param. Only Rate
+            // (modParamIndex 0) is wired today.
+            if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+                return {};
+            const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+            if (!track)
+                return {};
+            for (const auto& m : track->mods) {
+                if (m.id == modId) {
+                    juce::String paramLabel =
+                        modParamIndex == 0 ? "Rate" : "P" + juce::String(modParamIndex);
+                    return m.name + " " + paramLabel;
+                }
+            }
+            return {};
+        });
     addChildComponent(*globalMacroEditorPanel_);
 }
 

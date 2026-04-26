@@ -193,7 +193,16 @@ void MacroEditorPanel::updateFromMacro() {
         row.target = link.target;
         row.amount = link.amount;
         row.bipolar = link.bipolar;
-        if (paramNameResolver_) {
+        if (link.target.kind == magda::MacroTarget::Kind::ModParam) {
+            // ModParam link: resolve via the mod-name callback. Falls back to
+            // a generic "Mod <id> Rate" so the row never appears blank.
+            juce::String modName;
+            if (modNameResolver_)
+                modName = modNameResolver_(link.target.modId, link.target.modParamIndex);
+            if (modName.isEmpty())
+                modName = "Mod " + juce::String(link.target.modId) + " Rate";
+            row.paramName = modName;
+        } else if (paramNameResolver_) {
             row.paramName = paramNameResolver_(link.target.deviceId, link.target.paramIndex);
         } else {
             row.paramName = "Device " + juce::String(link.target.deviceId) + " P" +

@@ -76,6 +76,16 @@ class MacroEditorPanel : public juce::Component {
         paramNameResolver_ = std::move(resolver);
     }
 
+    // Resolve a ModParam-kind link's display name from (modId, modParamIndex).
+    // Used when the macro drives a modifier's rate / depth instead of a
+    // device parameter — paramNameResolver doesn't apply because the link
+    // doesn't carry a deviceId. Optional; if unset the link displays a
+    // "Mod <id> Rate" fallback.
+    void setModNameResolver(
+        std::function<juce::String(magda::ModId modId, int modParamIndex)> resolver) {
+        modNameResolver_ = std::move(resolver);
+    }
+
     // Set the selected macro index (-1 for none)
     void setSelectedMacroIndex(int index);
     int getSelectedMacroIndex() const {
@@ -110,6 +120,7 @@ class MacroEditorPanel : public juce::Component {
     void updateFromMacro();
 
     std::function<juce::String(magda::DeviceId, int)> paramNameResolver_;
+    std::function<juce::String(magda::ModId, int)> modNameResolver_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MacroEditorPanel)
 };
