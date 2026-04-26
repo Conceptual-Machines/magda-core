@@ -25,6 +25,42 @@
 
 namespace magda {
 
+namespace {
+
+// Resolve the TE param for a macro/mod link whose target is another modifier
+// on the same scope (device or track). modParamIndex 0 == Rate; we pick the
+// LFO's `rate` param when tempoSync is off and `rateType` when it's on, so
+// the link drives whichever param the unified Rate lane writes to.
+//
+// `scopeMods` is the MAGDA ModInfo vector for the scope the source lives on
+// (device.mods or trackInfo->mods); `scopeTeMods` is the parallel TE
+// modifier vector (syncedDevices_[id].modifiers or trackModStates_[id].modifiers).
+// Same-scope only — cross-device / cross-rack mod targeting isn't supported
+// yet; return nullptr if the modId isn't found in this scope.
+template <typename Link>
+te::AutomatableParameter* resolveSameScopeModParam(
+    const Link& link, const std::vector<ModInfo>& scopeMods,
+    const std::vector<te::Modifier::Ptr>& scopeTeMods) {
+    if (link.target.kind != decltype(link.target.kind)::ModParam)
+        return nullptr;
+
+    for (size_t i = 0; i < scopeMods.size() && i < scopeTeMods.size(); ++i) {
+        if (scopeMods[i].id != link.target.modId || !scopeTeMods[i])
+            continue;
+        const bool sync = scopeMods[i].tempoSync;
+        const juce::String wantedID =
+            link.target.modParamIndex == 0 ? (sync ? "rateType" : "rate") : "depth";
+        for (auto* p : scopeTeMods[i]->getAutomatableParameters()) {
+            if (p && p->paramID == wantedID)
+                return p;
+        }
+        return nullptr;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
 PluginManager::PluginManager(te::Engine& engine, te::Edit& edit, TrackController& trackController,
                              PluginWindowBridge& pluginWindowBridge,
                              TransportStateManager& transportState)
@@ -1612,6 +1648,17 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
                 if (!link.isValid())
                     continue;
 
+                // Mod-on-mod: target another modifier on the same device.
+                // Self-target is a feedback loop with no useful semantics.
+                if (link.target.kind == ModTarget::Kind::ModParam) {
+                    if (link.target.modId == modInfo.id)
+                        continue;
+                    if (auto* targetParam = resolveSameScopeModParam(
+                            link, device.mods, syncedDevices_[device.id].modifiers))
+                        targetParam->addModifier(*modifier, link.amount);
+                    continue;
+                }
+
                 // Device-level mods target parameters on the same device
                 // (link.target.deviceId should match device.id)
                 te::Plugin::Ptr linkTarget = targetPlugin;
@@ -1728,10 +1775,20 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
 
                 trackModState.modifiers.push_back(modifier);
 
-                // Create assignments — track mods can target any device on the track
+                // Create assignments — track mods can target any device on the
+                // track, or another track-level modifier (mod-on-mod).
                 for (const auto& link : modInfo.links) {
                     if (!link.isValid())
                         continue;
+
+                    if (link.target.kind == ModTarget::Kind::ModParam) {
+                        if (link.target.modId == modInfo.id)
+                            continue;  // Self-target — see device-mod path.
+                        if (auto* targetParam = resolveSameScopeModParam(link, trackInfo->mods,
+                                                                         trackModState.modifiers))
+                            targetParam->addModifier(*modifier, link.amount);
+                        continue;
+                    }
 
                     te::Plugin::Ptr linkTarget;
                     {
@@ -2503,6 +2560,17 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
                 if (!link.target.isValid())
                     continue;
 
+                // Macro-on-mod: target another modifier on the same device.
+                if (link.target.kind == MacroTarget::Kind::ModParam) {
+                    if (auto* targetParam = resolveSameScopeModParam(
+                            link, device.mods, syncedDevices_[device.id].modifiers)) {
+                        float offset = link.bipolar ? -link.amount : 0.0f;
+                        float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                        targetParam->addModifier(*macroParam, value, offset);
+                    }
+                    continue;
+                }
+
                 // Find the TE plugin for the link target device
                 te::Plugin::Ptr linkTarget;
                 {
@@ -2605,6 +2673,17 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
         for (const auto& link : macroInfo.links) {
             if (!link.target.isValid())
                 continue;
+
+            // Macro-on-mod: target another modifier on the same track.
+            if (link.target.kind == MacroTarget::Kind::ModParam) {
+                if (auto* targetParam = resolveSameScopeModParam(
+                        link, trackInfo->mods, trackModStates_[trackId].modifiers)) {
+                    float offset = link.bipolar ? -link.amount : 0.0f;
+                    float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                    targetParam->addModifier(*macroParam, value, offset);
+                }
+                continue;
+            }
 
             te::Plugin::Ptr linkTarget;
             {

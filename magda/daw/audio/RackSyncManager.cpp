@@ -11,6 +11,42 @@ namespace magda {
 RackSyncManager::RackSyncManager(te::Edit& edit, PluginManager& pluginManager)
     : edit_(edit), pluginManager_(pluginManager) {}
 
+namespace {
+
+// Pick the TE param the macro/mod link should attach to when its target is
+// another modifier (target.kind == ModParam). modParamIndex 0 == Rate; we
+// resolve to the LFO's `rate` param in Hz mode and `rateType` in sync mode,
+// matching the unified Rate lane behaviour. Returns nullptr if the modifier
+// isn't synced yet or the requested param isn't exposed.
+template <typename Link, typename SyncedRackT, typename RackInfoT>
+te::AutomatableParameter* resolveModParamTargetInRack(const Link& link, const SyncedRackT& synced,
+                                                      const RackInfoT& rackInfo) {
+    if (link.target.kind != decltype(link.target.kind)::ModParam)
+        return nullptr;
+
+    auto modIt = synced.innerModifiers.find(link.target.modId);
+    if (modIt == synced.innerModifiers.end() || !modIt->second)
+        return nullptr;
+
+    // Look up the target ModInfo's tempoSync flag — drives rate vs rateType.
+    bool sync = false;
+    for (const auto& m : rackInfo.mods) {
+        if (m.id == link.target.modId) {
+            sync = m.tempoSync;
+            break;
+        }
+    }
+    const juce::String wantedID =
+        link.target.modParamIndex == 0 ? (sync ? "rateType" : "rate") : "depth";
+    for (auto* p : modIt->second->getAutomatableParameters()) {
+        if (p && p->paramID == wantedID)
+            return p;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
 // =============================================================================
 // Public API
 // =============================================================================
@@ -460,22 +496,27 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                             if (!link.isValid())
                                 continue;
 
-                            auto pluginIt = synced.innerPlugins.find(link.target.deviceId);
-                            if (pluginIt == synced.innerPlugins.end() || !pluginIt->second)
+                            te::AutomatableParameter* param = nullptr;
+                            if (link.target.kind == ModTarget::Kind::ModParam) {
+                                if (link.target.modId == modInfo.id)
+                                    continue;  // Self-target — see syncModifiers
+                                param = resolveModParamTargetInRack(link, synced, rackInfo);
+                            } else {
+                                auto pluginIt = synced.innerPlugins.find(link.target.deviceId);
+                                if (pluginIt == synced.innerPlugins.end() || !pluginIt->second)
+                                    continue;
+                                auto params = pluginIt->second->getAutomatableParameters();
+                                if (link.target.paramIndex >= 0 &&
+                                    link.target.paramIndex < static_cast<int>(params.size()))
+                                    param = params[static_cast<size_t>(link.target.paramIndex)];
+                            }
+                            if (!param)
                                 continue;
-
-                            auto params = pluginIt->second->getAutomatableParameters();
-                            if (link.target.paramIndex >= 0 &&
-                                link.target.paramIndex < static_cast<int>(params.size())) {
-                                auto* param = params[static_cast<size_t>(link.target.paramIndex)];
-                                if (param) {
-                                    for (auto* assignment : param->getAssignments()) {
-                                        if (assignment->isForModifierSource(*modifier)) {
-                                            assignment->value = link.amount;
-                                            assignment->offset = 0.0f;
-                                            break;
-                                        }
-                                    }
+                            for (auto* assignment : param->getAssignments()) {
+                                if (assignment->isForModifierSource(*modifier)) {
+                                    assignment->value = link.amount;
+                                    assignment->offset = 0.0f;
+                                    break;
                                 }
                             }
                         }
@@ -872,6 +913,18 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
             if (!link.isValid())
                 continue;
 
+            // Mod-on-mod link: attach this modifier to another modifier's
+            // rate/rateType param. Refuse self-targeting — that's a feedback
+            // loop with no useful semantics; UI filters it out, this is a
+            // belt-and-braces guard.
+            if (link.target.kind == ModTarget::Kind::ModParam) {
+                if (link.target.modId == modInfo.id)
+                    continue;
+                if (auto* targetParam = resolveModParamTargetInRack(link, synced, rackInfo))
+                    targetParam->addModifier(*modifier, link.amount);
+                continue;
+            }
+
             auto pluginIt = synced.innerPlugins.find(link.target.deviceId);
             if (pluginIt == synced.innerPlugins.end() || !pluginIt->second)
                 continue;
@@ -931,6 +984,15 @@ void RackSyncManager::syncMacros(SyncedRack& synced, const RackInfo& rackInfo) {
         for (const auto& link : macroInfo.links) {
             if (!link.target.isValid())
                 continue;
+
+            // Macro-on-mod link: attach this macro to a modifier's rate /
+            // rateType param. Macros never target themselves so no extra
+            // self-link guard is needed here.
+            if (link.target.kind == MacroTarget::Kind::ModParam) {
+                if (auto* targetParam = resolveModParamTargetInRack(link, synced, rackInfo))
+                    targetParam->addModifier(*macroParam, link.amount);
+                continue;
+            }
 
             auto pluginIt = synced.innerPlugins.find(link.target.deviceId);
             if (pluginIt == synced.innerPlugins.end() || !pluginIt->second)
