@@ -82,6 +82,19 @@ juce::var encodeControllerProfile(const ControllerProfile& p);
 std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v);
 
 /**
+ * @brief A single issue found by validateControllerProfile.
+ *
+ * `key` is a StringTable key (e.g. "controllers.validation.duplicate_control_id");
+ * the UI runs it through tr() and substitutes `{0}` with `arg`. Returning
+ * structured values rather than baked English strings keeps the validator
+ * usable from non-UI call sites and lets translations come through Crowdin.
+ */
+struct ProfileValidationIssue {
+    juce::String key;
+    juce::String arg;
+};
+
+/**
  * @brief Run cross-field consistency checks on an already-decoded profile.
  *
  * decodeControllerProfile catches structural problems; this catches semantic
@@ -89,10 +102,10 @@ std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v);
  *   - Duplicate controlId within controls[].
  *   - defaultBindings[*].controlId that doesn't appear in controls[].
  *
- * Returns a list of human-readable issues; an empty list means the profile is
- * internally consistent.
+ * Returns a list of issues; an empty list means the profile is internally
+ * consistent.
  */
-std::vector<juce::String> validateControllerProfile(const ControllerProfile& p);
+std::vector<ProfileValidationIssue> validateControllerProfile(const ControllerProfile& p);
 
 // ============================================================================
 // Materialisation

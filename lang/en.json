@@ -462,8 +462,13 @@
     "upload_invalid_json": "That file isn't valid JSON.",
     "upload_invalid_profile": "That JSON isn't a valid controller profile.",
     "upload_validation_failed": "The profile has issues that need fixing first:",
+    "validation": {
+      "duplicate_control_id": "Duplicate controlId: {0}",
+      "unknown_default_binding_control_id": "defaultBinding references unknown controlId: {0}"
+    },
     "upload_overwrite": "A profile with id \"{0}\" already exists. Replace it?",
     "upload_copy_failed": "Couldn't copy the profile into your controllers folder.",
+    "upload_create_dir_failed": "Couldn't create the controllers folder:\n{0}",
     "upload_success": "Imported profile \"{0}\"."
   }
 }

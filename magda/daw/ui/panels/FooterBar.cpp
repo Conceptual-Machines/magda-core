@@ -4,6 +4,7 @@
 
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "audio/MidiDeviceMatch.hpp"
 #include "core/StringTable.hpp"
 
 namespace magda {
@@ -60,8 +61,12 @@ void FooterBar::refreshControllerBadges() {
         ControllerBadge b;
         b.label = c.name;
         b.connected = false;
+        // Use the shared port matcher rather than strict equality: stored
+        // inputPort can be either a JUCE identifier or a display name, with
+        // varying case, depending on platform — magda::midi::matches handles
+        // all of those consistently.
         for (const auto& dev : liveInputs_) {
-            if (dev.identifier == c.inputPort || dev.name == c.inputPort) {
+            if (magda::midi::matches(c.inputPort, dev.identifier, dev.name)) {
                 b.connected = true;
                 break;
             }

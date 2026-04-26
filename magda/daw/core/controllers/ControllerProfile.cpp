@@ -169,15 +169,15 @@ std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v) {
 // Cross-field validation
 // ============================================================================
 
-std::vector<juce::String> validateControllerProfile(const ControllerProfile& p) {
-    std::vector<juce::String> issues;
+std::vector<ProfileValidationIssue> validateControllerProfile(const ControllerProfile& p) {
+    std::vector<ProfileValidationIssue> issues;
 
     // Duplicate controlIds — surface every offender exactly once.
     std::set<juce::String> seen;
     std::set<juce::String> reported;
     for (const auto& c : p.controls) {
         if (!seen.insert(c.controlId).second && reported.insert(c.controlId).second)
-            issues.push_back("Duplicate controlId: " + c.controlId);
+            issues.push_back({"controllers.validation.duplicate_control_id", c.controlId});
     }
 
     // defaultBindings must reference an existing control.
@@ -190,7 +190,8 @@ std::vector<juce::String> validateControllerProfile(const ControllerProfile& p) 
             }
         }
         if (!found) {
-            issues.push_back("defaultBinding references unknown controlId: " + db.controlId);
+            issues.push_back(
+                {"controllers.validation.unknown_default_binding_control_id", db.controlId});
         }
     }
 

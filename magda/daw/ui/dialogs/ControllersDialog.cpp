@@ -193,13 +193,16 @@ void ControllersDialog::onUploadClicked() {
     auto title = tr("controllers.upload_profile");
     uploadChooser_ = std::make_unique<juce::FileChooser>(
         title, juce::File::getSpecialLocation(juce::File::userHomeDirectory), "*.json");
+    juce::Component::SafePointer<ControllersDialog> safeThis(this);
     uploadChooser_->launchAsync(juce::FileBrowserComponent::openMode |
                                     juce::FileBrowserComponent::canSelectFiles,
-                                [this, title](const juce::FileChooser& fc) {
+                                [safeThis, title](const juce::FileChooser& fc) {
                                     auto file = fc.getResult();
                                     if (file == juce::File{})
                                         return;  // cancelled
-                                    importProfileFile(file, title);
+                                    if (safeThis == nullptr)
+                                        return;  // dialog closed before chooser returned
+                                    safeThis->importProfileFile(file, title);
                                 });
 }
 
@@ -217,20 +220,23 @@ void ControllersDialog::importProfileFile(const juce::File& file, const juce::St
         return fail(tr("controllers.upload_invalid_profile"));
 
     // Cross-field consistency — duplicate controlIds, defaultBindings pointing
-    // at unknown controls. List every issue so the contributor can fix all
-    // of them in one round-trip.
+    // at unknown controls. Validator emits localizable keys, UI formats.
     auto issues = validateControllerProfile(*profileOpt);
     if (!issues.empty()) {
         juce::String body = tr("controllers.upload_validation_failed");
-        for (const auto& msg : issues)
-            body += "\n  • " + msg;
+        for (const auto& issue : issues)
+            body += "\n  • " + tr(issue.key).replace("{0}", issue.arg);
         return fail(body);
     }
 
     auto& reg = ControllerProfileRegistry::getInstance();
     auto userDir = ControllerProfileRegistry::userControllersDirectory();
-    if (!userDir.isDirectory())
-        userDir.createDirectory();
+    if (!userDir.isDirectory()) {
+        auto createResult = userDir.createDirectory();
+        if (createResult.failed())
+            return fail(tr("controllers.upload_create_dir_failed")
+                            .replace("{0}", createResult.getErrorMessage()));
+    }
 
     // Copy with a name derived from the profile id so the file lives next to
     // its siblings; if a profile with the same id exists, ask before clobbering.
