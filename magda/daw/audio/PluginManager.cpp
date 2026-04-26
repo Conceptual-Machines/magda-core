@@ -4508,13 +4508,16 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
     // the four bands close together, so the curve looks like one bump instead
     // of a useful low/low-mid/high-mid/high spread. Log-spaced defaults match
     // the colour layout in EqualiserUI (Low / Mid 1 / Mid 2 / High).
+    // Values are raw Hz; route through setParameterFromHost like every other
+    // host-side write so the path is uniform across the codebase.
     if (plugin && xmlTypeName == te::EqualiserPlugin::xmlTypeName) {
         auto params = plugin->getAutomatableParameters();
         const float defaultFreqs[4] = {100.0f, 500.0f, 3000.0f, 10000.0f};
         for (int band = 0; band < 4; ++band) {
             int freqIndex = band * 3;  // each band lays out as freq/gain/Q
             if (freqIndex < params.size() && params[freqIndex])
-                params[freqIndex]->setParameter(defaultFreqs[band], juce::sendNotificationSync);
+                params[freqIndex]->setParameterFromHost(defaultFreqs[band],
+                                                        juce::sendNotificationSync);
         }
     }
 

@@ -63,10 +63,18 @@ void MidiLearnCoordinator::armSession(const ChainNodePath& path, int paramIndex,
     jassert(juce::MessageManager::getInstanceWithoutCreating() == nullptr ||
             juce::MessageManager::getInstanceWithoutCreating()->isThisTheMessageThread());
 
+    // Listener-facing paramIndex carries modParamIndex for ModParam so a UI
+    // component can match its learn pulse by (path, paramIndex, owner) — the
+    // armed_*_ fields keep -1 internally to avoid colliding with PluginParam /
+    // DeviceMacro isLearning() lookups on the same (path, paramIndex) tuple.
+    auto listenerParam = [](StaticTarget::Owner o, int regular, int modParam) {
+        return o == StaticTarget::Owner::ModParam ? modParam : regular;
+    };
+
     // Cancel any prior session first
     if (armed_) {
         ChainNodePath prevPath = armedPath_;
-        int prevParam = armedParam_;
+        int prevParam = listenerParam(armedOwner_, armedParam_, armedModParamIndex_);
         StaticTarget::Owner prevOwner = armedOwner_;
         armed_ = false;
         armedPath_ = {};
@@ -89,7 +97,7 @@ void MidiLearnCoordinator::armSession(const ChainNodePath& path, int paramIndex,
     armedModParamIndex_ = modParamIndex;
     armedDisplayName_ = displayName;
 
-    notifyStateChanged(path, paramIndex, owner, true);
+    notifyStateChanged(path, listenerParam(owner, paramIndex, modParamIndex), owner, true);
 
     if (router_) {
         LearnSessionConfig cfg;
@@ -107,8 +115,8 @@ void MidiLearnCoordinator::cancelLearn() {
         return;
 
     ChainNodePath path = armedPath_;
-    int param = armedParam_;
     StaticTarget::Owner owner = armedOwner_;
+    int param = owner == StaticTarget::Owner::ModParam ? armedModParamIndex_ : armedParam_;
     armed_ = false;
     armedPath_ = {};
     armedParam_ = -1;
