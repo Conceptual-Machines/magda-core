@@ -19,6 +19,9 @@ class TransportPanel : public juce::Component {
     ~TransportPanel() override;
 
     void paint(juce::Graphics& g) override;
+    // Draws the W/T/L mode glyph on top of the (now letterless) automation
+    // button. Runs after children paint, so the glyph sits above the SVG.
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
     // Transport control callbacks

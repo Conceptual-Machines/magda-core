@@ -56,6 +56,34 @@ TransportPanel::~TransportPanel() {
     snapButton->setLookAndFeel(nullptr);
 }
 
+void TransportPanel::paintOverChildren(juce::Graphics& g) {
+    if (!automationWriteButton)
+        return;
+
+    juce::String letter;
+    switch (automationMode_) {
+        case AutomationMode::Write: letter = "W"; break;
+        case AutomationMode::Touch: letter = "T"; break;
+        case AutomationMode::Latch: letter = "L"; break;
+        case AutomationMode::Off:   letter = "W"; break;  // shouldn't happen — Off is disarmed
+    }
+
+    auto btnBounds = automationWriteButton->getBounds();
+    // Bottom strip of the button — same y-band the original SVG used for its W
+    // (rows 42..47 of a 56-tall icon, ≈75–84%).
+    auto labelArea = btnBounds.removeFromBottom(btnBounds.getHeight() * 27 / 100);
+
+    juce::Colour textColour =
+        isAutomationWriteEnabled
+            ? juce::Colours::white
+            : DarkTheme::getSecondaryTextColour();
+
+    g.setColour(textColour);
+    // Bold ~9pt matches the visual weight of the original glyph at 56-px icon.
+    g.setFont(FontManager::getInstance().getUIFont(9.0f).boldened());
+    g.drawText(letter, labelArea, juce::Justification::centred);
+}
+
 void TransportPanel::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::TRANSPORT_BACKGROUND));
 
