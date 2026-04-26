@@ -219,6 +219,12 @@ bool ProjectSerializer::deserializeAutomationTarget(const juce::var& json,
     outTarget.macroIndex = obj->getProperty("macroIndex");
     outTarget.modId = obj->getProperty("modId");
     outTarget.modParamIndex = obj->getProperty("modParamIndex");
+    // Migration: pre-unification projects had a separate sync-division lane
+    // at modParamIndex == 1. The unified Rate lane (index 0) now covers both
+    // Hz and sync. Collapse legacy index 1 onto index 0; the loader's lane
+    // dedupe will drop the duplicate if a Hz lane already exists.
+    if (outTarget.type == AutomationTargetType::ModParameter && outTarget.modParamIndex == 1)
+        outTarget.modParamIndex = 0;
     // sendBusIndex is new — default to -1 for projects saved before it existed.
     outTarget.sendBusIndex =
         obj->hasProperty("sendBusIndex") ? static_cast<int>(obj->getProperty("sendBusIndex")) : -1;

@@ -98,6 +98,12 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
     double convertFromTEValue(const AutomationTarget& target, te::AutomatableParameter* param,
                               float teValue) const;
 
+    // Push a normalized rate-curve value back into MAGDA's modulator state.
+    // The lane is mode-aware: tempoSync=false → setXxxModRate (Hz), true →
+    // setXxxModSyncDivision. Used by both drag-preview and TE-driven
+    // currentValueChanged writeback so the two paths agree.
+    void writeModRateFromCurve(const AutomationTarget& target, double normalized);
+
     // Register this engine as a TE listener on every parameter we just baked,
     // and unregister from any parameter we used to bake but no longer do. This
     // keeps the listenedParams_ map in sync with bakedTargets_.

@@ -2363,18 +2363,12 @@ te::AutomatableParameter* PluginManager::findModifierParameterForAutomation(
     if (modId == INVALID_MOD_ID || modParamIndex < 0)
         return nullptr;
 
-    // MAGDA's modParamIndex is a SEMANTIC index (0 = rate, 1 = depth, ...).
-    // TE's getAutomatableParameters() ordering varies per modifier type —
-    // for LFOModifier the rate is at TE index 2 (after wave + syncType) —
-    // so look up by paramID rather than positional index.
-    static const char* const kSemanticParamID[] = {
-        "rate",      // 0 — Hz value (free mode)
-        "rateType",  // 1 — sync division (sync mode)
-        "depth",     // 2
-    };
-    if (modParamIndex >= static_cast<int>(std::size(kSemanticParamID)))
+    // MAGDA exposes a single semantic Rate lane (modParamIndex 0). The TE
+    // parameter we route automation to depends on the modifier's tempoSync
+    // flag — Hz values bake into TE's `rate`, sync divisions into `rateType`.
+    // Future depth lane lives at index 1.
+    if (modParamIndex >= 2)
         return nullptr;
-    const juce::String wantedID(kSemanticParamID[modParamIndex]);
 
     // ModId is a per-array slot index, not globally unique. Pick the right
     // owner from the path before matching modId.
@@ -2384,6 +2378,8 @@ te::AutomatableParameter* PluginManager::findModifierParameterForAutomation(
         for (size_t i = 0; i < mods.size() && i < teMods.size(); ++i) {
             if (mods[i].id != modId || !teMods[i])
                 continue;
+            const juce::String wantedID =
+                modParamIndex == 0 ? (mods[i].tempoSync ? "rateType" : "rate") : "depth";
             for (auto* p : teMods[i]->getAutomatableParameters()) {
                 if (p && p->paramID == wantedID)
                     return p;

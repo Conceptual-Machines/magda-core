@@ -102,6 +102,16 @@ class AutomationManager : public TrackManagerListener {
     AutomationLaneInfo* getLane(AutomationLaneId laneId);
     const AutomationLaneInfo* getLane(AutomationLaneId laneId) const;
 
+    /** Notify listeners (UI, playback engine) that a lane's underlying
+        ParameterInfo has effectively changed — typically because a mode flag
+        on the target (e.g. an LFO's tempoSync) flipped, swapping the lane's
+        scale/labels and the TE bake target. Same wire as the private
+        property-change notification but reachable from AudioBridge.
+    */
+    void invalidateLane(AutomationLaneId laneId) {
+        notifyLanePropertyChanged(laneId);
+    }
+
     /**
      * @brief Get all lanes
      */

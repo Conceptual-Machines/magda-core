@@ -506,50 +506,7 @@ void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneI
             trackMgr.setTrackMacroValue(target.trackId, target.macroIndex, value);
         }
     } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 0) {
-        ParameterInfo info = target.getParameterInfo();
-        float real = ParameterUtils::normalizedToReal(static_cast<float>(previewValue), info);
-        auto& trackMgr = TrackManager::getInstance();
-        AutomationManager::AutomationWriteScope writeScope;
-        if (target.devicePath.isValid()) {
-            switch (target.devicePath.getType()) {
-                case ChainNodeType::Rack:
-                    trackMgr.setRackModRate(target.devicePath, target.modId, real);
-                    break;
-                case ChainNodeType::TopLevelDevice:
-                case ChainNodeType::Device:
-                    trackMgr.setDeviceModRate(target.devicePath, target.modId, real);
-                    break;
-                default:
-                    trackMgr.setTrackModRate(target.trackId, target.modId, real);
-                    break;
-            }
-        } else {
-            trackMgr.setTrackModRate(target.trackId, target.modId, real);
-        }
-    } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 1) {
-        ParameterInfo info = target.getParameterInfo();
-        float real = ParameterUtils::normalizedToReal(static_cast<float>(previewValue), info);
-        // Lane stores 0-based display index — shift +1 to recover the TE ordinal.
-        int ordinal = juce::jlimit(1, 23, static_cast<int>(std::round(real)) + 1);
-        SyncDivision division = teRateOrdinalToSyncDivision(ordinal);
-        auto& trackMgr = TrackManager::getInstance();
-        AutomationManager::AutomationWriteScope writeScope;
-        if (target.devicePath.isValid()) {
-            switch (target.devicePath.getType()) {
-                case ChainNodeType::Rack:
-                    trackMgr.setRackModSyncDivision(target.devicePath, target.modId, division);
-                    break;
-                case ChainNodeType::TopLevelDevice:
-                case ChainNodeType::Device:
-                    trackMgr.setDeviceModSyncDivision(target.devicePath, target.modId, division);
-                    break;
-                default:
-                    trackMgr.setTrackModSyncDivision(target.trackId, target.modId, division);
-                    break;
-            }
-        } else {
-            trackMgr.setTrackModSyncDivision(target.trackId, target.modId, division);
-        }
+        writeModRateFromCurve(target, previewValue);
     }
 }
 
@@ -759,60 +716,89 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
             trackMgr.setTrackMacroValue(target.trackId, target.macroIndex, value);
         }
     } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 0) {
-        // Mirror the curve value back into ModInfo.rate so the modulator UI
-        // tracks the curve. modParamIndex 0 == rate; other indices (depth,
-        // shape, etc.) require their own setters and aren't wired yet.
-        // AudioBridge::deviceModifiersChanged checks AutomationWriteScope
-        // and skips its resync to avoid fighting the live TE curve.
-        ParameterInfo info = target.getParameterInfo();
-        float real = ParameterUtils::normalizedToReal(static_cast<float>(normalized), info);
-        auto& trackMgr = TrackManager::getInstance();
-        AutomationManager::AutomationWriteScope writeScope;
+        // Mirror the curve value back into MAGDA's mod state. The lane is
+        // mode-aware — Hz value or sync division depending on tempoSync.
+        // AudioBridge::deviceModifiersChanged checks AutomationWriteScope and
+        // skips its resync to avoid fighting the live TE curve.
+        writeModRateFromCurve(target, normalized);
+    }
+}
+
+void AutomationPlaybackEngine::writeModRateFromCurve(const AutomationTarget& target,
+                                                     double normalized) {
+    ParameterInfo info = target.getParameterInfo();
+    auto& trackMgr = TrackManager::getInstance();
+    AutomationManager::AutomationWriteScope writeScope;
+
+    // tempoSync flag drives both the lane's ParameterInfo (built above) and
+    // the writeback target. Resolving the mod again here keeps the two in
+    // lockstep without threading the flag through the call.
+    auto* track = trackMgr.getTrack(target.trackId);
+    const ModInfo* mod = nullptr;
+    if (track) {
         if (target.devicePath.isValid()) {
-            switch (target.devicePath.getType()) {
-                case ChainNodeType::Rack:
-                    trackMgr.setRackModRate(target.devicePath, target.modId, real);
-                    break;
-                case ChainNodeType::TopLevelDevice:
-                case ChainNodeType::Device:
-                    trackMgr.setDeviceModRate(target.devicePath, target.modId, real);
-                    break;
-                default:
-                    trackMgr.setTrackModRate(target.trackId, target.modId, real);
-                    break;
+            auto resolved = trackMgr.resolvePath(target.devicePath);
+            if (resolved.valid && resolved.rack) {
+                for (const auto& m : resolved.rack->mods)
+                    if (m.id == target.modId) {
+                        mod = &m;
+                        break;
+                    }
+            } else if (resolved.valid && resolved.device) {
+                for (const auto& m : resolved.device->mods)
+                    if (m.id == target.modId) {
+                        mod = &m;
+                        break;
+                    }
             }
-        } else {
-            trackMgr.setTrackModRate(target.trackId, target.modId, real);
         }
-    } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 1) {
-        // Sync division. TE writes the rateType ordinal float into the curve;
-        // map back to a MAGDA SyncDivision (snapping to closest known) and
-        // push through the TrackManager setters so MAGDA state, the slider,
-        // and TE's resync chain all stay aligned. Lane stores 0-based display
-        // index — shift +1 to recover the TE ordinal.
-        ParameterInfo info = target.getParameterInfo();
+        if (!mod) {
+            for (const auto& m : track->mods)
+                if (m.id == target.modId) {
+                    mod = &m;
+                    break;
+                }
+        }
+    }
+    const bool sync = mod && mod->tempoSync;
+
+    if (sync) {
+        // Lane stores 0-based display index — shift +1 to recover TE ordinal.
         float real = ParameterUtils::normalizedToReal(static_cast<float>(normalized), info);
         int ordinal = juce::jlimit(1, 23, static_cast<int>(std::round(real)) + 1);
         SyncDivision division = teRateOrdinalToSyncDivision(ordinal);
-        auto& trackMgr = TrackManager::getInstance();
-        AutomationManager::AutomationWriteScope writeScope;
         if (target.devicePath.isValid()) {
             switch (target.devicePath.getType()) {
                 case ChainNodeType::Rack:
                     trackMgr.setRackModSyncDivision(target.devicePath, target.modId, division);
-                    break;
+                    return;
                 case ChainNodeType::TopLevelDevice:
                 case ChainNodeType::Device:
                     trackMgr.setDeviceModSyncDivision(target.devicePath, target.modId, division);
-                    break;
+                    return;
                 default:
-                    trackMgr.setTrackModSyncDivision(target.trackId, target.modId, division);
                     break;
             }
-        } else {
-            trackMgr.setTrackModSyncDivision(target.trackId, target.modId, division);
+        }
+        trackMgr.setTrackModSyncDivision(target.trackId, target.modId, division);
+        return;
+    }
+
+    float real = ParameterUtils::normalizedToReal(static_cast<float>(normalized), info);
+    if (target.devicePath.isValid()) {
+        switch (target.devicePath.getType()) {
+            case ChainNodeType::Rack:
+                trackMgr.setRackModRate(target.devicePath, target.modId, real);
+                return;
+            case ChainNodeType::TopLevelDevice:
+            case ChainNodeType::Device:
+                trackMgr.setDeviceModRate(target.devicePath, target.modId, real);
+                return;
+            default:
+                break;
         }
     }
+    trackMgr.setTrackModRate(target.trackId, target.modId, real);
 }
 
 }  // namespace magda

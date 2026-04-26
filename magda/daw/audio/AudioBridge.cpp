@@ -450,6 +450,20 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     // Modifier properties changed (rate, waveform, sync, trigger mode) - resync only modifiers
     pluginManager_.resyncDeviceModifiers(trackId);
 
+    // Mod-rate lanes are mode-aware: tempoSync flips swap the bake target
+    // between TE's `rate` (Hz) and `rateType` (sync division). Force a rebake
+    // and broadcast lane-property change so any visible Rate lane recomputes
+    // its ParameterInfo (scale, labels, range) and repaints. Cheap to nudge
+    // unconditionally — most modifier changes (waveform, trigger mode, rate
+    // value) don't need this, but the rebake is coalesced via needsRebake_.
+    auto& autoMgr = AutomationManager::getInstance();
+    for (const auto& lane : autoMgr.getLanes()) {
+        if (lane.target.type == AutomationTargetType::ModParameter &&
+            lane.target.trackId == trackId) {
+            autoMgr.invalidateLane(lane.id);
+        }
+    }
+
     // Re-check sidechain monitors on this track and all other tracks
     // (a sidechain source change on this track may affect the source track's monitor)
     for (const auto& track : magda::TrackManager::getInstance().getTracks()) {

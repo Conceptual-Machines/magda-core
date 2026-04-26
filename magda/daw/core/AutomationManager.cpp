@@ -136,15 +136,20 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             if (!mod)
                 return std::nullopt;
 
+            // Single Rate lane: read either the Hz value or the sync-division
+            // ordinal depending on the LFO's current mode. paramInfo (built
+            // from the same mode flag in getParameterInfo) determines how the
+            // normalized value is interpreted, so the two stay in lockstep.
             if (target.modParamIndex == 0) {
+                if (mod->tempoSync) {
+                    // Lane stores 0-based display index (TE ordinal − 1) so
+                    // it never resolves "Hertz" (TE ordinal 0) at the bottom.
+                    float displayIdx =
+                        static_cast<float>(syncDivisionToTeRateOrdinal(mod->syncDivision) - 1);
+                    return static_cast<double>(
+                        ParameterUtils::realToNormalized(displayIdx, paramInfo));
+                }
                 return static_cast<double>(ParameterUtils::realToNormalized(mod->rate, paramInfo));
-            }
-            if (target.modParamIndex == 1) {
-                // Lane stores a 0-based display index (TE ordinal - 1) so it
-                // never resolves "Hertz" (TE ordinal 0) at the bottom edge.
-                float displayIdx =
-                    static_cast<float>(syncDivisionToTeRateOrdinal(mod->syncDivision) - 1);
-                return static_cast<double>(ParameterUtils::realToNormalized(displayIdx, paramInfo));
             }
             return std::nullopt;
         }

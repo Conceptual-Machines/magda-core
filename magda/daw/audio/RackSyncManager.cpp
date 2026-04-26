@@ -363,16 +363,10 @@ te::AutomatableParameter* RackSyncManager::findRackMacroParameter(RackId rackId,
 
 te::AutomatableParameter* RackSyncManager::findRackModifierParameter(RackId rackId, ModId modId,
                                                                      int paramIndex) const {
-    if (paramIndex < 0)
+    // Single Rate lane (paramIndex 0) maps to either TE's `rate` or `rateType`
+    // based on the modifier's tempoSync flag. Future depth lane lives at 1.
+    if (paramIndex < 0 || paramIndex >= 2)
         return nullptr;
-    static const char* const kSemanticParamID[] = {
-        "rate",      // 0 — Hz value
-        "rateType",  // 1 — sync division
-        "depth",     // 2
-    };
-    if (paramIndex >= static_cast<int>(std::size(kSemanticParamID)))
-        return nullptr;
-    const juce::String wantedID(kSemanticParamID[paramIndex]);
 
     auto rackIt = syncedRacks_.find(rackId);
     if (rackIt == syncedRacks_.end())
@@ -380,6 +374,22 @@ te::AutomatableParameter* RackSyncManager::findRackModifierParameter(RackId rack
     auto modIt = rackIt->second.innerModifiers.find(modId);
     if (modIt == rackIt->second.innerModifiers.end() || !modIt->second)
         return nullptr;
+
+    // Look up the MAGDA-side ModInfo to read tempoSync. Same scope walk the
+    // rest of RackSyncManager uses to reach the rack's mods vector.
+    bool sync = false;
+    auto& tm = TrackManager::getInstance();
+    auto resolved = tm.resolvePath(ChainNodePath::rack(rackIt->second.trackId, rackId));
+    if (resolved.valid && resolved.rack) {
+        for (const auto& m : resolved.rack->mods) {
+            if (m.id == modId) {
+                sync = m.tempoSync;
+                break;
+            }
+        }
+    }
+    const juce::String wantedID = paramIndex == 0 ? (sync ? "rateType" : "rate") : "depth";
+
     for (auto* p : modIt->second->getAutomatableParameters()) {
         if (p && p->paramID == wantedID)
             return p;
