@@ -471,9 +471,12 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                         continue;
                     const auto& rackInfo = **rackPtr;
 
-                    // Update existing TE modifiers in-place
+                    // Update existing TE modifiers in-place. Match the gate
+                    // used by syncModifiers — enabled is enough; an LFO with
+                    // no own outgoing links can still be the target of a
+                    // ModParam-kind macro/mod link.
                     for (const auto& modInfo : rackInfo.mods) {
-                        if (!modInfo.enabled || modInfo.links.empty())
+                        if (!modInfo.enabled)
                             continue;
 
                         auto modIt = synced.innerModifiers.find(modInfo.id);
@@ -853,7 +856,13 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
     synced.innerModifiers.clear();
 
     for (const auto& modInfo : rackInfo.mods) {
-        if (!modInfo.enabled || modInfo.links.empty())
+        // Create the TE modifier as soon as the modifier is enabled, even if
+        // it has no outgoing links yet. This lets a macro or another mod
+        // target THIS modifier's rate / rateType param (ModParam-kind links)
+        // — without an existing TE modifier object there's nothing to attach
+        // the source param to. An LFO with no own links costs essentially
+        // nothing in the TE graph beyond a few floats.
+        if (!modInfo.enabled)
             continue;
 
         te::Modifier::Ptr modifier;

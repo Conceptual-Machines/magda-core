@@ -1250,7 +1250,10 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
         size_t modIdx = 0;
 
         for (const auto& modInfo : device.mods) {
-            if (!modInfo.enabled || modInfo.links.empty())
+            // Match the gate used by syncModifiers — enabled is enough; an
+            // LFO with no own outgoing links is still kept in the TE graph
+            // so it can be the target of a ModParam-kind macro/mod link.
+            if (!modInfo.enabled)
                 continue;
 
             if (modIdx >= existingMods.size())
@@ -1386,7 +1389,10 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
         auto& trackModState = tmIt->second;
         size_t modIdx = 0;
         for (const auto& modInfo : trackInfo->mods) {
-            if (!modInfo.enabled || modInfo.links.empty())
+            // Match the gate used by syncModifiers — enabled is enough; an
+            // LFO with no own outgoing links is still kept in the TE graph
+            // so it can be the target of a ModParam-kind macro/mod link.
+            if (!modInfo.enabled)
                 continue;
             if (modIdx >= trackModState.modifiers.size())
                 break;
@@ -1587,9 +1593,11 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
         if (!targetPlugin)
             continue;
 
-        // Create TE modifiers for each active mod
+        // Create TE modifiers for each active mod. Skip only on disabled —
+        // an enabled mod with no outgoing links is still kept around so a
+        // macro / other mod can target ITS rate via a ModParam-kind link.
         for (const auto& modInfo : device.mods) {
-            if (!modInfo.enabled || modInfo.links.empty())
+            if (!modInfo.enabled)
                 continue;
 
             te::Modifier::Ptr modifier;
@@ -1723,11 +1731,15 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
     }
     trackModState.modifiers.clear();
 
-    // Check if any track-level mod has active links
+    // Check if any track-level mod is enabled. Used to be gated on having
+    // outgoing links, but a "dead" LFO is still a valid TARGET for a macro
+    // or other mod via a ModParam-kind link, so we keep the TE modifier
+    // around as long as the mod is enabled.
     bool hasActiveTrackMods = false;
     for (const auto& modInfo : trackInfo->mods) {
-        if (modInfo.enabled && !modInfo.links.empty()) {
+        if (modInfo.enabled) {
             hasActiveTrackMods = true;
+            break;
         }
     }
 
@@ -1735,7 +1747,9 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
         auto* trackModList = teTrack->getModifierList();
         if (trackModList) {
             for (const auto& modInfo : trackInfo->mods) {
-                if (!modInfo.enabled || modInfo.links.empty())
+                // Same as device-mods: enabled is enough; an LFO with no
+                // outgoing links can still be the TARGET of a ModParam link.
+                if (!modInfo.enabled)
                     continue;
 
                 te::Modifier::Ptr modifier;
