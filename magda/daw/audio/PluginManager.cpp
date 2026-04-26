@@ -37,6 +37,11 @@ namespace {
 // modifier vector (syncedDevices_[id].modifiers or trackModStates_[id].modifiers).
 // Same-scope only — cross-device / cross-rack mod targeting isn't supported
 // yet; return nullptr if the modId isn't found in this scope.
+//
+// scopeMods includes disabled mods; scopeTeMods is built from enabled ones
+// only (syncDeviceModifiers / syncTrackModifiers skip disabled). So the two
+// are NOT 1:1 indexable — we have to walk the MAGDA list and advance the
+// TE-side index only over enabled entries to keep them aligned.
 template <typename Link>
 te::AutomatableParameter* resolveSameScopeModParam(
     const Link& link, const std::vector<ModInfo>& scopeMods,
@@ -44,17 +49,23 @@ te::AutomatableParameter* resolveSameScopeModParam(
     if (link.target.kind != decltype(link.target.kind)::ModParam)
         return nullptr;
 
-    for (size_t i = 0; i < scopeMods.size() && i < scopeTeMods.size(); ++i) {
-        if (scopeMods[i].id != link.target.modId || !scopeTeMods[i])
+    size_t teIdx = 0;
+    for (size_t i = 0; i < scopeMods.size(); ++i) {
+        if (!scopeMods[i].enabled)
             continue;
-        const bool sync = scopeMods[i].tempoSync;
-        const juce::String wantedID =
-            link.target.modParamIndex == 0 ? (sync ? "rateType" : "rate") : "depth";
-        for (auto* p : scopeTeMods[i]->getAutomatableParameters()) {
-            if (p && p->paramID == wantedID)
-                return p;
+        if (teIdx >= scopeTeMods.size())
+            break;
+        if (scopeMods[i].id == link.target.modId && scopeTeMods[teIdx]) {
+            const bool sync = scopeMods[i].tempoSync;
+            const juce::String wantedID =
+                link.target.modParamIndex == 0 ? (sync ? "rateType" : "rate") : "depth";
+            for (auto* p : scopeTeMods[teIdx]->getAutomatableParameters()) {
+                if (p && p->paramID == wantedID)
+                    return p;
+            }
+            return nullptr;
         }
-        return nullptr;
+        ++teIdx;
     }
     return nullptr;
 }
@@ -1514,11 +1525,14 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
 
         const auto& device = getDevice(element);
 
-        // Check if any mod has active links AND device is not bypassed
+        // Any enabled mod keeps the TE side alive — even one without outgoing
+        // links can still be the TARGET of an incoming ModParam macro/mod
+        // link, and pass-2 needs the TE modifier to exist for the link to
+        // attach. Bypassed devices skip the modifier graph entirely.
         bool hasActiveMods = false;
         if (!device.bypassed) {
             for (const auto& mod : device.mods) {
-                if (mod.enabled && !mod.links.empty()) {
+                if (mod.enabled) {
                     hasActiveMods = true;
                     break;
                 }

@@ -132,6 +132,18 @@ void TrackManager::setRackMacroTarget(const ChainNodePath& rackPath, int macroIn
         if (macroIndex < 0 || macroIndex >= static_cast<int>(rack->macros.size())) {
             return;
         }
+        // ModParam targets are only meaningful through the links vector — the
+        // legacy single-target field has no rendering path for cross-mod links.
+        if (target.kind == MacroTarget::Kind::ModParam) {
+            if (!rack->macros[macroIndex].getLink(target)) {
+                MacroLink newLink;
+                newLink.target = target;
+                newLink.amount = 1.0f;
+                rack->macros[macroIndex].links.push_back(newLink);
+                notifyDeviceModifiersChanged(rackPath.trackId);
+            }
+            return;
+        }
         rack->macros[macroIndex].target = target;
         notifyTrackDevicesChanged(rackPath.trackId);
     }
@@ -234,6 +246,18 @@ void TrackManager::setRackModAmount(const ChainNodePath& rackPath, int modIndex,
 void TrackManager::setRackModTarget(const ChainNodePath& rackPath, int modIndex, ModTarget target) {
     if (auto* rack = getRackByPath(rackPath)) {
         if (modIndex < 0 || modIndex >= static_cast<int>(rack->mods.size())) {
+            return;
+        }
+        // ModParam targets are only meaningful through the links vector — the
+        // legacy single-target field has no rendering path for cross-mod links.
+        if (target.kind == ModTarget::Kind::ModParam) {
+            if (!rack->mods[modIndex].getLink(target)) {
+                ModLink newLink;
+                newLink.target = target;
+                newLink.amount = 1.0f;
+                rack->mods[modIndex].links.push_back(newLink);
+                notifyDeviceModifiersChanged(rackPath.trackId);
+            }
             return;
         }
         rack->mods[modIndex].target = target;
@@ -515,9 +539,13 @@ void TrackManager::setDeviceModTarget(const ChainNodePath& devicePath, int modIn
                                       ModTarget target) {
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         if (target.isValid()) {
-            mod->addLink(target, 0.0f);
+            // ModParam picks come from a menu (no drag), so 0.0 would be silent —
+            // give the link an audible default amount the user can dial down.
+            const float defaultAmount = target.kind == ModTarget::Kind::ModParam ? 1.0f : 0.0f;
+            mod->addLink(target, defaultAmount);
         }
-        mod->target = target;
+        if (target.kind != ModTarget::Kind::ModParam)
+            mod->target = target;
         // Use modifier-only notify to avoid full UI rebuild (panel stays open)
         notifyDeviceModifiersChanged(devicePath.trackId);
     }
@@ -1128,7 +1156,10 @@ void TrackManager::setDeviceMacroTarget(const ChainNodePath& devicePath, int mac
         if (!device->macros[macroIndex].getLink(target)) {
             MacroLink newLink;
             newLink.target = target;
-            newLink.amount = 0.3f;    // Default amount (30% — adjustable via overlay)
+            // ModParam picks come from a menu (no drag overlay yet); 100% so
+            // the link is immediately audible. Knob-target picks default to
+            // 30% to leave headroom for the overlay drag.
+            newLink.amount = target.kind == MacroTarget::Kind::ModParam ? 1.0f : 0.3f;
             newLink.bipolar = false;  // Default unipolar
             device->macros[macroIndex].links.push_back(newLink);
             // Use lighter notification — adding a macro link doesn't change device
@@ -1250,9 +1281,13 @@ void TrackManager::setTrackModAmount(TrackId trackId, int modIndex, float amount
 void TrackManager::setTrackModTarget(TrackId trackId, int modIndex, ModTarget target) {
     if (auto* mod = getTrackMod(trackId, modIndex)) {
         if (target.isValid()) {
-            mod->addLink(target, 0.0f);
+            // ModParam picks come from a menu (no drag), so 0.0 would be silent —
+            // give the link an audible default amount the user can dial down.
+            const float defaultAmount = target.kind == ModTarget::Kind::ModParam ? 1.0f : 0.0f;
+            mod->addLink(target, defaultAmount);
         }
-        mod->target = target;
+        if (target.kind != ModTarget::Kind::ModParam)
+            mod->target = target;
         notifyDeviceModifiersChanged(trackId);
     }
 }
@@ -1474,7 +1509,10 @@ void TrackManager::setTrackMacroTarget(TrackId trackId, int macroIndex, MacroTar
     if (!track->macros[macroIndex].getLink(target)) {
         MacroLink newLink;
         newLink.target = target;
-        newLink.amount = 0.3f;
+        // ModParam picks come from a menu (no drag overlay yet); 100% so
+        // the link is immediately audible. Knob-target picks default to
+        // 30% to leave headroom for the overlay drag.
+        newLink.amount = target.kind == MacroTarget::Kind::ModParam ? 1.0f : 0.3f;
         track->macros[macroIndex].links.push_back(newLink);
         notifyDeviceModifiersChanged(trackId);
     }

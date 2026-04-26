@@ -300,23 +300,18 @@ void ModKnobComponent::showContextMenu() {
                                return;
                            }
 
-                           // Modulator-rate link selection
+                           // Modulator-rate link selection. The parent's
+                           // onTargetChanged routes through TrackManager::
+                           // setXxxModTarget, which materialises the link
+                           // (with an audible default amount for ModParam
+                           // kind) and triggers a refresh — so we don't
+                           // need to mutate currentMod_ here.
                            int modSlot = result - kModRateBaseId;
                            if (modSlot >= 0 && modSlot < static_cast<int>(modifiers.size())) {
                                magda::ModTarget t;
                                t.kind = magda::ModTarget::Kind::ModParam;
                                t.modId = modifiers[static_cast<size_t>(modSlot)].first;
                                t.modParamIndex = 0;  // Rate
-                               // Append link locally; parent's onTargetChanged
-                               // routes through TrackManager::setXxxModTarget,
-                               // which appends to .links and resyncs TE.
-                               if (!safeThis->currentMod_.getLink(t)) {
-                                   magda::ModLink link;
-                                   link.target = t;
-                                   link.amount = 1.0f;
-                                   safeThis->currentMod_.links.push_back(link);
-                               }
-                               safeThis->repaint();
                                if (safeThis->onTargetChanged)
                                    safeThis->onTargetChanged(t);
                            }

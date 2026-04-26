@@ -445,20 +445,16 @@ void MacroKnobComponent::showLinkMenu() {
             return;
         }
 
-        // Modulator-rate link selection
+        // Modulator-rate link selection. The parent's onTargetChanged routes
+        // through TrackManager::setXxxMacroTarget, which materialises the
+        // link (with an audible default amount for ModParam kind) and
+        // triggers a refresh — so we don't need to mutate currentMacro_.
         int modSlot = result - kModRateBaseId;
         if (modSlot >= 0 && modSlot < static_cast<int>(modifiers.size())) {
             magda::MacroTarget t;
             t.kind = magda::MacroTarget::Kind::ModParam;
             t.modId = modifiers[static_cast<size_t>(modSlot)].first;
             t.modParamIndex = 0;  // Rate
-            if (!safeThis->currentMacro_.getLink(t)) {
-                magda::MacroLink link;
-                link.target = t;
-                link.amount = 1.0f;
-                safeThis->currentMacro_.links.push_back(link);
-            }
-            safeThis->repaint();
             if (safeThis->onTargetChanged)
                 safeThis->onTargetChanged(t);
             return;
