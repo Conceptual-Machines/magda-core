@@ -7,6 +7,7 @@
 #include <variant>
 
 #include "../SelectionManager.hpp"
+#include "../TypeIds.hpp"
 
 namespace magda {
 
@@ -22,10 +23,18 @@ namespace magda {
  */
 struct StaticTarget {
     /**
-     * @brief Identifies which value domain paramIndex belongs to.
+     * @brief Identifies which value domain the secondary fields belong to.
      *
      * PluginParam  -- paramIndex is an index into plugin->getAutomatableParameters()
-     * DeviceMacro  -- paramIndex is a macro index on the device (0-based)
+     * DeviceMacro  -- paramIndex is a macro index on the macro array attached to the
+     *                 path's owner. The owner is determined by devicePath.getType():
+     *                 Track -> track macros, Rack -> rack macros, Device/TopLevelDevice
+     *                 -> device macros. (Name is historical -- predates track / rack
+     *                 macro support.)
+     *  ModParam    -- modId + modParamIndex address a TE modifier living in the scope
+     *                 named by devicePath; modParamIndex 0 is Rate (resolves to "rate"
+     *                 or "rateType" depending on the modifier's tempoSync flag).
+     *                 paramIndex is unused.
      *
      * Defaulting to PluginParam preserves backward compatibility for all
      * existing targets that do not carry an explicit owner field.
@@ -33,19 +42,31 @@ struct StaticTarget {
     enum class Owner {
         PluginParam,  // default
         DeviceMacro,
+        ModParam,
     };
 
     ChainNodePath devicePath;
     int paramIndex = -1;
     Owner owner = Owner::PluginParam;
 
+    // ModParam-only fields. Ignored for PluginParam / DeviceMacro.
+    ModId modId = INVALID_MOD_ID;
+    int modParamIndex = -1;
+
     bool isValid() const {
-        return devicePath.isValid() && paramIndex >= 0;
+        if (!devicePath.isValid())
+            return false;
+        if (owner == Owner::ModParam)
+            return modId != INVALID_MOD_ID && modParamIndex >= 0;
+        return paramIndex >= 0;
     }
 
     bool operator==(const StaticTarget& other) const {
-        return devicePath == other.devicePath && paramIndex == other.paramIndex &&
-               owner == other.owner;
+        if (devicePath != other.devicePath || owner != other.owner)
+            return false;
+        if (owner == Owner::ModParam)
+            return modId == other.modId && modParamIndex == other.modParamIndex;
+        return paramIndex == other.paramIndex;
     }
 
     bool operator!=(const StaticTarget& other) const {

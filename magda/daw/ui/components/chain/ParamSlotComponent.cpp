@@ -264,19 +264,27 @@ void ParamSlotComponent::macroLinkModeChanged(bool active, const magda::MacroSel
 // ============================================================================
 
 void ParamSlotComponent::midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
-                                               bool learning) {
+                                               magda::StaticTarget::Owner owner, bool learning) {
+    if (owner != magda::StaticTarget::Owner::PluginParam)
+        return;  // ParamSlot only cares about plugin-param Learn
     bool isMe = (path == devicePath_ && paramIndex == paramIndex_);
     isInMidiLearnMode_ = learning && isMe;
     repaint();
 }
 
 void ParamSlotComponent::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                                            magda::StaticTarget::Owner owner,
                                             const magda::Binding&) {
+    if (owner != magda::StaticTarget::Owner::PluginParam)
+        return;
     if (path == devicePath_ && paramIndex == paramIndex_)
         refreshMidiBindingState();
 }
 
-void ParamSlotComponent::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex, int) {
+void ParamSlotComponent::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
+                                          magda::StaticTarget::Owner owner, int) {
+    if (owner != magda::StaticTarget::Owner::PluginParam)
+        return;
     if (path == devicePath_ && paramIndex == paramIndex_)
         refreshMidiBindingState();
 }

@@ -12,10 +12,20 @@ juce::String toDebugString(const Target& target) {
             using T = std::decay_t<decltype(t)>;
 
             if constexpr (std::is_same_v<T, StaticTarget>) {
-                juce::String s = "StaticTarget{path=" + t.devicePath.toString() +
-                                 ", paramIndex=" + juce::String(t.paramIndex);
-                if (t.owner != StaticTarget::Owner::PluginParam)
-                    s += ", owner=device_macro";
+                juce::String s = "StaticTarget{path=" + t.devicePath.toString();
+                switch (t.owner) {
+                    case StaticTarget::Owner::PluginParam:
+                        s += ", paramIndex=" + juce::String(t.paramIndex);
+                        break;
+                    case StaticTarget::Owner::DeviceMacro:
+                        s += ", paramIndex=" + juce::String(t.paramIndex) + ", owner=device_macro";
+                        break;
+                    case StaticTarget::Owner::ModParam:
+                        s += ", modId=" + juce::String(t.modId) +
+                             ", modParamIndex=" + juce::String(t.modParamIndex) +
+                             ", owner=mod_param";
+                        break;
+                }
                 s += "}";
                 return s;
             } else if constexpr (std::is_same_v<T, AliasRef>) {
@@ -51,8 +61,13 @@ juce::String encodeTarget(const Target& target) {
                 obj->setProperty("paramIndex", t.paramIndex);
 
                 // Encode owner (omit when default to keep old JSON compact)
-                if (t.owner == StaticTarget::Owner::DeviceMacro)
+                if (t.owner == StaticTarget::Owner::DeviceMacro) {
                     obj->setProperty("owner", juce::String("device_macro"));
+                } else if (t.owner == StaticTarget::Owner::ModParam) {
+                    obj->setProperty("owner", juce::String("mod_param"));
+                    obj->setProperty("modId", t.modId);
+                    obj->setProperty("modParamIndex", t.modParamIndex);
+                }
 
                 // Encode ChainNodePath inline
                 auto* pathObj = new juce::DynamicObject();
@@ -116,6 +131,10 @@ std::optional<Target> decodeTarget(const juce::String& json) {
             auto ownerStr = obj->getProperty("owner").toString();
             if (ownerStr == "device_macro") {
                 t.owner = StaticTarget::Owner::DeviceMacro;
+            } else if (ownerStr == "mod_param") {
+                t.owner = StaticTarget::Owner::ModParam;
+                t.modId = static_cast<ModId>(static_cast<int>(obj->getProperty("modId")));
+                t.modParamIndex = static_cast<int>(obj->getProperty("modParamIndex"));
             } else if (ownerStr == "plugin_param" || ownerStr.isEmpty()) {
                 t.owner = StaticTarget::Owner::PluginParam;
             } else {

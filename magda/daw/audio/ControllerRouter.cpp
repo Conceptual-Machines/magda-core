@@ -265,15 +265,16 @@ void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
     // Preference rule: an explicit user-mapped binding (MIDI Learn) shadows
     // any focused-device-macro resolver binding (automap profile) matched by
     // the same MIDI event. Only the explicit target fires so the Learn override
-    // wins over the profile default. "Explicit" includes both StaticTarget with
-    // owner=PluginParam and AliasRef — MidiLearnCoordinator prefers an alias
-    // target whenever a canonical alias exists for the param. ResolverRef
-    // bindings are profile-driven and do not count as explicit.
+    // wins over the profile default. Every StaticTarget (PluginParam,
+    // DeviceMacro, ModParam) counts as explicit because Learn is the only
+    // gesture that produces them; AliasRef is also explicit since
+    // MidiLearnCoordinator prefers an alias whenever a canonical alias exists
+    // for the param. ResolverRef bindings are profile-driven and do not count
+    // as explicit.
     const bool hasExplicitOverride =
         std::any_of(bindings.begin(), bindings.end(), [](const Binding& b) {
-            if (auto* st = std::get_if<StaticTarget>(&b.target))
-                return st->owner == StaticTarget::Owner::PluginParam;
-            return std::holds_alternative<AliasRef>(b.target);
+            return std::holds_alternative<StaticTarget>(b.target) ||
+                   std::holds_alternative<AliasRef>(b.target);
         });
     if (hasExplicitOverride) {
         bindings.erase(std::remove_if(bindings.begin(), bindings.end(),

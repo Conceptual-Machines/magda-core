@@ -111,11 +111,12 @@ class MainWindow::MainComponent : public juce::Component,
 
     // MidiLearnCoordinatorListener
     void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
-                               bool learning) override;
+                               magda::StaticTarget::Owner owner, bool learning) override;
     void midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                            magda::StaticTarget::Owner owner,
                             const magda::Binding& binding) override;
     void midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
-                          int numRemoved) override;
+                          magda::StaticTarget::Owner owner, int numRemoved) override;
 
     // Command manager access
     juce::ApplicationCommandManager& getCommandManager() {

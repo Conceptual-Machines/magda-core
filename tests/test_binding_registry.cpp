@@ -236,6 +236,40 @@ TEST_CASE("BindingRegistry - hasBindingForDevice distinguishes PluginParam from 
     REQUIRE_FALSE(reg.hasBindingForDevice(devicePath, StaticTarget::Owner::DeviceMacro));
 }
 
+TEST_CASE("BindingRegistry - hasActiveStaticBindingForMacro excludes resolver bindings",
+          "[controllers][binding_registry]") {
+    clearRegistry();
+    auto& reg = BindingRegistry::getInstance();
+
+    ChainNodePath devicePath = ChainNodePath::topLevelDevice(1, 10);
+    ControllerId cid = juce::Uuid();
+
+    // Resolver binding (focused_device_macro automap profile) — counts as active
+    // for hasActiveBindingForTarget but NOT for hasActiveStaticBindingForMacro,
+    // since it isn't a user-mapped Learn target.
+    Binding bResolver = makeBinding(cid, BindingMsgType::CC, 1, 20);
+    ResolverRef rr;
+    rr.kind = "focused_device_macro";
+    rr.args.set("macroIndex", "3");
+    bResolver.target = Target{rr};
+    reg.add(BindingScope::Global, bResolver);
+
+    REQUIRE_FALSE(reg.hasActiveStaticBindingForMacro(devicePath, 3));
+
+    // Add an explicit DeviceMacro StaticTarget — now Learn'd, helper returns true.
+    Binding bMacro = makeBinding(cid, BindingMsgType::CC, 1, 21);
+    bMacro.id = juce::Uuid();
+    StaticTarget stMacro;
+    stMacro.devicePath = devicePath;
+    stMacro.paramIndex = 3;
+    stMacro.owner = StaticTarget::Owner::DeviceMacro;
+    bMacro.target = Target{stMacro};
+    reg.add(BindingScope::Project, bMacro);
+
+    REQUIRE(reg.hasActiveStaticBindingForMacro(devicePath, 3));
+    REQUIRE_FALSE(reg.hasActiveStaticBindingForMacro(devicePath, 2));  // wrong macro index
+}
+
 TEST_CASE("BindingRegistry - JSON round-trip for project bindings",
           "[controllers][binding_registry]") {
     clearRegistry();

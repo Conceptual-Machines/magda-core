@@ -136,6 +136,18 @@ class BindingRegistry {
                         StaticTarget::Owner owner = StaticTarget::Owner::PluginParam);
 
     /**
+     * @brief Find/remove bindings whose target is a ModParam (path, modId, modParamIndex).
+     *
+     * ModParam targets carry their identity in (modId, modParamIndex), not paramIndex,
+     * so the regular paramIndex-keyed overloads can't match them.
+     */
+    std::vector<Binding> findForModParam(const ChainNodePath& devicePath, ModId modId,
+                                         int modParamIndex) const;
+    int removeForModParam(const ChainNodePath& devicePath, ModId modId, int modParamIndex);
+    bool hasActiveBindingForModParam(const ChainNodePath& devicePath, ModId modId,
+                                     int modParamIndex) const;
+
+    /**
      * @brief Return true if any binding (Global + Project) resolves to a target
      * on this devicePath with the given owner kind AND has an active source.
      *
@@ -148,6 +160,20 @@ class BindingRegistry {
      * Must be called on the message thread.
      */
     bool hasBindingForDevice(const ChainNodePath& devicePath, StaticTarget::Owner owner) const;
+
+    /**
+     * @brief Return true if any active focused-device-macro resolver binding
+     * currently resolves to this device — i.e. the device has automap-profile
+     * coverage, regardless of any user Learn'd bindings on top.
+     */
+    bool hasResolverBindingForDevice(const ChainNodePath& devicePath) const;
+
+    /**
+     * @brief Return true if any active explicit user mapping (StaticTarget or
+     * AliasRef) targets a parameter / macro / mod on this device. Excludes
+     * resolver-based automap-profile bindings.
+     */
+    bool hasUserMappingForDevice(const ChainNodePath& devicePath) const;
 
     /**
      * @brief Return true if any active binding (Global + Project) resolves to a
@@ -164,6 +190,25 @@ class BindingRegistry {
     bool hasActiveBindingForTarget(
         const ChainNodePath& devicePath, int paramIndex,
         StaticTarget::Owner owner = StaticTarget::Owner::PluginParam) const;
+
+    /**
+     * @brief Return true if any active binding (Global + Project) for this macro
+     * is an explicit static target (StaticTarget owner=DeviceMacro) — i.e. came
+     * from a user MIDI Learn gesture, not an automap profile resolver.
+     *
+     * Used to paint the macro indicator orange (Learn override) vs green (profile
+     * default). Same "active" semantics as hasActiveBindingForTarget.
+     */
+    bool hasActiveStaticBindingForMacro(const ChainNodePath& devicePath, int macroIndex) const;
+
+    /**
+     * @brief Remove only user Learn'd static DeviceMacro bindings on (path, macroIndex).
+     *
+     * Mirrors hasActiveStaticBindingForMacro: leaves focused-device-macro
+     * resolver bindings (automap profile defaults) alone so the macro falls
+     * back to its profile mapping after the user clears their override.
+     */
+    int removeStaticBindingsForMacro(const ChainNodePath& devicePath, int macroIndex);
 
     /**
      * @brief Return true when an automap profile binding (focused-device-macro

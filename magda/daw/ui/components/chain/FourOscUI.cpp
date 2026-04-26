@@ -239,18 +239,26 @@ FourOscUI::OscTab::OscTab(FourOscUI& owner) : owner_(owner) {
         };
         addAndMakeVisible(row.tuneSlider);
 
-        // Fine tune (-100 to 100 cents)
+        // Fine tune (-100 to 100 cents) — TE prints 3 decimals; one is plenty
+        // for cents.
         row.fineSlider.setRange(-100.0, 100.0, 0.1);
         row.fineSlider.setValue(0.0, juce::dontSendNotification);
+        row.fineSlider.setValueFormatter([](double v) { return juce::String(v, 1); });
         row.fineSlider.onValueChanged = [this, idx = oscBase + 1](double v) {
             if (owner_.onParameterChanged)
                 owner_.onParameterChanged(idx, static_cast<float>(v));
         };
         addAndMakeVisible(row.fineSlider);
 
-        // Level (-100 to 0 dB)
+        // Level (-100 to 0 dB) — TE prints 3 decimals after "dB"; collapse to
+        // 1 decimal to match the rest of MAGDA's dB readouts.
         row.levelSlider.setRange(-100.0, 0.0, 0.1);
         row.levelSlider.setValue(-100.0, juce::dontSendNotification);
+        row.levelSlider.setValueFormatter([](double v) -> juce::String {
+            if (v <= -60.0)
+                return "-inf";
+            return juce::String(v, 1) + "dB";
+        });
         row.levelSlider.onValueChanged = [this, idx = oscBase + 2](double v) {
             if (owner_.onParameterChanged)
                 owner_.onParameterChanged(idx, static_cast<float>(v));
@@ -275,18 +283,29 @@ FourOscUI::OscTab::OscTab(FourOscUI& owner) : owner_(owner) {
         };
         addAndMakeVisible(row.detuneSlider);
 
-        // Spread (-100 to 100 %)
+        // Spread (-100 to 100 %) — TE prints 3 decimals + "%"; integer percent
+        // is plenty for a perceptual stereo width control.
         row.spreadSlider.setRange(-100.0, 100.0, 0.1);
         row.spreadSlider.setValue(0.0, juce::dontSendNotification);
+        row.spreadSlider.setValueFormatter(
+            [](double v) { return juce::String(static_cast<int>(std::round(v))) + "%"; });
         row.spreadSlider.onValueChanged = [this, idx = oscBase + 5](double v) {
             if (owner_.onParameterChanged)
                 owner_.onParameterChanged(idx, static_cast<float>(v));
         };
         addAndMakeVisible(row.spreadSlider);
 
-        // Pan (-1 to 1)
+        // Pan (-1 to 1) — TE's native getParameterText labels centre as "0R",
+        // which reads like a noisy mistake. Show a clean "0" at centre and
+        // standard "L50"/"R50" elsewhere. (Sticky against setParameterInfo.)
         row.panSlider.setRange(-1.0, 1.0, 0.01);
         row.panSlider.setValue(0.0, juce::dontSendNotification);
+        row.panSlider.setValueFormatter([](double v) -> juce::String {
+            if (std::abs(v) < 0.005)
+                return "0";
+            int amount = static_cast<int>(std::round(std::abs(v) * 100.0));
+            return (v < 0 ? "L" : "R") + juce::String(amount);
+        });
         row.panSlider.onValueChanged = [this, idx = oscBase + 6](double v) {
             if (owner_.onParameterChanged)
                 owner_.onParameterChanged(idx, static_cast<float>(v));
@@ -332,6 +351,8 @@ FourOscUI::OscTab::OscTab(FourOscUI& owner) : owner_(owner) {
     setupLabel(legatoLabel_, "GLIDE");
     legatoSlider_.setRange(0.0, 500.0, 0.1);
     legatoSlider_.setValue(0.0, juce::dontSendNotification);
+    legatoSlider_.setValueFormatter(
+        [](double v) { return juce::String(static_cast<int>(std::round(v))) + "ms"; });
     legatoSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kGlobalBase, static_cast<float>(v));
@@ -341,6 +362,11 @@ FourOscUI::OscTab::OscTab(FourOscUI& owner) : owner_(owner) {
     setupLabel(masterLabel_, "LEVEL");
     masterLevelSlider_.setRange(-100.0, 0.0, 0.1);
     masterLevelSlider_.setValue(0.0, juce::dontSendNotification);
+    masterLevelSlider_.setValueFormatter([](double v) -> juce::String {
+        if (v <= -60.0)
+            return "-inf";
+        return juce::String(v, 1) + "dB";
+    });
     masterLevelSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kGlobalBase + 1, static_cast<float>(v));
@@ -544,9 +570,17 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     };
     addAndMakeVisible(freqSlider_);
 
+    // Resonance / Key / Velocity are all 0–100 % params. TE prints 3 decimals
+    // after the "%" — integer percent is the right granularity for perceptual
+    // controls.
+    auto percentFormatter = [](double v) {
+        return juce::String(static_cast<int>(std::round(v))) + "%";
+    };
+
     // Resonance
     setupLabel(resLabel_, "RES");
     resonanceSlider_.setRange(0.0, 100.0, 0.1);
+    resonanceSlider_.setValueFormatter(percentFormatter);
     resonanceSlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase + 5, static_cast<float>(v));
@@ -556,6 +590,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     // Key tracking
     setupLabel(keyLabel_, "KEY");
     keySlider_.setRange(0.0, 100.0, 0.1);
+    keySlider_.setValueFormatter(percentFormatter);
     keySlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase + 7, static_cast<float>(v));
@@ -565,6 +600,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     // Velocity
     setupLabel(velLabel_, "VEL");
     velocitySlider_.setRange(0.0, 100.0, 0.1);
+    velocitySlider_.setValueFormatter(percentFormatter);
     velocitySlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kFilterBase + 8, static_cast<float>(v));
@@ -743,6 +779,8 @@ FourOscUI::AmpTab::AmpTab(FourOscUI& owner) : owner_(owner) {
 
     setupLabel(velLabel_, "VEL");
     velocitySlider_.setRange(0.0, 100.0, 0.1);
+    velocitySlider_.setValueFormatter(
+        [](double v) { return juce::String(static_cast<int>(std::round(v))) + "%"; });
     velocitySlider_.onValueChanged = [this](double v) {
         if (owner_.onParameterChanged)
             owner_.onParameterChanged(kAmpBase + 4, static_cast<float>(v));

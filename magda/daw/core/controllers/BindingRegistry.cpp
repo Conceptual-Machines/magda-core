@@ -172,11 +172,22 @@ std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& deviceP
 
 namespace {
 
-// Shared by indicator queries — a binding counts as "active" when its source
-// controller is either absent from the registry (port-only Learn bindings) or
-// present and enabled. Matches ControllerRouter's runtime filter so indicators
-// agree with actual MIDI routing.
+// Shared by indicator queries — a binding counts as "active" when it will
+// actually fire on incoming MIDI. ControllerRouter routes via two paths:
+//   1. findForPort: port-based dispatch — fires whenever the live port matches
+//      the binding's portKey, INDEPENDENT of whether a registered controller
+//      is enabled. Pure Learn'd bindings always come this way.
+//   2. findForSource (controller-addressed): only used when the registered
+//      controller is enabled.
+// So a binding fires when (portKey is set) OR (controllerId is null) OR
+// (controllerId is set AND that controller is enabled). Earlier this helper
+// only checked the controller-side, which made indicators disappear for
+// Learn'd bindings whose source carries both a portKey AND a controllerId
+// pointing at a controller the user has toggled off — even though the
+// binding still routes via the port.
 bool isSourceControllerActive(const Binding& b) {
+    if (b.source.portKey.isNotEmpty())
+        return true;  // port-based routing — fires regardless of controller enabled
     if (b.source.controllerId.isNull())
         return true;
     auto c = ControllerRegistry::getInstance().find(b.source.controllerId);
@@ -265,6 +276,90 @@ bool BindingRegistry::hasActiveBindingForTarget(const ChainNodePath& devicePath,
     };
 
     return check(globalBindings_) || check(projectBindings_);
+}
+
+bool BindingRegistry::hasResolverBindingForDevice(const ChainNodePath& devicePath) const {
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+    auto check = [&](const std::vector<Binding>& vec) -> bool {
+        for (const auto& b : vec) {
+            if (!std::holds_alternative<ResolverRef>(b.target))
+                continue;
+            if (!isSourceControllerActive(b))
+                continue;
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.devicePath == devicePath)
+                return true;
+        }
+        return false;
+    };
+    return check(globalBindings_) || check(projectBindings_);
+}
+
+bool BindingRegistry::hasUserMappingForDevice(const ChainNodePath& devicePath) const {
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+    auto check = [&](const std::vector<Binding>& vec) -> bool {
+        for (const auto& b : vec) {
+            if (std::holds_alternative<ResolverRef>(b.target))
+                continue;  // resolver bindings are profile defaults, not user mappings
+            if (!isSourceControllerActive(b))
+                continue;
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.devicePath == devicePath)
+                return true;
+        }
+        return false;
+    };
+    return check(globalBindings_) || check(projectBindings_);
+}
+
+bool BindingRegistry::hasActiveStaticBindingForMacro(const ChainNodePath& devicePath,
+                                                     int macroIndex) const {
+    auto check = [&](const std::vector<Binding>& vec) -> bool {
+        for (const auto& b : vec) {
+            auto* st = std::get_if<StaticTarget>(&b.target);
+            if (st == nullptr)
+                continue;
+            if (st->owner != StaticTarget::Owner::DeviceMacro)
+                continue;
+            if (st->devicePath != devicePath || st->paramIndex != macroIndex)
+                continue;
+            if (!isSourceControllerActive(b))
+                continue;
+            return true;
+        }
+        return false;
+    };
+    return check(globalBindings_) || check(projectBindings_);
+}
+
+int BindingRegistry::removeStaticBindingsForMacro(const ChainNodePath& devicePath, int macroIndex) {
+    std::vector<BindingId> toRemoveGlobal;
+    std::vector<BindingId> toRemoveProject;
+    auto collect = [&](const std::vector<Binding>& vec, std::vector<BindingId>& out) {
+        for (const auto& b : vec) {
+            auto* st = std::get_if<StaticTarget>(&b.target);
+            if (st == nullptr)
+                continue;
+            if (st->owner != StaticTarget::Owner::DeviceMacro)
+                continue;
+            if (st->devicePath != devicePath || st->paramIndex != macroIndex)
+                continue;
+            out.push_back(b.id);
+        }
+    };
+    collect(globalBindings_, toRemoveGlobal);
+    collect(projectBindings_, toRemoveProject);
+    for (const auto& id : toRemoveGlobal)
+        remove(BindingScope::Global, id);
+    for (const auto& id : toRemoveProject)
+        remove(BindingScope::Project, id);
+    return static_cast<int>(toRemoveGlobal.size() + toRemoveProject.size());
 }
 
 bool BindingRegistry::isAutomapShadowedForMacro(const ChainNodePath& devicePath,
@@ -373,6 +468,54 @@ int BindingRegistry::removeForTarget(const ChainNodePath& devicePath, int paramI
     }
 
     return static_cast<int>(toRemove.size());
+}
+
+std::vector<Binding> BindingRegistry::findForModParam(const ChainNodePath& devicePath, ModId modId,
+                                                      int modParamIndex) const {
+    std::vector<Binding> results;
+
+    DefaultChainContext ctx;
+    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
+
+    auto checkScope = [&](const std::vector<Binding>& vec) {
+        for (const auto& b : vec) {
+            auto resolved = resolver.resolve(b.target);
+            if (!resolved.ok())
+                continue;
+            if (resolved.owner == StaticTarget::Owner::ModParam &&
+                resolved.devicePath == devicePath && resolved.modId == modId &&
+                resolved.modParamIndex == modParamIndex)
+                results.push_back(b);
+        }
+    };
+
+    checkScope(globalBindings_);
+    checkScope(projectBindings_);
+
+    return results;
+}
+
+int BindingRegistry::removeForModParam(const ChainNodePath& devicePath, ModId modId,
+                                       int modParamIndex) {
+    auto toRemove = findForModParam(devicePath, modId, modParamIndex);
+    for (const auto& b : toRemove) {
+        bool inGlobal = false;
+        for (const auto& gb : globalBindings_) {
+            if (gb.id == b.id) {
+                inGlobal = true;
+                break;
+            }
+        }
+        remove(inGlobal ? BindingScope::Global : BindingScope::Project, b.id);
+    }
+    return static_cast<int>(toRemove.size());
+}
+
+bool BindingRegistry::hasActiveBindingForModParam(const ChainNodePath& devicePath, ModId modId,
+                                                  int modParamIndex) const {
+    auto matches = findForModParam(devicePath, modId, modParamIndex);
+    return std::any_of(matches.begin(), matches.end(),
+                       [](const Binding& b) { return isSourceControllerActive(b); });
 }
 
 // ============================================================================

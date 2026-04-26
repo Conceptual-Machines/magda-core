@@ -22,6 +22,8 @@ ResolvedTarget TargetResolver::resolve(const Target& target) const {
                 r.devicePath = t.devicePath;
                 r.paramIndex = t.paramIndex;
                 r.owner = t.owner;
+                r.modId = t.modId;
+                r.modParamIndex = t.modParamIndex;
                 r.sourceLabel = "static";
                 r.resolved = true;
                 return r;
