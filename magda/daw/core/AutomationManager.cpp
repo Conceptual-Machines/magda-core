@@ -378,6 +378,33 @@ std::vector<AutomationTarget> AutomationManager::getUserTouchedTargets() const {
     return userTouchedTargets_;
 }
 
+void AutomationManager::setTouchBaseline(const AutomationTarget& target, double normalizedValue) {
+    for (auto& entry : touchBaselines_) {
+        if (entry.first == target) {
+            entry.second = normalizedValue;
+            return;
+        }
+    }
+    touchBaselines_.emplace_back(target, normalizedValue);
+}
+
+std::optional<double> AutomationManager::getTouchBaseline(const AutomationTarget& target) const {
+    for (const auto& entry : touchBaselines_) {
+        if (entry.first == target)
+            return entry.second;
+    }
+    return std::nullopt;
+}
+
+void AutomationManager::clearTouchBaseline(const AutomationTarget& target) {
+    touchBaselines_.erase(
+        std::remove_if(touchBaselines_.begin(), touchBaselines_.end(),
+                       [&](const std::pair<AutomationTarget, double>& e) {
+                           return e.first == target;
+                       }),
+        touchBaselines_.end());
+}
+
 AutomationVisualState AutomationManager::getVisualState(const AutomationTarget& target) const {
     AutomationLaneId laneId = getLaneForTarget(target);
     if (laneId == INVALID_AUTOMATION_LANE_ID)

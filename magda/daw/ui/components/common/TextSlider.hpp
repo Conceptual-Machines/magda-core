@@ -416,6 +416,18 @@ class TextSlider : public juce::Component,
             if (hasAutomationTarget_) {
                 magda::AutomationManager::getInstance().setTargetUserTouched(automationTarget_,
                                                                              true);
+                // Capture the pre-drag value as a Touch-mode bounce-back
+                // baseline. dragStartValue_ is the slider's value before any
+                // motion, in the slider's display units; convert to the
+                // normalized 0..1 form the lane stores via the target's
+                // ParameterInfo. Track volume / pan have their own engine-
+                // internal baseline path and don't strictly need this, but
+                // it's harmless — the engine prefers its own when both exist.
+                magda::ParameterInfo info = automationTarget_.getParameterInfo();
+                double normalized = static_cast<double>(magda::ParameterUtils::realToNormalized(
+                    static_cast<float>(dragStartValue_), info));
+                magda::AutomationManager::getInstance().setTouchBaseline(automationTarget_,
+                                                                         normalized);
             }
         } else {
             isLeftButtonDrag_ = false;
@@ -506,6 +518,10 @@ class TextSlider : public juce::Component,
             auto& mgr = magda::AutomationManager::getInstance();
             mgr.setTargetUserTouched(automationTarget_, false);
             mgr.setTargetTouchSuppressed(automationTarget_, false);
+            // Recording engine consumes the baseline on the release
+            // transition; clear it here so a stale value doesn't leak into
+            // the next gesture if the engine wasn't recording.
+            mgr.clearTouchBaseline(automationTarget_);
         }
 
         // Handle Shift+drag end

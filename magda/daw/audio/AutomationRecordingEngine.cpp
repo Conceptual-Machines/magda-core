@@ -334,6 +334,14 @@ void AutomationRecordingEngine::onDeviceParameterChanged(DeviceId deviceId, int 
 
     auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
 
+    // Touch bounce-back baseline. For device params there's no engine-side
+    // pre-touch value (unlike volume/pan which use mix state), so we read
+    // the slider-captured baseline that TextSlider deposited on mouseDown.
+    if (mode_ == AutomationMode::Touch && !laneTouchBaseline_.count(laneId)) {
+        if (auto baseline = autoMgr.getTouchBaseline(target))
+            laneTouchBaseline_[laneId] = *baseline;
+    }
+
     double beatTime = getCurrentBeatTime();
     double normalizedValue = normalizeDeviceParam(target, rawValue);
 
@@ -619,6 +627,11 @@ void AutomationRecordingEngine::onMacroValueChanged(TrackId trackId, bool isRack
         return;
 
     auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+
+    if (mode_ == AutomationMode::Touch && !laneTouchBaseline_.count(laneId)) {
+        if (auto baseline = autoMgr.getTouchBaseline(target))
+            laneTouchBaseline_[laneId] = *baseline;
+    }
 
     double beatTime = getCurrentBeatTime();
     double normalizedValue = static_cast<double>(value);  // Macros are already 0-1
