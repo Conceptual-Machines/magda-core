@@ -231,6 +231,7 @@ class Interpreter {
 
     // Time conversion
     double barsToTime(double bar) const;
+    double barsToBeats(double bars) const;
 
     InterpreterContext ctx_;
 };

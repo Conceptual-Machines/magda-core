@@ -83,8 +83,8 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     return clip.id;
 }
 
-ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double length,
-                                   ClipView view) {
+ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, double lengthBeats,
+                                        ClipView view) {
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
@@ -97,14 +97,18 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
     } else {
         clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
     }
-    clip.startTime = startTime;
-    clip.length = length;
 
-    // MIDI clips: beats are authoritative, derive from seconds using project tempo
+    // Beats are authoritative.
+    clip.startBeats = startBeats;
+    clip.lengthBeats = lengthBeats;
+
+    // Derive seconds for display caches only — never round-tripped back into
+    // beats. ClipSynchronizer reads clip->startBeats / lengthBeats directly
+    // when positioning the TE clip, so the seconds stored here are advisory.
     double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
     if (tempo > 0.0) {
-        clip.startBeats = (startTime * tempo) / 60.0;
-        clip.lengthBeats = (length * tempo) / 60.0;
+        clip.startTime = (startBeats * 60.0) / tempo;
+        clip.length = (lengthBeats * 60.0) / tempo;
     }
 
     if (view == ClipView::Arrangement) {
@@ -113,13 +117,27 @@ ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double len
         // Session clips loop by default
         clip.loopEnabled = true;
         clip.loopLengthBeats = clip.lengthBeats;
-        clip.loopLength = length;
+        clip.loopLength = clip.length;
         clips_[clip.id] = clip;
     }
 
     notifyClipsChanged();
 
     return clip.id;
+}
+
+ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double length,
+                                   ClipView view) {
+    // Seconds → beats once, at the boundary, using project tempo. Then
+    // delegate to the beats-authoritative path. Anything driven by musical
+    // input (bars, beats from a parser, etc.) should call createMidiClipBeats
+    // directly to avoid this seconds detour.
+    double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    if (tempo <= 0.0)
+        tempo = 120.0;
+    double startBeats = (startTime * tempo) / 60.0;
+    double lengthBeats = (length * tempo) / 60.0;
+    return createMidiClipBeats(trackId, startBeats, lengthBeats, view);
 }
 
 void ClipManager::deleteClip(ClipId clipId) {

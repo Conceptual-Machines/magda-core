@@ -89,7 +89,25 @@ class ClipManager {
                            double projectBPM = 120.0);
 
     /**
-     * @brief Create an empty MIDI clip
+     * @brief Create an empty MIDI clip — beats-authoritative API.
+     *
+     * Beats are the canonical positioning unit for MIDI clips in MAGDA.
+     * Use this whenever the caller has musical units (bars, beats, ticks)
+     * — never compute beats by going through seconds first. Seconds are
+     * derived from the project tempo at clip-creation time and stored as
+     * a display cache only; they are NOT round-tripped back into beats.
+     */
+    ClipId createMidiClipBeats(TrackId trackId, double startBeats, double lengthBeats,
+                               ClipView view = ClipView::Arrangement);
+
+    /**
+     * @brief Create an empty MIDI clip from seconds.
+     *
+     * Thin shim around createMidiClipBeats — only legitimate when the
+     * caller's natural unit is seconds (recording from the audio thread,
+     * timeline drops measured in pixels-as-time). Anything driven by
+     * musical input should call createMidiClipBeats directly.
+     *
      * @param view Which view the clip belongs to (Arrangement or Session)
      * @param startTime Position on timeline - only used for Arrangement view
      */

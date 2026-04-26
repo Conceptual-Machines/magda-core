@@ -18,6 +18,7 @@
 #include "../daw/core/UndoManager.hpp"
 #include "../daw/engine/AudioEngine.hpp"
 #include "../daw/engine/TracktionEngineWrapper.hpp"
+#include "../daw/project/ProjectManager.hpp"
 #include "music_helpers.hpp"
 
 namespace magda::dsl {
@@ -824,11 +825,13 @@ bool Interpreter::executeNewClip(const Params& params) {
         return false;
     }
 
-    double startTime = barsToTime(bar);
-    double length = barsToTime(bar + lengthBars) - startTime;
+    // Beats-authoritative: bars → beats via project time signature, no
+    // seconds round-trip.
+    double startBeats = barsToBeats(bar - 1.0);
+    double lengthBeats = barsToBeats(lengthBars);
 
     auto& cm = ClipManager::getInstance();
-    auto clipId = cm.createMidiClip(ctx_.currentTrackId, startTime, length);
+    auto clipId = cm.createMidiClipBeats(ctx_.currentTrackId, startBeats, lengthBeats);
 
     if (clipId < 0) {
         ctx_.setError("Failed to create clip");
@@ -1436,6 +1439,15 @@ double Interpreter::barsToTime(double bar) const {
 
     constexpr double beatsPerBar = 4.0;
     return (bar - 1.0) * beatsPerBar * 60.0 / bpm;
+}
+
+double Interpreter::barsToBeats(double bars) const {
+    // Use project time signature; never assume 4/4 here — the seconds round
+    // trip is what got us into trouble under non-4/4 sigs.
+    int beatsPerBar = ProjectManager::getInstance().getCurrentProjectInfo().timeSignatureNumerator;
+    if (beatsPerBar <= 0)
+        beatsPerBar = 4;
+    return bars * static_cast<double>(beatsPerBar);
 }
 
 // ============================================================================
