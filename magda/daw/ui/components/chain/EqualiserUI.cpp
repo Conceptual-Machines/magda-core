@@ -86,8 +86,10 @@ void EqualiserUI::setupBandControls(int bandIndex, const juce::String& name) {
     addAndMakeVisible(b.freqSlider);
     setupLabelStatic(b.freqLabel, "FREQ", this);
 
-    // Gain slider
+    // Gain slider — TE prints 3 decimals + "dB"; one decimal is the right
+    // granularity for an EQ band gain.
     b.gainSlider.setRange(-20.0, 20.0, 0.1);
+    b.gainSlider.setValueFormatter([](double v) { return juce::String(v, 1) + "dB"; });
     b.gainSlider.onValueChanged = [this, bandIndex](double value) {
         bandGains_[bandIndex] = static_cast<float>(value);
         int paramIndex = bandIndex * kBandParamCount + 1;
@@ -97,8 +99,9 @@ void EqualiserUI::setupBandControls(int bandIndex, const juce::String& name) {
     addAndMakeVisible(b.gainSlider);
     setupLabelStatic(b.gainLabel, "GAIN", this);
 
-    // Q slider
+    // Q slider — TE prints 3 decimals; 2 decimals is plenty for a Q control.
     b.qSlider.setRange(0.1, 4.0, 0.01);
+    b.qSlider.setValueFormatter([](double v) { return juce::String(v, 2); });
     b.qSlider.onValueChanged = [this, bandIndex](double value) {
         int paramIndex = bandIndex * kBandParamCount + 2;
         if (onParameterChanged)
