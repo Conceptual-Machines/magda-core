@@ -202,6 +202,15 @@ class BindingRegistry {
     bool hasActiveStaticBindingForMacro(const ChainNodePath& devicePath, int macroIndex) const;
 
     /**
+     * @brief Remove only user Learn'd static DeviceMacro bindings on (path, macroIndex).
+     *
+     * Mirrors hasActiveStaticBindingForMacro: leaves focused-device-macro
+     * resolver bindings (automap profile defaults) alone so the macro falls
+     * back to its profile mapping after the user clears their override.
+     */
+    int removeStaticBindingsForMacro(const ChainNodePath& devicePath, int macroIndex);
+
+    /**
      * @brief Return true when an automap profile binding (focused-device-macro
      * resolver) targeting this (devicePath, macroIndex) is shadowed by an
      * overlapping static PluginParam binding — i.e. a MIDI Learn override is

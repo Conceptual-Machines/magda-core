@@ -338,6 +338,30 @@ bool BindingRegistry::hasActiveStaticBindingForMacro(const ChainNodePath& device
     return check(globalBindings_) || check(projectBindings_);
 }
 
+int BindingRegistry::removeStaticBindingsForMacro(const ChainNodePath& devicePath, int macroIndex) {
+    std::vector<BindingId> toRemoveGlobal;
+    std::vector<BindingId> toRemoveProject;
+    auto collect = [&](const std::vector<Binding>& vec, std::vector<BindingId>& out) {
+        for (const auto& b : vec) {
+            auto* st = std::get_if<StaticTarget>(&b.target);
+            if (st == nullptr)
+                continue;
+            if (st->owner != StaticTarget::Owner::DeviceMacro)
+                continue;
+            if (st->devicePath != devicePath || st->paramIndex != macroIndex)
+                continue;
+            out.push_back(b.id);
+        }
+    };
+    collect(globalBindings_, toRemoveGlobal);
+    collect(projectBindings_, toRemoveProject);
+    for (const auto& id : toRemoveGlobal)
+        remove(BindingScope::Global, id);
+    for (const auto& id : toRemoveProject)
+        remove(BindingScope::Project, id);
+    return static_cast<int>(toRemoveGlobal.size() + toRemoveProject.size());
+}
+
 bool BindingRegistry::isAutomapShadowedForMacro(const ChainNodePath& devicePath,
                                                 int macroIndex) const {
     DefaultChainContext ctx;

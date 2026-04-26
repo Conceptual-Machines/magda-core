@@ -661,6 +661,66 @@ TEST_CASE("MidiLearnCoordinator - macro Learn does not stage plugin-param listen
     MidiLearnCoordinator::getInstance().cancelLearn();
 }
 
+TEST_CASE("MidiLearnCoordinator - clearMacroMappings leaves automap resolver intact",
+          "[midi-learn][coordinator]") {
+    CoordinatorFixture fix;
+
+    auto c = makeController("coord_port_clear_macro");
+    ControllerRegistry::getInstance().add(c);
+
+    ChainNodePath path = ChainNodePath::topLevelDevice(80, 800);
+    int macroIndex = 0;
+
+    auto& reg = BindingRegistry::getInstance();
+
+    // Profile-style automap binding (focused_device_macro resolver).
+    Binding bAuto;
+    bAuto.id = juce::Uuid();
+    bAuto.source.controllerId = c.id;
+    bAuto.source.msgType = BindingMsgType::CC;
+    bAuto.source.number = 50;
+    ResolverRef rr;
+    rr.kind = "focused_device_macro";
+    rr.args.set("macroIndex", juce::String(macroIndex));
+    bAuto.target = Target{rr};
+    bAuto.mode = BindingMode::Absolute;
+    bAuto.range = BindingRange{0.0f, 1.0f, BindingCurve::Linear};
+    reg.add(BindingScope::Global, bAuto);
+
+    // User Learn'd Static binding on the same macro.
+    Binding bLearn;
+    bLearn.id = juce::Uuid();
+    bLearn.source.controllerId = c.id;
+    bLearn.source.msgType = BindingMsgType::CC;
+    bLearn.source.number = 51;
+    StaticTarget stLearn;
+    stLearn.devicePath = path;
+    stLearn.paramIndex = macroIndex;
+    stLearn.owner = StaticTarget::Owner::DeviceMacro;
+    bLearn.target = Target{stLearn};
+    bLearn.mode = BindingMode::Absolute;
+    bLearn.range = BindingRange{0.0f, 1.0f, BindingCurve::Linear};
+    reg.add(BindingScope::Project, bLearn);
+
+    REQUIRE(reg.hasActiveStaticBindingForMacro(path, macroIndex));
+
+    int removed = MidiLearnCoordinator::getInstance().clearMacroMappings(path, macroIndex);
+    REQUIRE(removed == 1);  // only the Static binding is removed
+    REQUIRE_FALSE(reg.hasActiveStaticBindingForMacro(path, macroIndex));
+
+    // Resolver binding survives so the macro falls back to its automap default.
+    bool resolverStillThere = false;
+    for (const auto& b : reg.bindings(BindingScope::Global)) {
+        if (std::holds_alternative<ResolverRef>(b.target)) {
+            resolverStillThere = true;
+            break;
+        }
+    }
+    REQUIRE(resolverStillThere);
+
+    clearAll();
+}
+
 TEST_CASE("MidiLearnCoordinator - clearModParamMappings removes only matching bindings",
           "[midi-learn][coordinator]") {
     CoordinatorFixture fix;

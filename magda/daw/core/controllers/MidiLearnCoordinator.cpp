@@ -158,8 +158,10 @@ int MidiLearnCoordinator::clearMacroMappings(const ChainNodePath& path, int macr
     jassert(juce::MessageManager::getInstanceWithoutCreating() == nullptr ||
             juce::MessageManager::getInstanceWithoutCreating()->isThisTheMessageThread());
 
-    int removed = BindingRegistry::getInstance().removeForTarget(path, macroIndex,
-                                                                 StaticTarget::Owner::DeviceMacro);
+    // Only remove the user Learn'd Static binding; leave any focused-device-macro
+    // resolver (automap profile) binding untouched so the macro falls back to its
+    // profile mapping after the override is cleared.
+    int removed = BindingRegistry::getInstance().removeStaticBindingsForMacro(path, macroIndex);
     if (removed > 0) {
         auto copyListeners = listeners_;
         for (auto* l : copyListeners)
