@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "../../audio/AutomationRecordingEngine.hpp"  // for AutomationMode
 #include "../components/common/BarsBeatsTicksLabel.hpp"
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/SvgButton.hpp"
@@ -33,6 +34,10 @@ class TransportPanel : public juce::Component {
     std::function<void(int, int)> onTimeSignatureChange;
     std::function<void(bool, int, int)> onGridQuantizeChange;  // (autoGrid, numerator, denominator)
     std::function<void(bool)> onAutomationWriteToggle;
+    // Fires whenever the user changes the active automation mode via the
+    // transport's split-button menu, OR toggles arm/disarm. The argument is
+    // the resolved mode the engine should adopt (Off when disarmed).
+    std::function<void(AutomationMode)> onAutomationModeChanged;
 
     // Navigation callbacks
     std::function<void()> onGoHome;
@@ -61,6 +66,10 @@ class TransportPanel : public juce::Component {
                         bool punchOutEnabled);
 
     void setAutomationWriteEnabled(bool enabled);
+    void setAutomationMode(AutomationMode mode);
+    AutomationMode getAutomationMode() const {
+        return automationMode_;
+    }
     void setQwertyKeyboardEnabled(bool enabled);
 
     /** Handed in from MainWindow so right-clicking the QWERTY toggle can pop
@@ -202,6 +211,13 @@ class TransportPanel : public juce::Component {
     bool isPaused = false;
     bool isLooping = false;
     bool isAutomationWriteEnabled = false;
+    // Selected automation mode for the next arm. Stays sticky across disarm so
+    // the user's last choice is preserved when they re-arm. Defaults to Write
+    // to match historical single-toggle behavior.
+    AutomationMode automationMode_ = AutomationMode::Write;
+    void showAutomationModeMenu();
+    void emitCurrentAutomationMode();
+    void updateAutomationLabelText();
     bool isSnapEnabled = true;
     bool isAutoGrid = true;
     int gridNumerator = 1;

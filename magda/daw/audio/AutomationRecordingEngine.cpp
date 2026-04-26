@@ -21,10 +21,22 @@ static float gainToDb(float gain) {
 
 AutomationRecordingEngine::AutomationRecordingEngine(te::Edit& edit) : edit_(edit) {}
 
-void AutomationRecordingEngine::setWriteEnabled(bool enabled) {
-    DBG("[AutoRec] setWriteEnabled: " << (enabled ? "ON" : "OFF"));
-    writeEnabled_ = enabled;
-    if (enabled) {
+static const char* modeName(AutomationMode m) {
+    switch (m) {
+        case AutomationMode::Off:   return "OFF";
+        case AutomationMode::Write: return "WRITE";
+        case AutomationMode::Touch: return "TOUCH";
+        case AutomationMode::Latch: return "LATCH";
+    }
+    return "?";
+}
+
+void AutomationRecordingEngine::setMode(AutomationMode mode) {
+    if (mode == mode_)
+        return;
+    DBG("[AutoRec] setMode: " << modeName(mode_) << " -> " << modeName(mode));
+    mode_ = mode;
+    if (mode_ != AutomationMode::Off) {
         // Capture track state now — before playback starts and before TE
         // feeds back automation echoes that would corrupt track->volume.
         // This snapshot is used as the initial anchor value for any lane
@@ -33,14 +45,22 @@ void AutomationRecordingEngine::setWriteEnabled(bool enabled) {
     }
 }
 
+AutomationMode AutomationRecordingEngine::getMode() const {
+    return mode_;
+}
+
+void AutomationRecordingEngine::setWriteEnabled(bool enabled) {
+    setMode(enabled ? AutomationMode::Write : AutomationMode::Off);
+}
+
 bool AutomationRecordingEngine::isWriteEnabled() const {
-    return writeEnabled_;
+    return mode_ != AutomationMode::Off;
 }
 
 void AutomationRecordingEngine::process() {
     bool playing = edit_.getTransport().isPlaying();
 
-    if (!wasPlaying_ && playing && writeEnabled_) {
+    if (!wasPlaying_ && playing && isWriteEnabled()) {
         DBG("[AutoRec] Transport started with write ON — begin recording");
         UndoManager::getInstance().beginCompoundOperation("Record Automation");
         isRecording_ = true;
@@ -54,13 +74,14 @@ void AutomationRecordingEngine::process() {
         lastRecorded_.clear();
         laneRecordingStart_.clear();
         lanePreRecordingPoints_.clear();
-    } else if (playing && writeEnabled_ && !isRecording_) {
+        clearLatchState();
+    } else if (playing && isWriteEnabled() && !isRecording_) {
         DBG("[AutoRec] Write toggled ON mid-playback — begin recording");
         UndoManager::getInstance().beginCompoundOperation("Record Automation");
         isRecording_ = true;
         lastRecorded_.clear();
         seedBaselines();
-    } else if (isRecording_ && !writeEnabled_) {
+    } else if (isRecording_ && !isWriteEnabled()) {
         DBG("[AutoRec] Write toggled OFF — end recording");
         flushFinalPoints();
         UndoManager::getInstance().endCompoundOperation();
@@ -68,13 +89,69 @@ void AutomationRecordingEngine::process() {
         lastRecorded_.clear();
         laneRecordingStart_.clear();
         lanePreRecordingPoints_.clear();
+        clearLatchState();
     }
+
+    if (isRecording_ && mode_ == AutomationMode::Latch)
+        processLatch();
+    else if (!latched_.empty() || !previouslyTouched_.empty())
+        clearLatchState();
 
     wasPlaying_ = playing;
 }
 
+void AutomationRecordingEngine::processLatch() {
+    auto& autoMgr = AutomationManager::getInstance();
+    auto current = autoMgr.getUserTouchedTargets();
+
+    // Detect release: targets in previouslyTouched_ but not in current.
+    for (const auto& prev : previouslyTouched_) {
+        bool stillTouched =
+            std::find(current.begin(), current.end(), prev) != current.end();
+        if (stillTouched)
+            continue;
+
+        auto laneId = autoMgr.getLaneForTarget(prev);
+        if (laneId == INVALID_AUTOMATION_LANE_ID)
+            continue;
+        auto it = lastRecorded_.find(laneId);
+        if (it == lastRecorded_.end())
+            continue;
+        latched_[laneId] = LatchEntry{prev, it->second.value};
+        DBG("[AutoRec] Latch captured lane=" << laneId << " value=" << it->second.value);
+    }
+
+    // Re-touch: drop entries the user has taken back over.
+    for (const auto& cur : current) {
+        auto laneId = autoMgr.getLaneForTarget(cur);
+        if (laneId != INVALID_AUTOMATION_LANE_ID && latched_.erase(laneId) > 0) {
+            DBG("[AutoRec] Latch released (user re-touched) lane=" << laneId);
+        }
+    }
+
+    // Continue writing each latched value at the current beat — recordPoint's
+    // existing sweep deletes any pre-existing curve in the held range, so the
+    // lane stays flat at the held value until the user re-touches or stops.
+    double beatTime = getCurrentBeatTime();
+    for (const auto& [laneId, entry] : latched_) {
+        if (!shouldThinPoint(laneId, beatTime, entry.value))
+            recordPoint(laneId, beatTime, entry.value);
+    }
+
+    previouslyTouched_ = std::move(current);
+}
+
+void AutomationRecordingEngine::clearLatchState() {
+    latched_.clear();
+    previouslyTouched_.clear();
+}
+
 bool AutomationRecordingEngine::shouldRecord() const {
     return isRecording_ && edit_.getTransport().isPlaying();
+}
+
+bool AutomationRecordingEngine::requiresUserTouched() const {
+    return mode_ == AutomationMode::Touch || mode_ == AutomationMode::Latch;
 }
 
 double AutomationRecordingEngine::getCurrentBeatTime() const {
@@ -223,6 +300,13 @@ void AutomationRecordingEngine::onDeviceParameterChanged(DeviceId deviceId, int 
     }
 
     auto& autoMgr = AutomationManager::getInstance();
+
+    // Touch / Latch only record while the user is physically holding the
+    // control. Filter before lane creation so a quick fly-by parameter change
+    // doesn't even materialise a lane.
+    if (requiresUserTouched() && !autoMgr.isTargetUserTouched(target))
+        return;
+
     auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
 
     double beatTime = getCurrentBeatTime();
@@ -286,8 +370,9 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     // During playback, ignore property changes that weren't initiated by a
     // user gesture — otherwise AutomationPlaybackEngine's writes to the TE
     // parameter round-trip back through trackPropertyChanged and we'd re-record
-    // the baked curve on every block.
-    if (autoMgr.isPlaybackActive()) {
+    // the baked curve on every block. Touch / Latch always require this gate
+    // even outside playback, since their semantics demand a physical hold.
+    if (autoMgr.isPlaybackActive() || requiresUserTouched()) {
         AutomationTarget volTarget;
         volTarget.type = AutomationTargetType::TrackVolume;
         volTarget.trackId = tid;
@@ -488,6 +573,10 @@ void AutomationRecordingEngine::onMacroValueChanged(TrackId trackId, bool isRack
     }
 
     auto& autoMgr = AutomationManager::getInstance();
+
+    if (requiresUserTouched() && !autoMgr.isTargetUserTouched(target))
+        return;
+
     auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
 
     double beatTime = getCurrentBeatTime();

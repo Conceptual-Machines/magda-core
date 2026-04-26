@@ -172,6 +172,9 @@ class AutomationManager : public TrackManagerListener {
     // active playback — preventing feedback loops that overwrite baked curves.
     void setTargetUserTouched(const AutomationTarget& target, bool touched);
     bool isTargetUserTouched(const AutomationTarget& target) const;
+    // Snapshot of all currently touched targets, used by AutomationRecordingEngine
+    // to detect release transitions for Latch mode.
+    std::vector<AutomationTarget> getUserTouchedTargets() const;
 
     /**
      * @brief Compute the visual state for a target's bound control.

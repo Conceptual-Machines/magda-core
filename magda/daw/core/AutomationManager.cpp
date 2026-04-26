@@ -374,6 +374,10 @@ bool AutomationManager::isTargetUserTouched(const AutomationTarget& target) cons
            userTouchedTargets_.end();
 }
 
+std::vector<AutomationTarget> AutomationManager::getUserTouchedTargets() const {
+    return userTouchedTargets_;
+}
+
 AutomationVisualState AutomationManager::getVisualState(const AutomationTarget& target) const {
     AutomationLaneId laneId = getLaneForTarget(target);
     if (laneId == INVALID_AUTOMATION_LANE_ID)

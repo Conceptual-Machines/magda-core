@@ -876,6 +876,10 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         if (auto* bridge = getAudioEngine()->getAudioBridge())
             bridge->setAutomationWriteEnabled(enabled);
     };
+    transportPanel->onAutomationModeChanged = [this](AutomationMode mode) {
+        if (auto* bridge = getAudioEngine()->getAudioBridge())
+            bridge->setAutomationMode(mode);
+    };
 
     // Navigation callbacks
     transportPanel->onGoHome = [this]() {

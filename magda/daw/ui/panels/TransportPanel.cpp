@@ -635,10 +635,13 @@ void TransportPanel::setupTransportButtons() {
         automationWriteButton->setActive(isAutomationWriteEnabled);
         if (automationWriteLabel)
             automationWriteLabel->setVisible(isAutomationWriteEnabled);
+        updateAutomationLabelText();
         if (onAutomationWriteToggle)
             onAutomationWriteToggle(isAutomationWriteEnabled);
+        emitCurrentAutomationMode();
         repaint();
     };
+    automationWriteButton->addMouseListener(this, false);
     addAndMakeVisible(*automationWriteButton);
 
     // Pause button
@@ -1388,6 +1391,9 @@ void TransportPanel::updateCpuTooltip() {
 void TransportPanel::mouseDown(const juce::MouseEvent& e) {
     if (e.originalComponent == metronomeButton.get() && e.mods.isRightButtonDown()) {
         showCountInMenu();
+    } else if (e.originalComponent == automationWriteButton.get() &&
+               e.mods.isRightButtonDown()) {
+        showAutomationModeMenu();
     } else if (e.originalComponent == qwertyKeyboardButton.get() && e.mods.isRightButtonDown() &&
                qwertyKeyboard_ != nullptr) {
         // TODO: CallOutBox steals keyboard focus, which silences the
@@ -1426,6 +1432,66 @@ void TransportPanel::showCountInMenu() {
 
 void TransportPanel::setCountInMode(int mode) {
     countInMode_ = mode;
+}
+
+void TransportPanel::showAutomationModeMenu() {
+    juce::PopupMenu menu;
+    auto addModeItem = [&](int id, const juce::String& label, AutomationMode m) {
+        menu.addItem(id, label, true, automationMode_ == m);
+    };
+    addModeItem(1, "Write", AutomationMode::Write);
+    addModeItem(2, "Touch", AutomationMode::Touch);
+    addModeItem(3, "Latch", AutomationMode::Latch);
+
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(automationWriteButton.get()),
+        [this](int result) {
+            if (result <= 0)
+                return;
+            AutomationMode picked = AutomationMode::Write;
+            switch (result) {
+                case 1: picked = AutomationMode::Write; break;
+                case 2: picked = AutomationMode::Touch; break;
+                case 3: picked = AutomationMode::Latch; break;
+                default: return;
+            }
+            if (picked == automationMode_)
+                return;
+            automationMode_ = picked;
+            updateAutomationLabelText();
+            // Live-update the engine if currently armed; otherwise the choice
+            // becomes effective the next time the user arms.
+            if (isAutomationWriteEnabled)
+                emitCurrentAutomationMode();
+            repaint();
+        });
+}
+
+void TransportPanel::setAutomationMode(AutomationMode mode) {
+    if (automationMode_ == mode)
+        return;
+    automationMode_ = mode;
+    updateAutomationLabelText();
+    repaint();
+}
+
+void TransportPanel::emitCurrentAutomationMode() {
+    if (onAutomationModeChanged)
+        onAutomationModeChanged(isAutomationWriteEnabled ? automationMode_
+                                                          : AutomationMode::Off);
+}
+
+void TransportPanel::updateAutomationLabelText() {
+    if (!automationWriteLabel)
+        return;
+    juce::String suffix;
+    switch (automationMode_) {
+        case AutomationMode::Write: suffix = "WRITE"; break;
+        case AutomationMode::Touch: suffix = "TOUCH"; break;
+        case AutomationMode::Latch: suffix = "LATCH"; break;
+        case AutomationMode::Off:   suffix = "WRITE"; break;  // shouldn't happen — Off implies disarmed
+    }
+    automationWriteLabel->setText("AUTOMATION " + suffix, juce::dontSendNotification);
 }
 
 }  // namespace magda

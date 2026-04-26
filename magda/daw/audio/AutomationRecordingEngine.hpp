@@ -13,6 +13,24 @@ namespace magda {
 namespace te = tracktion;
 
 /**
+ * @brief Automation recording mode.
+ *
+ * Off    — not armed; nothing is recorded.
+ * Write  — record any user-driven parameter change while transport rolls
+ *          (current default behavior).
+ * Touch  — record only while the user is physically holding/dragging the
+ *          parameter; on release, automation playback resumes.
+ * Latch  — like Touch, but on release the last held value continues to be
+ *          written into the lane until the transport stops.
+ */
+enum class AutomationMode {
+    Off,
+    Write,
+    Touch,
+    Latch,
+};
+
+/**
  * @brief Records parameter changes into armed automation lanes during playback
  *
  * When automation write mode is enabled and the transport is playing, parameter
@@ -29,6 +47,10 @@ class AutomationRecordingEngine {
   public:
     explicit AutomationRecordingEngine(te::Edit& edit);
 
+    void setMode(AutomationMode mode);
+    AutomationMode getMode() const;
+
+    // Backwards-compat shims — Off↔Write only. Touch/Latch require setMode().
     void setWriteEnabled(bool enabled);
     bool isWriteEnabled() const;
 
@@ -49,6 +71,10 @@ class AutomationRecordingEngine {
 
   private:
     bool shouldRecord() const;
+    // True when the active mode requires the user to be physically holding the
+    // target (Touch / Latch). Write mode records on any change; Off doesn't get
+    // here because shouldRecord() already returns false.
+    bool requiresUserTouched() const;
     double getCurrentBeatTime() const;
     double normalizeDeviceParam(const AutomationTarget& target, float rawValue);
     bool shouldThinPoint(AutomationLaneId laneId, double beatTime, double value);
@@ -59,7 +85,7 @@ class AutomationRecordingEngine {
     void seedBaselines();
 
     te::Edit& edit_;
-    bool writeEnabled_ = false;
+    AutomationMode mode_ = AutomationMode::Off;
     bool wasPlaying_ = false;
     bool isRecording_ = false;
 
@@ -81,6 +107,22 @@ class AutomationRecordingEngine {
 
     // Per-lane beat time at which recording first wrote a point this session.
     std::unordered_map<int, double> laneRecordingStart_;
+
+    // Latch state: targets the user touched and released without re-touching.
+    // While the transport rolls in Latch mode, each entry's value is re-written
+    // to its lane on every process() tick so the lane stays flat at the held
+    // value until the user re-engages or transport stops.
+    struct LatchEntry {
+        AutomationTarget target;
+        double value = 0.0;
+    };
+    std::unordered_map<int, LatchEntry> latched_;
+    // Targets that were under user touch at the previous process() tick. The
+    // diff against the current tick's set is how we detect release for Latch.
+    std::vector<AutomationTarget> previouslyTouched_;
+
+    void processLatch();
+    void clearLatchState();
 
     // Snapshot of point IDs that existed before recording started for each lane.
     // The sweep only deletes from this set so newly recorded points are never erased.
