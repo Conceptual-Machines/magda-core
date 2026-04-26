@@ -587,7 +587,20 @@ void AutomationRecordingEngine::onModParameterValueChanged(TrackId trackId,
     target.modParamIndex = paramIndex;
 
     auto& autoMgr = AutomationManager::getInstance();
+
+    // Touch / Latch: only record while the user is physically holding the
+    // mod-rate slider. Same gate as device params and macros.
+    if (requiresUserTouched() && !autoMgr.isTargetUserTouched(target))
+        return;
+
     auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
+
+    // Touch baseline for bounce-back on release. The slider deposits the
+    // pre-drag value into AutomationManager on mouseDown.
+    if (mode_ == AutomationMode::Touch && !laneTouchBaseline_.count(laneId)) {
+        if (auto baseline = autoMgr.getTouchBaseline(target))
+            laneTouchBaseline_[laneId] = *baseline;
+    }
 
     // Convert raw rate (Hz, etc.) to normalized 0..1 using the lane's stored
     // ParameterInfo so curve points are stored in the same space as draws.
