@@ -1305,6 +1305,7 @@ void NodeComponent::updateModulatorEditor() {
                 return &(*m)[modIdx];
             return nullptr;
         };
+        modulatorEditorPanel_->setOwnerPath(nodePath_.trackId, nodePath_);
         modulatorEditorPanel_->setModInfo((*mods)[selectedModIndex_], &(*mods)[selectedModIndex_],
                                           std::move(getter));
         modulatorEditorPanel_->setSelectedModIndex(selectedModIndex_);

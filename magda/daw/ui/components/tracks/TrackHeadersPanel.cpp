@@ -2359,7 +2359,22 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
             if (getTrackHeaderArea(i).contains(pos)) {
                 TrackId trackId = trackHeaders[i]->trackId;
 
-                if (event.mods.isCommandDown() && !event.mods.isPopupMenu()) {
+                // Clicks bubbled up from child components (mute / solo /
+                // automation button, name label, selectors, etc.) skip the
+                // selection branch — those controls have their own purpose
+                // and shouldn't drag focus onto a track the user wasn't
+                // intentionally selecting. Without this, e.g., clicking the
+                // automation button on track B switches the chain panel to
+                // track B and tears down any device editor open on track A.
+                // Direct clicks on the panel (originalComponent == this) still
+                // select normally; the right-click context menu below already
+                // uses the same gate.
+                const bool fromChild = event.originalComponent != this;
+                if (fromChild) {
+                    // Skip the selection branches entirely — fall through to
+                    // the right-click / drag-record block, both of which
+                    // already gate on originalComponent.
+                } else if (event.mods.isCommandDown() && !event.mods.isPopupMenu()) {
                     // Cmd+click: toggle track in multi-selection
                     SelectionManager::getInstance().toggleTrackSelection(trackId);
                     grabKeyboardFocus();
@@ -3183,7 +3198,8 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                 for (const auto& element : elements) {
                     if (isDevice(element)) {
                         const auto& device = getDevice(element);
-                        if (device.parameters.empty())
+                        if (device.parameters.empty() && device.mods.empty() &&
+                            device.macros.empty())
                             continue;
 
                         juce::PopupMenu deviceMenu;
@@ -3192,21 +3208,80 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                               ? ChainNodePath::topLevelDevice(trackId, device.id)
                                               : parentPath.withDevice(device.id);
 
-                        for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i) {
-                            AutomationTarget target;
-                            target.type = AutomationTargetType::DeviceParameter;
-                            target.trackId = trackId;
-                            target.devicePath = devicePath;
-                            target.paramIndex = i;
-                            target.paramName =
-                                device.name + ": " + device.parameters[static_cast<size_t>(i)].name;
+                        // Params submenu
+                        if (!device.parameters.empty()) {
+                            juce::PopupMenu paramsMenu;
+                            for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i) {
+                                AutomationTarget target;
+                                target.type = AutomationTargetType::DeviceParameter;
+                                target.trackId = trackId;
+                                target.devicePath = devicePath;
+                                target.paramIndex = i;
+                                target.paramName = device.name + ": " +
+                                                   device.parameters[static_cast<size_t>(i)].name;
 
-                            int itemId =
-                                kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
-                            deviceParamTargets->push_back(target);
-                            deviceMenu.addItem(itemId,
-                                               device.parameters[static_cast<size_t>(i)].name);
+                                int itemId =
+                                    kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                deviceParamTargets->push_back(target);
+                                paramsMenu.addItem(itemId,
+                                                   device.parameters[static_cast<size_t>(i)].name);
+                            }
+                            deviceMenu.addSubMenu("Params", paramsMenu);
                         }
+
+                        // Mods submenu (device-scope MAGDA modifiers). One
+                        // "Rate" lane per modifier — its scale/labels switch
+                        // between Hz (log) and sync divisions (discrete) based
+                        // on the mod's tempoSync flag, so a single lane covers
+                        // both modes without duplicate entries.
+                        {
+                            juce::PopupMenu modsMenu;
+                            bool any = false;
+                            for (const auto& mod : device.mods) {
+                                if (!mod.enabled)
+                                    continue;
+                                AutomationTarget target;
+                                target.type = AutomationTargetType::ModParameter;
+                                target.trackId = trackId;
+                                target.devicePath = devicePath;
+                                target.modId = mod.id;
+                                target.modParamIndex = 0;  // Rate
+                                target.paramName = device.name + ": " + mod.name + " Rate";
+                                int itemId =
+                                    kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                deviceParamTargets->push_back(target);
+                                modsMenu.addItem(itemId, mod.name + " Rate");
+                                any = true;
+                            }
+                            if (any)
+                                deviceMenu.addSubMenu("Mods", modsMenu);
+                        }
+
+                        // Macros submenu (device-scope macros)
+                        {
+                            juce::PopupMenu macrosMenu;
+                            bool any = false;
+                            for (int m = 0; m < static_cast<int>(device.macros.size()); ++m) {
+                                const auto& macro = device.macros[static_cast<size_t>(m)];
+                                if (macro.name.isEmpty())
+                                    continue;
+                                AutomationTarget target;
+                                target.type = AutomationTargetType::Macro;
+                                target.trackId = trackId;
+                                target.devicePath = devicePath;
+                                target.macroIndex = m;
+                                target.paramName = device.name + ": " + macro.name;
+
+                                int itemId =
+                                    kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                deviceParamTargets->push_back(target);
+                                macrosMenu.addItem(itemId, macro.name);
+                                any = true;
+                            }
+                            if (any)
+                                deviceMenu.addSubMenu("Macros", macrosMenu);
+                        }
+
                         parentMenu.addSubMenu(device.name, deviceMenu);
 
                     } else if (isRack(element)) {
@@ -3214,22 +3289,54 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                         juce::PopupMenu rackMenu;
                         auto rackPath = ChainNodePath::rack(trackId, rack.id);
 
-                        // Add macro entries
-                        for (int m = 0; m < static_cast<int>(rack.macros.size()); ++m) {
-                            if (!rack.macros[static_cast<size_t>(m)].name.isEmpty()) {
+                        // Mods submenu (rack-scope modifiers) — one Rate lane
+                        // per modifier; scale/labels switch on tempoSync.
+                        {
+                            juce::PopupMenu modsMenu;
+                            bool any = false;
+                            for (const auto& mod : rack.mods) {
+                                if (!mod.enabled)
+                                    continue;
+                                AutomationTarget target;
+                                target.type = AutomationTargetType::ModParameter;
+                                target.trackId = trackId;
+                                target.devicePath = rackPath;
+                                target.modId = mod.id;
+                                target.modParamIndex = 0;  // Rate
+                                target.paramName = rack.name + ": " + mod.name + " Rate";
+                                int itemId =
+                                    kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                deviceParamTargets->push_back(target);
+                                modsMenu.addItem(itemId, mod.name + " Rate");
+                                any = true;
+                            }
+                            if (any)
+                                rackMenu.addSubMenu("Mods", modsMenu);
+                        }
+
+                        // Macros submenu (rack-scope macros)
+                        {
+                            juce::PopupMenu macrosMenu;
+                            bool any = false;
+                            for (int m = 0; m < static_cast<int>(rack.macros.size()); ++m) {
+                                const auto& macro = rack.macros[static_cast<size_t>(m)];
+                                if (macro.name.isEmpty())
+                                    continue;
                                 AutomationTarget target;
                                 target.type = AutomationTargetType::Macro;
                                 target.trackId = trackId;
                                 target.devicePath = rackPath;
                                 target.macroIndex = m;
-                                target.paramName =
-                                    rack.name + ": " + rack.macros[static_cast<size_t>(m)].name;
+                                target.paramName = rack.name + ": " + macro.name;
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                                 deviceParamTargets->push_back(target);
-                                rackMenu.addItem(itemId, rack.macros[static_cast<size_t>(m)].name);
+                                macrosMenu.addItem(itemId, macro.name);
+                                any = true;
                             }
+                            if (any)
+                                rackMenu.addSubMenu("Macros", macrosMenu);
                         }
 
                         // Add chain device parameters
@@ -3258,6 +3365,32 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
         ChainNodePath rootPath = ChainNodePath::trackLevel(trackId);
         buildMenu(trackInfo->chainElements, rootPath, addNewMenu);
+
+        // Track-scope modifier entries — siblings of the chain content,
+        // grouped under a "Track Modulators" submenu when present. One Rate
+        // lane per mod; the lane's scale/labels switch on tempoSync so a
+        // single entry covers both Hz and sync-division automation.
+        if (!trackInfo->mods.empty()) {
+            juce::PopupMenu trackModsMenu;
+            bool any = false;
+            for (const auto& mod : trackInfo->mods) {
+                if (!mod.enabled)
+                    continue;
+                AutomationTarget target;
+                target.type = AutomationTargetType::ModParameter;
+                target.trackId = trackId;
+                target.devicePath = rootPath;  // track-level
+                target.modId = mod.id;
+                target.modParamIndex = 0;  // Rate
+                target.paramName = mod.name + " Rate";
+                int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                deviceParamTargets->push_back(target);
+                trackModsMenu.addItem(itemId, mod.name + " Rate");
+                any = true;
+            }
+            if (any)
+                addNewMenu.addSubMenu("Track Modulators", trackModsMenu);
+        }
     }
 
     menu.addSubMenu("Add New Lane...", addNewMenu);
@@ -3442,6 +3575,30 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                             label = juce::String(rounded);
                         label += paramInfo.unit;
                         gridValues.push_back({static_cast<double>(norm), label});
+                    }
+                } else if (paramInfo.scale == ParameterScale::Discrete &&
+                           !paramInfo.choices.empty()) {
+                    // Discrete: use the choices array as label source. Each
+                    // index maps to a real value (0..N-1) — sample evenly so
+                    // the lane shows musical labels (e.g. "1 Bar", "1/4",
+                    // "1/8") instead of falling through to the 10% fallback.
+                    // If the parameter curated a sparse labelTicks set (e.g.
+                    // sync division skipping the triplet/dotted entries that
+                    // snap on playback), use it directly so the thinner can't
+                    // re-introduce the labels we deliberately excluded.
+                    if (!paramInfo.labelTicks.empty()) {
+                        for (const auto& [realValue, label] : paramInfo.labelTicks) {
+                            float norm = ParameterUtils::realToNormalized(realValue, paramInfo);
+                            gridValues.push_back({static_cast<double>(norm), label});
+                        }
+                    } else {
+                        int numChoices = static_cast<int>(paramInfo.choices.size());
+                        for (int i = 0; i < numChoices; ++i) {
+                            float norm =
+                                ParameterUtils::realToNormalized(static_cast<float>(i), paramInfo);
+                            gridValues.push_back({static_cast<double>(norm),
+                                                  paramInfo.choices[static_cast<size_t>(i)]});
+                        }
                     }
                 } else if (paramInfo.unit.isNotEmpty()) {
                     // Unipolar with unit: evenly spaced in normalized space,

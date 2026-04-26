@@ -285,18 +285,18 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
 
     // Initialize automatable parameters to their default values.
     // addParam() defaults to range minimum; we must explicitly set the intended defaults.
-    attackParam->setParameter(attackValue.get(), juce::dontSendNotification);
-    decayParam->setParameter(decayValue.get(), juce::dontSendNotification);
-    sustainParam->setParameter(sustainValue.get(), juce::dontSendNotification);
-    releaseParam->setParameter(releaseValue.get(), juce::dontSendNotification);
-    pitchParam->setParameter(pitchValue.get(), juce::dontSendNotification);
-    fineParam->setParameter(fineValue.get(), juce::dontSendNotification);
-    levelParam->setParameter(levelValue.get(), juce::dontSendNotification);
-    sampleStartParam->setParameter(sampleStartValue.get(), juce::dontSendNotification);
-    sampleEndParam->setParameter(sampleEndValue.get(), juce::dontSendNotification);
-    loopStartParam->setParameter(loopStartValue.get(), juce::dontSendNotification);
-    loopEndParam->setParameter(loopEndValue.get(), juce::dontSendNotification);
-    velAmountParam->setParameter(velAmountValue.get(), juce::dontSendNotification);
+    attackParam->setParameterFromHost(attackValue.get(), juce::dontSendNotification);
+    decayParam->setParameterFromHost(decayValue.get(), juce::dontSendNotification);
+    sustainParam->setParameterFromHost(sustainValue.get(), juce::dontSendNotification);
+    releaseParam->setParameterFromHost(releaseValue.get(), juce::dontSendNotification);
+    pitchParam->setParameterFromHost(pitchValue.get(), juce::dontSendNotification);
+    fineParam->setParameterFromHost(fineValue.get(), juce::dontSendNotification);
+    levelParam->setParameterFromHost(levelValue.get(), juce::dontSendNotification);
+    sampleStartParam->setParameterFromHost(sampleStartValue.get(), juce::dontSendNotification);
+    sampleEndParam->setParameterFromHost(sampleEndValue.get(), juce::dontSendNotification);
+    loopStartParam->setParameterFromHost(loopStartValue.get(), juce::dontSendNotification);
+    loopEndParam->setParameterFromHost(loopEndValue.get(), juce::dontSendNotification);
+    velAmountParam->setParameterFromHost(velAmountValue.get(), juce::dontSendNotification);
 
     // Restore sample from saved state
     juce::String savedPath = samplePathValue.get();
@@ -320,19 +320,19 @@ MagdaSamplerPlugin::MagdaSamplerPlugin(const te::PluginCreationInfo& info) : Plu
         float maxLen = static_cast<float>(lenSec);
 
         if (savedStart > 0.001f && savedStart < maxLen) {
-            sampleStartParam->setParameter(savedStart, juce::dontSendNotification);
+            sampleStartParam->setParameterFromHost(savedStart, juce::dontSendNotification);
             sampleStartValue = savedStart;
         }
         if (savedEnd > 0.001f && savedEnd < maxLen) {
-            sampleEndParam->setParameter(savedEnd, juce::dontSendNotification);
+            sampleEndParam->setParameterFromHost(savedEnd, juce::dontSendNotification);
             sampleEndValue = savedEnd;
         }
         if (savedLoopStart > 0.001f && savedLoopStart < maxLen) {
-            loopStartParam->setParameter(savedLoopStart, juce::dontSendNotification);
+            loopStartParam->setParameterFromHost(savedLoopStart, juce::dontSendNotification);
             loopStartValue = savedLoopStart;
         }
         if (savedLoopEnd > 0.001f && savedLoopEnd < maxLen) {
-            loopEndParam->setParameter(savedLoopEnd, juce::dontSendNotification);
+            loopEndParam->setParameterFromHost(savedLoopEnd, juce::dontSendNotification);
             loopEndValue = savedLoopEnd;
         }
     }
@@ -401,13 +401,13 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     float maxLen = static_cast<float>(lengthSeconds);
     float endClamped = juce::jmin(maxLen, sampleEndParam->getValueRange().getEnd());
     float loopEndClamped = juce::jmin(maxLen, loopEndParam->getValueRange().getEnd());
-    sampleStartParam->setParameter(0.0f, juce::dontSendNotification);
+    sampleStartParam->setParameterFromHost(0.0f, juce::dontSendNotification);
     sampleStartValue = 0.0f;
-    sampleEndParam->setParameter(endClamped, juce::dontSendNotification);
+    sampleEndParam->setParameterFromHost(endClamped, juce::dontSendNotification);
     sampleEndValue = endClamped;
-    loopStartParam->setParameter(0.0f, juce::dontSendNotification);
+    loopStartParam->setParameterFromHost(0.0f, juce::dontSendNotification);
     loopStartValue = 0.0f;
-    loopEndParam->setParameter(loopEndClamped, juce::dontSendNotification);
+    loopEndParam->setParameterFromHost(loopEndClamped, juce::dontSendNotification);
     loopEndValue = loopEndClamped;
 }
 

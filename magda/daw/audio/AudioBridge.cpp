@@ -133,6 +133,13 @@ AudioBridge::~AudioBridge() {
             }
         });
 
+        // Clear baked automation curves BEFORE PluginManager mappings are
+        // wiped. Once mappings are gone, target resolution can't find any
+        // macro/mod parameter, so the curves would stay populated and trip
+        // a TE assert when MacroParameters / Modifiers destruct in Edit
+        // teardown.
+        automationPlayback_.clearAllLanes();
+
         // Clear all mappings - safe now as timer is stopped and lock is held
         trackController_.clearAllMappings();
         pluginManager_.clearAllMappings();
@@ -433,8 +440,29 @@ void AudioBridge::trackDevicesChanged(TrackId trackId) {
 }
 
 void AudioBridge::deviceModifiersChanged(TrackId trackId) {
+    // Skip the modifier resync when this notify is the playback engine
+    // echoing a baked curve value (e.g. LFO rate) back into MAGDA state.
+    // TE already drove the modifier param on the audio thread; resyncing
+    // would just push the same value back through and fight the curve.
+    if (AutomationManager::getInstance().isApplyingAutomationWrite())
+        return;
+
     // Modifier properties changed (rate, waveform, sync, trigger mode) - resync only modifiers
     pluginManager_.resyncDeviceModifiers(trackId);
+
+    // Mod-rate lanes are mode-aware: tempoSync flips swap the bake target
+    // between TE's `rate` (Hz) and `rateType` (sync division). Force a rebake
+    // and broadcast lane-property change so any visible Rate lane recomputes
+    // its ParameterInfo (scale, labels, range) and repaints. Cheap to nudge
+    // unconditionally — most modifier changes (waveform, trigger mode, rate
+    // value) don't need this, but the rebake is coalesced via needsRebake_.
+    auto& autoMgr = AutomationManager::getInstance();
+    for (const auto& lane : autoMgr.getLanes()) {
+        if (lane.target.type == AutomationTargetType::ModParameter &&
+            lane.target.trackId == trackId) {
+            autoMgr.invalidateLane(lane.id);
+        }
+    }
 
     // Re-check sidechain monitors on this track and all other tracks
     // (a sidechain source change on this track may affect the source track's monitor)
@@ -452,9 +480,23 @@ void AudioBridge::audioSidechainTriggered(TrackId /*sourceTrackId*/) {
     // AudioSidechainMonitorPlugin — this callback is no longer needed.
 }
 
+void AudioBridge::modParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
+                                      int paramIndex, float value) {
+    // Skip recording when this notify is the playback engine echoing a baked
+    // curve back into MAGDA state — it would create circular lane writes.
+    if (AutomationManager::getInstance().isApplyingAutomationWrite())
+        return;
+    automationRecording_.onModParameterValueChanged(trackId, devicePath, modId, paramIndex, value);
+}
+
 void AudioBridge::macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
                                     float value) {
-    pluginManager_.setMacroValue(trackId, isRack, id, macroIndex, value);
+    // Skip the TE writeback when this notify is the playback engine echoing
+    // a baked curve value back into MAGDA state — TE already drove the
+    // MacroParameter on the audio thread, re-pushing fights its own curve.
+    // Manual user edits (no AutomationWriteScope) still flow through.
+    if (!AutomationManager::getInstance().isApplyingAutomationWrite())
+        pluginManager_.setMacroValue(trackId, isRack, id, macroIndex, value);
     automationRecording_.onMacroValueChanged(trackId, isRack, id, macroIndex, value);
 }
 
@@ -904,7 +946,7 @@ void AudioBridge::processParameterChanges() {
 
             auto params = plugin->getAutomatableParameters();
             if (change.paramIndex >= 0 && change.paramIndex < static_cast<int>(params.size())) {
-                params[static_cast<size_t>(change.paramIndex)]->setParameter(
+                params[static_cast<size_t>(change.paramIndex)]->setParameterFromHost(
                     change.value, juce::sendNotificationSync);
             }
         }

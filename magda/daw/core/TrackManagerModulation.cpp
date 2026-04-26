@@ -320,6 +320,8 @@ void TrackManager::setRackModRate(const ChainNodePath& rackPath, int modIndex, f
         }
         rack->mods[modIndex].rate = rate;
         notifyDeviceModifiersChanged(rackPath.trackId);
+        notifyModParameterChanged(rackPath.trackId, rackPath, rack->mods[modIndex].id,
+                                  /*paramIndex=*/0, rate);
     }
 }
 
@@ -353,6 +355,9 @@ void TrackManager::setRackModSyncDivision(const ChainNodePath& rackPath, int mod
         }
         rack->mods[modIndex].syncDivision = division;
         notifyDeviceModifiersChanged(rackPath.trackId);
+        notifyModParameterChanged(rackPath.trackId, rackPath, rack->mods[modIndex].id,
+                                  /*paramIndex=*/1,
+                                  static_cast<float>(syncDivisionToTeRateOrdinal(division)));
     }
 }
 
@@ -583,6 +588,7 @@ void TrackManager::setDeviceModRate(const ChainNodePath& devicePath, int modInde
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         mod->rate = rate;
         notifyDeviceModifiersChanged(devicePath.trackId);
+        notifyModParameterChanged(devicePath.trackId, devicePath, mod->id, /*paramIndex=*/0, rate);
     }
 }
 
@@ -607,6 +613,8 @@ void TrackManager::setDeviceModSyncDivision(const ChainNodePath& devicePath, int
     if (auto* mod = getDeviceMod(devicePath, modIndex)) {
         mod->syncDivision = division;
         notifyDeviceModifiersChanged(devicePath.trackId);
+        notifyModParameterChanged(devicePath.trackId, devicePath, mod->id, /*paramIndex=*/1,
+                                  static_cast<float>(syncDivisionToTeRateOrdinal(division)));
     }
 }
 
@@ -1253,6 +1261,8 @@ void TrackManager::setTrackModRate(TrackId trackId, int modIndex, float rate) {
     if (auto* mod = getTrackMod(trackId, modIndex)) {
         mod->rate = rate;
         notifyDeviceModifiersChanged(trackId);
+        notifyModParameterChanged(trackId, ChainNodePath::trackLevel(trackId), mod->id,
+                                  /*paramIndex=*/0, rate);
     }
 }
 
@@ -1274,6 +1284,9 @@ void TrackManager::setTrackModSyncDivision(TrackId trackId, int modIndex, SyncDi
     if (auto* mod = getTrackMod(trackId, modIndex)) {
         mod->syncDivision = division;
         notifyDeviceModifiersChanged(trackId);
+        notifyModParameterChanged(trackId, ChainNodePath::trackLevel(trackId), mod->id,
+                                  /*paramIndex=*/1,
+                                  static_cast<float>(syncDivisionToTeRateOrdinal(division)));
     }
 }
 

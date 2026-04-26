@@ -10,6 +10,7 @@
 #include <optional>
 
 #include "../core/DeviceInfo.hpp"
+#include "../core/SelectionManager.hpp"
 #include "../core/TypeIds.hpp"
 #include "CurveSnapshot.hpp"
 #include "DeviceProcessor.hpp"
@@ -401,6 +402,27 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
      * @param value Normalized value (0.0 to 1.0)
      */
     void setMacroValue(TrackId trackId, bool isRack, int id, int macroIndex, float value);
+
+    /**
+     * @brief Resolve an AutomationTarget::Macro to its TE MacroParameter for
+     * automation playback. devicePath identifies device or rack scope; pass an
+     * invalid devicePath for a track-level macro.
+     */
+    te::AutomatableParameter* findMacroParameterForAutomation(TrackId trackId,
+                                                              const ChainNodePath& devicePath,
+                                                              int macroIndex) const;
+
+    /**
+     * @brief Resolve an AutomationTarget::ModParameter to a TE Modifier's
+     * AutomatableParameter. modParamIndex maps into the modifier's
+     * getAutomatableParameters() list (0 = rate for LFOModifier). modId is a
+     * per-array slot index, NOT globally unique — pass devicePath to identify
+     * the owning scope (rack, top-level device, or track).
+     */
+    te::AutomatableParameter* findModifierParameterForAutomation(TrackId trackId,
+                                                                 const ChainNodePath& devicePath,
+                                                                 ModId modId,
+                                                                 int modParamIndex) const;
 
     /**
      * @brief Sync device-level macros to TE MacroParameters

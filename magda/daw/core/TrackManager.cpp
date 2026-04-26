@@ -1827,6 +1827,15 @@ void TrackManager::notifyMacroValueChanged(TrackId trackId, bool isRack, int id,
     }
 }
 
+void TrackManager::notifyModParameterChanged(TrackId trackId, const ChainNodePath& devicePath,
+                                             ModId modId, int paramIndex, float value) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->modParameterChanged(trackId, devicePath, modId, paramIndex, value);
+    }
+}
+
 void TrackManager::updateRackMods(const RackInfo& rack, double deltaTime) {
     // TODO: Recursively update mods in rack, chains, and nested racks
     (void)rack;

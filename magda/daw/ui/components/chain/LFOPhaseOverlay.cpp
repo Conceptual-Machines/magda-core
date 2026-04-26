@@ -7,7 +7,10 @@ namespace magda {
 LFOPhaseOverlay::LFOPhaseOverlay() {
     setInterceptsMouseClicks(false, false);  // Click-through to editor components
     setOpaque(true);                         // Opaque to prevent flickering
-    startTimer(33);                          // 30 FPS animation
+    // 60 FPS so the phase dot stays readable for fast sync divisions —
+    // 30 FPS aliases past ~1/16 (8 Hz) and the dot looks chaotically fast
+    // even though the underlying rate is correct.
+    startTimer(16);
 }
 
 LFOPhaseOverlay::~LFOPhaseOverlay() {

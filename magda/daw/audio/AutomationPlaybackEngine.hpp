@@ -68,11 +68,17 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
     void curveHasChanged(te::AutomatableParameter&) override {}
     void currentValueChanged(te::AutomatableParameter&) override;
 
+    // Clear every baked TE curve. Public so AudioBridge can call it during
+    // its own destructor BEFORE pluginManager_.clearAllMappings() — once the
+    // PluginManager state is gone, target resolution returns nullptr and
+    // macro/mod curves can't be cleared, leaving them populated when the
+    // Edit tears down (which trips a TE assert in MacroParameter teardown).
+    void clearAllLanes();
+
   private:
     static constexpr double kBakeIntervalSeconds = 0.01;  // 10ms between baked points
 
     void bakeAllLanes();
-    void clearAllLanes();
 
     void bakeLane(const AutomationLaneInfo& lane);
     void clearLane(const AutomationLaneInfo& lane);
@@ -91,6 +97,12 @@ class AutomationPlaybackEngine : public AutomationManagerListener,
     // into the normalized form UI listeners expect.
     double convertFromTEValue(const AutomationTarget& target, te::AutomatableParameter* param,
                               float teValue) const;
+
+    // Push a normalized rate-curve value back into MAGDA's modulator state.
+    // The lane is mode-aware: tempoSync=false → setXxxModRate (Hz), true →
+    // setXxxModSyncDivision. Used by both drag-preview and TE-driven
+    // currentValueChanged writeback so the two paths agree.
+    void writeModRateFromCurve(const AutomationTarget& target, double normalized);
 
     // Register this engine as a TE listener on every parameter we just baked,
     // and unregister from any parameter we used to bake but no longer do. This

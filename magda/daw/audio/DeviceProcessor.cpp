@@ -333,7 +333,7 @@ void ToneGeneratorProcessor::setFrequency(float hz) {
         // Set via AutomatableParameter - this is the proper Tracktion Engine way
         // The parameter will automatically sync to the CachedValue
         if (tone->frequencyParam) {
-            tone->frequencyParam->setParameter(hz, juce::dontSendNotification);
+            tone->frequencyParam->setParameterFromHost(hz, juce::dontSendNotification);
         }
     }
 }
@@ -349,7 +349,7 @@ void ToneGeneratorProcessor::setLevel(float level) {
     if (auto* tone = getTonePlugin()) {
         // Set via AutomatableParameter - proper Tracktion Engine way
         if (tone->levelParam) {
-            tone->levelParam->setParameter(level, juce::dontSendNotification);
+            tone->levelParam->setParameterFromHost(level, juce::dontSendNotification);
         }
     }
 }
@@ -366,7 +366,7 @@ void ToneGeneratorProcessor::setOscType(int teOscType) {
         // TE enum: 0=sin, 1=triangle, 2=sawUp, 3=sawDown, 4=square, 5=noise
         float teType = static_cast<float>(juce::jlimit(0, 5, teOscType));
         if (tone->oscTypeParam) {
-            tone->oscTypeParam->setParameter(teType, juce::dontSendNotification);
+            tone->oscTypeParam->setParameterFromHost(teType, juce::dontSendNotification);
         }
     }
 }
@@ -381,8 +381,8 @@ int ToneGeneratorProcessor::getOscType() const {
 void ToneGeneratorProcessor::setBandLimit(bool bandLimited) {
     if (auto* tone = getTonePlugin()) {
         if (tone->bandLimitParam) {
-            tone->bandLimitParam->setParameter(bandLimited ? 1.0f : 0.0f,
-                                               juce::dontSendNotification);
+            tone->bandLimitParam->setParameterFromHost(bandLimited ? 1.0f : 0.0f,
+                                                       juce::dontSendNotification);
         }
     }
 }
@@ -442,7 +442,7 @@ std::vector<juce::String> VolumeProcessor::getParameterNames() const {
 void VolumeProcessor::setVolume(float db) {
     if (auto* volPan = getVolPanPlugin()) {
         if (volPan->volParam) {
-            volPan->volParam->setParameter(db, juce::sendNotificationSync);
+            volPan->volParam->setParameterFromHost(db, juce::sendNotificationSync);
         }
     }
 }
@@ -459,7 +459,7 @@ float VolumeProcessor::getVolume() const {
 void VolumeProcessor::setPan(float pan) {
     if (auto* volPan = getVolPanPlugin()) {
         if (volPan->panParam) {
-            volPan->panParam->setParameter(pan, juce::sendNotificationSync);
+            volPan->panParam->setParameterFromHost(pan, juce::sendNotificationSync);
         }
     }
 }
@@ -514,7 +514,7 @@ void MagdaSamplerProcessor::setParameterByIndex(int paramIndex, float value) {
 
     auto params = plugin_->getAutomatableParameters();
     if (paramIndex >= 0 && paramIndex < params.size()) {
-        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
     }
 }
 
@@ -594,7 +594,7 @@ void FourOscProcessor::setParameterByIndex(int paramIndex, float value) {
 
     auto params = plugin_->getAutomatableParameters();
     if (paramIndex >= 0 && paramIndex < params.size()) {
-        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
     }
 }
 
@@ -686,7 +686,7 @@ void EqualiserProcessor::setParameterByIndex(int paramIndex, float value) {
     int autoCount = static_cast<int>(params.size());
 
     if (paramIndex >= 0 && paramIndex < autoCount) {
-        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
     } else if (paramIndex == autoCount) {
         if (auto* eq = dynamic_cast<te::EqualiserPlugin*>(plugin_.get()))
             eq->phaseInvert = value >= 0.5f;
@@ -764,7 +764,7 @@ void CompressorProcessor::setParameterByIndex(int paramIndex, float value) {
     int autoCount = static_cast<int>(params.size());
 
     if (paramIndex >= 0 && paramIndex < autoCount) {
-        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
     } else if (paramIndex == autoCount) {
         if (auto* comp = dynamic_cast<te::CompressorPlugin*>(plugin_.get()))
             comp->useSidechainTrigger = value >= 0.5f;
@@ -843,7 +843,7 @@ void DelayProcessor::setParameterByIndex(int paramIndex, float value) {
     int autoCount = static_cast<int>(params.size());
 
     if (paramIndex >= 0 && paramIndex < autoCount) {
-        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
     } else if (paramIndex == autoCount) {
         // Virtual parameter: delay length in ms
         if (auto* delay = dynamic_cast<te::DelayPlugin*>(plugin_.get()))
@@ -903,7 +903,7 @@ void ReverbProcessor::setParameterByIndex(int paramIndex, float value) {
 
     auto params = plugin_->getAutomatableParameters();
     if (paramIndex >= 0 && paramIndex < params.size()) {
-        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
     }
 }
 
@@ -1160,7 +1160,7 @@ void FilterProcessor::setParameterByIndex(int paramIndex, float value) {
     int autoCount = static_cast<int>(params.size());
 
     if (paramIndex < autoCount && params[paramIndex]) {
-        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
         return;
     }
 
@@ -1222,7 +1222,7 @@ void PitchShiftProcessor::setParameterByIndex(int paramIndex, float value) {
         return;
     auto params = plugin_->getAutomatableParameters();
     if (paramIndex < static_cast<int>(params.size()) && params[paramIndex])
-        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
 }
 
 float PitchShiftProcessor::getParameterByIndex(int paramIndex) const {
@@ -1267,7 +1267,7 @@ void ImpulseResponseProcessor::setParameterByIndex(int paramIndex, float value) 
         return;
     auto params = plugin_->getAutomatableParameters();
     if (paramIndex < static_cast<int>(params.size()) && params[paramIndex])
-        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
 }
 
 float ImpulseResponseProcessor::getParameterByIndex(int paramIndex) const {
@@ -1346,11 +1346,11 @@ void UtilityProcessor::setParameterByIndex(int paramIndex, float value) {
     switch (paramIndex) {
         case 0:
             if (volPan->volParam)
-                volPan->volParam->setParameter(value, juce::sendNotificationSync);
+                volPan->volParam->setParameterFromHost(value, juce::sendNotificationSync);
             break;
         case 1:
             if (volPan->panParam)
-                volPan->panParam->setParameter(value, juce::sendNotificationSync);
+                volPan->panParam->setParameterFromHost(value, juce::sendNotificationSync);
             break;
         case 2:
             volPan->polarity = value >= 0.5f;
@@ -1421,7 +1421,7 @@ void ArpeggiatorProcessor::setParameterByIndex(int paramIndex, float value) {
     int autoCount = static_cast<int>(params.size());
 
     if (paramIndex >= 0 && paramIndex < autoCount) {
-        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
     }
 }
 
@@ -1481,7 +1481,7 @@ void StepSequencerProcessor::setParameterByIndex(int paramIndex, float value) {
     int autoCount = static_cast<int>(params.size());
 
     if (paramIndex >= 0 && paramIndex < autoCount) {
-        params[paramIndex]->setParameter(value, juce::sendNotificationSync);
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
     }
 }
 
@@ -1563,7 +1563,7 @@ void ExternalPluginProcessor::setParameter(const juce::String& paramName, float 
     if (auto* ext = getExternalPlugin()) {
         for (auto params = ext->getAutomatableParameters(); auto* param : params) {
             if (param && param->getParameterName().equalsIgnoreCase(paramName)) {
-                param->setParameter(value, juce::sendNotificationSync);
+                param->setParameterFromHost(value, juce::sendNotificationSync);
                 return;
             }
         }
@@ -1645,8 +1645,8 @@ void ExternalPluginProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
         for (size_t i = 0; i < info.parameters.size() && i < static_cast<size_t>(params.size());
              ++i) {
             if (params[i]) {
-                params[i]->setParameter(info.parameters[i].currentValue,
-                                        juce::dontSendNotification);
+                params[i]->setParameterFromHost(info.parameters[i].currentValue,
+                                                juce::dontSendNotification);
             }
         }
     }
@@ -1661,8 +1661,8 @@ void ExternalPluginProcessor::setParameterByIndex(int paramIndex, float value) {
     if (auto* ext = getExternalPlugin()) {
         auto params = ext->getAutomatableParameters();
         if (paramIndex >= 0 && paramIndex < static_cast<int>(params.size())) {
-            params[static_cast<size_t>(paramIndex)]->setParameter(value,
-                                                                  juce::sendNotificationSync);
+            params[static_cast<size_t>(paramIndex)]->setParameterFromHost(
+                value, juce::sendNotificationSync);
         }
     }
 

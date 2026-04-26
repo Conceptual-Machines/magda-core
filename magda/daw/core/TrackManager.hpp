@@ -87,6 +87,16 @@ class TrackManagerListener {
                                    float value) {
         juce::ignoreUnused(trackId, isRack, id, macroIndex, value);
     }
+
+    // Called when a single modifier parameter (rate, depth, etc.) is edited
+    // by the user. Distinct from deviceModifiersChanged() which only carries
+    // a TrackId and is used by the audio engine to resync the whole modifier
+    // list. This carries enough scope info to address the exact parameter
+    // for automation recording.
+    virtual void modParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
+                                     int paramIndex, float value) {
+        juce::ignoreUnused(trackId, devicePath, modId, paramIndex, value);
+    }
 };
 
 /**
@@ -681,6 +691,8 @@ class TrackManager {
     void notifyDevicePropertyChanged(DeviceId deviceId);
     void notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue);
     void notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex, float value);
+    void notifyModParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
+                                   int paramIndex, float value);
 
     // Helper: get a ModInfo from device path + index
     ModInfo* getDeviceMod(const ChainNodePath& devicePath, int modIndex);

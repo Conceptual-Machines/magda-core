@@ -99,6 +99,60 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             }
             return std::nullopt;
         }
+        case AutomationTargetType::ModParameter: {
+            // Resolve the ModInfo by scope — same shape as the playback
+            // resolver in PluginManager. Without this, new sync-division /
+            // rate lanes would be created with a default 0.5 normalized
+            // initial point that doesn't match the modulator's current
+            // state — the lane would drift the LFO away from the slider as
+            // soon as transport starts.
+            const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+            if (!track)
+                return std::nullopt;
+            const ModInfo* mod = nullptr;
+            if (target.devicePath.isValid()) {
+                auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
+                if (resolved.valid && resolved.rack) {
+                    for (const auto& m : resolved.rack->mods)
+                        if (m.id == target.modId) {
+                            mod = &m;
+                            break;
+                        }
+                } else if (resolved.valid && resolved.device) {
+                    for (const auto& m : resolved.device->mods)
+                        if (m.id == target.modId) {
+                            mod = &m;
+                            break;
+                        }
+                }
+            }
+            if (!mod) {
+                for (const auto& m : track->mods)
+                    if (m.id == target.modId) {
+                        mod = &m;
+                        break;
+                    }
+            }
+            if (!mod)
+                return std::nullopt;
+
+            // Single Rate lane: read either the Hz value or the sync-division
+            // ordinal depending on the LFO's current mode. paramInfo (built
+            // from the same mode flag in getParameterInfo) determines how the
+            // normalized value is interpreted, so the two stay in lockstep.
+            if (target.modParamIndex == 0) {
+                if (mod->tempoSync) {
+                    // Lane stores 0-based display index (TE ordinal − 1) so
+                    // it never resolves "Hertz" (TE ordinal 0) at the bottom.
+                    float displayIdx =
+                        static_cast<float>(syncDivisionToTeRateOrdinal(mod->syncDivision) - 1);
+                    return static_cast<double>(
+                        ParameterUtils::realToNormalized(displayIdx, paramInfo));
+                }
+                return static_cast<double>(ParameterUtils::realToNormalized(mod->rate, paramInfo));
+            }
+            return std::nullopt;
+        }
         default:
             return std::nullopt;
     }

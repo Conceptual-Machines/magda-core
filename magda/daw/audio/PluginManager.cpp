@@ -2304,7 +2304,7 @@ void PluginManager::setMacroValue(TrackId trackId, bool isRack, int id, int macr
         if (tmIt != trackMacroParams_.end()) {
             auto macroIt = tmIt->second.find(macroIndex);
             if (macroIt != tmIt->second.end() && macroIt->second != nullptr) {
-                macroIt->second->setParameter(value, juce::sendNotificationSync);
+                macroIt->second->setParameterFromHost(value, juce::sendNotificationSync);
                 return;
             }
         }
@@ -2320,8 +2320,105 @@ void PluginManager::setDeviceMacroValue(DeviceId deviceId, int macroIndex, float
 
     auto macroIt = it->second.macroParams.find(macroIndex);
     if (macroIt != it->second.macroParams.end() && macroIt->second != nullptr) {
-        macroIt->second->setParameter(value, juce::sendNotificationSync);
+        macroIt->second->setParameterFromHost(value, juce::sendNotificationSync);
     }
+}
+
+te::AutomatableParameter* PluginManager::findMacroParameterForAutomation(
+    TrackId trackId, const ChainNodePath& devicePath, int macroIndex) const {
+    if (macroIndex < 0)
+        return nullptr;
+
+    if (devicePath.isValid()) {
+        switch (devicePath.getType()) {
+            case ChainNodeType::Rack:
+                return rackSyncManager_.findRackMacroParameter(devicePath.getRackId(), macroIndex);
+            case ChainNodeType::TopLevelDevice:
+            case ChainNodeType::Device: {
+                auto it = syncedDevices_.find(devicePath.getDeviceId());
+                if (it == syncedDevices_.end())
+                    return nullptr;
+                auto macroIt = it->second.macroParams.find(macroIndex);
+                if (macroIt == it->second.macroParams.end() || macroIt->second == nullptr)
+                    return nullptr;
+                return macroIt->second;
+            }
+            default:
+                break;
+        }
+    }
+
+    // Track-scope macro fallback.
+    auto tmIt = trackMacroParams_.find(trackId);
+    if (tmIt != trackMacroParams_.end()) {
+        auto macroIt = tmIt->second.find(macroIndex);
+        if (macroIt != tmIt->second.end() && macroIt->second != nullptr)
+            return macroIt->second;
+    }
+    return nullptr;
+}
+
+te::AutomatableParameter* PluginManager::findModifierParameterForAutomation(
+    TrackId trackId, const ChainNodePath& devicePath, ModId modId, int modParamIndex) const {
+    if (modId == INVALID_MOD_ID || modParamIndex < 0)
+        return nullptr;
+
+    // MAGDA exposes a single semantic Rate lane (modParamIndex 0). The TE
+    // parameter we route automation to depends on the modifier's tempoSync
+    // flag — Hz values bake into TE's `rate`, sync divisions into `rateType`.
+    // Future depth lane lives at index 1.
+    if (modParamIndex >= 2)
+        return nullptr;
+
+    // ModId is a per-array slot index, not globally unique. Pick the right
+    // owner from the path before matching modId.
+    auto resolveFromVector =
+        [&](const std::vector<ModInfo>& mods,
+            const std::vector<te::Modifier::Ptr>& teMods) -> te::AutomatableParameter* {
+        for (size_t i = 0; i < mods.size() && i < teMods.size(); ++i) {
+            if (mods[i].id != modId || !teMods[i])
+                continue;
+            const juce::String wantedID =
+                modParamIndex == 0 ? (mods[i].tempoSync ? "rateType" : "rate") : "depth";
+            for (auto* p : teMods[i]->getAutomatableParameters()) {
+                if (p && p->paramID == wantedID)
+                    return p;
+            }
+            return nullptr;
+        }
+        return nullptr;
+    };
+
+    auto& tm = TrackManager::getInstance();
+
+    if (devicePath.isValid()) {
+        switch (devicePath.getType()) {
+            case ChainNodeType::Rack:
+                return rackSyncManager_.findRackModifierParameter(devicePath.getRackId(), modId,
+                                                                  modParamIndex);
+            case ChainNodeType::TopLevelDevice:
+            case ChainNodeType::Device: {
+                auto it = syncedDevices_.find(devicePath.getDeviceId());
+                if (it == syncedDevices_.end())
+                    return nullptr;
+                DeviceInfo* device = tm.getDevice(it->second.trackId, it->first);
+                if (!device)
+                    return nullptr;
+                return resolveFromVector(device->mods, it->second.modifiers);
+            }
+            default:
+                break;
+        }
+    }
+
+    // Track-scope modifier (no devicePath / track-level path).
+    auto modIt = trackModStates_.find(trackId);
+    if (modIt == trackModStates_.end())
+        return nullptr;
+    const TrackInfo* track = tm.getTrack(trackId);
+    if (!track)
+        return nullptr;
+    return resolveFromVector(track->mods, modIt->second.modifiers);
 }
 
 void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
@@ -2397,7 +2494,7 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
                 continue;
 
             macroParam->macroName = macroInfo.name;
-            macroParam->setParameter(macroInfo.value, juce::dontSendNotification);
+            macroParam->setParameterFromHost(macroInfo.value, juce::dontSendNotification);
 
             syncedDevices_[device.id].macroParams[i] = macroParam;
 
@@ -2501,7 +2598,7 @@ void PluginManager::syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack) {
             continue;
 
         macroParam->macroName = macroInfo.name;
-        macroParam->setParameter(macroInfo.value, juce::dontSendNotification);
+        macroParam->setParameterFromHost(macroInfo.value, juce::dontSendNotification);
 
         existingTrackMacros[i] = macroParam;
 

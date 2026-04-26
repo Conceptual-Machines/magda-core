@@ -62,16 +62,17 @@ StepSequencerPlugin::StepSequencerPlugin(const te::PluginCreationInfo& info)
     skewParam = addParam("skew", "Timing Skew", {-1.0f, 1.0f});
 
     // Initialize automatable params from CachedValues
-    rateParam->setParameter(static_cast<float>(rate.get()), juce::dontSendNotification);
-    directionParam->setParameter(static_cast<float>(direction.get()), juce::dontSendNotification);
-    swingParam->setParameter(swing.get(), juce::dontSendNotification);
-    gateLengthParam->setParameter(gateLength.get(), juce::dontSendNotification);
-    accentVelParam->setParameter(static_cast<float>(accentVelocity.get()),
-                                 juce::dontSendNotification);
-    normalVelParam->setParameter(static_cast<float>(normalVelocity.get()),
-                                 juce::dontSendNotification);
-    rampParam->setParameter(ramp.get(), juce::dontSendNotification);
-    skewParam->setParameter(skew.get(), juce::dontSendNotification);
+    rateParam->setParameterFromHost(static_cast<float>(rate.get()), juce::dontSendNotification);
+    directionParam->setParameterFromHost(static_cast<float>(direction.get()),
+                                         juce::dontSendNotification);
+    swingParam->setParameterFromHost(swing.get(), juce::dontSendNotification);
+    gateLengthParam->setParameterFromHost(gateLength.get(), juce::dontSendNotification);
+    accentVelParam->setParameterFromHost(static_cast<float>(accentVelocity.get()),
+                                         juce::dontSendNotification);
+    normalVelParam->setParameterFromHost(static_cast<float>(normalVelocity.get()),
+                                         juce::dontSendNotification);
+    rampParam->setParameterFromHost(ramp.get(), juce::dontSendNotification);
+    skewParam->setParameterFromHost(skew.get(), juce::dontSendNotification);
 
     // Listen for CachedValue changes (from UI) to sync to AutomatableParams
     state.addListener(&paramSyncListener_);
@@ -86,24 +87,24 @@ StepSequencerPlugin::~StepSequencerPlugin() {
 
 void StepSequencerPlugin::syncParamFromProperty(const juce::Identifier& property) {
     if (property == SeqIDs::rate && rateParam)
-        rateParam->setParameter(static_cast<float>(rate.get()), juce::dontSendNotification);
+        rateParam->setParameterFromHost(static_cast<float>(rate.get()), juce::dontSendNotification);
     else if (property == SeqIDs::direction && directionParam)
-        directionParam->setParameter(static_cast<float>(direction.get()),
-                                     juce::dontSendNotification);
+        directionParam->setParameterFromHost(static_cast<float>(direction.get()),
+                                             juce::dontSendNotification);
     else if (property == SeqIDs::swing && swingParam)
-        swingParam->setParameter(swing.get(), juce::dontSendNotification);
+        swingParam->setParameterFromHost(swing.get(), juce::dontSendNotification);
     else if (property == SeqIDs::gateLength && gateLengthParam)
-        gateLengthParam->setParameter(gateLength.get(), juce::dontSendNotification);
+        gateLengthParam->setParameterFromHost(gateLength.get(), juce::dontSendNotification);
     else if (property == SeqIDs::accentVelocity && accentVelParam)
-        accentVelParam->setParameter(static_cast<float>(accentVelocity.get()),
-                                     juce::dontSendNotification);
+        accentVelParam->setParameterFromHost(static_cast<float>(accentVelocity.get()),
+                                             juce::dontSendNotification);
     else if (property == SeqIDs::normalVelocity && normalVelParam)
-        normalVelParam->setParameter(static_cast<float>(normalVelocity.get()),
-                                     juce::dontSendNotification);
+        normalVelParam->setParameterFromHost(static_cast<float>(normalVelocity.get()),
+                                             juce::dontSendNotification);
     else if (property == SeqIDs::ramp && rampParam)
-        rampParam->setParameter(ramp.get(), juce::dontSendNotification);
+        rampParam->setParameterFromHost(ramp.get(), juce::dontSendNotification);
     else if (property == SeqIDs::skew && skewParam)
-        skewParam->setParameter(skew.get(), juce::dontSendNotification);
+        skewParam->setParameterFromHost(skew.get(), juce::dontSendNotification);
 }
 
 void StepSequencerPlugin::initialise(const te::PluginInitialisationInfo& info) {

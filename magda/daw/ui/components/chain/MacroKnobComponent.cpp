@@ -1,6 +1,8 @@
 #include "MacroKnobComponent.hpp"
 
 #include "BinaryData.h"
+#include "core/AutomationInfo.hpp"
+#include "core/AutomationManager.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
@@ -61,6 +63,24 @@ MacroKnobComponent::~MacroKnobComponent() {
     magda::BindingRegistry::getInstance().removeListener(this);
     magda::ControllerRegistry::getInstance().removeListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
+}
+
+void MacroKnobComponent::updateAutomationTarget() {
+    // Build the AutomationTarget for this macro so TextSlider can listen to
+    // AutomationManager and paint the standard purple highlight when a lane
+    // exists. Mirrors the way plugin-param sliders register themselves.
+    if (parentPath_.trackId == magda::INVALID_TRACK_ID || macroIndex_ < 0) {
+        valueSlider_.clearAutomationTarget();
+        return;
+    }
+
+    magda::AutomationTarget target;
+    target.type = magda::AutomationTargetType::Macro;
+    target.trackId = parentPath_.trackId;
+    target.devicePath = parentPath_;
+    target.macroIndex = macroIndex_;
+    target.paramName = currentMacro_.name;
+    valueSlider_.setAutomationTarget(target);
 }
 
 void MacroKnobComponent::refreshAutomapState() {
@@ -317,6 +337,10 @@ void MacroKnobComponent::paintLinkIndicator(juce::Graphics& g, juce::Rectangle<i
 void MacroKnobComponent::showLinkMenu() {
     juce::PopupMenu menu;
 
+    constexpr int kShowAutomationLaneId = 30000;
+    menu.addItem(kShowAutomationLaneId, "Show Automation Lane");
+    menu.addSeparator();
+
     menu.addSectionHeader("Link to Parameter...");
     menu.addSeparator();
 
@@ -389,6 +413,22 @@ void MacroKnobComponent::showLinkMenu() {
     menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, targets, paramNames, unlinkBaseId,
                                                     unlinkTargets, clearAllId](int result) {
         if (safeThis == nullptr || result == 0) {
+            return;
+        }
+
+        // Show automation lane for this macro
+        constexpr int kShowAutomationLaneId = 30000;
+        if (result == kShowAutomationLaneId) {
+            magda::AutomationTarget target;
+            target.type = magda::AutomationTargetType::Macro;
+            target.trackId = safeThis->parentPath_.trackId;
+            target.devicePath = safeThis->parentPath_;
+            target.macroIndex = safeThis->macroIndex_;
+            if (safeThis->currentMacro_.name.isNotEmpty())
+                target.paramName = safeThis->currentMacro_.name;
+            auto& mgr = magda::AutomationManager::getInstance();
+            auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
+            mgr.setLaneVisible(laneId, true);
             return;
         }
 
