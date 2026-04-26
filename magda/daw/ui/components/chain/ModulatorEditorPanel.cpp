@@ -886,11 +886,12 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
     if (sb.isEmpty())
         return;
 
-    // Current normalized value of the slider — bar starts here and extends by
-    // the modulation total, signed.
-    // The rate slider uses different ranges in Hz vs sync mode (Hz: 0.05..20,
-    // sync: 0..N divisions). TextSlider exposes getValue but not min/max, so
-    // hard-code per visible mode — both ranges are panel-owned constants.
+    // Current normalized value of the slider — bar starts here and extends
+    // by the modulation total, signed. Match the slider's actual visible
+    // mapping: sync mode is linear 0..N divisions, Hz mode is logarithmic
+    // (0.05..20 Hz, same scale used by TextSlider). Using linear math for
+    // the Hz case left the bar misaligned with the thumb and pushed it past
+    // the slider's right edge as the LFO oscillated.
     float currentNorm = 0.0f;
     if (currentMod_.tempoSync) {
         constexpr float kSyncMin = 0.0f;
@@ -902,29 +903,31 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
     } else {
         constexpr float kHzMin = 0.05f;
         constexpr float kHzMax = 20.0f;
-        currentNorm = juce::jlimit(0.0f, 1.0f,
-                                   (static_cast<float>(visibleSlider.getValue()) - kHzMin) /
-                                       (kHzMax - kHzMin));
+        const float v = juce::jlimit(kHzMin, kHzMax, static_cast<float>(visibleSlider.getValue()));
+        currentNorm = std::log(v / kHzMin) / std::log(kHzMax / kHzMin);
     }
 
     const int maxWidth = sb.getWidth();
     const int leftX = sb.getX();
+    const int rightX = sb.getRight();
     const int barHeight = 5;  // Matches ParamModulationPainter "movement bar"
 
+    // Bar is drawn from the slider thumb position, extending by `total`
+    // (signed) — clamped to the slider rect so a high-amount or fast LFO
+    // can't paint past the slider's edges.
     auto drawBar = [&](float total, int y, juce::Colour colour) {
         if (total == 0.0f)
             return;
-        int startX = leftX + static_cast<int>(maxWidth * currentNorm);
-        int barWidth = static_cast<int>(maxWidth * total);
+        const int startX = leftX + static_cast<int>(maxWidth * currentNorm);
+        const int endX = startX + static_cast<int>(maxWidth * total);
+        const int x0 = juce::jlimit(leftX, rightX, juce::jmin(startX, endX));
+        const int x1 = juce::jlimit(leftX, rightX, juce::jmax(startX, endX));
+        const int width = x1 - x0;
+        if (width <= 0)
+            return;
         g.setColour(colour);
-        if (barWidth > 0)
-            g.fillRoundedRectangle(static_cast<float>(startX), static_cast<float>(y),
-                                   static_cast<float>(juce::jmax(1, barWidth)),
-                                   static_cast<float>(barHeight), 1.0f);
-        else
-            g.fillRoundedRectangle(static_cast<float>(startX + barWidth), static_cast<float>(y),
-                                   static_cast<float>(juce::jmax(1, -barWidth)),
-                                   static_cast<float>(barHeight), 1.0f);
+        g.fillRoundedRectangle(static_cast<float>(x0), static_cast<float>(y),
+                               static_cast<float>(width), static_cast<float>(barHeight), 1.0f);
     };
 
     // Macro bar at top (purple), mod bar at bottom (orange) — same convention
