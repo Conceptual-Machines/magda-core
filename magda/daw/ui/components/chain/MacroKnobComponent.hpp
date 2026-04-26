@@ -150,8 +150,11 @@ class MacroKnobComponent : public juce::Component,
     // Drag state
     juce::Point<int> dragStartPos_;
     bool isDragging_ = false;
-    bool isKnobDragging_ = false;  // True when dragging the knob to change value
-    float dragStartValue_ = 0.0f;  // Value when knob drag started
+    bool isKnobDragging_ = false;    // True while a click on the knob is in progress
+    bool knobValueDragged_ = false;  // True once a drag has actually changed the value;
+                                     // distinguishes a pure click-on-knob (selects) from
+                                     // a value drag (suppresses selection).
+    float dragStartValue_ = 0.0f;    // Value when knob drag started
     static constexpr int DRAG_THRESHOLD = 5;
 
     // Helper to get knob bounds for hit testing

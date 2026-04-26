@@ -259,6 +259,7 @@ void MacroKnobComponent::mouseDown(const juce::MouseEvent& e) {
     if (!e.mods.isPopupMenu()) {
         dragStartPos_ = e.getPosition();
         isDragging_ = false;
+        knobValueDragged_ = false;
 
         // Check if click is in knob area
         if (getKnobBounds().contains(e.getPosition())) {
@@ -284,6 +285,7 @@ void MacroKnobComponent::mouseDrag(const juce::MouseEvent& e) {
         if (newValue != currentMacro_.value) {
             currentMacro_.value = newValue;
             valueSlider_.setValue(newValue, juce::dontSendNotification);
+            knobValueDragged_ = true;
             repaint();
             if (onValueChanged) {
                 onValueChanged(newValue);
@@ -319,14 +321,17 @@ void MacroKnobComponent::mouseUp(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu()) {
         // Right-click shows link menu
         showLinkMenu();
-    } else if (!isDragging_ && !isKnobDragging_) {
-        // Left-click (no drag) - select this macro
+    } else if (!isDragging_ && !knobValueDragged_) {
+        // Left-click (no link drag, no knob value change) — select this macro.
+        // Clicking on the knob without dragging counts as a select gesture; we
+        // only suppress selection when the user actually moved the knob.
         if (onClicked) {
             onClicked();
         }
     }
     isDragging_ = false;
     isKnobDragging_ = false;
+    knobValueDragged_ = false;
 }
 
 void MacroKnobComponent::macroLinkModeChanged(bool active, const magda::MacroSelection& selection) {
