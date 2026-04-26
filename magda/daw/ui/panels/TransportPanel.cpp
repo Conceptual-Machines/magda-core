@@ -76,10 +76,12 @@ void TransportPanel::paintOverChildren(juce::Graphics& g) {
             break;  // shouldn't happen — Off is disarmed
     }
 
+    constexpr int kModeLetterStripPercent = 27;
     auto btnBounds = automationWriteButton->getBounds();
     // Bottom strip of the button, nudged upward — the original SVG glyph sat
     // a touch high inside the icon and looked better that way.
-    auto labelArea = btnBounds.removeFromBottom(btnBounds.getHeight() * 27 / 100);
+    auto labelArea =
+        btnBounds.removeFromBottom(btnBounds.getHeight() * kModeLetterStripPercent / 100);
     labelArea.translate(1, -3);
 
     juce::Colour textColour = isAutomationWriteEnabled
