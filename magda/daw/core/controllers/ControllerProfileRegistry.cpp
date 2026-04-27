@@ -98,11 +98,11 @@ void ControllerProfileRegistry::load() {
 
     auto userDir = userControllersDirectory();
 
-    // First-launch seed: if the user dir doesn't exist yet, copy the bundled
-    // starter profiles in. Deletion is durable — once seeded, the bundled
-    // dir is never consulted again.
-    if (!userDir.isDirectory())
-        seedUserDirectory(userDir);
+    // Additive seed: copy any bundled profile whose filename isn't already in
+    // the user dir. This runs every launch so newly-bundled or renamed profiles
+    // flow through. We never overwrite — if a user has edited or removed a
+    // bundled file, the seed leaves it alone.
+    seedUserDirectory(userDir);
 
     if (userDir.isDirectory())
         loadFromDirectory(userDir);
@@ -112,7 +112,7 @@ void ControllerProfileRegistry::seedUserDirectory(const juce::File& userDir) {
     auto bundledDir = findBundledControllersDirectory();
     if (!bundledDir.isDirectory()) {
         DBG("ControllerProfileRegistry: bundled controllers directory not found, "
-            "skipping first-launch seed");
+            "skipping seed");
         return;
     }
 
@@ -122,14 +122,20 @@ void ControllerProfileRegistry::seedUserDirectory(const juce::File& userDir) {
         return;
     }
 
+    int seeded = 0;
     auto files = bundledDir.findChildFiles(juce::File::findFiles, false, "*.json");
     for (const auto& src : files) {
         auto dest = userDir.getChildFile(src.getFileName());
-        if (!src.copyFileTo(dest))
+        if (dest.existsAsFile())
+            continue;
+        if (src.copyFileTo(dest))
+            ++seeded;
+        else
             DBG("ControllerProfileRegistry: failed to seed " << dest.getFullPathName());
     }
-    DBG("ControllerProfileRegistry: seeded " << files.size() << " profile(s) into "
-                                             << userDir.getFullPathName());
+    if (seeded > 0)
+        DBG("ControllerProfileRegistry: seeded " << seeded << " new profile(s) into "
+                                                 << userDir.getFullPathName());
 }
 
 void ControllerProfileRegistry::loadFromDirectory(const juce::File& dir) {

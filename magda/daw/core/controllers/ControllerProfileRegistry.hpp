@@ -18,9 +18,10 @@ namespace magda {
  *
  * At runtime the registry reads only from the user directory
  * (~/Library/Application Support/MAGDA/controllers/ on macOS, or the platform
- * equivalent). Bundled JSON files under resources/controllers/ are copied in
- * once on first launch when the user directory doesn't exist — after that,
- * deletion of a profile is durable and bundled files are never consulted again.
+ * equivalent). On every load the bundled JSON files under resources/controllers/
+ * are copied in additively: any bundled file whose filename is missing from the
+ * user directory is seeded; existing files are never overwritten, so user edits
+ * and deletions stick.
  *
  * Two files in the user directory that share an "id" field resolve last-wins:
  * the later file overrides the earlier entry so findById stays deterministic.
@@ -33,10 +34,11 @@ class ControllerProfileRegistry {
     static ControllerProfileRegistry& getInstance();
 
     /**
-     * @brief Load profiles from the user directory, seeding from bundled on first launch.
+     * @brief Load profiles from the user directory, seeding any missing bundled files.
      *
-     * If the user directory does not yet exist, bundled starter profiles are copied in
-     * once. After that, deletion is durable — bundled files are never re-read at runtime.
+     * Bundled files whose filename is absent from the user directory are copied in.
+     * Existing user files (including bundled files the user has edited) are left
+     * untouched, so deletions and customisations are durable.
      *
      * Safe to call multiple times (re-loads on each call, replacing existing data).
      */
