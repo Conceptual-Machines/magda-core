@@ -1,7 +1,7 @@
 {
-  "id": "generic.8_knob",
+  "id": "generic.8_knob.macros",
   "vendor": "Generic",
-  "name": "Generic 8-Knob Controller",
+  "name": "Generic 8-Knob — Macros",
   "controls": [
     { "controlId": "knob_1", "kind": "knob", "cc": 21, "channel": 1 },
     { "controlId": "knob_2", "kind": "knob", "cc": 22, "channel": 1 },

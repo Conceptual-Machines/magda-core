@@ -8,9 +8,9 @@ This page is a reference for anyone writing or editing a profile by hand — com
 
 ```jsonc
 {
-  "id": "novation.launchkey_mini_mk4",
+  "id": "novation.launchkey_mini_mk4.macros",
   "vendor": "Novation",
-  "name": "Launchkey Mini MK4",
+  "name": "Launchkey Mini MK4 — Macros",
 
   "controls": [
     { "controlId": "knob_1", "kind": "knob", "cc": 21, "channel": 1 },
@@ -116,29 +116,26 @@ Drives the master bus pan. No args.
 
 ## Multiple profiles per controller
 
-A single piece of hardware doesn't have to be one profile. A Launchkey Mini might be useful in three different ways: knobs driving the focused device's macros, knobs driving the selected track's volume / pan / sends, knobs driving transport-style controls. Each of those is a different **intent**, and each is its own profile JSON.
+A single piece of hardware doesn't have to be one profile. A Launchkey Mini might be useful in two different ways: knobs driving the focused device's macros, or knobs driving the selected track's volume / pan / sends. Each of those is a different **intent**, and each is its own profile JSON.
 
-The architecture supports this — what matters is that each profile has a distinct `id`. Convention going forward is `<vendor>.<model>_<intent>`:
+The architecture supports this — what matters is that each profile has a distinct `id`. The convention is `<vendor>.<model>.<intent>`, dot-separated at every segment:
 
 ```
-novation.launchkey_mini_mk4_macros     ← knobs follow focused device
-novation.launchkey_mini_mk4_mix        ← knobs control selected-track mix
-novation.launchkey_mini_mk4_transport  ← buttons map to play / stop / record
+novation.launchkey_mini_mk4.macros     ← knobs follow focused device
+novation.launchkey_mini_mk4.mix        ← knobs control selected-track mix
 ```
 
-The `name` field can be the same model name with the intent appended for clarity:
+The `name` field uses the model name with the intent appended for clarity:
 
 ```jsonc
 {
-  "id": "novation.launchkey_mini_mk4_mix",
+  "id": "novation.launchkey_mini_mk4.mix",
   "vendor": "Novation",
   "name": "Launchkey Mini MK4 — Mix"
 }
 ```
 
 Each variant shows up as its own row in the Controllers dialog. A user picks the variant they want for the way they're working today; switching variants is one dialog visit, not a rebuild of the JSON.
-
-The bundled `novation.launchkey_mini_mk4` profile predates this convention — it implicitly is the macros variant. New submissions should use the suffixed form so multiple variants can coexist as the community library grows.
 
 ## A complete example
 
