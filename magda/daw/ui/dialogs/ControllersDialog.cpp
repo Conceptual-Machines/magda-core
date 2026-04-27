@@ -31,7 +31,8 @@ void ControllersDialog::ControllerListModel::paintListBoxItem(int rowNumber, juc
 
     const auto& c = (*controllers)[static_cast<size_t>(rowNumber)];
     const bool connected = isConnected ? isConnected(c) : false;
-    const bool active = connected;
+    const bool enabled = isEnabled ? isEnabled(c) : true;
+    const bool active = enabled && connected;
 
     if (rowIsSelected) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.20f));
@@ -60,7 +61,13 @@ void ControllersDialog::ControllerListModel::paintListBoxItem(int rowNumber, juc
                true);
 
     // Line 2: port name · status
-    juce::String status = connected ? tr("controllers.connected") : tr("controllers.not_connected");
+    juce::String status;
+    if (!enabled)
+        status = tr("controllers.disabled");
+    else if (connected)
+        status = tr("controllers.connected");
+    else
+        status = tr("controllers.not_connected");
 
     juce::String portText = c.inputPortName.isNotEmpty() ? c.inputPortName : c.inputPort;
     juce::String line2 = portText + juce::String::fromUTF8("  \xc2\xb7  ") + status;
@@ -97,6 +104,9 @@ ControllersDialog::ControllersDialog() {
     // Controllers list
     listModel_.controllers = &controllers_;
     listModel_.isConnected = [this](const Controller& c) { return isControllerConnected(c); };
+    listModel_.isEnabled = [](const Controller& c) {
+        return BindingRegistry::getInstance().hasAnyBindingForController(c.id);
+    };
     listModel_.onRowClicked = [this](int row, const juce::MouseEvent& e) { onRowClicked(row, e); };
 
     list_ = std::make_unique<juce::ListBox>("controllers", &listModel_);
@@ -344,8 +354,43 @@ void ControllersDialog::onRowClicked(int row, const juce::MouseEvent& e) {
     if (row < 0 || row >= static_cast<int>(controllers_.size()))
         return;
 
-    if (e.mods.isPopupMenu() || e.mods.isRightButtonDown() || e.mods.isCtrlDown())
+    if (e.mods.isPopupMenu() || e.mods.isRightButtonDown() || e.mods.isCtrlDown()) {
         onRowRemoveRequested(row);
+        return;
+    }
+
+    onRowToggled(row);
+}
+
+void ControllersDialog::onRowToggled(int row) {
+    if (row < 0 || row >= static_cast<int>(controllers_.size()))
+        return;
+
+    const auto& c = controllers_[static_cast<size_t>(row)];
+    auto& bindingReg = BindingRegistry::getInstance();
+
+    if (bindingReg.hasAnyBindingForController(c.id)) {
+        // Currently enabled — silence by removing all bindings keyed to this id.
+        bindingReg.removeAllForController(BindingScope::Global, c.id);
+        bindingReg.removeAllForController(BindingScope::Project, c.id);
+    } else {
+        // Currently disabled — re-materialise the profile bindings against the
+        // current port and add them back.
+        auto profileOpt = ControllerProfileRegistry::getInstance().findById(c.profileId);
+        if (!profileOpt.has_value())
+            return;
+        auto mat = materialiseControllerFromProfile(*profileOpt, c.inputPort, c.outputPort,
+                                                    c.inputPortName);
+        // Reuse the existing controller's id so bindings stay tied to the same
+        // registry row across enable/disable cycles.
+        for (auto& b : mat.bindings) {
+            b.source.controllerId = c.id;
+            bindingReg.add(BindingScope::Global, b);
+        }
+    }
+
+    persist();
+    rebuildList();
 }
 
 void ControllersDialog::onRowRemoveRequested(int row) {

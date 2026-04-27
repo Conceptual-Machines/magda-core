@@ -85,6 +85,14 @@ int BindingRegistry::removeAllForController(BindingScope scope, const Controller
     return removed;
 }
 
+bool BindingRegistry::hasAnyBindingForController(const ControllerId& controllerId) const {
+    auto match = [&controllerId](const Binding& b) {
+        return b.source.controllerId == controllerId;
+    };
+    return std::any_of(globalBindings_.begin(), globalBindings_.end(), match) ||
+           std::any_of(projectBindings_.begin(), projectBindings_.end(), match);
+}
+
 // ============================================================================
 // Queries
 // ============================================================================
