@@ -64,6 +64,31 @@ juce::File ControllerProfileRegistry::userFileForProfileId(const juce::String& i
     return userControllersDirectory().getChildFile(filenameForProfileId(id));
 }
 
+juce::File ControllerProfileRegistry::findSourceFileForProfileId(const juce::String& id) const {
+    // Try the canonical filename first — fast path for user-created profiles.
+    auto direct = userFileForProfileId(id);
+    if (direct.existsAsFile())
+        return direct;
+
+    // Bundled profiles use shipping filenames that don't always match the id
+    // (e.g. id "novation.launchkey_mini_mk4" lives in
+    // novation_launchkey_mini_mk4.json). Walk the directory and pick the file
+    // whose JSON body advertises this id.
+    auto dir = userControllersDirectory();
+    if (!dir.isDirectory())
+        return {};
+
+    for (const auto& f : dir.findChildFiles(juce::File::findFiles, false, "*.json")) {
+        auto parsed = juce::JSON::parse(f.loadFileAsString());
+        if (parsed.isVoid())
+            continue;
+        auto profileOpt = decodeControllerProfile(parsed);
+        if (profileOpt.has_value() && profileOpt->id == id)
+            return f;
+    }
+    return {};
+}
+
 // ============================================================================
 // Load
 // ============================================================================

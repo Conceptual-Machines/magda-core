@@ -96,6 +96,10 @@ ControllersDialog::ControllersDialog() {
     addButton_.onClick = [this]() { onAddClicked(); };
     addAndMakeVisible(addButton_);
 
+    uploadButton_.setButtonText(tr("controllers.upload_profile"));
+    uploadButton_.onClick = [this]() { onUploadClicked(); };
+    addAndMakeVisible(uploadButton_);
+
     // Controllers list
     listModel_.controllers = &controllers_;
     listModel_.isConnected = [this](const Controller& c) { return isControllerConnected(c); };
@@ -138,10 +142,14 @@ void ControllersDialog::resized() {
     auto bounds = getLocalBounds().reduced(16);
     const int labelH = 24;
     const int addBtnW = 120;
+    const int uploadBtnW = 140;
+    const int btnGap = 6;
 
-    // Section header row: label on the left, add button on the right
+    // Section header row: label on the left, upload + add buttons on the right
     auto headerRow = bounds.removeFromTop(labelH);
     addButton_.setBounds(headerRow.removeFromRight(addBtnW));
+    headerRow.removeFromRight(btnGap);
+    uploadButton_.setBounds(headerRow.removeFromRight(uploadBtnW));
     sectionLabel_.setBounds(headerRow);
     bounds.removeFromTop(6);
 
@@ -180,6 +188,80 @@ bool ControllersDialog::isControllerConnected(const Controller& c) const {
 // -----------------------------------------------------------------------------
 // Add flow
 // -----------------------------------------------------------------------------
+
+void ControllersDialog::onUploadClicked() {
+    auto title = tr("controllers.upload_profile");
+    uploadChooser_ = std::make_unique<juce::FileChooser>(
+        title, juce::File::getSpecialLocation(juce::File::userHomeDirectory), "*.json");
+    juce::Component::SafePointer<ControllersDialog> safeThis(this);
+    uploadChooser_->launchAsync(juce::FileBrowserComponent::openMode |
+                                    juce::FileBrowserComponent::canSelectFiles,
+                                [safeThis, title](const juce::FileChooser& fc) {
+                                    auto file = fc.getResult();
+                                    if (file == juce::File{})
+                                        return;  // cancelled
+                                    if (safeThis == nullptr)
+                                        return;  // dialog closed before chooser returned
+                                    safeThis->importProfileFile(file, title);
+                                });
+}
+
+void ControllersDialog::importProfileFile(const juce::File& file, const juce::String& title) {
+    auto fail = [&](const juce::String& reason) {
+        juce::AlertWindow::showMessageBox(juce::AlertWindow::WarningIcon, title, reason);
+    };
+
+    auto parsed = juce::JSON::parse(file.loadFileAsString());
+    if (parsed.isVoid())
+        return fail(tr("controllers.upload_invalid_json"));
+
+    auto profileOpt = decodeControllerProfile(parsed);
+    if (!profileOpt.has_value())
+        return fail(tr("controllers.upload_invalid_profile"));
+
+    // Cross-field consistency — duplicate controlIds, defaultBindings pointing
+    // at unknown controls. Validator emits localizable keys, UI formats.
+    auto issues = validateControllerProfile(*profileOpt);
+    if (!issues.empty()) {
+        juce::String body = tr("controllers.upload_validation_failed");
+        for (const auto& issue : issues)
+            body += "\n  • " + tr(issue.key).replace("{0}", issue.arg);
+        return fail(body);
+    }
+
+    auto& reg = ControllerProfileRegistry::getInstance();
+    auto userDir = ControllerProfileRegistry::userControllersDirectory();
+    if (!userDir.isDirectory()) {
+        auto createResult = userDir.createDirectory();
+        if (createResult.failed())
+            return fail(tr("controllers.upload_create_dir_failed")
+                            .replace("{0}", createResult.getErrorMessage()));
+    }
+
+    // Copy with a name derived from the profile id so the file lives next to
+    // its siblings; if a profile with the same id exists, ask before clobbering.
+    auto destFile =
+        userDir.getChildFile(ControllerProfileRegistry::filenameForProfileId(profileOpt->id));
+
+    if (destFile.existsAsFile()) {
+        bool ok = juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::QuestionIcon, title,
+            tr("controllers.upload_overwrite").replace("{0}", profileOpt->id), tr("dialogs.ok"),
+            tr("dialogs.cancel"));
+        if (!ok)
+            return;
+    }
+
+    if (!file.copyFileTo(destFile))
+        return fail(tr("controllers.upload_copy_failed"));
+
+    reg.load();  // pick up the new file
+    rebuildList();
+
+    juce::AlertWindow::showMessageBox(
+        juce::AlertWindow::InfoIcon, title,
+        tr("controllers.upload_success").replace("{0}", profileOpt->id));
+}
 
 void ControllersDialog::onAddClicked() {
     auto profiles = ControllerProfileRegistry::getInstance().all();
@@ -297,35 +379,40 @@ void ControllersDialog::onRowRemoveRequested(int row) {
     const auto name = c.name;
     const auto profileId = c.profileId;
 
-    menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(list_.get()),
-        [this, id, name, profileId](int result) {
-            if (result == 2) {
-                auto file = ControllerProfileRegistry::userFileForProfileId(profileId);
-                if (file.existsAsFile())
-                    file.revealToUser();
-                return;
-            }
+    // No target component → JUCE pops the menu at the cursor (where the user
+    // right-clicked), instead of pinning it to the list's edge.
+    menu.showMenuAsync(juce::PopupMenu::Options(), [this, id, name, profileId](int result) {
+        if (result == 2) {
+            // Bundled profile filenames don't always match their id
+            // (e.g. id "novation.launchkey_mini_mk4" lives in
+            // novation_launchkey_mini_mk4.json), so look the file up by
+            // parsed id rather than synthesising a path.
+            auto file =
+                ControllerProfileRegistry::getInstance().findSourceFileForProfileId(profileId);
+            if (file.existsAsFile())
+                file.revealToUser();
+            return;
+        }
 
-            if (result != 1)
-                return;
+        if (result != 1)
+            return;
 
-            juce::String title = tr("controllers.remove_confirm_title");
-            juce::String msg = tr("controllers.remove_confirm_message");
-            msg = msg.replace("{0}", name);
+        juce::String title = tr("controllers.remove_confirm_title");
+        juce::String msg = tr("controllers.remove_confirm_message");
+        msg = msg.replace("{0}", name);
 
-            juce::AlertWindow::showOkCancelBox(
-                juce::AlertWindow::QuestionIcon, title, msg, tr("dialogs.ok"), tr("dialogs.cancel"),
-                nullptr, juce::ModalCallbackFunction::create([this, id](int result2) {
-                    if (result2 != 1)
-                        return;
+        juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::QuestionIcon, title, msg, tr("dialogs.ok"), tr("dialogs.cancel"),
+            nullptr, juce::ModalCallbackFunction::create([this, id](int result2) {
+                if (result2 != 1)
+                    return;
 
-                    BindingRegistry::getInstance().removeAllForController(BindingScope::Global, id);
-                    ControllerRegistry::getInstance().remove(id);
-                    persist();
-                    rebuildList();
-                }));
-        });
+                BindingRegistry::getInstance().removeAllForController(BindingScope::Global, id);
+                ControllerRegistry::getInstance().remove(id);
+                persist();
+                rebuildList();
+            }));
+    });
 }
 
 // -----------------------------------------------------------------------------

@@ -61,6 +61,15 @@ class ControllerProfileRegistry {
     /** Full path to a profile's JSON file in the user directory. */
     static juce::File userFileForProfileId(const juce::String& id);
 
+    /**
+     * Look up the on-disk file a profile was loaded from. Bundled files don't
+     * have to be named after their id (the loader reads the id out of the JSON
+     * body), so userFileForProfileId() can synthesise a path that doesn't
+     * exist. This walks the user directory and returns the file whose parsed
+     * id matches. Returns an invalid juce::File when no match.
+     */
+    juce::File findSourceFileForProfileId(const juce::String& id) const;
+
   private:
     ControllerProfileRegistry() = default;
 

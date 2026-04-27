@@ -3,20 +3,92 @@
 #include <BinaryData.h>
 
 #include "../themes/DarkTheme.hpp"
+#include "../themes/FontManager.hpp"
+#include "audio/MidiDeviceMatch.hpp"
 #include "core/StringTable.hpp"
 
 namespace magda {
+
+namespace {
+constexpr int kBadgePadX = 8;
+constexpr int kBadgeGap = 6;
+constexpr int kBadgeHeight = 20;
+constexpr int kBadgeDotSize = 6;
+constexpr int kBadgeDotPad = 4;
+constexpr int kStripLeftMargin = 12;
+}  // namespace
 
 FooterBar::FooterBar() {
     setupButtons();
     setupBottomCollapseButton();
     ViewModeController::getInstance().addListener(this);
+    ControllerRegistry::getInstance().addListener(this);
+    refreshLiveInputs();
+    refreshControllerBadges();
+    startTimerHz(2);  // poll for MIDI device hot-plug
     updateButtonStates();
 }
 
 FooterBar::~FooterBar() {
+    stopTimer();
+    ControllerRegistry::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
     // RAII cleanup handled automatically by ManagedChild
+}
+
+bool FooterBar::refreshLiveInputs() {
+    auto fresh = juce::MidiInput::getAvailableDevices();
+    bool changed = fresh.size() != liveInputs_.size();
+    if (!changed) {
+        for (int i = 0; i < fresh.size(); ++i) {
+            if (fresh[i].identifier != liveInputs_[i].identifier ||
+                fresh[i].name != liveInputs_[i].name) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    liveInputs_ = std::move(fresh);
+    return changed;
+}
+
+void FooterBar::refreshControllerBadges() {
+    controllerBadges_.clear();
+    for (const auto& c : ControllerRegistry::getInstance().all()) {
+        if (!c.enabled)
+            continue;  // only enabled controllers earn a badge
+
+        ControllerBadge b;
+        b.label = c.name;
+        b.connected = false;
+        // Use the shared port matcher rather than strict equality: stored
+        // inputPort can be either a JUCE identifier or a display name, with
+        // varying case, depending on platform — magda::midi::matches handles
+        // all of those consistently.
+        for (const auto& dev : liveInputs_) {
+            if (magda::midi::matches(c.inputPort, dev.identifier, dev.name)) {
+                b.connected = true;
+                break;
+            }
+        }
+        controllerBadges_.push_back(std::move(b));
+    }
+    resized();  // recompute badge hit areas
+    repaint();
+}
+
+void FooterBar::controllerRegistryChanged() {
+    refreshControllerBadges();
+}
+
+void FooterBar::timerCallback() {
+    if (refreshLiveInputs())
+        refreshControllerBadges();
+}
+
+void FooterBar::mouseUp(const juce::MouseEvent& e) {
+    if (controllerStripArea_.contains(e.getPosition()) && onControllersClicked)
+        onControllersClicked();
 }
 
 void FooterBar::paint(juce::Graphics& g) {
@@ -25,6 +97,32 @@ void FooterBar::paint(juce::Graphics& g) {
     // Draw top border
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
     g.drawLine(0.0f, 0.0f, static_cast<float>(getWidth()), 0.0f, 1.0f);
+
+    // Enabled-controller badges on the left.
+    auto font = FontManager::getInstance().getUIFont(11.0f);
+    g.setFont(font);
+    for (const auto& b : controllerBadges_) {
+        // Pill background.
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRoundedRectangle(b.hitArea.toFloat(), 4.0f);
+
+        // Connection dot — green when the live MIDI port is available, dim
+        // grey when the controller is enabled but the port is unplugged.
+        auto dotArea = juce::Rectangle<float>(
+            static_cast<float>(b.hitArea.getX() + kBadgeDotPad),
+            static_cast<float>(b.hitArea.getCentreY() - kBadgeDotSize / 2.0f),
+            static_cast<float>(kBadgeDotSize), static_cast<float>(kBadgeDotSize));
+        g.setColour(b.connected ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.95f)
+                                : juce::Colour(DarkTheme::TEXT_DIM).withAlpha(0.55f));
+        g.fillEllipse(dotArea);
+
+        // Label.
+        g.setColour(DarkTheme::getTextColour());
+        auto textArea = b.hitArea;
+        textArea.removeFromLeft(kBadgeDotPad + kBadgeDotSize + 4);
+        textArea.removeFromRight(kBadgePadX / 2);
+        g.drawText(b.label, textArea, juce::Justification::centredLeft, true);
+    }
 }
 
 void FooterBar::resized() {
@@ -48,6 +146,28 @@ void FooterBar::resized() {
         bottomCollapseButton_->setBounds(bounds.getWidth() - collapseSize - 8, cy, collapseSize,
                                          collapseSize);
     }
+
+    // Lay out controller badges on the left. Each pill is a small rounded box
+    // with a connection dot + label; cap text width so a long controller name
+    // can't push past the centred view-mode buttons.
+    auto font = FontManager::getInstance().getUIFont(11.0f);
+    int x = kStripLeftMargin;
+    int badgeY = (bounds.getHeight() - kBadgeHeight) / 2;
+    const int maxRight = startX - 12;  // keep badges clear of the centre buttons
+    for (auto& b : controllerBadges_) {
+        int textW = juce::jmax(40, juce::GlyphArrangement::getStringWidthInt(font, b.label));
+        int badgeW = kBadgeDotPad + kBadgeDotSize + 4 + textW + (kBadgePadX / 2);
+        if (x + badgeW > maxRight) {
+            // No room for this one — collapse remaining badges with an empty
+            // hit area so they don't get clicked off-screen.
+            b.hitArea = {};
+            continue;
+        }
+        b.hitArea = juce::Rectangle<int>(x, badgeY, badgeW, kBadgeHeight);
+        x += badgeW + kBadgeGap;
+    }
+    controllerStripArea_ = juce::Rectangle<int>(kStripLeftMargin, badgeY,
+                                                juce::jmax(0, x - kStripLeftMargin), kBadgeHeight);
 }
 
 void FooterBar::viewModeChanged(ViewMode /*mode*/, const AudioEngineProfile& /*profile*/) {
