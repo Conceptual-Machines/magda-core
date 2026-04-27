@@ -285,19 +285,8 @@ void Config::load() {
         return out;
     };
 
-    // Migrate from old seconds-based keys if new bars keys don't exist yet
-    if (obj->hasProperty("defaultTimelineLengthBars")) {
-        defaultTimelineLengthBars = getInt("defaultTimelineLengthBars", defaultTimelineLengthBars);
-    } else if (obj->hasProperty("defaultTimelineLength")) {
-        // Old config: convert seconds to bars (at 120 BPM, 4/4: 1 bar = 2 sec)
-        defaultTimelineLengthBars =
-            static_cast<int>(getDouble("defaultTimelineLength", 256.0) / 2.0);
-    }
-    if (obj->hasProperty("defaultZoomViewBars")) {
-        defaultZoomViewBars = getInt("defaultZoomViewBars", defaultZoomViewBars);
-    } else if (obj->hasProperty("defaultZoomViewDuration")) {
-        defaultZoomViewBars = static_cast<int>(getDouble("defaultZoomViewDuration", 64.0) / 2.0);
-    }
+    defaultTimelineLengthBars = getInt("defaultTimelineLengthBars", defaultTimelineLengthBars);
+    defaultZoomViewBars = getInt("defaultZoomViewBars", defaultZoomViewBars);
     minZoomLevel = getDouble("minZoomLevel", minZoomLevel);
     maxZoomLevel = getDouble("maxZoomLevel", maxZoomLevel);
 
