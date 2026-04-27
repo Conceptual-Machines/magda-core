@@ -131,10 +131,7 @@ MainView::MainView(AudioEngine* audioEngine)
             StringTable::getInstance().loadLanguage(lang);
     }
 
-    timelineLength = config.getDefaultTimelineLengthBars() * 2.0;  // bars → seconds at 120 BPM
-
-    DBG("CONFIG: Timeline length=" << config.getDefaultTimelineLengthBars() << " bars ("
-                                   << timelineLength << " seconds at 120 BPM)");
+    DBG("CONFIG: Timeline length=" << config.getDefaultTimelineLengthBars() << " bars");
     DBG("CONFIG: Default zoom view=" << config.getDefaultZoomViewBars() << " bars");
 
     // Apply auto-save settings from config
@@ -422,9 +419,6 @@ void MainView::setupComponents() {
 
     // Set up track synchronization between headers and content
     setupTrackSynchronization();
-
-    // Set initial timeline length from config (bars → seconds at default 120 BPM)
-    setTimelineLength(magda::Config::getInstance().getDefaultTimelineLengthBars() * 2.0);
 }
 
 void MainView::setupCallbacks() {
