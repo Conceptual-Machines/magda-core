@@ -279,7 +279,7 @@ jobs:
 
     # Ninja is shipped with the Visual Studio install on windows-latest, so
     # we only need to provision NSIS. We pin a known version and download
-    # the zip directly — Chocolatey's community feed historically flakes
+    # the zip directly: Chocolatey's community feed historically flakes
     # (5xx, rate limits) and was blocking the release as recently as the
     # rc0 attempt.
     - name: Cache NSIS
@@ -304,7 +304,7 @@ jobs:
         }
 
         # NSIS: portable zip from SourceForge, pinned + hash-checked.
-        # Two mirrors and an in-attempt retry loop — Windows PowerShell 5.1
+        # Two mirrors and an in-attempt retry loop. Windows PowerShell 5.1
         # doesn't support Invoke-WebRequest's -MaximumRetryCount, so retries
         # are spelled out here.
         $nsisDir = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION"
@@ -344,7 +344,7 @@ jobs:
           $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
           $expected = $env:NSIS_SHA256.ToLower()
           if ($actual -ne $expected) {
-            Write-Error "NSIS zip hash mismatch — expected $expected, got $actual"
+            Write-Error "NSIS zip hash mismatch - expected $expected, got $actual"
             exit 1
           }
           Write-Output "NSIS zip hash OK ($actual)"
