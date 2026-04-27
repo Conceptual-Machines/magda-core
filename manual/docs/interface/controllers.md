@@ -44,6 +44,8 @@ User profiles live alongside MAGDA's other configuration:
 
 On first launch the bundled profiles are seeded into this folder. Edits and additions there are durable — drop a new `*.json` profile in and it's available next time you open the Controllers dialog.
 
+For the JSON schema, the resolver list (the functions that route a CC to a target — `focused_device_macro`, `selected.volume`, `master.pan`, etc.), and a worked example, see the [Controller Profile Format reference](../reference/controller-profile-format.md).
+
 ## MIDI Learn
 
 To map a single hardware control to a single MAGDA target:
