@@ -289,8 +289,13 @@ jobs:
         path: ${{ runner.temp }}\nsis-${{ env.NSIS_VERSION }}
         key: nsis-${{ env.NSIS_VERSION }}
 
-    - name: Install Ninja and NSIS
+    - name: Verify Ninja and provision NSIS
       shell: powershell
+      env:
+        # Pinned hash matches the contents of the Sourceforge release for
+        # NSIS_VERSION above. Bumping the version means computing a fresh
+        # hash with `Get-FileHash -Algorithm SHA256` (or `shasum -a 256`).
+        NSIS_SHA256: "fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110"
       run: |
         # Ninja: prefer whatever the VS install ships; only bail if missing.
         if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
@@ -298,8 +303,10 @@ jobs:
           exit 1
         }
 
-        # NSIS: portable zip from SourceForge, pinned. Two mirrors with a
-        # small backoff so a transient 5xx on one doesn't kill the build.
+        # NSIS: portable zip from SourceForge, pinned + hash-checked.
+        # Two mirrors and an in-attempt retry loop — Windows PowerShell 5.1
+        # doesn't support Invoke-WebRequest's -MaximumRetryCount, so retries
+        # are spelled out here.
         $nsisDir = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION"
         $makensis = Join-Path $nsisDir "nsis-$env:NSIS_VERSION\makensis.exe"
         if (-not (Test-Path $makensis)) {
@@ -308,29 +315,55 @@ jobs:
             "https://prdownloads.sourceforge.net/nsis/nsis-$env:NSIS_VERSION.zip",
             "https://sourceforge.net/projects/nsis/files/NSIS%203/$env:NSIS_VERSION/nsis-$env:NSIS_VERSION.zip/download"
           )
-          $ok = $false
+          $downloaded = $false
           foreach ($u in $urls) {
-            try {
-              Write-Output "Downloading NSIS $env:NSIS_VERSION from $u"
-              Invoke-WebRequest -Uri $u -OutFile $zip -MaximumRetryCount 3 -RetryIntervalSec 5
-              if ((Get-Item $zip).Length -gt 1MB) { $ok = $true; break }
-            } catch {
-              Write-Output "Mirror failed: $($_.Exception.Message)"
-              Start-Sleep -Seconds 5
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try {
+                Write-Output "Downloading NSIS $env:NSIS_VERSION from $u (attempt $attempt/3)"
+                Invoke-WebRequest -Uri $u -OutFile $zip
+                if ((Test-Path $zip) -and ((Get-Item $zip).Length -gt 1MB)) {
+                  $downloaded = $true
+                  break
+                }
+                Write-Output "Downloaded file from $u was missing or too small"
+              } catch {
+                Write-Output "Download attempt $attempt failed: $($_.Exception.Message)"
+              }
+              if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
             }
+            if ($downloaded) { break }
+            Write-Output "Mirror failed: $u"
           }
-          if (-not $ok) {
+          if (-not $downloaded) {
             Write-Error "All NSIS mirrors failed"
             exit 1
           }
+
+          # Supply-chain check: refuse to extract if the zip doesn't match
+          # the pinned hash for this version.
+          $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
+          $expected = $env:NSIS_SHA256.ToLower()
+          if ($actual -ne $expected) {
+            Write-Error "NSIS zip hash mismatch — expected $expected, got $actual"
+            exit 1
+          }
+          Write-Output "NSIS zip hash OK ($actual)"
+
           Expand-Archive -Path $zip -DestinationPath $nsisDir -Force
         } else {
           Write-Output "NSIS $env:NSIS_VERSION already cached"
         }
 
+        if (-not (Test-Path $makensis)) {
+          Write-Error "makensis.exe missing after extraction at $makensis"
+          exit 1
+        }
+
         $bin = Split-Path -Parent $makensis
         echo "$bin" >> $env:GITHUB_PATH
+        echo "MAKENSIS=$makensis" >> $env:GITHUB_ENV
         Write-Output "NSIS on PATH: $bin"
+        Write-Output "Resolved makensis: $makensis"
 
     - name: Configure CMake
       shell: powershell
@@ -415,7 +448,7 @@ jobs:
           exit 1
         }
 
-        & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" /DVERSION=$env:VERSION "$stage\magda-installer.nsi"
+        & $env:MAKENSIS /DVERSION=$env:VERSION "$stage\magda-installer.nsi"
 
         $installerName = "MAGDA-$env:VERSION-Windows-x86_64-Setup.exe"
         Move-Item "$stage\MAGDA-$env:VERSION-Windows-Setup.exe" $installerName
