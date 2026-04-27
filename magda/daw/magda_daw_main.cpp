@@ -20,6 +20,7 @@
 #include "ui/dialogs/SplashScreen.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/MainLookAndFeel.hpp"
 #include "ui/windows/MainWindow.hpp"
 #include "version.hpp"
 
@@ -30,7 +31,7 @@ class MagdaDAWApplication : public JUCEApplication {
     std::unique_ptr<juce::FileLogger> fileLogger_;
     std::unique_ptr<magda::TracktionEngineWrapper> daw_engine_;
     std::unique_ptr<magda::MainWindow> mainWindow_;
-    std::unique_ptr<juce::LookAndFeel> lookAndFeel_;
+    std::unique_ptr<magda::MainLookAndFeel> lookAndFeel_;
     std::unique_ptr<magda::SplashScreen> splashScreen_;
 
     // Cancellable deferred init timer — destroyed in shutdown() to prevent
@@ -84,7 +85,7 @@ class MagdaDAWApplication : public JUCEApplication {
         magda::FontManager::getInstance().initialize();
 
         // 2. Set up dark theme
-        lookAndFeel_ = std::make_unique<juce::LookAndFeel_V4>();
+        lookAndFeel_ = std::make_unique<magda::MainLookAndFeel>();
         magda::DarkTheme::applyToLookAndFeel(*lookAndFeel_);
         juce::LookAndFeel::setDefaultLookAndFeel(lookAndFeel_.get());
 

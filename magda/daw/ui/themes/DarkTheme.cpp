@@ -2,10 +2,25 @@
 
 namespace magda {
 
-void DarkTheme::applyToLookAndFeel(juce::LookAndFeel& laf) {
+void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
+    // V4 ColourScheme drives the title bar background (widgetBackground) and a
+    // few other top-level surfaces that the colour-ID system doesn't reach.
+    laf.setColourScheme({
+        getColour(BACKGROUND),        // windowBackground
+        getColour(BACKGROUND),        // widgetBackground (DocumentWindow title bar)
+        getColour(PANEL_BACKGROUND),  // menuBackground
+        getColour(BORDER),            // outline
+        getColour(TEXT_PRIMARY),      // defaultText
+        getColour(BUTTON_NORMAL),     // defaultFill
+        getColour(TEXT_PRIMARY),      // highlightedText
+        getColour(ACCENT_BLUE),       // highlightedFill
+        getColour(TEXT_PRIMARY),      // menuText
+    });
+
     // Background colors
     laf.setColour(juce::ResizableWindow::backgroundColourId, getColour(BACKGROUND));
     laf.setColour(juce::DocumentWindow::backgroundColourId, getColour(BACKGROUND));
+    laf.setColour(juce::DocumentWindow::textColourId, getColour(TEXT_PRIMARY));
 
     // Text colors
     laf.setColour(juce::Label::textColourId, getColour(TEXT_PRIMARY));
