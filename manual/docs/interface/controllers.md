@@ -26,7 +26,7 @@ Bindings created by MIDI Learn against a removed controller's port still work �
 
 ### Profiles
 
-A profile describes a controller's physical layout — which CC numbers correspond to the eight macro knobs, the transport buttons, and so on. MAGDA ships with profiles for common controllers (Launchkey Mini MK3 / MK4, generic 8-knob, etc.) and you can add your own.
+A profile describes a controller's physical layout — which CC numbers correspond to the eight macro knobs, and so on. MAGDA ships with profiles for common controllers (Launchkey Mini MK3 / MK4, generic 8-knob, etc.) and you can add your own.
 
 When a profile is assigned to an enabled controller and a device is focused, the profile's macro knobs drive **that device's macros**. Focus a different device — the same hardware knobs follow.
 
@@ -43,6 +43,10 @@ User profiles live alongside MAGDA's other configuration:
 | Linux | `~/.config/MAGDA/controllers/` |
 
 On first launch the bundled profiles are seeded into this folder. Edits and additions there are durable — drop a new `*.json` profile in and it's available next time you open the Controllers dialog.
+
+### Profile JSON format
+
+For the full JSON schema, the resolver list (the functions that route a CC to a target — `focused.macro`, `selected.volume`, `master.pan`, etc.), the `<vendor>.<model>.<intent>` id convention, and a worked example, see the [Controller Profile Format reference](../reference/controller-profile-format.md).
 
 ## MIDI Learn
 
@@ -95,7 +99,9 @@ If MAGDA doesn't ship a profile for your controller, the AI Assistant can write 
 /controller Akai MPK Mini Mk3, 8 knobs on CC 70-77, channel 1
 ```
 
-The AI generates a profile JSON, drops it in your [controllers directory](#profiles-directory), and prompts you to enable it. Describe the controller in plain language — manufacturer, model, which CCs the knobs send, transport button mappings, MIDI channel — the more specific you are, the better the profile.
+The AI generates a profile JSON, drops it in your [controllers directory](#profiles-directory), and prompts you to enable it. Describe the controller in plain language — manufacturer, model, which CCs the knobs send, MIDI channel — the more specific you are, the better the profile.
+
+To tweak the generated JSON by hand — fix a CC number, switch a knob to drive `selected.pan` instead of a focused-device macro — the [Controller Profile Format reference](../reference/controller-profile-format.md) explains every field.
 
 See [AI Assistant — Slash Commands](../panels/ai-assistant.md#slash-commands).
 

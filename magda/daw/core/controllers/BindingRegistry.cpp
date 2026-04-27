@@ -213,7 +213,7 @@ bool sourcesOverlap(const BindingSource& a, const BindingSource& b) {
 
 bool isFocusedDeviceMacroResolver(const Target& t) {
     if (auto* rr = std::get_if<ResolverRef>(&t))
-        return rr->kind == "focused_device_macro";
+        return rr->kind == "focused.macro";
     return false;
 }
 
@@ -223,7 +223,7 @@ bool isFocusedDeviceMacroResolver(const Target& t) {
 // included because MidiLearnCoordinator prefers an alias target whenever a
 // canonical alias exists for the param (e.g. "4osc.filter_freq"), and aliases
 // always resolve to a plugin parameter in this codebase. ResolverRef bindings
-// (focused_device_macro and any future kinds) are profile-driven defaults and
+// (focused.macro and any future kinds) are profile-driven defaults and
 // do not count.
 bool isExplicitPluginParamTarget(const Target& t) {
     if (auto* st = std::get_if<StaticTarget>(&t))

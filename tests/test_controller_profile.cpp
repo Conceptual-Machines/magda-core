@@ -31,13 +31,13 @@ static ControllerProfile makeTestProfile() {
 
     ControllerProfileDefaultBinding db1;
     db1.controlId = "knob_1";
-    db1.resolverKind = "focused_device_macro";
+    db1.resolverKind = "focused.macro";
     db1.args.set("macroIndex", "0");
     p.defaultBindings.push_back(db1);
 
     ControllerProfileDefaultBinding db2;
     db2.controlId = "knob_2";
-    db2.resolverKind = "focused_device_macro";
+    db2.resolverKind = "focused.macro";
     db2.args.set("macroIndex", "1");
     p.defaultBindings.push_back(db2);
 
@@ -115,7 +115,7 @@ TEST_CASE("ControllerProfile - decode skips malformed default bindings", "[contr
     // Valid binding
     ControllerProfileDefaultBinding valid;
     valid.controlId = "knob_1";
-    valid.resolverKind = "focused_device_macro";
+    valid.resolverKind = "focused.macro";
     valid.args.set("macroIndex", "0");
     p.defaultBindings.push_back(valid);
 
@@ -170,7 +170,7 @@ TEST_CASE("ControllerProfile - materialiseControllerFromProfile basic",
     // Target should be a ResolverRef
     REQUIRE(std::holds_alternative<ResolverRef>(result.bindings[0].target));
     auto ref0 = std::get<ResolverRef>(result.bindings[0].target);
-    CHECK(ref0.kind == "focused_device_macro");
+    CHECK(ref0.kind == "focused.macro");
     CHECK(ref0.args.getValue("macroIndex", "") == "0");
 
     CHECK(result.bindings[1].source.number == 22);  // knob_2 CC
@@ -194,7 +194,7 @@ TEST_CASE("ControllerProfile - materialiseControllerFromProfile skips unknown re
     // Only the first binding (with registered resolver) should be produced
     REQUIRE(result.bindings.size() == 1);
     auto ref = std::get<ResolverRef>(result.bindings[0].target);
-    CHECK(ref.kind == "focused_device_macro");
+    CHECK(ref.kind == "focused.macro");
 }
 
 // ============================================================================

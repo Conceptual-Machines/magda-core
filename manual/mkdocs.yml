@@ -80,6 +80,7 @@ nav:
   - Transport: transport.md
   - Reference:
       - DSL Reference: reference/dsl.md
+      - Controller Profile Format: reference/controller-profile-format.md
       - Keyboard Shortcuts: reference/keyboard-shortcuts.md
       - File Formats: reference/file-formats.md
       - Troubleshooting: reference/troubleshooting.md

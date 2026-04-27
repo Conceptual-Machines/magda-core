@@ -1,0 +1,25 @@
+{
+  "id": "novation.launchkey_mk3.macros",
+  "vendor": "Novation",
+  "name": "Launchkey MK3 — Macros",
+  "controls": [
+    { "controlId": "knob_1", "kind": "knob", "cc": 21, "channel": 1 },
+    { "controlId": "knob_2", "kind": "knob", "cc": 22, "channel": 1 },
+    { "controlId": "knob_3", "kind": "knob", "cc": 23, "channel": 1 },
+    { "controlId": "knob_4", "kind": "knob", "cc": 24, "channel": 1 },
+    { "controlId": "knob_5", "kind": "knob", "cc": 25, "channel": 1 },
+    { "controlId": "knob_6", "kind": "knob", "cc": 26, "channel": 1 },
+    { "controlId": "knob_7", "kind": "knob", "cc": 27, "channel": 1 },
+    { "controlId": "knob_8", "kind": "knob", "cc": 28, "channel": 1 }
+  ],
+  "defaultBindings": [
+    { "controlId": "knob_1", "resolverKind": "focused.macro", "args": { "macroIndex": "0" } },
+    { "controlId": "knob_2", "resolverKind": "focused.macro", "args": { "macroIndex": "1" } },
+    { "controlId": "knob_3", "resolverKind": "focused.macro", "args": { "macroIndex": "2" } },
+    { "controlId": "knob_4", "resolverKind": "focused.macro", "args": { "macroIndex": "3" } },
+    { "controlId": "knob_5", "resolverKind": "focused.macro", "args": { "macroIndex": "4" } },
+    { "controlId": "knob_6", "resolverKind": "focused.macro", "args": { "macroIndex": "5" } },
+    { "controlId": "knob_7", "resolverKind": "focused.macro", "args": { "macroIndex": "6" } },
+    { "controlId": "knob_8", "resolverKind": "focused.macro", "args": { "macroIndex": "7" } }
+  ]
+}

@@ -198,7 +198,7 @@ TEST_CASE("Target encodeTarget/decodeTarget - AliasRef round-trip", "[aliases][t
 
 TEST_CASE("Target encodeTarget/decodeTarget - ResolverRef round-trip", "[aliases][target]") {
     ResolverRef rr;
-    rr.kind = "focused_device_macro";
+    rr.kind = "focused.macro";
     rr.args.set("macroIndex", "2");
 
     Target t{rr};
@@ -209,7 +209,7 @@ TEST_CASE("Target encodeTarget/decodeTarget - ResolverRef round-trip", "[aliases
     REQUIRE(std::holds_alternative<ResolverRef>(*decoded));
 
     const auto& dRr = std::get<ResolverRef>(*decoded);
-    REQUIRE(dRr.kind == "focused_device_macro");
+    REQUIRE(dRr.kind == "focused.macro");
     REQUIRE(dRr.args.getValue("macroIndex", "") == "2");
 }
 
@@ -227,7 +227,7 @@ TEST_CASE("toDebugString - returns non-empty string for all variants", "[aliases
     REQUIRE(toDebugString(ar).isNotEmpty());
     REQUIRE(toDebugString(ar).contains("filter_cutoff"));
 
-    Target rr{ResolverRef{"focused_device_macro", {}}};
+    Target rr{ResolverRef{"focused.macro", {}}};
     REQUIRE(toDebugString(rr).isNotEmpty());
-    REQUIRE(toDebugString(rr).contains("focused_device_macro"));
+    REQUIRE(toDebugString(rr).contains("focused.macro"));
 }

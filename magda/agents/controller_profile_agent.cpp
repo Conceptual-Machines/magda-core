@@ -26,7 +26,7 @@ Field rules:
     "channel": MIDI channel 1-16 (use 1 when unknown).
 - "defaultBindings": sensible starter bindings that will activate when the user enables
   the profile. For each knob or encoder, bind to a device macro by adding:
-    { "controlId": "<id>", "resolverKind": "focused_device_macro",
+    { "controlId": "<id>", "resolverKind": "focused.macro",
       "args": { "macroIndex": "<N>" } }
   where macroIndex is a string, "0" through "7" (MAGDA exposes 8 macros per focused
   device). Cycle the index if the device has more than 8 knobs. Do NOT add default
@@ -35,7 +35,7 @@ Field rules:
 If the user doesn't specify CCs or channels, pick reasonable defaults — commonly
 CCs 21-28 for knobs 1-8 on channel 1 (this matches MAGDA's generic profile).
 
-Only "focused_device_macro" is a valid resolverKind today. Do not invent others.)PROMPT";
+Only "focused.macro" is a valid resolverKind today. Do not invent others.)PROMPT";
 }
 
 juce::var ControllerProfileAgent::buildSchema() {
@@ -56,7 +56,7 @@ juce::var ControllerProfileAgent::buildSchema() {
         {"controlId", Schema::string()},
         // Constrain to the resolvers that actually exist in ResolverRegistry —
         // anything else would silently fail to materialise.
-        {"resolverKind", Schema::oneOf({"focused_device_macro"})},
+        {"resolverKind", Schema::oneOf({"focused.macro"})},
         {"args", argsObj},
     });
 
