@@ -86,7 +86,7 @@ class ClipManager {
      */
     ClipId createAudioClip(TrackId trackId, double startTime, double length,
                            const juce::String& audioFilePath, ClipView view = ClipView::Arrangement,
-                           double projectBPM = 120.0);
+                           double projectBPM = 0.0);
 
     /**
      * @brief Create an empty MIDI clip — beats-authoritative API.

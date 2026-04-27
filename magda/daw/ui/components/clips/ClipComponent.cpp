@@ -7,6 +7,7 @@
 #include <numeric>
 
 #include "../../panels/state/PanelController.hpp"
+#include "../../state/TimelineEvents.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../tracks/TrackContentPanel.hpp"
@@ -2246,6 +2247,15 @@ void ClipComponent::showContextMenu() {
     }
     bool canEdit = hasSelection && !isFrozen;
 
+    // "Duplicate Time Selection" is enabled when an active, visible time
+    // selection exists — mirrors the gate Cmd+D uses in MainWindowCommands
+    // and the empty-area menu in TrackContentPanel.
+    bool hasTimeSelection = false;
+    if (parentPanel_ && parentPanel_->getTimelineController()) {
+        const auto& sel = parentPanel_->getTimelineController()->getState().selection;
+        hasTimeSelection = sel.isVisuallyActive();
+    }
+
     juce::PopupMenu menu;
 
     // Copy/Cut/Paste
@@ -2256,6 +2266,7 @@ void ClipComponent::showContextMenu() {
 
     // Duplicate
     menu.addItem(4, "Duplicate", canEdit);
+    menu.addItem(17, "Duplicate Time Selection", !isFrozen && hasTimeSelection);
     menu.addSeparator();
 
     // Split / Trim
@@ -2505,6 +2516,40 @@ void ClipComponent::showContextMenu() {
                     if (selectedClips.size() > 1)
                         UndoManager::getInstance().endCompoundOperation();
                 }
+                break;
+            }
+
+            case 17: {  // Duplicate Time Selection
+                if (!parentPanel_ || !parentPanel_->getTimelineController())
+                    break;
+                auto& tc = *parentPanel_->getTimelineController();
+                const auto& sel = tc.getState().selection;
+                if (!sel.isVisuallyActive())
+                    break;
+
+                std::vector<TrackId> trackIds;
+                auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
+                    ViewModeController::getInstance().getViewMode());
+                if (sel.isAllTracks()) {
+                    trackIds = visibleTracks;
+                } else {
+                    for (int idx : sel.trackIndices) {
+                        if (idx >= 0 && idx < static_cast<int>(visibleTracks.size()))
+                            trackIds.push_back(visibleTracks[idx]);
+                    }
+                }
+
+                clipManager.copyTimeRangeToClipboard(sel.startTime, sel.endTime, trackIds,
+                                                     tc.getState().tempo.bpm);
+                if (!clipManager.hasClipsInClipboard())
+                    break;
+
+                auto cmd = std::make_unique<PasteClipCommand>(sel.endTime);
+                UndoManager::getInstance().executeCommand(std::move(cmd));
+
+                double duration = sel.endTime - sel.startTime;
+                tc.dispatch(
+                    SetTimeSelectionEvent{sel.endTime, sel.endTime + duration, sel.trackIndices});
                 break;
             }
 

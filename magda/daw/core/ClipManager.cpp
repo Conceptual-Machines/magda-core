@@ -201,11 +201,19 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
     newClip.name = original->name + " Copy";
 
     if (newClip.view == ClipView::Arrangement) {
-        // Offset the duplicate to the right on the timeline
-        newClip.startTime = original->startTime + original->length;
-        if (newClip.type == ClipType::MIDI) {
-            newClip.startBeats = original->startBeats + original->lengthBeats;
-        }
+        // Beats are authoritative for clip positioning. Compute the new
+        // position fully in beats, then derive seconds at the boundary.
+        // The previous code only did this for MIDI; the audio path left the
+        // duplicate's startBeats equal to the original's, so any later
+        // beats-driven re-derivation snapped the duplicate back on top of
+        // the original.
+        double bpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+        double clipLengthBeats = (original->isBeatsAuthoritative() && original->lengthBeats > 0.0)
+                                     ? original->lengthBeats
+                                     : (bpm > 0.0 ? original->length * bpm / 60.0 : 0.0);
+        newClip.startBeats = original->startBeats + clipLengthBeats;
+        newClip.startTime = (bpm > 0.0) ? (newClip.startBeats * 60.0 / bpm)
+                                        : original->startTime + original->length;
     } else {
         // Session clips always loop
         newClip.startTime = 0.0;
