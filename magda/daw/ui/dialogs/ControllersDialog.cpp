@@ -258,7 +258,12 @@ void ControllersDialog::importProfileFile(const juce::File& file, const juce::St
 }
 
 void ControllersDialog::onAddClicked() {
-    auto profiles = ControllerProfileRegistry::getInstance().all();
+    // Re-scan the profiles directory so files added or removed on disk since
+    // app launch are reflected in the menu — without this, deleting a JSON in
+    // Finder still leaves the entry in +Add.
+    auto& profileReg = ControllerProfileRegistry::getInstance();
+    profileReg.load();
+    auto profiles = profileReg.all();
     if (profiles.empty()) {
         juce::AlertWindow::showMessageBox(juce::AlertWindow::InfoIcon,
                                           tr("controllers.add_profile"),
