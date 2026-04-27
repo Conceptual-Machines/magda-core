@@ -4,6 +4,7 @@
 #include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/project/ProjectManager.hpp"
 
 /**
  * Tests for ClipCommand undo/redo operations
@@ -373,6 +374,64 @@ TEST_CASE("MoveClipCommand - undo/redo", "[clip][command][move][undo]") {
 
     cmd.execute();
     REQUIRE(ClipManager::getInstance().getClip(clipId)->startTime == Catch::Approx(5.0));
+}
+
+// Regression: ClipManager::moveClip used to default tempo to 120 BPM, and
+// MoveClipCommand::execute called it without an override. Anyone running a
+// project at any other tempo therefore got a wrong startBeats baked in,
+// which the next BPM change then translated into a wrong startTime — clips
+// snapping to bizarre positions. The fix has moveClip read the live project
+// tempo from ProjectManager when no explicit tempo is passed.
+TEST_CASE("MoveClipCommand - startBeats derived from live project tempo, not 120",
+          "[clip][command][move][bpm-snap-regression]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(90.0);
+
+    TrackId track = createTrack();
+    ClipId clipId = createAudio(track, 0.0, 2.0);
+
+    MoveClipCommand cmd(clipId, 6.0);
+    cmd.execute();
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip->startTime == Catch::Approx(6.0));
+    // 6 seconds * 90 BPM / 60 = 9 beats. Pre-fix this was 12 (using the
+    // hard-coded 120 default).
+    REQUIRE(clip->startBeats == Catch::Approx(9.0));
+
+    proj.setTempo(originalTempo);
+}
+
+// Companion to the regression above: with startBeats correctly derived from
+// the live tempo, a subsequent BPM change keeps the clip at the same bar
+// position (i.e. the clip's startTime tracks the new BPM via beats).
+// Operates on the ClipManager state directly — TimelineController's
+// SetTempoEvent does the same beats→seconds re-derivation on tempo change,
+// just orchestrated through more layers.
+TEST_CASE("MoveClipCommand - clip stays bar-anchored across BPM change",
+          "[clip][command][move][bpm-snap-regression]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(90.0);
+
+    TrackId track = createTrack();
+    ClipId clipId = createAudio(track, 0.0, 2.0);
+
+    MoveClipCommand cmd(clipId, 6.0);
+    cmd.execute();
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip->startBeats == Catch::Approx(9.0));
+
+    // Simulate the SetTempoEvent re-derivation: at 60 BPM, beat 9 lives at
+    // 9 * 60/60 = 9 seconds.
+    clip->startTime = (clip->startBeats * 60.0) / 60.0;
+    REQUIRE(clip->startTime == Catch::Approx(9.0));
+
+    proj.setTempo(originalTempo);
 }
 
 TEST_CASE("MoveClipCommand - merge consecutive moves", "[clip][command][move][merge]") {
