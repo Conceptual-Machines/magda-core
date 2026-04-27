@@ -38,7 +38,7 @@ void ControllerRouter::reconfigure() {
         << " project binding(s)");
     for (const auto& c : ControllerRegistry::getInstance().all())
         DBG("ControllerRouter:   controller name='" << c.name << "' inputPort='" << c.inputPort
-                                                    << "' enabled=" << (c.enabled ? "yes" : "no"));
+                                                    << "'");
 }
 
 void ControllerRouter::setMidiBridge(MidiBridge* bridge) {
@@ -249,7 +249,7 @@ void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
         auto controllerOpt = controllerReg.findByInputPort(portId);
         if (!controllerOpt.has_value())
             controllerOpt = controllerReg.findByInputPort(portName);
-        if (controllerOpt.has_value() && controllerOpt->enabled) {
+        if (controllerOpt.has_value()) {
             auto controllerBindings =
                 bindingReg.findForSource(controllerOpt->id, msgType, channel, number);
             for (const auto& cb : controllerBindings) {

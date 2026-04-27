@@ -458,7 +458,6 @@
     "no_midi_inputs": "No MIDI inputs available.",
     "connected": "Connected",
     "not_connected": "Not connected",
-    "disabled": "Disabled",
     "upload_invalid_json": "That file isn't valid JSON.",
     "upload_invalid_profile": "That JSON isn't a valid controller profile.",
     "upload_validation_failed": "The profile has issues that need fixing first:",

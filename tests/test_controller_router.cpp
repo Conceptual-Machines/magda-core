@@ -68,7 +68,6 @@ static Controller makeController(const juce::String& port) {
     c.id = juce::Uuid();
     c.name = "Test Controller";
     c.inputPort = port;
-    c.enabled = true;
     return c;
 }
 
@@ -148,24 +147,6 @@ TEST_CASE("ControllerRouter - enabled controller, Absolute CC -> one write",
     // are set, ResolvedTarget::ok() returns true. So write() IS called.
     REQUIRE(fix.writer->writes.size() == 1);
     REQUIRE(fix.writer->writes[0].value == Approx(64.0f / 127.0f));
-}
-
-TEST_CASE("ControllerRouter - disabled controller -> no writes", "[controllers][router]") {
-    RouterFixture fix;
-
-    auto c = makeController("test_port_2");
-    c.enabled = false;
-    ControllerRegistry::getInstance().add(c);
-
-    auto b = makeBinding(c.id, BindingMsgType::CC, 1, 74);
-    BindingRegistry::getInstance().add(BindingScope::Global, b);
-
-    auto msg = juce::MidiMessage::controllerEvent(1, 74, 64);
-    ControllerRouter::getInstance().injectMessageForTest("test_port_2", msg);
-
-    pumpMessages();
-
-    REQUIRE(fix.writer->writes.empty());
 }
 
 TEST_CASE("ControllerRouter - unknown CC -> no writes", "[controllers][router]") {

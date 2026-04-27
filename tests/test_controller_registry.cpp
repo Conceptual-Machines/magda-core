@@ -14,7 +14,6 @@ static Controller makeController(const juce::String& name, const juce::String& i
     c.name = name;
     c.vendor = "TestVendor";
     c.inputPort = inputPort;
-    c.enabled = true;
     return c;
 }
 
@@ -68,20 +67,6 @@ TEST_CASE("ControllerRegistry - remove", "[controllers][registry]") {
     REQUIRE(!reg.find(c.id).has_value());
 }
 
-TEST_CASE("ControllerRegistry - setEnabled", "[controllers][registry]") {
-    clearRegistry();
-    auto& reg = ControllerRegistry::getInstance();
-
-    auto c = makeController("Akai", "midi_in_1");
-    reg.add(c);
-
-    reg.setEnabled(c.id, false);
-    REQUIRE(!reg.find(c.id)->enabled);
-
-    reg.setEnabled(c.id, true);
-    REQUIRE(reg.find(c.id)->enabled);
-}
-
 // ============================================================================
 // findByInputPort
 // ============================================================================
@@ -121,10 +106,6 @@ TEST_CASE("ControllerRegistry - isControllerInputPort", "[controllers][registry]
 
     REQUIRE(reg.isControllerInputPort("midi_port_controller"));
     REQUIRE(!reg.isControllerInputPort("some_other_port"));
-
-    // Disabled controller should not match
-    reg.setEnabled(c.id, false);
-    REQUIRE(!reg.isControllerInputPort("midi_port_controller"));
 }
 
 // ============================================================================

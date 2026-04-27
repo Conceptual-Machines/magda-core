@@ -55,9 +55,6 @@ bool FooterBar::refreshLiveInputs() {
 void FooterBar::refreshControllerBadges() {
     controllerBadges_.clear();
     for (const auto& c : ControllerRegistry::getInstance().all()) {
-        if (!c.enabled)
-            continue;  // only enabled controllers earn a badge
-
         ControllerBadge b;
         b.label = c.name;
         b.connected = false;

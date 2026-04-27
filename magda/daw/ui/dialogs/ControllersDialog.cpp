@@ -31,7 +31,7 @@ void ControllersDialog::ControllerListModel::paintListBoxItem(int rowNumber, juc
 
     const auto& c = (*controllers)[static_cast<size_t>(rowNumber)];
     const bool connected = isConnected ? isConnected(c) : false;
-    const bool active = c.enabled && connected;
+    const bool active = connected;
 
     if (rowIsSelected) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.20f));
@@ -60,13 +60,7 @@ void ControllersDialog::ControllerListModel::paintListBoxItem(int rowNumber, juc
                true);
 
     // Line 2: port name · status
-    juce::String status;
-    if (!c.enabled)
-        status = tr("controllers.disabled");
-    else if (connected)
-        status = tr("controllers.connected");
-    else
-        status = tr("controllers.not_connected");
+    juce::String status = connected ? tr("controllers.connected") : tr("controllers.not_connected");
 
     juce::String portText = c.inputPortName.isNotEmpty() ? c.inputPortName : c.inputPort;
     juce::String line2 = portText + juce::String::fromUTF8("  \xc2\xb7  ") + status;
@@ -345,22 +339,8 @@ void ControllersDialog::onRowClicked(int row, const juce::MouseEvent& e) {
     if (row < 0 || row >= static_cast<int>(controllers_.size()))
         return;
 
-    if (e.mods.isPopupMenu() || e.mods.isRightButtonDown() || e.mods.isCtrlDown()) {
+    if (e.mods.isPopupMenu() || e.mods.isRightButtonDown() || e.mods.isCtrlDown())
         onRowRemoveRequested(row);
-        return;
-    }
-
-    onRowToggled(row);
-}
-
-void ControllersDialog::onRowToggled(int row) {
-    if (row < 0 || row >= static_cast<int>(controllers_.size()))
-        return;
-
-    const auto& c = controllers_[static_cast<size_t>(row)];
-    ControllerRegistry::getInstance().setEnabled(c.id, !c.enabled);
-    persist();
-    rebuildList();
 }
 
 void ControllersDialog::onRowRemoveRequested(int row) {

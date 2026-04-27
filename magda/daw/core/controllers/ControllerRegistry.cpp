@@ -49,17 +49,6 @@ void ControllerRegistry::remove(const ControllerId& id) {
     }
 }
 
-void ControllerRegistry::setEnabled(const ControllerId& id, bool enabled) {
-    for (auto& c : controllers_) {
-        if (c.id == id) {
-            c.enabled = enabled;
-            rebuildSnapshot();
-            notifyListeners();
-            return;
-        }
-    }
-}
-
 bool ControllerRegistry::rematchInputPorts(const juce::Array<juce::MidiDeviceInfo>& liveInputs) {
     bool changed = false;
     for (auto& c : controllers_) {
@@ -116,7 +105,7 @@ bool ControllerRegistry::isControllerInputPort(const juce::String& portId) const
     if (!snap)
         return false;
     for (const auto& c : *snap)
-        if (c.enabled && c.inputPort == portId)
+        if (c.inputPort == portId)
             return true;
     return false;
 }
@@ -128,7 +117,7 @@ bool ControllerRegistry::isControllerInputPort(const juce::String& liveIdentifie
     if (!snap)
         return false;
     for (const auto& c : *snap)
-        if (c.enabled && magda::midi::matches(c.inputPort, liveIdentifier, liveName))
+        if (magda::midi::matches(c.inputPort, liveIdentifier, liveName))
             return true;
     return false;
 }
@@ -151,8 +140,7 @@ void ControllerRegistry::loadFromConfig(const juce::var& json) {
             if (c) {
                 controllers_.push_back(*c);
                 DBG("ControllerRegistry:   [" << index << "] loaded name='" << c->name
-                                              << "' inputPort='" << c->inputPort
-                                              << "' enabled=" << (c->enabled ? "yes" : "no"));
+                                              << "' inputPort='" << c->inputPort << "'");
             } else {
                 DBG("ControllerRegistry:   ["
                     << index << "] FAILED to decode entry: " << juce::JSON::toString(item, true));

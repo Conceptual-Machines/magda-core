@@ -155,7 +155,6 @@ TEST_CASE("ControllerProfile - materialiseControllerFromProfile basic",
     CHECK(result.controller.inputPort == "midi_port_test");
     CHECK(result.controller.outputPort == "midi_port_out");
     CHECK(result.controller.profileId == "test.profile_1");
-    CHECK(result.controller.enabled);
 
     // Both knobs have registered resolvers -> 2 bindings
     REQUIRE(result.bindings.size() == 2);

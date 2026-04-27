@@ -90,7 +90,6 @@ class ControllersDialog : public juce::Component,
     void onPortPicked(const ControllerProfile& profile, const juce::MidiDeviceInfo& dev);
 
     void onRowClicked(int row, const juce::MouseEvent& e);
-    void onRowToggled(int row);
     void onRowRemoveRequested(int row);
 
     bool isControllerConnected(const Controller& c) const;
