@@ -44,10 +44,6 @@ MAGDA is a free, open-source DAW with AI integrated from the ground up. Built on
 
 See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known bugs and planned features.
 
-### Platform support
-
-- **Linux:** tested on X11 sessions only. On Wayland (e.g. KDE Plasma Wayland) the top menu bar may be clipped by the compositor — use an X11 session for now.
-
 ## Building
 
 ### Prerequisites
