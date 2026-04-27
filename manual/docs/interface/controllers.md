@@ -46,7 +46,7 @@ On first launch the bundled profiles are seeded into this folder. Edits and addi
 
 ### Profile JSON format
 
-For the full JSON schema, the resolver list (the functions that route a CC to a target — `focused_device_macro`, `selected.volume`, `master.pan`, etc.), the `<vendor>.<model>.<intent>` id convention, and a worked example, see the [Controller Profile Format reference](../reference/controller-profile-format.md).
+For the full JSON schema, the resolver list (the functions that route a CC to a target — `focused.macro`, `selected.volume`, `master.pan`, etc.), the `<vendor>.<model>.<intent>` id convention, and a worked example, see the [Controller Profile Format reference](../reference/controller-profile-format.md).
 
 ## MIDI Learn
 

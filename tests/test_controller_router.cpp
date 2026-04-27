@@ -259,14 +259,14 @@ TEST_CASE("ControllerRouter - static PluginParam shadows focused-device-macro re
     auto c = makeController("test_port_shadow");
     ControllerRegistry::getInstance().add(c);
 
-    // Focus a device so the focused_device_macro resolver actually resolves.
+    // Focus a device so the focused.macro resolver actually resolves.
     auto devicePath = ChainNodePath::topLevelDevice(1, 10);
     SelectionManager::getInstance().selectChainNode(devicePath);
 
     // Profile-style binding: CC 21 -> @focused.macro_0 (macro target)
     Binding bMacro = makeBinding(c.id, BindingMsgType::CC, 1, 21);
     ResolverRef rr;
-    rr.kind = "focused_device_macro";
+    rr.kind = "focused.macro";
     rr.args.set("macroIndex", "0");
     bMacro.target = Target{rr};
     BindingRegistry::getInstance().add(BindingScope::Project, bMacro);
@@ -317,7 +317,7 @@ TEST_CASE("BindingRegistry - shadow + override queries flag both sides of confli
     // Profile binding: CC 21 -> @focused.macro_0
     Binding bMacro = makeBinding(c.id, BindingMsgType::CC, 1, 21);
     ResolverRef rr;
-    rr.kind = "focused_device_macro";
+    rr.kind = "focused.macro";
     rr.args.set("macroIndex", "0");
     bMacro.target = Target{rr};
     reg.add(BindingScope::Project, bMacro);

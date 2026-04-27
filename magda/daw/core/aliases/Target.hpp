@@ -97,7 +97,7 @@ struct AliasRef {
 /**
  * @brief A reference to a named resolver in ResolverRegistry.
  *
- * The kind identifies the built-in resolver (e.g. "focused_device_macro").
+ * The kind identifies the built-in resolver (e.g. "focused.macro").
  * The args are key=value pairs passed to the resolver.
  */
 struct ResolverRef {

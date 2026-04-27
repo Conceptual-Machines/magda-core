@@ -55,7 +55,7 @@ class AliasResolver {
 class FocusedDeviceMacroResolver : public AliasResolver {
   public:
     juce::String kind() const override {
-        return "focused_device_macro";
+        return "focused.macro";
     }
     std::optional<StaticTarget> resolve(const juce::StringPairArray& args,
                                         const ChainContext& ctx) const override;

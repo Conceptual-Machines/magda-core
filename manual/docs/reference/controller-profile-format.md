@@ -19,8 +19,8 @@ This page is a reference for anyone writing or editing a profile by hand — com
   ],
 
   "defaultBindings": [
-    { "controlId": "knob_1", "resolverKind": "focused_device_macro", "args": { "macroIndex": "0" } },
-    { "controlId": "knob_2", "resolverKind": "focused_device_macro", "args": { "macroIndex": "1" } }
+    { "controlId": "knob_1", "resolverKind": "focused.macro", "args": { "macroIndex": "0" } },
+    { "controlId": "knob_2", "resolverKind": "focused.macro", "args": { "macroIndex": "1" } }
     // …
   ]
 }
@@ -68,7 +68,7 @@ This is the difference between a profile and a [MIDI Learn binding](../interface
 
 MAGDA ships with five built-in resolvers:
 
-### `focused_device_macro`
+### `focused.macro`
 
 Drives one macro of whichever device currently has focus.
 
@@ -79,7 +79,7 @@ Drives one macro of whichever device currently has focus.
 Example:
 
 ```json
-{ "controlId": "knob_1", "resolverKind": "focused_device_macro", "args": { "macroIndex": "0" } }
+{ "controlId": "knob_1", "resolverKind": "focused.macro", "args": { "macroIndex": "0" } }
 ```
 
 The eight knobs of a typical 8-knob controller usually map to `macroIndex` `"0"` through `"7"` — they always land on the focused device's first eight macros, regardless of which track or device that is.
@@ -161,14 +161,14 @@ A full profile for a hypothetical 8-knob, 1-fader, 1-pan-encoder controller:
   ],
 
   "defaultBindings": [
-    { "controlId": "knob_1", "resolverKind": "focused_device_macro", "args": { "macroIndex": "0" } },
-    { "controlId": "knob_2", "resolverKind": "focused_device_macro", "args": { "macroIndex": "1" } },
-    { "controlId": "knob_3", "resolverKind": "focused_device_macro", "args": { "macroIndex": "2" } },
-    { "controlId": "knob_4", "resolverKind": "focused_device_macro", "args": { "macroIndex": "3" } },
-    { "controlId": "knob_5", "resolverKind": "focused_device_macro", "args": { "macroIndex": "4" } },
-    { "controlId": "knob_6", "resolverKind": "focused_device_macro", "args": { "macroIndex": "5" } },
-    { "controlId": "knob_7", "resolverKind": "focused_device_macro", "args": { "macroIndex": "6" } },
-    { "controlId": "knob_8", "resolverKind": "focused_device_macro", "args": { "macroIndex": "7" } },
+    { "controlId": "knob_1", "resolverKind": "focused.macro", "args": { "macroIndex": "0" } },
+    { "controlId": "knob_2", "resolverKind": "focused.macro", "args": { "macroIndex": "1" } },
+    { "controlId": "knob_3", "resolverKind": "focused.macro", "args": { "macroIndex": "2" } },
+    { "controlId": "knob_4", "resolverKind": "focused.macro", "args": { "macroIndex": "3" } },
+    { "controlId": "knob_5", "resolverKind": "focused.macro", "args": { "macroIndex": "4" } },
+    { "controlId": "knob_6", "resolverKind": "focused.macro", "args": { "macroIndex": "5" } },
+    { "controlId": "knob_7", "resolverKind": "focused.macro", "args": { "macroIndex": "6" } },
+    { "controlId": "knob_8", "resolverKind": "focused.macro", "args": { "macroIndex": "7" } },
     { "controlId": "fader_master", "resolverKind": "master.volume", "args": {} },
     { "controlId": "pan_encoder",  "resolverKind": "selected.pan",  "args": {} }
   ]

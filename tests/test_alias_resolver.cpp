@@ -322,7 +322,7 @@ TEST_CASE("TargetResolver::resolveSigil - @focused no device focused fails",
 
 TEST_CASE("ResolverRegistry - built-ins are registered", "[aliases][resolver]") {
     auto& reg = ResolverRegistry::getInstance();
-    REQUIRE(reg.findResolver("focused_device_macro") != nullptr);
+    REQUIRE(reg.findResolver("focused.macro") != nullptr);
     REQUIRE(reg.findResolver("selected.volume") != nullptr);
     REQUIRE(reg.findResolver("selected.pan") != nullptr);
     REQUIRE(reg.findResolver("master.volume") != nullptr);
@@ -356,7 +356,7 @@ TEST_CASE("FocusedDeviceMacroResolver returns DeviceMacro owner", "[aliases][res
     ctx.setFocusedDevice(path);
 
     auto& resolvers = ResolverRegistry::getInstance();
-    const auto* resolver = resolvers.findResolver("focused_device_macro");
+    const auto* resolver = resolvers.findResolver("focused.macro");
     REQUIRE(resolver != nullptr);
 
     juce::StringPairArray args;
@@ -439,7 +439,7 @@ TEST_CASE("TargetResolver propagates DeviceMacro owner from ResolverRef via Focu
     TargetResolver resolver{reg, resolvers, ctx};
 
     ResolverRef rr;
-    rr.kind = "focused_device_macro";
+    rr.kind = "focused.macro";
     rr.args.set("macroIndex", "0");
 
     auto result = resolver.resolve(Target{rr});

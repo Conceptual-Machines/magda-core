@@ -673,14 +673,14 @@ TEST_CASE("MidiLearnCoordinator - clearMacroMappings leaves automap resolver int
 
     auto& reg = BindingRegistry::getInstance();
 
-    // Profile-style automap binding (focused_device_macro resolver).
+    // Profile-style automap binding (focused.macro resolver).
     Binding bAuto;
     bAuto.id = juce::Uuid();
     bAuto.source.controllerId = c.id;
     bAuto.source.msgType = BindingMsgType::CC;
     bAuto.source.number = 50;
     ResolverRef rr;
-    rr.kind = "focused_device_macro";
+    rr.kind = "focused.macro";
     rr.args.set("macroIndex", juce::String(macroIndex));
     bAuto.target = Target{rr};
     bAuto.mode = BindingMode::Absolute;

@@ -35,7 +35,7 @@ struct ControllerProfileControl {
  */
 struct ControllerProfileDefaultBinding {
     juce::String controlId;      // must match a ControllerProfileControl.controlId
-    juce::String resolverKind;   // e.g. "focused_device_macro"
+    juce::String resolverKind;   // e.g. "focused.macro"
     juce::StringPairArray args;  // resolver args, e.g. macroIndex=0
 
     bool operator==(const ControllerProfileDefaultBinding& other) const {

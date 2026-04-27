@@ -244,12 +244,12 @@ TEST_CASE("BindingRegistry - hasActiveStaticBindingForMacro excludes resolver bi
     ChainNodePath devicePath = ChainNodePath::topLevelDevice(1, 10);
     ControllerId cid = juce::Uuid();
 
-    // Resolver binding (focused_device_macro automap profile) — counts as active
+    // Resolver binding (focused.macro automap profile) — counts as active
     // for hasActiveBindingForTarget but NOT for hasActiveStaticBindingForMacro,
     // since it isn't a user-mapped Learn target.
     Binding bResolver = makeBinding(cid, BindingMsgType::CC, 1, 20);
     ResolverRef rr;
-    rr.kind = "focused_device_macro";
+    rr.kind = "focused.macro";
     rr.args.set("macroIndex", "3");
     bResolver.target = Target{rr};
     reg.add(BindingScope::Global, bResolver);

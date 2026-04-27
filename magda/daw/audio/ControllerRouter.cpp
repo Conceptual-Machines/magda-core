@@ -280,7 +280,7 @@ void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
         bindings.erase(std::remove_if(bindings.begin(), bindings.end(),
                                       [](const Binding& b) {
                                           if (auto* rr = std::get_if<ResolverRef>(&b.target))
-                                              return rr->kind == "focused_device_macro";
+                                              return rr->kind == "focused.macro";
                                           return false;
                                       }),
                        bindings.end());
