@@ -81,6 +81,34 @@ MainView::MainView(AudioEngine* audioEngine)
     // Load controller + binding state and start the MIDI dispatch router
     ControllerRegistry::getInstance().loadFromConfig(config.getControllers());
     BindingRegistry::getInstance().loadGlobal(config.getGlobalBindings());
+
+    // Enforce single-controller-per-port. Older configs may carry multiple
+    // rows on the same hardware port (the dialog and AI flows used to allow
+    // it); keep the most recently added and drop the rest plus their bindings.
+    {
+        auto& cReg = ControllerRegistry::getInstance();
+        auto& bReg = BindingRegistry::getInstance();
+        auto rows = cReg.all();
+        std::set<juce::String> seenPorts;
+        bool changed = false;
+        // Walk newest-to-oldest so the keep-set picks the latest entry per port.
+        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+            if (it->inputPort.isEmpty())
+                continue;
+            if (!seenPorts.insert(it->inputPort).second) {
+                bReg.removeAllForController(BindingScope::Global, it->id);
+                bReg.removeAllForController(BindingScope::Project, it->id);
+                cReg.remove(it->id);
+                changed = true;
+            }
+        }
+        if (changed) {
+            config.setControllers(cReg.saveToConfig());
+            config.setGlobalBindings(bReg.saveGlobal());
+            config.save();
+        }
+    }
+
     ControllerRouter::getInstance().reconfigure();
     if (auto* audioBridge = audioEngine_->getAudioBridge())
         ControllerRouter::getInstance().setParamWriter(
