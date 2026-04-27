@@ -278,10 +278,10 @@ jobs:
         arch: x64
 
     # Ninja is shipped with the Visual Studio install on windows-latest, so
-    # we only need to provision NSIS. We pin a known version and download
-    # the zip directly: Chocolatey's community feed historically flakes
-    # (5xx, rate limits) and was blocking the release as recently as the
-    # rc0 attempt.
+    # we only need to provision NSIS. The zip is hosted as a release asset
+    # on this repo's "vendor/nsis-X.Y" tag - GitHub-hosted, rock-solid, no
+    # third-party CDN flakes. Bumping NSIS_VERSION means uploading the new
+    # zip to a new vendor/nsis-X.Y release tag and refreshing NSIS_SHA256.
     - name: Cache NSIS
       uses: actions/cache@v4
       id: cache-nsis
@@ -303,39 +303,32 @@ jobs:
           exit 1
         }
 
-        # NSIS: portable zip from SourceForge, pinned + hash-checked.
-        # Two mirrors and an in-attempt retry loop. Windows PowerShell 5.1
-        # doesn't support Invoke-WebRequest's -MaximumRetryCount, so retries
-        # are spelled out here.
+        # NSIS: vendored as a GitHub release asset on this repo. Three
+        # attempts with a small backoff covers any transient blip; PS 5.1
+        # doesn't support Invoke-WebRequest's -MaximumRetryCount so retries
+        # are spelled out.
         $nsisDir = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION"
         $makensis = Join-Path $nsisDir "nsis-$env:NSIS_VERSION\makensis.exe"
         if (-not (Test-Path $makensis)) {
           $zip = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION.zip"
-          $urls = @(
-            "https://prdownloads.sourceforge.net/nsis/nsis-$env:NSIS_VERSION.zip",
-            "https://sourceforge.net/projects/nsis/files/NSIS%203/$env:NSIS_VERSION/nsis-$env:NSIS_VERSION.zip/download"
-          )
+          $url = "https://github.com/${env:GITHUB_REPOSITORY}/releases/download/vendor/nsis-$env:NSIS_VERSION/nsis-$env:NSIS_VERSION.zip"
           $downloaded = $false
-          foreach ($u in $urls) {
-            for ($attempt = 1; $attempt -le 3; $attempt++) {
-              try {
-                Write-Output "Downloading NSIS $env:NSIS_VERSION from $u (attempt $attempt/3)"
-                Invoke-WebRequest -Uri $u -OutFile $zip
-                if ((Test-Path $zip) -and ((Get-Item $zip).Length -gt 1MB)) {
-                  $downloaded = $true
-                  break
-                }
-                Write-Output "Downloaded file from $u was missing or too small"
-              } catch {
-                Write-Output "Download attempt $attempt failed: $($_.Exception.Message)"
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Write-Output "Downloading NSIS $env:NSIS_VERSION from $url (attempt $attempt/3)"
+              Invoke-WebRequest -Uri $url -OutFile $zip
+              if ((Test-Path $zip) -and ((Get-Item $zip).Length -gt 1MB)) {
+                $downloaded = $true
+                break
               }
-              if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
+              Write-Output "Downloaded file was missing or too small"
+            } catch {
+              Write-Output "Download attempt $attempt failed: $($_.Exception.Message)"
             }
-            if ($downloaded) { break }
-            Write-Output "Mirror failed: $u"
+            if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
           }
           if (-not $downloaded) {
-            Write-Error "All NSIS mirrors failed"
+            Write-Error "NSIS download failed after 3 attempts"
             exit 1
           }
 
