@@ -73,6 +73,9 @@ class BindingRegistry {
      */
     int removeAllForController(BindingScope scope, const ControllerId& controllerId);
 
+    /** True when any binding in any scope is keyed to this controllerId. */
+    bool hasAnyBindingForController(const ControllerId& controllerId) const;
+
     // ========================================================================
     // Queries (message-thread)
     // ========================================================================

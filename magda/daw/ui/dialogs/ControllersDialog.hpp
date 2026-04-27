@@ -47,6 +47,9 @@ class ControllersDialog : public juce::Component,
         std::vector<Controller>* controllers = nullptr;
         // Returns true when the controller's inputPort matches a live MIDI input.
         std::function<bool(const Controller&)> isConnected;
+        // Returns true when the controller has any binding registered against
+        // its id — i.e. is currently active. False = user has toggled it off.
+        std::function<bool(const Controller&)> isEnabled;
         std::function<void(int, const juce::MouseEvent&)> onRowClicked;
 
         int getNumRows() override {

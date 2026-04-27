@@ -28,9 +28,9 @@ Bindings created by MIDI Learn against a removed controller's port still work �
 
 A profile describes a controller's physical layout — which CC numbers correspond to the eight macro knobs, and so on. MAGDA ships with profiles for common controllers (Launchkey Mini MK3 / MK4, generic 8-knob, etc.) and you can add your own.
 
-When a profile is assigned to an enabled controller and a device is focused, the profile's macro knobs drive **that device's macros**. Focus a different device — the same hardware knobs follow.
+When a profile is assigned to a controller and a device is focused, the profile's macro knobs drive **that device's macros**. Focus a different device — the same hardware knobs follow.
 
-Pick **None** if you only want MIDI Learn (no automap).
+If you only want MIDI Learn (no automap), don't add a controller — Learn'd bindings route via the live port name and don't need a registry entry.
 
 #### Profiles directory
 
@@ -109,6 +109,3 @@ See [AI Assistant — Slash Commands](../panels/ai-assistant.md#slash-commands).
 
 !!! tip
     A Learn'd binding routes through the **port name**, so it survives renaming the controller in the dialog or even removing it from the registry. The binding still fires whenever the named port is connected.
-
-!!! tip
-    Disabling a controller stops profile routing but keeps Learn'd bindings firing — they're keyed to the port, not the controller's enabled flag.

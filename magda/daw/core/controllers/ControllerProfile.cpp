@@ -215,7 +215,6 @@ MaterialisedController materialiseControllerFromProfile(const ControllerProfile&
     result.controller.inputPortName = inputPortName;
     result.controller.outputPort = outputPort;
     result.controller.profileId = profile.id;
-    result.controller.enabled = true;
 
     // Build a lookup map from controlId -> control
     std::unordered_map<juce::String, const ControllerProfileControl*> controlMap;

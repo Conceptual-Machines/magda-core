@@ -40,6 +40,7 @@ inline constexpr const char* GPT_5 = "gpt-5";
 inline constexpr const char* GPT_5_MINI = "gpt-5-mini";
 inline constexpr const char* GPT_5_NANO = "gpt-5-nano";
 inline constexpr const char* GPT_5_4 = "gpt-5.4";
+inline constexpr const char* GPT_5_5 = "gpt-5.5";
 // Anthropic
 inline constexpr const char* CLAUDE_OPUS = "claude-opus-4-6";
 inline constexpr const char* CLAUDE_SONNET = "claude-sonnet-4-6";

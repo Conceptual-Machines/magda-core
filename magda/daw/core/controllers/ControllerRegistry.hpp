@@ -51,9 +51,6 @@ class ControllerRegistry {
     /** Remove a controller by id. No-op if not found. */
     void remove(const ControllerId& id);
 
-    /** Enable or disable a controller by id. No-op if not found. */
-    void setEnabled(const ControllerId& id, bool enabled);
-
     /**
      * @brief Re-resolve stored inputPort identifiers against a live MIDI input list.
      *

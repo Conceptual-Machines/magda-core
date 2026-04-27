@@ -341,9 +341,12 @@ void LinkableTextSlider::macroLinkModeChanged(bool active, const magda::MacroSel
 
 void LinkableTextSlider::midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
                                                magda::StaticTarget::Owner owner, bool learning) {
-    if (owner != magda::StaticTarget::Owner::PluginParam)
+    const auto wantedOwner =
+        isModRate_ ? magda::StaticTarget::Owner::ModParam : magda::StaticTarget::Owner::PluginParam;
+    if (owner != wantedOwner)
         return;
-    bool isMe = (path == devicePath_ && paramIndex == paramIndex_);
+    const int wantedIndex = isModRate_ ? modParamIndex_ : paramIndex_;
+    bool isMe = (path == devicePath_ && paramIndex == wantedIndex);
     isInMidiLearnMode_ = learning && isMe;
     repaint();
 }
@@ -351,17 +354,23 @@ void LinkableTextSlider::midiLearnStateChanged(const magda::ChainNodePath& path,
 void LinkableTextSlider::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
                                             magda::StaticTarget::Owner owner,
                                             const magda::Binding&) {
-    if (owner != magda::StaticTarget::Owner::PluginParam)
+    const auto wantedOwner =
+        isModRate_ ? magda::StaticTarget::Owner::ModParam : magda::StaticTarget::Owner::PluginParam;
+    if (owner != wantedOwner)
         return;
-    if (path == devicePath_ && paramIndex == paramIndex_)
+    const int wantedIndex = isModRate_ ? modParamIndex_ : paramIndex_;
+    if (path == devicePath_ && paramIndex == wantedIndex)
         refreshMidiBindingState();
 }
 
 void LinkableTextSlider::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
                                           magda::StaticTarget::Owner owner, int) {
-    if (owner != magda::StaticTarget::Owner::PluginParam)
+    const auto wantedOwner =
+        isModRate_ ? magda::StaticTarget::Owner::ModParam : magda::StaticTarget::Owner::PluginParam;
+    if (owner != wantedOwner)
         return;
-    if (path == devicePath_ && paramIndex == paramIndex_)
+    const int wantedIndex = isModRate_ ? modParamIndex_ : paramIndex_;
+    if (path == devicePath_ && paramIndex == wantedIndex)
         refreshMidiBindingState();
 }
 
@@ -370,12 +379,31 @@ void LinkableTextSlider::bindingRegistryChanged(magda::BindingScope) {
 }
 
 void LinkableTextSlider::refreshMidiBindingState() {
-    bool newState =
-        magda::BindingRegistry::getInstance().hasActiveBindingForTarget(devicePath_, paramIndex_);
+    const bool newState =
+        isModRate_ ? magda::BindingRegistry::getInstance().hasActiveBindingForModParam(
+                         devicePath_, modId_, modParamIndex_)
+                   : magda::BindingRegistry::getInstance().hasActiveBindingForTarget(devicePath_,
+                                                                                     paramIndex_);
     if (newState != hasMidiBinding_) {
         hasMidiBinding_ = newState;
         repaint();
     }
+}
+
+void LinkableTextSlider::setModRateContext(const magda::ChainNodePath& path, magda::ModId modId,
+                                           int modParamIndex) {
+    isModRate_ = true;
+    devicePath_ = path;
+    modId_ = modId;
+    modParamIndex_ = modParamIndex;
+    refreshMidiBindingState();
+}
+
+void LinkableTextSlider::clearModRateContext() {
+    isModRate_ = false;
+    modId_ = magda::INVALID_MOD_ID;
+    modParamIndex_ = 0;
+    refreshMidiBindingState();
 }
 
 // ============================================================================

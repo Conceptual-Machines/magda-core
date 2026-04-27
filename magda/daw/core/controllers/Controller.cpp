@@ -9,8 +9,7 @@ bool Controller::isValid() const {
 bool Controller::operator==(const Controller& other) const {
     return id == other.id && name == other.name && vendor == other.vendor &&
            inputPort == other.inputPort && inputPortName == other.inputPortName &&
-           outputPort == other.outputPort && script == other.script &&
-           profileId == other.profileId && enabled == other.enabled;
+           outputPort == other.outputPort && script == other.script && profileId == other.profileId;
 }
 
 // ============================================================================
@@ -29,7 +28,6 @@ juce::var encodeController(const Controller& c) {
     obj->setProperty("script", c.script);
     if (c.profileId.isNotEmpty())
         obj->setProperty("profileId", c.profileId);
-    obj->setProperty("enabled", c.enabled);
     return juce::var(obj);
 }
 
@@ -57,7 +55,6 @@ std::optional<Controller> decodeController(const juce::var& v) {
     c.outputPort = obj->getProperty("outputPort").toString();
     c.script = obj->getProperty("script").toString();
     c.profileId = obj->getProperty("profileId").toString();  // optional, defaults to empty
-    c.enabled = obj->hasProperty("enabled") ? static_cast<bool>(obj->getProperty("enabled")) : true;
 
     return c;
 }

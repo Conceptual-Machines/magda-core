@@ -40,7 +40,6 @@ static Controller makeController(const juce::String& port,
     c.id = juce::Uuid();
     c.name = name;
     c.inputPort = port;
-    c.enabled = true;
     return c;
 }
 

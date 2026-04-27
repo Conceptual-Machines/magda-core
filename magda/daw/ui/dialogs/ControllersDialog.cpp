@@ -31,7 +31,8 @@ void ControllersDialog::ControllerListModel::paintListBoxItem(int rowNumber, juc
 
     const auto& c = (*controllers)[static_cast<size_t>(rowNumber)];
     const bool connected = isConnected ? isConnected(c) : false;
-    const bool active = c.enabled && connected;
+    const bool enabled = isEnabled ? isEnabled(c) : true;
+    const bool active = enabled && connected;
 
     if (rowIsSelected) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.20f));
@@ -61,7 +62,7 @@ void ControllersDialog::ControllerListModel::paintListBoxItem(int rowNumber, juc
 
     // Line 2: port name · status
     juce::String status;
-    if (!c.enabled)
+    if (!enabled)
         status = tr("controllers.disabled");
     else if (connected)
         status = tr("controllers.connected");
@@ -103,6 +104,9 @@ ControllersDialog::ControllersDialog() {
     // Controllers list
     listModel_.controllers = &controllers_;
     listModel_.isConnected = [this](const Controller& c) { return isControllerConnected(c); };
+    listModel_.isEnabled = [](const Controller& c) {
+        return BindingRegistry::getInstance().hasAnyBindingForController(c.id);
+    };
     listModel_.onRowClicked = [this](int row, const juce::MouseEvent& e) { onRowClicked(row, e); };
 
     list_ = std::make_unique<juce::ListBox>("controllers", &listModel_);
@@ -264,7 +268,12 @@ void ControllersDialog::importProfileFile(const juce::File& file, const juce::St
 }
 
 void ControllersDialog::onAddClicked() {
-    auto profiles = ControllerProfileRegistry::getInstance().all();
+    // Re-scan the profiles directory so files added or removed on disk since
+    // app launch are reflected in the menu — without this, deleting a JSON in
+    // Finder still leaves the entry in +Add.
+    auto& profileReg = ControllerProfileRegistry::getInstance();
+    profileReg.load();
+    auto profiles = profileReg.all();
     if (profiles.empty()) {
         juce::AlertWindow::showMessageBox(juce::AlertWindow::InfoIcon,
                                           tr("controllers.add_profile"),
@@ -327,11 +336,24 @@ void ControllersDialog::onProfilePicked(const ControllerProfile& profile) {
 
 void ControllersDialog::onPortPicked(const ControllerProfile& profile,
                                      const juce::MidiDeviceInfo& dev) {
+    auto& controllerReg = ControllerRegistry::getInstance();
+    auto& bindingReg = BindingRegistry::getInstance();
+
+    // One enabled controller per port: any existing row on this port stays
+    // registered, but its bindings are dropped so it goes inactive. The new
+    // controller becomes the active one.
+    for (const auto& existing : controllerReg.all()) {
+        if (existing.inputPort == dev.identifier) {
+            bindingReg.removeAllForController(BindingScope::Global, existing.id);
+            bindingReg.removeAllForController(BindingScope::Project, existing.id);
+        }
+    }
+
     auto mat = materialiseControllerFromProfile(profile, dev.identifier, {}, dev.name);
 
-    ControllerRegistry::getInstance().add(mat.controller);
+    controllerReg.add(mat.controller);
     for (const auto& b : mat.bindings)
-        BindingRegistry::getInstance().add(BindingScope::Global, b);
+        bindingReg.add(BindingScope::Global, b);
 
     persist();
     rebuildList();
@@ -358,7 +380,36 @@ void ControllersDialog::onRowToggled(int row) {
         return;
 
     const auto& c = controllers_[static_cast<size_t>(row)];
-    ControllerRegistry::getInstance().setEnabled(c.id, !c.enabled);
+    auto& controllerReg = ControllerRegistry::getInstance();
+    auto& bindingReg = BindingRegistry::getInstance();
+
+    if (bindingReg.hasAnyBindingForController(c.id)) {
+        // Currently enabled — silence by removing all bindings keyed to this id.
+        bindingReg.removeAllForController(BindingScope::Global, c.id);
+        bindingReg.removeAllForController(BindingScope::Project, c.id);
+    } else {
+        // Currently disabled — first silence any other controller on the same
+        // port (one enabled per port), then re-materialise this profile's
+        // bindings and add them back.
+        for (const auto& other : controllerReg.all()) {
+            if (other.id == c.id || other.inputPort != c.inputPort)
+                continue;
+            bindingReg.removeAllForController(BindingScope::Global, other.id);
+            bindingReg.removeAllForController(BindingScope::Project, other.id);
+        }
+        auto profileOpt = ControllerProfileRegistry::getInstance().findById(c.profileId);
+        if (!profileOpt.has_value())
+            return;
+        auto mat = materialiseControllerFromProfile(*profileOpt, c.inputPort, c.outputPort,
+                                                    c.inputPortName);
+        // Reuse the existing controller's id so bindings stay tied to the same
+        // registry row across enable/disable cycles.
+        for (auto& b : mat.bindings) {
+            b.source.controllerId = c.id;
+            bindingReg.add(BindingScope::Global, b);
+        }
+    }
+
     persist();
     rebuildList();
 }

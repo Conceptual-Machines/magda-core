@@ -8,6 +8,7 @@
 #include "../core/aliases/ResolverRegistry.hpp"
 #include "../core/aliases/TargetResolver.hpp"
 #include "../core/controllers/BindingTransform.hpp"
+#include "MidiDeviceMatch.hpp"
 
 namespace magda {
 
@@ -38,7 +39,7 @@ void ControllerRouter::reconfigure() {
         << " project binding(s)");
     for (const auto& c : ControllerRegistry::getInstance().all())
         DBG("ControllerRouter:   controller name='" << c.name << "' inputPort='" << c.inputPort
-                                                    << "' enabled=" << (c.enabled ? "yes" : "no"));
+                                                    << "'");
 }
 
 void ControllerRouter::setMidiBridge(MidiBridge* bridge) {
@@ -241,24 +242,24 @@ void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
     // port (display name or identifier) with no ControllerRegistry dependency.
     auto bindings = bindingReg.findForPort(portId, portName, msgType, channel, number);
 
-    // Controller-addressed bindings: if the port maps to a registered
-    // scripted surface, also match bindings keyed by its ControllerId. Each
-    // binding ID is only dispatched once even if both lookups return it.
+    // Controller-addressed bindings: walk every registered controller whose
+    // port matches and accumulate bindings keyed to its ControllerId. A single
+    // hardware port can host multiple registry rows (e.g. an AI-generated
+    // profile alongside the bundled one) and each row carries its own UUID,
+    // so the bindings of every matching row need to fire — picking just the
+    // "first match" silently drops the others. Each binding ID is only
+    // dispatched once even if multiple lookups return it.
     auto& controllerReg = ControllerRegistry::getInstance();
-    if (controllerReg.isControllerInputPort(portId, portName)) {
-        auto controllerOpt = controllerReg.findByInputPort(portId);
-        if (!controllerOpt.has_value())
-            controllerOpt = controllerReg.findByInputPort(portName);
-        if (controllerOpt.has_value() && controllerOpt->enabled) {
-            auto controllerBindings =
-                bindingReg.findForSource(controllerOpt->id, msgType, channel, number);
-            for (const auto& cb : controllerBindings) {
-                const bool alreadyIncluded =
-                    std::any_of(bindings.begin(), bindings.end(),
-                                [&cb](const Binding& b) { return b.id == cb.id; });
-                if (!alreadyIncluded)
-                    bindings.push_back(cb);
-            }
+    for (const auto& c : controllerReg.all()) {
+        if (!magda::midi::matches(c.inputPort, portId, portName))
+            continue;
+        auto controllerBindings = bindingReg.findForSource(c.id, msgType, channel, number);
+        for (const auto& cb : controllerBindings) {
+            const bool alreadyIncluded =
+                std::any_of(bindings.begin(), bindings.end(),
+                            [&cb](const Binding& b) { return b.id == cb.id; });
+            if (!alreadyIncluded)
+                bindings.push_back(cb);
         }
     }
 

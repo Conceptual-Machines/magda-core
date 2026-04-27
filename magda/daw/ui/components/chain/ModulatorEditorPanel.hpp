@@ -9,6 +9,8 @@
 #include "core/LinkModeManager.hpp"
 #include "core/ModInfo.hpp"
 #include "core/ModulatorEngine.hpp"
+#include "core/controllers/BindingRegistry.hpp"
+#include "core/controllers/MidiLearnCoordinator.hpp"
 #include "ui/components/chain/LFOCurveEditor.hpp"
 #include "ui/components/chain/LFOCurveEditorWindow.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -194,6 +196,8 @@ class ModMatrixContent : public juce::Component {
  */
 class ModulatorEditorPanel : public juce::Component,
                              public magda::LinkModeManagerListener,
+                             public magda::BindingRegistryListener,
+                             public magda::MidiLearnCoordinatorListener,
                              private juce::Timer {
   public:
     ModulatorEditorPanel();
@@ -248,6 +252,16 @@ class ModulatorEditorPanel : public juce::Component,
     void macroLinkModeChanged(bool active, const magda::MacroSelection& sel) override;
     void modLinkModeChanged(bool active, const magda::ModSelection& sel) override;
 
+    // BindingRegistry / MIDI Learn — repaint the rate-slider dot indicator
+    // when a Learn'd binding is added, removed, or mid-learn.
+    void bindingRegistryChanged(magda::BindingScope scope) override;
+    void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
+                               magda::StaticTarget::Owner owner, bool learning) override;
+    void midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                            magda::StaticTarget::Owner owner, const magda::Binding&) override;
+    void midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
+                          magda::StaticTarget::Owner owner, int numRemoved) override;
+
     // Preferred width for this panel
     static constexpr int PREFERRED_WIDTH = 150;
 
@@ -258,6 +272,13 @@ class ModulatorEditorPanel : public juce::Component,
     magda::ChainNodePath ownerDevicePath_;
     void updateRateAutomationTarget();
     void showRateSliderContextMenu();
+
+    // True when there's any binding keyed to (ownerDevicePath_, currentMod_.id,
+    // modParamIndex 0). Drives the small mapped-binding dot painted over the
+    // rate slider, plus the learn-mode pulse.
+    void refreshRateMidiBindingState();
+    bool hasRateMidiBinding_ = false;
+    bool isRateInMidiLearnMode_ = false;
 
     // Apply / clear link-mode click handling on the rate sliders. When a
     // link-mode source (macro or mod) is active, clicking the visible rate

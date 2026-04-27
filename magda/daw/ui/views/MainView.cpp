@@ -81,6 +81,37 @@ MainView::MainView(AudioEngine* audioEngine)
     // Load controller + binding state and start the MIDI dispatch router
     ControllerRegistry::getInstance().loadFromConfig(config.getControllers());
     BindingRegistry::getInstance().loadGlobal(config.getGlobalBindings());
+
+    // Enforce one-enabled-controller-per-port. Multiple rows on the same
+    // hardware port are fine (different profiles for the same device), but
+    // only one should be firing at a time. Older configs may have ended up
+    // with bindings registered for several rows on the same port; walk
+    // newest-to-oldest and silence (drop bindings of) every row whose port
+    // already has an enabled neighbour.
+    {
+        auto& cReg = ControllerRegistry::getInstance();
+        auto& bReg = BindingRegistry::getInstance();
+        auto rows = cReg.all();
+        std::set<juce::String> portWithEnabled;
+        bool changed = false;
+        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+            if (it->inputPort.isEmpty())
+                continue;
+            const bool hasBindings = bReg.hasAnyBindingForController(it->id);
+            if (!hasBindings)
+                continue;
+            if (!portWithEnabled.insert(it->inputPort).second) {
+                bReg.removeAllForController(BindingScope::Global, it->id);
+                bReg.removeAllForController(BindingScope::Project, it->id);
+                changed = true;
+            }
+        }
+        if (changed) {
+            config.setGlobalBindings(bReg.saveGlobal());
+            config.save();
+        }
+    }
+
     ControllerRouter::getInstance().reconfigure();
     if (auto* audioBridge = audioEngine_->getAudioBridge())
         ControllerRouter::getInstance().setParamWriter(

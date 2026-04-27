@@ -1965,12 +1965,26 @@ void AIChatConsoleContent::finishControllerGeneration(bool success, const juce::
                 }
 
                 const auto& dev = ports[idx];
+
+                // One enabled controller per port: any existing row on this
+                // port stays registered but loses its bindings, leaving the
+                // newly-added one as the active controller.
+                auto& controllerReg = magda::ControllerRegistry::getInstance();
+                auto& bindingReg = magda::BindingRegistry::getInstance();
+                for (const auto& existing : controllerReg.all()) {
+                    if (existing.inputPort == dev.identifier) {
+                        bindingReg.removeAllForController(magda::BindingScope::Global, existing.id);
+                        bindingReg.removeAllForController(magda::BindingScope::Project,
+                                                          existing.id);
+                    }
+                }
+
                 auto mat = magda::materialiseControllerFromProfile(*profileOpt, dev.identifier, {},
                                                                    dev.name);
 
-                magda::ControllerRegistry::getInstance().add(mat.controller);
+                controllerReg.add(mat.controller);
                 for (const auto& b : mat.bindings)
-                    magda::BindingRegistry::getInstance().add(magda::BindingScope::Global, b);
+                    bindingReg.add(magda::BindingScope::Global, b);
 
                 auto& cfg = magda::Config::getInstance();
                 cfg.setControllers(magda::ControllerRegistry::getInstance().saveToConfig());
