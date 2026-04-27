@@ -536,6 +536,28 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/controllers/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Controllers
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1228,6 +1250,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#driving-modulators" class="md-nav__link">
+    <span class="md-ellipsis">
+      Driving Modulators
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#use-cases" class="md-nav__link">
     <span class="md-ellipsis">
       Use Cases
@@ -1270,6 +1301,27 @@
           </ul>
         </nav>
       
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../automation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Automation
+    
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -1335,10 +1387,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1350,8 +1402,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -1369,6 +1421,28 @@
   
   <span class="md-ellipsis">
     DSL Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/controller-profile-format/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Controller Profile Format
     
   </span>
   
@@ -1515,6 +1589,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#driving-modulators" class="md-nav__link">
+    <span class="md-ellipsis">
+      Driving Modulators
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#use-cases" class="md-nav__link">
     <span class="md-ellipsis">
       Use Cases
@@ -1563,11 +1646,20 @@
 <li>Adjust the modulation amount and polarity</li>
 </ol>
 <p>A single macro can control multiple parameters simultaneously — for example, one "Brightness" knob could increase filter cutoff, reduce reverb wet, and boost high-shelf EQ gain at the same time.</p>
+<h2 id="driving-modulators">Driving Modulators<a class="headerlink" href="#driving-modulators" title="Permanent link">&para;</a></h2>
+<p>A macro can also target a modulator's <strong>Rate</strong> instead of a device parameter — turn the macro and you turn the LFO speed. Same workflow:</p>
+<ol>
+<li>Right-click the macro and pick the modulator from <strong>Link to Parameter… → Modulators</strong>, or</li>
+<li>Use link mode and click the modulator's Rate slider as the target.</li>
+</ol>
+<p><img alt="Macro 1 mapped to LFO 1 Rate" src="../../assets/images/modulation/macro-to-mod.png" /></p>
+<p>In the screenshot, <strong>Macro 1</strong> at 0.20 is dialling <strong>LFO 1</strong>'s Rate down. As the macro turns, the LFO speed follows. Combine with traditional parameter links and a single knob can sweep filter cutoff, reduce reverb send, <em>and</em> slow the LFO that's wobbling the pitch — all at once.</p>
 <h2 id="use-cases">Use Cases<a class="headerlink" href="#use-cases" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Map the most important synth parameters to a few knobs for live performance</li>
 <li>Create unified controls that coordinate multiple effects at once</li>
 <li>Expose simple controls for complex multi-device setups</li>
+<li>Use a macro as a "tempo" or "intensity" control that drives an LFO's rate alongside the parameters it modulates</li>
 </ul>
 
 

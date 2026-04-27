@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/reference/dsl/">
+        <link rel="canonical" href="https://Conceptual-Machines.github.io/magda-core/interface/controllers/">
       
       
-        <link rel="prev" href="../../transport/">
+        <link rel="prev" href="../plugin-settings/">
       
       
-        <link rel="next" href="../controller-profile-format/">
+        <link rel="next" href="../../tracks/">
       
       
       <link rel="icon" href="../../assets/images/magda-lisa.svg">
@@ -24,7 +24,7 @@
     
     
       
-        <title>DSL Reference - MAGDA Manual</title>
+        <title>Controllers - MAGDA Manual</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#magda-dsl-reference" class="md-skip">
+        <a href="#controllers" class="md-skip">
           Skip to content
         </a>
       
@@ -113,7 +113,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              DSL Reference
+              Controllers
             
           </span>
         </div>
@@ -389,8 +389,10 @@
       
   
   
+    
   
   
+  
     
     
     
@@ -400,11 +402,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -419,7 +421,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             Interface Layout
@@ -433,7 +435,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../interface/overview/" class="md-nav__link">
+      <a href="../overview/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -455,7 +457,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../interface/menus/" class="md-nav__link">
+      <a href="../menus/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -477,7 +479,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../interface/preferences/" class="md-nav__link">
+      <a href="../preferences/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -499,7 +501,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../interface/audio-settings/" class="md-nav__link">
+      <a href="../audio-settings/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -521,7 +523,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../interface/plugin-settings/" class="md-nav__link">
+      <a href="../plugin-settings/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -540,10 +542,31 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../interface/controllers/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Controllers
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   <span class="md-ellipsis">
@@ -553,6 +576,119 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#controllers-dialog" class="md-nav__link">
+    <span class="md-ellipsis">
+      Controllers Dialog
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Controllers Dialog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      Profiles
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#profiles-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      Profiles directory
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#profile-json-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      Profile JSON format
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#midi-learn" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI Learn
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clearing-mappings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Clearing Mappings
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#indicator-legend" class="md-nav__link">
+    <span class="md-ellipsis">
+      Indicator Legend
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#generating-a-profile-from-description" class="md-nav__link">
+    <span class="md-ellipsis">
+      Generating a Profile from Description
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tips
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1275,8 +1411,6 @@
       
   
   
-    
-  
   
   
     
@@ -1288,11 +1422,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
         
           
           <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
@@ -1307,7 +1441,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_17">
             <span class="md-nav__icon md-icon"></span>
             Reference
@@ -1318,31 +1452,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  <span class="md-ellipsis">
-    DSL Reference
-    
-  </span>
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../reference/dsl/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1352,317 +1465,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#syntax" class="md-nav__link">
-    <span class="md-ellipsis">
-      Syntax
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#tracks" class="md-nav__link">
-    <span class="md-ellipsis">
-      Tracks
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Tracks">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#creating-referencing-tracks" class="md-nav__link">
-    <span class="md-ellipsis">
-      Creating &amp; referencing tracks
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#modifying-tracks" class="md-nav__link">
-    <span class="md-ellipsis">
-      Modifying tracks
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#other-track-operations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Other track operations
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#clips" class="md-nav__link">
-    <span class="md-ellipsis">
-      Clips
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Clips">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#creating-clips" class="md-nav__link">
-    <span class="md-ellipsis">
-      Creating clips
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#managing-clips" class="md-nav__link">
-    <span class="md-ellipsis">
-      Managing clips
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#selecting-clips" class="md-nav__link">
-    <span class="md-ellipsis">
-      Selecting clips
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Notes
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Notes">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#adding-notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Adding notes
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adding-chords" class="md-nav__link">
-    <span class="md-ellipsis">
-      Adding chords
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adding-arpeggios" class="md-nav__link">
-    <span class="md-ellipsis">
-      Adding arpeggios
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#selecting-notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Selecting notes
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#editing-notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Editing notes
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#effects" class="md-nav__link">
-    <span class="md-ellipsis">
-      Effects
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#filter-operations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Filter Operations
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#groove-swing" class="md-nav__link">
-    <span class="md-ellipsis">
-      Groove / Swing
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Groove / Swing">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#creating-custom-grooves" class="md-nav__link">
-    <span class="md-ellipsis">
-      Creating custom grooves
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#extracting-groove-from-audio" class="md-nav__link">
-    <span class="md-ellipsis">
-      Extracting groove from audio
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#applying-groove-to-a-clip" class="md-nav__link">
-    <span class="md-ellipsis">
-      Applying groove to a clip
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#listing-available-grooves" class="md-nav__link">
-    <span class="md-ellipsis">
-      Listing available grooves
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      Examples
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Examples">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#simple-track-with-clip" class="md-nav__link">
-    <span class="md-ellipsis">
-      Simple track with clip
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#chord-progression" class="md-nav__link">
-    <span class="md-ellipsis">
-      Chord progression
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#arpeggiated-lead-with-swing" class="md-nav__link">
-    <span class="md-ellipsis">
-      Arpeggiated lead with swing
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#split-arpeggios-across-a-clip" class="md-nav__link">
-    <span class="md-ellipsis">
-      Split arpeggios across a clip
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#bulk-operations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Bulk operations
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#custom-groove-from-scratch" class="md-nav__link">
-    <span class="md-ellipsis">
-      Custom groove from scratch
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1675,7 +1477,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../controller-profile-format/" class="md-nav__link">
+      <a href="../../reference/controller-profile-format/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1697,7 +1499,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../keyboard-shortcuts/" class="md-nav__link">
+      <a href="../../reference/keyboard-shortcuts/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1719,7 +1521,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../file-formats/" class="md-nav__link">
+      <a href="../../reference/file-formats/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1741,7 +1543,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../troubleshooting/" class="md-nav__link">
+      <a href="../../reference/troubleshooting/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
@@ -1790,46 +1592,43 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#syntax" class="md-nav__link">
+  <a href="#controllers-dialog" class="md-nav__link">
     <span class="md-ellipsis">
-      Syntax
+      Controllers Dialog
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#tracks" class="md-nav__link">
-    <span class="md-ellipsis">
-      Tracks
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Tracks">
+    <nav class="md-nav" aria-label="Controllers Dialog">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#creating-referencing-tracks" class="md-nav__link">
+  <a href="#profiles" class="md-nav__link">
     <span class="md-ellipsis">
-      Creating &amp; referencing tracks
+      Profiles
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#profiles-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      Profiles directory
     </span>
   </a>
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#modifying-tracks" class="md-nav__link">
-    <span class="md-ellipsis">
-      Modifying tracks
-    </span>
-  </a>
+      </ul>
+    </nav>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#other-track-operations" class="md-nav__link">
+  <a href="#profile-json-format" class="md-nav__link">
     <span class="md-ellipsis">
-      Other track operations
+      Profile JSON format
     </span>
   </a>
   
@@ -1841,242 +1640,47 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#clips" class="md-nav__link">
+  <a href="#midi-learn" class="md-nav__link">
     <span class="md-ellipsis">
-      Clips
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Clips">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#creating-clips" class="md-nav__link">
-    <span class="md-ellipsis">
-      Creating clips
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#managing-clips" class="md-nav__link">
-    <span class="md-ellipsis">
-      Managing clips
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#selecting-clips" class="md-nav__link">
-    <span class="md-ellipsis">
-      Selecting clips
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Notes
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Notes">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#adding-notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Adding notes
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adding-chords" class="md-nav__link">
-    <span class="md-ellipsis">
-      Adding chords
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#adding-arpeggios" class="md-nav__link">
-    <span class="md-ellipsis">
-      Adding arpeggios
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#selecting-notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Selecting notes
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#editing-notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      Editing notes
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#effects" class="md-nav__link">
-    <span class="md-ellipsis">
-      Effects
+      MIDI Learn
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#filter-operations" class="md-nav__link">
+  <a href="#clearing-mappings" class="md-nav__link">
     <span class="md-ellipsis">
-      Filter Operations
+      Clearing Mappings
     </span>
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#groove-swing" class="md-nav__link">
+  <a href="#indicator-legend" class="md-nav__link">
     <span class="md-ellipsis">
-      Groove / Swing
+      Indicator Legend
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Groove / Swing">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#creating-custom-grooves" class="md-nav__link">
-    <span class="md-ellipsis">
-      Creating custom grooves
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#extracting-groove-from-audio" class="md-nav__link">
-    <span class="md-ellipsis">
-      Extracting groove from audio
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#applying-groove-to-a-clip" class="md-nav__link">
-    <span class="md-ellipsis">
-      Applying groove to a clip
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#listing-available-grooves" class="md-nav__link">
-    <span class="md-ellipsis">
-      Listing available grooves
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
+  <a href="#generating-a-profile-from-description" class="md-nav__link">
     <span class="md-ellipsis">
-      Examples
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Examples">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#simple-track-with-clip" class="md-nav__link">
-    <span class="md-ellipsis">
-      Simple track with clip
+      Generating a Profile from Description
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#chord-progression" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#tips" class="md-nav__link">
     <span class="md-ellipsis">
-      Chord progression
+      Tips
     </span>
   </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#arpeggiated-lead-with-swing" class="md-nav__link">
-    <span class="md-ellipsis">
-      Arpeggiated lead with swing
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#split-arpeggios-across-a-clip" class="md-nav__link">
-    <span class="md-ellipsis">
-      Split arpeggios across a clip
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#bulk-operations" class="md-nav__link">
-    <span class="md-ellipsis">
-      Bulk operations
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#custom-groove-from-scratch" class="md-nav__link">
-    <span class="md-ellipsis">
-      Custom groove from scratch
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -2099,575 +1703,114 @@
   
 
 
-<h1 id="magda-dsl-reference">MAGDA DSL Reference<a class="headerlink" href="#magda-dsl-reference" title="Permanent link">&para;</a></h1>
-<p>The MAGDA DSL is a functional scripting language for DAW operations. The <a href="../../panels/ai-assistant/">AI Assistant</a> translates natural language into DSL, and the <a href="../../panels/ai-assistant/#dsl-tab">DSL tab</a> lets you write it directly.</p>
-<h2 id="syntax">Syntax<a class="headerlink" href="#syntax" title="Permanent link">&para;</a></h2>
-<p>Commands are written one per line. Track statements return a context that can be extended with a method chain. Comments start with <code>//</code>.</p>
-<div class="highlight"><pre><span></span><code>// This is a comment
-track(name=&quot;Bass&quot;, new=true)
-  .clip.new(bar=1, length_bars=4)
-  .notes.add_chord(root=C4, quality=major, beat=0, length=4)
-</code></pre></div>
-<h2 id="tracks">Tracks<a class="headerlink" href="#tracks" title="Permanent link">&para;</a></h2>
-<h3 id="creating-referencing-tracks">Creating &amp; referencing tracks<a class="headerlink" href="#creating-referencing-tracks" title="Permanent link">&para;</a></h3>
+<h1 id="controllers">Controllers<a class="headerlink" href="#controllers" title="Permanent link">&para;</a></h1>
+<p>MAGDA can be driven by any class-compliant MIDI controller. Hardware knobs, sliders, pads, and pitch/mod wheels can all map to plugin parameters, macros, and LFO rates — with two complementary mapping systems:</p>
+<ul>
+<li><strong>Automap profiles</strong> — a controller-specific profile maps each control to a focused-device macro automatically. Plug in a supported keyboard, focus a device, and the eight macro knobs already drive that device's macros. No setup.</li>
+<li><strong>MIDI Learn</strong> — right-click any parameter, macro, or LFO Rate, choose <strong>Learn MIDI</strong>, move a controller, done. The mapping is yours and persists with the project.</li>
+</ul>
+<p>Both can coexist. A Learn'd binding shadows automap on the same CC so your custom mapping wins.</p>
+<h2 id="controllers-dialog">Controllers Dialog<a class="headerlink" href="#controllers-dialog" title="Permanent link">&para;</a></h2>
+<p>Open from <strong>Settings &gt; Controllers</strong>.</p>
+<p><img alt="Controllers Dialog" src="../../assets/images/interface/controllers.png" /></p>
+<p>The dialog lists every controller MAGDA knows about. Each row shows the manufacturer and model, the live MIDI input port the controller is connected to, and a connection-status indicator (green dot when the named port is currently available).</p>
+<p>Two buttons sit in the header:</p>
+<ul>
+<li><strong>+ Add profile</strong> — register a new controller using one of the profiles already in your <a href="#profiles-directory">controllers directory</a>. Pops a menu of available profiles, then asks which MIDI input the controller is connected to.</li>
+<li><strong>Upload profile…</strong> — pick a <code>.json</code> profile from disk and import it. Validates the JSON, copies it into the controllers directory, and refreshes the registry. After upload, the new profile is available to <strong>+ Add profile</strong>.</li>
+</ul>
+<p>Right-click a row to <strong>Show profile in Finder</strong> (reveals the JSON file) or <strong>Remove</strong> (deletes the controller and its bindings).</p>
+<p>Bindings created by MIDI Learn against a removed controller's port still work — they attach to the live MIDI port name, not to the controller registry entry.</p>
+<h3 id="profiles">Profiles<a class="headerlink" href="#profiles" title="Permanent link">&para;</a></h3>
+<p>A profile describes a controller's physical layout — which CC numbers correspond to the eight macro knobs, and so on. MAGDA ships with profiles for common controllers (Launchkey Mini MK3 / MK4, generic 8-knob, etc.) and you can add your own.</p>
+<p>When a profile is assigned to a controller and a device is focused, the profile's macro knobs drive <strong>that device's macros</strong>. Focus a different device — the same hardware knobs follow.</p>
+<p>If you only want MIDI Learn (no automap), don't add a controller — Learn'd bindings route via the live port name and don't need a registry entry.</p>
+<h4 id="profiles-directory">Profiles directory<a class="headerlink" href="#profiles-directory" title="Permanent link">&para;</a></h4>
+<p>User profiles live alongside MAGDA's other configuration:</p>
 <table>
 <thead>
 <tr>
-<th>Command</th>
-<th>Description</th>
+<th>Platform</th>
+<th>Path</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>track()</code></td>
-<td>Create a new unnamed track</td>
+<td>macOS</td>
+<td><code>~/Library/MAGDA/controllers/</code></td>
 </tr>
 <tr>
-<td><code>track(name="Bass")</code></td>
-<td>Reference existing track by name, or create if none exists</td>
+<td>Windows</td>
+<td><code>%APPDATA%\MAGDA\controllers\</code></td>
 </tr>
 <tr>
-<td><code>track(name="Bass", new=true)</code></td>
-<td>Always create a new track (even if name exists)</td>
-</tr>
-<tr>
-<td><code>track(id=1)</code></td>
-<td>Reference track by 1-based index</td>
+<td>Linux</td>
+<td><code>~/.config/MAGDA/controllers/</code></td>
 </tr>
 </tbody>
 </table>
-<h3 id="modifying-tracks">Modifying tracks<a class="headerlink" href="#modifying-tracks" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>track(name=&quot;Bass&quot;).track.set(name=&quot;Sub Bass&quot;, volume_db=-3, pan=0.5, mute=true, solo=true)
-</code></pre></div>
+<p>On first launch the bundled profiles are seeded into this folder. Edits and additions there are durable — drop a new <code>*.json</code> profile in and it's available next time you open the Controllers dialog.</p>
+<h3 id="profile-json-format">Profile JSON format<a class="headerlink" href="#profile-json-format" title="Permanent link">&para;</a></h3>
+<p>For the full JSON schema, the resolver list (the functions that route a CC to a target — <code>focused.macro</code>, <code>selected.volume</code>, <code>master.pan</code>, etc.), the <code>&lt;vendor&gt;.&lt;model&gt;.&lt;intent&gt;</code> id convention, and a worked example, see the <a href="../../reference/controller-profile-format/">Controller Profile Format reference</a>.</p>
+<h2 id="midi-learn">MIDI Learn<a class="headerlink" href="#midi-learn" title="Permanent link">&para;</a></h2>
+<p>To map a single hardware control to a single MAGDA target:</p>
+<ol>
+<li>Right-click the parameter, macro knob, or LFO <strong>Rate</strong> slider.</li>
+<li>Choose <strong>Learn MIDI</strong>. The control pulses orange.</li>
+<li>Move a knob, slider, or press a button on your controller.</li>
+<li>The binding is captured. The pulse stops; an orange dot appears.</li>
+</ol>
+<p>Learn works on:</p>
+<ul>
+<li><strong>Plugin parameters</strong> — any device parameter (pulses on the slider).</li>
+<li><strong>Macros</strong> — track, rack, or device macros. Right-click the knob.</li>
+<li><strong>LFO / modifier Rate</strong> — right-click the <strong>Rate</strong> slider in the modulator editor.</li>
+</ul>
+<p>To cancel without capturing, choose <strong>Cancel MIDI Learn</strong> (same menu, same item).</p>
+<h2 id="clearing-mappings">Clearing Mappings<a class="headerlink" href="#clearing-mappings" title="Permanent link">&para;</a></h2>
+<p>Right-click → <strong>Clear MIDI Mapping (N)</strong> removes only your Learn'd bindings; automap profile coverage is left alone. After clearing a Learn'd macro, the macro falls back to its profile mapping (the dot returns to green).</p>
+<h2 id="indicator-legend">Indicator Legend<a class="headerlink" href="#indicator-legend" title="Permanent link">&para;</a></h2>
+<p>MAGDA shows controller coverage as small dots on macro knobs, parameter slots, and device headers.</p>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
+<th>Dot</th>
+<th>Meaning</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>name</code></td>
-<td>string</td>
-<td>Rename the track</td>
+<td>Green</td>
+<td>Profile-driven (automap) binding is active on this target.</td>
 </tr>
 <tr>
-<td><code>volume_db</code></td>
-<td>number</td>
-<td>Volume in dB</td>
+<td>Orange</td>
+<td>A user MIDI Learn'd binding is active.</td>
 </tr>
 <tr>
-<td><code>pan</code></td>
-<td>number</td>
-<td>Pan position (-1.0 left to 1.0 right)</td>
-</tr>
-<tr>
-<td><code>mute</code></td>
-<td>bool</td>
-<td>Mute the track</td>
-</tr>
-<tr>
-<td><code>solo</code></td>
-<td>bool</td>
-<td>Solo the track</td>
+<td>Grey</td>
+<td>Profile binding exists but is shadowed by an explicit Learn override on the same CC.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="other-track-operations">Other track operations<a class="headerlink" href="#other-track-operations" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>track(id=1).select()    // Select track in UI
-track(id=1).delete()    // Delete track
+<p>A device header can show two dots side-by-side (green for profile coverage, orange for any Learn'd binding inside the device).</p>
+<p><img alt="Macro panel with green automap dots" src="../../assets/images/interface/controllers-automap.png" /></p>
+<p><em>Above: a 4OSC Synth focused with an automap-mapped controller. Each macro knob carries a green dot — the automap profile is driving them, and the device-header dot mirrors the same green.</em></p>
+<p><img alt="4OSC filter showing an orange MIDI-learn dot on FREQ" src="../../assets/images/interface/controllers-midilearn.png" /></p>
+<p><em>Above: the FREQ slider has an orange dot — a user MIDI Learn binding is in effect. The device-header dot turns orange to mirror it.</em></p>
+<h2 id="generating-a-profile-from-description">Generating a Profile from Description<a class="headerlink" href="#generating-a-profile-from-description" title="Permanent link">&para;</a></h2>
+<p>If MAGDA doesn't ship a profile for your controller, the AI Assistant can write one for you. In the AI panel, type <code>/co</code> to autocomplete <code>/controller</code>, then describe the controller after the command:</p>
+<p><img alt="/controller autocomplete in the AI panel" src="../../assets/images/interface/controllers-slash.png" /></p>
+<div class="highlight"><pre><span></span><code>/controller Akai MPK Mini Mk3, 8 knobs on CC 70-77, channel 1
 </code></pre></div>
-<h2 id="clips">Clips<a class="headerlink" href="#clips" title="Permanent link">&para;</a></h2>
-<h3 id="creating-clips">Creating clips<a class="headerlink" href="#creating-clips" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>track(name=&quot;Bass&quot;).clip.new(bar=1, length_bars=4)     // At specific bar
-track(name=&quot;Bass&quot;).clip.new(length_bars=4)             // Auto-place after last clip
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>bar</code></td>
-<td>number</td>
-<td>auto</td>
-<td>Bar position (omit to auto-place)</td>
-</tr>
-<tr>
-<td><code>length_bars</code></td>
-<td>number</td>
-<td>4</td>
-<td>Clip length in bars</td>
-</tr>
-</tbody>
-</table>
-<h3 id="managing-clips">Managing clips<a class="headerlink" href="#managing-clips" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>track(name=&quot;Bass&quot;).clip.rename(index=0, name=&quot;Intro&quot;)  // Rename clip at index
-track(name=&quot;Bass&quot;).clip.rename(name=&quot;Part {i}&quot;)         // Rename selected clips (auto-number)
-track(name=&quot;Bass&quot;).clip.delete(index=0)                 // Delete clip at index
-</code></pre></div>
-<h3 id="selecting-clips">Selecting clips<a class="headerlink" href="#selecting-clips" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>track(id=1).clips.select(clip.length_bars &gt;= 2)
-track(id=1).clips.select(clip.start_bar == 1)
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>clip.length_bars</code></td>
-<td>Clip length in bars</td>
-</tr>
-<tr>
-<td><code>clip.start_bar</code></td>
-<td>Clip start position in bars</td>
-</tr>
-</tbody>
-</table>
-<p>Operators: <code>==</code>, <code>!=</code>, <code>&gt;</code>, <code>&gt;=</code>, <code>&lt;</code>, <code>&lt;=</code></p>
-<h2 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h2>
-<p>Note operations require a selected clip. Chain them on a <code>clip.new()</code> call or use a track reference when a clip is already selected.</p>
-<h3 id="adding-notes">Adding notes<a class="headerlink" href="#adding-notes" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>.notes.add(pitch=C4, beat=0, length=1, velocity=100)
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>pitch</code></td>
-<td>note/number</td>
-<td>—</td>
-<td>Note name (<code>C4</code>, <code>F#3</code>, <code>Bb2</code>) or MIDI number</td>
-</tr>
-<tr>
-<td><code>beat</code></td>
-<td>number</td>
-<td>—</td>
-<td>Beat position within the clip</td>
-</tr>
-<tr>
-<td><code>length</code></td>
-<td>number</td>
-<td>1</td>
-<td>Duration in beats</td>
-</tr>
-<tr>
-<td><code>velocity</code></td>
-<td>number</td>
-<td>100</td>
-<td>Velocity (0–127)</td>
-</tr>
-</tbody>
-</table>
+<p>The AI generates a profile JSON, drops it in your <a href="#profiles-directory">controllers directory</a>, and prompts you to enable it. Describe the controller in plain language — manufacturer, model, which CCs the knobs send, MIDI channel — the more specific you are, the better the profile.</p>
+<p>To tweak the generated JSON by hand — fix a CC number, switch a knob to drive <code>selected.pan</code> instead of a focused-device macro — the <a href="../../reference/controller-profile-format/">Controller Profile Format reference</a> explains every field.</p>
+<p>See <a href="../../panels/ai-assistant/#slash-commands">AI Assistant — Slash Commands</a>.</p>
+<h2 id="tips">Tips<a class="headerlink" href="#tips" title="Permanent link">&para;</a></h2>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p>To add multiple notes to the <strong>same clip</strong>, chain <code>.notes.add()</code> calls on a single statement. Do <strong>not</strong> create a separate <code>clip.new()</code> for each note.</p>
+<p>A Learn'd binding routes through the <strong>port name</strong>, so it survives renaming the controller in the dialog or even removing it from the registry. The binding still fires whenever the named port is connected.</p>
 </div>
-<h3 id="adding-chords">Adding chords<a class="headerlink" href="#adding-chords" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>.notes.add_chord(root=C4, quality=major, beat=0, length=1, velocity=100, inversion=0)
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>root</code></td>
-<td>note</td>
-<td>—</td>
-<td>Root note</td>
-</tr>
-<tr>
-<td><code>quality</code></td>
-<td>string</td>
-<td>—</td>
-<td>Chord quality (see table below)</td>
-</tr>
-<tr>
-<td><code>beat</code></td>
-<td>number</td>
-<td>0</td>
-<td>Beat position</td>
-</tr>
-<tr>
-<td><code>length</code></td>
-<td>number</td>
-<td>1</td>
-<td>Duration in beats</td>
-</tr>
-<tr>
-<td><code>velocity</code></td>
-<td>number</td>
-<td>100</td>
-<td>Velocity</td>
-</tr>
-<tr>
-<td><code>inversion</code></td>
-<td>number</td>
-<td>0</td>
-<td>0 = root, 1 = first, 2 = second</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Chord qualities:</strong></p>
-<table>
-<thead>
-<tr>
-<th>Category</th>
-<th>Qualities</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Triads</td>
-<td><code>major</code> / <code>maj</code>, <code>minor</code> / <code>min</code>, <code>dim</code>, <code>aug</code>, <code>sus2</code>, <code>sus4</code>, <code>power</code> / <code>5</code></td>
-</tr>
-<tr>
-<td>Sevenths</td>
-<td><code>dom7</code> / <code>7</code>, <code>maj7</code>, <code>min7</code>, <code>dim7</code>, <code>min7b5</code> / <code>half_dim</code></td>
-</tr>
-<tr>
-<td>Extended</td>
-<td><code>dom9</code> / <code>9</code>, <code>maj9</code>, <code>min9</code>, <code>dom11</code> / <code>11</code>, <code>min11</code>, <code>maj11</code>, <code>dom13</code> / <code>13</code>, <code>min13</code>, <code>maj13</code></td>
-</tr>
-<tr>
-<td>Added tone</td>
-<td><code>add9</code>, <code>add11</code>, <code>add13</code>, <code>madd9</code></td>
-</tr>
-<tr>
-<td>Sixth</td>
-<td><code>6</code> / <code>maj6</code>, <code>min6</code></td>
-</tr>
-<tr>
-<td>Altered</td>
-<td><code>7b5</code>, <code>7sharp5</code>, <code>7b9</code>, <code>7sharp9</code></td>
-</tr>
-</tbody>
-</table>
-<h3 id="adding-arpeggios">Adding arpeggios<a class="headerlink" href="#adding-arpeggios" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>.notes.add_arpeggio(root=C4, quality=major, beat=0, step=0.5,
-                    note_length=0.5, velocity=100, inversion=0, pattern=up, fill=true)
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>root</code></td>
-<td>note</td>
-<td>—</td>
-<td>Root note</td>
-</tr>
-<tr>
-<td><code>quality</code></td>
-<td>string</td>
-<td>—</td>
-<td>Same chord qualities as <code>add_chord</code></td>
-</tr>
-<tr>
-<td><code>beat</code></td>
-<td>number</td>
-<td>0</td>
-<td>Start beat</td>
-</tr>
-<tr>
-<td><code>step</code></td>
-<td>number</td>
-<td>—</td>
-<td>Beat interval between notes</td>
-</tr>
-<tr>
-<td><code>note_length</code></td>
-<td>number</td>
-<td>= step</td>
-<td>Duration of each note</td>
-</tr>
-<tr>
-<td><code>velocity</code></td>
-<td>number</td>
-<td>100</td>
-<td>Velocity</td>
-</tr>
-<tr>
-<td><code>inversion</code></td>
-<td>number</td>
-<td>0</td>
-<td>Chord inversion</td>
-</tr>
-<tr>
-<td><code>pattern</code></td>
-<td>string</td>
-<td><code>up</code></td>
-<td><code>up</code>, <code>down</code>, or <code>updown</code></td>
-</tr>
-<tr>
-<td><code>fill</code></td>
-<td>bool</td>
-<td>false</td>
-<td>Repeat pattern to fill the entire clip</td>
-</tr>
-<tr>
-<td><code>beats</code></td>
-<td>number</td>
-<td>—</td>
-<td>Fill a specific number of beats instead of the whole clip</td>
-</tr>
-</tbody>
-</table>
-<h3 id="selecting-notes">Selecting notes<a class="headerlink" href="#selecting-notes" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>.notes.select(note.pitch == C4)
-.notes.select(note.velocity &gt; 100)
-.notes.select(note.start_beat &gt;= 4)
-.notes.select(note.length_beats &lt; 0.5)
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>note.pitch</code></td>
-<td>Note pitch (note name or MIDI number)</td>
-</tr>
-<tr>
-<td><code>note.velocity</code></td>
-<td>Note velocity</td>
-</tr>
-<tr>
-<td><code>note.start_beat</code></td>
-<td>Note start position in beats</td>
-</tr>
-<tr>
-<td><code>note.length_beats</code></td>
-<td>Note length in beats</td>
-</tr>
-</tbody>
-</table>
-<h3 id="editing-notes">Editing notes<a class="headerlink" href="#editing-notes" title="Permanent link">&para;</a></h3>
-<p>All editing operations apply to currently selected notes.</p>
-<div class="highlight"><pre><span></span><code>.notes.delete()                    // Delete selected notes
-.notes.transpose(semitones=5)      // Transpose (positive=up, negative=down)
-.notes.set_pitch(pitch=F1)         // Set absolute pitch
-.notes.set_velocity(value=80)      // Set velocity
-.notes.quantize(grid=0.25)         // Quantize (0.25=16th, 0.5=8th, 1.0=quarter)
-.notes.resize(length=0.5)          // Set note length in beats
-</code></pre></div>
-<h2 id="effects">Effects<a class="headerlink" href="#effects" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>track(name=&quot;Vocals&quot;).fx.add(name=&quot;reverb&quot;)
-track(name=&quot;Vocals&quot;).fx.add(name=&quot;Pro-Q 3&quot;, format=&quot;VST3&quot;)
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>name</code></td>
-<td>string</td>
-<td>Effect name</td>
-</tr>
-<tr>
-<td><code>format</code></td>
-<td>string</td>
-<td>Optional: <code>VST3</code>, <code>AU</code>, or <code>VST</code> to disambiguate</td>
-</tr>
-</tbody>
-</table>
-<p><strong>Built-in effects:</strong> <code>eq</code>, <code>compressor</code>, <code>reverb</code>, <code>delay</code>, <code>chorus</code>, <code>phaser</code>, <code>filter</code>, <code>utility</code>, <code>pitch shift</code>, <code>ir reverb</code></p>
-<p>Third-party plugins are referenced by their scanned name. Use the <code>@alias</code> syntax in the AI chat to autocomplete plugin names.</p>
-<h2 id="filter-operations">Filter Operations<a class="headerlink" href="#filter-operations" title="Permanent link">&para;</a></h2>
-<p>Bulk operations on tracks matching a condition.</p>
-<div class="highlight"><pre><span></span><code>filter(tracks, track.name == &quot;Drums&quot;).track.set(mute=true)
-filter(tracks, track.name == &quot;Drums&quot;).delete()
-filter(tracks, track.name == &quot;Drums&quot;).select()
-filter(tracks, track.name == &quot;Drums&quot;).for_each(.clip.new(bar=1, length_bars=4))
-filter(tracks, track.name == &quot;Drums&quot;).for_each(.fx.add(name=&quot;reverb&quot;).track.set(volume_db=-6))
-</code></pre></div>
-<h2 id="groove-swing">Groove / Swing<a class="headerlink" href="#groove-swing" title="Permanent link">&para;</a></h2>
-<p>Groove templates control playback timing feel — they shift note positions at playback without modifying the source MIDI. These are <strong>not</strong> drum patterns.</p>
-<p>In the AI chat, prefix your message with <code>/groove</code> to ensure the AI generates groove commands instead of note patterns.</p>
-<h3 id="creating-custom-grooves">Creating custom grooves<a class="headerlink" href="#creating-custom-grooves" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>groove.new(name=&quot;Funky 16ths&quot;, notesPerBeat=4,
-           shifts=&quot;0.0,0.15,-0.05,0.4,0.0,0.2,-0.1,0.35&quot;)
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>name</code></td>
-<td>string</td>
-<td>—</td>
-<td>Template name</td>
-</tr>
-<tr>
-<td><code>notesPerBeat</code></td>
-<td>number</td>
-<td>2</td>
-<td>Grid resolution: <code>2</code> = 8th notes, <code>4</code> = 16th notes</td>
-</tr>
-<tr>
-<td><code>shifts</code></td>
-<td>string</td>
-<td>—</td>
-<td>Comma-separated lateness values (<code>-1.0</code> to <code>1.0</code>, <code>0</code> = on grid)</td>
-</tr>
-<tr>
-<td><code>parameterized</code></td>
-<td>bool</td>
-<td>true</td>
-<td>Whether the strength slider scales the groove</td>
-</tr>
-</tbody>
-</table>
-<p>The <code>shifts</code> string defines one value per grid position in a single beat. Positive values push notes <strong>late</strong> (behind the beat), negative values push notes <strong>early</strong> (ahead of the beat).</p>
-<h3 id="extracting-groove-from-audio">Extracting groove from audio<a class="headerlink" href="#extracting-groove-from-audio" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>groove.extract(clip=0, resolution=16, name=&quot;Drum Loop Feel&quot;)
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>clip</code></td>
-<td>number</td>
-<td>—</td>
-<td>Clip index on the current track</td>
-</tr>
-<tr>
-<td><code>resolution</code></td>
-<td>number</td>
-<td>16</td>
-<td>Grid resolution: <code>8</code> or <code>16</code></td>
-</tr>
-<tr>
-<td><code>name</code></td>
-<td>string</td>
-<td>"Extracted Groove"</td>
-<td>Template name</td>
-</tr>
-</tbody>
-</table>
-<p>Reads transient positions from an audio clip and computes timing deviations from the grid.</p>
-<h3 id="applying-groove-to-a-clip">Applying groove to a clip<a class="headerlink" href="#applying-groove-to-a-clip" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>groove.set(template=&quot;Basic 8th Swing&quot;, strength=0.7)
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>template</code></td>
-<td>string</td>
-<td>—</td>
-<td>Groove template name</td>
-</tr>
-<tr>
-<td><code>strength</code></td>
-<td>number</td>
-<td>—</td>
-<td>Amount of groove to apply (<code>0.0</code>–<code>1.0</code>)</td>
-</tr>
-</tbody>
-</table>
-<p>Applies to the currently selected MIDI clip.</p>
-<h3 id="listing-available-grooves">Listing available grooves<a class="headerlink" href="#listing-available-grooves" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>groove.list()
-</code></pre></div>
-<p>Returns all available groove template names (built-in and custom).</p>
-<h2 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h2>
-<h3 id="simple-track-with-clip">Simple track with clip<a class="headerlink" href="#simple-track-with-clip" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>track(name=&quot;Bass&quot;, new=true).clip.new(bar=1, length_bars=4)
-</code></pre></div>
-<h3 id="chord-progression">Chord progression<a class="headerlink" href="#chord-progression" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>track(name=&quot;Synth&quot;, new=true)
-  .clip.new(bar=1, length_bars=4)
-  .notes.add_chord(root=C4, quality=major, beat=0, length=4)
-  .notes.add_chord(root=F4, quality=major, beat=4, length=4)
-  .notes.add_chord(root=G4, quality=major, beat=8, length=4)
-  .notes.add_chord(root=A3, quality=minor, beat=12, length=4)
-</code></pre></div>
-<h3 id="arpeggiated-lead-with-swing">Arpeggiated lead with swing<a class="headerlink" href="#arpeggiated-lead-with-swing" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>track(name=&quot;Lead&quot;, new=true)
-  .clip.new(bar=1, length_bars=4)
-  .notes.add_arpeggio(root=C4, quality=major, step=0.25, pattern=updown, fill=true)
-track(name=&quot;Lead&quot;).fx.add(name=&quot;reverb&quot;).track.set(volume_db=-6)
-groove.set(template=&quot;Basic 8th Swing&quot;, strength=0.6)
-</code></pre></div>
-<h3 id="split-arpeggios-across-a-clip">Split arpeggios across a clip<a class="headerlink" href="#split-arpeggios-across-a-clip" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>track(name=&quot;Arp&quot;, new=true)
-  .clip.new(length_bars=4)
-  .notes.add_arpeggio(root=E4, quality=min, beat=0, step=0.5, beats=8)
-  .notes.add_arpeggio(root=C4, quality=major, beat=8, step=0.5, beats=8)
-</code></pre></div>
-<h3 id="bulk-operations">Bulk operations<a class="headerlink" href="#bulk-operations" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>// Mute all drum tracks
-filter(tracks, track.name == &quot;Drums&quot;).track.set(mute=true)
-
-// Add compressor to every track named &quot;Vocals&quot;
-filter(tracks, track.name == &quot;Vocals&quot;).for_each(.fx.add(name=&quot;compressor&quot;))
-
-// Delete all tracks named &quot;Scratch&quot;
-filter(tracks, track.name == &quot;Scratch&quot;).delete()
-</code></pre></div>
-<h3 id="custom-groove-from-scratch">Custom groove from scratch<a class="headerlink" href="#custom-groove-from-scratch" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>groove.new(name=&quot;Lazy Swing&quot;, notesPerBeat=2, shifts=&quot;0.0,0.33&quot;)
-groove.set(template=&quot;Lazy Swing&quot;, strength=0.8)
-</code></pre></div>
 
 
 

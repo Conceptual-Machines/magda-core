@@ -542,6 +542,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="UI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ui-scale" class="md-nav__link">
+    <span class="md-ellipsis">
+      UI Scale
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -623,6 +638,28 @@
   
   <span class="md-ellipsis">
     Plugin Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../controllers/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Controllers
     
   </span>
   
@@ -1290,6 +1327,27 @@
   
   
     <li class="md-nav__item">
+      <a href="../../automation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Automation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../time-bend/" class="md-nav__link">
         
   
@@ -1344,10 +1402,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1359,8 +1417,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -1378,6 +1436,28 @@
   
   <span class="md-ellipsis">
     DSL Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/controller-profile-format/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Controller Profile Format
     
   </span>
   
@@ -1503,6 +1583,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="UI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ui-scale" class="md-nav__link">
+    <span class="md-ellipsis">
+      UI Scale
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1578,6 +1673,27 @@
 <li><strong>Behavior settings</strong> — Configure UI interaction preferences</li>
 <li><strong>Language</strong> — Select the UI language from the dropdown. The list is populated from the locale files (<code>.json</code>) shipped in MAGDA's <code>lang/</code> folder, so available languages grow as translations are contributed. A restart-required hint appears after switching; the new language takes effect the next time MAGDA launches. See <a href="../../localization/">Localization</a> for how translations are managed and how to contribute.</li>
 </ul>
+<h3 id="ui-scale">UI Scale<a class="headerlink" href="#ui-scale" title="Permanent link">&para;</a></h3>
+<p>Pick a global scale factor for the whole interface. Useful on HiDPI / 4K screens where MAGDA looks too small at native resolution, or on the opposite end where you want more screen real estate.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Auto</strong></td>
+<td>Scale is derived from the display's reported DPI.</td>
+</tr>
+<tr>
+<td><strong>100% – 200%</strong></td>
+<td>Fixed multiplier, ignoring DPI auto-detection. Common picks: 125% on a regular 4K monitor, 150% on a Retina laptop with external scaling, 200% if you want to see fewer rows from across the room.</td>
+</tr>
+</tbody>
+</table>
+<p>Changes apply live — no restart required. The shortcuts <span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-plus">+</kbd></span> and <span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-minus">-</kbd></span> also bump the scale up and down by one preset.</p>
 <h2 id="colours">Colours<a class="headerlink" href="#colours" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Custom colour palette</strong> — Define a custom set of colours for tracks and clips</li>

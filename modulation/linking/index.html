@@ -16,7 +16,7 @@
         <link rel="prev" href="../macros/">
       
       
-        <link rel="next" href="../../time-bend/">
+        <link rel="next" href="../../automation/">
       
       
       <link rel="icon" href="../../assets/images/magda-lisa.svg">
@@ -526,6 +526,28 @@
   
   <span class="md-ellipsis">
     Plugin Settings
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../interface/controllers/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Controllers
     
   </span>
   
@@ -1258,6 +1280,24 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#linking-modulator-to-modulator" class="md-nav__link">
+    <span class="md-ellipsis">
+      Linking Modulator-to-Modulator
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#same-scope-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      Same-Scope Rule
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1270,6 +1310,27 @@
           </ul>
         </nav>
       
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../automation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Automation
+    
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -1335,10 +1396,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_16" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_17" >
         
           
-          <label class="md-nav__link" for="__nav_16" id="__nav_16_label" tabindex="">
+          <label class="md-nav__link" for="__nav_17" id="__nav_17_label" tabindex="">
             
   
   <span class="md-ellipsis">
@@ -1350,8 +1411,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_16_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_16">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17">
             <span class="md-nav__icon md-icon"></span>
             Reference
           </label>
@@ -1369,6 +1430,28 @@
   
   <span class="md-ellipsis">
     DSL Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/controller-profile-format/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Controller Profile Format
     
   </span>
   
@@ -1523,6 +1606,24 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#linking-modulator-to-modulator" class="md-nav__link">
+    <span class="md-ellipsis">
+      Linking Modulator-to-Modulator
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#same-scope-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      Same-Scope Rule
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1576,6 +1677,18 @@
 <li><strong>Color coding</strong> distinguishes between different modulation sources</li>
 <li>Parameters with active modulation links display a small indicator dot</li>
 </ul>
+<h2 id="linking-modulator-to-modulator">Linking Modulator-to-Modulator<a class="headerlink" href="#linking-modulator-to-modulator" title="Permanent link">&para;</a></h2>
+<p>Modulators can target each other's <strong>Rate</strong> to create more interesting motion than a single LFO can produce on its own. A slow LFO modulating a faster LFO's rate gives you accelerating-then-decelerating wobbles; a square-wave LFO driving another LFO's rate gives you discrete tempo shifts.</p>
+<p><img alt="Mods panel — one LFO targeting another LFO's Rate" src="../../assets/images/modulation/mod-to-mod.png" /></p>
+<p>To create the link:</p>
+<ol>
+<li>Open the modulator editor for the source LFO.</li>
+<li>Right-click the destination LFO's Rate slider, or use link mode with the source LFO selected.</li>
+<li>Adjust the modulation amount as usual.</li>
+</ol>
+<p>A modulator's Rate can be driven by <strong>modulators and macros from the same scope</strong> (track, rack, or device). Cross-scope links — say, a track-level macro driving a Rate inside a nested rack — are not supported in 0.6.0.</p>
+<h2 id="same-scope-rule">Same-Scope Rule<a class="headerlink" href="#same-scope-rule" title="Permanent link">&para;</a></h2>
+<p>Macro→param, macro→mod, mod→param, and mod→mod links must all stay within the same scope. The scope is the parent that owns the source: track-level macros target track-level mods or any device on the track; rack-level macros target rack-level mods or devices in that rack; device-level macros and mods target only that device.</p>
 
 
 
