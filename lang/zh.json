@@ -417,6 +417,7 @@
     "no_midi_inputs": "没有可用的 MIDI 输入。",
     "connected": "已连接",
     "not_connected": "未连接",
+    "disabled": "翻译已关闭",
     "upload_invalid_json": "该文件不是有效的 JSON。",
     "upload_invalid_profile": "该 JSON 不是有效的控制器配置文件。",
     "upload_validation_failed": "配置文件存在需先修复的问题：",
