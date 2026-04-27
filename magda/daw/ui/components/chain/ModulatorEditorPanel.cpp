@@ -190,6 +190,11 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // target when a macro/mod is in link mode (Bitwig-style).
     magda::LinkModeManager::getInstance().addListener(this);
 
+    // Track MIDI Learn state for the rate so we can paint the orange
+    // mapped-binding dot and the learn-mode pulse over the rate slider.
+    magda::BindingRegistry::getInstance().addListener(this);
+    magda::MidiLearnCoordinator::getInstance().addListener(this);
+
     startTimer(33);  // 30 FPS for waveform animation
 
     // Name label at top
@@ -544,6 +549,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
 
 ModulatorEditorPanel::~ModulatorEditorPanel() {
     magda::LinkModeManager::getInstance().removeListener(this);
+    magda::BindingRegistry::getInstance().removeListener(this);
+    magda::MidiLearnCoordinator::getInstance().removeListener(this);
     stopTimer();
 }
 
@@ -560,6 +567,7 @@ void ModulatorEditorPanel::setModInfo(const magda::ModInfo& mod, const magda::Mo
     waveformDisplay_.setModInfo(liveMod ? liveMod : &currentMod_, liveModGetter_);
     updateFromMod();
     updateRateAutomationTarget();
+    refreshRateMidiBindingState();
 }
 
 void ModulatorEditorPanel::setOwnerPath(magda::TrackId trackId,
@@ -847,6 +855,29 @@ void ModulatorEditorPanel::updateFromMod() {
 }
 
 void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
+    // Mapped-binding dot + learn-mode pulse on the visible rate slider, same
+    // visual language as LinkableTextSlider uses for plugin params.
+    {
+        auto& visSlider = currentMod_.tempoSync ? syncDivisionSlider_ : rateSlider_;
+        auto sb = visSlider.getBounds();
+        if (!sb.isEmpty() && hasRateMidiBinding_ && !isRateInMidiLearnMode_) {
+            constexpr float dotSize = 5.0f;
+            constexpr float margin = 3.0f;
+            auto r = sb.toFloat();
+            juce::Rectangle<float> dot(r.getRight() - margin - dotSize, r.getY() + margin, dotSize,
+                                       dotSize);
+            g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.85f));
+            g.fillEllipse(dot);
+        }
+        if (!sb.isEmpty() && isRateInMidiLearnMode_) {
+            float phase = std::fmod(
+                static_cast<float>(juce::Time::getMillisecondCounterHiRes() * 0.003), 1.0f);
+            float alpha = 0.7f + 0.3f * std::sin(phase * juce::MathConstants<float>::twoPi);
+            g.setColour(juce::Colour(0xFFFF6B35).withAlpha(alpha));
+            g.drawRoundedRectangle(sb.toFloat().reduced(0.5f), 2.0f, 1.5f);
+        }
+    }
+
     // Link-mode highlight on the visible rate slider — translucent fill in the
     // active source's accent (purple = macro, orange = mod), matching the
     // convention ParamSlotComponent uses on every other parameter slot.
@@ -1456,6 +1487,49 @@ void ModulatorEditorPanel::timerCallback() {
     }
 
     repaint();
+}
+
+void ModulatorEditorPanel::refreshRateMidiBindingState() {
+    bool newState = false;
+    if (currentMod_.id != magda::INVALID_MOD_ID) {
+        newState = magda::BindingRegistry::getInstance().hasActiveBindingForModParam(
+            ownerDevicePath_, currentMod_.id, /*modParamIndex=*/0);
+    }
+    if (newState != hasRateMidiBinding_) {
+        hasRateMidiBinding_ = newState;
+        repaint();
+    }
+}
+
+void ModulatorEditorPanel::bindingRegistryChanged(magda::BindingScope) {
+    refreshRateMidiBindingState();
+}
+
+void ModulatorEditorPanel::midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
+                                                 magda::StaticTarget::Owner owner, bool learning) {
+    if (owner != magda::StaticTarget::Owner::ModParam)
+        return;
+    bool isMe =
+        (path == ownerDevicePath_ && paramIndex == 0 && currentMod_.id != magda::INVALID_MOD_ID);
+    isRateInMidiLearnMode_ = learning && isMe;
+    repaint();
+}
+
+void ModulatorEditorPanel::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
+                                              magda::StaticTarget::Owner owner,
+                                              const magda::Binding&) {
+    if (owner != magda::StaticTarget::Owner::ModParam)
+        return;
+    if (path == ownerDevicePath_ && paramIndex == 0)
+        refreshRateMidiBindingState();
+}
+
+void ModulatorEditorPanel::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
+                                            magda::StaticTarget::Owner owner, int) {
+    if (owner != magda::StaticTarget::Owner::ModParam)
+        return;
+    if (path == ownerDevicePath_ && paramIndex == 0)
+        refreshRateMidiBindingState();
 }
 
 }  // namespace magda::daw::ui
