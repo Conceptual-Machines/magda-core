@@ -1966,8 +1966,9 @@ void AIChatConsoleContent::finishControllerGeneration(bool success, const juce::
 
                 const auto& dev = ports[idx];
 
-                // Single-controller-per-port: drop any existing controller
-                // (and its bindings) on this hardware port before adding ours.
+                // One enabled controller per port: any existing row on this
+                // port stays registered but loses its bindings, leaving the
+                // newly-added one as the active controller.
                 auto& controllerReg = magda::ControllerRegistry::getInstance();
                 auto& bindingReg = magda::BindingRegistry::getInstance();
                 for (const auto& existing : controllerReg.all()) {
@@ -1975,7 +1976,6 @@ void AIChatConsoleContent::finishControllerGeneration(bool success, const juce::
                         bindingReg.removeAllForController(magda::BindingScope::Global, existing.id);
                         bindingReg.removeAllForController(magda::BindingScope::Project,
                                                           existing.id);
-                        controllerReg.remove(existing.id);
                     }
                 }
 

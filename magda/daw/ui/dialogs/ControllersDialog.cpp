@@ -339,13 +339,13 @@ void ControllersDialog::onPortPicked(const ControllerProfile& profile,
     auto& controllerReg = ControllerRegistry::getInstance();
     auto& bindingReg = BindingRegistry::getInstance();
 
-    // Single-controller-per-port: if anything is already registered to this
-    // hardware port, drop it (and its bindings) before adding the new one.
+    // One enabled controller per port: any existing row on this port stays
+    // registered, but its bindings are dropped so it goes inactive. The new
+    // controller becomes the active one.
     for (const auto& existing : controllerReg.all()) {
         if (existing.inputPort == dev.identifier) {
             bindingReg.removeAllForController(BindingScope::Global, existing.id);
             bindingReg.removeAllForController(BindingScope::Project, existing.id);
-            controllerReg.remove(existing.id);
         }
     }
 
@@ -380,6 +380,7 @@ void ControllersDialog::onRowToggled(int row) {
         return;
 
     const auto& c = controllers_[static_cast<size_t>(row)];
+    auto& controllerReg = ControllerRegistry::getInstance();
     auto& bindingReg = BindingRegistry::getInstance();
 
     if (bindingReg.hasAnyBindingForController(c.id)) {
@@ -387,8 +388,15 @@ void ControllersDialog::onRowToggled(int row) {
         bindingReg.removeAllForController(BindingScope::Global, c.id);
         bindingReg.removeAllForController(BindingScope::Project, c.id);
     } else {
-        // Currently disabled — re-materialise the profile bindings against the
-        // current port and add them back.
+        // Currently disabled — first silence any other controller on the same
+        // port (one enabled per port), then re-materialise this profile's
+        // bindings and add them back.
+        for (const auto& other : controllerReg.all()) {
+            if (other.id == c.id || other.inputPort != c.inputPort)
+                continue;
+            bindingReg.removeAllForController(BindingScope::Global, other.id);
+            bindingReg.removeAllForController(BindingScope::Project, other.id);
+        }
         auto profileOpt = ControllerProfileRegistry::getInstance().findById(c.profileId);
         if (!profileOpt.has_value())
             return;

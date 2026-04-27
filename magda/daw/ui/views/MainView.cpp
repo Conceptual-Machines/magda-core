@@ -82,28 +82,31 @@ MainView::MainView(AudioEngine* audioEngine)
     ControllerRegistry::getInstance().loadFromConfig(config.getControllers());
     BindingRegistry::getInstance().loadGlobal(config.getGlobalBindings());
 
-    // Enforce single-controller-per-port. Older configs may carry multiple
-    // rows on the same hardware port (the dialog and AI flows used to allow
-    // it); keep the most recently added and drop the rest plus their bindings.
+    // Enforce one-enabled-controller-per-port. Multiple rows on the same
+    // hardware port are fine (different profiles for the same device), but
+    // only one should be firing at a time. Older configs may have ended up
+    // with bindings registered for several rows on the same port; walk
+    // newest-to-oldest and silence (drop bindings of) every row whose port
+    // already has an enabled neighbour.
     {
         auto& cReg = ControllerRegistry::getInstance();
         auto& bReg = BindingRegistry::getInstance();
         auto rows = cReg.all();
-        std::set<juce::String> seenPorts;
+        std::set<juce::String> portWithEnabled;
         bool changed = false;
-        // Walk newest-to-oldest so the keep-set picks the latest entry per port.
         for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
             if (it->inputPort.isEmpty())
                 continue;
-            if (!seenPorts.insert(it->inputPort).second) {
+            const bool hasBindings = bReg.hasAnyBindingForController(it->id);
+            if (!hasBindings)
+                continue;
+            if (!portWithEnabled.insert(it->inputPort).second) {
                 bReg.removeAllForController(BindingScope::Global, it->id);
                 bReg.removeAllForController(BindingScope::Project, it->id);
-                cReg.remove(it->id);
                 changed = true;
             }
         }
         if (changed) {
-            config.setControllers(cReg.saveToConfig());
             config.setGlobalBindings(bReg.saveGlobal());
             config.save();
         }
