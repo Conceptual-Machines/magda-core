@@ -252,6 +252,8 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    env:
+      NSIS_VERSION: "3.10"
     steps:
     - uses: actions/checkout@v4
       with:
@@ -275,43 +277,60 @@ jobs:
       with:
         arch: x64
 
+    # Ninja is shipped with the Visual Studio install on windows-latest, so
+    # we only need to provision NSIS. We pin a known version and download
+    # the zip directly — Chocolatey's community feed historically flakes
+    # (5xx, rate limits) and was blocking the release as recently as the
+    # rc0 attempt.
+    - name: Cache NSIS
+      uses: actions/cache@v4
+      id: cache-nsis
+      with:
+        path: ${{ runner.temp }}\nsis-${{ env.NSIS_VERSION }}
+        key: nsis-${{ env.NSIS_VERSION }}
+
     - name: Install Ninja and NSIS
       shell: powershell
       run: |
-        # Both tools are typically pre-installed on windows-latest runners;
-        # only fall back to Chocolatey if missing, since the community feed
-        # flakes (HTTP 499) intermittently and blocks the release otherwise.
-        $nsisPath = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
-        $needNinja = -not (Get-Command ninja -ErrorAction SilentlyContinue)
-        $needNsis  = -not (Test-Path $nsisPath) `
-                     -and -not (Get-Command makensis -ErrorAction SilentlyContinue)
-
-        if ($needNinja -or $needNsis) {
-          $packages = @()
-          if ($needNinja) { $packages += "ninja" }
-          if ($needNsis)  { $packages += "nsis" }
-          Write-Output "Installing via Chocolatey: $($packages -join ', ')"
-          choco install $packages -y
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Chocolatey install failed with exit code $LASTEXITCODE"
-            exit $LASTEXITCODE
-          }
-        } else {
-          Write-Output "Ninja and NSIS already present; skipping Chocolatey"
-        }
-
-        # Export the resolved NSIS directory so later steps find makensis
-        # regardless of whether ProgramFiles(x86) is on C: or elsewhere.
-        $makensis = Get-Command makensis -ErrorAction SilentlyContinue
-        if ($makensis) {
-          $nsisDir = Split-Path -Parent $makensis.Source
-        } elseif (Test-Path $nsisPath) {
-          $nsisDir = Split-Path -Parent $nsisPath
-        } else {
-          Write-Error "NSIS not found after install attempt"
+        # Ninja: prefer whatever the VS install ships; only bail if missing.
+        if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+          Write-Error "ninja not found on PATH (expected via Visual Studio install)"
           exit 1
         }
-        echo "$nsisDir" >> $env:GITHUB_PATH
+
+        # NSIS: portable zip from SourceForge, pinned. Two mirrors with a
+        # small backoff so a transient 5xx on one doesn't kill the build.
+        $nsisDir = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION"
+        $makensis = Join-Path $nsisDir "nsis-$env:NSIS_VERSION\makensis.exe"
+        if (-not (Test-Path $makensis)) {
+          $zip = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION.zip"
+          $urls = @(
+            "https://prdownloads.sourceforge.net/nsis/nsis-$env:NSIS_VERSION.zip",
+            "https://sourceforge.net/projects/nsis/files/NSIS%203/$env:NSIS_VERSION/nsis-$env:NSIS_VERSION.zip/download"
+          )
+          $ok = $false
+          foreach ($u in $urls) {
+            try {
+              Write-Output "Downloading NSIS $env:NSIS_VERSION from $u"
+              Invoke-WebRequest -Uri $u -OutFile $zip -MaximumRetryCount 3 -RetryIntervalSec 5
+              if ((Get-Item $zip).Length -gt 1MB) { $ok = $true; break }
+            } catch {
+              Write-Output "Mirror failed: $($_.Exception.Message)"
+              Start-Sleep -Seconds 5
+            }
+          }
+          if (-not $ok) {
+            Write-Error "All NSIS mirrors failed"
+            exit 1
+          }
+          Expand-Archive -Path $zip -DestinationPath $nsisDir -Force
+        } else {
+          Write-Output "NSIS $env:NSIS_VERSION already cached"
+        }
+
+        $bin = Split-Path -Parent $makensis
+        echo "$bin" >> $env:GITHUB_PATH
+        Write-Output "NSIS on PATH: $bin"
 
     - name: Configure CMake
       shell: powershell
