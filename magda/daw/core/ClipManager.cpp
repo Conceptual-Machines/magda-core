@@ -270,8 +270,18 @@ void ClipManager::resetLoopedClipLength(ClipInfo& clip) {
 void ClipManager::moveClip(ClipId clipId, double newStartTime, double tempo) {
     if (auto* clip = getClip(clipId)) {
         ClipOperations::moveContainer(*clip, newStartTime);
-        if (tempo > 0.0)
-            clip->startBeats = clip->startTime * tempo / 60.0;
+        // Always pull the live project tempo when re-deriving startBeats —
+        // callers who relied on the default 120 BPM were silently corrupting
+        // startBeats whenever the project was at any other tempo, and the
+        // damage only surfaced on the next SetTempoEvent (which re-derives
+        // startTime from this stale startBeats and snaps clips to the wrong
+        // position). The `tempo` param is kept for the rare in-test caller
+        // that genuinely wants to override; production code should pass <= 0
+        // (or omit it) to fall back to ProjectManager.
+        double bpm =
+            tempo > 0.0 ? tempo : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+        if (bpm > 0.0)
+            clip->startBeats = clip->startTime * bpm / 60.0;
         // Notes maintain their relative position within the clip (startBeat unchanged)
         // so they move with the clip on the timeline
         notifyClipPropertyChanged(clipId);
