@@ -183,7 +183,14 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     : DocumentWindow("MAGDA", DarkTheme::getBackgroundColour(), DocumentWindow::allButtons),
       externalAudioEngine_(audioEngine) {
     juce::Logger::writeToLog("[MainWindow] Constructor started");
+#if JUCE_LINUX
+    // KWin/Wayland clips the top of the client area for XWayland windows that
+    // request native decorations, hiding the menu bar. JUCE-drawn decorations
+    // lay out the menu correctly on every WM.
+    setUsingNativeTitleBar(false);
+#else
     setUsingNativeTitleBar(true);
+#endif
     setResizable(true, true);
 
     juce::Logger::writeToLog("[MainWindow] Creating MainComponent...");
