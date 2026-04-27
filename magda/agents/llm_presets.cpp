@@ -22,7 +22,7 @@ const std::vector<LLMPreset>& getBuiltInPresets() {
             {
                 {role::ROUTER, {provider::OPENAI_CHAT, "", "", model::GPT_4_1}},
                 {role::COMMAND, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
-                {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
+                {role::MUSIC, {provider::OPENAI_RESPONSES, "", "", model::GPT_5_5}},
                 {role::CONTROLLER, {provider::OPENAI_RESPONSES, "", "", model::GPT_5}},
             },
         },
