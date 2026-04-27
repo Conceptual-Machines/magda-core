@@ -407,6 +407,7 @@
     "title": "控制器",
     "my_controllers": "我的控制器",
     "add_profile": "+ 添加配置文件",
+    "upload_profile": "上传配置文件…",
     "remove": "移除",
     "show_in_finder": "在 Finder 中显示配置文件",
     "remove_confirm_title": "移除控制器？",
@@ -416,6 +417,17 @@
     "no_midi_inputs": "没有可用的 MIDI 输入。",
     "connected": "已连接",
     "not_connected": "未连接",
-    "disabled": "已禁用"
+    "disabled": "已禁用",
+    "upload_invalid_json": "该文件不是有效的 JSON。",
+    "upload_invalid_profile": "该 JSON 不是有效的控制器配置文件。",
+    "upload_validation_failed": "配置文件存在需先修复的问题：",
+    "validation": {
+      "duplicate_control_id": "controlId 重复：{0}",
+      "unknown_default_binding_control_id": "defaultBinding 引用了未知的 controlId：{0}"
+    },
+    "upload_overwrite": "已存在 id 为「{0}」的配置文件。是否替换？",
+    "upload_copy_failed": "无法将配置文件复制到你的控制器文件夹。",
+    "upload_create_dir_failed": "无法创建控制器文件夹：\n{0}",
+    "upload_success": "已导入配置文件「{0}」。"
   }
 }
