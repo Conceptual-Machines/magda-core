@@ -336,11 +336,24 @@ void ControllersDialog::onProfilePicked(const ControllerProfile& profile) {
 
 void ControllersDialog::onPortPicked(const ControllerProfile& profile,
                                      const juce::MidiDeviceInfo& dev) {
+    auto& controllerReg = ControllerRegistry::getInstance();
+    auto& bindingReg = BindingRegistry::getInstance();
+
+    // Single-controller-per-port: if anything is already registered to this
+    // hardware port, drop it (and its bindings) before adding the new one.
+    for (const auto& existing : controllerReg.all()) {
+        if (existing.inputPort == dev.identifier) {
+            bindingReg.removeAllForController(BindingScope::Global, existing.id);
+            bindingReg.removeAllForController(BindingScope::Project, existing.id);
+            controllerReg.remove(existing.id);
+        }
+    }
+
     auto mat = materialiseControllerFromProfile(profile, dev.identifier, {}, dev.name);
 
-    ControllerRegistry::getInstance().add(mat.controller);
+    controllerReg.add(mat.controller);
     for (const auto& b : mat.bindings)
-        BindingRegistry::getInstance().add(BindingScope::Global, b);
+        bindingReg.add(BindingScope::Global, b);
 
     persist();
     rebuildList();
