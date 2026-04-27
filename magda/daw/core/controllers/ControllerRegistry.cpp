@@ -104,10 +104,20 @@ std::optional<Controller> ControllerRegistry::find(const ControllerId& id) const
 }
 
 std::optional<Controller> ControllerRegistry::findByInputPort(const juce::String& portId) const {
-    for (const auto& c : controllers_)
-        if (c.inputPort == portId)
+    // Prefer an enabled controller when multiple rows share a port (e.g. the
+    // user has two profiles registered on the same hardware, only one active).
+    // Without this preference the caller's `enabled` check would silently drop
+    // the MIDI as soon as a disabled sibling happened to come first.
+    std::optional<Controller> disabledMatch;
+    for (const auto& c : controllers_) {
+        if (c.inputPort != portId)
+            continue;
+        if (c.enabled)
             return c;
-    return std::nullopt;
+        if (!disabledMatch.has_value())
+            disabledMatch = c;
+    }
+    return disabledMatch;
 }
 
 bool ControllerRegistry::isControllerInputPort(const juce::String& portId) const {
