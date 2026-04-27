@@ -20,6 +20,8 @@
 
 MAGDA is a free, open-source DAW with AI integrated from the ground up. Built on C++20, JUCE, and Tracktion Engine.
 
+> **Heads up:** MAGDA is in early v0. Development started in January 2026 — internal iteration first, public release more recently — and is very much active. Expect bugs and missing pieces. The best way to help the project is to [file an issue on GitHub](https://github.com/Conceptual-Machines/magda-core/issues).
+
 ### Features
 
 - **Hybrid tracks**: every track hosts both audio and MIDI clips
