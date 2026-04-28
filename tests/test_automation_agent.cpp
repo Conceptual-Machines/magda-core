@@ -4,6 +4,7 @@
 #include "magda/agents/automation_agent.hpp"
 #include "magda/agents/automation_executor.hpp"
 #include "magda/agents/automation_parser.hpp"
+#include "magda/daw/api/magda_api_live.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
@@ -161,7 +162,8 @@ TEST_CASE("AutomationExecutor: target=volume creates TrackVolume lane on selecte
     SelectionManager::getInstance().selectTrack(trackId);
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     auto ir = parseOrFail(parser, "AUTO line start=0 end=4 from=0 to=1 target=volume");
     REQUIRE(exec.execute(ir));
 
@@ -191,7 +193,8 @@ TEST_CASE("AutomationExecutor: target=pan creates a separate TrackPan lane",
     SelectionManager::getInstance().selectTrack(trackId);
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "AUTO line start=0 end=4 from=0 to=1 target=volume")));
     REQUIRE(exec.execute(parseOrFail(parser, "AUTO line start=0 end=4 from=0 to=1 target=pan")));
 
@@ -217,7 +220,8 @@ TEST_CASE("AutomationExecutor: target=volume is a singleton (two runs = one lane
     SelectionManager::getInstance().selectTrack(trackId);
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "AUTO line start=0 end=4 from=0 to=1 target=volume")));
     REQUIRE(exec.execute(parseOrFail(parser, "AUTO line start=4 end=8 from=1 to=0 target=volume")));
 
@@ -232,7 +236,8 @@ TEST_CASE("AutomationExecutor: target=selected falls back to TrackVolume with no
     SelectionManager::getInstance().selectTrack(trackId);
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     REQUIRE(
         exec.execute(parseOrFail(parser, "AUTO line start=0 end=4 from=0 to=1 target=selected")));
 
@@ -247,7 +252,8 @@ TEST_CASE("AutomationExecutor: target=volume with no track selected fails",
     resetState();
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     REQUIRE_FALSE(
         exec.execute(parseOrFail(parser, "AUTO line start=0 end=4 from=0 to=1 target=volume")));
     REQUIRE(exec.getError().isNotEmpty());
@@ -263,7 +269,8 @@ TEST_CASE("AutomationExecutor: target=laneId:N writes to that exact lane",
     auto laneId = AutomationManager::getInstance().createLane(t, AutomationLaneType::Absolute);
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     auto ir = parseOrFail(parser, "AUTO line start=0 end=4 from=0 to=1 target=laneId:" +
                                       juce::String(laneId));
     REQUIRE(exec.execute(ir));
@@ -280,7 +287,8 @@ TEST_CASE("AutomationExecutor: target=laneId:INVALID fails", "[automation][execu
     resetState();
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     REQUIRE_FALSE(exec.execute(
         parseOrFail(parser, "AUTO line start=0 end=4 from=0 to=1 target=laneId:9999")));
     REQUIRE(exec.getError().isNotEmpty());
@@ -297,7 +305,8 @@ TEST_CASE("AutomationExecutor: line writes exactly 2 endpoints with correct valu
     SelectionManager::getInstance().selectTrack(trackId);
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     REQUIRE(
         exec.execute(parseOrFail(parser, "AUTO line start=0 end=8 from=0.2 to=0.8 target=volume")));
 
@@ -321,7 +330,8 @@ TEST_CASE("AutomationExecutor: sin writes many points bounded by [min,max]",
     SelectionManager::getInstance().selectTrack(trackId);
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     REQUIRE(exec.execute(
         parseOrFail(parser, "AUTO sin start=0 end=8 min=0.1 max=0.9 cycles=2 target=volume")));
 
@@ -343,7 +353,8 @@ TEST_CASE("AutomationExecutor: freeform writes the exact provided points",
     SelectionManager::getInstance().selectTrack(trackId);
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     REQUIRE(exec.execute(
         parseOrFail(parser, "AUTO freeform points=(0,0.1)(2,0.5)(4,0.9) target=volume")));
 
@@ -369,7 +380,8 @@ TEST_CASE("AutomationExecutor: clear empties the lane", "[automation][executor][
     SelectionManager::getInstance().selectTrack(trackId);
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     REQUIRE(exec.execute(
         parseOrFail(parser, "AUTO sin start=0 end=8 min=0 max=1 cycles=2 target=volume")));
 
@@ -389,7 +401,8 @@ TEST_CASE("AutomationExecutor: values are clamped into [0, 1]", "[automation][ex
     SelectionManager::getInstance().selectTrack(trackId);
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
     REQUIRE(exec.execute(
         parseOrFail(parser, "AUTO freeform points=(0,-0.5)(2,1.5)(4,0.5) target=volume")));
 

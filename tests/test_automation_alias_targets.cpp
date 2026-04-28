@@ -2,6 +2,7 @@
 
 #include "magda/agents/automation_executor.hpp"
 #include "magda/agents/automation_parser.hpp"
+#include "magda/daw/api/magda_api_live.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
@@ -106,7 +107,8 @@ TEST_CASE("AutomationExecutor: unresolvable @alias target fails gracefully",
     resetState();
 
     AutomationParser parser;
-    AutomationExecutor exec;
+    MagdaApiLive api;
+    AutomationExecutor exec(api);
 
     // No registry entry for @ghost.param, no chain context — resolution fails.
     auto ir = parseOrFail(parser, "AUTO sin start=0 end=4 min=0 max=1 target=@ghost.param");
