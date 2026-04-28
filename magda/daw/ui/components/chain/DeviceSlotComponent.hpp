@@ -68,10 +68,10 @@ class DeviceSlotComponent : public NodeComponent,
     static constexpr int BASE_SLOT_WIDTH = 450;  // Maximum width (8 columns)
     static constexpr int NUM_PARAMS_PER_PAGE = 32;
     static constexpr int PARAMS_PER_ROW = 8;  // Maximum columns
-    static constexpr int PARAM_CELL_WIDTH = 48;
+    static constexpr int PARAM_CELL_WIDTH = 54;
     static constexpr int PARAM_CELL_HEIGHT = 24;
     static constexpr int PAGINATION_HEIGHT = 18;
-    static constexpr int CONTENT_HEADER_HEIGHT = 18;
+    static constexpr int CONTENT_HEADER_HEIGHT = 26;
     DeviceSlotComponent(const magda::DeviceInfo& device);
     ~DeviceSlotComponent() override;
 
@@ -266,9 +266,16 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;
 
-    static constexpr int METER_STRIP_WIDTH = 10;
+    static constexpr int METER_STRIP_WIDTH = 18;  // wide enough for slider thumb overlay
     magda::LevelMeter levelMeter_;
     magda::MidiNoteStrip midiNoteStrip_;
+
+    // MAGDA preset menu button (lives in top header, replaces gainLabel_ slot)
+    std::unique_ptr<magda::SvgButton> presetButton_;
+    // Native plugin programs dropdown (lives in second/content header, plugin-hosted only)
+    std::unique_ptr<juce::ComboBox> programsCombo_;
+    // Vertical gain slider overlaid on the meter
+    std::unique_ptr<juce::Slider> gainSlider_;
     daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;
     daw::audio::StepSequencerPlugin* stepSeqPlugin_ = nullptr;
     int lastArpNote_ = -1;
