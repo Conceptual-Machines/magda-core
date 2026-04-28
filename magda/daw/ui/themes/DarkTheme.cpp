@@ -28,6 +28,7 @@ void DarkTheme::applyToLookAndFeel(juce::LookAndFeel_V4& laf) {
     laf.setColour(juce::TextEditor::backgroundColourId, getColour(SURFACE));
     laf.setColour(juce::TextEditor::outlineColourId, getColour(BORDER));
     laf.setColour(juce::TextEditor::focusedOutlineColourId, getColour(ACCENT_BLUE));
+    laf.setColour(juce::CaretComponent::caretColourId, getColour(TEXT_PRIMARY));
 
     // Button colors
     laf.setColour(juce::TextButton::buttonColourId, getColour(BUTTON_NORMAL));
