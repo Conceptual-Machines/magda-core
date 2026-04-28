@@ -75,6 +75,10 @@ class ControllersDialog : public juce::Component,
     juce::Label sectionLabel_;
     juce::TextButton addButton_;
     juce::TextButton uploadButton_;
+    // Lua controller scripts (issue #592)
+    juce::TextButton reloadLuaButton_;
+    juce::TextButton openScriptsFolderButton_;
+    juce::Label luaStatusLabel_;
     ControllerListModel listModel_;
     std::unique_ptr<juce::ListBox> list_;
     std::unique_ptr<juce::FileChooser> uploadChooser_;
@@ -97,6 +101,11 @@ class ControllersDialog : public juce::Component,
     void onRowRemoveRequested(int row);
 
     bool isControllerConnected(const Controller& c) const;
+
+    // Lua controller scripts
+    void onReloadLuaClicked();
+    void onOpenScriptsFolderClicked();
+    void refreshLuaStatus();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ControllersDialog)
 };

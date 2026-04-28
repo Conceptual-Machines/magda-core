@@ -7,9 +7,12 @@
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
+#include "engine/TracktionEngineWrapper.hpp"
+#include "magda/scripting/LuaScriptStore.hpp"
 
 namespace magda {
 
@@ -101,6 +104,22 @@ ControllersDialog::ControllersDialog() {
     uploadButton_.onClick = [this]() { onUploadClicked(); };
     addAndMakeVisible(uploadButton_);
 
+    // Lua controller scripts row (issue #592)
+    reloadLuaButton_.setButtonText("Reload Lua Script");
+    reloadLuaButton_.onClick = [this]() { onReloadLuaClicked(); };
+    addAndMakeVisible(reloadLuaButton_);
+
+    openScriptsFolderButton_.setButtonText("Open Scripts Folder");
+    openScriptsFolderButton_.onClick = [this]() { onOpenScriptsFolderClicked(); };
+    addAndMakeVisible(openScriptsFolderButton_);
+
+    luaStatusLabel_.setColour(juce::Label::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    luaStatusLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    luaStatusLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(luaStatusLabel_);
+    refreshLuaStatus();
+
     // Controllers list
     listModel_.controllers = &controllers_;
     listModel_.isConnected = [this](const Controller& c) { return isControllerConnected(c); };
@@ -156,6 +175,18 @@ void ControllersDialog::resized() {
     uploadButton_.setBounds(headerRow.removeFromRight(uploadBtnW));
     sectionLabel_.setBounds(headerRow);
     bounds.removeFromTop(6);
+
+    // Lua scripts row at the bottom of the dialog.
+    const int luaRowH = 30;
+    auto luaRow = bounds.removeFromBottom(luaRowH);
+    bounds.removeFromBottom(6);
+    const int reloadW = 140;
+    const int openW = 160;
+    reloadLuaButton_.setBounds(luaRow.removeFromRight(reloadW));
+    luaRow.removeFromRight(btnGap);
+    openScriptsFolderButton_.setBounds(luaRow.removeFromRight(openW));
+    luaRow.removeFromRight(btnGap);
+    luaStatusLabel_.setBounds(luaRow);
 
     list_->setBounds(bounds);
 }
@@ -513,6 +544,50 @@ class SelfClosingDialogWindow : public juce::DialogWindow {
     }
 };
 }  // namespace
+
+// -----------------------------------------------------------------------------
+// Lua controller scripts
+// -----------------------------------------------------------------------------
+
+void ControllersDialog::onReloadLuaClicked() {
+    auto* engine = dynamic_cast<TracktionEngineWrapper*>(
+        TrackManager::getInstance().getAudioEngine());
+    if (engine == nullptr) {
+        luaStatusLabel_.setText("Engine not ready", juce::dontSendNotification);
+        return;
+    }
+    if (engine->reloadLuaScript()) {
+        refreshLuaStatus();
+    } else {
+        auto name = engine->getCurrentLuaScriptName();
+        if (name.isEmpty())
+            luaStatusLabel_.setText("No script in scripts folder",
+                                    juce::dontSendNotification);
+        else
+            luaStatusLabel_.setText("Reload failed (see log)",
+                                    juce::dontSendNotification);
+    }
+}
+
+void ControllersDialog::onOpenScriptsFolderClicked() {
+    scripting::LuaScriptStore store;
+    store.ensureExists();
+    store.root().revealToUser();
+}
+
+void ControllersDialog::refreshLuaStatus() {
+    auto* engine = dynamic_cast<TracktionEngineWrapper*>(
+        TrackManager::getInstance().getAudioEngine());
+    if (engine == nullptr) {
+        luaStatusLabel_.setText("Lua: engine not ready", juce::dontSendNotification);
+        return;
+    }
+    auto name = engine->getCurrentLuaScriptName();
+    if (name.isEmpty())
+        luaStatusLabel_.setText("Lua: no script loaded", juce::dontSendNotification);
+    else
+        luaStatusLabel_.setText("Lua: " + name, juce::dontSendNotification);
+}
 
 void ControllersDialog::showDialog(juce::Component* /*parent*/) {
     auto* dialog = new ControllersDialog();

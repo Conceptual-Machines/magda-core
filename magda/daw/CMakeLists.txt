@@ -890,6 +890,7 @@ target_link_libraries(magda_daw_app
     PRIVATE
     magda_daw
     magda_agents
+    magda_scripting
     MagdaAssets
     juce::juce_gui_basics
     juce::juce_gui_extra

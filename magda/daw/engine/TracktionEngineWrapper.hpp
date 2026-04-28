@@ -19,11 +19,16 @@ namespace magda {
 
 // Forward declarations
 class AudioBridge;
+class MagdaApi;
 class MidiBridge;
 class PluginScanCoordinator;
 class PluginWindowManager;
 class SessionClipScheduler;
 class SessionRecorder;
+
+namespace scripting {
+class LuaController;
+}
 
 /**
  * @brief Tracktion Engine implementation of AudioEngine
@@ -237,6 +242,19 @@ class TracktionEngineWrapper : public AudioEngine,
     const tracktion::Edit* getEdit() const {
         return currentEdit_.get();
     }
+
+    // =========================================================================
+    // Lua Controller Scripts (issue #592)
+    // =========================================================================
+
+    /** Reload the Lua controller script from `~/MAGDA/Scripts/Controllers/`.
+     *  v1: loads the first .lua file found alphabetically. Returns true on
+     *  success, or false (with juce::Logger output) on parse / file errors.
+     *  No-op if no script files are present. */
+    bool reloadLuaScript();
+
+    /** Filename of the currently active Lua script, or empty if none. */
+    juce::String getCurrentLuaScriptName() const;
 
     // =========================================================================
     // Device Loading State
@@ -461,6 +479,13 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // MIDI bridge for MIDI device management and routing
     std::unique_ptr<MidiBridge> midiBridge_;
+
+    // Lua-script-driven MIDI controller. Holds its own MagdaApiLive so the
+    // Lua bindings can drive DAW state without depending on the AI Chat
+    // Console panel that owns the legacy MagdaApiLive instance. Both wrap
+    // the same singletons, so there's no state divergence.
+    std::unique_ptr<MagdaApi> luaMagdaApi_;
+    std::unique_ptr<scripting::LuaController> luaController_;
 
     // Plugin window manager for safe window lifecycle
     std::unique_ptr<PluginWindowManager> pluginWindowManager_;

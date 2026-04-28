@@ -83,6 +83,8 @@ set(TEST_SOURCES
     test_lua_runtime.cpp
     # Lua bindings tests (issue #30 — bind MagdaApi)
     test_magda_api_lua_bindings.cpp
+    # Lua controller tests (issue #592 — MIDI dispatch)
+    test_lua_controller.cpp
 )
 
 # Create test executable
