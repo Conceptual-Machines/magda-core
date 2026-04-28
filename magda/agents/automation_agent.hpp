@@ -27,7 +27,7 @@ class MagdaApi;
  */
 class AutomationAgent {
   public:
-    explicit AutomationAgent(MagdaApi& api) : executor_(api) {}
+    explicit AutomationAgent(MagdaApi& api) : api_(api), executor_(api) {}
 
     struct GenerateResult {
         std::string rawOutput;
@@ -57,6 +57,7 @@ class AutomationAgent {
     static const char* getSystemPrompt();
 
   private:
+    MagdaApi& api_;
     AutomationParser parser_;
     AutomationExecutor executor_;
     std::atomic<bool> shouldStop_{false};

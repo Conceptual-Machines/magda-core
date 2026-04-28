@@ -178,13 +178,8 @@ class Interpreter {
      * Includes the user's current track/clip selection by default so the LLM
      * can target it. Controlled by setContextEnabled(): when false, the
      * snapshot omits selection info so the LLM has no bias signal.
-     *
-     * NOTE: still reads MAGDA singletons internally — migration to
-     * MagdaApi is deferred to a follow-up PR (touches CommandAgent which
-     * doesn't yet hold a MagdaApi&). The instance Interpreter migrated
-     * in this PR doesn't depend on this static helper.
      */
-    static juce::String buildStateSnapshot();
+    static juce::String buildStateSnapshot(MagdaApi& api);
 
     /** Toggle whether the state snapshot exposes the UI selection to the LLM. */
     static void setContextEnabled(bool enabled);
