@@ -6,7 +6,7 @@
 
 namespace magda {
 
-DAWAgent::DAWAgent() = default;
+DAWAgent::DAWAgent(MagdaApi& api) : api_(api), executor_(api), interpreter_(api) {}
 DAWAgent::~DAWAgent() = default;
 
 std::map<std::string, std::string> DAWAgent::getCapabilities() const {
@@ -122,7 +122,7 @@ DAWAgent::GenerateResult DAWAgent::generate(const std::string& message) {
     auto client = createLLMClient(agentConfig, "music");
 
     // Build state snapshot for context
-    auto stateJson = dsl::Interpreter::buildStateSnapshot();
+    auto stateJson = dsl::Interpreter::buildStateSnapshot(api_);
 
     // Build the full prompt with system prompt + state
     auto systemPrompt = juce::String::fromUTF8(getCompactSystemPrompt());
@@ -202,7 +202,7 @@ DAWAgent::DSLResult DAWAgent::generateDSL(const std::string& message) {
     pc.provider = llm::Provider::OpenAIResponses;
     auto client = llm::LLMClientFactory::create(pc);
 
-    auto stateJson = dsl::Interpreter::buildStateSnapshot();
+    auto stateJson = dsl::Interpreter::buildStateSnapshot(api_);
     auto systemPrompt = juce::String::fromUTF8(dsl::getToolDescription());
     if (stateJson.isNotEmpty())
         systemPrompt += "\n\nCurrent DAW state:\n" + stateJson;

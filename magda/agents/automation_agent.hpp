@@ -11,6 +11,8 @@
 
 namespace magda {
 
+class MagdaApi;
+
 /**
  * @brief Automation agent — emits automation curves on a selected lane.
  *
@@ -21,10 +23,12 @@ namespace magda {
  *   1. Call LLM with system prompt describing AUTO grammar + current
  *      selection context
  *   2. Parse response into AutoInstruction IR
- *   3. Execute against AutomationManager (must be on message thread)
+ *   3. Execute against the MagdaApi automation surface (message thread)
  */
 class AutomationAgent {
   public:
+    explicit AutomationAgent(MagdaApi& api) : api_(api), executor_(api) {}
+
     struct GenerateResult {
         std::string rawOutput;
         std::vector<AutoInstruction> instructions;
@@ -53,6 +57,7 @@ class AutomationAgent {
     static const char* getSystemPrompt();
 
   private:
+    MagdaApi& api_;
     AutomationParser parser_;
     AutomationExecutor executor_;
     std::atomic<bool> shouldStop_{false};

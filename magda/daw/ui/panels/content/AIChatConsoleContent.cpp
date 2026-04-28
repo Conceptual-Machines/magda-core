@@ -13,10 +13,12 @@
 #include "../../../../agents/controller_profile_agent.hpp"
 #include "../../../../agents/daw_agent.hpp"
 #include "../../../../agents/dsl_interpreter.hpp"
+#include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_presets.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/router_agent.hpp"
+#include "../../../api/magda_api_live.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/SelectionManager.hpp"
@@ -484,7 +486,7 @@ void AIChatConsoleContent::RequestThread::run() {
                 // Execute DSL from command agent
                 int commandClipId = -1;
                 if (!dsl.empty()) {
-                    magda::dsl::Interpreter interpreter;
+                    magda::dsl::Interpreter interpreter(*safeThis->magdaApi_);
                     if (interpreter.execute(dsl.c_str())) {
                         auto results = interpreter.getResults().toStdString();
                         response = results.empty() ? "OK" : results;
@@ -501,7 +503,7 @@ void AIChatConsoleContent::RequestThread::run() {
                             response += "\n";
                         response += musicDesc;
                     }
-                    magda::CompactExecutor executor;
+                    magda::CompactExecutor executor(*safeThis->magdaApi_);
                     // Hand the command agent's freshly-created clip (if any)
                     // explicitly to the music executor. Otherwise it will
                     // auto-create a new clip — we never want it to silently
@@ -541,7 +543,7 @@ void AIChatConsoleContent::RequestThread::run() {
 
                 // Execute IR from automation agent
                 if (!autoIR.empty()) {
-                    magda::AutomationExecutor autoExec;
+                    magda::AutomationExecutor autoExec(*safeThis->magdaApi_);
                     if (autoExec.execute(autoIR)) {
                         auto results = autoExec.getResults().toStdString();
                         if (!response.empty())
@@ -881,13 +883,18 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // Register for config changes (e.g. preset changed in settings dialog)
     magda::Config::getInstance().addListener(this);
 
+    // Create the live MagdaApi facade once. Agents take a MagdaApi& and
+    // route DAW reads/writes through it instead of the singletons; the
+    // facade outlives every agent because it's a member of this panel.
+    magdaApi_ = std::make_unique<magda::MagdaApiLive>();
+
     // Create agents
-    agent_ = std::make_unique<magda::DAWAgent>();  // legacy DSL REPL
+    agent_ = std::make_unique<magda::DAWAgent>(*magdaApi_);  // legacy DSL REPL
     agent_->start();
     routerAgent_ = std::make_unique<magda::RouterAgent>();
-    commandAgent_ = std::make_unique<magda::CommandAgent>();
+    commandAgent_ = std::make_unique<magda::CommandAgent>(*magdaApi_);
     musicAgent_ = std::make_unique<magda::MusicAgent>();
-    automationAgent_ = std::make_unique<magda::AutomationAgent>();
+    automationAgent_ = std::make_unique<magda::AutomationAgent>(*magdaApi_);
     controllerAgent_ = std::make_unique<magda::ControllerProfileAgent>();
 }
 
@@ -978,7 +985,7 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
         auto dslCode = text.trimStart().substring(5).trim();
         appendToChat(juce::String::charToString(0x25CF) + " " + text);
 
-        magda::dsl::Interpreter interpreter;
+        magda::dsl::Interpreter interpreter(*magdaApi_);
         bool success = interpreter.execute(dslCode.toRawUTF8());
 
         if (success) {
@@ -1376,7 +1383,7 @@ void AIChatConsoleContent::executeDSL() {
     }
 
     // Execute
-    magda::dsl::Interpreter interpreter;
+    magda::dsl::Interpreter interpreter(*magdaApi_);
     bool success = interpreter.execute(code.toRawUTF8());
 
     if (success) {
@@ -1556,24 +1563,13 @@ void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
 void AIChatConsoleContent::buildAliasList() {
     allAliases_.clear();
 
-    // Internal plugins
-    auto addInternal = [this](const juce::String& name) {
-        allAliases_.push_back({PluginBrowserInfo::generateAlias(name), name});
-    };
-    addInternal("Test Tone");
-    addInternal("4OSC Synth");
-    addInternal("Equaliser");
-    addInternal("Compressor");
-    addInternal("Reverb");
-    addInternal("Delay");
-    addInternal("Chorus");
-    addInternal("Phaser");
-    addInternal("Filter");
-    addInternal("Pitch Shift");
-    addInternal("IR Reverb");
-    addInternal("Utility");
-    addInternal(juce::String(audio::MagdaSamplerPlugin::getPluginName()));
-    addInternal(juce::String(audio::DrumGridPlugin::getPluginName()));
+    // Internal plugins — single source of truth in internal_plugins.hpp,
+    // shared with the DSL interpreter and CompactExecutor so the autocomplete
+    // dropdown lists exactly the aliases the agent layer accepts.
+    for (const auto& entry : magda::getInternalPlugins()) {
+        allAliases_.push_back(
+            {PluginBrowserInfo::generateAlias(entry.displayName), entry.displayName});
+    }
 
     // External plugins from KnownPluginList
     if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(

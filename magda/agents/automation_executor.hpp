@@ -8,17 +8,21 @@
 
 namespace magda {
 
+class MagdaApi;
+
 /**
- * @brief Executes AutomationAgent IR against AutomationManager.
+ * @brief Executes AutomationAgent IR against the MagdaApi automation surface.
  *
- * Resolves the "selected" target from SelectionManager, generates shape
- * points in beats, and writes them via AutomationManager::addPoint.
+ * Resolves the "selected" target via the host's selection state, generates
+ * shape points in beats, and writes them through MagdaApi::automation().
  *
- * MUST be called on the message thread (touches AutomationManager which
- * notifies UI listeners).
+ * MUST be called on the message thread (host writes ultimately notify UI
+ * listeners).
  */
 class AutomationExecutor {
   public:
+    explicit AutomationExecutor(MagdaApi& api) : api_(api) {}
+
     /** Run all instructions. Returns true on success. */
     bool execute(const std::vector<AutoInstruction>& instructions);
 
@@ -30,6 +34,7 @@ class AutomationExecutor {
     }
 
   private:
+    MagdaApi& api_;
     juce::String error_;
     juce::String results_;
 };

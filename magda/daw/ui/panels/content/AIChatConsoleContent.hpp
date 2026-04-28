@@ -20,6 +20,7 @@ class AutomationAgent;
 class CommandAgent;
 class ControllerProfileAgent;
 class DAWAgent;
+class MagdaApiLive;
 class MusicAgent;
 class RouterAgent;
 class SvgButton;
@@ -111,6 +112,14 @@ class AIChatConsoleContent : public PanelContent,
     // KeyListener — intercept arrow keys for autocomplete navigation
     using juce::Component::keyPressed;  // unhide 1-param overload
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
+
+    // Live MagdaApi backing the agent layer. Owned by this panel so it
+    // outlives every agent we hand it to. Every agent the chat creates
+    // (DAWAgent, CommandAgent, MusicAgent, AutomationAgent, ...) is
+    // constructed with this api as its DAW backend; the inline executors
+    // used in the request-thread lambda do the same via
+    // *safeThis->magdaApi_.
+    std::unique_ptr<magda::MagdaApiLive> magdaApi_;
 
     std::unique_ptr<magda::DAWAgent> agent_;  // kept for legacy DSL REPL
     std::unique_ptr<magda::RouterAgent> routerAgent_;

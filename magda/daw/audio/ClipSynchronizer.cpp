@@ -293,8 +293,8 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                     }
 
                 }  // if (teClip)
-            }      // else (already synced)
-        }          // if (sceneIndex >= 0)
+            }  // else (already synced)
+        }  // if (sceneIndex >= 0)
         return;
     }
 
