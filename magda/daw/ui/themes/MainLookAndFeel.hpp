@@ -3,13 +3,66 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "DarkTheme.hpp"
+#include "FontManager.hpp"
 
 namespace magda {
 
 class MainLookAndFeel : public juce::LookAndFeel_V4 {
   public:
+    static constexpr int kTitleBarHeight = 22;
+
     MainLookAndFeel() = default;
     ~MainLookAndFeel() override = default;
+
+    void drawDocumentWindowTitleBar(juce::DocumentWindow& window, juce::Graphics& g, int w, int h,
+                                    int titleSpaceX, int titleSpaceW, const juce::Image* icon,
+                                    bool drawTitleTextOnLeft) override {
+        if (w * h == 0)
+            return;
+
+        const bool isActive = window.isActiveWindow();
+
+        g.setColour(getCurrentColourScheme().getUIColour(
+            juce::LookAndFeel_V4::ColourScheme::widgetBackground));
+        g.fillAll();
+
+        auto font = FontManager::getInstance().getUIFontMedium(static_cast<float>(h) * 0.55f);
+        g.setFont(font);
+
+        auto textW = juce::GlyphArrangement::getStringWidthInt(font, window.getName());
+        int iconW = 0;
+        int iconH = 0;
+        if (icon != nullptr) {
+            iconH = static_cast<int>(font.getHeight());
+            iconW = icon->getWidth() * iconH / icon->getHeight() + 4;
+        }
+
+        textW = juce::jmin(titleSpaceW, textW + iconW);
+        int textX = drawTitleTextOnLeft ? titleSpaceX : juce::jmax(titleSpaceX, (w - textW) / 2);
+        if (textX + textW > titleSpaceX + titleSpaceW)
+            textX = titleSpaceX + titleSpaceW - textW;
+
+        if (icon != nullptr) {
+            const auto drawnIconW = juce::jmin(iconW, textW);
+            if (drawnIconW > 0) {
+                g.setOpacity(isActive ? 1.0f : 0.6f);
+                g.drawImageWithin(*icon, textX, (h - iconH) / 2, drawnIconW, iconH,
+                                  juce::RectanglePlacement::centred, false);
+                textX += drawnIconW;
+            }
+            textW = juce::jmax(0, textW - drawnIconW);
+        }
+
+        g.setOpacity(isActive ? 1.0f : 0.6f);
+        if (window.isColourSpecified(juce::DocumentWindow::textColourId) ||
+            isColourSpecified(juce::DocumentWindow::textColourId))
+            g.setColour(window.findColour(juce::DocumentWindow::textColourId));
+        else
+            g.setColour(getCurrentColourScheme().getUIColour(
+                juce::LookAndFeel_V4::ColourScheme::defaultText));
+
+        g.drawText(window.getName(), textX, 0, textW, h, juce::Justification::centredLeft, true);
+    }
 
     juce::Button* createDocumentWindowButton(int buttonType) override {
         juce::Path shape;

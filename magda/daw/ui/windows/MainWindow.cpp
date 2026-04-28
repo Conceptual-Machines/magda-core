@@ -19,6 +19,7 @@
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../themes/DarkTheme.hpp"
+#include "../themes/MainLookAndFeel.hpp"
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
@@ -188,6 +189,7 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     // request native decorations, hiding the menu bar. JUCE-drawn decorations
     // lay out the menu correctly on every WM.
     setUsingNativeTitleBar(false);
+    setTitleBarHeight(MainLookAndFeel::kTitleBarHeight);
 #else
     setUsingNativeTitleBar(true);
 #endif

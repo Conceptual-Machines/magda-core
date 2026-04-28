@@ -2,7 +2,6 @@
 
 #include <algorithm>
 
-#include "../core/SelectionManager.hpp"
 #include "../core/aliases/AliasRegistry.hpp"
 #include "../core/aliases/ChainContext.hpp"
 #include "../core/aliases/ResolverRegistry.hpp"
@@ -384,19 +383,6 @@ void ControllerRouter::executeWrite(const BindingId& bindingId, int rawValue, in
         DBG("ControllerRouter: target resolve FAILED (" << resolved.sourceLabel << ") for binding "
                                                         << bindingId.toDashedString());
         return;
-    }
-
-    // Contextual firing: if the resolved target is pinned to a specific track,
-    // the binding only fires while that track is the selected track. Targets
-    // without a track pin (master, @focused.*, @selected.*) fire regardless.
-    const TrackId targetTrackId = resolved.devicePath.trackId;
-    if (targetTrackId != INVALID_TRACK_ID) {
-        const TrackId selected = SelectionManager::getInstance().getSelectedTrack();
-        if (selected != targetTrackId) {
-            DBG("ControllerRouter: gated — binding target is on track "
-                << targetTrackId << " but selected is " << selected);
-            return;
-        }
     }
 
     DBG("ControllerRouter: WRITE value=" << finalValue << " to " << resolved.sourceLabel);
