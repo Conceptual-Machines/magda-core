@@ -333,6 +333,19 @@ class TrackManager {
     void setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex, float value);
 
     /**
+     * @brief Apply a deserialized DeviceInfo (from a .mps preset) to a live device.
+     *
+     * Copies the state-y fields (parameters, macros, mods, gainDb, pluginState)
+     * onto the existing device at devicePath; preserves identity (id, name,
+     * pluginId, format, etc.). Pushes the plugin state to the running plugin
+     * and notifies UI listeners.
+     *
+     * Returns false if the path doesn't resolve to a device or the preset's
+     * plugin identity doesn't match the live device.
+     */
+    bool applyDevicePreset(const ChainNodePath& devicePath, const DeviceInfo& presetDevice);
+
+    /**
      * @brief Set a device parameter value from the plugin's native UI
      *
      * This method is called when the plugin's native UI changes a parameter.

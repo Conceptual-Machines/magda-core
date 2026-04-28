@@ -19,6 +19,40 @@ juce::String sanitizeName(const juce::String& name) {
     return sanitized;
 }
 
+// Sanitize each segment of a slash-separated relative path so the user can
+// nest presets in subfolders ("Bass/Reese 808" → "Bass/Reese 808.mps").
+juce::String sanitizeRelativePath(const juce::String& relativePath) {
+    juce::StringArray parts;
+    parts.addTokens(relativePath, "/", "");
+    juce::StringArray cleaned;
+    for (const auto& part : parts) {
+        auto trimmed = part.trim();
+        if (trimmed.isEmpty())
+            continue;
+        cleaned.add(juce::File::createLegalFileName(trimmed));
+    }
+    if (cleaned.isEmpty())
+        cleaned.add("Untitled");
+    return cleaned.joinIntoString("/");
+}
+
+// Walk a preset directory tree, appending forward-slash relative paths
+// (no extension) for every .mps file encountered. Directories first then
+// files, alphabetical within each, so the menu order is predictable.
+void collectPresetsRecursive(const juce::File& root, const juce::String& prefix,
+                             juce::StringArray& out) {
+    if (!root.isDirectory())
+        return;
+    auto subdirs = root.findChildFiles(juce::File::findDirectories, false);
+    auto files = root.findChildFiles(juce::File::findFiles, false, "*.mps");
+    subdirs.sort();
+    files.sort();
+    for (const auto& sub : subdirs)
+        collectPresetsRecursive(sub, prefix + sub.getFileName() + "/", out);
+    for (const auto& f : files)
+        out.add(prefix + f.getFileNameWithoutExtension());
+}
+
 // Wrap payload in the standard envelope and write pretty JSON.
 bool writePresetFile(const juce::File& target, const juce::String& kind, const juce::var& payload,
                      juce::String& outError) {
@@ -182,14 +216,22 @@ juce::StringArray PresetManager::getRackPresets() const {
 // Device Presets
 // ============================================================================
 
+juce::File PresetManager::getDevicePluginDirectory(const juce::String& pluginFolder) const {
+    return getDevicesDirectory().getChildFile(sanitizeName(pluginFolder));
+}
+
 bool PresetManager::saveDevicePreset(const DeviceInfo& device, const juce::String& presetName) {
     auto payload = ProjectSerializer::serializeDeviceInfo(device);
-    auto target = getDevicesDirectory().getChildFile(sanitizeName(presetName) + kPresetExtension);
+    auto pluginDir = getDevicePluginDirectory(device.name);
+    auto target = pluginDir.getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
     return writePresetFile(target, kKindDevice, payload, lastError_);
 }
 
-bool PresetManager::loadDevicePreset(const juce::String& presetName, DeviceInfo& outDevice) {
-    auto source = getDevicesDirectory().getChildFile(sanitizeName(presetName) + kPresetExtension);
+bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
+                                     const juce::String& presetRelativePath,
+                                     DeviceInfo& outDevice) {
+    auto source = getDevicePluginDirectory(pluginFolder)
+                      .getChildFile(sanitizeRelativePath(presetRelativePath) + kPresetExtension);
     juce::var payload;
     if (!readPresetFile(source, kKindDevice, payload, lastError_))
         return false;
@@ -201,8 +243,10 @@ bool PresetManager::loadDevicePreset(const juce::String& presetName, DeviceInfo&
     return true;
 }
 
-juce::StringArray PresetManager::getDevicePresets() const {
-    return getPresetList(getDevicesDirectory());
+juce::StringArray PresetManager::getDevicePresets(const juce::String& pluginFolder) const {
+    juce::StringArray out;
+    collectPresetsRecursive(getDevicePluginDirectory(pluginFolder), "", out);
+    return out;
 }
 
 // ============================================================================

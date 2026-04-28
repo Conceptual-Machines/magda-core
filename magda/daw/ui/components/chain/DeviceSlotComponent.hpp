@@ -292,8 +292,19 @@ class DeviceSlotComponent : public NodeComponent,
     void refreshProgramsCombo();        // full re-populate (item list + selection)
     void syncProgramsComboSelection();  // selection-only, cheap, called from timer
 
-    // MAGDA preset dialogs
+    // MAGDA preset dialogs / actions
+    void showPresetMenu();
     void showSaveMagdaPresetDialog();
+    void saveCurrentMagdaPreset();  // overwrite currentPresetName_
+    void loadMagdaPreset(const juce::String& presetRelativePath);
+    // Trigger PluginManager::capturePluginState and return a fresh DeviceInfo
+    // copy from TrackManager — used as the source-of-truth for a save.
+    magda::DeviceInfo snapshotForPreset();
+
+    // Name of the .mps file last loaded (or saved-as) on this device.
+    // Empty until the user touches the preset surface; cleared when the
+    // device's pluginId changes (different plugin loaded into the slot).
+    juce::String currentPresetName_;
 
     void updateParamModulation();  // Update mod/macro pointers for params
     void updateParameterSlots();   // Reload parameter data for current page

@@ -12,6 +12,7 @@
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
+#include "audio/PluginManager.hpp"
 #include "audio/StepClock.hpp"
 #include "core/ClipManager.hpp"
 #include "core/MacroInfo.hpp"
@@ -257,35 +258,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // full button size.
     presetButton_->setIconPadding(4.5f);
     presetButton_->setTooltip("MAGDA Presets");
-    presetButton_->onClick = [this]() {
-        auto& pm = magda::PresetManager::getInstance();
-        const auto presets = pm.getDevicePresets();
-
-        juce::PopupMenu menu;
-        menu.addSectionHeader("MAGDA Presets");
-        if (presets.isEmpty()) {
-            menu.addItem(1, "(no presets yet)", /*isActive*/ false);
-        } else {
-            // Load is wired in task 3 — for now items are visible-only so the
-            // user can confirm saves landed on disk.
-            int id = 100;
-            for (const auto& name : presets)
-                menu.addItem(id++, name, /*isActive*/ false);
-        }
-        menu.addSeparator();
-        menu.addItem(2, "Save as MAGDA Preset...");
-        menu.addItem(3, "Reveal in Finder");
-
-        menu.showMenuAsync(
-            juce::PopupMenu::Options().withTargetComponent(presetButton_.get()),
-            [this](int chosen) {
-                if (chosen == 2) {
-                    showSaveMagdaPresetDialog();
-                } else if (chosen == 3) {
-                    magda::PresetManager::getInstance().getDevicesDirectory().revealToUser();
-                }
-            });
-    };
+    presetButton_->onClick = [this]() { showPresetMenu(); };
     addAndMakeVisible(*presetButton_);
 
     // Native plugin programs (factory presets) dropdown — populated lazily once
@@ -1237,32 +1210,191 @@ int DeviceSlotComponent::getPreferredWidth() const {
     return getTotalWidth(getDynamicSlotWidth()) + meterExtra;
 }
 
+namespace {
+void showPresetErrorAsync(const juce::String& title, const juce::String& message) {
+    juce::AlertWindow::showAsync(juce::MessageBoxOptions()
+                                     .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                     .withTitle(title)
+                                     .withMessage(message)
+                                     .withButton("OK"),
+                                 nullptr);
+}
+}  // namespace
+
+namespace {
+
+// Recursively walk a preset directory and append items / submenus to `menu`.
+// `outIndex` collects the relative path of every preset file in click order
+// so the chosen menu id can be resolved back to a path.
+void buildPresetSubmenu(juce::PopupMenu& menu, const juce::File& dir, const juce::String& prefix,
+                        int idBase, int& nextId, const juce::String& currentLoaded,
+                        juce::StringArray& outIndex) {
+    if (!dir.isDirectory())
+        return;
+    auto subdirs = dir.findChildFiles(juce::File::findDirectories, false);
+    auto files = dir.findChildFiles(juce::File::findFiles, false, "*.mps");
+    subdirs.sort();
+    files.sort();
+
+    for (const auto& sub : subdirs) {
+        juce::PopupMenu submenu;
+        buildPresetSubmenu(submenu, sub, prefix + sub.getFileName() + "/", idBase, nextId,
+                           currentLoaded, outIndex);
+        menu.addSubMenu(sub.getFileName(), submenu);
+    }
+    for (const auto& f : files) {
+        const auto displayName = f.getFileNameWithoutExtension();
+        const auto relPath = prefix + displayName;
+        outIndex.add(relPath);
+        const bool ticked = (relPath == currentLoaded);
+        menu.addItem(idBase + outIndex.size() - 1, displayName, /*isActive*/ true, ticked);
+    }
+}
+
+}  // namespace
+
+void DeviceSlotComponent::showPresetMenu() {
+    auto& pm = magda::PresetManager::getInstance();
+    const auto pluginFolder = device_.name;
+
+    constexpr int kSaveOverwrite = 1;
+    constexpr int kSaveAs = 2;
+    constexpr int kRevealInFinder = 3;
+    constexpr int kPresetIdBase = 1000;
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("MAGDA Presets");
+
+    juce::StringArray index;  // relative paths, indexed by chosen-id - kPresetIdBase
+    int nextId = 0;
+    auto pluginDir = pm.getDevicePluginDirectory(pluginFolder);
+    buildPresetSubmenu(menu, pluginDir, "", kPresetIdBase, nextId, currentPresetName_, index);
+
+    if (index.isEmpty())
+        menu.addItem(kPresetIdBase, "(no presets yet)", /*isActive*/ false);
+
+    menu.addSeparator();
+    if (currentPresetName_.isNotEmpty())
+        menu.addItem(kSaveOverwrite, "Save \"" + currentPresetName_ + "\"");
+    menu.addItem(kSaveAs, "Save as MAGDA Preset...");
+    menu.addItem(kRevealInFinder, "Reveal in Finder");
+
+    const auto indexCopy = index;
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(presetButton_.get()),
+                       [this, indexCopy](int chosen) {
+                           if (chosen == 0)
+                               return;
+                           if (chosen == kSaveAs) {
+                               showSaveMagdaPresetDialog();
+                           } else if (chosen == kSaveOverwrite) {
+                               saveCurrentMagdaPreset();
+                           } else if (chosen == kRevealInFinder) {
+                               auto& pm = magda::PresetManager::getInstance();
+                               auto dir = pm.getDevicePluginDirectory(device_.name);
+                               if (!dir.exists())
+                                   dir = pm.getDevicesDirectory();
+                               dir.revealToUser();
+                           } else if (chosen >= kPresetIdBase) {
+                               const int idx = chosen - kPresetIdBase;
+                               if (idx >= 0 && idx < indexCopy.size())
+                                   loadMagdaPreset(indexCopy[idx]);
+                           }
+                       });
+}
+
+magda::DeviceInfo DeviceSlotComponent::snapshotForPreset() {
+    // Force the plugin's current state into DeviceInfo before we snapshot,
+    // otherwise device_.pluginState reflects only the last project-save /
+    // capture point and recent edits would be silently dropped.
+    auto& tm = magda::TrackManager::getInstance();
+    if (auto* engine = tm.getAudioEngine()) {
+        if (auto* bridge = engine->getAudioBridge())
+            bridge->getPluginManager().capturePluginState(device_.id);
+    }
+    if (auto* live = tm.getDeviceInChainByPath(nodePath_))
+        return *live;
+    return device_;
+}
+
 void DeviceSlotComponent::showSaveMagdaPresetDialog() {
     auto* aw = new juce::AlertWindow("Save MAGDA Preset", "Enter a name for this device preset:",
                                      juce::MessageBoxIconType::NoIcon);
-    aw->addTextEditor("name", device_.name, "Name:");
+    aw->addTextEditor("name", currentPresetName_.isNotEmpty() ? currentPresetName_ : device_.name,
+                      "Name:");
     aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
     aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-    const auto deviceCopy = device_;  // capture by value — async callback
-    aw->enterModalState(true, juce::ModalCallbackFunction::create([aw, deviceCopy](int result) {
-                            if (result == 1) {
-                                auto name = aw->getTextEditorContents("name").trim();
-                                if (name.isNotEmpty()) {
-                                    auto& pm = magda::PresetManager::getInstance();
-                                    if (!pm.saveDevicePreset(deviceCopy, name)) {
-                                        juce::AlertWindow::showAsync(
-                                            juce::MessageBoxOptions()
-                                                .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                                .withTitle("Save Preset Failed")
-                                                .withMessage(pm.getLastError())
-                                                .withButton("OK"),
-                                            nullptr);
-                                    }
-                                }
-                            }
-                            delete aw;
-                        }));
+    juce::Component::SafePointer<DeviceSlotComponent> self(this);
+    aw->enterModalState(
+        true, juce::ModalCallbackFunction::create([aw, self](int result) {
+            if (result != 1) {
+                delete aw;
+                return;
+            }
+            auto name = aw->getTextEditorContents("name").trim();
+            delete aw;
+            if (name.isEmpty() || self == nullptr)
+                return;
+
+            auto doSave = [name, self]() {
+                if (self == nullptr)
+                    return;
+                auto fresh = self->snapshotForPreset();
+                auto& mgr = magda::PresetManager::getInstance();
+                if (!mgr.saveDevicePreset(fresh, name)) {
+                    showPresetErrorAsync("Save Preset Failed", mgr.getLastError());
+                    return;
+                }
+                if (self != nullptr)
+                    self->currentPresetName_ = name;
+            };
+
+            if (magda::PresetManager::getInstance().getDevicePresets().contains(name)) {
+                juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions()
+                        .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                        .withTitle("Overwrite Preset?")
+                        .withMessage("\"" + name + "\" already exists. Overwrite?")
+                        .withButton("Overwrite")
+                        .withButton("Cancel"),
+                    [doSave](int r) {
+                        if (r == 1)
+                            doSave();
+                    });
+            } else {
+                doSave();
+            }
+        }));
+}
+
+void DeviceSlotComponent::saveCurrentMagdaPreset() {
+    if (currentPresetName_.isEmpty())
+        return;
+    auto& pm = magda::PresetManager::getInstance();
+    auto fresh = snapshotForPreset();
+    if (!pm.saveDevicePreset(fresh, currentPresetName_))
+        showPresetErrorAsync("Save Preset Failed", pm.getLastError());
+}
+
+void DeviceSlotComponent::loadMagdaPreset(const juce::String& presetRelativePath) {
+    magda::DeviceInfo preset;
+    auto& pm = magda::PresetManager::getInstance();
+    if (!pm.loadDevicePreset(device_.name, presetRelativePath, preset)) {
+        showPresetErrorAsync("Load Preset Failed", pm.getLastError());
+        return;
+    }
+    auto& tm = magda::TrackManager::getInstance();
+    if (!tm.applyDevicePreset(nodePath_, preset)) {
+        showPresetErrorAsync("Load Preset Failed",
+                             "Preset is for a different plugin (\"" + preset.pluginId + "\").");
+        return;
+    }
+    // Refresh this slot's UI from the now-mutated live DeviceInfo. The
+    // applyDevicePreset path notifies via devicePropertyChanged (AudioBridge),
+    // but DeviceSlotComponent's custom-UI refresh sits in updateFromDevice().
+    if (auto* live = tm.getDeviceInChainByPath(nodePath_))
+        updateFromDevice(*live);
+    currentPresetName_ = presetRelativePath;
 }
 
 void DeviceSlotComponent::refreshProgramsCombo() {
@@ -1319,6 +1451,11 @@ void DeviceSlotComponent::syncProgramsComboSelection() {
 }
 
 void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
+    // Detect plugin replacement BEFORE assignment so we can drop a stale
+    // currentPresetName_ reference (a preset is tied to one plugin).
+    if (currentPresetName_.isNotEmpty() && device.pluginId != device_.pluginId)
+        currentPresetName_.clear();
+
     device_ = device;
     // Custom name and font for drum grid (MPC-style with Microgramma)
     isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
