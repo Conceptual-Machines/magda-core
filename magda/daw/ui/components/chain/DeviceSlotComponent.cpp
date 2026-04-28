@@ -12,12 +12,14 @@
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
+#include "audio/PluginManager.hpp"
 #include "audio/StepClock.hpp"
 #include "core/ClipManager.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/ModInfo.hpp"
 #include "core/ParameterUtils.hpp"
+#include "core/PresetManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -30,8 +32,73 @@
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
+#include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+// Minimal flat-thumb LookAndFeel for the device gain slider: draws no track,
+// just a thin horizontal bar at the slider position.
+class FlatGainSliderLookAndFeel : public juce::LookAndFeel_V4 {
+  public:
+    void drawLinearSlider(juce::Graphics& g, int x, int /*y*/, int width, int /*height*/,
+                          float sliderPos, float /*minSliderPos*/, float /*maxSliderPos*/,
+                          const juce::Slider::SliderStyle /*style*/,
+                          juce::Slider& /*slider*/) override {
+        constexpr float thumbHeight = 2.0f;
+        const float thumbY = sliderPos - thumbHeight * 0.5f;
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.fillRect((float)x, thumbY, (float)width, thumbHeight);
+    }
+
+    int getSliderThumbRadius(juce::Slider&) override {
+        return 1;
+    }
+
+    static FlatGainSliderLookAndFeel& getInstance() {
+        static FlatGainSliderLookAndFeel instance;
+        return instance;
+    }
+};
+
+// Slider subclass that returns a dynamic tooltip showing both the current
+// gain value and the meter's peak-hold dB level.
+class GainSliderWithMeterTooltip : public juce::Slider {
+  public:
+    GainSliderWithMeterTooltip(juce::Slider::SliderStyle style,
+                               juce::Slider::TextEntryBoxPosition textPos,
+                               const magda::LevelMeter& meter)
+        : juce::Slider(style, textPos), meter_(meter) {}
+
+    juce::String getTooltip() override {
+        const double gainDb = getValue();
+        const float peakDb = meter_.getPeakDb();
+        const juce::String peakStr =
+            peakDb <= -59.5f ? juce::String("-inf") : juce::String::formatted("%+.1f", peakDb);
+        return juce::String::formatted("Gain: %+.1f dB    Peak: ", gainDb) + peakStr +
+               juce::String(" dB");
+    }
+
+  private:
+    const magda::LevelMeter& meter_;
+};
+
+// Unified visual recipe for all device-header SvgButtons. Pass the accent
+// colour used as the active-state pill background. Set toggling=false for
+// stateless buttons (menus, one-shots).
+inline void applyHeaderIconStyle(magda::SvgButton& btn, juce::Colour activeBg,
+                                 bool toggling = true) {
+    btn.setIconPadding(2.0f);
+    btn.setOriginalColor(juce::Colour(0xFFB3B3B3));
+    btn.setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
+    btn.setActiveColor(juce::Colours::white);
+    btn.setActiveBackgroundColor(activeBg);
+    if (toggling)
+        btn.setClickingTogglesState(true);
+}
+
+}  // namespace
 
 DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : device_(device) {
     // Register as TrackManager listener for parameter updates from plugin
@@ -139,11 +206,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Mod button (toggle mod panel) - bare sine icon
     modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::bare_sine_svg,
                                                     BinaryData::bare_sine_svgSize);
-    modButton_->setClickingTogglesState(true);
+    applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
-    modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    modButton_->setActiveColor(juce::Colours::white);
-    modButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     modButton_->setActive(modPanelVisible_);
     modButton_->onClick = [this]() {
         modButton_->setActive(modButton_->getToggleState());
@@ -154,11 +218,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Macro button (toggle macro panel) - knob icon
     macroButton_ =
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
-    macroButton_->setClickingTogglesState(true);
+    applyHeaderIconStyle(*macroButton_, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
-    macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    macroButton_->setActiveColor(juce::Colours::white);
-    macroButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     macroButton_->setActive(paramPanelVisible_);
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
@@ -181,6 +242,67 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     };
     addAndMakeVisible(gainLabel_);
 
+    // ----- MOCK UI (no wiring): MAGDA preset menu button (top header) -----
+    presetButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::preset_svg,
+                                                       BinaryData::preset_svgSize);
+    // Indigo sits between ACCENT_BLUE and ACCENT_PURPLE — distinct from both
+    // utility blue (ui/multiOut) and macro purple, signals "MAGDA presets".
+    constexpr juce::uint32 PRESET_INDIGO = 0xFF5577CC;
+    applyHeaderIconStyle(*presetButton_, juce::Colour(PRESET_INDIGO),
+                         /*toggling*/ false);
+    // Permanent "active" treatment: indigo pill + white icon. Using setActive()
+    // (not normalBackgroundColor) so hover/pressed don't wipe out the pill —
+    // the active branch wins first in SvgButton's paint priority.
+    presetButton_->setActive(true);
+    // Larger inner padding shrinks the icon glyph while leaving the pill at
+    // full button size.
+    presetButton_->setIconPadding(4.5f);
+    presetButton_->setTooltip("MAGDA Presets");
+    presetButton_->onClick = [this]() { showPresetMenu(); };
+    addAndMakeVisible(*presetButton_);
+
+    // Native plugin programs (factory presets) dropdown — populated lazily once
+    // the plugin instance is loaded (see refreshProgramsCombo).
+    programsCombo_ = std::make_unique<juce::ComboBox>("Programs");
+    programsCombo_->setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    programsCombo_->setColour(juce::ComboBox::backgroundColourId,
+                              DarkTheme::getColour(DarkTheme::SURFACE));
+    programsCombo_->setColour(juce::ComboBox::outlineColourId,
+                              DarkTheme::getColour(DarkTheme::BORDER));
+    programsCombo_->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    programsCombo_->setTextWhenNothingSelected({});
+    programsCombo_->onChange = [this]() {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return;
+        const int programIndex = programsCombo_->getSelectedId() - 1;
+        if (programIndex >= 0)
+            bridge->setPluginCurrentProgram(device_.id, programIndex);
+    };
+    addAndMakeVisible(*programsCombo_);
+
+    // Vertical gain slider overlaid on the meter, with a tooltip that reports
+    // both the current gain and the meter's peak-hold dB.
+    gainSlider_ = std::make_unique<GainSliderWithMeterTooltip>(
+        juce::Slider::LinearVertical, juce::Slider::NoTextBox, levelMeter_);
+    gainSlider_->setRange(-60.0, 12.0, 0.1);
+    gainSlider_->setValue(device_.gainDb, juce::dontSendNotification);
+    gainSlider_->setTooltip("Device Gain (dB)");
+    // Overlay slider on top of the meter — keep track/background transparent so
+    // the meter shows through; only the thumb is drawn.
+    gainSlider_->setLookAndFeel(&FlatGainSliderLookAndFeel::getInstance());
+    gainSlider_->setColour(juce::Slider::backgroundColourId, juce::Colours::transparentBlack);
+    gainSlider_->setColour(juce::Slider::trackColourId, juce::Colours::transparentBlack);
+    gainSlider_->setDoubleClickReturnValue(true, 0.0);
+    gainSlider_->onValueChange = [this]() {
+        magda::TrackManager::getInstance().setDeviceGainDb(
+            nodePath_, static_cast<float>(gainSlider_->getValue()));
+    };
+    addAndMakeVisible(*gainSlider_);
+
     // Sidechain button (only visible when plugin supports sidechain)
     scButton_ = std::make_unique<juce::TextButton>("SC");
     scButton_->setColour(juce::TextButton::buttonColourId,
@@ -195,10 +317,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Multi-output routing button (only visible for multi-out plugins)
     multiOutButton_ = std::make_unique<magda::SvgButton>("MultiOut", BinaryData::multiout_svg,
                                                          BinaryData::multiout_svgSize);
-    multiOutButton_->setIconPadding(2.0f);
-    multiOutButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    multiOutButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
-    multiOutButton_->setActiveColor(juce::Colours::white);
+    applyHeaderIconStyle(*multiOutButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
+                         /*toggling*/ false);
     multiOutButton_->onClick = [this]() { showMultiOutMenu(); };
     multiOutButton_->setVisible(device_.multiOut.isMultiOut);
     addAndMakeVisible(*multiOutButton_);
@@ -206,12 +326,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // UI button (toggle plugin window) - open in new icon
     uiButton_ = std::make_unique<magda::SvgButton>("UI", BinaryData::open_in_new_svg,
                                                    BinaryData::open_in_new_svgSize);
-    uiButton_->setIconPadding(2.0f);
-    uiButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    uiButton_->setClickingTogglesState(true);
-    uiButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
-    uiButton_->setActiveColor(juce::Colours::white);
-    uiButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    applyHeaderIconStyle(*uiButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
     uiButton_->onClick = [this]() {
         // Get the audio bridge and toggle plugin window
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
@@ -234,12 +349,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Learn button (parameter pick mode)
     learnButton_ = std::make_unique<magda::SvgButton>("Learn", BinaryData::learn_svg,
                                                       BinaryData::learn_svgSize);
-    learnButton_->setIconPadding(2.0f);
-    learnButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    learnButton_->setClickingTogglesState(true);
-    learnButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
-    learnButton_->setActiveColor(juce::Colours::white);
-    learnButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    applyHeaderIconStyle(*learnButton_, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     learnButton_->setEnabled(false);
     learnButton_->onClick = [this]() {
         bool active = learnButton_->getToggleState();
@@ -277,11 +387,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     if (isStepSequencer_) {
         exportClipButton_ = std::make_unique<magda::SvgButton>("ExportClip", BinaryData::copy_svg,
                                                                BinaryData::copy_svgSize);
-        // Match the muted styling of multiOut / open-in-external buttons so it
-        // blends into the header instead of popping.
-        exportClipButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        exportClipButton_->setNormalColor(juce::Colour(0xFFB3B3B3).withAlpha(0.5f));
-        exportClipButton_->setActiveColor(juce::Colours::white);
+        applyHeaderIconStyle(*exportClipButton_, DarkTheme::getColour(DarkTheme::ACCENT_GREEN),
+                             /*toggling*/ false);
         exportClipButton_->setTooltip("Click to copy pattern, drag to timeline");
         exportClipButton_->addMouseListener(this, false);
         exportClipButton_->onClick = [this]() {
@@ -693,6 +800,10 @@ void DeviceSlotComponent::timerCallback() {
     if (!bridge)
         return;
 
+    // Keep the plugin programs combo selection in sync with the underlying
+    // plugin (program may have been changed via the plugin's native UI).
+    syncProgramsComboSelection();
+
     // Update UI button state to match actual plugin window state
     if (uiButton_) {
         bool isOpen = bridge->isPluginWindowOpen(device_.id);
@@ -1099,7 +1210,253 @@ int DeviceSlotComponent::getPreferredWidth() const {
     return getTotalWidth(getDynamicSlotWidth()) + meterExtra;
 }
 
+namespace {
+void showPresetErrorAsync(const juce::String& title, const juce::String& message) {
+    juce::AlertWindow::showAsync(juce::MessageBoxOptions()
+                                     .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                     .withTitle(title)
+                                     .withMessage(message)
+                                     .withButton("OK"),
+                                 nullptr);
+}
+}  // namespace
+
+namespace {
+
+// Recursively walk a preset directory and append items / submenus to `menu`.
+// `outIndex` collects the relative path of every preset file in click order
+// so the chosen menu id can be resolved back to a path.
+void buildPresetSubmenu(juce::PopupMenu& menu, const juce::File& dir, const juce::String& prefix,
+                        int idBase, int& nextId, const juce::String& currentLoaded,
+                        juce::StringArray& outIndex) {
+    if (!dir.isDirectory())
+        return;
+    auto subdirs = dir.findChildFiles(juce::File::findDirectories, false);
+    auto files = dir.findChildFiles(juce::File::findFiles, false, "*.mps");
+    subdirs.sort();
+    files.sort();
+
+    for (const auto& sub : subdirs) {
+        juce::PopupMenu submenu;
+        buildPresetSubmenu(submenu, sub, prefix + sub.getFileName() + "/", idBase, nextId,
+                           currentLoaded, outIndex);
+        menu.addSubMenu(sub.getFileName(), submenu);
+    }
+    for (const auto& f : files) {
+        const auto displayName = f.getFileNameWithoutExtension();
+        const auto relPath = prefix + displayName;
+        outIndex.add(relPath);
+        const bool ticked = (relPath == currentLoaded);
+        menu.addItem(idBase + outIndex.size() - 1, displayName, /*isActive*/ true, ticked);
+    }
+}
+
+}  // namespace
+
+void DeviceSlotComponent::showPresetMenu() {
+    auto& pm = magda::PresetManager::getInstance();
+    const auto pluginFolder = device_.name;
+
+    constexpr int kSaveOverwrite = 1;
+    constexpr int kSaveAs = 2;
+    constexpr int kRevealInFinder = 3;
+    constexpr int kPresetIdBase = 1000;
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("MAGDA Presets");
+
+    juce::StringArray index;  // relative paths, indexed by chosen-id - kPresetIdBase
+    int nextId = 0;
+    auto pluginDir = pm.getDevicePluginDirectory(pluginFolder);
+    buildPresetSubmenu(menu, pluginDir, "", kPresetIdBase, nextId, currentPresetName_, index);
+
+    if (index.isEmpty())
+        menu.addItem(kPresetIdBase, "(no presets yet)", /*isActive*/ false);
+
+    menu.addSeparator();
+    if (currentPresetName_.isNotEmpty())
+        menu.addItem(kSaveOverwrite, "Save \"" + currentPresetName_ + "\"");
+    menu.addItem(kSaveAs, "Save as MAGDA Preset...");
+    menu.addItem(kRevealInFinder, "Reveal in Finder");
+
+    const auto indexCopy = index;
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(presetButton_.get()),
+                       [this, indexCopy](int chosen) {
+                           if (chosen == 0)
+                               return;
+                           if (chosen == kSaveAs) {
+                               showSaveMagdaPresetDialog();
+                           } else if (chosen == kSaveOverwrite) {
+                               saveCurrentMagdaPreset();
+                           } else if (chosen == kRevealInFinder) {
+                               auto& pm = magda::PresetManager::getInstance();
+                               auto dir = pm.getDevicePluginDirectory(device_.name);
+                               if (!dir.exists())
+                                   dir = pm.getDevicesDirectory();
+                               dir.revealToUser();
+                           } else if (chosen >= kPresetIdBase) {
+                               const int idx = chosen - kPresetIdBase;
+                               if (idx >= 0 && idx < indexCopy.size())
+                                   loadMagdaPreset(indexCopy[idx]);
+                           }
+                       });
+}
+
+magda::DeviceInfo DeviceSlotComponent::snapshotForPreset() {
+    // Force the plugin's current state into DeviceInfo before we snapshot,
+    // otherwise device_.pluginState reflects only the last project-save /
+    // capture point and recent edits would be silently dropped.
+    auto& tm = magda::TrackManager::getInstance();
+    if (auto* engine = tm.getAudioEngine()) {
+        if (auto* bridge = engine->getAudioBridge())
+            bridge->getPluginManager().capturePluginState(device_.id);
+    }
+    if (auto* live = tm.getDeviceInChainByPath(nodePath_))
+        return *live;
+    return device_;
+}
+
+void DeviceSlotComponent::showSaveMagdaPresetDialog() {
+    auto* aw = new juce::AlertWindow("Save MAGDA Preset", "Enter a name for this device preset:",
+                                     juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor("name", currentPresetName_.isNotEmpty() ? currentPresetName_ : device_.name,
+                      "Name:");
+    aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<DeviceSlotComponent> self(this);
+    aw->enterModalState(
+        true, juce::ModalCallbackFunction::create([aw, self](int result) {
+            if (result != 1) {
+                delete aw;
+                return;
+            }
+            auto name = aw->getTextEditorContents("name").trim();
+            delete aw;
+            if (name.isEmpty() || self == nullptr)
+                return;
+
+            auto doSave = [name, self]() {
+                if (self == nullptr)
+                    return;
+                auto fresh = self->snapshotForPreset();
+                auto& mgr = magda::PresetManager::getInstance();
+                if (!mgr.saveDevicePreset(fresh, name)) {
+                    showPresetErrorAsync("Save Preset Failed", mgr.getLastError());
+                    return;
+                }
+                if (self != nullptr)
+                    self->currentPresetName_ = name;
+            };
+
+            const auto pluginFolder = self->device_.name;
+            if (magda::PresetManager::getInstance().getDevicePresets(pluginFolder).contains(name)) {
+                juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions()
+                        .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                        .withTitle("Overwrite Preset?")
+                        .withMessage("\"" + name + "\" already exists. Overwrite?")
+                        .withButton("Overwrite")
+                        .withButton("Cancel"),
+                    [doSave](int r) {
+                        if (r == 1)
+                            doSave();
+                    });
+            } else {
+                doSave();
+            }
+        }));
+}
+
+void DeviceSlotComponent::saveCurrentMagdaPreset() {
+    if (currentPresetName_.isEmpty())
+        return;
+    auto& pm = magda::PresetManager::getInstance();
+    auto fresh = snapshotForPreset();
+    if (!pm.saveDevicePreset(fresh, currentPresetName_))
+        showPresetErrorAsync("Save Preset Failed", pm.getLastError());
+}
+
+void DeviceSlotComponent::loadMagdaPreset(const juce::String& presetRelativePath) {
+    magda::DeviceInfo preset;
+    auto& pm = magda::PresetManager::getInstance();
+    if (!pm.loadDevicePreset(device_.name, presetRelativePath, preset)) {
+        showPresetErrorAsync("Load Preset Failed", pm.getLastError());
+        return;
+    }
+    auto& tm = magda::TrackManager::getInstance();
+    if (!tm.applyDevicePreset(nodePath_, preset)) {
+        showPresetErrorAsync("Load Preset Failed",
+                             "Preset is for a different plugin (\"" + preset.pluginId + "\").");
+        return;
+    }
+    // Refresh this slot's UI from the now-mutated live DeviceInfo. The
+    // applyDevicePreset path notifies via devicePropertyChanged (AudioBridge),
+    // but DeviceSlotComponent's custom-UI refresh sits in updateFromDevice().
+    if (auto* live = tm.getDeviceInChainByPath(nodePath_))
+        updateFromDevice(*live);
+    currentPresetName_ = presetRelativePath;
+}
+
+void DeviceSlotComponent::refreshProgramsCombo() {
+    if (!programsCombo_)
+        return;
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return;
+
+    const int numPrograms = bridge->getPluginNumPrograms(device_.id);
+    // Hide the combo for plugins that don't expose meaningful programs
+    // (most modern VST3s return 1 because presets live as .vstpreset files).
+    if (numPrograms <= 1) {
+        programsCombo_->clear(juce::dontSendNotification);
+        programsCombo_->setVisible(false);
+        return;
+    }
+
+    programsCombo_->clear(juce::dontSendNotification);
+    for (int i = 0; i < numPrograms; ++i) {
+        auto name = bridge->getPluginProgramName(device_.id, i);
+        if (name.isEmpty())
+            name = "Program " + juce::String(i + 1);
+        programsCombo_->addItem(name, i + 1);
+    }
+    const int current = bridge->getPluginCurrentProgram(device_.id);
+    programsCombo_->setSelectedId(current + 1, juce::dontSendNotification);
+}
+
+void DeviceSlotComponent::syncProgramsComboSelection() {
+    if (!programsCombo_ || isInternalDevice() ||
+        device_.loadState != magda::DeviceLoadState::Loaded)
+        return;
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return;
+
+    // First-time population: combo is empty but the plugin is now ready.
+    if (programsCombo_->getNumItems() == 0) {
+        if (bridge->getPluginNumPrograms(device_.id) > 1)
+            refreshProgramsCombo();
+        return;
+    }
+
+    const int current = bridge->getPluginCurrentProgram(device_.id);
+    if (current + 1 != programsCombo_->getSelectedId())
+        programsCombo_->setSelectedId(current + 1, juce::dontSendNotification);
+}
+
 void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
+    // Detect plugin replacement BEFORE assignment so we can drop a stale
+    // currentPresetName_ reference (a preset is tied to one plugin).
+    if (currentPresetName_.isNotEmpty() && device.pluginId != device_.pluginId)
+        currentPresetName_.clear();
+
     device_ = device;
     // Custom name and font for drum grid (MPC-style with Microgramma)
     isDrumGrid_ = device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
@@ -1114,6 +1471,13 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);
     gainLabel_.setValue(device.gainDb, juce::dontSendNotification);
+    if (gainSlider_)
+        gainSlider_->setValue(device.gainDb, juce::dontSendNotification);
+
+    // Plugin instance may have just become available (or its program list changed
+    // due to a state restore) — repopulate.
+    if (device_.loadState == magda::DeviceLoadState::Loaded && !isInternalDevice())
+        refreshProgramsCombo();
 
     // Update sidechain button visibility and state
     if (scButton_) {
@@ -1422,15 +1786,39 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // When collapsed, NodeComponent calls resizedCollapsed() first then resizedContent()
     // with an empty rect — so we must not touch meter visibility when collapsed.
     if (!collapsed_) {
-        auto meterBounds = contentArea.removeFromRight(METER_STRIP_WIDTH)
-                               .withTrimmedTop(CONTENT_HEADER_HEIGHT)
-                               .reduced(1, 3);
+        // Carve the FULL-width second header first so the programs dropdown
+        // can sit flush against the right edge of the panel.
+        auto secondHeaderArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
+        if (programsCombo_) {
+            const bool showCombo = device_.loadState == magda::DeviceLoadState::Loaded &&
+                                   !isInternalDevice() && !isChordEngine_ && !isArpeggiator_ &&
+                                   !isStepSequencer_;
+            if (showCombo) {
+                const int comboWidth = juce::jmin(140, secondHeaderArea.getWidth() / 2);
+                programsCombo_->setBounds(
+                    secondHeaderArea.removeFromRight(comboWidth).reduced(2, 3));
+                programsCombo_->setVisible(true);
+            } else {
+                programsCombo_->setVisible(false);
+            }
+        }
+
+        // Then the meter strip lives in the area BELOW the second header.
+        auto stripBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
         contentArea.removeFromRight(4);  // Padding between content and meter
+
         bool usesNoteStrip = isArpeggiator_ || isChordEngine_ || isStepSequencer_;
-        levelMeter_.setBounds(meterBounds);
+        levelMeter_.setBounds(stripBounds);
         levelMeter_.setVisible(!usesNoteStrip);
-        midiNoteStrip_.setBounds(meterBounds);
+        midiNoteStrip_.setBounds(stripBounds);
         midiNoteStrip_.setVisible(usesNoteStrip);
+
+        // Slider overlaid on the meter — same bounds, drawn on top, always visible.
+        if (gainSlider_) {
+            gainSlider_->setBounds(stripBounds);
+            gainSlider_->setVisible(true);
+            gainSlider_->toFront(false);
+        }
     }
 
     // Bottom padding
@@ -1440,6 +1828,13 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     if (collapsed_ || device_.loadState != magda::DeviceLoadState::Loaded) {
         paramGrid_->setVisible(false);
         gainLabel_.setVisible(false);
+        if (programsCombo_)
+            programsCombo_->setVisible(false);
+        if (gainSlider_)
+            gainSlider_->setVisible(false);
+        if (presetButton_)
+            presetButton_->setVisible(
+                !collapsed_);  // preset button stays in header even while loading
         if (toneGeneratorUI_)
             toneGeneratorUI_->setVisible(false);
         if (samplerUI_)
@@ -1488,8 +1883,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     onButton_->setVisible(true);
     gainLabel_.setVisible(!isChordEngine_ && !isArpeggiator_ && !isStepSequencer_);
 
-    // Content header subtitle area (all devices)
-    contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
+    // (Second header carve + programs combo placement happen in the
+    //  `if (!collapsed_)` block above so the dropdown can sit flush right.)
 
     // Check if this is an internal device with custom UI
     if (isInternalDevice() &&
@@ -1620,11 +2015,17 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    // Header layout: [Macro] [M] [Name] [UI] [gain slider] [SC] [MO] [on] [X]
-    // Note: delete (X) is handled by NodeComponent on the right
+    // Header layout (visual L→R):
+    //   Plugin-hosted: [macro] [mod] [name ...]  [learn] [ui] [multiOut] [sc] [preset] [power] [X]
+    //   MIDI:          [macro] [mod?] [name ...]                       [preset] [exportClip]
+    //   [power] [X] X (delete) is owned by NodeComponent.
+    //
+    // Right→left removal order is the reverse of the visual order above.
 
-    bool isDrumGrid = drumGridUI_ != nullptr;
+    const bool isDrumGrid = drumGridUI_ != nullptr;
+    gainLabel_.setVisible(false);  // gain has moved to the meter-strip slider
 
+    // Left side: macro, mod
     if (device_.deviceType != magda::DeviceType::MIDI || isDrumGrid) {
         macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
@@ -1639,56 +2040,53 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         modButton_->setVisible(false);
     }
 
-    // MIDI devices: no volume/SC
-    // Right-edge order (left → right): [export clip] [power] [delete X (NodeComponent)]
-    // Power must sit immediately to the left of the delete X — clip lives to its left.
+    // place(): right→left removal of one button, with gap, only if visible.
+    auto place = [&](juce::Component* c) {
+        if (c == nullptr || !c->isVisible())
+            return;
+        c->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        headerArea.removeFromRight(4);
+    };
+
+    // MIDI branch: preset, exportClip, power, X
     if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
-        gainLabel_.setVisible(false);
         learnButton_->setVisible(false);
         if (scButton_)
             scButton_->setVisible(false);
-        onButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-        if (exportClipButton_) {
+        if (multiOutButton_)
+            multiOutButton_->setVisible(false);
+        onButton_->setVisible(true);
+        if (presetButton_)
+            presetButton_->setVisible(true);
+        if (exportClipButton_)
             exportClipButton_->setVisible(true);
-            headerArea.removeFromRight(4);
-            exportClipButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-        }
+
+        place(onButton_.get());
+        place(exportClipButton_ ? exportClipButton_.get() : nullptr);
+        place(presetButton_ ? presetButton_.get() : nullptr);
         return;
     }
 
-    // Non-MIDI devices with export clip (none currently, but keep symmetric)
-    if (exportClipButton_) {
-        exportClipButton_->setVisible(true);
-        exportClipButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-        headerArea.removeFromRight(4);
-    }
+    // Non-MIDI: ui, learn, sc, multiOut, preset, power, X
+    if (exportClipButton_)
+        exportClipButton_->setVisible(false);
 
-    // Set conditional button visibility before calling shared layout
-    // DrumGrid: hide SC button (manages its own MIDI internally) and gain slider (per-pad level)
     if (scButton_)
         scButton_->setVisible(!isDrumGrid && (device_.canSidechain || device_.canReceiveMidi));
     if (multiOutButton_)
         multiOutButton_->setVisible(device_.multiOut.isMultiOut);
-    if (isDrumGrid)
-        gainLabel_.setVisible(false);
-
-    // Learn button: visible only for external plugins (not internal/MIDI devices)
     learnButton_->setVisible(!isInternalDevice());
+    onButton_->setVisible(true);
+    uiButton_->setVisible(!isInternalDevice());
+    if (presetButton_)
+        presetButton_->setVisible(true);
 
-    layoutDeviceSlotHeaderRight(headerArea, BUTTON_SIZE, 4,
-                                /*delete*/ nullptr,
-                                /*power*/ onButton_.get(),
-                                /*multiOut*/ multiOutButton_ ? multiOutButton_.get() : nullptr,
-                                /*sc*/ scButton_ ? scButton_.get() : nullptr,
-                                /*slider*/ isDrumGrid ? nullptr : &gainLabel_, 70,
-                                /*ui*/ uiButton_.get());
-
-    // Place learn button to the left of the UI button (headerArea still has remaining central
-    // space)
-    if (learnButton_->isVisible()) {
-        learnButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-        headerArea.removeFromRight(4);
-    }
+    place(onButton_.get());
+    place(presetButton_ ? presetButton_.get() : nullptr);
+    place(scButton_ ? scButton_.get() : nullptr);
+    place(multiOutButton_ ? multiOutButton_.get() : nullptr);
+    place(uiButton_.get());
+    place(learnButton_.get());
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {

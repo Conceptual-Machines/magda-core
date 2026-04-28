@@ -759,6 +759,50 @@ DeviceProcessor* AudioBridge::getDeviceProcessor(DeviceId deviceId) const {
     return pluginManager_.getDeviceProcessor(deviceId);
 }
 
+namespace {
+te::ExternalPlugin* asExternalPlugin(te::Plugin::Ptr plugin) {
+    return dynamic_cast<te::ExternalPlugin*>(plugin.get());
+}
+}  // namespace
+
+int AudioBridge::getPluginNumPrograms(DeviceId deviceId) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
+        if (auto* pi = ext->getAudioPluginInstance())
+            return pi->getNumPrograms();
+    }
+    return 0;
+}
+
+int AudioBridge::getPluginCurrentProgram(DeviceId deviceId) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
+        if (auto* pi = ext->getAudioPluginInstance())
+            return pi->getCurrentProgram();
+    }
+    return 0;
+}
+
+juce::String AudioBridge::getPluginProgramName(DeviceId deviceId, int programIndex) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
+        if (auto* pi = ext->getAudioPluginInstance()) {
+            if (programIndex >= 0 && programIndex < pi->getNumPrograms())
+                return pi->getProgramName(programIndex);
+        }
+    }
+    return {};
+}
+
+bool AudioBridge::setPluginCurrentProgram(DeviceId deviceId, int programIndex) {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
+        if (auto* pi = ext->getAudioPluginInstance()) {
+            if (programIndex >= 0 && programIndex < pi->getNumPrograms()) {
+                pi->setCurrentProgram(programIndex);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 te::VirtualMidiInputDevice* AudioBridge::getQwertyMidiDevice() {
     if (!qwertyMidiDevice_) {
         // Check if it already exists (persisted from a previous session).

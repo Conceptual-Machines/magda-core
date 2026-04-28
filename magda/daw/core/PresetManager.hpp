@@ -102,25 +102,33 @@ class PresetManager {
     // ========================================================================
 
     /**
-     * @brief Save a device configuration as a preset
-     * @param device The device to save
-     * @param presetName Name for the preset file
-     * @return true on success, false on error
+     * @brief Save a device configuration as a preset.
+     *
+     * Saved into Devices/<plugin folder>/<presetName>.mps. The plugin folder
+     * is derived from device.name. presetName may contain forward slashes to
+     * place the preset in a subfolder (e.g. "Bass/Reese 808").
      */
     bool saveDevicePreset(const DeviceInfo& device, const juce::String& presetName);
 
     /**
-     * @brief Load a device preset
-     * @param presetName Name of the preset file
-     * @param outDevice Output device info
-     * @return true on success, false on error
+     * @brief Load a device preset by plugin folder + relative preset path.
+     *
+     * @param pluginFolder The plugin's folder name (typically device.name)
+     * @param presetRelativePath Relative path within that folder, no extension
+     *                           (e.g. "Init Patch" or "Bass/Reese 808")
      */
-    bool loadDevicePreset(const juce::String& presetName, DeviceInfo& outDevice);
+    bool loadDevicePreset(const juce::String& pluginFolder, const juce::String& presetRelativePath,
+                          DeviceInfo& outDevice);
 
     /**
-     * @brief Get list of available device presets
+     * @brief List device presets for a single plugin, returned as forward-slash
+     *        relative paths sans extension (e.g. ["Init Patch", "Bass/Reese 808"]).
+     *        Sorted: directories first, then files, alphabetical.
      */
-    juce::StringArray getDevicePresets() const;
+    juce::StringArray getDevicePresets(const juce::String& pluginFolder) const;
+
+    /** @brief The Devices/<pluginFolder>/ directory. Created lazily on save. */
+    juce::File getDevicePluginDirectory(const juce::String& pluginFolder) const;
 
     // ========================================================================
     // Error Handling

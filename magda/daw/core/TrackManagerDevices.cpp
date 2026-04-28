@@ -545,6 +545,58 @@ void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int 
     }
 }
 
+bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
+                                     const DeviceInfo& presetDevice) {
+    auto* live = getDeviceInChainByPath(devicePath);
+    if (!live) {
+        DBG("applyDevicePreset: no live device at path");
+        return false;
+    }
+
+    // Don't load a preset captured from a different plugin onto this slot.
+    if (live->pluginId != presetDevice.pluginId) {
+        DBG("applyDevicePreset: pluginId mismatch (live='" << live->pluginId << "', preset='"
+                                                           << presetDevice.pluginId << "')");
+        return false;
+    }
+
+    // Copy state-y fields; preserve identity (id, name, format, fileOrIdentifier,
+    // capabilities, sidechain wiring, current track placement).
+    live->parameters = presetDevice.parameters;
+    live->macros = presetDevice.macros;
+    live->mods = presetDevice.mods;
+    live->gainDb = presetDevice.gainDb;
+    live->gainValue = std::pow(10.0f, presetDevice.gainDb / 20.0f);
+    live->pluginState = presetDevice.pluginState;
+
+    // Push the new pluginState into the running plugin.
+    if (audioEngine_) {
+        if (auto* bridge = audioEngine_->getAudioBridge()) {
+            if (auto plugin = bridge->getPlugin(live->id)) {
+                if (auto* ext = dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin.get())) {
+                    ext->state.setProperty(tracktion::engine::IDs::state, live->pluginState,
+                                           nullptr);
+                    ext->restorePluginStateFromValueTree(ext->state);
+                } else if (auto xml = juce::parseXML(live->pluginState)) {
+                    auto savedState = juce::ValueTree::fromXml(*xml);
+                    if (savedState.isValid())
+                        plugin->restorePluginStateFromValueTree(savedState);
+                }
+            }
+        }
+    }
+
+    // Notify listeners — devicePropertyChanged covers gain/macros/mods refresh
+    // via the AudioBridge sync path, then push each parameter individually so
+    // the UI's ParamGrid pickup matches what the preset captured.
+    notifyDevicePropertyChanged(live->id);
+    for (size_t i = 0; i < live->parameters.size(); ++i) {
+        notifyDeviceParameterChanged(live->id, static_cast<int>(i),
+                                     live->parameters[i].currentValue);
+    }
+    return true;
+}
+
 void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& devicePath,
                                                      int paramIndex, float value) {
     // This method is called when the plugin's native UI changes a parameter.
