@@ -1349,7 +1349,8 @@ void DeviceSlotComponent::showSaveMagdaPresetDialog() {
                     self->currentPresetName_ = name;
             };
 
-            if (magda::PresetManager::getInstance().getDevicePresets().contains(name)) {
+            const auto pluginFolder = self->device_.name;
+            if (magda::PresetManager::getInstance().getDevicePresets(pluginFolder).contains(name)) {
                 juce::AlertWindow::showAsync(
                     juce::MessageBoxOptions()
                         .withIconType(juce::MessageBoxIconType::QuestionIcon)
