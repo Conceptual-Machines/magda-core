@@ -19,6 +19,7 @@
 #include "core/MidiFileWriter.hpp"
 #include "core/ModInfo.hpp"
 #include "core/ParameterUtils.hpp"
+#include "core/PluginPresetScanner.hpp"
 #include "core/PresetManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
@@ -32,7 +33,6 @@
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
-#include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -97,6 +97,57 @@ inline void applyHeaderIconStyle(magda::SvgButton& btn, juce::Colour activeBg,
     if (toggling)
         btn.setClickingTogglesState(true);
 }
+
+// LookAndFeel for the plugin-presets header button. Visually a flat label
+// with a chevron on the right, so it reads as a menu trigger rather than a
+// "select one of these values" combo.
+class PluginPresetsButtonLookAndFeel : public juce::LookAndFeel_V4 {
+  public:
+    void drawButtonBackground(juce::Graphics& g, juce::Button& button,
+                              const juce::Colour& /*bgColour*/, bool isHighlighted,
+                              bool isDown) override {
+        auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
+        auto bg = DarkTheme::getColour(DarkTheme::SURFACE);
+        if (isDown)
+            bg = bg.darker(0.2f);
+        else if (isHighlighted)
+            bg = bg.brighter(0.1f);
+        g.setColour(bg);
+        g.fillRoundedRectangle(bounds, 3.0f);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
+    }
+
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool /*highlighted*/,
+                        bool /*down*/) override {
+        auto bounds = button.getLocalBounds().reduced(6, 0);
+        constexpr float chevronW = 10.0f;
+        auto chevronArea = bounds.removeFromRight((int)chevronW).toFloat();
+
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.setColour(
+            DarkTheme::getTextColour().withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+        g.drawText(button.getButtonText(), bounds.toFloat(), juce::Justification::centredLeft,
+                   /*useEllipses*/ true);
+
+        // Down-pointing chevron, two strokes from the centre.
+        const float cx = chevronArea.getCentreX();
+        const float cy = chevronArea.getCentreY() + 1.0f;
+        constexpr float halfSize = 2.5f;
+        juce::Path chevron;
+        chevron.startNewSubPath(cx - halfSize, cy - 1.0f);
+        chevron.lineTo(cx, cy + 1.5f);
+        chevron.lineTo(cx + halfSize, cy - 1.0f);
+        g.setColour(DarkTheme::getSecondaryTextColour());
+        g.strokePath(chevron, juce::PathStrokeType(1.0f, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+    }
+
+    static PluginPresetsButtonLookAndFeel& getInstance() {
+        static PluginPresetsButtonLookAndFeel instance;
+        return instance;
+    }
+};
 
 }  // namespace
 
@@ -261,28 +312,15 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     presetButton_->onClick = [this]() { showPresetMenu(); };
     addAndMakeVisible(*presetButton_);
 
-    // Native plugin programs (factory presets) dropdown — populated lazily once
-    // the plugin instance is loaded (see refreshProgramsCombo).
-    programsCombo_ = std::make_unique<juce::ComboBox>("Programs");
-    programsCombo_->setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
-    programsCombo_->setColour(juce::ComboBox::backgroundColourId,
-                              DarkTheme::getColour(DarkTheme::SURFACE));
-    programsCombo_->setColour(juce::ComboBox::outlineColourId,
-                              DarkTheme::getColour(DarkTheme::BORDER));
-    programsCombo_->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
-    programsCombo_->setTextWhenNothingSelected({});
-    programsCombo_->onChange = [this]() {
-        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (!audioEngine)
-            return;
-        auto* bridge = audioEngine->getAudioBridge();
-        if (!bridge)
-            return;
-        const int programIndex = programsCombo_->getSelectedId() - 1;
-        if (programIndex >= 0)
-            bridge->setPluginCurrentProgram(device_.id, programIndex);
-    };
-    addAndMakeVisible(*programsCombo_);
+    // Plugin presets menu button — opens a hierarchical popup of disk-scanned
+    // presets (.vstpreset / .aupreset). Hidden when neither disk presets nor
+    // built-in programs are available so plugins with proprietary preset
+    // systems (Vital, Serum 2, etc.) don't show a dead control.
+    presetsButton_ = std::make_unique<juce::TextButton>("Presets");
+    presetsButton_->setLookAndFeel(&PluginPresetsButtonLookAndFeel::getInstance());
+    presetsButton_->setTooltip("Plugin Presets");
+    presetsButton_->onClick = [this]() { showPluginPresetMenu(); };
+    addChildComponent(*presetsButton_);  // hidden by default; shown by refreshPresetsButton
 
     // Vertical gain slider overlaid on the meter, with a tooltip that reports
     // both the current gain and the meter's peak-hold dB.
@@ -799,10 +837,6 @@ void DeviceSlotComponent::timerCallback() {
     auto* bridge = audioEngine->getAudioBridge();
     if (!bridge)
         return;
-
-    // Keep the plugin programs combo selection in sync with the underlying
-    // plugin (program may have been changed via the plugin's native UI).
-    syncProgramsComboSelection();
 
     // Update UI button state to match actual plugin window state
     if (uiButton_) {
@@ -1398,64 +1432,243 @@ void DeviceSlotComponent::loadMagdaPreset(const juce::String& presetRelativePath
     currentPresetName_ = presetRelativePath;
 }
 
-void DeviceSlotComponent::refreshProgramsCombo() {
-    if (!programsCombo_)
+void DeviceSlotComponent::refreshPresetsButton() {
+    if (!presetsButton_)
         return;
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return;
-
-    const int numPrograms = bridge->getPluginNumPrograms(device_.id);
-    // Hide the combo for plugins that don't expose meaningful programs
-    // (most modern VST3s return 1 because presets live as .vstpreset files).
-    if (numPrograms <= 1) {
-        programsCombo_->clear(juce::dontSendNotification);
-        programsCombo_->setVisible(false);
-        return;
-    }
-
-    programsCombo_->clear(juce::dontSendNotification);
-    for (int i = 0; i < numPrograms; ++i) {
-        auto name = bridge->getPluginProgramName(device_.id, i);
-        if (name.isEmpty())
-            name = "Program " + juce::String(i + 1);
-        programsCombo_->addItem(name, i + 1);
-    }
-    const int current = bridge->getPluginCurrentProgram(device_.id);
-    programsCombo_->setSelectedId(current + 1, juce::dontSendNotification);
+    const auto label = pluginPresetName_.isNotEmpty() ? pluginPresetName_ : juce::String("Presets");
+    presetsButton_->setButtonText(label);
 }
 
-void DeviceSlotComponent::syncProgramsComboSelection() {
-    if (!programsCombo_ || isInternalDevice() ||
-        device_.loadState != magda::DeviceLoadState::Loaded)
-        return;
+bool DeviceSlotComponent::hasPluginPresetsAvailable() const {
+    // Disk presets only. The legacy getNumPrograms / getProgramName API is
+    // effectively useless on modern VST3s (Serum, Vital, etc. report 128
+    // generic "Program N" entries that resolve to identical state) so we
+    // don't fall back to it — that's exactly the lie #1118 set out to remove.
+    if (isInternalDevice() || device_.loadState != magda::DeviceLoadState::Loaded)
+        return false;
+    return !magda::PluginPresetScanner::getInstance().getPresets(device_).empty();
+}
+
+namespace {
+
+// Walk a PluginPresetScanner tree, append items / submenus to `menu`,
+// and accumulate every leaf preset's File so the chosen menu id can be
+// resolved back to a path. Items matching `currentLoaded` are ticked.
+void buildPluginPresetSubmenu(juce::PopupMenu& menu,
+                              const std::vector<magda::PluginPresetScanner::Entry>& entries,
+                              int idBase, juce::Array<juce::File>& outFiles,
+                              const juce::File& currentLoaded) {
+    for (const auto& entry : entries) {
+        if (entry.isFolder) {
+            juce::PopupMenu submenu;
+            buildPluginPresetSubmenu(submenu, entry.children, idBase, outFiles, currentLoaded);
+            if (submenu.getNumItems() > 0)
+                menu.addSubMenu(entry.name, submenu);
+        } else {
+            outFiles.add(entry.file);
+            const bool ticked = currentLoaded == entry.file;
+            menu.addItem(idBase + outFiles.size() - 1, entry.name, /*isActive*/ true, ticked);
+        }
+    }
+}
+
+}  // namespace
+
+void DeviceSlotComponent::showPluginPresetMenu() {
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
+    auto* bridge = audioEngine != nullptr ? audioEngine->getAudioBridge() : nullptr;
+    if (bridge == nullptr || isInternalDevice())
         return;
 
-    // First-time population: combo is empty but the plugin is now ready.
-    if (programsCombo_->getNumItems() == 0) {
-        if (bridge->getPluginNumPrograms(device_.id) > 1)
-            refreshProgramsCombo();
+    auto& scanner = magda::PluginPresetScanner::getInstance();
+    const auto extension = scanner.getPresetExtension(device_);
+    const bool diskPresetsSupported = extension.isNotEmpty();
+
+    constexpr int kPresetIdBase = 1000;
+    constexpr int kProgramIdBase = 5000;
+    constexpr int kSavePresetAs = 1;
+    constexpr int kRevealUserDir = 2;
+    constexpr int kRescan = 3;
+
+    juce::PopupMenu menu;
+    juce::Array<juce::File> indexed;
+
+    if (diskPresetsSupported) {
+        const auto& tree = scanner.getPresets(device_);
+        if (!tree.empty()) {
+            buildPluginPresetSubmenu(menu, tree.roots, kPresetIdBase, indexed,
+                                     currentPluginPresetFile_);
+        } else {
+            menu.addItem(kPresetIdBase, "(no presets installed)", /*isActive*/ false);
+        }
+    }
+
+    // Legacy program API as a fallback / supplementary entry. Plugins like
+    // older VSTs and a handful of VST3s still expose meaningful program lists
+    // through getNumPrograms — keep them reachable.
+    const int numPrograms = bridge->getPluginNumPrograms(device_.id);
+    if (numPrograms > 1) {
+        juce::PopupMenu programsSubmenu;
+        const int currentProgram = bridge->getPluginCurrentProgram(device_.id);
+        for (int i = 0; i < numPrograms; ++i) {
+            auto name = bridge->getPluginProgramName(device_.id, i);
+            if (name.isEmpty())
+                name = "Program " + juce::String(i + 1);
+            programsSubmenu.addItem(kProgramIdBase + i, name, /*isActive*/ true,
+                                    /*isTicked*/ i == currentProgram);
+        }
+        if (menu.getNumItems() > 0)
+            menu.addSeparator();
+        menu.addSubMenu("Built-in Programs", programsSubmenu);
+    }
+
+    if (diskPresetsSupported) {
+        menu.addSeparator();
+        menu.addItem(kSavePresetAs, "Save Preset As...");
+        const auto userDir = scanner.getUserPresetDirectory(device_);
+        menu.addItem(kRevealUserDir, "Reveal User Preset Folder",
+                     /*isActive*/ !userDir.getFullPathName().isEmpty());
+        menu.addItem(kRescan, "Rescan");
+    } else if (numPrograms <= 1) {
+        // Nothing to show at all (e.g. a legacy VST with one program and no
+        // disk presets). Don't show the menu.
         return;
     }
 
-    const int current = bridge->getPluginCurrentProgram(device_.id);
-    if (current + 1 != programsCombo_->getSelectedId())
-        programsCombo_->setSelectedId(current + 1, juce::dontSendNotification);
+    juce::Component::SafePointer<DeviceSlotComponent> self(this);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(presetsButton_.get()),
+        [self, indexed](int chosen) {
+            if (self == nullptr || chosen == 0)
+                return;
+            if (chosen == kSavePresetAs) {
+                self->showSavePluginPresetDialog();
+            } else if (chosen == kRevealUserDir) {
+                auto dir =
+                    magda::PluginPresetScanner::getInstance().getUserPresetDirectory(self->device_);
+                if (!dir.exists())
+                    dir.createDirectory();
+                if (dir.exists())
+                    dir.revealToUser();
+            } else if (chosen == kRescan) {
+                magda::PluginPresetScanner::getInstance().rescan(self->device_);
+            } else if (chosen >= kProgramIdBase) {
+                const int programIndex = chosen - kProgramIdBase;
+                auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+                if (auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr) {
+                    if (bridge->setPluginCurrentProgram(self->device_.id, programIndex)) {
+                        auto name = bridge->getPluginProgramName(self->device_.id, programIndex);
+                        self->pluginPresetName_ =
+                            name.isNotEmpty() ? name
+                                              : ("Program " + juce::String(programIndex + 1));
+                        self->currentPluginPresetFile_ = juce::File();
+                        self->refreshPresetsButton();
+                    }
+                }
+            } else if (chosen >= kPresetIdBase) {
+                const int idx = chosen - kPresetIdBase;
+                if (idx >= 0 && idx < indexed.size())
+                    self->loadPluginPresetFile(indexed[idx]);
+            }
+        });
+}
+
+void DeviceSlotComponent::loadPluginPresetFile(const juce::File& file) {
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
+    if (bridge == nullptr)
+        return;
+    if (!bridge->loadPluginPresetFile(device_.id, file)) {
+        showPresetErrorAsync("Load Preset Failed",
+                             "Could not load \"" + file.getFileName() + "\".");
+        return;
+    }
+    currentPluginPresetFile_ = file;
+    pluginPresetName_ = file.getFileNameWithoutExtension();
+    refreshPresetsButton();
+}
+
+void DeviceSlotComponent::showSavePluginPresetDialog() {
+    auto& scanner = magda::PluginPresetScanner::getInstance();
+    const auto extension = scanner.getPresetExtension(device_);
+    if (extension.isEmpty())
+        return;
+    const auto userDir = scanner.getUserPresetDirectory(device_);
+    if (userDir.getFullPathName().isEmpty()) {
+        showPresetErrorAsync("Save Preset Failed",
+                             "No writable preset directory for this plugin format.");
+        return;
+    }
+
+    auto* aw = new juce::AlertWindow("Save Plugin Preset",
+                                     "Enter a name for this " + extension.substring(1) + " preset:",
+                                     juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor("name", pluginPresetName_.isNotEmpty() ? pluginPresetName_ : device_.name,
+                      "Name:");
+    aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<DeviceSlotComponent> self(this);
+    aw->enterModalState(
+        true, juce::ModalCallbackFunction::create([aw, self, userDir, extension](int result) {
+            if (result != 1) {
+                delete aw;
+                return;
+            }
+            auto rawName = aw->getTextEditorContents("name").trim();
+            delete aw;
+            if (rawName.isEmpty() || self == nullptr)
+                return;
+            auto safeName = juce::File::createLegalFileName(rawName);
+            if (safeName.isEmpty())
+                return;
+
+            auto target = userDir.getChildFile(safeName + extension);
+
+            auto doSave = [self, target]() {
+                if (self == nullptr)
+                    return;
+                auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+                auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
+                if (bridge == nullptr)
+                    return;
+                if (!bridge->savePluginPresetFile(self->device_.id, target)) {
+                    showPresetErrorAsync("Save Preset Failed",
+                                         "Could not write \"" + target.getFileName() + "\".");
+                    return;
+                }
+                magda::PluginPresetScanner::getInstance().rescan(self->device_);
+                self->currentPluginPresetFile_ = target;
+                self->pluginPresetName_ = target.getFileNameWithoutExtension();
+                self->refreshPresetsButton();
+            };
+
+            if (target.existsAsFile()) {
+                juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions()
+                        .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                        .withTitle("Overwrite Preset?")
+                        .withMessage("\"" + target.getFileName() + "\" already exists. Overwrite?")
+                        .withButton("Overwrite")
+                        .withButton("Cancel"),
+                    [doSave](int r) {
+                        if (r == 1)
+                            doSave();
+                    });
+            } else {
+                doSave();
+            }
+        }));
 }
 
 void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Detect plugin replacement BEFORE assignment so we can drop a stale
     // currentPresetName_ reference (a preset is tied to one plugin).
-    if (currentPresetName_.isNotEmpty() && device.pluginId != device_.pluginId)
+    if (device.pluginId != device_.pluginId) {
         currentPresetName_.clear();
+        pluginPresetName_.clear();
+        currentPluginPresetFile_ = juce::File();
+    }
 
     device_ = device;
     // Custom name and font for drum grid (MPC-style with Microgramma)
@@ -1477,7 +1690,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Plugin instance may have just become available (or its program list changed
     // due to a state restore) — repopulate.
     if (device_.loadState == magda::DeviceLoadState::Loaded && !isInternalDevice())
-        refreshProgramsCombo();
+        refreshPresetsButton();
 
     // Update sidechain button visibility and state
     if (scButton_) {
@@ -1786,20 +1999,18 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // When collapsed, NodeComponent calls resizedCollapsed() first then resizedContent()
     // with an empty rect — so we must not touch meter visibility when collapsed.
     if (!collapsed_) {
-        // Carve the FULL-width second header first so the programs dropdown
-        // can sit flush against the right edge of the panel.
+        // Carve the FULL-width second header first so the presets button can
+        // sit flush against the right edge of the panel.
         auto secondHeaderArea = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
-        if (programsCombo_) {
-            const bool showCombo = device_.loadState == magda::DeviceLoadState::Loaded &&
-                                   !isInternalDevice() && !isChordEngine_ && !isArpeggiator_ &&
-                                   !isStepSequencer_;
-            if (showCombo) {
-                const int comboWidth = juce::jmin(140, secondHeaderArea.getWidth() / 2);
-                programsCombo_->setBounds(
-                    secondHeaderArea.removeFromRight(comboWidth).reduced(2, 3));
-                programsCombo_->setVisible(true);
+        if (presetsButton_) {
+            const bool eligible = !isChordEngine_ && !isArpeggiator_ && !isStepSequencer_;
+            const bool show = eligible && hasPluginPresetsAvailable();
+            if (show) {
+                const int btnWidth = juce::jmin(140, secondHeaderArea.getWidth() / 2);
+                presetsButton_->setBounds(secondHeaderArea.removeFromRight(btnWidth).reduced(2, 3));
+                presetsButton_->setVisible(true);
             } else {
-                programsCombo_->setVisible(false);
+                presetsButton_->setVisible(false);
             }
         }
 
@@ -1828,8 +2039,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     if (collapsed_ || device_.loadState != magda::DeviceLoadState::Loaded) {
         paramGrid_->setVisible(false);
         gainLabel_.setVisible(false);
-        if (programsCombo_)
-            programsCombo_->setVisible(false);
+        if (presetsButton_)
+            presetsButton_->setVisible(false);
         if (gainSlider_)
             gainSlider_->setVisible(false);
         if (presetButton_)

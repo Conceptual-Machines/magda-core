@@ -320,6 +320,18 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     /** Switch the plugin's current program. Returns true on success. */
     bool setPluginCurrentProgram(DeviceId deviceId, int programIndex);
 
+    // ------------------------------------------------------------------------
+    // Disk-based plugin preset loading / saving (.vstpreset / .aupreset).
+    //
+    // VST3: routed through JUCE's ExtensionsVisitor::VST3Client which feeds
+    //       raw .vstpreset bytes to IComponent::setState / IEditController::setState.
+    // AU:   uses AudioPluginInstance::setCurrentProgramStateInformation, which
+    //       parses the .aupreset plist and calls
+    //       AudioUnitSetProperty(kAudioUnitProperty_ClassInfo).
+    // ------------------------------------------------------------------------
+    bool loadPluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
+    bool savePluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
+
     /**
      * @brief Get (or lazily create) the virtual MIDI input device used by
      *        the QWERTY keyboard. Returns nullptr if creation fails.
