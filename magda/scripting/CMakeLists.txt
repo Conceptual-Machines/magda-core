@@ -87,6 +87,8 @@ set(MAGDA_SCRIPTING_SOURCES
     LuaRuntime.cpp
     LuaSandbox.hpp
     LuaSandbox.cpp
+    MagdaApiLuaBindings.hpp
+    MagdaApiLuaBindings.cpp
 )
 
 add_library(magda_scripting STATIC ${MAGDA_SCRIPTING_SOURCES})
@@ -95,6 +97,12 @@ target_link_libraries(magda_scripting
     PUBLIC
     lua_static
     juce::juce_core
+    # MagdaApi headers live under magda/daw/api/. The bindings need the
+    # full DAW types (TrackInfo, ClipInfo, ProjectInfo). Long-term these
+    # types could be split into a thin "magda_api_types" lib so scripting
+    # doesn't pull all of magda_daw, but that refactor is out of scope
+    # for #30.
+    magda_daw
 )
 
 target_include_directories(magda_scripting

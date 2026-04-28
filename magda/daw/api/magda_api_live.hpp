@@ -6,6 +6,7 @@
 #include "magda_api.hpp"
 #include "project_api_live.hpp"
 #include "selection_api_live.hpp"
+#include "session_api_live.hpp"
 #include "track_api_live.hpp"
 #include "undo_api_live.hpp"
 
@@ -29,6 +30,9 @@ class MagdaApiLive : public MagdaApi {
     ClipApi& clips() override {
         return clips_;
     }
+    SessionApi& session() override {
+        return session_;
+    }
     ProjectApi& project() override {
         return project_;
     }
@@ -42,6 +46,7 @@ class MagdaApiLive : public MagdaApi {
     AliasApiLive aliases_;
     TrackApiLive tracks_;
     ClipApiLive clips_;
+    SessionApiLive session_;
     ProjectApiLive project_;
     UndoApiLive undo_;
 };
