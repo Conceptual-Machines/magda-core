@@ -1,11 +1,15 @@
 #pragma once
 
+#include <unordered_set>
+
+#include "../core/ClipTypes.hpp"
 #include "../core/TypeIds.hpp"
 
 namespace magda {
 
 /**
- * Abstract view onto SelectionManager — the subset the agent layer reads.
+ * Abstract view onto SelectionManager — the subset the agent layer reads
+ * and writes.
  *
  * Lives behind MagdaApi so agents/scripting/CLI consumers don't depend on
  * the SelectionManager singleton directly. Kept lightweight on purpose:
@@ -14,14 +18,16 @@ namespace magda {
  * (e.g. AutomationLaneSelection) are deliberately not exposed here —
  * their members are surfaced as primitive accessors instead.
  *
- * PR1 only exposes what AutomationExecutor needs; subsequent PRs grow
- * the surface as more call sites migrate.
+ * PR1 added the read paths AutomationExecutor needs; PR2 adds the
+ * multi-selection read/write surface CompactExecutor uses.
  */
 class SelectionApi {
   public:
     virtual ~SelectionApi() = default;
 
+    // Reads
     virtual TrackId getSelectedTrack() const = 0;
+    virtual const std::unordered_set<ClipId>& getSelectedClips() const = 0;
 
     /**
      * @return The lane id of the currently selected automation lane, or
@@ -30,6 +36,10 @@ class SelectionApi {
      *         nothing is selected).
      */
     virtual AutomationLaneId getSelectedAutomationLaneId() const = 0;
+
+    // Writes
+    virtual void selectTracks(const std::unordered_set<TrackId>& trackIds) = 0;
+    virtual void selectClips(const std::unordered_set<ClipId>& clipIds) = 0;
 };
 
 }  // namespace magda
