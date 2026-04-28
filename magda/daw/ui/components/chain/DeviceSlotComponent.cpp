@@ -257,19 +257,27 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     };
     addAndMakeVisible(*presetButton_);
 
-    // ----- MOCK UI (no wiring): Native plugin programs dropdown (second header) -----
+    // Native plugin programs (factory presets) dropdown — populated lazily once
+    // the plugin instance is loaded (see refreshProgramsCombo).
     programsCombo_ = std::make_unique<juce::ComboBox>("Programs");
-    programsCombo_->addItem("Init Patch", 1);
-    programsCombo_->addItem("Bass Lead", 2);
-    programsCombo_->addItem("Pad", 3);
-    programsCombo_->addItem("Bell", 4);
-    programsCombo_->setSelectedId(1, juce::dontSendNotification);
     programsCombo_->setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
     programsCombo_->setColour(juce::ComboBox::backgroundColourId,
                               DarkTheme::getColour(DarkTheme::SURFACE));
     programsCombo_->setColour(juce::ComboBox::outlineColourId,
                               DarkTheme::getColour(DarkTheme::BORDER));
     programsCombo_->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
+    programsCombo_->setTextWhenNothingSelected({});
+    programsCombo_->onChange = [this]() {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        if (!audioEngine)
+            return;
+        auto* bridge = audioEngine->getAudioBridge();
+        if (!bridge)
+            return;
+        const int programIndex = programsCombo_->getSelectedId() - 1;
+        if (programIndex >= 0)
+            bridge->setPluginCurrentProgram(device_.id, programIndex);
+    };
     addAndMakeVisible(*programsCombo_);
 
     // Vertical gain slider overlaid on the meter, with a tooltip that reports
@@ -788,6 +796,10 @@ void DeviceSlotComponent::timerCallback() {
     if (!bridge)
         return;
 
+    // Keep the plugin programs combo selection in sync with the underlying
+    // plugin (program may have been changed via the plugin's native UI).
+    syncProgramsComboSelection();
+
     // Update UI button state to match actual plugin window state
     if (uiButton_) {
         bool isOpen = bridge->isPluginWindowOpen(device_.id);
@@ -1194,6 +1206,59 @@ int DeviceSlotComponent::getPreferredWidth() const {
     return getTotalWidth(getDynamicSlotWidth()) + meterExtra;
 }
 
+void DeviceSlotComponent::refreshProgramsCombo() {
+    if (!programsCombo_)
+        return;
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return;
+
+    const int numPrograms = bridge->getPluginNumPrograms(device_.id);
+    // Hide the combo for plugins that don't expose meaningful programs
+    // (most modern VST3s return 1 because presets live as .vstpreset files).
+    if (numPrograms <= 1) {
+        programsCombo_->clear(juce::dontSendNotification);
+        programsCombo_->setVisible(false);
+        return;
+    }
+
+    programsCombo_->clear(juce::dontSendNotification);
+    for (int i = 0; i < numPrograms; ++i) {
+        auto name = bridge->getPluginProgramName(device_.id, i);
+        if (name.isEmpty())
+            name = "Program " + juce::String(i + 1);
+        programsCombo_->addItem(name, i + 1);
+    }
+    const int current = bridge->getPluginCurrentProgram(device_.id);
+    programsCombo_->setSelectedId(current + 1, juce::dontSendNotification);
+}
+
+void DeviceSlotComponent::syncProgramsComboSelection() {
+    if (!programsCombo_ || isInternalDevice() ||
+        device_.loadState != magda::DeviceLoadState::Loaded)
+        return;
+    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!audioEngine)
+        return;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (!bridge)
+        return;
+
+    // First-time population: combo is empty but the plugin is now ready.
+    if (programsCombo_->getNumItems() == 0) {
+        if (bridge->getPluginNumPrograms(device_.id) > 1)
+            refreshProgramsCombo();
+        return;
+    }
+
+    const int current = bridge->getPluginCurrentProgram(device_.id);
+    if (current + 1 != programsCombo_->getSelectedId())
+        programsCombo_->setSelectedId(current + 1, juce::dontSendNotification);
+}
+
 void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     device_ = device;
     // Custom name and font for drum grid (MPC-style with Microgramma)
@@ -1211,6 +1276,11 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     gainLabel_.setValue(device.gainDb, juce::dontSendNotification);
     if (gainSlider_)
         gainSlider_->setValue(device.gainDb, juce::dontSendNotification);
+
+    // Plugin instance may have just become available (or its program list changed
+    // due to a state restore) — repopulate.
+    if (device_.loadState == magda::DeviceLoadState::Loaded && !isInternalDevice())
+        refreshProgramsCombo();
 
     // Update sidechain button visibility and state
     if (scButton_) {

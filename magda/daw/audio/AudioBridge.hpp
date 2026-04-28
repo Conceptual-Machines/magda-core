@@ -310,6 +310,16 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
 
+    // ------------------------------------------------------------------------
+    // VST/AU plugin program (factory preset) access for hosted external plugins.
+    // All return zero/empty for non-external (internal/MAGDA) devices.
+    // ------------------------------------------------------------------------
+    int getPluginNumPrograms(DeviceId deviceId) const;
+    int getPluginCurrentProgram(DeviceId deviceId) const;
+    juce::String getPluginProgramName(DeviceId deviceId, int programIndex) const;
+    /** Switch the plugin's current program. Returns true on success. */
+    bool setPluginCurrentProgram(DeviceId deviceId, int programIndex);
+
     /**
      * @brief Get (or lazily create) the virtual MIDI input device used by
      *        the QWERTY keyboard. Returns nullptr if creation fails.

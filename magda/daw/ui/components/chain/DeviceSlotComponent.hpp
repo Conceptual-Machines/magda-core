@@ -288,6 +288,10 @@ class DeviceSlotComponent : public NodeComponent,
     bool hasAutomapBindings_ = false;  // Any DeviceMacro binding targets this device
     void refreshControllerIndicators();
 
+    // Plugin programs combo helpers
+    void refreshProgramsCombo();        // full re-populate (item list + selection)
+    void syncProgramsComboSelection();  // selection-only, cheap, called from timer
+
     void updateParamModulation();  // Update mod/macro pointers for params
     void updateParameterSlots();   // Reload parameter data for current page
     void updateParameterValues();  // Update only parameter values (for polling)
