@@ -12,6 +12,8 @@
 
 namespace magda {
 
+class MagdaApi;
+
 /**
  * @brief Concrete DAW agent that wires LLM → compact IR → execution.
  *
@@ -26,7 +28,7 @@ namespace magda {
  */
 class DAWAgent : public AgentInterface {
   public:
-    DAWAgent();
+    explicit DAWAgent(MagdaApi& api);
     ~DAWAgent() override;
 
     // AgentInterface
@@ -91,6 +93,7 @@ class DAWAgent : public AgentInterface {
     /** Get the compact system prompt with instruction set. */
     static const char* getCompactSystemPrompt();
 
+    MagdaApi& api_;
     CompactParser parser_;
     CompactExecutor executor_;
     dsl::Interpreter interpreter_;

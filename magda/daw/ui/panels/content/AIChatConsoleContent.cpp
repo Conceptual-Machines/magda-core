@@ -502,7 +502,7 @@ void AIChatConsoleContent::RequestThread::run() {
                             response += "\n";
                         response += musicDesc;
                     }
-                    magda::CompactExecutor executor;
+                    magda::CompactExecutor executor(*safeThis->magdaApi_);
                     // Hand the command agent's freshly-created clip (if any)
                     // explicitly to the music executor. Otherwise it will
                     // auto-create a new clip — we never want it to silently
@@ -888,7 +888,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     magdaApi_ = std::make_unique<magda::MagdaApiLive>();
 
     // Create agents
-    agent_ = std::make_unique<magda::DAWAgent>();  // legacy DSL REPL
+    agent_ = std::make_unique<magda::DAWAgent>(*magdaApi_);  // legacy DSL REPL
     agent_->start();
     routerAgent_ = std::make_unique<magda::RouterAgent>();
     commandAgent_ = std::make_unique<magda::CommandAgent>();
