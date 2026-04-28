@@ -25,12 +25,23 @@ juce::File writeTempScript(const juce::String& source, const juce::String& name)
 
 }  // namespace
 
-TEST_CASE("LuaController loads a script and dispatches MIDI to on_midi",
+TEST_CASE("LuaController dispatches MIDI to on_midi with full event table",
           "[lua_controller]") {
+    // Verifies the event-table contract end to end: type, channel, number,
+    // value, port. The script dumps each field into a write the mock can
+    // read back, so we assert observable side effects rather than relying
+    // on the dispatch not crashing.
     auto script = writeTempScript(R"(
-        events_received = {}
         function on_midi(e)
-          table.insert(events_received, e.type)
+          if e.type == 'cc' then
+            -- Pack channel/number/value into recognisable mock writes.
+            magda.tracks.set_volume(e.channel, e.number / 127.0)
+            magda.tracks.set_pan(e.channel, e.value / 127.0)
+            magda.tracks.set_name(e.channel, e.port)
+          elseif e.type == 'note_on' then
+            magda.tracks.set_volume(100 + e.channel, e.number / 127.0)
+            magda.tracks.set_pan(100 + e.channel, e.value / 127.0)
+          end
         end
     )",
                                   "test_lua_controller_dispatch.lua");
@@ -41,13 +52,25 @@ TEST_CASE("LuaController loads a script and dispatches MIDI to on_midi",
 
     controller.dispatchEventForTest("test-port",
                                     juce::MidiMessage::controllerEvent(1, 7, 100));
-    controller.dispatchEventForTest("test-port",
-                                    juce::MidiMessage::noteOn(1, 60, juce::uint8(127)));
+    controller.dispatchEventForTest("my-keyboard",
+                                    juce::MidiMessage::noteOn(2, 60, juce::uint8(127)));
 
-    // Read back via the runtime — load a small inspection chunk against the
-    // same VM by running another eval through a fresh runtime won't work
-    // because state is per-runtime. Instead poke at it through bindings.
-    // We assert side effects via events that did call into the mock below.
+    // CC #7 value 100 on channel 1 → volume(1, 7/127), pan(1, 100/127),
+    // name(1, "test-port")
+    REQUIRE(mock.tracks_.volumeWrites.size() == 2);
+    REQUIRE(mock.tracks_.volumeWrites[0].id == 1);
+    REQUIRE(mock.tracks_.volumeWrites[0].value > 0.054f);
+    REQUIRE(mock.tracks_.volumeWrites[0].value < 0.056f);
+    REQUIRE(mock.tracks_.panWrites[0].value > 0.785f);  // 100/127
+    REQUIRE(mock.tracks_.panWrites[0].value < 0.788f);
+    REQUIRE(mock.tracks_.nameWrites.size() == 1);
+    REQUIRE(mock.tracks_.nameWrites[0].value == "test-port");
+
+    // Note 60, velocity 127 on channel 2 → ids offset by 100.
+    REQUIRE(mock.tracks_.volumeWrites[1].id == 102);
+    REQUIRE(mock.tracks_.volumeWrites[1].value > 0.472f);  // 60/127
+    REQUIRE(mock.tracks_.panWrites[1].id == 102);
+    REQUIRE(mock.tracks_.panWrites[1].value == 1.0f);  // 127/127
 
     script.deleteFile();
 }

@@ -34,9 +34,11 @@ const char* midiTypeName(const juce::MidiMessage& m) {
 //   type     string: 'cc' | 'note_on' | 'note_off' | 'pitch_bend' |
 //                    'aftertouch' | 'program_change' | 'other'
 //   channel  integer 1..16
-//   number   integer (CC #, note #, or program #; 0 for pitch_bend/aftertouch)
+//   number   integer (CC #, note #, program #; 0 for pitch_bend and
+//                     channel-pressure aftertouch; note number for
+//                     poly-aftertouch)
 //   value    integer (CC value 0..127, velocity 0..127, pitch_bend
-//                     -8192..8191, aftertouch 0..127)
+//                     -8192..8191, aftertouch pressure 0..127)
 //   port     string  (originating device's display name)
 void pushMidiEvent(lua_State* L, const juce::String& deviceName,
                    const juce::MidiMessage& m) {

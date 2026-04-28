@@ -21,6 +21,12 @@ bool reloadActiveLuaScript();
 /** Filename of the currently active Lua script, or empty if none. */
 juce::String activeLuaScriptName();
 
+/** True if the per-user scripts folder contains at least one .lua file.
+ *  Disambiguates "no scripts present" from "load failed" after a Reload —
+ *  LuaController::loadScript clears the active name on any failure, so the
+ *  dialog can't tell those two cases apart from activeLuaScriptName alone. */
+bool hasAnyLuaScripts();
+
 /** Opens the per-user controller scripts folder in the OS file explorer.
  *  Creates the folder if it doesn't exist. */
 void revealLuaScriptsFolder();

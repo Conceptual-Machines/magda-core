@@ -18,8 +18,8 @@ Define `on_midi(e)`. Each MIDI event is a Lua table:
 |---|---|---|
 | `type` | string | `cc`, `note_on`, `note_off`, `pitch_bend`, `aftertouch`, `program_change`, `other` |
 | `channel` | int | 1..16 |
-| `number` | int | CC#, note#, program# (0 for pitch_bend / channel pressure) |
-| `value` | int | CC value 0..127, velocity 0..127, pitch_bend −8192..8191, aftertouch 0..127 |
+| `number` | int | CC#, note#, program#; 0 for pitch_bend and channel-pressure aftertouch; note# for poly-aftertouch |
+| `value` | int | CC value 0..127, velocity 0..127, pitch_bend −8192..8191, aftertouch pressure 0..127 |
 | `port` | string | originating device's display name |
 
 Available bindings (all on the message thread):

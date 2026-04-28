@@ -883,23 +883,25 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // Register for config changes (e.g. preset changed in settings dialog)
     magda::Config::getInstance().addListener(this);
 
-    // Reuse the engine's MagdaApi so we don't keep a redundant facade
-    // alive in parallel. The engine outlives this panel; both wrap the
-    // same singletons either way.
+    // Prefer the engine's MagdaApi (avoids a redundant facade). Fall back
+    // to owning one if the engine is unreachable so magdaApi_ is never
+    // null — every dereference site below ( *safeThis->magdaApi_ etc. )
+    // assumes a live api.
     if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
             magda::TrackManager::getInstance().getAudioEngine())) {
         magdaApi_ = &engine->getMagdaApi();
+    } else {
+        ownedApi_ = std::make_unique<magda::MagdaApiLive>();
+        magdaApi_ = ownedApi_.get();
     }
 
     // Create agents
-    if (magdaApi_ != nullptr) {
-        agent_ = std::make_unique<magda::DAWAgent>(*magdaApi_);  // legacy DSL REPL
-        agent_->start();
-        commandAgent_ = std::make_unique<magda::CommandAgent>(*magdaApi_);
-        automationAgent_ = std::make_unique<magda::AutomationAgent>(*magdaApi_);
-    }
+    agent_ = std::make_unique<magda::DAWAgent>(*magdaApi_);  // legacy DSL REPL
+    agent_->start();
     routerAgent_ = std::make_unique<magda::RouterAgent>();
+    commandAgent_ = std::make_unique<magda::CommandAgent>(*magdaApi_);
     musicAgent_ = std::make_unique<magda::MusicAgent>();
+    automationAgent_ = std::make_unique<magda::AutomationAgent>(*magdaApi_);
     controllerAgent_ = std::make_unique<magda::ControllerProfileAgent>();
 }
 

@@ -367,6 +367,11 @@ juce::String activeLuaScriptName() {
     return {};
 }
 
+bool hasAnyLuaScripts() {
+    magda::scripting::LuaScriptStore store;
+    return !store.enumerate().empty();
+}
+
 void revealLuaScriptsFolder() {
     if (auto* app = MagdaDAWApplication::getMagdaInstance())
         app->revealLuaScriptsFolder();

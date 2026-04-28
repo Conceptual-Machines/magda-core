@@ -550,15 +550,17 @@ class SelfClosingDialogWindow : public juce::DialogWindow {
 void ControllersDialog::onReloadLuaClicked() {
     if (scripting_app::reloadActiveLuaScript()) {
         refreshLuaStatus();
-    } else {
-        auto name = scripting_app::activeLuaScriptName();
-        if (name.isEmpty())
-            luaStatusLabel_.setText("No script in scripts folder",
-                                    juce::dontSendNotification);
-        else
-            luaStatusLabel_.setText("Reload failed (see log)",
-                                    juce::dontSendNotification);
+        return;
     }
+    // Reload returned false. Disambiguate via hasAnyLuaScripts() because
+    // LuaController::loadScript clears the active name on any failure —
+    // checking the name alone would mislabel a syntax error as "no script".
+    if (scripting_app::hasAnyLuaScripts())
+        luaStatusLabel_.setText("Reload failed (see log)",
+                                juce::dontSendNotification);
+    else
+        luaStatusLabel_.setText("No script in scripts folder",
+                                juce::dontSendNotification);
 }
 
 void ControllersDialog::onOpenScriptsFolderClicked() {
