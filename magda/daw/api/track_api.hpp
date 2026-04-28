@@ -29,6 +29,8 @@ class TrackApi {
 
     virtual int getNumTracks() const = 0;
     virtual const std::vector<TrackInfo>& getTracks() const = 0;
+    virtual TrackInfo* getTrack(TrackId trackId) = 0;
+    virtual const TrackInfo* getTrack(TrackId trackId) const = 0;
 
     virtual void setTrackName(TrackId trackId, const juce::String& name) = 0;
     virtual void setTrackVolume(TrackId trackId, float volume, bool fromAutomation = false) = 0;

@@ -6,7 +6,7 @@
 
 namespace magda {
 
-DAWAgent::DAWAgent(MagdaApi& api) : api_(api), executor_(api) {}
+DAWAgent::DAWAgent(MagdaApi& api) : api_(api), executor_(api), interpreter_(api) {}
 DAWAgent::~DAWAgent() = default;
 
 std::map<std::string, std::string> DAWAgent::getCapabilities() const {

@@ -20,6 +20,14 @@ const std::vector<TrackInfo>& TrackApiLive::getTracks() const {
     return TrackManager::getInstance().getTracks();
 }
 
+TrackInfo* TrackApiLive::getTrack(TrackId trackId) {
+    return TrackManager::getInstance().getTrack(trackId);
+}
+
+const TrackInfo* TrackApiLive::getTrack(TrackId trackId) const {
+    return TrackManager::getInstance().getTrack(trackId);
+}
+
 void TrackApiLive::setTrackName(TrackId trackId, const juce::String& name) {
     TrackManager::getInstance().setTrackName(trackId, name);
 }

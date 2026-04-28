@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/agents/dsl_interpreter.hpp"
+#include "magda/daw/api/magda_api_live.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
@@ -47,7 +48,8 @@ static std::vector<int> getSortedPitches(const ClipInfo* clip) {
 
 TEST_CASE("notes.add_chord - C major triad", "[dsl][chord]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
@@ -69,7 +71,8 @@ TEST_CASE("notes.add_chord - C major triad", "[dsl][chord]") {
 
 TEST_CASE("notes.add_chord - minor triad", "[dsl][chord]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
@@ -89,7 +92,8 @@ TEST_CASE("notes.add_chord - minor triad", "[dsl][chord]") {
 
 TEST_CASE("notes.add_chord - min7 four-note chord", "[dsl][chord]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
@@ -114,7 +118,8 @@ TEST_CASE("notes.add_chord - min7 four-note chord", "[dsl][chord]") {
 
 TEST_CASE("notes.add_chord - dom7", "[dsl][chord]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
@@ -135,7 +140,8 @@ TEST_CASE("notes.add_chord - dom7", "[dsl][chord]") {
 
 TEST_CASE("notes.add_chord - diminished", "[dsl][chord]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
@@ -155,7 +161,8 @@ TEST_CASE("notes.add_chord - diminished", "[dsl][chord]") {
 
 TEST_CASE("notes.add_chord - augmented", "[dsl][chord]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
@@ -175,7 +182,8 @@ TEST_CASE("notes.add_chord - augmented", "[dsl][chord]") {
 
 TEST_CASE("notes.add_chord - sus2", "[dsl][chord]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
@@ -195,7 +203,8 @@ TEST_CASE("notes.add_chord - sus2", "[dsl][chord]") {
 
 TEST_CASE("notes.add_chord - sus4", "[dsl][chord]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
@@ -215,7 +224,8 @@ TEST_CASE("notes.add_chord - sus4", "[dsl][chord]") {
 
 TEST_CASE("notes.add_chord - power chord", "[dsl][chord]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
@@ -238,7 +248,8 @@ TEST_CASE("notes.add_chord - power chord", "[dsl][chord]") {
 
 TEST_CASE("notes.add_chord - quality aliases", "[dsl][chord][alias]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     SECTION("maj alias") {
         REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
@@ -294,7 +305,8 @@ TEST_CASE("notes.add_chord - quality aliases", "[dsl][chord][alias]") {
 
 TEST_CASE("notes.add_chord - first inversion", "[dsl][chord][inversion]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // C major first inversion: E4, G4, C5
     REQUIRE(
@@ -316,7 +328,8 @@ TEST_CASE("notes.add_chord - first inversion", "[dsl][chord][inversion]") {
 
 TEST_CASE("notes.add_chord - second inversion", "[dsl][chord][inversion]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // C major second inversion: G4, C5, E5
     REQUIRE(
@@ -342,7 +355,8 @@ TEST_CASE("notes.add_chord - second inversion", "[dsl][chord][inversion]") {
 
 TEST_CASE("notes.add_chord - beat position and velocity", "[dsl][chord]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute(
         "track(name=\"Test\", type=\"midi\")"
@@ -367,7 +381,8 @@ TEST_CASE("notes.add_chord - beat position and velocity", "[dsl][chord]") {
 
 TEST_CASE("notes.add_chord - multiple chords (progression)", "[dsl][chord][progression]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // Em - C - G - D progression
     REQUIRE(interp.execute(
@@ -391,7 +406,8 @@ TEST_CASE("notes.add_chord - multiple chords (progression)", "[dsl][chord][progr
 
 TEST_CASE("clip.new without bar places after last clip", "[dsl][chord][autoplace]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // Create first clip at bar 1, 4 bars long (ends at bar 5)
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\").clip.new(bar=1, length_bars=4)"));
@@ -418,7 +434,8 @@ TEST_CASE("clip.new without bar places after last clip", "[dsl][chord][autoplace
 
 TEST_CASE("clip.new without bar on empty track places at bar 1", "[dsl][chord][autoplace]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\").clip.new(length_bars=4)"));
 
@@ -439,7 +456,8 @@ TEST_CASE("clip.new without bar on empty track places at bar 1", "[dsl][chord][a
 
 TEST_CASE("notes.add_chord - missing root", "[dsl][chord][error]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
                                  ".clip.new(bar=1, length_bars=4)"
@@ -449,7 +467,8 @@ TEST_CASE("notes.add_chord - missing root", "[dsl][chord][error]") {
 
 TEST_CASE("notes.add_chord - missing quality", "[dsl][chord][error]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
                                  ".clip.new(bar=1, length_bars=4)"
@@ -459,7 +478,8 @@ TEST_CASE("notes.add_chord - missing quality", "[dsl][chord][error]") {
 
 TEST_CASE("notes.add_chord - unknown quality", "[dsl][chord][error]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
                                  ".clip.new(bar=1, length_bars=4)"
@@ -473,7 +493,8 @@ TEST_CASE("notes.add_chord - unknown quality", "[dsl][chord][error]") {
 
 TEST_CASE("notes.add_chord - continues after failed statement", "[dsl][chord][recovery]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // First statement fails (bad FX), but track is created.
     // Second statement should still add chords to the clip.
@@ -498,7 +519,8 @@ TEST_CASE("notes.add_chord - continues after failed statement", "[dsl][chord][re
 
 TEST_CASE("notes.add_chord - undo removes all chord notes", "[dsl][chord][undo]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
