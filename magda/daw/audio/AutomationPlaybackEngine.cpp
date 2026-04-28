@@ -35,9 +35,8 @@ AutomationPlaybackEngine::AutomationPlaybackEngine(AudioBridge& bridge, te::Edit
         auto* lane = AutomationManager::getInstance().getLane(laneId);
         if (!lane)
             return;
-        DBG("[AutoPb] touchSuppressionListener lane=" << laneId
-                                                       << " suppressed=" << (int)suppressed
-                                                       << " bypass=" << (int)lane->bypass);
+        DBG("[AutoPb] touchSuppressionListener lane=" << laneId << " suppressed=" << (int)suppressed
+                                                      << " bypass=" << (int)lane->bypass);
         if (suppressed) {
             clearLane(*lane);
             if (auto* param = resolveParameter(lane->target))

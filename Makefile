@@ -185,7 +185,7 @@ rebuild: clean debug
 format:
 	@echo "🎨 Formatting code..."
 	@if command -v clang-format >/dev/null 2>&1; then \
-		find . -name "*.cpp" -o -name "*.hpp" -o -name "*.h" | grep -E "(daw|agents|tests)" | xargs clang-format -i; \
+		find magda tests \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) | xargs clang-format -i; \
 		echo "✅ Code formatting complete"; \
 	else \
 		echo "❌ clang-format not found. Please install it first."; \

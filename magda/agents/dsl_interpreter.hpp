@@ -9,6 +9,10 @@
 #include "../daw/core/ClipTypes.hpp"
 #include "../daw/core/TrackTypes.hpp"
 
+namespace magda {
+class MagdaApi;
+}
+
 namespace magda::dsl {
 
 // ============================================================================
@@ -144,10 +148,10 @@ struct InterpreterContext {
 // ============================================================================
 class Interpreter {
   public:
-    Interpreter();
+    explicit Interpreter(MagdaApi& api);
 
     /**
-     * @brief Execute DSL code against TrackManager/ClipManager
+     * @brief Execute DSL code against the MagdaApi facade.
      * @return true on success, false on error (check getError())
      */
     bool execute(const char* dslCode);
@@ -175,7 +179,7 @@ class Interpreter {
      * can target it. Controlled by setContextEnabled(): when false, the
      * snapshot omits selection info so the LLM has no bias signal.
      */
-    static juce::String buildStateSnapshot();
+    static juce::String buildStateSnapshot(MagdaApi& api);
 
     /** Toggle whether the state snapshot exposes the UI selection to the LLM. */
     static void setContextEnabled(bool enabled);
@@ -233,6 +237,7 @@ class Interpreter {
     double barsToTime(double bar) const;
     double barsToBeats(double bars) const;
 
+    MagdaApi& api_;
     InterpreterContext ctx_;
 };
 

@@ -4,17 +4,19 @@
 #include <cmath>
 #include <limits>
 
-#include "../daw/core/ClipManager.hpp"
+#include "../daw/api/clip_api.hpp"
+#include "../daw/api/magda_api.hpp"
+#include "../daw/api/project_api.hpp"
+#include "../daw/api/selection_api.hpp"
+#include "../daw/api/track_api.hpp"
+#include "../daw/api/undo_api.hpp"
 #include "../daw/core/DeviceInfo.hpp"
 #include "../daw/core/MidiNoteCommands.hpp"
 #include "../daw/core/PluginAlias.hpp"
-#include "../daw/core/SelectionManager.hpp"
-#include "../daw/core/TrackManager.hpp"
 #include "../daw/core/TrackTypes.hpp"
-#include "../daw/core/UndoManager.hpp"
 #include "../daw/engine/AudioEngine.hpp"
 #include "../daw/engine/TracktionEngineWrapper.hpp"
-#include "../daw/project/ProjectManager.hpp"
+#include "internal_plugins.hpp"
 #include "music_helpers.hpp"
 
 namespace magda {
@@ -24,8 +26,7 @@ namespace magda {
 // ============================================================================
 
 int CompactExecutor::findTrackByName(const juce::String& name) const {
-    auto& tm = TrackManager::getInstance();
-    for (const auto& track : tm.getTracks())
+    for (const auto& track : api_.tracks().getTracks())
         if (track.name.equalsIgnoreCase(name))
             return track.id;
     return -1;
@@ -40,7 +41,7 @@ int CompactExecutor::resolveTrackRef(const TrackRef& ref) {
         return currentTrackId_;
     }
 
-    auto& tm = TrackManager::getInstance();
+    auto& tm = api_.tracks();
     if (ref.isById()) {
         int index = ref.id - 1;
         if (index < 0 || index >= tm.getNumTracks()) {
@@ -57,7 +58,7 @@ int CompactExecutor::resolveTrackRef(const TrackRef& ref) {
 
 double CompactExecutor::barsToTime(double bar) const {
     double bpm = 120.0;
-    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* engine = api_.tracks().getAudioEngine();
     if (engine)
         bpm = engine->getTempo();
     return (bar - 1.0) * 4.0 * 60.0 / bpm;
@@ -65,7 +66,7 @@ double CompactExecutor::barsToTime(double bar) const {
 
 double CompactExecutor::barsToLength(double bars) const {
     double bpm = 120.0;
-    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* engine = api_.tracks().getAudioEngine();
     if (engine)
         bpm = engine->getTempo();
     return bars * 4.0 * 60.0 / bpm;
@@ -74,7 +75,7 @@ double CompactExecutor::barsToLength(double bars) const {
 double CompactExecutor::barsToBeats(double bars) const {
     // Use the project's time-signature numerator. Hard-coding 4 here was
     // the source of the seconds↔beats round-trip drift under non-4/4 sigs.
-    int beatsPerBar = ProjectManager::getInstance().getCurrentProjectInfo().timeSignatureNumerator;
+    int beatsPerBar = api_.project().getCurrentProjectInfo().timeSignatureNumerator;
     if (beatsPerBar <= 0)
         beatsPerBar = 4;
     return bars * static_cast<double>(beatsPerBar);
@@ -98,7 +99,7 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
     // command agent's clip.new). Using SelectionManager for agent-to-agent
     // handoff would silently fill whichever clip the user happened to have
     // selected in the UI.
-    auto& sm = SelectionManager::getInstance();
+    auto& sm = api_.selection();
     auto selectedTrack = sm.getSelectedTrack();
 
     // Ignore master track as implicit target — it's not a user track
@@ -110,7 +111,7 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
     // auto-creation and cause note commands to silently no-op on a missing
     // clip while still reporting success.
     if (seedClipId_ >= 0) {
-        auto* clipInfo = ClipManager::getInstance().getClip(seedClipId_);
+        auto* clipInfo = api_.clips().getClip(seedClipId_);
         if (clipInfo) {
             currentClipId_ = seedClipId_;
             if (clipInfo->trackId != INVALID_TRACK_ID)
@@ -129,7 +130,7 @@ bool CompactExecutor::execute(const std::vector<Instruction>& instructions) {
         // Derive track from first clip if no track selected
         if (currentTrackId_ < 0) {
             for (auto cid : uiClips) {
-                auto* clipInfo = ClipManager::getInstance().getClip(cid);
+                auto* clipInfo = api_.clips().getClip(cid);
                 if (clipInfo && clipInfo->trackId != INVALID_TRACK_ID) {
                     currentTrackId_ = clipInfo->trackId;
                     break;
@@ -222,8 +223,7 @@ bool CompactExecutor::autoCreateClip() {
         juce::String(currentTrackId_) + " startBeats=" + juce::String(startBeats, 3) +
         " lenBeats=" + juce::String(lengthBeats, 3));
 
-    auto clipId =
-        ClipManager::getInstance().createMidiClipBeats(currentTrackId_, startBeats, lengthBeats);
+    auto clipId = api_.clips().createMidiClipBeats(currentTrackId_, startBeats, lengthBeats);
     if (clipId < 0) {
         error_ = "Failed to auto-create clip";
         DBG("CompactExecutor::autoCreateClip FAIL: createMidiClip returned -1 for track " +
@@ -244,7 +244,7 @@ bool CompactExecutor::autoCreateClip() {
 // ============================================================================
 
 bool CompactExecutor::executeTrack(const TrackOp& op) {
-    auto& tm = TrackManager::getInstance();
+    auto& tm = api_.tracks();
 
     // TRACK FX <alias> — resolve plugin, name track after it, add plugin
     if (op.fxAlias.isNotEmpty()) {
@@ -292,8 +292,8 @@ bool CompactExecutor::executeTrack(const TrackOp& op) {
 bool CompactExecutor::executeDel(const DelOp& op) {
     // If active selection from SELECT, delete all selected items
     if (op.target.isImplicit() && hasActiveSelection()) {
-        auto& tm = TrackManager::getInstance();
-        auto& cm = ClipManager::getInstance();
+        auto& tm = api_.tracks();
+        auto& cm = api_.clips();
         int count = 0;
 
         if (!selectedClips_.empty()) {
@@ -318,13 +318,13 @@ bool CompactExecutor::executeDel(const DelOp& op) {
     int trackId = resolveTrackRef(op.target);
     if (trackId < 0)
         return false;
-    TrackManager::getInstance().deleteTrack(trackId);
+    api_.tracks().deleteTrack(trackId);
     results_.add("Deleted track");
     return true;
 }
 
 bool CompactExecutor::executeMute(const MuteOp& op) {
-    auto& tm = TrackManager::getInstance();
+    auto& tm = api_.tracks();
 
     // If an active track selection from SELECT is present, mute all selected
     // (unless the caller gave an explicit target, in which case honour that).
@@ -361,7 +361,7 @@ bool CompactExecutor::executeMute(const MuteOp& op) {
 }
 
 bool CompactExecutor::executeSolo(const SoloOp& op) {
-    auto& tm = TrackManager::getInstance();
+    auto& tm = api_.tracks();
 
     if (!selectedTracks_.empty() && op.target.isImplicit()) {
         for (auto trackId : selectedTracks_)
@@ -392,7 +392,7 @@ bool CompactExecutor::executeSolo(const SoloOp& op) {
 }
 
 void CompactExecutor::applySetProps(int trackId, const juce::StringPairArray& props) {
-    auto& tm = TrackManager::getInstance();
+    auto& tm = api_.tracks();
     for (const auto& key : props.getAllKeys()) {
         auto val = props.getValue(key, "");
         if (key == "vol" || key == "volume_db") {
@@ -424,7 +424,7 @@ bool CompactExecutor::executeSet(const SetOp& op) {
     // If active clip selection, apply track props to each clip's parent track
     // and apply clip-specific props (name) to the clips
     if (op.target.isImplicit() && !selectedClips_.empty()) {
-        auto& cm = ClipManager::getInstance();
+        auto& cm = api_.clips();
         int count = 0;
         for (auto clipId : selectedClips_) {
             auto* clip = cm.getClip(clipId);
@@ -463,7 +463,7 @@ bool CompactExecutor::executeClip(const ClipOp& op) {
     double startBeats = barsToBeats(op.bar - 1.0);
     double lengthBeats = barsToBeats(op.lengthBars);
 
-    auto& cm = ClipManager::getInstance();
+    auto& cm = api_.clips();
     auto clipId = cm.createMidiClipBeats(trackId, startBeats, lengthBeats);
 
     if (clipId < 0) {
@@ -489,46 +489,27 @@ bool CompactExecutor::executeFx(const FxOp& op) {
     if (trackId < 0)
         return false;
 
-    // Internal plugin alias lookup (mirrors DSL interpreter)
-    static const std::map<juce::String, juce::String> internalAliases = {
-        {"eq", "eq"},
-        {"equaliser", "eq"},
-        {"equalizer", "eq"},
-        {"compressor", "compressor"},
-        {"reverb", "reverb"},
-        {"delay", "delay"},
-        {"chorus", "chorus"},
-        {"phaser", "phaser"},
-        {"filter", "lowpass"},
-        {"lowpass", "lowpass"},
-        {"utility", "utility"},
-        {"pitch shift", "pitchshift"},
-        {"pitchshift", "pitchshift"},
-        {"ir reverb", "impulseresponse"},
-        {"impulse response", "impulseresponse"},
-    };
-
-    auto lowerName = op.fxName.toLowerCase();
-    auto aliasIt = internalAliases.find(lowerName);
-
-    if (aliasIt != internalAliases.end()) {
+    // Internal plugin lookup — shares internal_plugins.hpp with the DSL
+    // interpreter so a single canonical alias per plugin is accepted by both.
+    if (const auto* match = lookupInternalPluginByAlias(op.fxName)) {
         DeviceInfo device;
-        device.name = op.fxName;
-        device.pluginId = aliasIt->second;
+        device.name = match->displayName;
+        device.pluginId = match->pluginId;
         device.format = PluginFormat::Internal;
-        device.isInstrument = false;
+        device.deviceType = match->deviceType;
+        device.isInstrument = (match->deviceType == DeviceType::Instrument);
 
-        auto deviceId = TrackManager::getInstance().addDeviceToTrack(trackId, device);
+        auto deviceId = api_.tracks().addDeviceToTrack(trackId, device);
         if (deviceId == INVALID_DEVICE_ID) {
             error_ = "Failed to add FX '" + op.fxName + "'";
             return false;
         }
-        results_.add("Added FX '" + op.fxName + "'");
+        results_.add("Added FX '" + match->displayName + "'");
         return true;
     }
 
     // External plugin lookup via alias matching
-    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* engine = api_.tracks().getAudioEngine();
     if (!engine) {
         error_ = "Audio engine not available";
         return false;
@@ -577,7 +558,7 @@ bool CompactExecutor::executeFx(const FxOp& op) {
     else
         device.format = PluginFormat::VST3;
 
-    auto deviceId = TrackManager::getInstance().addDeviceToTrack(trackId, device);
+    auto deviceId = api_.tracks().addDeviceToTrack(trackId, device);
     if (deviceId == INVALID_DEVICE_ID) {
         error_ = "Failed to add plugin '" + op.fxName + "'";
         return false;
@@ -588,10 +569,10 @@ bool CompactExecutor::executeFx(const FxOp& op) {
 }
 
 bool CompactExecutor::executeSelect(const SelectOp& op) {
-    auto& sm = SelectionManager::getInstance();
+    auto& sm = api_.selection();
 
     if (op.target == SelectOp::Target::Tracks) {
-        auto& tm = TrackManager::getInstance();
+        auto& tm = api_.tracks();
         std::unordered_set<TrackId> matches;
 
         for (const auto& track : tm.getTracks()) {
@@ -638,7 +619,7 @@ bool CompactExecutor::executeSelect(const SelectOp& op) {
     }
 
     // SELECT CLIPS
-    auto& cm = ClipManager::getInstance();
+    auto& cm = api_.clips();
     std::unordered_set<ClipId> matches;
 
     for (const auto& clip : cm.getArrangementClips()) {
@@ -680,8 +661,7 @@ bool CompactExecutor::executeSelect(const SelectOp& op) {
                 match = std::abs(clipBar - numVal) < 0.01;
         } else if (op.field == "track") {
             // Filter by parent track name
-            auto& tm = TrackManager::getInstance();
-            for (const auto& track : tm.getTracks()) {
+            for (const auto& track : api_.tracks().getTracks()) {
                 if (track.id == clip.trackId) {
                     auto trackName = track.name.toLowerCase();
                     auto val = op.value.toLowerCase();
@@ -787,7 +767,7 @@ bool CompactExecutor::executeArp(const ArpOp& op) {
         idx++;
     }
 
-    UndoManager::getInstance().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
+    api_.undo().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
         currentClipId_, std::move(notes),
         "Add " + op.quality + " arpeggio at beat " + juce::String(op.beat, 2)));
 
@@ -821,7 +801,7 @@ bool CompactExecutor::executeChord(const ChordOp& op) {
         notes.push_back(mn);
     }
 
-    UndoManager::getInstance().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
+    api_.undo().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
         currentClipId_, std::move(notes),
         "Add " + op.quality + " chord at beat " + juce::String(op.beat, 2)));
 
@@ -843,7 +823,7 @@ bool CompactExecutor::executeNote(const NoteOp& op) {
 
     int velocity = op.velocity >= 0 ? op.velocity : 100;
 
-    UndoManager::getInstance().executeCommand(std::make_unique<AddMidiNoteCommand>(
+    api_.undo().executeCommand(std::make_unique<AddMidiNoteCommand>(
         currentClipId_, op.beat, noteNumber, op.length, velocity));
 
     results_.add("Added note " + op.pitch);

@@ -2,6 +2,7 @@
 
 #include "magda/agents/compact_executor.hpp"
 #include "magda/agents/compact_parser.hpp"
+#include "magda/daw/api/magda_api_live.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
@@ -56,7 +57,8 @@ TEST_CASE("CompactExecutor: bare MUTE mutes the selected track", "[compact][cont
     SelectionManager::getInstance().selectTrack(bass);
 
     CompactParser parser;
-    CompactExecutor exec;
+    MagdaApiLive api;
+    CompactExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "MUTE")));
 
     auto& tm = TrackManager::getInstance();
@@ -71,7 +73,8 @@ TEST_CASE("CompactExecutor: bare SOLO solos the selected track", "[compact][cont
     SelectionManager::getInstance().selectTrack(lead);
 
     CompactParser parser;
-    CompactExecutor exec;
+    MagdaApiLive api;
+    CompactExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "SOLO")));
 
     auto& tm = TrackManager::getInstance();
@@ -85,7 +88,8 @@ TEST_CASE("CompactExecutor: bare MUTE with no selection fails with a helpful err
     makeTrack("Anything");
 
     CompactParser parser;
-    CompactExecutor exec;
+    MagdaApiLive api;
+    CompactExecutor exec(api);
     REQUIRE_FALSE(exec.execute(parseOrFail(parser, "MUTE")));
     REQUIRE(exec.getError().isNotEmpty());
 }
@@ -101,7 +105,8 @@ TEST_CASE("CompactExecutor: MUTE 2 mutes the second track by 1-based index", "[c
     auto t3 = makeTrack("C");
 
     CompactParser parser;
-    CompactExecutor exec;
+    MagdaApiLive api;
+    CompactExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "MUTE 2")));
 
     auto& tm = TrackManager::getInstance();
@@ -122,7 +127,8 @@ TEST_CASE("CompactExecutor: MUTE <name> mutes every track with matching name",
     auto bass = makeTrack("Bass");
 
     CompactParser parser;
-    CompactExecutor exec;
+    MagdaApiLive api;
+    CompactExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "MUTE Drums")));
 
     auto& tm = TrackManager::getInstance();
@@ -143,7 +149,8 @@ TEST_CASE("CompactExecutor: SELECT TRACKS advances currentTrackId for follow-up 
     auto bass = makeTrack("Bass");
 
     CompactParser parser;
-    CompactExecutor exec;
+    MagdaApiLive api;
+    CompactExecutor exec(api);
 
     // After SELECT, bare MUTE mutes every selected track via the
     // SELECT-driven bulk path (no implicit single-track resolution needed).
@@ -161,7 +168,8 @@ TEST_CASE("CompactExecutor: SELECT with empty match does not crash follow-up MUT
     makeTrack("Bass");
 
     CompactParser parser;
-    CompactExecutor exec;
+    MagdaApiLive api;
+    CompactExecutor exec(api);
     // Predicate matches nothing. SELECT succeeds with an empty set; the
     // follow-up bare MUTE has no implicit track context and fails. The
     // batch executor still returns true when at least one instruction
@@ -184,7 +192,8 @@ TEST_CASE("CompactExecutor: bare SET targets the selected track", "[compact][con
     SelectionManager::getInstance().selectTrack(bass);
 
     CompactParser parser;
-    CompactExecutor exec;
+    MagdaApiLive api;
+    CompactExecutor exec(api);
     REQUIRE(exec.execute(parseOrFail(parser, "SET mute=true")));
 
     auto& tm = TrackManager::getInstance();

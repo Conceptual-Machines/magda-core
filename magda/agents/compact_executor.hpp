@@ -11,14 +11,18 @@
 
 namespace magda {
 
+class MagdaApi;
+
 /**
- * @brief Executes IR instructions against TrackManager/ClipManager.
+ * @brief Executes IR instructions against the MagdaApi facade.
  *
- * Skips the DSL text round-trip: compact LLM output → IR → direct API calls.
- * Must be called on the message thread (same as DSL Interpreter).
+ * Skips the DSL text round-trip: compact LLM output → IR → MagdaApi calls.
+ * Must be called on the message thread (host writes notify UI listeners).
  */
 class CompactExecutor {
   public:
+    explicit CompactExecutor(MagdaApi& api) : api_(api) {}
+
     /**
      * @brief Execute a list of IR instructions.
      * @return true if all instructions succeeded
@@ -89,6 +93,7 @@ class CompactExecutor {
     /** Convert bar count to duration in beats (uses project time signature). */
     double barsToBeats(double bars) const;
 
+    MagdaApi& api_;
     int currentTrackId_ = -1;
     int currentClipId_ = -1;
     int seedClipId_ = -1;

@@ -12,6 +12,7 @@ dsl_grammar.hpp
     dsl_interpreter.hpp
     dsl_interpreter.cpp
     music_helpers.hpp
+    internal_plugins.hpp
     compact_parser.hpp
     compact_parser.cpp
     compact_executor.hpp

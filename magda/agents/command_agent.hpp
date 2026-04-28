@@ -7,6 +7,8 @@
 
 namespace magda {
 
+class MagdaApi;
+
 /**
  * @brief Command agent — handles DAW operations via DSL generation.
  *
@@ -16,6 +18,8 @@ namespace magda {
  */
 class CommandAgent {
   public:
+    explicit CommandAgent(MagdaApi& api) : api_(api) {}
+
     struct GenerateResult {
         std::string dslOutput;  // raw DSL text from the LLM
         std::string error;
@@ -40,6 +44,7 @@ class CommandAgent {
     static const char* getSystemPrompt();
 
   private:
+    MagdaApi& api_;
     std::atomic<bool> shouldStop_{false};
 };
 
