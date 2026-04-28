@@ -17,6 +17,8 @@ class ClipApiLive : public ClipApi {
 
     void setClipName(ClipId clipId, const juce::String& name) override;
     void setGrooveTemplate(ClipId clipId, const juce::String& templateName) override;
+
+    const juce::Array<double>* getCachedTransients(const juce::String& filePath) const override;
 };
 
 }  // namespace magda

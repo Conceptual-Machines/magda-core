@@ -1024,64 +1024,59 @@ bool Interpreter::executeAddFx(const Params& params) {
     if (fxName.startsWith("<") && fxName.endsWith(">"))
         fxName = fxName.substring(1, fxName.length() - 1);
 
-    // --- Internal plugin lookup (case-insensitive alias map) ---
+    // --- Internal plugin lookup ---
+    // Single canonical alias per plugin, matching the autocomplete dropdown
+    // (see AIChatConsoleContent::buildAliasList). Both lists feed off
+    // pluginNameToAlias(displayName) so what autocomplete suggests is exactly
+    // what the DSL accepts. To add a built-in here, also add the same display
+    // name to buildAliasList — never invent variants.
     struct InternalAlias {
+        juce::String displayName;
         juce::String pluginId;
         DeviceType deviceType;
     };
-    static const std::map<juce::String, InternalAlias> internalAliases = {
+    static const InternalAlias internalAliases[] = {
         // Effects
-        {"eq", {"eq", DeviceType::Effect}},
-        {"equaliser", {"eq", DeviceType::Effect}},
-        {"equalizer", {"eq", DeviceType::Effect}},
-        {"compressor", {"compressor", DeviceType::Effect}},
-        {"reverb", {"reverb", DeviceType::Effect}},
-        {"delay", {"delay", DeviceType::Effect}},
-        {"chorus", {"chorus", DeviceType::Effect}},
-        {"phaser", {"phaser", DeviceType::Effect}},
-        {"filter", {"lowpass", DeviceType::Effect}},
-        {"lowpass", {"lowpass", DeviceType::Effect}},
-        {"utility", {"utility", DeviceType::Effect}},
-        {"pitch shift", {"pitchshift", DeviceType::Effect}},
-        {"pitchshift", {"pitchshift", DeviceType::Effect}},
-        {"ir reverb", {"impulseresponse", DeviceType::Effect}},
-        {"impulse response", {"impulseresponse", DeviceType::Effect}},
+        {"Equaliser", "eq", DeviceType::Effect},
+        {"Compressor", "compressor", DeviceType::Effect},
+        {"Reverb", "reverb", DeviceType::Effect},
+        {"Delay", "delay", DeviceType::Effect},
+        {"Chorus", "chorus", DeviceType::Effect},
+        {"Phaser", "phaser", DeviceType::Effect},
+        {"Filter", "lowpass", DeviceType::Effect},
+        {"Utility", "utility", DeviceType::Effect},
+        {"Pitch Shift", "pitchshift", DeviceType::Effect},
+        {"IR Reverb", "impulseresponse", DeviceType::Effect},
+        {"Test Tone", "tone", DeviceType::Effect},
         // Instruments
-        {"4osc", {"4osc", DeviceType::Instrument}},
-        {"4osc synth", {"4osc", DeviceType::Instrument}},
-        {"fourosc", {"4osc", DeviceType::Instrument}},
-        {"sampler", {"magdasampler", DeviceType::Instrument}},
-        {"magda sampler", {"magdasampler", DeviceType::Instrument}},
-        {"drum grid", {"drumgrid", DeviceType::Instrument}},
-        {"drumgrid", {"drumgrid", DeviceType::Instrument}},
-        {"drum machine", {"drumgrid", DeviceType::Instrument}},
-        // MIDI devices
-        {"chord engine", {"midichordengine", DeviceType::MIDI}},
-        {"chord", {"midichordengine", DeviceType::MIDI}},
-        {"midichordengine", {"midichordengine", DeviceType::MIDI}},
-        {"arpeggiator", {"arpeggiator", DeviceType::MIDI}},
-        {"arp", {"arpeggiator", DeviceType::MIDI}},
-        // Tone generator
-        {"test tone", {"tone", DeviceType::Effect}},
-        {"tone", {"tone", DeviceType::Effect}},
+        {"4OSC Synth", "4osc", DeviceType::Instrument},
+        {"MAGDA Sampler", "magdasampler", DeviceType::Instrument},
+        {"Drum Grid", "drumgrid", DeviceType::Instrument},
     };
 
     auto lowerName = fxName.toLowerCase();
-    auto aliasIt = internalAliases.find(lowerName);
-    if (aliasIt != internalAliases.end()) {
+    const InternalAlias* internalMatch = nullptr;
+    for (const auto& entry : internalAliases) {
+        if (pluginNameToAlias(entry.displayName).equalsIgnoreCase(lowerName)) {
+            internalMatch = &entry;
+            break;
+        }
+    }
+
+    if (internalMatch != nullptr) {
         DeviceInfo device;
-        device.name = fxName;
-        device.pluginId = aliasIt->second.pluginId;
+        device.name = internalMatch->displayName;
+        device.pluginId = internalMatch->pluginId;
         device.format = PluginFormat::Internal;
-        device.deviceType = aliasIt->second.deviceType;
-        device.isInstrument = (aliasIt->second.deviceType == DeviceType::Instrument);
+        device.deviceType = internalMatch->deviceType;
+        device.isInstrument = (internalMatch->deviceType == DeviceType::Instrument);
 
         auto deviceId = api_.tracks().addDeviceToTrack(ctx_.currentTrackId, device);
         if (deviceId == INVALID_DEVICE_ID) {
             ctx_.setError("Failed to add internal FX '" + fxName + "' to track");
             return false;
         }
-        ctx_.addResult("Added internal FX '" + fxName + "'");
+        ctx_.addResult("Added internal FX '" + internalMatch->displayName + "'");
         return true;
     }
 
@@ -1472,8 +1467,8 @@ bool Interpreter::isContextEnabled() {
     return g_contextEnabled.load(std::memory_order_relaxed);
 }
 
-juce::String Interpreter::buildStateSnapshot() {
-    auto& tm = TrackManager::getInstance();
+juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
+    auto& tm = api.tracks();
 
     auto* root = new juce::DynamicObject();
 
@@ -1497,7 +1492,7 @@ juce::String Interpreter::buildStateSnapshot() {
     if (!g_contextEnabled.load(std::memory_order_relaxed))
         return juce::JSON::toString(juce::var(root), true);
 
-    auto& sm = SelectionManager::getInstance();
+    auto& sm = api.selection();
     auto selTrack = sm.getSelectedTrack();
     if (selTrack != INVALID_TRACK_ID) {
         // Find 1-based index for the selected track
@@ -1511,7 +1506,7 @@ juce::String Interpreter::buildStateSnapshot() {
     }
 
     // Selected clip context
-    auto& cm = ClipManager::getInstance();
+    auto& cm = api.clips();
     auto selClip = sm.getSelectedClip();
     if (selClip != INVALID_CLIP_ID) {
         auto* clip = cm.getClip(selClip);
@@ -2279,9 +2274,8 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
         return false;
     }
 
-    // Get cached transients
-    auto& thumbnailManager = AudioThumbnailManager::getInstance();
-    const auto* transients = thumbnailManager.getCachedTransients(clip->audioFilePath);
+    // Get cached transients via the api
+    const auto* transients = api_.clips().getCachedTransients(clip->audioFilePath);
     if (!transients || transients->isEmpty()) {
         ctx_.setError("groove.extract: no transients detected for this clip. "
                       "Enable warp or detect transients first.");

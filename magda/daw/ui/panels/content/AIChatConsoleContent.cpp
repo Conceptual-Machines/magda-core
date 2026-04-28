@@ -891,7 +891,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     agent_ = std::make_unique<magda::DAWAgent>(*magdaApi_);  // legacy DSL REPL
     agent_->start();
     routerAgent_ = std::make_unique<magda::RouterAgent>();
-    commandAgent_ = std::make_unique<magda::CommandAgent>();
+    commandAgent_ = std::make_unique<magda::CommandAgent>(*magdaApi_);
     musicAgent_ = std::make_unique<magda::MusicAgent>();
     automationAgent_ = std::make_unique<magda::AutomationAgent>(*magdaApi_);
     controllerAgent_ = std::make_unique<magda::ControllerProfileAgent>();

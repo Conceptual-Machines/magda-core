@@ -23,6 +23,15 @@ class ClipApi {
 
     virtual void setClipName(ClipId clipId, const juce::String& name) = 0;
     virtual void setGrooveTemplate(ClipId clipId, const juce::String& templateName) = 0;
+
+    /**
+     * @brief Cached transient times for an audio clip's source file.
+     *
+     * Looks the file path up in the audio thumbnail / transient cache.
+     * @return Array of transient times in seconds, or nullptr if no
+     *         transients have been detected for this file.
+     */
+    virtual const juce::Array<double>* getCachedTransients(const juce::String& filePath) const = 0;
 };
 
 }  // namespace magda

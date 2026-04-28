@@ -1,5 +1,6 @@
 #include "clip_api_live.hpp"
 
+#include "../audio/AudioThumbnailManager.hpp"
 #include "../core/ClipManager.hpp"
 
 namespace magda {
@@ -31,6 +32,10 @@ void ClipApiLive::setClipName(ClipId clipId, const juce::String& name) {
 
 void ClipApiLive::setGrooveTemplate(ClipId clipId, const juce::String& templateName) {
     ClipManager::getInstance().setGrooveTemplate(clipId, templateName);
+}
+
+const juce::Array<double>* ClipApiLive::getCachedTransients(const juce::String& filePath) const {
+    return AudioThumbnailManager::getInstance().getCachedTransients(filePath);
 }
 
 }  // namespace magda
