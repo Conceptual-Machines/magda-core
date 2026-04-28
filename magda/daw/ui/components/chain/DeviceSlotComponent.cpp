@@ -60,6 +60,28 @@ class FlatGainSliderLookAndFeel : public juce::LookAndFeel_V4 {
     }
 };
 
+// Slider subclass that returns a dynamic tooltip showing both the current
+// gain value and the meter's peak-hold dB level.
+class GainSliderWithMeterTooltip : public juce::Slider {
+  public:
+    GainSliderWithMeterTooltip(juce::Slider::SliderStyle style,
+                               juce::Slider::TextEntryBoxPosition textPos,
+                               const magda::LevelMeter& meter)
+        : juce::Slider(style, textPos), meter_(meter) {}
+
+    juce::String getTooltip() override {
+        const double gainDb = getValue();
+        const float peakDb = meter_.getPeakDb();
+        const juce::String peakStr =
+            peakDb <= -59.5f ? juce::String("-inf") : juce::String::formatted("%+.1f", peakDb);
+        return juce::String::formatted("Gain: %+.1f dB    Peak: ", gainDb) + peakStr +
+               juce::String(" dB");
+    }
+
+  private:
+    const magda::LevelMeter& meter_;
+};
+
 // Unified visual recipe for all device-header SvgButtons. Pass the accent
 // colour used as the active-state pill background. Set toggling=false for
 // stateless buttons (menus, one-shots).
@@ -250,9 +272,10 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     programsCombo_->setColour(juce::ComboBox::textColourId, DarkTheme::getTextColour());
     addAndMakeVisible(*programsCombo_);
 
-    // ----- MOCK UI (no wiring): Vertical gain slider (above meter) + chevron toggle -----
-    gainSlider_ =
-        std::make_unique<juce::Slider>(juce::Slider::LinearVertical, juce::Slider::NoTextBox);
+    // Vertical gain slider overlaid on the meter, with a tooltip that reports
+    // both the current gain and the meter's peak-hold dB.
+    gainSlider_ = std::make_unique<GainSliderWithMeterTooltip>(
+        juce::Slider::LinearVertical, juce::Slider::NoTextBox, levelMeter_);
     gainSlider_->setRange(-60.0, 12.0, 0.1);
     gainSlider_->setValue(device_.gainDb, juce::dontSendNotification);
     gainSlider_->setTooltip("Device Gain (dB)");
@@ -261,6 +284,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     gainSlider_->setLookAndFeel(&FlatGainSliderLookAndFeel::getInstance());
     gainSlider_->setColour(juce::Slider::backgroundColourId, juce::Colours::transparentBlack);
     gainSlider_->setColour(juce::Slider::trackColourId, juce::Colours::transparentBlack);
+    gainSlider_->setDoubleClickReturnValue(true, 0.0);
+    gainSlider_->onValueChange = [this]() {
+        magda::TrackManager::getInstance().setDeviceGainDb(
+            nodePath_, static_cast<float>(gainSlider_->getValue()));
+    };
     addAndMakeVisible(*gainSlider_);
 
     // Sidechain button (only visible when plugin supports sidechain)
@@ -1181,6 +1209,8 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);
     gainLabel_.setValue(device.gainDb, juce::dontSendNotification);
+    if (gainSlider_)
+        gainSlider_->setValue(device.gainDb, juce::dontSendNotification);
 
     // Update sidechain button visibility and state
     if (scButton_) {
