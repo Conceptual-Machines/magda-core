@@ -8,8 +8,7 @@ namespace magda {
 class SelectionApiLive : public SelectionApi {
   public:
     TrackId getSelectedTrack() const override;
-    bool hasAutomationLaneSelection() const override;
-    const AutomationLaneSelection& getAutomationLaneSelection() const override;
+    AutomationLaneId getSelectedAutomationLaneId() const override;
 };
 
 }  // namespace magda

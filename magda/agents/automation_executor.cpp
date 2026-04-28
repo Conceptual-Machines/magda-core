@@ -34,8 +34,8 @@ TrackId getSelectedTrack(MagdaApi& api, juce::String& err) {
     if (trackId == INVALID_TRACK_ID) {
         // Also consult the automation-lane selection for its track, so that
         // clicking a lane counts as "having a track context" too.
-        if (sel.hasAutomationLaneSelection()) {
-            auto laneId = sel.getAutomationLaneSelection().laneId;
+        auto laneId = sel.getSelectedAutomationLaneId();
+        if (laneId != INVALID_AUTOMATION_LANE_ID) {
             if (auto* lane = api.automation().getLane(laneId))
                 return lane->target.trackId;
         }
@@ -67,8 +67,9 @@ AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::St
         }
         case AutoTarget::Kind::Selected: {
             auto& sel = api.selection();
-            if (sel.hasAutomationLaneSelection())
-                return sel.getAutomationLaneSelection().laneId;
+            auto laneId = sel.getSelectedAutomationLaneId();
+            if (laneId != INVALID_AUTOMATION_LANE_ID)
+                return laneId;
             // Fall back to trackVolume on the selected track — the most
             // common default for "automate this track".
             auto trackId = getSelectedTrack(api, err);

@@ -1,17 +1,18 @@
 #include "selection_api_live.hpp"
 
+#include "../core/SelectionManager.hpp"
+
 namespace magda {
 
 TrackId SelectionApiLive::getSelectedTrack() const {
     return SelectionManager::getInstance().getSelectedTrack();
 }
 
-bool SelectionApiLive::hasAutomationLaneSelection() const {
-    return SelectionManager::getInstance().hasAutomationLaneSelection();
-}
-
-const AutomationLaneSelection& SelectionApiLive::getAutomationLaneSelection() const {
-    return SelectionManager::getInstance().getAutomationLaneSelection();
+AutomationLaneId SelectionApiLive::getSelectedAutomationLaneId() const {
+    auto& sel = SelectionManager::getInstance();
+    if (!sel.hasAutomationLaneSelection())
+        return INVALID_AUTOMATION_LANE_ID;
+    return sel.getAutomationLaneSelection().laneId;
 }
 
 }  // namespace magda
