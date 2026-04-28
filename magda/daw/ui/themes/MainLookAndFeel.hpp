@@ -43,13 +43,17 @@ class MainLookAndFeel : public juce::LookAndFeel_V4 {
             textX = titleSpaceX + titleSpaceW - textW;
 
         if (icon != nullptr) {
-            g.setOpacity(isActive ? 1.0f : 0.6f);
-            g.drawImageWithin(*icon, textX, (h - iconH) / 2, iconW, iconH,
-                              juce::RectanglePlacement::centred, false);
-            textX += iconW;
-            textW -= iconW;
+            const auto drawnIconW = juce::jmin(iconW, textW);
+            if (drawnIconW > 0) {
+                g.setOpacity(isActive ? 1.0f : 0.6f);
+                g.drawImageWithin(*icon, textX, (h - iconH) / 2, drawnIconW, iconH,
+                                  juce::RectanglePlacement::centred, false);
+                textX += drawnIconW;
+            }
+            textW = juce::jmax(0, textW - drawnIconW);
         }
 
+        g.setOpacity(isActive ? 1.0f : 0.6f);
         if (window.isColourSpecified(juce::DocumentWindow::textColourId) ||
             isColourSpecified(juce::DocumentWindow::textColourId))
             g.setColour(window.findColour(juce::DocumentWindow::textColourId));
