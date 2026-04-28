@@ -191,13 +191,13 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.setInfo("Increase UI Scale", "Make the UI larger", "View", 0);
             result.addDefaultKeypress('=', juce::ModifierKeys::commandModifier);
             result.addDefaultKeypress('+', juce::ModifierKeys::commandModifier |
-                                              juce::ModifierKeys::shiftModifier);
+                                               juce::ModifierKeys::shiftModifier);
             break;
         case uiScaleDown:
             result.setInfo("Decrease UI Scale", "Make the UI smaller", "View", 0);
             result.addDefaultKeypress('-', juce::ModifierKeys::commandModifier);
             result.addDefaultKeypress('_', juce::ModifierKeys::commandModifier |
-                                              juce::ModifierKeys::shiftModifier);
+                                               juce::ModifierKeys::shiftModifier);
             break;
 
         // Help

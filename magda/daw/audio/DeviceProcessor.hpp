@@ -187,7 +187,8 @@ class ToneGeneratorProcessor : public DeviceProcessor {
     int getParameterCount() const override;
     ParameterInfo getParameterInfo(int index) const override;
 
-    // Single-parameter sync from DeviceInfo (values in real units: TE osc enum / bandLimit / Hz / dB)
+    // Single-parameter sync from DeviceInfo (values in real units: TE osc enum / bandLimit / Hz /
+    // dB)
     void setParameterByIndex(int paramIndex, float value);
 
     // Initialize with default values - call after processor is fully set up

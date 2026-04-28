@@ -263,6 +263,10 @@ set(DAW_CORE_SOURCES
     core/aliases/AutoAliasGenerator.cpp
     # Parameter alias system (PR 5 -- CuratedAliasLoader)
     core/aliases/CuratedAliasLoader.cpp
+    # MagdaApi -- programmatic facade for the agent layer (issue #1113)
+    api/selection_api_live.cpp
+    api/automation_api_live.cpp
+    api/alias_api_live.cpp
     # Controller data model (issue #1050 -- Phase A)
     core/controllers/Controller.cpp
     core/controllers/Binding.cpp
@@ -563,6 +567,15 @@ set(DAW_HEADERS
     interfaces/prompt_interface.hpp
     interfaces/track_interface.hpp
     interfaces/transport_interface.hpp
+    # MagdaApi (issue #1113)
+    api/magda_api.hpp
+    api/selection_api.hpp
+    api/automation_api.hpp
+    api/alias_api.hpp
+    api/magda_api_live.hpp
+    api/selection_api_live.hpp
+    api/automation_api_live.hpp
+    api/alias_api_live.hpp
     # Themes
     ui/themes/DarkTheme.hpp
     ui/themes/FontManager.hpp
