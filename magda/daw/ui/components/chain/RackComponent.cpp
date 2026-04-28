@@ -4,6 +4,7 @@
 
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
+#include "NodeHeaderStyles.hpp"
 #include "audio/AudioBridge.hpp"
 #include "engine/AudioEngine.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -73,11 +74,8 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // MOD button (modulators toggle) - bare sine icon
     modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::bare_sine_svg,
                                                     BinaryData::bare_sine_svgSize);
-    modButton_->setClickingTogglesState(true);
     modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
-    modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    modButton_->setActiveColor(juce::Colours::white);
-    modButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    node_header::applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     modButton_->setActive(modPanelVisible_);
     modButton_->onClick = [this]() {
         modButton_->setActive(modButton_->getToggleState());
@@ -88,11 +86,9 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // MACRO button (macros toggle) - knob icon
     macroButton_ =
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
-    macroButton_->setClickingTogglesState(true);
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
-    macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    macroButton_->setActiveColor(juce::Colours::white);
-    macroButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    node_header::applyHeaderIconStyle(*macroButton_,
+                                      DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     macroButton_->setActive(paramPanelVisible_);
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
@@ -100,17 +96,24 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     };
     addAndMakeVisible(*macroButton_);
 
-    // Volume label (dB format, draggable)
-    volumeLabel_.setRange(-60.0, 6.0, 0.0);
-    volumeLabel_.setValue(rack.volume, juce::dontSendNotification);
-    volumeLabel_.setFontSize(10.0f);
-    volumeLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
-    volumeLabel_.onValueChange = [this]() {
-        magda::TrackManager::getInstance().setRackVolume(
-            rackPath_, static_cast<float>(volumeLabel_.getValue()));
-    };
-    addAndMakeVisible(volumeLabel_);
+    // Gain slider — vertical, overlaid on the level meter strip in the
+    // content area. Same pattern (and LookAndFeel) as DeviceSlotComponent so
+    // the visual reads consistently.
     addAndMakeVisible(levelMeter_);
+    gainSlider_ = std::make_unique<node_header::GainSliderWithMeterTooltip>(
+        juce::Slider::LinearVertical, juce::Slider::NoTextBox, levelMeter_);
+    gainSlider_->setRange(-60.0, 6.0, 0.1);
+    gainSlider_->setValue(rack.volume, juce::dontSendNotification);
+    gainSlider_->setTooltip("Rack Gain (dB)");
+    gainSlider_->setLookAndFeel(&node_header::FlatGainSliderLookAndFeel::getInstance());
+    gainSlider_->setColour(juce::Slider::backgroundColourId, juce::Colours::transparentBlack);
+    gainSlider_->setColour(juce::Slider::trackColourId, juce::Colours::transparentBlack);
+    gainSlider_->setDoubleClickReturnValue(true, 0.0);
+    gainSlider_->onValueChange = [this]() {
+        magda::TrackManager::getInstance().setRackVolume(
+            rackPath_, static_cast<float>(gainSlider_->getValue()));
+    };
+    addAndMakeVisible(*gainSlider_);
 
     // === CONTENT AREA SETUP ===
 
@@ -224,7 +227,8 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
         if (chainPanel_) {
             chainPanel_->setVisible(false);
         }
-        volumeLabel_.setVisible(false);
+        if (gainSlider_)
+            gainSlider_->setVisible(false);
         // levelMeter_ visibility handled by resizedCollapsed
         return;
     }
@@ -235,14 +239,19 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     chainViewport_.setVisible(true);
     modButton_->setVisible(true);
     macroButton_->setVisible(true);
-    volumeLabel_.setVisible(true);
     levelMeter_.setVisible(true);
 
-    // Position the level meter on the right edge of the content area
+    // Position the level meter on the right edge of the content area, with
+    // the gain slider overlaid on top so dragging the thumb sets rack volume.
     {
         auto meterBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
         contentArea.removeFromRight(4);  // Padding between content and meter
         levelMeter_.setBounds(meterBounds);
+        if (gainSlider_) {
+            gainSlider_->setBounds(meterBounds);
+            gainSlider_->setVisible(true);
+            gainSlider_->toFront(false);
+        }
     }
 
     // Calculate chain panel positioning
@@ -310,10 +319,6 @@ void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     headerArea.removeFromLeft(4);
     modButton_->setBounds(headerArea.removeFromLeft(20));
     headerArea.removeFromLeft(4);
-
-    // Volume slider on the right side of header (same width as device slots)
-    volumeLabel_.setBounds(headerArea.removeFromRight(70));
-    headerArea.removeFromRight(4);
 }
 
 juce::String RackComponent::getCollapsedName() const {
@@ -394,6 +399,8 @@ void RackComponent::setAvailableWidth(int width) {
 void RackComponent::updateFromRack(const magda::RackInfo& rack) {
     setNodeName(rack.name);
     setBypassed(rack.bypassed);
+    if (gainSlider_)
+        gainSlider_->setValue(rack.volume, juce::dontSendNotification);
     rebuildChainRows();
 
     // Update panels if visible (uses base class methods)
