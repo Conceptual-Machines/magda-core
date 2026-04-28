@@ -269,6 +269,7 @@ set(DAW_CORE_SOURCES
     api/alias_api_live.cpp
     api/track_api_live.cpp
     api/clip_api_live.cpp
+    api/session_api_live.cpp
     api/project_api_live.cpp
     api/undo_api_live.cpp
     # Controller data model (issue #1050 -- Phase A)
@@ -578,6 +579,7 @@ set(DAW_HEADERS
     api/alias_api.hpp
     api/track_api.hpp
     api/clip_api.hpp
+    api/session_api.hpp
     api/project_api.hpp
     api/undo_api.hpp
     api/magda_api_live.hpp
