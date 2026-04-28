@@ -7,6 +7,7 @@ class AutomationApi;
 class AliasApi;
 class TrackApi;
 class ClipApi;
+class SessionApi;
 class ProjectApi;
 class UndoApi;
 
@@ -31,6 +32,7 @@ class MagdaApi {
     virtual AliasApi& aliases() = 0;
     virtual TrackApi& tracks() = 0;
     virtual ClipApi& clips() = 0;
+    virtual SessionApi& session() = 0;
     virtual ProjectApi& project() = 0;
     virtual UndoApi& undo() = 0;
 };
