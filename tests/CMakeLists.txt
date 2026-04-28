@@ -79,6 +79,8 @@ set(TEST_SOURCES
     test_midi_learn.cpp
     # Controller profile tests (issue #1052)
     test_controller_profile.cpp
+    # Lua runtime tests (issue #29)
+    test_lua_runtime.cpp
 )
 
 # Create test executable
@@ -89,6 +91,7 @@ target_link_libraries(magda_tests
     PRIVATE
     magda_daw
     magda_agents
+    magda_scripting
     Catch2::Catch2WithMain
     juce::juce_core
     juce::juce_gui_basics
