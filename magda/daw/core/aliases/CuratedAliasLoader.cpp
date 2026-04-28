@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 
 #include "AliasRegistry.hpp"
+#include "InternalPluginAliases.hpp"
 
 namespace magda {
 
@@ -87,10 +88,10 @@ void CuratedAliasLoader::loadFromBinary() {
     // Load curated_index.json from BinaryData.
     int indexSize = 0;
     const char* indexData = BinaryData::getNamedResource("curated_index_json", indexSize);
-    if (indexData == nullptr || indexSize <= 0)
-        return;
+    juce::String indexJson;
+    if (indexData != nullptr && indexSize > 0)
+        indexJson = juce::String::fromUTF8(indexData, indexSize);
 
-    juce::String indexJson = juce::String::fromUTF8(indexData, indexSize);
     loadFromString(indexJson, binaryResolver);
 }
 
@@ -101,43 +102,42 @@ void CuratedAliasLoader::loadFromBinary() {
 void CuratedAliasLoader::loadFromString(
     const juce::String& indexJson,
     const std::function<juce::String(const juce::String& filename)>& fileResolver) {
+    // Start with the code-driven internal-plugin aliases (EQ, Reverb, etc.).
+    // These are owned by MAGDA so we ship them in C++ rather than JSON;
+    // third-party JSON packs merge on top.
+    std::map<juce::String, StoredAlias> allEntries = collectInternalPluginCuratedAliases();
+
     juce::var indexParsed;
-    if (juce::JSON::parse(indexJson, indexParsed).failed())
-        return;
+    if (indexJson.isNotEmpty() && juce::JSON::parse(indexJson, indexParsed).wasOk()) {
+        if (auto* indexRoot = indexParsed.getDynamicObject()) {
+            auto pluginsVar = indexRoot->getProperty("plugins");
+            if (pluginsVar.isArray()) {
+                for (const auto& pluginEntry : *pluginsVar.getArray()) {
+                    auto* entryObj = pluginEntry.getDynamicObject();
+                    if (entryObj == nullptr)
+                        continue;
 
-    auto* indexRoot = indexParsed.getDynamicObject();
-    if (indexRoot == nullptr)
-        return;
+                    const juce::String pluginKey = entryObj->getProperty("key").toString();
+                    const juce::String fileName = entryObj->getProperty("file").toString();
 
-    auto pluginsVar = indexRoot->getProperty("plugins");
-    if (!pluginsVar.isArray())
-        return;
+                    if (pluginKey.isEmpty() || fileName.isEmpty())
+                        continue;
 
-    std::map<juce::String, StoredAlias> allEntries;
+                    // juce_add_binary_data turns '.' / '-' in filenames into '_' in
+                    // the resource symbol.
+                    juce::String resourceName =
+                        fileName.replaceCharacter('.', '_').replaceCharacter('-', '_');
+                    juce::String fileContent = fileResolver(resourceName);
+                    if (fileContent.isEmpty())
+                        continue;
 
-    for (const auto& pluginEntry : *pluginsVar.getArray()) {
-        auto* entryObj = pluginEntry.getDynamicObject();
-        if (entryObj == nullptr)
-            continue;
-
-        const juce::String pluginKey = entryObj->getProperty("key").toString();
-        const juce::String fileName = entryObj->getProperty("file").toString();
-
-        if (pluginKey.isEmpty() || fileName.isEmpty())
-            continue;
-
-        // Convert filename to BinaryData-compatible resource name.
-        // juce_add_binary_data replaces '.' with '_' and '-' with '_' in resource names.
-        juce::String resourceName = fileName.replaceCharacter('.', '_').replaceCharacter('-', '_');
-        juce::String fileContent = fileResolver(resourceName);
-
-        if (fileContent.isEmpty())
-            continue;
-
-        parsePluginFile(pluginKey, fileContent, allEntries);
+                    parsePluginFile(pluginKey, fileContent, allEntries);
+                }
+            }
+        }
     }
 
-    // Atomically replace the Curated layer.
+    // Atomically replace the Curated layer with the merged set.
     AliasRegistry::getInstance().replaceLayer(AliasLayer::Curated, allEntries);
 }
 

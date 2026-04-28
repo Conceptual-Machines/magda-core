@@ -1,15 +1,5 @@
 {
   "version": 1,
-  "plugins": [
-    {
-      "match": { "name_equals": "4-Band Equaliser", "format": "Internal" },
-      "key": "eq",
-      "file": "curated_eq.json"
-    },
-    {
-      "match": { "name_equals": "Compressor", "format": "Internal" },
-      "key": "compressor",
-      "file": "curated_compressor.json"
-    }
-  ]
+  "_comment": "MAGDA-internal plugin aliases ship in code (see InternalPluginAliases.cpp). This index lists JSON-based curated packs for third-party plugins.",
+  "plugins": []
 }

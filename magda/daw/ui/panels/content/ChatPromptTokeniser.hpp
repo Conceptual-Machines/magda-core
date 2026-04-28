@@ -24,13 +24,20 @@ class ChatPromptTokeniser : public juce::CodeTokeniser {
     juce::CodeEditorComponent::ColourScheme getDefaultColourScheme() override;
 
     enum TokenType {
-        tokenType_text = 0,        // Plain text (default)
-        tokenType_pluginAlias,     // @plugin
-        tokenType_paramSeparator,  // The "." between @plugin and param
-        tokenType_paramAlias,      // .param suffix
-        tokenType_slashCommand,    // /command
-        tokenType_punctuation      // Stray @ or . that don't form an alias
+        tokenType_text = 0,      // Plain text (default)
+        tokenType_pluginAlias,   // @plugin
+        tokenType_paramAlias,    // word body after a "." that forms an alias chain
+        tokenType_slashCommand,  // /command
+        tokenType_punctuation    // Stray @ or . that don't form an alias
     };
+
+  private:
+    // Tokeniser state set by the previous readNextToken call. When true the
+    // next identifier-shaped token is rendered as paramAlias instead of
+    // plain text — that's how the "." ends up white while ".cutoff"'s body
+    // ends up amber. Re-entrancy is safe enough for the chat input because
+    // CodeEditor re-tokenises from the document start on every edit.
+    bool expectParamBody_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChatPromptTokeniser)
 };

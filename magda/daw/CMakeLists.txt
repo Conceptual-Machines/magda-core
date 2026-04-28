@@ -211,10 +211,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/cloud_providers/openrouter.svg
     # App logo
     ../../assets/magda-lisa.svg
-    # Curated alias dictionaries
+    # Curated alias dictionaries (JSON path is reserved for third-party
+    # plugin packs; MAGDA-internal plugin aliases live in
+    # core/aliases/InternalPluginAliases.cpp).
     ../../assets/aliases/curated_index.json
-    ../../assets/aliases/curated_eq.json
-    ../../assets/aliases/curated_compressor.json
 )
 
 # DAW Core sources
@@ -263,6 +263,7 @@ set(DAW_CORE_SOURCES
     core/aliases/AutoAliasGenerator.cpp
     # Parameter alias system (PR 5 -- CuratedAliasLoader)
     core/aliases/CuratedAliasLoader.cpp
+    core/aliases/InternalPluginAliases.cpp
     # MagdaApi -- programmatic facade for the agent layer (issue #1113)
     api/selection_api_live.cpp
     api/automation_api_live.cpp

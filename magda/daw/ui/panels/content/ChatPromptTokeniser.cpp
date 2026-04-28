@@ -21,8 +21,10 @@ void consumeAliasBody(juce::CodeDocument::Iterator& source) {
 int ChatPromptTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
     auto firstChar = source.peekNextChar();
 
-    if (firstChar == 0)
+    if (firstChar == 0) {
+        expectParamBody_ = false;
         return tokenType_text;
+    }
 
     // @plugin alias — '@' followed by an identifier body. A bare '@' with
     // nothing identifier-like after it is treated as text/punctuation.
@@ -30,23 +32,25 @@ int ChatPromptTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
         source.skip();
         if (isAliasBodyChar(source.peekNextChar())) {
             consumeAliasBody(source);
+            expectParamBody_ = false;
             return tokenType_pluginAlias;
         }
+        expectParamBody_ = false;
         return tokenType_punctuation;
     }
 
-    // .param chain — '.' immediately followed by a letter (no space) becomes
-    // a paramSeparator + paramAlias pair, so "@filter.cutoff" colourises the
-    // suffix but ordinary sentence-ending dots stay neutral.
+    // '.' immediately followed by a letter starts a param chain. The dot
+    // itself is rendered as plain text (white) so the user can still see
+    // the structural break; the body that follows is coloured on the
+    // next readNextToken call via expectParamBody_.
     if (firstChar == '.') {
         source.skip();
         const auto next = source.peekNextChar();
         if (juce::CharacterFunctions::isLetter(next) || next == '_') {
-            // Emit just the separator here; the body is consumed on the
-            // next call as paramAlias. Splitting them lets the colour
-            // scheme tint the dot itself the same as the param.
-            return tokenType_paramSeparator;
+            expectParamBody_ = true;
+            return tokenType_text;
         }
+        expectParamBody_ = false;
         return tokenType_punctuation;
     }
 
@@ -56,49 +60,38 @@ int ChatPromptTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
         source.skip();
         if (isAliasBodyChar(source.peekNextChar())) {
             consumeAliasBody(source);
+            expectParamBody_ = false;
             return tokenType_slashCommand;
         }
+        expectParamBody_ = false;
         return tokenType_punctuation;
     }
 
-    // paramAlias body, when we just emitted a paramSeparator. Detect this
-    // by checking the immediately-preceding character was a '.' that was
-    // itself preceded by an alias body char — that's the only way a '.'
-    // would have been classified as a separator.
+    // Identifier-shaped word. If the previous token was a '.' that opened a
+    // param chain, this body is the param alias and gets the param colour;
+    // otherwise it's plain text.
     if (juce::CharacterFunctions::isLetter(firstChar) || firstChar == '_') {
-        const int pos = source.getPosition();
-        if (pos >= 2) {
-            // Walk back to inspect the previous two chars in the document.
-            // CodeDocument::Iterator doesn't expose a backward peek, so use
-            // a temporary iterator anchored two positions earlier.
-            juce::CodeDocument::Iterator probe(source);
-            // Move the probe back by re-scanning from a slightly earlier
-            // position. We can't seek directly, so reuse skip from the
-            // start of the line — for chat prose this is cheap.
-            // Cheaper: just look at the body and let neighbouring text
-            // tokens absorb the surrounding context. We don't try to
-            // distinguish a paramAlias body from a regular word here,
-            // because CodeEditor re-tokenises continuously and the
-            // visual difference between text and paramAlias body would
-            // require a stateful tokeniser. The dot itself carries the
-            // colour signal via tokenType_paramSeparator.
-            (void)probe;
-        }
-        // Consume the rest of the word as plain text.
         consumeAliasBody(source);
-        return tokenType_text;
+        const bool wasParamBody = expectParamBody_;
+        expectParamBody_ = false;
+        return wasParamBody ? tokenType_paramAlias : tokenType_text;
     }
 
     // Default: consume one char as text and continue.
     source.skip();
+    expectParamBody_ = false;
     return tokenType_text;
 }
 
 juce::CodeEditorComponent::ColourScheme ChatPromptTokeniser::getDefaultColourScheme() {
+    // Two clearly distinct hues for the two alias halves: cool blue for the
+    // plugin alias and warm amber for the parameter alias. Plain prose stays
+    // white so the user can see immediately which words are tokenised vs
+    // freeform.
     static const juce::CodeEditorComponent::ColourScheme::TokenType types[] = {
-        {"Text", juce::Colour(0xffe0e0e0)},           {"PluginAlias", juce::Colour(0xff5fa8ff)},
-        {"ParamSeparator", juce::Colour(0xff9cdcfe)}, {"ParamAlias", juce::Colour(0xff9cdcfe)},
-        {"SlashCommand", juce::Colour(0xff7acf68)},   {"Punctuation", juce::Colour(0xffd4d4d4)},
+        {"Text", juce::Colour(0xffe0e0e0)},        {"PluginAlias", juce::Colour(0xff5fa8ff)},
+        {"ParamAlias", juce::Colour(0xffe0a85a)},  {"SlashCommand", juce::Colour(0xff7acf68)},
+        {"Punctuation", juce::Colour(0xffd4d4d4)},
     };
 
     juce::CodeEditorComponent::ColourScheme cs;
