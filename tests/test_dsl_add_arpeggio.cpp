@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/agents/dsl_interpreter.hpp"
+#include "magda/daw/api/magda_api_live.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
@@ -50,7 +51,8 @@ static std::vector<std::pair<int, double>> getNotesByBeat(const ClipInfo* clip) 
 
 TEST_CASE("add_arpeggio - up pattern (default)", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
@@ -77,7 +79,8 @@ TEST_CASE("add_arpeggio - up pattern (default)", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - down pattern", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute(
         "track(name=\"Test\", type=\"midi\")"
@@ -101,7 +104,8 @@ TEST_CASE("add_arpeggio - down pattern", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - updown pattern", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // C min7 = C4(60), Eb4(63), G4(67), Bb4(70)
     // updown skips endpoints: C Eb G Bb G Eb → 6 notes
@@ -130,7 +134,8 @@ TEST_CASE("add_arpeggio - updown pattern", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - first inversion", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // C major first inversion: E4(64), G4(67), C5(72)
     REQUIRE(interp.execute(
@@ -155,7 +160,8 @@ TEST_CASE("add_arpeggio - first inversion", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - second inversion down", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // C major second inversion: G4(67), C5(72), E5(76) — down: E5, C5, G4
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
@@ -180,7 +186,8 @@ TEST_CASE("add_arpeggio - second inversion down", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - custom note_length", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute(
         "track(name=\"Test\", type=\"midi\")"
@@ -199,7 +206,8 @@ TEST_CASE("add_arpeggio - custom note_length", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - staccato (note_length < step)", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute(
         "track(name=\"Test\", type=\"midi\")"
@@ -226,7 +234,8 @@ TEST_CASE("add_arpeggio - staccato (note_length < step)", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - beat offset and velocity", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute(
         "track(name=\"Test\", type=\"midi\")"
@@ -257,7 +266,8 @@ TEST_CASE("add_arpeggio - beat offset and velocity", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - fill covers entire clip", "[dsl][arpeggio][fill]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // 2-bar clip at 120 BPM = 8 beats, step=0.5 → 16 notes cycling C E G
     REQUIRE(
@@ -283,7 +293,8 @@ TEST_CASE("add_arpeggio - fill covers entire clip", "[dsl][arpeggio][fill]") {
 
 TEST_CASE("add_arpeggio - fill with updown pattern", "[dsl][arpeggio][fill]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // C major updown = C E G E (4 notes per cycle), 1-bar clip = 4 beats, step=0.5 → 8 notes
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
@@ -305,7 +316,8 @@ TEST_CASE("add_arpeggio - fill with updown pattern", "[dsl][arpeggio][fill]") {
 
 TEST_CASE("add_arpeggio - fill with down pattern", "[dsl][arpeggio][fill]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // 1-bar clip = 4 beats, step=0.5, down: G E C → 8 notes cycling
     REQUIRE(interp.execute(
@@ -330,7 +342,8 @@ TEST_CASE("add_arpeggio - fill with down pattern", "[dsl][arpeggio][fill]") {
 
 TEST_CASE("add_arpeggio - beats parameter for exact duration", "[dsl][arpeggio][fill]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // Fill only 2 beats of a 4-bar clip — step=0.5 → 4 notes
     REQUIRE(
@@ -350,7 +363,8 @@ TEST_CASE("add_arpeggio - beats parameter for exact duration", "[dsl][arpeggio][
 
 TEST_CASE("add_arpeggio - chord progression with beats", "[dsl][arpeggio][progression]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // E minor for 4 beats, then C major for 4 beats in a 2-bar clip
     REQUIRE(
@@ -385,7 +399,8 @@ TEST_CASE("add_arpeggio - chord progression with beats", "[dsl][arpeggio][progre
 
 TEST_CASE("add_arpeggio - four-chord progression", "[dsl][arpeggio][progression]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // Em - C - G - D, each for 4 beats in a 4-bar clip
     REQUIRE(
@@ -428,7 +443,8 @@ TEST_CASE("add_arpeggio - four-chord progression", "[dsl][arpeggio][progression]
 
 TEST_CASE("add_arpeggio - 9th chord", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // C dom9 = C4(60), E4(64), G4(67), Bb4(70), D5(74) — 5 notes
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
@@ -450,7 +466,8 @@ TEST_CASE("add_arpeggio - 9th chord", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - min7b5 (half diminished)", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // B half-dim = B3(59), D4(62), F4(65), A4(69)
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
@@ -475,7 +492,8 @@ TEST_CASE("add_arpeggio - min7b5 (half diminished)", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - undo removes all notes", "[dsl][arpeggio][undo]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=4)"
@@ -495,7 +513,8 @@ TEST_CASE("add_arpeggio - undo removes all notes", "[dsl][arpeggio][undo]") {
 
 TEST_CASE("add_arpeggio - undo progression removes last chord only", "[dsl][arpeggio][undo]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(
         interp.execute("track(name=\"Test\", type=\"midi\")"
@@ -529,7 +548,8 @@ TEST_CASE("add_arpeggio - undo progression removes last chord only", "[dsl][arpe
 
 TEST_CASE("add_arpeggio - missing root", "[dsl][arpeggio][error]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
                                  ".clip.new(bar=1, length_bars=4)"
@@ -539,7 +559,8 @@ TEST_CASE("add_arpeggio - missing root", "[dsl][arpeggio][error]") {
 
 TEST_CASE("add_arpeggio - missing quality", "[dsl][arpeggio][error]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
                                  ".clip.new(bar=1, length_bars=4)"
@@ -549,7 +570,8 @@ TEST_CASE("add_arpeggio - missing quality", "[dsl][arpeggio][error]") {
 
 TEST_CASE("add_arpeggio - unknown quality", "[dsl][arpeggio][error]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
                                  ".clip.new(bar=1, length_bars=4)"
@@ -559,7 +581,8 @@ TEST_CASE("add_arpeggio - unknown quality", "[dsl][arpeggio][error]") {
 
 TEST_CASE("add_arpeggio - zero step rejected", "[dsl][arpeggio][error]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
                                  ".clip.new(bar=1, length_bars=4)"
@@ -569,7 +592,8 @@ TEST_CASE("add_arpeggio - zero step rejected", "[dsl][arpeggio][error]") {
 
 TEST_CASE("add_arpeggio - negative step rejected", "[dsl][arpeggio][error]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
                                  ".clip.new(bar=1, length_bars=4)"
@@ -579,7 +603,8 @@ TEST_CASE("add_arpeggio - negative step rejected", "[dsl][arpeggio][error]") {
 
 TEST_CASE("add_arpeggio - negative note_length rejected", "[dsl][arpeggio][error]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     bool result = interp.execute(
         "track(name=\"Test\", type=\"midi\")"
@@ -590,7 +615,8 @@ TEST_CASE("add_arpeggio - negative note_length rejected", "[dsl][arpeggio][error
 
 TEST_CASE("add_arpeggio - negative beats rejected", "[dsl][arpeggio][error]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     bool result =
         interp.execute("track(name=\"Test\", type=\"midi\")"
@@ -601,7 +627,8 @@ TEST_CASE("add_arpeggio - negative beats rejected", "[dsl][arpeggio][error]") {
 
 TEST_CASE("add_arpeggio - no clip context", "[dsl][arpeggio][error]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // Create track but no clip — arpeggio should fail
     bool result = interp.execute("track(name=\"Test\", type=\"midi\")"
@@ -615,7 +642,8 @@ TEST_CASE("add_arpeggio - no clip context", "[dsl][arpeggio][error]") {
 
 TEST_CASE("add_arpeggio - power chord (2 notes)", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     REQUIRE(interp.execute("track(name=\"Test\", type=\"midi\")"
                            ".clip.new(bar=1, length_bars=2)"
@@ -633,7 +661,8 @@ TEST_CASE("add_arpeggio - power chord (2 notes)", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - fill with beat offset", "[dsl][arpeggio][fill]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // Start at beat 2 and fill to end of 1-bar (4-beat) clip
     // Available space: beats 2-4, step=0.5 → 4 notes
@@ -654,7 +683,8 @@ TEST_CASE("add_arpeggio - fill with beat offset", "[dsl][arpeggio][fill]") {
 
 TEST_CASE("add_arpeggio - updown with triad (3 notes)", "[dsl][arpeggio]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // updown with 3-note chord: C E G E → 4 notes (skip top and bottom on way down)
     REQUIRE(interp.execute(
@@ -681,7 +711,8 @@ TEST_CASE("add_arpeggio - updown with triad (3 notes)", "[dsl][arpeggio]") {
 
 TEST_CASE("add_arpeggio - new=true creates separate track", "[dsl][arpeggio][track]") {
     resetState();
-    dsl::Interpreter interp;
+    magda::MagdaApiLive api;
+    dsl::Interpreter interp(api);
 
     // Create first track
     REQUIRE(

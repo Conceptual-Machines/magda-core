@@ -485,7 +485,7 @@ void AIChatConsoleContent::RequestThread::run() {
                 // Execute DSL from command agent
                 int commandClipId = -1;
                 if (!dsl.empty()) {
-                    magda::dsl::Interpreter interpreter;
+                    magda::dsl::Interpreter interpreter(*safeThis->magdaApi_);
                     if (interpreter.execute(dsl.c_str())) {
                         auto results = interpreter.getResults().toStdString();
                         response = results.empty() ? "OK" : results;
@@ -984,7 +984,7 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
         auto dslCode = text.trimStart().substring(5).trim();
         appendToChat(juce::String::charToString(0x25CF) + " " + text);
 
-        magda::dsl::Interpreter interpreter;
+        magda::dsl::Interpreter interpreter(*magdaApi_);
         bool success = interpreter.execute(dslCode.toRawUTF8());
 
         if (success) {
@@ -1382,7 +1382,7 @@ void AIChatConsoleContent::executeDSL() {
     }
 
     // Execute
-    magda::dsl::Interpreter interpreter;
+    magda::dsl::Interpreter interpreter(*magdaApi_);
     bool success = interpreter.execute(code.toRawUTF8());
 
     if (success) {

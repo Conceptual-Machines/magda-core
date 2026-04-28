@@ -12,6 +12,8 @@ class TrackApiLive : public TrackApi {
 
     int getNumTracks() const override;
     const std::vector<TrackInfo>& getTracks() const override;
+    TrackInfo* getTrack(TrackId trackId) override;
+    const TrackInfo* getTrack(TrackId trackId) const override;
 
     void setTrackName(TrackId trackId, const juce::String& name) override;
     void setTrackVolume(TrackId trackId, float volume, bool fromAutomation) override;

@@ -12,6 +12,10 @@ std::vector<ClipInfo> ClipApiLive::getArrangementClips() const {
     return ClipManager::getInstance().getArrangementClips();
 }
 
+std::vector<ClipId> ClipApiLive::getClipsOnTrack(TrackId trackId) const {
+    return ClipManager::getInstance().getClipsOnTrack(trackId);
+}
+
 ClipId ClipApiLive::createMidiClipBeats(TrackId trackId, double startBeats, double lengthBeats,
                                         ClipView view) {
     return ClipManager::getInstance().createMidiClipBeats(trackId, startBeats, lengthBeats, view);
@@ -23,6 +27,10 @@ void ClipApiLive::deleteClip(ClipId clipId) {
 
 void ClipApiLive::setClipName(ClipId clipId, const juce::String& name) {
     ClipManager::getInstance().setClipName(clipId, name);
+}
+
+void ClipApiLive::setGrooveTemplate(ClipId clipId, const juce::String& templateName) {
+    ClipManager::getInstance().setGrooveTemplate(clipId, templateName);
 }
 
 }  // namespace magda
