@@ -7,12 +7,10 @@
 #include "../themes/FontManager.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
-#include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
-#include "magda/scripting/LuaScriptStore.hpp"
+#include "scripting_app.hpp"
 
 namespace magda {
 
@@ -550,16 +548,10 @@ class SelfClosingDialogWindow : public juce::DialogWindow {
 // -----------------------------------------------------------------------------
 
 void ControllersDialog::onReloadLuaClicked() {
-    auto* engine = dynamic_cast<TracktionEngineWrapper*>(
-        TrackManager::getInstance().getAudioEngine());
-    if (engine == nullptr) {
-        luaStatusLabel_.setText("Engine not ready", juce::dontSendNotification);
-        return;
-    }
-    if (engine->reloadLuaScript()) {
+    if (scripting_app::reloadActiveLuaScript()) {
         refreshLuaStatus();
     } else {
-        auto name = engine->getCurrentLuaScriptName();
+        auto name = scripting_app::activeLuaScriptName();
         if (name.isEmpty())
             luaStatusLabel_.setText("No script in scripts folder",
                                     juce::dontSendNotification);
@@ -570,19 +562,11 @@ void ControllersDialog::onReloadLuaClicked() {
 }
 
 void ControllersDialog::onOpenScriptsFolderClicked() {
-    scripting::LuaScriptStore store;
-    store.ensureExists();
-    store.root().revealToUser();
+    scripting_app::revealLuaScriptsFolder();
 }
 
 void ControllersDialog::refreshLuaStatus() {
-    auto* engine = dynamic_cast<TracktionEngineWrapper*>(
-        TrackManager::getInstance().getAudioEngine());
-    if (engine == nullptr) {
-        luaStatusLabel_.setText("Lua: engine not ready", juce::dontSendNotification);
-        return;
-    }
-    auto name = engine->getCurrentLuaScriptName();
+    auto name = scripting_app::activeLuaScriptName();
     if (name.isEmpty())
         luaStatusLabel_.setText("Lua: no script loaded", juce::dontSendNotification);
     else

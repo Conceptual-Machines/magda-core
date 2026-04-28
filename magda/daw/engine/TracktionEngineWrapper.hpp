@@ -26,10 +26,6 @@ class PluginWindowManager;
 class SessionClipScheduler;
 class SessionRecorder;
 
-namespace scripting {
-class LuaController;
-}
-
 /**
  * @brief Tracktion Engine implementation of AudioEngine
  *
@@ -243,18 +239,12 @@ class TracktionEngineWrapper : public AudioEngine,
         return currentEdit_.get();
     }
 
-    // =========================================================================
-    // Lua Controller Scripts (issue #592)
-    // =========================================================================
-
-    /** Reload the Lua controller script from `~/MAGDA/Scripts/Controllers/`.
-     *  v1: loads the first .lua file found alphabetically. Returns true on
-     *  success, or false (with juce::Logger output) on parse / file errors.
-     *  No-op if no script files are present. */
-    bool reloadLuaScript();
-
-    /** Filename of the currently active Lua script, or empty if none. */
-    juce::String getCurrentLuaScriptName() const;
+    /** Programmatic facade onto MAGDA's DAW state. Owned by the wrapper and
+     *  shared across consumers (AI Chat panel, Lua controller, future CLI).
+     *  The reference is valid for the lifetime of the wrapper. */
+    MagdaApi& getMagdaApi() {
+        return *magdaApi_;
+    }
 
     // =========================================================================
     // Device Loading State
@@ -480,12 +470,12 @@ class TracktionEngineWrapper : public AudioEngine,
     // MIDI bridge for MIDI device management and routing
     std::unique_ptr<MidiBridge> midiBridge_;
 
-    // Lua-script-driven MIDI controller. Holds its own MagdaApiLive so the
-    // Lua bindings can drive DAW state without depending on the AI Chat
-    // Console panel that owns the legacy MagdaApiLive instance. Both wrap
-    // the same singletons, so there's no state divergence.
-    std::unique_ptr<MagdaApi> luaMagdaApi_;
-    std::unique_ptr<scripting::LuaController> luaController_;
+    // Programmatic facade onto MAGDA's DAW state. Owned here and shared
+    // with consumers (AI Chat, Lua controller, future CLI) via getMagdaApi().
+    // No Lua / scripting types referenced from this lib — the Lua controller
+    // lives in the magda_daw_app layer to avoid a circular link with
+    // magda_scripting.
+    std::unique_ptr<MagdaApi> magdaApi_;
 
     // Plugin window manager for safe window lifecycle
     std::unique_ptr<PluginWindowManager> pluginWindowManager_;

@@ -4,8 +4,6 @@
 #include "../audio/MidiBridge.hpp"
 #include "../audio/SessionClipScheduler.hpp"
 #include "../audio/SessionRecorder.hpp"
-#include "magda/scripting/LuaController.hpp"
-#include "magda/scripting/LuaScriptStore.hpp"
 #include "../core/Config.hpp"
 #include "../core/ViewModeController.hpp"
 #include "../core/controllers/BindingRegistry.hpp"
@@ -423,47 +421,11 @@ void TracktionEngineWrapper::createEditAndBridges() {
     // Register as transport listener for recording callbacks
     currentEdit_->getTransport().addListener(this);
 
-    // Lua controller scripts (issue #592). MagdaApiLive is a thin facade
-    // over MAGDA's singletons; instantiating one here is independent of the
-    // one AIChatConsoleContent owns — both wrap the same state.
-    luaMagdaApi_ = std::make_unique<MagdaApiLive>();
-    luaController_ = std::make_unique<scripting::LuaController>(*luaMagdaApi_);
-    luaController_->attach(*midiBridge_);
-    if (!reloadLuaScript()) {
-        // Empty scripts directory or no Lua files — not an error condition.
-        DBG("[lua] No controller script loaded");
-    }
+    // Programmatic facade onto DAW state — shared with AI Chat panel and
+    // app-level Lua controller wiring.
+    magdaApi_ = std::make_unique<MagdaApiLive>();
 
     DBG("Tracktion Engine initialized with Edit, AudioBridge, and MidiBridge");
-}
-
-bool TracktionEngineWrapper::reloadLuaScript() {
-    if (luaController_ == nullptr)
-        return false;
-
-    scripting::LuaScriptStore store;
-    store.ensureExists();
-    auto scripts = store.enumerate();
-    if (scripts.empty()) {
-        luaController_->unloadScript();
-        return false;
-    }
-
-    // v1: load the first script alphabetically. UI for picking comes later.
-    auto& script = scripts.front();
-    if (luaController_->loadScript(script)) {
-        juce::Logger::writeToLog("[lua] Loaded controller script: " +
-                                 script.getFileName());
-        return true;
-    }
-    juce::Logger::writeToLog("[lua] Failed to load " + script.getFileName() +
-                             ": " + luaController_->lastError());
-    return false;
-}
-
-juce::String TracktionEngineWrapper::getCurrentLuaScriptName() const {
-    return luaController_ != nullptr ? luaController_->currentScriptName()
-                                     : juce::String{};
 }
 
 bool TracktionEngineWrapper::initialize() {
@@ -556,13 +518,6 @@ void TracktionEngineWrapper::shutdown() {
         pluginWindowManager_.reset();
     }
 
-    // Destroy LuaController before MidiBridge — the controller's dtor
-    // unregisters from MidiBridge::removeRawMidiListener.
-    if (luaController_) {
-        luaController_.reset();
-    }
-    luaMagdaApi_.reset();
-
     // Destroy session scheduler before AudioBridge (it references both)
     if (sessionScheduler_) {
         sessionScheduler_.reset();
@@ -614,6 +569,10 @@ void TracktionEngineWrapper::shutdown() {
         DBG("Destroying MidiBridge...");
         midiBridge_.reset();
     }
+
+    // MagdaApi is a thin facade over singletons — safe to reset anytime,
+    // but match teardown order with construction.
+    magdaApi_.reset();
 
     // Close audio/MIDI devices before destroying engine
     if (engine_) {
