@@ -31,6 +31,12 @@
 #include "magda/daw/core/TrackInfo.hpp"
 #include "magda/daw/core/TrackTypes.hpp"
 #include "magda/daw/core/TypeIds.hpp"
+// UndoableCommand's full definition lives in UndoManager.hpp; undo_api.hpp
+// only forward-declares it. We need the complete type because StubUndoApi
+// takes std::unique_ptr<UndoableCommand> by value — MSVC instantiates
+// ~unique_ptr eagerly when parsing the inline body, and the default
+// deleter static_asserts on a complete type.
+#include "magda/daw/core/UndoManager.hpp"
 #include "magda/daw/project/ProjectInfo.hpp"
 
 namespace magda::test {
