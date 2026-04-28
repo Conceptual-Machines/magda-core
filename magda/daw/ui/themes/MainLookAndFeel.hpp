@@ -9,6 +9,8 @@ namespace magda {
 
 class MainLookAndFeel : public juce::LookAndFeel_V4 {
   public:
+    static constexpr int kTitleBarHeight = 22;
+
     MainLookAndFeel() = default;
     ~MainLookAndFeel() override = default;
 
