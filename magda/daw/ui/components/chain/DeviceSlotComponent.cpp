@@ -18,6 +18,7 @@
 #include "core/MidiFileWriter.hpp"
 #include "core/ModInfo.hpp"
 #include "core/ParameterUtils.hpp"
+#include "core/PresetManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -243,17 +244,47 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // ----- MOCK UI (no wiring): MAGDA preset menu button (top header) -----
     presetButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::preset_svg,
                                                        BinaryData::preset_svgSize);
-    applyHeaderIconStyle(*presetButton_, DarkTheme::getColour(DarkTheme::ACCENT_PURPLE),
+    // Indigo sits between ACCENT_BLUE and ACCENT_PURPLE — distinct from both
+    // utility blue (ui/multiOut) and macro purple, signals "MAGDA presets".
+    constexpr juce::uint32 PRESET_INDIGO = 0xFF5577CC;
+    applyHeaderIconStyle(*presetButton_, juce::Colour(PRESET_INDIGO),
                          /*toggling*/ false);
+    // Permanent "active" treatment: indigo pill + white icon. Using setActive()
+    // (not normalBackgroundColor) so hover/pressed don't wipe out the pill —
+    // the active branch wins first in SvgButton's paint priority.
+    presetButton_->setActive(true);
+    // Larger inner padding shrinks the icon glyph while leaving the pill at
+    // full button size.
+    presetButton_->setIconPadding(4.5f);
     presetButton_->setTooltip("MAGDA Presets");
     presetButton_->onClick = [this]() {
+        auto& pm = magda::PresetManager::getInstance();
+        const auto presets = pm.getDevicePresets();
+
         juce::PopupMenu menu;
         menu.addSectionHeader("MAGDA Presets");
-        menu.addItem(1, "(no presets yet)", false);
+        if (presets.isEmpty()) {
+            menu.addItem(1, "(no presets yet)", /*isActive*/ false);
+        } else {
+            // Load is wired in task 3 — for now items are visible-only so the
+            // user can confirm saves landed on disk.
+            int id = 100;
+            for (const auto& name : presets)
+                menu.addItem(id++, name, /*isActive*/ false);
+        }
         menu.addSeparator();
         menu.addItem(2, "Save as MAGDA Preset...");
         menu.addItem(3, "Reveal in Finder");
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(presetButton_.get()));
+
+        menu.showMenuAsync(
+            juce::PopupMenu::Options().withTargetComponent(presetButton_.get()),
+            [this](int chosen) {
+                if (chosen == 2) {
+                    showSaveMagdaPresetDialog();
+                } else if (chosen == 3) {
+                    magda::PresetManager::getInstance().getDevicesDirectory().revealToUser();
+                }
+            });
     };
     addAndMakeVisible(*presetButton_);
 
@@ -1204,6 +1235,34 @@ int DeviceSlotComponent::getPreferredWidth() const {
         return getTotalWidth(drumGridUI_->getPreferredContentWidth()) + meterExtra;
     }
     return getTotalWidth(getDynamicSlotWidth()) + meterExtra;
+}
+
+void DeviceSlotComponent::showSaveMagdaPresetDialog() {
+    auto* aw = new juce::AlertWindow("Save MAGDA Preset", "Enter a name for this device preset:",
+                                     juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor("name", device_.name, "Name:");
+    aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    const auto deviceCopy = device_;  // capture by value — async callback
+    aw->enterModalState(true, juce::ModalCallbackFunction::create([aw, deviceCopy](int result) {
+                            if (result == 1) {
+                                auto name = aw->getTextEditorContents("name").trim();
+                                if (name.isNotEmpty()) {
+                                    auto& pm = magda::PresetManager::getInstance();
+                                    if (!pm.saveDevicePreset(deviceCopy, name)) {
+                                        juce::AlertWindow::showAsync(
+                                            juce::MessageBoxOptions()
+                                                .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                                .withTitle("Save Preset Failed")
+                                                .withMessage(pm.getLastError())
+                                                .withButton("OK"),
+                                            nullptr);
+                                    }
+                                }
+                            }
+                            delete aw;
+                        }));
 }
 
 void DeviceSlotComponent::refreshProgramsCombo() {

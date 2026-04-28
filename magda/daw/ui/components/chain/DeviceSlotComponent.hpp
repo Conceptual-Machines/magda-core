@@ -292,6 +292,9 @@ class DeviceSlotComponent : public NodeComponent,
     void refreshProgramsCombo();        // full re-populate (item list + selection)
     void syncProgramsComboSelection();  // selection-only, cheap, called from timer
 
+    // MAGDA preset dialogs
+    void showSaveMagdaPresetDialog();
+
     void updateParamModulation();  // Update mod/macro pointers for params
     void updateParameterSlots();   // Reload parameter data for current page
     void updateParameterValues();  // Update only parameter values (for polling)
