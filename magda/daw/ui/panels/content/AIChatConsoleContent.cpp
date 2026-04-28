@@ -13,6 +13,7 @@
 #include "../../../../agents/controller_profile_agent.hpp"
 #include "../../../../agents/daw_agent.hpp"
 #include "../../../../agents/dsl_interpreter.hpp"
+#include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_presets.hpp"
 #include "../../../../agents/music_agent.hpp"
@@ -1562,24 +1563,13 @@ void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
 void AIChatConsoleContent::buildAliasList() {
     allAliases_.clear();
 
-    // Internal plugins
-    auto addInternal = [this](const juce::String& name) {
-        allAliases_.push_back({PluginBrowserInfo::generateAlias(name), name});
-    };
-    addInternal("Test Tone");
-    addInternal("4OSC Synth");
-    addInternal("Equaliser");
-    addInternal("Compressor");
-    addInternal("Reverb");
-    addInternal("Delay");
-    addInternal("Chorus");
-    addInternal("Phaser");
-    addInternal("Filter");
-    addInternal("Pitch Shift");
-    addInternal("IR Reverb");
-    addInternal("Utility");
-    addInternal(juce::String(audio::MagdaSamplerPlugin::getPluginName()));
-    addInternal(juce::String(audio::DrumGridPlugin::getPluginName()));
+    // Internal plugins — single source of truth in internal_plugins.hpp,
+    // shared with the DSL interpreter and CompactExecutor so the autocomplete
+    // dropdown lists exactly the aliases the agent layer accepts.
+    for (const auto& entry : magda::getInternalPlugins()) {
+        allAliases_.push_back(
+            {PluginBrowserInfo::generateAlias(entry.displayName), entry.displayName});
+    }
 
     // External plugins from KnownPluginList
     if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(

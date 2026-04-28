@@ -16,6 +16,7 @@
 #include "../daw/core/TrackTypes.hpp"
 #include "../daw/engine/AudioEngine.hpp"
 #include "../daw/engine/TracktionEngineWrapper.hpp"
+#include "internal_plugins.hpp"
 #include "music_helpers.hpp"
 
 namespace magda {
@@ -488,41 +489,22 @@ bool CompactExecutor::executeFx(const FxOp& op) {
     if (trackId < 0)
         return false;
 
-    // Internal plugin alias lookup (mirrors DSL interpreter)
-    static const std::map<juce::String, juce::String> internalAliases = {
-        {"eq", "eq"},
-        {"equaliser", "eq"},
-        {"equalizer", "eq"},
-        {"compressor", "compressor"},
-        {"reverb", "reverb"},
-        {"delay", "delay"},
-        {"chorus", "chorus"},
-        {"phaser", "phaser"},
-        {"filter", "lowpass"},
-        {"lowpass", "lowpass"},
-        {"utility", "utility"},
-        {"pitch shift", "pitchshift"},
-        {"pitchshift", "pitchshift"},
-        {"ir reverb", "impulseresponse"},
-        {"impulse response", "impulseresponse"},
-    };
-
-    auto lowerName = op.fxName.toLowerCase();
-    auto aliasIt = internalAliases.find(lowerName);
-
-    if (aliasIt != internalAliases.end()) {
+    // Internal plugin lookup — shares internal_plugins.hpp with the DSL
+    // interpreter so a single canonical alias per plugin is accepted by both.
+    if (const auto* match = lookupInternalPluginByAlias(op.fxName)) {
         DeviceInfo device;
-        device.name = op.fxName;
-        device.pluginId = aliasIt->second;
+        device.name = match->displayName;
+        device.pluginId = match->pluginId;
         device.format = PluginFormat::Internal;
-        device.isInstrument = false;
+        device.deviceType = match->deviceType;
+        device.isInstrument = (match->deviceType == DeviceType::Instrument);
 
         auto deviceId = api_.tracks().addDeviceToTrack(trackId, device);
         if (deviceId == INVALID_DEVICE_ID) {
             error_ = "Failed to add FX '" + op.fxName + "'";
             return false;
         }
-        results_.add("Added FX '" + op.fxName + "'");
+        results_.add("Added FX '" + match->displayName + "'");
         return true;
     }
 

@@ -25,6 +25,7 @@
 #include "../daw/engine/AudioEngine.hpp"
 #include "../daw/engine/TracktionEngineWrapper.hpp"
 #include "../daw/project/ProjectManager.hpp"
+#include "internal_plugins.hpp"
 #include "music_helpers.hpp"
 
 namespace magda::dsl {
@@ -1025,58 +1026,22 @@ bool Interpreter::executeAddFx(const Params& params) {
         fxName = fxName.substring(1, fxName.length() - 1);
 
     // --- Internal plugin lookup ---
-    // Single canonical alias per plugin, matching the autocomplete dropdown
-    // (see AIChatConsoleContent::buildAliasList). Both lists feed off
-    // pluginNameToAlias(displayName) so what autocomplete suggests is exactly
-    // what the DSL accepts. To add a built-in here, also add the same display
-    // name to buildAliasList — never invent variants.
-    struct InternalAlias {
-        juce::String displayName;
-        juce::String pluginId;
-        DeviceType deviceType;
-    };
-    static const InternalAlias internalAliases[] = {
-        // Effects
-        {"Equaliser", "eq", DeviceType::Effect},
-        {"Compressor", "compressor", DeviceType::Effect},
-        {"Reverb", "reverb", DeviceType::Effect},
-        {"Delay", "delay", DeviceType::Effect},
-        {"Chorus", "chorus", DeviceType::Effect},
-        {"Phaser", "phaser", DeviceType::Effect},
-        {"Filter", "lowpass", DeviceType::Effect},
-        {"Utility", "utility", DeviceType::Effect},
-        {"Pitch Shift", "pitchshift", DeviceType::Effect},
-        {"IR Reverb", "impulseresponse", DeviceType::Effect},
-        {"Test Tone", "tone", DeviceType::Effect},
-        // Instruments
-        {"4OSC Synth", "4osc", DeviceType::Instrument},
-        {"MAGDA Sampler", "magdasampler", DeviceType::Instrument},
-        {"Drum Grid", "drumgrid", DeviceType::Instrument},
-    };
-
-    auto lowerName = fxName.toLowerCase();
-    const InternalAlias* internalMatch = nullptr;
-    for (const auto& entry : internalAliases) {
-        if (pluginNameToAlias(entry.displayName).equalsIgnoreCase(lowerName)) {
-            internalMatch = &entry;
-            break;
-        }
-    }
-
-    if (internalMatch != nullptr) {
+    // Built-in plugins are listed in internal_plugins.hpp — single canonical
+    // alias per plugin, matching the autocomplete dropdown.
+    if (const auto* match = lookupInternalPluginByAlias(fxName)) {
         DeviceInfo device;
-        device.name = internalMatch->displayName;
-        device.pluginId = internalMatch->pluginId;
+        device.name = match->displayName;
+        device.pluginId = match->pluginId;
         device.format = PluginFormat::Internal;
-        device.deviceType = internalMatch->deviceType;
-        device.isInstrument = (internalMatch->deviceType == DeviceType::Instrument);
+        device.deviceType = match->deviceType;
+        device.isInstrument = (match->deviceType == DeviceType::Instrument);
 
         auto deviceId = api_.tracks().addDeviceToTrack(ctx_.currentTrackId, device);
         if (deviceId == INVALID_DEVICE_ID) {
             ctx_.setError("Failed to add internal FX '" + fxName + "' to track");
             return false;
         }
-        ctx_.addResult("Added internal FX '" + internalMatch->displayName + "'");
+        ctx_.addResult("Added internal FX '" + match->displayName + "'");
         return true;
     }
 
