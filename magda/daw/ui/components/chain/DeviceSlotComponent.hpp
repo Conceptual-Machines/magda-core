@@ -272,8 +272,11 @@ class DeviceSlotComponent : public NodeComponent,
 
     // MAGDA preset menu button (lives in top header, replaces gainLabel_ slot)
     std::unique_ptr<magda::SvgButton> presetButton_;
-    // Native plugin programs dropdown (lives in second/content header, plugin-hosted only)
-    std::unique_ptr<juce::ComboBox> programsCombo_;
+    // Plugin preset menu button (second/content header, plugin-hosted only).
+    // Hidden when neither disk presets nor built-in programs are available so
+    // plugins with proprietary preset systems (Vital, Serum 2, etc.) don't
+    // show a dead control.
+    std::unique_ptr<juce::TextButton> presetsButton_;
     // Vertical gain slider overlaid on the meter
     std::unique_ptr<juce::Slider> gainSlider_;
     daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;
@@ -288,9 +291,18 @@ class DeviceSlotComponent : public NodeComponent,
     bool hasAutomapBindings_ = false;  // Any DeviceMacro binding targets this device
     void refreshControllerIndicators();
 
-    // Plugin programs combo helpers
-    void refreshProgramsCombo();        // full re-populate (item list + selection)
-    void syncProgramsComboSelection();  // selection-only, cheap, called from timer
+    // Plugin presets button helpers (disk-scanned .vstpreset / .aupreset).
+    void refreshPresetsButton();             // re-paint label + recompute visibility
+    bool hasPluginPresetsAvailable() const;  // disk presets OR >1 built-in programs
+    void showPluginPresetMenu();
+    void loadPluginPresetFile(const juce::File& file);
+    void showSavePluginPresetDialog();
+
+    // Most-recently loaded plugin preset (cleared when the device's pluginId
+    // changes). pluginPresetName_ is the display label; currentPluginPresetFile_
+    // is the source file used to tick the entry in the popup menu.
+    juce::File currentPluginPresetFile_;
+    juce::String pluginPresetName_;
 
     // MAGDA preset dialogs / actions
     void showPresetMenu();

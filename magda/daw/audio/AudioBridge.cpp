@@ -803,6 +803,104 @@ bool AudioBridge::setPluginCurrentProgram(DeviceId deviceId, int programIndex) {
     return false;
 }
 
+namespace {
+
+// Loads / saves a .vstpreset blob via JUCE's VST3Client extension. Two-mode
+// visitor: when `dataIn` is non-empty we apply it as a preset; otherwise we
+// pull the current state into `dataOut`.
+struct Vst3PresetVisitor : juce::ExtensionsVisitor {
+    juce::MemoryBlock dataIn;
+    juce::MemoryBlock dataOut;
+    bool ok = false;
+    bool save = false;
+
+    void visitVST3Client(const VST3Client& client) override {
+        if (save) {
+            dataOut = client.getPreset();
+            ok = dataOut.getSize() > 0;
+        } else {
+            ok = client.setPreset(dataIn);
+        }
+    }
+};
+
+}  // namespace
+
+bool AudioBridge::loadPluginPresetFile(DeviceId deviceId, const juce::File& presetFile) {
+    if (!presetFile.existsAsFile())
+        return false;
+
+    auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId));
+    if (ext == nullptr)
+        return false;
+    auto* pi = ext->getAudioPluginInstance();
+    if (pi == nullptr)
+        return false;
+
+    const auto extension = presetFile.getFileExtension().toLowerCase();
+    bool applied = false;
+
+    if (extension == ".vstpreset") {
+        juce::MemoryBlock raw;
+        if (!presetFile.loadFileAsData(raw))
+            return false;
+        Vst3PresetVisitor visitor;
+        visitor.save = false;
+        visitor.dataIn = std::move(raw);
+        pi->getExtensions(visitor);
+        applied = visitor.ok;
+    } else if (extension == ".aupreset") {
+        juce::MemoryBlock raw;
+        if (!presetFile.loadFileAsData(raw))
+            return false;
+        // JUCE's AU wrapper reads the plist directly and pushes it to the
+        // unit via kAudioUnitProperty_ClassInfo. Note: setStateInformation
+        // is NOT what we want — that's JUCE's own state envelope, which
+        // wraps the AU class-info plist and would not match a bare .aupreset.
+        pi->setCurrentProgramStateInformation(raw.getData(), (int)raw.getSize());
+        applied = true;  // AU API doesn't report success; assume ok.
+    }
+
+    if (applied) {
+        // Persist the new state into TE's ValueTree so project save / undo
+        // / param refresh sees it. Mirrors PluginManager::capturePluginState.
+        ext->flushPluginStateToValueTree();
+    }
+    return applied;
+}
+
+bool AudioBridge::savePluginPresetFile(DeviceId deviceId, const juce::File& presetFile) {
+    auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId));
+    if (ext == nullptr)
+        return false;
+    auto* pi = ext->getAudioPluginInstance();
+    if (pi == nullptr)
+        return false;
+
+    const auto extension = presetFile.getFileExtension().toLowerCase();
+
+    if (extension == ".vstpreset") {
+        Vst3PresetVisitor visitor;
+        visitor.save = true;
+        pi->getExtensions(visitor);
+        if (!visitor.ok)
+            return false;
+        presetFile.getParentDirectory().createDirectory();
+        return presetFile.replaceWithData(visitor.dataOut.getData(), visitor.dataOut.getSize());
+    }
+
+    if (extension == ".aupreset") {
+        juce::MemoryBlock raw;
+        pi->getCurrentProgramStateInformation(raw);
+        if (raw.getSize() == 0)
+            return false;
+        presetFile.getParentDirectory().createDirectory();
+        return presetFile.replaceWithData(raw.getData(), raw.getSize());
+    }
+
+    return false;
+}
+
 te::VirtualMidiInputDevice* AudioBridge::getQwertyMidiDevice() {
     if (!qwertyMidiDevice_) {
         // Check if it already exists (persisted from a previous session).

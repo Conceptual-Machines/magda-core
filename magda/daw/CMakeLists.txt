@@ -348,6 +348,7 @@ set(DAW_CORE_SOURCES
     project/ProjectManager.cpp
     # Preset management
     core/PresetManager.cpp
+    core/PluginPresetScanner.cpp
     # Music theory (chord detection, suggestion, scales)
     music/ChordEngine.cpp
     music/ChordSuggestionEngine.cpp
@@ -778,6 +779,7 @@ set(DAW_HEADERS
     project/ProjectManager.hpp
     # Preset management
     core/PresetManager.hpp
+    core/PluginPresetScanner.hpp
     # Components - Common Curve Editor
     ui/components/common/curve/CurveTypes.hpp
     ui/components/common/curve/CurveEditorBase.hpp
