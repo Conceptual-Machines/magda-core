@@ -420,6 +420,7 @@ set(DAW_UI_SOURCES
     ui/panels/content/inspector/InspectorContainer.cpp
     ui/panels/content/AIChatConsoleContent.cpp
     ui/panels/content/ScriptingConsoleContent.cpp
+    ui/panels/content/ChatPromptTokeniser.cpp
     ui/panels/content/DSLTokeniser.cpp
     ui/panels/content/PanelContent.cpp
     ui/panels/content/TrackChainContent.cpp
@@ -639,6 +640,7 @@ set(DAW_HEADERS
     ui/panels/content/inspector/InspectorContainer.hpp
     ui/panels/content/AIChatConsoleContent.hpp
     ui/panels/content/ScriptingConsoleContent.hpp
+    ui/panels/content/ChatPromptTokeniser.hpp
     ui/panels/content/DSLTokeniser.hpp
     ui/panels/content/TrackChainContent.hpp
     ui/panels/content/PianoRollContent.hpp
