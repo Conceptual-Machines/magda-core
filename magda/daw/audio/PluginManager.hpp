@@ -480,7 +480,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     /**
      * @brief Set a device macro parameter value on the TE MacroParameter
      */
-    void setDeviceMacroValue(DeviceId deviceId, int macroIndex, float value);
+    void setMacroValue(DeviceId deviceId, int macroIndex, float value);
 
     /**
      * @brief Sync multi-out tracks for a DrumGrid device

@@ -535,18 +535,18 @@ void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneI
         if (target.devicePath.isValid()) {
             switch (target.devicePath.getType()) {
                 case ChainNodeType::Rack:
-                    trackMgr.setRackMacroValue(target.devicePath, target.macroIndex, value);
+                    trackMgr.setMacroValue(target.devicePath, target.macroIndex, value);
                     break;
                 case ChainNodeType::TopLevelDevice:
                 case ChainNodeType::Device:
-                    trackMgr.setDeviceMacroValue(target.devicePath, target.macroIndex, value);
+                    trackMgr.setMacroValue(target.devicePath, target.macroIndex, value);
                     break;
                 default:
-                    trackMgr.setTrackMacroValue(target.trackId, target.macroIndex, value);
+                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex, value);
                     break;
             }
         } else {
-            trackMgr.setTrackMacroValue(target.trackId, target.macroIndex, value);
+            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex, value);
         }
     } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 0) {
         writeModRateFromCurve(target, previewValue);
@@ -766,18 +766,18 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
         if (target.devicePath.isValid()) {
             switch (target.devicePath.getType()) {
                 case ChainNodeType::Rack:
-                    trackMgr.setRackMacroValue(target.devicePath, target.macroIndex, value);
+                    trackMgr.setMacroValue(target.devicePath, target.macroIndex, value);
                     break;
                 case ChainNodeType::TopLevelDevice:
                 case ChainNodeType::Device:
-                    trackMgr.setDeviceMacroValue(target.devicePath, target.macroIndex, value);
+                    trackMgr.setMacroValue(target.devicePath, target.macroIndex, value);
                     break;
                 default:
-                    trackMgr.setTrackMacroValue(target.trackId, target.macroIndex, value);
+                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex, value);
                     break;
             }
         } else {
-            trackMgr.setTrackMacroValue(target.trackId, target.macroIndex, value);
+            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex, value);
         }
     } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 0) {
         // Mirror the curve value back into MAGDA's mod state. The lane is
@@ -834,17 +834,17 @@ void AutomationPlaybackEngine::writeModRateFromCurve(const AutomationTarget& tar
         if (target.devicePath.isValid()) {
             switch (target.devicePath.getType()) {
                 case ChainNodeType::Rack:
-                    trackMgr.setRackModSyncDivision(target.devicePath, target.modId, division);
+                    trackMgr.setModSyncDivision(target.devicePath, target.modId, division);
                     return;
                 case ChainNodeType::TopLevelDevice:
                 case ChainNodeType::Device:
-                    trackMgr.setDeviceModSyncDivision(target.devicePath, target.modId, division);
+                    trackMgr.setModSyncDivision(target.devicePath, target.modId, division);
                     return;
                 default:
                     break;
             }
         }
-        trackMgr.setTrackModSyncDivision(target.trackId, target.modId, division);
+        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(target.trackId), target.modId, division);
         return;
     }
 
@@ -852,17 +852,17 @@ void AutomationPlaybackEngine::writeModRateFromCurve(const AutomationTarget& tar
     if (target.devicePath.isValid()) {
         switch (target.devicePath.getType()) {
             case ChainNodeType::Rack:
-                trackMgr.setRackModRate(target.devicePath, target.modId, real);
+                trackMgr.setModRate(target.devicePath, target.modId, real);
                 return;
             case ChainNodeType::TopLevelDevice:
             case ChainNodeType::Device:
-                trackMgr.setDeviceModRate(target.devicePath, target.modId, real);
+                trackMgr.setModRate(target.devicePath, target.modId, real);
                 return;
             default:
                 break;
         }
     }
-    trackMgr.setTrackModRate(target.trackId, target.modId, real);
+    trackMgr.setModRate(ChainNodePath::trackLevel(target.trackId), target.modId, real);
 }
 
 }  // namespace magda

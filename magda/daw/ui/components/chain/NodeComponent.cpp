@@ -1144,10 +1144,10 @@ void NodeComponent::initializeModsMacrosPanels() {
     modulatorEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ModTarget target) {
         auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
         if (device) {
-            magda::TrackManager::getInstance().removeDeviceModLink(nodePath_, modIndex, target);
+            magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
         } else {
             // Rack mod
-            magda::TrackManager::getInstance().removeRackModLink(nodePath_, modIndex, target);
+            magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
         }
         updateModulatorEditor();
     };
@@ -1157,10 +1157,10 @@ void NodeComponent::initializeModsMacrosPanels() {
                                                             bool bipolar) {
         auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
         if (device) {
-            magda::TrackManager::getInstance().setDeviceModLinkBipolar(nodePath_, modIndex, target,
+            magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
                                                                        bipolar);
         } else {
-            magda::TrackManager::getInstance().setRackModLinkBipolar(nodePath_, modIndex, target,
+            magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
                                                                      bipolar);
         }
         updateModulatorEditor();
@@ -1171,10 +1171,10 @@ void NodeComponent::initializeModsMacrosPanels() {
                                                            float amount) {
         auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
         if (device) {
-            magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath_, modIndex, target,
+            magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
                                                                       amount);
         } else {
-            magda::TrackManager::getInstance().setRackModLinkAmount(nodePath_, modIndex, target,
+            magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
                                                                     amount);
         }
     };

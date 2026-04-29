@@ -746,11 +746,11 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
             t.modId = rateModId;
             t.modParamIndex = 0;
             if (e.parentPath.isTrackLevel) {
-                tmgr.removeTrackMacroLink(e.parentPath.trackId, e.index, t);
+                tmgr.removeMacroLink(ChainNodePath::trackLevel(e.parentPath.trackId), e.index, t);
             } else if (e.parentPath.getType() == magda::ChainNodeType::Rack) {
-                tmgr.removeRackMacroLink(e.parentPath, e.index, t);
+                tmgr.removeMacroLink(e.parentPath, e.index, t);
             } else {
-                tmgr.removeDeviceMacroLink(e.parentPath, e.index, t);
+                tmgr.removeMacroLink(e.parentPath, e.index, t);
             }
         } else {
             magda::ModTarget t;
@@ -758,11 +758,11 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
             t.modId = rateModId;
             t.modParamIndex = 0;
             if (e.parentPath.isTrackLevel) {
-                tmgr.removeTrackModLink(e.parentPath.trackId, e.index, t);
+                tmgr.removeModLink(ChainNodePath::trackLevel(e.parentPath.trackId), e.index, t);
             } else if (e.parentPath.getType() == magda::ChainNodeType::Rack) {
-                tmgr.removeRackModLink(e.parentPath, e.index, t);
+                tmgr.removeModLink(e.parentPath, e.index, t);
             } else {
-                tmgr.removeDeviceModLink(e.parentPath, e.index, t);
+                tmgr.removeModLink(e.parentPath, e.index, t);
             }
         }
     });
@@ -1392,11 +1392,11 @@ void ModulatorEditorPanel::writeLinkAmountFromActiveSource(float amount) {
         // setXxxMacroLinkAmount creates the link if missing, otherwise
         // updates its amount — same single-call semantics across scopes.
         if (sel.parentPath.isTrackLevel) {
-            tm.setTrackMacroLinkAmount(sel.parentPath.trackId, sel.macroIndex, target, amount);
+            tm.setMacroLinkAmount(ChainNodePath::trackLevel(sel.parentPath.trackId), sel.macroIndex, target, amount);
         } else if (sel.parentPath.getType() == magda::ChainNodeType::Rack) {
-            tm.setRackMacroLinkAmount(sel.parentPath, sel.macroIndex, target, amount);
+            tm.setMacroLinkAmount(sel.parentPath, sel.macroIndex, target, amount);
         } else {
-            tm.setDeviceMacroLinkAmount(sel.parentPath, sel.macroIndex, target, amount);
+            tm.setMacroLinkAmount(sel.parentPath, sel.macroIndex, target, amount);
         }
     } else if (lmm.getLinkModeType() == magda::LinkModeType::Mod) {
         const auto& sel = lmm.getModInLinkMode();
@@ -1408,11 +1408,11 @@ void ModulatorEditorPanel::writeLinkAmountFromActiveSource(float amount) {
         target.modParamIndex = 0;  // Rate
 
         if (sel.parentPath.isTrackLevel) {
-            tm.setTrackModLinkAmount(sel.parentPath.trackId, sel.modIndex, target, amount);
+            tm.setModLinkAmount(ChainNodePath::trackLevel(sel.parentPath.trackId), sel.modIndex, target, amount);
         } else if (sel.parentPath.getType() == magda::ChainNodeType::Rack) {
-            tm.setRackModLinkAmount(sel.parentPath, sel.modIndex, target, amount);
+            tm.setModLinkAmount(sel.parentPath, sel.modIndex, target, amount);
         } else {
-            tm.setDeviceModLinkAmount(sel.parentPath, sel.modIndex, target, amount);
+            tm.setModLinkAmount(sel.parentPath, sel.modIndex, target, amount);
         }
     }
 }

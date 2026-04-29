@@ -367,14 +367,16 @@ class TrackManager {
     void removeRackFromChainByPath(const ChainNodePath& rackPath);
 
     // ========================================================================
-    // Unified ChainNode-based modulation API (issue #1131 step 1)
+    // Unified ChainNode-based modulation API (issue #1131 steps 1–3)
     // ========================================================================
     //
     // Every Track / Rack / Device macro & mod operation routes through one
     // path-driven implementation that resolves the path once and operates on
-    // the resulting ChainNode view. The scope-specific setTrack* / setRack* /
-    // setDevice* methods below remain as thin shims for now and will be
-    // dropped in step 3 of the refactor.
+    // the resulting ChainNode view. Steps 1–2 introduced the unified ops and
+    // the modifier-sync walker; step 3 deleted the scope-specific setTrack* /
+    // setRack* / setDevice* triplet shims and rewrote every caller to use
+    // these methods with a `ChainNodePath` (or `ChainNodePath::trackLevel`
+    // for track-scope operations).
     //
     // resolveChainNode() walks a ChainNodePath through the track tree and
     // returns a non-owning view onto the macros / mods (and parameters, for
@@ -422,78 +424,6 @@ class TrackManager {
     void addModPage(const ChainNodePath& path);
     void removeModPage(const ChainNodePath& path);
 
-    // ========================================================================
-    // Scope-specific shims (kept for backward compatibility — to be deleted)
-    // ========================================================================
-
-    // Macro management for racks (path-based for nested rack support)
-    void setRackMacroValue(const ChainNodePath& rackPath, int macroIndex, float value);
-    void setRackMacroTarget(const ChainNodePath& rackPath, int macroIndex, MacroTarget target);
-    void setRackMacroLinkAmount(const ChainNodePath& rackPath, int macroIndex, MacroTarget target,
-                                float amount);
-    void setRackMacroLinkBipolar(const ChainNodePath& rackPath, int macroIndex, MacroTarget target,
-                                 bool bipolar);
-    void setRackMacroName(const ChainNodePath& rackPath, int macroIndex, const juce::String& name);
-    void addRackMacroPage(const ChainNodePath& rackPath);
-    void removeRackMacroPage(const ChainNodePath& rackPath);
-    void removeRackMacroLink(const ChainNodePath& rackPath, int macroIndex, MacroTarget target);
-
-    // Mod management for racks (path-based for nested rack support)
-    void setRackModAmount(const ChainNodePath& rackPath, int modIndex, float amount);
-    void setRackModTarget(const ChainNodePath& rackPath, int modIndex, ModTarget target);
-    void setRackModLinkAmount(const ChainNodePath& rackPath, int modIndex, ModTarget target,
-                              float amount);
-    void setRackModLinkBipolar(const ChainNodePath& rackPath, int modIndex, ModTarget target,
-                               bool bipolar);
-    void setRackModName(const ChainNodePath& rackPath, int modIndex, const juce::String& name);
-    void setRackModType(const ChainNodePath& rackPath, int modIndex, ModType type);
-    void setRackModWaveform(const ChainNodePath& rackPath, int modIndex, LFOWaveform waveform);
-    void setRackModRate(const ChainNodePath& rackPath, int modIndex, float rate);
-    void setRackModPhaseOffset(const ChainNodePath& rackPath, int modIndex, float phaseOffset);
-    void setRackModTempoSync(const ChainNodePath& rackPath, int modIndex, bool tempoSync);
-    void setRackModSyncDivision(const ChainNodePath& rackPath, int modIndex, SyncDivision division);
-    void setRackModTriggerMode(const ChainNodePath& rackPath, int modIndex, LFOTriggerMode mode);
-    void setRackModCurvePreset(const ChainNodePath& rackPath, int modIndex, CurvePreset preset);
-    void notifyRackModCurveChanged(const ChainNodePath& rackPath);
-    void setRackModAudioAttack(const ChainNodePath& rackPath, int modIndex, float ms);
-    void setRackModAudioRelease(const ChainNodePath& rackPath, int modIndex, float ms);
-    void addRackMod(const ChainNodePath& rackPath, int slotIndex, ModType type,
-                    LFOWaveform waveform = LFOWaveform::Sine);
-    void removeRackMod(const ChainNodePath& rackPath, int modIndex);
-    void removeRackModLink(const ChainNodePath& rackPath, int modIndex, ModTarget target);
-    void setRackModEnabled(const ChainNodePath& rackPath, int modIndex, bool enabled);
-    void addRackModPage(const ChainNodePath& rackPath);
-    void removeRackModPage(const ChainNodePath& rackPath);
-
-    // Mod management for devices (path-based for nested device support)
-    void setDeviceModAmount(const ChainNodePath& devicePath, int modIndex, float amount);
-    void setDeviceModTarget(const ChainNodePath& devicePath, int modIndex, ModTarget target);
-    void removeDeviceModLink(const ChainNodePath& devicePath, int modIndex, ModTarget target);
-    void setDeviceModLinkAmount(const ChainNodePath& devicePath, int modIndex, ModTarget target,
-                                float amount);
-    void setDeviceModLinkBipolar(const ChainNodePath& devicePath, int modIndex, ModTarget target,
-                                 bool bipolar);
-    void setDeviceModName(const ChainNodePath& devicePath, int modIndex, const juce::String& name);
-    void setDeviceModType(const ChainNodePath& devicePath, int modIndex, ModType type);
-    void setDeviceModWaveform(const ChainNodePath& devicePath, int modIndex, LFOWaveform waveform);
-    void setDeviceModRate(const ChainNodePath& devicePath, int modIndex, float rate);
-    void setDeviceModPhaseOffset(const ChainNodePath& devicePath, int modIndex, float phaseOffset);
-    void setDeviceModTempoSync(const ChainNodePath& devicePath, int modIndex, bool tempoSync);
-    void setDeviceModSyncDivision(const ChainNodePath& devicePath, int modIndex,
-                                  SyncDivision division);
-    void setDeviceModTriggerMode(const ChainNodePath& devicePath, int modIndex,
-                                 LFOTriggerMode mode);
-    void setDeviceModCurvePreset(const ChainNodePath& devicePath, int modIndex, CurvePreset preset);
-    void notifyDeviceModCurveChanged(const ChainNodePath& devicePath);
-    void setDeviceModAudioAttack(const ChainNodePath& devicePath, int modIndex, float ms);
-    void setDeviceModAudioRelease(const ChainNodePath& devicePath, int modIndex, float ms);
-    void addDeviceMod(const ChainNodePath& devicePath, int slotIndex, ModType type,
-                      LFOWaveform waveform = LFOWaveform::Sine);
-    void removeDeviceMod(const ChainNodePath& devicePath, int modIndex);
-    void setDeviceModEnabled(const ChainNodePath& devicePath, int modIndex, bool enabled);
-    void addDeviceModPage(const ChainNodePath& devicePath);
-    void removeDeviceModPage(const ChainNodePath& devicePath);
-
     // Modulation engine integration - updates LFO values silently (no UI notifications)
     // bpm parameter is used for tempo-synced LFOs (default 120 if not provided)
     // transportJustStarted/Looped flags trigger phase reset for Transport trigger mode
@@ -527,57 +457,6 @@ class TrackManager {
         bool justStopped;
     };
     TransportSnapshot consumeTransportState();
-
-    // Macro management for devices (path-based for nested device support)
-    void setDeviceMacroValue(const ChainNodePath& devicePath, int macroIndex, float value);
-    void setDeviceMacroTarget(const ChainNodePath& devicePath, int macroIndex, MacroTarget target);
-    void removeDeviceMacroLink(const ChainNodePath& devicePath, int macroIndex, MacroTarget target);
-    void clearAllDeviceMacroLinks(const ChainNodePath& devicePath, int macroIndex);
-    void setDeviceMacroLinkAmount(const ChainNodePath& devicePath, int macroIndex,
-                                  MacroTarget target, float amount);
-    void setDeviceMacroLinkBipolar(const ChainNodePath& devicePath, int macroIndex,
-                                   MacroTarget target, bool bipolar);
-    void setDeviceMacroName(const ChainNodePath& devicePath, int macroIndex,
-                            const juce::String& name);
-    void addDeviceMacroPage(const ChainNodePath& devicePath);
-    void removeDeviceMacroPage(const ChainNodePath& devicePath);
-
-    // Track-level mod management (global: can target any device in the chain)
-    void setTrackModAmount(TrackId trackId, int modIndex, float amount);
-    void setTrackModTarget(TrackId trackId, int modIndex, ModTarget target);
-    void setTrackModLinkAmount(TrackId trackId, int modIndex, ModTarget target, float amount);
-    void setTrackModLinkBipolar(TrackId trackId, int modIndex, ModTarget target, bool bipolar);
-    void setTrackModName(TrackId trackId, int modIndex, const juce::String& name);
-    void setTrackModType(TrackId trackId, int modIndex, ModType type);
-    void setTrackModWaveform(TrackId trackId, int modIndex, LFOWaveform waveform);
-    void setTrackModRate(TrackId trackId, int modIndex, float rate);
-    void setTrackModPhaseOffset(TrackId trackId, int modIndex, float phaseOffset);
-    void setTrackModTempoSync(TrackId trackId, int modIndex, bool tempoSync);
-    void setTrackModSyncDivision(TrackId trackId, int modIndex, SyncDivision division);
-    void setTrackModTriggerMode(TrackId trackId, int modIndex, LFOTriggerMode mode);
-    void setTrackModCurvePreset(TrackId trackId, int modIndex, CurvePreset preset);
-    void notifyTrackModCurveChanged(TrackId trackId);
-    void setTrackModAudioAttack(TrackId trackId, int modIndex, float ms);
-    void setTrackModAudioRelease(TrackId trackId, int modIndex, float ms);
-    void addTrackMod(TrackId trackId, int slotIndex, ModType type,
-                     LFOWaveform waveform = LFOWaveform::Sine);
-    void removeTrackMod(TrackId trackId, int modIndex);
-    void removeTrackModLink(TrackId trackId, int modIndex, ModTarget target);
-    void setTrackModEnabled(TrackId trackId, int modIndex, bool enabled);
-    void addTrackModPage(TrackId trackId);
-    void removeTrackModPage(TrackId trackId);
-
-    // Track-level macro management (global: can target any device in the chain)
-    void setTrackMacroValue(TrackId trackId, int macroIndex, float value);
-    void setTrackMacroTarget(TrackId trackId, int macroIndex, MacroTarget target);
-    void setTrackMacroLinkAmount(TrackId trackId, int macroIndex, MacroTarget target, float amount);
-    void setTrackMacroLinkBipolar(TrackId trackId, int macroIndex, MacroTarget target,
-                                  bool bipolar);
-    void setTrackMacroName(TrackId trackId, int macroIndex, const juce::String& name);
-    void removeTrackMacroLink(TrackId trackId, int macroIndex, MacroTarget target);
-    void clearAllTrackMacroLinks(TrackId trackId, int macroIndex);
-    void addTrackMacroPage(TrackId trackId);
-    void removeTrackMacroPage(TrackId trackId);
 
     // ========================================================================
     // Path Resolution - Centralized tree traversal

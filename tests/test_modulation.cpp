@@ -321,7 +321,7 @@ TEST_CASE("TrackManager - Device macro operations", "[modulation][macro][integra
     devicePath.topLevelDeviceId = deviceId;
 
     SECTION("Set device macro value") {
-        trackManager.setDeviceMacroValue(devicePath, 0, 0.75f);
+        trackManager.setMacroValue(devicePath, 0, 0.75f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
         REQUIRE(device != nullptr);
@@ -332,8 +332,8 @@ TEST_CASE("TrackManager - Device macro operations", "[modulation][macro][integra
     SECTION("Set device macro target and link amount") {
         MacroTarget target{deviceId, 3};
 
-        trackManager.setDeviceMacroTarget(devicePath, 0, target);
-        trackManager.setDeviceMacroLinkAmount(devicePath, 0, target, 0.8f);
+        trackManager.setMacroTarget(devicePath, 0, target);
+        trackManager.setMacroLinkAmount(devicePath, 0, target, 0.8f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
         REQUIRE(device != nullptr);
@@ -347,8 +347,8 @@ TEST_CASE("TrackManager - Device macro operations", "[modulation][macro][integra
         MacroTarget target1{deviceId, 0};
         MacroTarget target2{deviceId, 1};
 
-        trackManager.setDeviceMacroLinkAmount(devicePath, 0, target1, 0.3f);
-        trackManager.setDeviceMacroLinkAmount(devicePath, 0, target2, 0.7f);
+        trackManager.setMacroLinkAmount(devicePath, 0, target1, 0.3f);
+        trackManager.setMacroLinkAmount(devicePath, 0, target2, 0.7f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
         REQUIRE(device->macros[0].links.size() == 2);
@@ -357,7 +357,7 @@ TEST_CASE("TrackManager - Device macro operations", "[modulation][macro][integra
     }
 
     SECTION("Set device macro name") {
-        trackManager.setDeviceMacroName(devicePath, 0, "Cutoff");
+        trackManager.setMacroName(devicePath, 0, "Cutoff");
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
         REQUIRE(device->macros[0].name == "Cutoff");
@@ -380,7 +380,7 @@ TEST_CASE("TrackManager - Rack macro operations", "[modulation][macro][integrati
     rackPath.steps.push_back({ChainStepType::Rack, rackId});
 
     SECTION("Set rack macro value") {
-        trackManager.setRackMacroValue(rackPath, 0, 0.65f);
+        trackManager.setMacroValue(rackPath, 0, 0.65f);
 
         auto* rack = trackManager.getRackByPath(rackPath);
         REQUIRE(rack != nullptr);
@@ -392,7 +392,7 @@ TEST_CASE("TrackManager - Rack macro operations", "[modulation][macro][integrati
         DeviceId deviceId(100);  // Mock device ID
         MacroTarget target{deviceId, 2};
 
-        trackManager.setRackMacroLinkAmount(rackPath, 0, target, 0.9f);
+        trackManager.setMacroLinkAmount(rackPath, 0, target, 0.9f);
 
         auto* rack = trackManager.getRackByPath(rackPath);
         REQUIRE(rack != nullptr);
@@ -408,8 +408,8 @@ TEST_CASE("TrackManager - Rack macro operations", "[modulation][macro][integrati
         MacroTarget target1{device1, 0};
         MacroTarget target2{device2, 5};
 
-        trackManager.setRackMacroLinkAmount(rackPath, 1, target1, 0.4f);
-        trackManager.setRackMacroLinkAmount(rackPath, 1, target2, 0.6f);
+        trackManager.setMacroLinkAmount(rackPath, 1, target1, 0.4f);
+        trackManager.setMacroLinkAmount(rackPath, 1, target2, 0.6f);
 
         auto* rack = trackManager.getRackByPath(rackPath);
         REQUIRE(rack->macros[1].links.size() == 2);
@@ -418,7 +418,7 @@ TEST_CASE("TrackManager - Rack macro operations", "[modulation][macro][integrati
     }
 
     SECTION("Set rack macro name") {
-        trackManager.setRackMacroName(rackPath, 2, "Mix");
+        trackManager.setMacroName(rackPath, 2, "Mix");
 
         auto* rack = trackManager.getRackByPath(rackPath);
         REQUIRE(rack->macros[2].name == "Mix");
@@ -442,19 +442,19 @@ TEST_CASE("TrackManager - Device mod operations", "[modulation][mod][integration
 
     SECTION("Set device mod amount") {
         // Devices start with 0 mods - add one first
-        trackManager.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-        trackManager.setDeviceModAmount(devicePath, 0, 0.85f);
+        trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+        trackManager.setModAmount(devicePath, 0, 0.85f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
         REQUIRE(device->mods[0].amount == Catch::Approx(0.85f));
     }
 
     SECTION("Set device mod target and link amount") {
-        trackManager.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+        trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
         ModTarget target{deviceId, 4};
 
-        trackManager.setDeviceModTarget(devicePath, 0, target);
-        trackManager.setDeviceModLinkAmount(devicePath, 0, target, 0.55f);
+        trackManager.setModTarget(devicePath, 0, target);
+        trackManager.setModLinkAmount(devicePath, 0, target, 0.55f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
         const auto* link = device->mods[0].getLink(target);
@@ -463,9 +463,9 @@ TEST_CASE("TrackManager - Device mod operations", "[modulation][mod][integration
     }
 
     SECTION("Set device mod type and rate") {
-        trackManager.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-        trackManager.setDeviceModType(devicePath, 0, ModType::Envelope);
-        trackManager.setDeviceModRate(devicePath, 0, 2.5f);
+        trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+        trackManager.setModType(devicePath, 0, ModType::Envelope);
+        trackManager.setModRate(devicePath, 0, 2.5f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
         REQUIRE(device->mods[0].type == ModType::Envelope);
@@ -473,9 +473,9 @@ TEST_CASE("TrackManager - Device mod operations", "[modulation][mod][integration
     }
 
     SECTION("Set device mod name") {
-        trackManager.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-        trackManager.addDeviceMod(devicePath, 1, ModType::LFO, LFOWaveform::Sine);
-        trackManager.setDeviceModName(devicePath, 1, "LFO 1");
+        trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+        trackManager.addMod(devicePath, 1, ModType::LFO, LFOWaveform::Sine);
+        trackManager.setModName(devicePath, 1, "LFO 1");
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
         REQUIRE(device->mods[1].name == "LFO 1");
@@ -502,7 +502,7 @@ TEST_CASE("TrackManager - Rack vs Device macro isolation", "[modulation][macro][
 
     SECTION("Rack and device macros are independent") {
         // Set rack macro link
-        trackManager.setRackMacroLinkAmount(rackPath, 0, target, 0.3f);
+        trackManager.setMacroLinkAmount(rackPath, 0, target, 0.3f);
 
         // Set device macro link (simulated)
         auto* rack = trackManager.getRackByPath(rackPath);
@@ -514,7 +514,7 @@ TEST_CASE("TrackManager - Rack vs Device macro isolation", "[modulation][macro][
         REQUIRE(rackLink->amount == Catch::Approx(0.3f));
 
         // Change rack macro link amount
-        trackManager.setRackMacroLinkAmount(rackPath, 0, target, 0.8f);
+        trackManager.setMacroLinkAmount(rackPath, 0, target, 0.8f);
 
         const auto* updatedLink = rack->macros[0].getLink(target);
         REQUIRE(updatedLink->amount == Catch::Approx(0.8f));
@@ -540,8 +540,8 @@ TEST_CASE("TrackManager - Modulation calculation scenarios", "[modulation][integ
         // Macro value = 0.5, link amount = 0.8
         // Expected modulation = 0.5 * 0.8 = 0.4
         MacroTarget target{deviceId, 0};
-        trackManager.setDeviceMacroValue(devicePath, 0, 0.5f);
-        trackManager.setDeviceMacroLinkAmount(devicePath, 0, target, 0.8f);
+        trackManager.setMacroValue(devicePath, 0, 0.5f);
+        trackManager.setMacroLinkAmount(devicePath, 0, target, 0.8f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
         float macroValue = device->macros[0].value;
@@ -557,11 +557,11 @@ TEST_CASE("TrackManager - Modulation calculation scenarios", "[modulation][integ
         // Total modulation = 0.3 + 0.4 = 0.7
         MacroTarget target{deviceId, 0};
 
-        trackManager.setDeviceMacroValue(devicePath, 0, 0.6f);
-        trackManager.setDeviceMacroLinkAmount(devicePath, 0, target, 0.5f);
+        trackManager.setMacroValue(devicePath, 0, 0.6f);
+        trackManager.setMacroLinkAmount(devicePath, 0, target, 0.5f);
 
-        trackManager.setDeviceMacroValue(devicePath, 1, 0.4f);
-        trackManager.setDeviceMacroLinkAmount(devicePath, 1, target, 1.0f);
+        trackManager.setMacroValue(devicePath, 1, 0.4f);
+        trackManager.setMacroLinkAmount(devicePath, 1, target, 1.0f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
 
@@ -575,10 +575,10 @@ TEST_CASE("TrackManager - Modulation calculation scenarios", "[modulation][integ
     SECTION("Mod modulation calculation") {
         // Mod amount = 0.7, link amount = 0.6
         // Expected modulation = 0.7 * 0.6 = 0.42
-        trackManager.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+        trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
         ModTarget target{deviceId, 2};
-        trackManager.setDeviceModAmount(devicePath, 0, 0.7f);
-        trackManager.setDeviceModLinkAmount(devicePath, 0, target, 0.6f);
+        trackManager.setModAmount(devicePath, 0, 0.7f);
+        trackManager.setModLinkAmount(devicePath, 0, target, 0.6f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
         float modAmount = device->mods[0].amount;

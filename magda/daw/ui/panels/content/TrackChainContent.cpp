@@ -710,17 +710,17 @@ void TrackChainContent::initGlobalModsPanel() {
     globalModsPanel_ = std::make_unique<ModsPanelComponent>();
     globalModsPanel_->onModAmountChanged = [this](int modIndex, float amount) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setTrackModAmount(selectedTrackId_, modIndex,
+            magda::TrackManager::getInstance().setModAmount(ChainNodePath::trackLevel(selectedTrackId_), modIndex,
                                                                  amount);
     };
     globalModsPanel_->onModTargetChanged = [this](int modIndex, magda::ModTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setTrackModTarget(selectedTrackId_, modIndex,
+            magda::TrackManager::getInstance().setModTarget(ChainNodePath::trackLevel(selectedTrackId_), modIndex,
                                                                  target);
     };
     globalModsPanel_->onModNameChanged = [this](int modIndex, juce::String name) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setTrackModName(selectedTrackId_, modIndex, name);
+            magda::TrackManager::getInstance().setModName(ChainNodePath::trackLevel(selectedTrackId_), modIndex, name);
     };
     globalModsPanel_->onModClicked = [this](int modIndex) {
         if (globalModEditorVisible_ && selectedGlobalModIndex_ == modIndex) {
@@ -732,7 +732,7 @@ void TrackChainContent::initGlobalModsPanel() {
     globalModsPanel_->onAddModRequested = [this](int slotIndex, magda::ModType type,
                                                  magda::LFOWaveform waveform) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().addTrackMod(selectedTrackId_, slotIndex, type,
+            magda::TrackManager::getInstance().addMod(ChainNodePath::trackLevel(selectedTrackId_), slotIndex, type,
                                                            waveform);
             magda::TrackManager::getInstance().notifyTrackDevicesChanged(selectedTrackId_);
         }
@@ -741,21 +741,21 @@ void TrackChainContent::initGlobalModsPanel() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             if (selectedGlobalModIndex_ == modIndex)
                 hideGlobalModEditor();
-            magda::TrackManager::getInstance().removeTrackMod(selectedTrackId_, modIndex);
+            magda::TrackManager::getInstance().removeMod(ChainNodePath::trackLevel(selectedTrackId_), modIndex);
         }
     };
     globalModsPanel_->onModEnableToggled = [this](int modIndex, bool enabled) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setTrackModEnabled(selectedTrackId_, modIndex,
+            magda::TrackManager::getInstance().setModEnabled(ChainNodePath::trackLevel(selectedTrackId_), modIndex,
                                                                   enabled);
     };
     globalModsPanel_->onAddPageRequested = [this](int) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().addTrackModPage(selectedTrackId_);
+            magda::TrackManager::getInstance().addModPage(ChainNodePath::trackLevel(selectedTrackId_));
     };
     globalModsPanel_->onRemovePageRequested = [this](int) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().removeTrackModPage(selectedTrackId_);
+            magda::TrackManager::getInstance().removeModPage(ChainNodePath::trackLevel(selectedTrackId_));
     };
     globalModsPanel_->onPanelClicked = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -769,60 +769,60 @@ void TrackChainContent::initGlobalModsPanel() {
     globalModEditorPanel_ = std::make_unique<ModulatorEditorPanel>();
     globalModEditorPanel_->onRateChanged = [this](float rate) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
-            magda::TrackManager::getInstance().setTrackModRate(selectedTrackId_,
+            magda::TrackManager::getInstance().setModRate(ChainNodePath::trackLevel(selectedTrackId_),
                                                                selectedGlobalModIndex_, rate);
     };
     globalModEditorPanel_->onWaveformChanged = [this](magda::LFOWaveform waveform) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
-            magda::TrackManager::getInstance().setTrackModWaveform(
-                selectedTrackId_, selectedGlobalModIndex_, waveform);
+            magda::TrackManager::getInstance().setModWaveform(ChainNodePath::trackLevel(
+                selectedTrackId_), selectedGlobalModIndex_, waveform);
     };
     globalModEditorPanel_->onTempoSyncChanged = [this](bool tempoSync) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
-            magda::TrackManager::getInstance().setTrackModTempoSync(
-                selectedTrackId_, selectedGlobalModIndex_, tempoSync);
+            magda::TrackManager::getInstance().setModTempoSync(ChainNodePath::trackLevel(
+                selectedTrackId_), selectedGlobalModIndex_, tempoSync);
     };
     globalModEditorPanel_->onSyncDivisionChanged = [this](magda::SyncDivision division) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
-            magda::TrackManager::getInstance().setTrackModSyncDivision(
-                selectedTrackId_, selectedGlobalModIndex_, division);
+            magda::TrackManager::getInstance().setModSyncDivision(ChainNodePath::trackLevel(
+                selectedTrackId_), selectedGlobalModIndex_, division);
     };
     globalModEditorPanel_->onTriggerModeChanged = [this](magda::LFOTriggerMode mode) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
-            magda::TrackManager::getInstance().setTrackModTriggerMode(
-                selectedTrackId_, selectedGlobalModIndex_, mode);
+            magda::TrackManager::getInstance().setModTriggerMode(ChainNodePath::trackLevel(
+                selectedTrackId_), selectedGlobalModIndex_, mode);
     };
     globalModEditorPanel_->onAudioAttackChanged = [this](float ms) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
-            magda::TrackManager::getInstance().setTrackModAudioAttack(selectedTrackId_,
+            magda::TrackManager::getInstance().setModAudioAttack(ChainNodePath::trackLevel(selectedTrackId_),
                                                                       selectedGlobalModIndex_, ms);
     };
     globalModEditorPanel_->onAudioReleaseChanged = [this](float ms) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
-            magda::TrackManager::getInstance().setTrackModAudioRelease(selectedTrackId_,
+            magda::TrackManager::getInstance().setModAudioRelease(ChainNodePath::trackLevel(selectedTrackId_),
                                                                        selectedGlobalModIndex_, ms);
     };
     globalModEditorPanel_->onCurveChanged = [this]() {
         if (globalModsPanel_)
             globalModsPanel_->repaintWaveforms();
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalModIndex_ >= 0)
-            magda::TrackManager::getInstance().notifyTrackModCurveChanged(selectedTrackId_);
+            magda::TrackManager::getInstance().notifyModCurveChanged(ChainNodePath::trackLevel(selectedTrackId_));
     };
     globalModEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ModTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().removeTrackModLink(selectedTrackId_, modIndex,
+            magda::TrackManager::getInstance().removeModLink(ChainNodePath::trackLevel(selectedTrackId_), modIndex,
                                                                   target);
     };
     globalModEditorPanel_->onModLinkBipolarChanged = [this](int modIndex, magda::ModTarget target,
                                                             bool bipolar) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setTrackModLinkBipolar(selectedTrackId_, modIndex,
+            magda::TrackManager::getInstance().setModLinkBipolar(ChainNodePath::trackLevel(selectedTrackId_), modIndex,
                                                                       target, bipolar);
     };
     globalModEditorPanel_->onModLinkAmountChanged = [this](int modIndex, magda::ModTarget target,
                                                            float amount) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setTrackModLinkAmount(selectedTrackId_, modIndex,
+            magda::TrackManager::getInstance().setModLinkAmount(ChainNodePath::trackLevel(selectedTrackId_), modIndex,
                                                                      target, amount);
     };
     globalModEditorPanel_->setParamNameResolver(
@@ -862,29 +862,29 @@ void TrackChainContent::initGlobalMacrosPanel() {
     globalMacrosPanel_ = std::make_unique<MacroPanelComponent>();
     globalMacrosPanel_->onMacroValueChanged = [this](int macroIndex, float value) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setTrackMacroValue(selectedTrackId_, macroIndex,
+            magda::TrackManager::getInstance().setMacroValue(ChainNodePath::trackLevel(selectedTrackId_), macroIndex,
                                                                   value);
     };
     globalMacrosPanel_->onMacroTargetChanged = [this](int macroIndex, magda::MacroTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setTrackMacroTarget(selectedTrackId_, macroIndex,
+            magda::TrackManager::getInstance().setMacroTarget(ChainNodePath::trackLevel(selectedTrackId_), macroIndex,
                                                                    target);
     };
     globalMacrosPanel_->onMacroNameChanged = [this](int macroIndex, juce::String name) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setTrackMacroName(selectedTrackId_, macroIndex,
+            magda::TrackManager::getInstance().setMacroName(ChainNodePath::trackLevel(selectedTrackId_), macroIndex,
                                                                  name);
     };
     globalMacrosPanel_->onMacroLinkRemoved = [this](int macroIndex, magda::MacroTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().removeTrackMacroLink(selectedTrackId_, macroIndex,
+            magda::TrackManager::getInstance().removeMacroLink(ChainNodePath::trackLevel(selectedTrackId_), macroIndex,
                                                                     target);
             updateGlobalMacrosPanel();
         }
     };
     globalMacrosPanel_->onMacroAllLinksCleared = [this](int macroIndex) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().clearAllTrackMacroLinks(selectedTrackId_,
+            magda::TrackManager::getInstance().clearAllMacroLinks(ChainNodePath::trackLevel(selectedTrackId_),
                                                                        macroIndex);
             updateGlobalMacrosPanel();
         }
@@ -898,11 +898,11 @@ void TrackChainContent::initGlobalMacrosPanel() {
     };
     globalMacrosPanel_->onAddPageRequested = [this](int) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().addTrackMacroPage(selectedTrackId_);
+            magda::TrackManager::getInstance().addMacroPage(ChainNodePath::trackLevel(selectedTrackId_));
     };
     globalMacrosPanel_->onRemovePageRequested = [this](int) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().removeTrackMacroPage(selectedTrackId_);
+            magda::TrackManager::getInstance().removeMacroPage(ChainNodePath::trackLevel(selectedTrackId_));
     };
     globalMacrosPanel_->onPanelClicked = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -916,21 +916,21 @@ void TrackChainContent::initGlobalMacrosPanel() {
     globalMacroEditorPanel_ = std::make_unique<MacroEditorPanel>();
     globalMacroEditorPanel_->onLinkAmountChanged = [this](magda::MacroTarget target, float amount) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0)
-            magda::TrackManager::getInstance().setTrackMacroLinkAmount(
-                selectedTrackId_, selectedGlobalMacroIndex_, target, amount);
+            magda::TrackManager::getInstance().setMacroLinkAmount(ChainNodePath::trackLevel(
+                selectedTrackId_), selectedGlobalMacroIndex_, target, amount);
     };
     globalMacroEditorPanel_->onLinkRemoved = [this](magda::MacroTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0) {
-            magda::TrackManager::getInstance().removeTrackMacroLink(
-                selectedTrackId_, selectedGlobalMacroIndex_, target);
+            magda::TrackManager::getInstance().removeMacroLink(ChainNodePath::trackLevel(
+                selectedTrackId_), selectedGlobalMacroIndex_, target);
             updateGlobalMacrosPanel();
         }
     };
     globalMacroEditorPanel_->onLinkBipolarToggled = [this](magda::MacroTarget target,
                                                            bool bipolar) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0) {
-            magda::TrackManager::getInstance().setTrackMacroLinkBipolar(
-                selectedTrackId_, selectedGlobalMacroIndex_, target, bipolar);
+            magda::TrackManager::getInstance().setMacroLinkBipolar(ChainNodePath::trackLevel(
+                selectedTrackId_), selectedGlobalMacroIndex_, target, bipolar);
             updateGlobalMacrosPanel();
         }
     };

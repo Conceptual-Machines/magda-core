@@ -1967,11 +1967,11 @@ void PluginManager::setMacroValue(TrackId trackId, bool isRack, int id, int macr
             }
         }
         // Device macro — use device macro params
-        setDeviceMacroValue(static_cast<DeviceId>(id), macroIndex, value);
+        setMacroValue(static_cast<DeviceId>(id), macroIndex, value);
     }
 }
 
-void PluginManager::setDeviceMacroValue(DeviceId deviceId, int macroIndex, float value) {
+void PluginManager::setMacroValue(DeviceId deviceId, int macroIndex, float value) {
     auto it = syncedDevices_.find(deviceId);
     if (it == syncedDevices_.end())
         return;

@@ -623,61 +623,61 @@ std::vector<std::pair<magda::DeviceId, juce::String>> RackComponent::getAvailabl
 // === Virtual callback overrides for mod/macro persistence ===
 
 void RackComponent::onModAmountChangedInternal(int modIndex, float amount) {
-    magda::TrackManager::getInstance().setRackModAmount(rackPath_, modIndex, amount);
+    magda::TrackManager::getInstance().setModAmount(rackPath_, modIndex, amount);
 }
 
 void RackComponent::onModTargetChangedInternal(int modIndex, magda::ModTarget target) {
-    magda::TrackManager::getInstance().setRackModTarget(rackPath_, modIndex, target);
+    magda::TrackManager::getInstance().setModTarget(rackPath_, modIndex, target);
 }
 
 void RackComponent::onModNameChangedInternal(int modIndex, const juce::String& name) {
-    magda::TrackManager::getInstance().setRackModName(rackPath_, modIndex, name);
+    magda::TrackManager::getInstance().setModName(rackPath_, modIndex, name);
 }
 
 void RackComponent::onModTypeChangedInternal(int modIndex, magda::ModType type) {
-    magda::TrackManager::getInstance().setRackModType(rackPath_, modIndex, type);
+    magda::TrackManager::getInstance().setModType(rackPath_, modIndex, type);
 }
 
 void RackComponent::onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) {
-    magda::TrackManager::getInstance().setRackModWaveform(rackPath_, modIndex, waveform);
+    magda::TrackManager::getInstance().setModWaveform(rackPath_, modIndex, waveform);
 }
 
 void RackComponent::onModRateChangedInternal(int modIndex, float rate) {
-    magda::TrackManager::getInstance().setRackModRate(rackPath_, modIndex, rate);
+    magda::TrackManager::getInstance().setModRate(rackPath_, modIndex, rate);
 }
 
 void RackComponent::onModPhaseOffsetChangedInternal(int modIndex, float phaseOffset) {
-    magda::TrackManager::getInstance().setRackModPhaseOffset(rackPath_, modIndex, phaseOffset);
+    magda::TrackManager::getInstance().setModPhaseOffset(rackPath_, modIndex, phaseOffset);
 }
 
 void RackComponent::onModTempoSyncChangedInternal(int modIndex, bool tempoSync) {
-    magda::TrackManager::getInstance().setRackModTempoSync(rackPath_, modIndex, tempoSync);
+    magda::TrackManager::getInstance().setModTempoSync(rackPath_, modIndex, tempoSync);
 }
 
 void RackComponent::onModSyncDivisionChangedInternal(int modIndex, magda::SyncDivision division) {
-    magda::TrackManager::getInstance().setRackModSyncDivision(rackPath_, modIndex, division);
+    magda::TrackManager::getInstance().setModSyncDivision(rackPath_, modIndex, division);
 }
 
 void RackComponent::onModTriggerModeChangedInternal(int modIndex, magda::LFOTriggerMode mode) {
-    magda::TrackManager::getInstance().setRackModTriggerMode(rackPath_, modIndex, mode);
+    magda::TrackManager::getInstance().setModTriggerMode(rackPath_, modIndex, mode);
 }
 
 void RackComponent::onModAudioAttackChangedInternal(int modIndex, float ms) {
-    magda::TrackManager::getInstance().setRackModAudioAttack(rackPath_, modIndex, ms);
+    magda::TrackManager::getInstance().setModAudioAttack(rackPath_, modIndex, ms);
 }
 
 void RackComponent::onModAudioReleaseChangedInternal(int modIndex, float ms) {
-    magda::TrackManager::getInstance().setRackModAudioRelease(rackPath_, modIndex, ms);
+    magda::TrackManager::getInstance().setModAudioRelease(rackPath_, modIndex, ms);
 }
 
 void RackComponent::onModCurveChangedInternal(int /*modIndex*/) {
     // Curve points are already written directly to ModInfo by LFOCurveEditor.
     // Just notify the audio thread to pick up the new data.
-    magda::TrackManager::getInstance().notifyRackModCurveChanged(rackPath_);
+    magda::TrackManager::getInstance().notifyModCurveChanged(rackPath_);
 }
 
 void RackComponent::onMacroValueChangedInternal(int macroIndex, float value) {
-    magda::TrackManager::getInstance().setRackMacroValue(rackPath_, macroIndex, value);
+    magda::TrackManager::getInstance().setMacroValue(rackPath_, macroIndex, value);
 
     // Refresh chain panel to update parameter movement indicators
     if (chainPanel_ && chainPanel_->isVisible()) {
@@ -686,11 +686,11 @@ void RackComponent::onMacroValueChangedInternal(int macroIndex, float value) {
 }
 
 void RackComponent::onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) {
-    magda::TrackManager::getInstance().setRackMacroTarget(rackPath_, macroIndex, target);
+    magda::TrackManager::getInstance().setMacroTarget(rackPath_, macroIndex, target);
 }
 
 void RackComponent::onMacroNameChangedInternal(int macroIndex, const juce::String& name) {
-    magda::TrackManager::getInstance().setRackMacroName(rackPath_, macroIndex, name);
+    magda::TrackManager::getInstance().setMacroName(rackPath_, macroIndex, name);
 }
 
 void RackComponent::onModClickedInternal(int modIndex) {
@@ -708,18 +708,18 @@ void RackComponent::onMacroClickedInternal(int macroIndex) {
 
 void RackComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type,
                                               magda::LFOWaveform waveform) {
-    magda::TrackManager::getInstance().addRackMod(rackPath_, slotIndex, type, waveform);
+    magda::TrackManager::getInstance().addMod(rackPath_, slotIndex, type, waveform);
     // Update the mods panel directly to avoid full UI rebuild (which closes the panel)
     updateModsPanel();
 }
 
 void RackComponent::onModRemoveRequestedInternal(int modIndex) {
-    magda::TrackManager::getInstance().removeRackMod(rackPath_, modIndex);
+    magda::TrackManager::getInstance().removeMod(rackPath_, modIndex);
     updateModsPanel();
 }
 
 void RackComponent::onModEnableToggledInternal(int modIndex, bool enabled) {
-    magda::TrackManager::getInstance().setRackModEnabled(rackPath_, modIndex, enabled);
+    magda::TrackManager::getInstance().setModEnabled(rackPath_, modIndex, enabled);
 }
 
 void RackComponent::onModPageAddRequested(int /*itemsToAdd*/) {
@@ -733,11 +733,11 @@ void RackComponent::onModPageRemoveRequested(int /*itemsToRemove*/) {
 }
 
 void RackComponent::onMacroPageAddRequested(int /*itemsToAdd*/) {
-    magda::TrackManager::getInstance().addRackMacroPage(rackPath_);
+    magda::TrackManager::getInstance().addMacroPage(rackPath_);
 }
 
 void RackComponent::onMacroPageRemoveRequested(int /*itemsToRemove*/) {
-    magda::TrackManager::getInstance().removeRackMacroPage(rackPath_);
+    magda::TrackManager::getInstance().removeMacroPage(rackPath_);
 }
 
 // === Panel width overrides ===
