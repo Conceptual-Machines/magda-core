@@ -372,6 +372,21 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     void rebuildSidechainLFOCache();
 
     /**
+     * @brief Copy each TE LFO's current phase + value into its MAGDA ModInfo.
+     *
+     * Single source of truth fix: instead of running an independent visual
+     * LFO simulation in ModulatorEngine that drifts against TE's audio LFO
+     * (different start times, no phase sync), overlay TE's atomic-loaded
+     * `getCurrentPhase()` / `getCurrentValue()` onto every ModInfo so the
+     * UI marker tracks the audio exactly. Called from ModulatorEngine's
+     * post-update hook after the local sim's trigger/running tracking has
+     * run. Walks track-level mods, top-level device mods, instrument-rack
+     * inner mods, and rack-internal mods (delegates to RackSyncManager
+     * for the last). Safe to call from the message thread.
+     */
+    void syncLFOValuesToVisuals();
+
+    /**
      * @brief Prepare LFO assignments for offline rendering.
      *
      * Sets all MIDI/Audio-triggered LFO assignment values to their link.amount
@@ -423,7 +438,6 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
                                                                  const ChainNodePath& devicePath,
                                                                  ModId modId,
                                                                  int modParamIndex) const;
-
 
     /**
      * @brief Sync sidechain routing for devices on a track
@@ -554,9 +568,9 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // unified ModifierSyncWalker reads/writes both call sites through the
     // same `ModifierSyncState` view.
     struct SyncedDevice {
-        TrackId trackId = INVALID_TRACK_ID;          // MAGDA track that owns this device
-        te::Plugin::Ptr plugin;                      // Always set on creation
-        std::unique_ptr<DeviceProcessor> processor;  // nullptr until async load completes
+        TrackId trackId = INVALID_TRACK_ID;            // MAGDA track that owns this device
+        te::Plugin::Ptr plugin;                        // Always set on creation
+        std::unique_ptr<DeviceProcessor> processor;    // nullptr until async load completes
         std::map<ModId, te::Modifier::Ptr> modifiers;  // Can be empty
         std::map<ModId, std::unique_ptr<CurveSnapshotHolder>>
             curveSnapshots;                              // ModId-only (device scope implicit)

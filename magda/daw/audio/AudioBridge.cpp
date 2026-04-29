@@ -4,6 +4,7 @@
 
 #include "../core/AutomationManager.hpp"
 #include "../core/ClipOperations.hpp"
+#include "../core/ModulatorEngine.hpp"
 #include "../core/RackInfo.hpp"
 #include "../core/controllers/ControllerRegistry.hpp"
 #include "../engine/PluginWindowManager.hpp"
@@ -79,6 +80,13 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
+    // Hook into ModulatorEngine's per-tick callback so that after the visual
+    // sim updates each ModInfo, we overlay TE's authoritative LFO phase +
+    // value. Single source of truth — no drift between UI marker and audio.
+    // The hook is cleared in the destructor before this AudioBridge dies.
+    ModulatorEngine::getInstance().setPostUpdateHook(
+        [this]() { pluginManager_.syncLFOValuesToVisuals(); });
+
     // Set up per-device metering manager
     deviceMetering_.setPluginManager(&pluginManager_);
     DeviceMeteringManager::registerForEdit(edit_, &deviceMetering_);
@@ -104,6 +112,11 @@ AudioBridge::~AudioBridge() {
 
         // Set shutdown flag while holding lock to prevent new timer operations
         isShuttingDown_.store(true, std::memory_order_release);
+
+        // Drop the ModulatorEngine hook BEFORE we tear down anything it
+        // captures (this AudioBridge → pluginManager_). The engine timer
+        // may fire concurrently on the message thread until stopped.
+        ModulatorEngine::getInstance().setPostUpdateHook(nullptr);
 
         // Stop timer while holding lock - ensures no callback is running when we proceed
         stopTimer();

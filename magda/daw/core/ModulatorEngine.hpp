@@ -3,6 +3,7 @@
 #include <juce_events/juce_events.h>
 
 #include <chrono>
+#include <functional>
 #include <memory>
 
 #include "ModInfo.hpp"
@@ -38,6 +39,18 @@ class ModulatorEngine {
 
     ~ModulatorEngine() {
         shutdown();
+    }
+
+    /**
+     * @brief Install a hook that runs after the local visual sim updates
+     * each tick, used to overlay the audio thread's authoritative LFO
+     * phase + value (from te::LFOModifier::getCurrentPhase / getCurrentValue)
+     * onto MAGDA's ModInfo. Without it, the visual sim and audio LFO
+     * free-run independently and drift apart even at matching rates.
+     * AudioBridge installs this on construction.
+     */
+    void setPostUpdateHook(std::function<void()> hook) {
+        postUpdateHook_ = std::move(hook);
     }
 
     // Delete copy/move
@@ -337,6 +350,11 @@ class ModulatorEngine {
         lastTickTime_ = now;
 
         updateAllMods(deltaTime);
+
+        // Overlay TE LFO phase + value onto MAGDA ModInfo so the visual
+        // marker tracks the audio LFO exactly (no free-run drift).
+        if (postUpdateHook_)
+            postUpdateHook_();
     }
 
     void updateAllMods(double deltaTime);
@@ -346,6 +364,8 @@ class ModulatorEngine {
 
     std::chrono::steady_clock::time_point lastTickTime_{};
     bool lastTickValid_ = false;
+
+    std::function<void()> postUpdateHook_;
 };
 
 }  // namespace magda

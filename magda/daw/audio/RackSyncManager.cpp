@@ -12,7 +12,6 @@ namespace magda {
 RackSyncManager::RackSyncManager(te::Edit& edit, PluginManager& pluginManager)
     : edit_(edit), pluginManager_(pluginManager) {}
 
-
 // =============================================================================
 // Public API
 // =============================================================================
@@ -842,10 +841,19 @@ void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rac
 
     ModifierSyncState state{synced.innerModifiers, synced.curveSnapshots, synced.innerMacroParams};
     ModifierSyncWalker::syncStructure(node, ctx, state, deferredHolders_);
+
+    // Refresh the structural fingerprint so the next resyncAllModifiers
+    // doesn't take the in-place property path against an out-of-date stored
+    // fingerprint. Without this, a removeMod-triggered structural rebuild
+    // (which goes through updateProperties → syncRackModulation) leaves the
+    // fingerprint stale: a subsequent add+link with the same shape matches
+    // the stale fingerprint, falls into syncProperties, finds an empty
+    // state.modifiers map, and silently drops the new assignment — the
+    // user sees the link wired in the UI but no audio modulation.
+    rackFingerprints_[synced.rackId] = ModifierSyncWalker::fingerprintOf(node);
 }
 
-void RackSyncManager::updateRackModulationProperties(SyncedRack& synced,
-                                                     const RackInfo& rackInfo) {
+void RackSyncManager::updateRackModulationProperties(SyncedRack& synced, const RackInfo& rackInfo) {
     auto lookupTarget = [&synced](DeviceId id) -> te::Plugin* {
         auto it = synced.innerPlugins.find(id);
         if (it != synced.innerPlugins.end() && it->second)
@@ -882,7 +890,6 @@ void RackSyncManager::updateRackModulationProperties(SyncedRack& synced,
             triggerLFONoteOnWithReset(lfo);
     }
 }
-
 
 bool RackSyncManager::needsModifierResync(TrackId trackId) const {
     auto& tm = TrackManager::getInstance();
@@ -931,6 +938,26 @@ void RackSyncManager::collectLFOModifiers(TrackId trackId,
         if (collected > 0)
             DBG("RackSyncManager::collectLFOModifiers - rackId=" << rackId << " trackId=" << trackId
                                                                  << " collected=" << collected);
+    }
+}
+
+void RackSyncManager::syncLFOValuesToVisuals() {
+    auto& tm = TrackManager::getInstance();
+    for (auto& [rackId, synced] : syncedRacks_) {
+        if (synced.innerModifiers.empty())
+            continue;
+        auto* rackInfo = tm.getRack(synced.trackId, rackId);
+        if (!rackInfo)
+            continue;
+        for (auto& magdaMod : rackInfo->mods) {
+            auto it = synced.innerModifiers.find(magdaMod.id);
+            if (it == synced.innerModifiers.end() || !it->second)
+                continue;
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get())) {
+                magdaMod.value = lfo->getCurrentValue();
+                magdaMod.phase = lfo->getCurrentPhase();
+            }
+        }
     }
 }
 

@@ -186,6 +186,13 @@ class RackSyncManager {
     void collectLFOModifiers(TrackId trackId, std::vector<te::LFOModifier*>& out) const;
 
     /**
+     * @brief Copy each rack-internal TE LFO's current phase + value into its
+     * MAGDA ModInfo so the visual UI marker tracks the audio LFO exactly.
+     * See PluginManager::syncLFOValuesToVisuals() for full rationale.
+     */
+    void syncLFOValuesToVisuals();
+
+    /**
      * @brief Check if any rack on a track needs a full modifier resync
      *
      * Compares the number of active rack mods (enabled + has links) against
