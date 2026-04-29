@@ -103,6 +103,10 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     gainSlider_ = std::make_unique<node_header::GainSliderWithMeterTooltip>(
         juce::Slider::LinearVertical, juce::Slider::NoTextBox, levelMeter_);
     gainSlider_->setRange(-60.0, 6.0, 0.1);
+    // Match LevelMeter's dbToMeterPos curve (METER_CURVE_EXPONENT = 2). With
+    // skew = 1/exponent the slider's position-at-value tracks the meter's
+    // tick-at-value exactly — so the 0 dB thumb sits on the 0 dB tick.
+    gainSlider_->setSkewFactor(0.5);
     gainSlider_->setValue(rack.volume, juce::dontSendNotification);
     gainSlider_->setTooltip("Rack Gain (dB)");
     gainSlider_->setLookAndFeel(&node_header::FlatGainSliderLookAndFeel::getInstance());
