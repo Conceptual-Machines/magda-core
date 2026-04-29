@@ -235,6 +235,20 @@ class RackSyncManager {
 
         // Double-buffered curve snapshots for custom LFO waveforms (scoped per-rack)
         std::map<ModId, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
+
+        // Per-rack-internal-device modulation state. Mods on devices inside a
+        // rack chain (DeviceInfo::mods, accessed via rackInfo.chains[].elements[])
+        // live on the rackType's modifier list — same list as rack-level mods,
+        // because the rack's audio graph is what processes the inner plugins'
+        // params. Storage is keyed by inner DeviceId so it doesn't collide with
+        // the rack-scope `innerModifiers` map (rack-scope mods and inner-device
+        // mods can both have ModId=0).
+        struct InnerDeviceModState {
+            std::map<ModId, te::Modifier::Ptr> modifiers;
+            std::map<int, te::MacroParameter*> macroParams;
+            std::map<ModId, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
+        };
+        std::map<DeviceId, InnerDeviceModState> innerDeviceMods;
     };
 
     /**
@@ -242,6 +256,13 @@ class RackSyncManager {
      * vs only properties changed (bypass, volume, mute/solo)
      */
     bool structureChanged(const SyncedRack& synced, const RackInfo& rackInfo) const;
+
+    /**
+     * @brief Sum structural fingerprint over rack-scope mods/macros AND every
+     * inner device's mods/macros, since they all share the rackType's
+     * modifier list. Used by resyncAllModifiers to gate structural rebuild.
+     */
+    ChainFingerprint computeRackFingerprint(const RackInfo& rackInfo) const;
 
     /**
      * @brief Update only properties (bypass, volume, chain mute/solo) without rebuilding plugins

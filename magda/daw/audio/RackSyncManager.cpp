@@ -80,13 +80,7 @@ te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackI
 
     // Seed the structural fingerprint so resyncAllModifiers can short-circuit
     // when only properties change.
-    ConstChainNode node;
-    node.scope = ChainScope::Rack;
-    node.trackId = trackId;
-    node.rackId = rackInfo.id;
-    node.mods = &rackInfo.mods;
-    node.macros = &rackInfo.macros;
-    rackFingerprints_[rackInfo.id] = ModifierSyncWalker::fingerprintOf(node);
+    rackFingerprints_[rackInfo.id] = computeRackFingerprint(rackInfo);
 
     DBG("RackSyncManager: Synced rack " << rackInfo.id << " ('" << rackInfo.name << "') with "
                                         << rackInfo.chains.size() << " chains");
@@ -144,13 +138,7 @@ void RackSyncManager::resyncRack(TrackId trackId, const RackInfo& rackInfo) {
     applyBypassState(synced, rackInfo);
 
     // Refresh the stored fingerprint after a structural rebuild.
-    ConstChainNode node;
-    node.scope = ChainScope::Rack;
-    node.trackId = trackId;
-    node.rackId = rackInfo.id;
-    node.mods = &rackInfo.mods;
-    node.macros = &rackInfo.macros;
-    rackFingerprints_[rackInfo.id] = ModifierSyncWalker::fingerprintOf(node);
+    rackFingerprints_[rackInfo.id] = computeRackFingerprint(rackInfo);
 
     DBG("RackSyncManager: Resynced rack " << rackInfo.id);
 }
@@ -450,6 +438,36 @@ te::AutomatableParameter* RackSyncManager::findRackModifierParameter(RackId rack
     return nullptr;
 }
 
+ChainFingerprint RackSyncManager::computeRackFingerprint(const RackInfo& rackInfo) const {
+    // Sum the rack-scope mod/macro fingerprint with each rack-internal
+    // device's own mods/macros, since those all live on the rackType's
+    // modifier list and a structural change to any of them needs a full
+    // rebuild via syncRackModulation.
+    ChainFingerprint fp;
+
+    ConstChainNode rackNode;
+    rackNode.scope = ChainScope::Rack;
+    rackNode.mods = &rackInfo.mods;
+    rackNode.macros = &rackInfo.macros;
+    fp += ModifierSyncWalker::fingerprintOf(rackNode);
+
+    for (const auto& chain : rackInfo.chains) {
+        for (const auto& chainElement : chain.elements) {
+            if (!isDevice(chainElement))
+                continue;
+            const auto& device = getDevice(chainElement);
+            if (device.bypassed)
+                continue;
+            ConstChainNode deviceNode;
+            deviceNode.scope = ChainScope::Device;
+            deviceNode.mods = &device.mods;
+            deviceNode.macros = &device.macros;
+            fp += ModifierSyncWalker::fingerprintOf(deviceNode);
+        }
+    }
+    return fp;
+}
+
 void RackSyncManager::resyncAllModifiers(TrackId trackId) {
     auto& tm = TrackManager::getInstance();
     for (auto& [rackId, synced] : syncedRacks_) {
@@ -472,14 +490,12 @@ void RackSyncManager::resyncAllModifiers(TrackId trackId) {
                     // link drag would destroy and recreate every rack LFO on
                     // the audio thread (audible clicks; risk of TE
                     // AutomationSourceList tearing down a CachedSource that
-                    // the audio thread is still reading).
-                    ConstChainNode node;
-                    node.scope = ChainScope::Rack;
-                    node.trackId = trackId;
-                    node.rackId = rackId;
-                    node.mods = &rackInfo.mods;
-                    node.macros = &rackInfo.macros;
-                    auto current = ModifierSyncWalker::fingerprintOf(node);
+                    // the audio thread is still reading). The fingerprint
+                    // covers both rack-scope mods AND mods on devices inside
+                    // the rack chain — both live on the rackType modifier
+                    // list and both need the structural rebuild path when
+                    // their shape changes.
+                    auto current = computeRackFingerprint(rackInfo);
                     auto& stored = rackFingerprints_[rackId];
                     if (current != stored) {
                         stored = current;
@@ -842,6 +858,49 @@ void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rac
     ModifierSyncState state{synced.innerModifiers, synced.curveSnapshots, synced.innerMacroParams};
     ModifierSyncWalker::syncStructure(node, ctx, state, deferredHolders_);
 
+    // Sync per-rack-internal-device mods + macros. These are mods attached to
+    // a device sitting inside a rack chain (DeviceInfo::mods on
+    // rackInfo.chains[].elements[]). They live on the SAME rackType modifier
+    // list as rack-scope mods, because the rack's audio graph is what
+    // processes the inner plugins' parameters. Keyed per-DeviceId so the
+    // ModId namespace doesn't collide with the rack-scope `innerModifiers`.
+    auto innerDeviceIds = std::set<DeviceId>{};
+    for (const auto& chain : rackInfo.chains) {
+        for (const auto& chainElement : chain.elements) {
+            if (!isDevice(chainElement))
+                continue;
+            const auto& device = getDevice(chainElement);
+            innerDeviceIds.insert(device.id);
+
+            ConstChainNode deviceNode;
+            deviceNode.scope = ChainScope::Device;
+            deviceNode.deviceId = device.id;
+            deviceNode.trackId = synced.trackId;
+            deviceNode.mods = device.bypassed ? nullptr : &device.mods;
+            deviceNode.macros = device.bypassed ? nullptr : &device.macros;
+
+            ModifierSyncContext deviceCtx;
+            deviceCtx.modifierList = ctx.modifierList;
+            deviceCtx.macroList = ctx.macroList;
+            deviceCtx.lookupTargetPlugin = lookupTarget;
+            deviceCtx.forEachScopePlugin = ctx.forEachScopePlugin;
+            deviceCtx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
+
+            auto& devState = synced.innerDeviceMods[device.id];
+            ModifierSyncState devSyncState{devState.modifiers, devState.curveSnapshots,
+                                           devState.macroParams};
+            ModifierSyncWalker::syncStructure(deviceNode, deviceCtx, devSyncState,
+                                              deferredHolders_);
+        }
+    }
+    // Drop per-device state for devices that are no longer in the rack.
+    for (auto it = synced.innerDeviceMods.begin(); it != synced.innerDeviceMods.end();) {
+        if (innerDeviceIds.count(it->first) == 0)
+            it = synced.innerDeviceMods.erase(it);
+        else
+            ++it;
+    }
+
     // Refresh the structural fingerprint so the next resyncAllModifiers
     // doesn't take the in-place property path against an out-of-date stored
     // fingerprint. Without this, a removeMod-triggered structural rebuild
@@ -850,7 +909,7 @@ void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rac
     // the stale fingerprint, falls into syncProperties, finds an empty
     // state.modifiers map, and silently drops the new assignment — the
     // user sees the link wired in the UI but no audio modulation.
-    rackFingerprints_[synced.rackId] = ModifierSyncWalker::fingerprintOf(node);
+    rackFingerprints_[synced.rackId] = computeRackFingerprint(rackInfo);
 }
 
 void RackSyncManager::updateRackModulationProperties(SyncedRack& synced, const RackInfo& rackInfo) {
@@ -878,16 +937,45 @@ void RackSyncManager::updateRackModulationProperties(SyncedRack& synced, const R
     // triggerLFONoteOnWithReset for any triggered LFO whose triggerMode wasn't
     // Free. Walker syncProperties leaves gate state alone (audio-thread owns
     // it), so we mirror the legacy retrigger here to preserve behaviour.
-    for (const auto& modInfo : rackInfo.mods) {
-        if (!modInfo.enabled)
-            continue;
-        if (!modInfo.triggered || modInfo.triggerMode == LFOTriggerMode::Free)
-            continue;
-        auto modIt = synced.innerModifiers.find(modInfo.id);
-        if (modIt == synced.innerModifiers.end() || !modIt->second)
-            continue;
-        if (auto* lfo = dynamic_cast<te::LFOModifier*>(modIt->second.get()))
+    auto retriggerIfNeeded = [](const ModInfo& modInfo,
+                                const std::map<ModId, te::Modifier::Ptr>& mods) {
+        if (!modInfo.enabled || !modInfo.triggered || modInfo.triggerMode == LFOTriggerMode::Free)
+            return;
+        auto it = mods.find(modInfo.id);
+        if (it == mods.end() || !it->second)
+            return;
+        if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get()))
             triggerLFONoteOnWithReset(lfo);
+    };
+    for (const auto& modInfo : rackInfo.mods)
+        retriggerIfNeeded(modInfo, synced.innerModifiers);
+
+    // Same property update + retrigger pass for each rack-internal device's
+    // own mods. Keyed per-DeviceId so each device's ModId namespace is
+    // resolved against the right state map.
+    for (const auto& chain : rackInfo.chains) {
+        for (const auto& chainElement : chain.elements) {
+            if (!isDevice(chainElement))
+                continue;
+            const auto& device = getDevice(chainElement);
+            auto devIt = synced.innerDeviceMods.find(device.id);
+            if (devIt == synced.innerDeviceMods.end())
+                continue;
+
+            ConstChainNode deviceNode;
+            deviceNode.scope = ChainScope::Device;
+            deviceNode.deviceId = device.id;
+            deviceNode.trackId = synced.trackId;
+            deviceNode.mods = &device.mods;
+            deviceNode.macros = &device.macros;
+
+            ModifierSyncState devSyncState{devIt->second.modifiers, devIt->second.curveSnapshots,
+                                           devIt->second.macroParams};
+            ModifierSyncWalker::syncProperties(deviceNode, ctx, devSyncState);
+
+            for (const auto& modInfo : device.mods)
+                retriggerIfNeeded(modInfo, devIt->second.modifiers);
+        }
     }
 }
 
@@ -925,16 +1013,22 @@ bool RackSyncManager::needsModifierResync(TrackId trackId) const {
 
 void RackSyncManager::collectLFOModifiers(TrackId trackId,
                                           std::vector<te::LFOModifier*>& out) const {
+    auto collectFromMap = [&out](const std::map<ModId, te::Modifier::Ptr>& mods) -> int {
+        int n = 0;
+        for (const auto& [_modId, modifier] : mods) {
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
+                out.push_back(lfo);
+                ++n;
+            }
+        }
+        return n;
+    };
     for (const auto& [rackId, synced] : syncedRacks_) {
         if (synced.trackId != trackId)
             continue;
-        int collected = 0;
-        for (const auto& [modId, modifier] : synced.innerModifiers) {
-            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
-                out.push_back(lfo);
-                ++collected;
-            }
-        }
+        int collected = collectFromMap(synced.innerModifiers);
+        for (const auto& [_devId, devState] : synced.innerDeviceMods)
+            collected += collectFromMap(devState.modifiers);
         if (collected > 0)
             DBG("RackSyncManager::collectLFOModifiers - rackId=" << rackId << " trackId=" << trackId
                                                                  << " collected=" << collected);
@@ -943,54 +1037,84 @@ void RackSyncManager::collectLFOModifiers(TrackId trackId,
 
 void RackSyncManager::syncLFOValuesToVisuals() {
     auto& tm = TrackManager::getInstance();
-    for (auto& [rackId, synced] : syncedRacks_) {
-        if (synced.innerModifiers.empty())
-            continue;
-        auto* rackInfo = tm.getRack(synced.trackId, rackId);
-        if (!rackInfo)
-            continue;
-        for (auto& magdaMod : rackInfo->mods) {
-            auto it = synced.innerModifiers.find(magdaMod.id);
-            if (it == synced.innerModifiers.end() || !it->second)
+    auto overlayInto = [](std::vector<ModInfo>& magdaMods,
+                          const std::map<ModId, te::Modifier::Ptr>& teMods) {
+        if (teMods.empty())
+            return;
+        for (auto& magdaMod : magdaMods) {
+            auto it = teMods.find(magdaMod.id);
+            if (it == teMods.end() || !it->second)
                 continue;
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get())) {
                 magdaMod.value = lfo->getCurrentValue();
                 magdaMod.phase = lfo->getCurrentPhase();
             }
         }
+    };
+    for (auto& [rackId, synced] : syncedRacks_) {
+        auto* rackInfo = tm.getRack(synced.trackId, rackId);
+        if (!rackInfo)
+            continue;
+
+        // Rack-scope mods.
+        overlayInto(rackInfo->mods, synced.innerModifiers);
+
+        // Per-rack-internal-device mods.
+        if (synced.innerDeviceMods.empty())
+            continue;
+        for (auto& chain : rackInfo->chains) {
+            for (auto& chainElement : chain.elements) {
+                if (!isDevice(chainElement))
+                    continue;
+                auto& device = getDevice(chainElement);
+                auto devIt = synced.innerDeviceMods.find(device.id);
+                if (devIt == synced.innerDeviceMods.end())
+                    continue;
+                overlayInto(device.mods, devIt->second.modifiers);
+            }
+        }
     }
 }
 
 void RackSyncManager::ungateAllLFOs() {
-    for (auto& [rackId, synced] : syncedRacks_) {
-        for (auto& [modId, modifier] : synced.innerModifiers) {
+    auto ungate = [](const std::map<ModId, te::Modifier::Ptr>& mods) {
+        for (const auto& [_modId, modifier] : mods)
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get()))
                 lfo->setGated(false);
-        }
+    };
+    for (auto& [rackId, synced] : syncedRacks_) {
+        ungate(synced.innerModifiers);
+        for (auto& [_devId, devState] : synced.innerDeviceMods)
+            ungate(devState.modifiers);
     }
 }
 
 void RackSyncManager::regateTriggeredLFOs() {
-    for (auto& [rackId, synced] : syncedRacks_) {
-        for (auto& [modId, modifier] : synced.innerModifiers) {
-            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
+    auto regate = [](const std::map<ModId, te::Modifier::Ptr>& mods) {
+        for (const auto& [_modId, modifier] : mods)
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get()))
                 if (lfo->getSkipNativeResync())
                     lfo->setGated(true);
-            }
-        }
+    };
+    for (auto& [rackId, synced] : syncedRacks_) {
+        regate(synced.innerModifiers);
+        for (auto& [_devId, devState] : synced.innerDeviceMods)
+            regate(devState.modifiers);
     }
 }
 
 void RackSyncManager::triggerLFONoteOn(TrackId trackId) {
+    auto trigger = [](const std::map<ModId, te::Modifier::Ptr>& mods) {
+        for (const auto& [_modId, modifier] : mods)
+            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get()))
+                triggerLFONoteOnWithReset(lfo);
+    };
     for (auto& [rackId, synced] : syncedRacks_) {
         if (synced.trackId != trackId)
             continue;
-
-        for (auto& [modId, modifier] : synced.innerModifiers) {
-            if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
-                triggerLFONoteOnWithReset(lfo);
-            }
-        }
+        trigger(synced.innerModifiers);
+        for (auto& [_devId, devState] : synced.innerDeviceMods)
+            trigger(devState.modifiers);
     }
 }
 
