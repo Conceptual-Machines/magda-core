@@ -11,6 +11,8 @@
 #include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
+#include "core/PresetManager.hpp"
+#include "magda/scripting/LuaScriptStore.hpp"
 #include "core/ModulatorEngine.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UIScale.hpp"
@@ -120,6 +122,15 @@ class MagdaDAWApplication : public JUCEApplication {
                                  (magda::paths::dataDirOverriddenByEnv()
                                       ? " (MAGDA_DATA_DIR override)"
                                       : ""));
+
+        // Eagerly create the configured per-user folders so they exist on
+        // disk immediately after launch — users expect to find them when
+        // they look at the paths shown in Preferences. PresetManager is a
+        // singleton whose ctor mkdir's Chains/Racks/Devices; touching it
+        // here forces that. LuaScriptStore::ensureExists() does the same
+        // for Scripts/Controllers/.
+        magda::PresetManager::getInstance();
+        magda::scripting::LuaScriptStore{}.ensureExists();
 
         // 3. Initialize fonts
         magda::FontManager::getInstance().initialize();
