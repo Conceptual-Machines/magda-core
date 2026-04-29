@@ -257,14 +257,16 @@ class RackSyncManager {
     te::Plugin::Ptr createPluginForRack(TrackId trackId, const DeviceInfo& device);
 
     /**
-     * @brief Sync TE modifiers from RackInfo mods (Phase 2)
+     * @brief Drive ModifierSyncWalker over a rack scope to rebuild TE
+     * modifiers + macros. Replaces the pre-step-2 `syncModifiers` + `syncMacros`
+     * duplicated bodies.
      */
-    void syncModifiers(SyncedRack& synced, const RackInfo& rackInfo);
+    void syncRackModulation(SyncedRack& synced, const RackInfo& rackInfo);
 
     /**
-     * @brief Sync TE macro parameters from RackInfo macros (Phase 2)
+     * @brief Drive ModifierSyncWalker in-place properties update for a rack.
      */
-    void syncMacros(SyncedRack& synced, const RackInfo& rackInfo);
+    void updateRackModulationProperties(SyncedRack& synced, const RackInfo& rackInfo);
 
     /**
      * @brief Apply rack bypass state via wet/dry gains

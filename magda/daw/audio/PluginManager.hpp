@@ -424,12 +424,6 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
                                                                  ModId modId,
                                                                  int modParamIndex) const;
 
-    /**
-     * @brief Sync device-level macros to TE MacroParameters
-     * Creates TE MacroParameters and assignments for all device macros on a track.
-     * Called from syncTrackPlugins after devices are created.
-     */
-    void syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack);
 
     /**
      * @brief Sync sidechain routing for devices on a track
@@ -554,11 +548,16 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
 
     // Per-device consolidated state. All device-scoped data lives here,
     // keyed by DeviceId. Cleanup is a single erase().
+    //
+    // Step 2 of issue #1131: `modifiers` switched from a vector to a map keyed
+    // by ModId so it matches RackSyncManager's `innerModifiers` shape. The
+    // unified ModifierSyncWalker reads/writes both call sites through the
+    // same `ModifierSyncState` view.
     struct SyncedDevice {
         TrackId trackId = INVALID_TRACK_ID;          // MAGDA track that owns this device
         te::Plugin::Ptr plugin;                      // Always set on creation
         std::unique_ptr<DeviceProcessor> processor;  // nullptr until async load completes
-        std::vector<te::Modifier::Ptr> modifiers;    // Can be empty
+        std::map<ModId, te::Modifier::Ptr> modifiers;  // Can be empty
         std::map<ModId, std::unique_ptr<CurveSnapshotHolder>>
             curveSnapshots;                              // ModId-only (device scope implicit)
         std::map<int, te::MacroParameter*> macroParams;  // Can be empty
@@ -572,7 +571,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
 
     // Track-level mod state (for track-scope modulators that target any device)
     struct TrackModState {
-        std::vector<te::Modifier::Ptr> modifiers;
+        std::map<ModId, te::Modifier::Ptr> modifiers;
         std::map<ModId, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
     };
     std::map<TrackId, TrackModState> trackModStates_;

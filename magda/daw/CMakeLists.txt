@@ -317,6 +317,7 @@ set(DAW_CORE_SOURCES
     audio/PluginManager.cpp
     audio/InstrumentRackManager.cpp
     audio/RackSyncManager.cpp
+    audio/ModifierSync.cpp
     audio/AutomationPlaybackEngine.cpp
     audio/AutomationRecordingEngine.cpp
     audio/AutomationCurveSimplifier.cpp

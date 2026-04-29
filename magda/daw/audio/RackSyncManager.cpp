@@ -2,6 +2,7 @@
 
 #include "CurveSnapshot.hpp"
 #include "ModifierHelpers.hpp"
+#include "ModifierSync.hpp"
 #include "PluginManager.hpp"
 #include "TracktionHelpers.hpp"
 #include "core/TrackManager.hpp"
@@ -11,41 +12,6 @@ namespace magda {
 RackSyncManager::RackSyncManager(te::Edit& edit, PluginManager& pluginManager)
     : edit_(edit), pluginManager_(pluginManager) {}
 
-namespace {
-
-// Pick the TE param the macro/mod link should attach to when its target is
-// another modifier (target.kind == ModParam). modParamIndex 0 == Rate; we
-// resolve to the LFO's `rate` param in Hz mode and `rateType` in sync mode,
-// matching the unified Rate lane behaviour. Returns nullptr if the modifier
-// isn't synced yet or the requested param isn't exposed.
-template <typename Link, typename SyncedRackT, typename RackInfoT>
-te::AutomatableParameter* resolveModParamTargetInRack(const Link& link, const SyncedRackT& synced,
-                                                      const RackInfoT& rackInfo) {
-    if (link.target.kind != decltype(link.target.kind)::ModParam)
-        return nullptr;
-
-    auto modIt = synced.innerModifiers.find(link.target.modId);
-    if (modIt == synced.innerModifiers.end() || !modIt->second)
-        return nullptr;
-
-    // Look up the target ModInfo's tempoSync flag — drives rate vs rateType.
-    bool sync = false;
-    for (const auto& m : rackInfo.mods) {
-        if (m.id == link.target.modId) {
-            sync = m.tempoSync;
-            break;
-        }
-    }
-    const juce::String wantedID =
-        link.target.modParamIndex == 0 ? (sync ? "rateType" : "rate") : "depth";
-    for (auto* p : modIt->second->getAutomatableParameters()) {
-        if (p && p->paramID == wantedID)
-            return p;
-    }
-    return nullptr;
-}
-
-}  // namespace
 
 // =============================================================================
 // Public API
@@ -93,8 +59,7 @@ te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackI
     buildConnections(synced, rackInfo);
 
     // 5. Sync modifiers and macros (Phase 2)
-    syncModifiers(synced, rackInfo);
-    syncMacros(synced, rackInfo);
+    syncRackModulation(synced, rackInfo);
 
     // 6. Create a RackInstance from the RackType
     auto rackInstanceState = te::RackInstance::create(*rackType);
@@ -164,8 +129,7 @@ void RackSyncManager::resyncRack(TrackId trackId, const RackInfo& rackInfo) {
     buildConnections(synced, rackInfo);
 
     // Resync modifiers and macros
-    syncModifiers(synced, rackInfo);
-    syncMacros(synced, rackInfo);
+    syncRackModulation(synced, rackInfo);
 
     // Reapply bypass
     applyBypassState(synced, rackInfo);
@@ -446,8 +410,7 @@ void RackSyncManager::resyncAllModifiers(TrackId trackId) {
             for (const auto& element : track.chainElements) {
                 if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
                     if (*rackPtr && (*rackPtr)->id == rackId) {
-                        syncModifiers(synced, **rackPtr);
-                        syncMacros(synced, **rackPtr);
+                        syncRackModulation(synced, **rackPtr);
                     }
                 }
             }
@@ -460,8 +423,6 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
     for (auto& [rackId, synced] : syncedRacks_) {
         if (synced.trackId != trackId)
             continue;
-
-        // Find the current RackInfo for this rack
         for (const auto& track : tm.getTracks()) {
             if (track.id != trackId)
                 continue;
@@ -469,61 +430,7 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                 if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
                     if (!*rackPtr || (*rackPtr)->id != rackId)
                         continue;
-                    const auto& rackInfo = **rackPtr;
-
-                    // Update existing TE modifiers in-place. Match the gate
-                    // used by syncModifiers — enabled is enough; an LFO with
-                    // no own outgoing links can still be the target of a
-                    // ModParam-kind macro/mod link.
-                    for (const auto& modInfo : rackInfo.mods) {
-                        if (!modInfo.enabled)
-                            continue;
-
-                        auto modIt = synced.innerModifiers.find(modInfo.id);
-                        if (modIt == synced.innerModifiers.end() || !modIt->second)
-                            continue;
-
-                        auto& modifier = modIt->second;
-
-                        if (auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get())) {
-                            auto& snapHolder = synced.curveSnapshots[modInfo.id];
-                            if (!snapHolder)
-                                snapHolder = std::make_unique<CurveSnapshotHolder>();
-                            applyLFOProperties(lfo, modInfo, snapHolder.get());
-                            if (modInfo.triggered && modInfo.triggerMode != LFOTriggerMode::Free)
-                                triggerLFONoteOnWithReset(lfo);
-                        }
-
-                        // Update assignment values (mod depth) for each link
-                        for (const auto& link : modInfo.links) {
-                            if (!link.isValid())
-                                continue;
-
-                            te::AutomatableParameter* param = nullptr;
-                            if (link.target.kind == ModTarget::Kind::ModParam) {
-                                if (link.target.modId == modInfo.id)
-                                    continue;  // Self-target — see syncModifiers
-                                param = resolveModParamTargetInRack(link, synced, rackInfo);
-                            } else {
-                                auto pluginIt = synced.innerPlugins.find(link.target.deviceId);
-                                if (pluginIt == synced.innerPlugins.end() || !pluginIt->second)
-                                    continue;
-                                auto params = pluginIt->second->getAutomatableParameters();
-                                if (link.target.paramIndex >= 0 &&
-                                    link.target.paramIndex < static_cast<int>(params.size()))
-                                    param = params[static_cast<size_t>(link.target.paramIndex)];
-                            }
-                            if (!param)
-                                continue;
-                            for (auto* assignment : param->getAssignments()) {
-                                if (assignment->isForModifierSource(*modifier)) {
-                                    assignment->value = link.amount;
-                                    assignment->offset = 0.0f;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    updateRackModulationProperties(synced, **rackPtr);
                 }
             }
         }
@@ -789,8 +696,7 @@ void RackSyncManager::updateProperties(SyncedRack& synced, const RackInfo& rackI
 
     // Resync modifiers and macros (lightweight — just rebuilds TE modifier
     // assignments, no plugin state is lost)
-    syncModifiers(synced, rackInfo);
-    syncMacros(synced, rackInfo);
+    syncRackModulation(synced, rackInfo);
 
     DBG("RackSyncManager: Updated properties for rack " << rackInfo.id);
 }
@@ -828,229 +734,85 @@ void RackSyncManager::applyBypassState(SyncedRack& synced, const RackInfo& rackI
 // Phase 2: Modifiers & Macros
 // =============================================================================
 
-void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo) {
-    auto& rackType = synced.rackType;
-    if (!rackType)
+void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rackInfo) {
+    if (!synced.rackType)
         return;
 
-    auto& modList = rackType->getModifierList();
-
-    // Remove existing TE modifiers before recreating
-    // Clear LFO callbacks before destroying CurveSnapshotHolders
-    clearLFOCustomWaveCallbacks(synced.innerModifiers);
-
-    for (auto& [modId, mod] : synced.innerModifiers) {
-        if (!mod)
-            continue;
-
-        // Remove modifier assignments from all inner plugin parameters
-        for (auto& [pluginId, plugin] : synced.innerPlugins) {
-            if (plugin) {
-                for (auto* param : plugin->getAutomatableParameters())
-                    param->removeModifier(*mod);
-            }
-        }
-
-        modList.state.removeChild(mod->state, nullptr);
-    }
-    synced.innerModifiers.clear();
-
-    // Two-pass: create all TE modifiers first, then wire link assignments.
-    // Cross-mod ModParam links resolve via synced.innerModifiers — if the
-    // target mod isn't in the map yet (because it's later in the iteration
-    // order), the link is silently dropped. Splitting the passes guarantees
-    // the map is fully populated before any link is wired.
-    struct CreatedMod {
-        te::Modifier::Ptr modifier;
-        const ModInfo* info;
+    auto lookupTarget = [&synced](DeviceId id) -> te::Plugin* {
+        auto it = synced.innerPlugins.find(id);
+        if (it != synced.innerPlugins.end() && it->second)
+            return it->second.get();
+        return nullptr;
     };
-    std::vector<CreatedMod> created;
 
+    ModifierSyncContext ctx;
+    ctx.modifierList = &synced.rackType->getModifierList();
+    ctx.macroList = &synced.rackType->getMacroParameterListForWriting();
+    ctx.lookupTargetPlugin = lookupTarget;
+    ctx.forEachScopePlugin = [&synced](const std::function<void(te::Plugin*)>& visit) {
+        for (auto& [pluginId, plugin] : synced.innerPlugins) {
+            if (plugin)
+                visit(plugin.get());
+        }
+    };
+    // Real per-scope divergences flagged in step 4 — keep 1:1 with the
+    // pre-step-2 behaviour (see ModifierSyncContext docstring).
+    ctx.hasCrossTrackSidechain = false;
+    ctx.gateMidiTriggeredLFOs = true;
+    ctx.applyLegacyMacroTarget = true;
+    ctx.applyBipolarMacroOffsets = false;
+
+    ConstChainNode node;
+    node.scope = ChainScope::Rack;
+    node.trackId = synced.trackId;
+    node.rackId = synced.rackId;
+    node.mods = &rackInfo.mods;
+    node.macros = &rackInfo.macros;
+
+    ModifierSyncState state{synced.innerModifiers, synced.curveSnapshots, synced.innerMacroParams};
+    ModifierSyncWalker::syncStructure(node, ctx, state, deferredHolders_);
+}
+
+void RackSyncManager::updateRackModulationProperties(SyncedRack& synced,
+                                                     const RackInfo& rackInfo) {
+    auto lookupTarget = [&synced](DeviceId id) -> te::Plugin* {
+        auto it = synced.innerPlugins.find(id);
+        if (it != synced.innerPlugins.end() && it->second)
+            return it->second.get();
+        return nullptr;
+    };
+
+    ModifierSyncContext ctx;
+    ctx.lookupTargetPlugin = lookupTarget;
+    ctx.applyBipolarMacroOffsets = false;
+
+    ConstChainNode node;
+    node.scope = ChainScope::Rack;
+    node.trackId = synced.trackId;
+    node.rackId = synced.rackId;
+    node.mods = &rackInfo.mods;
+    node.macros = &rackInfo.macros;
+
+    ModifierSyncState state{synced.innerModifiers, synced.curveSnapshots, synced.innerMacroParams};
+    ModifierSyncWalker::syncProperties(node, ctx, state);
+
+    // Note-trigger: the pre-step-2 updateAllModifierProperties also called
+    // triggerLFONoteOnWithReset for any triggered LFO whose triggerMode wasn't
+    // Free. Walker syncProperties leaves gate state alone (audio-thread owns
+    // it), so we mirror the legacy retrigger here to preserve behaviour.
     for (const auto& modInfo : rackInfo.mods) {
-        // Create the TE modifier as soon as the modifier is enabled, even if
-        // it has no outgoing links yet. This lets a macro or another mod
-        // target THIS modifier's rate / rateType param (ModParam-kind links)
-        // — without an existing TE modifier object there's nothing to attach
-        // the source param to. An LFO with no own links costs essentially
-        // nothing in the TE graph beyond a few floats.
         if (!modInfo.enabled)
             continue;
-
-        te::Modifier::Ptr modifier;
-
-        switch (modInfo.type) {
-            case ModType::LFO: {
-                // Create LFO modifier via ValueTree
-                juce::ValueTree lfoState(te::IDs::LFO);
-                auto lfoMod = modList.insertModifier(lfoState, -1, nullptr);
-                if (!lfoMod)
-                    break;
-
-                if (auto* lfo = dynamic_cast<te::LFOModifier*>(lfoMod.get())) {
-                    auto& snapHolder = synced.curveSnapshots[modInfo.id];
-                    if (!snapHolder)
-                        snapHolder = std::make_unique<CurveSnapshotHolder>();
-                    applyLFOProperties(lfo, modInfo, snapHolder.get());
-                    if (modInfo.triggerMode == LFOTriggerMode::MIDI ||
-                        modInfo.triggerMode == LFOTriggerMode::Audio)
-                        lfo->setGated(true);
-                }
-                modifier = lfoMod;
-                DBG("RackSyncManager::syncModifiers - created LFO for rackId="
-                    << synced.rackId << " modId=" << modInfo.id << " triggerMode="
-                    << (int)modInfo.triggerMode << " links=" << (int)modInfo.links.size());
-                break;
-            }
-
-            case ModType::Random: {
-                juce::ValueTree randomState(te::IDs::RANDOM);
-                auto randomMod = modList.insertModifier(randomState, -1, nullptr);
-                modifier = randomMod;
-                break;
-            }
-
-            case ModType::Follower: {
-                juce::ValueTree envState(te::IDs::ENVELOPEFOLLOWER);
-                auto envMod = modList.insertModifier(envState, -1, nullptr);
-                modifier = envMod;
-                break;
-            }
-
-            case ModType::Envelope: {
-                // TE doesn't have a direct envelope generator — use LFO one-shot as approximation
-                // For now, skip Envelope type
-                break;
-            }
-        }
-
-        if (!modifier)
+        if (!modInfo.triggered || modInfo.triggerMode == LFOTriggerMode::Free)
             continue;
-
-        synced.innerModifiers[modInfo.id] = modifier;
-        created.push_back({modifier, &modInfo});
-    }
-
-    // Pass 2: wire link assignments now that every TE modifier exists.
-    for (const auto& cm : created) {
-        const auto& modInfo = *cm.info;
-        for (const auto& link : modInfo.links) {
-            if (!link.isValid())
-                continue;
-
-            // Mod-on-mod link: attach this modifier to another modifier's
-            // rate/rateType param. Refuse self-targeting — that's a feedback
-            // loop with no useful semantics; UI filters it out, this is a
-            // belt-and-braces guard.
-            if (link.target.kind == ModTarget::Kind::ModParam) {
-                if (link.target.modId == modInfo.id)
-                    continue;
-                if (auto* targetParam = resolveModParamTargetInRack(link, synced, rackInfo))
-                    targetParam->addModifier(*cm.modifier, link.amount);
-                continue;
-            }
-
-            auto pluginIt = synced.innerPlugins.find(link.target.deviceId);
-            if (pluginIt == synced.innerPlugins.end() || !pluginIt->second)
-                continue;
-
-            auto params = pluginIt->second->getAutomatableParameters();
-            if (link.target.paramIndex >= 0 &&
-                link.target.paramIndex < static_cast<int>(params.size())) {
-                auto* param = params[static_cast<size_t>(link.target.paramIndex)];
-                if (param) {
-                    param->addModifier(*cm.modifier, link.amount);
-                }
-            }
-        }
+        auto modIt = synced.innerModifiers.find(modInfo.id);
+        if (modIt == synced.innerModifiers.end() || !modIt->second)
+            continue;
+        if (auto* lfo = dynamic_cast<te::LFOModifier*>(modIt->second.get()))
+            triggerLFONoteOnWithReset(lfo);
     }
 }
 
-void RackSyncManager::syncMacros(SyncedRack& synced, const RackInfo& rackInfo) {
-    auto& rackType = synced.rackType;
-    if (!rackType)
-        return;
-
-    auto& macroList = rackType->getMacroParameterListForWriting();
-
-    // Remove existing TE MacroParameters before recreating
-    for (auto& [macroIdx, macroParam] : synced.innerMacroParams) {
-        if (!macroParam)
-            continue;
-
-        // Remove modifier assignments from all inner plugin parameters
-        for (auto& [pluginId, plugin] : synced.innerPlugins) {
-            if (plugin) {
-                for (auto* param : plugin->getAutomatableParameters())
-                    param->removeModifier(*macroParam);
-            }
-        }
-
-        macroList.removeMacroParameter(*macroParam);
-    }
-    synced.innerMacroParams.clear();
-
-    for (int i = 0; i < static_cast<int>(rackInfo.macros.size()); ++i) {
-        const auto& macroInfo = rackInfo.macros[static_cast<size_t>(i)];
-        if (!macroInfo.isLinked())
-            continue;
-
-        // Create a TE MacroParameter
-        auto* macroParam = macroList.createMacroParameter();
-        if (!macroParam)
-            continue;
-
-        macroParam->macroName = macroInfo.name;
-        macroParam->setParameterFromHost(macroInfo.value, juce::dontSendNotification);
-
-        synced.innerMacroParams[i] = macroParam;
-
-        // Create assignments for each link
-        for (const auto& link : macroInfo.links) {
-            if (!link.target.isValid())
-                continue;
-
-            // Macro-on-mod link: attach this macro to a modifier's rate /
-            // rateType param. Macros never target themselves so no extra
-            // self-link guard is needed here.
-            if (link.target.kind == MacroTarget::Kind::ModParam) {
-                if (auto* targetParam = resolveModParamTargetInRack(link, synced, rackInfo))
-                    targetParam->addModifier(*macroParam, link.amount);
-                continue;
-            }
-
-            auto pluginIt = synced.innerPlugins.find(link.target.deviceId);
-            if (pluginIt == synced.innerPlugins.end() || !pluginIt->second)
-                continue;
-
-            auto params = pluginIt->second->getAutomatableParameters();
-            if (link.target.paramIndex >= 0 &&
-                link.target.paramIndex < static_cast<int>(params.size())) {
-                auto* param = params[static_cast<size_t>(link.target.paramIndex)];
-                if (param) {
-                    param->addModifier(*macroParam, link.amount);
-                    DBG("RackSyncManager: Linked macro " << i << " to device "
-                                                         << link.target.deviceId << " param "
-                                                         << link.target.paramIndex);
-                }
-            }
-        }
-
-        // Also handle legacy single target
-        if (macroInfo.target.isValid()) {
-            auto pluginIt = synced.innerPlugins.find(macroInfo.target.deviceId);
-            if (pluginIt != synced.innerPlugins.end() && pluginIt->second) {
-                auto params = pluginIt->second->getAutomatableParameters();
-                if (macroInfo.target.paramIndex >= 0 &&
-                    macroInfo.target.paramIndex < static_cast<int>(params.size())) {
-                    auto* param = params[static_cast<size_t>(macroInfo.target.paramIndex)];
-                    if (param) {
-                        param->addModifier(*macroParam, 1.0f);
-                    }
-                }
-            }
-        }
-    }
-}
 
 bool RackSyncManager::needsModifierResync(TrackId trackId) const {
     auto& tm = TrackManager::getInstance();
