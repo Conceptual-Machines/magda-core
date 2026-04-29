@@ -10,6 +10,7 @@
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
+#include "scripting_app.hpp"
 
 namespace magda {
 
@@ -101,6 +102,22 @@ ControllersDialog::ControllersDialog() {
     uploadButton_.onClick = [this]() { onUploadClicked(); };
     addAndMakeVisible(uploadButton_);
 
+    // Lua controller scripts row (issue #592)
+    reloadLuaButton_.setButtonText("Reload Lua Script");
+    reloadLuaButton_.onClick = [this]() { onReloadLuaClicked(); };
+    addAndMakeVisible(reloadLuaButton_);
+
+    openScriptsFolderButton_.setButtonText("Open Scripts Folder");
+    openScriptsFolderButton_.onClick = [this]() { onOpenScriptsFolderClicked(); };
+    addAndMakeVisible(openScriptsFolderButton_);
+
+    luaStatusLabel_.setColour(juce::Label::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    luaStatusLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    luaStatusLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(luaStatusLabel_);
+    refreshLuaStatus();
+
     // Controllers list
     listModel_.controllers = &controllers_;
     listModel_.isConnected = [this](const Controller& c) { return isControllerConnected(c); };
@@ -156,6 +173,18 @@ void ControllersDialog::resized() {
     uploadButton_.setBounds(headerRow.removeFromRight(uploadBtnW));
     sectionLabel_.setBounds(headerRow);
     bounds.removeFromTop(6);
+
+    // Lua scripts row at the bottom of the dialog.
+    const int luaRowH = 30;
+    auto luaRow = bounds.removeFromBottom(luaRowH);
+    bounds.removeFromBottom(6);
+    const int reloadW = 140;
+    const int openW = 160;
+    reloadLuaButton_.setBounds(luaRow.removeFromRight(reloadW));
+    luaRow.removeFromRight(btnGap);
+    openScriptsFolderButton_.setBounds(luaRow.removeFromRight(openW));
+    luaRow.removeFromRight(btnGap);
+    luaStatusLabel_.setBounds(luaRow);
 
     list_->setBounds(bounds);
 }
@@ -513,6 +542,38 @@ class SelfClosingDialogWindow : public juce::DialogWindow {
     }
 };
 }  // namespace
+
+// -----------------------------------------------------------------------------
+// Lua controller scripts
+// -----------------------------------------------------------------------------
+
+void ControllersDialog::onReloadLuaClicked() {
+    if (scripting_app::reloadActiveLuaScript()) {
+        refreshLuaStatus();
+        return;
+    }
+    // Reload returned false. Disambiguate via hasAnyLuaScripts() because
+    // LuaController::loadScript clears the active name on any failure —
+    // checking the name alone would mislabel a syntax error as "no script".
+    if (scripting_app::hasAnyLuaScripts())
+        luaStatusLabel_.setText("Reload failed (see log)",
+                                juce::dontSendNotification);
+    else
+        luaStatusLabel_.setText("No script in scripts folder",
+                                juce::dontSendNotification);
+}
+
+void ControllersDialog::onOpenScriptsFolderClicked() {
+    scripting_app::revealLuaScriptsFolder();
+}
+
+void ControllersDialog::refreshLuaStatus() {
+    auto name = scripting_app::activeLuaScriptName();
+    if (name.isEmpty())
+        luaStatusLabel_.setText("Lua: no script loaded", juce::dontSendNotification);
+    else
+        luaStatusLabel_.setText("Lua: " + name, juce::dontSendNotification);
+}
 
 void ControllersDialog::showDialog(juce::Component* /*parent*/) {
     auto* dialog = new ControllersDialog();
