@@ -2015,13 +2015,15 @@ void DeviceSlotComponent::onModLinkRemovedInternal(int modIndex, magda::ModTarge
 void DeviceSlotComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type,
                                                     magda::LFOWaveform waveform) {
     magda::TrackManager::getInstance().addMod(nodePath_, slotIndex, type, waveform);
-    // Update the mods panel directly to avoid full UI rebuild (which closes the panel)
-    updateModsPanel();
+    // Refresh both panels — adding a mod can introduce a new ModParam target
+    // for macros, so the macro-link menu must rebuild too. refreshPanels()
+    // guards each by its own visibility flag.
+    refreshPanels();
 }
 
 void DeviceSlotComponent::onModRemoveRequestedInternal(int modIndex) {
     magda::TrackManager::getInstance().removeMod(nodePath_, modIndex);
-    updateModsPanel();
+    refreshPanels();
 }
 
 void DeviceSlotComponent::onModEnableToggledInternal(int modIndex, bool enabled) {

@@ -755,12 +755,7 @@ void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rac
                 visit(plugin.get());
         }
     };
-    // Real per-scope divergences flagged in step 4 — keep 1:1 with the
-    // pre-step-2 behaviour (see ModifierSyncContext docstring).
     ctx.hasCrossTrackSidechain = false;
-    ctx.gateMidiTriggeredLFOs = true;
-    ctx.applyLegacyMacroTarget = true;
-    ctx.applyBipolarMacroOffsets = false;
 
     ConstChainNode node;
     node.scope = ChainScope::Rack;
@@ -784,7 +779,6 @@ void RackSyncManager::updateRackModulationProperties(SyncedRack& synced,
 
     ModifierSyncContext ctx;
     ctx.lookupTargetPlugin = lookupTarget;
-    ctx.applyBipolarMacroOffsets = false;
 
     ConstChainNode node;
     node.scope = ChainScope::Rack;

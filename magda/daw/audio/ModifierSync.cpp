@@ -65,16 +65,13 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
                 if (ctx.hasCrossTrackSidechain)
                     lfo->setSkipNativeResync(true);
 
-                // Per-scope gate divergence captured by the context flag —
-                // see ModifierSyncContext docstring; step 4 converges.
-                if (ctx.gateMidiTriggeredLFOs) {
-                    if (modInfo.triggerMode == LFOTriggerMode::MIDI ||
-                        modInfo.triggerMode == LFOTriggerMode::Audio)
-                        lfo->setGated(true);
-                } else {
-                    if (modInfo.triggerMode == LFOTriggerMode::Audio)
-                        lfo->setGated(true);
-                }
+                // Audio-triggered LFOs start gated so getCurrentValue()
+                // returns 0 until an audio peak fires the trigger. MIDI-
+                // triggered LFOs don't need gating — they reset phase on
+                // note-on and free-run otherwise; the audio thread owns
+                // their gate state via gateSidechainLFOs.
+                if (modInfo.triggerMode == LFOTriggerMode::Audio)
+                    lfo->setGated(true);
             }
             modifier = lfoMod;
             break;
@@ -291,13 +288,9 @@ void ModifierSyncWalker::syncStructure(
                     if (auto* targetParam = node.mods ? resolveSameScopeModParam(
                                                             link, *node.mods, state.modifiers)
                                                       : nullptr) {
-                        if (ctx.applyBipolarMacroOffsets) {
-                            const float offset = link.bipolar ? -link.amount : 0.0f;
-                            const float value = link.bipolar ? link.amount * 2.0f : link.amount;
-                            targetParam->addModifier(*macroParam, value, offset);
-                        } else {
-                            targetParam->addModifier(*macroParam, link.amount);
-                        }
+                        const float offset = link.bipolar ? -link.amount : 0.0f;
+                        const float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                        targetParam->addModifier(*macroParam, value, offset);
                     }
                     continue;
                 }
@@ -307,22 +300,9 @@ void ModifierSyncWalker::syncStructure(
                 if (!param)
                     continue;
 
-                if (ctx.applyBipolarMacroOffsets) {
-                    const float offset = link.bipolar ? -link.amount : 0.0f;
-                    const float value = link.bipolar ? link.amount * 2.0f : link.amount;
-                    param->addModifier(*macroParam, value, offset);
-                } else {
-                    param->addModifier(*macroParam, link.amount);
-                }
-            }
-
-            // Legacy single-target field — old project format. Honoured today
-            // by RackSyncManager only; PluginManager scopes dropped it. Step 4
-            // converges.
-            if (ctx.applyLegacyMacroTarget && macroInfo.target.isValid()) {
-                if (auto* param = resolveLinkTargetParam(ctx, macroInfo.target.deviceId,
-                                                         macroInfo.target.paramIndex))
-                    param->addModifier(*macroParam, 1.0f);
+                const float offset = link.bipolar ? -link.amount : 0.0f;
+                const float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                param->addModifier(*macroParam, value, offset);
             }
         }
     }
@@ -414,15 +394,10 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node,
 
                 for (auto* assignment : param->getAssignments()) {
                     if (assignment->isForModifierSource(*macroParam)) {
-                        if (ctx.applyBipolarMacroOffsets) {
-                            const float offset = link.bipolar ? -link.amount : 0.0f;
-                            const float value = link.bipolar ? link.amount * 2.0f : link.amount;
-                            assignment->value = value;
-                            assignment->offset = offset;
-                        } else {
-                            assignment->value = link.amount;
-                            assignment->offset = 0.0f;
-                        }
+                        const float offset = link.bipolar ? -link.amount : 0.0f;
+                        const float value = link.bipolar ? link.amount * 2.0f : link.amount;
+                        assignment->value = value;
+                        assignment->offset = offset;
                         break;
                     }
                 }

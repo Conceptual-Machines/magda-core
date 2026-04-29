@@ -396,13 +396,8 @@ void RackComponent::updateFromRack(const magda::RackInfo& rack) {
     setBypassed(rack.bypassed);
     rebuildChainRows();
 
-    // Update panels if visible (uses base class methods)
-    if (paramPanelVisible_) {
-        NodeComponent::updateMacroPanel();
-    }
-    if (modPanelVisible_) {
-        NodeComponent::updateModsPanel();
-    }
+    // Refresh both panels if either is visible.
+    refreshPanels();
 
     // Also refresh the chain panel if it's showing a chain
     if (chainPanel_ && chainPanel_->isVisible() && selectedChainId_ != magda::INVALID_CHAIN_ID) {
@@ -709,13 +704,15 @@ void RackComponent::onMacroClickedInternal(int macroIndex) {
 void RackComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type,
                                               magda::LFOWaveform waveform) {
     magda::TrackManager::getInstance().addMod(rackPath_, slotIndex, type, waveform);
-    // Update the mods panel directly to avoid full UI rebuild (which closes the panel)
-    updateModsPanel();
+    // Refresh both panels so the macro-link menu picks up the new mod as a
+    // possible target — the f4f556f regression was a missing macro refresh
+    // here. refreshPanels() guards each by its own visibility flag.
+    refreshPanels();
 }
 
 void RackComponent::onModRemoveRequestedInternal(int modIndex) {
     magda::TrackManager::getInstance().removeMod(rackPath_, modIndex);
-    updateModsPanel();
+    refreshPanels();
 }
 
 void RackComponent::onModEnableToggledInternal(int modIndex, bool enabled) {

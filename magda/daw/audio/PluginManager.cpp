@@ -1256,7 +1256,6 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
 
     ModifierSyncContext ctx;
     ctx.lookupTargetPlugin = lookupTarget;
-    ctx.applyBipolarMacroOffsets = true;
 
     // Per-device: in-place LFO + assignment depth update.
     for (const auto& element : trackInfo->chainElements) {
@@ -1387,9 +1386,6 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
         ctx.lookupTargetPlugin = lookupTarget;
         ctx.forEachScopePlugin = forEachPlugin;
         ctx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
-        ctx.gateMidiTriggeredLFOs = false;     // top-device path: Audio-gate only
-        ctx.applyLegacyMacroTarget = false;
-        ctx.applyBipolarMacroOffsets = true;
 
         auto& sd = syncedDevices_[device.id];
         ModifierSyncState state{sd.modifiers, sd.curveSnapshots, sd.macroParams};
@@ -1412,9 +1408,6 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
     trackCtx.lookupTargetPlugin = lookupTarget;
     trackCtx.forEachScopePlugin = forEachPlugin;
     trackCtx.hasCrossTrackSidechain = false;
-    trackCtx.gateMidiTriggeredLFOs = false;
-    trackCtx.applyLegacyMacroTarget = false;
-    trackCtx.applyBipolarMacroOffsets = true;
 
     ModifierSyncState trackState{trackModState.modifiers, trackModState.curveSnapshots,
                                  trackMacroMap};

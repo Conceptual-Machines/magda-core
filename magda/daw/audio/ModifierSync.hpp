@@ -73,18 +73,20 @@ struct ModifierSyncState {
 /**
  * @brief Per-node bindings the walker needs to interact with TE for one ChainNode.
  *
- * The walker is scope-agnostic; everything that varies between Track / Rack /
- * top-level Device scopes is injected here. Two flag fields preserve real
- * behavioural divergences flagged in the issue's "Step 4 converges them" list:
+ * Step 4 of issue #1131 converged the per-scope behavioural divergences that
+ * step 2 captured behind boolean flags. The walker now uses one consistent
+ * behaviour across Track / Rack / Device scopes (matching the original
+ * Track/Device pattern):
+ *  - LFO gating only for Audio-trigger LFOs at creation (MIDI gating was
+ *    redundant — the audio thread owns gate state via gateSidechainLFOs).
+ *  - No legacy single-target macro field handling (modern projects use
+ *    `MacroInfo::links`; old projects' `target` field was already dead in
+ *    the Track/Device paths).
+ *  - Bipolar macros use TE's `addModifier(value, offset)` so they pivot
+ *    around 0.5 — RackSyncManager's 2-arg form lacked this.
  *
- *  - `gateMidiTriggeredLFOs` — RackSyncManager today gates MIDI+Audio trigger
- *    LFOs at creation; PluginManager top-device + track-level paths only gate
- *    Audio. Step 4 will pick one.
- *  - `applyLegacyMacroTarget` — RackSyncManager honours the legacy single-target
- *    macro field for backward compat; PluginManager dropped it. Step 4 converges.
- *  - `applyBipolarMacroOffsets` — PluginManager uses `addModifier(value, offset)`
- *    (so bipolar macros pivot around 0.5); RackSyncManager uses the 2-arg form
- *    (no offset). Step 4 converges on the bipolar version.
+ * `hasCrossTrackSidechain` stays a per-device fact (top-level devices with
+ * a cross-track sidechain set `LFOModifier::skipNativeResync`).
  */
 struct ModifierSyncContext {
     /// TE modifier list to insert/remove this node's modifiers.
@@ -113,15 +115,6 @@ struct ModifierSyncContext {
     /// `te::LFOModifier::skipNativeResync` on any LFOs created here, so
     /// the destination track's MIDI doesn't retrigger them.
     bool hasCrossTrackSidechain = false;
-
-    /// See struct docstring — true for rack scope today, false for the others.
-    bool gateMidiTriggeredLFOs = false;
-
-    /// See struct docstring — true for rack scope today.
-    bool applyLegacyMacroTarget = false;
-
-    /// See struct docstring — true for PluginManager scopes today.
-    bool applyBipolarMacroOffsets = true;
 };
 
 /**

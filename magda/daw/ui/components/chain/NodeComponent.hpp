@@ -322,6 +322,13 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     // slider only auto-updates on local mouse interaction.
     void updateMacroPanel();
 
+    /// Refresh both the macro and mods panels (each guarded by its own
+    /// visibility flag). Use this after any operation that affects both
+    /// panels' contents — e.g. adding/removing a mod can invalidate the
+    /// macro-link menu's mod-target list. Centralises what the pre-step-4
+    /// call sites did inline.
+    void refreshPanels();
+
     // Lightweight variant for high-rate external writes (e.g. controller
     // automap) — updates just one knob's displayed value without rebuilding
     // the panel, available-devices list, or param-name map.

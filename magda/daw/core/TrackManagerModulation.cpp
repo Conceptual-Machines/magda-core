@@ -209,29 +209,6 @@ void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex, Mac
         return;
     auto& macro = (*node.macros)[macroIndex];
 
-    // Rack scope retains its older two-branch shape: ModParam adds a link
-    // with amount=1.0 only if the link doesn't already exist; DeviceParam
-    // sets the legacy single-target field and triggers a heavier rebuild.
-    // Track / Device both unconditionally push a link (defaulted by kind)
-    // and never touch the legacy target field. This divergence predates the
-    // refactor; preserving it here keeps step 1 a pure restructure. Step 4
-    // can converge the behaviour during the UI cleanup pass.
-    if (node.scope == ChainScope::Rack) {
-        if (target.kind == MacroTarget::Kind::ModParam) {
-            if (!macro.getLink(target)) {
-                MacroLink newLink;
-                newLink.target = target;
-                newLink.amount = 1.0f;
-                macro.links.push_back(newLink);
-                notifyDeviceModifiersChanged(path.trackId);
-            }
-            return;
-        }
-        macro.target = target;
-        notifyTrackDevicesChanged(path.trackId);
-        return;
-    }
-
     if (!macro.getLink(target)) {
         MacroLink newLink;
         newLink.target = target;
@@ -298,12 +275,9 @@ void TrackManager::removeMacroLink(const ChainNodePath& path, int macroIndex, Ma
     if (!indexInRange(node.macros, macroIndex))
         return;
     (*node.macros)[macroIndex].removeLink(target);
-    // Device scope uses the lighter notify; Track / Rack rebuild the device
-    // topology to drop the corresponding TE assignment.
-    if (node.scope == ChainScope::Device)
-        notifyDeviceModifiersChanged(path.trackId);
-    else
-        notifyTrackDevicesChanged(path.trackId);
+    // Lighter notify across all scopes — modifier sync alone is sufficient to
+    // drop the TE assignment, no full device-topology rebuild needed.
+    notifyDeviceModifiersChanged(path.trackId);
 }
 
 void TrackManager::clearAllMacroLinks(const ChainNodePath& path, int macroIndex) {
@@ -313,10 +287,7 @@ void TrackManager::clearAllMacroLinks(const ChainNodePath& path, int macroIndex)
     auto& macro = (*node.macros)[macroIndex];
     macro.links.clear();
     macro.target = MacroTarget{};
-    if (node.scope == ChainScope::Device)
-        notifyDeviceModifiersChanged(path.trackId);
-    else
-        notifyTrackDevicesChanged(path.trackId);
+    notifyDeviceModifiersChanged(path.trackId);
 }
 
 void TrackManager::addMacroPage(const ChainNodePath& path) {
@@ -393,26 +364,6 @@ void TrackManager::setModTarget(const ChainNodePath& path, int modIndex, ModTarg
     if (!indexInRange(node.mods, modIndex))
         return;
     auto& mod = (*node.mods)[modIndex];
-
-    // Rack scope: ModParam adds a link only if missing; DeviceParam sets
-    // legacy target field. Track / Device: always add link (default amount
-    // by kind), only set legacy target for DeviceParam. Same divergence as
-    // setMacroTarget — preserved for step 1.
-    if (node.scope == ChainScope::Rack) {
-        if (target.kind == ModTarget::Kind::ModParam) {
-            if (!mod.getLink(target)) {
-                ModLink newLink;
-                newLink.target = target;
-                newLink.amount = 1.0f;
-                mod.links.push_back(newLink);
-                notifyDeviceModifiersChanged(path.trackId);
-            }
-            return;
-        }
-        mod.target = target;
-        notifyDeviceModifiersChanged(path.trackId);
-        return;
-    }
 
     if (target.isValid()) {
         const float defaultAmount = target.kind == ModTarget::Kind::ModParam ? 1.0f : 0.0f;
@@ -561,10 +512,7 @@ void TrackManager::removeModLink(const ChainNodePath& path, int modIndex, ModTar
     if (mod.target == target) {
         mod.target = ModTarget{};
     }
-    if (node.scope == ChainScope::Device)
-        notifyDeviceModifiersChanged(path.trackId);
-    else
-        notifyTrackDevicesChanged(path.trackId);
+    notifyDeviceModifiersChanged(path.trackId);
 }
 
 void TrackManager::setModEnabled(const ChainNodePath& path, int modIndex, bool enabled) {

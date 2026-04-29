@@ -964,7 +964,7 @@ TEST_CASE("Rack mod page add/remove fires trackDevicesChanged", "[mod][notificat
 // Rack Macro Target Notification
 // ============================================================================
 
-TEST_CASE("Rack macro target fires trackDevicesChanged", "[macro][notification][rack]") {
+TEST_CASE("Rack macro target fires deviceModifiersChanged", "[macro][notification][rack]") {
     GroupMacroTestFixture fixture;
     MacroListenerSpy spy;
     fixture.tm().addListener(&spy);
@@ -973,13 +973,19 @@ TEST_CASE("Rack macro target fires trackDevicesChanged", "[macro][notification][
     auto rackId = fixture.tm().addRackToTrack(trackId, "Test Rack");
     auto rackPath = ChainNodePath::rack(trackId, rackId);
 
+    spy.modifiersChangedCount = 0;
     spy.devicesChangedCount = 0;
 
-    SECTION("setMacroTarget fires trackDevicesChanged") {
+    // Step 4 converged the per-scope notification divergence: a new macro
+    // target on any scope (Track/Rack/Device) now fires the lighter
+    // deviceModifiersChanged. The pre-step-4 rack path fired the heavier
+    // trackDevicesChanged.
+    SECTION("setMacroTarget fires deviceModifiersChanged") {
         MacroTarget target{DeviceId(42), 0};
         fixture.tm().setMacroTarget(rackPath, 0, target);
 
-        REQUIRE(spy.devicesChangedCount == 1);
+        REQUIRE(spy.modifiersChangedCount == 1);
+        REQUIRE(spy.devicesChangedCount == 0);
     }
 
     fixture.tm().removeListener(&spy);

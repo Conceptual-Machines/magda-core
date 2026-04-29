@@ -1269,6 +1269,13 @@ void NodeComponent::updateMacroValueDisplay(int macroIndex, float value) {
         macroPanel_->updateMacroValueDisplay(macroIndex, value);
 }
 
+void NodeComponent::refreshPanels() {
+    if (paramPanelVisible_)
+        updateMacroPanel();
+    if (modPanelVisible_)
+        updateModsPanel();
+}
+
 void NodeComponent::updateMacroPanel() {
     if (!macroPanel_)
         return;
