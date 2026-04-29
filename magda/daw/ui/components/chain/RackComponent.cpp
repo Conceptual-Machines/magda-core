@@ -42,6 +42,15 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     modPanelVisible_ = rack.modPanelOpen;
     paramPanelVisible_ = rack.paramPanelOpen;
 
+    // Restore collapsed state from rack state. The model field is the single
+    // source of truth — TrackChainContent's save/restore-state map skips
+    // racks so a freshly-loaded preset's `expanded` value isn't shadowed.
+    setCollapsed(!rack.expanded);
+    onCollapsedChanged = [this](bool collapsed) {
+        if (auto* rackInfo = magda::TrackManager::getInstance().getRackByPath(rackPath_))
+            rackInfo->expanded = !collapsed;
+    };
+
     onBypassChanged = [this](bool bypassed) {
         magda::TrackManager::getInstance().setRackBypassed(trackId_, rackId_, bypassed);
     };
@@ -809,6 +818,35 @@ void showRackPresetErrorAsync(const juce::String& title, const juce::String& mes
                                      .withButton("OK"),
                                  nullptr);
 }
+
+// Recursively walk the rack-presets directory and append items / submenus to
+// `menu`. `outIndex` collects the relative path of every preset file in click
+// order so the chosen menu id can be resolved back to a path. Mirrors the
+// equivalent helper in DeviceSlotComponent.
+void buildRackPresetSubmenu(juce::PopupMenu& menu, const juce::File& dir,
+                            const juce::String& prefix, int idBase,
+                            const juce::String& currentLoaded, juce::StringArray& outIndex) {
+    if (!dir.isDirectory())
+        return;
+    auto subdirs = dir.findChildFiles(juce::File::findDirectories, false);
+    auto files = dir.findChildFiles(juce::File::findFiles, false, "*.mps");
+    subdirs.sort();
+    files.sort();
+
+    for (const auto& sub : subdirs) {
+        juce::PopupMenu submenu;
+        buildRackPresetSubmenu(submenu, sub, prefix + sub.getFileName() + "/", idBase,
+                               currentLoaded, outIndex);
+        menu.addSubMenu(sub.getFileName(), submenu);
+    }
+    for (const auto& f : files) {
+        const auto displayName = f.getFileNameWithoutExtension();
+        const auto relPath = prefix + displayName;
+        outIndex.add(relPath);
+        const bool ticked = (relPath == currentLoaded);
+        menu.addItem(idBase + outIndex.size() - 1, displayName, /*isActive*/ true, ticked);
+    }
+}
 }  // namespace
 
 void RackComponent::showPresetMenu() {
@@ -822,16 +860,12 @@ void RackComponent::showPresetMenu() {
     juce::PopupMenu menu;
     menu.addSectionHeader("MAGDA Rack Presets");
 
-    auto presets = pm.getRackPresets();
-    if (presets.isEmpty()) {
+    juce::StringArray index;  // relative paths, indexed by chosen-id - kPresetIdBase
+    buildRackPresetSubmenu(menu, pm.getRacksDirectory(), "", kPresetIdBase, currentPresetName_,
+                           index);
+
+    if (index.isEmpty())
         menu.addItem(kPresetIdBase, "(no presets yet)", /*isActive*/ false);
-    } else {
-        for (int i = 0; i < presets.size(); ++i) {
-            const auto& name = presets[i];
-            menu.addItem(kPresetIdBase + i, name, /*enabled*/ true,
-                         /*ticked*/ name == currentPresetName_);
-        }
-    }
 
     menu.addSeparator();
     if (currentPresetName_.isNotEmpty())
@@ -839,10 +873,10 @@ void RackComponent::showPresetMenu() {
     menu.addItem(kSaveAs, "Save as MAGDA Rack Preset...");
     menu.addItem(kRevealInFinder, "Reveal in Finder");
 
-    const auto presetsCopy = presets;
+    const auto indexCopy = index;
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetComponent(presetButton_.get()),
-        [this, presetsCopy](int chosen) {
+        [this, indexCopy](int chosen) {
             if (chosen == 0)
                 return;
             if (chosen == kSaveAs) {
@@ -853,8 +887,8 @@ void RackComponent::showPresetMenu() {
                 magda::PresetManager::getInstance().getRacksDirectory().revealToUser();
             } else if (chosen >= kPresetIdBase) {
                 const int idx = chosen - kPresetIdBase;
-                if (idx >= 0 && idx < presetsCopy.size())
-                    loadRackPresetByName(presetsCopy[idx]);
+                if (idx >= 0 && idx < indexCopy.size())
+                    loadRackPresetByName(indexCopy[idx]);
             }
         });
 }
@@ -864,8 +898,10 @@ void RackComponent::showSaveRackPresetDialog() {
     const juce::String defaultName =
         currentPresetName_.isNotEmpty() ? currentPresetName_ : (live ? live->name : "Rack");
 
-    auto* aw = new juce::AlertWindow("Save MAGDA Rack Preset", "Enter a name for this rack preset:",
-                                     juce::MessageBoxIconType::NoIcon);
+    auto* aw = new juce::AlertWindow(
+        "Save MAGDA Rack Preset",
+        "Enter a name for this rack preset (use \"/\" to nest, e.g. \"Drums/808 Stack\"):",
+        juce::MessageBoxIconType::NoIcon);
     aw->addTextEditor("name", defaultName, "Name:");
     aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
     aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
