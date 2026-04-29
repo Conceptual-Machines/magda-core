@@ -113,6 +113,7 @@ te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackI
 
     // 8. Store synced state
     syncedRacks_[rackInfo.id] = std::move(synced);
+    rackFingerprints_[rackInfo.id] = computeRackFingerprints(rackInfo);
 
     DBG("RackSyncManager: Synced rack " << rackInfo.id << " ('" << rackInfo.name << "') with "
                                         << rackInfo.chains.size() << " chains");
@@ -170,6 +171,8 @@ void RackSyncManager::resyncRack(TrackId trackId, const RackInfo& rackInfo) {
     // Reapply bypass
     applyBypassState(synced, rackInfo);
 
+    rackFingerprints_[rackInfo.id] = computeRackFingerprints(rackInfo);
+
     DBG("RackSyncManager: Resynced rack " << rackInfo.id);
 }
 
@@ -217,6 +220,7 @@ void RackSyncManager::removeRack(RackId rackId) {
     DBG("RackSyncManager: Removed rack " << rackId);
 
     syncedRacks_.erase(it);
+    rackFingerprints_.erase(rackId);
 }
 
 void RackSyncManager::removeRacksForTrack(TrackId trackId) {
@@ -473,14 +477,116 @@ void RackSyncManager::resyncAllModifiers(TrackId trackId) {
                 continue;
             for (const auto& element : track.chainElements) {
                 if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
-                    if (*rackPtr && (*rackPtr)->id == rackId) {
+                    if (!*rackPtr || (*rackPtr)->id != rackId)
+                        continue;
+
+                    // Split fingerprint: only rebuild the half that actually
+                    // changed. Conflating mods + macros caused syncMacros to
+                    // run on every mod-structure edit (e.g. adding an LFO),
+                    // tearing down TE's macro CachedSources while audio was
+                    // reading them — heap corruption / SIGABRT.
+                    auto currentFP = computeRackFingerprints(**rackPtr);
+                    auto& storedFP = rackFingerprints_[rackId];
+                    bool modsRebuilt = false;
+                    if (currentFP.mods != storedFP.mods) {
+                        storedFP.mods = currentFP.mods;
                         syncModifiers(synced, **rackPtr);
+                        modsRebuilt = true;
+                    }
+                    // syncModifiers destroys and recreates every TE modifier;
+                    // any macro that targets a modifier param (Kind::ModParam,
+                    // e.g. macro → LFO rate / depth) still holds an
+                    // assignment to the now-freed param. syncMacros is the
+                    // only path that re-binds those, so force it whenever
+                    // mods rebuilt and at least one macro→ModParam link
+                    // exists. Without this the macro silently stops
+                    // affecting the newly-built modifier.
+                    bool needMacrosRebuildForRebind =
+                        modsRebuilt && rackHasMacroOnModLink(**rackPtr);
+                    if (currentFP.macros != storedFP.macros || needMacrosRebuildForRebind) {
+                        storedFP.macros = currentFP.macros;
                         syncMacros(synced, **rackPtr);
                     }
                 }
             }
         }
     }
+    // Always update properties (LFO rate/wave/sync, link assignment values).
+    // The user's amount/rate edits live in this in-place path and don't
+    // tear plugins down.
+    updateAllModifierProperties(trackId);
+}
+
+RackSyncManager::RackFingerprints RackSyncManager::computeRackFingerprints(const RackInfo& rack) {
+    RackFingerprints fp;
+
+    auto accumulateMod = [&](const ModInfo& m) {
+        if (!m.enabled || m.links.empty())
+            return;
+        ++fp.mods.count;
+        fp.mods.linkCount += static_cast<int>(m.links.size());
+        for (const auto& link : m.links)
+            fp.mods.bipolarCount += link.bipolar ? 1 : 0;
+        fp.mods.triggerModeMix |= 1 << static_cast<int>(m.triggerMode);
+    };
+    auto accumulateMacro = [&](const MacroInfo& macro) {
+        if (macro.links.empty())
+            return;
+        ++fp.macros.count;
+        fp.macros.linkCount += static_cast<int>(macro.links.size());
+        for (const auto& link : macro.links)
+            fp.macros.bipolarCount += link.bipolar ? 1 : 0;
+    };
+
+    for (const auto& m : rack.mods)
+        accumulateMod(m);
+    for (const auto& macro : rack.macros)
+        accumulateMacro(macro);
+    for (const auto& chain : rack.chains) {
+        for (const auto& element : chain.elements) {
+            if (isDevice(element)) {
+                const auto& dev = getDevice(element);
+                for (const auto& m : dev.mods)
+                    accumulateMod(m);
+                for (const auto& macro : dev.macros)
+                    accumulateMacro(macro);
+            } else if (isRack(element)) {
+                auto nested = computeRackFingerprints(getRack(element));
+                fp.mods.count += nested.mods.count;
+                fp.mods.linkCount += nested.mods.linkCount;
+                fp.mods.bipolarCount += nested.mods.bipolarCount;
+                fp.mods.triggerModeMix |= nested.mods.triggerModeMix;
+                fp.macros.count += nested.macros.count;
+                fp.macros.linkCount += nested.macros.linkCount;
+                fp.macros.bipolarCount += nested.macros.bipolarCount;
+            }
+        }
+    }
+    return fp;
+}
+
+bool RackSyncManager::rackHasMacroOnModLink(const RackInfo& rack) {
+    auto check = [](const std::vector<MacroInfo>& macros) {
+        for (const auto& macro : macros)
+            for (const auto& link : macro.links)
+                if (link.target.kind == MacroTarget::Kind::ModParam)
+                    return true;
+        return false;
+    };
+    if (check(rack.macros))
+        return true;
+    for (const auto& chain : rack.chains) {
+        for (const auto& element : chain.elements) {
+            if (isDevice(element)) {
+                if (check(getDevice(element).macros))
+                    return true;
+            } else if (isRack(element)) {
+                if (rackHasMacroOnModLink(getRack(element)))
+                    return true;
+            }
+        }
+    }
+    return false;
 }
 
 void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
@@ -545,6 +651,47 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
                                 continue;
                             for (auto* assignment : param->getAssignments()) {
                                 if (assignment->isForModifierSource(*modifier)) {
+                                    assignment->value = link.amount;
+                                    assignment->offset = 0.0f;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // In-place rack-macro link amount update — mirrors the
+                    // mod loop above. Without this, dragging a rack macro's
+                    // link amount left the TE assignment stale because the
+                    // split-fingerprint guard skips syncMacros for non-
+                    // structural changes.
+                    for (const auto& macroInfo : rackInfo.macros) {
+                        if (macroInfo.links.empty())
+                            continue;
+                        auto macroIt = synced.innerMacroParams.find(macroInfo.id);
+                        if (macroIt == synced.innerMacroParams.end() || !macroIt->second)
+                            continue;
+                        auto* macroParam = macroIt->second;
+
+                        for (const auto& link : macroInfo.links) {
+                            if (!link.target.isValid())
+                                continue;
+
+                            te::AutomatableParameter* param = nullptr;
+                            if (link.target.kind == MacroTarget::Kind::ModParam) {
+                                param = resolveModParamTargetInRack(link, synced, rackInfo);
+                            } else {
+                                auto pluginIt = synced.innerPlugins.find(link.target.deviceId);
+                                if (pluginIt == synced.innerPlugins.end() || !pluginIt->second)
+                                    continue;
+                                auto params = pluginIt->second->getAutomatableParameters();
+                                if (link.target.paramIndex >= 0 &&
+                                    link.target.paramIndex < static_cast<int>(params.size()))
+                                    param = params[static_cast<size_t>(link.target.paramIndex)];
+                            }
+                            if (!param)
+                                continue;
+                            for (auto* assignment : param->getAssignments()) {
+                                if (assignment->isForModifierSource(*macroParam)) {
                                     assignment->value = link.amount;
                                     assignment->offset = 0.0f;
                                     break;
@@ -919,9 +1066,14 @@ void RackSyncManager::syncModifiers(SyncedRack& synced, const RackInfo& rackInfo
                     if (!snapHolder)
                         snapHolder = std::make_unique<CurveSnapshotHolder>();
                     applyLFOProperties(lfo, modInfo, snapHolder.get());
-                    if (modInfo.triggerMode == LFOTriggerMode::MIDI ||
-                        modInfo.triggerMode == LFOTriggerMode::Audio)
-                        lfo->setGated(true);
+                    // Don't pre-gate rack LFOs. Gating is the cross-track
+                    // sidechain semantic (silent until the source track has
+                    // a held note); PluginManager::gateSidechainLFOs handles
+                    // it after deciding cross-track vs self-track. Self-
+                    // track LFOs should free-run and just reset phase on
+                    // noteOn — pre-gating here muted them indefinitely
+                    // because the cross-track gating path correctly skips
+                    // self-track LFOs and never came back to ungate.
                 }
                 modifier = lfoMod;
                 DBG("RackSyncManager::syncModifiers - created LFO for rackId="
@@ -1127,6 +1279,53 @@ void RackSyncManager::collectLFOModifiers(TrackId trackId,
         if (collected > 0)
             DBG("RackSyncManager::collectLFOModifiers - rackId=" << rackId << " trackId=" << trackId
                                                                  << " collected=" << collected);
+    }
+}
+
+void RackSyncManager::collectLFOModifiersWithModes(TrackId trackId,
+                                                   std::vector<te::LFOModifier*>& outLfos,
+                                                   std::vector<LFOTriggerMode>& outModes) const {
+    auto& trackManager = TrackManager::getInstance();
+
+    // Look up the trigger mode for a given ModId by walking the rack's mods
+    // and recursing into chain-internal devices. Returns nullopt when the
+    // mod can't be located in the model — caller skips that LFO so the
+    // parallel arrays stay aligned.
+    std::function<std::optional<LFOTriggerMode>(const RackInfo&, ModId)> findModeRecursive;
+    findModeRecursive = [&](const RackInfo& rack, ModId target) -> std::optional<LFOTriggerMode> {
+        for (const auto& m : rack.mods)
+            if (m.id == target)
+                return m.triggerMode;
+        for (const auto& chain : rack.chains) {
+            for (const auto& element : chain.elements) {
+                if (isDevice(element)) {
+                    for (const auto& m : getDevice(element).mods)
+                        if (m.id == target)
+                            return m.triggerMode;
+                } else if (isRack(element)) {
+                    if (auto found = findModeRecursive(getRack(element), target))
+                        return found;
+                }
+            }
+        }
+        return std::nullopt;
+    };
+
+    for (const auto& [rackId, synced] : syncedRacks_) {
+        if (synced.trackId != trackId)
+            continue;
+        const auto* rackInfo = trackManager.getRack(synced.trackId, synced.rackId);
+        if (rackInfo == nullptr)
+            continue;
+        for (const auto& [modId, modifier] : synced.innerModifiers) {
+            auto* lfo = dynamic_cast<te::LFOModifier*>(modifier.get());
+            if (lfo == nullptr)
+                continue;
+            if (auto mode = findModeRecursive(*rackInfo, modId)) {
+                outLfos.push_back(lfo);
+                outModes.push_back(*mode);
+            }
+        }
     }
 }
 

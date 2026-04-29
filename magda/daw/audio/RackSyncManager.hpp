@@ -185,6 +185,16 @@ class RackSyncManager {
     void collectLFOModifiers(TrackId trackId, std::vector<te::LFOModifier*>& out) const;
 
     /**
+     * @brief Like collectLFOModifiers, but also reports each LFO's trigger
+     *        mode by resolving the ModInfo through the rack hierarchy.
+     *        outLfos and outModes are filled in parallel (same size, same
+     *        order). LFOs whose ModId can't be resolved against the model
+     *        are skipped so the arrays stay consistent.
+     */
+    void collectLFOModifiersWithModes(TrackId trackId, std::vector<te::LFOModifier*>& outLfos,
+                                      std::vector<LFOTriggerMode>& outModes) const;
+
+    /**
      * @brief Check if any rack on a track needs a full modifier resync
      *
      * Compares the number of active rack mods (enabled + has links) against
@@ -280,6 +290,40 @@ class RackSyncManager {
     PluginManager& pluginManager_;
 
     std::map<RackId, SyncedRack> syncedRacks_;
+
+    // Per-rack fingerprint, split by mods vs macros so an LFO add (mods
+    // changed, macros didn't) doesn't tear down the macro graph and vice
+    // versa. The teardown isn't safe vs audio: TE's AutomationSourceList
+    // CachedSources can be read by the audio thread while we destroy and
+    // recreate them, which manifests as heap corruption when actual
+    // modulation is happening. Conflating them caused crashes on a
+    // structural mod change because the unrelated macro path also rebuilt.
+    struct StructureFingerprint {
+        int count = 0;
+        int linkCount = 0;
+        int bipolarCount = 0;
+        int triggerModeMix = 0;
+        bool operator==(const StructureFingerprint& o) const {
+            return count == o.count && linkCount == o.linkCount && bipolarCount == o.bipolarCount &&
+                   triggerModeMix == o.triggerModeMix;
+        }
+        bool operator!=(const StructureFingerprint& o) const {
+            return !(*this == o);
+        }
+    };
+    struct RackFingerprints {
+        StructureFingerprint mods;
+        StructureFingerprint macros;
+    };
+    std::unordered_map<RackId, RackFingerprints> rackFingerprints_;
+
+    static RackFingerprints computeRackFingerprints(const RackInfo& rack);
+
+    // True if any macro under this rack (recursive) targets a modifier param
+    // (Kind::ModParam). Drives the "rebuild macros after mod rebuild" rebind
+    // path in resyncAllModifiers — otherwise macros that drive LFO rate /
+    // depth silently disconnect when the mod graph is rebuilt.
+    static bool rackHasMacroOnModLink(const RackInfo& rack);
 
     // Deferred CurveSnapshotHolder deletion to prevent audio-thread use-after-free.
     std::vector<std::unique_ptr<CurveSnapshotHolder>> deferredHolders_;
