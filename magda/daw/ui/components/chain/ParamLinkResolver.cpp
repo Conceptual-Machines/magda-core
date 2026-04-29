@@ -347,8 +347,11 @@ bool isInScopeOf(const magda::ChainNodePath& devicePath, const magda::ChainNodeP
     auto parentType = parentPath.getType();
 
     if (parentType == magda::ChainNodeType::Rack) {
-        // Parameter must be in a device inside that rack (a descendant)
-        if (devicePath.steps.size() <= parentPath.steps.size()) {
+        // Parameter owner must be the rack itself or a descendant inside it.
+        // Equal-path case covers rack-level mod params (e.g. an LFO that lives
+        // on the rack, whose rate slider should be in scope of that rack's own
+        // macros / mods).
+        if (devicePath.steps.size() < parentPath.steps.size()) {
             return false;
         }
         for (size_t i = 0; i < parentPath.steps.size(); ++i) {

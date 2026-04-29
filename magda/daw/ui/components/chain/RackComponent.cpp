@@ -740,13 +740,18 @@ void RackComponent::onMacroClickedInternal(int macroIndex) {
 void RackComponent::onAddModRequestedInternal(int slotIndex, magda::ModType type,
                                               magda::LFOWaveform waveform) {
     magda::TrackManager::getInstance().addRackMod(rackPath_, slotIndex, type, waveform);
-    // Update the mods panel directly to avoid full UI rebuild (which closes the panel)
+    // Update both panels directly to avoid a full UI rebuild (which closes the
+    // open panels). The macro panel must refresh too because the macro link
+    // menu's "Modulators" submenu reads availableModifiers_ — without this,
+    // a freshly-added LFO never appears as a link target on rack macros.
     updateModsPanel();
+    updateMacroPanel();
 }
 
 void RackComponent::onModRemoveRequestedInternal(int modIndex) {
     magda::TrackManager::getInstance().removeRackMod(rackPath_, modIndex);
     updateModsPanel();
+    updateMacroPanel();
 }
 
 void RackComponent::onModEnableToggledInternal(int modIndex, bool enabled) {
