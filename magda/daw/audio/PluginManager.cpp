@@ -2128,20 +2128,32 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
     // Check if this track has any MIDI-triggered mods (self-trigger).
     // Audio-triggered mods don't need the monitor — audio peaks come from
     // LevelMeterPlugin via AudioBridge timer, not from this plugin.
-    for (const auto& element : trackInfo->chainElements) {
-        if (isDevice(element)) {
-            for (const auto& mod : getDevice(element).mods) {
-                if (mod.triggerMode == LFOTriggerMode::MIDI)
-                    return true;
-            }
-        } else if (isRack(element)) {
-            const auto& rack = getRack(element);
-            for (const auto& mod : rack.mods) {
-                if (mod.triggerMode == LFOTriggerMode::MIDI)
-                    return true;
+    //
+    // Must recurse into rack chains: an LFO on a 4OSC sitting inside a rack
+    // chain still listens on this track's MIDI bus for retrigger, so missing
+    // it here would leave the SidechainMonitor uninstalled and self-trigger
+    // LFOs silently dead in that scope.
+    std::function<bool(const std::vector<ChainElement>&)> hasMidiTriggeredMod =
+        [&](const std::vector<ChainElement>& elements) -> bool {
+        for (const auto& element : elements) {
+            if (isDevice(element)) {
+                for (const auto& mod : getDevice(element).mods)
+                    if (mod.triggerMode == LFOTriggerMode::MIDI)
+                        return true;
+            } else if (isRack(element)) {
+                const auto& rack = getRack(element);
+                for (const auto& mod : rack.mods)
+                    if (mod.triggerMode == LFOTriggerMode::MIDI)
+                        return true;
+                for (const auto& chain : rack.chains)
+                    if (hasMidiTriggeredMod(chain.elements))
+                        return true;
             }
         }
-    }
+        return false;
+    };
+    if (hasMidiTriggeredMod(trackInfo->chainElements))
+        return true;
 
     // Check if this track is a MIDI sidechain source for any other track
     for (const auto& track : TrackManager::getInstance().getTracks()) {

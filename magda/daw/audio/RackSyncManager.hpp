@@ -12,6 +12,7 @@
 #include "../core/RackInfo.hpp"
 #include "../core/TypeIds.hpp"
 #include "CurveSnapshot.hpp"
+#include "ModifierSync.hpp"
 
 namespace magda {
 
@@ -282,6 +283,12 @@ class RackSyncManager {
     PluginManager& pluginManager_;
 
     std::map<RackId, SyncedRack> syncedRacks_;
+
+    // Per-rack structural fingerprint. Compared in resyncAllModifiers to skip
+    // a full TE-modifier teardown+rebuild when only properties (rate, depth,
+    // amount) changed. Without this gate every macro-link amount drag would
+    // destroy and recreate every rack LFO on the audio thread.
+    std::map<RackId, ChainFingerprint> rackFingerprints_;
 
     // Deferred CurveSnapshotHolder deletion to prevent audio-thread use-after-free.
     std::vector<std::unique_ptr<CurveSnapshotHolder>> deferredHolders_;

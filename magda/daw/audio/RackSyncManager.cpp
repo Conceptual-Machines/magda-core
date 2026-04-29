@@ -79,6 +79,16 @@ te::Plugin::Ptr RackSyncManager::syncRack(TrackId trackId, const RackInfo& rackI
     // 8. Store synced state
     syncedRacks_[rackInfo.id] = std::move(synced);
 
+    // Seed the structural fingerprint so resyncAllModifiers can short-circuit
+    // when only properties change.
+    ConstChainNode node;
+    node.scope = ChainScope::Rack;
+    node.trackId = trackId;
+    node.rackId = rackInfo.id;
+    node.mods = &rackInfo.mods;
+    node.macros = &rackInfo.macros;
+    rackFingerprints_[rackInfo.id] = ModifierSyncWalker::fingerprintOf(node);
+
     DBG("RackSyncManager: Synced rack " << rackInfo.id << " ('" << rackInfo.name << "') with "
                                         << rackInfo.chains.size() << " chains");
 
@@ -134,6 +144,15 @@ void RackSyncManager::resyncRack(TrackId trackId, const RackInfo& rackInfo) {
     // Reapply bypass
     applyBypassState(synced, rackInfo);
 
+    // Refresh the stored fingerprint after a structural rebuild.
+    ConstChainNode node;
+    node.scope = ChainScope::Rack;
+    node.trackId = trackId;
+    node.rackId = rackInfo.id;
+    node.mods = &rackInfo.mods;
+    node.macros = &rackInfo.macros;
+    rackFingerprints_[rackInfo.id] = ModifierSyncWalker::fingerprintOf(node);
+
     DBG("RackSyncManager: Resynced rack " << rackInfo.id);
 }
 
@@ -181,6 +200,7 @@ void RackSyncManager::removeRack(RackId rackId) {
     DBG("RackSyncManager: Removed rack " << rackId);
 
     syncedRacks_.erase(it);
+    rackFingerprints_.erase(rackId);
 }
 
 void RackSyncManager::removeRacksForTrack(TrackId trackId) {
@@ -443,8 +463,30 @@ void RackSyncManager::resyncAllModifiers(TrackId trackId) {
                 continue;
             for (const auto& element : track.chainElements) {
                 if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
-                    if (*rackPtr && (*rackPtr)->id == rackId) {
-                        syncRackModulation(synced, **rackPtr);
+                    if (!*rackPtr || (*rackPtr)->id != rackId)
+                        continue;
+                    const auto& rackInfo = **rackPtr;
+
+                    // Gate on structural fingerprint: amount-only edits skip
+                    // the full TE-modifier teardown+rebuild and take the
+                    // in-place properties path. Without this, every macro-
+                    // link drag would destroy and recreate every rack LFO on
+                    // the audio thread (audible clicks; risk of TE
+                    // AutomationSourceList tearing down a CachedSource that
+                    // the audio thread is still reading).
+                    ConstChainNode node;
+                    node.scope = ChainScope::Rack;
+                    node.trackId = trackId;
+                    node.rackId = rackId;
+                    node.mods = &rackInfo.mods;
+                    node.macros = &rackInfo.macros;
+                    auto current = ModifierSyncWalker::fingerprintOf(node);
+                    auto& stored = rackFingerprints_[rackId];
+                    if (current != stored) {
+                        stored = current;
+                        syncRackModulation(synced, rackInfo);
+                    } else {
+                        updateRackModulationProperties(synced, rackInfo);
                     }
                 }
             }
