@@ -8,6 +8,7 @@
 #include <mutex>
 #include <vector>
 
+#include "ChainNode.hpp"
 #include "SelectionManager.hpp"
 #include "TrackInfo.hpp"
 #include "TrackTypes.hpp"
@@ -365,6 +366,66 @@ class TrackManager {
                              RackId nestedRackId);
     void removeRackFromChainByPath(const ChainNodePath& rackPath);
 
+    // ========================================================================
+    // Unified ChainNode-based modulation API (issue #1131 step 1)
+    // ========================================================================
+    //
+    // Every Track / Rack / Device macro & mod operation routes through one
+    // path-driven implementation that resolves the path once and operates on
+    // the resulting ChainNode view. The scope-specific setTrack* / setRack* /
+    // setDevice* methods below remain as thin shims for now and will be
+    // dropped in step 3 of the refactor.
+    //
+    // resolveChainNode() walks a ChainNodePath through the track tree and
+    // returns a non-owning view onto the macros / mods (and parameters, for
+    // device nodes) at that path. Returns an invalid node (valid() == false)
+    // if the path doesn't resolve.
+
+    ChainNode resolveChainNode(const ChainNodePath& path);
+    ConstChainNode resolveChainNode(const ChainNodePath& path) const;
+
+    // Unified macro management — works for Track, Rack, and Device scopes.
+    void setMacroValue(const ChainNodePath& path, int macroIndex, float value);
+    void setMacroTarget(const ChainNodePath& path, int macroIndex, MacroTarget target);
+    void setMacroLinkAmount(const ChainNodePath& path, int macroIndex, MacroTarget target,
+                            float amount);
+    void setMacroLinkBipolar(const ChainNodePath& path, int macroIndex, MacroTarget target,
+                             bool bipolar);
+    void setMacroName(const ChainNodePath& path, int macroIndex, const juce::String& name);
+    void removeMacroLink(const ChainNodePath& path, int macroIndex, MacroTarget target);
+    void clearAllMacroLinks(const ChainNodePath& path, int macroIndex);
+    void addMacroPage(const ChainNodePath& path);
+    void removeMacroPage(const ChainNodePath& path);
+
+    // Unified mod management — works for Track, Rack, and Device scopes.
+    void addMod(const ChainNodePath& path, int slotIndex, ModType type,
+                LFOWaveform waveform = LFOWaveform::Sine);
+    void removeMod(const ChainNodePath& path, int modIndex);
+    void setModAmount(const ChainNodePath& path, int modIndex, float amount);
+    void setModTarget(const ChainNodePath& path, int modIndex, ModTarget target);
+    void setModLinkAmount(const ChainNodePath& path, int modIndex, ModTarget target, float amount);
+    void setModLinkBipolar(const ChainNodePath& path, int modIndex, ModTarget target, bool bipolar);
+    void setModName(const ChainNodePath& path, int modIndex, const juce::String& name);
+    void setModType(const ChainNodePath& path, int modIndex, ModType type);
+    void setModWaveform(const ChainNodePath& path, int modIndex, LFOWaveform waveform);
+    void setModRate(const ChainNodePath& path, int modIndex, float rate);
+    void setModPhaseOffset(const ChainNodePath& path, int modIndex, float phaseOffset);
+    void setModTempoSync(const ChainNodePath& path, int modIndex, bool tempoSync);
+    void setModSyncDivision(const ChainNodePath& path, int modIndex, SyncDivision division);
+    void setModTriggerMode(const ChainNodePath& path, int modIndex, LFOTriggerMode mode);
+    void setModCurvePreset(const ChainNodePath& path, int modIndex, CurvePreset preset);
+    void notifyModCurveChanged(const ChainNodePath& path);
+    void setModAudioAttack(const ChainNodePath& path, int modIndex, float ms);
+    void setModAudioRelease(const ChainNodePath& path, int modIndex, float ms);
+    void removeModLink(const ChainNodePath& path, int modIndex, ModTarget target);
+    void setModEnabled(const ChainNodePath& path, int modIndex, bool enabled);
+    void addModPage(const ChainNodePath& path);
+    void removeModPage(const ChainNodePath& path);
+
+    // ========================================================================
+    // Scope-specific shims (kept for backward compatibility — to be deleted)
+    // ========================================================================
+
     // Macro management for racks (path-based for nested rack support)
     void setRackMacroValue(const ChainNodePath& rackPath, int macroIndex, float value);
     void setRackMacroTarget(const ChainNodePath& rackPath, int macroIndex, MacroTarget target);
@@ -693,12 +754,6 @@ class TrackManager {
     void notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex, float value);
     void notifyModParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
                                    int paramIndex, float value);
-
-    // Helper: get a ModInfo from device path + index
-    ModInfo* getDeviceMod(const ChainNodePath& devicePath, int modIndex);
-
-    // Helper: get a ModInfo from track-level mods
-    ModInfo* getTrackMod(TrackId trackId, int modIndex);
 
     // Helper for recursive mod updates
     void updateRackMods(const RackInfo& rack, double deltaTime);

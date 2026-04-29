@@ -537,6 +537,7 @@ set(DAW_HEADERS
     core/TrackManager.hpp
     core/TrackTypes.hpp
     core/RackInfo.hpp
+    core/ChainNode.hpp
     core/TrackViewSettings.hpp
     core/ClipTypes.hpp
     core/ClipInfo.hpp
