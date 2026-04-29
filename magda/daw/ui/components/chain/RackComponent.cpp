@@ -627,6 +627,30 @@ std::vector<std::pair<magda::DeviceId, juce::String>> RackComponent::getAvailabl
     return availableDevices;
 }
 
+std::map<magda::DeviceId, std::vector<juce::String>> RackComponent::getDeviceParamNames() const {
+    // Walk the rack's chains and emit a paramName vector per device so the
+    // macro "Link to Parameter…" submenu shows real names (Tune, Filter
+    // Freq, …) instead of the "Parameter N" fallback that fires when the
+    // map has no entry for a deviceId.
+    std::map<magda::DeviceId, std::vector<juce::String>> result;
+    const auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath_);
+    if (rack == nullptr)
+        return result;
+    for (const auto& chain : rack->chains) {
+        for (const auto& element : chain.elements) {
+            if (!magda::isDevice(element))
+                continue;
+            const auto& device = magda::getDevice(element);
+            std::vector<juce::String> names;
+            names.reserve(device.parameters.size());
+            for (const auto& param : device.parameters)
+                names.push_back(param.name);
+            result[device.id] = std::move(names);
+        }
+    }
+    return result;
+}
+
 // === Virtual callback overrides for mod/macro persistence ===
 
 void RackComponent::onModAmountChangedInternal(int modIndex, float amount) {

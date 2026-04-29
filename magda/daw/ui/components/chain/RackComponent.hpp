@@ -123,6 +123,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
     const magda::ModArray* getModsData() const override;
     const magda::MacroArray* getMacrosData() const override;
     std::vector<std::pair<magda::DeviceId, juce::String>> getAvailableDevices() const override;
+    std::map<magda::DeviceId, std::vector<juce::String>> getDeviceParamNames() const override;
 
     // === Virtual callback overrides for mod/macro persistence ===
     void onModAmountChangedInternal(int modIndex, float amount) override;
