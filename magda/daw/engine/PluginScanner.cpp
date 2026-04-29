@@ -1,5 +1,7 @@
 #include "PluginScanner.hpp"
 
+#include "../core/AppPaths.hpp"
+
 namespace magda {
 
 PluginScanner::PluginScanner() : juce::Thread("Plugin Scanner") {
@@ -73,10 +75,7 @@ void PluginScanner::run() {
         auto searchPath = format->getDefaultLocationsToSearch();
 
         // Dead man's pedal - if we crash, this file tells us which plugin was being scanned
-        juce::File deadMansPedal =
-            juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                .getChildFile("MAGDA")
-                .getChildFile("scanning_" + formatName + ".txt");
+        juce::File deadMansPedal = magda::paths::pluginScanMarkerFile(formatName);
         (void)deadMansPedal.getParentDirectory().createDirectory();
 
         // Check if there's a dead man's pedal from a previous crash
@@ -182,9 +181,7 @@ void PluginScanner::excludePlugin(const juce::String& pluginPath, const juce::St
 }
 
 juce::File PluginScanner::getExclusionFile() const {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("plugin_exclusions.txt");
+    return magda::paths::pluginExclusionsFile();
 }
 
 void PluginScanner::loadExclusions() {

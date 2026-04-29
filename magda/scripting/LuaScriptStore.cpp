@@ -1,21 +1,12 @@
 #include "magda/scripting/LuaScriptStore.hpp"
 
+#include "magda/daw/core/AppPaths.hpp"
+
 #include <algorithm>
 
 namespace magda::scripting {
 
-namespace {
-
-juce::File defaultControllerScriptsDir() {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("Scripts")
-        .getChildFile("Controllers");
-}
-
-}  // namespace
-
-LuaScriptStore::LuaScriptStore() : root_(defaultControllerScriptsDir()) {}
+LuaScriptStore::LuaScriptStore() : root_(magda::paths::controllerScriptsDir()) {}
 
 LuaScriptStore::LuaScriptStore(const juce::File& root) : root_(root) {}
 

@@ -1,6 +1,7 @@
 #include "PresetManager.hpp"
 
 #include "../project/serialization/ProjectSerializer.hpp"
+#include "AppPaths.hpp"
 #include "version.hpp"
 
 namespace magda {
@@ -117,8 +118,7 @@ PresetManager::PresetManager() {
 // ============================================================================
 
 juce::File PresetManager::getPresetsDirectory() const {
-    auto docsDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
-    return docsDir.getChildFile("MAGDA").getChildFile("Presets");
+    return magda::paths::presetsDir();
 }
 
 juce::File PresetManager::getChainsDirectory() const {

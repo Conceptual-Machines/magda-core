@@ -1,5 +1,7 @@
 #include "ControllerProfileRegistry.hpp"
 
+#include "../AppPaths.hpp"
+
 #include <algorithm>
 
 namespace magda {
@@ -49,9 +51,7 @@ juce::File ControllerProfileRegistry::findBundledControllersDirectory() {
 }
 
 juce::File ControllerProfileRegistry::userControllersDirectory() {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("controllers");
+    return magda::paths::controllerProfilesDir();
 }
 
 juce::String ControllerProfileRegistry::filenameForProfileId(const juce::String& id) {

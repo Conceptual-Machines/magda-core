@@ -87,6 +87,8 @@ set(TEST_SOURCES
     test_lua_controller.cpp
     # SelectionManager listener reentrancy
     test_selection_manager_listeners.cpp
+    # Configurable user data paths
+    test_app_paths.cpp
 )
 
 # Create test executable

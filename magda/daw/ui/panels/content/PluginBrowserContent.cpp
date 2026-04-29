@@ -11,6 +11,7 @@
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
 #include "audio/StepSequencerPlugin.hpp"
+#include "core/AppPaths.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
 #include "core/TrackManager.hpp"
@@ -666,9 +667,7 @@ void PluginBrowserContent::toggleFavorite(const PluginBrowserInfo& plugin) {
 }
 
 juce::File PluginBrowserContent::getFavoritesFile() const {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("plugin_favorites.xml");
+    return magda::paths::pluginFavoritesFile();
 }
 
 void PluginBrowserContent::saveFavorites() {
@@ -710,9 +709,7 @@ void PluginBrowserContent::loadFavorites() {
 }
 
 juce::File PluginBrowserContent::getAliasesFile() const {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("plugin_aliases.xml");
+    return magda::paths::pluginAliasesFile();
 }
 
 void PluginBrowserContent::saveAliases() {

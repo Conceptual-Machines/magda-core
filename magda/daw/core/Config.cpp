@@ -4,17 +4,15 @@
 
 #include <algorithm>
 
+#include "AppPaths.hpp"
+
 // ---------------------------------------------------------------------------
 // Path helper
 // ---------------------------------------------------------------------------
-
-namespace {
-juce::File getConfigFile() {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("config.json");
-}
-}  // namespace
+// config.json itself is anchored to the OS default location (paths::configFile
+// returns alwaysOSDefault() / "config.json"). It cannot move with the
+// configurable data dir override — Config has to be loaded BEFORE the
+// override is known.
 
 namespace {
 // Use fromUTF8 to avoid juce_String.cpp:327 assertion when std::string contains non-ASCII bytes
@@ -99,6 +97,11 @@ void Config::save() {
     // Export audio
     root->setProperty("exportFormat", toJuceString(exportFormat));
     root->setProperty("exportSampleRate", exportSampleRate);
+
+    // Configurable user-data paths (empty string = OS default; resolved by
+    // magda::paths::resolve()). Render folder uses the same field as before.
+    root->setProperty("dataDir", toJuceString(dataDir));
+    root->setProperty("presetsDir", toJuceString(presetsDir));
 
     // Render
     root->setProperty("renderFolder", toJuceString(renderFolder));
@@ -214,7 +217,7 @@ void Config::save() {
     }
 
     // Write to disk
-    auto configFile = getConfigFile();
+    auto configFile = magda::paths::configFile();
     configFile.getParentDirectory().createDirectory();
 
     auto json = juce::JSON::toString(juce::var(root.get()));
@@ -234,7 +237,7 @@ void Config::save() {
 // ---------------------------------------------------------------------------
 
 void Config::load() {
-    auto configFile = getConfigFile();
+    auto configFile = magda::paths::configFile();
     if (!configFile.existsAsFile()) {
         DBG("Config::load - file not found, using defaults: " + configFile.getFullPathName());
         return;
@@ -324,6 +327,8 @@ void Config::load() {
     exportFormat = getString("exportFormat", exportFormat);
     exportSampleRate = getDouble("exportSampleRate", exportSampleRate);
 
+    dataDir = getString("dataDir", dataDir);
+    presetsDir = getString("presetsDir", presetsDir);
     renderFolder = getString("renderFolder", renderFolder);
     renderSampleRate = getDouble("renderSampleRate", renderSampleRate);
     renderBitDepth = getInt("renderBitDepth", renderBitDepth);
