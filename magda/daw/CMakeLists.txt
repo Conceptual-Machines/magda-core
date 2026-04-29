@@ -222,6 +222,7 @@ set(DAW_CORE_SOURCES
     command.cpp
     magda.cpp
     core/Config.cpp
+    core/AppPaths.cpp
     core/UIScale.cpp
     core/UpdateChecker.cpp
     core/ViewModeController.cpp
@@ -540,6 +541,7 @@ set(DAW_HEADERS
     profiling/PerformanceProfiler.hpp
     profiling/BenchmarkSuite.hpp
     core/Config.hpp
+    core/AppPaths.hpp
     core/UIScale.hpp
     core/DeviceInfo.hpp
     core/ViewModeState.hpp

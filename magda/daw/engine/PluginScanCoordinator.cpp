@@ -1,5 +1,6 @@
 #include "PluginScanCoordinator.hpp"
 
+#include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 
 #if JUCE_LINUX
@@ -462,9 +463,7 @@ void PluginScanCoordinator::killOrphanScannerProcesses() {
 
 // Exclusion management
 juce::File PluginScanCoordinator::getExclusionFile() const {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("plugin_exclusions.txt");
+    return magda::paths::pluginExclusionsFile();
 }
 
 const std::vector<ExcludedPlugin>& PluginScanCoordinator::getExcludedPlugins() const {
@@ -501,9 +500,7 @@ void PluginScanCoordinator::saveExclusions() {
 }
 
 juce::File PluginScanCoordinator::getScanReportFile() const {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("last_scan_report.txt");
+    return magda::paths::lastScanReportFile();
 }
 
 void PluginScanCoordinator::writeScanReport() {
