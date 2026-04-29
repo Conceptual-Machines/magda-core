@@ -79,6 +79,8 @@ set(TEST_SOURCES
     test_midi_learn.cpp
     # Controller profile tests (issue #1052)
     test_controller_profile.cpp
+    # SelectionManager listener reentrancy
+    test_selection_manager_listeners.cpp
 )
 
 # Create test executable
