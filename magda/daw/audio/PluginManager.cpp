@@ -1658,6 +1658,20 @@ void PluginManager::resetSidechainState() {
 void PluginManager::syncLFOValuesToVisuals() {
     auto& tm = TrackManager::getInstance();
 
+    // Only overlay when the local sim considers this mod "running" — see
+    // RackSyncManager::syncLFOValuesToVisuals for full rationale. The audio
+    // LFO keeps free-running in syncType=note mode, but the visual must
+    // freeze on note release.
+    auto overlayMod = [](ModInfo& magdaMod, te::Modifier::Ptr& mod) {
+        const bool running = (magdaMod.triggerMode == LFOTriggerMode::Free) || magdaMod.running;
+        if (!running)
+            return;
+        if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod.get())) {
+            magdaMod.value = lfo->getCurrentValue();
+            magdaMod.phase = lfo->getCurrentPhase();
+        }
+    };
+
     // Track-level mods.
     for (auto& [trackId, tms] : trackModStates_) {
         if (tms.modifiers.empty())
@@ -1669,10 +1683,7 @@ void PluginManager::syncLFOValuesToVisuals() {
             auto it = tms.modifiers.find(magdaMod.id);
             if (it == tms.modifiers.end() || !it->second)
                 continue;
-            if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get())) {
-                magdaMod.value = lfo->getCurrentValue();
-                magdaMod.phase = lfo->getCurrentPhase();
-            }
+            overlayMod(magdaMod, it->second);
         }
     }
 
@@ -1690,10 +1701,7 @@ void PluginManager::syncLFOValuesToVisuals() {
                 auto it = sd.modifiers.find(magdaMod.id);
                 if (it == sd.modifiers.end() || !it->second)
                     continue;
-                if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get())) {
-                    magdaMod.value = lfo->getCurrentValue();
-                    magdaMod.phase = lfo->getCurrentPhase();
-                }
+                overlayMod(magdaMod, it->second);
             }
         }
     }

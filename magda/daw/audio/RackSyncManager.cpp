@@ -1045,6 +1045,15 @@ void RackSyncManager::syncLFOValuesToVisuals() {
             auto it = teMods.find(magdaMod.id);
             if (it == teMods.end() || !it->second)
                 continue;
+            // Only overlay when the local sim considers this mod "running".
+            // For triggered modes (MIDI/Audio), the audio LFO keeps free-
+            // running between notes (TE syncType=note resets phase on
+            // note-on, doesn't gate on note-off), but the local sim
+            // correctly clamps value=0 after note release. Without this
+            // gate the visual would keep animating forever once triggered.
+            const bool running = (magdaMod.triggerMode == LFOTriggerMode::Free) || magdaMod.running;
+            if (!running)
+                continue;
             if (auto* lfo = dynamic_cast<te::LFOModifier*>(it->second.get())) {
                 magdaMod.value = lfo->getCurrentValue();
                 magdaMod.phase = lfo->getCurrentPhase();
