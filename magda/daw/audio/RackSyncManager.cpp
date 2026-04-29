@@ -438,36 +438,6 @@ te::AutomatableParameter* RackSyncManager::findRackModifierParameter(RackId rack
     return nullptr;
 }
 
-ChainFingerprint RackSyncManager::computeRackFingerprint(const RackInfo& rackInfo) const {
-    // Sum the rack-scope mod/macro fingerprint with each rack-internal
-    // device's own mods/macros, since those all live on the rackType's
-    // modifier list and a structural change to any of them needs a full
-    // rebuild via syncRackModulation.
-    ChainFingerprint fp;
-
-    ConstChainNode rackNode;
-    rackNode.scope = ChainScope::Rack;
-    rackNode.mods = &rackInfo.mods;
-    rackNode.macros = &rackInfo.macros;
-    fp += ModifierSyncWalker::fingerprintOf(rackNode);
-
-    for (const auto& chain : rackInfo.chains) {
-        for (const auto& chainElement : chain.elements) {
-            if (!isDevice(chainElement))
-                continue;
-            const auto& device = getDevice(chainElement);
-            if (device.bypassed)
-                continue;
-            ConstChainNode deviceNode;
-            deviceNode.scope = ChainScope::Device;
-            deviceNode.mods = &device.mods;
-            deviceNode.macros = &device.macros;
-            fp += ModifierSyncWalker::fingerprintOf(deviceNode);
-        }
-    }
-    return fp;
-}
-
 void RackSyncManager::resyncAllModifiers(TrackId trackId) {
     auto& tm = TrackManager::getInstance();
     for (auto& [rackId, synced] : syncedRacks_) {

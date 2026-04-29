@@ -258,13 +258,6 @@ class RackSyncManager {
     bool structureChanged(const SyncedRack& synced, const RackInfo& rackInfo) const;
 
     /**
-     * @brief Sum structural fingerprint over rack-scope mods/macros AND every
-     * inner device's mods/macros, since they all share the rackType's
-     * modifier list. Used by resyncAllModifiers to gate structural rebuild.
-     */
-    ChainFingerprint computeRackFingerprint(const RackInfo& rackInfo) const;
-
-    /**
      * @brief Update only properties (bypass, volume, chain mute/solo) without rebuilding plugins
      */
     void updateProperties(SyncedRack& synced, const RackInfo& rackInfo);

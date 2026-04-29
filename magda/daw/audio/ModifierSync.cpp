@@ -42,8 +42,7 @@ te::AutomatableParameter* resolveSameScopeModParam(
 // applying LFO properties + gating per the context's flags. Returns nullptr
 // on unsupported types or insertion failure.
 te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modList,
-                                 const ModifierSyncContext& ctx,
-                                 ModifierSyncState& state) {
+                                 const ModifierSyncContext& ctx, ModifierSyncState& state) {
     te::Modifier::Ptr modifier;
 
     switch (modInfo.type) {
@@ -108,45 +107,6 @@ te::AutomatableParameter* resolveLinkTargetParam(const ModifierSyncContext& ctx,
 }
 
 }  // namespace
-
-// =============================================================================
-// fingerprintOf
-// =============================================================================
-
-ChainFingerprint ModifierSyncWalker::fingerprintOf(const ConstChainNode& node) {
-    ChainFingerprint fp;
-    if (!node.valid())
-        return fp;
-
-    if (node.mods) {
-        for (const auto& mod : *node.mods) {
-            // Match the gate used by PluginManager::computeModLinkFingerprint and
-            // RackSyncManager::needsModifierResync (enabled + has links). An
-            // enabled-but-linkless mod still creates a TE modifier (so a macro
-            // can target its rate), but the fingerprint doesn't bump for it —
-            // the structural rebuild fires when the first link appears.
-            if (mod.enabled && !mod.links.empty()) {
-                ++fp.modCount;
-                fp.modLinkCount += static_cast<int>(mod.links.size());
-                for (const auto& link : mod.links)
-                    fp.bipolarCount += link.bipolar ? 1 : 0;
-            }
-        }
-    }
-
-    if (node.macros) {
-        for (const auto& macro : *node.macros) {
-            if (!macro.links.empty()) {
-                ++fp.macroCount;
-                fp.macroLinkCount += static_cast<int>(macro.links.size());
-                for (const auto& link : macro.links)
-                    fp.bipolarCount += link.bipolar ? 1 : 0;
-            }
-        }
-    }
-
-    return fp;
-}
 
 // =============================================================================
 // syncStructure — full rebuild
@@ -285,9 +245,9 @@ void ModifierSyncWalker::syncStructure(
                     continue;
 
                 if (link.target.kind == MacroTarget::Kind::ModParam) {
-                    if (auto* targetParam = node.mods ? resolveSameScopeModParam(
-                                                            link, *node.mods, state.modifiers)
-                                                      : nullptr) {
+                    if (auto* targetParam =
+                            node.mods ? resolveSameScopeModParam(link, *node.mods, state.modifiers)
+                                      : nullptr) {
                         const float offset = link.bipolar ? -link.amount : 0.0f;
                         const float value = link.bipolar ? link.amount * 2.0f : link.amount;
                         targetParam->addModifier(*macroParam, value, offset);
@@ -295,8 +255,8 @@ void ModifierSyncWalker::syncStructure(
                     continue;
                 }
 
-                auto* param = resolveLinkTargetParam(ctx, link.target.deviceId,
-                                                     link.target.paramIndex);
+                auto* param =
+                    resolveLinkTargetParam(ctx, link.target.deviceId, link.target.paramIndex);
                 if (!param)
                     continue;
 
@@ -312,8 +272,7 @@ void ModifierSyncWalker::syncStructure(
 // syncProperties — in-place update
 // =============================================================================
 
-void ModifierSyncWalker::syncProperties(const ConstChainNode& node,
-                                        const ModifierSyncContext& ctx,
+void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const ModifierSyncContext& ctx,
                                         ModifierSyncState& state) {
     if (!node.valid())
         return;
@@ -351,8 +310,8 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node,
                         continue;  // Self-target — skipped, see syncStructure.
                     param = resolveSameScopeModParam(link, *node.mods, state.modifiers);
                 } else {
-                    param = resolveLinkTargetParam(ctx, link.target.deviceId,
-                                                   link.target.paramIndex);
+                    param =
+                        resolveLinkTargetParam(ctx, link.target.deviceId, link.target.paramIndex);
                 }
                 if (!param)
                     continue;
@@ -386,8 +345,8 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node,
                     param = node.mods ? resolveSameScopeModParam(link, *node.mods, state.modifiers)
                                       : nullptr;
                 } else {
-                    param = resolveLinkTargetParam(ctx, link.target.deviceId,
-                                                   link.target.paramIndex);
+                    param =
+                        resolveLinkTargetParam(ctx, link.target.deviceId, link.target.paramIndex);
                 }
                 if (!param)
                     continue;

@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 
+#include "../core/ChainFingerprint.hpp"
 #include "../core/ChainNode.hpp"
 #include "../core/MacroInfo.hpp"
 #include "../core/ModInfo.hpp"
@@ -15,45 +16,6 @@
 namespace magda {
 
 namespace te = tracktion;
-
-/**
- * @brief Cheap structural fingerprint over a ChainNode's mods and macros.
- *
- * Captures everything the structural rebuild path keys off; non-structural
- * changes (LFO rate, waveform, link amount) take the in-place properties path.
- *
- * Composable: per-node fingerprints sum together so PluginManager can keep a
- * per-track digest while RackSyncManager works rack-by-rack.
- *
- * Step 2 of issue #1131 — collapses the duplicated structural fingerprints
- * from PluginManager (`computeModLinkFingerprint`) and RackSyncManager
- * (`needsModifierResync`) into one shape.
- */
-struct ChainFingerprint {
-    int modCount = 0;        // enabled mods with at least one link
-    int modLinkCount = 0;    // total mod->target links
-    int macroCount = 0;      // macros with at least one link
-    int macroLinkCount = 0;  // total macro->target links
-    int bipolarCount = 0;    // bipolar links across both kinds (offsets diverge)
-
-    bool operator==(const ChainFingerprint& o) const {
-        return modCount == o.modCount && modLinkCount == o.modLinkCount &&
-               macroCount == o.macroCount && macroLinkCount == o.macroLinkCount &&
-               bipolarCount == o.bipolarCount;
-    }
-    bool operator!=(const ChainFingerprint& o) const {
-        return !(*this == o);
-    }
-
-    ChainFingerprint& operator+=(const ChainFingerprint& o) {
-        modCount += o.modCount;
-        modLinkCount += o.modLinkCount;
-        macroCount += o.macroCount;
-        macroLinkCount += o.macroLinkCount;
-        bipolarCount += o.bipolarCount;
-        return *this;
-    }
-};
 
 /**
  * @brief Per-node TE state — the walker reads/writes through these refs.
@@ -132,22 +94,16 @@ struct ModifierSyncContext {
  */
 class ModifierSyncWalker {
   public:
-    /// Compute a structural fingerprint for the node's mods + macros.
-    /// Composable via `operator+=` so callers can sum across child nodes.
-    static ChainFingerprint fingerprintOf(const ConstChainNode& node);
-
     /// Full structural rebuild. Tears down all TE modifiers + macros for this
     /// node and re-creates them from MAGDA state. Snapshots are deferred for
     /// audio-thread use-after-free safety.
-    static void syncStructure(
-        const ConstChainNode& node, const ModifierSyncContext& ctx,
-        ModifierSyncState& state,
-        std::vector<std::unique_ptr<CurveSnapshotHolder>>& deferredHolders);
+    static void syncStructure(const ConstChainNode& node, const ModifierSyncContext& ctx,
+                              ModifierSyncState& state,
+                              std::vector<std::unique_ptr<CurveSnapshotHolder>>& deferredHolders);
 
     /// In-place property update. Keeps existing TE modifiers; updates LFO
     /// properties (rate, waveform, sync) and assignment depths.
-    static void syncProperties(const ConstChainNode& node,
-                               const ModifierSyncContext& ctx,
+    static void syncProperties(const ConstChainNode& node, const ModifierSyncContext& ctx,
                                ModifierSyncState& state);
 };
 
