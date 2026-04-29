@@ -279,6 +279,10 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     gainSlider_->setLookAndFeel(&FlatGainSliderLookAndFeel::getInstance());
     gainSlider_->setColour(juce::Slider::backgroundColourId, juce::Colours::transparentBlack);
     gainSlider_->setColour(juce::Slider::trackColourId, juce::Colours::transparentBlack);
+    // Without this, click 1 of a double-click drags the thumb to the cursor
+    // before mouseDoubleClick fires its reset, so the visible jump is "thumb
+    // to mouse → thumb to 0", not just "thumb to 0".
+    gainSlider_->setSliderSnapsToMousePosition(false);
     gainSlider_->setDoubleClickReturnValue(true, 0.0);
     gainSlider_->onValueChange = [this]() {
         magda::TrackManager::getInstance().setDeviceGainDb(

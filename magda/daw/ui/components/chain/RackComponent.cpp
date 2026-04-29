@@ -103,15 +103,22 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     gainSlider_ = std::make_unique<node_header::GainSliderWithMeterTooltip>(
         juce::Slider::LinearVertical, juce::Slider::NoTextBox, levelMeter_);
     gainSlider_->setRange(-60.0, 6.0, 0.1);
-    // Match LevelMeter's dbToMeterPos curve (METER_CURVE_EXPONENT = 2). With
-    // skew = 1/exponent the slider's position-at-value tracks the meter's
-    // tick-at-value exactly — so the 0 dB thumb sits on the 0 dB tick.
-    gainSlider_->setSkewFactor(0.5);
+    // Match LevelMeter's dbToMeterPos curve (METER_CURVE_EXPONENT = 2). JUCE
+    // applies the skew as value = min + (max-min) * pow(prop, 1/skew), so the
+    // skew that inverts the meter's exponent is the exponent itself, not its
+    // reciprocal — skew = 2.0 puts 0 dB at the same ~83% position as the
+    // meter's 0 dB tick, instead of the ~91% a linear slider would land on.
+    gainSlider_->setSkewFactor(2.0);
     gainSlider_->setValue(rack.volume, juce::dontSendNotification);
     gainSlider_->setTooltip("Rack Gain (dB)");
     gainSlider_->setLookAndFeel(&node_header::FlatGainSliderLookAndFeel::getInstance());
     gainSlider_->setColour(juce::Slider::backgroundColourId, juce::Colours::transparentBlack);
     gainSlider_->setColour(juce::Slider::trackColourId, juce::Colours::transparentBlack);
+    // Without this, a click anywhere on the strip jumps the thumb to the
+    // cursor before the double-click handler runs, so resetting to 0 dB looks
+    // like the thumb darts twice. Disabling it makes the first click a no-op
+    // and the double-click goes straight to unity.
+    gainSlider_->setSliderSnapsToMousePosition(false);
     gainSlider_->setDoubleClickReturnValue(true, 0.0);
     gainSlider_->onValueChange = [this]() {
         magda::TrackManager::getInstance().setRackVolume(
