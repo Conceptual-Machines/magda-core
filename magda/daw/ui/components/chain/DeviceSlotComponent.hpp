@@ -99,6 +99,11 @@ class DeviceSlotComponent : public NodeComponent,
     std::function<void()> onDeviceLayoutChanged;
     std::function<void(bool)> onDeviceBypassChanged;
 
+    // Refresh param-slot modulation indicators (mod/macro pointers + repaint).
+    // Called externally by ChainPanel when a parent rack's macro value changes
+    // so contained devices' param movement bars track the rack macro live.
+    void updateParamModulation();
+
   protected:
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
@@ -281,7 +286,6 @@ class DeviceSlotComponent : public NodeComponent,
     bool hasAutomapBindings_ = false;  // Any DeviceMacro binding targets this device
     void refreshControllerIndicators();
 
-    void updateParamModulation();  // Update mod/macro pointers for params
     void updateParameterSlots();   // Reload parameter data for current page
     void updateParameterValues();  // Update only parameter values (for polling)
     void goToPrevPage();
