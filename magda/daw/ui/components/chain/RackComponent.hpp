@@ -94,9 +94,20 @@ class RackComponent : public NodeComponent, public juce::Timer {
     magda::RackId rackId_;
 
     // Header extra controls
-    std::unique_ptr<magda::SvgButton> modButton_;    // Modulators toggle
-    std::unique_ptr<magda::SvgButton> macroButton_;  // Macros toggle
+    std::unique_ptr<magda::SvgButton> modButton_;     // Modulators toggle
+    std::unique_ptr<magda::SvgButton> macroButton_;   // Macros toggle
+    std::unique_ptr<magda::SvgButton> presetButton_;  // MAGDA rack presets menu
     juce::TextButton addChainButton_;
+
+    // Currently-loaded preset name (empty when none) — used as the default
+    // for "Save as" and to surface the loaded preset in the popup tick.
+    juce::String currentPresetName_;
+
+    // Preset menu wiring (mirrors DeviceSlotComponent's MAGDA preset UX).
+    void showPresetMenu();
+    void showSaveRackPresetDialog();
+    void saveCurrentRackPreset();
+    void loadRackPresetByName(const juce::String& presetName);
 
     // Level meter (right side of content area, like DeviceSlotComponent).
     // The gain slider is drawn on top of it with a flat-thumb LookAndFeel, so

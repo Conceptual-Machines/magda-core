@@ -597,6 +597,49 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     return true;
 }
 
+bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo& presetRack) {
+    auto* live = getRackByPath(rackPath);
+    if (!live) {
+        DBG("applyRackPreset: no live rack at path");
+        return false;
+    }
+
+    // Replace state, but preserve the rack's runtime identity (its id and
+    // its slot in the parent track / chain).
+    const auto preservedId = live->id;
+    *live = presetRack;
+    live->id = preservedId;
+
+    // Reassign every chain / device / nested-rack id under this rack so the
+    // freshly-loaded subtree doesn't collide with other live elements'
+    // runtime IDs. Macros and mods are indexed within their parent and don't
+    // need reassignment. Mirrors the recursive walk in duplicateTrack.
+    std::function<void(std::vector<ChainElement>&)> reassignIds;
+    reassignIds = [&](std::vector<ChainElement>& elements) {
+        for (auto& element : elements) {
+            if (magda::isDevice(element)) {
+                magda::getDevice(element).id = nextDeviceId_++;
+            } else if (magda::isRack(element)) {
+                auto& nested = magda::getRack(element);
+                nested.id = nextRackId_++;
+                for (auto& chain : nested.chains) {
+                    chain.id = nextChainId_++;
+                    reassignIds(chain.elements);
+                }
+            }
+        }
+    };
+    for (auto& chain : live->chains) {
+        chain.id = nextChainId_++;
+        reassignIds(chain.elements);
+    }
+
+    // Trigger a full track resync — AudioBridge::trackDevicesChanged tears
+    // down and rebuilds the rack via RackSyncManager from the updated model.
+    notifyTrackDevicesChanged(rackPath.trackId);
+    return true;
+}
+
 void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& devicePath,
                                                      int paramIndex, float value) {
     // This method is called when the plugin's native UI changes a parameter.
