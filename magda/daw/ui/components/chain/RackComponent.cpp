@@ -605,10 +605,17 @@ const magda::MacroArray* RackComponent::getMacrosData() const {
 }
 
 std::vector<std::pair<magda::DeviceId, juce::String>> RackComponent::getAvailableDevices() const {
+    // Emit a chain-header sentinel (deviceId == INVALID_DEVICE_ID) before each
+    // chain's devices. Knob menus that build a chain-grouped picker (the
+    // macro "Link to Parameter…" submenu) detect these to start a new
+    // submenu; consumers that just iterate device IDs (unlink-name lookup,
+    // mod knobs) skip sentinels naturally because their deviceId compare
+    // can't match an invalid id.
     std::vector<std::pair<magda::DeviceId, juce::String>> availableDevices;
     const auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath_);
     if (rack) {
         for (const auto& chain : rack->chains) {
+            availableDevices.emplace_back(magda::INVALID_DEVICE_ID, chain.name);
             for (const auto& element : chain.elements) {
                 if (magda::isDevice(element)) {
                     const auto& device = magda::getDevice(element);
