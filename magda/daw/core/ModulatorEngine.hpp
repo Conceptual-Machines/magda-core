@@ -2,6 +2,7 @@
 
 #include <juce_events/juce_events.h>
 
+#include <chrono>
 #include <memory>
 
 #include "ModInfo.hpp"
@@ -318,10 +319,23 @@ class ModulatorEngine {
 
     // Timer callback handler
     void onTimerCallback() {
-        // Calculate delta time (approximately 1/60 second at 60 FPS)
-        double deltaTime = timer_ ? timer_->getTimerInterval() / 1000.0 : 0.0;
+        // Use the actual elapsed wall time since the previous tick rather than
+        // the timer's nominal interval. juce::Timer fires late under message-
+        // thread load and never coalesces missed ticks, so a fixed deltaTime
+        // makes the visual sim drift slower than the audio LFO. Clamp to a
+        // sensible upper bound so a long stall (debugger pause, modal dialog)
+        // doesn't cause the LFO phase to jump wildly on the next tick.
+        const auto now = std::chrono::steady_clock::now();
+        double deltaTime = 0.0;
+        if (lastTickValid_) {
+            const std::chrono::duration<double> elapsed = now - lastTickTime_;
+            deltaTime = juce::jlimit(0.0, 0.25, elapsed.count());
+        } else {
+            deltaTime = timer_ ? timer_->getTimerInterval() / 1000.0 : 0.0;
+            lastTickValid_ = true;
+        }
+        lastTickTime_ = now;
 
-        // Update all mods through TrackManager
         updateAllMods(deltaTime);
     }
 
@@ -329,6 +343,9 @@ class ModulatorEngine {
 
     // Timer instance - using composition instead of inheritance to allow early destruction
     std::unique_ptr<UpdateTimer> timer_;
+
+    std::chrono::steady_clock::time_point lastTickTime_{};
+    bool lastTickValid_ = false;
 };
 
 }  // namespace magda

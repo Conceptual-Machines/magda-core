@@ -314,8 +314,14 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
             ext->flushPluginStateToValueTree();
             stateStr = ext->state.getProperty(te::IDs::state).toString();
         } else {
+            // Strip MODIFIERASSIGNMENTS so the post-restore syncModifiers
+            // adds fresh assignments instead of doubling up on the
+            // captured ones (which would re-apply the LFO modulation on
+            // top of the already-modulated value, sweeping params past
+            // their range).
             auto stateCopy = plugin->state.createCopy();
             stripTracktionIdsRecursive(stateCopy);
+            stripModifierAssignmentsRecursive(stateCopy);
             if (auto xml = stateCopy.createXml())
                 stateStr = xml->toString();
         }
