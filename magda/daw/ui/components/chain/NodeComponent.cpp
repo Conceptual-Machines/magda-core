@@ -6,6 +6,7 @@
 #include "MacroPanelComponent.hpp"
 #include "ModsPanelComponent.hpp"
 #include "ModulatorEditorPanel.hpp"
+#include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -861,6 +862,19 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
         if (onDragEnd)
             onDragEnd(this, e);
         isDragging_ = false;
+        mouseDownForSelection_ = false;
+        return;
+    }
+
+    // While a macro/mod is in link mode, clicks bouncing up from a non-link-
+    // target child (a tab strip, the device meter, the empty space between
+    // params) shouldn't change selection or toggle the device's collapsed
+    // state — that interrupts the linking gesture and visibly collapses the
+    // device the user is trying to link into. Bail out of the selection /
+    // collapse path; the actual link target widget (ParamSlot,
+    // LinkableTextSlider) consumes its own click separately.
+    auto& linkMgr = magda::LinkModeManager::getInstance();
+    if (linkMgr.getMacroInLinkMode().isValid() || linkMgr.getModInLinkMode().isValid()) {
         mouseDownForSelection_ = false;
         return;
     }
