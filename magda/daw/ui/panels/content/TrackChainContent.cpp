@@ -1982,8 +1982,13 @@ void TrackChainContent::saveNodeStates() {
     for (const auto& node : nodeComponents_) {
         const auto& path = node->getNodePath();
         if (path.isValid()) {
-            // Save collapsed state
-            savedCollapsedStates_[path.toString()] = node->isCollapsed();
+            // Save collapsed state — but skip racks: their collapsed state is
+            // persisted in RackInfo::expanded so a freshly-loaded rack preset
+            // can drive the expanded/collapsed UI directly. Caching here
+            // would shadow the preset value on rebuild.
+            const bool isRack = dynamic_cast<RackComponent*>(node.get()) != nullptr;
+            if (!isRack)
+                savedCollapsedStates_[path.toString()] = node->isCollapsed();
 
             // Save param panel (macro panel) visible state
             savedParamPanelStates_[path.toString()] = node->isParamPanelVisible();

@@ -191,12 +191,16 @@ juce::StringArray PresetManager::getChainPresets() const {
 
 bool PresetManager::saveRackPreset(const RackInfo& rack, const juce::String& presetName) {
     auto payload = ProjectSerializer::serializeRackInfo(rack);
-    auto target = getRacksDirectory().getChildFile(sanitizeName(presetName) + kPresetExtension);
+    // sanitizeRelativePath lets forward slashes in `presetName` nest the
+    // preset under subdirectories (e.g. "Drums/808 Stack").
+    auto target =
+        getRacksDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
     return writePresetFile(target, kKindRack, payload, lastError_);
 }
 
 bool PresetManager::loadRackPreset(const juce::String& presetName, RackInfo& outRack) {
-    auto source = getRacksDirectory().getChildFile(sanitizeName(presetName) + kPresetExtension);
+    auto source =
+        getRacksDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
     juce::var payload;
     if (!readPresetFile(source, kKindRack, payload, lastError_))
         return false;
@@ -209,7 +213,9 @@ bool PresetManager::loadRackPreset(const juce::String& presetName, RackInfo& out
 }
 
 juce::StringArray PresetManager::getRackPresets() const {
-    return getPresetList(getRacksDirectory());
+    juce::StringArray out;
+    collectPresetsRecursive(getRacksDirectory(), "", out);
+    return out;
 }
 
 // ============================================================================

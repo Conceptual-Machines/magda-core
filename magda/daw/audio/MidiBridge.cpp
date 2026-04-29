@@ -32,13 +32,21 @@ void MidiBridge::stopAllInputs() {
         monitoredTracks_.clear();
     }
 
-    // Stop and destroy all MidiInput objects — destroying removes us from
-    // WaitFreeListeners so CoreMIDI can't dispatch to our callback anymore.
-    // We must stop() first, then destroy, to avoid CoreMIDI delivering to a
-    // half-torn-down MidiInput.
+    // Stop, then explicitly unregister this callback BEFORE destroying.
+    //
+    // MidiInput::~MidiInput leaves the WaitFreeListeners populated until the
+    // Impl's members are destroyed; if a CoreMIDI callback thread is mid
+    // WaitFreeListeners::call when MidiBridge gets freed, the in-flight
+    // dispatch dereferences a freed `MidiInputCallback*` and crashes at
+    // vtable offset 0x10. removeCallback() goes through
+    // WaitFreeListeners::remove which spin-waits for any in-flight callback
+    // to finish before returning, so after this loop no CoreMIDI thread
+    // can be holding a pointer to *this.
     for (auto& [deviceId, midiInput] : inputsToDestroy) {
-        if (midiInput)
+        if (midiInput) {
             midiInput->stop();
+            midiInput->removeCallback(*this);
+        }
     }
     inputsToDestroy.clear();
 
@@ -131,8 +139,13 @@ void MidiBridge::disableMidiInput(const juce::String& deviceId) {
             activeMidiInputs_.erase(it);
         }
     }
-    if (inputToDestroy)
+    if (inputToDestroy) {
         inputToDestroy->stop();
+        // Drain any in-flight CoreMIDI dispatch holding a pointer to *this
+        // before the unique_ptr destructor tears the MidiInput down.
+        // See stopAllInputs for the full rationale.
+        inputToDestroy->removeCallback(*this);
+    }
     // inputToDestroy destroyed here, outside lock
 }
 
