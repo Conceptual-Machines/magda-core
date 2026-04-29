@@ -678,12 +678,31 @@ void SelectionManager::clearSelection() {
 // ============================================================================
 
 void SelectionManager::addListener(SelectionManagerListener* listener) {
-    if (listener && std::find(listeners_.begin(), listeners_.end(), listener) == listeners_.end()) {
-        listeners_.push_back(listener);
+    if (!listener)
+        return;
+
+    if (notifyDepth_ > 0) {
+        // During notification: defer the push_back so listeners_ can't reallocate
+        // and invalidate the in-flight ranged-for iterator. Outermost NotifyGuard
+        // flushes pendingAdditions_ once the call stack unwinds.
+        if (std::find(listeners_.begin(), listeners_.end(), listener) == listeners_.end() &&
+            std::find(pendingAdditions_.begin(), pendingAdditions_.end(), listener) ==
+                pendingAdditions_.end())
+            pendingAdditions_.push_back(listener);
+        return;
     }
+
+    if (std::find(listeners_.begin(), listeners_.end(), listener) == listeners_.end())
+        listeners_.push_back(listener);
 }
 
 void SelectionManager::removeListener(SelectionManagerListener* listener) {
+    // Drop from pendingAdditions_ in either branch so an add/remove pair during
+    // notify doesn't resurrect the listener when the outer guard flushes.
+    pendingAdditions_.erase(
+        std::remove(pendingAdditions_.begin(), pendingAdditions_.end(), listener),
+        pendingAdditions_.end());
+
     if (notifyDepth_ > 0) {
         // During notification: null out instead of erasing to keep iterators valid
         std::replace(listeners_.begin(), listeners_.end(), listener,

@@ -1212,10 +1212,13 @@ class SelectionManager {
     AutomationPointSelection automationPointSelection_;
 
     std::vector<SelectionManagerListener*> listeners_;
+    std::vector<SelectionManagerListener*> pendingAdditions_;  // queued while notifying
     int notifyDepth_ = 0;  // >0 while iterating listeners (reentrant-safe)
 
-    /** RAII guard for safe listener iteration. Nulls are skipped during iteration;
-     *  removeListener sets entries to nullptr instead of erasing while depth > 0. */
+    /** RAII guard for safe listener iteration. Removals null the slot in place
+     *  rather than erasing (so the in-flight ranged-for stays valid); additions
+     *  go into pendingAdditions_ so push_back can't reallocate listeners_ mid
+     *  iteration. The outermost guard flushes both queues. */
     struct NotifyGuard {
         SelectionManager& sm;
         NotifyGuard(SelectionManager& s) : sm(s) {
@@ -1226,6 +1229,12 @@ class SelectionManager {
                 sm.listeners_.erase(
                     std::remove(sm.listeners_.begin(), sm.listeners_.end(), nullptr),
                     sm.listeners_.end());
+                for (auto* l : sm.pendingAdditions_) {
+                    if (l && std::find(sm.listeners_.begin(), sm.listeners_.end(), l) ==
+                                 sm.listeners_.end())
+                        sm.listeners_.push_back(l);
+                }
+                sm.pendingAdditions_.clear();
             }
         }
     };
