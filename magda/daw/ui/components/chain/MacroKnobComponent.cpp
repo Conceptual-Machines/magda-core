@@ -385,9 +385,38 @@ void MacroKnobComponent::showLinkMenu() {
         menu.addSubMenu("Modulators", modsMenu);
     }
 
-    // Add submenu for each available device
+    // Add submenu for each available device, optionally grouped by chain.
+    //
+    // RackComponent::getAvailableDevices emits a sentinel entry
+    // (deviceId == INVALID_DEVICE_ID) before each chain's devices to mark
+    // a chain boundary. When we see one we open a per-chain submenu and
+    // route subsequent device entries into it; outside any chain (devices
+    // on a track, or when the targets come from a non-rack owner) the
+    // device submenu is added directly to the top-level menu.
     int itemId = 1;
+    juce::PopupMenu* destination = &menu;
+    juce::PopupMenu chainMenu;
+    juce::String chainTitle;
+    auto flushChain = [&]() {
+        if (destination != &menu) {
+            menu.addSubMenu(chainTitle, chainMenu);
+            chainMenu = juce::PopupMenu{};
+            destination = &menu;
+        }
+    };
+
     for (const auto& [deviceId, deviceName] : availableTargets_) {
+        if (deviceId == magda::INVALID_DEVICE_ID) {
+            // Chain-header sentinel — close any open chain submenu and
+            // start collecting devices into a new one named after the
+            // chain.
+            flushChain();
+            chainTitle = deviceName;
+            chainMenu = juce::PopupMenu{};
+            destination = &chainMenu;
+            continue;
+        }
+
         juce::PopupMenu deviceMenu;
 
         // Get real param names for this device, fall back to "Parameter N"
@@ -410,8 +439,9 @@ void MacroKnobComponent::showLinkMenu() {
             itemId++;
         }
 
-        menu.addSubMenu(deviceName, deviceMenu);
+        destination->addSubMenu(deviceName, deviceMenu);
     }
+    flushChain();
 
     menu.addSeparator();
 
