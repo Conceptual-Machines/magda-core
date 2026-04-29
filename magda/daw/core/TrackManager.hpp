@@ -306,6 +306,7 @@ class TrackManager {
     DeviceInfo* getDeviceInChain(TrackId trackId, RackId rackId, ChainId chainId,
                                  DeviceId deviceId);
     DeviceInfo* getDeviceInChainByPath(const ChainNodePath& devicePath);
+    const DeviceInfo* getDeviceInChainByPath(const ChainNodePath& devicePath) const;
     void setDeviceInChainBypassed(TrackId trackId, RackId rackId, ChainId chainId,
                                   DeviceId deviceId, bool bypassed);
     void setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed);
@@ -383,7 +384,9 @@ class TrackManager {
     // device nodes) at that path. Returns an invalid node (valid() == false)
     // if the path doesn't resolve.
 
-    ChainNode resolveChainNode(const ChainNodePath& path);
+    // Public form returns a const view — external callers should never bypass
+    // the unified setters' notification logic. The mutable form is private and
+    // used only by those setters; see private section below.
     ConstChainNode resolveChainNode(const ChainNodePath& path) const;
 
     // Unified macro management — works for Track, Rack, and Device scopes.
@@ -563,6 +566,12 @@ class TrackManager {
   private:
     TrackManager();
     ~TrackManager() = default;
+
+    // Mutable resolver — used only by the unified setters in
+    // TrackManagerModulation.cpp. Kept private so external callers can't
+    // reach in and mutate macros/mods without going through the setter
+    // notification path.
+    ChainNode resolveChainNode(const ChainNodePath& path);
 
     std::vector<TrackInfo> tracks_;
     std::vector<TrackManagerListener*> listeners_;

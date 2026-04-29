@@ -410,6 +410,13 @@ DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath
     return nullptr;
 }
 
+const DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath) const {
+    // Standard const-overload idiom: the mutable version performs no mutation
+    // (it's a pure lookup), so const_cast'ing `this` here is safe and avoids
+    // duplicating the 50-line traversal.
+    return const_cast<TrackManager*>(this)->getDeviceInChainByPath(devicePath);
+}
+
 void TrackManager::setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         device->bypassed = bypassed;

@@ -166,16 +166,46 @@ ChainNode TrackManager::resolveChainNode(const ChainNodePath& path) {
 }
 
 ConstChainNode TrackManager::resolveChainNode(const ChainNodePath& path) const {
-    auto mut = const_cast<TrackManager*>(this)->resolveChainNode(path);
-    ConstChainNode out;
-    out.scope = mut.scope;
-    out.trackId = mut.trackId;
-    out.rackId = mut.rackId;
-    out.deviceId = mut.deviceId;
-    out.macros = mut.macros;
-    out.mods = mut.mods;
-    out.params = mut.params;
-    return out;
+    ConstChainNode node;
+    node.trackId = path.trackId;
+
+    switch (path.getType()) {
+        case ChainNodeType::Track: {
+            const auto* track = getTrack(path.trackId);
+            if (!track)
+                return ConstChainNode{};
+            node.scope = ChainScope::Track;
+            node.macros = &track->macros;
+            node.mods = &track->mods;
+            return node;
+        }
+        case ChainNodeType::Rack: {
+            const auto* rack = getRackByPath(path);
+            if (!rack)
+                return ConstChainNode{};
+            node.scope = ChainScope::Rack;
+            node.rackId = rack->id;
+            node.macros = &rack->macros;
+            node.mods = &rack->mods;
+            return node;
+        }
+        case ChainNodeType::Device:
+        case ChainNodeType::TopLevelDevice: {
+            const auto* device = getDeviceInChainByPath(path);
+            if (!device)
+                return ConstChainNode{};
+            node.scope = ChainScope::Device;
+            node.deviceId = device->id;
+            node.macros = &device->macros;
+            node.mods = &device->mods;
+            node.params = &device->parameters;
+            return node;
+        }
+        case ChainNodeType::Chain:
+        case ChainNodeType::None:
+            break;
+    }
+    return ConstChainNode{};
 }
 
 namespace {
