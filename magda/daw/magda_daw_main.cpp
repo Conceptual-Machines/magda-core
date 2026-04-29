@@ -8,6 +8,7 @@
 #include "../../magda/agents/llama_model_manager.hpp"
 #include "../../magda/agents/llm_presets.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/ModulatorEngine.hpp"
@@ -83,12 +84,28 @@ class MagdaDAWApplication : public JUCEApplication {
             return;
         }
 
-        // Set up file logger early so all startup activity is captured
-        auto logDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                          .getChildFile("MAGDA")
-                          .getChildFile("Logs");
+        // 0. Configurable user-data paths. Two-phase resolution (issue:
+        //    custom data dir).
+        //    Phase 1: env vars only — Config not yet loaded. Lets MAGDA_DATA_DIR
+        //    redirect even before config.json is read. Files created by font
+        //    init / look-and-feel / etc. land in the right place.
+        magda::paths::resolve();
+
+        // 1. Load Config from its always-OS-default path. config.json itself
+        //    cannot move with the data dir override (chicken-and-egg: we
+        //    have to read it to know where to redirect to).
+        magda::Config::getInstance().load();
+
+        //    Phase 2: re-resolve now that Config has provided any persisted
+        //    path overrides.
+        magda::paths::resolve();
+
+        // 2. File logger — set up only NOW so it lands in the configured
+        //    data dir / Logs. The 4-5 ms of pre-logger init below this
+        //    runs without logging, which is fine; nothing of substance
+        //    logged there pre-refactor either.
+        auto logDir = magda::paths::logsDir();
         if (!logDir.createDirectory()) {
-            // Fall back to temp directory if APPDATA is not writable
             logDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
                          .getChildFile("MAGDA-Logs");
             logDir.createDirectory();
@@ -99,19 +116,22 @@ class MagdaDAWApplication : public JUCEApplication {
         juce::Logger::writeToLog("=== MAGDA " + getApplicationVersion() + " starting ===");
         juce::Logger::writeToLog("OS: " + juce::SystemStats::getOperatingSystemName());
         juce::Logger::writeToLog("Command line: " + commandLine);
+        juce::Logger::writeToLog("Data dir: " + magda::paths::dataDir().getFullPathName() +
+                                 (magda::paths::dataDirOverriddenByEnv()
+                                      ? " (MAGDA_DATA_DIR override)"
+                                      : ""));
 
-        // 1. Initialize fonts
+        // 3. Initialize fonts
         magda::FontManager::getInstance().initialize();
 
-        // 2. Set up dark theme
+        // 4. Set up dark theme
         lookAndFeel_ = std::make_unique<magda::MainLookAndFeel>();
         magda::DarkTheme::applyToLookAndFeel(*lookAndFeel_);
         juce::LookAndFeel::setDefaultLookAndFeel(lookAndFeel_.get());
 
-        // 2a. Apply HiDPI scale before any window is created.
+        // 5. Apply HiDPI scale before any window is created.
         // setGlobalScaleFactor must run before TopLevelWindows exist for clean
         // sizing; see juce_TopLevelWindow.cpp.
-        magda::Config::getInstance().load();
         const double uiScale = magda::resolveStartupScale();
         juce::Desktop::getInstance().setGlobalScaleFactor(static_cast<float>(uiScale));
         juce::Logger::writeToLog("UI scale: " + juce::String(uiScale, 2) + "x");

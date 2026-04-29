@@ -9,6 +9,7 @@
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "../windows/MainWindow.hpp"
+#include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/UIScale.hpp"
@@ -961,6 +962,230 @@ class RenderingPage : public juce::Component {
     std::unique_ptr<juce::FileChooser> fileChooser_;
 };
 
+// ---- Paths tab (configurable user-data locations) -------------------------
+//
+// Two pickers: Data Folder (logs, config, scripts, plugin caches) and
+// Presets Folder (Chains, Racks, Devices). Render Folder lives on the
+// Rendering tab — kept there to avoid duplication.
+//
+// Render + Presets apply hot via Config listeners. Data Folder triggers a
+// migration confirmation in PreferencesDialog::applySettings() because file
+// handles (logger, plugin scanner) are open at the old path; the actual
+// move + restart happens there.
+
+class PathsPage : public juce::Component {
+  public:
+    PathsPage() {
+        // --- Data Folder ---
+        setupSectionHeader(*this, dataHeader_,
+                           "Data folder (logs, scripts, plugin caches)");
+
+        dataLabel_.setText("Folder:", juce::dontSendNotification);
+        dataLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        dataLabel_.setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        dataLabel_.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(dataLabel_);
+
+        dataValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        dataValue_.setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        dataValue_.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(dataValue_);
+
+        dataBrowse_.setButtonText("Browse...");
+        dataBrowse_.onClick = [this]() {
+            pickFolder("Choose data folder", dataPath_, dataValue_, true);
+        };
+        addAndMakeVisible(dataBrowse_);
+
+        dataReset_.setButtonText("Reset");
+        dataReset_.onClick = [this]() {
+            dataPath_.clear();
+            updateDisplay();
+        };
+        addAndMakeVisible(dataReset_);
+
+        dataNote_.setFont(FontManager::getInstance().getUIFont(11.0f));
+        dataNote_.setColour(juce::Label::textColourId,
+                            DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        dataNote_.setJustificationType(juce::Justification::centredLeft);
+        dataNote_.setText(
+            "Changes require a restart. Existing files can be copied to the "
+            "new location.",
+            juce::dontSendNotification);
+        addAndMakeVisible(dataNote_);
+
+        // --- Presets Folder ---
+        setupSectionHeader(*this, presetsHeader_,
+                           "Presets folder (Chains, Racks, Devices)");
+
+        presetsLabel_.setText("Folder:", juce::dontSendNotification);
+        presetsLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        presetsLabel_.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        presetsLabel_.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(presetsLabel_);
+
+        presetsValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        presetsValue_.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        presetsValue_.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(presetsValue_);
+
+        presetsBrowse_.setButtonText("Browse...");
+        presetsBrowse_.onClick = [this]() {
+            pickFolder("Choose presets folder", presetsPath_, presetsValue_, false);
+        };
+        addAndMakeVisible(presetsBrowse_);
+
+        presetsReset_.setButtonText("Reset");
+        presetsReset_.onClick = [this]() {
+            presetsPath_.clear();
+            updateDisplay();
+        };
+        addAndMakeVisible(presetsReset_);
+
+        presetsNote_.setFont(FontManager::getInstance().getUIFont(11.0f));
+        presetsNote_.setColour(juce::Label::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        presetsNote_.setJustificationType(juce::Justification::centredLeft);
+        presetsNote_.setText(
+            "Applies immediately — preset browsers re-scan on next open.",
+            juce::dontSendNotification);
+        addAndMakeVisible(presetsNote_);
+
+        // --- Hint about Render Folder ---
+        renderHint_.setFont(FontManager::getInstance().getUIFont(11.0f));
+        renderHint_.setColour(juce::Label::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        renderHint_.setJustificationType(juce::Justification::centredLeft);
+        renderHint_.setText(
+            "Render output folder is configured on the Rendering tab.",
+            juce::dontSendNotification);
+        addAndMakeVisible(renderHint_);
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(20);
+        const int rowH = 28;
+        const int gap = 6;
+        const int sectionGap = 18;
+
+        // Data section
+        dataHeader_.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(gap);
+        auto dataRow = bounds.removeFromTop(rowH);
+        dataLabel_.setBounds(dataRow.removeFromLeft(60));
+        dataReset_.setBounds(dataRow.removeFromRight(80));
+        dataRow.removeFromRight(gap);
+        dataBrowse_.setBounds(dataRow.removeFromRight(100));
+        dataRow.removeFromRight(gap);
+        dataValue_.setBounds(dataRow);
+        bounds.removeFromTop(gap);
+        dataNote_.setBounds(bounds.removeFromTop(rowH));
+
+        bounds.removeFromTop(sectionGap);
+
+        // Presets section
+        presetsHeader_.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(gap);
+        auto pRow = bounds.removeFromTop(rowH);
+        presetsLabel_.setBounds(pRow.removeFromLeft(60));
+        presetsReset_.setBounds(pRow.removeFromRight(80));
+        pRow.removeFromRight(gap);
+        presetsBrowse_.setBounds(pRow.removeFromRight(100));
+        pRow.removeFromRight(gap);
+        presetsValue_.setBounds(pRow);
+        bounds.removeFromTop(gap);
+        presetsNote_.setBounds(bounds.removeFromTop(rowH));
+
+        bounds.removeFromTop(sectionGap);
+
+        renderHint_.setBounds(bounds.removeFromTop(rowH));
+    }
+
+    void loadSettings(Config& config) {
+        dataPath_ = config.getDataDir();
+        presetsPath_ = config.getPresetsDir();
+        // Snapshot the original Data path for change detection in
+        // applySettings — used to decide whether to trigger the migration
+        // dialog.
+        originalDataPath_ = dataPath_;
+        updateDisplay();
+    }
+
+    void applySettings(Config& config) {
+        config.setDataDir(dataPath_);
+        config.setPresetsDir(presetsPath_);
+        // Re-resolve so paths::presetsDir() picks up the change immediately
+        // (Render is also re-resolved here for free). The data dir part
+        // doesn't take full effect until restart — see PreferencesDialog
+        // applySettings for the migration prompt.
+        magda::paths::resolve();
+    }
+
+    /** Returns true if the data dir has been changed in this dialog session.
+     *  PreferencesDialog uses this to gate the migration confirmation. */
+    bool dataDirChanged() const {
+        return dataPath_ != originalDataPath_;
+    }
+    std::string getOriginalDataPath() const { return originalDataPath_; }
+    std::string getNewDataPath() const { return dataPath_; }
+
+  private:
+    void pickFolder(const juce::String& title,
+                    std::string& target,
+                    juce::Label& display,
+                    bool isDataDir) {
+        (void)isDataDir;  // no migration here — applied in PreferencesDialog
+        fileChooser_ = std::make_unique<juce::FileChooser>(title);
+        fileChooser_->launchAsync(juce::FileBrowserComponent::openMode |
+                                      juce::FileBrowserComponent::canSelectDirectories,
+                                  [&target, &display](const juce::FileChooser& fc) {
+                                      auto result = fc.getResult();
+                                      if (result.exists() && result.isDirectory()) {
+                                          target = result.getFullPathName().toStdString();
+                                          display.setText(result.getFullPathName(),
+                                                          juce::dontSendNotification);
+                                      }
+                                  });
+    }
+
+    void updateDisplay() {
+        if (dataPath_.empty()) {
+            dataValue_.setText("(default: " +
+                                   magda::paths::alwaysOSDefault().getFullPathName() + ")",
+                               juce::dontSendNotification);
+        } else {
+            dataValue_.setText(juce::String(dataPath_), juce::dontSendNotification);
+        }
+
+        if (presetsPath_.empty()) {
+            auto def = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                           .getChildFile("MAGDA")
+                           .getChildFile("Presets");
+            presetsValue_.setText("(default: " + def.getFullPathName() + ")",
+                                  juce::dontSendNotification);
+        } else {
+            presetsValue_.setText(juce::String(presetsPath_), juce::dontSendNotification);
+        }
+    }
+
+    juce::Label dataHeader_, dataLabel_, dataValue_, dataNote_;
+    juce::TextButton dataBrowse_, dataReset_;
+    std::string dataPath_;
+    std::string originalDataPath_;
+
+    juce::Label presetsHeader_, presetsLabel_, presetsValue_, presetsNote_;
+    juce::TextButton presetsBrowse_, presetsReset_;
+    std::string presetsPath_;
+
+    juce::Label renderHint_;
+
+    std::unique_ptr<juce::FileChooser> fileChooser_;
+};
+
 // ---- Shortcuts tab (read-only) --------------------------------------------
 
 class ShortcutsPage : public juce::Component {
@@ -1025,6 +1250,7 @@ PreferencesDialog::PreferencesDialog() {
     uiPage = std::make_unique<UIPage>();
     coloursPage = std::make_unique<ColoursPage>();
     renderingPage = std::make_unique<RenderingPage>();
+    pathsPage = std::make_unique<PathsPage>();
     shortcutsPage = std::make_unique<ShortcutsPage>();
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
@@ -1032,6 +1258,7 @@ PreferencesDialog::PreferencesDialog() {
     tabbedComponent.addTab(tr("preferences.tab.ui"), tabBg, uiPage.get(), false);
     tabbedComponent.addTab(tr("preferences.tab.colours"), tabBg, coloursPage.get(), false);
     tabbedComponent.addTab(tr("preferences.tab.rendering"), tabBg, renderingPage.get(), false);
+    tabbedComponent.addTab("Paths", tabBg, pathsPage.get(), false);
     tabbedComponent.addTab(tr("preferences.tab.shortcuts"), tabBg, shortcutsPage.get(), false);
     addAndMakeVisible(tabbedComponent);
 
@@ -1096,17 +1323,84 @@ void PreferencesDialog::loadCurrentSettings() {
     uiPage->loadSettings(config);
     coloursPage->loadSettings(config);
     renderingPage->loadSettings(config);
+    pathsPage->loadSettings(config);
     shortcutsPage->loadSettings(config);
 }
 
 void PreferencesDialog::applySettings() {
     auto& config = Config::getInstance();
+
+    // Capture data-dir change BEFORE pathsPage.applySettings writes to Config
+    // — we use the snapshot to gate the migration dialog.
+    bool dataDirChange = pathsPage->dataDirChanged();
+    juce::String oldDataPath =
+        juce::String(pathsPage->getOriginalDataPath()).isEmpty()
+            ? magda::paths::alwaysOSDefault().getFullPathName()
+            : juce::String(pathsPage->getOriginalDataPath());
+    juce::String newDataPath =
+        juce::String(pathsPage->getNewDataPath()).isEmpty()
+            ? magda::paths::alwaysOSDefault().getFullPathName()
+            : juce::String(pathsPage->getNewDataPath());
+
     generalPage->applySettings(config);
     uiPage->applySettings(config);
     coloursPage->applySettings(config);
     renderingPage->applySettings(config);
+    pathsPage->applySettings(config);
     shortcutsPage->applySettings(config);
     config.save();
+
+    // If the user changed the data dir, prompt for optional migration +
+    // restart. The save above persists the new path so the prompt can
+    // be backed out by reverting Config if user cancels — but we're
+    // committed by this point; cancel just means "don't migrate now,
+    // restart later".
+    if (dataDirChange) {
+        juce::AlertWindow::showAsync(
+            juce::MessageBoxOptions()
+                .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                .withTitle("Move MAGDA data folder")
+                .withMessage(
+                    "MAGDA's data folder is changing.\n\nFrom: " + oldDataPath +
+                    "\nTo:    " + newDataPath +
+                    "\n\nCopy existing files to the new location now? "
+                    "MAGDA will restart afterwards.\n\n"
+                    "If you choose No, the new path takes effect on next "
+                    "launch but existing files stay where they are.")
+                .withButton("Copy and restart")
+                .withButton("Restart only")
+                .withButton("Later"),
+            [oldDataPath, newDataPath](int result) {
+                if (result == 0)
+                    return;  // "Later" — no action
+                if (result == 1) {
+                    juce::File from(oldDataPath);
+                    juce::File to(newDataPath);
+                    if (from.isDirectory() &&
+                        from.getFullPathName() != to.getFullPathName()) {
+                        to.createDirectory();
+                        if (!from.copyDirectoryTo(to)) {
+                            juce::AlertWindow::showAsync(
+                                juce::MessageBoxOptions()
+                                    .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                    .withTitle("Migration failed")
+                                    .withMessage(
+                                        "Could not copy all files from\n" +
+                                        from.getFullPathName() + "\nto\n" +
+                                        to.getFullPathName() +
+                                        "\n\nFiles in the old location are "
+                                        "untouched. You can copy them "
+                                        "manually and restart.")
+                                    .withButton("OK"),
+                                nullptr);
+                            return;
+                        }
+                    }
+                }
+                // Both "Copy and restart" (1) and "Restart only" (2) end here.
+                juce::JUCEApplication::quit();  // Caller responsible for relaunch.
+            });
+    }
 
     // Apply auto-save settings
     ProjectManager::getInstance().setAutoSaveEnabled(config.getAutoSaveEnabled(),

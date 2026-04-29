@@ -85,6 +85,8 @@ set(TEST_SOURCES
     test_magda_api_lua_bindings.cpp
     # Lua controller tests (issue #592 — MIDI dispatch)
     test_lua_controller.cpp
+    # Configurable user data paths
+    test_app_paths.cpp
 )
 
 # Create test executable
