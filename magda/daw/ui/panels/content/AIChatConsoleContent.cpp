@@ -20,6 +20,7 @@
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/router_agent.hpp"
 #include "../../../api/magda_api_live.hpp"
+#include "../../../core/AppPaths.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/SelectionManager.hpp"
@@ -1619,9 +1620,7 @@ void AIChatConsoleContent::buildAliasList() {
     }
 
     // Load custom alias overrides
-    auto aliasFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                         .getChildFile("MAGDA")
-                         .getChildFile("plugin_aliases.xml");
+    auto aliasFile = magda::paths::pluginAliasesFile();
 
     if (aliasFile.existsAsFile()) {
         if (auto xml = juce::parseXML(aliasFile)) {
