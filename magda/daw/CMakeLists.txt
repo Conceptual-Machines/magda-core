@@ -211,10 +211,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/cloud_providers/openrouter.svg
     # App logo
     ../../assets/magda-lisa.svg
-    # Curated alias dictionaries
+    # Curated alias dictionaries (JSON path is reserved for third-party
+    # plugin packs; MAGDA-internal plugin aliases live in
+    # core/aliases/InternalPluginAliases.cpp).
     ../../assets/aliases/curated_index.json
-    ../../assets/aliases/curated_eq.json
-    ../../assets/aliases/curated_compressor.json
 )
 
 # DAW Core sources
@@ -263,6 +263,7 @@ set(DAW_CORE_SOURCES
     core/aliases/AutoAliasGenerator.cpp
     # Parameter alias system (PR 5 -- CuratedAliasLoader)
     core/aliases/CuratedAliasLoader.cpp
+    core/aliases/InternalPluginAliases.cpp
     # MagdaApi -- programmatic facade for the agent layer (issue #1113)
     api/selection_api_live.cpp
     api/automation_api_live.cpp
@@ -421,6 +422,7 @@ set(DAW_UI_SOURCES
     ui/panels/content/inspector/InspectorContainer.cpp
     ui/panels/content/AIChatConsoleContent.cpp
     ui/panels/content/ScriptingConsoleContent.cpp
+    ui/panels/content/ChatPromptTokeniser.cpp
     ui/panels/content/DSLTokeniser.cpp
     ui/panels/content/PanelContent.cpp
     ui/panels/content/TrackChainContent.cpp
@@ -641,6 +643,7 @@ set(DAW_HEADERS
     ui/panels/content/inspector/InspectorContainer.hpp
     ui/panels/content/AIChatConsoleContent.hpp
     ui/panels/content/ScriptingConsoleContent.hpp
+    ui/panels/content/ChatPromptTokeniser.hpp
     ui/panels/content/DSLTokeniser.hpp
     ui/panels/content/TrackChainContent.hpp
     ui/panels/content/PianoRollContent.hpp
