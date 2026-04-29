@@ -89,6 +89,10 @@ set(MAGDA_SCRIPTING_SOURCES
     LuaSandbox.cpp
     MagdaApiLuaBindings.hpp
     MagdaApiLuaBindings.cpp
+    LuaController.hpp
+    LuaController.cpp
+    LuaScriptStore.hpp
+    LuaScriptStore.cpp
 )
 
 add_library(magda_scripting STATIC ${MAGDA_SCRIPTING_SOURCES})

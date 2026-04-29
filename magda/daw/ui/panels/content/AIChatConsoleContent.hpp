@@ -21,6 +21,7 @@ class AutomationAgent;
 class CommandAgent;
 class ControllerProfileAgent;
 class DAWAgent;
+class MagdaApi;
 class MagdaApiLive;
 class MusicAgent;
 class RouterAgent;
@@ -128,13 +129,13 @@ class AIChatConsoleContent : public PanelContent,
     using juce::Component::keyPressed;  // unhide 1-param overload
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
 
-    // Live MagdaApi backing the agent layer. Owned by this panel so it
-    // outlives every agent we hand it to. Every agent the chat creates
-    // (DAWAgent, CommandAgent, MusicAgent, AutomationAgent, ...) is
-    // constructed with this api as its DAW backend; the inline executors
-    // used in the request-thread lambda do the same via
-    // *safeThis->magdaApi_.
-    std::unique_ptr<magda::MagdaApiLive> magdaApi_;
+    // Live MagdaApi backing the agent layer. Normally borrowed from
+    // TracktionEngineWrapper (the engine outlives this panel). When the
+    // engine is unreachable (headless tests, init failure), we fall back
+    // to owning a fresh MagdaApiLive in ownedApi_ so the pointer is never
+    // null and downstream agents / executors can dereference unconditionally.
+    std::unique_ptr<magda::MagdaApiLive> ownedApi_;
+    magda::MagdaApi* magdaApi_ = nullptr;
 
     std::unique_ptr<magda::DAWAgent> agent_;  // kept for legacy DSL REPL
     std::unique_ptr<magda::RouterAgent> routerAgent_;

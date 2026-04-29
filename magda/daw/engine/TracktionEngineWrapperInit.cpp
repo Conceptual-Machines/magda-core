@@ -1,3 +1,4 @@
+#include "../api/magda_api_live.hpp"
 #include "../audio/AudioBridge.hpp"
 #include "../audio/ControllerRouter.hpp"
 #include "../audio/MidiBridge.hpp"
@@ -420,6 +421,10 @@ void TracktionEngineWrapper::createEditAndBridges() {
     // Register as transport listener for recording callbacks
     currentEdit_->getTransport().addListener(this);
 
+    // Programmatic facade onto DAW state — shared with AI Chat panel and
+    // app-level Lua controller wiring.
+    magdaApi_ = std::make_unique<MagdaApiLive>();
+
     DBG("Tracktion Engine initialized with Edit, AudioBridge, and MidiBridge");
 }
 
@@ -564,6 +569,10 @@ void TracktionEngineWrapper::shutdown() {
         DBG("Destroying MidiBridge...");
         midiBridge_.reset();
     }
+
+    // MagdaApi is a thin facade over singletons — safe to reset anytime,
+    // but match teardown order with construction.
+    magdaApi_.reset();
 
     // Close audio/MIDI devices before destroying engine
     if (engine_) {
