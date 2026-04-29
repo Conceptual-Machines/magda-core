@@ -282,6 +282,31 @@ RackId RackSyncManager::getRackIdForInstance(te::Plugin* plugin) const {
 void RackSyncManager::capturePluginStates(SyncedRack& synced) {
     auto& trackManager = TrackManager::getInstance();
 
+    // Resolve devices through the rack's chain hierarchy rather than
+    // TrackManager::getDevice, which only finds top-level devices and would
+    // return nullptr for anything inside a rack — silently dropping the
+    // captured state and resetting the plugin to defaults on resync.
+    auto* rackInfo = trackManager.getRack(synced.trackId, synced.rackId);
+    if (rackInfo == nullptr)
+        return;
+
+    std::function<DeviceInfo*(std::vector<ChainElement>&, DeviceId)> findInChains;
+    findInChains = [&](std::vector<ChainElement>& elements, DeviceId id) -> DeviceInfo* {
+        for (auto& element : elements) {
+            if (isDevice(element)) {
+                auto& dev = getDevice(element);
+                if (dev.id == id)
+                    return &dev;
+            } else if (isRack(element)) {
+                for (auto& chain : getRack(element).chains) {
+                    if (auto* found = findInChains(chain.elements, id))
+                        return found;
+                }
+            }
+        }
+        return nullptr;
+    };
+
     for (auto& [deviceId, plugin] : synced.innerPlugins) {
         juce::String stateStr;
 
@@ -295,8 +320,11 @@ void RackSyncManager::capturePluginStates(SyncedRack& synced) {
                 stateStr = xml->toString();
         }
 
-        if (auto* devInfo = trackManager.getDevice(synced.trackId, deviceId)) {
-            devInfo->pluginState = stateStr;
+        for (auto& chain : rackInfo->chains) {
+            if (auto* devInfo = findInChains(chain.elements, deviceId)) {
+                devInfo->pluginState = stateStr;
+                break;
+            }
         }
     }
 }
