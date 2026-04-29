@@ -1051,7 +1051,7 @@ class PathsPage : public juce::Component {
                                DarkTheme::getColour(DarkTheme::TEXT_DIM));
         presetsNote_.setJustificationType(juce::Justification::centredLeft);
         presetsNote_.setText(
-            "Applies immediately — preset browsers re-scan on next open.",
+            "Applies immediately. Preset browsers re-scan on next open.",
             juce::dontSendNotification);
         addAndMakeVisible(presetsNote_);
 
