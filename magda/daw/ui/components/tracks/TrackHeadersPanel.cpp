@@ -1773,6 +1773,15 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
                     if (auto* t = tm.getTrack(tid))
                         multiTrackBaseVolumes_[tid] = t->volume;
                 multiTrackDragStartDb_ = header.volumeLabel->getValue();
+                // Light up the volume label on every other selected track so
+                // the user can see which tracks are being moved together.
+                for (auto tid : sel.getSelectedTracks()) {
+                    if (tid == trackId)
+                        continue;
+                    int otherIdx = getVisibleHeaderIndex(tid);
+                    if (otherIdx >= 0)
+                        trackHeaders[otherIdx]->volumeLabel->setCoEditing(true);
+                }
             }
             const double delta = header.volumeLabel->getValue() - multiTrackDragStartDb_;
             for (auto& [tid, baseVol] : multiTrackBaseVolumes_) {
@@ -1787,7 +1796,14 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
                 std::make_unique<SetTrackVolumeCommand>(trackId, header.volume));
         }
     };
-    header.volumeLabel->onDragEnd = [this](double) { multiTrackBaseVolumes_.clear(); };
+    header.volumeLabel->onDragEnd = [this](double) {
+        for (auto& [tid, _] : multiTrackBaseVolumes_) {
+            int idx = getVisibleHeaderIndex(tid);
+            if (idx >= 0)
+                trackHeaders[idx]->volumeLabel->setCoEditing(false);
+        }
+        multiTrackBaseVolumes_.clear();
+    };
 
     // Pan label callback - updates TrackManager. Multi-track: shift every
     // selected track by the same delta from its own pre-drag base.
@@ -1808,6 +1824,13 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
                     if (auto* t = tm.getTrack(tid))
                         multiTrackBasePans_[tid] = t->pan;
                 multiTrackDragStartPan_ = header.panLabel->getValue();
+                for (auto tid : sel.getSelectedTracks()) {
+                    if (tid == trackId)
+                        continue;
+                    int otherIdx = getVisibleHeaderIndex(tid);
+                    if (otherIdx >= 0)
+                        trackHeaders[otherIdx]->panLabel->setCoEditing(true);
+                }
             }
             const double delta = header.panLabel->getValue() - multiTrackDragStartPan_;
             for (auto& [tid, basePan] : multiTrackBasePans_) {
@@ -1820,7 +1843,14 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
                 std::make_unique<SetTrackPanCommand>(trackId, header.pan));
         }
     };
-    header.panLabel->onDragEnd = [this](double) { multiTrackBasePans_.clear(); };
+    header.panLabel->onDragEnd = [this](double) {
+        for (auto& [tid, _] : multiTrackBasePans_) {
+            int idx = getVisibleHeaderIndex(tid);
+            if (idx >= 0)
+                trackHeaders[idx]->panLabel->setCoEditing(false);
+        }
+        multiTrackBasePans_.clear();
+    };
 
     // Record arm button callback - updates TrackManager
     header.recordButton->onClick = [this, trackId, getEditTargets]() {

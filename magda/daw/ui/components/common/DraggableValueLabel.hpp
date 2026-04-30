@@ -247,9 +247,24 @@ class DraggableValueLabel : public juce::Component,
         return isDragging_;
     }
 
+    // Mark this label as being edited indirectly because another label in a
+    // multi-selection group is being dragged. Paints the same drag-active
+    // border so the user can see which other tracks are being affected. Has
+    // no effect on input handling — purely a visual cue.
+    void setCoEditing(bool shouldShow) {
+        if (coEditing_ == shouldShow)
+            return;
+        coEditing_ = shouldShow;
+        repaint();
+    }
+    bool isCoEditing() const {
+        return coEditing_;
+    }
+
   private:
     // Drag state
     bool isDragging_ = false;
+    bool coEditing_ = false;  // see setCoEditing
     bool overrideLatchedThisGesture_ = false;
     double dragStartValue_ = 0.0;
     int dragStartY_ = 0;
