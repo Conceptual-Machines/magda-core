@@ -283,12 +283,17 @@ void NodeComponent::paintOverChildren(juce::Graphics& g) {
 
     // Controller-binding indicator dots, drawn next to the node name. Two
     // dots side-by-side when both apply: automap (green) then pinned
-    // (orange). Skipped when neither applies, or when the name label is
-    // hidden (collapsed mode).
-    if ((hasAutomapBindings_ || hasPinnedBindings_) && nameLabel_.isVisible()) {
+    // (orange). Skipped when neither applies, when the name label is
+    // hidden (collapsed mode), OR when the label has no text — devices
+    // like Drum Grid clear the label and paint a custom logo elsewhere,
+    // so anchoring to the (empty) label bounds would dump the dot into
+    // unrelated header space.
+    const auto& labelText = nameLabel_.getText();
+    if ((hasAutomapBindings_ || hasPinnedBindings_) && nameLabel_.isVisible() &&
+        labelText.isNotEmpty()) {
         auto labelBounds = nameLabel_.getBounds();
         juce::GlyphArrangement glyphs;
-        glyphs.addLineOfText(nameLabel_.getFont(), nameLabel_.getText(), 0.0f, 0.0f);
+        glyphs.addLineOfText(nameLabel_.getFont(), labelText, 0.0f, 0.0f);
         float textWidth = glyphs.getBoundingBox(0, -1, true).getWidth();
 
         constexpr float dotSize = 6.0f;
