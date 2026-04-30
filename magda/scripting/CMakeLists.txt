@@ -1,9 +1,10 @@
 # Scripting - Embedded Lua runtime for MAGDA
 #
-# This module owns the embedded Lua VM. It is intentionally free of any
-# MagdaApi / DAW dependencies in this branch — issue #29 only.
-# The MagdaApi bindings (#30) and MIDI controller scripting (#592)
-# will land in follow-up branches that can depend on this lib.
+# This module owns the embedded Lua VM (issue #29) and the MagdaApi
+# bindings (#30) plus the MIDI controller bridge (#592). Because the
+# bindings expose DAW types directly, magda_scripting links magda_daw —
+# splitting the API types into a thin lib so this can be DAW-independent
+# is tracked as future cleanup.
 
 # ---------------------------------------------------------------------------
 # Lua 5.4 static library — fetched in the root CMakeLists.txt.
