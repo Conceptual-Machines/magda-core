@@ -189,6 +189,70 @@ TEST_CASE("LuaController surfaces sysex with bytes table", "[lua_controller]") {
     script.deleteFile();
 }
 
+TEST_CASE("LuaController fires on_load after script eval", "[lua_controller]") {
+    auto script = writeTempScript(R"(
+        function on_load()
+          magda.tracks.set_name(1, 'loaded')
+        end
+    )",
+                                  "test_lua_controller_on_load.lua");
+
+    MockMagdaApi mock;
+    LuaController controller(mock);
+    REQUIRE(controller.loadScript(script));
+
+    REQUIRE(mock.tracks_.nameWrites.size() == 1);
+    REQUIRE(mock.tracks_.nameWrites[0].value == "loaded");
+
+    script.deleteFile();
+}
+
+TEST_CASE("LuaController fires on_unload before runtime teardown", "[lua_controller]") {
+    auto script = writeTempScript(R"(
+        function on_unload()
+          magda.tracks.set_name(2, 'unloaded')
+        end
+    )",
+                                  "test_lua_controller_on_unload.lua");
+
+    MockMagdaApi mock;
+    LuaController controller(mock);
+    REQUIRE(controller.loadScript(script));
+    REQUIRE(mock.tracks_.nameWrites.empty());
+
+    controller.unloadScript();
+
+    REQUIRE(mock.tracks_.nameWrites.size() == 1);
+    REQUIRE(mock.tracks_.nameWrites[0].value == "unloaded");
+
+    script.deleteFile();
+}
+
+TEST_CASE("LuaController on_tick receives a dt argument", "[lua_controller]") {
+    auto script = writeTempScript(R"(
+        function on_tick(dt)
+          -- pan accepts a number; record dt via the mock
+          magda.tracks.set_pan(1, dt)
+        end
+    )",
+                                  "test_lua_controller_on_tick.lua");
+
+    MockMagdaApi mock;
+    LuaController controller(mock);
+    REQUIRE(controller.loadScript(script));
+
+    controller.tickForTest(0.033);
+    controller.tickForTest(0.034);
+
+    REQUIRE(mock.tracks_.panWrites.size() == 2);
+    REQUIRE(mock.tracks_.panWrites[0].value > 0.032f);
+    REQUIRE(mock.tracks_.panWrites[0].value < 0.034f);
+    REQUIRE(mock.tracks_.panWrites[1].value > 0.033f);
+    REQUIRE(mock.tracks_.panWrites[1].value < 0.035f);
+
+    script.deleteFile();
+}
+
 TEST_CASE("LuaController is a no-op when on_midi is undefined", "[lua_controller]") {
     auto script =
         writeTempScript("magda.log.info('no on_midi here')", "test_lua_controller_no_handler.lua");

@@ -99,6 +99,11 @@ void pushMidiEvent(lua_State* L, const juce::String& deviceName, const juce::Mid
     lua_setfield(L, -2, "port");
 }
 
+// Tick rate for on_tick callbacks. ~30 Hz is enough for LED blink animations
+// without burning cycles when scripts don't define on_tick anyway (the dispatch
+// is a hash-table check + return).
+constexpr int kTickIntervalMs = 33;
+
 int luaMessageHandler(lua_State* L) {
     const char* msg = lua_tostring(L, 1);
     if (msg == nullptr) {
@@ -112,10 +117,28 @@ int luaMessageHandler(lua_State* L) {
 
 }  // namespace
 
+class LuaController::TickTimer : public juce::Timer {
+  public:
+    explicit TickTimer(LuaController& owner) : owner_(owner) {}
+    void timerCallback() override {
+        auto now = juce::Time::getMillisecondCounter();
+        double dt = (now - owner_.lastTickMs_) / 1000.0;
+        owner_.lastTickMs_ = now;
+        owner_.callOnTick(dt);
+    }
+
+  private:
+    LuaController& owner_;
+};
+
 LuaController::LuaController(MagdaApi& api) : api_(api) {}
 
 LuaController::~LuaController() {
     detach();
+    if (tickTimer_) {
+        tickTimer_->stopTimer();
+        tickTimer_.reset();
+    }
     // ~JUCE_DECLARE_WEAK_REFERENCEABLE invalidates outstanding WeakReferences,
     // so any in-flight MessageManager::callAsync lambdas become no-ops.
     rt_.reset();
@@ -154,10 +177,31 @@ bool LuaController::loadScript(const juce::File& file) {
     rt_ = std::move(rt);
     currentScriptName_ = file.getFileName();
     lastError_ = {};
+
+    // on_load fires after registration so the script body has had a chance
+    // to define it. Lifecycle hooks (DAW-mode handshake, LED priming) belong
+    // here, not at top-level — top-level errors abort the load.
+    callOptionalNullary("on_load");
+
+    if (juce::MessageManager::getInstanceWithoutCreating() != nullptr) {
+        if (!tickTimer_)
+            tickTimer_ = std::make_unique<TickTimer>(*this);
+        lastTickMs_ = juce::Time::getMillisecondCounter();
+        tickTimer_->startTimer(kTickIntervalMs);
+    }
     return true;
 }
 
 void LuaController::unloadScript() {
+    if (tickTimer_) {
+        tickTimer_->stopTimer();
+        tickTimer_.reset();
+    }
+    if (rt_ != nullptr) {
+        // Run the script's teardown (DAW-mode disable, LED reset) before
+        // dropping the runtime. Errors are logged but don't block teardown.
+        callOptionalNullary("on_unload");
+    }
     rt_.reset();
     currentScriptName_ = {};
     lastError_ = {};
@@ -191,6 +235,75 @@ void LuaController::onRawMidi(const juce::String& /*deviceId*/, const juce::Stri
 void LuaController::dispatchEventForTest(const juce::String& deviceName,
                                          const juce::MidiMessage& msg) {
     dispatchToLua(deviceName, msg);
+}
+
+void LuaController::tickForTest(double dt) {
+    callOnTick(dt);
+}
+
+void LuaController::callOptionalNullary(const char* name) {
+    if (rt_ == nullptr)
+        return;
+    lua_State* L = rt_->state();
+    if (L == nullptr)
+        return;
+
+    lua_getglobal(L, name);
+    if (lua_type(L, -1) != LUA_TFUNCTION) {
+        lua_pop(L, 1);
+        return;
+    }
+
+    int fnIdx = lua_gettop(L);
+    lua_pushcfunction(L, luaMessageHandler);
+    int msgHandlerIdx = fnIdx;
+    lua_insert(L, msgHandlerIdx);  // stack: [..., msghandler, fn]
+
+    int rc = lua_pcall(L, /*nargs*/ 0, /*nresults*/ 0, msgHandlerIdx);
+    lua_remove(L, msgHandlerIdx);
+
+    if (rc != LUA_OK) {
+        size_t len = 0;
+        const char* err = lua_tolstring(L, -1, &len);
+        if (err != nullptr) {
+            juce::Logger::writeToLog(juce::String("[lua ") + name + " error] " +
+                                     juce::String::fromUTF8(err, static_cast<int>(len)));
+        }
+        lua_pop(L, 1);
+    }
+}
+
+void LuaController::callOnTick(double dt) {
+    if (rt_ == nullptr)
+        return;
+    lua_State* L = rt_->state();
+    if (L == nullptr)
+        return;
+
+    lua_getglobal(L, "on_tick");
+    if (lua_type(L, -1) != LUA_TFUNCTION) {
+        lua_pop(L, 1);
+        return;
+    }
+
+    int fnIdx = lua_gettop(L);
+    lua_pushcfunction(L, luaMessageHandler);
+    int msgHandlerIdx = fnIdx;
+    lua_insert(L, msgHandlerIdx);  // stack: [..., msghandler, fn]
+    lua_pushnumber(L, dt);
+
+    int rc = lua_pcall(L, /*nargs*/ 1, /*nresults*/ 0, msgHandlerIdx);
+    lua_remove(L, msgHandlerIdx);
+
+    if (rc != LUA_OK) {
+        size_t len = 0;
+        const char* err = lua_tolstring(L, -1, &len);
+        if (err != nullptr) {
+            juce::Logger::writeToLog("[lua on_tick error] " +
+                                     juce::String::fromUTF8(err, static_cast<int>(len)));
+        }
+        lua_pop(L, 1);
+    }
 }
 
 void LuaController::dispatchToLua(const juce::String& deviceName, const juce::MidiMessage& msg) {
