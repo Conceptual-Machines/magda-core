@@ -38,6 +38,9 @@ class ChatPromptTokeniser : public juce::CodeTokeniser {
     // ends up amber. Re-entrancy is safe enough for the chat input because
     // CodeEditor re-tokenises from the document start on every edit.
     bool expectParamBody_ = false;
+    // True only directly after emitting a pluginAlias token; gates the '.'
+    // branch so prose like "hello.world" or "v1.2" isn't miscoloured.
+    bool inAliasChain_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChatPromptTokeniser)
 };

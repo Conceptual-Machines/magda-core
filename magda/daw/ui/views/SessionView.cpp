@@ -5,6 +5,7 @@
 #include <cmath>
 #include <functional>
 #include <set>
+#include <unordered_map>
 
 #include "../../audio/AudioBridge.hpp"
 #include "../../audio/MeteringBuffer.hpp"
@@ -44,6 +45,18 @@ float dbToGain(float db) {
     if (db <= MIN_DB)
         return 0.0f;
     return std::pow(10.0f, db / 20.0f);
+}
+
+// Multi-track edit fan-out: when a strip is part of a multi-selection, every
+// selected track receives the same edit. Otherwise only the clicked track is
+// touched.
+std::vector<TrackId> getMultiEditTargets(TrackId clickedId) {
+    auto& sel = SelectionManager::getInstance();
+    if (sel.isTrackSelected(clickedId) && sel.getSelectedTrackCount() > 1) {
+        const auto& set = sel.getSelectedTracks();
+        return std::vector<TrackId>(set.begin(), set.end());
+    }
+    return {clickedId};
 }
 }  // namespace
 
@@ -812,10 +825,33 @@ class SessionView::MiniChannelStrip : public juce::Component {
         float db = gainToDb(track.volume);
         volumeSlider_->setValue(db, juce::dontSendNotification);
         volumeSlider_->onValueChanged = [this](double newValue) {
-            float gain = dbToGain(static_cast<float>(newValue));
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackVolumeCommand>(trackId_, gain));
+            const float currentGain = dbToGain(static_cast<float>(newValue));
+            auto& sel = SelectionManager::getInstance();
+            const bool multi =
+                sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
+            if (multi) {
+                if (multiTrackBaseVolumes_.empty()) {
+                    auto& tm = TrackManager::getInstance();
+                    for (auto tid : sel.getSelectedTracks())
+                        if (auto* t = tm.getTrack(tid))
+                            multiTrackBaseVolumes_[tid] = t->volume;
+                    multiTrackDragStartDb_ = newValue;
+                }
+                const double deltaDb = newValue - multiTrackDragStartDb_;
+                for (auto& [tid, baseVol] : multiTrackBaseVolumes_) {
+                    float baseDb = gainToDb(baseVol);
+                    float newDb =
+                        juce::jlimit(MIN_DB, 6.0f, static_cast<float>(baseDb + deltaDb));
+                    float newGain = dbToGain(newDb);
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<SetTrackVolumeCommand>(tid, newGain));
+                }
+            } else {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackVolumeCommand>(trackId_, currentGain));
+            }
         };
+        volumeSlider_->onDragEnd = [this]() { multiTrackBaseVolumes_.clear(); };
         {
             AutomationTarget volTarget;
             volTarget.type = AutomationTargetType::TrackVolume;
@@ -847,8 +883,10 @@ class SessionView::MiniChannelStrip : public juce::Component {
         muteButton_->setClickingTogglesState(true);
         muteButton_->setToggleState(track.muted, juce::dontSendNotification);
         muteButton_->onClick = [this]() {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackMuteCommand>(trackId_, muteButton_->getToggleState()));
+            const bool newState = muteButton_->getToggleState();
+            for (auto tid : getMultiEditTargets(trackId_))
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackMuteCommand>(tid, newState));
         };
         addAndMakeVisible(*muteButton_);
 
@@ -867,8 +905,10 @@ class SessionView::MiniChannelStrip : public juce::Component {
         soloButton_->setClickingTogglesState(true);
         soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
         soloButton_->onClick = [this]() {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackSoloCommand>(trackId_, soloButton_->getToggleState()));
+            const bool newState = soloButton_->getToggleState();
+            for (auto tid : getMultiEditTargets(trackId_))
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackSoloCommand>(tid, newState));
         };
         addAndMakeVisible(*soloButton_);
 
@@ -888,8 +928,9 @@ class SessionView::MiniChannelStrip : public juce::Component {
         recordButton_->setClickingTogglesState(true);
         recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
         recordButton_->onClick = [this]() {
-            TrackManager::getInstance().setTrackRecordArmed(trackId_,
-                                                            recordButton_->getToggleState());
+            const bool armed = recordButton_->getToggleState();
+            for (auto tid : getMultiEditTargets(trackId_))
+                TrackManager::getInstance().setTrackRecordArmed(tid, armed);
         };
         addAndMakeVisible(*recordButton_);
 
@@ -923,8 +964,9 @@ class SessionView::MiniChannelStrip : public juce::Component {
                     nextMode = InputMonitorMode::Off;
                     break;
             }
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackInputMonitorCommand>(trackId_, nextMode));
+            for (auto tid : getMultiEditTargets(trackId_))
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackInputMonitorCommand>(tid, nextMode));
         };
         addAndMakeVisible(*monitorButton_);
         updateMonitorVisual(track.inputMonitor);
@@ -936,9 +978,30 @@ class SessionView::MiniChannelStrip : public juce::Component {
         panSlider_->setFont(FontManager::getInstance().getUIFont(8.0f));
         panSlider_->setValue(track.pan, juce::dontSendNotification);
         panSlider_->onValueChanged = [this](double newValue) {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackPanCommand>(trackId_, static_cast<float>(newValue)));
+            auto& sel = SelectionManager::getInstance();
+            const bool multi =
+                sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
+            if (multi) {
+                if (multiTrackBasePans_.empty()) {
+                    auto& tm = TrackManager::getInstance();
+                    for (auto tid : sel.getSelectedTracks())
+                        if (auto* t = tm.getTrack(tid))
+                            multiTrackBasePans_[tid] = t->pan;
+                    multiTrackDragStartPan_ = newValue;
+                }
+                const double delta = newValue - multiTrackDragStartPan_;
+                for (auto& [tid, basePan] : multiTrackBasePans_) {
+                    float newPan =
+                        juce::jlimit(-1.0f, 1.0f, static_cast<float>(basePan + delta));
+                    UndoManager::getInstance().executeCommand(
+                        std::make_unique<SetTrackPanCommand>(tid, newPan));
+                }
+            } else {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackPanCommand>(trackId_, static_cast<float>(newValue)));
+            }
         };
+        panSlider_->onDragEnd = [this]() { multiTrackBasePans_.clear(); };
         {
             AutomationTarget panTarget;
             panTarget.type = AutomationTargetType::TrackPan;
@@ -1048,6 +1111,12 @@ class SessionView::MiniChannelStrip : public juce::Component {
     std::unique_ptr<juce::TextButton> soloButton_;
     std::unique_ptr<juce::TextButton> recordButton_;
     std::unique_ptr<juce::TextButton> monitorButton_;
+
+    // Multi-track relative drag state for volume/pan (see ChannelStrip).
+    std::unordered_map<TrackId, float> multiTrackBaseVolumes_;
+    std::unordered_map<TrackId, float> multiTrackBasePans_;
+    double multiTrackDragStartDb_ = 0.0;
+    double multiTrackDragStartPan_ = 0.0;
 
     void updateMonitorVisual(InputMonitorMode mode) {
         switch (mode) {
@@ -1285,6 +1354,9 @@ SessionView::SessionView() {
     // Register as ClipManager listener
     ClipManager::getInstance().addListener(this);
 
+    // Register as SelectionManager listener so multi-selected headers light up
+    SelectionManager::getInstance().addListener(this);
+
     // Register as ViewModeController listener
     ViewModeController::getInstance().addListener(this);
 
@@ -1300,6 +1372,7 @@ SessionView::~SessionView() {
     stopTimer();
     TrackManager::getInstance().removeListener(this);
     ClipManager::getInstance().removeListener(this);
+    SelectionManager::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
     gridViewport->getHorizontalScrollBar().removeListener(this);
     gridViewport->getVerticalScrollBar().removeListener(this);
@@ -1489,10 +1562,39 @@ void SessionView::rebuildTracks() {
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         header->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
 
-        // Click handler - select track and toggle collapse for groups
+        // Click handler - select track and toggle collapse for groups.
+        // Modifier-aware: Cmd toggles in/out of the multi-selection,
+        // Shift range-selects from the anchor. Modifiers are captured in
+        // onHeaderMouseDown because juce::TextButton::onClick doesn't
+        // surface them on its own.
         TrackId trackId = track->id;
         header->onClick = [this, trackId]() {
-            // Always select the track
+            auto& sel = SelectionManager::getInstance();
+            if (lastHeaderClickCmd_) {
+                sel.toggleTrackSelection(trackId);
+                return;
+            }
+            if (lastHeaderClickShift_) {
+                TrackId anchor = sel.getAnchorTrack();
+                const auto& tracks = TrackManager::getInstance().getTracks();
+                int anchorIdx = -1, clickedIdx = -1;
+                for (size_t k = 0; k < tracks.size(); ++k) {
+                    if (tracks[k].id == anchor)
+                        anchorIdx = static_cast<int>(k);
+                    if (tracks[k].id == trackId)
+                        clickedIdx = static_cast<int>(k);
+                }
+                if (anchorIdx >= 0 && clickedIdx >= 0) {
+                    int lo = std::min(anchorIdx, clickedIdx);
+                    int hi = std::max(anchorIdx, clickedIdx);
+                    std::unordered_set<TrackId> rangeIds;
+                    for (int k = lo; k <= hi; ++k)
+                        rangeIds.insert(tracks[k].id);
+                    sel.selectTracks(rangeIds);
+                    return;
+                }
+                // Fall through to single select if we can't form a range
+            }
             selectTrack(trackId);
 
             // Additionally toggle collapse for groups
@@ -1509,7 +1611,11 @@ void SessionView::rebuildTracks() {
         };
 
         int headerIdx = i;
-        header->onHeaderMouseDown = [this, headerIdx](const juce::MouseEvent&) {
+        header->onHeaderMouseDown = [this, headerIdx](const juce::MouseEvent& e) {
+            // Capture modifier state for the upcoming onClick (TextButton
+            // doesn't pass modifiers through to its click callback).
+            lastHeaderClickCmd_ = e.mods.isCommandDown();
+            lastHeaderClickShift_ = e.mods.isShiftDown();
             headerDragIndex_ = headerIdx;
             headerDragStartX_ = getTrackX(headerIdx) + trackColumnWidths_[headerIdx] / 2;
         };
@@ -2309,6 +2415,14 @@ void SessionView::trackSelectionChanged(TrackId trackId) {
     updateHeaderSelectionVisuals();
 }
 
+void SessionView::selectionTypeChanged(SelectionType /*newType*/) {
+    updateHeaderSelectionVisuals();
+}
+
+void SessionView::multiTrackSelectionChanged(const std::unordered_set<TrackId>& /*trackIds*/) {
+    updateHeaderSelectionVisuals();
+}
+
 // =============================================================================
 // Track Header Drag-and-Drop (reorder / drop into group)
 // =============================================================================
@@ -2438,10 +2552,13 @@ void SessionView::selectTrack(TrackId trackId) {
 }
 
 void SessionView::updateHeaderSelectionVisuals() {
-    auto selectedId = TrackManager::getInstance().getSelectedTrack();
+    // Reflect the full SelectionManager state — including multi-selection —
+    // so every selected header lights up, not just the primary one.
+    auto& sel = SelectionManager::getInstance();
+    const auto selectedId = sel.getSelectedTrack();
 
     for (size_t i = 0; i < visibleTrackIds_.size() && i < trackHeaders.size(); ++i) {
-        bool isSelected = visibleTrackIds_[i] == selectedId;
+        bool isSelected = sel.isTrackSelected(visibleTrackIds_[i]);
         auto* header = trackHeaders[i].get();
 
         // Get track info for proper coloring
