@@ -4,7 +4,7 @@ Drop these into:
 
 | OS | Path |
 |----|------|
-| macOS | `~/Library/Application Support/MAGDA/Scripts/Controllers/` |
+| macOS | `~/Library/MAGDA/Scripts/Controllers/` |
 | Windows | `%APPDATA%\MAGDA\Scripts\Controllers\` |
 | Linux | `~/.config/MAGDA/Scripts/Controllers/` |
 

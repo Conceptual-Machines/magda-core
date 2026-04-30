@@ -13,7 +13,7 @@
 -- Reference: docs/controllers/launchkey_mk4_programmers_reference_v2.pdf
 --
 -- Drop into:
---   macOS:   ~/Library/Application Support/MAGDA/Scripts/Controllers/
+--   macOS:   ~/Library/MAGDA/Scripts/Controllers/
 --   Windows: %APPDATA%\MAGDA\Scripts\Controllers\
 --   Linux:   ~/.config/MAGDA/Scripts/Controllers/
 
