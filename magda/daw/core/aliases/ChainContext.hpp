@@ -53,14 +53,25 @@ class ChainContext {
      * @brief Get the path of the chain node whose macros should be
      * targeted by automap (e.g. focused.macro resolver).
      *
-     * Walks the focus path up to the innermost user-rack ancestor (or
-     * itself if it IS a rack). Falls back to the focused device when no
-     * rack ancestor exists (top-level instrument case). Returns an
-     * invalid path when no macro-bearing node is focused.
+     * Mapping (see DefaultChainContext::focusedMacroOwner for canonical
+     * behaviour):
+     *   TopLevelDevice   → the device itself.
+     *   Rack             → the rack itself.
+     *   Chain            → the parent rack of the chain.
+     *   Device-in-chain  → invalid. Inner-device focus does NOT engage
+     *                      rack automap; the user must click the rack
+     *                      header explicitly. This avoids two surprises:
+     *                      the inner device silently capturing the
+     *                      controller, and the enclosing rack's macros
+     *                      lighting up automap-green just because the
+     *                      user clicked into its chain to inspect a
+     *                      device.
+     *   Track / None     → invalid (track macros don't go through
+     *                      focused.macro today).
      *
-     * Distinct from focusedDevice(): selecting a device INSIDE a user
-     * rack should automap to the RACK's macros, not the inner device's,
-     * so the rack's macro page is the canonical hands-on layer.
+     * Distinct from focusedDevice(), which is the strict "what device
+     * does the user have selected" answer used by `@focused.<param>`
+     * alias lookups.
      */
     virtual ChainNodePath focusedMacroOwner() const = 0;
 

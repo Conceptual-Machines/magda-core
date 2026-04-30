@@ -1294,6 +1294,8 @@ juce::Point<float> DeviceSlotComponent::getControllerIndicatorAnchor() const {
         const float textCentreY = static_cast<float>(modBounds.getCentreY());
 
         // Microgramma 11pt — same font paint() draws "MDG2000" with.
+        // GlyphArrangement is the JUCE-recommended way to measure text;
+        // juce::Font::getStringWidthFloat is deprecated.
         auto font = FontManager::getInstance().getMicrogrammaFont(11.0f);
         juce::GlyphArrangement glyphs;
         glyphs.addLineOfText(font, "MDG2000", 0.0f, 0.0f);

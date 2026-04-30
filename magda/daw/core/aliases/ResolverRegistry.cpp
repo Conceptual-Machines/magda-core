@@ -47,11 +47,13 @@ void ResolverRegistry::registerResolver(std::unique_ptr<AliasResolver> resolver)
 std::optional<StaticTarget> FocusedDeviceMacroResolver::resolve(const juce::StringPairArray& args,
                                                                 const ChainContext& ctx) const {
     // Use focusedMacroOwner() rather than focusedDevice() so that focusing
-    // a user-created rack (or any device inside one) auto-maps the
-    // controller to the RACK's macros, not the inner device's. Top-level
-    // instruments still resolve to their own device macros because they
-    // have no rack ancestor in the chain path (the InstrumentRackManager
-    // wrapper rack is flattened away and never appears here).
+    // a user-created rack auto-maps the controller to the rack's macros.
+    // See DefaultChainContext::focusedMacroOwner() for the exact mapping;
+    // notably, focusing a device INSIDE a rack does NOT engage automap —
+    // the user must click the rack header explicitly. Top-level
+    // instruments still resolve to their own device macros because the
+    // InstrumentRackManager wrapper rack is flattened out of the chain
+    // path and never appears here.
     auto ownerPath = ctx.focusedMacroOwner();
     if (!ownerPath.isValid())
         return std::nullopt;

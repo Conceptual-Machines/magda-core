@@ -844,9 +844,11 @@ juce::Point<float> NodeComponent::getControllerIndicatorAnchor() const {
         return {-1.0f, 0.0f};
 
     auto labelBounds = nameLabel_.getBounds();
+    // GlyphArrangement is JUCE's recommended path for measuring text
+    // since juce::Font::getStringWidthFloat is deprecated.
     juce::GlyphArrangement glyphs;
     glyphs.addLineOfText(nameLabel_.getFont(), nameLabel_.getText(), 0.0f, 0.0f);
-    float textWidth = glyphs.getBoundingBox(0, -1, true).getWidth();
+    const float textWidth = glyphs.getBoundingBox(0, -1, true).getWidth();
 
     constexpr float gapAfterText = 12.0f;
     return {static_cast<float>(labelBounds.getX()) + textWidth + gapAfterText,
