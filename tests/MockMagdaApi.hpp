@@ -320,6 +320,13 @@ class MockSessionApi : public SessionApi {
         auto it = slots.find({trackId, sceneIndex});
         return it != slots.end() ? it->second : INVALID_CLIP_ID;
     }
+
+    // Tests can populate clipStates[clipId].
+    std::unordered_map<ClipId, SessionClipPlayState> clipStates;
+    SessionClipPlayState getClipPlayState(ClipId clipId) const override {
+        auto it = clipStates.find(clipId);
+        return it != clipStates.end() ? it->second : SessionClipPlayState::Stopped;
+    }
 };
 
 class MockProjectApi : public ProjectApi {

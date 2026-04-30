@@ -435,6 +435,28 @@ int lua_clips_set_groove(lua_State* L) {
     return 0;
 }
 
+// magda.clips.colour(clipId) -> {r=, g=, b=} with each component already
+// scaled to 0..127 (7-bit, ready for SysEx). Returns nil if the clip is
+// not found.
+int lua_clips_colour(lua_State* L) {
+    auto* api = getApi(L);
+    auto id = static_cast<ClipId>(luaL_checkinteger(L, 1));
+    auto* info = api->clips().getClip(id);
+    if (info == nullptr) {
+        lua_pushnil(L);
+        return 1;
+    }
+    auto c = info->colour;
+    lua_createtable(L, 0, 3);
+    lua_pushinteger(L, c.getRed() >> 1);
+    lua_setfield(L, -2, "r");
+    lua_pushinteger(L, c.getGreen() >> 1);
+    lua_setfield(L, -2, "g");
+    lua_pushinteger(L, c.getBlue() >> 1);
+    lua_setfield(L, -2, "b");
+    return 1;
+}
+
 // ---- session ---------------------------------------------------------------
 
 int lua_session_launch_clip(lua_State* L) {
@@ -475,7 +497,7 @@ int lua_session_active_clip_on_track(lua_State* L) {
     return 1;
 }
 
-// magda.session.clip_in_slot(trackId, sceneIndex) — sceneIndex is 0-based,
+// magda.session.clip_in_slot(trackId, sceneIndex) - sceneIndex is 0-based,
 // 0 = topmost session row. Returns nil if the slot is empty.
 int lua_session_clip_in_slot(lua_State* L) {
     auto* api = getApi(L);
@@ -486,6 +508,28 @@ int lua_session_clip_in_slot(lua_State* L) {
         lua_pushnil(L);
     else
         lua_pushinteger(L, static_cast<lua_Integer>(id));
+    return 1;
+}
+
+// magda.session.clip_play_state(clipId) -> "stopped" | "queued" | "playing".
+// Returns "stopped" for an invalid id so scripts can blindly query.
+int lua_session_clip_play_state(lua_State* L) {
+    auto* api = getApi(L);
+    auto clipId = static_cast<ClipId>(luaL_checkinteger(L, 1));
+    auto state = api->session().getClipPlayState(clipId);
+    const char* s = "stopped";
+    switch (state) {
+        case SessionClipPlayState::Stopped:
+            s = "stopped";
+            break;
+        case SessionClipPlayState::Queued:
+            s = "queued";
+            break;
+        case SessionClipPlayState::Playing:
+            s = "playing";
+            break;
+    }
+    lua_pushstring(L, s);
     return 1;
 }
 
@@ -761,6 +805,7 @@ const FnReg kClipFns[] = {
     {"list_arrangement", lua_clips_list_arrangement},
     {"set_name", lua_clips_set_name},
     {"set_groove", lua_clips_set_groove},
+    {"colour", lua_clips_colour},
     {nullptr, nullptr},
 };
 
@@ -771,6 +816,7 @@ const FnReg kSessionFns[] = {
     {"stop_all", lua_session_stop_all},
     {"active_clip_on_track", lua_session_active_clip_on_track},
     {"clip_in_slot", lua_session_clip_in_slot},
+    {"clip_play_state", lua_session_clip_play_state},
     {nullptr, nullptr},
 };
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <juce_core/juce_core.h>
+
 #include "../core/ClipTypes.hpp"
 #include "../core/TypeIds.hpp"
 
@@ -46,6 +48,11 @@ class SessionApi {
     /// if that slot is empty. sceneIndex is 0-based, matching how the
     /// session view stacks clips top-to-bottom.
     virtual ClipId getClipInSlot(TrackId trackId, int sceneIndex) const = 0;
+
+    /// Return the playback state of a session clip. Returns Stopped if
+    /// the id is invalid, the clip isn't a session clip, or the engine
+    /// is unavailable.
+    virtual SessionClipPlayState getClipPlayState(ClipId clipId) const = 0;
 };
 
 }  // namespace magda

@@ -134,14 +134,14 @@ class LuaController::TickTimer : public juce::Timer {
 LuaController::LuaController(MagdaApi& api) : api_(api) {}
 
 LuaController::~LuaController() {
+    // detach first so no new MIDI events arrive while we're tearing down.
     detach();
-    if (tickTimer_) {
-        tickTimer_->stopTimer();
-        tickTimer_.reset();
-    }
+    // unloadScript() fires on_unload (LED reset, DAW-mode disable, etc.),
+    // stops the tick timer, and clears the runtime. Without this, app quit
+    // would leave the device in DAW mode with whatever LEDs were lit.
+    unloadScript();
     // ~JUCE_DECLARE_WEAK_REFERENCEABLE invalidates outstanding WeakReferences,
     // so any in-flight MessageManager::callAsync lambdas become no-ops.
-    rt_.reset();
 }
 
 void LuaController::attach(MidiBridge& bridge) {

@@ -16,6 +16,7 @@ class SessionApiLive : public SessionApi {
     void stopAll() override;
     ClipId getActiveClipOnTrack(TrackId trackId) const override;
     ClipId getClipInSlot(TrackId trackId, int sceneIndex) const override;
+    SessionClipPlayState getClipPlayState(ClipId clipId) const override;
 };
 
 }  // namespace magda
