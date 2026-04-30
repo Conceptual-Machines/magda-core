@@ -60,6 +60,40 @@ local function set_daw_mode(enable)
 end
 
 ----------------------------------------------------------------
+-- Stationary display banner ("MAGDA")
+----------------------------------------------------------------
+-- Reference p.17-19. The stationary display (target 0x20) is what's
+-- shown when no temp display is up. We configure it once with
+-- arrangement 1 (2-line: Parameter Name + Text Parameter Value) and
+-- write the Name field, leaving the Value field empty. Bits 6+5 of
+-- the config byte stay set (default) so encoder Temp Displays still
+-- trigger normally on knob change/touch.
+local STATIONARY_TARGET = 0x20
+
+local function show_stationary_banner(out, text)
+  if not out then
+    magda.log.warn("[launchkey] banner: no DAW Out port")
+    return
+  end
+  -- Configure: bit 6 (auto temp on Change) + bit 5 (auto temp on Touch)
+  -- + arrangement 1 = 0x60 | 0x01 = 0x61.
+  magda.midi.send_sysex(out, {0x00, 0x20, 0x29, 0x02, 0x13, 0x04, STATIONARY_TARGET, 0x61})
+  -- Set field 0 (Name).
+  local payload = {0x00, 0x20, 0x29, 0x02, 0x13, 0x06,
+                   STATIONARY_TARGET, 0x00}
+  for i = 1, #text do
+    local b = text:byte(i)
+    if b < 0x20 or b > 0x7E then b = 0x3F end
+    table.insert(payload, b)
+  end
+  magda.midi.send_sysex(out, payload)
+  -- Trigger the display so the new contents come up immediately
+  -- (config byte 0x7F per reference p.18, "compact way to trigger
+  -- display").
+  magda.midi.send_sysex(out, {0x00, 0x20, 0x29, 0x02, 0x13, 0x04, STATIONARY_TARGET, 0x7F})
+end
+
+----------------------------------------------------------------
 -- Pad layout
 ----------------------------------------------------------------
 -- DAW-mode pad notes (Channel 1):
@@ -130,6 +164,10 @@ function on_load()
   -- ControllerRouter, so the registered bindings aren't routable — they
   -- exist purely for the UI affordance).
   magda.focused.auto_map()
+  -- Paint "MAGDA" on the device's stationary display so the LCD reads
+  -- our brand at rest. Temp displays (encoder names, etc.) overlay on
+  -- top and revert to MAGDA after their timeout.
+  show_stationary_banner(find_daw_out(), "MAGDA")
 end
 
 function on_unload()
@@ -242,12 +280,6 @@ local ENCODER_NAME_MAX_CHARS = 16
 
 local last_encoder_name = {}
 
-local function bytes_to_hex(t)
-  local parts = {}
-  for i = 1, #t do parts[i] = string.format("%02X", t[i]) end
-  return table.concat(parts, " ")
-end
-
 local function send_encoder_name(out, encoder_idx, name)
   -- Truncate + sanitise: device only accepts ASCII 0x20..0x7E (plus a
   -- handful of reassigned control codes we don't use). Anything else
@@ -255,48 +287,75 @@ local function send_encoder_name(out, encoder_idx, name)
   if #name > ENCODER_NAME_MAX_CHARS then
     name = name:sub(1, ENCODER_NAME_MAX_CHARS)
   end
-  local target = ENCODER_NAME_TARGET_BASE + encoder_idx
   local payload = {SET_TEXT_PREFIX[1], SET_TEXT_PREFIX[2], SET_TEXT_PREFIX[3],
                    SET_TEXT_PREFIX[4], SET_TEXT_PREFIX[5], SET_TEXT_PREFIX[6],
-                   target, 0x00}
+                   ENCODER_NAME_TARGET_BASE + encoder_idx, 0x00}
   for i = 1, #name do
     local b = name:byte(i)
     if b < 0x20 or b > 0x7E then b = 0x3F end  -- '?'
     table.insert(payload, b)
   end
-  magda.log.info(string.format(
-    "[launchkey] encoder name: knob=%d target=0x%02X name='%s' port='%s' sysex=F0 %s F7",
-    encoder_idx + 1, target, name, out, bytes_to_hex(payload)))
   magda.midi.send_sysex(out, payload)
 end
 
+local last_focus_for_names = nil
+
 local function refresh_encoder_names()
   local out = find_daw_out()
-  if not out then
-    if not refresh_encoder_names_warned then
-      magda.log.warn("[launchkey] refresh_encoder_names: no DAW Out port")
-      refresh_encoder_names_warned = true
-    end
-    return
-  end
+  if not out then return end
   local has_focus = magda.focused.has_focus()
-  local focused_name = magda.focused.name() or ""
+  local focused_name = has_focus and magda.focused.name() or ""
+  if focused_name ~= last_focus_for_names then
+    -- Focus changed: invalidate the diff cache so every encoder re-sends
+    -- (clears when leaving focus, repopulates when entering).
+    last_encoder_name = {}
+    last_focus_for_names = focused_name
+  end
   for i = 0, 7 do
-    local name = magda.focused.macro_name(i) or ""
-    if name == "" then name = string.format("Macro %d", i + 1) end
+    -- When nothing is focused there are no macros to label — send empty
+    -- so the device falls back to its own default for that encoder
+    -- instead of carrying stale names from a previous focus.
+    local name = has_focus and (magda.focused.macro_name(i) or "") or ""
     if last_encoder_name[i] ~= name then
-      magda.log.info(string.format(
-        "[launchkey] macro[%d] name change '%s' -> '%s' (focused='%s' has_focus=%s)",
-        i, tostring(last_encoder_name[i]), name, focused_name, tostring(has_focus)))
       last_encoder_name[i] = name
       send_encoder_name(out, i, name)
     end
   end
 end
 
+----------------------------------------------------------------
+-- Transport button LEDs
+----------------------------------------------------------------
+-- Play and Record are monochrome LEDs. Per the reference (p. 14)
+-- monochrome LEDs are addressed with a CC on Channel 4: CC number =
+-- the LED's CC index, value = brightness (0..127). So the same CC
+-- number the button generates, sent back on Ch4, drives its lamp.
+local last_play_lit = nil
+local last_rec_lit = nil
+
+local function set_mono_led(out, cc, lit)
+  magda.midi.send_cc(out, 4, cc, lit and 0x7F or 0x00)
+end
+
+local function refresh_transport_leds()
+  local out = find_daw_out()
+  if not out then return end
+  local playing = magda.transport.is_playing()
+  if playing ~= last_play_lit then
+    last_play_lit = playing
+    set_mono_led(out, TRANSPORT_PLAY, playing)
+  end
+  local recording = magda.transport.is_recording()
+  if recording ~= last_rec_lit then
+    last_rec_lit = recording
+    set_mono_led(out, TRANSPORT_RECORD, recording)
+  end
+end
+
 function on_tick(dt)
   refresh_leds()
   refresh_encoder_names()
+  refresh_transport_leds()
 end
 
 ----------------------------------------------------------------
