@@ -35,9 +35,8 @@ AutomationPlaybackEngine::AutomationPlaybackEngine(AudioBridge& bridge, te::Edit
         auto* lane = AutomationManager::getInstance().getLane(laneId);
         if (!lane)
             return;
-        DBG("[AutoPb] touchSuppressionListener lane=" << laneId
-                                                       << " suppressed=" << (int)suppressed
-                                                       << " bypass=" << (int)lane->bypass);
+        DBG("[AutoPb] touchSuppressionListener lane=" << laneId << " suppressed=" << (int)suppressed
+                                                      << " bypass=" << (int)lane->bypass);
         if (suppressed) {
             clearLane(*lane);
             if (auto* param = resolveParameter(lane->target))
@@ -542,11 +541,13 @@ void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneI
                     trackMgr.setMacroValue(target.devicePath, target.macroIndex, value);
                     break;
                 default:
-                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex, value);
+                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId),
+                                           target.macroIndex, value);
                     break;
             }
         } else {
-            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex, value);
+            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex,
+                                   value);
         }
     } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 0) {
         writeModRateFromCurve(target, previewValue);
@@ -773,11 +774,13 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
                     trackMgr.setMacroValue(target.devicePath, target.macroIndex, value);
                     break;
                 default:
-                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex, value);
+                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId),
+                                           target.macroIndex, value);
                     break;
             }
         } else {
-            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex, value);
+            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex,
+                                   value);
         }
     } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 0) {
         // Mirror the curve value back into MAGDA's mod state. The lane is
@@ -844,7 +847,8 @@ void AutomationPlaybackEngine::writeModRateFromCurve(const AutomationTarget& tar
                     break;
             }
         }
-        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(target.trackId), target.modId, division);
+        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(target.trackId), target.modId,
+                                    division);
         return;
     }
 

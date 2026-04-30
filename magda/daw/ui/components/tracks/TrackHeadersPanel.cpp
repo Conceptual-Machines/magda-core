@@ -3186,6 +3186,61 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
 
+    // Track-scope macros + modulators — grouped right under Track Volume / Pan
+    // so they're easy to find without diving into a device's submenu.
+    if (trackInfo) {
+        ChainNodePath trackPath = ChainNodePath::trackLevel(trackId);
+
+        // Track Macros submenu
+        if (!trackInfo->macros.empty()) {
+            juce::PopupMenu trackMacrosMenu;
+            bool any = false;
+            for (int m = 0; m < static_cast<int>(trackInfo->macros.size()); ++m) {
+                const auto& macro = trackInfo->macros[static_cast<size_t>(m)];
+                if (macro.name.isEmpty())
+                    continue;
+                AutomationTarget target;
+                target.type = AutomationTargetType::Macro;
+                target.trackId = trackId;
+                target.devicePath = trackPath;
+                target.macroIndex = m;
+                target.paramName = macro.name;
+                int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                bool ticked = isTargetShown(target);
+                deviceParamTargets->push_back(target);
+                trackMacrosMenu.addItem(itemId, macro.name, true, ticked);
+                any = true;
+            }
+            if (any)
+                addNewMenu.addSubMenu("Track Macros", trackMacrosMenu);
+        }
+
+        // Track Modulators submenu — one Rate lane per modifier; scale/labels
+        // switch on tempoSync so a single entry covers both Hz and sync-division.
+        if (!trackInfo->mods.empty()) {
+            juce::PopupMenu trackModsMenu;
+            bool any = false;
+            for (const auto& mod : trackInfo->mods) {
+                if (!mod.enabled)
+                    continue;
+                AutomationTarget target;
+                target.type = AutomationTargetType::ModParameter;
+                target.trackId = trackId;
+                target.devicePath = trackPath;
+                target.modId = mod.id;
+                target.modParamIndex = 0;  // Rate
+                target.paramName = mod.name + " Rate";
+                int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                bool ticked = isTargetShown(target);
+                deviceParamTargets->push_back(target);
+                trackModsMenu.addItem(itemId, mod.name + " Rate", true, ticked);
+                any = true;
+            }
+            if (any)
+                addNewMenu.addSubMenu("Track Modulators", trackModsMenu);
+        }
+    }
+
     // Send levels — one entry per existing aux send on this track.
     if (trackInfo && !trackInfo->sends.empty()) {
         addNewMenu.addSeparator();
@@ -3392,33 +3447,6 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
         ChainNodePath rootPath = ChainNodePath::trackLevel(trackId);
         buildMenu(trackInfo->chainElements, rootPath, addNewMenu);
-
-        // Track-scope modifier entries — siblings of the chain content,
-        // grouped under a "Track Modulators" submenu when present. One Rate
-        // lane per mod; the lane's scale/labels switch on tempoSync so a
-        // single entry covers both Hz and sync-division automation.
-        if (!trackInfo->mods.empty()) {
-            juce::PopupMenu trackModsMenu;
-            bool any = false;
-            for (const auto& mod : trackInfo->mods) {
-                if (!mod.enabled)
-                    continue;
-                AutomationTarget target;
-                target.type = AutomationTargetType::ModParameter;
-                target.trackId = trackId;
-                target.devicePath = rootPath;  // track-level
-                target.modId = mod.id;
-                target.modParamIndex = 0;  // Rate
-                target.paramName = mod.name + " Rate";
-                int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
-                bool ticked = isTargetShown(target);
-                deviceParamTargets->push_back(target);
-                trackModsMenu.addItem(itemId, mod.name + " Rate", true, ticked);
-                any = true;
-            }
-            if (any)
-                addNewMenu.addSubMenu("Track Modulators", trackModsMenu);
-        }
     }
 
     menu.addSubMenu("Add New Lane...", addNewMenu);
