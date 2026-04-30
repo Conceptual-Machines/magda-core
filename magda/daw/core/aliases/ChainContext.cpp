@@ -32,6 +32,41 @@ ChainNodePath DefaultChainContext::focusedDevice() const {
     return {};
 }
 
+ChainNodePath DefaultChainContext::focusedMacroOwner() const {
+    auto& sel = SelectionManager::getInstance();
+    if (!sel.hasChainNodeSelection())
+        return {};
+
+    const auto& path = sel.getSelectedChainNode();
+    if (!path.isValid())
+        return {};
+
+    // Walk steps from innermost outward and return the first rack ancestor
+    // (or the focused rack itself). Truncating the path to the rack step
+    // yields a Rack-typed ChainNodePath whose getDeviceMacro target points
+    // at the rack's macro array.
+    //
+    // User-created racks live in path.steps; instrument-wrapper racks
+    // (InstrumentRackManager) are flattened into TopLevelDevice and never
+    // appear here, so a focused top-level instrument still automaps to its
+    // own device macros — preserving the "every device exposes macros
+    // uniformly" contract.
+    for (int i = static_cast<int>(path.steps.size()) - 1; i >= 0; --i) {
+        if (path.steps[i].type == ChainStepType::Rack) {
+            ChainNodePath rackPath;
+            rackPath.trackId = path.trackId;
+            rackPath.steps.assign(path.steps.begin(), path.steps.begin() + i + 1);
+            return rackPath;
+        }
+    }
+
+    // No rack ancestor — fall back to the focused device.
+    if (path.getType() == ChainNodeType::TopLevelDevice || path.getType() == ChainNodeType::Device)
+        return path;
+
+    return {};
+}
+
 const DeviceInfo* DefaultChainContext::deviceAt(const ChainNodePath& path) const {
     return TrackManager::getInstance().getDeviceInChainByPath(path);
 }

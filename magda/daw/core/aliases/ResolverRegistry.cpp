@@ -46,19 +46,25 @@ void ResolverRegistry::registerResolver(std::unique_ptr<AliasResolver> resolver)
 
 std::optional<StaticTarget> FocusedDeviceMacroResolver::resolve(const juce::StringPairArray& args,
                                                                 const ChainContext& ctx) const {
-    auto devicePath = ctx.focusedDevice();
-    if (!devicePath.isValid())
+    // Use focusedMacroOwner() rather than focusedDevice() so that focusing
+    // a user-created rack (or any device inside one) auto-maps the
+    // controller to the RACK's macros, not the inner device's. Top-level
+    // instruments still resolve to their own device macros because they
+    // have no rack ancestor in the chain path (the InstrumentRackManager
+    // wrapper rack is flattened away and never appears here).
+    auto ownerPath = ctx.focusedMacroOwner();
+    if (!ownerPath.isValid())
         return std::nullopt;
 
     int macroIndex = args.getValue("macroIndex", "0").getIntValue();
 
     StaticTarget t;
-    t.devicePath = devicePath;
+    t.devicePath = ownerPath;
     t.paramIndex = macroIndex;
     t.owner = StaticTarget::Owner::DeviceMacro;
-    DBG("[AUTOMAP] FocusedDeviceMacroResolver: returning StaticTarget macroIndex="
-        << macroIndex << " owner=DeviceMacro trackId=" << devicePath.trackId
-        << " deviceId=" << devicePath.getDeviceId());
+    DBG("[AUTOMAP] FocusedDeviceMacroResolver: macroIndex=" << macroIndex << " ownerPathType="
+                                                            << static_cast<int>(ownerPath.getType())
+                                                            << " trackId=" << ownerPath.trackId);
     return t;
 }
 

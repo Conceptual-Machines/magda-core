@@ -369,6 +369,49 @@ TEST_CASE("FocusedDeviceMacroResolver returns DeviceMacro owner", "[aliases][res
     REQUIRE(result->devicePath == path);
 }
 
+TEST_CASE("FocusedDeviceMacroResolver targets focused rack's macros",
+          "[aliases][resolver][rack-automap]") {
+    // When the user focuses a user-created rack, automap should bind
+    // controller knobs to the rack's macros.
+    auto rackPath = ChainNodePath::rack(1, /*rackId=*/7);
+    FixedChainContext ctx;
+    ctx.setFocusedMacroOwner(rackPath);
+
+    const auto* resolver = ResolverRegistry::getInstance().findResolver("focused.macro");
+    REQUIRE(resolver != nullptr);
+
+    juce::StringPairArray args;
+    args.set("macroIndex", "2");
+    auto result = resolver->resolve(args, ctx);
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->owner == StaticTarget::Owner::DeviceMacro);
+    REQUIRE(result->paramIndex == 2);
+    REQUIRE(result->devicePath == rackPath);
+    REQUIRE(result->devicePath.getType() == ChainNodeType::Rack);
+}
+
+TEST_CASE("FocusedDeviceMacroResolver promotes inner-device focus to enclosing rack",
+          "[aliases][resolver][rack-automap]") {
+    // Selecting a device INSIDE a user rack must NOT automap to that
+    // device's own macros — the rack is the canonical hands-on layer.
+    // The DefaultChainContext walks the path up to the innermost rack;
+    // here we simulate that walked result via setFocusedMacroOwner.
+    auto rackPath = ChainNodePath::rack(1, /*rackId=*/7);
+    FixedChainContext ctx;
+    ctx.setFocusedMacroOwner(rackPath);
+    // The fact that the user clicked the inner device is irrelevant to
+    // the resolver — focusedMacroOwner already collapsed it to the rack.
+    ctx.setFocusedDevice(makePath(1, /*deviceId=*/55));
+
+    const auto* resolver = ResolverRegistry::getInstance().findResolver("focused.macro");
+    auto result = resolver->resolve({}, ctx);
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->devicePath == rackPath);
+    REQUIRE(result->devicePath.getDeviceId() == INVALID_DEVICE_ID);
+}
+
 TEST_CASE("StaticTarget JSON round-trip preserves DeviceMacro owner",
           "[aliases][resolver][owner]") {
     StaticTarget st;

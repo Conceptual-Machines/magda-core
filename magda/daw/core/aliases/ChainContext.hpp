@@ -50,6 +50,21 @@ class ChainContext {
     virtual ChainNodePath focusedDevice() const = 0;
 
     /**
+     * @brief Get the path of the chain node whose macros should be
+     * targeted by automap (e.g. focused.macro resolver).
+     *
+     * Walks the focus path up to the innermost user-rack ancestor (or
+     * itself if it IS a rack). Falls back to the focused device when no
+     * rack ancestor exists (top-level instrument case). Returns an
+     * invalid path when no macro-bearing node is focused.
+     *
+     * Distinct from focusedDevice(): selecting a device INSIDE a user
+     * rack should automap to the RACK's macros, not the inner device's,
+     * so the rack's macro page is the canonical hands-on layer.
+     */
+    virtual ChainNodePath focusedMacroOwner() const = 0;
+
+    /**
      * @brief Look up a DeviceInfo at the given path.
      *
      * Returns nullptr if the path is invalid or no device lives there.
@@ -94,6 +109,7 @@ class DefaultChainContext : public ChainContext {
     ChainNodePath focusedChain() const override;
     TrackId selectedTrack() const override;
     ChainNodePath focusedDevice() const override;
+    ChainNodePath focusedMacroOwner() const override;
     const DeviceInfo* deviceAt(const ChainNodePath& path) const override;
     std::vector<DeviceWithPath> devicesInFocusedChain() const override;
     std::vector<DeviceWithPath> devicesForTrack(TrackId trackId) const override;
@@ -121,6 +137,12 @@ class FixedChainContext : public ChainContext {
     void setFocusedDevice(const ChainNodePath& path) {
         focusedDevice_ = path;
     }
+    // Optional override: by default focusedMacroOwner() returns focusedDevice_.
+    // Tests for the rack-automap path set this explicitly.
+    void setFocusedMacroOwner(const ChainNodePath& path) {
+        focusedMacroOwner_ = path;
+        hasMacroOwner_ = true;
+    }
 
     /**
      * @brief Register a device with the context.
@@ -141,6 +163,9 @@ class FixedChainContext : public ChainContext {
     }
     ChainNodePath focusedDevice() const override {
         return focusedDevice_;
+    }
+    ChainNodePath focusedMacroOwner() const override {
+        return hasMacroOwner_ ? focusedMacroOwner_ : focusedDevice_;
     }
     const DeviceInfo* deviceAt(const ChainNodePath& path) const override {
         for (const auto& entry : devices_)
@@ -164,6 +189,8 @@ class FixedChainContext : public ChainContext {
     ChainNodePath focusedChain_;
     TrackId selectedTrack_ = INVALID_TRACK_ID;
     ChainNodePath focusedDevice_;
+    ChainNodePath focusedMacroOwner_;
+    bool hasMacroOwner_ = false;
     std::vector<DeviceWithPath> devices_;
 };
 
