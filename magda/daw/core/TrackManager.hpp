@@ -367,6 +367,20 @@ class TrackManager {
     bool applyRackPreset(const ChainNodePath& rackPath, const RackInfo& presetRack);
 
     /**
+     * @brief Replace a track's FX chain with a loaded chain preset's elements.
+     *
+     * Replaces track.chainElements wholesale with the preset's elements. The
+     * track's identity (id, name, type, send routing, master volume/pan/etc.)
+     * is preserved — only the inline chain is swapped. All chain / device /
+     * nested-rack ids in the preset are reassigned to fresh runtime values to
+     * avoid collisions with other live elements. Triggers
+     * notifyTrackDevicesChanged so AudioBridge resyncs the track's plugins.
+     *
+     * Returns false if trackId doesn't resolve to a live track.
+     */
+    bool applyChainPreset(TrackId trackId, std::vector<ChainElement> presetElements);
+
+    /**
      * @brief Set a device parameter value from the plugin's native UI
      *
      * This method is called when the plugin's native UI changes a parameter.

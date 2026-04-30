@@ -146,13 +146,15 @@ bool PresetManager::saveChainPreset(const std::vector<ChainElement>& chainElemen
     auto* payload = new juce::DynamicObject();
     payload->setProperty("elements", juce::var(elementsArray));
 
-    auto target = getChainsDirectory().getChildFile(sanitizeName(presetName) + kPresetExtension);
+    auto target =
+        getChainsDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
     return writePresetFile(target, kKindChain, juce::var(payload), lastError_);
 }
 
 bool PresetManager::loadChainPreset(const juce::String& presetName,
                                     std::vector<ChainElement>& outChainElements) {
-    auto source = getChainsDirectory().getChildFile(sanitizeName(presetName) + kPresetExtension);
+    auto source =
+        getChainsDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
     juce::var payload;
     if (!readPresetFile(source, kKindChain, payload, lastError_))
         return false;
@@ -182,7 +184,9 @@ bool PresetManager::loadChainPreset(const juce::String& presetName,
 }
 
 juce::StringArray PresetManager::getChainPresets() const {
-    return getPresetList(getChainsDirectory());
+    juce::StringArray out;
+    collectPresetsRecursive(getChainsDirectory(), "", out);
+    return out;
 }
 
 // ============================================================================

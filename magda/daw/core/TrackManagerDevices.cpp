@@ -647,6 +647,39 @@ bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo
     return true;
 }
 
+bool TrackManager::applyChainPreset(TrackId trackId, std::vector<ChainElement> presetElements) {
+    auto* track = getTrack(trackId);
+    if (!track) {
+        DBG("applyChainPreset: no live track");
+        return false;
+    }
+
+    // Reassign every chain / device / nested-rack id in the preset so they
+    // don't collide with other live elements' runtime IDs. Same recursive
+    // walk applyRackPreset uses.
+    std::function<void(std::vector<ChainElement>&)> reassignIds;
+    reassignIds = [&](std::vector<ChainElement>& elements) {
+        for (auto& element : elements) {
+            if (magda::isDevice(element)) {
+                magda::getDevice(element).id = nextDeviceId_++;
+            } else if (magda::isRack(element)) {
+                auto& nested = magda::getRack(element);
+                nested.id = nextRackId_++;
+                for (auto& chain : nested.chains) {
+                    chain.id = nextChainId_++;
+                    reassignIds(chain.elements);
+                }
+            }
+        }
+    };
+    reassignIds(presetElements);
+
+    track->chainElements = std::move(presetElements);
+
+    notifyTrackDevicesChanged(trackId);
+    return true;
+}
+
 void TrackManager::setDeviceParameterValueFromPlugin(const ChainNodePath& devicePath,
                                                      int paramIndex, float value) {
     // This method is called when the plugin's native UI changes a parameter.
