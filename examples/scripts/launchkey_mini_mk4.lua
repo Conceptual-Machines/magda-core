@@ -78,16 +78,14 @@ end
 ----------------------------------------------------------------
 -- Transport row (DAW-port CCs on Channel 16)
 ----------------------------------------------------------------
--- Mini transport (from reference figures, Standalone fig. 1 / DAW fig. 3):
---   Play   = 0x73 (115)
---   Stop   = 0x75 (117) on Mini (Shift+Play in some firmware)
---   Record = 0x76 (118)
---   Loop   = ? — varies per firmware; check with a MIDI monitor and add
--- These are best-effort defaults — the figures in the PDF are tiny and you
--- may need to confirm with a MIDI monitor on your unit.
+-- Mini's transport area in DAW mode (reference fig. 3 p. 9):
+--   Play   = CC 115 (0x73)
+--   Record = CC 117 (0x75)
+-- The Mini has no dedicated Stop button. Stop is Shift+Play. Play here
+-- toggles play/stop, which covers the common case without needing to
+-- track Shift state.
 local TRANSPORT_PLAY   = 0x73
-local TRANSPORT_STOP   = 0x75
-local TRANSPORT_RECORD = 0x76
+local TRANSPORT_RECORD = 0x75
 
 ----------------------------------------------------------------
 -- Lifecycle
@@ -130,8 +128,6 @@ local function handle_transport_cc(e)
     else
       magda.transport.play()
     end
-  elseif e.number == TRANSPORT_STOP then
-    magda.transport.stop()
   elseif e.number == TRANSPORT_RECORD then
     magda.transport.set_recording(not magda.transport.is_recording())
   end
