@@ -20,6 +20,7 @@ namespace magda {
 class AutomationAgent;
 class CommandAgent;
 class ControllerProfileAgent;
+class FourOscAgent;
 class DAWAgent;
 class MagdaApi;
 class MagdaApiLive;
@@ -143,6 +144,7 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<magda::MusicAgent> musicAgent_;
     std::unique_ptr<magda::AutomationAgent> automationAgent_;
     std::unique_ptr<magda::ControllerProfileAgent> controllerAgent_;
+    std::unique_ptr<magda::FourOscAgent> fourOscAgent_;
     std::unique_ptr<RequestThread> requestThread_;
 
     // Dedicated thread for the controller profile agent (kept separate from
@@ -163,6 +165,36 @@ class AIChatConsoleContent : public PanelContent,
     void startControllerGeneration(const juce::String& description);
     void finishControllerGeneration(bool success, const juce::String& errorOrRawJson,
                                     juce::String profileId, juce::String profileName);
+
+    // /design <description> — kick the FourOscAgent on a background thread
+    // and dump the parsed JSON into chat. Kept on its own thread so a
+    // long preset generation can't block the main router/command/music
+    // pipeline running in requestThread_.
+    class FourOscRequestThread : public juce::Thread {
+      public:
+        FourOscRequestThread(AIChatConsoleContent& owner, juce::String description);
+        void run() override;
+
+      private:
+        AIChatConsoleContent& owner_;
+        juce::String description_;
+    };
+    std::unique_ptr<FourOscRequestThread> fourOscThread_;
+    void startPresetGeneration(const juce::String& description);
+    void finishPresetGeneration(bool success, const juce::String& errorOrPretty,
+                                juce::String presetName);
+
+    // Last preset name produced by /design — used as the default for a
+    // bare `/save` so the user can run /design then /save to commit it
+    // without having to retype the name.
+    juce::String lastDesignedPresetName_;
+    void saveDesignedPresetToFocusedDevice(const juce::String& name);
+
+    // Clear the input box's text AND force a repaint. Document mutations
+    // alone don't always invalidate the CodeEditorComponent's glyph
+    // cache (especially on macOS with our custom fonts), leaving stale
+    // pixels under where the previous text rendered.
+    void clearInput();
     std::atomic<bool> shouldStop_{false};
     std::atomic<bool> processing_{false};
     juce::String pendingMessage_;
