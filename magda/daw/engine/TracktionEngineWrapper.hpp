@@ -19,6 +19,7 @@ namespace magda {
 
 // Forward declarations
 class AudioBridge;
+class MagdaApi;
 class MidiBridge;
 class PluginScanCoordinator;
 class PluginWindowManager;
@@ -236,6 +237,13 @@ class TracktionEngineWrapper : public AudioEngine,
     }
     const tracktion::Edit* getEdit() const {
         return currentEdit_.get();
+    }
+
+    /** Programmatic facade onto MAGDA's DAW state. Owned by the wrapper and
+     *  shared across consumers (AI Chat panel, Lua controller, future CLI).
+     *  The reference is valid for the lifetime of the wrapper. */
+    MagdaApi& getMagdaApi() {
+        return *magdaApi_;
     }
 
     // =========================================================================
@@ -461,6 +469,13 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // MIDI bridge for MIDI device management and routing
     std::unique_ptr<MidiBridge> midiBridge_;
+
+    // Programmatic facade onto MAGDA's DAW state. Owned here and shared
+    // with consumers (AI Chat, Lua controller, future CLI) via getMagdaApi().
+    // No Lua / scripting types referenced from this lib — the Lua controller
+    // lives in the magda_daw_app layer to avoid a circular link with
+    // magda_scripting.
+    std::unique_ptr<MagdaApi> magdaApi_;
 
     // Plugin window manager for safe window lifecycle
     std::unique_ptr<PluginWindowManager> pluginWindowManager_;

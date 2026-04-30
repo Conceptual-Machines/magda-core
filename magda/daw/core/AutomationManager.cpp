@@ -397,12 +397,11 @@ std::optional<double> AutomationManager::getTouchBaseline(const AutomationTarget
 }
 
 void AutomationManager::clearTouchBaseline(const AutomationTarget& target) {
-    touchBaselines_.erase(
-        std::remove_if(touchBaselines_.begin(), touchBaselines_.end(),
-                       [&](const std::pair<AutomationTarget, double>& e) {
-                           return e.first == target;
-                       }),
-        touchBaselines_.end());
+    touchBaselines_.erase(std::remove_if(touchBaselines_.begin(), touchBaselines_.end(),
+                                         [&](const std::pair<AutomationTarget, double>& e) {
+                                             return e.first == target;
+                                         }),
+                          touchBaselines_.end());
 }
 
 AutomationVisualState AutomationManager::getVisualState(const AutomationTarget& target) const {

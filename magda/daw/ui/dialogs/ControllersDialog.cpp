@@ -10,6 +10,7 @@
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
+#include "scripting_app.hpp"
 
 namespace magda {
 
@@ -17,15 +18,177 @@ namespace {
 
 constexpr int kPollIntervalMs = 2000;
 
+void styleListBox(juce::ListBox& lb) {
+    lb.setColour(juce::ListBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
+    lb.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
+    lb.setOutlineThickness(1);
+}
+
 }  // namespace
 
 // =============================================================================
-// ControllerListModel
+// ControllerProfilesPage
 // =============================================================================
 
-void ControllersDialog::ControllerListModel::paintListBoxItem(int rowNumber, juce::Graphics& g,
-                                                              int width, int height,
-                                                              bool rowIsSelected) {
+class ControllerProfilesPage : public juce::Component,
+                               private ControllerRegistryListener,
+                               private juce::Timer {
+  public:
+    ControllerProfilesPage() {
+        openFolderButton_.setButtonText(tr("controllers.open_profiles_folder"));
+        openFolderButton_.onClick = [this]() { onOpenFolderClicked(); };
+        addAndMakeVisible(openFolderButton_);
+
+        uploadButton_.setButtonText(tr("controllers.upload_profile"));
+        uploadButton_.onClick = [this]() { onUploadClicked(); };
+        addAndMakeVisible(uploadButton_);
+
+        addButton_.setButtonText(tr("controllers.add_profile"));
+        addButton_.onClick = [this]() { onAddClicked(); };
+        addAndMakeVisible(addButton_);
+
+        listModel_.controllers = &controllers_;
+        listModel_.isConnected = [this](const Controller& c) { return isControllerConnected(c); };
+        listModel_.isEnabled = [](const Controller& c) {
+            return BindingRegistry::getInstance().hasAnyBindingForController(c.id);
+        };
+        listModel_.onRowClicked = [this](int row, const juce::MouseEvent& e) {
+            onRowClicked(row, e);
+        };
+
+        list_ = std::make_unique<juce::ListBox>("profiles", &listModel_);
+        styleListBox(*list_);
+        list_->setRowHeight(46);
+        addAndMakeVisible(*list_);
+
+        refreshLiveInputs();
+        if (ControllerRegistry::getInstance().rematchInputPorts(liveInputs_))
+            persist();
+        rebuildList();
+
+        ControllerRegistry::getInstance().addListener(this);
+        startTimer(kPollIntervalMs);
+    }
+
+    ~ControllerProfilesPage() override {
+        stopTimer();
+        ControllerRegistry::getInstance().removeListener(this);
+        if (list_)
+            list_->setModel(nullptr);
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(16);
+        const int rowH = 28;
+        const int btnGap = 6;
+        const int openW = 170;
+        const int uploadW = 140;
+        const int addW = 120;
+
+        // Left-to-right: Open Folder | Upload | + Add. Same shape as Scripts.
+        auto buttonRow = bounds.removeFromTop(rowH);
+        openFolderButton_.setBounds(buttonRow.removeFromLeft(openW));
+        buttonRow.removeFromLeft(btnGap);
+        uploadButton_.setBounds(buttonRow.removeFromLeft(uploadW));
+        buttonRow.removeFromLeft(btnGap);
+        addButton_.setBounds(buttonRow.removeFromLeft(addW));
+        bounds.removeFromTop(8);
+
+        list_->setBounds(bounds);
+    }
+
+  private:
+    struct ControllerListModel : public juce::ListBoxModel {
+        std::vector<Controller>* controllers = nullptr;
+        std::function<bool(const Controller&)> isConnected;
+        std::function<bool(const Controller&)> isEnabled;
+        std::function<void(int, const juce::MouseEvent&)> onRowClicked;
+
+        int getNumRows() override {
+            return controllers ? static_cast<int>(controllers->size()) : 0;
+        }
+        void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height,
+                              bool rowIsSelected) override;
+        void listBoxItemClicked(int row, const juce::MouseEvent& e) override {
+            if (onRowClicked)
+                onRowClicked(row, e);
+        }
+    };
+
+    void controllerRegistryChanged() override {
+        rebuildList();
+    }
+
+    void timerCallback() override {
+        auto previous = liveInputs_;
+        refreshLiveInputs();
+        bool changed = previous.size() != liveInputs_.size();
+        if (!changed) {
+            for (int i = 0; i < liveInputs_.size(); ++i) {
+                if (previous[i].identifier != liveInputs_[i].identifier ||
+                    previous[i].name != liveInputs_[i].name) {
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        if (!changed)
+            return;
+        if (ControllerRegistry::getInstance().rematchInputPorts(liveInputs_))
+            persist();
+        rebuildList();
+    }
+
+    void refreshLiveInputs() {
+        liveInputs_ = juce::MidiInput::getAvailableDevices();
+    }
+
+    void rebuildList() {
+        controllers_ = ControllerRegistry::getInstance().all();
+        if (list_)
+            list_->updateContent();
+        repaint();
+    }
+
+    static void persist() {
+        auto& cfg = Config::getInstance();
+        cfg.setControllers(ControllerRegistry::getInstance().saveToConfig());
+        cfg.setGlobalBindings(BindingRegistry::getInstance().saveGlobal());
+        cfg.save();
+    }
+
+    bool isControllerConnected(const Controller& c) const {
+        for (const auto& dev : liveInputs_)
+            if (dev.identifier == c.inputPort)
+                return true;
+        return false;
+    }
+
+    void onAddClicked();
+    void onUploadClicked();
+    void onOpenFolderClicked();
+    void importProfileFile(const juce::File& file, const juce::String& title);
+    void onProfilePicked(const ControllerProfile& profile);
+    void onPortPicked(const ControllerProfile& profile, const juce::MidiDeviceInfo& dev);
+
+    void onRowClicked(int row, const juce::MouseEvent& e);
+    void onRowToggled(int row);
+    void onRowRemoveRequested(int row);
+
+    std::vector<Controller> controllers_;
+    juce::Array<juce::MidiDeviceInfo> liveInputs_;
+
+    juce::TextButton openFolderButton_;
+    juce::TextButton uploadButton_;
+    juce::TextButton addButton_;
+    ControllerListModel listModel_;
+    std::unique_ptr<juce::ListBox> list_;
+    std::unique_ptr<juce::FileChooser> uploadChooser_;
+};
+
+void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber, juce::Graphics& g,
+                                                                   int width, int height,
+                                                                   bool rowIsSelected) {
     if (!controllers || rowNumber < 0 || rowNumber >= static_cast<int>(controllers->size()))
         return;
 
@@ -45,14 +208,12 @@ void ControllersDialog::ControllerListModel::paintListBoxItem(int rowNumber, juc
     const int textX = dotX + dotSize + 8;
     const int lineH = (height - 2 * pad) / 2;
 
-    // Status dot: green when enabled + connected, dim otherwise
     const int dotY = (height - dotSize) / 2;
     g.setColour(active ? DarkTheme::getColour(DarkTheme::ACCENT_GREEN)
                        : DarkTheme::getColour(DarkTheme::TEXT_DIM));
     g.fillEllipse(static_cast<float>(dotX), static_cast<float>(dotY), static_cast<float>(dotSize),
                   static_cast<float>(dotSize));
 
-    // Line 1: "Vendor  .  Name" — full opacity when active, dimmed otherwise
     juce::String line1 = c.vendor.isEmpty() ? c.name : c.vendor + "  \xc2\xb7  " + c.name;
     g.setColour(active ? DarkTheme::getTextColour()
                        : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
@@ -60,7 +221,6 @@ void ControllersDialog::ControllerListModel::paintListBoxItem(int rowNumber, juc
     g.drawText(line1, textX, pad, width - textX - pad, lineH, juce::Justification::centredLeft,
                true);
 
-    // Line 2: port name · status
     juce::String status;
     if (!enabled)
         status = tr("controllers.disabled");
@@ -78,139 +238,36 @@ void ControllersDialog::ControllerListModel::paintListBoxItem(int rowNumber, juc
                juce::Justification::centredLeft, true);
 }
 
-// =============================================================================
-// ControllersDialog
-// =============================================================================
+// -- Profiles page handlers ---------------------------------------------------
 
-ControllersDialog::ControllersDialog() {
-    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
-
-    // Section header
-    sectionLabel_.setText(tr("controllers.my_controllers"), juce::dontSendNotification);
-    sectionLabel_.setColour(juce::Label::textColourId,
-                            DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    sectionLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
-    sectionLabel_.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(sectionLabel_);
-
-    addButton_.setButtonText(tr("controllers.add_profile"));
-    addButton_.onClick = [this]() { onAddClicked(); };
-    addAndMakeVisible(addButton_);
-
-    uploadButton_.setButtonText(tr("controllers.upload_profile"));
-    uploadButton_.onClick = [this]() { onUploadClicked(); };
-    addAndMakeVisible(uploadButton_);
-
-    // Controllers list
-    listModel_.controllers = &controllers_;
-    listModel_.isConnected = [this](const Controller& c) { return isControllerConnected(c); };
-    listModel_.isEnabled = [](const Controller& c) {
-        return BindingRegistry::getInstance().hasAnyBindingForController(c.id);
-    };
-    listModel_.onRowClicked = [this](int row, const juce::MouseEvent& e) { onRowClicked(row, e); };
-
-    list_ = std::make_unique<juce::ListBox>("controllers", &listModel_);
-    list_->setColour(juce::ListBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
-    list_->setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
-    list_->setOutlineThickness(1);
-    list_->setRowHeight(46);
-    addAndMakeVisible(*list_);
-
-    refreshLiveInputs();
-
-    // Adopt the registry on first show: rematch any stale identifiers against
-    // the current live input list, then pick up the data.
-    if (ControllerRegistry::getInstance().rematchInputPorts(liveInputs_))
-        persist();
+void ControllerProfilesPage::onOpenFolderClicked() {
+    auto dir = ControllerProfileRegistry::userControllersDirectory();
+    if (!dir.isDirectory())
+        dir.createDirectory();
+    dir.revealToUser();
+    // Re-scan when the user comes back — they may have dropped/removed files.
+    ControllerProfileRegistry::getInstance().load();
     rebuildList();
-
-    ControllerRegistry::getInstance().addListener(this);
-    startTimer(kPollIntervalMs);
-
-    setSize(560, 440);
 }
 
-ControllersDialog::~ControllersDialog() {
-    stopTimer();
-    ControllerRegistry::getInstance().removeListener(this);
-    setLookAndFeel(nullptr);
-    if (list_)
-        list_->setModel(nullptr);
-}
-
-void ControllersDialog::paint(juce::Graphics& g) {
-    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-}
-
-void ControllersDialog::resized() {
-    auto bounds = getLocalBounds().reduced(16);
-    const int labelH = 24;
-    const int addBtnW = 120;
-    const int uploadBtnW = 140;
-    const int btnGap = 6;
-
-    // Section header row: label on the left, upload + add buttons on the right
-    auto headerRow = bounds.removeFromTop(labelH);
-    addButton_.setBounds(headerRow.removeFromRight(addBtnW));
-    headerRow.removeFromRight(btnGap);
-    uploadButton_.setBounds(headerRow.removeFromRight(uploadBtnW));
-    sectionLabel_.setBounds(headerRow);
-    bounds.removeFromTop(6);
-
-    list_->setBounds(bounds);
-}
-
-// -----------------------------------------------------------------------------
-// Data helpers
-// -----------------------------------------------------------------------------
-
-void ControllersDialog::refreshLiveInputs() {
-    liveInputs_ = juce::MidiInput::getAvailableDevices();
-}
-
-void ControllersDialog::rebuildList() {
-    controllers_ = ControllerRegistry::getInstance().all();
-    if (list_)
-        list_->updateContent();
-    repaint();
-}
-
-void ControllersDialog::persist() {
-    auto& cfg = Config::getInstance();
-    cfg.setControllers(ControllerRegistry::getInstance().saveToConfig());
-    cfg.setGlobalBindings(BindingRegistry::getInstance().saveGlobal());
-    cfg.save();
-}
-
-bool ControllersDialog::isControllerConnected(const Controller& c) const {
-    for (const auto& dev : liveInputs_)
-        if (dev.identifier == c.inputPort)
-            return true;
-    return false;
-}
-
-// -----------------------------------------------------------------------------
-// Add flow
-// -----------------------------------------------------------------------------
-
-void ControllersDialog::onUploadClicked() {
+void ControllerProfilesPage::onUploadClicked() {
     auto title = tr("controllers.upload_profile");
     uploadChooser_ = std::make_unique<juce::FileChooser>(
         title, juce::File::getSpecialLocation(juce::File::userHomeDirectory), "*.json");
-    juce::Component::SafePointer<ControllersDialog> safeThis(this);
+    juce::Component::SafePointer<ControllerProfilesPage> safeThis(this);
     uploadChooser_->launchAsync(juce::FileBrowserComponent::openMode |
                                     juce::FileBrowserComponent::canSelectFiles,
                                 [safeThis, title](const juce::FileChooser& fc) {
                                     auto file = fc.getResult();
                                     if (file == juce::File{})
-                                        return;  // cancelled
+                                        return;
                                     if (safeThis == nullptr)
-                                        return;  // dialog closed before chooser returned
+                                        return;
                                     safeThis->importProfileFile(file, title);
                                 });
 }
 
-void ControllersDialog::importProfileFile(const juce::File& file, const juce::String& title) {
+void ControllerProfilesPage::importProfileFile(const juce::File& file, const juce::String& title) {
     auto fail = [&](const juce::String& reason) {
         juce::AlertWindow::showMessageBox(juce::AlertWindow::WarningIcon, title, reason);
     };
@@ -223,8 +280,6 @@ void ControllersDialog::importProfileFile(const juce::File& file, const juce::St
     if (!profileOpt.has_value())
         return fail(tr("controllers.upload_invalid_profile"));
 
-    // Cross-field consistency — duplicate controlIds, defaultBindings pointing
-    // at unknown controls. Validator emits localizable keys, UI formats.
     auto issues = validateControllerProfile(*profileOpt);
     if (!issues.empty()) {
         juce::String body = tr("controllers.upload_validation_failed");
@@ -242,8 +297,6 @@ void ControllersDialog::importProfileFile(const juce::File& file, const juce::St
                             .replace("{0}", createResult.getErrorMessage()));
     }
 
-    // Copy with a name derived from the profile id so the file lives next to
-    // its siblings; if a profile with the same id exists, ask before clobbering.
     auto destFile =
         userDir.getChildFile(ControllerProfileRegistry::filenameForProfileId(profileOpt->id));
 
@@ -259,7 +312,7 @@ void ControllersDialog::importProfileFile(const juce::File& file, const juce::St
     if (!file.copyFileTo(destFile))
         return fail(tr("controllers.upload_copy_failed"));
 
-    reg.load();  // pick up the new file
+    reg.load();
     rebuildList();
 
     juce::AlertWindow::showMessageBox(
@@ -267,10 +320,7 @@ void ControllersDialog::importProfileFile(const juce::File& file, const juce::St
         tr("controllers.upload_success").replace("{0}", profileOpt->id));
 }
 
-void ControllersDialog::onAddClicked() {
-    // Re-scan the profiles directory so files added or removed on disk since
-    // app launch are reflected in the menu — without this, deleting a JSON in
-    // Finder still leaves the entry in +Add.
+void ControllerProfilesPage::onAddClicked() {
     auto& profileReg = ControllerProfileRegistry::getInstance();
     profileReg.load();
     auto profiles = profileReg.all();
@@ -282,7 +332,6 @@ void ControllersDialog::onAddClicked() {
     }
 
     juce::PopupMenu menu;
-    // Disambiguate entries sharing the same vendor·name by appending the id.
     std::map<juce::String, int> nameCounts;
     for (const auto& p : profiles) {
         juce::String key = p.vendor + "\x1f" + p.name;
@@ -308,20 +357,17 @@ void ControllersDialog::onAddClicked() {
                        });
 }
 
-void ControllersDialog::onProfilePicked(const ControllerProfile& profile) {
+void ControllerProfilesPage::onProfilePicked(const ControllerProfile& profile) {
     refreshLiveInputs();
-
     if (liveInputs_.isEmpty()) {
         juce::AlertWindow::showMessageBox(juce::AlertWindow::WarningIcon,
                                           tr("controllers.add_profile"),
                                           tr("controllers.no_midi_inputs"));
         return;
     }
-
     juce::PopupMenu menu;
     for (int i = 0; i < liveInputs_.size(); ++i)
         menu.addItem(i + 1, liveInputs_[i].name);
-
     auto devicesCopy = liveInputs_;
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addButton_),
                        [this, profile, devicesCopy](int result) {
@@ -334,14 +380,11 @@ void ControllersDialog::onProfilePicked(const ControllerProfile& profile) {
                        });
 }
 
-void ControllersDialog::onPortPicked(const ControllerProfile& profile,
-                                     const juce::MidiDeviceInfo& dev) {
+void ControllerProfilesPage::onPortPicked(const ControllerProfile& profile,
+                                          const juce::MidiDeviceInfo& dev) {
     auto& controllerReg = ControllerRegistry::getInstance();
     auto& bindingReg = BindingRegistry::getInstance();
 
-    // One enabled controller per port: any existing row on this port stays
-    // registered, but its bindings are dropped so it goes inactive. The new
-    // controller becomes the active one.
     for (const auto& existing : controllerReg.all()) {
         if (existing.inputPort == dev.identifier) {
             bindingReg.removeAllForController(BindingScope::Global, existing.id);
@@ -350,7 +393,6 @@ void ControllersDialog::onPortPicked(const ControllerProfile& profile,
     }
 
     auto mat = materialiseControllerFromProfile(profile, dev.identifier, {}, dev.name);
-
     controllerReg.add(mat.controller);
     for (const auto& b : mat.bindings)
         bindingReg.add(BindingScope::Global, b);
@@ -359,38 +401,27 @@ void ControllersDialog::onPortPicked(const ControllerProfile& profile,
     rebuildList();
 }
 
-// -----------------------------------------------------------------------------
-// Row interaction
-// -----------------------------------------------------------------------------
-
-void ControllersDialog::onRowClicked(int row, const juce::MouseEvent& e) {
+void ControllerProfilesPage::onRowClicked(int row, const juce::MouseEvent& e) {
     if (row < 0 || row >= static_cast<int>(controllers_.size()))
         return;
-
     if (e.mods.isPopupMenu() || e.mods.isRightButtonDown() || e.mods.isCtrlDown()) {
         onRowRemoveRequested(row);
         return;
     }
-
     onRowToggled(row);
 }
 
-void ControllersDialog::onRowToggled(int row) {
+void ControllerProfilesPage::onRowToggled(int row) {
     if (row < 0 || row >= static_cast<int>(controllers_.size()))
         return;
-
     const auto& c = controllers_[static_cast<size_t>(row)];
     auto& controllerReg = ControllerRegistry::getInstance();
     auto& bindingReg = BindingRegistry::getInstance();
 
     if (bindingReg.hasAnyBindingForController(c.id)) {
-        // Currently enabled — silence by removing all bindings keyed to this id.
         bindingReg.removeAllForController(BindingScope::Global, c.id);
         bindingReg.removeAllForController(BindingScope::Project, c.id);
     } else {
-        // Currently disabled — first silence any other controller on the same
-        // port (one enabled per port), then re-materialise this profile's
-        // bindings and add them back.
         for (const auto& other : controllerReg.all()) {
             if (other.id == c.id || other.inputPort != c.inputPort)
                 continue;
@@ -402,22 +433,18 @@ void ControllersDialog::onRowToggled(int row) {
             return;
         auto mat = materialiseControllerFromProfile(*profileOpt, c.inputPort, c.outputPort,
                                                     c.inputPortName);
-        // Reuse the existing controller's id so bindings stay tied to the same
-        // registry row across enable/disable cycles.
         for (auto& b : mat.bindings) {
             b.source.controllerId = c.id;
             bindingReg.add(BindingScope::Global, b);
         }
     }
-
     persist();
     rebuildList();
 }
 
-void ControllersDialog::onRowRemoveRequested(int row) {
+void ControllerProfilesPage::onRowRemoveRequested(int row) {
     if (row < 0 || row >= static_cast<int>(controllers_.size()))
         return;
-
     const auto& c = controllers_[static_cast<size_t>(row)];
 
     juce::PopupMenu menu;
@@ -430,21 +457,14 @@ void ControllersDialog::onRowRemoveRequested(int row) {
     const auto name = c.name;
     const auto profileId = c.profileId;
 
-    // No target component → JUCE pops the menu at the cursor (where the user
-    // right-clicked), instead of pinning it to the list's edge.
     menu.showMenuAsync(juce::PopupMenu::Options(), [this, id, name, profileId](int result) {
         if (result == 2) {
-            // Bundled profile filenames don't always match their id
-            // (e.g. id "novation.launchkey_mini_mk4" lives in
-            // novation_launchkey_mini_mk4.json), so look the file up by
-            // parsed id rather than synthesising a path.
             auto file =
                 ControllerProfileRegistry::getInstance().findSourceFileForProfileId(profileId);
             if (file.existsAsFile())
                 file.revealToUser();
             return;
         }
-
         if (result != 1)
             return;
 
@@ -457,7 +477,6 @@ void ControllersDialog::onRowRemoveRequested(int row) {
             nullptr, juce::ModalCallbackFunction::create([this, id](int result2) {
                 if (result2 != 1)
                     return;
-
                 BindingRegistry::getInstance().removeAllForController(BindingScope::Global, id);
                 ControllerRegistry::getInstance().remove(id);
                 persist();
@@ -466,36 +485,265 @@ void ControllersDialog::onRowRemoveRequested(int row) {
     });
 }
 
-// -----------------------------------------------------------------------------
-// Listeners
-// -----------------------------------------------------------------------------
+// =============================================================================
+// LuaScriptsPage
+// =============================================================================
 
-void ControllersDialog::controllerRegistryChanged() {
-    rebuildList();
-}
+class LuaScriptsPage : public juce::Component {
+  public:
+    LuaScriptsPage() {
+        openScriptsFolderButton_.setButtonText(tr("controllers.scripts.open_folder"));
+        openScriptsFolderButton_.onClick = [this]() { onOpenScriptsFolderClicked(); };
+        addAndMakeVisible(openScriptsFolderButton_);
 
-void ControllersDialog::timerCallback() {
-    auto previous = liveInputs_;
-    refreshLiveInputs();
+        importButton_.setButtonText(tr("controllers.scripts.import"));
+        importButton_.onClick = [this]() { onImportClicked(); };
+        addAndMakeVisible(importButton_);
 
-    // Has the device set changed?
-    bool changed = previous.size() != liveInputs_.size();
-    if (!changed) {
-        for (int i = 0; i < liveInputs_.size(); ++i) {
-            if (previous[i].identifier != liveInputs_[i].identifier ||
-                previous[i].name != liveInputs_[i].name) {
-                changed = true;
-                break;
-            }
-        }
+        reloadLuaButton_.setButtonText(tr("controllers.scripts.reload"));
+        reloadLuaButton_.onClick = [this]() { onReloadLuaClicked(); };
+        addAndMakeVisible(reloadLuaButton_);
+
+        listModel_.scripts = &scripts_;
+        listModel_.activeScriptName = []() { return scripting_app::activeLuaScriptName(); };
+        listModel_.onRowClicked = [this](int row, const juce::MouseEvent& e) {
+            onRowClicked(row, e);
+        };
+
+        list_ = std::make_unique<juce::ListBox>("scripts", &listModel_);
+        styleListBox(*list_);
+        list_->setRowHeight(28);
+        addAndMakeVisible(*list_);
+
+        rebuildScripts();
     }
 
-    if (!changed)
+    ~LuaScriptsPage() override {
+        if (list_)
+            list_->setModel(nullptr);
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(16);
+        const int rowH = 28;
+        const int btnGap = 6;
+        const int openW = 170;
+        const int importW = 140;
+        const int reloadW = 100;
+
+        // Left-to-right: Open Folder | Import | Reload. Same shape as Profiles.
+        auto buttonRow = bounds.removeFromTop(rowH);
+        openScriptsFolderButton_.setBounds(buttonRow.removeFromLeft(openW));
+        buttonRow.removeFromLeft(btnGap);
+        importButton_.setBounds(buttonRow.removeFromLeft(importW));
+        buttonRow.removeFromLeft(btnGap);
+        reloadLuaButton_.setBounds(buttonRow.removeFromLeft(reloadW));
+        bounds.removeFromTop(8);
+
+        list_->setBounds(bounds);
+    }
+
+  private:
+    struct ScriptListModel : public juce::ListBoxModel {
+        std::vector<juce::File>* scripts = nullptr;
+        std::function<juce::String()> activeScriptName;
+        std::function<void(int, const juce::MouseEvent&)> onRowClicked;
+
+        int getNumRows() override {
+            return scripts ? static_cast<int>(scripts->size()) : 0;
+        }
+        void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height,
+                              bool rowIsSelected) override;
+        void listBoxItemClicked(int row, const juce::MouseEvent& e) override {
+            if (onRowClicked)
+                onRowClicked(row, e);
+        }
+    };
+
+    void rebuildScripts() {
+        scripts_ = scripting_app::enumerateLuaScripts();
+        if (list_)
+            list_->updateContent();
+        repaint();
+    }
+
+    void onRowClicked(int row, const juce::MouseEvent& e) {
+        if (row < 0 || row >= static_cast<int>(scripts_.size()))
+            return;
+        if (e.mods.isPopupMenu() || e.mods.isRightButtonDown() || e.mods.isCtrlDown()) {
+            onRowMenu(row);
+            return;
+        }
+        scripting_app::loadLuaScript(scripts_[static_cast<size_t>(row)]);
+        rebuildScripts();
+    }
+
+    void onRowMenu(int row) {
+        if (row < 0 || row >= static_cast<int>(scripts_.size()))
+            return;
+        const auto file = scripts_[static_cast<size_t>(row)];
+        const bool isActive = file.getFileName() == scripting_app::activeLuaScriptName();
+
+        juce::PopupMenu menu;
+        menu.addItem(1, tr("controllers.scripts.reveal"));
+        if (isActive)
+            menu.addItem(2, tr("controllers.scripts.unload"));
+
+        juce::Component::SafePointer<LuaScriptsPage> self(this);
+        menu.showMenuAsync(juce::PopupMenu::Options(), [self, file](int result) {
+            if (result == 1) {
+                if (file.existsAsFile())
+                    file.revealToUser();
+            } else if (result == 2) {
+                scripting_app::unloadLuaScript();
+                if (auto* page = self.getComponent())
+                    page->rebuildScripts();
+            }
+        });
+    }
+
+    void onReloadLuaClicked() {
+        if (!scripting_app::reloadActiveLuaScript() && scripting_app::hasAnyLuaScripts()) {
+            juce::AlertWindow::showAsync(juce::MessageBoxOptions()
+                                             .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                             .withTitle(tr("controllers.tab.scripts"))
+                                             .withMessage(tr("controllers.scripts.reload_failed"))
+                                             .withButton(tr("dialogs.ok")),
+                                         nullptr);
+        }
+        rebuildScripts();
+    }
+
+    void onOpenScriptsFolderClicked() {
+        scripting_app::revealLuaScriptsFolder();
+        rebuildScripts();
+    }
+
+    void onImportClicked() {
+        auto title = tr("controllers.scripts.import");
+        importChooser_ = std::make_unique<juce::FileChooser>(
+            title, juce::File::getSpecialLocation(juce::File::userHomeDirectory), "*.lua");
+        juce::Component::SafePointer<LuaScriptsPage> self(this);
+        importChooser_->launchAsync(juce::FileBrowserComponent::openMode |
+                                        juce::FileBrowserComponent::canSelectFiles,
+                                    [self, title](const juce::FileChooser& fc) {
+                                        auto file = fc.getResult();
+                                        if (file == juce::File{})
+                                            return;
+                                        if (auto* page = self.getComponent())
+                                            page->importScriptFile(file, title);
+                                    });
+    }
+
+    void importScriptFile(const juce::File& file, const juce::String& title) {
+        auto fail = [&](const juce::String& reason) {
+            juce::AlertWindow::showMessageBox(juce::AlertWindow::WarningIcon, title, reason);
+        };
+        if (!file.existsAsFile() || !file.hasFileExtension("lua"))
+            return fail(tr("controllers.scripts.import_invalid"));
+
+        auto scriptsDir = scripting_app::luaScriptsFolder();
+        if (!scriptsDir.isDirectory())
+            return fail(tr("controllers.scripts.import_copy_failed"));
+
+        auto destFile = scriptsDir.getChildFile(file.getFileName());
+        if (destFile.existsAsFile()) {
+            bool ok = juce::AlertWindow::showOkCancelBox(
+                juce::AlertWindow::QuestionIcon, title,
+                tr("controllers.scripts.import_overwrite").replace("{0}", file.getFileName()),
+                tr("dialogs.ok"), tr("dialogs.cancel"));
+            if (!ok)
+                return;
+        }
+        if (!file.copyFileTo(destFile))
+            return fail(tr("controllers.scripts.import_copy_failed"));
+
+        rebuildScripts();
+        juce::AlertWindow::showMessageBox(
+            juce::AlertWindow::InfoIcon, title,
+            tr("controllers.scripts.import_success").replace("{0}", file.getFileName()));
+    }
+
+    std::vector<juce::File> scripts_;
+
+    juce::TextButton openScriptsFolderButton_;
+    juce::TextButton importButton_;
+    juce::TextButton reloadLuaButton_;
+    ScriptListModel listModel_;
+    std::unique_ptr<juce::ListBox> list_;
+    std::unique_ptr<juce::FileChooser> importChooser_;
+};
+
+void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Graphics& g, int width,
+                                                       int height, bool rowIsSelected) {
+    if (!scripts || rowNumber < 0 || rowNumber >= static_cast<int>(scripts->size()))
         return;
 
-    if (ControllerRegistry::getInstance().rematchInputPorts(liveInputs_))
-        persist();
-    rebuildList();
+    const auto& file = (*scripts)[static_cast<size_t>(rowNumber)];
+    const juce::String name = file.getFileName();
+    const juce::String active = activeScriptName ? activeScriptName() : juce::String{};
+    const bool isActive = name == active && active.isNotEmpty();
+
+    if (rowIsSelected) {
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.20f));
+        g.fillRect(0, 0, width, height);
+    }
+
+    const int pad = 6;
+    const int dotSize = 8;
+    const int dotX = pad;
+    const int textX = dotX + dotSize + 8;
+    const int dotY = (height - dotSize) / 2;
+
+    if (isActive) {
+        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
+        g.fillEllipse(static_cast<float>(dotX), static_cast<float>(dotY),
+                      static_cast<float>(dotSize), static_cast<float>(dotSize));
+    } else {
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.drawEllipse(static_cast<float>(dotX), static_cast<float>(dotY),
+                      static_cast<float>(dotSize), static_cast<float>(dotSize), 1.0f);
+    }
+
+    juce::String line = name;
+    if (isActive)
+        line += "  \xc2\xb7  " + tr("controllers.scripts.active");
+
+    g.setColour(isActive ? DarkTheme::getTextColour()
+                         : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setFont(isActive ? FontManager::getInstance().getUIFontBold(12.0f)
+                       : FontManager::getInstance().getUIFont(12.0f));
+    g.drawText(line, textX, 0, width - textX - pad, height, juce::Justification::centredLeft, true);
+}
+
+// =============================================================================
+// ControllersDialog
+// =============================================================================
+
+ControllersDialog::ControllersDialog() {
+    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
+
+    profilesPage_ = std::make_unique<ControllerProfilesPage>();
+    scriptsPage_ = std::make_unique<LuaScriptsPage>();
+
+    auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
+    tabbedComponent_.addTab(tr("controllers.tab.profiles"), tabBg, profilesPage_.get(), false);
+    tabbedComponent_.addTab(tr("controllers.tab.scripts"), tabBg, scriptsPage_.get(), false);
+    addAndMakeVisible(tabbedComponent_);
+
+    setSize(560, 480);
+}
+
+ControllersDialog::~ControllersDialog() {
+    setLookAndFeel(nullptr);
+}
+
+void ControllersDialog::paint(juce::Graphics& g) {
+    g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+}
+
+void ControllersDialog::resized() {
+    tabbedComponent_.setBounds(getLocalBounds().reduced(8));
 }
 
 // =============================================================================

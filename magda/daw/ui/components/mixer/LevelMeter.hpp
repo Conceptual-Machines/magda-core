@@ -55,6 +55,12 @@ class LevelMeter : public juce::Component, private juce::Timer {
         return std::max(displayLeftLevel_, displayRightLevel_);
     }
 
+    /** Highest peak-hold value across L/R channels, in dB.
+     *  Returns MIN_DB (~-60) when there has been no signal. */
+    float getPeakDb() const {
+        return std::max(peakLeftDb_, peakRightDb_);
+    }
+
     void paint(juce::Graphics& g) override {
         auto effectiveBounds = getLocalBounds().toFloat();
 

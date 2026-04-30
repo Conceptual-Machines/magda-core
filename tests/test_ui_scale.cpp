@@ -59,8 +59,7 @@ TEST_CASE("stepUIScale - up from 2.0 clamps to 2.0", "[ui_scale]") {
 // Out-of-range current values — snap to nearest in-range step, then move.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("stepUIScale - up from 0.5 (below range) snaps to 1.0 then to 1.25",
-          "[ui_scale]") {
+TEST_CASE("stepUIScale - up from 0.5 (below range) snaps to 1.0 then to 1.25", "[ui_scale]") {
     REQUIRE(stepUIScale(0.5, +1) == Approx(1.25));
 }
 
@@ -68,8 +67,7 @@ TEST_CASE("stepUIScale - down from 0.5 (below range) snaps to 1.0 and clamps", "
     REQUIRE(stepUIScale(0.5, -1) == Approx(1.0));
 }
 
-TEST_CASE("stepUIScale - down from 3.0 (above range) snaps to 2.0 then to 1.75",
-          "[ui_scale]") {
+TEST_CASE("stepUIScale - down from 3.0 (above range) snaps to 2.0 then to 1.75", "[ui_scale]") {
     REQUIRE(stepUIScale(3.0, -1) == Approx(1.75));
 }
 

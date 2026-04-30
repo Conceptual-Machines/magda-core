@@ -333,6 +333,31 @@ class Config {
         renderFolder = folder;
     }
 
+    // ----- Configurable user-data paths --------------------------------
+    // Empty string means "use OS default". Resolution + env-var override
+    // happens in magda::paths (AppPaths.hpp); these are just the persisted
+    // override strings.
+
+    /** Override for `userApplicationDataDirectory/MAGDA/` — logs, scripts,
+     *  controller profiles, plugin caches. Empty = OS default. Changes
+     *  require a restart to fully apply (file logger + plugin scanner
+     *  hold open file handles). */
+    std::string getDataDir() const {
+        return dataDir;
+    }
+    void setDataDir(const std::string& d) {
+        dataDir = d;
+    }
+
+    /** Override for `userDocumentsDirectory/MAGDA/Presets/` — Chains, Racks,
+     *  Devices. Empty = OS default. Hot-swappable via Config listeners. */
+    std::string getPresetsDir() const {
+        return presetsDir;
+    }
+    void setPresetsDir(const std::string& d) {
+        presetsDir = d;
+    }
+
     double getRenderSampleRate() const {
         return renderSampleRate;
     }
@@ -741,6 +766,11 @@ class Config {
     // Export audio settings
     std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC
     double exportSampleRate = 48000.0;   // 44100, 48000, 96000, 192000
+
+    // Configurable user-data path overrides (resolved by magda::paths).
+    // Empty = OS default. Persisted in config.json.
+    std::string dataDir = "";     // userApplicationDataDirectory/MAGDA/
+    std::string presetsDir = "";  // userDocumentsDirectory/MAGDA/Presets/
 
     // Render settings
     std::string renderFolder = "";  // Custom render output folder (empty = renders/ beside source)

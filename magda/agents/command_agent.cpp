@@ -45,8 +45,8 @@ static std::unique_ptr<llm::LLMClient> createCommandClient(const Config::AgentLL
 }
 
 /** Build the LLM request, adding CFG grammar when supported. */
-static llm::Request buildRequest(const std::string& message, bool cfg) {
-    auto stateJson = dsl::Interpreter::buildStateSnapshot();
+static llm::Request buildRequest(MagdaApi& api, const std::string& message, bool cfg) {
+    auto stateJson = dsl::Interpreter::buildStateSnapshot(api);
     auto systemPrompt = juce::String::fromUTF8(CommandAgent::getSystemPrompt());
     if (stateJson.isNotEmpty())
         systemPrompt += "\n\nCurrent DAW state:\n" + stateJson;
@@ -87,7 +87,7 @@ CommandAgent::GenerateResult CommandAgent::generate(const std::string& message) 
 
     bool cfg = usesCFG(agentConfig);
     auto client = createCommandClient(agentConfig);
-    auto request = buildRequest(message, cfg);
+    auto request = buildRequest(api_, message, cfg);
 
     auto response = client->sendRequest(request);
 
@@ -130,7 +130,7 @@ CommandAgent::GenerateResult CommandAgent::generateStreaming(const std::string& 
 
     bool cfg = usesCFG(agentConfig);
     auto client = createCommandClient(agentConfig);
-    auto request = buildRequest(message, cfg);
+    auto request = buildRequest(api_, message, cfg);
 
     // CFG via Responses API doesn't support streaming — fall back to sync
     if (cfg) {

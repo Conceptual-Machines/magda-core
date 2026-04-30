@@ -333,6 +333,33 @@ class TrackManager {
     void setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex, float value);
 
     /**
+     * @brief Apply a deserialized DeviceInfo (from a .mps preset) to a live device.
+     *
+     * Copies the state-y fields (parameters, macros, mods, gainDb, pluginState)
+     * onto the existing device at devicePath; preserves identity (id, name,
+     * pluginId, format, etc.). Pushes the plugin state to the running plugin
+     * and notifies UI listeners.
+     *
+     * Returns false if the path doesn't resolve to a device or the preset's
+     * plugin identity doesn't match the live device.
+     */
+    bool applyDevicePreset(const ChainNodePath& devicePath, const DeviceInfo& presetDevice);
+
+    /**
+     * @brief Apply a loaded rack preset to a live rack at the given path.
+     *
+     * Replaces the rack's state (chains, macros, mods, volume/pan/bypass,
+     * sidechain) with the preset's. The rack's own id and its position on
+     * the track are preserved so existing references stay valid; chain /
+     * device / nested-rack IDs inside the preset are reassigned to fresh
+     * runtime values to avoid collisions with other live elements. Triggers
+     * notifyTrackDevicesChanged so AudioBridge resyncs the track's plugins.
+     *
+     * Returns false if the path doesn't resolve to a rack.
+     */
+    bool applyRackPreset(const ChainNodePath& rackPath, const RackInfo& presetRack);
+
+    /**
      * @brief Set a device parameter value from the plugin's native UI
      *
      * This method is called when the plugin's native UI changes a parameter.

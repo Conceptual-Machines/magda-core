@@ -310,6 +310,28 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      */
     DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
 
+    // ------------------------------------------------------------------------
+    // VST/AU plugin program (factory preset) access for hosted external plugins.
+    // All return zero/empty for non-external (internal/MAGDA) devices.
+    // ------------------------------------------------------------------------
+    int getPluginNumPrograms(DeviceId deviceId) const;
+    int getPluginCurrentProgram(DeviceId deviceId) const;
+    juce::String getPluginProgramName(DeviceId deviceId, int programIndex) const;
+    /** Switch the plugin's current program. Returns true on success. */
+    bool setPluginCurrentProgram(DeviceId deviceId, int programIndex);
+
+    // ------------------------------------------------------------------------
+    // Disk-based plugin preset loading / saving (.vstpreset / .aupreset).
+    //
+    // VST3: routed through JUCE's ExtensionsVisitor::VST3Client which feeds
+    //       raw .vstpreset bytes to IComponent::setState / IEditController::setState.
+    // AU:   uses AudioPluginInstance::setCurrentProgramStateInformation, which
+    //       parses the .aupreset plist and calls
+    //       AudioUnitSetProperty(kAudioUnitProperty_ClassInfo).
+    // ------------------------------------------------------------------------
+    bool loadPluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
+    bool savePluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
+
     /**
      * @brief Get (or lazily create) the virtual MIDI input device used by
      *        the QWERTY keyboard. Returns nullptr if creation fails.

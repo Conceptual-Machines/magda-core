@@ -22,6 +22,7 @@ FooterBar::FooterBar() {
     setupButtons();
     setupBottomCollapseButton();
     ViewModeController::getInstance().addListener(this);
+    BindingRegistry::getInstance().addListener(this);
     ControllerRegistry::getInstance().addListener(this);
     refreshLiveInputs();
     refreshControllerBadges();
@@ -32,6 +33,7 @@ FooterBar::FooterBar() {
 FooterBar::~FooterBar() {
     stopTimer();
     ControllerRegistry::getInstance().removeListener(this);
+    BindingRegistry::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
     // RAII cleanup handled automatically by ManagedChild
 }
@@ -55,6 +57,9 @@ bool FooterBar::refreshLiveInputs() {
 void FooterBar::refreshControllerBadges() {
     controllerBadges_.clear();
     for (const auto& c : ControllerRegistry::getInstance().all()) {
+        if (!BindingRegistry::getInstance().hasAnyBindingForController(c.id))
+            continue;
+
         ControllerBadge b;
         b.label = c.name;
         b.connected = false;
@@ -72,6 +77,10 @@ void FooterBar::refreshControllerBadges() {
     }
     resized();  // recompute badge hit areas
     repaint();
+}
+
+void FooterBar::bindingRegistryChanged(BindingScope /*scope*/) {
+    refreshControllerBadges();
 }
 
 void FooterBar::controllerRegistryChanged() {

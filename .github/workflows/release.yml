@@ -252,6 +252,8 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    env:
+      NSIS_VERSION: "3.10"
     steps:
     - uses: actions/checkout@v4
       with:
@@ -275,43 +277,86 @@ jobs:
       with:
         arch: x64
 
-    - name: Install Ninja and NSIS
+    # Ninja is shipped with the Visual Studio install on windows-latest, so
+    # we only need to provision NSIS. The zip is hosted as a release asset
+    # on this repo's "vendor/nsis-X.Y" tag - GitHub-hosted, rock-solid, no
+    # third-party CDN flakes. Bumping NSIS_VERSION means uploading the new
+    # zip to a new vendor/nsis-X.Y release tag and refreshing NSIS_SHA256.
+    - name: Cache NSIS
+      uses: actions/cache@v4
+      id: cache-nsis
+      with:
+        path: ${{ runner.temp }}\nsis-${{ env.NSIS_VERSION }}
+        key: nsis-${{ env.NSIS_VERSION }}
+
+    - name: Verify Ninja and provision NSIS
       shell: powershell
+      env:
+        # Pinned hash matches the contents of the Sourceforge release for
+        # NSIS_VERSION above. Bumping the version means computing a fresh
+        # hash with `Get-FileHash -Algorithm SHA256` (or `shasum -a 256`).
+        NSIS_SHA256: "fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110"
       run: |
-        # Both tools are typically pre-installed on windows-latest runners;
-        # only fall back to Chocolatey if missing, since the community feed
-        # flakes (HTTP 499) intermittently and blocks the release otherwise.
-        $nsisPath = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
-        $needNinja = -not (Get-Command ninja -ErrorAction SilentlyContinue)
-        $needNsis  = -not (Test-Path $nsisPath) `
-                     -and -not (Get-Command makensis -ErrorAction SilentlyContinue)
-
-        if ($needNinja -or $needNsis) {
-          $packages = @()
-          if ($needNinja) { $packages += "ninja" }
-          if ($needNsis)  { $packages += "nsis" }
-          Write-Output "Installing via Chocolatey: $($packages -join ', ')"
-          choco install $packages -y
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Chocolatey install failed with exit code $LASTEXITCODE"
-            exit $LASTEXITCODE
-          }
-        } else {
-          Write-Output "Ninja and NSIS already present; skipping Chocolatey"
-        }
-
-        # Export the resolved NSIS directory so later steps find makensis
-        # regardless of whether ProgramFiles(x86) is on C: or elsewhere.
-        $makensis = Get-Command makensis -ErrorAction SilentlyContinue
-        if ($makensis) {
-          $nsisDir = Split-Path -Parent $makensis.Source
-        } elseif (Test-Path $nsisPath) {
-          $nsisDir = Split-Path -Parent $nsisPath
-        } else {
-          Write-Error "NSIS not found after install attempt"
+        # Ninja: prefer whatever the VS install ships; only bail if missing.
+        if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+          Write-Error "ninja not found on PATH (expected via Visual Studio install)"
           exit 1
         }
-        echo "$nsisDir" >> $env:GITHUB_PATH
+
+        # NSIS: vendored as a GitHub release asset on this repo. Three
+        # attempts with a small backoff covers any transient blip; PS 5.1
+        # doesn't support Invoke-WebRequest's -MaximumRetryCount so retries
+        # are spelled out.
+        $nsisDir = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION"
+        $makensis = Join-Path $nsisDir "nsis-$env:NSIS_VERSION\makensis.exe"
+        if (-not (Test-Path $makensis)) {
+          $zip = "$env:RUNNER_TEMP\nsis-$env:NSIS_VERSION.zip"
+          $url = "https://github.com/${env:GITHUB_REPOSITORY}/releases/download/vendor/nsis-$env:NSIS_VERSION/nsis-$env:NSIS_VERSION.zip"
+          $downloaded = $false
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Write-Output "Downloading NSIS $env:NSIS_VERSION from $url (attempt $attempt/3)"
+              Invoke-WebRequest -Uri $url -OutFile $zip
+              if ((Test-Path $zip) -and ((Get-Item $zip).Length -gt 1MB)) {
+                $downloaded = $true
+                break
+              }
+              Write-Output "Downloaded file was missing or too small"
+            } catch {
+              Write-Output "Download attempt $attempt failed: $($_.Exception.Message)"
+            }
+            if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
+          }
+          if (-not $downloaded) {
+            Write-Error "NSIS download failed after 3 attempts"
+            exit 1
+          }
+
+          # Supply-chain check: refuse to extract if the zip doesn't match
+          # the pinned hash for this version.
+          $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
+          $expected = $env:NSIS_SHA256.ToLower()
+          if ($actual -ne $expected) {
+            Write-Error "NSIS zip hash mismatch - expected $expected, got $actual"
+            exit 1
+          }
+          Write-Output "NSIS zip hash OK ($actual)"
+
+          Expand-Archive -Path $zip -DestinationPath $nsisDir -Force
+        } else {
+          Write-Output "NSIS $env:NSIS_VERSION already cached"
+        }
+
+        if (-not (Test-Path $makensis)) {
+          Write-Error "makensis.exe missing after extraction at $makensis"
+          exit 1
+        }
+
+        $bin = Split-Path -Parent $makensis
+        echo "$bin" >> $env:GITHUB_PATH
+        echo "MAKENSIS=$makensis" >> $env:GITHUB_ENV
+        Write-Output "NSIS on PATH: $bin"
+        Write-Output "Resolved makensis: $makensis"
 
     - name: Configure CMake
       shell: powershell
@@ -396,7 +441,7 @@ jobs:
           exit 1
         }
 
-        & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" /DVERSION=$env:VERSION "$stage\magda-installer.nsi"
+        & $env:MAKENSIS /DVERSION=$env:VERSION "$stage\magda-installer.nsi"
 
         $installerName = "MAGDA-$env:VERSION-Windows-x86_64-Setup.exe"
         Move-Item "$stage\MAGDA-$env:VERSION-Windows-Setup.exe" $installerName

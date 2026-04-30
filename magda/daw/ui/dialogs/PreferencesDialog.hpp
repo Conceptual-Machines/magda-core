@@ -9,6 +9,7 @@ class GeneralPage;
 class UIPage;
 class ColoursPage;
 class RenderingPage;
+class PathsPage;
 class ShortcutsPage;
 
 /**
@@ -36,6 +37,7 @@ class PreferencesDialog : public juce::Component {
     std::unique_ptr<UIPage> uiPage;
     std::unique_ptr<ColoursPage> coloursPage;
     std::unique_ptr<RenderingPage> renderingPage;
+    std::unique_ptr<PathsPage> pathsPage;
     std::unique_ptr<ShortcutsPage> shortcutsPage;
 
     juce::TextButton okButton;

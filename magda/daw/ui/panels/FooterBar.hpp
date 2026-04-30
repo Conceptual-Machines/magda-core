@@ -10,6 +10,7 @@
 #include "../utils/ComponentManager.hpp"
 #include "core/ViewModeController.hpp"
 #include "core/ViewModeState.hpp"
+#include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
 
 namespace magda {
@@ -22,6 +23,7 @@ namespace magda {
  */
 class FooterBar : public juce::Component,
                   public ViewModeListener,
+                  private BindingRegistryListener,
                   private ControllerRegistryListener,
                   private juce::Timer {
   public:
@@ -61,6 +63,9 @@ class FooterBar : public juce::Component,
     juce::Rectangle<int> controllerStripArea_;  // overall strip bounds for click hit-testing
 
     void refreshControllerBadges();
+
+    // BindingRegistryListener
+    void bindingRegistryChanged(BindingScope scope) override;
 
     // ControllerRegistryListener
     void controllerRegistryChanged() override;

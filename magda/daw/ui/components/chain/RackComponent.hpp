@@ -8,7 +8,6 @@
 #include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
-#include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 
@@ -95,14 +94,29 @@ class RackComponent : public NodeComponent, public juce::Timer {
     magda::RackId rackId_;
 
     // Header extra controls
-    std::unique_ptr<magda::SvgButton> modButton_;    // Modulators toggle
-    std::unique_ptr<magda::SvgButton> macroButton_;  // Macros toggle
-    magda::DraggableValueLabel volumeLabel_{magda::DraggableValueLabel::Format::Decibels};
+    std::unique_ptr<magda::SvgButton> modButton_;     // Modulators toggle
+    std::unique_ptr<magda::SvgButton> macroButton_;   // Macros toggle
+    std::unique_ptr<magda::SvgButton> presetButton_;  // MAGDA rack presets menu
     juce::TextButton addChainButton_;
 
-    // Level meter (right side of content area, like DeviceSlotComponent)
-    static constexpr int METER_STRIP_WIDTH = 10;
+    // Currently-loaded preset name (empty when none) — used as the default
+    // for "Save as" and to surface the loaded preset in the popup tick.
+    juce::String currentPresetName_;
+
+    // Preset menu wiring (mirrors DeviceSlotComponent's MAGDA preset UX).
+    void showPresetMenu();
+    void showSaveRackPresetDialog();
+    void saveCurrentRackPreset();
+    void loadRackPresetByName(const juce::String& presetName);
+
+    // Level meter (right side of content area, like DeviceSlotComponent).
+    // The gain slider is drawn on top of it with a flat-thumb LookAndFeel, so
+    // dragging the thumb sets rack volume while the meter remains visible
+    // behind it. Width matches DeviceSlotComponent's strip so adjacent meters
+    // line up across racks and devices.
+    static constexpr int METER_STRIP_WIDTH = 18;
     magda::LevelMeter levelMeter_;
+    std::unique_ptr<juce::Slider> gainSlider_;
 
     // Content area
     juce::Label chainsLabel_;  // "Chains:" label
@@ -163,7 +177,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
 
     static constexpr int CHAINS_LABEL_HEIGHT = 18;
     static constexpr int MIN_CONTENT_HEIGHT = 30;
-    static constexpr int BASE_CHAINS_LIST_WIDTH = 300;
+    static constexpr int BASE_CHAINS_LIST_WIDTH = 360;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RackComponent)
 };

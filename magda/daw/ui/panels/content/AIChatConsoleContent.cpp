@@ -5,6 +5,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 
 #include "../../../../agents/automation_agent.hpp"
@@ -13,14 +14,18 @@
 #include "../../../../agents/controller_profile_agent.hpp"
 #include "../../../../agents/daw_agent.hpp"
 #include "../../../../agents/dsl_interpreter.hpp"
+#include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_presets.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/router_agent.hpp"
+#include "../../../api/magda_api_live.hpp"
+#include "../../../core/AppPaths.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/TrackManager.hpp"
+#include "../../../core/aliases/AliasRegistry.hpp"
 #include "../../../core/controllers/BindingRegistry.hpp"
 #include "../../../core/controllers/ControllerProfileRegistry.hpp"
 #include "../../../core/controllers/ControllerRegistry.hpp"
@@ -51,13 +56,15 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
         addAndMakeVisible(listBox_);
     }
 
-    enum class Mode { Alias, SlashCommand };
+    enum class Mode { Alias, SlashCommand, Param };
 
     void updateFilter(const juce::String& filter) {
         mode_ = Mode::Alias;
         filter_ = filter.toLowerCase();
         filtered_.clear();
         filteredCommands_.clear();
+        paramEntries_.clear();
+        filteredParams_.clear();
 
         for (const auto& entry : owner_.allAliases_) {
             if (filter_.isEmpty() || entry.alias.toLowerCase().contains(filter_) ||
@@ -79,6 +86,8 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
         filter_ = filter.toLowerCase();
         filtered_.clear();
         filteredCommands_.clear();
+        paramEntries_.clear();
+        filteredParams_.clear();
 
         for (const auto& cmd : owner_.slashCommands_) {
             if (filter_.isEmpty() || cmd.name.toLowerCase().startsWith(filter_))
@@ -93,8 +102,41 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
         setSize(getWidth(), rows * 22 + 2);
     }
 
+    // Switch to param mode: the popup shows paramAlias entries belonging to
+    // a single plugin alias. Caller supplies the source list (already scoped
+    // by pluginAlias) and a sub-filter typed by the user after the dot.
+    void updateParamFilter(std::vector<ParamAliasEntry> source, const juce::String& pluginAlias,
+                           const juce::String& filter) {
+        mode_ = Mode::Param;
+        filter_ = filter.toLowerCase();
+        currentPluginAlias_ = pluginAlias;
+        filtered_.clear();
+        filteredCommands_.clear();
+        paramEntries_ = std::move(source);
+        filteredParams_.clear();
+        for (const auto& entry : paramEntries_) {
+            if (filter_.isEmpty() || entry.paramAlias.toLowerCase().contains(filter_) ||
+                entry.paramName.toLowerCase().contains(filter_)) {
+                filteredParams_.push_back(&entry);
+            }
+        }
+        listBox_.updateContent();
+        if (!filteredParams_.empty())
+            listBox_.selectRow(0);
+        int rows = juce::jmin(static_cast<int>(filteredParams_.size()), 8);
+        setSize(getWidth(), rows * 22 + 2);
+    }
+
     bool isEmpty() const {
-        return mode_ == Mode::Alias ? filtered_.empty() : filteredCommands_.empty();
+        switch (mode_) {
+            case Mode::Alias:
+                return filtered_.empty();
+            case Mode::SlashCommand:
+                return filteredCommands_.empty();
+            case Mode::Param:
+                return filteredParams_.empty();
+        }
+        return true;
     }
 
     Mode getMode() const {
@@ -116,6 +158,13 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
         return nullptr;
     }
 
+    const ParamAliasEntry* getSelectedParamEntry() const {
+        int row = listBox_.getSelectedRow();
+        if (mode_ == Mode::Param && row >= 0 && row < static_cast<int>(filteredParams_.size()))
+            return filteredParams_[static_cast<size_t>(row)];
+        return nullptr;
+    }
+
     void selectNext() {
         int current = listBox_.getSelectedRow();
         if (current < getNumRows() - 1)
@@ -130,8 +179,15 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
 
     // ListBoxModel
     int getNumRows() override {
-        return mode_ == Mode::Alias ? static_cast<int>(filtered_.size())
-                                    : static_cast<int>(filteredCommands_.size());
+        switch (mode_) {
+            case Mode::Alias:
+                return static_cast<int>(filtered_.size());
+            case Mode::SlashCommand:
+                return static_cast<int>(filteredCommands_.size());
+            case Mode::Param:
+                return static_cast<int>(filteredParams_.size());
+        }
+        return 0;
     }
 
     void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height,
@@ -154,7 +210,7 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(entry.pluginName, width / 2, 0, width / 2 - 6, height,
                        juce::Justification::centredRight);
-        } else {
+        } else if (mode_ == Mode::SlashCommand) {
             const auto& cmd = *filteredCommands_[static_cast<size_t>(rowNumber)];
             g.setColour(DarkTheme::getAccentColour());
             g.setFont(FontManager::getInstance().getMonoFont(11.0f));
@@ -163,6 +219,18 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
             g.setFont(FontManager::getInstance().getUIFont(10.0f));
             g.drawText(cmd.description, width / 3, 0, width * 2 / 3 - 6, height,
                        juce::Justification::centredLeft);
+        } else {
+            const auto& entry = *filteredParams_[static_cast<size_t>(rowNumber)];
+            g.setColour(DarkTheme::getAccentColour());
+            g.setFont(FontManager::getInstance().getMonoFont(11.0f));
+            g.drawText("@" + entry.pluginAlias + "." + entry.paramAlias, 6, 0, width / 2, height,
+                       juce::Justification::centredLeft);
+            g.setColour(DarkTheme::getSecondaryTextColour());
+            g.setFont(FontManager::getInstance().getUIFont(10.0f));
+            const auto& displayName =
+                entry.paramName.isNotEmpty() ? entry.paramName : juce::String("parameter");
+            g.drawText(displayName, width / 2, 0, width / 2 - 6, height,
+                       juce::Justification::centredRight);
         }
     }
 
@@ -172,6 +240,10 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
         } else if (mode_ == Mode::SlashCommand && row >= 0 &&
                    row < static_cast<int>(filteredCommands_.size())) {
             owner_.insertSlashCommand(filteredCommands_[static_cast<size_t>(row)]->name);
+        } else if (mode_ == Mode::Param && row >= 0 &&
+                   row < static_cast<int>(filteredParams_.size())) {
+            const auto& entry = *filteredParams_[static_cast<size_t>(row)];
+            owner_.insertParamAlias(entry.pluginAlias, entry.paramAlias);
         }
     }
 
@@ -186,6 +258,9 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
     Mode mode_ = Mode::Alias;
     std::vector<const AliasEntry*> filtered_;
     std::vector<const SlashCommand*> filteredCommands_;
+    std::vector<ParamAliasEntry> paramEntries_;
+    std::vector<const ParamAliasEntry*> filteredParams_;
+    juce::String currentPluginAlias_;
 };
 
 // ============================================================================
@@ -484,7 +559,7 @@ void AIChatConsoleContent::RequestThread::run() {
                 // Execute DSL from command agent
                 int commandClipId = -1;
                 if (!dsl.empty()) {
-                    magda::dsl::Interpreter interpreter;
+                    magda::dsl::Interpreter interpreter(*safeThis->magdaApi_);
                     if (interpreter.execute(dsl.c_str())) {
                         auto results = interpreter.getResults().toStdString();
                         response = results.empty() ? "OK" : results;
@@ -501,7 +576,7 @@ void AIChatConsoleContent::RequestThread::run() {
                             response += "\n";
                         response += musicDesc;
                     }
-                    magda::CompactExecutor executor;
+                    magda::CompactExecutor executor(*safeThis->magdaApi_);
                     // Hand the command agent's freshly-created clip (if any)
                     // explicitly to the music executor. Otherwise it will
                     // auto-create a new clip — we never want it to silently
@@ -541,7 +616,7 @@ void AIChatConsoleContent::RequestThread::run() {
 
                 // Execute IR from automation agent
                 if (!autoIR.empty()) {
-                    magda::AutomationExecutor autoExec;
+                    magda::AutomationExecutor autoExec(*safeThis->magdaApi_);
                     if (autoExec.execute(autoIR)) {
                         auto results = autoExec.getResults().toStdString();
                         if (!response.empty())
@@ -596,10 +671,10 @@ void AIChatConsoleContent::RequestThread::run() {
             currentText += juce::String::charToString(0x25C6) + " " + formattedResponse + "\n\n";
             safeThis->chatHistory_.setText(currentText);
             safeThis->chatHistory_.moveCaretToEnd();
-            safeThis->inputBox_.setEnabled(true);
+            safeThis->inputBox_->setEnabled(true);
             safeThis->processing_ = false;
             safeThis->restoreSendIcon();
-            safeThis->inputBox_.grabKeyboardFocus();
+            safeThis->inputBox_->grabKeyboardFocus();
         });
 }
 
@@ -624,78 +699,29 @@ AIChatConsoleContent::AIChatConsoleContent() {
     chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
     addAndMakeVisible(chatHistory_);
 
-    // Input box
-    inputBox_.setFont(monoFont);
-    inputBox_.setMultiLine(true);
-    inputBox_.setReturnKeyStartsNewLine(false);
-    inputBox_.setTextToShowWhenEmpty("Type a message...", DarkTheme::getSecondaryTextColour());
-    inputBox_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
-    inputBox_.setColour(juce::TextEditor::textColourId, DarkTheme::getTextColour());
-    inputBox_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
-    inputBox_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
-    inputBox_.onReturnKey = [this]() {
-        // If autocomplete is showing, insert the selected item instead of sending
-        if (autocompletePopup_ && autocompletePopup_->isVisible()) {
-            if (autocompletePopup_->getMode() == AutocompletePopup::Mode::SlashCommand) {
-                if (auto* cmd = autocompletePopup_->getSelectedCommand()) {
-                    insertSlashCommand(cmd->name);
-                    return;
-                }
-            } else {
-                if (auto* entry = autocompletePopup_->getSelectedEntry()) {
-                    insertAlias(entry->alias);
-                    return;
-                }
-            }
-        }
-        auto text = inputBox_.getText().trim();
-        if (text.isNotEmpty() && !processing_)
-            sendMessage(text);
-    };
-    inputBox_.onTextChange = [this]() {
-        auto text = inputBox_.getText();
-        int caretPos = inputBox_.getCaretPosition();
+    // Input box: CodeEditorComponent driven by ChatPromptTokeniser so
+    // @plugin / @plugin.param / /command get coloured automatically. Same
+    // affordance the DSL panel uses, just with a different tokeniser. Enter
+    // is intercepted in keyPressed() to send the message; the document
+    // listener replaces TextEditor::onTextChange for autocomplete triggering.
+    inputBox_ = std::make_unique<juce::CodeEditorComponent>(inputDocument_, &inputTokeniser_);
+    inputBox_->setFont(monoFont);
+    inputBox_->setLineNumbersShown(false);
+    inputBox_->setScrollbarThickness(8);
+    inputBox_->setColour(juce::CodeEditorComponent::backgroundColourId,
+                         juce::Colours::transparentBlack);
+    inputBox_->setColour(juce::CodeEditorComponent::defaultTextColourId,
+                         DarkTheme::getTextColour());
+    inputBox_->setColour(juce::CodeEditorComponent::lineNumberBackgroundId,
+                         juce::Colours::transparentBlack);
+    inputBox_->setColour(juce::CodeEditorComponent::highlightColourId,
+                         DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.3f));
+    inputBox_->setColour(juce::CaretComponent::caretColourId, DarkTheme::getTextColour());
+    inputDocument_.addListener(this);
+    addAndMakeVisible(*inputBox_);
 
-        // Check for / at start of input (slash commands)
-        if (text.startsWith("/")) {
-            // Extract the command token (up to first space or end)
-            int spacePos = text.indexOf(" ");
-            if (spacePos < 0 || caretPos <= spacePos) {
-                // Still typing the command name
-                auto filter = text.substring(1, caretPos);
-                showSlashAutocomplete(filter);
-                return;
-            }
-        }
-
-        // Find the @ token before the caret
-        int atPos = -1;
-        for (int i = caretPos - 1; i >= 0; --i) {
-            auto ch = text[i];
-            if (ch == '@') {
-                atPos = i;
-                break;
-            }
-            if (ch == ' ' || ch == '\n')
-                break;
-        }
-
-        if (atPos >= 0) {
-            auto filter = text.substring(atPos + 1, caretPos);
-            showAutocomplete(filter);
-        } else {
-            hideAutocomplete();
-        }
-    };
-    inputBox_.onEscapeKey = [this]() {
-        if (autocompletePopup_ && autocompletePopup_->isVisible()) {
-            hideAutocomplete();
-        }
-    };
-    addAndMakeVisible(inputBox_);
-
-    // Register key listener on input box for autocomplete navigation
-    inputBox_.addKeyListener(this);
+    // Register key listener for autocomplete navigation + Enter/Esc handling.
+    inputBox_->addKeyListener(this);
 
     // Load context icons
     trackIconDrawable_ =
@@ -729,7 +755,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
             cancelRequest();
             return;
         }
-        auto text = inputBox_.getText().trim();
+        auto text = inputDocument_.getAllContent().trim();
         if (text.isNotEmpty())
             sendMessage(text);
     };
@@ -881,20 +907,35 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // Register for config changes (e.g. preset changed in settings dialog)
     magda::Config::getInstance().addListener(this);
 
+    // Prefer the engine's MagdaApi (avoids a redundant facade). Fall back
+    // to owning one if the engine is unreachable so magdaApi_ is never
+    // null — every dereference site below ( *safeThis->magdaApi_ etc. )
+    // assumes a live api.
+    if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
+            magda::TrackManager::getInstance().getAudioEngine())) {
+        magdaApi_ = &engine->getMagdaApi();
+    } else {
+        ownedApi_ = std::make_unique<magda::MagdaApiLive>();
+        magdaApi_ = ownedApi_.get();
+    }
+
     // Create agents
-    agent_ = std::make_unique<magda::DAWAgent>();  // legacy DSL REPL
+    agent_ = std::make_unique<magda::DAWAgent>(*magdaApi_);  // legacy DSL REPL
     agent_->start();
     routerAgent_ = std::make_unique<magda::RouterAgent>();
-    commandAgent_ = std::make_unique<magda::CommandAgent>();
+    commandAgent_ = std::make_unique<magda::CommandAgent>(*magdaApi_);
     musicAgent_ = std::make_unique<magda::MusicAgent>();
-    automationAgent_ = std::make_unique<magda::AutomationAgent>();
+    automationAgent_ = std::make_unique<magda::AutomationAgent>(*magdaApi_);
     controllerAgent_ = std::make_unique<magda::ControllerProfileAgent>();
 }
 
 AIChatConsoleContent::~AIChatConsoleContent() {
     if (dslEditor_)
         dslEditor_->removeKeyListener(this);
-    inputBox_.removeKeyListener(this);
+    if (inputBox_) {
+        inputDocument_.removeListener(this);
+        inputBox_->removeKeyListener(this);
+    }
     autocompletePopup_.reset();
     magda::Config::getInstance().removeListener(this);
     magda::ProjectManager::getInstance().removeListener(this);
@@ -978,7 +1019,7 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
         auto dslCode = text.trimStart().substring(5).trim();
         appendToChat(juce::String::charToString(0x25CF) + " " + text);
 
-        magda::dsl::Interpreter interpreter;
+        magda::dsl::Interpreter interpreter(*magdaApi_);
         bool success = interpreter.execute(dslCode.toRawUTF8());
 
         if (success) {
@@ -991,7 +1032,7 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
                          " Error: " + juce::String(interpreter.getError()));
         }
 
-        inputBox_.clear();
+        inputDocument_.replaceAllContent({});
         return;
     }
 
@@ -1001,7 +1042,7 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
         if (trimmed.startsWithIgnoreCase("/controller ")) {
             auto description = trimmed.substring(12).trim();
             appendToChat(juce::String::charToString(0x25CF) + " " + text);
-            inputBox_.clear();
+            inputDocument_.replaceAllContent({});
             if (description.isEmpty()) {
                 appendToChat(juce::String::charToString(0x25C6) +
                              " Usage: /controller <device description>");
@@ -1037,8 +1078,8 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
     resolvedText = rewriteSlashCommand(resolvedText);
 
     processing_ = true;
-    inputBox_.clear();
-    inputBox_.setEnabled(false);
+    inputDocument_.replaceAllContent({});
+    inputBox_->setEnabled(false);
 
     // Swap send button to stop icon
     auto stopSvg =
@@ -1097,8 +1138,8 @@ void AIChatConsoleContent::cancelRequest() {
     processing_ = false;
 
     appendToChat("[cancelled]\n");
-    inputBox_.setEnabled(true);
-    inputBox_.grabKeyboardFocus();
+    inputBox_->setEnabled(true);
+    inputBox_->grabKeyboardFocus();
     restoreSendIcon();
 }
 
@@ -1158,7 +1199,7 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
                              chatPanel.getRight() - 1.0f);
 
         // Draw input box + bottom bar as one unified rounded rectangle
-        auto inputBounds = inputBox_.getBounds();
+        auto inputBounds = inputBox_->getBounds();
         auto barBounds = bottomBarBounds_;
         auto combined = inputBounds.getUnion(barBounds).toFloat();
 
@@ -1222,7 +1263,7 @@ void AIChatConsoleContent::resized() {
 
         // Input box directly above context bar (no gap — unified shape)
         auto inputArea = bounds.removeFromBottom(80);
-        inputBox_.setBounds(inputArea);
+        inputBox_->setBounds(inputArea);
 
         bounds.removeFromBottom(8);  // Spacing
 
@@ -1270,7 +1311,7 @@ void AIChatConsoleContent::onActivated() {
     updateConfigStatus();
     if (isShowing()) {
         if (activeTab_ == ConsoleTab::AI)
-            inputBox_.grabKeyboardFocus();
+            inputBox_->grabKeyboardFocus();
         else if (dslEditor_)
             dslEditor_->grabKeyboardFocus();
     }
@@ -1320,7 +1361,7 @@ void AIChatConsoleContent::switchTab(ConsoleTab tab) {
 
     // AI components
     chatHistory_.setVisible(isAI);
-    inputBox_.setVisible(isAI);
+    inputBox_->setVisible(isAI);
     sendButton_.setVisible(isAI);
     contextLabel_.setVisible(isAI);
     clearButton_.setVisible(isAI);
@@ -1336,7 +1377,7 @@ void AIChatConsoleContent::switchTab(ConsoleTab tab) {
     repaint();
 
     if (isAI)
-        inputBox_.grabKeyboardFocus();
+        inputBox_->grabKeyboardFocus();
     else
         dslEditor_->grabKeyboardFocus();
 }
@@ -1376,7 +1417,7 @@ void AIChatConsoleContent::executeDSL() {
     }
 
     // Execute
-    magda::dsl::Interpreter interpreter;
+    magda::dsl::Interpreter interpreter(*magdaApi_);
     bool success = interpreter.execute(code.toRawUTF8());
 
     if (success) {
@@ -1556,24 +1597,13 @@ void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
 void AIChatConsoleContent::buildAliasList() {
     allAliases_.clear();
 
-    // Internal plugins
-    auto addInternal = [this](const juce::String& name) {
-        allAliases_.push_back({PluginBrowserInfo::generateAlias(name), name});
-    };
-    addInternal("Test Tone");
-    addInternal("4OSC Synth");
-    addInternal("Equaliser");
-    addInternal("Compressor");
-    addInternal("Reverb");
-    addInternal("Delay");
-    addInternal("Chorus");
-    addInternal("Phaser");
-    addInternal("Filter");
-    addInternal("Pitch Shift");
-    addInternal("IR Reverb");
-    addInternal("Utility");
-    addInternal(juce::String(audio::MagdaSamplerPlugin::getPluginName()));
-    addInternal(juce::String(audio::DrumGridPlugin::getPluginName()));
+    // Internal plugins — single source of truth in internal_plugins.hpp,
+    // shared with the DSL interpreter and CompactExecutor so the autocomplete
+    // dropdown lists exactly the aliases the agent layer accepts.
+    for (const auto& entry : magda::getInternalPlugins()) {
+        allAliases_.push_back(
+            {PluginBrowserInfo::generateAlias(entry.displayName), entry.displayName});
+    }
 
     // External plugins from KnownPluginList
     if (auto* engine = dynamic_cast<magda::TracktionEngineWrapper*>(
@@ -1590,9 +1620,7 @@ void AIChatConsoleContent::buildAliasList() {
     }
 
     // Load custom alias overrides
-    auto aliasFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                         .getChildFile("MAGDA")
-                         .getChildFile("plugin_aliases.xml");
+    auto aliasFile = magda::paths::pluginAliasesFile();
 
     if (aliasFile.existsAsFile()) {
         if (auto xml = juce::parseXML(aliasFile)) {
@@ -1630,7 +1658,7 @@ void AIChatConsoleContent::showAutocomplete(const juce::String& filter) {
         addAndMakeVisible(*autocompletePopup_);
     }
 
-    auto inputBounds = inputBox_.getBounds();
+    auto inputBounds = inputBox_->getBounds();
     int popupWidth = inputBounds.getWidth();
     autocompletePopup_->setSize(popupWidth, 8 * 22 + 2);  // Initial size, updateFilter adjusts
     autocompletePopup_->updateFilter(filter);
@@ -1653,9 +1681,105 @@ void AIChatConsoleContent::hideAutocomplete() {
         autocompletePopup_->setVisible(false);
 }
 
+std::vector<AIChatConsoleContent::ParamAliasEntry> AIChatConsoleContent::collectParamAliases(
+    const juce::String& pluginAlias) const {
+    std::vector<ParamAliasEntry> out;
+    if (pluginAlias.isEmpty())
+        return out;
+
+    auto& registry = magda::AliasRegistry::getInstance();
+    const juce::String prefix = pluginAlias + ".";
+    std::set<juce::String> seenCanonical;
+    auto walk = [&](magda::AliasLayer layer) {
+        for (const auto& [canonicalName, alias] : registry.layerEntries(layer)) {
+            if (!canonicalName.startsWith(prefix))
+                continue;
+            if (!seenCanonical.insert(canonicalName).second)
+                continue;
+            ParamAliasEntry e;
+            e.pluginAlias = pluginAlias;
+            e.paramAlias = canonicalName.substring(prefix.length());
+            e.paramName = alias.paramNameAtSetTime;
+            out.push_back(std::move(e));
+        }
+    };
+    walk(magda::AliasLayer::UserProject);
+    walk(magda::AliasLayer::UserGlobal);
+    walk(magda::AliasLayer::Curated);
+    walk(magda::AliasLayer::AutoGen);
+
+    std::sort(out.begin(), out.end(), [](const ParamAliasEntry& a, const ParamAliasEntry& b) {
+        return a.paramAlias < b.paramAlias;
+    });
+    return out;
+}
+
+void AIChatConsoleContent::showParamAutocomplete(const juce::String& pluginAlias,
+                                                 const juce::String& filter) {
+    auto entries = collectParamAliases(pluginAlias);
+    if (entries.empty()) {
+        // No aliases for this plugin (yet) — hide rather than show an empty
+        // popup or stale content from an earlier plugin scope.
+        hideAutocomplete();
+        return;
+    }
+
+    if (!autocompletePopup_) {
+        autocompletePopup_ = std::make_unique<AutocompletePopup>(*this);
+        addAndMakeVisible(*autocompletePopup_);
+    }
+
+    auto inputBounds = inputBox_->getBounds();
+    int popupWidth = inputBounds.getWidth();
+    autocompletePopup_->setSize(popupWidth, 8 * 22 + 2);
+    autocompletePopup_->updateParamFilter(std::move(entries), pluginAlias, filter);
+
+    if (autocompletePopup_->isEmpty()) {
+        hideAutocomplete();
+        return;
+    }
+
+    int popupHeight = autocompletePopup_->getHeight();
+    autocompletePopup_->setBounds(inputBounds.getX(), inputBounds.getY() - popupHeight, popupWidth,
+                                  popupHeight);
+    autocompletePopup_->setVisible(true);
+    autocompletePopup_->toFront(false);
+}
+
+void AIChatConsoleContent::insertParamAlias(const juce::String& pluginAlias,
+                                            const juce::String& paramAlias) {
+    auto text = inputDocument_.getAllContent();
+    int caretPos = inputBox_->getCaretPos().getPosition();
+
+    int atPos = -1;
+    for (int i = caretPos - 1; i >= 0; --i) {
+        auto ch = text[i];
+        if (ch == '@') {
+            atPos = i;
+            break;
+        }
+        if (ch == ' ' || ch == '\n')
+            break;
+    }
+
+    if (atPos >= 0) {
+        auto before = text.substring(0, atPos);
+        auto after = text.substring(caretPos);
+        auto inserted = "@" + pluginAlias + "." + paramAlias;
+        auto newText = before + inserted + " " + after;
+        inputDocument_.replaceAllContent(newText);
+        inputBox_->moveCaretTo(
+            juce::CodeDocument::Position(inputDocument_, atPos + (int)inserted.length() + 1),
+            false);
+    }
+
+    hideAutocomplete();
+    inputBox_->grabKeyboardFocus();
+}
+
 void AIChatConsoleContent::insertAlias(const juce::String& alias) {
-    auto text = inputBox_.getText();
-    int caretPos = inputBox_.getCaretPosition();
+    auto text = inputDocument_.getAllContent();
+    int caretPos = inputBox_->getCaretPos().getPosition();
 
     // Find the @ that started this completion
     int atPos = -1;
@@ -1670,16 +1794,19 @@ void AIChatConsoleContent::insertAlias(const juce::String& alias) {
     }
 
     if (atPos >= 0) {
-        // Replace @partial with @full_alias
+        // Replace @partial with @full_alias. No trailing space — the user
+        // may want to chain "." into the param-alias popup, and a space
+        // would break the @-token search loop in onTextChange.
         auto before = text.substring(0, atPos);
         auto after = text.substring(caretPos);
-        auto newText = before + "@" + alias + " " + after;
-        inputBox_.setText(newText, false);
-        inputBox_.setCaretPosition(atPos + 1 + alias.length() + 1);
+        auto newText = before + "@" + alias + after;
+        inputDocument_.replaceAllContent(newText);
+        inputBox_->moveCaretTo(
+            juce::CodeDocument::Position(inputDocument_, atPos + 1 + (int)alias.length()), false);
     }
 
     hideAutocomplete();
-    inputBox_.grabKeyboardFocus();
+    inputBox_->grabKeyboardFocus();
 }
 
 bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component*) {
@@ -1699,8 +1826,51 @@ bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component
         return false;
     }
 
-    // AI tab — autocomplete navigation
-    if (!autocompletePopup_ || !autocompletePopup_->isVisible())
+    // AI tab — autocomplete navigation, plus the Enter/Esc handling that
+    // used to live on TextEditor's onReturnKey/onEscapeKey callbacks before
+    // we swapped the input box for a CodeEditorComponent.
+    const bool popupVisible = autocompletePopup_ && autocompletePopup_->isVisible();
+
+    if (key == juce::KeyPress::escapeKey) {
+        if (popupVisible) {
+            hideAutocomplete();
+            return true;
+        }
+        return false;
+    }
+
+    // Enter (no shift) — accept the autocomplete entry if visible, otherwise
+    // send the message. Shift+Enter falls through to the editor for newline.
+    if (key == juce::KeyPress::returnKey && !key.getModifiers().isShiftDown()) {
+        if (popupVisible) {
+            switch (autocompletePopup_->getMode()) {
+                case AutocompletePopup::Mode::SlashCommand:
+                    if (auto* cmd = autocompletePopup_->getSelectedCommand()) {
+                        insertSlashCommand(cmd->name);
+                        return true;
+                    }
+                    break;
+                case AutocompletePopup::Mode::Param:
+                    if (auto* entry = autocompletePopup_->getSelectedParamEntry()) {
+                        insertParamAlias(entry->pluginAlias, entry->paramAlias);
+                        return true;
+                    }
+                    break;
+                case AutocompletePopup::Mode::Alias:
+                    if (auto* entry = autocompletePopup_->getSelectedEntry()) {
+                        insertAlias(entry->alias);
+                        return true;
+                    }
+                    break;
+            }
+        }
+        auto text = inputDocument_.getAllContent().trim();
+        if (text.isNotEmpty() && !processing_)
+            sendMessage(text);
+        return true;
+    }
+
+    if (!popupVisible)
         return false;
 
     if (key == juce::KeyPress::upKey) {
@@ -1712,24 +1882,95 @@ bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component
         return true;
     }
     if (key == juce::KeyPress::tabKey) {
-        if (autocompletePopup_->getMode() == AutocompletePopup::Mode::SlashCommand) {
-            if (auto* cmd = autocompletePopup_->getSelectedCommand()) {
-                insertSlashCommand(cmd->name);
-                return true;
-            }
-        } else {
-            if (auto* entry = autocompletePopup_->getSelectedEntry()) {
-                insertAlias(entry->alias);
-                return true;
-            }
+        switch (autocompletePopup_->getMode()) {
+            case AutocompletePopup::Mode::SlashCommand:
+                if (auto* cmd = autocompletePopup_->getSelectedCommand()) {
+                    insertSlashCommand(cmd->name);
+                    return true;
+                }
+                break;
+            case AutocompletePopup::Mode::Param:
+                if (auto* entry = autocompletePopup_->getSelectedParamEntry()) {
+                    insertParamAlias(entry->pluginAlias, entry->paramAlias);
+                    return true;
+                }
+                break;
+            case AutocompletePopup::Mode::Alias:
+                if (auto* entry = autocompletePopup_->getSelectedEntry()) {
+                    insertAlias(entry->alias);
+                    return true;
+                }
+                break;
         }
-    }
-    if (key == juce::KeyPress::escapeKey) {
-        hideAutocomplete();
-        return true;
     }
 
     return false;
+}
+
+void AIChatConsoleContent::codeDocumentTextInserted(const juce::String& /*inserted*/,
+                                                    int /*insertIndex*/) {
+    // Defer to after the editor finishes settling its caret. The listener
+    // fires synchronously during the document mutation, while the editor
+    // updates its caret position after returning — checking caret-pos here
+    // would read a stale value and pick the wrong autocomplete branch.
+    juce::Component::SafePointer<AIChatConsoleContent> self(this);
+    juce::MessageManager::callAsync([self] {
+        if (self != nullptr)
+            self->onInputChanged();
+    });
+}
+
+void AIChatConsoleContent::codeDocumentTextDeleted(int /*startIndex*/, int /*endIndex*/) {
+    juce::Component::SafePointer<AIChatConsoleContent> self(this);
+    juce::MessageManager::callAsync([self] {
+        if (self != nullptr)
+            self->onInputChanged();
+    });
+}
+
+void AIChatConsoleContent::onInputChanged() {
+    if (!inputBox_)
+        return;
+    auto text = inputDocument_.getAllContent();
+    int caretPos = inputBox_->getCaretPos().getPosition();
+
+    // Slash commands at start of input
+    if (text.startsWith("/")) {
+        int spacePos = text.indexOf(" ");
+        if (spacePos < 0 || caretPos <= spacePos) {
+            auto filter = text.substring(1, caretPos);
+            showSlashAutocomplete(filter);
+            return;
+        }
+    }
+
+    // Walk back from the caret to find the start of the current @-token.
+    int atPos = -1;
+    for (int i = caretPos - 1; i >= 0; --i) {
+        auto ch = text[i];
+        if (ch == '@') {
+            atPos = i;
+            break;
+        }
+        if (ch == ' ' || ch == '\n')
+            break;
+    }
+
+    if (atPos >= 0) {
+        auto after = text.substring(atPos + 1, caretPos);
+        // A '.' inside the @-token splits plugin alias from a parameter
+        // filter; the popup pivots to param mode.
+        int dotPos = after.indexOfChar('.');
+        if (dotPos < 0) {
+            showAutocomplete(after);
+        } else {
+            auto pluginAlias = after.substring(0, dotPos);
+            auto paramFilter = after.substring(dotPos + 1);
+            showParamAutocomplete(pluginAlias, paramFilter);
+        }
+    } else {
+        hideAutocomplete();
+    }
 }
 
 void AIChatConsoleContent::buildSlashCommands() {
@@ -1748,7 +1989,7 @@ void AIChatConsoleContent::showSlashAutocomplete(const juce::String& filter) {
         addAndMakeVisible(*autocompletePopup_);
     }
 
-    auto inputBounds = inputBox_.getBounds();
+    auto inputBounds = inputBox_->getBounds();
     int popupWidth = inputBounds.getWidth();
     autocompletePopup_->setSize(popupWidth, 8 * 22 + 2);
     autocompletePopup_->updateSlashFilter(filter);
@@ -1766,16 +2007,16 @@ void AIChatConsoleContent::showSlashAutocomplete(const juce::String& filter) {
 }
 
 void AIChatConsoleContent::insertSlashCommand(const juce::String& command) {
-    auto text = inputBox_.getText();
+    auto text = inputDocument_.getAllContent();
     // Find the end of the /command token
     int spacePos = text.indexOf(" ");
     auto after = (spacePos >= 0) ? text.substring(spacePos) : "";
     auto newText = "/" + command + " " + after.trimStart();
-    inputBox_.setText(newText, false);
-    inputBox_.setCaretPosition(newText.length());
+    inputDocument_.replaceAllContent(newText);
+    inputBox_->moveCaretTo(juce::CodeDocument::Position(inputDocument_, newText.length()), false);
 
     hideAutocomplete();
-    inputBox_.grabKeyboardFocus();
+    inputBox_->grabKeyboardFocus();
 }
 
 // ============================================================================
@@ -1949,7 +2190,7 @@ void AIChatConsoleContent::finishControllerGeneration(bool success, const juce::
         menu.addItem(9999, "Skip");
 
         menu.showMenuAsync(
-            juce::PopupMenu::Options().withTargetComponent(&safeThis->inputBox_),
+            juce::PopupMenu::Options().withTargetComponent(safeThis->inputBox_.get()),
             [safeThis, finalId, displayName, ports](int result) {
                 if (!safeThis || result <= 0 || result == 9999)
                     return;
@@ -2009,7 +2250,7 @@ void AIChatConsoleContent::finishControllerGeneration(bool success, const juce::
         auto baseId = profileId;
         auto displayName = profileName;
 
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&inputBox_),
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(inputBox_.get()),
                            [safeThis, writeAndPromptPort, rawJson, baseId, displayName](int r) {
                                if (!safeThis || r <= 0 || r == 9999) {
                                    if (safeThis)

@@ -142,9 +142,6 @@ bool DeviceProcessor::isBypassed() const {
 }
 
 void DeviceProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
-    DBG("syncFromDeviceInfo: deviceId=" << deviceId_ << " gainDb=" << info.gainDb
-                                        << " params.size=" << info.parameters.size());
-
     setGainDb(info.gainDb);
     setBypassed(info.bypassed);
 

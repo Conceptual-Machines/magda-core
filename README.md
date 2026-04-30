@@ -137,6 +137,8 @@ docs/           # Documentation
 
 ## Issues
 
+> **Heads up:** MAGDA is in early v0. Development started in January 2026 — internal iteration first, public release more recently — and is very much active. Expect bugs and missing pieces. The best way to help the project is to file an issue.
+
 Found a bug or have a feature request? Please [open an issue](https://github.com/Conceptual-Machines/magda-core/issues/new) on GitHub.
 
 ## License

@@ -86,7 +86,7 @@ class ClipManager {
      */
     ClipId createAudioClip(TrackId trackId, double startTime, double length,
                            const juce::String& audioFilePath, ClipView view = ClipView::Arrangement,
-                           double projectBPM = 120.0);
+                           double projectBPM = 0.0);
 
     /**
      * @brief Create an empty MIDI clip — beats-authoritative API.
@@ -158,9 +158,15 @@ class ClipManager {
 
     /**
      * @brief Move clip to a new start time
-     * @param tempo BPM for MIDI note shifting (notes maintain absolute timeline position)
+     * @param tempo BPM used to refresh the clip's startBeats from the new
+     *              startTime. Pass <= 0 (default) to read the live project
+     *              tempo from ProjectManager — the safe path. The previous
+     *              hard-coded default of 120 silently corrupted startBeats
+     *              whenever the project was at any other tempo, which then
+     *              snapped clips to the wrong position on the next BPM
+     *              change.
      */
-    void moveClip(ClipId clipId, double newStartTime, double tempo = 120.0);
+    void moveClip(ClipId clipId, double newStartTime, double tempo = 0.0);
 
     /**
      * @brief Move clip to a different track

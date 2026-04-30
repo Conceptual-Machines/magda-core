@@ -12,6 +12,7 @@
 #include "../../../core/Config.hpp"
 #include "../../../core/SelectionManager.hpp"
 #include "../../../project/ProjectManager.hpp"
+#include "ChatPromptTokeniser.hpp"
 #include "DSLTokeniser.hpp"
 #include "PanelContent.hpp"
 
@@ -20,6 +21,8 @@ class AutomationAgent;
 class CommandAgent;
 class ControllerProfileAgent;
 class DAWAgent;
+class MagdaApi;
+class MagdaApiLive;
 class MusicAgent;
 class RouterAgent;
 class SvgButton;
@@ -36,6 +39,7 @@ namespace magda::daw::ui {
 class AIChatConsoleContent : public PanelContent,
                              private juce::Timer,
                              private juce::KeyListener,
+                             private juce::CodeDocument::Listener,
                              public magda::SelectionManagerListener,
                              public magda::ProjectManagerListener,
                              public magda::ConfigListener {
@@ -90,7 +94,20 @@ class AIChatConsoleContent : public PanelContent,
     void timerCallback() override;
 
     juce::TextEditor chatHistory_;
-    juce::TextEditor inputBox_;
+
+    // Input box: CodeEditorComponent + ChatPromptTokeniser so @plugin and
+    // /command syntax pick up colour automatically. inputDocument_ holds the
+    // text; inputBox_ is the visible editor; we listen on the document for
+    // text changes (the autocomplete trigger) and intercept Enter / Esc via
+    // the KeyListener mixin already on this class.
+    juce::CodeDocument inputDocument_;
+    ChatPromptTokeniser inputTokeniser_;
+    std::unique_ptr<juce::CodeEditorComponent> inputBox_;
+
+    // CodeDocument::Listener — autocomplete trigger replaces TextEditor::onTextChange.
+    void codeDocumentTextInserted(const juce::String& text, int insertIndex) override;
+    void codeDocumentTextDeleted(int startIndex, int endIndex) override;
+    void onInputChanged();  // shared body for both insert / delete callbacks
 
     // Bottom bar: context icon + label + send button
     enum class ContextIcon { None, Track, Clip, Device };
@@ -111,6 +128,14 @@ class AIChatConsoleContent : public PanelContent,
     // KeyListener — intercept arrow keys for autocomplete navigation
     using juce::Component::keyPressed;  // unhide 1-param overload
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
+
+    // Live MagdaApi backing the agent layer. Normally borrowed from
+    // TracktionEngineWrapper (the engine outlives this panel). When the
+    // engine is unreachable (headless tests, init failure), we fall back
+    // to owning a fresh MagdaApiLive in ownedApi_ so the pointer is never
+    // null and downstream agents / executors can dereference unconditionally.
+    std::unique_ptr<magda::MagdaApiLive> ownedApi_;
+    magda::MagdaApi* magdaApi_ = nullptr;
 
     std::unique_ptr<magda::DAWAgent> agent_;  // kept for legacy DSL REPL
     std::unique_ptr<magda::RouterAgent> routerAgent_;
@@ -155,11 +180,23 @@ class AIChatConsoleContent : public PanelContent,
         juce::String pluginName;  // e.g. "Serum 2"
     };
 
+    // Parameter alias entry shown after the user types '@plugin.' in the input.
+    // Sourced from AliasRegistry across all layers (UserProject, UserGlobal,
+    // Curated, AutoGen). The autocomplete pivots from plugin mode → param mode
+    // when a '.' is typed inside an @-token, and back to plugin mode when the
+    // '.' is deleted.
+    struct ParamAliasEntry {
+        juce::String pluginAlias;  // e.g. "eq" / "equaliser" — the bit before the dot
+        juce::String paramAlias;   // e.g. "low_shelf_freq"   — the bit after the dot
+        juce::String paramName;    // Display string from paramNameAtSetTime (may be empty)
+    };
+
     class AutocompletePopup;
     std::unique_ptr<AutocompletePopup> autocompletePopup_;
     std::vector<AliasEntry> allAliases_;
 
     void buildAliasList();
+    std::vector<ParamAliasEntry> collectParamAliases(const juce::String& pluginAlias) const;
     juce::String resolveAliases(const juce::String& text);
     juce::String rewriteSlashCommand(const juce::String& text);
 
@@ -173,8 +210,10 @@ class AIChatConsoleContent : public PanelContent,
     void showSlashAutocomplete(const juce::String& filter);
     void insertSlashCommand(const juce::String& command);
     void showAutocomplete(const juce::String& filter);
+    void showParamAutocomplete(const juce::String& pluginAlias, const juce::String& filter);
     void hideAutocomplete();
     void insertAlias(const juce::String& alias);
+    void insertParamAlias(const juce::String& pluginAlias, const juce::String& paramAlias);
 
     // Tab switching: AI vs DSL
     enum class ConsoleTab { AI, DSL };

@@ -211,10 +211,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/cloud_providers/openrouter.svg
     # App logo
     ../../assets/magda-lisa.svg
-    # Curated alias dictionaries
+    # Curated alias dictionaries (JSON path is reserved for third-party
+    # plugin packs; MAGDA-internal plugin aliases live in
+    # core/aliases/InternalPluginAliases.cpp).
     ../../assets/aliases/curated_index.json
-    ../../assets/aliases/curated_eq.json
-    ../../assets/aliases/curated_compressor.json
 )
 
 # DAW Core sources
@@ -222,6 +222,7 @@ set(DAW_CORE_SOURCES
     command.cpp
     magda.cpp
     core/Config.cpp
+    core/AppPaths.cpp
     core/UIScale.cpp
     core/UpdateChecker.cpp
     core/ViewModeController.cpp
@@ -263,6 +264,16 @@ set(DAW_CORE_SOURCES
     core/aliases/AutoAliasGenerator.cpp
     # Parameter alias system (PR 5 -- CuratedAliasLoader)
     core/aliases/CuratedAliasLoader.cpp
+    core/aliases/InternalPluginAliases.cpp
+    # MagdaApi -- programmatic facade for the agent layer (issue #1113)
+    api/selection_api_live.cpp
+    api/automation_api_live.cpp
+    api/alias_api_live.cpp
+    api/track_api_live.cpp
+    api/clip_api_live.cpp
+    api/session_api_live.cpp
+    api/project_api_live.cpp
+    api/undo_api_live.cpp
     # Controller data model (issue #1050 -- Phase A)
     core/controllers/Controller.cpp
     core/controllers/Binding.cpp
@@ -339,6 +350,7 @@ set(DAW_CORE_SOURCES
     project/ProjectManager.cpp
     # Preset management
     core/PresetManager.cpp
+    core/PluginPresetScanner.cpp
     # Music theory (chord detection, suggestion, scales)
     music/ChordEngine.cpp
     music/ChordSuggestionEngine.cpp
@@ -411,6 +423,7 @@ set(DAW_UI_SOURCES
     ui/panels/content/inspector/InspectorContainer.cpp
     ui/panels/content/AIChatConsoleContent.cpp
     ui/panels/content/ScriptingConsoleContent.cpp
+    ui/panels/content/ChatPromptTokeniser.cpp
     ui/panels/content/DSLTokeniser.cpp
     ui/panels/content/PanelContent.cpp
     ui/panels/content/TrackChainContent.cpp
@@ -528,6 +541,7 @@ set(DAW_HEADERS
     profiling/PerformanceProfiler.hpp
     profiling/BenchmarkSuite.hpp
     core/Config.hpp
+    core/AppPaths.hpp
     core/UIScale.hpp
     core/DeviceInfo.hpp
     core/ViewModeState.hpp
@@ -563,6 +577,24 @@ set(DAW_HEADERS
     interfaces/prompt_interface.hpp
     interfaces/track_interface.hpp
     interfaces/transport_interface.hpp
+    # MagdaApi (issue #1113)
+    api/magda_api.hpp
+    api/selection_api.hpp
+    api/automation_api.hpp
+    api/alias_api.hpp
+    api/track_api.hpp
+    api/clip_api.hpp
+    api/session_api.hpp
+    api/project_api.hpp
+    api/undo_api.hpp
+    api/magda_api_live.hpp
+    api/selection_api_live.hpp
+    api/automation_api_live.hpp
+    api/alias_api_live.hpp
+    api/track_api_live.hpp
+    api/clip_api_live.hpp
+    api/project_api_live.hpp
+    api/undo_api_live.hpp
     # Themes
     ui/themes/DarkTheme.hpp
     ui/themes/FontManager.hpp
@@ -613,6 +645,7 @@ set(DAW_HEADERS
     ui/panels/content/inspector/InspectorContainer.hpp
     ui/panels/content/AIChatConsoleContent.hpp
     ui/panels/content/ScriptingConsoleContent.hpp
+    ui/panels/content/ChatPromptTokeniser.hpp
     ui/panels/content/DSLTokeniser.hpp
     ui/panels/content/TrackChainContent.hpp
     ui/panels/content/PianoRollContent.hpp
@@ -751,6 +784,7 @@ set(DAW_HEADERS
     project/ProjectManager.hpp
     # Preset management
     core/PresetManager.hpp
+    core/PluginPresetScanner.hpp
     # Components - Common Curve Editor
     ui/components/common/curve/CurveTypes.hpp
     ui/components/common/curve/CurveEditorBase.hpp
@@ -861,6 +895,7 @@ target_link_libraries(magda_daw_app
     PRIVATE
     magda_daw
     magda_agents
+    magda_scripting
     MagdaAssets
     juce::juce_gui_basics
     juce::juce_gui_extra

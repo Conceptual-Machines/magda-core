@@ -3,6 +3,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "../ui/themes/MainLookAndFeel.hpp"
+
 namespace magda {
 
 // =============================================================================
@@ -107,6 +109,7 @@ PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
     // with Tracktion's window ownership. Using JUCE's title bar gives us
     // complete control - nothing happens after closeButtonPressed() unless we do it.
     setUsingNativeTitleBar(false);
+    setTitleBarHeight(MainLookAndFeel::kTitleBarHeight);
 
     // Keep plugin window always on top so it doesn't go behind main window when user interacts with
     // parameters

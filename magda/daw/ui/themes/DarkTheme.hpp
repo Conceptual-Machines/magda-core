@@ -99,7 +99,7 @@ class DarkTheme {
     static constexpr auto OFFSET_MARKER = 0xFFCCAA44;   // Solid yellow for content offset marker
 
     // Apply the theme to JUCE's LookAndFeel
-    static void applyToLookAndFeel(juce::LookAndFeel& laf);
+    static void applyToLookAndFeel(juce::LookAndFeel_V4& laf);
 
     // Get color as JUCE Colour object
     static juce::Colour getColour(juce::uint32 colorValue) {

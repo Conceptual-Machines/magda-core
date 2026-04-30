@@ -8,18 +8,24 @@
 #include "../../magda/agents/llama_model_manager.hpp"
 #include "../../magda/agents/llm_presets.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/ModulatorEngine.hpp"
+#include "core/PresetManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UIScale.hpp"
 #include "core/UpdateChecker.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
+#include "magda/scripting/LuaController.hpp"
+#include "magda/scripting/LuaScriptStore.hpp"
 #include "project/ProjectManager.hpp"
+#include "scripting_app.hpp"
 #include "ui/dialogs/SplashScreen.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/MainLookAndFeel.hpp"
 #include "ui/windows/MainWindow.hpp"
 #include "version.hpp"
 
@@ -29,10 +35,27 @@ class MagdaDAWApplication : public JUCEApplication {
   private:
     std::unique_ptr<juce::FileLogger> fileLogger_;
     std::unique_ptr<magda::TracktionEngineWrapper> daw_engine_;
+    // Lua-driven MIDI controller scripts (issue #592). Lives in the app
+    // layer rather than inside TracktionEngineWrapper so the engine library
+    // (magda_daw) doesn't pull magda_scripting into its link line.
+    std::unique_ptr<magda::scripting::LuaController> luaController_;
     std::unique_ptr<magda::MainWindow> mainWindow_;
-    std::unique_ptr<juce::LookAndFeel> lookAndFeel_;
+    std::unique_ptr<magda::MainLookAndFeel> lookAndFeel_;
     std::unique_ptr<magda::SplashScreen> splashScreen_;
 
+  public:
+    /** Convenience accessor used by the free functions in scripting_app.hpp. */
+    static MagdaDAWApplication* getMagdaInstance() noexcept {
+        return dynamic_cast<MagdaDAWApplication*>(JUCEApplication::getInstance());
+    }
+
+    bool reloadActiveLuaScript();
+    bool loadLuaScript(const juce::File& file);
+    void unloadLuaScript();
+    juce::String activeLuaScriptName() const;
+    void revealLuaScriptsFolder();
+
+  private:
     // Cancellable deferred init timer — destroyed in shutdown() to prevent
     // callbacks into a partially torn-down application.
     struct InitTimer : public juce::Timer {
@@ -63,12 +86,28 @@ class MagdaDAWApplication : public JUCEApplication {
             return;
         }
 
-        // Set up file logger early so all startup activity is captured
-        auto logDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                          .getChildFile("MAGDA")
-                          .getChildFile("Logs");
+        // 0. Configurable user-data paths. Two-phase resolution (issue:
+        //    custom data dir).
+        //    Phase 1: env vars only — Config not yet loaded. Lets MAGDA_DATA_DIR
+        //    redirect even before config.json is read. Files created by font
+        //    init / look-and-feel / etc. land in the right place.
+        magda::paths::resolve();
+
+        // 1. Load Config from its always-OS-default path. config.json itself
+        //    cannot move with the data dir override (chicken-and-egg: we
+        //    have to read it to know where to redirect to).
+        magda::Config::getInstance().load();
+
+        //    Phase 2: re-resolve now that Config has provided any persisted
+        //    path overrides.
+        magda::paths::resolve();
+
+        // 2. File logger — set up only NOW so it lands in the configured
+        //    data dir / Logs. The 4-5 ms of pre-logger init below this
+        //    runs without logging, which is fine; nothing of substance
+        //    logged there pre-refactor either.
+        auto logDir = magda::paths::logsDir();
         if (!logDir.createDirectory()) {
-            // Fall back to temp directory if APPDATA is not writable
             logDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
                          .getChildFile("MAGDA-Logs");
             logDir.createDirectory();
@@ -79,19 +118,30 @@ class MagdaDAWApplication : public JUCEApplication {
         juce::Logger::writeToLog("=== MAGDA " + getApplicationVersion() + " starting ===");
         juce::Logger::writeToLog("OS: " + juce::SystemStats::getOperatingSystemName());
         juce::Logger::writeToLog("Command line: " + commandLine);
+        juce::Logger::writeToLog(
+            "Data dir: " + magda::paths::dataDir().getFullPathName() +
+            (magda::paths::dataDirOverriddenByEnv() ? " (MAGDA_DATA_DIR override)" : ""));
 
-        // 1. Initialize fonts
+        // Eagerly create the configured per-user folders so they exist on
+        // disk immediately after launch — users expect to find them when
+        // they look at the paths shown in Preferences. PresetManager is a
+        // singleton whose ctor mkdir's Chains/Racks/Devices; touching it
+        // here forces that. LuaScriptStore::ensureExists() does the same
+        // for Scripts/Controllers/.
+        magda::PresetManager::getInstance();
+        magda::scripting::LuaScriptStore{}.ensureExists();
+
+        // 3. Initialize fonts
         magda::FontManager::getInstance().initialize();
 
-        // 2. Set up dark theme
-        lookAndFeel_ = std::make_unique<juce::LookAndFeel_V4>();
+        // 4. Set up dark theme
+        lookAndFeel_ = std::make_unique<magda::MainLookAndFeel>();
         magda::DarkTheme::applyToLookAndFeel(*lookAndFeel_);
         juce::LookAndFeel::setDefaultLookAndFeel(lookAndFeel_.get());
 
-        // 2a. Apply HiDPI scale before any window is created.
+        // 5. Apply HiDPI scale before any window is created.
         // setGlobalScaleFactor must run before TopLevelWindows exist for clean
         // sizing; see juce_TopLevelWindow.cpp.
-        magda::Config::getInstance().load();
         const double uiScale = magda::resolveStartupScale();
         juce::Desktop::getInstance().setGlobalScaleFactor(static_cast<float>(uiScale));
         juce::Logger::writeToLog("UI scale: " + juce::String(uiScale, 2) + "x");
@@ -128,6 +178,17 @@ class MagdaDAWApplication : public JUCEApplication {
         }
 
         juce::Logger::writeToLog("Audio engine initialized");
+
+        // 3a. Wire the Lua controller scripts (issue #592). Owned here so
+        // magda_daw stays free of magda_scripting symbols. attach() is
+        // skipped if the engine has no MidiBridge yet (headless / failure).
+        if (auto* bridge = daw_engine_->getMidiBridge()) {
+            luaController_ =
+                std::make_unique<magda::scripting::LuaController>(daw_engine_->getMagdaApi());
+            luaController_->attach(*bridge);
+            if (!reloadActiveLuaScript())
+                juce::Logger::writeToLog("[lua] No controller script loaded");
+        }
 
         // 3b. Clean up stale temp media directories from previous sessions
         magda::ProjectManager::cleanupStaleTempDirectories();
@@ -221,6 +282,11 @@ class MagdaDAWApplication : public JUCEApplication {
         DBG("[3] Destroying MainWindow...");
         mainWindow_.reset();
 
+        // Tear down the Lua controller before the engine — its dtor
+        // unregisters from MidiBridge::removeRawMidiListener.
+        DBG("[3b] Destroying LuaController...");
+        luaController_.reset();
+
         // Now shut down singletons — no live UI components reference them
         DBG("[4] TrackManager shutdown...");
         magda::TrackManager::getInstance().shutdown();
@@ -276,6 +342,115 @@ class MagdaDAWApplication : public JUCEApplication {
         quit();
     }
 };
+
+// -----------------------------------------------------------------------------
+// Lua controller scripts — out-of-line method definitions + free functions
+// implementing scripting_app.hpp.
+// -----------------------------------------------------------------------------
+
+bool MagdaDAWApplication::reloadActiveLuaScript() {
+    if (luaController_ == nullptr)
+        return false;
+
+    // If a script is already active, reload that exact file. Otherwise pick
+    // the alphabetically-first script in the folder so a fresh install with
+    // no chosen script still has a sensible default to load.
+    auto activeName = luaController_->currentScriptName();
+    magda::scripting::LuaScriptStore store;
+    store.ensureExists();
+    auto scripts = store.enumerate();
+    if (scripts.empty()) {
+        luaController_->unloadScript();
+        return false;
+    }
+
+    juce::File target = scripts.front();
+    if (activeName.isNotEmpty()) {
+        for (const auto& s : scripts) {
+            if (s.getFileName() == activeName) {
+                target = s;
+                break;
+            }
+        }
+    }
+    return loadLuaScript(target);
+}
+
+bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
+    if (luaController_ == nullptr)
+        return false;
+    if (luaController_->loadScript(file)) {
+        juce::Logger::writeToLog("[lua] Loaded controller script: " + file.getFileName());
+        return true;
+    }
+    juce::Logger::writeToLog("[lua] Failed to load " + file.getFileName() + ": " +
+                             luaController_->lastError());
+    return false;
+}
+
+void MagdaDAWApplication::unloadLuaScript() {
+    if (luaController_ != nullptr)
+        luaController_->unloadScript();
+}
+
+juce::String MagdaDAWApplication::activeLuaScriptName() const {
+    return luaController_ != nullptr ? luaController_->currentScriptName() : juce::String{};
+}
+
+void MagdaDAWApplication::revealLuaScriptsFolder() {
+    magda::scripting::LuaScriptStore store;
+    store.ensureExists();
+    store.root().revealToUser();
+}
+
+namespace magda::scripting_app {
+
+bool reloadActiveLuaScript() {
+    if (auto* app = MagdaDAWApplication::getMagdaInstance())
+        return app->reloadActiveLuaScript();
+    return false;
+}
+
+bool loadLuaScript(const juce::File& file) {
+    if (auto* app = MagdaDAWApplication::getMagdaInstance())
+        return app->loadLuaScript(file);
+    return false;
+}
+
+void unloadLuaScript() {
+    if (auto* app = MagdaDAWApplication::getMagdaInstance())
+        app->unloadLuaScript();
+}
+
+juce::String activeLuaScriptName() {
+    if (auto* app = MagdaDAWApplication::getMagdaInstance())
+        return app->activeLuaScriptName();
+    return {};
+}
+
+bool hasAnyLuaScripts() {
+    magda::scripting::LuaScriptStore store;
+    return !store.enumerate().empty();
+}
+
+std::vector<juce::File> enumerateLuaScripts() {
+    magda::scripting::LuaScriptStore store;
+    store.ensureExists();
+    return store.enumerate();
+}
+
+juce::File luaScriptsFolder() {
+    magda::scripting::LuaScriptStore store;
+    store.ensureExists();
+    return store.root();
+}
+
+void revealLuaScriptsFolder() {
+    if (auto* app = MagdaDAWApplication::getMagdaInstance())
+        app->revealLuaScriptsFolder();
+}
+
+}  // namespace magda::scripting_app
 
 // JUCE application startup
 START_JUCE_APPLICATION(MagdaDAWApplication)

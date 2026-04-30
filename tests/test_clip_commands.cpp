@@ -4,6 +4,7 @@
 #include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/project/ProjectManager.hpp"
 
 /**
  * Tests for ClipCommand undo/redo operations
@@ -146,6 +147,91 @@ TEST_CASE("DuplicateClipCommand - audio clip", "[clip][command][duplicate]") {
     REQUIRE(dup->type == ClipType::Audio);
     REQUIRE(dup->startTime == Catch::Approx(4.0));  // 1.0 + 3.0
     REQUIRE(dup->length == Catch::Approx(3.0));
+}
+
+// Regression: ClipManager::duplicateClip used to update startTime on audio
+// clips but leave startBeats equal to the original's, so any later
+// beats-driven re-derivation (BPM change, beats-aware paint) snapped the
+// duplicate back on top of the original. Position is beats-authoritative
+// for every clip type — startBeats must reflect the new startTime.
+TEST_CASE("DuplicateClipCommand - audio clip startBeats stays in sync with startTime",
+          "[clip][command][duplicate][bpm-snap-regression]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(90.0);
+    REQUIRE(proj.getCurrentProjectInfo().tempo == Catch::Approx(90.0));
+
+    TrackId track = createTrack("Audio Track", TrackType::Audio);
+    ClipId original = createAudio(track, 2.0, 4.0);
+
+    auto* origBeforeDup = ClipManager::getInstance().getClip(original);
+    REQUIRE(origBeforeDup != nullptr);
+    // Sanity: createAudio under bpm=90 should give startBeats = 2 * 90/60 = 3.0.
+    REQUIRE(origBeforeDup->startBeats == Catch::Approx(3.0));
+
+    DuplicateClipCommand cmd(original);
+    cmd.execute();
+
+    auto* dup = ClipManager::getInstance().getClip(cmd.getDuplicatedClipId());
+    REQUIRE(dup != nullptr);
+    // Position math in beats: original at 2.0s @ 90 BPM = beat 3, length 4.0s = 6 beats.
+    // Duplicate should sit at beat 9, derived seconds 6.0.
+    REQUIRE(dup->startBeats == Catch::Approx(9.0));
+    REQUIRE(dup->startTime == Catch::Approx(6.0));
+    // Pre-fix dup->startBeats was the original's (3.0) — would have snapped
+    // back to startTime 2.0 the moment anything re-derived from beats.
+    auto* origAfter = ClipManager::getInstance().getClip(original);
+    REQUIRE(origAfter != nullptr);
+    REQUIRE(dup->startBeats != Catch::Approx(origAfter->startBeats));
+
+    proj.setTempo(originalTempo);
+}
+
+// Regression: time-range duplicate (Cmd+D over an active time selection)
+// must preserve the relative spacing of clips inside the range, regardless
+// of project tempo. Each pasted clip's newStartTime = clipData.startTime +
+// (pasteTime - referenceTime), so the gap between A and B copies should
+// equal the gap between A and B in the source range.
+TEST_CASE("copyTimeRangeToClipboard + paste - preserves internal clip spacing",
+          "[clip][duplicate][time-selection][bpm-snap-regression]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(90.0);
+
+    TrackId track = createTrack("Audio Track", TrackType::Audio);
+    // Selection [2.0, 6.0] (4 seconds = 6 beats at 90 BPM).
+    // Two audio clips inside the range, 0.5s of internal gap.
+    ClipId a = createAudio(track, 2.0, 1.5);  // ends at 3.5
+    ClipId b = createAudio(track, 4.0, 1.5);  // starts 0.5s after A's end
+
+    auto& cm = ClipManager::getInstance();
+    cm.copyTimeRangeToClipboard(2.0, 6.0, {track}, /*tempoBPM=*/90.0);
+
+    PasteClipCommand paste(/*pasteTime=*/6.0);
+    paste.execute();
+
+    auto pastedIds = paste.getPastedClipIds();
+    REQUIRE(pastedIds.size() == 2);
+
+    // Sort pasted by startTime to align with originals.
+    std::sort(pastedIds.begin(), pastedIds.end(), [&](ClipId x, ClipId y) {
+        return cm.getClip(x)->startTime < cm.getClip(y)->startTime;
+    });
+    auto* pa = cm.getClip(pastedIds[0]);
+    auto* pb = cm.getClip(pastedIds[1]);
+    REQUIRE(pa != nullptr);
+    REQUIRE(pb != nullptr);
+
+    // A copy: 2.0 + (6 - 2) = 6.0. B copy: 4.0 + 4 = 8.0. Gap preserved.
+    REQUIRE(pa->startTime == Catch::Approx(6.0));
+    REQUIRE(pb->startTime == Catch::Approx(8.0));
+    REQUIRE((pb->startTime - pa->startTime) ==
+            Catch::Approx(cm.getClip(b)->startTime - cm.getClip(a)->startTime));
+
+    proj.setTempo(originalTempo);
+    juce::ignoreUnused(a, b);
 }
 
 // ============================================================================
@@ -373,6 +459,64 @@ TEST_CASE("MoveClipCommand - undo/redo", "[clip][command][move][undo]") {
 
     cmd.execute();
     REQUIRE(ClipManager::getInstance().getClip(clipId)->startTime == Catch::Approx(5.0));
+}
+
+// Regression: ClipManager::moveClip used to default tempo to 120 BPM, and
+// MoveClipCommand::execute called it without an override. Anyone running a
+// project at any other tempo therefore got a wrong startBeats baked in,
+// which the next BPM change then translated into a wrong startTime — clips
+// snapping to bizarre positions. The fix has moveClip read the live project
+// tempo from ProjectManager when no explicit tempo is passed.
+TEST_CASE("MoveClipCommand - startBeats derived from live project tempo, not 120",
+          "[clip][command][move][bpm-snap-regression]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(90.0);
+
+    TrackId track = createTrack();
+    ClipId clipId = createAudio(track, 0.0, 2.0);
+
+    MoveClipCommand cmd(clipId, 6.0);
+    cmd.execute();
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip->startTime == Catch::Approx(6.0));
+    // 6 seconds * 90 BPM / 60 = 9 beats. Pre-fix this was 12 (using the
+    // hard-coded 120 default).
+    REQUIRE(clip->startBeats == Catch::Approx(9.0));
+
+    proj.setTempo(originalTempo);
+}
+
+// Companion to the regression above: with startBeats correctly derived from
+// the live tempo, a subsequent BPM change keeps the clip at the same bar
+// position (i.e. the clip's startTime tracks the new BPM via beats).
+// Operates on the ClipManager state directly — TimelineController's
+// SetTempoEvent does the same beats→seconds re-derivation on tempo change,
+// just orchestrated through more layers.
+TEST_CASE("MoveClipCommand - clip stays bar-anchored across BPM change",
+          "[clip][command][move][bpm-snap-regression]") {
+    resetState();
+    auto& proj = ProjectManager::getInstance();
+    const double originalTempo = proj.getCurrentProjectInfo().tempo;
+    proj.setTempo(90.0);
+
+    TrackId track = createTrack();
+    ClipId clipId = createAudio(track, 0.0, 2.0);
+
+    MoveClipCommand cmd(clipId, 6.0);
+    cmd.execute();
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip->startBeats == Catch::Approx(9.0));
+
+    // Simulate the SetTempoEvent re-derivation: at 60 BPM, beat 9 lives at
+    // 9 * 60/60 = 9 seconds.
+    clip->startTime = (clip->startBeats * 60.0) / 60.0;
+    REQUIRE(clip->startTime == Catch::Approx(9.0));
+
+    proj.setTempo(originalTempo);
 }
 
 TEST_CASE("MoveClipCommand - merge consecutive moves", "[clip][command][move][merge]") {
