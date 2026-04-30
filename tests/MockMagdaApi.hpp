@@ -369,6 +369,11 @@ class MockFocusedApi : public FocusedApi {
     void setMacroValue(int idx, float value) override {
         macroWrites.push_back({idx, value});
     }
+
+    int autoMapCalls = 0;
+    void autoMapToFirstParams() override {
+        ++autoMapCalls;
+    }
 };
 
 class MockTransportApi : public TransportApi {

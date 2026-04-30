@@ -16,6 +16,7 @@
 namespace magda {
 
 class MidiBridge;
+class AudioBridge;
 
 /// Live implementation: every sub-interface forwards to the matching MAGDA singleton.
 class MagdaApiLive : public MagdaApi {
@@ -58,6 +59,12 @@ class MagdaApiLive : public MagdaApi {
      *  engine wrapper; safe to leave unset in headless tests. */
     void setMidiBridge(MidiBridge* bridge) {
         midi_.setMidiBridge(bridge);
+    }
+
+    /** Wire the AudioBridge into the live FocusedApi (used for the
+     *  auto-map-to-first-params helper which needs plugin parameter access). */
+    void setAudioBridge(AudioBridge* bridge) {
+        focused_.setAudioBridge(bridge);
     }
 
     /** Wire the current-Edit accessor into the live TransportApi. */

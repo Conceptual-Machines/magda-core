@@ -212,7 +212,22 @@ local function refresh_leds()
   end
 end
 
+-- Detect focused-device changes between ticks and run automap-style
+-- macro linking once per device. magda.focused.auto_map is idempotent and
+-- skips already-linked macros, so user customisation is preserved across
+-- re-focuses of the same device.
+local last_focused_name = ""
+local function maybe_auto_map()
+  local name = magda.focused.name()
+  if name == last_focused_name then return end
+  last_focused_name = name
+  if name ~= "" then
+    magda.focused.auto_map()
+  end
+end
+
 function on_tick(dt)
+  maybe_auto_map()
   refresh_leds()
 end
 
