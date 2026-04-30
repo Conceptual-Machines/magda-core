@@ -4,6 +4,7 @@
 #include "automation_api_live.hpp"
 #include "clip_api_live.hpp"
 #include "magda_api.hpp"
+#include "midi_api_live.hpp"
 #include "project_api_live.hpp"
 #include "selection_api_live.hpp"
 #include "session_api_live.hpp"
@@ -11,6 +12,8 @@
 #include "undo_api_live.hpp"
 
 namespace magda {
+
+class MidiBridge;
 
 /// Live implementation: every sub-interface forwards to the matching MAGDA singleton.
 class MagdaApiLive : public MagdaApi {
@@ -39,6 +42,15 @@ class MagdaApiLive : public MagdaApi {
     UndoApi& undo() override {
         return undo_;
     }
+    MidiApi& midi() override {
+        return midi_;
+    }
+
+    /** Wire the MidiBridge into the live MidiApi. Owned externally by the
+     *  engine wrapper; safe to leave unset in headless tests. */
+    void setMidiBridge(MidiBridge* bridge) {
+        midi_.setMidiBridge(bridge);
+    }
 
   private:
     SelectionApiLive selection_;
@@ -49,6 +61,7 @@ class MagdaApiLive : public MagdaApi {
     SessionApiLive session_;
     ProjectApiLive project_;
     UndoApiLive undo_;
+    MidiApiLive midi_;
 };
 
 }  // namespace magda

@@ -1,7 +1,11 @@
 #include "magda/scripting/MagdaApiLuaBindings.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_core/juce_core.h>
+
 #include "magda/daw/api/clip_api.hpp"
 #include "magda/daw/api/magda_api.hpp"
+#include "magda/daw/api/midi_api.hpp"
 #include "magda/daw/api/project_api.hpp"
 #include "magda/daw/api/selection_api.hpp"
 #include "magda/daw/api/session_api.hpp"
@@ -13,14 +17,13 @@
 #include "magda/daw/core/TypeIds.hpp"
 #include "magda/daw/project/ProjectInfo.hpp"
 
-#include <juce_core/juce_core.h>
-
 extern "C" {
 #include <lauxlib.h>
 #include <lua.h>
 }
 
 #include <unordered_set>
+#include <vector>
 
 // All bindings are defined in this TU because they share static helpers and
 // the registry-key sentinel. Keeping them grouped under a single anonymous
@@ -158,8 +161,7 @@ int lua_selection_select_track(lua_State* L) {
 // Helper: read a 1-indexed Lua array of integers at stack index `idx` into
 // an unordered_set<T>. Validates types up-front so any error fires before
 // allocations occur in the set.
-template <typename T>
-std::unordered_set<T> readIntSet(lua_State* L, int idx) {
+template <typename T> std::unordered_set<T> readIntSet(lua_State* L, int idx) {
     luaL_checktype(L, idx, LUA_TTABLE);
     std::unordered_set<T> out;
     lua_Integer n = luaL_len(L, idx);
@@ -222,11 +224,16 @@ TrackType parseTrackType(const char* s) {
 
 const char* trackTypeToLuaString(TrackType t) {
     switch (t) {
-        case TrackType::Audio: return "audio";
-        case TrackType::Group: return "group";
-        case TrackType::Aux: return "aux";
-        case TrackType::Master: return "master";
-        case TrackType::MultiOut: return "multi_out";
+        case TrackType::Audio:
+            return "audio";
+        case TrackType::Group:
+            return "group";
+        case TrackType::Aux:
+            return "aux";
+        case TrackType::Master:
+            return "master";
+        case TrackType::MultiOut:
+            return "multi_out";
     }
     return "audio";
 }
@@ -267,8 +274,7 @@ int lua_tracks_create(lua_State* L) {
     auto* api = getApi(L);
     const char* name = luaL_checkstring(L, 1);
     const char* typeStr = luaL_optstring(L, 2, "audio");
-    TrackId id = api->tracks().createTrack(juce::String::fromUTF8(name),
-                                           parseTrackType(typeStr));
+    TrackId id = api->tracks().createTrack(juce::String::fromUTF8(name), parseTrackType(typeStr));
     lua_pushinteger(L, static_cast<lua_Integer>(id));
     return 1;
 }
@@ -498,6 +504,107 @@ int lua_project_info(lua_State* L) {
     return 1;
 }
 
+// ---- midi ------------------------------------------------------------------
+
+// Read a 1-indexed Lua array of byte values into a vector. luaL_error on
+// non-table or out-of-range entries.
+std::vector<juce::uint8> readByteArray(lua_State* L, int idx) {
+    luaL_checktype(L, idx, LUA_TTABLE);
+    std::vector<juce::uint8> out;
+    lua_Integer n = luaL_len(L, idx);
+    out.reserve(static_cast<size_t>(n));
+    for (lua_Integer i = 1; i <= n; ++i) {
+        lua_rawgeti(L, idx, i);
+        if (!lua_isinteger(L, -1)) {
+            lua_pop(L, 1);
+            luaL_error(L, "expected integer byte at index %d", static_cast<int>(i));
+        }
+        lua_Integer v = lua_tointeger(L, -1);
+        lua_pop(L, 1);
+        if (v < 0 || v > 0x7F)
+            luaL_error(L, "byte at index %d out of range 0..127", static_cast<int>(i));
+        out.push_back(static_cast<juce::uint8>(v));
+    }
+    return out;
+}
+
+int lua_midi_send_cc(lua_State* L) {
+    auto* api = getApi(L);
+    const char* port = luaL_checkstring(L, 1);
+    int channel = static_cast<int>(luaL_checkinteger(L, 2));
+    int number = static_cast<int>(luaL_checkinteger(L, 3));
+    int value = static_cast<int>(luaL_checkinteger(L, 4));
+    bool ok = api->midi().sendMidi(juce::String::fromUTF8(port),
+                                   juce::MidiMessage::controllerEvent(channel, number, value));
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+int lua_midi_send_note_on(lua_State* L) {
+    auto* api = getApi(L);
+    const char* port = luaL_checkstring(L, 1);
+    int channel = static_cast<int>(luaL_checkinteger(L, 2));
+    int note = static_cast<int>(luaL_checkinteger(L, 3));
+    int vel = static_cast<int>(luaL_checkinteger(L, 4));
+    bool ok = api->midi().sendMidi(
+        juce::String::fromUTF8(port),
+        juce::MidiMessage::noteOn(channel, note, static_cast<juce::uint8>(vel)));
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+int lua_midi_send_note_off(lua_State* L) {
+    auto* api = getApi(L);
+    const char* port = luaL_checkstring(L, 1);
+    int channel = static_cast<int>(luaL_checkinteger(L, 2));
+    int note = static_cast<int>(luaL_checkinteger(L, 3));
+    bool ok = api->midi().sendMidi(juce::String::fromUTF8(port),
+                                   juce::MidiMessage::noteOff(channel, note));
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+// magda.midi.send(port, status, data1[, data2]) — escape hatch for any raw
+// channel-voice message the convenience helpers don't cover.
+int lua_midi_send(lua_State* L) {
+    auto* api = getApi(L);
+    const char* port = luaL_checkstring(L, 1);
+    int status = static_cast<int>(luaL_checkinteger(L, 2));
+    int data1 = static_cast<int>(luaL_checkinteger(L, 3));
+    int data2 = static_cast<int>(luaL_optinteger(L, 4, 0));
+    juce::uint8 raw[3] = {static_cast<juce::uint8>(status), static_cast<juce::uint8>(data1),
+                          static_cast<juce::uint8>(data2)};
+    // Channel-voice messages are 2 or 3 bytes; the third is allowed-but-ignored
+    // for program-change / channel-pressure. JUCE's MidiMessage handles either.
+    juce::MidiMessage msg(raw, 3);
+    bool ok = api->midi().sendMidi(juce::String::fromUTF8(port), msg);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+// magda.midi.send_sysex(port, {byte, byte, ...}) — bytes are the payload
+// only (no F0/F7 framing; the binding adds it).
+int lua_midi_send_sysex(lua_State* L) {
+    auto* api = getApi(L);
+    const char* port = luaL_checkstring(L, 1);
+    auto bytes = readByteArray(L, 2);
+    bool ok = api->midi().sendSysEx(juce::String::fromUTF8(port), bytes.data(), bytes.size());
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+int lua_midi_outputs(lua_State* L) {
+    auto* api = getApi(L);
+    auto names = api->midi().getOutputPortNames();
+    lua_createtable(L, static_cast<int>(names.size()), 0);
+    int i = 1;
+    for (const auto& n : names) {
+        pushJuceString(L, n);
+        lua_rawseti(L, -2, i++);
+    }
+    return 1;
+}
+
 // ---- registration ----------------------------------------------------------
 
 // Convenience: attach `funcs` (null-terminated) to the table at the top of
@@ -574,6 +681,16 @@ const FnReg kProjectFns[] = {
     {nullptr, nullptr},
 };
 
+const FnReg kMidiFns[] = {
+    {"send", lua_midi_send},
+    {"send_cc", lua_midi_send_cc},
+    {"send_note_on", lua_midi_send_note_on},
+    {"send_note_off", lua_midi_send_note_off},
+    {"send_sysex", lua_midi_send_sysex},
+    {"outputs", lua_midi_outputs},
+    {nullptr, nullptr},
+};
+
 void installSubtable(lua_State* L, const char* name, const FnReg* fns) {
     lua_newtable(L);
     setFunctions(L, fns);
@@ -596,6 +713,7 @@ void registerMagdaApi(lua_State* L, MagdaApi& api) {
     installSubtable(L, "clips", kClipFns);
     installSubtable(L, "session", kSessionFns);
     installSubtable(L, "project", kProjectFns);
+    installSubtable(L, "midi", kMidiFns);
     lua_setglobal(L, "magda");
 }
 

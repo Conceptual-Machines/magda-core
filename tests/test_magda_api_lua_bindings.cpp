@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <juce_core/juce_core.h>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "MockMagdaApi.hpp"
 #include "magda/scripting/LuaRuntime.hpp"
@@ -33,8 +33,7 @@ class CapturingLogger : public juce::Logger {
 
 }  // namespace
 
-TEST_CASE("magda.log.{info,warn,error} forward to juce::Logger",
-          "[lua_bindings][log]") {
+TEST_CASE("magda.log.{info,warn,error} forward to juce::Logger", "[lua_bindings][log]") {
     CapturingLogger capture;
     MockMagdaApi mock;
     LuaRuntime rt;
@@ -50,8 +49,7 @@ TEST_CASE("magda.log.{info,warn,error} forward to juce::Logger",
     REQUIRE(joined.contains("[lua error] boom"));
 }
 
-TEST_CASE("Bindings unavailable when registerMagdaApi has not been called",
-          "[lua_bindings]") {
+TEST_CASE("Bindings unavailable when registerMagdaApi has not been called", "[lua_bindings]") {
     LuaRuntime rt;
     // No registration. Access to magda is nil → indexing fails.
     REQUIRE_FALSE(rt.eval("magda.tracks.count()"));
@@ -91,8 +89,7 @@ TEST_CASE("magda.tracks.create routes to TrackApi", "[lua_bindings][tracks]") {
     REQUIRE(*id == mock.tracks_.created[0].id);
 }
 
-TEST_CASE("magda.tracks.create accepts every track-type alias",
-          "[lua_bindings][tracks]") {
+TEST_CASE("magda.tracks.create accepts every track-type alias", "[lua_bindings][tracks]") {
     MockMagdaApi mock;
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
@@ -143,8 +140,7 @@ TEST_CASE("magda.tracks setters record their writes", "[lua_bindings][tracks]") 
     REQUIRE(mock.tracks_.deleted == std::vector<magda::TrackId>{9});
 }
 
-TEST_CASE("magda.tracks.list returns a snapshot table per track",
-          "[lua_bindings][tracks]") {
+TEST_CASE("magda.tracks.list returns a snapshot table per track", "[lua_bindings][tracks]") {
     MockMagdaApi mock;
     magda::TrackInfo a;
     a.id = 1;
@@ -160,29 +156,23 @@ TEST_CASE("magda.tracks.list returns a snapshot table per track",
     registerMagdaApi(rt.state(), mock);
 
     REQUIRE(rt.evalToInt("#magda.tracks.list()") == std::optional<long long>{1});
-    REQUIRE(rt.evalToString("magda.tracks.list()[1].name") ==
-            std::optional<juce::String>{"Drums"});
-    REQUIRE(rt.evalToString("magda.tracks.list()[1].type") ==
-            std::optional<juce::String>{"audio"});
-    REQUIRE(rt.evalToInt("magda.tracks.list()[1].id") ==
-            std::optional<long long>{1});
+    REQUIRE(rt.evalToString("magda.tracks.list()[1].name") == std::optional<juce::String>{"Drums"});
+    REQUIRE(rt.evalToString("magda.tracks.list()[1].type") == std::optional<juce::String>{"audio"});
+    REQUIRE(rt.evalToInt("magda.tracks.list()[1].id") == std::optional<long long>{1});
     auto muted = rt.evalToString("tostring(magda.tracks.list()[1].muted)");
     REQUIRE(muted == std::optional<juce::String>{"true"});
 }
 
-TEST_CASE("magda.tracks.get returns nil for an unknown id",
-          "[lua_bindings][tracks]") {
+TEST_CASE("magda.tracks.get returns nil for an unknown id", "[lua_bindings][tracks]") {
     MockMagdaApi mock;
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
-    REQUIRE(rt.evalToString("type(magda.tracks.get(999))") ==
-            std::optional<juce::String>{"nil"});
+    REQUIRE(rt.evalToString("type(magda.tracks.get(999))") == std::optional<juce::String>{"nil"});
 }
 
 // ---- selection -------------------------------------------------------------
 
-TEST_CASE("magda.selection reads return seeded state",
-          "[lua_bindings][selection]") {
+TEST_CASE("magda.selection reads return seeded state", "[lua_bindings][selection]") {
     MockMagdaApi mock;
     mock.selection_.selectedTrack = 42;
     mock.selection_.selectedClip = 101;
@@ -194,22 +184,16 @@ TEST_CASE("magda.selection reads return seeded state",
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
 
-    REQUIRE(rt.evalToInt("magda.selection.track()") ==
-            std::optional<long long>{42});
-    REQUIRE(rt.evalToInt("magda.selection.clip()") ==
-            std::optional<long long>{101});
-    REQUIRE(rt.evalToInt("#magda.selection.clips()") ==
-            std::optional<long long>{2});
+    REQUIRE(rt.evalToInt("magda.selection.track()") == std::optional<long long>{42});
+    REQUIRE(rt.evalToInt("magda.selection.clip()") == std::optional<long long>{101});
+    REQUIRE(rt.evalToInt("#magda.selection.clips()") == std::optional<long long>{2});
     REQUIRE(rt.evalToString("tostring(magda.selection.has_notes())") ==
             std::optional<juce::String>{"true"});
-    REQUIRE(rt.evalToInt("magda.selection.note_clip()") ==
-            std::optional<long long>{101});
-    REQUIRE(rt.evalToInt("#magda.selection.note_indices()") ==
-            std::optional<long long>{3});
+    REQUIRE(rt.evalToInt("magda.selection.note_clip()") == std::optional<long long>{101});
+    REQUIRE(rt.evalToInt("#magda.selection.note_indices()") == std::optional<long long>{3});
 }
 
-TEST_CASE("magda.selection writes capture into the mock",
-          "[lua_bindings][selection]") {
+TEST_CASE("magda.selection writes capture into the mock", "[lua_bindings][selection]") {
     MockMagdaApi mock;
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
@@ -224,12 +208,10 @@ TEST_CASE("magda.selection writes capture into the mock",
     REQUIRE(mock.selection_.clipSelections == std::vector<magda::ClipId>{7});
 
     REQUIRE(mock.selection_.tracksSelections.size() == 1);
-    REQUIRE(mock.selection_.tracksSelections[0] ==
-            std::unordered_set<magda::TrackId>{1, 2, 3});
+    REQUIRE(mock.selection_.tracksSelections[0] == std::unordered_set<magda::TrackId>{1, 2, 3});
 
     REQUIRE(mock.selection_.clipsSelections.size() == 1);
-    REQUIRE(mock.selection_.clipsSelections[0] ==
-            std::unordered_set<magda::ClipId>{10, 20});
+    REQUIRE(mock.selection_.clipsSelections[0] == std::unordered_set<magda::ClipId>{10, 20});
 
     REQUIRE(mock.selection_.clearNoteCalls == 1);
 }
@@ -250,23 +232,18 @@ TEST_CASE("magda.clips.create_midi forwards args", "[lua_bindings][clips]") {
     REQUIRE(mock.clips_.midiCreations[0].lengthBeats == 4.0);
 }
 
-TEST_CASE("magda.clips.list_on_track returns ID array",
-          "[lua_bindings][clips]") {
+TEST_CASE("magda.clips.list_on_track returns ID array", "[lua_bindings][clips]") {
     MockMagdaApi mock;
     mock.clips_.clipsOnTrack[5] = {100, 101, 102};
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
 
-    REQUIRE(rt.evalToInt("#magda.clips.list_on_track(5)") ==
-            std::optional<long long>{3});
-    REQUIRE(rt.evalToInt("magda.clips.list_on_track(5)[1]") ==
-            std::optional<long long>{100});
-    REQUIRE(rt.evalToInt("magda.clips.list_on_track(5)[3]") ==
-            std::optional<long long>{102});
+    REQUIRE(rt.evalToInt("#magda.clips.list_on_track(5)") == std::optional<long long>{3});
+    REQUIRE(rt.evalToInt("magda.clips.list_on_track(5)[1]") == std::optional<long long>{100});
+    REQUIRE(rt.evalToInt("magda.clips.list_on_track(5)[3]") == std::optional<long long>{102});
 }
 
-TEST_CASE("magda.clips.set_name and set_groove route through",
-          "[lua_bindings][clips]") {
+TEST_CASE("magda.clips.set_name and set_groove route through", "[lua_bindings][clips]") {
     MockMagdaApi mock;
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
@@ -284,8 +261,7 @@ TEST_CASE("magda.clips.set_name and set_groove route through",
 
 // ---- session ---------------------------------------------------------------
 
-TEST_CASE("magda.session.launch_clip routes to SessionApi",
-          "[lua_bindings][session]") {
+TEST_CASE("magda.session.launch_clip routes to SessionApi", "[lua_bindings][session]") {
     MockMagdaApi mock;
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
@@ -293,12 +269,10 @@ TEST_CASE("magda.session.launch_clip routes to SessionApi",
     REQUIRE(rt.eval("magda.session.launch_clip(101)"));
     REQUIRE(rt.eval("magda.session.launch_clip(102)"));
 
-    REQUIRE(mock.session_.launchedClips ==
-            std::vector<magda::ClipId>{101, 102});
+    REQUIRE(mock.session_.launchedClips == std::vector<magda::ClipId>{101, 102});
 }
 
-TEST_CASE("magda.session stop variants record the right targets",
-          "[lua_bindings][session]") {
+TEST_CASE("magda.session stop variants record the right targets", "[lua_bindings][session]") {
     MockMagdaApi mock;
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
@@ -312,23 +286,20 @@ TEST_CASE("magda.session stop variants record the right targets",
     REQUIRE(mock.session_.stopAllCalls == 1);
 }
 
-TEST_CASE("magda.session.active_clip_on_track returns id or nil",
-          "[lua_bindings][session]") {
+TEST_CASE("magda.session.active_clip_on_track returns id or nil", "[lua_bindings][session]") {
     MockMagdaApi mock;
     mock.session_.activeOnTrack[3] = 707;
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
 
-    REQUIRE(rt.evalToInt("magda.session.active_clip_on_track(3)") ==
-            std::optional<long long>{707});
+    REQUIRE(rt.evalToInt("magda.session.active_clip_on_track(3)") == std::optional<long long>{707});
     REQUIRE(rt.evalToString("type(magda.session.active_clip_on_track(99))") ==
             std::optional<juce::String>{"nil"});
 }
 
 // ---- project ---------------------------------------------------------------
 
-TEST_CASE("magda.project.info returns tempo and time-sig fields",
-          "[lua_bindings][project]") {
+TEST_CASE("magda.project.info returns tempo and time-sig fields", "[lua_bindings][project]") {
     MockMagdaApi mock;
     mock.project_.info.name = "Demo";
     mock.project_.info.filePath = "/tmp/demo.mgd";
@@ -341,20 +312,92 @@ TEST_CASE("magda.project.info returns tempo and time-sig fields",
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
 
-    REQUIRE(rt.evalToString("magda.project.info().name") ==
-            std::optional<juce::String>{"Demo"});
+    REQUIRE(rt.evalToString("magda.project.info().name") == std::optional<juce::String>{"Demo"});
     REQUIRE(rt.evalToString("magda.project.info().file_path") ==
             std::optional<juce::String>{"/tmp/demo.mgd"});
-    REQUIRE(rt.evalToInt("magda.project.info().time_sig_num") ==
-            std::optional<long long>{7});
-    REQUIRE(rt.evalToInt("magda.project.info().time_sig_den") ==
-            std::optional<long long>{8});
+    REQUIRE(rt.evalToInt("magda.project.info().time_sig_num") == std::optional<long long>{7});
+    REQUIRE(rt.evalToInt("magda.project.info().time_sig_den") == std::optional<long long>{8});
     REQUIRE(rt.evalToString("tostring(magda.project.info().loop_enabled)") ==
             std::optional<juce::String>{"true"});
     // tempo / sample_rate are floats — fetch as string and verify substring
     auto tempo = rt.evalToString("tostring(magda.project.info().tempo)");
     REQUIRE(tempo.has_value());
     REQUIRE(tempo->contains("128.5"));
+}
+
+// ---- midi ------------------------------------------------------------------
+
+TEST_CASE("magda.midi.send_cc forwards a controller-event MidiMessage", "[lua_bindings][midi]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.eval("magda.midi.send_cc('Launchkey DAW Out', 7, 29, 2)"));
+
+    REQUIRE(mock.midi_.sends.size() == 1);
+    REQUIRE(mock.midi_.sends[0].port == "Launchkey DAW Out");
+    const auto& msg = mock.midi_.sends[0].msg;
+    REQUIRE(msg.isController());
+    REQUIRE(msg.getChannel() == 7);
+    REQUIRE(msg.getControllerNumber() == 29);
+    REQUIRE(msg.getControllerValue() == 2);
+}
+
+TEST_CASE("magda.midi.send_note_on / send_note_off forward note messages", "[lua_bindings][midi]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.eval("magda.midi.send_note_on('out', 1, 0x60, 41)"));
+    REQUIRE(rt.eval("magda.midi.send_note_off('out', 1, 0x60)"));
+
+    REQUIRE(mock.midi_.sends.size() == 2);
+    REQUIRE(mock.midi_.sends[0].msg.isNoteOn());
+    REQUIRE(mock.midi_.sends[0].msg.getNoteNumber() == 0x60);
+    REQUIRE(mock.midi_.sends[0].msg.getVelocity() == 41);
+    REQUIRE(mock.midi_.sends[1].msg.isNoteOff());
+    REQUIRE(mock.midi_.sends[1].msg.getNoteNumber() == 0x60);
+}
+
+TEST_CASE("magda.midi.send_sysex builds a SysEx message with framing", "[lua_bindings][midi]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    // Mini Launchkey header + dummy command/data.
+    REQUIRE(rt.eval("magda.midi.send_sysex('out', {0x00, 0x20, 0x29, 0x02, 0x13, 0x01, 0x42})"));
+
+    REQUIRE(mock.midi_.sends.size() == 1);
+    const auto& msg = mock.midi_.sends[0].msg;
+    REQUIRE(msg.isSysEx());
+    REQUIRE(msg.getSysExDataSize() == 7);
+    REQUIRE(msg.getSysExData()[0] == 0x00);
+    REQUIRE(msg.getSysExData()[6] == 0x42);
+}
+
+TEST_CASE("magda.midi.send_sysex rejects out-of-range bytes", "[lua_bindings][midi]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    // 200 is > 127 — must trigger the range check before any send.
+    REQUIRE_FALSE(rt.eval("magda.midi.send_sysex('out', {0x00, 200})"));
+    REQUIRE(rt.lastError().contains("out of range"));
+    REQUIRE(mock.midi_.sends.empty());
+}
+
+TEST_CASE("magda.midi.outputs returns the configured port names", "[lua_bindings][midi]") {
+    MockMagdaApi mock;
+    mock.midi_.outputPortNames = {"Launchkey DAW Out", "IAC Bus 1"};
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    auto first = rt.evalToString("magda.midi.outputs()[1]");
+    auto count = rt.evalToInt("#magda.midi.outputs()");
+    REQUIRE(first.has_value());
+    REQUIRE(*first == "Launchkey DAW Out");
+    REQUIRE(count.has_value());
+    REQUIRE(*count == 2);
 }
 
 // ---- argument validation ---------------------------------------------------

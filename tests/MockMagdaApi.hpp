@@ -21,6 +21,7 @@
 #include "magda/daw/api/automation_api.hpp"
 #include "magda/daw/api/clip_api.hpp"
 #include "magda/daw/api/magda_api.hpp"
+#include "magda/daw/api/midi_api.hpp"
 #include "magda/daw/api/project_api.hpp"
 #include "magda/daw/api/selection_api.hpp"
 #include "magda/daw/api/session_api.hpp"
@@ -57,8 +58,7 @@ class StubAutomationApi : public AutomationApi {
     const AutomationLaneInfo* getLane(AutomationLaneId) const override {
         std::abort();
     }
-    AutomationPointId addPoint(AutomationLaneId, double, double,
-                               AutomationCurveType) override {
+    AutomationPointId addPoint(AutomationLaneId, double, double, AutomationCurveType) override {
         std::abort();
     }
     void clearLanePoints(AutomationLaneId) override {
@@ -320,6 +320,29 @@ class MockProjectApi : public ProjectApi {
     }
 };
 
+class MockMidiApi : public MidiApi {
+  public:
+    struct Send {
+        juce::String port;
+        juce::MidiMessage msg;
+    };
+    std::vector<Send> sends;
+    std::vector<juce::String> outputPortNames;
+
+    bool sendMidi(const juce::String& port, const juce::MidiMessage& msg) override {
+        sends.push_back({port, msg});
+        return true;
+    }
+    bool sendSysEx(const juce::String& port, const juce::uint8* data, size_t numBytes) override {
+        sends.push_back(
+            {port, juce::MidiMessage::createSysExMessage(data, static_cast<int>(numBytes))});
+        return true;
+    }
+    std::vector<juce::String> getOutputPortNames() const override {
+        return outputPortNames;
+    }
+};
+
 // ---- composite -------------------------------------------------------
 
 class MockMagdaApi : public MagdaApi {
@@ -332,6 +355,7 @@ class MockMagdaApi : public MagdaApi {
     MockSessionApi session_;
     MockProjectApi project_;
     StubUndoApi undo_;
+    MockMidiApi midi_;
 
     SelectionApi& selection() override {
         return selection_;
@@ -356,6 +380,9 @@ class MockMagdaApi : public MagdaApi {
     }
     UndoApi& undo() override {
         return undo_;
+    }
+    MidiApi& midi() override {
+        return midi_;
     }
 };
 

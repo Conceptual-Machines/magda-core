@@ -274,6 +274,7 @@ set(DAW_CORE_SOURCES
     api/session_api_live.cpp
     api/project_api_live.cpp
     api/undo_api_live.cpp
+    api/midi_api_live.cpp
     # Controller data model (issue #1050 -- Phase A)
     core/controllers/Controller.cpp
     core/controllers/Binding.cpp
@@ -590,6 +591,7 @@ set(DAW_HEADERS
     api/session_api.hpp
     api/project_api.hpp
     api/undo_api.hpp
+    api/midi_api.hpp
     api/magda_api_live.hpp
     api/selection_api_live.hpp
     api/automation_api_live.hpp
@@ -598,6 +600,7 @@ set(DAW_HEADERS
     api/clip_api_live.hpp
     api/project_api_live.hpp
     api/undo_api_live.hpp
+    api/midi_api_live.hpp
     # Themes
     ui/themes/DarkTheme.hpp
     ui/themes/FontManager.hpp
