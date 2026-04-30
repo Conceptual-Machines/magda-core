@@ -7,11 +7,19 @@ namespace magda {
 namespace te = tracktion;
 
 void TransportApiLive::play() {
+    if (playDispatch_) {
+        playDispatch_();
+        return;
+    }
     if (auto* e = edit())
         e->getTransport().play(false);
 }
 
 void TransportApiLive::stop() {
+    if (stopDispatch_) {
+        stopDispatch_();
+        return;
+    }
     if (auto* e = edit())
         e->getTransport().stop(/*discardRecordings*/ false,
                                /*clearDevices*/ false,

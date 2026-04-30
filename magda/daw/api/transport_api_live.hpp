@@ -24,9 +24,25 @@ namespace magda {
 class TransportApiLive : public TransportApi {
   public:
     using EditGetter = std::function<tracktion::Edit*()>;
+    using TransportFn = std::function<void()>;
 
     void setEditGetter(EditGetter g) {
         getEdit_ = std::move(g);
+    }
+
+    /** Route play() through this callback when set, instead of going
+     *  straight to Tracktion's transport. The application wires this to
+     *  TimelineController::dispatch(StartPlaybackEvent) so script-driven
+     *  play uses the same playhead-aware path as the on-screen Play
+     *  button. With no callback set, falls back to a direct
+     *  transport.play(false). */
+    void setPlayDispatcher(TransportFn fn) {
+        playDispatch_ = std::move(fn);
+    }
+
+    /** Same idea for stop — wired to StopPlaybackEvent dispatch. */
+    void setStopDispatcher(TransportFn fn) {
+        stopDispatch_ = std::move(fn);
     }
 
     void play() override;
@@ -45,6 +61,8 @@ class TransportApiLive : public TransportApi {
     }
 
     EditGetter getEdit_;
+    TransportFn playDispatch_;
+    TransportFn stopDispatch_;
 };
 
 }  // namespace magda

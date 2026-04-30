@@ -257,6 +257,17 @@ class Config {
         loadModelOnStartup = enabled;
     }
 
+    // Transport: when true, pressing Stop snaps the playhead (editPosition)
+    // to wherever playback was at the moment of stopping, so the next Play
+    // resumes from there. When false (default), the playhead stays put and
+    // Play always restarts from the playhead's current location.
+    bool getStopUpdatesPlayhead() const {
+        return stopUpdatesPlayhead;
+    }
+    void setStopUpdatesPlayhead(bool enabled) {
+        stopUpdatesPlayhead = enabled;
+    }
+
     // Recent Projects
     std::vector<std::string> getRecentProjects() const {
         return recentProjects;
@@ -750,6 +761,10 @@ class Config {
 
     // Load AI model on startup (off by default)
     bool loadModelOnStartup = false;
+
+    // See getStopUpdatesPlayhead — default keeps the playhead in place
+    // across Stop/Play cycles (Bitwig-style "play from playhead").
+    bool stopUpdatesPlayhead = false;
 
     // Browser filter settings (media explorer)
     bool browserFilterAudio = true;  // Show audio files by default

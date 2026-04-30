@@ -65,6 +65,16 @@ class MagdaApiLive : public MagdaApi {
         transport_.setEditGetter(std::move(g));
     }
 
+    /** Wire play / stop dispatchers so script-driven transport calls
+     *  flow through TimelineController (matching the on-screen
+     *  buttons). With no dispatcher set, calls go straight to Tracktion. */
+    void setTransportPlayDispatcher(TransportApiLive::TransportFn fn) {
+        transport_.setPlayDispatcher(std::move(fn));
+    }
+    void setTransportStopDispatcher(TransportApiLive::TransportFn fn) {
+        transport_.setStopDispatcher(std::move(fn));
+    }
+
   private:
     SelectionApiLive selection_;
     AutomationApiLive automation_;

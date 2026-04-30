@@ -359,11 +359,25 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlayba
         return ChangeFlags::None;  // Already stopped
     }
 
+    // Capture where playback was at the moment of stopping, before any
+    // resets. The "stop updates playhead" preference uses this to move
+    // editPosition to the stop point so the next Play resumes from there.
+    const double stopPosition = state.playhead.playbackPosition;
+
     state.playhead.isPlaying = false;
     state.playhead.isRecording = false;
     punchArmed_ = false;
-    // Reset playbackPosition to editPosition (Bitwig behavior)
-    state.playhead.playbackPosition = state.playhead.editPosition;
+
+    if (magda::Config::getInstance().getStopUpdatesPlayhead()) {
+        state.playhead.editPosition = stopPosition;
+        state.playhead.editPositionBeats =
+            magda::TimelineUtils::secondsToBeats(stopPosition, state.tempo.bpm);
+        state.playhead.playbackPosition = stopPosition;
+    } else {
+        // Default Bitwig behavior: rewind playbackPosition to editPosition
+        // so the next Play restarts from where the playhead was before.
+        state.playhead.playbackPosition = state.playhead.editPosition;
+    }
 
     // Notify transport listeners to stop playback
     for (auto* listener : audioEngineListeners) {

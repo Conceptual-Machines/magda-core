@@ -180,6 +180,7 @@ void Config::save() {
     root->setProperty("totalPluginCount", totalPluginCount);
     root->setProperty("scanPluginsOnStartup", scanPluginsOnStartup);
     root->setProperty("loadModelOnStartup", loadModelOnStartup);
+    root->setProperty("stopUpdatesPlayhead", stopUpdatesPlayhead);
 
     // Clip colour mode
     root->setProperty("clipColourMode", clipColourMode);
@@ -486,6 +487,7 @@ void Config::load() {
     totalPluginCount = getInt("totalPluginCount", totalPluginCount);
     scanPluginsOnStartup = getBool("scanPluginsOnStartup", scanPluginsOnStartup);
     loadModelOnStartup = getBool("loadModelOnStartup", loadModelOnStartup);
+    stopUpdatesPlayhead = getBool("stopUpdatesPlayhead", stopUpdatesPlayhead);
 
     clipColourMode = getInt("clipColourMode", clipColourMode);
 
