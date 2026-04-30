@@ -276,6 +276,7 @@ set(DAW_CORE_SOURCES
     api/undo_api_live.cpp
     api/midi_api_live.cpp
     api/transport_api_live.cpp
+    api/focused_api_live.cpp
     # Controller data model (issue #1050 -- Phase A)
     core/controllers/Controller.cpp
     core/controllers/Binding.cpp
@@ -604,6 +605,8 @@ set(DAW_HEADERS
     api/midi_api_live.hpp
     api/transport_api.hpp
     api/transport_api_live.hpp
+    api/focused_api.hpp
+    api/focused_api_live.hpp
     # Themes
     ui/themes/DarkTheme.hpp
     ui/themes/FontManager.hpp

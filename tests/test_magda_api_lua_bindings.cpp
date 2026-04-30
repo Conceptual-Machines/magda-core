@@ -448,6 +448,54 @@ TEST_CASE("magda.transport loop and position round-trip via the mock",
     REQUIRE(pos->contains("16.5"));
 }
 
+// ---- focused ---------------------------------------------------------------
+
+TEST_CASE("magda.focused reads return seeded macro state", "[lua_bindings][focused]") {
+    MockMagdaApi mock;
+    mock.focused_.focused = true;
+    mock.focused_.focusedName = "Surge XT";
+    mock.focused_.macroNames = {"Cutoff", "Resonance"};
+    mock.focused_.macroValues = {0.25f, 0.75f};
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.evalToString("tostring(magda.focused.has_focus())") ==
+            std::optional<juce::String>{"true"});
+    REQUIRE(rt.evalToString("magda.focused.name()") == std::optional<juce::String>{"Surge XT"});
+    REQUIRE(rt.evalToString("magda.focused.macro_name(0)") ==
+            std::optional<juce::String>{"Cutoff"});
+
+    auto v = rt.evalToString("tostring(magda.focused.macro_value(1))");
+    REQUIRE(v.has_value());
+    REQUIRE(v->contains("0.75"));
+}
+
+TEST_CASE("magda.focused returns safe defaults when nothing is focused",
+          "[lua_bindings][focused]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.evalToString("tostring(magda.focused.has_focus())") ==
+            std::optional<juce::String>{"false"});
+    REQUIRE(rt.evalToString("magda.focused.name()") == std::optional<juce::String>{""});
+    REQUIRE(rt.evalToString("magda.focused.macro_name(0)") == std::optional<juce::String>{""});
+    REQUIRE(rt.evalToString("tostring(magda.focused.macro_value(0))") ==
+            std::optional<juce::String>{"0.0"});
+}
+
+TEST_CASE("magda.focused.set_macro records the write", "[lua_bindings][focused]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.eval("magda.focused.set_macro(2, 0.4)"));
+
+    REQUIRE(mock.focused_.macroWrites.size() == 1);
+    REQUIRE(mock.focused_.macroWrites[0].idx == 2);
+    REQUIRE(mock.focused_.macroWrites[0].value == 0.4f);
+}
+
 // ---- argument validation ---------------------------------------------------
 
 TEST_CASE("Bindings reject wrong types via luaL_check*", "[lua_bindings]") {

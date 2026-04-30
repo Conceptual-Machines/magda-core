@@ -3,6 +3,7 @@
 #include "alias_api_live.hpp"
 #include "automation_api_live.hpp"
 #include "clip_api_live.hpp"
+#include "focused_api_live.hpp"
 #include "magda_api.hpp"
 #include "midi_api_live.hpp"
 #include "project_api_live.hpp"
@@ -49,6 +50,9 @@ class MagdaApiLive : public MagdaApi {
     TransportApi& transport() override {
         return transport_;
     }
+    FocusedApi& focused() override {
+        return focused_;
+    }
 
     /** Wire the MidiBridge into the live MidiApi. Owned externally by the
      *  engine wrapper; safe to leave unset in headless tests. */
@@ -72,6 +76,7 @@ class MagdaApiLive : public MagdaApi {
     UndoApiLive undo_;
     MidiApiLive midi_;
     TransportApiLive transport_;
+    FocusedApiLive focused_;
 };
 
 }  // namespace magda

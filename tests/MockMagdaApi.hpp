@@ -20,6 +20,7 @@
 #include "magda/daw/api/alias_api.hpp"
 #include "magda/daw/api/automation_api.hpp"
 #include "magda/daw/api/clip_api.hpp"
+#include "magda/daw/api/focused_api.hpp"
 #include "magda/daw/api/magda_api.hpp"
 #include "magda/daw/api/midi_api.hpp"
 #include "magda/daw/api/project_api.hpp"
@@ -321,6 +322,40 @@ class MockProjectApi : public ProjectApi {
     }
 };
 
+class MockFocusedApi : public FocusedApi {
+  public:
+    bool focused = false;
+    juce::String focusedName;
+    std::vector<juce::String> macroNames;  // index → name
+    std::vector<float> macroValues;        // index → value
+
+    struct MacroWrite {
+        int idx;
+        float value;
+    };
+    std::vector<MacroWrite> macroWrites;
+
+    bool hasFocus() const override {
+        return focused;
+    }
+    juce::String getFocusedName() const override {
+        return focusedName;
+    }
+    juce::String getMacroName(int idx) const override {
+        if (idx < 0 || idx >= static_cast<int>(macroNames.size()))
+            return {};
+        return macroNames[static_cast<size_t>(idx)];
+    }
+    float getMacroValue(int idx) const override {
+        if (idx < 0 || idx >= static_cast<int>(macroValues.size()))
+            return 0.0f;
+        return macroValues[static_cast<size_t>(idx)];
+    }
+    void setMacroValue(int idx, float value) override {
+        macroWrites.push_back({idx, value});
+    }
+};
+
 class MockTransportApi : public TransportApi {
   public:
     bool playing = false;
@@ -400,6 +435,7 @@ class MockMagdaApi : public MagdaApi {
     StubUndoApi undo_;
     MockMidiApi midi_;
     MockTransportApi transport_;
+    MockFocusedApi focused_;
 
     SelectionApi& selection() override {
         return selection_;
@@ -430,6 +466,9 @@ class MockMagdaApi : public MagdaApi {
     }
     TransportApi& transport() override {
         return transport_;
+    }
+    FocusedApi& focused() override {
+        return focused_;
     }
 };
 

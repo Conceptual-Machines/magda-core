@@ -4,6 +4,7 @@
 #include <juce_core/juce_core.h>
 
 #include "magda/daw/api/clip_api.hpp"
+#include "magda/daw/api/focused_api.hpp"
 #include "magda/daw/api/magda_api.hpp"
 #include "magda/daw/api/midi_api.hpp"
 #include "magda/daw/api/project_api.hpp"
@@ -656,6 +657,37 @@ int lua_transport_set_position_beats(lua_State* L) {
     return 0;
 }
 
+// ---- focused ---------------------------------------------------------------
+
+int lua_focused_has_focus(lua_State* L) {
+    lua_pushboolean(L, getApi(L)->focused().hasFocus());
+    return 1;
+}
+
+int lua_focused_name(lua_State* L) {
+    pushJuceString(L, getApi(L)->focused().getFocusedName());
+    return 1;
+}
+
+int lua_focused_macro_name(lua_State* L) {
+    int idx = static_cast<int>(luaL_checkinteger(L, 1));
+    pushJuceString(L, getApi(L)->focused().getMacroName(idx));
+    return 1;
+}
+
+int lua_focused_macro_value(lua_State* L) {
+    int idx = static_cast<int>(luaL_checkinteger(L, 1));
+    lua_pushnumber(L, getApi(L)->focused().getMacroValue(idx));
+    return 1;
+}
+
+int lua_focused_set_macro(lua_State* L) {
+    int idx = static_cast<int>(luaL_checkinteger(L, 1));
+    double v = luaL_checknumber(L, 2);
+    getApi(L)->focused().setMacroValue(idx, static_cast<float>(v));
+    return 0;
+}
+
 // ---- registration ----------------------------------------------------------
 
 // Convenience: attach `funcs` (null-terminated) to the table at the top of
@@ -742,6 +774,12 @@ const FnReg kMidiFns[] = {
     {nullptr, nullptr},
 };
 
+const FnReg kFocusedFns[] = {
+    {"has_focus", lua_focused_has_focus},   {"name", lua_focused_name},
+    {"macro_name", lua_focused_macro_name}, {"macro_value", lua_focused_macro_value},
+    {"set_macro", lua_focused_set_macro},   {nullptr, nullptr},
+};
+
 const FnReg kTransportFns[] = {
     {"play", lua_transport_play},
     {"stop", lua_transport_stop},
@@ -779,6 +817,7 @@ void registerMagdaApi(lua_State* L, MagdaApi& api) {
     installSubtable(L, "project", kProjectFns);
     installSubtable(L, "midi", kMidiFns);
     installSubtable(L, "transport", kTransportFns);
+    installSubtable(L, "focused", kFocusedFns);
     lua_setglobal(L, "magda");
 }
 
