@@ -27,22 +27,26 @@ const char* midiTypeName(const juce::MidiMessage& m) {
         return "aftertouch";
     if (m.isProgramChange())
         return "program_change";
+    if (m.isSysEx())
+        return "sysex";
     return "other";
 }
 
 // Push a Lua table describing the MIDI event. Field set:
 //   type     string: 'cc' | 'note_on' | 'note_off' | 'pitch_bend' |
-//                    'aftertouch' | 'program_change' | 'other'
-//   channel  integer 1..16
+//                    'aftertouch' | 'program_change' | 'sysex' | 'other'
+//   channel  integer 1..16 (0 for sysex — no channel)
 //   number   integer (CC #, note #, program #; 0 for pitch_bend and
 //                     channel-pressure aftertouch; note number for
-//                     poly-aftertouch)
+//                     poly-aftertouch; 0 for sysex)
 //   value    integer (CC value 0..127, velocity 0..127, pitch_bend
-//                     -8192..8191, aftertouch pressure 0..127)
+//                     -8192..8191, aftertouch pressure 0..127; 0 for sysex)
+//   bytes    sysex only: 1-indexed array of integer bytes, NOT including
+//                        the F0/F7 framing
 //   port     string  (originating device's display name)
-void pushMidiEvent(lua_State* L, const juce::String& deviceName,
-                   const juce::MidiMessage& m) {
-    lua_createtable(L, 0, 5);
+void pushMidiEvent(lua_State* L, const juce::String& deviceName, const juce::MidiMessage& m) {
+    const bool sysex = m.isSysEx();
+    lua_createtable(L, 0, sysex ? 6 : 5);
 
     lua_pushstring(L, midiTypeName(m));
     lua_setfield(L, -2, "type");
@@ -75,6 +79,20 @@ void pushMidiEvent(lua_State* L, const juce::String& deviceName,
 
     lua_pushinteger(L, value);
     lua_setfield(L, -2, "value");
+
+    if (sysex) {
+        // getSysExData()/getSysExDataSize() omit the F0/F7 framing, which is
+        // exactly what scripts want for matching against the device's command
+        // bytes. Push as a 1-indexed array.
+        const auto* data = m.getSysExData();
+        const int size = m.getSysExDataSize();
+        lua_createtable(L, size, 0);
+        for (int i = 0; i < size; ++i) {
+            lua_pushinteger(L, static_cast<lua_Integer>(data[i]));
+            lua_rawseti(L, -2, i + 1);
+        }
+        lua_setfield(L, -2, "bytes");
+    }
 
     auto raw = deviceName.toRawUTF8();
     lua_pushlstring(L, raw, static_cast<size_t>(deviceName.getNumBytesAsUTF8()));
@@ -153,8 +171,7 @@ juce::String LuaController::lastError() const {
     return lastError_;
 }
 
-void LuaController::onRawMidi(const juce::String& /*deviceId*/,
-                              const juce::String& deviceName,
+void LuaController::onRawMidi(const juce::String& /*deviceId*/, const juce::String& deviceName,
                               const juce::MidiMessage& msg) {
     // MIDI thread. Capture POD copies and bounce to the message thread; the
     // WeakReference guards against this controller being destroyed before
@@ -176,8 +193,7 @@ void LuaController::dispatchEventForTest(const juce::String& deviceName,
     dispatchToLua(deviceName, msg);
 }
 
-void LuaController::dispatchToLua(const juce::String& deviceName,
-                                  const juce::MidiMessage& msg) {
+void LuaController::dispatchToLua(const juce::String& deviceName, const juce::MidiMessage& msg) {
     if (rt_ == nullptr)
         return;
 
@@ -208,9 +224,8 @@ void LuaController::dispatchToLua(const juce::String& deviceName,
         size_t len = 0;
         const char* err = lua_tolstring(L, -1, &len);
         if (err != nullptr) {
-            juce::Logger::writeToLog(
-                "[lua on_midi error] " +
-                juce::String::fromUTF8(err, static_cast<int>(len)));
+            juce::Logger::writeToLog("[lua on_midi error] " +
+                                     juce::String::fromUTF8(err, static_cast<int>(len)));
         }
         lua_pop(L, 1);
     }
