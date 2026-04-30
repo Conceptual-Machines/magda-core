@@ -95,9 +95,11 @@ class AIChatConsoleContent::AutocompletePopup : public juce::Component, public j
         paramEntries_.clear();
         filteredParams_.clear();
 
-        for (const auto& cmd : owner_.slashCommands_) {
-            if (filter_.isEmpty() || cmd.name.toLowerCase().startsWith(filter_))
-                filteredCommands_.push_back(&cmd);
+        if (owner_.slashRegistry_) {
+            for (const auto& cmd : owner_.slashRegistry_->all()) {
+                if (filter_.isEmpty() || cmd.name.toLowerCase().startsWith(filter_))
+                    filteredCommands_.push_back(&cmd);
+            }
         }
 
         listBox_.updateContent();
@@ -1021,7 +1023,9 @@ juce::String AIChatConsoleContent::rewriteSlashCommand(const juce::String& text)
 }
 
 void AIChatConsoleContent::sendMessage(const juce::String& text) {
-    // Direct DSL execution — bypass AI agent entirely
+    // Direct DSL execution — bypass AI entirely. Kept outside the slash
+    // command registry because /dsl isn't a "command with --help" — the
+    // payload is arbitrary DSL code, not a fixed argument set.
     if (text.trimStart().startsWith("/dsl ")) {
         auto dslCode = text.trimStart().substring(5).trim();
         appendToChat(juce::String::charToString(0x25CF) + " " + text);
@@ -1038,85 +1042,21 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
             appendToChat(juce::String::charToString(0x25C6) +
                          " Error: " + juce::String(interpreter.getError()));
         }
-
         clearInput();
         return;
     }
 
-    // /controller <description> — generate a controller profile from NL description
-    {
-        auto trimmed = text.trimStart();
-        if (trimmed.startsWithIgnoreCase("/controller ")) {
-            auto description = trimmed.substring(12).trim();
-            appendToChat(juce::String::charToString(0x25CF) + " " + text);
-            clearInput();
-            if (description.isEmpty()) {
-                appendToChat(juce::String::charToString(0x25C6) +
-                             " Usage: /controller <device description>");
-                return;
-            }
-            startControllerGeneration(description);
-            return;
-        }
-    }
-
-    // /design <description> — generate a 4OSC preset (JSON) from NL description.
-    // /design --help (or /design with no args) prints a quick usage block with
-    // category-grouped example prompts so users don't have to flip to the manual
-    // for the common starting points.
-    {
-        auto trimmed = text.trimStart();
-        const bool isBare = trimmed.equalsIgnoreCase("/design");
-        const bool isHelp = trimmed.equalsIgnoreCase("/design --help") ||
-                            trimmed.equalsIgnoreCase("/design -h") ||
-                            trimmed.equalsIgnoreCase("/design help");
-        if (isBare || isHelp) {
-            appendToChat(juce::String::charToString(0x25CF) + " " + text);
-            clearInput();
-            juce::String help;
-            help << juce::String::charToString(0x25C6) << " /design — AI 4OSC sound design\n";
-            help << "\n  Usage: /design <description>\n";
-            help << "  Focus a 4OSC device first; the preset applies to the focused device.\n";
-            help << "  The result is a starting point — tweak by ear, then save from the device "
-                    "header.\n";
-            help << "\n  Bass\n";
-            help << "    /design deep sub bass\n";
-            help << "    /design fat reese bass with movement\n";
-            help << "    /design acid bass with resonant filter\n";
-            help << "    /design 808-style bass with sub and click\n";
-            help << "\n  Lead\n";
-            help << "    /design fat detuned saw lead with octave layer\n";
-            help << "    /design trance supersaw lead\n";
-            help << "    /design bright square lead with chorus\n";
-            help << "    /design legato mono synth lead with portamento\n";
-            help << "\n  Pad\n";
-            help << "    /design warm analog pad\n";
-            help << "    /design evolving ambient pad with slow filter\n";
-            help << "    /design string ensemble pad\n";
-            help << "    /design dark cinematic drone\n";
-            help << "\n  Pluck / Keys\n";
-            help << "    /design snappy saw pluck\n";
-            help << "    /design muted soft pluck for arpeggios\n";
-            help << "    /design electric piano with chorus\n";
-            help << "\n  FX\n";
-            help << "    /design rising white noise sweep\n";
-            help << "    /design impact hit with reverb tail\n";
-            appendToChat(help);
-            return;
-        }
-        if (trimmed.startsWithIgnoreCase("/design ")) {
-            auto description = trimmed.substring(8).trim();
-            appendToChat(juce::String::charToString(0x25CF) + " " + text);
-            clearInput();
-            if (description.isEmpty()) {
-                appendToChat(
-                    juce::String::charToString(0x25C6) +
-                    " Usage: /design <preset description>  (run /design --help for examples)");
-                return;
-            }
-            startPresetGeneration(description);
-            return;
-        }
+    // Other slash commands — dispatch through the central registry. Returns
+    // true when the message was fully consumed (intercepting commands like
+    // /controller, /design, or any meta-flag like --help). Returns false
+    // when the message should continue down the normal AI path (e.g.
+    // /groove, whose handler returns false so rewriteSlashCommand below
+    // can transform the prompt before sending it to the LLM).
+    if (!slashRegistry_)
+        buildSlashCommands();
+    if (slashRegistry_->dispatch(text)) {
+        clearInput();
+        return;
     }
 
     // If a previous request thread is still around, stop it before starting a new one
@@ -2040,16 +1980,115 @@ void AIChatConsoleContent::onInputChanged() {
 }
 
 void AIChatConsoleContent::buildSlashCommands() {
-    slashCommands_ = {
-        {"groove", "Create or apply swing/groove timing templates"},
-        {"controller", "Generate a controller profile from a description"},
-        {"design", "Design a 4OSC preset from a description"},
-        {"save", "Save the focused 4OSC's current state as a .mps preset"},
+    if (slashRegistry_)
+        return;
+
+    slashRegistry_ = std::make_unique<magda::daw::ui::SlashCommandRegistry>(
+        [this](const juce::String& msg) { appendToChat(msg); });
+
+    // /design — 4OSC sound design. The handler reads --category=<cat> if
+    // present, stashes it as the override that finishPresetGeneration
+    // applies, then kicks the agent thread.
+    SlashCommand design;
+    design.name = "design";
+    design.description = "Design a 4OSC preset from a description";
+    design.usage = "/design [--category=<cat>] <description>";
+    design.details =
+        "Generate a preset for the focused 4OSC device from a natural-language description.\n"
+        "Focus a 4OSC device first; the preset applies directly to it.\n"
+        "The result is a starting point — tweak by ear, then save from the device header.\n"
+        "\n"
+        "Flags:\n"
+        "  --category=<Bass|Lead|Pad|Pluck|Keys|FX|Other>  override the agent's category pick";
+    design.examples = {
+        {"Bass",
+         {"deep sub bass", "fat reese bass with movement", "acid bass with resonant filter",
+          "808-style bass with sub and click", "dub-style bass with delay"}},
+        {"Lead",
+         {"fat detuned saw lead with octave layer", "trance supersaw lead",
+          "bright square lead with chorus", "legato mono synth lead with portamento",
+          "screaming acid lead"}},
+        {"Pad",
+         {"warm analog pad", "evolving ambient pad with slow filter", "string ensemble pad",
+          "dark cinematic drone", "lush chord pad"}},
+        {"Pluck", {"snappy saw pluck", "muted soft pluck for arpeggios", "FM-style bell pluck"}},
+        {"Keys", {"electric piano with chorus", "synth keys with subtle vibrato"}},
+        {"FX", {"rising white noise sweep", "impact hit with reverb tail", "alarm-style siren"}},
     };
+    design.handler = [this](const juce::String& originalText,
+                            const std::map<juce::String, juce::String>& flags,
+                            const juce::String& positional) {
+        appendToChat(juce::String::charToString(0x25CF) + " " + originalText);
+        if (positional.isEmpty()) {
+            appendToChat(juce::String::charToString(0x25C6) +
+                         " Usage: /design <description>  (run /design --help for examples)");
+            return true;
+        }
+        // Save the user's --category pick so finishPresetGeneration can
+        // override whatever the agent chose. Cleared on completion.
+        auto catIt = flags.find("category");
+        pendingCategoryOverride_ = catIt != flags.end() ? catIt->second.trim() : juce::String();
+        startPresetGeneration(positional);
+        return true;
+    };
+    slashRegistry_->add(std::move(design));
+
+    // /controller — generate a hardware controller profile JSON.
+    SlashCommand controller;
+    controller.name = "controller";
+    controller.description = "Generate a controller profile from a description";
+    controller.usage = "/controller <device description>";
+    controller.details = "Generate a hardware controller profile (encoder / pad / fader layout) "
+                         "from a description.\n"
+                         "The agent emits JSON describing the control surface; the result lands in "
+                         "the profile picker.";
+    controller.examples = {
+        {"MIDI controllers",
+         {"Akai MPK Mini with 8 pads and 8 knobs", "Novation Launchkey 25 with mod wheel",
+          "Behringer X-Touch Mini with 8 encoders and faders"}},
+    };
+    controller.handler = [this](const juce::String& originalText,
+                                const std::map<juce::String, juce::String>&,
+                                const juce::String& positional) {
+        appendToChat(juce::String::charToString(0x25CF) + " " + originalText);
+        if (positional.isEmpty()) {
+            appendToChat(juce::String::charToString(0x25C6) +
+                         " Usage: /controller <device description>");
+            return true;
+        }
+        startControllerGeneration(positional);
+        return true;
+    };
+    slashRegistry_->add(std::move(controller));
+
+    // /groove — rewrite the prompt to constrain the LLM to groove ops, then
+    // fall through to the normal AI path. The handler returns false so the
+    // dispatcher lets sendMessage continue (where rewriteSlashCommand
+    // transforms the user text before it goes to the model).
+    SlashCommand groove;
+    groove.name = "groove";
+    groove.description = "Create or apply swing/groove timing templates";
+    groove.usage = "/groove <request>";
+    groove.details =
+        "Constrain the AI to swing/groove template operations only. Use this when you want to\n"
+        "create a new groove, extract one from a clip, or apply one to a track without the AI\n"
+        "scope-bleeding into note-creation territory.";
+    groove.examples = {
+        {"Apply", {"set the project groove to MPC 8th swing 60%", "apply funky 16ths to track 2"}},
+        {"Create", {"make a shuffled 16th-note groove with subtle delay on the off-beats"}},
+        {"Extract", {"extract the timing feel from the selected clip into a new groove"}},
+    };
+    // Return false → fall through to the AI path. /groove's text reaches
+    // the LLM via rewriteSlashCommand which adds the constraint preamble.
+    // No echo here — sendMessage's AI path echoes the user's text further
+    // down, so doing it here would double-echo.
+    groove.handler = [](const juce::String&, const std::map<juce::String, juce::String>&,
+                        const juce::String&) { return false; };
+    slashRegistry_->add(std::move(groove));
 }
 
 void AIChatConsoleContent::showSlashAutocomplete(const juce::String& filter) {
-    if (slashCommands_.empty())
+    if (!slashRegistry_)
         buildSlashCommands();
 
     if (!autocompletePopup_) {
@@ -2890,6 +2929,12 @@ void AIChatConsoleContent::finishPresetGeneration(bool success, const juce::Stri
             if (kv.value.isBool() || kv.value.isInt() || kv.value.isDouble())
                 preset.fx.emplace(kv.name.toString().toStdString(), static_cast<bool>(kv.value));
         }
+    }
+    // /design --category=<cat> wins over whatever the agent picked. Cleared
+    // here so a subsequent /design without the flag falls back to inference.
+    if (pendingCategoryOverride_.isNotEmpty()) {
+        preset.category = pendingCategoryOverride_.toStdString();
+        pendingCategoryOverride_.clear();
     }
 
     // Render the preset itself (header + categorized summary), then the
