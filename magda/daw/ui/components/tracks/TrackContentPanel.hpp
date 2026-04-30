@@ -30,6 +30,7 @@ class TrackContentPanel : public juce::Component,
                           public TimelineStateListener,
                           public TrackManagerListener,
                           public ClipManagerListener,
+                          public SelectionManagerListener,
                           public AutomationManagerListener,
                           public ViewModeListener,
                           private juce::Timer {
@@ -60,6 +61,10 @@ class TrackContentPanel : public juce::Component,
     void clipsChanged() override;
     void clipPropertyChanged(ClipId clipId) override;
     void clipSelectionChanged(ClipId clipId) override;
+
+    // SelectionManagerListener implementation
+    void selectionTypeChanged(SelectionType newType) override;
+    void multiTrackSelectionChanged(const std::unordered_set<TrackId>& trackIds) override;
 
     // ViewModeListener implementation
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;

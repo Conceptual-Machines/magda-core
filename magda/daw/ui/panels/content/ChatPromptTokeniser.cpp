@@ -23,6 +23,7 @@ int ChatPromptTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
 
     if (firstChar == 0) {
         expectParamBody_ = false;
+        inAliasChain_ = false;
         return tokenType_text;
     }
 
@@ -33,24 +34,30 @@ int ChatPromptTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
         if (isAliasBodyChar(source.peekNextChar())) {
             consumeAliasBody(source);
             expectParamBody_ = false;
+            inAliasChain_ = true;
             return tokenType_pluginAlias;
         }
         expectParamBody_ = false;
+        inAliasChain_ = false;
         return tokenType_punctuation;
     }
 
-    // '.' immediately followed by a letter starts a param chain. The dot
-    // itself is rendered as plain text (white) so the user can still see
-    // the structural break; the body that follows is coloured on the
-    // next readNextToken call via expectParamBody_.
+    // '.' immediately followed by a letter only starts a param chain when
+    // we just emitted a pluginAlias — otherwise prose like "hello.world"
+    // or "v1.2" would get miscoloured. The dot itself renders as plain
+    // text so the structural break is visible; the body that follows is
+    // coloured on the next readNextToken call via expectParamBody_.
     if (firstChar == '.') {
         source.skip();
         const auto next = source.peekNextChar();
-        if (juce::CharacterFunctions::isLetter(next) || next == '_') {
+        const bool startsIdent = juce::CharacterFunctions::isLetter(next) || next == '_';
+        if (inAliasChain_ && startsIdent) {
             expectParamBody_ = true;
+            inAliasChain_ = false;
             return tokenType_text;
         }
         expectParamBody_ = false;
+        inAliasChain_ = false;
         return tokenType_punctuation;
     }
 
@@ -61,9 +68,11 @@ int ChatPromptTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
         if (isAliasBodyChar(source.peekNextChar())) {
             consumeAliasBody(source);
             expectParamBody_ = false;
+            inAliasChain_ = false;
             return tokenType_slashCommand;
         }
         expectParamBody_ = false;
+        inAliasChain_ = false;
         return tokenType_punctuation;
     }
 
@@ -74,12 +83,14 @@ int ChatPromptTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
         consumeAliasBody(source);
         const bool wasParamBody = expectParamBody_;
         expectParamBody_ = false;
+        inAliasChain_ = false;
         return wasParamBody ? tokenType_paramAlias : tokenType_text;
     }
 
     // Default: consume one char as text and continue.
     source.skip();
     expectParamBody_ = false;
+    inAliasChain_ = false;
     return tokenType_text;
 }
 

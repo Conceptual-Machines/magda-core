@@ -37,6 +37,10 @@ TrackContentPanel::TrackContentPanel() {
     // Register as ClipManager listener
     ClipManager::getInstance().addListener(this);
 
+    // Register as SelectionManager listener so multi-track selection drives
+    // lane highlights, not just the single selectedTrackIndex.
+    SelectionManager::getInstance().addListener(this);
+
     // Register as ViewModeController listener
     ViewModeController::getInstance().addListener(this);
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
@@ -60,6 +64,9 @@ TrackContentPanel::~TrackContentPanel() {
 
     // Unregister from ClipManager
     ClipManager::getInstance().removeListener(this);
+
+    // Unregister from SelectionManager
+    SelectionManager::getInstance().removeListener(this);
 
     // Unregister from ViewModeController
     ViewModeController::getInstance().removeListener(this);
@@ -287,11 +294,16 @@ void TrackContentPanel::paint(juce::Graphics& g) {
 
     // Grid is now drawn by GridOverlayComponent in MainView
     // This component only draws track lanes with horizontal separators
+    auto& sel = SelectionManager::getInstance();
     for (size_t i = 0; i < trackLanes.size(); ++i) {
         auto laneArea = getTrackLaneArea(static_cast<int>(i));
         if (laneArea.intersects(g.getClipBounds())) {
-            paintTrackLane(g, *trackLanes[i], laneArea, static_cast<int>(i) == selectedTrackIndex,
-                           static_cast<int>(i));
+            // Highlight every track that's part of the current selection
+            // (single or multi), not just the primary one — so multi-selected
+            // lanes match the multi-selected headers visually.
+            const bool laneSelected = i < visibleTrackIds_.size() &&
+                                      sel.isTrackSelected(visibleTrackIds_[i]);
+            paintTrackLane(g, *trackLanes[i], laneArea, laneSelected, static_cast<int>(i));
         }
     }
 
@@ -430,6 +442,17 @@ void TrackContentPanel::trackSelectionChanged(TrackId trackId) {
 void TrackContentPanel::trackPropertyChanged(int /*trackId*/) {
     // Repaint when track properties change (e.g. playback mode switching
     // between Arrangement and Session) to update visual overlays.
+    repaintVisible();
+}
+
+void TrackContentPanel::selectionTypeChanged(SelectionType /*newType*/) {
+    // Multi-selection visuals are read straight from SelectionManager in
+    // paint(); just trigger a repaint when the selection set changes.
+    repaintVisible();
+}
+
+void TrackContentPanel::multiTrackSelectionChanged(
+    const std::unordered_set<TrackId>& /*trackIds*/) {
     repaintVisible();
 }
 

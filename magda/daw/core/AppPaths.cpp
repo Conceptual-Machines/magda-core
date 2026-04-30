@@ -3,6 +3,8 @@
 #include "Config.hpp"
 
 #include <atomic>
+#include <cstdlib>
+#include <memory>
 #include <mutex>
 
 namespace magda::paths {
