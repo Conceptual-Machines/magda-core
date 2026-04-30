@@ -1,17 +1,28 @@
 #include "focused_api_live.hpp"
 
-#include <tracktion_engine/tracktion_engine.h>
-
-#include <algorithm>
-
-#include "../audio/AudioBridge.hpp"
 #include "../core/MacroInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/aliases/ChainContext.hpp"
+#include "../core/aliases/Target.hpp"
+#include "../core/controllers/Binding.hpp"
+#include "../core/controllers/BindingRegistry.hpp"
 
 namespace magda {
 
 namespace {
+
+// Sentinel ControllerId for Lua-script-driven automap bindings. Stable across
+// engages so engageAutoMap can wipe stale bindings from a prior load before
+// reinstalling fresh ones. Not registered in ControllerRegistry, so the
+// router never matches these bindings — they exist purely so the BindingRegistry
+// dot-detection (hasResolverBindingForDevice / hasActiveBindingForTarget)
+// lights the green automap dot on the focused device's header and macros.
+const juce::Uuid& luaAutomapSentinel() {
+    static const juce::Uuid id{"00000000-0000-0000-0000-000000000001"};
+    return id;
+}
+
+constexpr int kAutomapMacroCount = 8;
 
 // Locate the macro array for the focused-macro-owner path. Returns nullptr
 // when no focus, when the path doesn't resolve, or when the resolved node
@@ -96,57 +107,34 @@ void FocusedApiLive::setMacroValue(int idx, float value) {
     TrackManager::getInstance().setMacroValue(path, idx, value);
 }
 
-void FocusedApiLive::autoMapToFirstParams() {
-    auto path = focused();
-    if (!path.isValid() || bridge_ == nullptr)
-        return;
+void FocusedApiLive::engageAutoMap() {
+    auto& reg = BindingRegistry::getInstance();
+    const auto& sentinel = luaAutomapSentinel();
 
-    // Only meaningful for plugin-bearing nodes (devices). Racks have macros
-    // but no parameters of their own — their macros always need to be
-    // user-routed to the wrapped devices' params.
-    if (path.getType() != ChainNodeType::Device && path.getType() != ChainNodeType::TopLevelDevice)
-        return;
+    // Wipe any leftover bindings from a prior engage (or a prior session
+    // that didn't tear down cleanly) before adding fresh ones, so re-engaging
+    // is idempotent.
+    reg.removeAllForController(BindingScope::Global, sentinel);
 
-    auto deviceId = path.getDeviceId();
-    if (deviceId == INVALID_DEVICE_ID)
-        return;
+    for (int i = 0; i < kAutomapMacroCount; ++i) {
+        juce::StringPairArray args;
+        args.set("macroIndex", juce::String{i});
 
-    auto plugin = bridge_->getPlugin(deviceId);
-    if (plugin == nullptr)
-        return;
-
-    auto params = plugin->getAutomatableParameters();
-    if (params.isEmpty())
-        return;
-
-    auto& tm = TrackManager::getInstance();
-    auto resolved = tm.resolvePath(path);
-    const MacroArray* macros =
-        (resolved.valid && resolved.device) ? &resolved.device->macros : nullptr;
-
-    const int kNumKnobs = 8;
-    const int n = std::min(kNumKnobs, params.size());
-    for (int i = 0; i < n; ++i) {
-        // Skip macros that are already linked. Preserves user customisation
-        // and lets the script call this on every focus change without
-        // trampling per-device tweaks.
-        if (macros != nullptr && i < static_cast<int>(macros->size()) &&
-            (*macros)[static_cast<size_t>(i)].isLinked())
-            continue;
-
-        auto* p = params[i];
-        if (p == nullptr)
-            continue;
-
-        MacroTarget t;
-        t.kind = MacroTarget::Kind::DeviceParam;
-        t.deviceId = deviceId;
-        t.paramIndex = i;
-
-        tm.setMacroTarget(path, i, t);
-        tm.setMacroLinkAmount(path, i, t, 1.0f);
-        tm.setMacroName(path, i, p->getParameterName());
+        Binding b;
+        b.id = juce::Uuid();
+        b.source.controllerId = sentinel;
+        b.source.msgType = BindingMsgType::CC;
+        b.source.channel = 0;  // any
+        b.source.number = 0;
+        b.target = ResolverRef{"focused.macro", args};
+        b.mode = BindingMode::Absolute;
+        reg.add(BindingScope::Global, b);
     }
+}
+
+void FocusedApiLive::clearAutoMap() {
+    BindingRegistry::getInstance().removeAllForController(BindingScope::Global,
+                                                          luaAutomapSentinel());
 }
 
 }  // namespace magda

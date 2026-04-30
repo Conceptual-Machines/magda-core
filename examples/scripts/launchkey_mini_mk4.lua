@@ -118,10 +118,21 @@ function on_load()
     magda.log.info("[launchkey] output["..i.."] = "..name)
   end
   set_daw_mode(true)
+  -- Tell MAGDA the controller's 8 knobs auto-map to the focused device's
+  -- macros 0..7. Installs sentinel `focused.macro:0..7` resolver bindings
+  -- so the green automap dot lights on the focused device's header and
+  -- on its macros. The actual knob -> macro routing still happens via
+  -- magda.focused.set_macro in on_midi (DAW-port CCs don't reach
+  -- ControllerRouter, so the registered bindings aren't routable — they
+  -- exist purely for the UI affordance).
+  magda.focused.auto_map()
 end
 
 function on_unload()
   magda.log.info("[launchkey] unloading")
+  -- Drop the automap sentinel bindings so the green dot disappears
+  -- when the script is gone.
+  magda.focused.clear_auto_map()
   -- Clear all pad LEDs before leaving DAW mode so the device returns
   -- to a blank state.
   local out = find_daw_out()
@@ -212,23 +223,55 @@ local function refresh_leds()
   end
 end
 
--- Detect focused-device changes between ticks and run automap-style
--- macro linking once per device. magda.focused.auto_map is idempotent and
--- skips already-linked macros, so user customisation is preserved across
--- re-focuses of the same device.
-local last_focused_name = ""
-local function maybe_auto_map()
-  local name = magda.focused.name()
-  if name == last_focused_name then return end
-  last_focused_name = name
-  if name ~= "" then
-    magda.focused.auto_map()
+----------------------------------------------------------------
+-- Encoder name display (small LCD shows macro names on knob touch)
+----------------------------------------------------------------
+-- Mini-SKU "Set text" SysEx (reference p. 19):
+--   F0 00 20 29 02 13 06 <target> <field> <text…> F7
+-- Targets 0x15..0x1C are the per-encoder Temp Displays (1..8). Field 0
+-- is the Name slot of the default arrangement (Parameter Name + Numeric
+-- Value), so writing the macro name there makes the device flash it
+-- whenever the matching knob is touched / turned.
+local SET_TEXT_PREFIX = {0x00, 0x20, 0x29, 0x02, 0x13, 0x06}
+local ENCODER_NAME_TARGET_BASE = 0x15
+local ENCODER_NAME_MAX_CHARS = 16
+
+local last_encoder_name = {}
+
+local function send_encoder_name(out, encoder_idx, name)
+  -- Truncate + sanitise: device only accepts ASCII 0x20..0x7E (plus a
+  -- handful of reassigned control codes we don't use). Anything else
+  -- becomes '?' so we never trip the SysEx parser.
+  if #name > ENCODER_NAME_MAX_CHARS then
+    name = name:sub(1, ENCODER_NAME_MAX_CHARS)
+  end
+  local payload = {SET_TEXT_PREFIX[1], SET_TEXT_PREFIX[2], SET_TEXT_PREFIX[3],
+                   SET_TEXT_PREFIX[4], SET_TEXT_PREFIX[5], SET_TEXT_PREFIX[6],
+                   ENCODER_NAME_TARGET_BASE + encoder_idx, 0x00}
+  for i = 1, #name do
+    local b = name:byte(i)
+    if b < 0x20 or b > 0x7E then b = 0x3F end  -- '?'
+    table.insert(payload, b)
+  end
+  magda.midi.send_sysex(out, payload)
+end
+
+local function refresh_encoder_names()
+  local out = find_daw_out()
+  if not out then return end
+  for i = 0, 7 do
+    local name = magda.focused.macro_name(i) or ""
+    if name == "" then name = string.format("Macro %d", i + 1) end
+    if last_encoder_name[i] ~= name then
+      last_encoder_name[i] = name
+      send_encoder_name(out, i, name)
+    end
   end
 end
 
 function on_tick(dt)
-  maybe_auto_map()
   refresh_leds()
+  refresh_encoder_names()
 end
 
 ----------------------------------------------------------------
@@ -314,6 +357,13 @@ function on_midi(e)
   if e.type == 'note_on' and e.value > 0 then
     handle_pad_press(e)
   elseif e.type == 'cc' then
-    handle_transport_cc(e)
+    -- Encoders in DAW + Plugin mode: CCs 21..28 (0x15..0x1C) drive
+    -- macros 0..7 of the focused device. Bypasses the JSON profile,
+    -- which can't see DAW-port CCs once the script enters DAW mode.
+    if e.number >= 0x15 and e.number <= 0x1C then
+      magda.focused.set_macro(e.number - 0x15, e.value / 127.0)
+    else
+      handle_transport_cc(e)
+    end
   end
 end

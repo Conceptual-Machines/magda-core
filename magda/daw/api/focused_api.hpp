@@ -36,13 +36,17 @@ class FocusedApi {
     /** Write a normalized value to macro `idx`. No-op if no focus / OOB. */
     virtual void setMacroValue(int idx, float value) = 0;
 
-    /** Automap-style helper: for each macro 0..7 on the focused device that
-     *  isn't already linked to anything, link it to the corresponding
-     *  automatable parameter (idx 0 -> param 0, idx 1 -> param 1, ...) at
-     *  amount 1.0 unipolar, naming the macro after the param. Idempotent —
-     *  re-running won't overwrite user-set links. No-op if no focus, or if
-     *  the focused node isn't a plugin device. */
-    virtual void autoMapToFirstParams() = 0;
+    /** Engage script-side automap: install 8 `focused.macro:0..7` resolver
+     *  bindings in BindingRegistry under a sentinel ControllerId so the
+     *  green automap dot lights on the focused device's header and on its
+     *  macros 0..7. The bindings are not routable (the sentinel isn't in
+     *  ControllerRegistry) — they exist purely to drive the UI affordance;
+     *  the script keeps writing macro values via setMacroValue. Idempotent:
+     *  prior sentinel bindings are wiped before fresh ones are added. */
+    virtual void engageAutoMap() = 0;
+
+    /** Remove the sentinel automap bindings installed by engageAutoMap. */
+    virtual void clearAutoMap() = 0;
 };
 
 }  // namespace magda

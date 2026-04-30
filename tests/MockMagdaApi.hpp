@@ -370,9 +370,13 @@ class MockFocusedApi : public FocusedApi {
         macroWrites.push_back({idx, value});
     }
 
-    int autoMapCalls = 0;
-    void autoMapToFirstParams() override {
-        ++autoMapCalls;
+    int engageAutoMapCalls = 0;
+    int clearAutoMapCalls = 0;
+    void engageAutoMap() override {
+        ++engageAutoMapCalls;
+    }
+    void clearAutoMap() override {
+        ++clearAutoMapCalls;
     }
 };
 

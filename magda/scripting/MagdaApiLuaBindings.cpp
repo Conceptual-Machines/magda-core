@@ -747,7 +747,12 @@ int lua_focused_set_macro(lua_State* L) {
 }
 
 int lua_focused_auto_map(lua_State* L) {
-    getApi(L)->focused().autoMapToFirstParams();
+    getApi(L)->focused().engageAutoMap();
+    return 0;
+}
+
+int lua_focused_clear_auto_map(lua_State* L) {
+    getApi(L)->focused().clearAutoMap();
     return 0;
 }
 
@@ -841,13 +846,10 @@ const FnReg kMidiFns[] = {
 };
 
 const FnReg kFocusedFns[] = {
-    {"has_focus", lua_focused_has_focus},
-    {"name", lua_focused_name},
-    {"macro_name", lua_focused_macro_name},
-    {"macro_value", lua_focused_macro_value},
-    {"set_macro", lua_focused_set_macro},
-    {"auto_map", lua_focused_auto_map},
-    {nullptr, nullptr},
+    {"has_focus", lua_focused_has_focus},           {"name", lua_focused_name},
+    {"macro_name", lua_focused_macro_name},         {"macro_value", lua_focused_macro_value},
+    {"set_macro", lua_focused_set_macro},           {"auto_map", lua_focused_auto_map},
+    {"clear_auto_map", lua_focused_clear_auto_map}, {nullptr, nullptr},
 };
 
 const FnReg kTransportFns[] = {
