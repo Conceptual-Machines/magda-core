@@ -1996,7 +1996,7 @@ void AIChatConsoleContent::buildSlashCommands() {
     design.details =
         "Generate a preset for the focused 4OSC device from a natural-language description.\n"
         "Focus a 4OSC device first; the preset applies directly to it.\n"
-        "The result is a starting point — tweak by ear, then save from the device header.\n"
+        "The result is a starting point - tweak by ear, then save from the device header.\n"
         "\n"
         "Flags:\n"
         "  --category=<Bass|Lead|Pad|Pluck|Keys|FX|Other>  override the agent's category pick";
