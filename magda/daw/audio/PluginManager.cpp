@@ -1999,23 +1999,25 @@ void PluginManager::syncRackProperties(TrackId trackId) {
 // Macro Value Routing
 // =============================================================================
 
-void PluginManager::setMacroValue(TrackId trackId, bool isRack, int id, int macroIndex,
+void PluginManager::setMacroValue(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
                                   float value) {
-    if (isRack) {
-        // Rack macro — delegate to RackSyncManager
-        rackSyncManager_.setMacroValue(static_cast<RackId>(id), macroIndex, value);
-    } else {
-        // Check if this is a track-level macro (id == trackId, stored in trackMacroParams_)
-        auto tmIt = trackMacroParams_.find(static_cast<TrackId>(id));
-        if (tmIt != trackMacroParams_.end()) {
-            auto macroIt = tmIt->second.find(macroIndex);
-            if (macroIt != tmIt->second.end() && macroIt->second != nullptr) {
-                macroIt->second->setParameterFromHost(value, juce::sendNotificationSync);
+    juce::ignoreUnused(trackId);
+    switch (scope) {
+        case ChainScope::Rack:
+            rackSyncManager_.setMacroValue(static_cast<RackId>(ownerId), macroIndex, value);
+            return;
+        case ChainScope::Track: {
+            auto tmIt = trackMacroParams_.find(static_cast<TrackId>(ownerId));
+            if (tmIt == trackMacroParams_.end())
                 return;
-            }
+            auto macroIt = tmIt->second.find(macroIndex);
+            if (macroIt != tmIt->second.end() && macroIt->second != nullptr)
+                macroIt->second->setParameterFromHost(value, juce::sendNotificationSync);
+            return;
         }
-        // Device macro — use device macro params
-        setMacroValue(static_cast<DeviceId>(id), macroIndex, value);
+        case ChainScope::Device:
+            setMacroValue(static_cast<DeviceId>(ownerId), macroIndex, value);
+            return;
     }
 }
 

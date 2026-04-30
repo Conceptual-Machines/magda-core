@@ -502,15 +502,15 @@ void AudioBridge::modParameterChanged(TrackId trackId, const ChainNodePath& devi
     automationRecording_.onModParameterValueChanged(trackId, devicePath, modId, paramIndex, value);
 }
 
-void AudioBridge::macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
+void AudioBridge::macroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
                                     float value) {
     // Skip the TE writeback when this notify is the playback engine echoing
     // a baked curve value back into MAGDA state — TE already drove the
     // MacroParameter on the audio thread, re-pushing fights its own curve.
     // Manual user edits (no AutomationWriteScope) still flow through.
     if (!AutomationManager::getInstance().isApplyingAutomationWrite())
-        pluginManager_.setMacroValue(trackId, isRack, id, macroIndex, value);
-    automationRecording_.onMacroValueChanged(trackId, isRack, id, macroIndex, value);
+        pluginManager_.setMacroValue(trackId, scope, ownerId, macroIndex, value);
+    automationRecording_.onMacroValueChanged(trackId, scope, ownerId, macroIndex, value);
 }
 
 void AudioBridge::masterChannelChanged() {

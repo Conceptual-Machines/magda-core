@@ -82,11 +82,16 @@ class TrackManagerListener {
         juce::ignoreUnused(deviceId, paramIndex, newValue);
     }
 
-    // Called when a macro knob value changes (for audio engine sync)
-    // isRack: true = rack macro (id is RackId), false = device macro (id is DeviceId)
-    virtual void macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
+    // Called when a macro knob value changes (for audio engine sync).
+    // `scope` tells the receiver how to interpret `ownerId`:
+    //   ChainScope::Track  → ownerId is the TrackId
+    //   ChainScope::Rack   → ownerId is the RackId
+    //   ChainScope::Device → ownerId is the DeviceId
+    // Track and Device id namespaces overlap in practice, so `scope` is the
+    // only way to disambiguate — do not key off `ownerId == trackId`.
+    virtual void macroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
                                    float value) {
-        juce::ignoreUnused(trackId, isRack, id, macroIndex, value);
+        juce::ignoreUnused(trackId, scope, ownerId, macroIndex, value);
     }
 
     // Called when a single modifier parameter (rate, depth, etc.) is edited
@@ -639,7 +644,8 @@ class TrackManager {
     void notifyAudioSidechainTriggered(TrackId sourceTrackId);
     void notifyDevicePropertyChanged(DeviceId deviceId);
     void notifyDeviceParameterChanged(DeviceId deviceId, int paramIndex, float newValue);
-    void notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex, float value);
+    void notifyMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
+                                 float value);
     void notifyModParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
                                    int paramIndex, float value);
 

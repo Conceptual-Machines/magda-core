@@ -212,8 +212,7 @@ namespace {
 
 // True for paths whose macro/mod index is in range. Centralises the bounds
 // check so every unified op below can early-return uniformly.
-template <typename Array>
-bool indexInRange(const Array* arr, int idx) {
+template <typename Array> bool indexInRange(const Array* arr, int idx) {
     return arr != nullptr && idx >= 0 && idx < static_cast<int>(arr->size());
 }
 
@@ -229,8 +228,7 @@ void TrackManager::setMacroValue(const ChainNodePath& path, int macroIndex, floa
         return;
     float clampedValue = juce::jlimit(0.0f, 1.0f, value);
     (*node.macros)[macroIndex].value = clampedValue;
-    notifyMacroValueChanged(path.trackId, node.isRackMacro(), node.notifyId(), macroIndex,
-                            clampedValue);
+    notifyMacroValueChanged(path.trackId, node.scope, node.notifyId(), macroIndex, clampedValue);
 }
 
 void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex, MacroTarget target) {

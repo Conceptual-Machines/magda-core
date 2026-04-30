@@ -1,5 +1,7 @@
 #include "ModulatorEditorPanel.hpp"
 
+#include <stdexcept>
+
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
@@ -53,6 +55,34 @@ magda::SyncDivision indexToSyncDivision(int idx) {
     if (idx < 0 || idx >= static_cast<int>(std::size(kSyncDivisionOrder)))
         return magda::SyncDivision::Quarter;
     return kSyncDivisionOrder[idx];
+}
+
+// Build the lane label for a mod's Rate parameter, matching the format used by
+// the "Add New Lane" submenu in TrackHeadersPanel: device/rack-scope mods get
+// "<owner>: <mod> Rate"; track-scope mods get just "<mod> Rate" (no track
+// prefix, since the lane already lives under the track header).
+juce::String buildQualifiedModRateName(const magda::ChainNodePath& path,
+                                       const juce::String& modName) {
+    juce::String suffix = modName + " Rate";
+    auto& tm = magda::TrackManager::getInstance();
+    switch (path.getType()) {
+        case magda::ChainNodeType::Track:
+            return suffix;
+        case magda::ChainNodeType::Rack:
+            if (auto* rack = tm.getRackByPath(path))
+                return rack->name + ": " + suffix;
+            break;
+        case magda::ChainNodeType::TopLevelDevice:
+        case magda::ChainNodeType::Device:
+            if (auto* dev = tm.getDeviceInChainByPath(path))
+                return dev->name + ": " + suffix;
+            break;
+        case magda::ChainNodeType::None:
+        case magda::ChainNodeType::Chain:
+            throw std::runtime_error(
+                "buildQualifiedModRateName: mod path has no mod-bearing scope");
+    }
+    throw std::runtime_error("buildQualifiedModRateName: failed to resolve owner for mod path");
 }
 }  // namespace
 #include "ui/themes/FontManager.hpp"
@@ -591,7 +621,7 @@ void ModulatorEditorPanel::updateRateAutomationTarget() {
     target.devicePath = ownerDevicePath_;
     target.modId = currentMod_.id;
     target.modParamIndex = 0;
-    target.paramName = currentMod_.name + " Rate";
+    target.paramName = buildQualifiedModRateName(ownerDevicePath_, currentMod_.name);
     rateSlider_.setAutomationTarget(target);
     syncDivisionSlider_.setAutomationTarget(target);
 }
@@ -606,7 +636,7 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
     target.devicePath = ownerDevicePath_;
     target.modId = currentMod_.id;
     target.modParamIndex = 0;
-    target.paramName = currentMod_.name + " Rate";
+    target.paramName = buildQualifiedModRateName(ownerDevicePath_, currentMod_.name);
 
     juce::PopupMenu menu;
     constexpr int kShowLaneId = 1;
@@ -1392,7 +1422,8 @@ void ModulatorEditorPanel::writeLinkAmountFromActiveSource(float amount) {
         // setXxxMacroLinkAmount creates the link if missing, otherwise
         // updates its amount — same single-call semantics across scopes.
         if (sel.parentPath.isTrackLevel) {
-            tm.setMacroLinkAmount(ChainNodePath::trackLevel(sel.parentPath.trackId), sel.macroIndex, target, amount);
+            tm.setMacroLinkAmount(ChainNodePath::trackLevel(sel.parentPath.trackId), sel.macroIndex,
+                                  target, amount);
         } else if (sel.parentPath.getType() == magda::ChainNodeType::Rack) {
             tm.setMacroLinkAmount(sel.parentPath, sel.macroIndex, target, amount);
         } else {
@@ -1408,7 +1439,8 @@ void ModulatorEditorPanel::writeLinkAmountFromActiveSource(float amount) {
         target.modParamIndex = 0;  // Rate
 
         if (sel.parentPath.isTrackLevel) {
-            tm.setModLinkAmount(ChainNodePath::trackLevel(sel.parentPath.trackId), sel.modIndex, target, amount);
+            tm.setModLinkAmount(ChainNodePath::trackLevel(sel.parentPath.trackId), sel.modIndex,
+                                target, amount);
         } else if (sel.parentPath.getType() == magda::ChainNodeType::Rack) {
             tm.setModLinkAmount(sel.parentPath, sel.modIndex, target, amount);
         } else {

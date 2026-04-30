@@ -57,10 +57,6 @@ struct ChainNode {
         return scope == ChainScope::Device;
     }
 
-    // Helpers matching today's macroValueChanged(trackId, isRack, id, ...)
-    // listener signature. Track scope uses isRack=false with the trackId in
-    // the id field; Device scope uses isRack=false with the deviceId; Rack
-    // scope uses isRack=true with the rackId.
     bool isRackMacro() const {
         return scope == ChainScope::Rack;
     }

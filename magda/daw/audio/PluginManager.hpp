@@ -411,12 +411,12 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     /**
      * @brief Route a macro value change to the appropriate TE infrastructure
      * @param trackId The track containing the macro
-     * @param isRack true = rack macro (id is RackId), false = device macro (id is DeviceId)
-     * @param id RackId or DeviceId depending on isRack
+     * @param scope ChainScope::Track / ::Rack / ::Device — disambiguates ownerId
+     * @param ownerId TrackId / RackId / DeviceId, picked by `scope`
      * @param macroIndex Index into the macro array
      * @param value Normalized value (0.0 to 1.0)
      */
-    void setMacroValue(TrackId trackId, bool isRack, int id, int macroIndex, float value);
+    void setMacroValue(TrackId trackId, ChainScope scope, int ownerId, int macroIndex, float value);
 
     /**
      * @brief Resolve an AutomationTarget::Macro to its TE MacroParameter for

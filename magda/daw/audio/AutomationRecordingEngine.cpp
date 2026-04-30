@@ -625,24 +625,30 @@ void AutomationRecordingEngine::onModParameterValueChanged(TrackId trackId,
     recordPoint(laneId, beatTime, normalizedValue);
 }
 
-void AutomationRecordingEngine::onMacroValueChanged(TrackId trackId, bool isRack, int id,
+void AutomationRecordingEngine::onMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId,
                                                     int macroIndex, float value) {
     if (!shouldRecord())
         return;
 
-    // Build target: for rack macros the path points to the rack,
-    // for device macros it points to the device.
+    // Build target: path scope follows the macro's owning node.
     AutomationTarget target;
     target.type = AutomationTargetType::Macro;
     target.trackId = trackId;
     target.macroIndex = macroIndex;
 
-    if (isRack) {
-        target.devicePath = ChainNodePath::rack(trackId, static_cast<RackId>(id));
-    } else {
-        target.devicePath = TrackManager::getInstance().findDevicePath(static_cast<DeviceId>(id));
-        if (!target.devicePath.isValid())
-            return;
+    switch (scope) {
+        case ChainScope::Track:
+            target.devicePath = ChainNodePath::trackLevel(trackId);
+            break;
+        case ChainScope::Rack:
+            target.devicePath = ChainNodePath::rack(trackId, static_cast<RackId>(ownerId));
+            break;
+        case ChainScope::Device:
+            target.devicePath =
+                TrackManager::getInstance().findDevicePath(static_cast<DeviceId>(ownerId));
+            if (!target.devicePath.isValid())
+                return;
+            break;
     }
 
     auto& autoMgr = AutomationManager::getInstance();

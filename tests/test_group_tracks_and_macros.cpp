@@ -35,12 +35,12 @@ class MacroListenerSpy : public TrackManagerListener {
   public:
     void tracksChanged() override {}
 
-    void macroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
+    void macroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
                            float value) override {
         callCount++;
         lastTrackId = trackId;
-        lastIsRack = isRack;
-        lastId = id;
+        lastScope = scope;
+        lastId = ownerId;
         lastMacroIndex = macroIndex;
         lastValue = value;
     }
@@ -57,7 +57,7 @@ class MacroListenerSpy : public TrackManagerListener {
 
     int callCount = 0;
     TrackId lastTrackId = INVALID_TRACK_ID;
-    bool lastIsRack = false;
+    ChainScope lastScope = ChainScope::Track;
     int lastId = -1;
     int lastMacroIndex = -1;
     float lastValue = -1.0f;
@@ -219,7 +219,7 @@ TEST_CASE("Rack macro value change fires notification", "[macro][notification]")
 
         REQUIRE(spy.callCount == 1);
         REQUIRE(spy.lastTrackId == trackId);
-        REQUIRE(spy.lastIsRack == true);
+        REQUIRE(spy.lastScope == ChainScope::Rack);
         REQUIRE(spy.lastId == rackId);
         REQUIRE(spy.lastMacroIndex == 0);
         REQUIRE(spy.lastValue == Catch::Approx(0.75f));
@@ -274,7 +274,7 @@ TEST_CASE("Device macro value change fires notification", "[macro][notification]
 
         REQUIRE(spy.callCount == 1);
         REQUIRE(spy.lastTrackId == trackId);
-        REQUIRE(spy.lastIsRack == false);
+        REQUIRE(spy.lastScope == ChainScope::Device);
         REQUIRE(spy.lastId == deviceId);
         REQUIRE(spy.lastMacroIndex == 0);
         REQUIRE(spy.lastValue == Catch::Approx(0.3f));

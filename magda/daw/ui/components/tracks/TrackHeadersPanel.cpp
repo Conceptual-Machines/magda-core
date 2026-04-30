@@ -3151,11 +3151,32 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
     // "Add New Lane" submenu with common targets
     juce::PopupMenu addNewMenu;
 
+    // Tick a submenu item if a lane already exists for the target and is
+    // visible — mirrors the existing-lanes section above so the user can see
+    // at a glance which targets are already on screen.
+    auto isTargetShown = [&automationManager](const AutomationTarget& t) {
+        auto laneId = automationManager.getLaneForTarget(t);
+        if (laneId == INVALID_AUTOMATION_LANE_ID)
+            return false;
+        const auto* lane = automationManager.getLane(laneId);
+        return lane != nullptr && lane->visible;
+    };
+
     // Track volume
-    addNewMenu.addItem(1, "Track Volume");
+    {
+        AutomationTarget tvTarget;
+        tvTarget.type = AutomationTargetType::TrackVolume;
+        tvTarget.trackId = trackId;
+        addNewMenu.addItem(1, "Track Volume", true, isTargetShown(tvTarget));
+    }
 
     // Track pan
-    addNewMenu.addItem(2, "Track Pan");
+    {
+        AutomationTarget tpTarget;
+        tpTarget.type = AutomationTargetType::TrackPan;
+        tpTarget.trackId = trackId;
+        addNewMenu.addItem(2, "Track Pan", true, isTargetShown(tpTarget));
+    }
 
     // Build device parameter targets from chain elements
     // IDs 10+ are indices into deviceParamTargets (shared path used for
@@ -3183,7 +3204,7 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
             int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
             deviceParamTargets->push_back(target);
-            addNewMenu.addItem(itemId, destName);
+            addNewMenu.addItem(itemId, destName, true, isTargetShown(target));
         }
     }
 
@@ -3222,9 +3243,11 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
                                 paramsMenu.addItem(itemId,
-                                                   device.parameters[static_cast<size_t>(i)].name);
+                                                   device.parameters[static_cast<size_t>(i)].name,
+                                                   true, ticked);
                             }
                             deviceMenu.addSubMenu("Params", paramsMenu);
                         }
@@ -3249,8 +3272,9 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                 target.paramName = device.name + ": " + mod.name + " Rate";
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                modsMenu.addItem(itemId, mod.name + " Rate");
+                                modsMenu.addItem(itemId, mod.name + " Rate", true, ticked);
                                 any = true;
                             }
                             if (any)
@@ -3274,8 +3298,9 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                macrosMenu.addItem(itemId, macro.name);
+                                macrosMenu.addItem(itemId, macro.name, true, ticked);
                                 any = true;
                             }
                             if (any)
@@ -3306,8 +3331,9 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                 target.paramName = rack.name + ": " + mod.name + " Rate";
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                modsMenu.addItem(itemId, mod.name + " Rate");
+                                modsMenu.addItem(itemId, mod.name + " Rate", true, ticked);
                                 any = true;
                             }
                             if (any)
@@ -3331,8 +3357,9 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                macrosMenu.addItem(itemId, macro.name);
+                                macrosMenu.addItem(itemId, macro.name, true, ticked);
                                 any = true;
                             }
                             if (any)
@@ -3384,8 +3411,9 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                 target.modParamIndex = 0;  // Rate
                 target.paramName = mod.name + " Rate";
                 int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                bool ticked = isTargetShown(target);
                 deviceParamTargets->push_back(target);
-                trackModsMenu.addItem(itemId, mod.name + " Rate");
+                trackModsMenu.addItem(itemId, mod.name + " Rate", true, ticked);
                 any = true;
             }
             if (any)
