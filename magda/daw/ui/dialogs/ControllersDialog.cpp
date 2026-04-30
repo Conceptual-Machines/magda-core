@@ -706,8 +706,11 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
     }
 
     juce::String line = name;
-    if (isActive)
-        line += "  \xc2\xb7  " + tr("controllers.scripts.active");
+    if (isActive) {
+        // Build the middle dot via charToString rather than a UTF-8 byte
+        // literal — same mojibake we hit in the chat panel (96ca226f).
+        line += "  " + juce::String::charToString(0x00B7) + "  " + tr("controllers.scripts.active");
+    }
 
     g.setColour(isActive ? DarkTheme::getTextColour()
                          : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
