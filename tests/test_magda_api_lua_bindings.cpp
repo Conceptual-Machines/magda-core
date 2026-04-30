@@ -400,6 +400,54 @@ TEST_CASE("magda.midi.outputs returns the configured port names", "[lua_bindings
     REQUIRE(*count == 2);
 }
 
+// ---- transport -------------------------------------------------------------
+
+TEST_CASE("magda.transport play/stop/record toggle the mock state", "[lua_bindings][transport]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.eval("magda.transport.play()"));
+    REQUIRE(mock.transport_.playCalls == 1);
+    REQUIRE(mock.transport_.playing);
+
+    REQUIRE(rt.eval("magda.transport.set_recording(true)"));
+    REQUIRE(mock.transport_.recording);
+
+    REQUIRE(rt.eval("magda.transport.stop()"));
+    REQUIRE(mock.transport_.stopCalls == 1);
+    REQUIRE_FALSE(mock.transport_.playing);
+    REQUIRE_FALSE(mock.transport_.recording);
+}
+
+TEST_CASE("magda.transport.is_playing reflects the mock", "[lua_bindings][transport]") {
+    MockMagdaApi mock;
+    mock.transport_.playing = true;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    auto v = rt.evalToString("tostring(magda.transport.is_playing())");
+    REQUIRE(v.has_value());
+    REQUIRE(*v == "true");
+}
+
+TEST_CASE("magda.transport loop and position round-trip via the mock",
+          "[lua_bindings][transport]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.eval("magda.transport.set_loop_enabled(true)"));
+    REQUIRE(mock.transport_.loopEnabled);
+
+    REQUIRE(rt.eval("magda.transport.set_position_beats(16.5)"));
+    REQUIRE(mock.transport_.positionBeats == 16.5);
+
+    auto pos = rt.evalToString("tostring(magda.transport.position_beats())");
+    REQUIRE(pos.has_value());
+    REQUIRE(pos->contains("16.5"));
+}
+
 // ---- argument validation ---------------------------------------------------
 
 TEST_CASE("Bindings reject wrong types via luaL_check*", "[lua_bindings]") {

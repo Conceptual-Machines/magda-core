@@ -26,6 +26,7 @@
 #include "magda/daw/api/selection_api.hpp"
 #include "magda/daw/api/session_api.hpp"
 #include "magda/daw/api/track_api.hpp"
+#include "magda/daw/api/transport_api.hpp"
 #include "magda/daw/api/undo_api.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipTypes.hpp"
@@ -320,6 +321,48 @@ class MockProjectApi : public ProjectApi {
     }
 };
 
+class MockTransportApi : public TransportApi {
+  public:
+    bool playing = false;
+    bool recording = false;
+    bool loopEnabled = false;
+    double positionBeats = 0.0;
+
+    int playCalls = 0;
+    int stopCalls = 0;
+
+    void play() override {
+        ++playCalls;
+        playing = true;
+    }
+    void stop() override {
+        ++stopCalls;
+        playing = false;
+        recording = false;
+    }
+    void setRecording(bool r) override {
+        recording = r;
+    }
+    bool isPlaying() const override {
+        return playing;
+    }
+    bool isRecording() const override {
+        return recording;
+    }
+    bool isLoopEnabled() const override {
+        return loopEnabled;
+    }
+    void setLoopEnabled(bool e) override {
+        loopEnabled = e;
+    }
+    double getPositionBeats() const override {
+        return positionBeats;
+    }
+    void setPositionBeats(double b) override {
+        positionBeats = b;
+    }
+};
+
 class MockMidiApi : public MidiApi {
   public:
     struct Send {
@@ -356,6 +399,7 @@ class MockMagdaApi : public MagdaApi {
     MockProjectApi project_;
     StubUndoApi undo_;
     MockMidiApi midi_;
+    MockTransportApi transport_;
 
     SelectionApi& selection() override {
         return selection_;
@@ -383,6 +427,9 @@ class MockMagdaApi : public MagdaApi {
     }
     MidiApi& midi() override {
         return midi_;
+    }
+    TransportApi& transport() override {
+        return transport_;
     }
 };
 

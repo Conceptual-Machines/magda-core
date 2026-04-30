@@ -10,6 +10,7 @@
 #include "magda/daw/api/selection_api.hpp"
 #include "magda/daw/api/session_api.hpp"
 #include "magda/daw/api/track_api.hpp"
+#include "magda/daw/api/transport_api.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipTypes.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
@@ -605,6 +606,56 @@ int lua_midi_outputs(lua_State* L) {
     return 1;
 }
 
+// ---- transport -------------------------------------------------------------
+
+int lua_transport_play(lua_State* L) {
+    getApi(L)->transport().play();
+    return 0;
+}
+
+int lua_transport_stop(lua_State* L) {
+    getApi(L)->transport().stop();
+    return 0;
+}
+
+int lua_transport_set_recording(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TBOOLEAN);
+    getApi(L)->transport().setRecording(lua_toboolean(L, 1) != 0);
+    return 0;
+}
+
+int lua_transport_is_playing(lua_State* L) {
+    lua_pushboolean(L, getApi(L)->transport().isPlaying());
+    return 1;
+}
+
+int lua_transport_is_recording(lua_State* L) {
+    lua_pushboolean(L, getApi(L)->transport().isRecording());
+    return 1;
+}
+
+int lua_transport_is_loop_enabled(lua_State* L) {
+    lua_pushboolean(L, getApi(L)->transport().isLoopEnabled());
+    return 1;
+}
+
+int lua_transport_set_loop_enabled(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TBOOLEAN);
+    getApi(L)->transport().setLoopEnabled(lua_toboolean(L, 1) != 0);
+    return 0;
+}
+
+int lua_transport_position_beats(lua_State* L) {
+    lua_pushnumber(L, getApi(L)->transport().getPositionBeats());
+    return 1;
+}
+
+int lua_transport_set_position_beats(lua_State* L) {
+    double beats = luaL_checknumber(L, 1);
+    getApi(L)->transport().setPositionBeats(beats);
+    return 0;
+}
+
 // ---- registration ----------------------------------------------------------
 
 // Convenience: attach `funcs` (null-terminated) to the table at the top of
@@ -691,6 +742,19 @@ const FnReg kMidiFns[] = {
     {nullptr, nullptr},
 };
 
+const FnReg kTransportFns[] = {
+    {"play", lua_transport_play},
+    {"stop", lua_transport_stop},
+    {"set_recording", lua_transport_set_recording},
+    {"is_playing", lua_transport_is_playing},
+    {"is_recording", lua_transport_is_recording},
+    {"is_loop_enabled", lua_transport_is_loop_enabled},
+    {"set_loop_enabled", lua_transport_set_loop_enabled},
+    {"position_beats", lua_transport_position_beats},
+    {"set_position_beats", lua_transport_set_position_beats},
+    {nullptr, nullptr},
+};
+
 void installSubtable(lua_State* L, const char* name, const FnReg* fns) {
     lua_newtable(L);
     setFunctions(L, fns);
@@ -714,6 +778,7 @@ void registerMagdaApi(lua_State* L, MagdaApi& api) {
     installSubtable(L, "session", kSessionFns);
     installSubtable(L, "project", kProjectFns);
     installSubtable(L, "midi", kMidiFns);
+    installSubtable(L, "transport", kTransportFns);
     lua_setglobal(L, "magda");
 }
 

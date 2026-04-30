@@ -9,6 +9,7 @@
 #include "selection_api_live.hpp"
 #include "session_api_live.hpp"
 #include "track_api_live.hpp"
+#include "transport_api_live.hpp"
 #include "undo_api_live.hpp"
 
 namespace magda {
@@ -45,11 +46,19 @@ class MagdaApiLive : public MagdaApi {
     MidiApi& midi() override {
         return midi_;
     }
+    TransportApi& transport() override {
+        return transport_;
+    }
 
     /** Wire the MidiBridge into the live MidiApi. Owned externally by the
      *  engine wrapper; safe to leave unset in headless tests. */
     void setMidiBridge(MidiBridge* bridge) {
         midi_.setMidiBridge(bridge);
+    }
+
+    /** Wire the current-Edit accessor into the live TransportApi. */
+    void setEditAccessor(TransportApiLive::EditGetter g) {
+        transport_.setEditGetter(std::move(g));
     }
 
   private:
@@ -62,6 +71,7 @@ class MagdaApiLive : public MagdaApi {
     ProjectApiLive project_;
     UndoApiLive undo_;
     MidiApiLive midi_;
+    TransportApiLive transport_;
 };
 
 }  // namespace magda

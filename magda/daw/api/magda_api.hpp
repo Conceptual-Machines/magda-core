@@ -11,6 +11,7 @@ class SessionApi;
 class ProjectApi;
 class UndoApi;
 class MidiApi;
+class TransportApi;
 
 /**
  * Programmatic facade for MAGDA's DAW state.
@@ -37,6 +38,7 @@ class MagdaApi {
     virtual ProjectApi& project() = 0;
     virtual UndoApi& undo() = 0;
     virtual MidiApi& midi() = 0;
+    virtual TransportApi& transport() = 0;
 };
 
 }  // namespace magda
