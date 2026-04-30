@@ -521,9 +521,18 @@ class TextSlider : public juce::Component,
     }
 
     void mouseUp(const juce::MouseEvent& e) override {
+        // Capture and clear the drag flag up front. mouseUp has several early-
+        // return paths (shift-drag end, click, etc.); previously isLeftButtonDrag_
+        // was never reset, which left isBeingDragged() permanently true after
+        // the first drag and made every consumer that gates value updates on
+        // !isBeingDragged() — e.g. mixer fader sync from trackPropertyChanged
+        // — stop refreshing. (#1108)
+        const bool wasLeftDrag = isLeftButtonDrag_;
+        isLeftButtonDrag_ = false;
+
         // Release the transient flags; the lane stays in bypass (override)
         // state until the user explicitly re-enables it from the header.
-        if (isLeftButtonDrag_ && hasAutomationTarget_) {
+        if (wasLeftDrag && hasAutomationTarget_) {
             auto& mgr = magda::AutomationManager::getInstance();
             mgr.setTargetUserTouched(automationTarget_, false);
             mgr.setTargetTouchSuppressed(automationTarget_, false);
