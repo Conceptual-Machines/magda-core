@@ -159,10 +159,14 @@ void LuaController::detach() {
 }
 
 bool LuaController::loadScript(const juce::File& file) {
+    juce::Logger::writeToLog("[lua-debug] LuaController::loadScript ENTER file='" +
+                             file.getFullPathName() + "' active='" + currentScriptName_ +
+                             "' bridge=" + (bridge_ != nullptr ? "attached" : "null"));
     unloadScript();
 
     if (!file.existsAsFile()) {
         lastError_ = "Script file does not exist: " + file.getFullPathName();
+        juce::Logger::writeToLog("[lua-debug] loadScript FAIL: file missing");
         return false;
     }
 
@@ -171,6 +175,7 @@ bool LuaController::loadScript(const juce::File& file) {
 
     if (!rt->evalFile(file)) {
         lastError_ = rt->lastError();
+        juce::Logger::writeToLog("[lua-debug] loadScript FAIL: evalFile error: " + lastError_);
         return false;
     }
 
@@ -181,18 +186,26 @@ bool LuaController::loadScript(const juce::File& file) {
     // on_load fires after registration so the script body has had a chance
     // to define it. Lifecycle hooks (DAW-mode handshake, LED priming) belong
     // here, not at top-level — top-level errors abort the load.
+    juce::Logger::writeToLog("[lua-debug] loadScript: calling on_load");
     callOptionalNullary("on_load");
 
-    if (juce::MessageManager::getInstanceWithoutCreating() != nullptr) {
+    const bool hasMessageManager = juce::MessageManager::getInstanceWithoutCreating() != nullptr;
+    juce::Logger::writeToLog("[lua-debug] loadScript: tick timer "
+                             "messageManager=" +
+                             juce::String(hasMessageManager ? "present" : "absent"));
+    if (hasMessageManager) {
         if (!tickTimer_)
             tickTimer_ = std::make_unique<TickTimer>(*this);
         lastTickMs_ = juce::Time::getMillisecondCounter();
         tickTimer_->startTimer(kTickIntervalMs);
     }
+    juce::Logger::writeToLog("[lua-debug] loadScript OK script='" + currentScriptName_ + "'");
     return true;
 }
 
 void LuaController::unloadScript() {
+    juce::Logger::writeToLog("[lua-debug] unloadScript ENTER active='" + currentScriptName_ +
+                             "' rt=" + juce::String(rt_ != nullptr ? "alive" : "null"));
     if (tickTimer_) {
         tickTimer_->stopTimer();
         tickTimer_.reset();

@@ -39,6 +39,10 @@ class MagdaDAWApplication : public JUCEApplication {
     // layer rather than inside TracktionEngineWrapper so the engine library
     // (magda_daw) doesn't pull magda_scripting into its link line.
     std::unique_ptr<magda::scripting::LuaController> luaController_;
+    // Latches true once the deferred startup auto-load has fired. The
+    // engine's onMidiDevicesReady callback runs on every device-list
+    // change, but we only want to auto-load the active script once.
+    bool scriptAutoLoaded_ = false;
     std::unique_ptr<magda::MainWindow> mainWindow_;
     std::unique_ptr<magda::MainLookAndFeel> lookAndFeel_;
     std::unique_ptr<magda::SplashScreen> splashScreen_;
@@ -183,11 +187,34 @@ class MagdaDAWApplication : public JUCEApplication {
         // magda_daw stays free of magda_scripting symbols. attach() is
         // skipped if the engine has no MidiBridge yet (headless / failure).
         if (auto* bridge = daw_engine_->getMidiBridge()) {
+            juce::Logger::writeToLog("[lua-debug] startup: MidiBridge available, "
+                                     "constructing LuaController + attaching");
             luaController_ =
                 std::make_unique<magda::scripting::LuaController>(daw_engine_->getMagdaApi());
             luaController_->attach(*bridge);
-            if (!reloadActiveLuaScript())
-                juce::Logger::writeToLog("[lua] No controller script loaded");
+            // Defer the script load until JUCE has opened the MIDI output ports.
+            // Loading on_load before that means SysEx sends (DAW-mode handshake,
+            // LED priming) get dropped silently and the device behaves as if no
+            // script were loaded. Hook fires on first MIDI device-list change
+            // after engine init, then on every subsequent change. We only want
+            // the auto-load to fire once.
+            daw_engine_->onMidiDevicesReady = [this]() {
+                if (scriptAutoLoaded_)
+                    return;
+                scriptAutoLoaded_ = true;
+                juce::Logger::writeToLog("[lua-debug] onMidiDevicesReady fired - "
+                                         "running deferred reloadActiveLuaScript");
+                const bool ok = reloadActiveLuaScript();
+                juce::Logger::writeToLog(
+                    "[lua-debug] deferred reloadActiveLuaScript -> " +
+                    juce::String(ok ? "true" : "false") + " active='" +
+                    (luaController_ ? luaController_->currentScriptName() : juce::String{}) + "'");
+                if (!ok)
+                    juce::Logger::writeToLog("[lua] No controller script loaded");
+            };
+        } else {
+            juce::Logger::writeToLog("[lua-debug] startup: MidiBridge null, "
+                                     "LuaController NOT created");
         }
 
         // 3b. Clean up stale temp media directories from previous sessions
@@ -349,8 +376,10 @@ class MagdaDAWApplication : public JUCEApplication {
 // -----------------------------------------------------------------------------
 
 bool MagdaDAWApplication::reloadActiveLuaScript() {
-    if (luaController_ == nullptr)
+    if (luaController_ == nullptr) {
+        juce::Logger::writeToLog("[lua-debug] reloadActiveLuaScript: luaController_ null");
         return false;
+    }
 
     // If a script is already active, reload that exact file. Otherwise pick
     // the alphabetically-first script in the folder so a fresh install with
@@ -359,7 +388,11 @@ bool MagdaDAWApplication::reloadActiveLuaScript() {
     magda::scripting::LuaScriptStore store;
     store.ensureExists();
     auto scripts = store.enumerate();
+    juce::Logger::writeToLog("[lua-debug] reloadActiveLuaScript: scripts.size=" +
+                             juce::String(static_cast<int>(scripts.size())) + " activeName='" +
+                             activeName + "'");
     if (scripts.empty()) {
+        juce::Logger::writeToLog("[lua-debug] reloadActiveLuaScript: no scripts, unloading");
         luaController_->unloadScript();
         return false;
     }
@@ -373,6 +406,8 @@ bool MagdaDAWApplication::reloadActiveLuaScript() {
             }
         }
     }
+    juce::Logger::writeToLog("[lua-debug] reloadActiveLuaScript: target='" + target.getFileName() +
+                             "'");
     return loadLuaScript(target);
 }
 
