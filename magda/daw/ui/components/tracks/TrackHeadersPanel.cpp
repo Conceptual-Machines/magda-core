@@ -1773,15 +1773,18 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
                     if (auto* t = tm.getTrack(tid))
                         multiTrackBaseVolumes_[tid] = t->volume;
                 multiTrackDragStartDb_ = header.volumeLabel->getValue();
-                // Light up the volume label on every other selected track so
-                // the user can see which tracks are being moved together.
-                for (auto tid : sel.getSelectedTracks()) {
-                    if (tid == trackId)
-                        continue;
-                    int otherIdx = getVisibleHeaderIndex(tid);
-                    if (otherIdx >= 0)
-                        trackHeaders[otherIdx]->volumeLabel->setCoEditing(true);
-                }
+            }
+            // Light up the volume label on every other selected track so the
+            // user can see which tracks are being moved together. Set on every
+            // tick (idempotent thanks to setCoEditing's same-value guard) —
+            // ensures the highlight survives any intervening state churn from
+            // the cascade of trackPropertyChanged callbacks below.
+            for (auto tid : sel.getSelectedTracks()) {
+                if (tid == trackId)
+                    continue;
+                int otherIdx = getVisibleHeaderIndex(tid);
+                if (otherIdx >= 0)
+                    trackHeaders[otherIdx]->volumeLabel->setCoEditing(true);
             }
             const double delta = header.volumeLabel->getValue() - multiTrackDragStartDb_;
             for (auto& [tid, baseVol] : multiTrackBaseVolumes_) {
@@ -1824,13 +1827,13 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
                     if (auto* t = tm.getTrack(tid))
                         multiTrackBasePans_[tid] = t->pan;
                 multiTrackDragStartPan_ = header.panLabel->getValue();
-                for (auto tid : sel.getSelectedTracks()) {
-                    if (tid == trackId)
-                        continue;
-                    int otherIdx = getVisibleHeaderIndex(tid);
-                    if (otherIdx >= 0)
-                        trackHeaders[otherIdx]->panLabel->setCoEditing(true);
-                }
+            }
+            for (auto tid : sel.getSelectedTracks()) {
+                if (tid == trackId)
+                    continue;
+                int otherIdx = getVisibleHeaderIndex(tid);
+                if (otherIdx >= 0)
+                    trackHeaders[otherIdx]->panLabel->setCoEditing(true);
             }
             const double delta = header.panLabel->getValue() - multiTrackDragStartPan_;
             for (auto& [tid, basePan] : multiTrackBasePans_) {
