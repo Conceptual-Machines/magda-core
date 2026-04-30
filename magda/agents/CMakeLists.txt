@@ -43,6 +43,8 @@ dsl_grammar.hpp
     model_downloader.cpp
     daw_agent.hpp
     daw_agent.cpp
+    four_osc_agent.hpp
+    four_osc_agent.cpp
 )
 
 # Create the agents library

@@ -132,5 +132,19 @@ Prefix your message with a slash command to constrain the AI to a specific domai
 | Command | Description |
 |---------|-------------|
 | `/groove <request>` | Create or apply swing/groove timing templates |
+| `/design <description>` | Generate a 4OSC preset from a natural-language description and apply it to the focused 4OSC device |
 
 Typing `/` shows an autocomplete popup with available commands.
+
+#### `/design` — AI Sound Design
+
+Select a 4OSC device, then type `/design <description>`. The assistant produces a preset (waves, filter type, voice mode, FX gates, ADSR, levels) and applies it directly to the focused device.
+
+The chat shows a categorised summary of what changed, plus a one-line apply status. The preset name and category the AI chose become the default values when you save the preset from the device header — just click save and hit Enter.
+
+Built-in safeguards:
+
+- A **master-level safety cap** estimates worst-case peak gain from the active oscillator count, distortion drive, and filter resonance, then clamps the master `level` to keep peaks in a sensible range. The AI's choices are only overridden when they would clip.
+- The result is a **starting point**, not a final preset. Tweak by ear before saving.
+
+For example prompts and recipes, see the [4OSC Synth — AI Sound Design](../devices/4osc.md#ai-sound-design-design) section.

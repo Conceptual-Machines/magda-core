@@ -423,6 +423,7 @@ set(DAW_UI_SOURCES
     ui/panels/content/inspector/InspectorFactory.cpp
     ui/panels/content/inspector/InspectorContainer.cpp
     ui/panels/content/AIChatConsoleContent.cpp
+    ui/panels/content/SlashCommands.cpp
     ui/panels/content/ScriptingConsoleContent.cpp
     ui/panels/content/ChatPromptTokeniser.cpp
     ui/panels/content/DSLTokeniser.cpp

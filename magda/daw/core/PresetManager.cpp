@@ -287,4 +287,20 @@ juce::StringArray PresetManager::getPresetList(const juce::File& directory) cons
     return presets;
 }
 
+void PresetManager::setSuggestedPresetName(DeviceId deviceId, const juce::String& name) {
+    if (name.isEmpty())
+        suggestedNames_.erase(deviceId);
+    else
+        suggestedNames_[deviceId] = name;
+}
+
+juce::String PresetManager::getSuggestedPresetName(DeviceId deviceId) const {
+    auto it = suggestedNames_.find(deviceId);
+    return it != suggestedNames_.end() ? it->second : juce::String();
+}
+
+void PresetManager::clearSuggestedPresetName(DeviceId deviceId) {
+    suggestedNames_.erase(deviceId);
+}
+
 }  // namespace magda
