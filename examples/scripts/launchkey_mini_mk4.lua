@@ -102,6 +102,10 @@ local SCENE_NEXT = 0x6B   -- 107 - bottom button (Track >), scrolls down
 local TRACK_PREV = 0x68   -- 104 - top right, previous track
 local TRACK_NEXT = 0x69   -- 105 - bottom right, next track
 
+-- Device-cycle buttons: walk the focused track's chain prev/next.
+local DEVICE_PREV = 0x33  -- 51
+local DEVICE_NEXT = 0x34  -- 52
+
 -- Scene offset = sceneIndex of the top pad row. Bottom row is offset+1.
 local scene_offset = 0
 
@@ -238,6 +242,12 @@ local ENCODER_NAME_MAX_CHARS = 16
 
 local last_encoder_name = {}
 
+local function bytes_to_hex(t)
+  local parts = {}
+  for i = 1, #t do parts[i] = string.format("%02X", t[i]) end
+  return table.concat(parts, " ")
+end
+
 local function send_encoder_name(out, encoder_idx, name)
   -- Truncate + sanitise: device only accepts ASCII 0x20..0x7E (plus a
   -- handful of reassigned control codes we don't use). Anything else
@@ -245,24 +255,39 @@ local function send_encoder_name(out, encoder_idx, name)
   if #name > ENCODER_NAME_MAX_CHARS then
     name = name:sub(1, ENCODER_NAME_MAX_CHARS)
   end
+  local target = ENCODER_NAME_TARGET_BASE + encoder_idx
   local payload = {SET_TEXT_PREFIX[1], SET_TEXT_PREFIX[2], SET_TEXT_PREFIX[3],
                    SET_TEXT_PREFIX[4], SET_TEXT_PREFIX[5], SET_TEXT_PREFIX[6],
-                   ENCODER_NAME_TARGET_BASE + encoder_idx, 0x00}
+                   target, 0x00}
   for i = 1, #name do
     local b = name:byte(i)
     if b < 0x20 or b > 0x7E then b = 0x3F end  -- '?'
     table.insert(payload, b)
   end
+  magda.log.info(string.format(
+    "[launchkey] encoder name: knob=%d target=0x%02X name='%s' port='%s' sysex=F0 %s F7",
+    encoder_idx + 1, target, name, out, bytes_to_hex(payload)))
   magda.midi.send_sysex(out, payload)
 end
 
 local function refresh_encoder_names()
   local out = find_daw_out()
-  if not out then return end
+  if not out then
+    if not refresh_encoder_names_warned then
+      magda.log.warn("[launchkey] refresh_encoder_names: no DAW Out port")
+      refresh_encoder_names_warned = true
+    end
+    return
+  end
+  local has_focus = magda.focused.has_focus()
+  local focused_name = magda.focused.name() or ""
   for i = 0, 7 do
     local name = magda.focused.macro_name(i) or ""
     if name == "" then name = string.format("Macro %d", i + 1) end
     if last_encoder_name[i] ~= name then
+      magda.log.info(string.format(
+        "[launchkey] macro[%d] name change '%s' -> '%s' (focused='%s' has_focus=%s)",
+        i, tostring(last_encoder_name[i]), name, focused_name, tostring(has_focus)))
       last_encoder_name[i] = name
       send_encoder_name(out, i, name)
     end
@@ -337,6 +362,10 @@ local function handle_transport_cc(e)
     cycle_track(-1)
   elseif e.number == TRACK_NEXT then
     cycle_track(1)
+  elseif e.number == DEVICE_PREV then
+    magda.focused.cycle_device(-1)
+  elseif e.number == DEVICE_NEXT then
+    magda.focused.cycle_device(1)
   end
 end
 

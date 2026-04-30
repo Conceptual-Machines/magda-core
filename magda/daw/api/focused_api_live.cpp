@@ -1,6 +1,8 @@
 #include "focused_api_live.hpp"
 
 #include "../core/MacroInfo.hpp"
+#include "../core/RackInfo.hpp"
+#include "../core/SelectionManager.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/aliases/ChainContext.hpp"
 #include "../core/aliases/Target.hpp"
@@ -135,6 +137,60 @@ void FocusedApiLive::engageAutoMap() {
 void FocusedApiLive::clearAutoMap() {
     BindingRegistry::getInstance().removeAllForController(BindingScope::Global,
                                                           luaAutomapSentinel());
+}
+
+void FocusedApiLive::cycleDevice(int direction) {
+    if (direction == 0)
+        return;
+    direction = direction > 0 ? 1 : -1;
+
+    auto& sel = SelectionManager::getInstance();
+    if (!sel.hasChainNodeSelection())
+        return;
+
+    const auto current = sel.getSelectedChainNode();
+    if (!current.isValid() || current.trackId == INVALID_TRACK_ID)
+        return;
+
+    // Only handle top-level chain navigation. If focus is inside a rack
+    // (steps non-empty for the current path), bail rather than guess —
+    // the user can navigate up to the rack header first.
+    const auto type = current.getType();
+    const bool isTopLevel = (type == ChainNodeType::TopLevelDevice) ||
+                            (type == ChainNodeType::Rack && current.steps.size() == 1);
+    if (!isTopLevel)
+        return;
+
+    const auto& elements = TrackManager::getInstance().getChainElements(current.trackId);
+    if (elements.empty())
+        return;
+
+    std::vector<ChainNodePath> chainPaths;
+    chainPaths.reserve(elements.size());
+    for (const auto& elem : elements) {
+        if (isRack(elem)) {
+            chainPaths.push_back(ChainNodePath::rack(current.trackId, getRack(elem).id));
+        } else {
+            chainPaths.push_back(
+                ChainNodePath::topLevelDevice(current.trackId, getDevice(elem).id));
+        }
+    }
+    if (chainPaths.empty())
+        return;
+
+    int currentIdx = -1;
+    for (int i = 0; i < static_cast<int>(chainPaths.size()); ++i) {
+        if (chainPaths[static_cast<size_t>(i)] == current) {
+            currentIdx = i;
+            break;
+        }
+    }
+    if (currentIdx < 0)
+        return;
+
+    const int n = static_cast<int>(chainPaths.size());
+    const int nextIdx = ((currentIdx + direction) % n + n) % n;
+    sel.selectChainNode(chainPaths[static_cast<size_t>(nextIdx)]);
 }
 
 }  // namespace magda

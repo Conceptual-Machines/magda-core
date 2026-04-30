@@ -17,6 +17,7 @@ class FocusedApiLive : public FocusedApi {
     void setMacroValue(int idx, float value) override;
     void engageAutoMap() override;
     void clearAutoMap() override;
+    void cycleDevice(int direction) override;
 };
 
 }  // namespace magda

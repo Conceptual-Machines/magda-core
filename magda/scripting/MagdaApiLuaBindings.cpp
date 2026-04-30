@@ -756,6 +756,12 @@ int lua_focused_clear_auto_map(lua_State* L) {
     return 0;
 }
 
+int lua_focused_cycle_device(lua_State* L) {
+    int direction = static_cast<int>(luaL_checkinteger(L, 1));
+    getApi(L)->focused().cycleDevice(direction);
+    return 0;
+}
+
 // ---- registration ----------------------------------------------------------
 
 // Convenience: attach `funcs` (null-terminated) to the table at the top of
@@ -846,10 +852,15 @@ const FnReg kMidiFns[] = {
 };
 
 const FnReg kFocusedFns[] = {
-    {"has_focus", lua_focused_has_focus},           {"name", lua_focused_name},
-    {"macro_name", lua_focused_macro_name},         {"macro_value", lua_focused_macro_value},
-    {"set_macro", lua_focused_set_macro},           {"auto_map", lua_focused_auto_map},
-    {"clear_auto_map", lua_focused_clear_auto_map}, {nullptr, nullptr},
+    {"has_focus", lua_focused_has_focus},
+    {"name", lua_focused_name},
+    {"macro_name", lua_focused_macro_name},
+    {"macro_value", lua_focused_macro_value},
+    {"set_macro", lua_focused_set_macro},
+    {"auto_map", lua_focused_auto_map},
+    {"clear_auto_map", lua_focused_clear_auto_map},
+    {"cycle_device", lua_focused_cycle_device},
+    {nullptr, nullptr},
 };
 
 const FnReg kTransportFns[] = {

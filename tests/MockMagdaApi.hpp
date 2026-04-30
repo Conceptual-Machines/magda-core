@@ -378,6 +378,11 @@ class MockFocusedApi : public FocusedApi {
     void clearAutoMap() override {
         ++clearAutoMapCalls;
     }
+
+    std::vector<int> cycleDeviceCalls;
+    void cycleDevice(int direction) override {
+        cycleDeviceCalls.push_back(direction);
+    }
 };
 
 class MockTransportApi : public TransportApi {

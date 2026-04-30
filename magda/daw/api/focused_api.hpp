@@ -47,6 +47,13 @@ class FocusedApi {
 
     /** Remove the sentinel automap bindings installed by engageAutoMap. */
     virtual void clearAutoMap() = 0;
+
+    /** Move the focus to the prev/next device in the focused track's
+     *  top-level signal chain, wrapping at either end. `direction` is
+     *  -1 (prev) or +1 (next); other values are clamped to those.
+     *  No-op when no chain node is focused, or when the focused node
+     *  isn't a top-level chain element (e.g. focus is inside a rack). */
+    virtual void cycleDevice(int direction) = 0;
 };
 
 }  // namespace magda
