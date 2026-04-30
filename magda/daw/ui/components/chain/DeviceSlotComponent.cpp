@@ -1282,6 +1282,31 @@ void DeviceSlotComponent::paint(juce::Graphics& g) {
 // device-specific overlay code that used to live here was the dot-painting
 // logic, which has been moved to the base.
 
+juce::Point<float> DeviceSlotComponent::getControllerIndicatorAnchor() const {
+    // Drum Grid: anchor next to the orange "MDG2000" logo we paint in
+    // paint() rather than to the (empty) nameLabel_. Position has to
+    // match the conditions under which the logo actually renders;
+    // otherwise we'd float a dot in dead space.
+    if (isDrumGrid_ && !collapsed_ && getHeaderHeight() > 0 && modButton_ &&
+        modButton_->isVisible()) {
+        auto modBounds = modButton_->getBounds();
+        const float textStartX = static_cast<float>(modBounds.getRight() + 4);
+        const float textCentreY = static_cast<float>(modBounds.getCentreY());
+
+        // Microgramma 11pt — same font paint() draws "MDG2000" with.
+        auto font = FontManager::getInstance().getMicrogrammaFont(11.0f);
+        juce::GlyphArrangement glyphs;
+        glyphs.addLineOfText(font, "MDG2000", 0.0f, 0.0f);
+        const float logoWidth = glyphs.getBoundingBox(0, -1, true).getWidth();
+
+        constexpr float gapAfterLogo = 8.0f;
+        return {textStartX + logoWidth + gapAfterLogo, textCentreY};
+    }
+
+    // Other devices: keep the base behaviour (anchor to nameLabel_).
+    return NodeComponent::getControllerIndicatorAnchor();
+}
+
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
     // Draw separator line to the left of the meter/note strip (below content header)
     if (!collapsed_) {

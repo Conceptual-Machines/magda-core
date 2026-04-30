@@ -254,6 +254,13 @@ class NodeComponent : public juce::Component,
     bool hasAutomapBindings_ = false;
     void refreshControllerIndicators();
 
+    // Anchor for the controller-indicator dot(s). Default reads
+    // nameLabel_'s rendered text width; subclasses with a custom logo
+    // (Drum Grid's "MDG2000" etc.) override this to place the dot next to
+    // their own visible text rather than the (possibly empty) label.
+    // Returning a negative x suppresses dot painting.
+    virtual juce::Point<float> getControllerIndicatorAnchor() const;
+
     // Layout constants
     static constexpr int HEADER_HEIGHT = 24;
     static constexpr int BUTTON_SIZE = 18;

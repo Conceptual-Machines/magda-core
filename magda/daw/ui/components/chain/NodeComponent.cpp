@@ -283,34 +283,28 @@ void NodeComponent::paintOverChildren(juce::Graphics& g) {
 
     // Controller-binding indicator dots, drawn next to the node name. Two
     // dots side-by-side when both apply: automap (green) then pinned
-    // (orange). Skipped when neither applies, when the name label is
-    // hidden (collapsed mode), OR when the label has no text — devices
-    // like Drum Grid clear the label and paint a custom logo elsewhere,
-    // so anchoring to the (empty) label bounds would dump the dot into
-    // unrelated header space.
-    const auto& labelText = nameLabel_.getText();
-    if ((hasAutomapBindings_ || hasPinnedBindings_) && nameLabel_.isVisible() &&
-        labelText.isNotEmpty()) {
-        auto labelBounds = nameLabel_.getBounds();
-        juce::GlyphArrangement glyphs;
-        glyphs.addLineOfText(nameLabel_.getFont(), labelText, 0.0f, 0.0f);
-        float textWidth = glyphs.getBoundingBox(0, -1, true).getWidth();
+    // (orange). Anchor comes from getControllerIndicatorAnchor() so
+    // subclasses with a custom logo (Drum Grid's "MDG2000") can place the
+    // dot relative to their own visible text rather than the empty
+    // nameLabel_. A negative-x anchor suppresses dot painting.
+    if (hasAutomapBindings_ || hasPinnedBindings_) {
+        auto anchor = getControllerIndicatorAnchor();
+        if (anchor.x >= 0.0f) {
+            constexpr float dotSize = 6.0f;
+            constexpr float gapBetweenDots = 5.0f;
 
-        constexpr float dotSize = 6.0f;
-        constexpr float gapAfterText = 12.0f;
-        constexpr float gapBetweenDots = 5.0f;
+            float x = anchor.x;
+            float y = anchor.y - dotSize * 0.5f;
 
-        float x = static_cast<float>(labelBounds.getX()) + textWidth + gapAfterText;
-        float y = static_cast<float>(labelBounds.getCentreY()) - dotSize * 0.5f;
-
-        if (hasAutomapBindings_) {
-            g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.95f));
-            g.fillEllipse(x, y, dotSize, dotSize);
-            x += dotSize + gapBetweenDots;
-        }
-        if (hasPinnedBindings_) {
-            g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.9f));
-            g.fillEllipse(x, y, dotSize, dotSize);
+            if (hasAutomapBindings_) {
+                g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN).withAlpha(0.95f));
+                g.fillEllipse(x, y, dotSize, dotSize);
+                x += dotSize + gapBetweenDots;
+            }
+            if (hasPinnedBindings_) {
+                g.setColour(juce::Colour(0xFFFF6B35).withAlpha(0.9f));
+                g.fillEllipse(x, y, dotSize, dotSize);
+            }
         }
     }
 
@@ -839,6 +833,24 @@ void NodeComponent::setNodePath(const magda::ChainNodePath& path) {
     // Path change → re-evaluate controller dots; the previous path's
     // resolver match no longer applies.
     refreshControllerIndicators();
+}
+
+juce::Point<float> NodeComponent::getControllerIndicatorAnchor() const {
+    // Default: position the dot just to the right of nameLabel_'s rendered
+    // text, vertically centred on the label. Subclasses with a custom
+    // logo (Drum Grid, etc.) override this. A negative x suppresses
+    // painting (used when there's no visible name to anchor to).
+    if (!nameLabel_.isVisible() || nameLabel_.getText().isEmpty())
+        return {-1.0f, 0.0f};
+
+    auto labelBounds = nameLabel_.getBounds();
+    juce::GlyphArrangement glyphs;
+    glyphs.addLineOfText(nameLabel_.getFont(), nameLabel_.getText(), 0.0f, 0.0f);
+    float textWidth = glyphs.getBoundingBox(0, -1, true).getWidth();
+
+    constexpr float gapAfterText = 12.0f;
+    return {static_cast<float>(labelBounds.getX()) + textWidth + gapAfterText,
+            static_cast<float>(labelBounds.getCentreY())};
 }
 
 void NodeComponent::refreshControllerIndicators() {

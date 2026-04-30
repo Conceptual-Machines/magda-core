@@ -107,6 +107,12 @@ class DeviceSlotComponent : public NodeComponent,
     // No paintOverChildren override — base class handles dim, selection, and
     // controller-indicator dots uniformly across device + rack nodes.
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
+
+    // Drum Grid clears the standard nameLabel_ and paints its custom
+    // "MDG2000" logo in paint(); anchor the dot to that logo's right
+    // edge so it sits next to the visible text rather than the empty
+    // label bounds.
+    juce::Point<float> getControllerIndicatorAnchor() const override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
     void mouseDrag(const juce::MouseEvent& e) override;
