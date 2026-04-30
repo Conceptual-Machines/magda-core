@@ -372,6 +372,21 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     void rebuildSidechainLFOCache();
 
     /**
+     * @brief Copy each TE LFO's current phase + value into its MAGDA ModInfo.
+     *
+     * Single source of truth fix: instead of running an independent visual
+     * LFO simulation in ModulatorEngine that drifts against TE's audio LFO
+     * (different start times, no phase sync), overlay TE's atomic-loaded
+     * `getCurrentPhase()` / `getCurrentValue()` onto every ModInfo so the
+     * UI marker tracks the audio exactly. Called from ModulatorEngine's
+     * post-update hook after the local sim's trigger/running tracking has
+     * run. Walks track-level mods, top-level device mods, instrument-rack
+     * inner mods, and rack-internal mods (delegates to RackSyncManager
+     * for the last). Safe to call from the message thread.
+     */
+    void syncLFOValuesToVisuals();
+
+    /**
      * @brief Prepare LFO assignments for offline rendering.
      *
      * Sets all MIDI/Audio-triggered LFO assignment values to their link.amount
@@ -396,12 +411,12 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     /**
      * @brief Route a macro value change to the appropriate TE infrastructure
      * @param trackId The track containing the macro
-     * @param isRack true = rack macro (id is RackId), false = device macro (id is DeviceId)
-     * @param id RackId or DeviceId depending on isRack
+     * @param scope ChainScope::Track / ::Rack / ::Device — disambiguates ownerId
+     * @param ownerId TrackId / RackId / DeviceId, picked by `scope`
      * @param macroIndex Index into the macro array
      * @param value Normalized value (0.0 to 1.0)
      */
-    void setMacroValue(TrackId trackId, bool isRack, int id, int macroIndex, float value);
+    void setMacroValue(TrackId trackId, ChainScope scope, int ownerId, int macroIndex, float value);
 
     /**
      * @brief Resolve an AutomationTarget::Macro to its TE MacroParameter for
@@ -423,13 +438,6 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
                                                                  const ChainNodePath& devicePath,
                                                                  ModId modId,
                                                                  int modParamIndex) const;
-
-    /**
-     * @brief Sync device-level macros to TE MacroParameters
-     * Creates TE MacroParameters and assignments for all device macros on a track.
-     * Called from syncTrackPlugins after devices are created.
-     */
-    void syncDeviceMacros(TrackId trackId, te::AudioTrack* teTrack);
 
     /**
      * @brief Sync sidechain routing for devices on a track
@@ -486,7 +494,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     /**
      * @brief Set a device macro parameter value on the TE MacroParameter
      */
-    void setDeviceMacroValue(DeviceId deviceId, int macroIndex, float value);
+    void setMacroValue(DeviceId deviceId, int macroIndex, float value);
 
     /**
      * @brief Sync multi-out tracks for a DrumGrid device
@@ -554,11 +562,16 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
 
     // Per-device consolidated state. All device-scoped data lives here,
     // keyed by DeviceId. Cleanup is a single erase().
+    //
+    // Step 2 of issue #1131: `modifiers` switched from a vector to a map keyed
+    // by ModId so it matches RackSyncManager's `innerModifiers` shape. The
+    // unified ModifierSyncWalker reads/writes both call sites through the
+    // same `ModifierSyncState` view.
     struct SyncedDevice {
-        TrackId trackId = INVALID_TRACK_ID;          // MAGDA track that owns this device
-        te::Plugin::Ptr plugin;                      // Always set on creation
-        std::unique_ptr<DeviceProcessor> processor;  // nullptr until async load completes
-        std::vector<te::Modifier::Ptr> modifiers;    // Can be empty
+        TrackId trackId = INVALID_TRACK_ID;            // MAGDA track that owns this device
+        te::Plugin::Ptr plugin;                        // Always set on creation
+        std::unique_ptr<DeviceProcessor> processor;    // nullptr until async load completes
+        std::map<ModId, te::Modifier::Ptr> modifiers;  // Can be empty
         std::map<ModId, std::unique_ptr<CurveSnapshotHolder>>
             curveSnapshots;                              // ModId-only (device scope implicit)
         std::map<int, te::MacroParameter*> macroParams;  // Can be empty
@@ -572,7 +585,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
 
     // Track-level mod state (for track-scope modulators that target any device)
     struct TrackModState {
-        std::vector<te::Modifier::Ptr> modifiers;
+        std::map<ModId, te::Modifier::Ptr> modifiers;
         std::map<ModId, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
     };
     std::map<TrackId, TrackModState> trackModStates_;

@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "../core/AutomationInfo.hpp"
+#include "../core/ChainNode.hpp"
 #include "../core/TypeIds.hpp"
 
 namespace magda {
@@ -65,7 +66,8 @@ class AutomationRecordingEngine {
     // Forwarded from AudioBridge's TrackManagerListener callbacks
     void onDeviceParameterChanged(DeviceId deviceId, int paramIndex, float rawValue);
     void onTrackPropertyChanged(int trackId);
-    void onMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex, float value);
+    void onMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
+                             float value);
     void onModParameterValueChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,
                                     int paramIndex, float value);
 

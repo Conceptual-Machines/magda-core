@@ -785,6 +785,30 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
 
 void ParamSlotComponent::mouseUp(const juce::MouseEvent& /*e*/) {
     if (isLinkModeDrag_) {
+        // Click-to-link fallback: if the user pressed and released without
+        // dragging, the mouseDrag path that creates the link never ran, so
+        // we'd silently leave link mode with no link. Create the link here
+        // with a sensible default amount so a plain click in link mode
+        // actually links the param.
+        constexpr float kDefaultLinkAmount = 0.3f;
+        const bool noDragHappened = linkModeDragStartAmount_ == linkModeDragCurrentAmount_;
+        if (noDragHappened) {
+            magda::ModTarget modTarget{deviceId_, paramIndex_};
+            magda::MacroTarget macroTarget{deviceId_, paramIndex_};
+            if (activeMod_.isValid()) {
+                const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_,
+                                                   availableRackMods_, availableTrackMods_);
+                if (modPtr && !modPtr->getLink(modTarget) && onModLinkedWithAmount)
+                    onModLinkedWithAmount(activeMod_.modIndex, modTarget, kDefaultLinkAmount);
+            } else if (activeMacro_.isValid()) {
+                const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
+                                                       availableRackMacros_, availableTrackMacros_);
+                if (macroPtr && !macroPtr->getLink(macroTarget) && onMacroLinkedWithAmount)
+                    onMacroLinkedWithAmount(activeMacro_.macroIndex, macroTarget,
+                                            kDefaultLinkAmount);
+            }
+        }
+
         isLinkModeDrag_ = false;
         amountLabel_.setVisible(false);
 

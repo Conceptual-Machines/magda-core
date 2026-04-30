@@ -3151,11 +3151,32 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
     // "Add New Lane" submenu with common targets
     juce::PopupMenu addNewMenu;
 
+    // Tick a submenu item if a lane already exists for the target and is
+    // visible — mirrors the existing-lanes section above so the user can see
+    // at a glance which targets are already on screen.
+    auto isTargetShown = [&automationManager](const AutomationTarget& t) {
+        auto laneId = automationManager.getLaneForTarget(t);
+        if (laneId == INVALID_AUTOMATION_LANE_ID)
+            return false;
+        const auto* lane = automationManager.getLane(laneId);
+        return lane != nullptr && lane->visible;
+    };
+
     // Track volume
-    addNewMenu.addItem(1, "Track Volume");
+    {
+        AutomationTarget tvTarget;
+        tvTarget.type = AutomationTargetType::TrackVolume;
+        tvTarget.trackId = trackId;
+        addNewMenu.addItem(1, "Track Volume", true, isTargetShown(tvTarget));
+    }
 
     // Track pan
-    addNewMenu.addItem(2, "Track Pan");
+    {
+        AutomationTarget tpTarget;
+        tpTarget.type = AutomationTargetType::TrackPan;
+        tpTarget.trackId = trackId;
+        addNewMenu.addItem(2, "Track Pan", true, isTargetShown(tpTarget));
+    }
 
     // Build device parameter targets from chain elements
     // IDs 10+ are indices into deviceParamTargets (shared path used for
@@ -3164,6 +3185,61 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
     constexpr int kDeviceParamBase = 10;
 
     auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
+
+    // Track-scope macros + modulators — grouped right under Track Volume / Pan
+    // so they're easy to find without diving into a device's submenu.
+    if (trackInfo) {
+        ChainNodePath trackPath = ChainNodePath::trackLevel(trackId);
+
+        // Track Macros submenu
+        if (!trackInfo->macros.empty()) {
+            juce::PopupMenu trackMacrosMenu;
+            bool any = false;
+            for (int m = 0; m < static_cast<int>(trackInfo->macros.size()); ++m) {
+                const auto& macro = trackInfo->macros[static_cast<size_t>(m)];
+                if (macro.name.isEmpty())
+                    continue;
+                AutomationTarget target;
+                target.type = AutomationTargetType::Macro;
+                target.trackId = trackId;
+                target.devicePath = trackPath;
+                target.macroIndex = m;
+                target.paramName = macro.name;
+                int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                bool ticked = isTargetShown(target);
+                deviceParamTargets->push_back(target);
+                trackMacrosMenu.addItem(itemId, macro.name, true, ticked);
+                any = true;
+            }
+            if (any)
+                addNewMenu.addSubMenu("Track Macros", trackMacrosMenu);
+        }
+
+        // Track Modulators submenu — one Rate lane per modifier; scale/labels
+        // switch on tempoSync so a single entry covers both Hz and sync-division.
+        if (!trackInfo->mods.empty()) {
+            juce::PopupMenu trackModsMenu;
+            bool any = false;
+            for (const auto& mod : trackInfo->mods) {
+                if (!mod.enabled)
+                    continue;
+                AutomationTarget target;
+                target.type = AutomationTargetType::ModParameter;
+                target.trackId = trackId;
+                target.devicePath = trackPath;
+                target.modId = mod.id;
+                target.modParamIndex = 0;  // Rate
+                target.paramName = mod.name + " Rate";
+                int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                bool ticked = isTargetShown(target);
+                deviceParamTargets->push_back(target);
+                trackModsMenu.addItem(itemId, mod.name + " Rate", true, ticked);
+                any = true;
+            }
+            if (any)
+                addNewMenu.addSubMenu("Track Modulators", trackModsMenu);
+        }
+    }
 
     // Send levels — one entry per existing aux send on this track.
     if (trackInfo && !trackInfo->sends.empty()) {
@@ -3183,7 +3259,7 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
             int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
             deviceParamTargets->push_back(target);
-            addNewMenu.addItem(itemId, destName);
+            addNewMenu.addItem(itemId, destName, true, isTargetShown(target));
         }
     }
 
@@ -3222,9 +3298,11 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
                                 paramsMenu.addItem(itemId,
-                                                   device.parameters[static_cast<size_t>(i)].name);
+                                                   device.parameters[static_cast<size_t>(i)].name,
+                                                   true, ticked);
                             }
                             deviceMenu.addSubMenu("Params", paramsMenu);
                         }
@@ -3249,8 +3327,9 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                 target.paramName = device.name + ": " + mod.name + " Rate";
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                modsMenu.addItem(itemId, mod.name + " Rate");
+                                modsMenu.addItem(itemId, mod.name + " Rate", true, ticked);
                                 any = true;
                             }
                             if (any)
@@ -3274,8 +3353,9 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                macrosMenu.addItem(itemId, macro.name);
+                                macrosMenu.addItem(itemId, macro.name, true, ticked);
                                 any = true;
                             }
                             if (any)
@@ -3306,8 +3386,9 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                 target.paramName = rack.name + ": " + mod.name + " Rate";
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                modsMenu.addItem(itemId, mod.name + " Rate");
+                                modsMenu.addItem(itemId, mod.name + " Rate", true, ticked);
                                 any = true;
                             }
                             if (any)
@@ -3331,8 +3412,9 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
+                                bool ticked = isTargetShown(target);
                                 deviceParamTargets->push_back(target);
-                                macrosMenu.addItem(itemId, macro.name);
+                                macrosMenu.addItem(itemId, macro.name, true, ticked);
                                 any = true;
                             }
                             if (any)
@@ -3365,32 +3447,6 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
 
         ChainNodePath rootPath = ChainNodePath::trackLevel(trackId);
         buildMenu(trackInfo->chainElements, rootPath, addNewMenu);
-
-        // Track-scope modifier entries — siblings of the chain content,
-        // grouped under a "Track Modulators" submenu when present. One Rate
-        // lane per mod; the lane's scale/labels switch on tempoSync so a
-        // single entry covers both Hz and sync-division automation.
-        if (!trackInfo->mods.empty()) {
-            juce::PopupMenu trackModsMenu;
-            bool any = false;
-            for (const auto& mod : trackInfo->mods) {
-                if (!mod.enabled)
-                    continue;
-                AutomationTarget target;
-                target.type = AutomationTargetType::ModParameter;
-                target.trackId = trackId;
-                target.devicePath = rootPath;  // track-level
-                target.modId = mod.id;
-                target.modParamIndex = 0;  // Rate
-                target.paramName = mod.name + " Rate";
-                int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
-                deviceParamTargets->push_back(target);
-                trackModsMenu.addItem(itemId, mod.name + " Rate");
-                any = true;
-            }
-            if (any)
-                addNewMenu.addSubMenu("Track Modulators", trackModsMenu);
-        }
     }
 
     menu.addSubMenu("Add New Lane...", addNewMenu);

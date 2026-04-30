@@ -10,6 +10,8 @@
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/controllers/BindingRegistry.hpp"
+#include "core/controllers/ControllerRegistry.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
@@ -32,7 +34,10 @@ class MacroEditorPanel;
  * │ [Mods Panel]  [Content]  [Gain Panel]                   │ ← Side panels (optional)
  * └─────────────────────────────────────────────────────────┘
  */
-class NodeComponent : public juce::Component, public magda::SelectionManagerListener {
+class NodeComponent : public juce::Component,
+                      public magda::SelectionManagerListener,
+                      public magda::BindingRegistryListener,
+                      public magda::ControllerRegistryListener {
   public:
     NodeComponent();
     ~NodeComponent() override;
@@ -48,6 +53,18 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
     void chainNodeReselected(const magda::ChainNodePath& path) override;
     void paramSelectionChanged(const magda::ParamSelection& selection) override;
+
+    // BindingRegistryListener / ControllerRegistryListener — bindings or
+    // a controller's enabled state can change which dot lights up on this
+    // node's header. Also fires when the focused-macro-owner shifts (e.g.
+    // user selects a different rack), since hasResolverBindingForDevice()
+    // resolves through the live ChainContext.
+    void bindingRegistryChanged(magda::BindingScope) override {
+        refreshControllerIndicators();
+    }
+    void controllerRegistryChanged() override {
+        refreshControllerIndicators();
+    }
 
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
@@ -226,6 +243,24 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     // Unique path for centralized selection
     magda::ChainNodePath nodePath_;
 
+    // Controller-binding indicator state (drawn as small dots in the header
+    // by paintOverChildren). Recomputed by refreshControllerIndicators() in
+    // response to BindingRegistry / ControllerRegistry / chain-focus changes.
+    //   pinned (orange) — any user-mapped binding (Static or Alias) for this
+    //                     node. Survives focus changes.
+    //   automap (green) — at least one resolver binding (e.g. focused.macro)
+    //                     currently resolves to this node. Tracks focus.
+    bool hasPinnedBindings_ = false;
+    bool hasAutomapBindings_ = false;
+    void refreshControllerIndicators();
+
+    // Anchor for the controller-indicator dot(s). Default reads
+    // nameLabel_'s rendered text width; subclasses with a custom logo
+    // (Drum Grid's "MDG2000" etc.) override this to place the dot next to
+    // their own visible text rather than the (possibly empty) label.
+    // Returning a negative x suppresses dot painting.
+    virtual juce::Point<float> getControllerIndicatorAnchor() const;
+
     // Layout constants
     static constexpr int HEADER_HEIGHT = 24;
     static constexpr int BUTTON_SIZE = 18;
@@ -321,6 +356,13 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     // can force a redraw when the macro value was mutated externally — the knob
     // slider only auto-updates on local mouse interaction.
     void updateMacroPanel();
+
+    /// Refresh both the macro and mods panels (each guarded by its own
+    /// visibility flag). Use this after any operation that affects both
+    /// panels' contents — e.g. adding/removing a mod can invalidate the
+    /// macro-link menu's mod-target list. Centralises what the pre-step-4
+    /// call sites did inline.
+    void refreshPanels();
 
     // Lightweight variant for high-rate external writes (e.g. controller
     // automap) — updates just one knob's displayed value without rebuilding

@@ -77,8 +77,8 @@ class TrackChainContent : public PanelContent,
     void trackPropertyChanged(int trackId) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
     void trackDevicesChanged(magda::TrackId trackId) override;
-    void macroValueChanged(magda::TrackId trackId, bool isRack, int id, int macroIndex,
-                           float value) override;
+    void macroValueChanged(magda::TrackId trackId, magda::ChainScope scope, int ownerId,
+                           int macroIndex, float value) override;
 
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;

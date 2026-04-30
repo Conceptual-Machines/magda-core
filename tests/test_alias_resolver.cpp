@@ -369,6 +369,61 @@ TEST_CASE("FocusedDeviceMacroResolver returns DeviceMacro owner", "[aliases][res
     REQUIRE(result->devicePath == path);
 }
 
+TEST_CASE("FocusedDeviceMacroResolver targets focused rack's macros",
+          "[aliases][resolver][rack-automap]") {
+    // When the user focuses a user-created rack, automap should bind
+    // controller knobs to the rack's macros.
+    auto rackPath = ChainNodePath::rack(1, /*rackId=*/7);
+    FixedChainContext ctx;
+    ctx.setFocusedMacroOwner(rackPath);
+
+    const auto* resolver = ResolverRegistry::getInstance().findResolver("focused.macro");
+    REQUIRE(resolver != nullptr);
+
+    juce::StringPairArray args;
+    args.set("macroIndex", "2");
+    auto result = resolver->resolve(args, ctx);
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->owner == StaticTarget::Owner::DeviceMacro);
+    REQUIRE(result->paramIndex == 2);
+    REQUIRE(result->devicePath == rackPath);
+    REQUIRE(result->devicePath.getType() == ChainNodeType::Rack);
+}
+
+TEST_CASE("FocusedDeviceMacroResolver consumes focusedMacroOwner, not focusedDevice",
+          "[aliases][resolver][rack-automap]") {
+    // The resolver must read focusedMacroOwner() exclusively. Set the
+    // two getters to different paths and verify the resolver follows
+    // the macro-owner one. This documents the contract — the live
+    // path-walk logic (rack/chain/device → owner) lives in
+    // DefaultChainContext::focusedMacroOwner() and is not exercised here.
+    auto rackPath = ChainNodePath::rack(1, /*rackId=*/7);
+    auto unrelatedDevicePath = makePath(1, /*deviceId=*/55);
+    FixedChainContext ctx;
+    ctx.setFocusedMacroOwner(rackPath);
+    ctx.setFocusedDevice(unrelatedDevicePath);
+
+    const auto* resolver = ResolverRegistry::getInstance().findResolver("focused.macro");
+    auto result = resolver->resolve({}, ctx);
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->devicePath == rackPath);
+    REQUIRE(result->devicePath != unrelatedDevicePath);
+}
+
+TEST_CASE("FocusedDeviceMacroResolver returns nullopt when no macro owner is focused",
+          "[aliases][resolver][rack-automap]") {
+    // Inner-device focus / track focus / nothing focused all collapse to
+    // an invalid focusedMacroOwner; the resolver must produce no target
+    // (so no automap binding fires).
+    FixedChainContext ctx;  // default: invalid macro owner
+
+    const auto* resolver = ResolverRegistry::getInstance().findResolver("focused.macro");
+    auto result = resolver->resolve({}, ctx);
+    REQUIRE_FALSE(result.has_value());
+}
+
 TEST_CASE("StaticTarget JSON round-trip preserves DeviceMacro owner",
           "[aliases][resolver][owner]") {
     StaticTarget st;

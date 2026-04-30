@@ -1,16 +1,58 @@
 #include "MacroKnobComponent.hpp"
 
+#include <stdexcept>
+
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+// Build the lane label for a macro, matching the "Add New Lane" submenu in
+// TrackHeadersPanel: rack/device-scope macros are prefixed with the owner
+// ("<owner>: <macro>"); track-scope macros are NOT prefixed, because the lane
+// already sits under the track's header and tracks are often auto-named to
+// match their primary device, which would make the prefix look redundant or
+// misleading (e.g. "4OSC Synth: Macro 1" on a track named "4OSC Synth").
+juce::String buildQualifiedMacroName(const magda::ChainNodePath& path, int macroIndex,
+                                     const juce::String& macroName) {
+    juce::String macroDisplay =
+        macroName.isNotEmpty() ? macroName : "Macro " + juce::String(macroIndex + 1);
+
+    juce::String ownerName;
+    auto& tm = magda::TrackManager::getInstance();
+    switch (path.getType()) {
+        case magda::ChainNodeType::Track:
+            return macroDisplay;
+        case magda::ChainNodeType::Rack:
+            if (auto* rack = tm.getRackByPath(path))
+                ownerName = rack->name;
+            break;
+        case magda::ChainNodeType::TopLevelDevice:
+        case magda::ChainNodeType::Device:
+            if (auto* dev = tm.getDeviceInChainByPath(path))
+                ownerName = dev->name;
+            break;
+        case magda::ChainNodeType::None:
+        case magda::ChainNodeType::Chain:
+            throw std::runtime_error(
+                "buildQualifiedMacroName: macro path has no macro-bearing scope");
+    }
+
+    if (ownerName.isEmpty())
+        throw std::runtime_error("buildQualifiedMacroName: failed to resolve owner for macro path");
+
+    return ownerName + ": " + macroDisplay;
+}
+}  // namespace
 
 MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex) {
     // Initialize macro with default values
@@ -80,7 +122,7 @@ void MacroKnobComponent::updateAutomationTarget() {
     target.trackId = parentPath_.trackId;
     target.devicePath = parentPath_;
     target.macroIndex = macroIndex_;
-    target.paramName = currentMacro_.name;
+    target.paramName = buildQualifiedMacroName(parentPath_, macroIndex_, currentMacro_.name);
     valueSlider_.setAutomationTarget(target);
 }
 
@@ -385,9 +427,38 @@ void MacroKnobComponent::showLinkMenu() {
         menu.addSubMenu("Modulators", modsMenu);
     }
 
-    // Add submenu for each available device
+    // Add submenu for each available device, optionally grouped by chain.
+    //
+    // RackComponent::getAvailableDevices emits a sentinel entry
+    // (deviceId == INVALID_DEVICE_ID) before each chain's devices to mark
+    // a chain boundary. When we see one we open a per-chain submenu and
+    // route subsequent device entries into it; outside any chain (devices
+    // on a track, or when the targets come from a non-rack owner) the
+    // device submenu is added directly to the top-level menu.
     int itemId = 1;
+    juce::PopupMenu* destination = &menu;
+    juce::PopupMenu chainMenu;
+    juce::String chainTitle;
+    auto flushChain = [&]() {
+        if (destination != &menu) {
+            menu.addSubMenu(chainTitle, chainMenu);
+            chainMenu = juce::PopupMenu{};
+            destination = &menu;
+        }
+    };
+
     for (const auto& [deviceId, deviceName] : availableTargets_) {
+        if (deviceId == magda::INVALID_DEVICE_ID) {
+            // Chain-header sentinel — close any open chain submenu and
+            // start collecting devices into a new one named after the
+            // chain.
+            flushChain();
+            chainTitle = deviceName;
+            chainMenu = juce::PopupMenu{};
+            destination = &chainMenu;
+            continue;
+        }
+
         juce::PopupMenu deviceMenu;
 
         // Get real param names for this device, fall back to "Parameter N"
@@ -410,8 +481,9 @@ void MacroKnobComponent::showLinkMenu() {
             itemId++;
         }
 
-        menu.addSubMenu(deviceName, deviceMenu);
+        destination->addSubMenu(deviceName, deviceMenu);
     }
+    flushChain();
 
     menu.addSeparator();
 
@@ -527,8 +599,8 @@ void MacroKnobComponent::showLinkMenu() {
             target.trackId = safeThis->parentPath_.trackId;
             target.devicePath = safeThis->parentPath_;
             target.macroIndex = safeThis->macroIndex_;
-            if (safeThis->currentMacro_.name.isNotEmpty())
-                target.paramName = safeThis->currentMacro_.name;
+            target.paramName = buildQualifiedMacroName(safeThis->parentPath_, safeThis->macroIndex_,
+                                                       safeThis->currentMacro_.name);
             auto& mgr = magda::AutomationManager::getInstance();
             auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
             mgr.setLaneVisible(laneId, true);

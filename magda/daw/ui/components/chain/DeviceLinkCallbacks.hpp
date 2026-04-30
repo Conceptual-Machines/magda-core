@@ -54,8 +54,8 @@ void wireModMacroCallbacks(Widget* widget,
         auto nodePath = self->nodePath_;
         auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
         if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
-            magda::TrackManager::getInstance().setDeviceModTarget(nodePath, modIndex, target);
-            magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath, modIndex, target,
+            magda::TrackManager::getInstance().setModTarget(nodePath, modIndex, target);
+            magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target,
                                                                       amount);
             if (!self)
                 return;
@@ -69,13 +69,13 @@ void wireModMacroCallbacks(Widget* widget,
         } else if (activeModSelection.isValid() &&
                    activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
             auto trackId = activeModSelection.parentPath.trackId;
-            magda::TrackManager::getInstance().setTrackModTarget(trackId, modIndex, target);
-            magda::TrackManager::getInstance().setTrackModLinkAmount(trackId, modIndex, target,
+            magda::TrackManager::getInstance().setModTarget(ChainNodePath::trackLevel(trackId), modIndex, target);
+            magda::TrackManager::getInstance().setModLinkAmount(ChainNodePath::trackLevel(trackId), modIndex, target,
                                                                      amount);
         } else if (activeModSelection.isValid()) {
-            magda::TrackManager::getInstance().setRackModTarget(activeModSelection.parentPath,
+            magda::TrackManager::getInstance().setModTarget(activeModSelection.parentPath,
                                                                 modIndex, target);
-            magda::TrackManager::getInstance().setRackModLinkAmount(activeModSelection.parentPath,
+            magda::TrackManager::getInstance().setModLinkAmount(activeModSelection.parentPath,
                                                                     modIndex, target, amount);
         }
         if (self)
@@ -89,7 +89,7 @@ void wireModMacroCallbacks(Widget* widget,
         auto self = safeThis;
         if (!self)
             return;
-        magda::TrackManager::getInstance().removeDeviceModLink(self->nodePath_, modIndex, target);
+        magda::TrackManager::getInstance().removeModLink(self->nodePath_, modIndex, target);
         if (!self)
             return;
         self->updateParamModulation();
@@ -105,7 +105,7 @@ void wireModMacroCallbacks(Widget* widget,
             return;
         auto trackId = self->nodePath_.trackId;
         if (trackId != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().removeTrackModLink(trackId, modIndex, target);
+            magda::TrackManager::getInstance().removeModLink(ChainNodePath::trackLevel(trackId), modIndex, target);
         if (!self)
             return;
         self->updateParamModulation();
@@ -123,16 +123,16 @@ void wireModMacroCallbacks(Widget* widget,
         auto nodePath = self->nodePath_;
         auto activeModSelection = magda::LinkModeManager::getInstance().getModInLinkMode();
         if (activeModSelection.isValid() && activeModSelection.parentPath == nodePath) {
-            magda::TrackManager::getInstance().setDeviceModLinkAmount(nodePath, modIndex, target,
+            magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target,
                                                                       amount);
             if (self)
                 self->updateModsPanel();
         } else if (activeModSelection.isValid() &&
                    activeModSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            magda::TrackManager::getInstance().setTrackModLinkAmount(
-                activeModSelection.parentPath.trackId, modIndex, target, amount);
+            magda::TrackManager::getInstance().setModLinkAmount(ChainNodePath::trackLevel(
+                activeModSelection.parentPath.trackId), modIndex, target, amount);
         } else if (activeModSelection.isValid()) {
-            magda::TrackManager::getInstance().setRackModLinkAmount(activeModSelection.parentPath,
+            magda::TrackManager::getInstance().setModLinkAmount(activeModSelection.parentPath,
                                                                     modIndex, target, amount);
         }
         if (self)
@@ -177,8 +177,8 @@ void wireModMacroCallbacks(Widget* widget,
         auto nodePath = self->nodePath_;
         auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
         if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
-            magda::TrackManager::getInstance().setDeviceMacroTarget(nodePath, macroIndex, target);
-            magda::TrackManager::getInstance().setDeviceMacroLinkAmount(nodePath, macroIndex,
+            magda::TrackManager::getInstance().setMacroTarget(nodePath, macroIndex, target);
+            magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex,
                                                                         target, amount);
             if (!self)
                 return;
@@ -192,13 +192,13 @@ void wireModMacroCallbacks(Widget* widget,
         } else if (activeMacroSelection.isValid() &&
                    activeMacroSelection.parentPath.getType() == magda::ChainNodeType::Track) {
             auto trackId = activeMacroSelection.parentPath.trackId;
-            magda::TrackManager::getInstance().setTrackMacroTarget(trackId, macroIndex, target);
-            magda::TrackManager::getInstance().setTrackMacroLinkAmount(trackId, macroIndex, target,
+            magda::TrackManager::getInstance().setMacroTarget(ChainNodePath::trackLevel(trackId), macroIndex, target);
+            magda::TrackManager::getInstance().setMacroLinkAmount(ChainNodePath::trackLevel(trackId), macroIndex, target,
                                                                        amount);
         } else if (activeMacroSelection.isValid()) {
-            magda::TrackManager::getInstance().setRackMacroTarget(activeMacroSelection.parentPath,
+            magda::TrackManager::getInstance().setMacroTarget(activeMacroSelection.parentPath,
                                                                   macroIndex, target);
-            magda::TrackManager::getInstance().setRackMacroLinkAmount(
+            magda::TrackManager::getInstance().setMacroLinkAmount(
                 activeMacroSelection.parentPath, macroIndex, target, amount);
         }
         if (self)
@@ -212,7 +212,7 @@ void wireModMacroCallbacks(Widget* widget,
         auto self = safeThis;
         if (!self)
             return;
-        magda::TrackManager::getInstance().removeDeviceMacroLink(self->nodePath_, macroIndex,
+        magda::TrackManager::getInstance().removeMacroLink(self->nodePath_, macroIndex,
                                                                  target);
         if (self) {
             self->updateParamModulation();
@@ -229,7 +229,7 @@ void wireModMacroCallbacks(Widget* widget,
             return;
         auto trackId = self->nodePath_.trackId;
         if (trackId != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().removeTrackMacroLink(trackId, macroIndex, target);
+            magda::TrackManager::getInstance().removeMacroLink(ChainNodePath::trackLevel(trackId), macroIndex, target);
         if (!self)
             return;
         self->updateParamModulation();
@@ -245,7 +245,7 @@ void wireModMacroCallbacks(Widget* widget,
             return;
         auto rackPath = self->nodePath_.parent();
         if (rackPath.isValid())
-            magda::TrackManager::getInstance().setRackMacroTarget(rackPath, macroIndex, target);
+            magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex, target);
         if (self)
             self->updateParamModulation();
     };
@@ -259,7 +259,7 @@ void wireModMacroCallbacks(Widget* widget,
             return;
         auto trackId = self->nodePath_.trackId;
         if (trackId != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setTrackMacroTarget(trackId, macroIndex, target);
+            magda::TrackManager::getInstance().setMacroTarget(ChainNodePath::trackLevel(trackId), macroIndex, target);
         if (self)
             self->updateParamModulation();
     };
@@ -273,7 +273,7 @@ void wireModMacroCallbacks(Widget* widget,
             return;
         auto rackPath = self->nodePath_.parent();
         if (rackPath.isValid())
-            magda::TrackManager::getInstance().removeRackMacroLink(rackPath, macroIndex, target);
+            magda::TrackManager::getInstance().removeMacroLink(rackPath, macroIndex, target);
         if (!self)
             return;
         self->updateParamModulation();
@@ -291,16 +291,16 @@ void wireModMacroCallbacks(Widget* widget,
         auto nodePath = self->nodePath_;
         auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
         if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath) {
-            magda::TrackManager::getInstance().setDeviceMacroLinkAmount(nodePath, macroIndex,
+            magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex,
                                                                         target, amount);
             if (self)
                 self->updateMacroPanel();
         } else if (activeMacroSelection.isValid() &&
                    activeMacroSelection.parentPath.getType() == magda::ChainNodeType::Track) {
-            magda::TrackManager::getInstance().setTrackMacroLinkAmount(
-                activeMacroSelection.parentPath.trackId, macroIndex, target, amount);
+            magda::TrackManager::getInstance().setMacroLinkAmount(ChainNodePath::trackLevel(
+                activeMacroSelection.parentPath.trackId), macroIndex, target, amount);
         } else if (activeMacroSelection.isValid()) {
-            magda::TrackManager::getInstance().setRackMacroLinkAmount(
+            magda::TrackManager::getInstance().setMacroLinkAmount(
                 activeMacroSelection.parentPath, macroIndex, target, amount);
         }
         if (self)
@@ -315,7 +315,7 @@ void wireModMacroCallbacks(Widget* widget,
             auto self = safeThis;
             if (!self)
                 return;
-            magda::TrackManager::getInstance().setDeviceMacroValue(self->nodePath_, macroIndex,
+            magda::TrackManager::getInstance().setMacroValue(self->nodePath_, macroIndex,
                                                                    value);
             if (self)
                 self->updateParamModulation();

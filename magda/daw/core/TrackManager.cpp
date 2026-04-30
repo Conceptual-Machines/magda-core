@@ -1818,12 +1818,12 @@ void TrackManager::notifyDeviceParameterChanged(DeviceId deviceId, int paramInde
     }
 }
 
-void TrackManager::notifyMacroValueChanged(TrackId trackId, bool isRack, int id, int macroIndex,
-                                           float value) {
+void TrackManager::notifyMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId,
+                                           int macroIndex, float value) {
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {
         if (listeners_[i])
-            listeners_[i]->macroValueChanged(trackId, isRack, id, macroIndex, value);
+            listeners_[i]->macroValueChanged(trackId, scope, ownerId, macroIndex, value);
     }
 }
 
