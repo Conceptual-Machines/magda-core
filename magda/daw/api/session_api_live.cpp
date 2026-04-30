@@ -30,4 +30,8 @@ ClipId SessionApiLive::getActiveClipOnTrack(TrackId trackId) const {
     return track != nullptr ? track->activeSessionClipId : INVALID_CLIP_ID;
 }
 
+ClipId SessionApiLive::getClipInSlot(TrackId trackId, int sceneIndex) const {
+    return ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
+}
+
 }  // namespace magda

@@ -52,9 +52,10 @@ end
 local function set_daw_mode(enable)
   local out = find_daw_out()
   if not out then
-    magda.log.warn("[launchkey] no DAW Out port found — is the device connected?")
+    magda.log.warn("[launchkey] no DAW Out port matched - is the device connected?")
     return
   end
+  magda.log.info("[launchkey] "..(enable and "entering" or "leaving").." DAW mode via port: "..out)
   magda.midi.send_note_on(out, 16, 0x0C, enable and 0x7F or 0x00)
 end
 
@@ -64,13 +65,15 @@ end
 -- DAW-mode pad notes (Channel 1):
 --   Top row:    96..103 (0x60..0x67)
 --   Bottom row: 112..119 (0x70..0x77)
--- We map columns to tracks 1..8 and rows to clip slots 1 / 2.
+-- Columns map to tracks 1..8. Rows map to scene indices in visual
+-- order: top pad row = scene 0 (visually highest in MAGDA's session
+-- view), bottom pad row = scene 1.
 
-local function pad_to_track_and_slot(note)
+local function pad_to_track_and_scene(note)
   if note >= 0x60 and note <= 0x67 then
-    return note - 0x60 + 1, 1   -- track 1..8, top row = slot 1
+    return note - 0x60 + 1, 0   -- track 1..8, top row = scene 0 (top of session)
   elseif note >= 0x70 and note <= 0x77 then
-    return note - 0x70 + 1, 2   -- track 1..8, bottom row = slot 2
+    return note - 0x70 + 1, 1   -- track 1..8, bottom row = scene 1
   end
   return nil, nil
 end
@@ -93,6 +96,12 @@ local TRANSPORT_RECORD = 0x75
 
 function on_load()
   magda.log.info("[launchkey] loading")
+  -- Surface every output port name so we can see what JUCE is exposing.
+  -- If "DAW" doesn't show up here, the matcher won't find it and the
+  -- handshake never reaches the device.
+  for i, name in ipairs(magda.midi.outputs()) do
+    magda.log.info("[launchkey] output["..i.."] = "..name)
+  end
   set_daw_mode(true)
 end
 
@@ -106,14 +115,10 @@ end
 ----------------------------------------------------------------
 
 local function handle_pad_press(e)
-  local track, slot = pad_to_track_and_slot(e.number)
+  local track, scene = pad_to_track_and_scene(e.number)
   if not track then return end
 
-  -- Look up the slot-th clip on the track. clips_on_track returns clip ids
-  -- in arrangement order; session clips are intermixed but for v1 we just
-  -- index in. Future: filter to session clips only.
-  local clips = magda.clips.list_on_track(track)
-  local clip = clips[slot]
+  local clip = magda.session.clip_in_slot(track, scene)
   if clip then
     magda.session.launch_clip(clip)
   end

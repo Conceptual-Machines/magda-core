@@ -13,6 +13,7 @@
 
 #include <cassert>
 #include <cstdlib>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -311,6 +312,13 @@ class MockSessionApi : public SessionApi {
     ClipId getActiveClipOnTrack(TrackId id) const override {
         auto it = activeOnTrack.find(id);
         return it != activeOnTrack.end() ? it->second : INVALID_CLIP_ID;
+    }
+
+    // Tests can populate slots[(trackId, sceneIndex)] = clipId.
+    std::map<std::pair<TrackId, int>, ClipId> slots;
+    ClipId getClipInSlot(TrackId trackId, int sceneIndex) const override {
+        auto it = slots.find({trackId, sceneIndex});
+        return it != slots.end() ? it->second : INVALID_CLIP_ID;
     }
 };
 

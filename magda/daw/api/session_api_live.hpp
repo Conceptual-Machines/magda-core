@@ -15,6 +15,7 @@ class SessionApiLive : public SessionApi {
     void stopTrack(TrackId trackId) override;
     void stopAll() override;
     ClipId getActiveClipOnTrack(TrackId trackId) const override;
+    ClipId getClipInSlot(TrackId trackId, int sceneIndex) const override;
 };
 
 }  // namespace magda

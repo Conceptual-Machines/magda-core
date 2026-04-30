@@ -475,6 +475,20 @@ int lua_session_active_clip_on_track(lua_State* L) {
     return 1;
 }
 
+// magda.session.clip_in_slot(trackId, sceneIndex) — sceneIndex is 0-based,
+// 0 = topmost session row. Returns nil if the slot is empty.
+int lua_session_clip_in_slot(lua_State* L) {
+    auto* api = getApi(L);
+    auto trackId = static_cast<TrackId>(luaL_checkinteger(L, 1));
+    int sceneIndex = static_cast<int>(luaL_checkinteger(L, 2));
+    ClipId id = api->session().getClipInSlot(trackId, sceneIndex);
+    if (id == INVALID_CLIP_ID)
+        lua_pushnil(L);
+    else
+        lua_pushinteger(L, static_cast<lua_Integer>(id));
+    return 1;
+}
+
 // ---- project ---------------------------------------------------------------
 
 int lua_project_info(lua_State* L) {
@@ -756,6 +770,7 @@ const FnReg kSessionFns[] = {
     {"stop_track", lua_session_stop_track},
     {"stop_all", lua_session_stop_all},
     {"active_clip_on_track", lua_session_active_clip_on_track},
+    {"clip_in_slot", lua_session_clip_in_slot},
     {nullptr, nullptr},
 };
 
