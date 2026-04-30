@@ -1,0 +1,148 @@
+-- launchkey_mini_mk4.lua
+-- Novation Launchkey Mini MK4 controller script for MAGDA.
+--
+-- What it does:
+--   * Enters DAW mode on load (so pads / transport row report on the DAW port).
+--   * Pads (2x8) launch session clips on tracks 1..8, two clip slots per track.
+--   * Transport row drives MAGDA's transport (play / stop / record / loop).
+--   * Knobs are NOT handled here — they're already wired to focused-device
+--     macros via resources/controllers/novation.launchkey_mini_mk4.macros.json.
+--   * Exits DAW mode on unload so the device returns to a clean Standalone
+--     state when MAGDA quits.
+--
+-- Reference: docs/controllers/launchkey_mk4_programmers_reference_v2.pdf
+--
+-- Drop into:
+--   macOS:   ~/Library/Application Support/MAGDA/Scripts/Controllers/
+--   Windows: %APPDATA%\MAGDA\Scripts\Controllers\
+--   Linux:   ~/.config/MAGDA/Scripts/Controllers/
+
+----------------------------------------------------------------
+-- Device port matching
+----------------------------------------------------------------
+-- The MK4 exposes two USB MIDI interfaces: a "MIDI" port (keys / wheels /
+-- pad Custom Modes) and a "DAW" port (control surface). We listen for
+-- pad / transport on the DAW port and send all feedback to the DAW out.
+-- Display name varies slightly per OS — match permissively.
+
+local function is_daw_port(port)
+  return port:lower():find("launchkey") and port:lower():find("daw")
+end
+
+-- Output port name for sends (DAW Out). Resolved on first send.
+local daw_out = nil
+local function find_daw_out()
+  if daw_out then return daw_out end
+  for _, name in ipairs(magda.midi.outputs()) do
+    if is_daw_port(name) then
+      daw_out = name
+      return name
+    end
+  end
+  return nil
+end
+
+----------------------------------------------------------------
+-- DAW-mode handshake
+----------------------------------------------------------------
+-- "Enable DAW Mode" is a note-on, NOT SysEx, despite living in the SysEx
+-- chapter of the reference: 9Fh 0Ch 7Fh = note-on channel 16 #12 vel 127.
+-- Disable: same with vel 0.
+
+local function set_daw_mode(enable)
+  local out = find_daw_out()
+  if not out then
+    magda.log.warn("[launchkey] no DAW Out port found — is the device connected?")
+    return
+  end
+  magda.midi.send_note_on(out, 16, 0x0C, enable and 0x7F or 0x00)
+end
+
+----------------------------------------------------------------
+-- Pad layout
+----------------------------------------------------------------
+-- DAW-mode pad notes (Channel 1):
+--   Top row:    96..103 (0x60..0x67)
+--   Bottom row: 112..119 (0x70..0x77)
+-- We map columns to tracks 1..8 and rows to clip slots 1 / 2.
+
+local function pad_to_track_and_slot(note)
+  if note >= 0x60 and note <= 0x67 then
+    return note - 0x60 + 1, 1   -- track 1..8, top row = slot 1
+  elseif note >= 0x70 and note <= 0x77 then
+    return note - 0x70 + 1, 2   -- track 1..8, bottom row = slot 2
+  end
+  return nil, nil
+end
+
+----------------------------------------------------------------
+-- Transport row (DAW-port CCs on Channel 16)
+----------------------------------------------------------------
+-- Mini transport (from reference figures, Standalone fig. 1 / DAW fig. 3):
+--   Play   = 0x73 (115)
+--   Stop   = 0x75 (117) on Mini (Shift+Play in some firmware)
+--   Record = 0x76 (118)
+--   Loop   = ? — varies per firmware; check with a MIDI monitor and add
+-- These are best-effort defaults — the figures in the PDF are tiny and you
+-- may need to confirm with a MIDI monitor on your unit.
+local TRANSPORT_PLAY   = 0x73
+local TRANSPORT_STOP   = 0x75
+local TRANSPORT_RECORD = 0x76
+
+----------------------------------------------------------------
+-- Lifecycle
+----------------------------------------------------------------
+
+function on_load()
+  magda.log.info("[launchkey] loading")
+  set_daw_mode(true)
+end
+
+function on_unload()
+  magda.log.info("[launchkey] unloading")
+  set_daw_mode(false)
+end
+
+----------------------------------------------------------------
+-- MIDI dispatch
+----------------------------------------------------------------
+
+local function handle_pad_press(e)
+  local track, slot = pad_to_track_and_slot(e.number)
+  if not track then return end
+
+  -- Look up the slot-th clip on the track. clips_on_track returns clip ids
+  -- in arrangement order; session clips are intermixed but for v1 we just
+  -- index in. Future: filter to session clips only.
+  local clips = magda.clips.list_on_track(track)
+  local clip = clips[slot]
+  if clip then
+    magda.session.launch_clip(clip)
+  end
+end
+
+local function handle_transport_cc(e)
+  if e.value == 0 then return end   -- ignore button release
+
+  if e.number == TRANSPORT_PLAY then
+    if magda.transport.is_playing() then
+      magda.transport.stop()
+    else
+      magda.transport.play()
+    end
+  elseif e.number == TRANSPORT_STOP then
+    magda.transport.stop()
+  elseif e.number == TRANSPORT_RECORD then
+    magda.transport.set_recording(not magda.transport.is_recording())
+  end
+end
+
+function on_midi(e)
+  if not is_daw_port(e.port) then return end
+
+  if e.type == 'note_on' and e.value > 0 then
+    handle_pad_press(e)
+  elseif e.type == 'cc' and e.channel == 16 then
+    handle_transport_cc(e)
+  end
+end
