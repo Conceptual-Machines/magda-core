@@ -113,6 +113,18 @@ class TrackChainContent : public PanelContent,
     std::unique_ptr<magda::SvgButton> macroButton_;       // Toggle global macros panel
     std::unique_ptr<magda::SvgButton> addRackButton_;     // Add rack button
     std::unique_ptr<magda::SvgButton> treeViewButton_;    // Show chain tree dialog
+    std::unique_ptr<magda::SvgButton> presetButton_;      // MAGDA track-chain presets menu
+
+    // Currently-loaded chain preset name for the selected track (empty when
+    // none). Cleared on track selection change so each track gets a fresh
+    // "Save" target — we don't track per-track preset state at the model
+    // level, this is purely a UI convenience for the active track.
+    juce::String currentPresetName_;
+
+    void showPresetMenu();
+    void showSaveTrackPresetDialog();
+    void saveCurrentTrackPreset();
+    void loadTrackPresetByName(const juce::String& presetName);
 
     // Header bar controls - RIGHT side (track info)
     juce::Label trackNameLabel_;
