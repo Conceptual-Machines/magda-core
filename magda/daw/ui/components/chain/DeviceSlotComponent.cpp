@@ -1294,10 +1294,29 @@ magda::DeviceInfo DeviceSlotComponent::snapshotForPreset() {
 }
 
 void DeviceSlotComponent::showSaveMagdaPresetDialog() {
-    auto* aw = new juce::AlertWindow("Save MAGDA Preset", "Enter a name for this device preset:",
+    auto* aw = new juce::AlertWindow("Save MAGDA Preset",
+                                     "Enter a name and optional category for this device preset:",
                                      juce::MessageBoxIconType::NoIcon);
-    aw->addTextEditor("name", currentPresetName_.isNotEmpty() ? currentPresetName_ : device_.name,
-                      "Name:");
+    // Default fallback chain: explicit `currentPresetName_` (a previously
+    // saved/loaded preset on this slot) → suggestion from PresetManager (e.g.
+    // a name produced by the /design AI agent for this device) → device name.
+    // The default may itself be `Category/Name` form — split on the LAST
+    // slash so multi-level folders survive (e.g. "Bass/Sub/Deep Sub" splits
+    // into category "Bass/Sub" and name "Deep Sub").
+    juce::String defaultPath = currentPresetName_;
+    if (defaultPath.isEmpty())
+        defaultPath = magda::PresetManager::getInstance().getSuggestedPresetName(device_.id);
+    if (defaultPath.isEmpty())
+        defaultPath = device_.name;
+    juce::String defaultCategory;
+    juce::String defaultName = defaultPath;
+    auto slash = defaultPath.lastIndexOfChar('/');
+    if (slash > 0) {
+        defaultCategory = defaultPath.substring(0, slash);
+        defaultName = defaultPath.substring(slash + 1);
+    }
+    aw->addTextEditor("category", defaultCategory, "Category (optional):");
+    aw->addTextEditor("name", defaultName, "Name:");
     aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
     aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
@@ -1309,30 +1328,41 @@ void DeviceSlotComponent::showSaveMagdaPresetDialog() {
                 return;
             }
             auto name = aw->getTextEditorContents("name").trim();
+            auto category = aw->getTextEditorContents("category").trim();
             delete aw;
             if (name.isEmpty() || self == nullptr)
                 return;
 
-            auto doSave = [name, self]() {
+            // Strip any leading/trailing slashes the user typed to avoid
+            // accidentally creating empty path segments (".../Foo/.mps").
+            while (category.startsWithChar('/'))
+                category = category.substring(1);
+            while (category.endsWithChar('/'))
+                category = category.dropLastCharacters(1);
+            const auto fullName = category.isEmpty() ? name : (category + "/" + name);
+
+            auto doSave = [fullName, self]() {
                 if (self == nullptr)
                     return;
                 auto fresh = self->snapshotForPreset();
                 auto& mgr = magda::PresetManager::getInstance();
-                if (!mgr.saveDevicePreset(fresh, name)) {
+                if (!mgr.saveDevicePreset(fresh, fullName)) {
                     showPresetErrorAsync("Save Preset Failed", mgr.getLastError());
                     return;
                 }
                 if (self != nullptr)
-                    self->currentPresetName_ = name;
+                    self->currentPresetName_ = fullName;
             };
 
             const auto pluginFolder = self->device_.name;
-            if (magda::PresetManager::getInstance().getDevicePresets(pluginFolder).contains(name)) {
+            if (magda::PresetManager::getInstance()
+                    .getDevicePresets(pluginFolder)
+                    .contains(fullName)) {
                 juce::AlertWindow::showAsync(
                     juce::MessageBoxOptions()
                         .withIconType(juce::MessageBoxIconType::QuestionIcon)
                         .withTitle("Overwrite Preset?")
-                        .withMessage("\"" + name + "\" already exists. Overwrite?")
+                        .withMessage("\"" + fullName + "\" already exists. Overwrite?")
                         .withButton("Overwrite")
                         .withButton("Cancel"),
                     [doSave](int r) {

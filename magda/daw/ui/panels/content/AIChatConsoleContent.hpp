@@ -184,12 +184,6 @@ class AIChatConsoleContent : public PanelContent,
     void finishPresetGeneration(bool success, const juce::String& errorOrPretty,
                                 juce::String presetName);
 
-    // Last preset name produced by /design — used as the default for a
-    // bare `/save` so the user can run /design then /save to commit it
-    // without having to retype the name.
-    juce::String lastDesignedPresetName_;
-    void saveDesignedPresetToFocusedDevice(const juce::String& name);
-
     // Clear the input box's text AND force a repaint. Document mutations
     // alone don't always invalidate the CodeEditorComponent's glyph
     // cache (especially on macOS with our custom fonts), leaving stale

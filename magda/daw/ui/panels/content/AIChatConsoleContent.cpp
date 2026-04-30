@@ -1060,41 +1060,61 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
         }
     }
 
-    // /design <description> — generate a 4OSC preset (JSON) from NL description
+    // /design <description> — generate a 4OSC preset (JSON) from NL description.
+    // /design --help (or /design with no args) prints a quick usage block with
+    // category-grouped example prompts so users don't have to flip to the manual
+    // for the common starting points.
     {
         auto trimmed = text.trimStart();
+        const bool isBare = trimmed.equalsIgnoreCase("/design");
+        const bool isHelp = trimmed.equalsIgnoreCase("/design --help") ||
+                            trimmed.equalsIgnoreCase("/design -h") ||
+                            trimmed.equalsIgnoreCase("/design help");
+        if (isBare || isHelp) {
+            appendToChat(juce::String::charToString(0x25CF) + " " + text);
+            clearInput();
+            juce::String help;
+            help << juce::String::charToString(0x25C6) << " /design — AI 4OSC sound design\n";
+            help << "\n  Usage: /design <description>\n";
+            help << "  Focus a 4OSC device first; the preset applies to the focused device.\n";
+            help << "  The result is a starting point — tweak by ear, then save from the device "
+                    "header.\n";
+            help << "\n  Bass\n";
+            help << "    /design deep sub bass\n";
+            help << "    /design fat reese bass with movement\n";
+            help << "    /design acid bass with resonant filter\n";
+            help << "    /design 808-style bass with sub and click\n";
+            help << "\n  Lead\n";
+            help << "    /design fat detuned saw lead with octave layer\n";
+            help << "    /design trance supersaw lead\n";
+            help << "    /design bright square lead with chorus\n";
+            help << "    /design legato mono synth lead with portamento\n";
+            help << "\n  Pad\n";
+            help << "    /design warm analog pad\n";
+            help << "    /design evolving ambient pad with slow filter\n";
+            help << "    /design string ensemble pad\n";
+            help << "    /design dark cinematic drone\n";
+            help << "\n  Pluck / Keys\n";
+            help << "    /design snappy saw pluck\n";
+            help << "    /design muted soft pluck for arpeggios\n";
+            help << "    /design electric piano with chorus\n";
+            help << "\n  FX\n";
+            help << "    /design rising white noise sweep\n";
+            help << "    /design impact hit with reverb tail\n";
+            appendToChat(help);
+            return;
+        }
         if (trimmed.startsWithIgnoreCase("/design ")) {
             auto description = trimmed.substring(8).trim();
             appendToChat(juce::String::charToString(0x25CF) + " " + text);
             clearInput();
             if (description.isEmpty()) {
-                appendToChat(juce::String::charToString(0x25C6) +
-                             " Usage: /design <preset description>");
+                appendToChat(
+                    juce::String::charToString(0x25C6) +
+                    " Usage: /design <preset description>  (run /design --help for examples)");
                 return;
             }
             startPresetGeneration(description);
-            return;
-        }
-    }
-
-    // /save [name] — capture focused 4OSC's current state as a .mps. Empty
-    // name falls back to the most recent /design preset name.
-    {
-        auto trimmed = text.trimStart();
-        const bool isBare = trimmed.equalsIgnoreCase("/save");
-        const bool hasArg = trimmed.startsWithIgnoreCase("/save ");
-        if (isBare || hasArg) {
-            auto name = hasArg ? trimmed.substring(6).trim() : juce::String();
-            if (name.isEmpty())
-                name = lastDesignedPresetName_;
-            appendToChat(juce::String::charToString(0x25CF) + " " + text);
-            clearInput();
-            if (name.isEmpty()) {
-                appendToChat(juce::String::charToString(0x25C6) +
-                             " Usage: /save <name>  (or run /design first to set a default name)");
-                return;
-            }
-            saveDesignedPresetToFocusedDevice(name);
             return;
         }
     }
@@ -2347,6 +2367,8 @@ void AIChatConsoleContent::FourOscRequestThread::run() {
         // the model emits and gives us a stable schema to render.
         auto* obj = new juce::DynamicObject();
         obj->setProperty("name", juce::String(result.preset.name));
+        if (!result.preset.category.empty())
+            obj->setProperty("category", juce::String(result.preset.category));
         obj->setProperty("description", juce::String(result.preset.description));
         auto* waves = new juce::DynamicObject();
         for (const auto& [n, name] : result.preset.waves)
@@ -2787,6 +2809,19 @@ static juce::String applyFourOscPresetToFocusedDevice(const magda::FourOscAgent:
     // preset-load uses.
     tm.notifyTrackDevicesChanged(path.trackId);
 
+    // Stash the agent's preset name as the default for the next save dialog
+    // on this device. If the agent picked a category, prepend it so the
+    // save dialog auto-fills both the Category and Name fields. The user
+    // can then click the device header's save action and just hit Enter —
+    // no retyping. Lives until overwritten or a different preset is loaded
+    // onto the slot.
+    if (!preset.name.empty()) {
+        juce::String suggested = juce::String(preset.name);
+        if (!preset.category.empty())
+            suggested = juce::String(preset.category) + "/" + suggested;
+        magda::PresetManager::getInstance().setSuggestedPresetName(device->id, suggested);
+    }
+
     juce::String status = "applied " + juce::String(applied) + " param(s)";
     if (wavesApplied > 0)
         status += " + " + juce::String(wavesApplied) + " wave(s)";
@@ -2825,6 +2860,8 @@ void AIChatConsoleContent::finishPresetGeneration(bool success, const juce::Stri
     magda::FourOscAgent::Preset preset;
     if (auto n = obj->getProperty("name"); n.isString())
         preset.name = n.toString().toStdString();
+    if (auto c = obj->getProperty("category"); c.isString())
+        preset.category = c.toString().toStdString();
     if (auto d = obj->getProperty("description"); d.isString())
         preset.description = d.toString().toStdString();
     if (auto* params = obj->getProperty("params").getDynamicObject()) {
@@ -2859,12 +2896,10 @@ void AIChatConsoleContent::finishPresetGeneration(bool success, const juce::Stri
     // apply status as the tail line. Done together so the chat shows
     // one block per /design call instead of split JSON + status.
     auto header = presetName.isEmpty() ? juce::String("Preset") : presetName;
-    lastDesignedPresetName_ = header;  // remember for bare `/save`
     juce::String body = juce::String::charToString(0x25C6) + " " + header + "\n";
     body << prettyPrintPreset(preset);
     body << "\n  " << applyFourOscPresetToFocusedDevice(preset);
-    body << "\n  starting point — tweak by ear before saving";
-    body << "\n  /save  to commit \"" << header << "\" as a .mps preset";
+    body << "\n  starting point — tweak by ear, then save from the device header";
     appendToChat(body);
 }
 
@@ -2878,43 +2913,6 @@ void AIChatConsoleContent::clearInput() {
         inputBox_->moveCaretToTop(false);
         inputBox_->repaint();
     }
-}
-
-void AIChatConsoleContent::saveDesignedPresetToFocusedDevice(const juce::String& name) {
-    auto& sel = magda::SelectionManager::getInstance();
-    if (!sel.hasChainNodeSelection()) {
-        appendToChat(juce::String::charToString(0x25C6) + " /save: no device focused");
-        return;
-    }
-    const auto& path = sel.getSelectedChainNode();
-    auto& tm = magda::TrackManager::getInstance();
-    auto* device = tm.getDeviceInChainByPath(path);
-    if (device == nullptr) {
-        appendToChat(juce::String::charToString(0x25C6) + " /save: focused node is not a device");
-        return;
-    }
-    if (!device->pluginId.equalsIgnoreCase("4osc")) {
-        appendToChat(juce::String::charToString(0x25C6) + " /save: focused device is '" +
-                     device->pluginId + "' — only 4OSC presets are supported here");
-        return;
-    }
-
-    // Flush the live plugin's ValueTree into DeviceInfo.pluginState BEFORE
-    // snapshotting so the saved preset reflects the current waveShape /
-    // filterType / param state, not the last-captured serialized blob.
-    if (auto* engine = tm.getAudioEngine()) {
-        if (auto* bridge = engine->getAudioBridge())
-            bridge->getPluginManager().capturePluginState(device->id);
-    }
-    auto fresh = *device;  // post-capture copy
-
-    auto& pm = magda::PresetManager::getInstance();
-    if (!pm.saveDevicePreset(fresh, name)) {
-        appendToChat(juce::String::charToString(0x25C6) + " /save: " + pm.getLastError());
-        return;
-    }
-    appendToChat(juce::String::charToString(0x25C6) + " saved \"" + name + "\" as " + device->name +
-                 "/" + name + ".mps");
 }
 
 }  // namespace magda::daw::ui

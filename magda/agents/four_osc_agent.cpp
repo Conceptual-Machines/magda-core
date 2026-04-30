@@ -26,6 +26,7 @@ no prose, no markdown fences.
 OUTPUT SCHEMA:
 {
   "name": "<2-4 word preset name>",
+  "category": "<Bass|Lead|Pad|Pluck|Keys|FX|Other>",
   "description": "<one short sentence describing the sound>",
   "waves": { "<osc_number 1..4>": "<wave_name>", ... },
   "filter_type": "<lp|hp|bp|notch|off>",
@@ -33,6 +34,16 @@ OUTPUT SCHEMA:
   "fx": { "distortion": <bool>, "reverb": <bool>, "delay": <bool>, "chorus": <bool> },
   "params": { "<param_name>": <0.0..1.0 float>, ... }
 }
+
+CATEGORY (REQUIRED) — picks the folder the preset is filed under so the
+user's bank stays organised. Choose exactly one of:
+  "Bass"  — sub bass, reese, 808, acid bass, growl, pluck-bass, etc.
+  "Lead"  — leads, solos, mono leads, fat detuned saws used as a lead
+  "Pad"   — pads, atmospheres, drones, evolving textures
+  "Pluck" — short percussive plucks, key-stabs that aren't quite leads
+  "Keys"  — electric piano / organ / clav / harmonic keys
+  "FX"    — risers, drops, sweeps, impacts, sound design noise
+  "Other" — anything that genuinely doesn't fit the above
 
 FX TOGGLES (REQUIRED if the corresponding FX params are set):
   Each FX block has an on/off gate that is OFF by default. Setting the
@@ -188,16 +199,16 @@ DESIGN GUIDELINES:
 EXAMPLES:
 
 User: "deep sub bass"
-{"name":"Deep Sub","description":"Pure sine sub bass with snappy envelope","waves":{"1":"sine","2":"none","3":"none","4":"none"},"filter_type":"lp","voice_mode":"mono","fx":{"distortion":false,"reverb":false,"delay":false,"chorus":false},"params":{"tune_1":-12,"level_1":1.0,"amp_attack":0.005,"amp_decay":0.15,"amp_sustain":0.7,"amp_release":0.2,"filter_freq":0.4,"filter_resonance":0.1,"level":0.96}}
+{"name":"Deep Sub","category":"Bass","description":"Pure sine sub bass with snappy envelope","waves":{"1":"sine","2":"none","3":"none","4":"none"},"filter_type":"lp","voice_mode":"mono","fx":{"distortion":false,"reverb":false,"delay":false,"chorus":false},"params":{"tune_1":-12,"level_1":1.0,"amp_attack":0.005,"amp_decay":0.15,"amp_sustain":0.7,"amp_release":0.2,"filter_freq":0.4,"filter_resonance":0.1,"level":0.96}}
 
 User: "warm analog pad"
-{"name":"Warm Pad","description":"Slow-evolving detuned saws with gentle filter movement and a touch of reverb","waves":{"1":"saw","2":"saw","3":"none","4":"none"},"filter_type":"lp","voice_mode":"poly","fx":{"distortion":false,"reverb":true,"delay":false,"chorus":true},"params":{"tune_1":0,"tune_2":0,"detune_1":0.3,"detune_2":0.4,"level_1":0.95,"level_2":0.92,"amp_attack":1.5,"amp_decay":0.6,"amp_sustain":0.8,"amp_release":1.5,"filter_freq":0.55,"filter_resonance":0.15,"filter_attack":1.0,"filter_amount":0.3,"rate_1":0.15,"depth_1":0.25,"width":0.6,"mix":0.3,"size":0.7,"speed":0.4,"level":0.94}}
+{"name":"Warm Pad","category":"Pad","description":"Slow-evolving detuned saws with gentle filter movement and a touch of reverb","waves":{"1":"saw","2":"saw","3":"none","4":"none"},"filter_type":"lp","voice_mode":"poly","fx":{"distortion":false,"reverb":true,"delay":false,"chorus":true},"params":{"tune_1":0,"tune_2":0,"detune_1":0.3,"detune_2":0.4,"level_1":0.95,"level_2":0.92,"amp_attack":1.5,"amp_decay":0.6,"amp_sustain":0.8,"amp_release":1.5,"filter_freq":0.55,"filter_resonance":0.15,"filter_attack":1.0,"filter_amount":0.3,"rate_1":0.15,"depth_1":0.25,"width":0.6,"mix":0.3,"size":0.7,"speed":0.4,"level":0.94}}
 
 User: "snappy pluck"
-{"name":"Snap Pluck","description":"Tight saw pluck with quick decay and filter presence","waves":{"1":"saw","2":"none","3":"none","4":"none"},"filter_type":"lp","voice_mode":"poly","fx":{"distortion":false,"reverb":false,"delay":false,"chorus":false},"params":{"tune_1":0,"level_1":1.0,"amp_attack":0.005,"amp_decay":0.12,"amp_sustain":0.0,"amp_release":0.1,"filter_freq":0.65,"filter_resonance":0.4,"filter_decay":0.15,"filter_amount":0.6,"level":0.96}}
+{"name":"Snap Pluck","category":"Pluck","description":"Tight saw pluck with quick decay and filter presence","waves":{"1":"saw","2":"none","3":"none","4":"none"},"filter_type":"lp","voice_mode":"poly","fx":{"distortion":false,"reverb":false,"delay":false,"chorus":false},"params":{"tune_1":0,"level_1":1.0,"amp_attack":0.005,"amp_decay":0.12,"amp_sustain":0.0,"amp_release":0.1,"filter_freq":0.65,"filter_resonance":0.4,"filter_decay":0.15,"filter_amount":0.6,"level":0.96}}
 
 User: "fat detuned saw lead with octave layer"
-{"name":"Fat Lead","description":"Two detuned saws at root + octave-up square, bright filter, lush chorus","waves":{"1":"saw","2":"saw","3":"square","4":"none"},"filter_type":"lp","voice_mode":"leg","fx":{"distortion":false,"reverb":false,"delay":false,"chorus":true},"params":{"tune_1":0,"tune_2":0,"tune_3":12,"detune_1":0.4,"detune_2":0.5,"fine_tune_2":-7,"fine_tune_1":7,"level_1":1.0,"level_2":1.0,"level_3":0.92,"pulse_width_3":0.5,"spread_1":0.5,"spread_2":0.5,"amp_attack":0.02,"amp_decay":0.2,"amp_sustain":0.7,"amp_release":0.3,"filter_freq":0.7,"filter_resonance":0.3,"filter_amount":0.4,"width":0.7,"speed":0.5,"level":0.92,"legato":0.25}}
+{"name":"Fat Lead","category":"Lead","description":"Two detuned saws at root + octave-up square, bright filter, lush chorus","waves":{"1":"saw","2":"saw","3":"square","4":"none"},"filter_type":"lp","voice_mode":"leg","fx":{"distortion":false,"reverb":false,"delay":false,"chorus":true},"params":{"tune_1":0,"tune_2":0,"tune_3":12,"detune_1":0.4,"detune_2":0.5,"fine_tune_2":-7,"fine_tune_1":7,"level_1":1.0,"level_2":1.0,"level_3":0.92,"pulse_width_3":0.5,"spread_1":0.5,"spread_2":0.5,"amp_attack":0.02,"amp_decay":0.2,"amp_sustain":0.7,"amp_release":0.3,"filter_freq":0.7,"filter_resonance":0.3,"filter_amount":0.4,"width":0.7,"speed":0.5,"level":0.92,"legato":0.25}}
 )PROMPT";
 }
 
@@ -228,6 +239,8 @@ FourOscAgent::Preset FourOscAgent::parseJson(const juce::String& text, std::stri
 
     if (auto name = obj->getProperty("name"); name.isString())
         preset.name = name.toString().toStdString();
+    if (auto cat = obj->getProperty("category"); cat.isString())
+        preset.category = cat.toString().toStdString();
     if (auto desc = obj->getProperty("description"); desc.isString())
         preset.description = desc.toString().toStdString();
 

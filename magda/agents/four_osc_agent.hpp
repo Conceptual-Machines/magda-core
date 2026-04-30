@@ -29,6 +29,7 @@ class FourOscAgent {
   public:
     struct Preset {
         std::string name;         // short, e.g. "Dark Sub Bass"
+        std::string category;     // one of: Bass, Lead, Pad, Pluck, Keys, FX, Other
         std::string description;  // one-line musical description
         // Normalized 0..1 parameter values keyed by 4OSC auto-alias suffix
         // (e.g. "amp_attack", "filter_freq", "tune_1"). Missing keys are

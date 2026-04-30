@@ -2,9 +2,12 @@
 
 #include <juce_core/juce_core.h>
 
+#include <unordered_map>
+
 #include "DeviceInfo.hpp"
 #include "RackInfo.hpp"
 #include "TrackInfo.hpp"
+#include "TypeIds.hpp"
 
 namespace magda {
 
@@ -131,6 +134,20 @@ class PresetManager {
     juce::File getDevicePluginDirectory(const juce::String& pluginFolder) const;
 
     // ========================================================================
+    // Suggested Preset Names
+    // ========================================================================
+    //
+    // External producers (the AI sound-design agent, future preset-import
+    // flows) can stash a default name keyed by DeviceId so the next save
+    // dialog on that device pre-fills the name field without needing the
+    // user to retype it. Values persist until overwritten or cleared —
+    // they're transient session state, never serialized.
+
+    void setSuggestedPresetName(DeviceId deviceId, const juce::String& name);
+    juce::String getSuggestedPresetName(DeviceId deviceId) const;
+    void clearSuggestedPresetName(DeviceId deviceId);
+
+    // ========================================================================
     // Error Handling
     // ========================================================================
 
@@ -160,6 +177,7 @@ class PresetManager {
     juce::StringArray getPresetList(const juce::File& directory) const;
 
     juce::String lastError_;
+    std::unordered_map<DeviceId, juce::String> suggestedNames_;
 };
 
 }  // namespace magda
