@@ -4,8 +4,19 @@ namespace magda::daw::ui {
 
 namespace {
 
-constexpr auto kBullet = "\xe2\x97\x86";  // ◆ — used as the chat answer prefix
-constexpr auto kEcho = "\xe2\x97\x8f";    // ● — used to echo the user's input
+// Chat glyph prefixes — built via charToString(codepoint) rather than UTF-8
+// byte literals because juce::String + const char* concatenation has bitten
+// us before with multi-byte chars rendering as mojibake on some builds.
+// charToString takes a juce_wchar directly so encoding can't drift.
+inline juce::String bullet() {
+    return juce::String::charToString(0x25C6);  // ◆ — chat answer prefix
+}
+inline juce::String echo() {
+    return juce::String::charToString(0x25CF);  // ● — user-input echo
+}
+inline juce::String emDash() {
+    return juce::String::charToString(0x2014);  // — — header separator
+}
 
 bool isMetaFlag(const std::map<juce::String, juce::String>& flags, const juce::String& key) {
     auto it = flags.find(key);
@@ -63,9 +74,9 @@ SlashInvocation SlashCommandRegistry::parse(const juce::String& text) {
 
 void SlashCommandRegistry::renderHelp(const SlashCommand& cmd) const {
     juce::String out;
-    out << kBullet << " /" << cmd.name;
+    out << bullet() << " /" << cmd.name;
     if (cmd.description.isNotEmpty())
-        out << " — " << cmd.description;
+        out << " " << emDash() << " " << cmd.description;
     out << "\n";
     if (cmd.usage.isNotEmpty())
         out << "\n  Usage: " << cmd.usage << "\n";
@@ -85,12 +96,12 @@ void SlashCommandRegistry::renderHelp(const SlashCommand& cmd) const {
 void SlashCommandRegistry::renderExamples(const SlashCommand& cmd,
                                           const juce::String& categoryFilter) const {
     if (cmd.examples.empty()) {
-        chatSink_(juce::String(kBullet) + " /" + cmd.name + " has no example prompts.");
+        chatSink_(juce::String(bullet()) + " /" + cmd.name + " has no example prompts.");
         return;
     }
 
     juce::String out;
-    out << kBullet << " /" << cmd.name << " — examples";
+    out << bullet() << " /" << cmd.name << " " << emDash() << " examples";
     if (categoryFilter.isNotEmpty())
         out << " (" << categoryFilter << ")";
     out << "\n";
@@ -126,8 +137,8 @@ bool SlashCommandRegistry::dispatch(const juce::String& text) {
     if (cmd == nullptr) {
         // Unknown command — don't silently send to the LLM, that'd waste a
         // round-trip and the LLM can't act on a typoed slash anyway.
-        chatSink_(juce::String(kEcho) + " " + text.trimStart());
-        chatSink_(juce::String(kBullet) + " unknown command: /" + inv.cmdName +
+        chatSink_(juce::String(echo()) + " " + text.trimStart());
+        chatSink_(juce::String(bullet()) + " unknown command: /" + inv.cmdName +
                   "  (type / to list available commands)");
         return true;
     }
@@ -139,13 +150,13 @@ bool SlashCommandRegistry::dispatch(const juce::String& text) {
     const bool wantsHelp = isMetaFlag(inv.flags, "help") || isMetaFlag(inv.flags, "h") ||
                            inv.positional.equalsIgnoreCase("help");
     if (wantsHelp) {
-        chatSink_(juce::String(kEcho) + " " + text.trimStart());
+        chatSink_(juce::String(echo()) + " " + text.trimStart());
         renderHelp(*cmd);
         return true;
     }
     auto exIt = inv.flags.find("examples");
     if (exIt != inv.flags.end()) {
-        chatSink_(juce::String(kEcho) + " " + text.trimStart());
+        chatSink_(juce::String(echo()) + " " + text.trimStart());
         renderExamples(*cmd, exIt->second);
         return true;
     }
@@ -153,7 +164,7 @@ bool SlashCommandRegistry::dispatch(const juce::String& text) {
     // Bare invocation with neither flags nor positional → treat as --help.
     // Saves users one keystroke when they've forgotten what a command does.
     if (inv.flags.empty() && inv.positional.isEmpty()) {
-        chatSink_(juce::String(kEcho) + " " + text.trimStart());
+        chatSink_(juce::String(echo()) + " " + text.trimStart());
         renderHelp(*cmd);
         return true;
     }

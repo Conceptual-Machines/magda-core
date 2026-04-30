@@ -1996,7 +1996,7 @@ void AIChatConsoleContent::buildSlashCommands() {
     design.details =
         "Generate a preset for the focused 4OSC device from a natural-language description.\n"
         "Focus a 4OSC device first; the preset applies directly to it.\n"
-        "The result is a starting point — tweak by ear, then save from the device header.\n"
+        "The result is a starting point - tweak by ear, then save from the device header.\n"
         "\n"
         "Flags:\n"
         "  --category=<Bass|Lead|Pad|Pluck|Keys|FX|Other>  override the agent's category pick";
@@ -2686,26 +2686,64 @@ static int voiceModeNameToInt(const juce::String& name) {
     return -1;
 }
 
-// Apply a parsed preset to the currently focused 4OSC device (if any).
-// Returns a one-line status string for the chat. Best-effort: silently
-// skips params whose name doesn't match any plugin parameter, but reports
-// counts so the user can spot a wholesale mismatch.
+// Apply a parsed preset to the currently focused 4OSC device. If there
+// isn't one (no selection, selection isn't a device, or focused device
+// is something other than 4OSC), spin up a new track with a fresh 4OSC
+// instance and apply there — wasting the LLM's output to "no device
+// focused" was just bad UX. Returns a one-line status string for the
+// chat. Best-effort: silently skips params whose name doesn't match any
+// plugin parameter, but reports counts so the user can spot a wholesale
+// mismatch.
 static juce::String applyFourOscPresetToFocusedDevice(const magda::FourOscAgent::Preset& preset) {
     auto& sel = magda::SelectionManager::getInstance();
-    if (!sel.hasChainNodeSelection())
-        return "(no device focused — preset shown above only)";
-
-    const auto& path = sel.getSelectedChainNode();
     auto& tm = magda::TrackManager::getInstance();
-    auto* device = tm.getDeviceInChainByPath(path);
-    if (device == nullptr)
-        return "(focused node is not a device — preset shown above only)";
 
-    // 4OSC's internal pluginId is "4osc" (see createInternalPlugin in the
-    // engine). Comparison is case-insensitive in case the canonical
-    // casing ever shifts.
-    if (!device->pluginId.equalsIgnoreCase("4osc"))
-        return "(focused device is '" + device->pluginId + "' — preset designed for 4OSC only)";
+    magda::ChainNodePath path;
+    magda::DeviceInfo* device = nullptr;
+    if (sel.hasChainNodeSelection()) {
+        path = sel.getSelectedChainNode();
+        if (auto* d = tm.getDeviceInChainByPath(path);
+            d != nullptr && d->pluginId.equalsIgnoreCase("4osc"))
+            device = d;
+    }
+
+    juce::String preamble;
+    if (device == nullptr) {
+        // No reachable 4OSC — create a new track, drop a 4OSC on it, and
+        // re-resolve the path so the rest of the function operates on
+        // the freshly-created device just like it would on a focused one.
+        magda::DeviceInfo newDevice;
+        const juce::String trackName =
+            preset.name.empty() ? juce::String("4OSC") : juce::String(preset.name);
+        newDevice.name = "4OSC";
+        newDevice.manufacturer = "MAGDA";
+        newDevice.pluginId = "4osc";
+        newDevice.uniqueId = "4osc";
+        newDevice.fileOrIdentifier = "4osc";
+        newDevice.isInstrument = true;
+        newDevice.deviceType = magda::DeviceType::Instrument;
+        newDevice.format = magda::PluginFormat::Internal;
+
+        const auto trackId = tm.createTrack(trackName, magda::TrackType::Audio);
+        if (trackId == magda::INVALID_TRACK_ID)
+            return "(could not create track for preset)";
+        const auto deviceId = tm.addDeviceToTrack(trackId, newDevice);
+        if (deviceId == magda::INVALID_DEVICE_ID)
+            return "(could not add 4OSC to new track)";
+
+        path = magda::ChainNodePath{};
+        path.trackId = trackId;
+        path.topLevelDeviceId = deviceId;
+        device = tm.getDeviceInChainByPath(path);
+        if (device == nullptr)
+            return "(created 4OSC but could not resolve its path)";
+
+        // Select the new device so subsequent /design calls land on it
+        // and the user sees its custom UI in the chain panel.
+        sel.selectChainNode(path);
+
+        preamble = "created 4OSC on '" + trackName + "', ";
+    }
 
     // Map every param name on the device to its index, normalized the same
     // way AutoAliasGenerator does, so the preset's alias-style keys
@@ -2861,7 +2899,7 @@ static juce::String applyFourOscPresetToFocusedDevice(const magda::FourOscAgent:
         magda::PresetManager::getInstance().setSuggestedPresetName(device->id, suggested);
     }
 
-    juce::String status = "applied " + juce::String(applied) + " param(s)";
+    juce::String status = preamble + "applied " + juce::String(applied) + " param(s)";
     if (wavesApplied > 0)
         status += " + " + juce::String(wavesApplied) + " wave(s)";
     if (filterTypeApplied)
