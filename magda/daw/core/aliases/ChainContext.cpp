@@ -41,29 +41,42 @@ ChainNodePath DefaultChainContext::focusedMacroOwner() const {
     if (!path.isValid())
         return {};
 
-    // Walk steps from innermost outward and return the first rack ancestor
-    // (or the focused rack itself). Truncating the path to the rack step
-    // yields a Rack-typed ChainNodePath whose getDeviceMacro target points
-    // at the rack's macro array.
+    // Map the focused node to the macro-owning scope used for automap:
     //
-    // User-created racks live in path.steps; instrument-wrapper racks
-    // (InstrumentRackManager) are flattened into TopLevelDevice and never
-    // appear here, so a focused top-level instrument still automaps to its
-    // own device macros — preserving the "every device exposes macros
-    // uniformly" contract.
-    for (int i = static_cast<int>(path.steps.size()) - 1; i >= 0; --i) {
-        if (path.steps[i].type == ChainStepType::Rack) {
-            ChainNodePath rackPath;
-            rackPath.trackId = path.trackId;
-            rackPath.steps.assign(path.steps.begin(), path.steps.begin() + i + 1);
-            return rackPath;
+    //   TopLevelDevice  → the device itself (instrument-wrapper racks are
+    //                     flattened, so there's no rack to bubble up to).
+    //   Rack            → the rack itself.
+    //   Chain           → the parent rack (chains don't own macros, but
+    //                     focusing a chain implies "operating on this rack").
+    //   Device-in-chain → invalid. Focusing a device INSIDE a user rack is
+    //                     not enough to engage automap — the user must click
+    //                     the rack header explicitly. Avoids two surprises:
+    //                     (a) inner-device macros being mapped just because
+    //                     the user opened a device to inspect parameters;
+    //                     (b) rack macros silently lighting up green when
+    //                     the user clicked through into the rack's chain.
+    //   Track / None    → invalid (track macros don't go through
+    //                     focused.macro today).
+    switch (path.getType()) {
+        case ChainNodeType::TopLevelDevice:
+        case ChainNodeType::Rack:
+            return path;
+        case ChainNodeType::Chain: {
+            for (int i = static_cast<int>(path.steps.size()) - 1; i >= 0; --i) {
+                if (path.steps[i].type == ChainStepType::Rack) {
+                    ChainNodePath rackPath;
+                    rackPath.trackId = path.trackId;
+                    rackPath.steps.assign(path.steps.begin(), path.steps.begin() + i + 1);
+                    return rackPath;
+                }
+            }
+            return {};
         }
+        case ChainNodeType::Device:
+        case ChainNodeType::Track:
+        case ChainNodeType::None:
+            return {};
     }
-
-    // No rack ancestor — fall back to the focused device.
-    if (path.getType() == ChainNodeType::TopLevelDevice || path.getType() == ChainNodeType::Device)
-        return path;
-
     return {};
 }
 

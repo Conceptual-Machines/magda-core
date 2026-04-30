@@ -10,6 +10,8 @@
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/controllers/BindingRegistry.hpp"
+#include "core/controllers/ControllerRegistry.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
@@ -32,7 +34,10 @@ class MacroEditorPanel;
  * │ [Mods Panel]  [Content]  [Gain Panel]                   │ ← Side panels (optional)
  * └─────────────────────────────────────────────────────────┘
  */
-class NodeComponent : public juce::Component, public magda::SelectionManagerListener {
+class NodeComponent : public juce::Component,
+                      public magda::SelectionManagerListener,
+                      public magda::BindingRegistryListener,
+                      public magda::ControllerRegistryListener {
   public:
     NodeComponent();
     ~NodeComponent() override;
@@ -48,6 +53,18 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
     void chainNodeReselected(const magda::ChainNodePath& path) override;
     void paramSelectionChanged(const magda::ParamSelection& selection) override;
+
+    // BindingRegistryListener / ControllerRegistryListener — bindings or
+    // a controller's enabled state can change which dot lights up on this
+    // node's header. Also fires when the focused-macro-owner shifts (e.g.
+    // user selects a different rack), since hasResolverBindingForDevice()
+    // resolves through the live ChainContext.
+    void bindingRegistryChanged(magda::BindingScope) override {
+        refreshControllerIndicators();
+    }
+    void controllerRegistryChanged() override {
+        refreshControllerIndicators();
+    }
 
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
@@ -225,6 +242,17 @@ class NodeComponent : public juce::Component, public magda::SelectionManagerList
 
     // Unique path for centralized selection
     magda::ChainNodePath nodePath_;
+
+    // Controller-binding indicator state (drawn as small dots in the header
+    // by paintOverChildren). Recomputed by refreshControllerIndicators() in
+    // response to BindingRegistry / ControllerRegistry / chain-focus changes.
+    //   pinned (orange) — any user-mapped binding (Static or Alias) for this
+    //                     node. Survives focus changes.
+    //   automap (green) — at least one resolver binding (e.g. focused.macro)
+    //                     currently resolves to this node. Tracks focus.
+    bool hasPinnedBindings_ = false;
+    bool hasAutomapBindings_ = false;
+    void refreshControllerIndicators();
 
     // Layout constants
     static constexpr int HEADER_HEIGHT = 24;
