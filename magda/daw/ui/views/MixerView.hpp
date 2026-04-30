@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "../components/common/MixerDebugPanel.hpp"
@@ -14,6 +15,7 @@
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
 #include "audio/MidiBridge.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -34,6 +36,7 @@ class MixerView : public juce::Component,
                   public juce::DragAndDropTarget,
                   public juce::Timer,
                   public TrackManagerListener,
+                  public SelectionManagerListener,
                   public ViewModeListener,
                   public MidiBridge::Listener {
   public:
@@ -63,6 +66,10 @@ class MixerView : public juce::Component,
     void masterChannelChanged() override;
     void trackSelectionChanged(TrackId trackId) override;
 
+    // SelectionManagerListener
+    void selectionTypeChanged(SelectionType newType) override;
+    void multiTrackSelectionChanged(const std::unordered_set<TrackId>& trackIds) override;
+
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
 
@@ -75,6 +82,9 @@ class MixerView : public juce::Component,
 
     // Selection
     void selectChannel(int index, bool isMaster = false);
+    // Drive strip highlights from SelectionManager (handles both single and
+    // multi-selection in one pass). Called from every selection-change event.
+    void syncSelectionVisuals();
     int getSelectedChannel() const {
         return selectedChannelIndex;
     }
@@ -197,6 +207,14 @@ class MixerView : public juce::Component,
         void setupControls();
         void setupRoutingCallbacks();
         void rebuildSendSlots(const std::vector<SendInfo>& sends);
+
+        // Multi-track relative drag state for volume/pan: when this strip is
+        // part of a multi-selection, every selected track shifts by the same
+        // delta from its own pre-drag base. Cleared from TextSlider::onDragEnd.
+        std::unordered_map<TrackId, float> multiTrackBaseVolumes_;
+        std::unordered_map<TrackId, float> multiTrackBasePans_;
+        double multiTrackDragStartDb_ = 0.0;
+        double multiTrackDragStartPan_ = 0.0;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChannelStrip)
     };

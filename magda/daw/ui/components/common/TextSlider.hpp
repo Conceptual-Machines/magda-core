@@ -260,6 +260,7 @@ class TextSlider : public juce::Component,
     }
 
     std::function<void(double)> onValueChanged;
+    std::function<void()> onDragEnd;       // Called when a drag gesture ends (mouseUp after drag)
     std::function<void()> onClicked;       // Called on single left-click (no drag)
     std::function<void()> onShiftClicked;  // Called on Shift+click (no drag)
     std::function<void(float)>
@@ -558,6 +559,8 @@ class TextSlider : public juce::Component,
                 // Single left-click callback
                 onClicked();
             }
+        } else if (onDragEnd) {
+            onDragEnd();
         }
         hasDragged_ = false;
     }

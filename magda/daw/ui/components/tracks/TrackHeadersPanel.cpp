@@ -1716,62 +1716,126 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
+    // Multi-track helper: when the user edits a strip whose track is part of
+    // a multi-selection, the same edit fans out to every selected track. Plain
+    // edits on a non-selected (or singly-selected) track stay scoped to that
+    // one track.
+    auto getEditTargets = [](TrackId clickedId) -> std::vector<TrackId> {
+        auto& sel = SelectionManager::getInstance();
+        if (sel.isTrackSelected(clickedId) && sel.getSelectedTrackCount() > 1) {
+            const auto& set = sel.getSelectedTracks();
+            return std::vector<TrackId>(set.begin(), set.end());
+        }
+        return {clickedId};
+    };
+
     // Mute button callback - updates TrackManager
-    header.muteButton->onClick = [this, trackId]() {
+    header.muteButton->onClick = [this, trackId, getEditTargets]() {
         int index = getVisibleHeaderIndex(trackId);
         if (index >= 0) {
             auto& header = *trackHeaders[index];
             header.muted = header.muteButton->getToggleState();
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackMuteCommand>(trackId, header.muted));
+            for (auto tid : getEditTargets(trackId))
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackMuteCommand>(tid, header.muted));
         }
     };
 
     // Solo button callback - updates TrackManager
-    header.soloButton->onClick = [this, trackId]() {
+    header.soloButton->onClick = [this, trackId, getEditTargets]() {
         int index = getVisibleHeaderIndex(trackId);
         if (index >= 0) {
             auto& header = *trackHeaders[index];
             header.solo = header.soloButton->getToggleState();
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackSoloCommand>(trackId, header.solo));
+            for (auto tid : getEditTargets(trackId))
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackSoloCommand>(tid, header.solo));
         }
     };
 
-    // Volume label callback - updates TrackManager
+    // Volume label callback - updates TrackManager. Multi-track: shift every
+    // selected track by the same dB delta from its own pre-drag base, so the
+    // relative balance between tracks is preserved.
     header.volumeLabel->onValueChange = [this, trackId]() {
         int index = getVisibleHeaderIndex(trackId);
-        if (index >= 0) {
-            auto& header = *trackHeaders[index];
-            // Convert dB to linear gain
-            header.volume = dbToGain(static_cast<float>(header.volumeLabel->getValue()));
+        if (index < 0)
+            return;
+        auto& header = *trackHeaders[index];
+        header.volume = dbToGain(static_cast<float>(header.volumeLabel->getValue()));
+
+        auto& sel = SelectionManager::getInstance();
+        const bool multi = sel.isTrackSelected(trackId) && sel.getSelectedTrackCount() > 1;
+
+        if (multi) {
+            if (multiTrackBaseVolumes_.empty()) {
+                auto& tm = TrackManager::getInstance();
+                for (auto tid : sel.getSelectedTracks())
+                    if (auto* t = tm.getTrack(tid))
+                        multiTrackBaseVolumes_[tid] = t->volume;
+                multiTrackDragStartDb_ = header.volumeLabel->getValue();
+            }
+            const double delta = header.volumeLabel->getValue() - multiTrackDragStartDb_;
+            for (auto& [tid, baseVol] : multiTrackBaseVolumes_) {
+                float baseDb = (baseVol <= 0.0f) ? -60.0f : 20.0f * std::log10(baseVol);
+                float newDb = juce::jlimit(-60.0f, 6.0f, static_cast<float>(baseDb + delta));
+                float newGain = (newDb <= -60.0f) ? 0.0f : std::pow(10.0f, newDb / 20.0f);
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackVolumeCommand>(tid, newGain));
+            }
+        } else {
             UndoManager::getInstance().executeCommand(
                 std::make_unique<SetTrackVolumeCommand>(trackId, header.volume));
         }
     };
+    header.volumeLabel->onDragEnd = [this](double) { multiTrackBaseVolumes_.clear(); };
 
-    // Pan label callback - updates TrackManager
+    // Pan label callback - updates TrackManager. Multi-track: shift every
+    // selected track by the same delta from its own pre-drag base.
     header.panLabel->onValueChange = [this, trackId]() {
         int index = getVisibleHeaderIndex(trackId);
-        if (index >= 0) {
-            auto& header = *trackHeaders[index];
-            header.pan = static_cast<float>(header.panLabel->getValue());
+        if (index < 0)
+            return;
+        auto& header = *trackHeaders[index];
+        header.pan = static_cast<float>(header.panLabel->getValue());
+
+        auto& sel = SelectionManager::getInstance();
+        const bool multi = sel.isTrackSelected(trackId) && sel.getSelectedTrackCount() > 1;
+
+        if (multi) {
+            if (multiTrackBasePans_.empty()) {
+                auto& tm = TrackManager::getInstance();
+                for (auto tid : sel.getSelectedTracks())
+                    if (auto* t = tm.getTrack(tid))
+                        multiTrackBasePans_[tid] = t->pan;
+                multiTrackDragStartPan_ = header.panLabel->getValue();
+            }
+            const double delta = header.panLabel->getValue() - multiTrackDragStartPan_;
+            for (auto& [tid, basePan] : multiTrackBasePans_) {
+                float newPan = juce::jlimit(-1.0f, 1.0f, static_cast<float>(basePan + delta));
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackPanCommand>(tid, newPan));
+            }
+        } else {
             UndoManager::getInstance().executeCommand(
                 std::make_unique<SetTrackPanCommand>(trackId, header.pan));
         }
     };
+    header.panLabel->onDragEnd = [this](double) { multiTrackBasePans_.clear(); };
 
     // Record arm button callback - updates TrackManager
-    header.recordButton->onClick = [this, trackId]() {
+    header.recordButton->onClick = [this, trackId, getEditTargets]() {
         int index = getVisibleHeaderIndex(trackId);
         if (index >= 0) {
             bool armed = trackHeaders[index]->recordButton->getToggleState();
-            TrackManager::getInstance().setTrackRecordArmed(trackId, armed);
+            for (auto tid : getEditTargets(trackId))
+                TrackManager::getInstance().setTrackRecordArmed(tid, armed);
         }
     };
 
-    // Monitor button callback - cycles Off → In → Auto → Off
-    header.monitorButton->onClick = [trackId]() {
+    // Monitor button callback - cycles Off → In → Auto → Off. In multi mode
+    // every selected track is forced to the next mode of the clicked track,
+    // so the group ends up homogeneous regardless of where each track started.
+    header.monitorButton->onClick = [trackId, getEditTargets]() {
         auto* track = TrackManager::getInstance().getTrack(trackId);
         if (!track)
             return;
@@ -1787,8 +1851,9 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
                 nextMode = InputMonitorMode::Off;
                 break;
         }
-        UndoManager::getInstance().executeCommand(
-            std::make_unique<SetTrackInputMonitorCommand>(trackId, nextMode));
+        for (auto tid : getEditTargets(trackId))
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackInputMonitorCommand>(tid, nextMode));
     };
 
     // Automation button - show automation lane menu
@@ -2361,20 +2426,20 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
 
                 // Clicks bubbled up from child components (mute / solo /
                 // automation button, name label, selectors, etc.) skip the
-                // selection branch — those controls have their own purpose
-                // and shouldn't drag focus onto a track the user wasn't
-                // intentionally selecting. Without this, e.g., clicking the
-                // automation button on track B switches the chain panel to
-                // track B and tears down any device editor open on track A.
-                // Direct clicks on the panel (originalComponent == this) still
-                // select normally; the right-click context menu below already
-                // uses the same gate.
+                // PLAIN selection branch — those controls have their own
+                // purpose and shouldn't drag focus onto a track the user
+                // wasn't intentionally selecting. Without this, e.g., clicking
+                // the automation button on track B switches the chain panel
+                // to track B and tears down any device editor open on track A.
+                //
+                // Cmd/Shift+click is the explicit multi-select gesture, so it
+                // is allowed through even when it bubbles up from a child —
+                // otherwise the user can almost never trigger it (most of the
+                // visible header area is covered by interactive children). The
+                // child's own onClick still fires (e.g. cmd-clicking the mute
+                // button still toggles mute); accepted trade-off.
                 const bool fromChild = event.originalComponent != this;
-                if (fromChild) {
-                    // Skip the selection branches entirely — fall through to
-                    // the right-click / drag-record block, both of which
-                    // already gate on originalComponent.
-                } else if (event.mods.isCommandDown() && !event.mods.isPopupMenu()) {
+                if (event.mods.isCommandDown() && !event.mods.isPopupMenu()) {
                     // Cmd+click: toggle track in multi-selection
                     SelectionManager::getInstance().toggleTrackSelection(trackId);
                     grabKeyboardFocus();
@@ -2400,7 +2465,7 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
                         selectTrack(i);
                     }
                     grabKeyboardFocus();
-                } else {
+                } else if (!fromChild) {
                     // Plain click on a track that's already in multi-selection:
                     // defer single-selection to mouseUp so drag can keep multi-selection
                     if (selectedTrackIndices_.size() > 1 && selectedTrackIndices_.count(i) > 0) {
