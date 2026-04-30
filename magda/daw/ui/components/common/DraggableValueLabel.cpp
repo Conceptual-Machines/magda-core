@@ -341,6 +341,9 @@ void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
     dragStartValue_ = value_;
     dragStartY_ = e.y;
 
+    if (onDragStart)
+        onDragStart();
+
     // Suppress playback write-back for the duration of the gesture so the
     // engine doesn't fight a drag-in-progress. This is transient (cleared on
     // mouseUp) and is NOT the same as the persistent override/bypass — that

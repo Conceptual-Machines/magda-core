@@ -1753,6 +1753,22 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         }
     };
 
+    // Light up every other selected track's volume label the moment the user
+    // presses this strip's slider, so the multi-track edit gesture is visible
+    // immediately rather than only once a value actually changes.
+    header.volumeLabel->onDragStart = [this, trackId]() {
+        auto& sel = SelectionManager::getInstance();
+        if (!sel.isTrackSelected(trackId) || sel.getSelectedTrackCount() <= 1)
+            return;
+        for (auto tid : sel.getSelectedTracks()) {
+            if (tid == trackId)
+                continue;
+            int otherIdx = getVisibleHeaderIndex(tid);
+            if (otherIdx >= 0)
+                trackHeaders[otherIdx]->volumeLabel->setCoEditing(true);
+        }
+    };
+
     // Volume label callback - updates TrackManager. Multi-track: shift every
     // selected track by the same dB delta from its own pre-drag base, so the
     // relative balance between tracks is preserved.
@@ -1806,6 +1822,20 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
                 trackHeaders[idx]->volumeLabel->setCoEditing(false);
         }
         multiTrackBaseVolumes_.clear();
+    };
+
+    // Same idea for pan — co-edit highlight engages on press, not on drag.
+    header.panLabel->onDragStart = [this, trackId]() {
+        auto& sel = SelectionManager::getInstance();
+        if (!sel.isTrackSelected(trackId) || sel.getSelectedTrackCount() <= 1)
+            return;
+        for (auto tid : sel.getSelectedTracks()) {
+            if (tid == trackId)
+                continue;
+            int otherIdx = getVisibleHeaderIndex(tid);
+            if (otherIdx >= 0)
+                trackHeaders[otherIdx]->panLabel->setCoEditing(true);
+        }
     };
 
     // Pan label callback - updates TrackManager. Multi-track: shift every
@@ -1973,14 +2003,17 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
         }
     }
 
-    // Background - groups have slightly different color
+    // Background - groups have slightly different color. Selected headers use
+    // pure black to match the mixer/session views' selection treatment, which
+    // reads at a glance even with many tracks. The timeline content lane keeps
+    // its softer TRACK_SELECTED tint so the clip area doesn't go fully dark.
     auto bgArea = outer.trimmed(area, indent);
+    const juce::Colour selectedBg = juce::Colours::black;
     if (header.isGroup) {
-        g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::TRACK_SELECTED)
+        g.setColour(isSelected ? selectedBg
                                : DarkTheme::getColour(DarkTheme::SURFACE).brighter(0.05f));
     } else {
-        g.setColour(isSelected ? DarkTheme::getColour(DarkTheme::TRACK_SELECTED)
-                               : DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
+        g.setColour(isSelected ? selectedBg : DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND));
     }
     g.fillRect(bgArea);
 
