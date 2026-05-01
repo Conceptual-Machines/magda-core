@@ -4,6 +4,7 @@
 target_sources(magda_daw PRIVATE
     AudioBridge.cpp
     AudioThumbnailManager.cpp
+    WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
     processors/DeviceProcessor.cpp
     MidiBridge.cpp
