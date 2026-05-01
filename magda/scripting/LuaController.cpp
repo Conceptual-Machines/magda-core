@@ -1,5 +1,8 @@
 #include "magda/scripting/LuaController.hpp"
 
+#include <juce_audio_devices/juce_audio_devices.h>
+
+#include "magda/daw/audio/MidiDeviceMatch.hpp"
 #include "magda/scripting/LuaRuntime.hpp"
 #include "magda/scripting/MagdaApiLuaBindings.hpp"
 
@@ -149,6 +152,7 @@ void LuaController::attach(MidiBridge& bridge) {
         detach();
     bridge_ = &bridge;
     bridge_->addRawMidiListener(this);
+    setDawInputPort(dawInputPort_);
 }
 
 void LuaController::detach() {
@@ -224,12 +228,27 @@ juce::String LuaController::currentScriptName() const {
     return currentScriptName_;
 }
 
+void LuaController::setDawInputPort(const juce::String& port) {
+    dawInputPort_ = port;
+    if (bridge_ == nullptr)
+        return;
+    if (dawInputPort_.isEmpty()) {
+        for (const auto& dev : juce::MidiInput::getAvailableDevices())
+            bridge_->enableMidiInput(dev.identifier);
+    } else {
+        bridge_->enableMidiInput(dawInputPort_);
+    }
+}
+
 juce::String LuaController::lastError() const {
     return lastError_;
 }
 
-void LuaController::onRawMidi(const juce::String& /*deviceId*/, const juce::String& deviceName,
+void LuaController::onRawMidi(const juce::String& deviceId, const juce::String& deviceName,
                               const juce::MidiMessage& msg) {
+    if (dawInputPort_.isNotEmpty() && !magda::midi::matches(dawInputPort_, deviceId, deviceName))
+        return;
+
     // MIDI thread. Capture POD copies and bounce to the message thread; the
     // WeakReference guards against this controller being destroyed before
     // the async fires.

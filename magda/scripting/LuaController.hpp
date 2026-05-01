@@ -63,6 +63,9 @@ class LuaController : public RawMidiListener {
     /** Filename of the currently loaded script, or empty if none. */
     juce::String currentScriptName() const;
 
+    /** Restrict on_midi to one selected DAW-protocol input. Empty means all inputs. */
+    void setDawInputPort(const juce::String& port);
+
     /** Last load/eval error, or empty if the last loadScript succeeded. */
     juce::String lastError() const;
 
@@ -94,6 +97,7 @@ class LuaController : public RawMidiListener {
     MidiBridge* bridge_ = nullptr;  // non-owning; nullptr until attach() is called
     std::unique_ptr<LuaRuntime> rt_;
     juce::String currentScriptName_;
+    juce::String dawInputPort_;
     juce::String lastError_;
     std::unique_ptr<TickTimer> tickTimer_;
     juce::int64 lastTickMs_ = 0;

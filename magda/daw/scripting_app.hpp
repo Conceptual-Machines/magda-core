@@ -17,6 +17,11 @@
 
 namespace magda::scripting_app {
 
+struct LuaScriptPorts {
+    juce::String midiOutputPort;
+    juce::String dawInputPort;
+};
+
 /** Reload the active Lua controller script. If no script is currently active,
  *  picks the alphabetically-first script in the scripts folder. Returns true
  *  on success. */
@@ -32,6 +37,12 @@ void unloadLuaScript();
 
 /** Filename of the currently active Lua script, or empty if none. */
 juce::String activeLuaScriptName();
+
+/** Persisted MIDI assignment for a script filename. */
+LuaScriptPorts luaScriptPorts(const juce::String& scriptName);
+
+/** Update the MIDI assignment for a script filename and persist it. */
+void setLuaScriptPorts(const juce::String& scriptName, const LuaScriptPorts& ports);
 
 /** True if the per-user scripts folder contains at least one .lua file.
  *  Disambiguates "no scripts present" from "load failed" after a Reload —

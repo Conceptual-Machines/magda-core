@@ -375,6 +375,21 @@ TEST_CASE("magda.midi.send_sysex builds a SysEx message with framing", "[lua_bin
     REQUIRE(msg.getSysExData()[6] == 0x42);
 }
 
+TEST_CASE("magda.midi default output is used by send helpers", "[lua_bindings][midi]") {
+    MockMagdaApi mock;
+    mock.midi_.defaultOutputPort = "Configured DAW Out";
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.eval("magda.midi.send_cc('default', 1, 7, 64)"));
+    auto defaultOut = rt.evalToString("magda.midi.default_output()");
+
+    REQUIRE(mock.midi_.sends.size() == 1);
+    REQUIRE(mock.midi_.sends[0].port == "Configured DAW Out");
+    REQUIRE(defaultOut.has_value());
+    REQUIRE(*defaultOut == "Configured DAW Out");
+}
+
 TEST_CASE("magda.midi.send_sysex rejects out-of-range bytes", "[lua_bindings][midi]") {
     MockMagdaApi mock;
     LuaRuntime rt;

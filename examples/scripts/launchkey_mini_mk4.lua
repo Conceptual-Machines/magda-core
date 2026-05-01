@@ -21,9 +21,8 @@
 -- Device port matching
 ----------------------------------------------------------------
 -- The MK4 exposes two USB MIDI interfaces: a "MIDI" port (keys / wheels /
--- pad Custom Modes) and a "DAW" port (control surface). We listen for
--- pad / transport on the DAW port and send all feedback to the DAW out.
--- Display name varies slightly per OS — match permissively.
+-- pad Custom Modes) and a "DAW" port (control surface). Select the DAW
+-- protocol ports as From Controller / To Controller in MAGDA's Lua Scripts row.
 
 local function is_daw_port(port)
   return port:lower():find("launchkey") and port:lower():find("daw")
@@ -33,6 +32,11 @@ end
 local daw_out = nil
 local function find_daw_out()
   if daw_out then return daw_out end
+  local configured = magda.midi.default_output()
+  if configured and configured ~= "" then
+    daw_out = configured
+    return configured
+  end
   for _, name in ipairs(magda.midi.outputs()) do
     if is_daw_port(name) then
       daw_out = name
@@ -434,8 +438,6 @@ end
 local DEBUG_LOG_EVENTS = true
 
 function on_midi(e)
-  if not is_daw_port(e.port) then return end
-
   if DEBUG_LOG_EVENTS and e.type ~= 'aftertouch' then
     magda.log.info(string.format(
       "[launchkey] %s ch=%d num=%d val=%d",

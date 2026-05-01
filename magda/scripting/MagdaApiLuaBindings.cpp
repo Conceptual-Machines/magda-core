@@ -588,13 +588,20 @@ std::vector<juce::uint8> readByteArray(lua_State* L, int idx) {
     return out;
 }
 
+juce::String resolveMidiOutputPort(MidiApi& midi, const char* rawPort) {
+    auto port = juce::String::fromUTF8(rawPort);
+    if (port.isEmpty() || port == "default" || port == "@default")
+        return midi.getDefaultOutputPort();
+    return port;
+}
+
 int lua_midi_send_cc(lua_State* L) {
     auto* api = getApi(L);
     const char* port = luaL_checkstring(L, 1);
     int channel = static_cast<int>(luaL_checkinteger(L, 2));
     int number = static_cast<int>(luaL_checkinteger(L, 3));
     int value = static_cast<int>(luaL_checkinteger(L, 4));
-    bool ok = api->midi().sendMidi(juce::String::fromUTF8(port),
+    bool ok = api->midi().sendMidi(resolveMidiOutputPort(api->midi(), port),
                                    juce::MidiMessage::controllerEvent(channel, number, value));
     lua_pushboolean(L, ok);
     return 1;
@@ -607,7 +614,7 @@ int lua_midi_send_note_on(lua_State* L) {
     int note = static_cast<int>(luaL_checkinteger(L, 3));
     int vel = static_cast<int>(luaL_checkinteger(L, 4));
     bool ok = api->midi().sendMidi(
-        juce::String::fromUTF8(port),
+        resolveMidiOutputPort(api->midi(), port),
         juce::MidiMessage::noteOn(channel, note, static_cast<juce::uint8>(vel)));
     lua_pushboolean(L, ok);
     return 1;
@@ -618,7 +625,7 @@ int lua_midi_send_note_off(lua_State* L) {
     const char* port = luaL_checkstring(L, 1);
     int channel = static_cast<int>(luaL_checkinteger(L, 2));
     int note = static_cast<int>(luaL_checkinteger(L, 3));
-    bool ok = api->midi().sendMidi(juce::String::fromUTF8(port),
+    bool ok = api->midi().sendMidi(resolveMidiOutputPort(api->midi(), port),
                                    juce::MidiMessage::noteOff(channel, note));
     lua_pushboolean(L, ok);
     return 1;
@@ -637,7 +644,7 @@ int lua_midi_send(lua_State* L) {
     // Channel-voice messages are 2 or 3 bytes; the third is allowed-but-ignored
     // for program-change / channel-pressure. JUCE's MidiMessage handles either.
     juce::MidiMessage msg(raw, 3);
-    bool ok = api->midi().sendMidi(juce::String::fromUTF8(port), msg);
+    bool ok = api->midi().sendMidi(resolveMidiOutputPort(api->midi(), port), msg);
     lua_pushboolean(L, ok);
     return 1;
 }
@@ -648,7 +655,8 @@ int lua_midi_send_sysex(lua_State* L) {
     auto* api = getApi(L);
     const char* port = luaL_checkstring(L, 1);
     auto bytes = readByteArray(L, 2);
-    bool ok = api->midi().sendSysEx(juce::String::fromUTF8(port), bytes.data(), bytes.size());
+    bool ok =
+        api->midi().sendSysEx(resolveMidiOutputPort(api->midi(), port), bytes.data(), bytes.size());
     lua_pushboolean(L, ok);
     return 1;
 }
@@ -662,6 +670,11 @@ int lua_midi_outputs(lua_State* L) {
         pushJuceString(L, n);
         lua_rawseti(L, -2, i++);
     }
+    return 1;
+}
+
+int lua_midi_default_output(lua_State* L) {
+    pushJuceString(L, getApi(L)->midi().getDefaultOutputPort());
     return 1;
 }
 
@@ -848,6 +861,7 @@ const FnReg kMidiFns[] = {
     {"send_note_off", lua_midi_send_note_off},
     {"send_sysex", lua_midi_send_sysex},
     {"outputs", lua_midi_outputs},
+    {"default_output", lua_midi_default_output},
     {nullptr, nullptr},
 };
 

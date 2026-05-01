@@ -30,6 +30,9 @@ class MidiApi {
 
     /** All currently available MIDI output port display names. */
     virtual std::vector<juce::String> getOutputPortNames() const = 0;
+
+    /** Default output selected for the currently loaded controller script. */
+    virtual juce::String getDefaultOutputPort() const = 0;
 };
 
 }  // namespace magda

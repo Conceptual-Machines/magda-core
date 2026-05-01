@@ -657,6 +657,21 @@ class Config {
         controllers_ = c;
     }
 
+    // Lua controller script assignments (serialized to/from config.json "luaScripts" key).
+    juce::var getLuaScripts() const {
+        return luaScripts_;
+    }
+    void setLuaScripts(const juce::var& scripts) {
+        luaScripts_ = scripts;
+    }
+
+    std::string getActiveLuaScript() const {
+        return activeLuaScript_;
+    }
+    void setActiveLuaScript(const std::string& scriptName) {
+        activeLuaScript_ = scriptName;
+    }
+
     // Global bindings (serialized to/from config.json "globalBindings" key)
     juce::var getGlobalBindings() const {
         return globalBindings_;
@@ -833,6 +848,10 @@ class Config {
 
     // Controller devices (opaque JSON blob, managed by ControllerRegistry)
     juce::var controllers_;
+
+    // Lua controller scripts (opaque JSON blob, managed by scripting_app)
+    juce::var luaScripts_;
+    std::string activeLuaScript_;
 
     // Global bindings (opaque JSON blob, managed by BindingRegistry)
     juce::var globalBindings_;

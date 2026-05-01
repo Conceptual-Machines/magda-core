@@ -38,7 +38,7 @@ Available bindings (all on the message thread):
 - `magda.clips.{create_midi, delete, list_on_track, list_arrangement, set_name, set_groove}`
 - `magda.session.{launch_clip, stop_clip, stop_track, stop_all, active_clip_on_track}`
 - `magda.project.info()` — name, file_path, tempo, time_sig_num, time_sig_den, sample_rate, loop_enabled
-- `magda.midi.{send, send_cc, send_note_on, send_note_off, send_sysex, outputs}` — host → device output. SysEx payload is the bytes between F0 and F7; the binding adds the framing.
+- `magda.midi.{send, send_cc, send_note_on, send_note_off, send_sysex, outputs, default_output}` — host → device output. Passing `"default"` uses the MIDI Out selected in the Lua Scripts tab. SysEx payload is the bytes between F0 and F7; the binding adds the framing.
 - `magda.transport.{play, stop, set_recording, is_playing, is_recording, is_loop_enabled, set_loop_enabled, position_beats, set_position_beats}` — beats-authoritative position.
 - `magda.focused.{has_focus, name, macro_name, macro_value, set_macro}` — read / write the focused device's 16 macros.
 

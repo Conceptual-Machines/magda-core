@@ -60,6 +60,10 @@ class MagdaApiLive : public MagdaApi {
         midi_.setMidiBridge(bridge);
     }
 
+    void setDefaultMidiOutputPort(const juce::String& port) {
+        midi_.setDefaultOutputPort(port);
+    }
+
     /** Wire the current-Edit accessor into the live TransportApi. */
     void setEditAccessor(TransportApiLive::EditGetter g) {
         transport_.setEditGetter(std::move(g));

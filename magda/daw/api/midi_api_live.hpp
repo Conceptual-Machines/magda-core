@@ -28,9 +28,17 @@ class MidiApiLive : public MidiApi {
     bool sendMidi(const juce::String& port, const juce::MidiMessage& msg) override;
     bool sendSysEx(const juce::String& port, const juce::uint8* data, size_t numBytes) override;
     std::vector<juce::String> getOutputPortNames() const override;
+    juce::String getDefaultOutputPort() const override {
+        return defaultOutputPort_;
+    }
+
+    void setDefaultOutputPort(const juce::String& port) {
+        defaultOutputPort_ = port;
+    }
 
   private:
     MidiBridge* bridge_ = nullptr;
+    juce::String defaultOutputPort_;
 };
 
 }  // namespace magda

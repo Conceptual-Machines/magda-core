@@ -4,9 +4,11 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <memory>
+#include <string>
 
 #include "../../magda/agents/llama_model_manager.hpp"
 #include "../../magda/agents/llm_presets.hpp"
+#include "api/magda_api_live.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
@@ -212,6 +214,20 @@ class MagdaDAWApplication : public JUCEApplication {
                 if (!ok)
                     juce::Logger::writeToLog("[lua] No controller script loaded");
             };
+            juce::MessageManager::callAsync([this]() {
+                if (scriptAutoLoaded_ || luaController_ == nullptr)
+                    return;
+                scriptAutoLoaded_ = true;
+                juce::Logger::writeToLog("[lua-debug] startup fallback - "
+                                         "running reloadActiveLuaScript");
+                const bool ok = reloadActiveLuaScript();
+                juce::Logger::writeToLog(
+                    "[lua-debug] startup fallback reloadActiveLuaScript -> " +
+                    juce::String(ok ? "true" : "false") + " active='" +
+                    (luaController_ ? luaController_->currentScriptName() : juce::String{}) + "'");
+                if (!ok)
+                    juce::Logger::writeToLog("[lua] No controller script loaded");
+            });
         } else {
             juce::Logger::writeToLog("[lua-debug] startup: MidiBridge null, "
                                      "LuaController NOT created");
@@ -375,6 +391,50 @@ class MagdaDAWApplication : public JUCEApplication {
 // implementing scripting_app.hpp.
 // -----------------------------------------------------------------------------
 
+namespace {
+
+magda::scripting_app::LuaScriptPorts getLuaScriptPortsFromConfig(const juce::String& scriptName) {
+    magda::scripting_app::LuaScriptPorts ports;
+    const auto scripts = magda::Config::getInstance().getLuaScripts();
+    if (!scripts.isArray())
+        return ports;
+
+    for (const auto& item : *scripts.getArray()) {
+        auto* obj = item.getDynamicObject();
+        if (obj == nullptr || obj->getProperty("scriptName").toString() != scriptName)
+            continue;
+        ports.midiOutputPort = obj->getProperty("midiOutputPort").toString();
+        ports.dawInputPort = obj->getProperty("dawInputPort").toString();
+        return ports;
+    }
+    return ports;
+}
+
+void setLuaScriptPortsInConfig(const juce::String& scriptName,
+                               const magda::scripting_app::LuaScriptPorts& ports) {
+    juce::Array<juce::var> entries;
+    const auto scripts = magda::Config::getInstance().getLuaScripts();
+    if (scripts.isArray()) {
+        for (const auto& item : *scripts.getArray()) {
+            auto* obj = item.getDynamicObject();
+            if (obj == nullptr || obj->getProperty("scriptName").toString() != scriptName)
+                entries.add(item);
+        }
+    }
+
+    auto* entry = new juce::DynamicObject();
+    entry->setProperty("scriptName", scriptName);
+    entry->setProperty("midiOutputPort", ports.midiOutputPort);
+    entry->setProperty("dawInputPort", ports.dawInputPort);
+    entries.add(juce::var(entry));
+
+    auto& cfg = magda::Config::getInstance();
+    cfg.setLuaScripts(juce::var(entries));
+    cfg.save();
+}
+
+}  // namespace
+
 bool MagdaDAWApplication::reloadActiveLuaScript() {
     if (luaController_ == nullptr) {
         juce::Logger::writeToLog("[lua-debug] reloadActiveLuaScript: luaController_ null");
@@ -382,9 +442,13 @@ bool MagdaDAWApplication::reloadActiveLuaScript() {
     }
 
     // If a script is already active, reload that exact file. Otherwise pick
-    // the alphabetically-first script in the folder so a fresh install with
-    // no chosen script still has a sensible default to load.
+    // the persisted active script, then fall back to the alphabetically-first
+    // script so a fresh install still has a sensible default to load.
     auto activeName = luaController_->currentScriptName();
+    if (activeName.isEmpty()) {
+        const auto persisted = magda::Config::getInstance().getActiveLuaScript();
+        activeName = juce::String::fromUTF8(persisted.c_str(), static_cast<int>(persisted.size()));
+    }
     magda::scripting::LuaScriptStore store;
     store.ensureExists();
     auto scripts = store.enumerate();
@@ -414,8 +478,17 @@ bool MagdaDAWApplication::reloadActiveLuaScript() {
 bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
     if (luaController_ == nullptr)
         return false;
+
+    const auto ports = getLuaScriptPortsFromConfig(file.getFileName());
+    luaController_->setDawInputPort(ports.dawInputPort);
+    if (auto* liveApi = dynamic_cast<magda::MagdaApiLive*>(&daw_engine_->getMagdaApi()))
+        liveApi->setDefaultMidiOutputPort(ports.midiOutputPort);
+
     if (luaController_->loadScript(file)) {
         juce::Logger::writeToLog("[lua] Loaded controller script: " + file.getFileName());
+        auto& cfg = magda::Config::getInstance();
+        cfg.setActiveLuaScript(file.getFileName().toStdString());
+        cfg.save();
         return true;
     }
     juce::Logger::writeToLog("[lua] Failed to load " + file.getFileName() + ": " +
@@ -426,6 +499,9 @@ bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
 void MagdaDAWApplication::unloadLuaScript() {
     if (luaController_ != nullptr)
         luaController_->unloadScript();
+    auto& cfg = magda::Config::getInstance();
+    cfg.setActiveLuaScript(std::string{});
+    cfg.save();
 }
 
 juce::String MagdaDAWApplication::activeLuaScriptName() const {
@@ -461,6 +537,18 @@ juce::String activeLuaScriptName() {
     if (auto* app = MagdaDAWApplication::getMagdaInstance())
         return app->activeLuaScriptName();
     return {};
+}
+
+LuaScriptPorts luaScriptPorts(const juce::String& scriptName) {
+    return getLuaScriptPortsFromConfig(scriptName);
+}
+
+void setLuaScriptPorts(const juce::String& scriptName, const LuaScriptPorts& ports) {
+    setLuaScriptPortsInConfig(scriptName, ports);
+    if (auto* app = MagdaDAWApplication::getMagdaInstance()) {
+        if (app->activeLuaScriptName() == scriptName)
+            app->reloadActiveLuaScript();
+    }
 }
 
 bool hasAnyLuaScripts() {

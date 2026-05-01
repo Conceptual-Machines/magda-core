@@ -17,11 +17,34 @@ namespace magda {
 namespace {
 
 constexpr int kPollIntervalMs = 2000;
+constexpr int kProfileMidiOutWidth = 170;
+constexpr int kScriptPortInWidth = 170;
+constexpr int kScriptPortOutWidth = 170;
 
 void styleListBox(juce::ListBox& lb) {
     lb.setColour(juce::ListBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
     lb.setColour(juce::ListBox::outlineColourId, DarkTheme::getBorderColour());
     lb.setOutlineThickness(1);
+}
+
+juce::String displayNameForDevice(const juce::Array<juce::MidiDeviceInfo>& devices,
+                                  const juce::String& id) {
+    if (id.isEmpty())
+        return {};
+    for (const auto& dev : devices)
+        if (dev.identifier == id || dev.name == id)
+            return dev.name;
+    return id;
+}
+
+void addMidiDeviceMenuItems(juce::PopupMenu& menu, const juce::Array<juce::MidiDeviceInfo>& devices,
+                            const juce::String& currentId) {
+    menu.addItem(1, tr("controllers.port.none"), true, currentId.isEmpty());
+    menu.addSeparator();
+    for (int i = 0; i < devices.size(); ++i) {
+        const auto& dev = devices[i];
+        menu.addItem(i + 2, dev.name, true, dev.identifier == currentId || dev.name == currentId);
+    }
 }
 
 }  // namespace
@@ -48,6 +71,7 @@ class ControllerProfilesPage : public juce::Component,
         addAndMakeVisible(addButton_);
 
         listModel_.controllers = &controllers_;
+        listModel_.liveInputs = &liveInputs_;
         listModel_.isConnected = [this](const Controller& c) { return isControllerConnected(c); };
         listModel_.isEnabled = [](const Controller& c) {
             return BindingRegistry::getInstance().hasAnyBindingForController(c.id);
@@ -58,10 +82,10 @@ class ControllerProfilesPage : public juce::Component,
 
         list_ = std::make_unique<juce::ListBox>("profiles", &listModel_);
         styleListBox(*list_);
-        list_->setRowHeight(46);
+        list_->setRowHeight(42);
         addAndMakeVisible(*list_);
 
-        refreshLiveInputs();
+        refreshLiveDevices();
         if (ControllerRegistry::getInstance().rematchInputPorts(liveInputs_))
             persist();
         rebuildList();
@@ -100,6 +124,7 @@ class ControllerProfilesPage : public juce::Component,
   private:
     struct ControllerListModel : public juce::ListBoxModel {
         std::vector<Controller>* controllers = nullptr;
+        juce::Array<juce::MidiDeviceInfo>* liveInputs = nullptr;
         std::function<bool(const Controller&)> isConnected;
         std::function<bool(const Controller&)> isEnabled;
         std::function<void(int, const juce::MouseEvent&)> onRowClicked;
@@ -121,7 +146,7 @@ class ControllerProfilesPage : public juce::Component,
 
     void timerCallback() override {
         auto previous = liveInputs_;
-        refreshLiveInputs();
+        refreshLiveDevices();
         bool changed = previous.size() != liveInputs_.size();
         if (!changed) {
             for (int i = 0; i < liveInputs_.size(); ++i) {
@@ -139,7 +164,7 @@ class ControllerProfilesPage : public juce::Component,
         rebuildList();
     }
 
-    void refreshLiveInputs() {
+    void refreshLiveDevices() {
         liveInputs_ = juce::MidiInput::getAvailableDevices();
     }
 
@@ -173,6 +198,7 @@ class ControllerProfilesPage : public juce::Component,
 
     void onRowClicked(int row, const juce::MouseEvent& e);
     void onRowToggled(int row);
+    void onRowPortRequested(int row);
     void onRowRemoveRequested(int row);
 
     std::vector<Controller> controllers_;
@@ -206,6 +232,8 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
     const int dotSize = 8;
     const int dotX = pad;
     const int textX = dotX + dotSize + 8;
+    const int portX = width - kProfileMidiOutWidth - pad;
+    const int nameW = juce::jmax(40, portX - textX - 8);
     const int lineH = (height - 2 * pad) / 2;
 
     const int dotY = (height - dotSize) / 2;
@@ -218,8 +246,7 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
     g.setColour(active ? DarkTheme::getTextColour()
                        : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFontBold(12.0f));
-    g.drawText(line1, textX, pad, width - textX - pad, lineH, juce::Justification::centredLeft,
-               true);
+    g.drawText(line1, textX, pad, nameW, lineH, juce::Justification::centredLeft, true);
 
     juce::String status;
     if (!enabled)
@@ -229,13 +256,25 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
     else
         status = tr("controllers.not_connected");
 
-    juce::String portText = c.inputPortName.isNotEmpty() ? c.inputPortName : c.inputPort;
-    juce::String line2 = portText + juce::String::fromUTF8("  \xc2\xb7  ") + status;
-
+    juce::String line2 = status;
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
     g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.drawText(line2, textX, pad + lineH, width - textX - pad, lineH,
+    g.drawText(line2, textX, pad + lineH, nameW, lineH, juce::Justification::centredLeft, true);
+
+    auto portText =
+        liveInputs != nullptr ? displayNameForDevice(*liveInputs, c.inputPort) : c.inputPort;
+    if (portText.isEmpty())
+        portText = tr("controllers.port.none");
+
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    g.setFont(FontManager::getInstance().getUIFont(9.0f));
+    g.drawText(tr("controllers.port.midi_out"), portX, 4, kProfileMidiOutWidth, 12,
                juce::Justification::centredLeft, true);
+
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setFont(FontManager::getInstance().getUIFont(11.0f));
+    g.drawText(portText, portX, 18, kProfileMidiOutWidth, 18, juce::Justification::centredLeft,
+               true);
 }
 
 // -- Profiles page handlers ---------------------------------------------------
@@ -358,26 +397,13 @@ void ControllerProfilesPage::onAddClicked() {
 }
 
 void ControllerProfilesPage::onProfilePicked(const ControllerProfile& profile) {
-    refreshLiveInputs();
-    if (liveInputs_.isEmpty()) {
-        juce::AlertWindow::showMessageBox(juce::AlertWindow::WarningIcon,
-                                          tr("controllers.add_profile"),
-                                          tr("controllers.no_midi_inputs"));
-        return;
-    }
-    juce::PopupMenu menu;
-    for (int i = 0; i < liveInputs_.size(); ++i)
-        menu.addItem(i + 1, liveInputs_[i].name);
-    auto devicesCopy = liveInputs_;
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addButton_),
-                       [this, profile, devicesCopy](int result) {
-                           if (result <= 0)
-                               return;
-                           int idx = result - 1;
-                           if (idx < 0 || idx >= devicesCopy.size())
-                               return;
-                           onPortPicked(profile, devicesCopy[idx]);
-                       });
+    auto mat = materialiseControllerFromProfile(profile, {}, {});
+    ControllerRegistry::getInstance().add(mat.controller);
+    for (const auto& b : mat.bindings)
+        BindingRegistry::getInstance().add(BindingScope::Global, b);
+
+    persist();
+    rebuildList();
 }
 
 void ControllerProfilesPage::onPortPicked(const ControllerProfile& profile,
@@ -408,7 +434,53 @@ void ControllerProfilesPage::onRowClicked(int row, const juce::MouseEvent& e) {
         onRowRemoveRequested(row);
         return;
     }
+    const int portX = list_ ? list_->getWidth() - kProfileMidiOutWidth - 6 : 0;
+    if (e.x >= portX) {
+        onRowPortRequested(row);
+        return;
+    }
     onRowToggled(row);
+}
+
+void ControllerProfilesPage::onRowPortRequested(int row) {
+    if (row < 0 || row >= static_cast<int>(controllers_.size()))
+        return;
+    refreshLiveDevices();
+    const auto current = controllers_[static_cast<size_t>(row)];
+
+    juce::PopupMenu menu;
+    addMidiDeviceMenuItems(menu, liveInputs_, current.inputPort);
+    menu.showMenuAsync(juce::PopupMenu::Options(), [this, row](int result) {
+        if (result <= 0)
+            return;
+        auto controllers = controllers_;
+        if (row < 0 || row >= static_cast<int>(controllers.size()))
+            return;
+
+        auto selected = controllers[static_cast<size_t>(row)];
+        if (result == 1) {
+            selected.inputPort = {};
+            selected.inputPortName = {};
+        } else {
+            const int idx = result - 2;
+            if (idx < 0 || idx >= liveInputs_.size())
+                return;
+            selected.inputPort = liveInputs_[idx].identifier;
+            selected.inputPortName = liveInputs_[idx].name;
+
+            for (auto& other : controllers) {
+                if (other.id != selected.id && other.inputPort == selected.inputPort) {
+                    other.inputPort = {};
+                    other.inputPortName = {};
+                    ControllerRegistry::getInstance().update(other);
+                }
+            }
+        }
+
+        ControllerRegistry::getInstance().update(selected);
+        persist();
+        rebuildList();
+    });
 }
 
 void ControllerProfilesPage::onRowToggled(int row) {
@@ -506,13 +578,18 @@ class LuaScriptsPage : public juce::Component {
 
         listModel_.scripts = &scripts_;
         listModel_.activeScriptName = []() { return scripting_app::activeLuaScriptName(); };
+        listModel_.portsForScript = [](const juce::String& name) {
+            return scripting_app::luaScriptPorts(name);
+        };
+        listModel_.liveInputs = &liveInputs_;
+        listModel_.liveOutputs = &liveOutputs_;
         listModel_.onRowClicked = [this](int row, const juce::MouseEvent& e) {
             onRowClicked(row, e);
         };
 
         list_ = std::make_unique<juce::ListBox>("scripts", &listModel_);
         styleListBox(*list_);
-        list_->setRowHeight(28);
+        list_->setRowHeight(42);
         addAndMakeVisible(*list_);
 
         rebuildScripts();
@@ -547,6 +624,9 @@ class LuaScriptsPage : public juce::Component {
     struct ScriptListModel : public juce::ListBoxModel {
         std::vector<juce::File>* scripts = nullptr;
         std::function<juce::String()> activeScriptName;
+        std::function<scripting_app::LuaScriptPorts(const juce::String&)> portsForScript;
+        juce::Array<juce::MidiDeviceInfo>* liveInputs = nullptr;
+        juce::Array<juce::MidiDeviceInfo>* liveOutputs = nullptr;
         std::function<void(int, const juce::MouseEvent&)> onRowClicked;
 
         int getNumRows() override {
@@ -561,6 +641,8 @@ class LuaScriptsPage : public juce::Component {
     };
 
     void rebuildScripts() {
+        liveInputs_ = juce::MidiInput::getAvailableDevices();
+        liveOutputs_ = juce::MidiOutput::getAvailableDevices();
         scripts_ = scripting_app::enumerateLuaScripts();
         if (list_)
             list_->updateContent();
@@ -574,8 +656,70 @@ class LuaScriptsPage : public juce::Component {
             onRowMenu(row);
             return;
         }
+        const int outX = list_ ? list_->getWidth() - kScriptPortOutWidth - 6 : 0;
+        const int inX = outX - kScriptPortInWidth - 8;
+        if (e.x >= outX) {
+            onRowOutputRequested(row);
+            return;
+        }
+        if (e.x >= inX) {
+            onRowDawInputRequested(row);
+            return;
+        }
         scripting_app::loadLuaScript(scripts_[static_cast<size_t>(row)]);
         rebuildScripts();
+    }
+
+    void onRowOutputRequested(int row) {
+        if (row < 0 || row >= static_cast<int>(scripts_.size()))
+            return;
+        rebuildScripts();
+        const auto scriptName = scripts_[static_cast<size_t>(row)].getFileName();
+        auto ports = scripting_app::luaScriptPorts(scriptName);
+
+        juce::PopupMenu menu;
+        addMidiDeviceMenuItems(menu, liveOutputs_, ports.midiOutputPort);
+        menu.showMenuAsync(juce::PopupMenu::Options(), [this, scriptName](int result) {
+            if (result <= 0)
+                return;
+            auto ports = scripting_app::luaScriptPorts(scriptName);
+            if (result == 1) {
+                ports.midiOutputPort = {};
+            } else {
+                const int idx = result - 2;
+                if (idx < 0 || idx >= liveOutputs_.size())
+                    return;
+                ports.midiOutputPort = liveOutputs_[idx].identifier;
+            }
+            scripting_app::setLuaScriptPorts(scriptName, ports);
+            rebuildScripts();
+        });
+    }
+
+    void onRowDawInputRequested(int row) {
+        if (row < 0 || row >= static_cast<int>(scripts_.size()))
+            return;
+        rebuildScripts();
+        const auto scriptName = scripts_[static_cast<size_t>(row)].getFileName();
+        auto ports = scripting_app::luaScriptPorts(scriptName);
+
+        juce::PopupMenu menu;
+        addMidiDeviceMenuItems(menu, liveInputs_, ports.dawInputPort);
+        menu.showMenuAsync(juce::PopupMenu::Options(), [this, scriptName](int result) {
+            if (result <= 0)
+                return;
+            auto ports = scripting_app::luaScriptPorts(scriptName);
+            if (result == 1) {
+                ports.dawInputPort = {};
+            } else {
+                const int idx = result - 2;
+                if (idx < 0 || idx >= liveInputs_.size())
+                    return;
+                ports.dawInputPort = liveInputs_[idx].identifier;
+            }
+            scripting_app::setLuaScriptPorts(scriptName, ports);
+            rebuildScripts();
+        });
     }
 
     void onRowMenu(int row) {
@@ -665,6 +809,8 @@ class LuaScriptsPage : public juce::Component {
     }
 
     std::vector<juce::File> scripts_;
+    juce::Array<juce::MidiDeviceInfo> liveInputs_;
+    juce::Array<juce::MidiDeviceInfo> liveOutputs_;
 
     juce::TextButton openScriptsFolderButton_;
     juce::TextButton importButton_;
@@ -694,6 +840,9 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
     const int dotX = pad;
     const int textX = dotX + dotSize + 8;
     const int dotY = (height - dotSize) / 2;
+    const int outX = width - kScriptPortOutWidth - pad;
+    const int inX = outX - kScriptPortInWidth - 8;
+    const int nameW = juce::jmax(40, outX - textX - 8);
 
     if (isActive) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
@@ -705,18 +854,42 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
                       static_cast<float>(dotSize), static_cast<float>(dotSize), 1.0f);
     }
 
-    juce::String line = name;
-    if (isActive) {
-        // Build the middle dot via charToString rather than a UTF-8 byte
-        // literal — same mojibake we hit in the chat panel (96ca226f).
-        line += "  " + juce::String::charToString(0x00B7) + "  " + tr("controllers.scripts.active");
-    }
-
     g.setColour(isActive ? DarkTheme::getTextColour()
                          : DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     g.setFont(isActive ? FontManager::getInstance().getUIFontBold(12.0f)
                        : FontManager::getInstance().getUIFont(12.0f));
-    g.drawText(line, textX, 0, width - textX - pad, height, juce::Justification::centredLeft, true);
+    g.drawText(name, textX, 5, nameW, 18, juce::Justification::centredLeft, true);
+
+    if (isActive) {
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.drawText(tr("controllers.scripts.active"), textX, 22, nameW, 14,
+                   juce::Justification::centredLeft, true);
+    }
+
+    auto ports = portsForScript ? portsForScript(name) : scripting_app::LuaScriptPorts{};
+    auto outputText = liveOutputs != nullptr
+                          ? displayNameForDevice(*liveOutputs, ports.midiOutputPort)
+                          : ports.midiOutputPort;
+    auto inputText = liveInputs != nullptr ? displayNameForDevice(*liveInputs, ports.dawInputPort)
+                                           : ports.dawInputPort;
+    if (outputText.isEmpty())
+        outputText = tr("controllers.port.none");
+    if (inputText.isEmpty())
+        inputText = tr("controllers.port.none");
+
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
+    g.setFont(FontManager::getInstance().getUIFont(9.0f));
+    g.drawText(tr("controllers.port.port_in"), inX, 4, kScriptPortInWidth, 12,
+               juce::Justification::centredLeft, true);
+    g.drawText(tr("controllers.port.port_out"), outX, 4, kScriptPortOutWidth, 12,
+               juce::Justification::centredLeft, true);
+
+    g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+    g.setFont(FontManager::getInstance().getUIFont(11.0f));
+    g.drawText(inputText, inX, 18, kScriptPortInWidth, 18, juce::Justification::centredLeft, true);
+    g.drawText(outputText, outX, 18, kScriptPortOutWidth, 18, juce::Justification::centredLeft,
+               true);
 }
 
 // =============================================================================

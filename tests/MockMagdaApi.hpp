@@ -435,6 +435,7 @@ class MockMidiApi : public MidiApi {
     };
     std::vector<Send> sends;
     std::vector<juce::String> outputPortNames;
+    juce::String defaultOutputPort;
 
     bool sendMidi(const juce::String& port, const juce::MidiMessage& msg) override {
         sends.push_back({port, msg});
@@ -447,6 +448,9 @@ class MockMidiApi : public MidiApi {
     }
     std::vector<juce::String> getOutputPortNames() const override {
         return outputPortNames;
+    }
+    juce::String getDefaultOutputPort() const override {
+        return defaultOutputPort;
     }
 };
 

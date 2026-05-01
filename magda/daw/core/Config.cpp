@@ -205,6 +205,12 @@ void Config::save() {
     if (!controllers_.isVoid())
         root->setProperty("controllers", controllers_);
 
+    // Lua controller scripts
+    if (!luaScripts_.isVoid())
+        root->setProperty("luaScripts", luaScripts_);
+    if (!activeLuaScript_.empty())
+        root->setProperty("activeLuaScript", toJuceString(activeLuaScript_));
+
     // Global bindings
     if (!globalBindings_.isVoid())
         root->setProperty("globalBindings", globalBindings_);
@@ -515,6 +521,11 @@ void Config::load() {
     // Controller devices
     if (obj->hasProperty("controllers"))
         controllers_ = obj->getProperty("controllers");
+
+    // Lua controller scripts
+    if (obj->hasProperty("luaScripts"))
+        luaScripts_ = obj->getProperty("luaScripts");
+    activeLuaScript_ = getString("activeLuaScript", activeLuaScript_);
 
     // Global bindings
     if (obj->hasProperty("globalBindings"))
