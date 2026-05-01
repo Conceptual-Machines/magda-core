@@ -2671,9 +2671,34 @@ void DeviceSlotComponent::goToNextPage() {
     }
 }
 
+void DeviceSlotComponent::openMacroPanelForSelectionIfNeeded() {
+    if (paramPanelVisible_ || !macroButton_ || !nodePath_.isValid()) {
+        return;
+    }
+
+    const auto& selectedPath = magda::SelectionManager::getInstance().getSelectedChainNode();
+    if (selectedPath != nodePath_) {
+        return;
+    }
+
+    macroButton_->setToggleState(true, juce::dontSendNotification);
+    macroButton_->setActive(true);
+    setParamPanelVisible(true);
+}
+
 // ============================================================================
 // SelectionManagerListener
 // ============================================================================
+
+void DeviceSlotComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
+    NodeComponent::chainNodeSelectionChanged(path);
+
+    if (!nodePath_.isValid() || path != nodePath_) {
+        return;
+    }
+
+    openMacroPanelForSelectionIfNeeded();
+}
 
 void DeviceSlotComponent::selectionTypeChanged(magda::SelectionType newType) {
     // Call base class first (handles node deselection)

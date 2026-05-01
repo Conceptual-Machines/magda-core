@@ -573,6 +573,10 @@ void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) 
     // First let base class handle visual selection state
     NodeComponent::chainNodeSelectionChanged(path);
 
+    if (rackPath_.isValid() && path == rackPath_) {
+        openMacroPanelForSelectionIfNeeded();
+    }
+
     // Check if the selected path is one of our chains
     if (path.trackId != trackId_) {
         return;  // Not our track
@@ -605,6 +609,21 @@ void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) 
     if (onChainSelected) {
         onChainSelected(trackId_, rackId_, chainId);
     }
+}
+
+void RackComponent::openMacroPanelForSelectionIfNeeded() {
+    if (paramPanelVisible_ || !macroButton_ || !rackPath_.isValid()) {
+        return;
+    }
+
+    const auto& selectedPath = magda::SelectionManager::getInstance().getSelectedChainNode();
+    if (selectedPath != rackPath_) {
+        return;
+    }
+
+    macroButton_->setToggleState(true, juce::dontSendNotification);
+    macroButton_->setActive(true);
+    setParamPanelVisible(true);
 }
 
 void RackComponent::onAddChainClicked() {
