@@ -1419,6 +1419,15 @@ void SessionView::trackPropertyChanged(int trackId) {
         if (index < static_cast<int>(trackSendStrips_.size())) {
             trackSendStrips_[index]->updateFromTrack();
         }
+
+        // Refresh clip slots for this track so the empty-slot record/stop glyph
+        // tracks the track's record-arm state.
+        if (index < static_cast<int>(clipSlots.size())) {
+            int numSlots = static_cast<int>(clipSlots[index].size());
+            for (int sceneIndex = 0; sceneIndex < numSlots; ++sceneIndex) {
+                updateClipSlotAppearance(index, sceneIndex);
+            }
+        }
     }
 }
 
@@ -2763,6 +2772,12 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     // Always set slot identity for drag-and-drop
     slot->trackId = trackId;
     slot->sceneIndex = sceneIndex;
+
+    // Mirror record-arm state so empty slots can render the record glyph.
+    if (const auto* trackInfo = TrackManager::getInstance().getTrack(trackId))
+        slot->trackIsRecordArmed = trackInfo->recordArmed;
+    else
+        slot->trackIsRecordArmed = false;
 
     // Group slot: check if any descendant has a clip in this scene
     if (slot->isGroupSlot) {

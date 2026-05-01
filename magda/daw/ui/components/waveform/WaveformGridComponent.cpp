@@ -150,7 +150,9 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
     auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
     auto* thumbnail = thumbnailManager.getThumbnail(clip.audioFilePath);
     double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
-    auto waveColour = clip.colour.brighter(0.2f);
+    // The waveform editor only ever shows the focused clip, so the waveform is
+    // always rendered as if "selected" — black, to match arrangement-view styling.
+    auto waveColour = juce::Colours::black;
     float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
     auto vertZoom = static_cast<float>(verticalZoom_) * gainLinear;
 

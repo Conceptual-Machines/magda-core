@@ -159,7 +159,7 @@ void ClipComponent::paint(juce::Graphics& g) {
     // Draw volume line (audio clips with non-zero volume, or when hovering/dragging)
     if (clip->type == ClipType::Audio && (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
                                           dragMode_ == DragMode::VolumeDrag)) {
-        auto wfArea = bounds.reduced(2, HEADER_HEIGHT + 2);
+        auto wfArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
         paintVolumeLine(g, *clip, wfArea);
     }
 
@@ -167,12 +167,6 @@ void ClipComponent::paint(juce::Graphics& g) {
     if (isMarqueeHighlighted_) {
         g.setColour(juce::Colours::white.withAlpha(0.2f));
         g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
-    }
-
-    // Selection border - show for both single selection and multi-selection
-    if (isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_)) {
-        g.setColour(juce::Colours::white);
-        g.drawRect(bounds, 2);
     }
 
     // Frozen overlay — dim clip on frozen tracks
@@ -268,7 +262,8 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
     if (isDragging_ && dragMode_ == DragMode::ResizeLeft)
         displayOffset = resizePreviewClip_.offset;
 
-    auto waveColour = clip.colour.brighter(0.2f);
+    const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
+    auto waveColour = selected ? juce::Colours::black : clip.colour.brighter(0.2f);
     float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
 
     double fileDuration = 0.0;
@@ -328,7 +323,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             if (finalSrcEnd > finalSrcStart &&
                 clipToVisible(drawRect, finalSrcStart, finalSrcEnd)) {
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, finalSrcStart,
-                                              finalSrcEnd, waveColour, gainLinear);
+                                              finalSrcEnd, waveColour, gainLinear, true, selected);
             }
         }
     } else if (di.isLooped()) {
@@ -369,7 +364,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             }
             if (clipToVisible(drawRect, tileFileStart, tileFileEnd))
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, tileFileStart,
-                                              tileFileEnd, waveColour, gainLinear);
+                                              tileFileEnd, waveColour, gainLinear, true, selected);
             timePos += tileFullDuration;
         }
     } else {
@@ -384,7 +379,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
                                              waveformArea.getHeight());
         if (clipToVisible(drawRect, fileStart, fileEnd))
             thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart, fileEnd,
-                                          waveColour, gainLinear);
+                                          waveColour, gainLinear, true, selected);
     }
 
     if (clip.isReversed)
@@ -393,7 +388,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
 
 void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                                    juce::Rectangle<int> bounds) {
-    auto waveformArea = bounds.reduced(2, HEADER_HEIGHT + 2);
+    auto waveformArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
 
     double clipDisplayLength = clip.length;
     if (isDragging_) {
@@ -566,14 +561,21 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                                     juce::Rectangle<int> bounds) {
     auto headerArea = bounds.removeFromTop(HEADER_HEIGHT);
 
-    // Header background
-    g.setColour(clip.colour);
+    // Selected clips paint a black header in place of the clip-coloured one.
+    // This replaces the old white selection rectangle so it can't fight overlay
+    // UI (e.g. controller scene-view rectangles).
+    const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
+    const auto headerColour = selected ? juce::Colours::black : clip.colour;
+    const auto headerForeground =
+        selected ? juce::Colours::white : DarkTheme::getColour(DarkTheme::BACKGROUND);
+
+    g.setColour(headerColour);
     g.fillRoundedRectangle(headerArea.toFloat().withBottom(headerArea.getBottom() + 2),
                            CORNER_RADIUS);
 
     // Clip name
     if (bounds.getWidth() > MIN_WIDTH_FOR_NAME) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.setColour(headerForeground);
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText(clip.name, headerArea.reduced(4, 0), juce::Justification::centredLeft, true);
     }
@@ -581,28 +583,31 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     // Musical mode indicator (auto-tempo)
     if (clip.autoTempo && clip.type == ClipType::Audio && headerArea.getWidth() > 16) {
         auto musicalArea = headerArea.removeFromRight(14).reduced(2);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.setColour(headerForeground);
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         g.drawText(juce::CharPointer_UTF8("\xe2\x99\xa9"), musicalArea,
                    juce::Justification::centred, false);
     }
 
-    // Loop indicator (infinito/infinity icon)
+    // Loop indicator (infinito/infinity icon).
+    // Cache one drawable per foreground variant — selection flips foreground,
+    // so we can't bake a single colour at construction.
     if (clip.loopEnabled && headerArea.getWidth() > 16) {
         headerArea.removeFromRight(2);  // right padding
         auto loopArea = headerArea.removeFromRight(14).reduced(1);
         if (loopArea.getWidth() > 0 && loopArea.getHeight() > 0) {
-            static auto loopIcon = [] {
+            static auto makeIcon = [](juce::Colour fg) {
                 auto icon = juce::Drawable::createFromImageData(BinaryData::infinito_svg,
                                                                 BinaryData::infinito_svgSize);
                 if (icon)
-                    icon->replaceColour(juce::Colour(0xFFB3B3B3),
-                                        DarkTheme::getColour(DarkTheme::BACKGROUND));
+                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
                 return icon;
-            }();
-            if (loopIcon)
-                loopIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred,
-                                     1.0f);
+            };
+            static auto normalIcon = makeIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
+            static auto selectedIcon = makeIcon(juce::Colours::white);
+            const auto& icon = selected ? selectedIcon : normalIcon;
+            if (icon)
+                icon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
         }
     }
 }
@@ -724,7 +729,7 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
 
 void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
                                      juce::Rectangle<int> bounds) {
-    auto waveformArea = bounds.reduced(2, HEADER_HEIGHT + 2);
+    auto waveformArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
     if (waveformArea.getWidth() <= 0 || waveformArea.getHeight() <= 0)
         return;
 
