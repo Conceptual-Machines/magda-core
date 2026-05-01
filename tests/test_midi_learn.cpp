@@ -321,10 +321,10 @@ TEST_CASE("AliasReverseIndex - findAliasesByPath autoGenOnly=true returns only A
 }
 
 // ============================================================================
-// Tests: BindingRegistry::findForTarget + removeForTarget
+// Tests: BindingRegistry::findFor + removeFor
 // ============================================================================
 
-TEST_CASE("BindingRegistry - findForTarget returns bindings resolving to (path, paramIndex)",
+TEST_CASE("BindingRegistry - findFor returns bindings resolving to a ControlTarget",
           "[midi-learn][bindings]") {
     clearAll();
 
@@ -350,7 +350,8 @@ TEST_CASE("BindingRegistry - findForTarget returns bindings resolving to (path, 
     auto bOther = makeStaticBinding(c1.id, BindingMsgType::CC, 0, 23, otherPath, 0);
     BindingRegistry::getInstance().add(BindingScope::Global, bOther);
 
-    auto found = BindingRegistry::getInstance().findForTarget(targetPath, targetParam);
+    auto found = BindingRegistry::getInstance().findFor(
+        ControlTarget::pluginParam(targetPath, targetParam));
     REQUIRE(found.size() == 2);
 
     // Both ids should be present
@@ -368,7 +369,7 @@ TEST_CASE("BindingRegistry - findForTarget returns bindings resolving to (path, 
     clearAll();
 }
 
-TEST_CASE("BindingRegistry - removeForTarget removes all matching bindings",
+TEST_CASE("BindingRegistry - removeFor removes all matching bindings",
           "[midi-learn][bindings]") {
     clearAll();
 
@@ -383,11 +384,13 @@ TEST_CASE("BindingRegistry - removeForTarget removes all matching bindings",
     BindingRegistry::getInstance().add(BindingScope::Global, b1);
     BindingRegistry::getInstance().add(BindingScope::Project, b2);
 
-    int removed = BindingRegistry::getInstance().removeForTarget(targetPath, targetParam);
+    int removed = BindingRegistry::getInstance().removeFor(
+        ControlTarget::pluginParam(targetPath, targetParam));
     REQUIRE(removed == 2);
 
-    // After removal, findForTarget returns empty
-    auto remaining = BindingRegistry::getInstance().findForTarget(targetPath, targetParam);
+    // After removal, findFor returns empty
+    auto remaining = BindingRegistry::getInstance().findFor(
+        ControlTarget::pluginParam(targetPath, targetParam));
     REQUIRE(remaining.empty());
 
     clearAll();
@@ -480,9 +483,9 @@ TEST_CASE(
     AliasRegistry::getInstance().set(AliasLayer::AutoGen, "serum.filter_cutoff", alias);
 
     auto& coord = MidiLearnCoordinator::getInstance();
-    coord.beginLearn(path, paramIdx, "Filter Cutoff");
+    coord.beginLearn(ControlTarget::pluginParam(path, paramIdx), "Filter Cutoff");
 
-    REQUIRE(coord.isLearning(path, paramIdx));
+    REQUIRE(coord.isLearning(ControlTarget::pluginParam(path, paramIdx)));
     REQUIRE(fix.listener.stateChanges.size() == 1);
     REQUIRE(fix.listener.stateChanges[0].learning == true);
 
@@ -491,7 +494,7 @@ TEST_CASE(
     ControllerRouter::getInstance().injectMessageForTest("coord_port_1", msg);
 
     // Coordinator should have fired completion
-    REQUIRE(!coord.isLearning(path, paramIdx));
+    REQUIRE(!coord.isLearning(ControlTarget::pluginParam(path, paramIdx)));
     REQUIRE(fix.listener.completions.size() == 1);
 
     // The binding target should be an AliasRef (alias was found)
@@ -518,7 +521,8 @@ TEST_CASE("MidiLearnCoordinator - ControlTarget used when no alias exists",
     int paramIdx = 3;
     // No alias registered
 
-    MidiLearnCoordinator::getInstance().beginLearn(path, paramIdx, "My Param");
+    MidiLearnCoordinator::getInstance().beginLearn(ControlTarget::pluginParam(path, paramIdx),
+                                                   "My Param");
 
     auto msg = juce::MidiMessage::controllerEvent(1, 7, 100);
     ControllerRouter::getInstance().injectMessageForTest("coord_port_2", msg);
@@ -543,8 +547,8 @@ TEST_CASE("MidiLearnCoordinator - second beginLearn cancels first", "[midi-learn
     ChainNodePath path2 = ChainNodePath::topLevelDevice(21, 210);
 
     auto& coord = MidiLearnCoordinator::getInstance();
-    coord.beginLearn(path1, 0, "Param A");
-    coord.beginLearn(path2, 1, "Param B");
+    coord.beginLearn(ControlTarget::pluginParam(path1, 0), "Param A");
+    coord.beginLearn(ControlTarget::pluginParam(path2, 1), "Param B");
 
     // path1 should have been cancelled: state false for path1
     bool cancelledA = false;
@@ -553,7 +557,7 @@ TEST_CASE("MidiLearnCoordinator - second beginLearn cancels first", "[midi-learn
             cancelledA = true;
     }
     REQUIRE(cancelledA);
-    REQUIRE(coord.isLearning(path2, 1));
+    REQUIRE(coord.isLearning(ControlTarget::pluginParam(path2, 1)));
 
     coord.cancelLearn();
 }
@@ -577,16 +581,16 @@ TEST_CASE("MidiLearnCoordinator - macro Learn capture builds DeviceMacro Control
     AliasRegistry::getInstance().set(AliasLayer::AutoGen, "synth.macro", alias);
 
     auto& coord = MidiLearnCoordinator::getInstance();
-    coord.beginLearnMacro(path, macroIndex, "Macro 4");
+    coord.beginLearn(ControlTarget::deviceMacro(path, macroIndex), "Macro 4");
 
-    REQUIRE(coord.isLearningMacro(path, macroIndex));
-    // The plugin-param overload must NOT match — owner kinds are distinct.
-    REQUIRE_FALSE(coord.isLearning(path, macroIndex));
+    REQUIRE(coord.isLearning(ControlTarget::deviceMacro(path, macroIndex)));
+    // The plugin-param target must NOT match — kinds are distinct.
+    REQUIRE_FALSE(coord.isLearning(ControlTarget::pluginParam(path, macroIndex)));
 
     auto msg = juce::MidiMessage::controllerEvent(1, 50, 64);
     ControllerRouter::getInstance().injectMessageForTest("coord_port_macro", msg);
 
-    REQUIRE(!coord.isLearningMacro(path, macroIndex));
+    REQUIRE(!coord.isLearning(ControlTarget::deviceMacro(path, macroIndex)));
     REQUIRE(fix.listener.completions.size() == 1);
 
     const auto& binding = fix.listener.completions[0].binding;
@@ -615,16 +619,16 @@ TEST_CASE("MidiLearnCoordinator - mod-param Learn capture builds ModParam Contro
     int modParamIndex = 0;
 
     auto& coord = MidiLearnCoordinator::getInstance();
-    coord.beginLearnModParam(path, modId, modParamIndex, "LFO 1 Rate");
+    coord.beginLearn(ControlTarget::modParam(path, modId, modParamIndex), "LFO 1 Rate");
 
-    REQUIRE(coord.isLearningModParam(path, modId, modParamIndex));
-    REQUIRE_FALSE(coord.isLearningModParam(path, modId + 1, modParamIndex));
-    REQUIRE_FALSE(coord.isLearning(path, modParamIndex));
+    REQUIRE(coord.isLearning(ControlTarget::modParam(path, modId, modParamIndex)));
+    REQUIRE_FALSE(coord.isLearning(ControlTarget::modParam(path, modId + 1, modParamIndex)));
+    REQUIRE_FALSE(coord.isLearning(ControlTarget::pluginParam(path, modParamIndex)));
 
     auto msg = juce::MidiMessage::controllerEvent(1, 71, 100);
     ControllerRouter::getInstance().injectMessageForTest("coord_port_modparam", msg);
 
-    REQUIRE(!coord.isLearningModParam(path, modId, modParamIndex));
+    REQUIRE(!coord.isLearning(ControlTarget::modParam(path, modId, modParamIndex)));
     REQUIRE(fix.listener.completions.size() == 1);
 
     const auto& binding = fix.listener.completions[0].binding;
@@ -648,7 +652,7 @@ TEST_CASE("MidiLearnCoordinator - macro Learn does not stage plugin-param listen
     // up when the user clicked Learn on macro 0.
     ChainNodePath path = ChainNodePath::topLevelDevice(70, 700);
 
-    MidiLearnCoordinator::getInstance().beginLearnMacro(path, 0, "Macro 1");
+    MidiLearnCoordinator::getInstance().beginLearn(ControlTarget::deviceMacro(path, 0), "Macro 1");
 
     REQUIRE(fix.listener.stateChanges.size() == 1);
     const auto& sc = fix.listener.stateChanges[0];
@@ -660,7 +664,7 @@ TEST_CASE("MidiLearnCoordinator - macro Learn does not stage plugin-param listen
     MidiLearnCoordinator::getInstance().cancelLearn();
 }
 
-TEST_CASE("MidiLearnCoordinator - clearMacroMappings leaves automap resolver intact",
+TEST_CASE("MidiLearnCoordinator - clearMappings on a macro leaves automap resolver intact",
           "[midi-learn][coordinator]") {
     CoordinatorFixture fix;
 
@@ -703,7 +707,8 @@ TEST_CASE("MidiLearnCoordinator - clearMacroMappings leaves automap resolver int
 
     REQUIRE(reg.hasActiveStaticBindingForMacro(path, macroIndex));
 
-    int removed = MidiLearnCoordinator::getInstance().clearMacroMappings(path, macroIndex);
+    int removed = MidiLearnCoordinator::getInstance().clearMappings(
+        ControlTarget::deviceMacro(path, macroIndex));
     REQUIRE(removed == 1);  // only the Static binding is removed
     REQUIRE_FALSE(reg.hasActiveStaticBindingForMacro(path, macroIndex));
 
@@ -720,7 +725,7 @@ TEST_CASE("MidiLearnCoordinator - clearMacroMappings leaves automap resolver int
     clearAll();
 }
 
-TEST_CASE("MidiLearnCoordinator - clearModParamMappings removes only matching bindings",
+TEST_CASE("MidiLearnCoordinator - clearMappings on a mod-param removes only matching bindings",
           "[midi-learn][coordinator]") {
     CoordinatorFixture fix;
 
@@ -752,10 +757,11 @@ TEST_CASE("MidiLearnCoordinator - clearModParamMappings removes only matching bi
     reg.add(BindingScope::Project, makeModParamBinding(2, modId, 0));
     reg.add(BindingScope::Project, makeModParamBinding(3, modId + 1, 0));  // different mod
 
-    int removed = MidiLearnCoordinator::getInstance().clearModParamMappings(path, modId, 0);
+    int removed =
+        MidiLearnCoordinator::getInstance().clearMappings(ControlTarget::modParam(path, modId, 0));
     REQUIRE(removed == 2);
     // The unrelated binding remains
-    REQUIRE(reg.findForModParam(path, modId + 1, 0).size() == 1);
+    REQUIRE(reg.findFor(ControlTarget::modParam(path, modId + 1, 0)).size() == 1);
 
     clearAll();
 }
@@ -774,7 +780,8 @@ TEST_CASE("MidiLearnCoordinator - clearMappings removes bindings and notifies",
     auto b = makeStaticBinding(c.id, BindingMsgType::CC, 0, 99, path, paramIdx);
     BindingRegistry::getInstance().add(BindingScope::Project, b);
 
-    int removed = MidiLearnCoordinator::getInstance().clearMappings(path, paramIdx);
+    int removed = MidiLearnCoordinator::getInstance().clearMappings(
+        ControlTarget::pluginParam(path, paramIdx));
     REQUIRE(removed == 1);
     REQUIRE(fix.listener.clears.size() == 1);
     REQUIRE(fix.listener.clears[0].numRemoved == 1);

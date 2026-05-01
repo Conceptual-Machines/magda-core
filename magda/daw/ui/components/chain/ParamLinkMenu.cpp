@@ -137,11 +137,12 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
     // MIDI section
     menu.addSeparator();
     {
-        bool isLearning =
-            magda::MidiLearnCoordinator::getInstance().isLearning(ctx.devicePath, ctx.paramIndex);
-        int mappingCount = static_cast<int>(magda::BindingRegistry::getInstance()
-                                                .findForTarget(ctx.devicePath, ctx.paramIndex)
-                                                .size());
+        bool isLearning = magda::MidiLearnCoordinator::getInstance().isLearning(
+            magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex));
+        int mappingCount = static_cast<int>(
+            magda::BindingRegistry::getInstance()
+                .findFor(magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex))
+                .size());
 
         juce::String learnLabel = isLearning ? "Cancel MIDI Learn" : "Learn MIDI";
         menu.addItem(6000, learnLabel);
@@ -215,8 +216,8 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
                 if (cbs.onShowAutomationLane)
                     cbs.onShowAutomationLane();
             } else if (result == 6000) {
-                bool isCurrentlyLearning =
-                    magda::MidiLearnCoordinator::getInstance().isLearning(devicePath, paramIdx);
+                bool isCurrentlyLearning = magda::MidiLearnCoordinator::getInstance().isLearning(
+                    magda::ControlTarget::pluginParam(devicePath, paramIdx));
                 if (isCurrentlyLearning) {
                     magda::MidiLearnCoordinator::getInstance().cancelLearn();
                 } else {

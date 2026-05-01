@@ -130,10 +130,12 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
     };
     // Default MIDI Learn wiring: delegate to MidiLearnCoordinator singleton
     onMidiLearn = [](magda::ChainNodePath path, int paramIdx, juce::String paramName) {
-        magda::MidiLearnCoordinator::getInstance().beginLearn(path, paramIdx, paramName);
+        magda::MidiLearnCoordinator::getInstance().beginLearn(
+            magda::ControlTarget::pluginParam(path, paramIdx), paramName);
     };
     onMidiClear = [](magda::ChainNodePath path, int paramIdx) {
-        magda::MidiLearnCoordinator::getInstance().clearMappings(path, paramIdx);
+        magda::MidiLearnCoordinator::getInstance().clearMappings(
+            magda::ControlTarget::pluginParam(path, paramIdx));
     };
 
     addAndMakeVisible(slider_);
@@ -379,11 +381,10 @@ void LinkableTextSlider::bindingRegistryChanged(magda::BindingScope) {
 }
 
 void LinkableTextSlider::refreshMidiBindingState() {
-    const bool newState =
-        isModRate_ ? magda::BindingRegistry::getInstance().hasActiveBindingForModParam(
-                         devicePath_, modId_, modParamIndex_)
-                   : magda::BindingRegistry::getInstance().hasActiveBindingForTarget(devicePath_,
-                                                                                     paramIndex_);
+    const auto target = isModRate_ ? magda::ControlTarget::modParam(devicePath_, modId_,
+                                                                    modParamIndex_)
+                                   : magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+    const bool newState = magda::BindingRegistry::getInstance().hasActiveBindingFor(target);
     if (newState != hasMidiBinding_) {
         hasMidiBinding_ = newState;
         repaint();

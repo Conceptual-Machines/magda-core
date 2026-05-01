@@ -65,7 +65,7 @@ class LinkableTextSlider : public juce::Component,
     // Switch this slider into "modifier rate" mode — used by the LFO / mod
     // rate slider. MIDI Learn becomes a ModParam binding instead of a
     // PluginParam binding, and the mapped-dot indicator queries
-    // BindingRegistry::hasActiveBindingForModParam.
+    // BindingRegistry::hasActiveBindingFor with a ModParam target.
     void setModRateContext(const magda::ChainNodePath& path, magda::ModId modId, int modParamIndex);
     void clearModRateContext();
 

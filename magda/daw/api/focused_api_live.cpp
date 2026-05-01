@@ -17,7 +17,7 @@ namespace {
 // engages so engageAutoMap can wipe stale bindings from a prior load before
 // reinstalling fresh ones. Not registered in ControllerRegistry, so the
 // router never matches these bindings — they exist purely so the BindingRegistry
-// dot-detection (hasResolverBindingForDevice / hasActiveBindingForTarget)
+// dot-detection (hasResolverBindingForDevice / hasActiveBindingFor)
 // lights the green automap dot on the focused device's header and macros.
 const juce::Uuid& luaAutomapSentinel() {
     static const juce::Uuid id{"00000000-0000-0000-0000-000000000001"};

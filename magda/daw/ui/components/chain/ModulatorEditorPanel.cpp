@@ -721,10 +721,12 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
     {
         auto& reg = magda::BindingRegistry::getInstance();
         auto& learn = magda::MidiLearnCoordinator::getInstance();
-        const bool isLearning =
-            learn.isLearningModParam(ownerDevicePath_, currentMod_.id, /*modParamIndex=*/0);
+        const bool isLearning = learn.isLearning(
+            magda::ControlTarget::modParam(ownerDevicePath_, currentMod_.id, /*modParamIndex=*/0));
         const int mappingCount = static_cast<int>(
-            reg.findForModParam(ownerDevicePath_, currentMod_.id, /*modParamIndex=*/0).size());
+            reg.findFor(magda::ControlTarget::modParam(ownerDevicePath_, currentMod_.id,
+                                                       /*modParamIndex=*/0))
+                .size());
 
         menu.addSeparator();
         menu.addItem(kLearnId, isLearning ? "Cancel MIDI Learn" : "Learn MIDI");
@@ -750,17 +752,18 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
         }
         if (result == kLearnId) {
             auto& learn = magda::MidiLearnCoordinator::getInstance();
-            if (learn.isLearningModParam(learnPath, rateModId, /*modParamIndex=*/0)) {
+            const auto target =
+                magda::ControlTarget::modParam(learnPath, rateModId, /*modParamIndex=*/0);
+            if (learn.isLearning(target)) {
                 learn.cancelLearn();
             } else {
-                learn.beginLearnModParam(learnPath, rateModId, /*modParamIndex=*/0,
-                                         learnDisplayName);
+                learn.beginLearn(target, learnDisplayName);
             }
             return;
         }
         if (result == kClearMidiId) {
-            magda::MidiLearnCoordinator::getInstance().clearModParamMappings(learnPath, rateModId,
-                                                                             /*modParamIndex=*/0);
+            magda::MidiLearnCoordinator::getInstance().clearMappings(
+                magda::ControlTarget::modParam(learnPath, rateModId, /*modParamIndex=*/0));
             return;
         }
         int unlinkIdx = result - kUnlinkBaseId;
@@ -1522,8 +1525,8 @@ void ModulatorEditorPanel::timerCallback() {
 void ModulatorEditorPanel::refreshRateMidiBindingState() {
     bool newState = false;
     if (currentMod_.id != magda::INVALID_MOD_ID) {
-        newState = magda::BindingRegistry::getInstance().hasActiveBindingForModParam(
-            ownerDevicePath_, currentMod_.id, /*modParamIndex=*/0);
+        newState = magda::BindingRegistry::getInstance().hasActiveBindingFor(
+            magda::ControlTarget::modParam(ownerDevicePath_, currentMod_.id, /*modParamIndex=*/0));
     }
     if (newState != hasRateMidiBinding_) {
         hasRateMidiBinding_ = newState;
