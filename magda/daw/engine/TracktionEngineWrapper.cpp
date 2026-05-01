@@ -80,6 +80,10 @@ void TracktionEngineWrapper::stopSessionTrack(TrackId trackId) {
         sessionScheduler_->stopSessionTrack(trackId);
 }
 
+bool TracktionEngineWrapper::isSessionTrackStopPending(TrackId trackId) const {
+    return sessionScheduler_ && sessionScheduler_->isSessionTrackStopPending(trackId);
+}
+
 void TracktionEngineWrapper::deactivateAllSessionClips() {
     if (sessionScheduler_)
         sessionScheduler_->deactivateAllSessionClips();

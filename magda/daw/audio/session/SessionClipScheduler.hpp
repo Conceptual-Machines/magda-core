@@ -3,6 +3,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <unordered_map>
+#include <unordered_set>
 
 #include "../../core/ClipManager.hpp"
 
@@ -47,6 +48,11 @@ class SessionClipScheduler : public ClipManagerListener {
     /** Schedule a quantized stop for the active session clip on a track.
         Used by scene launch for empty slots (empty slot = stop that track). */
     void stopSessionTrack(TrackId trackId);
+
+    /** True while a quantized stop is in flight on this track — between
+        `stopSessionTrack` being called and the LaunchHandle actually
+        reporting Stopped. Used by the UI to blink the stop affordance. */
+    bool isSessionTrackStopPending(TrackId trackId) const;
 
     /** Re-launch any session clips that have activeSessionClipId set but aren't
         currently playing. Call synchronously when transport starts to avoid
@@ -119,6 +125,11 @@ class SessionClipScheduler : public ClipManagerListener {
 
     // Tracks last-notified play state per clip to avoid redundant UI notifications
     std::unordered_map<ClipId, SessionClipPlayState> lastNotifiedState_;
+
+    // Tracks with a quantized stop in flight (set by stopSessionTrack, cleared
+    // when the orphaned LaunchHandle actually reaches Stopped). Drives the
+    // empty-slot stop-icon blink.
+    std::unordered_set<TrackId> stopPendingTracks_;
 
     // Snapshot of state at the start of a launch batch.
     // Prevents sequential clipPlaybackRequested calls within the same batch

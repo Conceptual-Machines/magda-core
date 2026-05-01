@@ -287,6 +287,17 @@ TEST_CASE("magda.session stop variants record the right targets", "[lua_bindings
     REQUIRE(mock.session_.stopAllCalls == 1);
 }
 
+TEST_CASE("magda.session.launch_scene routes to SessionApi", "[lua_bindings][session]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.eval("magda.session.launch_scene(0)"));
+    REQUIRE(rt.eval("magda.session.launch_scene(3)"));
+
+    REQUIRE(mock.session_.launchedScenes == std::vector<int>{0, 3});
+}
+
 TEST_CASE("magda.session.active_clip_on_track returns id or nil", "[lua_bindings][session]") {
     MockMagdaApi mock;
     mock.session_.activeOnTrack[3] = 707;

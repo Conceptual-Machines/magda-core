@@ -107,6 +107,10 @@ void SessionClipScheduler::clipPlaybackRequested(ClipId clipId, ClipPlaybackRequ
         track->activeSessionClipId = clipId;
         syncTrackPlaybackModes();
 
+        // A new launch on this track supersedes any pending row-stop, so
+        // empty slots should stop blinking the stop icon.
+        stopPendingTracks_.erase(clip->trackId);
+
         // Ensure transport is playing
         if (!edit_.getTransport().isPlaying()) {
             edit_.getTransport().play(false);
@@ -263,6 +267,7 @@ void SessionClipScheduler::processStateEvents() {
         activeLaunchHandles_.clear();
         clipLaunchData_.clear();
         lastNotifiedState_.clear();
+        stopPendingTracks_.clear();
     }
 
     // Transport just resumed with active session clips — re-launch them.
@@ -326,8 +331,10 @@ void SessionClipScheduler::processStateEvents() {
         releaseLaunchHandle(cid);
         clipLaunchData_.erase(cid);
         lastNotifiedState_.erase(cid);
-        if (auto* c = cm.getClip(cid))
+        if (auto* c = cm.getClip(cid)) {
             c->sessionPlayheadPos = -1.0;
+            stopPendingTracks_.erase(c->trackId);
+        }
         cm.notifyClipPlaybackStateChanged(cid);
     }
     if (!orphaned.empty())
@@ -504,6 +511,7 @@ void SessionClipScheduler::deactivateAllSessionClips() {
     activeLaunchHandles_.clear();
     clipLaunchData_.clear();
     lastNotifiedState_.clear();
+    stopPendingTracks_.clear();
     playheadClipId_ = INVALID_CLIP_ID;
     syncTrackPlaybackModes();
 }
@@ -533,6 +541,18 @@ void SessionClipScheduler::stopSessionTrack(TrackId trackId) {
     // Clear active clip so processStateEvents knows this is winding down
     track->activeSessionClipId = INVALID_CLIP_ID;
     // Don't sync track modes yet — TE needs playSlotClips=true until the handle stops
+
+    // Mark the track for the stop-pending blink only if there's actually
+    // a quantize wait — with LaunchQuantize::None TE stops immediately and
+    // there's no window to blink during.
+    if (quantize != LaunchQuantize::None) {
+        stopPendingTracks_.insert(trackId);
+        ClipManager::getInstance().notifyClipPlaybackStateChanged(clipId);
+    }
+}
+
+bool SessionClipScheduler::isSessionTrackStopPending(TrackId trackId) const {
+    return stopPendingTracks_.count(trackId) != 0;
 }
 
 }  // namespace magda

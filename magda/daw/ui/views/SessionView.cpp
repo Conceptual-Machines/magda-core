@@ -2180,6 +2180,12 @@ void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, in
     slot.onPlayButtonClick = [this, trackIndex, sceneIndex]() {
         onPlayButtonClicked(trackIndex, sceneIndex);
     };
+    slot.onEmptySlotStopClick = [this, trackIndex]() {
+        if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size()))
+            return;
+        if (audioEngine_)
+            audioEngine_->stopSessionTrack(visibleTrackIds_[trackIndex]);
+    };
     slot.onDoubleClick = [this, trackIndex, sceneIndex]() {
         openClipEditor(trackIndex, sceneIndex);
     };
@@ -2657,6 +2663,8 @@ void SessionView::clipPropertyChanged(ClipId clipId) {
             }
         }
     }
+
+    updateSceneButtonIcon(clip->sceneIndex);
 }
 
 void SessionView::clipSelectionChanged(ClipId /*clipId*/) {
@@ -2799,6 +2807,9 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         slot->hasClip = false;
         slot->clipId = INVALID_CLIP_ID;
         slot->clipIsPlaying = false;
+        slot->clipIsQueued = false;
+        slot->stopIsQueued =
+            audioEngine_ != nullptr && audioEngine_->isSessionTrackStopPending(trackId);
         slot->isSelected = false;
         slot->clipLength = 0.0;
         slot->sessionPlayheadPos = -1.0;
@@ -2819,6 +2830,30 @@ void SessionView::updateAllClipSlots() {
             updateClipSlotAppearance(trackIndex, sceneIndex);
         }
     }
+    updateAllSceneButtonIcons();
+}
+
+void SessionView::updateSceneButtonIcon(int sceneIndex) {
+    if (sceneIndex < 0 || sceneIndex >= static_cast<int>(sceneButtons.size()))
+        return;
+
+    bool anyClips = false;
+    auto& cm = ClipManager::getInstance();
+    for (TrackId tid : visibleTrackIds_) {
+        if (cm.getClipInSlot(tid, sceneIndex) != INVALID_CLIP_ID) {
+            anyClips = true;
+            break;
+        }
+    }
+
+    // ▶ = U+25B6, ■ = U+25A0
+    const char* glyph = anyClips ? "\xe2\x96\xb6" : "\xe2\x96\xa0";
+    sceneButtons[sceneIndex]->setButtonText(juce::String(juce::CharPointer_UTF8(glyph)));
+}
+
+void SessionView::updateAllSceneButtonIcons() {
+    for (int i = 0; i < static_cast<int>(sceneButtons.size()); ++i)
+        updateSceneButtonIcon(i);
 }
 
 // ============================================================================
@@ -2911,12 +2946,30 @@ void SessionView::timerCallback() {
                 newBlinkOn = (beatPhase < 0.5);
             }
         }
-        for (auto& trackSlots : clipSlots) {
-            for (auto& slotBtn : trackSlots) {
+        for (size_t trackIdx = 0; trackIdx < clipSlots.size(); ++trackIdx) {
+            // Re-poll stop-pending state per track. The scheduler doesn't
+            // notify when the orphan sweep retires the handle, so empty
+            // slots need to drop the blink on their own. Same per-tick cost
+            // as clipIsQueued repaint.
+            const bool stopPending =
+                trackIdx < visibleTrackIds_.size() &&
+                audioEngine_->isSessionTrackStopPending(visibleTrackIds_[trackIdx]);
+            for (auto& slotBtn : clipSlots[trackIdx]) {
                 auto* slot = dynamic_cast<ClipSlotButton*>(slotBtn.get());
-                if (slot && slot->clipIsQueued) {
+                if (!slot)
+                    continue;
+                if (slot->clipIsQueued) {
                     slot->blinkOn = newBlinkOn;
                     slot->repaint();
+                } else if (!slot->hasClip && !slot->trackIsRecordArmed) {
+                    if (slot->stopIsQueued != stopPending) {
+                        slot->stopIsQueued = stopPending;
+                        slot->blinkOn = newBlinkOn;
+                        slot->repaint();
+                    } else if (stopPending) {
+                        slot->blinkOn = newBlinkOn;
+                        slot->repaint();
+                    }
                 }
             }
         }

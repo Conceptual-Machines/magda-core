@@ -294,6 +294,7 @@ class MockSessionApi : public SessionApi {
     std::vector<ClipId> launchedClips;
     std::vector<ClipId> stoppedClips;
     std::vector<TrackId> stoppedTracks;
+    std::vector<int> launchedScenes;
     int stopAllCalls = 0;
     std::unordered_map<TrackId, ClipId> activeOnTrack;
 
@@ -308,6 +309,9 @@ class MockSessionApi : public SessionApi {
     }
     void stopAll() override {
         ++stopAllCalls;
+    }
+    void launchScene(int sceneIndex) override {
+        launchedScenes.push_back(sceneIndex);
     }
     ClipId getActiveClipOnTrack(TrackId id) const override {
         auto it = activeOnTrack.find(id);

@@ -235,6 +235,11 @@ class SessionView : public juce::Component,
     void updateClipSlotAppearance(int trackIndex, int sceneIndex);
     void updateAllClipSlots();
 
+    // Scene-button icons: play when any track has a clip in that scene,
+    // stop when the row is fully empty (acts as a row-stop affordance).
+    void updateSceneButtonIcon(int sceneIndex);
+    void updateAllSceneButtonIcons();
+
     // Drag & drop state (file drops)
     int dragHoverTrackIndex_ = -1;
     int dragHoverSceneIndex_ = -1;

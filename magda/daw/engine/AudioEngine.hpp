@@ -56,6 +56,11 @@ class AudioEngine : public AudioEngineListener {
     /** Schedule a quantized stop for the active clip on a track (empty slot in scene). */
     virtual void stopSessionTrack(TrackId trackId) = 0;
 
+    /** True while a quantized stop on this track is in flight (between
+        `stopSessionTrack` and the LaunchHandle reporting Stopped). The UI
+        uses this to blink the empty-slot stop affordance. */
+    virtual bool isSessionTrackStopPending(TrackId trackId) const = 0;
+
     /** Stop all session clips, clear active state, revert to arrangement. */
     virtual void deactivateAllSessionClips() = 0;
 

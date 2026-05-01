@@ -17,6 +17,8 @@ class ClipSlotButton : public juce::TextButton {
     std::function<void()> onSingleClick;
     std::function<void()> onDoubleClick;
     std::function<void()> onPlayButtonClick;
+    std::function<void()> onEmptySlotStopClick;    // strip click on empty slot, track not armed
+    std::function<void()> onEmptySlotRecordClick;  // strip click on empty slot, track armed
     std::function<void()> onCreateMidiClip;
     std::function<void()> onDeleteClip;
     std::function<void()> onCopyClip;
@@ -29,7 +31,8 @@ class ClipSlotButton : public juce::TextButton {
     bool hasClip = false;
     bool clipIsPlaying = false;
     bool clipIsQueued = false;
-    bool blinkOn = false;  // Toggled by SessionView timer for queued blink
+    bool stopIsQueued = false;  // Empty slot blinks its stop icon while a row-stop is pending
+    bool blinkOn = false;       // Toggled by SessionView timer for queued blink
     bool isSelected = false;
     bool trackIsRecordArmed = false;
     double clipLength = 0.0;           // Clip duration in seconds (for progress bar)
@@ -128,23 +131,37 @@ class ClipSlotButton : public juce::TextButton {
             return;
         }
 
-        const bool inPlayArea = hasClip && event.getPosition().getX() < PLAY_BUTTON_WIDTH;
+        const bool inStripArea = event.getPosition().getX() < PLAY_BUTTON_WIDTH;
 
         if (clicks >= 2) {
-            if (!inPlayArea && onDoubleClick) {
+            if (!(hasClip && inStripArea) && onDoubleClick) {
                 onDoubleClick();
             }
             return;
         }
 
-        if (inPlayArea) {
+        if (hasClip && inStripArea) {
             if (onPlayButtonClick) {
                 onPlayButtonClick();
             }
-        } else {
-            if (onSingleClick) {
-                onSingleClick();
+            return;
+        }
+
+        if (!hasClip && inStripArea) {
+            // Empty-slot strip is a row-level affordance: stop the active clip
+            // on this track, or start recording if the track is armed.
+            if (trackIsRecordArmed) {
+                if (onEmptySlotRecordClick)
+                    onEmptySlotRecordClick();
+            } else {
+                if (onEmptySlotStopClick)
+                    onEmptySlotStopClick();
             }
+            return;
+        }
+
+        if (onSingleClick) {
+            onSingleClick();
         }
     }
 
@@ -207,36 +224,26 @@ class ClipSlotButton : public juce::TextButton {
         }
 
         if (hasClip) {
-            // Draw play/stop icon in the left area. When the slot is selected, the
-            // strip background was filled black above and the icon switches to an
-            // accent color for contrast.
+            // Filled slots always render play. Stop is now the empty-slot
+            // affordance — the row's "stop whatever's playing here" button —
+            // so the strip stays a pure "trigger this clip" target regardless
+            // of state.
             auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
             auto centre = playArea.getCentre().toFloat();
 
-            // Selected: cyan icon over black strip. Unselected: black icon over
-            // white strip — high-contrast pairs on both sides of the toggle.
             const auto iconColour =
                 isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_CYAN) : juce::Colours::black;
 
-            if (clipIsPlaying) {
-                // Draw stop square when playing
-                float size = 5.0f;
-                g.setColour(iconColour);
-                g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
-                                                  size * 2.0f, size * 2.0f));
-            } else {
-                // Draw play triangle — blink when queued
-                juce::Path triangle;
-                float size = 6.0f;
-                triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
-                                     centre.getX() - size * 0.7f, centre.getY() + size,
-                                     centre.getX() + size, centre.getY());
-                auto playColour = iconColour;
-                if (clipIsQueued && !blinkOn)
-                    playColour = playColour.withAlpha(0.15f);
-                g.setColour(playColour);
-                g.fillPath(triangle);
-            }
+            juce::Path triangle;
+            float size = 6.0f;
+            triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
+                                 centre.getX() - size * 0.7f, centre.getY() + size,
+                                 centre.getX() + size, centre.getY());
+            auto playColour = iconColour;
+            if (clipIsQueued && !blinkOn)
+                playColour = playColour.withAlpha(0.15f);
+            g.setColour(playColour);
+            g.fillPath(triangle);
 
             // Content area (right of play button)
             auto contentArea = getLocalBounds();
@@ -278,8 +285,14 @@ class ClipSlotButton : public juce::TextButton {
                 g.fillEllipse(centre.getX() - radius, centre.getY() - radius, radius * 2.0f,
                               radius * 2.0f);
             } else {
+                // Stop square. While a quantized row-stop is in flight,
+                // blink the icon on each beat — same affordance as the
+                // play triangle's "queued" blink, just inverted intent.
                 float size = 5.0f;
-                g.setColour(juce::Colours::white.withAlpha(0.4f));
+                auto stopColour = juce::Colours::white.withAlpha(0.4f);
+                if (stopIsQueued && !blinkOn)
+                    stopColour = stopColour.withAlpha(0.1f);
+                g.setColour(stopColour);
                 g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
                                                   size * 2.0f, size * 2.0f));
             }
