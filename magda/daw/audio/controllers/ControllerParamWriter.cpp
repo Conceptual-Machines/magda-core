@@ -60,21 +60,12 @@ void DefaultControllerParamWriter::writePluginParam(const ResolvedTarget& resolv
 }
 
 void DefaultControllerParamWriter::writeMacro(const ResolvedTarget& resolved, float clamped) {
-    auto& tm = TrackManager::getInstance();
-    switch (resolved.devicePath.getType()) {
-        case ChainNodeType::Track:
-            tm.setMacroValue(ChainNodePath::trackLevel(resolved.devicePath.trackId), resolved.paramIndex, clamped);
-            break;
-        case ChainNodeType::Rack:
-            tm.setMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
-            break;
-        case ChainNodeType::TopLevelDevice:
-        case ChainNodeType::Device:
-            tm.setMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
-            break;
-        default:
-            break;
-    }
+    if (!resolved.devicePath.isValid())
+        return;
+    // setMacroValue takes the macro's owning ChainNodePath unchanged for every
+    // valid scope (Track/Rack/Device). The previous per-getType() switch
+    // dispatched to the same call in each arm.
+    TrackManager::getInstance().setMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
 }
 
 void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved, float clamped) {
@@ -123,42 +114,24 @@ void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved,
     }
     const bool sync = mod && mod->tempoSync;
 
-    if (sync) {
-        float real = ParameterUtils::normalizedToReal(clamped, info);
-        int ordinal = juce::jlimit(1, 23, static_cast<int>(std::round(real)) + 1);
-        SyncDivision division = teRateOrdinalToSyncDivision(ordinal);
-        if (t.devicePath.isValid()) {
-            switch (t.devicePath.getType()) {
-                case ChainNodeType::Rack:
-                    trackMgr.setModSyncDivision(t.devicePath, t.modId, division);
-                    return;
-                case ChainNodeType::TopLevelDevice:
-                case ChainNodeType::Device:
-                    trackMgr.setModSyncDivision(t.devicePath, t.modId, division);
-                    return;
-                default:
-                    break;
-            }
-        }
-        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(t.devicePath.trackId), t.modId, division);
-        return;
-    }
+    // setModRate / setModSyncDivision accept the modifier's owning path
+    // directly for Rack/TopLevelDevice/Device scopes; track-level modifiers
+    // need the trackLevel path. Pick once instead of dispatching on getType().
+    auto type = t.devicePath.getType();
+    auto pathForWrite =
+        (type == ChainNodeType::Rack || type == ChainNodeType::TopLevelDevice ||
+         type == ChainNodeType::Device)
+            ? t.devicePath
+            : ChainNodePath::trackLevel(t.devicePath.trackId);
 
     float real = ParameterUtils::normalizedToReal(clamped, info);
-    if (t.devicePath.isValid()) {
-        switch (t.devicePath.getType()) {
-            case ChainNodeType::Rack:
-                trackMgr.setModRate(t.devicePath, t.modId, real);
-                return;
-            case ChainNodeType::TopLevelDevice:
-            case ChainNodeType::Device:
-                trackMgr.setModRate(t.devicePath, t.modId, real);
-                return;
-            default:
-                break;
-        }
+    if (sync) {
+        int ordinal = juce::jlimit(1, 23, static_cast<int>(std::round(real)) + 1);
+        SyncDivision division = teRateOrdinalToSyncDivision(ordinal);
+        trackMgr.setModSyncDivision(pathForWrite, t.modId, division);
+        return;
     }
-    trackMgr.setModRate(ChainNodePath::trackLevel(t.devicePath.trackId), t.modId, real);
+    trackMgr.setModRate(pathForWrite, t.modId, real);
 }
 
 }  // namespace magda
