@@ -208,7 +208,7 @@ void ModifierSyncWalker::syncStructure(
                 if (!link.isValid())
                     continue;
 
-                if (link.target.kind == ModTarget::Kind::ModParam) {
+                if (link.target.kind == ControlTarget::Kind::ModParam) {
                     // Refuse self-target (UI filters it out; belt-and-braces).
                     if (link.target.modId == modInfo.id)
                         continue;
@@ -219,7 +219,7 @@ void ModifierSyncWalker::syncStructure(
                 }
 
                 if (auto* param =
-                        resolveLinkTargetParam(ctx, link.target.deviceId, link.target.paramIndex))
+                        resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(), link.target.paramIndex))
                     param->addModifier(sourceMod, link.amount);
             }
         }
@@ -244,7 +244,7 @@ void ModifierSyncWalker::syncStructure(
                 if (!link.target.isValid())
                     continue;
 
-                if (link.target.kind == MacroTarget::Kind::ModParam) {
+                if (link.target.kind == ControlTarget::Kind::ModParam) {
                     if (auto* targetParam =
                             node.mods ? resolveSameScopeModParam(link, *node.mods, state.modifiers)
                                       : nullptr) {
@@ -256,7 +256,7 @@ void ModifierSyncWalker::syncStructure(
                 }
 
                 auto* param =
-                    resolveLinkTargetParam(ctx, link.target.deviceId, link.target.paramIndex);
+                    resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(), link.target.paramIndex);
                 if (!param)
                     continue;
 
@@ -305,13 +305,13 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                     continue;
 
                 te::AutomatableParameter* param = nullptr;
-                if (link.target.kind == ModTarget::Kind::ModParam) {
+                if (link.target.kind == ControlTarget::Kind::ModParam) {
                     if (link.target.modId == modInfo.id)
                         continue;  // Self-target — skipped, see syncStructure.
                     param = resolveSameScopeModParam(link, *node.mods, state.modifiers);
                 } else {
                     param =
-                        resolveLinkTargetParam(ctx, link.target.deviceId, link.target.paramIndex);
+                        resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(), link.target.paramIndex);
                 }
                 if (!param)
                     continue;
@@ -341,12 +341,12 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                     continue;
 
                 te::AutomatableParameter* param = nullptr;
-                if (link.target.kind == MacroTarget::Kind::ModParam) {
+                if (link.target.kind == ControlTarget::Kind::ModParam) {
                     param = node.mods ? resolveSameScopeModParam(link, *node.mods, state.modifiers)
                                       : nullptr;
                 } else {
                     param =
-                        resolveLinkTargetParam(ctx, link.target.deviceId, link.target.paramIndex);
+                        resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(), link.target.paramIndex);
                 }
                 if (!param)
                     continue;

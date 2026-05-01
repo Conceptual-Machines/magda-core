@@ -289,7 +289,7 @@ class NodeComponent : public juce::Component,
 
     // Virtual callbacks for mod/macro changes (subclasses implement to persist changes)
     virtual void onModAmountChangedInternal(int /*modIndex*/, float /*amount*/) {}
-    virtual void onModTargetChangedInternal(int /*modIndex*/, magda::ModTarget /*target*/) {}
+    virtual void onModTargetChangedInternal(int /*modIndex*/, magda::ControlTarget /*target*/) {}
     virtual void onModNameChangedInternal(int /*modIndex*/, const juce::String& /*name*/) {}
     virtual void onModTypeChangedInternal(int /*modIndex*/, magda::ModType /*type*/) {}
     virtual void onModWaveformChangedInternal(int /*modIndex*/, magda::LFOWaveform /*waveform*/) {}
@@ -304,23 +304,23 @@ class NodeComponent : public juce::Component,
     virtual void onModAudioReleaseChangedInternal(int /*modIndex*/, float /*ms*/) {}
     virtual void onModCurveChangedInternal(int /*modIndex*/) {}
     // Contextual link callbacks (when param is selected and mod amount slider is used)
-    virtual void onModLinkAmountChangedInternal(int /*modIndex*/, magda::ModTarget /*target*/,
+    virtual void onModLinkAmountChangedInternal(int /*modIndex*/, magda::ControlTarget /*target*/,
                                                 float /*amount*/) {}
-    virtual void onModNewLinkCreatedInternal(int /*modIndex*/, magda::ModTarget /*target*/,
+    virtual void onModNewLinkCreatedInternal(int /*modIndex*/, magda::ControlTarget /*target*/,
                                              float /*amount*/) {}
-    virtual void onModLinkRemovedInternal(int /*modIndex*/, magda::ModTarget /*target*/) {}
+    virtual void onModLinkRemovedInternal(int /*modIndex*/, magda::ControlTarget /*target*/) {}
     virtual void onMacroValueChangedInternal(int /*macroIndex*/, float /*value*/) {}
-    virtual void onMacroTargetChangedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/) {}
+    virtual void onMacroTargetChangedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/) {}
     virtual void onMacroNameChangedInternal(int /*macroIndex*/, const juce::String& /*name*/) {}
     virtual void onMacroAllLinksClearedInternal(int /*macroIndex*/) {}
     // Contextual link callbacks for macros (similar to mods)
-    virtual void onMacroLinkAmountChangedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/,
+    virtual void onMacroLinkAmountChangedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/,
                                                   float /*amount*/) {}
-    virtual void onMacroNewLinkCreatedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/,
+    virtual void onMacroNewLinkCreatedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/,
                                                float /*amount*/) {}
-    virtual void onMacroLinkRemovedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/) {}
+    virtual void onMacroLinkRemovedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/) {}
     virtual void onMacroLinkBipolarChangedInternal(int /*macroIndex*/,
-                                                   magda::MacroTarget /*target*/,
+                                                   magda::ControlTarget /*target*/,
                                                    bool /*bipolar*/) {}
     virtual void onModClickedInternal(int /*modIndex*/) {}
     virtual void onMacroClickedInternal(int /*macroIndex*/) {}

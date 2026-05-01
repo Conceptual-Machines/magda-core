@@ -80,8 +80,8 @@ class MacroKnobComponent : public juce::Component,
 
     // Callbacks
     std::function<void(float)> onValueChanged;
-    std::function<void(magda::MacroTarget)> onTargetChanged;
-    std::function<void(magda::MacroTarget)>
+    std::function<void(magda::ControlTarget)> onTargetChanged;
+    std::function<void(magda::ControlTarget)>
         onLinkRemoved;                        // Called when individual link is removed
     std::function<void()> onAllLinksCleared;  // Called when "Clear All Links" clears all links
     std::function<void(juce::String)> onNameChanged;

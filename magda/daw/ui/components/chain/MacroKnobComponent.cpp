@@ -415,8 +415,8 @@ void MacroKnobComponent::showLinkMenu() {
         for (size_t mi = 0; mi < availableModifiers_.size(); ++mi) {
             const auto& [modId, modName] = availableModifiers_[mi];
             juce::PopupMenu perModMenu;
-            magda::MacroTarget t;
-            t.kind = magda::MacroTarget::Kind::ModParam;
+            magda::ControlTarget t;
+            t.kind = magda::ControlTarget::Kind::ModParam;
             t.modId = modId;
             t.modParamIndex = 0;  // Rate
             const bool isCurrentTarget = currentMacro_.getLink(t) != nullptr;
@@ -472,8 +472,8 @@ void MacroKnobComponent::showLinkMenu() {
                     : "Parameter " + juce::String(paramIdx + 1);
 
             // Check if this param is in the links vector
-            magda::MacroTarget t;
-            t.deviceId = deviceId;
+            magda::ControlTarget t;
+            t.devicePath = magda::ChainNodePath::topLevelDevice(0, deviceId);
             t.paramIndex = paramIdx;
             bool isCurrentTarget = currentMacro_.getLink(t) != nullptr;
 
@@ -489,12 +489,12 @@ void MacroKnobComponent::showLinkMenu() {
 
     // Individual unlink items for each existing link
     int unlinkBaseId = 10000;
-    std::vector<magda::MacroTarget> unlinkTargets;
+    std::vector<magda::ControlTarget> unlinkTargets;
     for (const auto& link : currentMacro_.links) {
         if (!link.target.isValid())
             continue;
         juce::String paramName;
-        auto it = deviceParamNames_.find(link.target.deviceId);
+        auto it = deviceParamNames_.find(link.target.deviceId());
         if (it != deviceParamNames_.end() && link.target.paramIndex >= 0 &&
             link.target.paramIndex < static_cast<int>(it->second.size())) {
             paramName = it->second[static_cast<size_t>(link.target.paramIndex)];
@@ -503,7 +503,7 @@ void MacroKnobComponent::showLinkMenu() {
         }
         // Find device name for context
         for (const auto& [devId, devName] : availableTargets_) {
-            if (devId == link.target.deviceId) {
+            if (devId == link.target.deviceId()) {
                 paramName = devName + " - " + paramName;
                 break;
             }
@@ -577,13 +577,13 @@ void MacroKnobComponent::showLinkMenu() {
         }
 
         // Modulator-rate link selection. The parent's onTargetChanged routes
-        // through TrackManager::setXxxMacroTarget, which materialises the
+        // through TrackManager::setXxxControlTarget, which materialises the
         // link (with an audible default amount for ModParam kind) and
         // triggers a refresh — so we don't need to mutate currentMacro_.
         int modSlot = result - kModRateBaseId;
         if (modSlot >= 0 && modSlot < static_cast<int>(modifiers.size())) {
-            magda::MacroTarget t;
-            t.kind = magda::MacroTarget::Kind::ModParam;
+            magda::ControlTarget t;
+            t.kind = magda::ControlTarget::Kind::ModParam;
             t.modId = modifiers[static_cast<size_t>(modSlot)].first;
             t.modParamIndex = 0;  // Rate
             if (safeThis->onTargetChanged)
@@ -609,7 +609,7 @@ void MacroKnobComponent::showLinkMenu() {
 
         // Clear all links
         if (result == clearAllId) {
-            safeThis->currentMacro_.target = magda::MacroTarget{};
+            safeThis->currentMacro_.target = magda::ControlTarget{};
             safeThis->currentMacro_.links.clear();
             safeThis->repaint();
             if (safeThis->onAllLinksCleared) {
@@ -638,8 +638,8 @@ void MacroKnobComponent::showLinkMenu() {
             for (int paramIdx = 0; paramIdx < paramCount; ++paramIdx) {
                 if (itemId == result) {
                     // Add to links vector (not legacy target)
-                    magda::MacroTarget t;
-                    t.deviceId = deviceId;
+                    magda::ControlTarget t;
+                    t.devicePath = magda::ChainNodePath::topLevelDevice(0, deviceId);
                     t.paramIndex = paramIdx;
                     if (!safeThis->currentMacro_.getLink(t)) {
                         magda::MacroLink link;

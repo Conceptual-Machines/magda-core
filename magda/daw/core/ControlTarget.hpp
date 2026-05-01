@@ -2,7 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
-#include "SelectionManager.hpp"
+#include "ChainNodePath.hpp"
 #include "TypeIds.hpp"
 
 namespace magda {
@@ -86,6 +86,72 @@ struct ControlTarget {
 
     bool operator!=(const ControlTarget& other) const {
         return !(*this == other);
+    }
+
+    // Factory helpers — concise construction at call sites.
+
+    static ControlTarget pluginParam(const ChainNodePath& path, int paramIndex) {
+        ControlTarget t;
+        t.kind = Kind::PluginParam;
+        t.devicePath = path;
+        t.paramIndex = paramIndex;
+        return t;
+    }
+
+    static ControlTarget deviceMacro(const ChainNodePath& path, int macroIndex) {
+        ControlTarget t;
+        t.kind = Kind::DeviceMacro;
+        t.devicePath = path;
+        t.paramIndex = macroIndex;
+        return t;
+    }
+
+    static ControlTarget modParam(const ChainNodePath& scopePath, ModId modId, int modParamIndex) {
+        ControlTarget t;
+        t.kind = Kind::ModParam;
+        t.devicePath = scopePath;
+        t.modId = modId;
+        t.modParamIndex = modParamIndex;
+        return t;
+    }
+
+    static ControlTarget trackVolume(TrackId track) {
+        ControlTarget t;
+        t.kind = Kind::TrackVolume;
+        t.devicePath = ChainNodePath::trackLevel(track);
+        return t;
+    }
+
+    static ControlTarget trackPan(TrackId track) {
+        ControlTarget t;
+        t.kind = Kind::TrackPan;
+        t.devicePath = ChainNodePath::trackLevel(track);
+        return t;
+    }
+
+    static ControlTarget sendLevel(TrackId track, int sendBusIndex) {
+        ControlTarget t;
+        t.kind = Kind::SendLevel;
+        t.devicePath = ChainNodePath::trackLevel(track);
+        t.sendBusIndex = sendBusIndex;
+        return t;
+    }
+
+    // Legacy-style factory: build a PluginParam target from a top-level DeviceId.
+    // Used by call sites that originally constructed MacroTarget{deviceId, paramIndex}.
+    // Uses trackId 0 as a sentinel because DeviceId is globally unique within a
+    // project; the trackId is only consulted by path-rewriting machinery.
+    static ControlTarget fromDeviceId(DeviceId deviceId, int paramIndex) {
+        ControlTarget t;
+        t.kind = Kind::PluginParam;
+        t.devicePath = ChainNodePath::topLevelDevice(0, deviceId);
+        t.paramIndex = paramIndex;
+        return t;
+    }
+
+    // Legacy convenience — extract the leaf device id from devicePath.
+    DeviceId deviceId() const {
+        return devicePath.getDeviceId();
     }
 };
 

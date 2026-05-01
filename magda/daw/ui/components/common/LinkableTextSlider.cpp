@@ -45,10 +45,10 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
         }
 
         const auto& selectedMod = (*availableMods_)[static_cast<size_t>(selectedModIndex_)];
-        magda::ModTarget thisTarget{deviceId_, paramIndex_};
+        magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = selectedMod.getLink(thisTarget);
-        bool isLinked = existingLink != nullptr || (selectedMod.target.deviceId == deviceId_ &&
+        bool isLinked = existingLink != nullptr || (selectedMod.target.deviceId() == deviceId_ &&
                                                     selectedMod.target.paramIndex == paramIndex_);
 
         float startAmount = 0.5f;
@@ -74,7 +74,7 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
         if (!isModAmountDrag_ || modAmountDragModIndex_ < 0) {
             return;
         }
-        magda::ModTarget thisTarget{deviceId_, paramIndex_};
+        magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
         if (onModAmountChanged) {
             onModAmountChanged(modAmountDragModIndex_, thisTarget, newAmount);
         }
@@ -97,10 +97,10 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
         }
 
         const auto& selectedMod = (*availableMods_)[static_cast<size_t>(selectedModIndex_)];
-        magda::ModTarget thisTarget{deviceId_, paramIndex_};
+        magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = selectedMod.getLink(thisTarget);
-        bool isLinked = existingLink != nullptr || (selectedMod.target.deviceId == deviceId_ &&
+        bool isLinked = existingLink != nullptr || (selectedMod.target.deviceId() == deviceId_ &&
                                                     selectedMod.target.paramIndex == paramIndex_);
 
         if (!isLinked && onModLinkedWithAmount) {
@@ -512,9 +512,9 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
         bool isLinked = false;
 
         if (modPtr) {
-            magda::ModTarget thisTarget{deviceId_, paramIndex_};
+            magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
             const auto* existingLink = modPtr->getLink(thisTarget);
-            isLinked = existingLink != nullptr || (modPtr->target.deviceId == deviceId_ &&
+            isLinked = existingLink != nullptr || (modPtr->target.deviceId() == deviceId_ &&
                                                    modPtr->target.paramIndex == paramIndex_);
             if (isLinked) {
                 initialAmount = existingLink ? existingLink->amount : modPtr->amount;
@@ -554,7 +554,7 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
         bool isLinked = false;
 
         if (macroPtr) {
-            magda::MacroTarget thisTarget{deviceId_, paramIndex_};
+            magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
             const auto* existingLink = macroPtr->getLink(thisTarget);
             isLinked = existingLink != nullptr;
             if (isLinked) {
@@ -606,10 +606,10 @@ void LinkableTextSlider::mouseDrag(const juce::MouseEvent& e) {
                                        availableTrackMods_);
 
     if (modPtr) {
-        magda::ModTarget thisTarget{deviceId_, paramIndex_};
+        magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = modPtr->getLink(thisTarget);
-        bool isLinked = existingLink != nullptr || (modPtr->target.deviceId == deviceId_ &&
+        bool isLinked = existingLink != nullptr || (modPtr->target.deviceId() == deviceId_ &&
                                                     modPtr->target.paramIndex == paramIndex_);
 
         if (isLinked) {
@@ -626,7 +626,7 @@ void LinkableTextSlider::mouseDrag(const juce::MouseEvent& e) {
         const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
                                                availableRackMacros_, availableTrackMacros_);
         if (macroPtr) {
-            magda::MacroTarget thisTarget{deviceId_, paramIndex_};
+            magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
             const auto* existingLink = macroPtr->getLink(thisTarget);
             bool isLinked = existingLink != nullptr;

@@ -726,7 +726,7 @@ void RackComponent::onModAmountChangedInternal(int modIndex, float amount) {
     magda::TrackManager::getInstance().setModAmount(rackPath_, modIndex, amount);
 }
 
-void RackComponent::onModTargetChangedInternal(int modIndex, magda::ModTarget target) {
+void RackComponent::onModTargetChangedInternal(int modIndex, magda::ControlTarget target) {
     magda::TrackManager::getInstance().setModTarget(rackPath_, modIndex, target);
 }
 
@@ -785,7 +785,7 @@ void RackComponent::onMacroValueChangedInternal(int macroIndex, float value) {
     }
 }
 
-void RackComponent::onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) {
+void RackComponent::onMacroTargetChangedInternal(int macroIndex, magda::ControlTarget target) {
     magda::TrackManager::getInstance().setMacroTarget(rackPath_, macroIndex, target);
 }
 
