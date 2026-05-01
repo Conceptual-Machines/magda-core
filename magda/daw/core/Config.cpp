@@ -88,6 +88,7 @@ void Config::save() {
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+    root->setProperty("openMacrosOnSelect", openMacrosOnSelect);
     root->setProperty("previewOutputChannel", previewOutputChannel);
 
     // Auto-save
@@ -326,6 +327,7 @@ void Config::load() {
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+    openMacrosOnSelect = getBool("openMacrosOnSelect", openMacrosOnSelect);
     previewOutputChannel = getInt("previewOutputChannel", previewOutputChannel);
 
     autoSaveEnabled = getBool("autoSaveEnabled", autoSaveEnabled);

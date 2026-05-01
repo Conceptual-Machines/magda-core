@@ -6,7 +6,6 @@ namespace magda {
 
 // Forward declarations for tab page components (defined in PreferencesDialog.cpp)
 class GeneralPage;
-class UIPage;
 class ColoursPage;
 class RenderingPage;
 class PathsPage;
@@ -14,7 +13,7 @@ class ShortcutsPage;
 
 /**
  * Preferences dialog for editing application configuration.
- * Organised into tabs: General, UI, Colours, Rendering, Shortcuts.
+ * Organised into tabs: General, Colours, Rendering, Paths, Shortcuts.
  */
 class PreferencesDialog : public juce::Component {
   public:
@@ -34,7 +33,6 @@ class PreferencesDialog : public juce::Component {
     juce::TabbedComponent tabbedComponent{juce::TabbedButtonBar::TabsAtTop};
 
     std::unique_ptr<GeneralPage> generalPage;
-    std::unique_ptr<UIPage> uiPage;
     std::unique_ptr<ColoursPage> coloursPage;
     std::unique_ptr<RenderingPage> renderingPage;
     std::unique_ptr<PathsPage> pathsPage;

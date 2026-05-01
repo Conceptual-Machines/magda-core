@@ -6,6 +6,7 @@
 #include "ChainRowComponent.hpp"
 #include "NodeHeaderStyles.hpp"
 #include "audio/AudioBridge.hpp"
+#include "core/Config.hpp"
 #include "core/PresetManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -612,7 +613,8 @@ void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) 
 }
 
 void RackComponent::openMacroPanelForSelectionIfNeeded() {
-    if (paramPanelVisible_ || !macroButton_ || !rackPath_.isValid()) {
+    if (!magda::Config::getInstance().getOpenMacrosOnSelect() || paramPanelVisible_ ||
+        !macroButton_ || !rackPath_.isValid()) {
         return;
     }
 

@@ -16,6 +16,7 @@
 #include "audio/PluginManager.hpp"
 #include "audio/StepClock.hpp"
 #include "core/ClipManager.hpp"
+#include "core/Config.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/ModInfo.hpp"
@@ -2672,7 +2673,8 @@ void DeviceSlotComponent::goToNextPage() {
 }
 
 void DeviceSlotComponent::openMacroPanelForSelectionIfNeeded() {
-    if (paramPanelVisible_ || !macroButton_ || !nodePath_.isValid()) {
+    if (!magda::Config::getInstance().getOpenMacrosOnSelect() || paramPanelVisible_ ||
+        !macroButton_ || !nodePath_.isValid()) {
         return;
     }
 

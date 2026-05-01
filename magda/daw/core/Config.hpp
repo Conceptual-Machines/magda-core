@@ -606,6 +606,14 @@ class Config {
         autoMonitorSelectedTrack = enabled;
     }
 
+    // Device chain behaviour
+    bool getOpenMacrosOnSelect() const {
+        return openMacrosOnSelect;
+    }
+    void setOpenMacrosOnSelect(bool enabled) {
+        openMacrosOnSelect = enabled;
+    }
+
     // Preview output channel (stereo pair offset: 0 = outputs 1-2, 2 = outputs 3-4, etc.)
     int getPreviewOutputChannel() const {
         return previewOutputChannel;
@@ -742,6 +750,9 @@ class Config {
 
     // Auto-monitor settings
     bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track
+
+    // Device chain behaviour
+    bool openMacrosOnSelect = true;  // Open macro panel when selecting a device/rack
 
     // Auto-save settings
     bool autoSaveEnabled = true;       // Auto-save enabled by default
