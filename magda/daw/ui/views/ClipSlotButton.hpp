@@ -31,6 +31,7 @@ class ClipSlotButton : public juce::TextButton {
     bool clipIsQueued = false;
     bool blinkOn = false;  // Toggled by SessionView timer for queued blink
     bool isSelected = false;
+    bool trackIsRecordArmed = false;
     double clipLength = 0.0;           // Clip duration in seconds (for progress bar)
     double sessionPlayheadPos = -1.0;  // Looped playhead position in seconds
 
@@ -162,10 +163,23 @@ class ClipSlotButton : public juce::TextButton {
         if (hasClip || isGroupSlot)
             setButtonText(savedText);
 
-        // Draw selection highlight border
-        if (isSelected) {
-            g.setColour(juce::Colours::white.withAlpha(0.8f));
-            g.drawRect(getLocalBounds(), 2);
+        // Filled clips: paint the strip area as a solid background — black when
+        // selected, mid-grey otherwise. The icon colour flips to keep contrast,
+        // replacing the old white selection rectangle so it can't fight overlay
+        // UI (e.g. controller scene-view rectangles). Top/bottom inset by 0.5px
+        // to match SmallButtonLookAndFeel's rounded bg so the strip doesn't
+        // poke past the slot's curved edges.
+        if (hasClip) {
+            auto stripArea =
+                getLocalBounds().toFloat().reduced(0.0f, 0.5f).removeFromLeft(PLAY_BUTTON_WIDTH);
+            constexpr float kStripCorner = 6.0f;
+            juce::Path stripPath;
+            stripPath.addRoundedRectangle(stripArea.getX(), stripArea.getY(), stripArea.getWidth(),
+                                          stripArea.getHeight(), kStripCorner, kStripCorner,
+                                          /*curveTopLeft*/ true, /*curveTopRight*/ false,
+                                          /*curveBottomLeft*/ true, /*curveBottomRight*/ false);
+            g.setColour(isSelected ? juce::Colours::black : juce::Colour(0xFFA0A0A0));
+            g.fillPath(stripPath);
         }
 
         // Group slot: draw centered play/stop button when child clips exist
@@ -193,14 +207,21 @@ class ClipSlotButton : public juce::TextButton {
         }
 
         if (hasClip) {
-            // Draw play/stop icon in the left area
+            // Draw play/stop icon in the left area. When the slot is selected, the
+            // strip background was filled black above and the icon switches to an
+            // accent color for contrast.
             auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
             auto centre = playArea.getCentre().toFloat();
+
+            // Selected: cyan icon over black strip. Unselected: black icon over
+            // white strip — high-contrast pairs on both sides of the toggle.
+            const auto iconColour =
+                isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_CYAN) : juce::Colours::black;
 
             if (clipIsPlaying) {
                 // Draw stop square when playing
                 float size = 5.0f;
-                g.setColour(juce::Colours::white.withAlpha(0.9f));
+                g.setColour(iconColour);
                 g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
                                                   size * 2.0f, size * 2.0f));
             } else {
@@ -210,8 +231,10 @@ class ClipSlotButton : public juce::TextButton {
                 triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
                                      centre.getX() - size * 0.7f, centre.getY() + size,
                                      centre.getX() + size, centre.getY());
-                float alpha = (clipIsQueued && !blinkOn) ? 0.15f : 0.7f;
-                g.setColour(juce::Colours::white.withAlpha(alpha));
+                auto playColour = iconColour;
+                if (clipIsQueued && !blinkOn)
+                    playColour = playColour.withAlpha(0.15f);
+                g.setColour(playColour);
                 g.fillPath(triangle);
             }
 
@@ -236,11 +259,30 @@ class ClipSlotButton : public juce::TextButton {
                                    static_cast<float>(contentArea.getBottom()));
             }
 
-            // Draw clip name in content area, left-justified
-            auto textArea = contentArea.reduced(2, 0);
+            // Draw clip name in content area, left-justified.
+            // Left padding clears the strip separator; right padding mirrors it.
+            auto textArea = contentArea.reduced(6, 0);
             g.setColour(findColour(juce::TextButton::textColourOffId));
             g.setFont(FontManager::getInstance().getUIFont(9.0f));
             g.drawText(getButtonText(), textArea, juce::Justification::centredLeft, true);
+        } else {
+            // Empty slot: show a record icon when the track is record-armed,
+            // otherwise a stop icon (acts as a row-stop affordance). Visual only —
+            // click handling is wired in a follow-up.
+            auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
+            auto centre = playArea.getCentre().toFloat();
+
+            if (trackIsRecordArmed) {
+                float radius = 5.0f;
+                g.setColour(DarkTheme::getColour(DarkTheme::STATUS_DANGER));
+                g.fillEllipse(centre.getX() - radius, centre.getY() - radius, radius * 2.0f,
+                              radius * 2.0f);
+            } else {
+                float size = 5.0f;
+                g.setColour(juce::Colours::white.withAlpha(0.4f));
+                g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
+                                                  size * 2.0f, size * 2.0f));
+            }
         }
     }
 };

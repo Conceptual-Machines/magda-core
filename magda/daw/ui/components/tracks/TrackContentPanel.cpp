@@ -301,8 +301,8 @@ void TrackContentPanel::paint(juce::Graphics& g) {
             // Highlight every track that's part of the current selection
             // (single or multi), not just the primary one — so multi-selected
             // lanes match the multi-selected headers visually.
-            const bool laneSelected = i < visibleTrackIds_.size() &&
-                                      sel.isTrackSelected(visibleTrackIds_[i]);
+            const bool laneSelected =
+                i < visibleTrackIds_.size() && sel.isTrackSelected(visibleTrackIds_[i]);
             paintTrackLane(g, *trackLanes[i], laneArea, laneSelected, static_cast<int>(i));
         }
     }
@@ -1738,8 +1738,12 @@ void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
 }
 
 void TrackContentPanel::clipSelectionChanged(ClipId clipId) {
-    // Grab keyboard focus to ensure shortcuts work after selection changes
-    grabKeyboardFocus();
+    // Grab keyboard focus to ensure shortcuts work after selection changes.
+    // Guarded by isShowing(): selection events can arrive while the panel is
+    // off-screen (e.g. during undo tear-down, or when another view is active),
+    // and grabbing focus on a hidden component fires juce_Component.cpp:2752.
+    if (isShowing())
+        grabKeyboardFocus();
 
     // Derive selected track from clip so edit cursor draws on the right lane
     if (clipId != INVALID_CLIP_ID) {

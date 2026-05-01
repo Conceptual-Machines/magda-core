@@ -155,53 +155,6 @@ class SessionView::GridViewport : public juce::Viewport {
     int separatorWidth_ = 3;
 };
 
-// Container for per-track stop buttons (pinned between grid and faders)
-class SessionView::StopButtonContainer : public juce::Component {
-  public:
-    StopButtonContainer() {
-        setInterceptsMouseClicks(true, true);
-    }
-
-    void mouseDown(const juce::MouseEvent& e) override {
-        if (e.mods.isPopupMenu() && onContextMenu)
-            onContextMenu();
-    }
-
-    std::function<void()> onContextMenu;
-
-    void setTrackLayout(int numTracks, const std::vector<int>& trackWidths, int separatorWidth,
-                        int scrollOffset) {
-        numTracks_ = numTracks;
-        trackWidths_ = trackWidths;
-        separatorWidth_ = separatorWidth;
-        scrollOffset_ = scrollOffset;
-        repaint();
-    }
-
-    void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
-
-        g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
-
-        // Top border
-        g.fillRect(0, 0, getWidth(), 1);
-
-        // Draw vertical separators between tracks
-        int x = 0;
-        for (int i = 0; i < numTracks_ && i < static_cast<int>(trackWidths_.size()); ++i) {
-            x += trackWidths_[i];
-            g.fillRect(x - scrollOffset_, 0, separatorWidth_, getHeight());
-            x += separatorWidth_;
-        }
-    }
-
-  private:
-    int numTracks_ = 0;
-    std::vector<int> trackWidths_;
-    int separatorWidth_ = 3;
-    int scrollOffset_ = 0;
-};
-
 // Container for track headers with clipping
 class SessionView::HeaderContainer : public juce::Component {
   public:
@@ -1273,12 +1226,7 @@ SessionView::SessionView() {
     gridViewport->getVerticalScrollBar().addListener(this);
     addAndMakeVisible(*gridViewport);
 
-    // Create per-track stop button container (pinned between grid and faders)
-    stopButtonContainer = std::make_unique<StopButtonContainer>();
-    stopButtonContainer->onContextMenu = [this]() { showMixerContextMenu(); };
-    addAndMakeVisible(*stopButtonContainer);
-
-    // Create I/O routing container (between stop buttons and faders, hidden by default)
+    // Create I/O routing container (between grid and faders, hidden by default)
     ioContainer_ = std::make_unique<IOContainer>();
     ioContainer_->onContextMenu = [this]() { showMixerContextMenu(); };
     addChildComponent(*ioContainer_);
@@ -1419,6 +1367,15 @@ void SessionView::trackPropertyChanged(int trackId) {
         if (index < static_cast<int>(trackSendStrips_.size())) {
             trackSendStrips_[index]->updateFromTrack();
         }
+
+        // Refresh clip slots for this track so the empty-slot record/stop glyph
+        // tracks the track's record-arm state.
+        if (index < static_cast<int>(clipSlots.size())) {
+            int numSlots = static_cast<int>(clipSlots[index].size());
+            for (int sceneIndex = 0; sceneIndex < numSlots; ++sceneIndex) {
+                updateClipSlotAppearance(index, sceneIndex);
+            }
+        }
     }
 }
 
@@ -1472,10 +1429,9 @@ int SessionView::getTrackIndexAtX(int x) const {
 }
 
 void SessionView::rebuildTracks() {
-    // Clear existing track headers, clip slots, stop buttons, strips, IO strips, and send strips
+    // Clear existing track headers, clip slots, strips, IO strips, and send strips
     trackHeaders.clear();
     clipSlots.clear();
-    trackStopButtons.clear();
     trackMiniStrips_.clear();
     trackIOStrips_.clear();
     trackSendViewports_.clear();
@@ -1699,32 +1655,6 @@ void SessionView::rebuildTracks() {
         trackSendStrips_.push_back(std::move(strip));
     }
 
-    // Create per-track stop buttons
-    for (int i = 0; i < numTracks; ++i) {
-        auto stopBtn = std::make_unique<juce::TextButton>();
-        stopBtn->setButtonText(juce::String(juce::CharPointer_UTF8("\xe2\x96\xa0")));  // ■
-        stopBtn->setColour(juce::TextButton::buttonColourId,
-                           DarkTheme::getColour(DarkTheme::SURFACE));
-        stopBtn->setColour(juce::TextButton::textColourOffId,
-                           DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-        stopBtn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
-
-        TrackId trackId = visibleTrackIds_[i];
-        stopBtn->onClick = [this, trackId]() {
-            auto& clipManager = ClipManager::getInstance();
-            // Stop all session clips on this track by iterating scene slots
-            for (int scene = 0; scene < numScenes_; ++scene) {
-                ClipId clipId = clipManager.getClipInSlot(trackId, scene);
-                if (clipId != INVALID_CLIP_ID) {
-                    clipManager.stopClip(clipId);
-                }
-            }
-        };
-
-        stopButtonContainer->addAndMakeVisible(*stopBtn);
-        trackStopButtons.push_back(std::move(stopBtn));
-    }
-
     resized();
     updateHeaderSelectionVisuals();
 
@@ -1748,10 +1678,6 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
     // Vertical separator on left edge of scene column
     auto sceneBounds = sceneContainer->getBounds();
     g.fillRect(sceneBounds.getX() - 1, 0, 1, getHeight());
-
-    // Horizontal separator on top of stop button row (full width)
-    auto stopContainerBounds = stopButtonContainer->getBounds();
-    g.fillRect(0, stopContainerBounds.getY(), getWidth(), 1);
 
     // Plugin drag overlay
     if (showPluginDropOverlay_) {
@@ -1855,8 +1781,19 @@ void SessionView::resized() {
     int numTracks = static_cast<int>(trackHeaders.size());
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
-    // Fader row at the bottom (tracks area + master strip in scene column)
+    // Fader row at the bottom (tracks area + master strip in scene column).
+    // A thin band along the top of the row hosts the I/O / Sends / Record-
+    // Monitor toggle icons (in the master corner) and stays empty above each
+    // track strip — keeping every fader at the same height across the row.
     auto faderRow = bounds.removeFromBottom(faderRowHeight_);
+    auto togglesBand = faderRow.removeFromTop(MIXER_TOGGLES_HEIGHT);
+    auto masterTogglesArea = togglesBand.removeFromRight(SCENE_BUTTON_WIDTH);
+    if (showIOToggle_ && showSendsToggle_ && showRecordMonitorToggle_) {
+        const int btnW = masterTogglesArea.getWidth() / 3;
+        showIOToggle_->setBounds(masterTogglesArea.removeFromLeft(btnW).reduced(1));
+        showSendsToggle_->setBounds(masterTogglesArea.removeFromLeft(btnW).reduced(1));
+        showRecordMonitorToggle_->setBounds(masterTogglesArea.reduced(1));
+    }
     auto masterFaderArea = faderRow.removeFromRight(SCENE_BUTTON_WIDTH);
     if (masterStrip_)
         masterStrip_->setBounds(masterFaderArea.reduced(2));
@@ -1914,21 +1851,6 @@ void SessionView::resized() {
     } else {
         sendSectionContainer_->setVisible(false);
         sendResizeHandle_->setVisible(false);
-    }
-
-    // Stop button row (full width: per-track stops + Stop All in scene column)
-    auto stopRow = bounds.removeFromBottom(STOP_BUTTON_ROW_HEIGHT);
-    auto stopAllArea = stopRow.removeFromRight(SCENE_BUTTON_WIDTH);
-    stopAllButton->setBounds(stopAllArea.reduced(2));
-    stopButtonContainer->setBounds(stopRow);
-    stopButtonContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
-                                        trackHeaderScrollOffset);
-
-    // Position per-track stop buttons (synced with grid horizontal scroll)
-    for (int i = 0; i < numTracks && i < static_cast<int>(trackStopButtons.size()); ++i) {
-        int x = getTrackX(i) - trackHeaderScrollOffset;
-        int w = trackColumnWidths_[i];
-        trackStopButtons[i]->setBounds(x + 2, 2, w - 4, STOP_BUTTON_ROW_HEIGHT - 4);
     }
 
     // Top row: Master label in scene column corner, headers in tracks area
@@ -2009,15 +1931,6 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
         faderContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                        trackHeaderScrollOffset);
 
-        // Reposition stop + arrangement buttons to sync with horizontal scroll
-        for (int i = 0; i < numTracks && i < static_cast<int>(trackStopButtons.size()); ++i) {
-            int x = getTrackX(i) - trackHeaderScrollOffset;
-            int w = trackColumnWidths_[i];
-            trackStopButtons[i]->setBounds(x + 2, 2, w - 4, STOP_BUTTON_ROW_HEIGHT - 4);
-        }
-        stopButtonContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
-                                            trackHeaderScrollOffset);
-
         // Reposition IO strips to sync with horizontal scroll
         if (ioRowVisible_) {
             for (int i = 0; i < numTracks && i < static_cast<int>(trackIOStrips_.size()); ++i) {
@@ -2075,16 +1988,63 @@ void SessionView::setupSceneButtons() {
         sceneButtons.push_back(std::move(btn));
     }
 
-    // Stop all button (pinned in stop button row, not in scene container)
-    stopAllButton = std::make_unique<juce::TextButton>();
-    stopAllButton->setButtonText(juce::String(juce::CharPointer_UTF8("\xe2\x96\xa0")));  // ■
-    stopAllButton->setColour(juce::TextButton::buttonColourId,
-                             DarkTheme::getColour(DarkTheme::STATUS_ERROR));
-    stopAllButton->setColour(juce::TextButton::textColourOffId,
-                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-    stopAllButton->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
-    stopAllButton->onClick = [this]() { onStopAllClicked(); };
-    addAndMakeVisible(*stopAllButton);
+    // Mixer-row toggles in the corner above the master fader. Reuses the same
+    // SvgButton styling as MainView's arrangement toolbar (io_routing.svg etc.)
+    // so the icons read identically across views.
+    auto setupToggle = [this](std::unique_ptr<SvgButton>& btn, const juce::String& name,
+                              const char* svgData, size_t svgSize, std::function<void()> onClick) {
+        btn = std::make_unique<SvgButton>(name, svgData, svgSize);
+        btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        btn->setPressedColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
+        btn->setBorderThickness(1.0f);
+        btn->setWantsKeyboardFocus(false);
+        btn->onClick = std::move(onClick);
+        addAndMakeVisible(*btn);
+    };
+
+    setupToggle(showIOToggle_, "ShowIO", BinaryData::io_routing_svg, BinaryData::io_routing_svgSize,
+                [this]() {
+                    ioRowVisible_ = !ioRowVisible_;
+                    updateMixerToggleStates();
+                    resized();
+                });
+    showIOToggle_->setTooltip("Show I/O routing");
+
+    setupToggle(showSendsToggle_, "ShowSends", BinaryData::send_svg, BinaryData::send_svgSize,
+                [this]() {
+                    sendRowVisible_ = !sendRowVisible_;
+                    updateMixerToggleStates();
+                    resized();
+                });
+    showSendsToggle_->setTooltip("Show sends");
+
+    setupToggle(showRecordMonitorToggle_, "ShowRecordMonitor", BinaryData::record_circle_svg,
+                BinaryData::record_circle_svgSize, [this]() {
+                    recordMonitorVisible_ = !recordMonitorVisible_;
+                    for (auto& strip : trackMiniStrips_)
+                        strip->setShowRecordMonitor(recordMonitorVisible_);
+                    updateMixerToggleStates();
+                });
+    showRecordMonitorToggle_->setTooltip("Show record/monitor");
+
+    updateMixerToggleStates();
+}
+
+void SessionView::updateMixerToggleStates() {
+    // Mirror the arrangement IOToggle: dim the icon when its row is hidden.
+    auto applyState = [](SvgButton* btn, bool on) {
+        if (!btn)
+            return;
+        const auto base = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
+        btn->setNormalColor(on ? base : base.withAlpha(0.3f));
+        btn->repaint();
+    };
+    applyState(showIOToggle_.get(), ioRowVisible_);
+    applyState(showSendsToggle_.get(), sendRowVisible_);
+    applyState(showRecordMonitorToggle_.get(), recordMonitorVisible_);
 }
 
 void SessionView::addScene() {
@@ -2331,10 +2291,6 @@ void SessionView::onSceneLaunched(int sceneIndex) {
             audioEngine_->stopSessionTrack(trackId);
         }
     }
-}
-
-void SessionView::onStopAllClicked() {
-    ClipManager::getInstance().stopAllClips();
 }
 
 void SessionView::triggerGroupScene(TrackId groupId, int sceneIndex) {
@@ -2654,6 +2610,7 @@ void SessionView::showMixerContextMenu() {
             for (auto& strip : safeThis->trackMiniStrips_)
                 strip->setShowRecordMonitor(safeThis->recordMonitorVisible_);
         }
+        safeThis->updateMixerToggleStates();
     });
 }
 
@@ -2763,6 +2720,12 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     // Always set slot identity for drag-and-drop
     slot->trackId = trackId;
     slot->sceneIndex = sceneIndex;
+
+    // Mirror record-arm state so empty slots can render the record glyph.
+    if (const auto* trackInfo = TrackManager::getInstance().getTrack(trackId))
+        slot->trackIsRecordArmed = trackInfo->recordArmed;
+    else
+        slot->trackIsRecordArmed = false;
 
     // Group slot: check if any descendant has a clip in this scene
     if (slot->isGroupSlot) {

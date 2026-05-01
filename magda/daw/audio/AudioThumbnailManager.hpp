@@ -41,7 +41,7 @@ class AudioThumbnailManager {
     void drawWaveform(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                       const juce::String& audioFilePath, double startTime, double endTime,
                       const juce::Colour& colour, float verticalZoom = 1.0f,
-                      bool useHighRes = false);
+                      bool useHighRes = false, bool thick = false);
 
     /**
      * @brief Detect BPM of an audio file using Tracktion's TempoDetect.
@@ -153,7 +153,8 @@ class AudioThumbnailManager {
     // Draw waveform directly from raw samples (used when zoomed in)
     void drawWaveformFromSamples(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                                  juce::AudioFormatReader* reader, double startTime, double endTime,
-                                 const juce::Colour& colour, float verticalZoom);
+                                 const juce::Colour& colour, float verticalZoom,
+                                 bool thick = false);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioThumbnailManager)
 };
