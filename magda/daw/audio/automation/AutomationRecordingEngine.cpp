@@ -196,7 +196,7 @@ double AutomationRecordingEngine::getCurrentBeatTime() const {
 
 double AutomationRecordingEngine::normalizeDeviceParam(const AutomationTarget& target,
                                                        float rawValue) {
-    ParameterInfo paramInfo = target.getParameterInfo();
+    ParameterInfo paramInfo = getParameterInfoForTarget(target);
     const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
     const bool infoMatchesTeRange = std::abs(paramInfo.minValue - paramInfo.teMinValue) < 1e-6f &&
                                     std::abs(paramInfo.maxValue - paramInfo.teMaxValue) < 1e-6f;
@@ -321,18 +321,13 @@ void AutomationRecordingEngine::onDeviceParameterChanged(DeviceId deviceId, int 
 
     // Build target for this device parameter
     AutomationTarget target;
-    target.type = AutomationTargetType::DeviceParameter;
-    target.trackId = devicePath.trackId;
+    target.kind = ControlTarget::Kind::PluginParam;
+    target.devicePath.trackId = devicePath.trackId;
     target.devicePath = devicePath;
     target.paramIndex = paramIndex;
 
-    // Get param name for lane display
-    auto resolved = trackMgr.resolvePath(devicePath);
-    if (resolved.valid && resolved.device) {
-        if (paramIndex >= 0 && paramIndex < (int)resolved.device->parameters.size())
-            target.paramName =
-                resolved.device->name + ": " + resolved.device->parameters[paramIndex].name;
-    }
+    // Param name population now happens on the lane (AutomationLaneInfo::paramName)
+    // — see lane creation sites in TrackHeadersPanel.
 
     auto& autoMgr = AutomationManager::getInstance();
 
@@ -418,11 +413,11 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
     // their semantics demand a physical hold to record.
     if (autoMgr.isPlaybackActive() || requiresUserTouched()) {
         AutomationTarget volTarget;
-        volTarget.type = AutomationTargetType::TrackVolume;
-        volTarget.trackId = tid;
+        volTarget.kind = ControlTarget::Kind::TrackVolume;
+        volTarget.devicePath = ChainNodePath::trackLevel(tid);
         AutomationTarget panTarget;
-        panTarget.type = AutomationTargetType::TrackPan;
-        panTarget.trackId = tid;
+        panTarget.kind = ControlTarget::Kind::TrackPan;
+        panTarget.devicePath = ChainNodePath::trackLevel(tid);
 
         if (volumeChanged && !autoMgr.isTargetUserTouched(volTarget))
             volumeChanged = false;
@@ -433,8 +428,8 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
         sendChanges.erase(std::remove_if(sendChanges.begin(), sendChanges.end(),
                                          [&](const SendDelta& s) {
                                              AutomationTarget sendTarget;
-                                             sendTarget.type = AutomationTargetType::SendLevel;
-                                             sendTarget.trackId = tid;
+                                             sendTarget.kind = ControlTarget::Kind::SendLevel;
+                                             sendTarget.devicePath = ChainNodePath::trackLevel(tid);
                                              sendTarget.sendBusIndex = s.busIndex;
                                              return !autoMgr.isTargetUserTouched(sendTarget);
                                          }),
@@ -464,8 +459,8 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
 
     if (volumeChanged) {
         AutomationTarget target;
-        target.type = AutomationTargetType::TrackVolume;
-        target.trackId = tid;
+        target.kind = ControlTarget::Kind::TrackVolume;
+        target.devicePath.trackId = tid;
 
         bool isNewLane = (autoMgr.getLaneForTarget(target) == INVALID_AUTOMATION_LANE_ID);
         auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
@@ -474,7 +469,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
         // on release. preSeedVolume is the value before this callback fired,
         // which on the first event of a gesture is the genuine pre-touch value.
         if (mode_ == AutomationMode::Touch && !laneTouchBaseline_.count(laneId)) {
-            ParameterInfo paramInfo = target.getParameterInfo();
+            ParameterInfo paramInfo = getParameterInfoForTarget(target);
             float seedDb = gainToDb(preSeedVolume);
             laneTouchBaseline_[laneId] =
                 static_cast<double>(ParameterUtils::realToNormalized(seedDb, paramInfo));
@@ -485,7 +480,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
         // a different value. Correct the anchor using the value seeded at
         // recording start, which is captured before TE's async callbacks run.
         if (isNewLane) {
-            ParameterInfo paramInfo = target.getParameterInfo();
+            ParameterInfo paramInfo = getParameterInfoForTarget(target);
             float seedDb = gainToDb(preSeedVolume);
             double seedNorm =
                 static_cast<double>(ParameterUtils::realToNormalized(seedDb, paramInfo));
@@ -501,7 +496,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
             }
         }
 
-        ParameterInfo paramInfo = target.getParameterInfo();
+        ParameterInfo paramInfo = getParameterInfoForTarget(target);
         float db = gainToDb(track->volume);
         double normalizedValue =
             static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
@@ -515,20 +510,20 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
 
     if (panChanged) {
         AutomationTarget target;
-        target.type = AutomationTargetType::TrackPan;
-        target.trackId = tid;
+        target.kind = ControlTarget::Kind::TrackPan;
+        target.devicePath.trackId = tid;
 
         bool isNewLane = (autoMgr.getLaneForTarget(target) == INVALID_AUTOMATION_LANE_ID);
         auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
 
         if (mode_ == AutomationMode::Touch && !laneTouchBaseline_.count(laneId)) {
-            ParameterInfo paramInfo = target.getParameterInfo();
+            ParameterInfo paramInfo = getParameterInfoForTarget(target);
             laneTouchBaseline_[laneId] =
                 static_cast<double>(ParameterUtils::realToNormalized(preSeedPan, paramInfo));
         }
 
         if (isNewLane) {
-            ParameterInfo paramInfo = target.getParameterInfo();
+            ParameterInfo paramInfo = getParameterInfoForTarget(target);
             double seedNorm =
                 static_cast<double>(ParameterUtils::realToNormalized(preSeedPan, paramInfo));
             const auto* lane = autoMgr.getLane(laneId);
@@ -540,7 +535,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
             }
         }
 
-        ParameterInfo paramInfo = target.getParameterInfo();
+        ParameterInfo paramInfo = getParameterInfoForTarget(target);
         double normalizedValue =
             static_cast<double>(ParameterUtils::realToNormalized(track->pan, paramInfo));
 
@@ -552,15 +547,15 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
 
     for (const auto& s : sendChanges) {
         AutomationTarget target;
-        target.type = AutomationTargetType::SendLevel;
-        target.trackId = tid;
+        target.kind = ControlTarget::Kind::SendLevel;
+        target.devicePath.trackId = tid;
         target.sendBusIndex = s.busIndex;
 
         bool isNewLane = (autoMgr.getLaneForTarget(target) == INVALID_AUTOMATION_LANE_ID);
         auto laneId = autoMgr.getOrCreateLane(target, AutomationLaneType::Absolute);
 
         if (isNewLane) {
-            ParameterInfo paramInfo = target.getParameterInfo();
+            ParameterInfo paramInfo = getParameterInfoForTarget(target);
             float seedDb = gainToDb(s.preSeedLevel);
             double seedNorm =
                 static_cast<double>(ParameterUtils::realToNormalized(seedDb, paramInfo));
@@ -573,7 +568,7 @@ void AutomationRecordingEngine::onTrackPropertyChanged(int trackId) {
             }
         }
 
-        ParameterInfo paramInfo = target.getParameterInfo();
+        ParameterInfo paramInfo = getParameterInfoForTarget(target);
         float db = gainToDb(s.newLevel);
         double normalizedValue =
             static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
@@ -591,8 +586,8 @@ void AutomationRecordingEngine::onModParameterValueChanged(TrackId trackId,
         return;
 
     AutomationTarget target;
-    target.type = AutomationTargetType::ModParameter;
-    target.trackId = trackId;
+    target.kind = ControlTarget::Kind::ModParam;
+    target.devicePath.trackId = trackId;
     target.devicePath = devicePath;
     target.modId = modId;
     target.modParamIndex = paramIndex;
@@ -615,7 +610,7 @@ void AutomationRecordingEngine::onModParameterValueChanged(TrackId trackId,
 
     // Convert raw rate (Hz, etc.) to normalized 0..1 using the lane's stored
     // ParameterInfo so curve points are stored in the same space as draws.
-    ParameterInfo info = target.getParameterInfo();
+    ParameterInfo info = getParameterInfoForTarget(target);
     double normalizedValue = static_cast<double>(ParameterUtils::realToNormalized(value, info));
 
     double beatTime = getCurrentBeatTime();
@@ -632,9 +627,9 @@ void AutomationRecordingEngine::onMacroValueChanged(TrackId trackId, ChainScope 
 
     // Build target: path scope follows the macro's owning node.
     AutomationTarget target;
-    target.type = AutomationTargetType::Macro;
-    target.trackId = trackId;
-    target.macroIndex = macroIndex;
+    target.kind = ControlTarget::Kind::DeviceMacro;
+    target.devicePath.trackId = trackId;
+    target.paramIndex = macroIndex;
 
     switch (scope) {
         case ChainScope::Track:

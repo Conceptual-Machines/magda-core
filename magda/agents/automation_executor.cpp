@@ -37,7 +37,7 @@ TrackId getSelectedTrack(MagdaApi& api, juce::String& err) {
         auto laneId = sel.getSelectedAutomationLaneId();
         if (laneId != INVALID_AUTOMATION_LANE_ID) {
             if (auto* lane = api.automation().getLane(laneId))
-                return lane->target.trackId;
+                return lane->target.devicePath.trackId;
         }
         err = "No track is selected. Click a track first.";
         return INVALID_TRACK_ID;
@@ -76,8 +76,8 @@ AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::St
             if (trackId == INVALID_TRACK_ID)
                 return INVALID_AUTOMATION_LANE_ID;
             AutomationTarget t;
-            t.type = AutomationTargetType::TrackVolume;
-            t.trackId = trackId;
+            t.kind = ControlTarget::Kind::TrackVolume;
+            t.devicePath = ChainNodePath::trackLevel(trackId);
             return ensureLaneForTarget(api, t);
         }
         case AutoTarget::Kind::TrackVolume: {
@@ -85,8 +85,8 @@ AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::St
             if (trackId == INVALID_TRACK_ID)
                 return INVALID_AUTOMATION_LANE_ID;
             AutomationTarget t;
-            t.type = AutomationTargetType::TrackVolume;
-            t.trackId = trackId;
+            t.kind = ControlTarget::Kind::TrackVolume;
+            t.devicePath = ChainNodePath::trackLevel(trackId);
             return ensureLaneForTarget(api, t);
         }
         case AutoTarget::Kind::TrackPan: {
@@ -94,8 +94,8 @@ AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::St
             if (trackId == INVALID_TRACK_ID)
                 return INVALID_AUTOMATION_LANE_ID;
             AutomationTarget t;
-            t.type = AutomationTargetType::TrackPan;
-            t.trackId = trackId;
+            t.kind = ControlTarget::Kind::TrackPan;
+            t.devicePath = ChainNodePath::trackLevel(trackId);
             return ensureLaneForTarget(api, t);
         }
         case AutoTarget::Kind::Alias: {
@@ -114,11 +114,11 @@ AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::St
                 return INVALID_AUTOMATION_LANE_ID;
             }
             AutomationTarget t;
-            t.type = AutomationTargetType::DeviceParameter;
+            t.kind = ControlTarget::Kind::PluginParam;
             t.devicePath = resolved.devicePath;
             t.paramIndex = resolved.paramIndex;
             // Derive track id from device path
-            t.trackId = resolved.devicePath.trackId;
+            t.devicePath.trackId = resolved.devicePath.trackId;
             return ensureLaneForTarget(api, t);
         }
     }

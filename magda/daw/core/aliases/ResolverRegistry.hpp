@@ -33,13 +33,13 @@ class AliasResolver {
     virtual juce::String kind() const = 0;
 
     /**
-     * @brief Attempt to materialise a StaticTarget.
+     * @brief Attempt to materialise a ControlTarget.
      *
      * @param args  Key-value arguments from the ResolverRef.
      * @param ctx   Chain context for querying the live DAW state.
-     * @return      Populated StaticTarget on success, nullopt on failure.
+     * @return      Populated ControlTarget on success, nullopt on failure.
      */
-    virtual std::optional<StaticTarget> resolve(const juce::StringPairArray& args,
+    virtual std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
                                                 const ChainContext& ctx) const = 0;
 };
 
@@ -57,7 +57,7 @@ class FocusedDeviceMacroResolver : public AliasResolver {
     juce::String kind() const override {
         return "focused.macro";
     }
-    std::optional<StaticTarget> resolve(const juce::StringPairArray& args,
+    std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
                                         const ChainContext& ctx) const override;
 };
 
@@ -71,7 +71,7 @@ class SelectedTrackVolumeResolver : public AliasResolver {
     juce::String kind() const override {
         return "selected.volume";
     }
-    std::optional<StaticTarget> resolve(const juce::StringPairArray& args,
+    std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
                                         const ChainContext& ctx) const override;
 };
 
@@ -85,7 +85,7 @@ class SelectedTrackPanResolver : public AliasResolver {
     juce::String kind() const override {
         return "selected.pan";
     }
-    std::optional<StaticTarget> resolve(const juce::StringPairArray& args,
+    std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
                                         const ChainContext& ctx) const override;
 };
 
@@ -99,7 +99,7 @@ class MasterVolumeResolver : public AliasResolver {
     juce::String kind() const override {
         return "master.volume";
     }
-    std::optional<StaticTarget> resolve(const juce::StringPairArray& args,
+    std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
                                         const ChainContext& ctx) const override;
 };
 
@@ -113,7 +113,7 @@ class MasterPanResolver : public AliasResolver {
     juce::String kind() const override {
         return "master.pan";
     }
-    std::optional<StaticTarget> resolve(const juce::StringPairArray& args,
+    std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
                                         const ChainContext& ctx) const override;
 };
 

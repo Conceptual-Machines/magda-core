@@ -101,7 +101,7 @@ void ModMatrixContent::setLinks(const std::vector<LinkRow>& links) {
     repaint();
 }
 
-bool ModMatrixContent::updateLinkAmount(magda::ModTarget target, float amount, bool bipolar) {
+bool ModMatrixContent::updateLinkAmount(magda::ControlTarget target, float amount, bool bipolar) {
     for (auto& link : links_) {
         if (link.target == target) {
             bool changed = (link.amount != amount || link.bipolar != bipolar);
@@ -560,17 +560,17 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     modMatrixViewport_.setScrollBarsShown(true, false);
     addAndMakeVisible(modMatrixViewport_);
 
-    modMatrixContent_.onDeleteLink = [this](magda::ModTarget target) {
+    modMatrixContent_.onDeleteLink = [this](magda::ControlTarget target) {
         if (selectedModIndex_ >= 0 && onModLinkDeleted) {
             onModLinkDeleted(selectedModIndex_, target);
         }
     };
-    modMatrixContent_.onToggleBipolar = [this](magda::ModTarget target, bool bipolar) {
+    modMatrixContent_.onToggleBipolar = [this](magda::ControlTarget target, bool bipolar) {
         if (selectedModIndex_ >= 0 && onModLinkBipolarChanged) {
             onModLinkBipolarChanged(selectedModIndex_, target, bipolar);
         }
     };
-    modMatrixContent_.onAmountChanged = [this](magda::ModTarget target, float amount) {
+    modMatrixContent_.onAmountChanged = [this](magda::ControlTarget target, float amount) {
         if (selectedModIndex_ >= 0 && onModLinkAmountChanged) {
             onModLinkAmountChanged(selectedModIndex_, target, amount);
         }
@@ -616,12 +616,11 @@ void ModulatorEditorPanel::updateRateAutomationTarget() {
     // Both sliders point at the same unified Rate lane (modParamIndex 0); the
     // lane's scale and the slider visible to the user both follow tempoSync.
     magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::ModParameter;
-    target.trackId = ownerTrackId_;
+    target.kind = magda::ControlTarget::Kind::ModParam;
+    target.devicePath.trackId = ownerTrackId_;
     target.devicePath = ownerDevicePath_;
     target.modId = currentMod_.id;
     target.modParamIndex = 0;
-    target.paramName = buildQualifiedModRateName(ownerDevicePath_, currentMod_.name);
     rateSlider_.setAutomationTarget(target);
     syncDivisionSlider_.setAutomationTarget(target);
 }
@@ -631,12 +630,11 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
         return;
 
     magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::ModParameter;
-    target.trackId = ownerTrackId_;
+    target.kind = magda::ControlTarget::Kind::ModParam;
+    target.devicePath.trackId = ownerTrackId_;
     target.devicePath = ownerDevicePath_;
     target.modId = currentMod_.id;
     target.modParamIndex = 0;
-    target.paramName = buildQualifiedModRateName(ownerDevicePath_, currentMod_.name);
 
     juce::PopupMenu menu;
     constexpr int kShowLaneId = 1;
@@ -664,7 +662,7 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
                                   const magda::ChainNodePath& parent) {
             for (size_t i = 0; i < macros.size(); ++i) {
                 for (const auto& l : macros[i].links) {
-                    if (l.target.kind == magda::MacroTarget::Kind::ModParam &&
+                    if (l.target.kind == magda::ControlTarget::Kind::ModParam &&
                         l.target.modId == modId && l.target.modParamIndex == 0) {
                         UnlinkEntry e{SrcKind::Macro, parent, static_cast<int>(i)};
                         unlinks.push_back(e);
@@ -684,7 +682,7 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
                 if (mods[i].id == modId)
                     continue;  // Skip self
                 for (const auto& l : mods[i].links) {
-                    if (l.target.kind == magda::ModTarget::Kind::ModParam &&
+                    if (l.target.kind == magda::ControlTarget::Kind::ModParam &&
                         l.target.modId == modId && l.target.modParamIndex == 0) {
                         UnlinkEntry e{SrcKind::Mod, parent, static_cast<int>(i)};
                         unlinks.push_back(e);
@@ -771,8 +769,8 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
         const auto& e = unlinks[static_cast<size_t>(unlinkIdx)];
         auto& tmgr = magda::TrackManager::getInstance();
         if (e.kind == SrcKind::Macro) {
-            magda::MacroTarget t;
-            t.kind = magda::MacroTarget::Kind::ModParam;
+            magda::ControlTarget t;
+            t.kind = magda::ControlTarget::Kind::ModParam;
             t.modId = rateModId;
             t.modParamIndex = 0;
             if (e.parentPath.isTrackLevel) {
@@ -783,8 +781,8 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
                 tmgr.removeMacroLink(e.parentPath, e.index, t);
             }
         } else {
-            magda::ModTarget t;
-            t.kind = magda::ModTarget::Kind::ModParam;
+            magda::ControlTarget t;
+            t.kind = magda::ControlTarget::Kind::ModParam;
             t.modId = rateModId;
             t.modParamIndex = 0;
             if (e.parentPath.isTrackLevel) {
@@ -960,7 +958,7 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
     float macroTotal = 0.0f;
     for (const auto& m : *macros) {
         for (const auto& l : m.links) {
-            if (l.target.kind != magda::MacroTarget::Kind::ModParam ||
+            if (l.target.kind != magda::ControlTarget::Kind::ModParam ||
                 l.target.modId != currentMod_.id || l.target.modParamIndex != 0)
                 continue;
             float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;
@@ -972,7 +970,7 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
         if (m.id == currentMod_.id)
             continue;
         for (const auto& l : m.links) {
-            if (l.target.kind != magda::ModTarget::Kind::ModParam ||
+            if (l.target.kind != magda::ControlTarget::Kind::ModParam ||
                 l.target.modId != currentMod_.id || l.target.modParamIndex != 0)
                 continue;
             float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;
@@ -1267,8 +1265,8 @@ void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
                 const auto& sel = lmm.getMacroInLinkMode();
                 if (auto* macros = findMacrosAt(sel.parentPath)) {
                     if (sel.macroIndex >= 0 && sel.macroIndex < static_cast<int>(macros->size())) {
-                        magda::MacroTarget t;
-                        t.kind = magda::MacroTarget::Kind::ModParam;
+                        magda::ControlTarget t;
+                        t.kind = magda::ControlTarget::Kind::ModParam;
                         t.modId = currentMod_.id;
                         t.modParamIndex = 0;
                         if (auto* link = (*macros)[static_cast<size_t>(sel.macroIndex)].getLink(t))
@@ -1279,8 +1277,8 @@ void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
                 const auto& sel = lmm.getModInLinkMode();
                 if (auto* mods = findModsAt(sel.parentPath)) {
                     if (sel.modIndex >= 0 && sel.modIndex < static_cast<int>(mods->size())) {
-                        magda::ModTarget t;
-                        t.kind = magda::ModTarget::Kind::ModParam;
+                        magda::ControlTarget t;
+                        t.kind = magda::ControlTarget::Kind::ModParam;
                         t.modId = currentMod_.id;
                         t.modParamIndex = 0;
                         if (auto* link = (*mods)[static_cast<size_t>(sel.modIndex)].getLink(t))
@@ -1414,8 +1412,8 @@ void ModulatorEditorPanel::writeLinkAmountFromActiveSource(float amount) {
         const auto& sel = lmm.getMacroInLinkMode();
         if (!sel.isValid())
             return;
-        magda::MacroTarget target;
-        target.kind = magda::MacroTarget::Kind::ModParam;
+        magda::ControlTarget target;
+        target.kind = magda::ControlTarget::Kind::ModParam;
         target.modId = currentMod_.id;
         target.modParamIndex = 0;  // Rate
 
@@ -1433,8 +1431,8 @@ void ModulatorEditorPanel::writeLinkAmountFromActiveSource(float amount) {
         const auto& sel = lmm.getModInLinkMode();
         if (!sel.isValid())
             return;
-        magda::ModTarget target;
-        target.kind = magda::ModTarget::Kind::ModParam;
+        magda::ControlTarget target;
+        target.kind = magda::ControlTarget::Kind::ModParam;
         target.modId = currentMod_.id;
         target.modParamIndex = 0;  // Rate
 
@@ -1462,7 +1460,7 @@ void ModulatorEditorPanel::updateModMatrix() {
         row.bipolar = link.bipolar;
 
         if (paramNameResolver_) {
-            row.paramName = paramNameResolver_(link.target.deviceId, link.target.paramIndex);
+            row.paramName = paramNameResolver_(link.target.deviceId(), link.target.paramIndex);
         } else {
             row.paramName = "P" + juce::String(link.target.paramIndex);
         }
@@ -1538,8 +1536,8 @@ void ModulatorEditorPanel::bindingRegistryChanged(magda::BindingScope) {
 }
 
 void ModulatorEditorPanel::midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
-                                                 magda::StaticTarget::Owner owner, bool learning) {
-    if (owner != magda::StaticTarget::Owner::ModParam)
+                                                 magda::ControlTarget::Kind owner, bool learning) {
+    if (owner != magda::ControlTarget::Kind::ModParam)
         return;
     bool isMe =
         (path == ownerDevicePath_ && paramIndex == 0 && currentMod_.id != magda::INVALID_MOD_ID);
@@ -1548,17 +1546,17 @@ void ModulatorEditorPanel::midiLearnStateChanged(const magda::ChainNodePath& pat
 }
 
 void ModulatorEditorPanel::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
-                                              magda::StaticTarget::Owner owner,
+                                              magda::ControlTarget::Kind owner,
                                               const magda::Binding&) {
-    if (owner != magda::StaticTarget::Owner::ModParam)
+    if (owner != magda::ControlTarget::Kind::ModParam)
         return;
     if (path == ownerDevicePath_ && paramIndex == 0)
         refreshRateMidiBindingState();
 }
 
 void ModulatorEditorPanel::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
-                                            magda::StaticTarget::Owner owner, int) {
-    if (owner != magda::StaticTarget::Owner::ModParam)
+                                            magda::ControlTarget::Kind owner, int) {
+    if (owner != magda::ControlTarget::Kind::ModParam)
         return;
     if (path == ownerDevicePath_ && paramIndex == 0)
         refreshRateMidiBindingState();

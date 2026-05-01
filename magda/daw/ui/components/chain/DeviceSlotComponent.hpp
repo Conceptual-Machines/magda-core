@@ -141,7 +141,7 @@ class DeviceSlotComponent : public NodeComponent,
 
     // Mod/macro callbacks
     void onModAmountChangedInternal(int modIndex, float amount) override;
-    void onModTargetChangedInternal(int modIndex, magda::ModTarget target) override;
+    void onModTargetChangedInternal(int modIndex, magda::ControlTarget target) override;
     void onModNameChangedInternal(int modIndex, const juce::String& name) override;
     void onModTypeChangedInternal(int modIndex, magda::ModType type) override;
     void onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) override;
@@ -154,16 +154,16 @@ class DeviceSlotComponent : public NodeComponent,
     void onModAudioReleaseChangedInternal(int modIndex, float ms) override;
     void onModCurveChangedInternal(int modIndex) override;
     void onMacroValueChangedInternal(int macroIndex, float value) override;
-    void onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) override;
+    void onMacroTargetChangedInternal(int macroIndex, magda::ControlTarget target) override;
     void onMacroNameChangedInternal(int macroIndex, const juce::String& name) override;
     void onMacroAllLinksClearedInternal(int macroIndex) override;
     // Contextual link callbacks for macros (similar to mods)
-    void onMacroLinkAmountChangedInternal(int macroIndex, magda::MacroTarget target,
+    void onMacroLinkAmountChangedInternal(int macroIndex, magda::ControlTarget target,
                                           float amount) override;
-    void onMacroNewLinkCreatedInternal(int macroIndex, magda::MacroTarget target,
+    void onMacroNewLinkCreatedInternal(int macroIndex, magda::ControlTarget target,
                                        float amount) override;
-    void onMacroLinkRemovedInternal(int macroIndex, magda::MacroTarget target) override;
-    void onMacroLinkBipolarChangedInternal(int macroIndex, magda::MacroTarget target,
+    void onMacroLinkRemovedInternal(int macroIndex, magda::ControlTarget target) override;
+    void onMacroLinkBipolarChangedInternal(int macroIndex, magda::ControlTarget target,
                                            bool bipolar) override;
     void onModClickedInternal(int modIndex) override;
     void onMacroClickedInternal(int macroIndex) override;
@@ -176,10 +176,10 @@ class DeviceSlotComponent : public NodeComponent,
     void onMacroPageAddRequested(int itemsToAdd) override;
     void onMacroPageRemoveRequested(int itemsToRemove) override;
     // Contextual link callbacks (when param is selected and mod amount slider is used)
-    void onModLinkAmountChangedInternal(int modIndex, magda::ModTarget target,
+    void onModLinkAmountChangedInternal(int modIndex, magda::ControlTarget target,
                                         float amount) override;
-    void onModNewLinkCreatedInternal(int modIndex, magda::ModTarget target, float amount) override;
-    void onModLinkRemovedInternal(int modIndex, magda::ModTarget target) override;
+    void onModNewLinkCreatedInternal(int modIndex, magda::ControlTarget target, float amount) override;
+    void onModLinkRemovedInternal(int modIndex, magda::ControlTarget target) override;
 
     // SelectionManagerListener overrides — chain-node + binding/controller
     // listeners now live on NodeComponent (the base class), which fans

@@ -1573,8 +1573,8 @@ void TrackHeadersPanel::automationValueChanged(AutomationLaneId laneId, double n
     if (!lane)
         return;
 
-    if (lane->target.type != AutomationTargetType::TrackVolume &&
-        lane->target.type != AutomationTargetType::TrackPan)
+    if (lane->target.kind != ControlTarget::Kind::TrackVolume &&
+        lane->target.kind != ControlTarget::Kind::TrackPan)
         return;
 
     // Overridden state covers both "user dragging right now" and "user
@@ -1586,7 +1586,7 @@ void TrackHeadersPanel::automationValueChanged(AutomationLaneId laneId, double n
 
     int index = -1;
     for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        if (visibleTrackIds_[i] == lane->target.trackId) {
+        if (visibleTrackIds_[i] == lane->target.devicePath.trackId) {
             index = static_cast<int>(i);
             break;
         }
@@ -1595,7 +1595,7 @@ void TrackHeadersPanel::automationValueChanged(AutomationLaneId laneId, double n
         return;
 
     auto& header = *trackHeaders[index];
-    if (lane->target.type == AutomationTargetType::TrackVolume) {
+    if (lane->target.kind == ControlTarget::Kind::TrackVolume) {
         // MAGDA normalized (FaderDB) → real dB for the draggable dB label.
         auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
         float dB = ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), paramInfo);
@@ -1696,13 +1696,13 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
     // fader fighting during playback) and so the label can self-paint the
     // "automated" purple highlight based on AutomationManager state.
     AutomationTarget volTarget;
-    volTarget.type = AutomationTargetType::TrackVolume;
-    volTarget.trackId = trackId;
+    volTarget.kind = ControlTarget::Kind::TrackVolume;
+    volTarget.devicePath = magda::ChainNodePath::trackLevel(trackId);
     header.volumeLabel->setAutomationTarget(volTarget);
 
     AutomationTarget panTarget;
-    panTarget.type = AutomationTargetType::TrackPan;
-    panTarget.trackId = trackId;
+    panTarget.kind = ControlTarget::Kind::TrackPan;
+    panTarget.devicePath = magda::ChainNodePath::trackLevel(trackId);
     header.panLabel->setAutomationTarget(panTarget);
 
     // Name label callback - updates TrackManager
@@ -3271,7 +3271,7 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
         for (auto laneId : existingLanes) {
             const auto* lane = automationManager.getLane(laneId);
             if (lane) {
-                juce::String name = lane->target.getDisplayName();
+                juce::String name = lane->getDisplayName();
                 bool isVisible = lane->visible;
                 menu.addItem(1000 + laneId, name, true, isVisible);
             }
@@ -3296,16 +3296,16 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
     // Track volume
     {
         AutomationTarget tvTarget;
-        tvTarget.type = AutomationTargetType::TrackVolume;
-        tvTarget.trackId = trackId;
+        tvTarget.kind = ControlTarget::Kind::TrackVolume;
+        tvTarget.devicePath = magda::ChainNodePath::trackLevel(trackId);
         addNewMenu.addItem(1, "Track Volume", true, isTargetShown(tvTarget));
     }
 
     // Track pan
     {
         AutomationTarget tpTarget;
-        tpTarget.type = AutomationTargetType::TrackPan;
-        tpTarget.trackId = trackId;
+        tpTarget.kind = ControlTarget::Kind::TrackPan;
+        tpTarget.devicePath = magda::ChainNodePath::trackLevel(trackId);
         addNewMenu.addItem(2, "Track Pan", true, isTargetShown(tpTarget));
     }
 
@@ -3331,11 +3331,10 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                 if (macro.name.isEmpty())
                     continue;
                 AutomationTarget target;
-                target.type = AutomationTargetType::Macro;
-                target.trackId = trackId;
+                target.kind = ControlTarget::Kind::DeviceMacro;
+                target.devicePath.trackId = trackId;
                 target.devicePath = trackPath;
-                target.macroIndex = m;
-                target.paramName = macro.name;
+                target.paramIndex = m;
                 int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                 bool ticked = isTargetShown(target);
                 deviceParamTargets->push_back(target);
@@ -3355,12 +3354,11 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                 if (!mod.enabled)
                     continue;
                 AutomationTarget target;
-                target.type = AutomationTargetType::ModParameter;
-                target.trackId = trackId;
+                target.kind = ControlTarget::Kind::ModParam;
+                target.devicePath.trackId = trackId;
                 target.devicePath = trackPath;
                 target.modId = mod.id;
                 target.modParamIndex = 0;  // Rate
-                target.paramName = mod.name + " Rate";
                 int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                 bool ticked = isTargetShown(target);
                 deviceParamTargets->push_back(target);
@@ -3377,8 +3375,8 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
         addNewMenu.addSeparator();
         for (const auto& send : trackInfo->sends) {
             AutomationTarget target;
-            target.type = AutomationTargetType::SendLevel;
-            target.trackId = trackId;
+            target.kind = ControlTarget::Kind::SendLevel;
+            target.devicePath.trackId = trackId;
             target.sendBusIndex = send.busIndex;
 
             juce::String destName = "Send " + juce::String(send.busIndex + 1);
@@ -3386,7 +3384,6 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                 if (!destTrack->name.isEmpty())
                     destName = "Send: " + destTrack->name;
             }
-            target.paramName = destName;
 
             int itemId = kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
             deviceParamTargets->push_back(target);
@@ -3420,11 +3417,10 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                             juce::PopupMenu paramsMenu;
                             for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i) {
                                 AutomationTarget target;
-                                target.type = AutomationTargetType::DeviceParameter;
-                                target.trackId = trackId;
+                                target.kind = ControlTarget::Kind::PluginParam;
+                                target.devicePath.trackId = trackId;
                                 target.devicePath = devicePath;
                                 target.paramIndex = i;
-                                target.paramName = device.name + ": " +
                                                    device.parameters[static_cast<size_t>(i)].name;
 
                                 int itemId =
@@ -3450,12 +3446,11 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                 if (!mod.enabled)
                                     continue;
                                 AutomationTarget target;
-                                target.type = AutomationTargetType::ModParameter;
-                                target.trackId = trackId;
+                                target.kind = ControlTarget::Kind::ModParam;
+                                target.devicePath.trackId = trackId;
                                 target.devicePath = devicePath;
                                 target.modId = mod.id;
                                 target.modParamIndex = 0;  // Rate
-                                target.paramName = device.name + ": " + mod.name + " Rate";
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                                 bool ticked = isTargetShown(target);
@@ -3476,11 +3471,10 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                 if (macro.name.isEmpty())
                                     continue;
                                 AutomationTarget target;
-                                target.type = AutomationTargetType::Macro;
-                                target.trackId = trackId;
+                                target.kind = ControlTarget::Kind::DeviceMacro;
+                                target.devicePath.trackId = trackId;
                                 target.devicePath = devicePath;
-                                target.macroIndex = m;
-                                target.paramName = device.name + ": " + macro.name;
+                                target.paramIndex = m;
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
@@ -3509,12 +3503,11 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                 if (!mod.enabled)
                                     continue;
                                 AutomationTarget target;
-                                target.type = AutomationTargetType::ModParameter;
-                                target.trackId = trackId;
+                                target.kind = ControlTarget::Kind::ModParam;
+                                target.devicePath.trackId = trackId;
                                 target.devicePath = rackPath;
                                 target.modId = mod.id;
                                 target.modParamIndex = 0;  // Rate
-                                target.paramName = rack.name + ": " + mod.name + " Rate";
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
                                 bool ticked = isTargetShown(target);
@@ -3535,11 +3528,10 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                 if (macro.name.isEmpty())
                                     continue;
                                 AutomationTarget target;
-                                target.type = AutomationTargetType::Macro;
-                                target.trackId = trackId;
+                                target.kind = ControlTarget::Kind::DeviceMacro;
+                                target.devicePath.trackId = trackId;
                                 target.devicePath = rackPath;
-                                target.macroIndex = m;
-                                target.paramName = rack.name + ": " + macro.name;
+                                target.paramIndex = m;
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());
@@ -3614,8 +3606,8 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
         } else if (result == 1) {
             // Create track volume automation lane
             AutomationTarget target;
-            target.type = AutomationTargetType::TrackVolume;
-            target.trackId = trackId;
+            target.kind = ControlTarget::Kind::TrackVolume;
+            target.devicePath.trackId = trackId;
             auto laneId = automationManager.getOrCreateLane(target, AutomationLaneType::Absolute);
             automationManager.setLaneVisible(laneId, true);
             if (onShowAutomationLane) {
@@ -3624,8 +3616,8 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
         } else if (result == 2) {
             // Create track pan automation lane
             AutomationTarget target;
-            target.type = AutomationTargetType::TrackPan;
-            target.trackId = trackId;
+            target.kind = ControlTarget::Kind::TrackPan;
+            target.devicePath.trackId = trackId;
             auto laneId = automationManager.getOrCreateLane(target, AutomationLaneType::Absolute);
             automationManager.setLaneVisible(laneId, true);
             if (onShowAutomationLane) {
@@ -3713,7 +3705,7 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
             constexpr float tickLen = 5.0f;
 
             if (contentHeight > 20) {
-                auto paramInfo = lane->target.getParameterInfo();
+                auto paramInfo = getParameterInfoForTarget(lane->target);
 
                 // Build grid values: pairs of (normalized, label)
                 std::vector<std::pair<double, juce::String>> gridValues;
@@ -3727,7 +3719,7 @@ void TrackHeadersPanel::paintAutomationLaneHeaders(juce::Graphics& g, int trackI
                             ParameterUtils::realToNormalized(static_cast<float>(db), paramInfo);
                         gridValues.push_back({static_cast<double>(norm), label});
                     }
-                } else if (lane->target.type == AutomationTargetType::TrackPan) {
+                } else if (lane->target.kind == ControlTarget::Kind::TrackPan) {
                     gridValues.push_back(
                         {static_cast<double>(ParameterUtils::realToNormalized(1.0f, paramInfo)),
                          "R"});

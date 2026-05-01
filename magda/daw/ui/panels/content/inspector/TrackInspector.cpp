@@ -708,12 +708,12 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
     // master track (no automation lanes for master volume/pan).
     if (trackId != magda::INVALID_TRACK_ID && trackId != magda::MASTER_TRACK_ID) {
         magda::AutomationTarget volTarget;
-        volTarget.type = magda::AutomationTargetType::TrackVolume;
-        volTarget.trackId = trackId;
+        volTarget.kind = magda::ControlTarget::Kind::TrackVolume;
+        volTarget.devicePath = magda::ChainNodePath::trackLevel(trackId);
         gainLabel_->setAutomationTarget(volTarget);
         magda::AutomationTarget panTarget;
-        panTarget.type = magda::AutomationTargetType::TrackPan;
-        panTarget.trackId = trackId;
+        panTarget.kind = magda::ControlTarget::Kind::TrackPan;
+        panTarget.devicePath = magda::ChainNodePath::trackLevel(trackId);
         panLabel_->setAutomationTarget(panTarget);
     } else {
         gainLabel_->clearAutomationTarget();
@@ -1317,16 +1317,16 @@ void TrackInspector::rebuildSendsUI() {
         // Bind automation visual state + right-click menu so the send label
         // tracks purple/grey like the volume fader and can add/show its lane.
         magda::AutomationTarget sendTarget;
-        sendTarget.type = magda::AutomationTargetType::SendLevel;
-        sendTarget.trackId = srcId;
+        sendTarget.kind = magda::ControlTarget::Kind::SendLevel;
+        sendTarget.devicePath = magda::ChainNodePath::trackLevel(srcId);
         sendTarget.sendBusIndex = busIndex;
         levelLabel->setAutomationTarget(sendTarget);
 
         levelLabel->onRightClick = [srcId, busIndex]() {
             auto& autoMgr = magda::AutomationManager::getInstance();
             magda::AutomationTarget target;
-            target.type = magda::AutomationTargetType::SendLevel;
-            target.trackId = srcId;
+            target.kind = magda::ControlTarget::Kind::SendLevel;
+            target.devicePath.trackId = srcId;
             target.sendBusIndex = busIndex;
 
             auto laneId = autoMgr.getLaneForTarget(target);

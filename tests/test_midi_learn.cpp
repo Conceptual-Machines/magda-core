@@ -51,7 +51,7 @@ static Binding makeStaticBinding(const ControllerId& cid, BindingMsgType msgType
     b.source.msgType = msgType;
     b.source.channel = channel;
     b.source.number = number;
-    StaticTarget st;
+    ControlTarget st;
     st.devicePath = path;
     st.paramIndex = paramIndex;
     b.target = Target{st};
@@ -402,19 +402,19 @@ struct FakeCoordinatorListener : public MidiLearnCoordinatorListener {
     struct StateChange {
         ChainNodePath path;
         int paramIndex;
-        StaticTarget::Owner owner;
+        ControlTarget::Kind kind;
         bool learning;
     };
     struct Completion {
         ChainNodePath path;
         int paramIndex;
-        StaticTarget::Owner owner;
+        ControlTarget::Kind kind;
         Binding binding;
     };
     struct Cleared {
         ChainNodePath path;
         int paramIndex;
-        StaticTarget::Owner owner;
+        ControlTarget::Kind kind;
         int numRemoved;
     };
 
@@ -422,15 +422,15 @@ struct FakeCoordinatorListener : public MidiLearnCoordinatorListener {
     std::vector<Completion> completions;
     std::vector<Cleared> clears;
 
-    void midiLearnStateChanged(const ChainNodePath& path, int paramIndex, StaticTarget::Owner owner,
+    void midiLearnStateChanged(const ChainNodePath& path, int paramIndex, ControlTarget::Kind owner,
                                bool learning) override {
         stateChanges.push_back({path, paramIndex, owner, learning});
     }
-    void midiLearnCompleted(const ChainNodePath& path, int paramIndex, StaticTarget::Owner owner,
+    void midiLearnCompleted(const ChainNodePath& path, int paramIndex, ControlTarget::Kind owner,
                             const Binding& binding) override {
         completions.push_back({path, paramIndex, owner, binding});
     }
-    void midiLearnCleared(const ChainNodePath& path, int paramIndex, StaticTarget::Owner owner,
+    void midiLearnCleared(const ChainNodePath& path, int paramIndex, ControlTarget::Kind owner,
                           int numRemoved) override {
         clears.push_back({path, paramIndex, owner, numRemoved});
     }
@@ -507,7 +507,7 @@ TEST_CASE(
     clearAll();
 }
 
-TEST_CASE("MidiLearnCoordinator - StaticTarget used when no alias exists",
+TEST_CASE("MidiLearnCoordinator - ControlTarget used when no alias exists",
           "[midi-learn][coordinator]") {
     CoordinatorFixture fix;
 
@@ -525,8 +525,8 @@ TEST_CASE("MidiLearnCoordinator - StaticTarget used when no alias exists",
 
     REQUIRE(fix.listener.completions.size() == 1);
     const auto& binding = fix.listener.completions[0].binding;
-    REQUIRE(std::holds_alternative<StaticTarget>(binding.target));
-    auto& st = std::get<StaticTarget>(binding.target);
+    REQUIRE(std::holds_alternative<ControlTarget>(binding.target));
+    auto& st = std::get<ControlTarget>(binding.target);
     REQUIRE(st.devicePath == path);
     REQUIRE(st.paramIndex == paramIdx);
 
@@ -558,7 +558,7 @@ TEST_CASE("MidiLearnCoordinator - second beginLearn cancels first", "[midi-learn
     coord.cancelLearn();
 }
 
-TEST_CASE("MidiLearnCoordinator - macro Learn capture builds DeviceMacro StaticTarget",
+TEST_CASE("MidiLearnCoordinator - macro Learn capture builds DeviceMacro ControlTarget",
           "[midi-learn][coordinator]") {
     CoordinatorFixture fix;
 
@@ -590,9 +590,9 @@ TEST_CASE("MidiLearnCoordinator - macro Learn capture builds DeviceMacro StaticT
     REQUIRE(fix.listener.completions.size() == 1);
 
     const auto& binding = fix.listener.completions[0].binding;
-    REQUIRE(std::holds_alternative<StaticTarget>(binding.target));
-    const auto& st = std::get<StaticTarget>(binding.target);
-    REQUIRE(st.owner == StaticTarget::Owner::DeviceMacro);
+    REQUIRE(std::holds_alternative<ControlTarget>(binding.target));
+    const auto& st = std::get<ControlTarget>(binding.target);
+    REQUIRE(st.kind == ControlTarget::Kind::DeviceMacro);
     REQUIRE(st.devicePath == path);
     REQUIRE(st.paramIndex == macroIndex);
 
@@ -603,7 +603,7 @@ TEST_CASE("MidiLearnCoordinator - macro Learn capture builds DeviceMacro StaticT
     clearAll();
 }
 
-TEST_CASE("MidiLearnCoordinator - mod-param Learn capture builds ModParam StaticTarget",
+TEST_CASE("MidiLearnCoordinator - mod-param Learn capture builds ModParam ControlTarget",
           "[midi-learn][coordinator]") {
     CoordinatorFixture fix;
 
@@ -628,9 +628,9 @@ TEST_CASE("MidiLearnCoordinator - mod-param Learn capture builds ModParam Static
     REQUIRE(fix.listener.completions.size() == 1);
 
     const auto& binding = fix.listener.completions[0].binding;
-    REQUIRE(std::holds_alternative<StaticTarget>(binding.target));
-    const auto& st = std::get<StaticTarget>(binding.target);
-    REQUIRE(st.owner == StaticTarget::Owner::ModParam);
+    REQUIRE(std::holds_alternative<ControlTarget>(binding.target));
+    const auto& st = std::get<ControlTarget>(binding.target);
+    REQUIRE(st.kind == ControlTarget::Kind::ModParam);
     REQUIRE(st.devicePath == path);
     REQUIRE(st.modId == modId);
     REQUIRE(st.modParamIndex == modParamIndex);
@@ -654,7 +654,7 @@ TEST_CASE("MidiLearnCoordinator - macro Learn does not stage plugin-param listen
     const auto& sc = fix.listener.stateChanges[0];
     REQUIRE(sc.path == path);
     REQUIRE(sc.paramIndex == 0);
-    REQUIRE(sc.owner == StaticTarget::Owner::DeviceMacro);
+    REQUIRE(sc.kind == ControlTarget::Kind::DeviceMacro);
     REQUIRE(sc.learning == true);
 
     MidiLearnCoordinator::getInstance().cancelLearn();
@@ -692,10 +692,10 @@ TEST_CASE("MidiLearnCoordinator - clearMacroMappings leaves automap resolver int
     bLearn.source.controllerId = c.id;
     bLearn.source.msgType = BindingMsgType::CC;
     bLearn.source.number = 51;
-    StaticTarget stLearn;
+    ControlTarget stLearn;
     stLearn.devicePath = path;
     stLearn.paramIndex = macroIndex;
-    stLearn.owner = StaticTarget::Owner::DeviceMacro;
+    stLearn.kind = ControlTarget::Kind::DeviceMacro;
     bLearn.target = Target{stLearn};
     bLearn.mode = BindingMode::Absolute;
     bLearn.range = BindingRange{0.0f, 1.0f, BindingCurve::Linear};
@@ -736,9 +736,9 @@ TEST_CASE("MidiLearnCoordinator - clearModParamMappings removes only matching bi
         b.source.controllerId = c.id;
         b.source.msgType = BindingMsgType::CC;
         b.source.number = number;
-        StaticTarget st;
+        ControlTarget st;
         st.devicePath = path;
-        st.owner = StaticTarget::Owner::ModParam;
+        st.kind = ControlTarget::Kind::ModParam;
         st.modId = mid;
         st.modParamIndex = mpIdx;
         b.target = Target{st};

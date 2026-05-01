@@ -1022,7 +1022,7 @@ void NodeComponent::initializeModsMacrosPanels() {
     modsPanel_->onModAmountChanged = [this](int modIndex, float amount) {
         onModAmountChangedInternal(modIndex, amount);
     };
-    modsPanel_->onModTargetChanged = [this](int modIndex, magda::ModTarget target) {
+    modsPanel_->onModTargetChanged = [this](int modIndex, magda::ControlTarget target) {
         onModTargetChangedInternal(modIndex, target);
     };
     modsPanel_->onModNameChanged = [this](int modIndex, juce::String name) {
@@ -1061,13 +1061,13 @@ void NodeComponent::initializeModsMacrosPanels() {
     macroPanel_->onMacroValueChanged = [this](int macroIndex, float value) {
         onMacroValueChangedInternal(macroIndex, value);
     };
-    macroPanel_->onMacroTargetChanged = [this](int macroIndex, magda::MacroTarget target) {
+    macroPanel_->onMacroTargetChanged = [this](int macroIndex, magda::ControlTarget target) {
         onMacroTargetChangedInternal(macroIndex, target);
     };
     macroPanel_->onMacroNameChanged = [this](int macroIndex, juce::String name) {
         onMacroNameChangedInternal(macroIndex, name);
     };
-    macroPanel_->onMacroLinkRemoved = [this](int macroIndex, magda::MacroTarget target) {
+    macroPanel_->onMacroLinkRemoved = [this](int macroIndex, magda::ControlTarget target) {
         onMacroLinkRemovedInternal(macroIndex, target);
         updateMacroPanel();
         updateMacroEditor();
@@ -1240,7 +1240,7 @@ void NodeComponent::initializeModsMacrosPanels() {
     });
 
     // Mod matrix: delete link
-    modulatorEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ModTarget target) {
+    modulatorEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ControlTarget target) {
         auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
         if (device) {
             magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
@@ -1252,7 +1252,7 @@ void NodeComponent::initializeModsMacrosPanels() {
     };
 
     // Mod matrix: toggle bipolar
-    modulatorEditorPanel_->onModLinkBipolarChanged = [this](int modIndex, magda::ModTarget target,
+    modulatorEditorPanel_->onModLinkBipolarChanged = [this](int modIndex, magda::ControlTarget target,
                                                             bool bipolar) {
         auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
         if (device) {
@@ -1266,7 +1266,7 @@ void NodeComponent::initializeModsMacrosPanels() {
     };
 
     // Mod matrix: change link amount
-    modulatorEditorPanel_->onModLinkAmountChanged = [this](int modIndex, magda::ModTarget target,
+    modulatorEditorPanel_->onModLinkAmountChanged = [this](int modIndex, magda::ControlTarget target,
                                                            float amount) {
         auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
         if (device) {
@@ -1292,18 +1292,18 @@ void NodeComponent::initializeModsMacrosPanels() {
             onMacroValueChangedInternal(selectedMacroIndex_, value);
         }
     };
-    macroEditorPanel_->onLinkAmountChanged = [this](magda::MacroTarget target, float amount) {
+    macroEditorPanel_->onLinkAmountChanged = [this](magda::ControlTarget target, float amount) {
         if (selectedMacroIndex_ >= 0) {
             onMacroLinkAmountChangedInternal(selectedMacroIndex_, target, amount);
         }
     };
-    macroEditorPanel_->onLinkRemoved = [this](magda::MacroTarget target) {
+    macroEditorPanel_->onLinkRemoved = [this](magda::ControlTarget target) {
         if (selectedMacroIndex_ >= 0) {
             onMacroLinkRemovedInternal(selectedMacroIndex_, target);
             updateMacroEditor();
         }
     };
-    macroEditorPanel_->onLinkBipolarToggled = [this](magda::MacroTarget target, bool bipolar) {
+    macroEditorPanel_->onLinkBipolarToggled = [this](magda::ControlTarget target, bool bipolar) {
         if (selectedMacroIndex_ >= 0) {
             onMacroLinkBipolarChangedInternal(selectedMacroIndex_, target, bipolar);
             updateMacroEditor();

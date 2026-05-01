@@ -38,7 +38,7 @@ class MidiLearnCoordinatorListener {
      * @param learning   true = session started; false = session ended (captured or cancelled).
      */
     virtual void midiLearnStateChanged(const ChainNodePath& path, int paramIndex,
-                                       StaticTarget::Owner owner, bool learning) = 0;
+                                       ControlTarget::Kind owner, bool learning) = 0;
 
     /**
      * @brief Called when a learn session completes and a binding was created.
@@ -46,7 +46,7 @@ class MidiLearnCoordinatorListener {
      * The binding has already been added to BindingRegistry at this point.
      */
     virtual void midiLearnCompleted(const ChainNodePath& /*path*/, int /*paramIndex*/,
-                                    StaticTarget::Owner /*owner*/, const Binding& /*binding*/) {}
+                                    ControlTarget::Kind /*owner*/, const Binding& /*binding*/) {}
 
     /**
      * @brief Called when clearMappings() removes one or more bindings.
@@ -54,7 +54,7 @@ class MidiLearnCoordinatorListener {
      * @param numRemoved Number of bindings removed (always >= 1 when called).
      */
     virtual void midiLearnCleared(const ChainNodePath& /*path*/, int /*paramIndex*/,
-                                  StaticTarget::Owner /*owner*/, int /*numRemoved*/) {}
+                                  ControlTarget::Kind /*owner*/, int /*numRemoved*/) {}
 };
 
 // ============================================================================
@@ -191,7 +191,7 @@ class MidiLearnCoordinator {
     // Called from router's callAsync (message thread) when a MIDI event is captured.
     void onCapture(const LearnCapture& capture);
 
-    void notifyStateChanged(const ChainNodePath& path, int paramIndex, StaticTarget::Owner owner,
+    void notifyStateChanged(const ChainNodePath& path, int paramIndex, ControlTarget::Kind owner,
                             bool learning);
 
     ControllerRouter* router_ = nullptr;
@@ -200,13 +200,13 @@ class MidiLearnCoordinator {
     bool armed_ = false;
     ChainNodePath armedPath_;
     int armedParam_ = -1;
-    StaticTarget::Owner armedOwner_ = StaticTarget::Owner::PluginParam;
+    ControlTarget::Kind armedOwner_ = ControlTarget::Kind::PluginParam;
     ModId armedModId_ = INVALID_MOD_ID;
     int armedModParamIndex_ = -1;
     juce::String armedDisplayName_;
 
     // Internal helpers ---------------------------------------------------
-    void armSession(const ChainNodePath& path, int paramIndex, StaticTarget::Owner owner,
+    void armSession(const ChainNodePath& path, int paramIndex, ControlTarget::Kind owner,
                     ModId modId, int modParamIndex, const juce::String& displayName);
 
     BindingScope scope_ = BindingScope::Project;

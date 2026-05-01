@@ -124,7 +124,7 @@ TEST_CASE("CuratedAliasLoader - third-party Compressor pack loaded into Curated 
     reg.clearLayer(AliasLayer::Curated);
 }
 
-TEST_CASE("CuratedAliasLoader - curated aliases are path-absent (no StaticTarget from lookup)",
+TEST_CASE("CuratedAliasLoader - curated aliases are path-absent (no ControlTarget from lookup)",
           "[aliases][curated]") {
     auto& reg = AliasRegistry::getInstance();
     reg.clearLayer(AliasLayer::Curated);

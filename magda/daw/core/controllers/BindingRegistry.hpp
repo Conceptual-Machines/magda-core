@@ -125,7 +125,7 @@ class BindingRegistry {
      */
     std::vector<Binding> findForTarget(
         const ChainNodePath& devicePath, int paramIndex,
-        StaticTarget::Owner owner = StaticTarget::Owner::PluginParam) const;
+        ControlTarget::Kind owner = ControlTarget::Kind::PluginParam) const;
 
     /**
      * @brief Remove all bindings whose target resolves to a given (devicePath, paramIndex, owner).
@@ -136,7 +136,7 @@ class BindingRegistry {
      * @return Number of bindings removed.
      */
     int removeForTarget(const ChainNodePath& devicePath, int paramIndex,
-                        StaticTarget::Owner owner = StaticTarget::Owner::PluginParam);
+                        ControlTarget::Kind owner = ControlTarget::Kind::PluginParam);
 
     /**
      * @brief Find/remove bindings whose target is a ModParam (path, modId, modParamIndex).
@@ -162,7 +162,7 @@ class BindingRegistry {
      *
      * Must be called on the message thread.
      */
-    bool hasBindingForDevice(const ChainNodePath& devicePath, StaticTarget::Owner owner) const;
+    bool hasBindingForDevice(const ChainNodePath& devicePath, ControlTarget::Kind owner) const;
 
     /**
      * @brief Return true if any active focused-device-macro resolver binding
@@ -172,7 +172,7 @@ class BindingRegistry {
     bool hasResolverBindingForDevice(const ChainNodePath& devicePath) const;
 
     /**
-     * @brief Return true if any active explicit user mapping (StaticTarget or
+     * @brief Return true if any active explicit user mapping (ControlTarget or
      * AliasRef) targets a parameter / macro / mod on this device. Excludes
      * resolver-based automap-profile bindings.
      */
@@ -192,11 +192,11 @@ class BindingRegistry {
      */
     bool hasActiveBindingForTarget(
         const ChainNodePath& devicePath, int paramIndex,
-        StaticTarget::Owner owner = StaticTarget::Owner::PluginParam) const;
+        ControlTarget::Kind owner = ControlTarget::Kind::PluginParam) const;
 
     /**
      * @brief Return true if any active binding (Global + Project) for this macro
-     * is an explicit static target (StaticTarget owner=DeviceMacro) — i.e. came
+     * is an explicit static target (ControlTarget owner=DeviceMacro) — i.e. came
      * from a user MIDI Learn gesture, not an automap profile resolver.
      *
      * Used to paint the macro indicator orange (Learn override) vs green (profile

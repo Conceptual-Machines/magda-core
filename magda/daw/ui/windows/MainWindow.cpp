@@ -1327,7 +1327,7 @@ void MainWindow::setupMenuBar() {
 
 void MainWindow::MainComponent::midiLearnStateChanged(const magda::ChainNodePath& /*path*/,
                                                       int /*paramIndex*/,
-                                                      magda::StaticTarget::Owner /*owner*/,
+                                                      magda::ControlTarget::Kind /*owner*/,
                                                       bool learning) {
     if (learning) {
         daw::ui::Toast::showGlobal("MIDI Learn armed - move a controller...", 5000);
@@ -1336,7 +1336,7 @@ void MainWindow::MainComponent::midiLearnStateChanged(const magda::ChainNodePath
 
 void MainWindow::MainComponent::midiLearnCompleted(const magda::ChainNodePath& /*path*/,
                                                    int /*paramIndex*/,
-                                                   magda::StaticTarget::Owner /*owner*/,
+                                                   magda::ControlTarget::Kind /*owner*/,
                                                    const magda::Binding& binding) {
     juce::String msg = "MIDI mapped";
     if (binding.source.msgType == magda::BindingMsgType::CC)
@@ -1348,7 +1348,7 @@ void MainWindow::MainComponent::midiLearnCompleted(const magda::ChainNodePath& /
 
 void MainWindow::MainComponent::midiLearnCleared(const magda::ChainNodePath& /*path*/,
                                                  int /*paramIndex*/,
-                                                 magda::StaticTarget::Owner /*owner*/,
+                                                 magda::ControlTarget::Kind /*owner*/,
                                                  int numRemoved) {
     juce::String msg = numRemoved == 1 ? "MIDI mapping cleared"
                                        : juce::String(numRemoved) + " MIDI mappings cleared";

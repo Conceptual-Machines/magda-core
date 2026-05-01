@@ -359,7 +359,7 @@ void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
         // Capture pre-drag value as the Touch-mode bounce-back baseline. Same
         // mechanism TextSlider uses; needed here for any DraggableValueLabel
         // wired to a Macro / ModParameter / device target.
-        ParameterInfo info = automationTarget_.getParameterInfo();
+        ParameterInfo info = getParameterInfoForTarget(automationTarget_);
         double normalized = static_cast<double>(
             ParameterUtils::realToNormalized(static_cast<float>(dragStartValue_), info));
         AutomationManager::getInstance().setTouchBaseline(automationTarget_, normalized);

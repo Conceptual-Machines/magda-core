@@ -257,8 +257,8 @@ void ModKnobComponent::showContextMenu() {
         if (modId == currentMod_.id)
             continue;  // Skip self
         juce::PopupMenu perModMenu;
-        magda::ModTarget t;
-        t.kind = magda::ModTarget::Kind::ModParam;
+        magda::ControlTarget t;
+        t.kind = magda::ControlTarget::Kind::ModParam;
         t.modId = modId;
         t.modParamIndex = 0;  // Rate
         const bool isCurrentTarget = currentMod_.getLink(t) != nullptr;
@@ -302,14 +302,14 @@ void ModKnobComponent::showContextMenu() {
 
                            // Modulator-rate link selection. The parent's
                            // onTargetChanged routes through TrackManager::
-                           // setXxxModTarget, which materialises the link
+                           // setXxxControlTarget, which materialises the link
                            // (with an audible default amount for ModParam
                            // kind) and triggers a refresh — so we don't
                            // need to mutate currentMod_ here.
                            int modSlot = result - kModRateBaseId;
                            if (modSlot >= 0 && modSlot < static_cast<int>(modifiers.size())) {
-                               magda::ModTarget t;
-                               t.kind = magda::ModTarget::Kind::ModParam;
+                               magda::ControlTarget t;
+                               t.kind = magda::ControlTarget::Kind::ModParam;
                                t.modId = modifiers[static_cast<size_t>(modSlot)].first;
                                t.modParamIndex = 0;  // Rate
                                if (safeThis->onTargetChanged)

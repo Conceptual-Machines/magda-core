@@ -144,7 +144,7 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
 
     // Callbacks
     std::function<void(float)> onAmountChanged;
-    std::function<void(magda::ModTarget)> onTargetChanged;
+    std::function<void(magda::ControlTarget)> onTargetChanged;
     std::function<void(juce::String)> onNameChanged;
     std::function<void()> onClicked;            // Opens modulator editor panel
     std::function<void()> onRemoveRequested;    // Remove this mod

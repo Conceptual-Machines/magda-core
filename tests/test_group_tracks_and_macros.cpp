@@ -319,7 +319,7 @@ TEST_CASE("Rack macro link amount change fires modifiers notification", "[macro]
     delay.pluginId = "delay";
     auto delayId = fixture.tm().addDeviceToChainByPath(chainPath, delay);
 
-    MacroTarget target{delayId, 0};
+    ControlTarget target = ControlTarget::fromDeviceId(delayId, 0);
 
     // Reset spy counters
     spy.modifiersChangedCount = 0;
@@ -362,7 +362,7 @@ TEST_CASE("Device macro link amount change fires notifications", "[macro][notifi
     auto deviceId = fixture.tm().addDeviceToTrack(trackId, device);
     auto devicePath = ChainNodePath::topLevelDevice(trackId, deviceId);
 
-    MacroTarget target{deviceId, 0};
+    ControlTarget target = ControlTarget::fromDeviceId(deviceId, 0);
 
     // Reset spy counters
     spy.modifiersChangedCount = 0;
@@ -406,14 +406,14 @@ TEST_CASE("Device macro target fires trackDevicesChanged", "[macro][notification
     spy.devicesChangedCount = 0;
 
     SECTION("setMacroTarget with new target fires deviceModifiersChanged") {
-        MacroTarget target{deviceId, 2};
+        ControlTarget target = ControlTarget::fromDeviceId(deviceId, 2);
         fixture.tm().setMacroTarget(devicePath, 0, target);
 
         REQUIRE(spy.modifiersChangedCount == 1);
     }
 
     SECTION("setMacroTarget with existing target does not fire") {
-        MacroTarget target{deviceId, 2};
+        ControlTarget target = ControlTarget::fromDeviceId(deviceId, 2);
         fixture.tm().setMacroTarget(devicePath, 0, target);
         spy.modifiersChangedCount = 0;
 
@@ -607,7 +607,7 @@ TEST_CASE("Device mod target fires deviceModifiersChanged", "[mod][notification]
     spy.devicesChangedCount = 0;
 
     SECTION("setModTarget fires deviceModifiersChanged") {
-        ModTarget target{deviceId, 3};
+        ControlTarget target = ControlTarget::fromDeviceId(deviceId, 3);
         fixture.tm().setModTarget(devicePath, 0, target);
 
         REQUIRE(spy.modifiersChangedCount == 1);
@@ -618,7 +618,7 @@ TEST_CASE("Device mod target fires deviceModifiersChanged", "[mod][notification]
     }
 
     SECTION("setModTarget creates link automatically") {
-        ModTarget target{deviceId, 3};
+        ControlTarget target = ControlTarget::fromDeviceId(deviceId, 3);
         fixture.tm().setModTarget(devicePath, 0, target);
 
         auto* dev = fixture.tm().getDeviceInChainByPath(devicePath);
@@ -627,7 +627,7 @@ TEST_CASE("Device mod target fires deviceModifiersChanged", "[mod][notification]
     }
 
     SECTION("removeModLink fires deviceModifiersChanged") {
-        ModTarget target{deviceId, 3};
+        ControlTarget target = ControlTarget::fromDeviceId(deviceId, 3);
         fixture.tm().setModTarget(devicePath, 0, target);
         spy.modifiersChangedCount = 0;
 
@@ -658,7 +658,7 @@ TEST_CASE("Device mod link amount fires deviceModifiersChanged", "[mod][notifica
 
     fixture.tm().addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
 
-    ModTarget target{deviceId, 2};
+    ControlTarget target = ControlTarget::fromDeviceId(deviceId, 2);
 
     spy.modifiersChangedCount = 0;
 
@@ -685,7 +685,7 @@ TEST_CASE("Device mod link amount fires deviceModifiersChanged", "[mod][notifica
     }
 
     SECTION("Multiple mod links to different params") {
-        ModTarget target2{deviceId, 5};
+        ControlTarget target2 = ControlTarget::fromDeviceId(deviceId, 5);
 
         fixture.tm().setModLinkAmount(devicePath, 0, target, 0.4f);
         fixture.tm().setModLinkAmount(devicePath, 0, target2, 0.6f);
@@ -755,14 +755,14 @@ TEST_CASE("Rack mod property changes fire deviceModifiersChanged", "[mod][notifi
     }
 
     SECTION("setModTarget fires deviceModifiersChanged") {
-        ModTarget target{DeviceId(42), 0};
+        ControlTarget target = ControlTarget::fromDeviceId(42, 0);
         fixture.tm().setModTarget(rackPath, 0, target);
 
         REQUIRE(spy.modifiersChangedCount == 1);
     }
 
     SECTION("setModLinkAmount fires deviceModifiersChanged") {
-        ModTarget target{DeviceId(42), 0};
+        ControlTarget target = ControlTarget::fromDeviceId(42, 0);
         fixture.tm().setModLinkAmount(rackPath, 0, target, 0.6f);
 
         REQUIRE(spy.modifiersChangedCount == 1);
@@ -981,7 +981,7 @@ TEST_CASE("Rack macro target fires deviceModifiersChanged", "[macro][notificatio
     // deviceModifiersChanged. The pre-step-4 rack path fired the heavier
     // trackDevicesChanged.
     SECTION("setMacroTarget fires deviceModifiersChanged") {
-        MacroTarget target{DeviceId(42), 0};
+        ControlTarget target = ControlTarget::fromDeviceId(42, 0);
         fixture.tm().setMacroTarget(rackPath, 0, target);
 
         REQUIRE(spy.modifiersChangedCount == 1);
