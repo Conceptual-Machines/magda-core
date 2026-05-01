@@ -54,8 +54,8 @@ TEST_CASE("TargetResolver - resolve ControlTarget ok", "[aliases][resolver]") {
 
     auto result = resolver.resolve(Target{st});
     REQUIRE(result.ok());
-    REQUIRE(result.paramIndex == 3);
-    REQUIRE(result.devicePath == st.devicePath);
+    REQUIRE(result.target.paramIndex == 3);
+    REQUIRE(result.target.devicePath == st.devicePath);
 }
 
 TEST_CASE("TargetResolver - resolve invalid ControlTarget fails", "[aliases][resolver]") {
@@ -92,9 +92,9 @@ TEST_CASE("TargetResolver - resolve ResolverRef master.volume", "[aliases][resol
 
     auto result = resolver.resolve(Target{rr});
     REQUIRE(result.ok());
-    REQUIRE(result.paramIndex == 0);
-    REQUIRE(result.devicePath.isTrackLevel);
-    REQUIRE(result.devicePath.trackId == MASTER_TRACK_ID);
+    REQUIRE(result.target.paramIndex == 0);
+    REQUIRE(result.target.devicePath.isTrackLevel);
+    REQUIRE(result.target.devicePath.trackId == MASTER_TRACK_ID);
 }
 
 TEST_CASE("TargetResolver - resolve ResolverRef master.pan", "[aliases][resolver]") {
@@ -112,8 +112,8 @@ TEST_CASE("TargetResolver - resolve ResolverRef master.pan", "[aliases][resolver
 
     auto result = resolver.resolve(Target{rr});
     REQUIRE(result.ok());
-    REQUIRE(result.paramIndex == 1);
-    REQUIRE(result.devicePath.isTrackLevel);
+    REQUIRE(result.target.paramIndex == 1);
+    REQUIRE(result.target.devicePath.isTrackLevel);
 }
 
 TEST_CASE("TargetResolver - resolve unknown ResolverRef kind fails", "[aliases][resolver]") {
@@ -171,8 +171,8 @@ TEST_CASE("@ resolution prefers selected-chain devices over registry", "[aliases
     auto result = resolver.resolveSigil(*parsed);
     REQUIRE(result.ok());
     // Must resolve to the concrete chain device, not the registry alias path
-    REQUIRE(result.devicePath == serumPath);
-    REQUIRE(result.paramIndex == 0);  // "Filter Cutoff" is index 0
+    REQUIRE(result.target.devicePath == serumPath);
+    REQUIRE(result.target.paramIndex == 0);  // "Filter Cutoff" is index 0
 }
 
 TEST_CASE("@ resolution falls back to registry when no track selected", "[aliases][resolver]") {
@@ -203,8 +203,8 @@ TEST_CASE("@ resolution falls back to registry when no track selected", "[aliase
 
     auto result = resolver.resolveSigil(*parsed);
     REQUIRE(result.ok());
-    REQUIRE(result.devicePath == makePath(2, 20));
-    REQUIRE(result.paramIndex == 5);
+    REQUIRE(result.target.devicePath == makePath(2, 20));
+    REQUIRE(result.target.paramIndex == 5);
 }
 
 // ============================================================================
@@ -227,8 +227,8 @@ TEST_CASE("TargetResolver::resolveSigil - @master.volume", "[aliases][resolver]"
 
     auto result = resolver.resolveSigil(*parsed);
     REQUIRE(result.ok());
-    REQUIRE(result.devicePath.trackId == MASTER_TRACK_ID);
-    REQUIRE(result.paramIndex == 0);
+    REQUIRE(result.target.devicePath.trackId == MASTER_TRACK_ID);
+    REQUIRE(result.target.paramIndex == 0);
 }
 
 TEST_CASE("TargetResolver::resolveSigil - @selected.volume with selected track",
@@ -249,8 +249,8 @@ TEST_CASE("TargetResolver::resolveSigil - @selected.volume with selected track",
 
     auto result = resolver.resolveSigil(*parsed);
     REQUIRE(result.ok());
-    REQUIRE(result.devicePath.trackId == 5);
-    REQUIRE(result.paramIndex == 0);
+    REQUIRE(result.target.devicePath.trackId == 5);
+    REQUIRE(result.target.paramIndex == 0);
 }
 
 TEST_CASE("TargetResolver::resolveSigil - @selected.volume no track selected fails",
@@ -293,8 +293,8 @@ TEST_CASE("TargetResolver::resolveSigil - @focused.filter_cutoff", "[aliases][re
 
     auto result = resolver.resolveSigil(*parsed);
     REQUIRE(result.ok());
-    REQUIRE(result.devicePath == path);
-    REQUIRE(result.paramIndex == 0);
+    REQUIRE(result.target.devicePath == path);
+    REQUIRE(result.target.paramIndex == 0);
 }
 
 TEST_CASE("TargetResolver::resolveSigil - @focused no device focused fails",
@@ -475,8 +475,8 @@ TEST_CASE("TargetResolver propagates DeviceMacro owner from ControlTarget",
 
     auto result = resolver.resolve(Target{st});
     REQUIRE(result.ok());
-    REQUIRE(result.kind == ControlTarget::Kind::DeviceMacro);
-    REQUIRE(result.paramIndex == 1);
+    REQUIRE(result.target.kind == ControlTarget::Kind::DeviceMacro);
+    REQUIRE(result.target.paramIndex == 1);
 }
 
 TEST_CASE("TargetResolver propagates DeviceMacro owner from ResolverRef via FocusedDeviceMacro",
@@ -499,7 +499,7 @@ TEST_CASE("TargetResolver propagates DeviceMacro owner from ResolverRef via Focu
 
     auto result = resolver.resolve(Target{rr});
     REQUIRE(result.ok());
-    REQUIRE(result.kind == ControlTarget::Kind::DeviceMacro);
-    REQUIRE(result.paramIndex == 0);
-    REQUIRE(result.devicePath == path);
+    REQUIRE(result.target.kind == ControlTarget::Kind::DeviceMacro);
+    REQUIRE(result.target.paramIndex == 0);
+    REQUIRE(result.target.devicePath == path);
 }

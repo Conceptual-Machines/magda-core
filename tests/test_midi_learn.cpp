@@ -63,7 +63,7 @@ static Binding makeStaticBinding(const ControllerId& cid, BindingMsgType msgType
 // Simple "no real plugin" param writer
 class NullWriter : public ControllerParamWriter {
   public:
-    void write(const ResolvedTarget&, float) override {}
+    void write(const ResolveResult&, float) override {}
 };
 
 struct RouterLearnFixture {

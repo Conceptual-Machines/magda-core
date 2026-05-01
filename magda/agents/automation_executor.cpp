@@ -115,10 +115,8 @@ AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::St
             }
             AutomationTarget t;
             t.kind = ControlTarget::Kind::PluginParam;
-            t.devicePath = resolved.devicePath;
-            t.paramIndex = resolved.paramIndex;
-            // Derive track id from device path
-            t.devicePath.trackId = resolved.devicePath.trackId;
+            t.devicePath = resolved.target.devicePath;
+            t.paramIndex = resolved.target.paramIndex;
             return ensureLaneForTarget(api, t);
         }
     }

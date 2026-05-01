@@ -31,7 +31,7 @@ class ControllerParamWriter {
      *
      * Must be called on the message thread.
      */
-    virtual void write(const ResolvedTarget& resolved, float value) = 0;
+    virtual void write(const ResolveResult& resolved, float value) = 0;
 };
 
 // ============================================================================
@@ -50,12 +50,12 @@ class DefaultControllerParamWriter : public ControllerParamWriter {
   public:
     explicit DefaultControllerParamWriter(AudioBridge& bridge) : bridge_(bridge) {}
 
-    void write(const ResolvedTarget& resolved, float value) override;
+    void write(const ResolveResult& resolved, float value) override;
 
   private:
-    void writePluginParam(const ResolvedTarget& resolved, float clamped);
-    void writeMacro(const ResolvedTarget& resolved, float clamped);
-    void writeModParam(const ResolvedTarget& resolved, float clamped);
+    void writePluginParam(const ControlTarget& target, float clamped);
+    void writeMacro(const ControlTarget& target, float clamped);
+    void writeModParam(const ControlTarget& target, float clamped);
 
     AudioBridge& bridge_;
 };

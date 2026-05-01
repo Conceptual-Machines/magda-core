@@ -166,8 +166,8 @@ std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& deviceP
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
-                resolved.kind == owner)
+            const auto& t = resolved.target;
+            if (t.devicePath == devicePath && t.paramIndex == paramIndex && t.kind == owner)
                 results.push_back(b);
         }
     };
@@ -231,7 +231,8 @@ bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.kind == owner)
+            const auto& t = resolved.target;
+            if (t.devicePath == devicePath && t.kind == owner)
                 return true;
         }
         return false;
@@ -250,8 +251,8 @@ bool BindingRegistry::hasActiveBindingForTarget(const ChainNodePath& devicePath,
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
-                resolved.kind == owner)
+            const auto& t = resolved.target;
+            if (t.devicePath == devicePath && t.paramIndex == paramIndex && t.kind == owner)
                 return true;
         }
         return false;
@@ -270,7 +271,7 @@ bool BindingRegistry::hasResolverBindingForDevice(const ChainNodePath& devicePat
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath)
+            if (resolved.target.devicePath == devicePath)
                 return true;
         }
         return false;
@@ -288,7 +289,7 @@ bool BindingRegistry::hasUserMappingForDevice(const ChainNodePath& devicePath) c
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath)
+            if (resolved.target.devicePath == devicePath)
                 return true;
         }
         return false;
@@ -353,8 +354,9 @@ bool BindingRegistry::isAutomapShadowedForMacro(const ChainNodePath& devicePath,
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.paramIndex == macroIndex &&
-                resolved.kind == ControlTarget::Kind::DeviceMacro)
+            const auto& t = resolved.target;
+            if (t.devicePath == devicePath && t.paramIndex == macroIndex &&
+                t.kind == ControlTarget::Kind::DeviceMacro)
                 automapSources.push_back(b.source);
         }
     };
@@ -392,8 +394,9 @@ bool BindingRegistry::isPluginParamOverridingMacro(const ChainNodePath& devicePa
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
-                resolved.kind == ControlTarget::Kind::PluginParam)
+            const auto& t = resolved.target;
+            if (t.devicePath == devicePath && t.paramIndex == paramIndex &&
+                t.kind == ControlTarget::Kind::PluginParam)
                 staticSources.push_back(b.source);
         }
     };
@@ -450,9 +453,9 @@ std::vector<Binding> BindingRegistry::findForModParam(const ChainNodePath& devic
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.kind == ControlTarget::Kind::ModParam &&
-                resolved.devicePath == devicePath && resolved.modId == modId &&
-                resolved.modParamIndex == modParamIndex)
+            const auto& t = resolved.target;
+            if (t.kind == ControlTarget::Kind::ModParam && t.devicePath == devicePath &&
+                t.modId == modId && t.modParamIndex == modParamIndex)
                 results.push_back(b);
         }
     };
