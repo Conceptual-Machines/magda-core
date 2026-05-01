@@ -91,14 +91,14 @@ juce::String buildSelectionContext(MagdaApi& api) {
     if (selLaneId != INVALID_AUTOMATION_LANE_ID) {
         auto laneId = selLaneId;
         if (auto* lane = amgr.getLane(laneId)) {
-            auto info = lane->target.getParameterInfo();
+            auto info = getParameterInfoForTarget(lane->target);
             out << "Selected lane: \"" << lane->getDisplayName() << "\" (laneId=" << laneId
                 << ", range " << info.minValue << ".." << info.maxValue;
             if (info.unit.isNotEmpty())
                 out << " " << info.unit;
             out << ").\n";
             if (contextTrackId == INVALID_TRACK_ID)
-                contextTrackId = lane->target.trackId;
+                contextTrackId = lane->target.devicePath.trackId;
         }
     } else {
         out << "No automation lane is currently selected.\n";

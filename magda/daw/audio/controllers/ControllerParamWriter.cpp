@@ -86,16 +86,15 @@ void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved,
     // all stay in sync. A linear interp on TE's raw Hz range crammed every
     // audible rate change into the bottom 5% of the slider.
     AutomationTarget t;
-    t.type = AutomationTargetType::ModParameter;
-    t.trackId = resolved.devicePath.trackId;
+    t.kind = ControlTarget::Kind::ModParam;
     t.devicePath = resolved.devicePath;
     t.modId = resolved.modId;
     t.modParamIndex = resolved.modParamIndex;
 
-    ParameterInfo info = t.getParameterInfo();
+    ParameterInfo info = getParameterInfoForTarget(t);
     auto& trackMgr = TrackManager::getInstance();
 
-    auto* track = trackMgr.getTrack(t.trackId);
+    auto* track = trackMgr.getTrack(t.devicePath.trackId);
     const ModInfo* mod = nullptr;
     if (track) {
         if (t.devicePath.isValid()) {
@@ -141,7 +140,7 @@ void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved,
                     break;
             }
         }
-        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(t.trackId), t.modId, division);
+        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(t.devicePath.trackId), t.modId, division);
         return;
     }
 
@@ -159,7 +158,7 @@ void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved,
                 break;
         }
     }
-    trackMgr.setModRate(ChainNodePath::trackLevel(t.trackId), t.modId, real);
+    trackMgr.setModRate(ChainNodePath::trackLevel(t.devicePath.trackId), t.modId, real);
 }
 
 }  // namespace magda

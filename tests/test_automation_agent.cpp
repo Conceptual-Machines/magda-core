@@ -173,7 +173,7 @@ TEST_CASE("AutomationExecutor: target=volume creates TrackVolume lane on selecte
 
     auto* lane = amgr.getLane(lanes[0]);
     REQUIRE(lane != nullptr);
-    REQUIRE(lane->target.type == AutomationTargetType::TrackVolume);
+    REQUIRE(lane->target.kind == ControlTarget::Kind::TrackVolume);
     // line writes its two endpoints; createLane may have inserted an
     // initial anchor point, so we only require the lane holds our two.
     auto hasPoint = [&](double t, double v) {
@@ -204,9 +204,9 @@ TEST_CASE("AutomationExecutor: target=pan creates a separate TrackPan lane",
     int volLanes = 0, panLanes = 0;
     for (auto id : lanes) {
         auto* lane = AutomationManager::getInstance().getLane(id);
-        if (lane->target.type == AutomationTargetType::TrackVolume)
+        if (lane->target.kind == ControlTarget::Kind::TrackVolume)
             ++volLanes;
-        else if (lane->target.type == AutomationTargetType::TrackPan)
+        else if (lane->target.kind == ControlTarget::Kind::TrackPan)
             ++panLanes;
     }
     REQUIRE(volLanes == 1);
@@ -244,7 +244,7 @@ TEST_CASE("AutomationExecutor: target=selected falls back to TrackVolume with no
     auto lanes = AutomationManager::getInstance().getLanesForTrack(trackId);
     REQUIRE(lanes.size() == 1);
     auto* lane = AutomationManager::getInstance().getLane(lanes[0]);
-    REQUIRE(lane->target.type == AutomationTargetType::TrackVolume);
+    REQUIRE(lane->target.kind == ControlTarget::Kind::TrackVolume);
 }
 
 TEST_CASE("AutomationExecutor: target=volume with no track selected fails",
@@ -264,8 +264,8 @@ TEST_CASE("AutomationExecutor: target=laneId:N writes to that exact lane",
     resetState();
     auto trackId = makeTrack("T");
     AutomationTarget t;
-    t.type = AutomationTargetType::TrackVolume;
-    t.trackId = trackId;
+    t.kind = ControlTarget::Kind::TrackVolume;
+    t.devicePath = ChainNodePath::trackLevel(trackId);
     auto laneId = AutomationManager::getInstance().createLane(t, AutomationLaneType::Absolute);
 
     AutomationParser parser;

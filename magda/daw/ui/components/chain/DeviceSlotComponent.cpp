@@ -947,14 +947,13 @@ void DeviceSlotComponent::showAutomationLaneForParam(int paramIndex) {
     if (trackId == magda::INVALID_TRACK_ID)
         return;
     magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::DeviceParameter;
-    target.trackId = trackId;
+    target.kind = magda::ControlTarget::Kind::PluginParam;
+    target.devicePath.trackId = trackId;
     target.devicePath = nodePath_;
     target.paramIndex = paramIndex;
     juce::String pName = "Param " + juce::String(paramIndex);
     if (paramIndex >= 0 && paramIndex < static_cast<int>(device_.parameters.size()))
         pName = device_.parameters[static_cast<size_t>(paramIndex)].name;
-    target.paramName = device_.name + " - " + pName;
     auto& automationMgr = magda::AutomationManager::getInstance();
     auto laneId = automationMgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
     automationMgr.setLaneVisible(laneId, true);
@@ -970,7 +969,7 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
     if (!lane)
         return;
 
-    if (lane->target.type != magda::AutomationTargetType::DeviceParameter)
+    if (lane->target.kind != magda::ControlTarget::Kind::PluginParam)
         return;
 
     if (lane->target.devicePath.getDeviceId() != device_.id)

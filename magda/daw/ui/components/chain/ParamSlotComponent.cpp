@@ -427,8 +427,8 @@ void ParamSlotComponent::setParamValue(double value) {
 
 void ParamSlotComponent::refreshAutomationTarget() {
     magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::DeviceParameter;
-    target.trackId = devicePath_.trackId;
+    target.kind = magda::ControlTarget::Kind::PluginParam;
+    target.devicePath.trackId = devicePath_.trackId;
     target.devicePath = devicePath_;
     target.paramIndex = paramIndex_;
     if (target.isValid())

@@ -471,8 +471,8 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     // value) don't need this, but the rebake is coalesced via needsRebake_.
     auto& autoMgr = AutomationManager::getInstance();
     for (const auto& lane : autoMgr.getLanes()) {
-        if (lane.target.type == AutomationTargetType::ModParameter &&
-            lane.target.trackId == trackId) {
+        if (lane.target.kind == ControlTarget::Kind::ModParam &&
+            lane.target.devicePath.trackId == trackId) {
             autoMgr.invalidateLane(lane.id);
         }
     }

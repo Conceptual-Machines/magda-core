@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "AutomationTypes.hpp"
+#include "ControlTarget.hpp"
 #include "ParameterInfo.hpp"
 #include "SelectionManager.hpp"
 #include "TypeIds.hpp"
@@ -68,115 +69,29 @@ struct AutomationPoint {
 };
 
 /**
- * @brief Target for automation (what is being automated)
+ * @brief Target for automation — alias for the unified ControlTarget.
  *
- * Can target device parameters, macros, or mod parameters.
+ * Automation lanes carry display metadata separately on AutomationLaneInfo
+ * (paramName), since the address itself is the universal ControlTarget shape.
  */
-struct AutomationTarget {
-    AutomationTargetType type = AutomationTargetType::DeviceParameter;
-    TrackId trackId = INVALID_TRACK_ID;
-    ChainNodePath devicePath;  // Path to device/rack containing target
+using AutomationTarget = ControlTarget;
 
-    // For DeviceParameter
-    int paramIndex = -1;
+/**
+ * @brief Get the ParameterInfo for an automation target.
+ *
+ * For track volume/pan returns preset info; for device parameters
+ * looks up the owning device's ParameterInfo (real range/unit/scale)
+ * via TrackManager so curve labels show real units. Defined in
+ * AutomationInfo.cpp to avoid pulling TrackManager into this header.
+ */
+ParameterInfo getParameterInfoForTarget(const AutomationTarget& target);
 
-    // For Macro
-    int macroIndex = -1;
-
-    // For ModParameter
-    ModId modId = INVALID_MOD_ID;
-    int modParamIndex = -1;
-
-    // For SendLevel — TE AuxSend bus number on the source track.
-    int sendBusIndex = -1;
-
-    // Display name for the parameter (populated at lane creation time)
-    juce::String paramName;
-
-    bool isValid() const {
-        if (trackId == INVALID_TRACK_ID)
-            return false;
-
-        switch (type) {
-            case AutomationTargetType::TrackVolume:
-            case AutomationTargetType::TrackPan:
-                return true;  // Only needs valid trackId
-            case AutomationTargetType::SendLevel:
-                return sendBusIndex >= 0;
-            case AutomationTargetType::DeviceParameter:
-                return devicePath.isValid() && paramIndex >= 0;
-            case AutomationTargetType::Macro:
-                return devicePath.isValid() && macroIndex >= 0;
-            case AutomationTargetType::ModParameter:
-                return modId != INVALID_MOD_ID && modParamIndex >= 0;
-        }
-        return false;
-    }
-
-    bool operator==(const AutomationTarget& other) const {
-        if (type != other.type || trackId != other.trackId)
-            return false;
-
-        switch (type) {
-            case AutomationTargetType::TrackVolume:
-            case AutomationTargetType::TrackPan:
-                return true;  // Only type and trackId need to match
-            case AutomationTargetType::SendLevel:
-                return sendBusIndex == other.sendBusIndex;
-            case AutomationTargetType::DeviceParameter:
-                return devicePath == other.devicePath && paramIndex == other.paramIndex;
-            case AutomationTargetType::Macro:
-                return devicePath == other.devicePath && macroIndex == other.macroIndex;
-            case AutomationTargetType::ModParameter:
-                return devicePath == other.devicePath && modId == other.modId &&
-                       modParamIndex == other.modParamIndex;
-        }
-        return false;
-    }
-
-    bool operator!=(const AutomationTarget& other) const {
-        return !(*this == other);
-    }
-
-    /**
-     * @brief Get a display name for this target
-     */
-    juce::String getDisplayName() const {
-        switch (type) {
-            case AutomationTargetType::TrackVolume:
-                return "Track Volume";
-            case AutomationTargetType::TrackPan:
-                return "Track Pan";
-            case AutomationTargetType::SendLevel:
-                if (paramName.isNotEmpty())
-                    return paramName;
-                return "Send " + juce::String(sendBusIndex + 1);
-            case AutomationTargetType::DeviceParameter:
-                if (paramName.isNotEmpty())
-                    return paramName;
-                return "Param " + juce::String(paramIndex);
-            case AutomationTargetType::Macro:
-                if (paramName.isNotEmpty())
-                    return paramName;
-                return "Macro " + juce::String(macroIndex + 1);
-            case AutomationTargetType::ModParameter:
-                if (paramName.isNotEmpty())
-                    return paramName;
-                return "Mod " + juce::String(modId) + " Param " + juce::String(modParamIndex);
-        }
-        return "Unknown";
-    }
-
-    /**
-     * @brief Get the ParameterInfo for this automation target
-     *
-     * For track volume/pan returns preset info; for device parameters
-     * looks up the owning device's ParameterInfo (real range/unit/scale)
-     * via TrackManager so curve labels show real units. Defined in
-     * AutomationInfo.cpp to avoid pulling TrackManager into this header.
-     */
-    ParameterInfo getParameterInfo() const;
-};
+/**
+ * @brief Get a display name for an automation target.
+ *
+ * Falls back to a kind-based default; the lane's paramName overrides this.
+ */
+juce::String getDisplayNameForTarget(const AutomationTarget& target);
 
 /**
  * @brief An automation clip for clip-based automation
@@ -251,6 +166,10 @@ struct AutomationLaneInfo {
     AutomationTarget target;
     AutomationLaneType type = AutomationLaneType::Absolute;
 
+    // Display name for the target parameter, populated at lane creation time.
+    // Was AutomationTarget::paramName before the unification.
+    juce::String paramName;
+
     juce::String name;  // Display name (auto-generated if empty)
     bool visible = true;
     bool expanded = true;
@@ -285,7 +204,9 @@ struct AutomationLaneInfo {
     juce::String getDisplayName() const {
         if (name.isNotEmpty())
             return name;
-        return target.getDisplayName();
+        if (paramName.isNotEmpty())
+            return paramName;
+        return getDisplayNameForTarget(target);
     }
 
     /**

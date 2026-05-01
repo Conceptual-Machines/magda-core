@@ -1482,12 +1482,12 @@ void TrackChainContent::updateFromSelectedTrack() {
             // Bind automation targets so these labels mirror the track
             // header's purple/grey state via the AutomationManager observer.
             magda::AutomationTarget volTarget;
-            volTarget.type = magda::AutomationTargetType::TrackVolume;
-            volTarget.trackId = selectedTrackId_;
+            volTarget.kind = magda::ControlTarget::Kind::TrackVolume;
+            volTarget.devicePath = magda::ChainNodePath::trackLevel(selectedTrackId_);
             volumeLabel_.setAutomationTarget(volTarget);
             magda::AutomationTarget panTarget;
-            panTarget.type = magda::AutomationTargetType::TrackPan;
-            panTarget.trackId = selectedTrackId_;
+            panTarget.kind = magda::ControlTarget::Kind::TrackPan;
+            panTarget.devicePath = magda::ChainNodePath::trackLevel(selectedTrackId_);
             panLabel_.setAutomationTarget(panTarget);
 
             // Check if any device in the chain is not bypassed

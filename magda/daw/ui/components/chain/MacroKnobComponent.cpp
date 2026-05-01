@@ -118,11 +118,10 @@ void MacroKnobComponent::updateAutomationTarget() {
     }
 
     magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::Macro;
-    target.trackId = parentPath_.trackId;
+    target.kind = magda::ControlTarget::Kind::DeviceMacro;
+    target.devicePath.trackId = parentPath_.trackId;
     target.devicePath = parentPath_;
-    target.macroIndex = macroIndex_;
-    target.paramName = buildQualifiedMacroName(parentPath_, macroIndex_, currentMacro_.name);
+    target.paramIndex = macroIndex_;
     valueSlider_.setAutomationTarget(target);
 }
 
@@ -595,12 +594,10 @@ void MacroKnobComponent::showLinkMenu() {
         constexpr int kShowAutomationLaneId = 30000;
         if (result == kShowAutomationLaneId) {
             magda::AutomationTarget target;
-            target.type = magda::AutomationTargetType::Macro;
-            target.trackId = safeThis->parentPath_.trackId;
+            target.kind = magda::ControlTarget::Kind::DeviceMacro;
+            target.devicePath.trackId = safeThis->parentPath_.trackId;
             target.devicePath = safeThis->parentPath_;
-            target.macroIndex = safeThis->macroIndex_;
-            target.paramName = buildQualifiedMacroName(safeThis->parentPath_, safeThis->macroIndex_,
-                                                       safeThis->currentMacro_.name);
+            target.paramIndex = safeThis->macroIndex_;
             auto& mgr = magda::AutomationManager::getInstance();
             auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
             mgr.setLaneVisible(laneId, true);

@@ -247,16 +247,13 @@ bool ProjectSerializer::deserializeAutomationPoint(const juce::var& json,
 juce::var ProjectSerializer::serializeAutomationTarget(const AutomationTarget& target) {
     auto* obj = new juce::DynamicObject();
 
-    obj->setProperty("type", static_cast<int>(target.type));
-    obj->setProperty("trackId", target.trackId);
+    obj->setProperty("type", static_cast<int>(target.kind));
+    obj->setProperty("trackId", target.devicePath.trackId);
     obj->setProperty("devicePath", serializeChainNodePath(target.devicePath));
     obj->setProperty("paramIndex", target.paramIndex);
-    obj->setProperty("macroIndex", target.macroIndex);
     obj->setProperty("modId", target.modId);
     obj->setProperty("modParamIndex", target.modParamIndex);
     obj->setProperty("sendBusIndex", target.sendBusIndex);
-    if (target.paramName.isNotEmpty())
-        obj->setProperty("paramName", target.paramName);
 
     return juce::var(obj);
 }
@@ -270,26 +267,28 @@ bool ProjectSerializer::deserializeAutomationTarget(const juce::var& json,
 
     auto* obj = json.getDynamicObject();
 
-    outTarget.type = static_cast<AutomationTargetType>(static_cast<int>(obj->getProperty("type")));
-    outTarget.trackId = obj->getProperty("trackId");
+    outTarget.kind = static_cast<ControlTarget::Kind>(static_cast<int>(obj->getProperty("type")));
     if (!deserializeChainNodePath(obj->getProperty("devicePath"), outTarget.devicePath)) {
         return false;
     }
+    // Pre-unification projects stored trackId on the target; the unified path
+    // carries it now. If the path didn't deserialize a trackId, fall back.
+    if (outTarget.devicePath.trackId == INVALID_TRACK_ID && obj->hasProperty("trackId"))
+        outTarget.devicePath.trackId = obj->getProperty("trackId");
     outTarget.paramIndex = obj->getProperty("paramIndex");
-    outTarget.macroIndex = obj->getProperty("macroIndex");
+    // Pre-unification format used a separate macroIndex field for Macro kind;
+    // collapse onto paramIndex.
+    if (obj->hasProperty("macroIndex") &&
+        outTarget.kind == ControlTarget::Kind::DeviceMacro)
+        outTarget.paramIndex = obj->getProperty("macroIndex");
     outTarget.modId = obj->getProperty("modId");
     outTarget.modParamIndex = obj->getProperty("modParamIndex");
     // Migration: pre-unification projects had a separate sync-division lane
-    // at modParamIndex == 1. The unified Rate lane (index 0) now covers both
-    // Hz and sync. Collapse legacy index 1 onto index 0; the loader's lane
-    // dedupe will drop the duplicate if a Hz lane already exists.
-    if (outTarget.type == AutomationTargetType::ModParameter && outTarget.modParamIndex == 1)
+    // at modParamIndex == 1. The unified Rate lane (index 0) now covers both.
+    if (outTarget.kind == ControlTarget::Kind::ModParam && outTarget.modParamIndex == 1)
         outTarget.modParamIndex = 0;
-    // sendBusIndex is new — default to -1 for projects saved before it existed.
     outTarget.sendBusIndex =
         obj->hasProperty("sendBusIndex") ? static_cast<int>(obj->getProperty("sendBusIndex")) : -1;
-    if (obj->hasProperty("paramName"))
-        outTarget.paramName = obj->getProperty("paramName").toString();
 
     return true;
 }

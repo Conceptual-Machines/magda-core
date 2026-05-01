@@ -227,8 +227,8 @@ void LinkableTextSlider::setLinkContext(magda::DeviceId deviceId, int paramIndex
     // "automated" tint paints when a lane exists for this param, and so
     // drag gestures trigger the touch/override bookkeeping on the lane.
     magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::DeviceParameter;
-    target.trackId = devicePath.trackId;
+    target.kind = magda::ControlTarget::Kind::PluginParam;
+    target.devicePath.trackId = devicePath.trackId;
     target.devicePath = devicePath;
     target.paramIndex = paramIndex;
     if (target.isValid())

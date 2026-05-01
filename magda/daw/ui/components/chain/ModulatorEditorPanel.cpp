@@ -616,12 +616,11 @@ void ModulatorEditorPanel::updateRateAutomationTarget() {
     // Both sliders point at the same unified Rate lane (modParamIndex 0); the
     // lane's scale and the slider visible to the user both follow tempoSync.
     magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::ModParameter;
-    target.trackId = ownerTrackId_;
+    target.kind = magda::ControlTarget::Kind::ModParam;
+    target.devicePath.trackId = ownerTrackId_;
     target.devicePath = ownerDevicePath_;
     target.modId = currentMod_.id;
     target.modParamIndex = 0;
-    target.paramName = buildQualifiedModRateName(ownerDevicePath_, currentMod_.name);
     rateSlider_.setAutomationTarget(target);
     syncDivisionSlider_.setAutomationTarget(target);
 }
@@ -631,12 +630,11 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
         return;
 
     magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::ModParameter;
-    target.trackId = ownerTrackId_;
+    target.kind = magda::ControlTarget::Kind::ModParam;
+    target.devicePath.trackId = ownerTrackId_;
     target.devicePath = ownerDevicePath_;
     target.modId = currentMod_.id;
     target.modParamIndex = 0;
-    target.paramName = buildQualifiedModRateName(ownerDevicePath_, currentMod_.name);
 
     juce::PopupMenu menu;
     constexpr int kShowLaneId = 1;

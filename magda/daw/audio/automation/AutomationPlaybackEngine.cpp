@@ -269,13 +269,13 @@ void AutomationPlaybackEngine::clearStaleTarget(const AutomationTarget& target) 
     // Restore the user's manual value where MAGDA tracks one separately. For
     // device parameters / macros / sends there's no separate manual store, so
     // we just clear the curve and leave the parameter at whatever TE last had.
-    const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+    const auto* track = TrackManager::getInstance().getTrack(target.devicePath.trackId);
     if (track) {
-        if (target.type == AutomationTargetType::TrackVolume) {
+        if (target.kind == ControlTarget::Kind::TrackVolume) {
             float manualDb = juce::Decibels::gainToDecibels(track->manualVolume);
             param->setParameter(te::decibelsToVolumeFaderPosition(manualDb),
                                 juce::sendNotificationSync);
-        } else if (target.type == AutomationTargetType::TrackPan) {
+        } else if (target.kind == ControlTarget::Kind::TrackPan) {
             param->setParameter(track->manualPan, juce::sendNotificationSync);
         }
     }
@@ -351,16 +351,16 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // Shared converter: maps MAGDA's 0-1 normalized to TE's parameter range.
     //
     // Hoisted out of the sample loop — convertToTEValue fetches
-    // target.getParameterInfo() per call, which walks the track /
+    // getParameterInfoForTarget(target) per call, which walks the track /
     // rack / chain tree to resolve the device and copies a full
     // ParameterInfo (incl. valueTable, choices, shared_ptrs). With
     // ~100k loop iterations on a long edit that lookup is enough to
     // beach-ball the UI on every play / stop bake. Compute the TE
     // mapping once here and inline the 2 FLOPS in the hot loop.
-    const ParameterInfo bakedInfo = (lane.target.type == AutomationTargetType::DeviceParameter)
-                                        ? lane.target.getParameterInfo()
+    const ParameterInfo bakedInfo = (lane.target.kind == ControlTarget::Kind::PluginParam)
+                                        ? getParameterInfoForTarget(lane.target)
                                         : ParameterInfo{};
-    const bool bakedIsDeviceParam = lane.target.type == AutomationTargetType::DeviceParameter;
+    const bool bakedIsDeviceParam = lane.target.kind == ControlTarget::Kind::PluginParam;
     const float bakedTeMin = bakedInfo.teMinValue;
     const float bakedTeSpan = bakedInfo.teMaxValue - bakedInfo.teMinValue;
     const bool bakedUseTeRange = bakedIsDeviceParam && bakedTeSpan > 0.0f &&
@@ -369,7 +369,7 @@ void AutomationPlaybackEngine::bakeLane(const AutomationLaneInfo& lane) {
     // For the info == TE-range path (most internal plugins, VSTs without
     // AI-Detect), we still need normalizedToReal to honour info.scale/
     // scaleAnchor. Precompute the info once — convertToTEValue itself
-    // would otherwise re-fetch via target.getParameterInfo() on every
+    // would otherwise re-fetch via getParameterInfoForTarget(target) on every
     // sample and walk the track/rack tree each time, beach-balling
     // play/stop on any edit with automation on a VST parameter.
     auto convertValue = [&](double magdaNormalized) -> float {
@@ -466,9 +466,9 @@ void AutomationPlaybackEngine::clearLane(const AutomationLaneInfo& lane) {
 float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
                                                  te::AutomatableParameter* param,
                                                  double magdaNormalized) const {
-    switch (target.type) {
-        case AutomationTargetType::TrackVolume:
-        case AutomationTargetType::SendLevel: {
+    switch (target.kind) {
+        case ControlTarget::Kind::TrackVolume:
+        case ControlTarget::Kind::SendLevel: {
             // MAGDA 0-1 (FaderDB scale) → dB → TE fader position. Same
             // mapping for both: AuxSendPlugin's `gain` parameter uses
             // volume-fader-position units just like VolAndPanPlugin.
@@ -477,7 +477,7 @@ float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
                 ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), paramInfo);
             return te::decibelsToVolumeFaderPosition(dB);
         }
-        case AutomationTargetType::TrackPan: {
+        case ControlTarget::Kind::TrackPan: {
             // MAGDA 0-1 → linear -1..+1 (same as TE's pan range)
             auto paramInfo = ParameterPresets::pan(-1, "Pan");
             return ParameterUtils::normalizedToReal(static_cast<float>(magdaNormalized), paramInfo);
@@ -499,7 +499,7 @@ float AutomationPlaybackEngine::convertToTEValue(const AutomationTarget& target,
             // drift. Fall back to a linear mapping onto the NATIVE TE
             // range instead, so the lane's normalized [0,1] reaches the
             // plugin unchanged.
-            ParameterInfo info = target.getParameterInfo();
+            ParameterInfo info = getParameterInfoForTarget(target);
             const float teSpan = info.teMaxValue - info.teMinValue;
             if (teSpan <= 0.0f) {
                 if (!param)
@@ -541,29 +541,29 @@ void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneI
     if (!lane)
         return;
     const auto& target = lane->target;
-    if (target.type == AutomationTargetType::Macro) {
+    if (target.kind == ControlTarget::Kind::DeviceMacro) {
         auto& trackMgr = TrackManager::getInstance();
         AutomationManager::AutomationWriteScope writeScope;
         const float value = static_cast<float>(previewValue);
         if (target.devicePath.isValid()) {
             switch (target.devicePath.getType()) {
                 case ChainNodeType::Rack:
-                    trackMgr.setMacroValue(target.devicePath, target.macroIndex, value);
+                    trackMgr.setMacroValue(target.devicePath, target.paramIndex, value);
                     break;
                 case ChainNodeType::TopLevelDevice:
                 case ChainNodeType::Device:
-                    trackMgr.setMacroValue(target.devicePath, target.macroIndex, value);
+                    trackMgr.setMacroValue(target.devicePath, target.paramIndex, value);
                     break;
                 default:
-                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId),
-                                           target.macroIndex, value);
+                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId),
+                                           target.paramIndex, value);
                     break;
             }
         } else {
-            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex,
+            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId), target.paramIndex,
                                    value);
         }
-    } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 0) {
+    } else if (target.kind == ControlTarget::Kind::ModParam && target.modParamIndex == 0) {
         writeModRateFromCurve(target, previewValue);
 
         // The MAGDA-side writeback above is wrapped in AutomationWriteScope
@@ -574,8 +574,8 @@ void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneI
         // mode, rateTypeParam in sync mode — findModifierParameterForAutomation
         // picks the right one) so audio tracks the drag in real time.
         if (auto* teParam = bridge_.getPluginManager().findModifierParameterForAutomation(
-                target.trackId, target.devicePath, target.modId, 0)) {
-            ParameterInfo info = target.getParameterInfo();
+                target.devicePath.trackId, target.devicePath, target.modId, 0)) {
+            ParameterInfo info = getParameterInfoForTarget(target);
             float real = ParameterUtils::normalizedToReal(static_cast<float>(previewValue), info);
             // Sync mode lane stores 0-based display index; the TE rateType
             // param expects a 1-based ordinal, so shift by +1 there. In Hz
@@ -591,9 +591,9 @@ void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneI
 
 te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
     const AutomationTarget& target) {
-    switch (target.type) {
-        case AutomationTargetType::TrackVolume: {
-            auto* track = bridge_.getAudioTrack(target.trackId);
+    switch (target.kind) {
+        case ControlTarget::Kind::TrackVolume: {
+            auto* track = bridge_.getAudioTrack(target.devicePath.trackId);
             if (!track)
                 return nullptr;
             if (auto* vp = track->getVolumePlugin()) {
@@ -602,8 +602,8 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
             return nullptr;
         }
 
-        case AutomationTargetType::TrackPan: {
-            auto* track = bridge_.getAudioTrack(target.trackId);
+        case ControlTarget::Kind::TrackPan: {
+            auto* track = bridge_.getAudioTrack(target.devicePath.trackId);
             if (!track)
                 return nullptr;
             if (auto* vp = track->getVolumePlugin()) {
@@ -612,8 +612,8 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
             return nullptr;
         }
 
-        case AutomationTargetType::SendLevel: {
-            auto* track = bridge_.getAudioTrack(target.trackId);
+        case ControlTarget::Kind::SendLevel: {
+            auto* track = bridge_.getAudioTrack(target.devicePath.trackId);
             if (!track)
                 return nullptr;
             if (auto* auxSend = track->getAuxSendPlugin(target.sendBusIndex)) {
@@ -622,7 +622,7 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
             return nullptr;
         }
 
-        case AutomationTargetType::DeviceParameter: {
+        case ControlTarget::Kind::PluginParam: {
             DeviceId deviceId = target.devicePath.getDeviceId();
             if (deviceId == INVALID_DEVICE_ID)
                 return nullptr;
@@ -636,13 +636,13 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
             return nullptr;
         }
 
-        case AutomationTargetType::Macro:
+        case ControlTarget::Kind::DeviceMacro:
             return bridge_.getPluginManager().findMacroParameterForAutomation(
-                target.trackId, target.devicePath, target.macroIndex);
+                target.devicePath.trackId, target.devicePath, target.paramIndex);
 
-        case AutomationTargetType::ModParameter:
+        case ControlTarget::Kind::ModParam:
             return bridge_.getPluginManager().findModifierParameterForAutomation(
-                target.trackId, target.devicePath, target.modId, target.modParamIndex);
+                target.devicePath.trackId, target.devicePath, target.modId, target.modParamIndex);
     }
 
     return nullptr;
@@ -651,16 +651,16 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
 double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& target,
                                                     te::AutomatableParameter* param,
                                                     float teValue) const {
-    switch (target.type) {
-        case AutomationTargetType::TrackVolume:
-        case AutomationTargetType::SendLevel: {
+    switch (target.kind) {
+        case ControlTarget::Kind::TrackVolume:
+        case ControlTarget::Kind::SendLevel: {
             // TE fader position → dB → MAGDA 0-1 (FaderDB scale). Mirror of
             // the forward path; kept identical for TrackVolume and SendLevel.
             auto paramInfo = ParameterPresets::faderVolume(-1, "Volume");
             float dB = te::volumeFaderPositionToDB(teValue);
             return ParameterUtils::realToNormalized(dB, paramInfo);
         }
-        case AutomationTargetType::TrackPan: {
+        case ControlTarget::Kind::TrackPan: {
             auto paramInfo = ParameterPresets::pan(-1, "Pan");
             return ParameterUtils::realToNormalized(teValue, paramInfo);
         }
@@ -668,7 +668,7 @@ double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& targ
             // Inverse of convertToTEValue — keep the two symmetric or the
             // round-trip (MAGDA normalized -> TE raw -> MAGDA normalized)
             // will drift and the UI will fight the curve.
-            ParameterInfo info = target.getParameterInfo();
+            ParameterInfo info = getParameterInfoForTarget(target);
             const float teSpan = info.teMaxValue - info.teMinValue;
             if (teSpan <= 0.0f) {
                 if (!param)
@@ -755,29 +755,29 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
     // AutomationManager directly. AudioBridge::trackPropertyChanged skips
     // the volume/pan writeback while playback is active, so going through
     // setTrackVolume/setTrackPan here won't fight TE's automation.
-    if (target.type == AutomationTargetType::TrackVolume ||
-        target.type == AutomationTargetType::TrackPan ||
-        target.type == AutomationTargetType::SendLevel) {
-        ParameterInfo info = target.getParameterInfo();
+    if (target.kind == ControlTarget::Kind::TrackVolume ||
+        target.kind == ControlTarget::Kind::TrackPan ||
+        target.kind == ControlTarget::Kind::SendLevel) {
+        ParameterInfo info = getParameterInfoForTarget(target);
         float real = ParameterUtils::normalizedToReal(static_cast<float>(normalized), info);
 
         auto& trackMgr = TrackManager::getInstance();
         // Scope the re-entrancy flag so AudioBridge can distinguish this
         // automation-driven writeback from user-initiated fader/pan edits.
         AutomationManager::AutomationWriteScope writeScope;
-        if (target.type == AutomationTargetType::TrackVolume) {
+        if (target.kind == ControlTarget::Kind::TrackVolume) {
             // Target param range is in dB; convert back to linear gain.
             float gain = std::pow(10.0f, real / 20.0f);
-            trackMgr.setTrackVolume(target.trackId, gain, /*fromAutomation=*/true);
-        } else if (target.type == AutomationTargetType::TrackPan) {
-            trackMgr.setTrackPan(target.trackId, real, /*fromAutomation=*/true);
+            trackMgr.setTrackVolume(target.devicePath.trackId, gain, /*fromAutomation=*/true);
+        } else if (target.kind == ControlTarget::Kind::TrackPan) {
+            trackMgr.setTrackPan(target.devicePath.trackId, real, /*fromAutomation=*/true);
         } else {
             // SendLevel: same fader-dB → linear-gain mapping as TrackVolume.
             float gain = std::pow(10.0f, real / 20.0f);
-            trackMgr.setSendLevel(target.trackId, target.sendBusIndex, gain,
+            trackMgr.setSendLevel(target.devicePath.trackId, target.sendBusIndex, gain,
                                   /*fromAutomation=*/true);
         }
-    } else if (target.type == AutomationTargetType::Macro) {
+    } else if (target.kind == ControlTarget::Kind::DeviceMacro) {
         // Mirror the curve value back into MacroInfo.value so the knob UI
         // (which reads from TrackManager) follows the curve. AudioBridge
         // gates the re-push to TE on AutomationWriteScope so we don't fight
@@ -788,22 +788,22 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
         if (target.devicePath.isValid()) {
             switch (target.devicePath.getType()) {
                 case ChainNodeType::Rack:
-                    trackMgr.setMacroValue(target.devicePath, target.macroIndex, value);
+                    trackMgr.setMacroValue(target.devicePath, target.paramIndex, value);
                     break;
                 case ChainNodeType::TopLevelDevice:
                 case ChainNodeType::Device:
-                    trackMgr.setMacroValue(target.devicePath, target.macroIndex, value);
+                    trackMgr.setMacroValue(target.devicePath, target.paramIndex, value);
                     break;
                 default:
-                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId),
-                                           target.macroIndex, value);
+                    trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId),
+                                           target.paramIndex, value);
                     break;
             }
         } else {
-            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.trackId), target.macroIndex,
+            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId), target.paramIndex,
                                    value);
         }
-    } else if (target.type == AutomationTargetType::ModParameter && target.modParamIndex == 0) {
+    } else if (target.kind == ControlTarget::Kind::ModParam && target.modParamIndex == 0) {
         // Mirror the curve value back into MAGDA's mod state. The lane is
         // mode-aware — Hz value or sync division depending on tempoSync.
         // AudioBridge::deviceModifiersChanged checks AutomationWriteScope and
@@ -814,14 +814,14 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
 
 void AutomationPlaybackEngine::writeModRateFromCurve(const AutomationTarget& target,
                                                      double normalized) {
-    ParameterInfo info = target.getParameterInfo();
+    ParameterInfo info = getParameterInfoForTarget(target);
     auto& trackMgr = TrackManager::getInstance();
     AutomationManager::AutomationWriteScope writeScope;
 
     // tempoSync flag drives both the lane's ParameterInfo (built above) and
     // the writeback target. Resolving the mod again here keeps the two in
     // lockstep without threading the flag through the call.
-    auto* track = trackMgr.getTrack(target.trackId);
+    auto* track = trackMgr.getTrack(target.devicePath.trackId);
     const ModInfo* mod = nullptr;
     if (track) {
         if (target.devicePath.isValid()) {
@@ -868,7 +868,7 @@ void AutomationPlaybackEngine::writeModRateFromCurve(const AutomationTarget& tar
                     break;
             }
         }
-        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(target.trackId), target.modId,
+        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(target.devicePath.trackId), target.modId,
                                     division);
         return;
     }
@@ -887,7 +887,7 @@ void AutomationPlaybackEngine::writeModRateFromCurve(const AutomationTarget& tar
                 break;
         }
     }
-    trackMgr.setModRate(ChainNodePath::trackLevel(target.trackId), target.modId, real);
+    trackMgr.setModRate(ChainNodePath::trackLevel(target.devicePath.trackId), target.modId, real);
 }
 
 }  // namespace magda
