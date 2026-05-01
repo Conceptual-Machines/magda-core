@@ -231,10 +231,13 @@ class ClipSlotButton : public juce::TextButton {
             auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
             auto centre = playArea.getCentre().toFloat();
 
-            // Selected: cyan over black strip. Unselected: black icon over
-            // the grey strip — high-contrast on either side of the toggle.
-            const auto iconColour =
-                isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_CYAN) : juce::Colours::black;
+            // Cyan when selected OR when the clip is actually running —
+            // launching from the scene button should light the track's play
+            // icon the same way as a direct click. Idle non-selected slots
+            // stay black against the grey strip for contrast.
+            const auto iconColour = (isSelected || clipIsPlaying || clipIsQueued)
+                                        ? DarkTheme::getColour(DarkTheme::ACCENT_CYAN)
+                                        : juce::Colours::black;
 
             juce::Path triangle;
             float size = 6.0f;
@@ -312,6 +315,8 @@ class SceneButton : public juce::TextButton {
 
     bool hasAnyClip = true;      // false = row empty → render stop glyph
     bool hasAnyPlaying = false;  // true → row has at least one playing/queued clip
+    bool stopIsQueued = false;   // true → quantized row-stop in flight, blink the stop icon
+    bool blinkOn = false;        // toggled by SessionView timer for stop-queued blink
 
     void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
                      bool shouldDrawButtonAsDown) override {
@@ -336,7 +341,10 @@ class SceneButton : public juce::TextButton {
             g.fillPath(triangle);
         } else {
             float size = 5.0f;
-            g.setColour(juce::Colour(0xFFA0A0A0));
+            auto stopColour = juce::Colour(0xFFA0A0A0);
+            if (stopIsQueued && !blinkOn)
+                stopColour = stopColour.withAlpha(0.25f);
+            g.setColour(stopColour);
             g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
                                               size * 2.0f, size * 2.0f));
         }

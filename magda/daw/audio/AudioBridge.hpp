@@ -10,22 +10,22 @@
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
+#include "DeviceMeteringManager.hpp"
+#include "MeteringBuffer.hpp"
+#include "PluginWindowBridge.hpp"
+#include "TrackController.hpp"
+#include "WarpMarkerManager.hpp"
 #include "automation/AutomationPlaybackEngine.hpp"
 #include "automation/AutomationRecordingEngine.hpp"
-#include "session/ClipSynchronizer.hpp"
-#include "DeviceMeteringManager.hpp"
-#include "processors/DeviceProcessor.hpp"
-#include "MeteringBuffer.hpp"
 #include "midi/MidiActivityMonitor.hpp"
 #include "params/ParameterManager.hpp"
 #include "params/ParameterQueue.hpp"
 #include "plugin_manager/PluginManager.hpp"
-#include "PluginWindowBridge.hpp"
-#include "session/SessionClipAudioMonitor.hpp"
 #include "plugins/SidechainTriggerBus.hpp"
-#include "TrackController.hpp"
+#include "processors/DeviceProcessor.hpp"
+#include "session/ClipSynchronizer.hpp"
+#include "session/SessionClipAudioMonitor.hpp"
 #include "transport/TransportStateManager.hpp"
-#include "WarpMarkerManager.hpp"
 
 namespace magda {
 
@@ -173,6 +173,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     /** Get the audio-thread session clip monitor (for SessionClipScheduler). */
     SessionClipAudioMonitor& getSessionAudioMonitor() {
+        return sessionAudioMonitor_;
+    }
+    const SessionClipAudioMonitor& getSessionAudioMonitor() const {
         return sessionAudioMonitor_;
     }
 

@@ -199,6 +199,23 @@ class SessionView : public juce::Component,
     bool recordMonitorVisible_ = true;
     void showMixerContextMenu();
 
+    // Beat indicator band — sits in the otherwise-empty toggles band over
+    // the track area. Each track gets its own segment that pulses on the
+    // beat (or a per-track subdivision). Right-click a segment to change
+    // its rate. State is in-memory only, like the other view-mode toggles.
+    // Musical-time rate names: Whole = 1 (one bar in 4/4), Half = 1/2,
+    // Quarter = 1/4 (one beat), Eighth = 1/8 (half a beat).
+    enum class BeatRate { Whole, Half, Quarter, Eighth };
+    class BeatBandContainer;
+    std::unique_ptr<BeatBandContainer> beatBandContainer_;
+    std::unordered_map<TrackId, BeatRate> trackBeatRates_;
+    std::unordered_set<TrackId> beatHiddenTracks_;
+    BeatRate getTrackBeatRate(TrackId trackId) const;
+    void setTrackBeatRate(TrackId trackId, BeatRate rate);
+    void showBeatRateMenuFor(TrackId trackId);
+    void toggleBeatHidden(TrackId trackId);
+    bool isBeatHidden(TrackId trackId) const;
+
     // Fader row at bottom of each track column - MiniChannelStrip per track
     class FaderContainer;
     std::unique_ptr<FaderContainer> faderContainer;

@@ -61,6 +61,12 @@ class AudioEngine : public AudioEngineListener {
         uses this to blink the empty-slot stop affordance. */
     virtual bool isSessionTrackStopPending(TrackId trackId) const = 0;
 
+    /** Latest transport position (seconds) sampled by the audio thread.
+        Returns -1.0 if the audio thread has not run yet. Used by
+        beat-aligned visuals (beat indicator, etc.) so they stay phase-locked
+        with audio rather than drifting at the message-thread sampling rate. */
+    virtual double getAudioThreadTransportSeconds() const = 0;
+
     /** Stop all session clips, clear active state, revert to arrangement. */
     virtual void deactivateAllSessionClips() = 0;
 

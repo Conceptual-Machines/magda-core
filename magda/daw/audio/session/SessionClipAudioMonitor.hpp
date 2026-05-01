@@ -60,6 +60,20 @@ class SessionClipAudioMonitor {
     void getActivePlayheadBeats(std::unordered_map<ClipId, double>& out) const;
 
     /**
+     * @brief Read the latest transport position (seconds) sampled by the
+     * audio thread. Returns -1.0 before the audio thread has run at least
+     * once. Safe to call from any thread.
+     *
+     * Use this for visual elements that need to stay phase-locked with
+     * audio (beat indicator, etc.) — message-thread reads of
+     * Transport::getPosition can drift relative to the audio thread by up
+     * to a buffer.
+     */
+    double getTransportPositionSeconds() const {
+        return transportPositionSeconds_.load(std::memory_order_relaxed);
+    }
+
+    /**
      * @brief Clear all monitored clips. Call only when audio is stopped.
      */
     void clear();
@@ -74,6 +88,10 @@ class SessionClipAudioMonitor {
     // Fixed-size array of monitored clips (no allocations on audio thread)
     std::array<MonitoredClip, kMaxMonitoredClips> monitoredClips_{};
     int numMonitored_ = 0;
+
+    // Audio-thread transport position snapshot. Written by process(),
+    // read freely from any thread.
+    std::atomic<double> transportPositionSeconds_{-1.0};
 
     // Per-clip playhead: elapsed beats (monotonic, unlooped) from getPlayedRange()
     struct PlayheadSlot {

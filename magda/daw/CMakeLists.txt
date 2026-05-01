@@ -205,6 +205,9 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/ai/psychology.svg
     ../../assets/icons/ai/robot.svg
     ../../assets/icons/ai/ai.svg
+    # Session view icons
+    ../../assets/icons/session/hide.svg
+    ../../assets/icons/session/rate.svg
     # Cloud provider icons
     ../../assets/icons/cloud_providers/openai.svg
     ../../assets/icons/cloud_providers/anthropic.svg
