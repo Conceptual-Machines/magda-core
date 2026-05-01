@@ -9,6 +9,7 @@
 
 #include "audio/MidiBridge.hpp"
 #include "core/ClipManager.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -36,6 +37,7 @@ class SessionView : public juce::Component,
                     public juce::Timer,
                     public TrackManagerListener,
                     public ClipManagerListener,
+                    public SelectionManagerListener,
                     public ViewModeListener,
                     public MidiBridge::Listener {
   public:
@@ -62,6 +64,10 @@ class SessionView : public juce::Component,
     void clipPropertyChanged(ClipId clipId) override;
     void clipSelectionChanged(ClipId clipId) override;
     void clipPlaybackStateChanged(ClipId clipId) override;
+
+    // SelectionManagerListener
+    void selectionTypeChanged(SelectionType newType) override;
+    void multiTrackSelectionChanged(const std::unordered_set<TrackId>& trackIds) override;
 
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
@@ -243,6 +249,14 @@ class SessionView : public juce::Component,
     int headerDragIndex_ = -1;
     int headerDragStartX_ = 0;
     bool headerIsDragging_ = false;
+
+    // Captured at the start of a track-header click (TrackHeaderButton's
+    // mouseDown) and consumed in its onClick. We can't read modifiers in
+    // onClick directly because TextButton drops them, and we want
+    // Cmd/Shift+click to drive multi-selection rather than the default
+    // single-select + collapse-toggle.
+    bool lastHeaderClickCmd_ = false;
+    bool lastHeaderClickShift_ = false;
     HeaderDropType headerDropType_ = HeaderDropType::None;
     int headerDropIndex_ = -1;
     static constexpr int HEADER_DRAG_THRESHOLD = 5;

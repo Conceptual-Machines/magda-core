@@ -410,6 +410,13 @@ DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath
     return nullptr;
 }
 
+const DeviceInfo* TrackManager::getDeviceInChainByPath(const ChainNodePath& devicePath) const {
+    // Standard const-overload idiom: the mutable version performs no mutation
+    // (it's a pure lookup), so const_cast'ing `this` here is safe and avoids
+    // duplicating the 50-line traversal.
+    return const_cast<TrackManager*>(this)->getDeviceInChainByPath(devicePath);
+}
+
 void TrackManager::setDeviceInChainBypassedByPath(const ChainNodePath& devicePath, bool bypassed) {
     if (auto* device = getDeviceInChainByPath(devicePath)) {
         device->bypassed = bypassed;
@@ -637,6 +644,39 @@ bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo
     // Trigger a full track resync — AudioBridge::trackDevicesChanged tears
     // down and rebuilds the rack via RackSyncManager from the updated model.
     notifyTrackDevicesChanged(rackPath.trackId);
+    return true;
+}
+
+bool TrackManager::applyChainPreset(TrackId trackId, std::vector<ChainElement> presetElements) {
+    auto* track = getTrack(trackId);
+    if (!track) {
+        DBG("applyChainPreset: no live track");
+        return false;
+    }
+
+    // Reassign every chain / device / nested-rack id in the preset so they
+    // don't collide with other live elements' runtime IDs. Same recursive
+    // walk applyRackPreset uses.
+    std::function<void(std::vector<ChainElement>&)> reassignIds;
+    reassignIds = [&](std::vector<ChainElement>& elements) {
+        for (auto& element : elements) {
+            if (magda::isDevice(element)) {
+                magda::getDevice(element).id = nextDeviceId_++;
+            } else if (magda::isRack(element)) {
+                auto& nested = magda::getRack(element);
+                nested.id = nextRackId_++;
+                for (auto& chain : nested.chains) {
+                    chain.id = nextChainId_++;
+                    reassignIds(chain.elements);
+                }
+            }
+        }
+    };
+    reassignIds(presetElements);
+
+    track->chainElements = std::move(presetElements);
+
+    notifyTrackDevicesChanged(trackId);
     return true;
 }
 

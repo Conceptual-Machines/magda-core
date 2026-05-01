@@ -440,10 +440,15 @@ void ChainPanel::refresh() {
 }
 
 void ChainPanel::updateParamIndicators() {
-    // Repaint all device slots to update parameter modulation indicators
+    // Refresh each device slot's modulation indicators so a rack-macro value
+    // change actually moves the param movement bar on the contained devices.
+    // A bare deviceSlot->repaint() would mark the slot dirty but leave the
+    // ParamSlotComponent children's paintOverChildren rendering stale macro
+    // values; updateParamModulation walks ParamGrid → ParamSlots and calls
+    // repaint per slot, mirroring the top-level-device path.
     for (auto& slot : elementSlots_) {
         if (auto* deviceSlot = dynamic_cast<DeviceSlotComponent*>(slot.get())) {
-            deviceSlot->repaint();
+            deviceSlot->updateParamModulation();
         }
     }
 }

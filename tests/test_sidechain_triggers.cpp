@@ -124,8 +124,8 @@ struct AudioTriggerFixture {
         devicePath.topLevelDeviceId = deviceId;
 
         // Add a mod and set it to Audio trigger mode
-        tm.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-        tm.setDeviceModTriggerMode(devicePath, 0, LFOTriggerMode::Audio);
+        tm.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+        tm.setModTriggerMode(devicePath, 0, LFOTriggerMode::Audio);
     }
 
     ~AudioTriggerFixture() {
@@ -312,8 +312,8 @@ TEST_CASE("Audio trigger - cross-track sidechain routes source track peak",
     devicePath.trackId = destTrackId;
     devicePath.topLevelDeviceId = deviceId;
 
-    tm.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-    tm.setDeviceModTriggerMode(devicePath, 0, LFOTriggerMode::Audio);
+    tm.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setModTriggerMode(devicePath, 0, LFOTriggerMode::Audio);
 
     auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
 
@@ -353,8 +353,8 @@ TEST_CASE("Audio trigger - cross-track sidechain does not trigger on dest track'
     devicePath.trackId = destTrackId;
     devicePath.topLevelDeviceId = deviceId;
 
-    tm.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-    tm.setDeviceModTriggerMode(devicePath, 0, LFOTriggerMode::Audio);
+    tm.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setModTriggerMode(devicePath, 0, LFOTriggerMode::Audio);
 
     auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
 
@@ -398,8 +398,8 @@ TEST_CASE("MIDI trigger - cross-track sidechain routes source track MIDI",
     devicePath.trackId = destTrackId;
     devicePath.topLevelDeviceId = deviceId;
 
-    tm.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-    tm.setDeviceModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
+    tm.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
 
     auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
 
@@ -490,8 +490,8 @@ TEST_CASE("Audio trigger - self-track trigger uses own peak", "[sidechain][audio
     devicePath.trackId = trackId;
     devicePath.topLevelDeviceId = deviceId;
 
-    tm.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-    tm.setDeviceModTriggerMode(devicePath, 0, LFOTriggerMode::Audio);
+    tm.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setModTriggerMode(devicePath, 0, LFOTriggerMode::Audio);
 
     auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
 
@@ -690,8 +690,8 @@ TEST_CASE("MIDI trigger - one-shot plays through after note-off",
     devicePath.trackId = trackId;
     devicePath.topLevelDeviceId = deviceId;
 
-    tm.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-    tm.setDeviceModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
+    tm.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
 
     auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
     mod.oneShot = true;
@@ -737,8 +737,8 @@ TEST_CASE("MIDI trigger - one-shot re-arms and re-triggers on next note-on",
     devicePath.trackId = trackId;
     devicePath.topLevelDeviceId = deviceId;
 
-    tm.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-    tm.setDeviceModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
+    tm.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
 
     auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
     mod.oneShot = true;
@@ -784,8 +784,8 @@ TEST_CASE("MIDI trigger - one-shot triggers every note even without note-off bet
     devicePath.trackId = trackId;
     devicePath.topLevelDeviceId = deviceId;
 
-    tm.addDeviceMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-    tm.setDeviceModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
+    tm.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    tm.setModTriggerMode(devicePath, 0, LFOTriggerMode::MIDI);
 
     auto& mod = tm.getDeviceInChainByPath(devicePath)->mods[0];
     mod.oneShot = true;

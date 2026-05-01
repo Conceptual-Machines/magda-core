@@ -12,6 +12,7 @@
 #include "../core/RackInfo.hpp"
 #include "../core/TypeIds.hpp"
 #include "CurveSnapshot.hpp"
+#include "ModifierSync.hpp"
 
 namespace magda {
 
@@ -185,6 +186,13 @@ class RackSyncManager {
     void collectLFOModifiers(TrackId trackId, std::vector<te::LFOModifier*>& out) const;
 
     /**
+     * @brief Copy each rack-internal TE LFO's current phase + value into its
+     * MAGDA ModInfo so the visual UI marker tracks the audio LFO exactly.
+     * See PluginManager::syncLFOValuesToVisuals() for full rationale.
+     */
+    void syncLFOValuesToVisuals();
+
+    /**
      * @brief Check if any rack on a track needs a full modifier resync
      *
      * Compares the number of active rack mods (enabled + has links) against
@@ -227,6 +235,20 @@ class RackSyncManager {
 
         // Double-buffered curve snapshots for custom LFO waveforms (scoped per-rack)
         std::map<ModId, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
+
+        // Per-rack-internal-device modulation state. Mods on devices inside a
+        // rack chain (DeviceInfo::mods, accessed via rackInfo.chains[].elements[])
+        // live on the rackType's modifier list — same list as rack-level mods,
+        // because the rack's audio graph is what processes the inner plugins'
+        // params. Storage is keyed by inner DeviceId so it doesn't collide with
+        // the rack-scope `innerModifiers` map (rack-scope mods and inner-device
+        // mods can both have ModId=0).
+        struct InnerDeviceModState {
+            std::map<ModId, te::Modifier::Ptr> modifiers;
+            std::map<int, te::MacroParameter*> macroParams;
+            std::map<ModId, std::unique_ptr<CurveSnapshotHolder>> curveSnapshots;
+        };
+        std::map<DeviceId, InnerDeviceModState> innerDeviceMods;
     };
 
     /**
@@ -257,14 +279,16 @@ class RackSyncManager {
     te::Plugin::Ptr createPluginForRack(TrackId trackId, const DeviceInfo& device);
 
     /**
-     * @brief Sync TE modifiers from RackInfo mods (Phase 2)
+     * @brief Drive ModifierSyncWalker over a rack scope to rebuild TE
+     * modifiers + macros. Replaces the pre-step-2 `syncModifiers` + `syncMacros`
+     * duplicated bodies.
      */
-    void syncModifiers(SyncedRack& synced, const RackInfo& rackInfo);
+    void syncRackModulation(SyncedRack& synced, const RackInfo& rackInfo);
 
     /**
-     * @brief Sync TE macro parameters from RackInfo macros (Phase 2)
+     * @brief Drive ModifierSyncWalker in-place properties update for a rack.
      */
-    void syncMacros(SyncedRack& synced, const RackInfo& rackInfo);
+    void updateRackModulationProperties(SyncedRack& synced, const RackInfo& rackInfo);
 
     /**
      * @brief Apply rack bypass state via wet/dry gains
@@ -280,6 +304,12 @@ class RackSyncManager {
     PluginManager& pluginManager_;
 
     std::map<RackId, SyncedRack> syncedRacks_;
+
+    // Per-rack structural fingerprint. Compared in resyncAllModifiers to skip
+    // a full TE-modifier teardown+rebuild when only properties (rate, depth,
+    // amount) changed. Without this gate every macro-link amount drag would
+    // destroy and recreate every rack LFO on the audio thread.
+    std::map<RackId, ChainFingerprint> rackFingerprints_;
 
     // Deferred CurveSnapshotHolder deletion to prevent audio-thread use-after-free.
     std::vector<std::unique_ptr<CurveSnapshotHolder>> deferredHolders_;

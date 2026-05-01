@@ -16,6 +16,7 @@ set(TEST_SOURCES
     test_nested_racks.cpp
     test_rack_audio.cpp
     test_modulation.cpp
+    test_chain_fingerprint.cpp
     test_group_tracks_and_macros.cpp
     test_parameter_utils.cpp
     test_update_checker.cpp

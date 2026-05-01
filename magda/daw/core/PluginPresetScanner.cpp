@@ -1,6 +1,7 @@
 #include "PluginPresetScanner.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 
 namespace magda {
 
@@ -99,6 +100,21 @@ PluginPresetScanner::Entry scanDir(const juce::File& dir, const juce::String& ex
     return node;
 }
 
+// Order siblings: folders first, files second, alphabetical within each
+// group. mergeInto() appends across scan roots and so cannot preserve the
+// per-directory sort scanDir() produces — sortEntries() restores it.
+void sortEntries(std::vector<PluginPresetScanner::Entry>& entries) {
+    std::sort(entries.begin(), entries.end(),
+              [](const PluginPresetScanner::Entry& a, const PluginPresetScanner::Entry& b) {
+                  if (a.isFolder != b.isFolder)
+                      return a.isFolder;
+                  return a.name.compareNatural(b.name) < 0;
+              });
+    for (auto& e : entries)
+        if (e.isFolder)
+            sortEntries(e.children);
+}
+
 // Merge another root's children into target, collapsing folders by name so
 // presets in `~/Library/Audio/Presets/Vendor/Plugin/Bass` and
 // `/Library/Audio/Presets/Vendor/Plugin/Bass` end up in one "Bass" submenu.
@@ -175,6 +191,7 @@ PluginPresetScanner::PresetTree PluginPresetScanner::scanPlugin(const DeviceInfo
         if (!rootEntry.children.empty())
             mergeInto(tree.roots, std::move(rootEntry.children));
     }
+    sortEntries(tree.roots);
     return tree;
 }
 

@@ -63,14 +63,14 @@ void DefaultControllerParamWriter::writeMacro(const ResolvedTarget& resolved, fl
     auto& tm = TrackManager::getInstance();
     switch (resolved.devicePath.getType()) {
         case ChainNodeType::Track:
-            tm.setTrackMacroValue(resolved.devicePath.trackId, resolved.paramIndex, clamped);
+            tm.setMacroValue(ChainNodePath::trackLevel(resolved.devicePath.trackId), resolved.paramIndex, clamped);
             break;
         case ChainNodeType::Rack:
-            tm.setRackMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
+            tm.setMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
             break;
         case ChainNodeType::TopLevelDevice:
         case ChainNodeType::Device:
-            tm.setDeviceMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
+            tm.setMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
             break;
         default:
             break;
@@ -131,17 +131,17 @@ void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved,
         if (t.devicePath.isValid()) {
             switch (t.devicePath.getType()) {
                 case ChainNodeType::Rack:
-                    trackMgr.setRackModSyncDivision(t.devicePath, t.modId, division);
+                    trackMgr.setModSyncDivision(t.devicePath, t.modId, division);
                     return;
                 case ChainNodeType::TopLevelDevice:
                 case ChainNodeType::Device:
-                    trackMgr.setDeviceModSyncDivision(t.devicePath, t.modId, division);
+                    trackMgr.setModSyncDivision(t.devicePath, t.modId, division);
                     return;
                 default:
                     break;
             }
         }
-        trackMgr.setTrackModSyncDivision(t.trackId, t.modId, division);
+        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(t.trackId), t.modId, division);
         return;
     }
 
@@ -149,17 +149,17 @@ void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved,
     if (t.devicePath.isValid()) {
         switch (t.devicePath.getType()) {
             case ChainNodeType::Rack:
-                trackMgr.setRackModRate(t.devicePath, t.modId, real);
+                trackMgr.setModRate(t.devicePath, t.modId, real);
                 return;
             case ChainNodeType::TopLevelDevice:
             case ChainNodeType::Device:
-                trackMgr.setDeviceModRate(t.devicePath, t.modId, real);
+                trackMgr.setModRate(t.devicePath, t.modId, real);
                 return;
             default:
                 break;
         }
     }
-    trackMgr.setTrackModRate(t.trackId, t.modId, real);
+    trackMgr.setModRate(ChainNodePath::trackLevel(t.trackId), t.modId, real);
 }
 
 }  // namespace magda

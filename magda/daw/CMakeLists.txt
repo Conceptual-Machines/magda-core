@@ -328,6 +328,7 @@ set(DAW_CORE_SOURCES
     audio/PluginManager.cpp
     audio/InstrumentRackManager.cpp
     audio/RackSyncManager.cpp
+    audio/ModifierSync.cpp
     audio/AutomationPlaybackEngine.cpp
     audio/AutomationRecordingEngine.cpp
     audio/AutomationCurveSimplifier.cpp
@@ -422,6 +423,7 @@ set(DAW_UI_SOURCES
     ui/panels/content/inspector/InspectorFactory.cpp
     ui/panels/content/inspector/InspectorContainer.cpp
     ui/panels/content/AIChatConsoleContent.cpp
+    ui/panels/content/SlashCommands.cpp
     ui/panels/content/ScriptingConsoleContent.cpp
     ui/panels/content/ChatPromptTokeniser.cpp
     ui/panels/content/DSLTokeniser.cpp
@@ -551,6 +553,7 @@ set(DAW_HEADERS
     core/TrackManager.hpp
     core/TrackTypes.hpp
     core/RackInfo.hpp
+    core/ChainNode.hpp
     core/TrackViewSettings.hpp
     core/ClipTypes.hpp
     core/ClipInfo.hpp

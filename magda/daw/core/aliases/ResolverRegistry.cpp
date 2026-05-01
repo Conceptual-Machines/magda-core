@@ -46,19 +46,24 @@ void ResolverRegistry::registerResolver(std::unique_ptr<AliasResolver> resolver)
 
 std::optional<StaticTarget> FocusedDeviceMacroResolver::resolve(const juce::StringPairArray& args,
                                                                 const ChainContext& ctx) const {
-    auto devicePath = ctx.focusedDevice();
-    if (!devicePath.isValid())
+    // Use focusedMacroOwner() rather than focusedDevice() so that focusing
+    // a user-created rack auto-maps the controller to the rack's macros.
+    // See DefaultChainContext::focusedMacroOwner() for the exact mapping;
+    // notably, focusing a device INSIDE a rack does NOT engage automap —
+    // the user must click the rack header explicitly. Top-level
+    // instruments still resolve to their own device macros because the
+    // InstrumentRackManager wrapper rack is flattened out of the chain
+    // path and never appears here.
+    auto ownerPath = ctx.focusedMacroOwner();
+    if (!ownerPath.isValid())
         return std::nullopt;
 
     int macroIndex = args.getValue("macroIndex", "0").getIntValue();
 
     StaticTarget t;
-    t.devicePath = devicePath;
+    t.devicePath = ownerPath;
     t.paramIndex = macroIndex;
     t.owner = StaticTarget::Owner::DeviceMacro;
-    DBG("[AUTOMAP] FocusedDeviceMacroResolver: returning StaticTarget macroIndex="
-        << macroIndex << " owner=DeviceMacro trackId=" << devicePath.trackId
-        << " deviceId=" << devicePath.getDeviceId());
     return t;
 }
 

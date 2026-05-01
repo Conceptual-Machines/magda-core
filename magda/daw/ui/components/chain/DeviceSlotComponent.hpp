@@ -61,9 +61,7 @@ namespace magda::daw::ui {
 class DeviceSlotComponent : public NodeComponent,
                             public juce::Timer,
                             public magda::TrackManagerListener,
-                            public magda::AutomationManagerListener,
-                            public magda::BindingRegistryListener,
-                            public magda::ControllerRegistryListener {
+                            public magda::AutomationManagerListener {
   public:
     static constexpr int BASE_SLOT_WIDTH = 450;  // Maximum width (8 columns)
     static constexpr int NUM_PARAMS_PER_PAGE = 32;
@@ -99,10 +97,22 @@ class DeviceSlotComponent : public NodeComponent,
     std::function<void()> onDeviceLayoutChanged;
     std::function<void(bool)> onDeviceBypassChanged;
 
+    // Refresh param-slot modulation indicators (mod/macro pointers + repaint).
+    // Called externally by ChainPanel when a parent rack's macro value changes
+    // so contained devices' param movement bars track the rack macro live.
+    void updateParamModulation();
+
   protected:
     void paint(juce::Graphics& g) override;
-    void paintOverChildren(juce::Graphics& g) override;
+    // No paintOverChildren override — base class handles dim, selection, and
+    // controller-indicator dots uniformly across device + rack nodes.
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
+
+    // Drum Grid clears the standard nameLabel_ and paints its custom
+    // "MDG2000" logo in paint(); anchor the dot to that logo's right
+    // edge so it sits next to the visible text rather than the empty
+    // label bounds.
+    juce::Point<float> getControllerIndicatorAnchor() const override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
     void mouseDrag(const juce::MouseEvent& e) override;
@@ -171,31 +181,13 @@ class DeviceSlotComponent : public NodeComponent,
     void onModNewLinkCreatedInternal(int modIndex, magda::ModTarget target, float amount) override;
     void onModLinkRemovedInternal(int modIndex, magda::ModTarget target) override;
 
-    // SelectionManagerListener overrides
+    // SelectionManagerListener overrides — chain-node + binding/controller
+    // listeners now live on NodeComponent (the base class), which fans
+    // refreshControllerIndicators() out for us.
     void selectionTypeChanged(magda::SelectionType newType) override;
     void modSelectionChanged(const magda::ModSelection& selection) override;
     void macroSelectionChanged(const magda::MacroSelection& selection) override;
     void paramSelectionChanged(const magda::ParamSelection& selection) override;
-    void chainNodeSelectionChanged(const magda::ChainNodePath& path) override {
-        NodeComponent::chainNodeSelectionChanged(path);  // preserve base setSelected()
-        refreshControllerIndicators();
-    }
-    void chainNodeReselected(const magda::ChainNodePath& path) override {
-        NodeComponent::chainNodeReselected(path);
-        refreshControllerIndicators();
-    }
-
-    // BindingRegistryListener
-    void bindingRegistryChanged(magda::BindingScope) override {
-        refreshControllerIndicators();
-    }
-
-    // ControllerRegistryListener — toggling a controller's enabled state
-    // changes whether its bindings count toward the indicator, so we must
-    // refresh on registry changes (add/update/remove/enable/disable).
-    void controllerRegistryChanged() override {
-        refreshControllerIndicators();
-    }
 
     // Mouse handling
     void mouseDown(const juce::MouseEvent& e) override;
@@ -286,10 +278,8 @@ class DeviceSlotComponent : public NodeComponent,
     std::array<int, 32> lastChordNotes_{};
     int lastChordCount_ = 0;
 
-    // Controller indicator state (repainted in paintOverChildren via NodeComponent)
-    bool hasPinnedBindings_ = false;   // Any PluginParam binding targets this device
-    bool hasAutomapBindings_ = false;  // Any DeviceMacro binding targets this device
-    void refreshControllerIndicators();
+    // Controller indicator state + refresh now live on NodeComponent
+    // (the base class) so racks share the same logic.
 
     // Plugin presets button helpers (disk-scanned .vstpreset / .aupreset).
     void refreshPresetsButton();             // re-paint label + recompute visibility
@@ -318,7 +308,6 @@ class DeviceSlotComponent : public NodeComponent,
     // device's pluginId changes (different plugin loaded into the slot).
     juce::String currentPresetName_;
 
-    void updateParamModulation();  // Update mod/macro pointers for params
     void updateParameterSlots();   // Reload parameter data for current page
     void updateParameterValues();  // Update only parameter values (for polling)
     void goToPrevPage();

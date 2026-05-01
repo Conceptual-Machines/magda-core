@@ -314,65 +314,34 @@ const magda::MacroInfo* resolveMacroPtr(const magda::MacroSelection& sel,
 }
 
 bool isInScopeOf(const magda::ChainNodePath& devicePath, const magda::ChainNodePath& parentPath) {
-    // Must be on the same track
-    if (devicePath.trackId != parentPath.trackId) {
+    if (devicePath.trackId != parentPath.trackId)
         return false;
-    }
 
-    // Track-level parent: all devices on the same track are in scope
-    if (parentPath.isTrackLevel) {
+    // Track-level parent: every device on the track is in scope.
+    if (parentPath.isTrackLevel)
         return true;
-    }
 
-    bool parentIsTopLevel = parentPath.topLevelDeviceId != magda::INVALID_DEVICE_ID;
-    bool deviceIsTopLevel = devicePath.topLevelDeviceId != magda::INVALID_DEVICE_ID;
-
-    // Case 1: Parent is a top-level device
-    if (parentIsTopLevel) {
-        if (!deviceIsTopLevel) {
-            return false;
-        }
+    // Top-level device parent: only that exact device is in scope.
+    if (parentPath.topLevelDeviceId != magda::INVALID_DEVICE_ID) {
         return devicePath.topLevelDeviceId == parentPath.topLevelDeviceId;
     }
 
-    // Case 2: Parent uses steps (rack/chain/device inside rack)
-    if (parentPath.steps.empty()) {
+    // Rack / Device parent: device path must start with parent's steps.
+    // For a Device parent the steps already represent the deepest path, so the
+    // prefix match degenerates to equality. For a Rack parent it admits any
+    // descendant (longer path with matching prefix). One check covers both.
+    if (parentPath.steps.empty())
         return false;
-    }
-
-    if (deviceIsTopLevel) {
+    if (devicePath.topLevelDeviceId != magda::INVALID_DEVICE_ID)
         return false;
-    }
-
-    auto parentType = parentPath.getType();
-
-    if (parentType == magda::ChainNodeType::Rack) {
-        // Parameter must be in a device inside that rack (a descendant)
-        if (devicePath.steps.size() <= parentPath.steps.size()) {
+    if (devicePath.steps.size() < parentPath.steps.size())
+        return false;
+    for (size_t i = 0; i < parentPath.steps.size(); ++i) {
+        if (devicePath.steps[i].type != parentPath.steps[i].type ||
+            devicePath.steps[i].id != parentPath.steps[i].id)
             return false;
-        }
-        for (size_t i = 0; i < parentPath.steps.size(); ++i) {
-            if (devicePath.steps[i].type != parentPath.steps[i].type ||
-                devicePath.steps[i].id != parentPath.steps[i].id) {
-                return false;
-            }
-        }
-        return true;
-    } else if (parentType == magda::ChainNodeType::Device) {
-        // Parameter must belong to that exact device
-        if (devicePath.steps.size() != parentPath.steps.size()) {
-            return false;
-        }
-        for (size_t i = 0; i < parentPath.steps.size(); ++i) {
-            if (devicePath.steps[i].type != parentPath.steps[i].type ||
-                devicePath.steps[i].id != parentPath.steps[i].id) {
-                return false;
-            }
-        }
-        return true;
     }
-
-    return false;
+    return true;
 }
 
 }  // namespace magda::daw::ui

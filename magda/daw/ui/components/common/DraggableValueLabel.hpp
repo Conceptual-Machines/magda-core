@@ -179,6 +179,11 @@ class DraggableValueLabel : public juce::Component,
     // Callback when value changes (fires on every drag pixel, wheel tick, or edit commit)
     std::function<void()> onValueChange;
 
+    // Callback when a drag gesture begins (fires from mouseDown for a left-
+    // button gesture, before any value change). Pairs with onDragEnd. Useful
+    // for setting up multi-track edit visuals before the user actually moves.
+    std::function<void()> onDragStart;
+
     // Callback when a drag gesture ends (fired from mouseUp after dragging)
     // Parameter is the value before the drag started.
     std::function<void(double startValue)> onDragEnd;
@@ -247,9 +252,24 @@ class DraggableValueLabel : public juce::Component,
         return isDragging_;
     }
 
+    // Mark this label as being edited indirectly because another label in a
+    // multi-selection group is being dragged. Paints the same drag-active
+    // border so the user can see which other tracks are being affected. Has
+    // no effect on input handling — purely a visual cue.
+    void setCoEditing(bool shouldShow) {
+        if (coEditing_ == shouldShow)
+            return;
+        coEditing_ = shouldShow;
+        repaint();
+    }
+    bool isCoEditing() const {
+        return coEditing_;
+    }
+
   private:
     // Drag state
     bool isDragging_ = false;
+    bool coEditing_ = false;  // see setCoEditing
     bool overrideLatchedThisGesture_ = false;
     double dragStartValue_ = 0.0;
     int dragStartY_ = 0;
