@@ -24,6 +24,18 @@
 -- pad Custom Modes) and a "DAW" port (control surface). Select the DAW
 -- protocol ports as Port Out / Port In in MAGDA's Lua Scripts row.
 
+-- Scene offset = sceneIndex of the top pad row. Bottom row is offset+1.
+local scene_offset = 0
+
+local function publish_session_view(sceneOffset, sceneCount)
+  if not (magda and magda.session and magda.session.set_view) then return end
+
+  local ok, err = pcall(magda.session.set_view, sceneOffset, sceneCount)
+  if not ok then
+    magda.log.warn("[launchkey] session view highlight failed: "..tostring(err))
+  end
+end
+
 local function is_daw_port(port)
   return port:lower():find("launchkey") and port:lower():find("daw")
 end
@@ -144,9 +156,6 @@ local TRACK_NEXT = 0x69   -- 105 - bottom right, next track
 local DEVICE_PREV = 0x33  -- 51
 local DEVICE_NEXT = 0x34  -- 52
 
--- Scene offset = sceneIndex of the top pad row. Bottom row is offset+1.
-local scene_offset = 0
-
 ----------------------------------------------------------------
 -- Lifecycle
 ----------------------------------------------------------------
@@ -168,6 +177,7 @@ function on_load()
   -- ControllerRouter, so the registered bindings aren't routable — they
   -- exist purely for the UI affordance).
   magda.focused.auto_map()
+  publish_session_view(scene_offset, 2)
   -- Paint "MAGDA" on the device's stationary display so the LCD reads
   -- our brand at rest. Temp displays (encoder names, etc.) overlay on
   -- top and revert to MAGDA after their timeout.
@@ -181,6 +191,7 @@ function on_unload()
   magda.focused.clear_auto_map()
   -- Clear all pad LEDs before leaving DAW mode so the device returns
   -- to a blank state.
+  publish_session_view(0, 0)
   local out = find_daw_out()
   if out then
     for col = 0, 7 do
@@ -401,6 +412,7 @@ local function shift_scene_bank(direction)
   -- the project has. clip_in_slot just returns nil past the last scene,
   -- so the worst case is empty pads (which the LED renderer handles).
   scene_offset = math.max(0, scene_offset + direction)
+  publish_session_view(scene_offset, 2)
   magda.log.info(string.format(
     "[launchkey] scene_offset = %d (top row) / %d (bottom row)",
     scene_offset, scene_offset + 1))

@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "MockMagdaApi.hpp"
+#include "magda/daw/core/SessionViewState.hpp"
 #include "magda/scripting/LuaRuntime.hpp"
 #include "magda/scripting/MagdaApiLuaBindings.hpp"
 
@@ -295,6 +296,23 @@ TEST_CASE("magda.session.active_clip_on_track returns id or nil", "[lua_bindings
     REQUIRE(rt.evalToInt("magda.session.active_clip_on_track(3)") == std::optional<long long>{707});
     REQUIRE(rt.evalToString("type(magda.session.active_clip_on_track(99))") ==
             std::optional<juce::String>{"nil"});
+}
+
+TEST_CASE("magda.session.set_view publishes controller scene window", "[lua_bindings][session]") {
+    auto& state = magda::SessionViewState::getInstance();
+    state.clearControllerSceneWindow();
+    auto before = state.getControllerSceneWindow();
+
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    REQUIRE(rt.eval("magda.session.set_view(4, 2)"));
+
+    auto after = state.getControllerSceneWindow();
+    REQUIRE(after.sceneOffset == 4);
+    REQUIRE(after.sceneCount == 2);
+    REQUIRE(after.revision > before.revision);
 }
 
 // ---- project ---------------------------------------------------------------

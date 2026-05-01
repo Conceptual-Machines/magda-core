@@ -7,7 +7,7 @@ BUILD_DIR_RELEASE = cmake-build-release
 BUILD_DIR_ASAN = cmake-build-asan
 CACHE_ROOT = $(CURDIR)/.cache
 BUILD_ENV = CCACHE_DIR=$(CACHE_ROOT)/ccache TMPDIR=$(CACHE_ROOT)/tmp XDG_CACHE_HOME=$(CACHE_ROOT)/xdg
-TEST_ENV = $(BUILD_ENV) HOME=$(CACHE_ROOT)/home
+TEST_ENV = $(BUILD_ENV) HOME=$(CACHE_ROOT)/home CFFIXED_USER_HOME=$(CACHE_ROOT)/home
 
 # Platform-specific binary layout.
 # macOS: JUCE wraps the exe in a .app bundle (MAGDA.app/Contents/MacOS/MAGDA)

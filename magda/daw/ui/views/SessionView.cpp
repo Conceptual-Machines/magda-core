@@ -24,6 +24,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/SessionViewState.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -827,8 +828,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
         volumeSlider_->onValueChanged = [this](double newValue) {
             const float currentGain = dbToGain(static_cast<float>(newValue));
             auto& sel = SelectionManager::getInstance();
-            const bool multi =
-                sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
+            const bool multi = sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
             if (multi) {
                 if (multiTrackBaseVolumes_.empty()) {
                     auto& tm = TrackManager::getInstance();
@@ -840,8 +840,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
                 const double deltaDb = newValue - multiTrackDragStartDb_;
                 for (auto& [tid, baseVol] : multiTrackBaseVolumes_) {
                     float baseDb = gainToDb(baseVol);
-                    float newDb =
-                        juce::jlimit(MIN_DB, 6.0f, static_cast<float>(baseDb + deltaDb));
+                    float newDb = juce::jlimit(MIN_DB, 6.0f, static_cast<float>(baseDb + deltaDb));
                     float newGain = dbToGain(newDb);
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<SetTrackVolumeCommand>(tid, newGain));
@@ -979,8 +978,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
         panSlider_->setValue(track.pan, juce::dontSendNotification);
         panSlider_->onValueChanged = [this](double newValue) {
             auto& sel = SelectionManager::getInstance();
-            const bool multi =
-                sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
+            const bool multi = sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
             if (multi) {
                 if (multiTrackBasePans_.empty()) {
                     auto& tm = TrackManager::getInstance();
@@ -991,8 +989,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
                 }
                 const double delta = newValue - multiTrackDragStartPan_;
                 for (auto& [tid, basePan] : multiTrackBasePans_) {
-                    float newPan =
-                        juce::jlimit(-1.0f, 1.0f, static_cast<float>(basePan + delta));
+                    float newPan = juce::jlimit(-1.0f, 1.0f, static_cast<float>(basePan + delta));
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<SetTrackPanCommand>(tid, newPan));
                 }
@@ -1809,6 +1806,49 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
         g.drawLine(centre.getX() - 8, centre.getY(), centre.getX() + 8, centre.getY(), 2.0f);
         g.drawLine(centre.getX(), centre.getY() - 8, centre.getX(), centre.getY() + 8, 2.0f);
     }
+
+    paintControllerSceneWindowHighlight(g);
+}
+
+void SessionView::updateControllerSceneWindowHighlight() {
+    auto window = SessionViewState::getInstance().getControllerSceneWindow();
+    if (window.revision == controllerSceneWindowRevision_)
+        return;
+
+    controllerSceneWindowRevision_ = window.revision;
+    controllerSceneOffset_ = window.sceneOffset;
+    controllerSceneCount_ = window.sceneCount;
+    repaint();
+}
+
+void SessionView::paintControllerSceneWindowHighlight(juce::Graphics& g) {
+    if (controllerSceneOffset_ < 0 || controllerSceneCount_ <= 0 || gridViewport == nullptr ||
+        sceneContainer == nullptr)
+        return;
+
+    const int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
+    const int y = gridViewport->getY() + controllerSceneOffset_ * sceneRowHeight -
+                  gridViewport->getViewPositionY();
+    const int h = controllerSceneCount_ * sceneRowHeight - CLIP_SLOT_MARGIN;
+    if (h <= 0)
+        return;
+
+    auto clipArea = gridViewport->getBounds().withRight(sceneContainer->getRight());
+    if (y >= clipArea.getBottom() || y + h <= clipArea.getY())
+        return;
+
+    auto highlight = juce::Rectangle<int>(gridViewport->getX(), y,
+                                          sceneContainer->getRight() - gridViewport->getX(), h)
+                         .getIntersection(clipArea)
+                         .reduced(3);
+    if (highlight.isEmpty())
+        return;
+
+    auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
+    g.setColour(accent.withAlpha(0.08f));
+    g.fillRoundedRectangle(highlight.toFloat(), 6.0f);
+    g.setColour(accent.withAlpha(0.72f));
+    g.drawRoundedRectangle(highlight.toFloat(), 6.0f, 2.0f);
 }
 
 void SessionView::resized() {
@@ -2017,6 +2057,7 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
             sceneButtons[i]->setBounds(2, y, SCENE_BUTTON_WIDTH - 4, CLIP_SLOT_HEIGHT);
         }
         sceneContainer->repaint();
+        repaint();
     }
 }
 
@@ -2872,6 +2913,8 @@ void SessionView::midiDeviceListChanged() {
 }
 
 void SessionView::timerCallback() {
+    updateControllerSceneWindowHighlight();
+
     if (!audioEngine_)
         return;
 

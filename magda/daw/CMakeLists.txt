@@ -226,6 +226,7 @@ set(DAW_CORE_SOURCES
     core/UIScale.cpp
     core/UpdateChecker.cpp
     core/ViewModeController.cpp
+    core/SessionViewState.cpp
     core/TrackManager.cpp
     core/TrackManagerModulation.cpp
     core/TrackManagerDevices.cpp
@@ -562,6 +563,7 @@ set(DAW_HEADERS
     core/ClipInfo.hpp
     core/ClipManager.hpp
     core/MidiFileWriter.hpp
+    core/SessionViewState.hpp
     core/SelectionManager.hpp
     core/LinkModeManager.hpp
     core/UndoManager.hpp

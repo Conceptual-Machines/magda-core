@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -265,6 +266,12 @@ class SessionView : public juce::Component,
     void executeHeaderDrop();
     void resetHeaderDragState();
     void paintHeaderDragFeedback(juce::Graphics& g);
+    void updateControllerSceneWindowHighlight();
+    void paintControllerSceneWindowHighlight(juce::Graphics& g);
+
+    int controllerSceneOffset_ = -1;
+    int controllerSceneCount_ = 0;
+    std::uint64_t controllerSceneWindowRevision_ = 0;
 
     // Session playhead position (looped, seconds). -1.0 = inactive.
     std::unordered_map<ClipId, double> clipPlayheadPositions_;

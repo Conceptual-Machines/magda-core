@@ -14,6 +14,7 @@
 #include "magda/daw/api/transport_api.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipTypes.hpp"
+#include "magda/daw/core/SessionViewState.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
 #include "magda/daw/core/TrackTypes.hpp"
 #include "magda/daw/core/TypeIds.hpp"
@@ -533,6 +534,16 @@ int lua_session_clip_play_state(lua_State* L) {
     return 1;
 }
 
+// magda.session.set_view(sceneOffset, sceneCount)
+// Publishes the controller's current session-scene window so the UI can
+// highlight the rows currently visible on the hardware surface.
+int lua_session_set_view(lua_State* L) {
+    int sceneOffset = static_cast<int>(luaL_checkinteger(L, 1));
+    int sceneCount = static_cast<int>(luaL_optinteger(L, 2, 1));
+    SessionViewState::getInstance().setControllerSceneWindow(sceneOffset, sceneCount);
+    return 0;
+}
+
 // ---- project ---------------------------------------------------------------
 
 int lua_project_info(lua_State* L) {
@@ -846,6 +857,7 @@ const FnReg kSessionFns[] = {
     {"active_clip_on_track", lua_session_active_clip_on_track},
     {"clip_in_slot", lua_session_clip_in_slot},
     {"clip_play_state", lua_session_clip_play_state},
+    {"set_view", lua_session_set_view},
     {nullptr, nullptr},
 };
 
