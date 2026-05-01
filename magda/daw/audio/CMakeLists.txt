@@ -22,11 +22,11 @@ target_sources(magda_daw PRIVATE
     WarpMarkerManager.cpp
     # Phase 3: Core controllers
     TrackController.cpp
-    PluginManager/PluginManager.cpp
-    PluginManager/PluginManagerSync.cpp
-    PluginManager/PluginManagerMacros.cpp
-    PluginManager/PluginManagerModifiers.cpp
-    PluginManager/PluginManagerSidechain.cpp
+    plugin_manager/PluginManager.cpp
+    plugin_manager/PluginManagerSync.cpp
+    plugin_manager/PluginManagerMacros.cpp
+    plugin_manager/PluginManagerModifiers.cpp
+    plugin_manager/PluginManagerSidechain.cpp
     InstrumentRackManager.cpp
     RackSyncManager.cpp
     ModifierSync.cpp
@@ -62,7 +62,7 @@ target_sources(magda_daw PRIVATE
     PluginWindowBridge.hpp
     WarpMarkerManager.hpp
     TrackController.hpp
-    PluginManager/PluginManager.hpp
+    plugin_manager/PluginManager.hpp
     InstrumentRackManager.hpp
     RackSyncManager.hpp
     AutomationPlaybackEngine.hpp

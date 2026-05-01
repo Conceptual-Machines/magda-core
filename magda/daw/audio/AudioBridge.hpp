@@ -19,7 +19,7 @@
 #include "MidiActivityMonitor.hpp"
 #include "ParameterManager.hpp"
 #include "ParameterQueue.hpp"
-#include "PluginManager/PluginManager.hpp"
+#include "plugin_manager/PluginManager.hpp"
 #include "PluginWindowBridge.hpp"
 #include "SessionClipAudioMonitor.hpp"
 #include "SidechainTriggerBus.hpp"

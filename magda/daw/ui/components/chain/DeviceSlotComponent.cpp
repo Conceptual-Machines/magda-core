@@ -13,7 +13,7 @@
 #include "audio/DrumGridPlugin.hpp"
 #include "audio/MagdaSamplerPlugin.hpp"
 #include "audio/MidiChordEnginePlugin.hpp"
-#include "audio/PluginManager/PluginManager.hpp"
+#include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/StepClock.hpp"
 #include "core/ClipManager.hpp"
 #include "core/MacroInfo.hpp"

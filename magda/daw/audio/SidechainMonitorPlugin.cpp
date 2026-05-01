@@ -1,7 +1,7 @@
 #include "SidechainMonitorPlugin.hpp"
 
 #include "MidiBroadcastBus.hpp"
-#include "PluginManager/PluginManager.hpp"
+#include "plugin_manager/PluginManager.hpp"
 #include "SidechainTriggerBus.hpp"
 
 namespace magda {
