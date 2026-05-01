@@ -155,7 +155,7 @@ std::vector<Binding> BindingRegistry::findForPort(const juce::String& liveIdenti
 // ============================================================================
 
 std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& devicePath, int paramIndex,
-                                                    StaticTarget::Owner owner) const {
+                                                    ControlTarget::Kind owner) const {
     std::vector<Binding> results;
 
     DefaultChainContext ctx;
@@ -167,7 +167,7 @@ std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& deviceP
             if (!resolved.ok())
                 continue;
             if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
-                resolved.owner == owner)
+                resolved.kind == owner)
                 results.push_back(b);
         }
     };
@@ -205,15 +205,15 @@ bool isFocusedDeviceMacroResolver(const Target& t) {
 
 // True for explicit user mappings to a plugin parameter — i.e. anything that
 // represents a Learn or hand-edited binding rather than an automap profile
-// default. StaticTarget{PluginParam} is the obvious case; AliasRef is also
+// default. ControlTarget{PluginParam} is the obvious case; AliasRef is also
 // included because MidiLearnCoordinator prefers an alias target whenever a
 // canonical alias exists for the param (e.g. "4osc.filter_freq"), and aliases
 // always resolve to a plugin parameter in this codebase. ResolverRef bindings
 // (focused.macro and any future kinds) are profile-driven defaults and
 // do not count.
 bool isExplicitPluginParamTarget(const Target& t) {
-    if (auto* st = std::get_if<StaticTarget>(&t))
-        return st->owner == StaticTarget::Owner::PluginParam;
+    if (auto* st = std::get_if<ControlTarget>(&t))
+        return st->kind == ControlTarget::Kind::PluginParam;
     if (std::holds_alternative<AliasRef>(t))
         return true;
     return false;
@@ -222,7 +222,7 @@ bool isExplicitPluginParamTarget(const Target& t) {
 }  // namespace
 
 bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
-                                          StaticTarget::Owner owner) const {
+                                          ControlTarget::Kind owner) const {
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
 
@@ -231,7 +231,7 @@ bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.owner == owner)
+            if (resolved.devicePath == devicePath && resolved.kind == owner)
                 return true;
         }
         return false;
@@ -241,7 +241,7 @@ bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
 }
 
 bool BindingRegistry::hasActiveBindingForTarget(const ChainNodePath& devicePath, int paramIndex,
-                                                StaticTarget::Owner owner) const {
+                                                ControlTarget::Kind owner) const {
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
 
@@ -251,7 +251,7 @@ bool BindingRegistry::hasActiveBindingForTarget(const ChainNodePath& devicePath,
             if (!resolved.ok())
                 continue;
             if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
-                resolved.owner == owner)
+                resolved.kind == owner)
                 return true;
         }
         return false;
@@ -300,10 +300,10 @@ bool BindingRegistry::hasActiveStaticBindingForMacro(const ChainNodePath& device
                                                      int macroIndex) const {
     auto check = [&](const std::vector<Binding>& vec) -> bool {
         for (const auto& b : vec) {
-            auto* st = std::get_if<StaticTarget>(&b.target);
+            auto* st = std::get_if<ControlTarget>(&b.target);
             if (st == nullptr)
                 continue;
-            if (st->owner != StaticTarget::Owner::DeviceMacro)
+            if (st->kind != ControlTarget::Kind::DeviceMacro)
                 continue;
             if (st->devicePath != devicePath || st->paramIndex != macroIndex)
                 continue;
@@ -319,10 +319,10 @@ int BindingRegistry::removeStaticBindingsForMacro(const ChainNodePath& devicePat
     std::vector<BindingId> toRemoveProject;
     auto collect = [&](const std::vector<Binding>& vec, std::vector<BindingId>& out) {
         for (const auto& b : vec) {
-            auto* st = std::get_if<StaticTarget>(&b.target);
+            auto* st = std::get_if<ControlTarget>(&b.target);
             if (st == nullptr)
                 continue;
-            if (st->owner != StaticTarget::Owner::DeviceMacro)
+            if (st->kind != ControlTarget::Kind::DeviceMacro)
                 continue;
             if (st->devicePath != devicePath || st->paramIndex != macroIndex)
                 continue;
@@ -354,7 +354,7 @@ bool BindingRegistry::isAutomapShadowedForMacro(const ChainNodePath& devicePath,
             if (!resolved.ok())
                 continue;
             if (resolved.devicePath == devicePath && resolved.paramIndex == macroIndex &&
-                resolved.owner == StaticTarget::Owner::DeviceMacro)
+                resolved.kind == ControlTarget::Kind::DeviceMacro)
                 automapSources.push_back(b.source);
         }
     };
@@ -393,7 +393,7 @@ bool BindingRegistry::isPluginParamOverridingMacro(const ChainNodePath& devicePa
             if (!resolved.ok())
                 continue;
             if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
-                resolved.owner == StaticTarget::Owner::PluginParam)
+                resolved.kind == ControlTarget::Kind::PluginParam)
                 staticSources.push_back(b.source);
         }
     };
@@ -420,7 +420,7 @@ bool BindingRegistry::isPluginParamOverridingMacro(const ChainNodePath& devicePa
 }
 
 int BindingRegistry::removeForTarget(const ChainNodePath& devicePath, int paramIndex,
-                                     StaticTarget::Owner owner) {
+                                     ControlTarget::Kind owner) {
     auto toRemove = findForTarget(devicePath, paramIndex, owner);
 
     for (const auto& b : toRemove) {
@@ -450,7 +450,7 @@ std::vector<Binding> BindingRegistry::findForModParam(const ChainNodePath& devic
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.owner == StaticTarget::Owner::ModParam &&
+            if (resolved.kind == ControlTarget::Kind::ModParam &&
                 resolved.devicePath == devicePath && resolved.modId == modId &&
                 resolved.modParamIndex == modParamIndex)
                 results.push_back(b);

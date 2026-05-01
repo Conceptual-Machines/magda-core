@@ -1538,8 +1538,8 @@ void ModulatorEditorPanel::bindingRegistryChanged(magda::BindingScope) {
 }
 
 void ModulatorEditorPanel::midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
-                                                 magda::StaticTarget::Owner owner, bool learning) {
-    if (owner != magda::StaticTarget::Owner::ModParam)
+                                                 magda::ControlTarget::Kind owner, bool learning) {
+    if (owner != magda::ControlTarget::Kind::ModParam)
         return;
     bool isMe =
         (path == ownerDevicePath_ && paramIndex == 0 && currentMod_.id != magda::INVALID_MOD_ID);
@@ -1548,17 +1548,17 @@ void ModulatorEditorPanel::midiLearnStateChanged(const magda::ChainNodePath& pat
 }
 
 void ModulatorEditorPanel::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
-                                              magda::StaticTarget::Owner owner,
+                                              magda::ControlTarget::Kind owner,
                                               const magda::Binding&) {
-    if (owner != magda::StaticTarget::Owner::ModParam)
+    if (owner != magda::ControlTarget::Kind::ModParam)
         return;
     if (path == ownerDevicePath_ && paramIndex == 0)
         refreshRateMidiBindingState();
 }
 
 void ModulatorEditorPanel::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
-                                            magda::StaticTarget::Owner owner, int) {
-    if (owner != magda::StaticTarget::Owner::ModParam)
+                                            magda::ControlTarget::Kind owner, int) {
+    if (owner != magda::ControlTarget::Kind::ModParam)
         return;
     if (path == ownerDevicePath_ && paramIndex == 0)
         refreshRateMidiBindingState();

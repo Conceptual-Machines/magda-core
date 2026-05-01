@@ -22,9 +22,9 @@ namespace magda {
 struct ResolvedTarget {
     ChainNodePath devicePath;
     int paramIndex = -1;
-    StaticTarget::Owner owner = StaticTarget::Owner::PluginParam;
+    ControlTarget::Kind kind = ControlTarget::Kind::PluginParam;
 
-    // Populated only when owner == ModParam.
+    // Populated only when kind == ModParam.
     ModId modId = INVALID_MOD_ID;
     int modParamIndex = -1;
 
@@ -34,7 +34,7 @@ struct ResolvedTarget {
     bool ok() const {
         if (!resolved || !devicePath.isValid())
             return false;
-        if (owner == StaticTarget::Owner::ModParam)
+        if (kind == ControlTarget::Kind::ModParam)
             return modId != INVALID_MOD_ID && modParamIndex >= 0;
         return paramIndex >= 0;
     }
@@ -45,6 +45,17 @@ struct ResolvedTarget {
         r.sourceLabel = reason;
         r.resolved = false;
         return r;
+    }
+
+    /** Construct a ControlTarget mirroring the resolved fields. */
+    ControlTarget toControlTarget() const {
+        ControlTarget t;
+        t.kind = kind;
+        t.devicePath = devicePath;
+        t.paramIndex = paramIndex;
+        t.modId = modId;
+        t.modParamIndex = modParamIndex;
+        return t;
     }
 };
 

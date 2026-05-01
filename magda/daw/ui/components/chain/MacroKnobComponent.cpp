@@ -129,7 +129,7 @@ void MacroKnobComponent::updateAutomationTarget() {
 void MacroKnobComponent::refreshAutomapState() {
     auto& reg = magda::BindingRegistry::getInstance();
     bool active = reg.hasActiveBindingForTarget(parentPath_, macroIndex_,
-                                                magda::StaticTarget::Owner::DeviceMacro);
+                                                magda::ControlTarget::Kind::DeviceMacro);
     bool shadowed = active && reg.isAutomapShadowedForMacro(parentPath_, macroIndex_);
     bool learned = reg.hasActiveStaticBindingForMacro(parentPath_, macroIndex_);
     if (active != hasAutomap_ || shadowed != automapShadowed_ || learned != hasLearnedBinding_) {
@@ -527,7 +527,7 @@ void MacroKnobComponent::showLinkMenu() {
         auto& learn = magda::MidiLearnCoordinator::getInstance();
         const bool isLearning = learn.isLearningMacro(parentPath_, macroIndex_);
         const int mappingCount = static_cast<int>(
-            reg.findForTarget(parentPath_, macroIndex_, magda::StaticTarget::Owner::DeviceMacro)
+            reg.findForTarget(parentPath_, macroIndex_, magda::ControlTarget::Kind::DeviceMacro)
                 .size());
 
         menu.addSeparator();

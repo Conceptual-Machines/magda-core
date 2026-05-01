@@ -15,14 +15,14 @@ void DefaultControllerParamWriter::write(const ResolvedTarget& resolved, float v
 
     const float clamped = juce::jlimit(0.0f, 1.0f, value);
 
-    switch (resolved.owner) {
-        case StaticTarget::Owner::PluginParam:
+    switch (resolved.kind) {
+        case ControlTarget::Kind::PluginParam:
             writePluginParam(resolved, clamped);
             break;
-        case StaticTarget::Owner::DeviceMacro:
+        case ControlTarget::Kind::DeviceMacro:
             writeMacro(resolved, clamped);
             break;
-        case StaticTarget::Owner::ModParam:
+        case ControlTarget::Kind::ModParam:
             writeModParam(resolved, clamped);
             break;
     }

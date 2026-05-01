@@ -340,9 +340,9 @@ void LinkableTextSlider::macroLinkModeChanged(bool active, const magda::MacroSel
 // ============================================================================
 
 void LinkableTextSlider::midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
-                                               magda::StaticTarget::Owner owner, bool learning) {
+                                               magda::ControlTarget::Kind owner, bool learning) {
     const auto wantedOwner =
-        isModRate_ ? magda::StaticTarget::Owner::ModParam : magda::StaticTarget::Owner::PluginParam;
+        isModRate_ ? magda::ControlTarget::Kind::ModParam : magda::ControlTarget::Kind::PluginParam;
     if (owner != wantedOwner)
         return;
     const int wantedIndex = isModRate_ ? modParamIndex_ : paramIndex_;
@@ -352,10 +352,10 @@ void LinkableTextSlider::midiLearnStateChanged(const magda::ChainNodePath& path,
 }
 
 void LinkableTextSlider::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
-                                            magda::StaticTarget::Owner owner,
+                                            magda::ControlTarget::Kind owner,
                                             const magda::Binding&) {
     const auto wantedOwner =
-        isModRate_ ? magda::StaticTarget::Owner::ModParam : magda::StaticTarget::Owner::PluginParam;
+        isModRate_ ? magda::ControlTarget::Kind::ModParam : magda::ControlTarget::Kind::PluginParam;
     if (owner != wantedOwner)
         return;
     const int wantedIndex = isModRate_ ? modParamIndex_ : paramIndex_;
@@ -364,9 +364,9 @@ void LinkableTextSlider::midiLearnCompleted(const magda::ChainNodePath& path, in
 }
 
 void LinkableTextSlider::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
-                                          magda::StaticTarget::Owner owner, int) {
+                                          magda::ControlTarget::Kind owner, int) {
     const auto wantedOwner =
-        isModRate_ ? magda::StaticTarget::Owner::ModParam : magda::StaticTarget::Owner::PluginParam;
+        isModRate_ ? magda::ControlTarget::Kind::ModParam : magda::ControlTarget::Kind::PluginParam;
     if (owner != wantedOwner)
         return;
     const int wantedIndex = isModRate_ ? modParamIndex_ : paramIndex_;

@@ -176,11 +176,11 @@ class ParamSlotComponent : public juce::Component,
 
     // MidiLearnCoordinatorListener implementation
     void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
-                               magda::StaticTarget::Owner owner, bool learning) override;
+                               magda::ControlTarget::Kind owner, bool learning) override;
     void midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
-                            magda::StaticTarget::Owner owner, const magda::Binding&) override;
+                            magda::ControlTarget::Kind owner, const magda::Binding&) override;
     void midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
-                          magda::StaticTarget::Owner owner, int numRemoved) override;
+                          magda::ControlTarget::Kind owner, int numRemoved) override;
 
     // BindingRegistryListener implementation
     void bindingRegistryChanged(magda::BindingScope scope) override;
