@@ -18,6 +18,24 @@ namespace magda {
 namespace te = tracktion;
 
 /**
+ * @brief DeviceId → te::Plugin* lookup the walker uses to materialise link targets.
+ *
+ * Implementers hold whatever state is needed to find the plugin (RackSyncManager
+ * looks in its inner-plugin map; PluginManagerModifiers looks in syncedDevices_
+ * and the instrument-rack manager). Returns nullptr if the device is not
+ * reachable from this scope — the walker silently drops such links.
+ *
+ * Pre-#1149 this was a `std::function<te::Plugin*(DeviceId)>` on the context;
+ * the non-erased interface avoids a heap allocation per link rebuild and keeps
+ * the call site from being a dynamic dispatch through a type-erased object.
+ */
+class TargetPluginLookup {
+  public:
+    virtual ~TargetPluginLookup() = default;
+    virtual te::Plugin* getPlugin(DeviceId id) const = 0;
+};
+
+/**
  * @brief Per-node TE state — the walker reads/writes through these refs.
  *
  * Storage is owned by callers under their existing field names
@@ -64,7 +82,8 @@ struct ModifierSyncContext {
     /// deviceId → te::Plugin* lookup for resolving link targets. Returns
     /// nullptr if the device isn't reachable from this scope (the walker
     /// silently drops such links — matches today's behaviour).
-    std::function<te::Plugin*(DeviceId)> lookupTargetPlugin;
+    /// Non-owning; the lookup must outlive the sync call.
+    const TargetPluginLookup* lookup = nullptr;
 
     /// Visit every plugin where stale modifier/macro assignments may need
     /// scrubbing. Called once per existing TE modifier/macro being torn down.

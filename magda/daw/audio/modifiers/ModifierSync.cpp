@@ -94,10 +94,10 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
 }
 
 // Look up the TE plugin for a link.target, and return its automatable parameter
-// at `paramIndex` if in range. Lambda-based to keep the call sites tidy.
+// at `paramIndex` if in range.
 te::AutomatableParameter* resolveLinkTargetParam(const ModifierSyncContext& ctx,
                                                  DeviceId targetDeviceId, int paramIndex) {
-    auto* plugin = ctx.lookupTargetPlugin ? ctx.lookupTargetPlugin(targetDeviceId) : nullptr;
+    auto* plugin = ctx.lookup ? ctx.lookup->getPlugin(targetDeviceId) : nullptr;
     if (!plugin)
         return nullptr;
     auto params = plugin->getAutomatableParameters();

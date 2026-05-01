@@ -795,21 +795,29 @@ void RackSyncManager::applyBypassState(SyncedRack& synced, const RackInfo& rackI
 // Phase 2: Modifiers & Macros
 // =============================================================================
 
+// Adapter exposing SyncedRack::innerPlugins as a TargetPluginLookup. Used by
+// syncRackModulation / updateRackModulationProperties; defined as a private
+// nested type (rather than in an anonymous namespace) so it can refer to the
+// class-private SyncedRack.
+struct RackSyncManager::InnerPluginLookup : TargetPluginLookup {
+    SyncedRack& synced;
+    explicit InnerPluginLookup(SyncedRack& s) : synced(s) {}
+    te::Plugin* getPlugin(DeviceId id) const override {
+        auto it = synced.innerPlugins.find(id);
+        return (it != synced.innerPlugins.end() && it->second) ? it->second.get() : nullptr;
+    }
+};
+
 void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rackInfo) {
     if (!synced.rackType)
         return;
 
-    auto lookupTarget = [&synced](DeviceId id) -> te::Plugin* {
-        auto it = synced.innerPlugins.find(id);
-        if (it != synced.innerPlugins.end() && it->second)
-            return it->second.get();
-        return nullptr;
-    };
+    InnerPluginLookup lookup(synced);
 
     ModifierSyncContext ctx;
     ctx.modifierList = &synced.rackType->getModifierList();
     ctx.macroList = &synced.rackType->getMacroParameterListForWriting();
-    ctx.lookupTargetPlugin = lookupTarget;
+    ctx.lookup = &lookup;
     ctx.forEachScopePlugin = [&synced](const std::function<void(te::Plugin*)>& visit) {
         for (auto& [pluginId, plugin] : synced.innerPlugins) {
             if (plugin)
@@ -852,7 +860,7 @@ void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rac
             ModifierSyncContext deviceCtx;
             deviceCtx.modifierList = ctx.modifierList;
             deviceCtx.macroList = ctx.macroList;
-            deviceCtx.lookupTargetPlugin = lookupTarget;
+            deviceCtx.lookup = &lookup;
             deviceCtx.forEachScopePlugin = ctx.forEachScopePlugin;
             deviceCtx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
 
@@ -883,15 +891,10 @@ void RackSyncManager::syncRackModulation(SyncedRack& synced, const RackInfo& rac
 }
 
 void RackSyncManager::updateRackModulationProperties(SyncedRack& synced, const RackInfo& rackInfo) {
-    auto lookupTarget = [&synced](DeviceId id) -> te::Plugin* {
-        auto it = synced.innerPlugins.find(id);
-        if (it != synced.innerPlugins.end() && it->second)
-            return it->second.get();
-        return nullptr;
-    };
+    InnerPluginLookup lookup(synced);
 
     ModifierSyncContext ctx;
-    ctx.lookupTargetPlugin = lookupTarget;
+    ctx.lookup = &lookup;
 
     ConstChainNode node;
     node.scope = ChainScope::Rack;
