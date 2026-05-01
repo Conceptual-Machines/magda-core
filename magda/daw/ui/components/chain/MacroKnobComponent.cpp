@@ -608,7 +608,6 @@ void MacroKnobComponent::showLinkMenu() {
 
         // Clear all links
         if (result == clearAllId) {
-            safeThis->currentMacro_.target = magda::ControlTarget{};
             safeThis->currentMacro_.links.clear();
             safeThis->repaint();
             if (safeThis->onAllLinksCleared) {

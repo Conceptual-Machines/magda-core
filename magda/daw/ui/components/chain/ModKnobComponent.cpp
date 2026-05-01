@@ -22,19 +22,6 @@ ModKnobComponent::ModKnobComponent(int modIndex) : modIndex_(modIndex) {
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
 
-    // Amount slider (modulation depth) - hidden, amount is set per-parameter link
-    amountSlider_.setRange(0.0, 1.0, 0.01);
-    amountSlider_.setValue(currentMod_.amount, juce::dontSendNotification);
-    amountSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    amountSlider_.onValueChanged = [this](double value) {
-        currentMod_.amount = static_cast<float>(value);
-        if (onAmountChanged) {
-            onAmountChanged(currentMod_.amount);
-        }
-    };
-    amountSlider_.setVisible(false);  // Hide - amount is per-parameter, not global
-    addChildComponent(amountSlider_);
-
     // Waveform display (don't intercept mouse clicks - pass through to parent)
     waveformDisplay_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(waveformDisplay_);
@@ -67,7 +54,6 @@ void ModKnobComponent::setModInfo(const magda::ModInfo& mod, const magda::ModInf
     // Use live mod pointer if available (for animation), otherwise use local copy
     waveformDisplay_.setModInfo(liveMod ? liveMod : &currentMod_);
     nameLabel_.setText(mod.name, juce::dontSendNotification);
-    amountSlider_.setValue(mod.amount, juce::dontSendNotification);
     repaint();
 }
 

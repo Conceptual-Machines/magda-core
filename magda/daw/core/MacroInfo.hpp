@@ -40,10 +40,6 @@ struct MacroInfo {
     float value = 0.5f;            // 0.0 to 1.0, normalized (global macro value)
     std::vector<MacroLink> links;  // Multiple links with per-link amounts
 
-    // Legacy single target — kept for clearAllMacroLinks() compatibility.
-    // New code should use links[]; this is pruned together with its setter.
-    ControlTarget target;
-
     // Default constructor
     MacroInfo() = default;
 

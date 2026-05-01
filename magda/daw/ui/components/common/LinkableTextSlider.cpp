@@ -48,16 +48,15 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
         magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = selectedMod.getLink(thisTarget);
-        bool isLinked = existingLink != nullptr || (selectedMod.target.deviceId() == deviceId_ &&
-                                                    selectedMod.target.paramIndex == paramIndex_);
+        bool isLinked = existingLink != nullptr;
 
         float startAmount = 0.5f;
         if (!isLinked) {
             if (onModLinkedWithAmount) {
                 onModLinkedWithAmount(selectedModIndex_, thisTarget, 0.5f);
             }
-        } else {
-            startAmount = existingLink ? existingLink->amount : selectedMod.amount;
+        } else if (existingLink) {
+            startAmount = existingLink->amount;
         }
         slider_.setShiftDragStartValue(startAmount);
 
@@ -100,8 +99,7 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
         magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = selectedMod.getLink(thisTarget);
-        bool isLinked = existingLink != nullptr || (selectedMod.target.deviceId() == deviceId_ &&
-                                                    selectedMod.target.paramIndex == paramIndex_);
+        bool isLinked = existingLink != nullptr;
 
         if (!isLinked && onModLinkedWithAmount) {
             onModLinkedWithAmount(selectedModIndex_, thisTarget, 0.5f);
@@ -514,11 +512,9 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
 
         if (modPtr) {
             magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
-            const auto* existingLink = modPtr->getLink(thisTarget);
-            isLinked = existingLink != nullptr || (modPtr->target.deviceId() == deviceId_ &&
-                                                   modPtr->target.paramIndex == paramIndex_);
-            if (isLinked) {
-                initialAmount = existingLink ? existingLink->amount : modPtr->amount;
+            if (const auto* existingLink = modPtr->getLink(thisTarget)) {
+                isLinked = true;
+                initialAmount = existingLink->amount;
             }
         }
 
@@ -610,8 +606,7 @@ void LinkableTextSlider::mouseDrag(const juce::MouseEvent& e) {
         magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = modPtr->getLink(thisTarget);
-        bool isLinked = existingLink != nullptr || (modPtr->target.deviceId() == deviceId_ &&
-                                                    modPtr->target.paramIndex == paramIndex_);
+        bool isLinked = existingLink != nullptr;
 
         if (isLinked) {
             if (onModAmountChanged) {

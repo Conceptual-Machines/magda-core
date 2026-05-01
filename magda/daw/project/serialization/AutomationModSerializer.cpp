@@ -375,11 +375,6 @@ juce::var ProjectSerializer::serializeMacroInfo(const MacroInfo& macro) {
     obj->setProperty("name", macro.name);
     obj->setProperty("value", macro.value);
 
-    // Legacy target
-    auto* targetObj = new juce::DynamicObject();
-    serializeControlTarget(targetObj, macro.target);
-    obj->setProperty("target", juce::var(targetObj));
-
     // Links
     juce::Array<juce::var> linksArray;
     for (const auto& link : macro.links) {
@@ -402,12 +397,6 @@ bool ProjectSerializer::deserializeMacroInfo(const juce::var& json, MacroInfo& o
     outMacro.name = obj->getProperty("name").toString();
     outMacro.value = obj->getProperty("value");
 
-    // Legacy target.
-    auto targetVar = obj->getProperty("target");
-    if (targetVar.isObject()) {
-        deserializeControlTarget(targetVar.getDynamicObject(), outMacro.target);
-    }
-
     // Links
     auto linksVar = obj->getProperty("links");
     if (linksVar.isArray()) {
@@ -417,6 +406,23 @@ bool ProjectSerializer::deserializeMacroInfo(const juce::var& json, MacroInfo& o
             if (!deserializeMacroLink(linkVar, link))
                 return false;
             outMacro.links.push_back(link);
+        }
+    }
+
+    // One-shot migration of pre-#1149 projects: if no `links` were stored but
+    // a populated legacy single `target` was, lift it into links so the macro
+    // keeps working. New projects never write `target`, so this branch is dead
+    // for anything saved after this commit.
+    if (outMacro.links.empty()) {
+        auto targetVar = obj->getProperty("target");
+        if (targetVar.isObject()) {
+            ControlTarget legacy;
+            deserializeControlTarget(targetVar.getDynamicObject(), legacy);
+            if (legacy.isValid()) {
+                MacroLink link;
+                link.target = legacy;
+                outMacro.links.push_back(link);
+            }
         }
     }
 
@@ -463,12 +469,6 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
         linksArray.add(serializeModLink(link));
     }
     obj->setProperty("links", juce::var(linksArray));
-
-    // Legacy target/amount
-    auto* targetObj = new juce::DynamicObject();
-    serializeControlTarget(targetObj, mod.target);
-    obj->setProperty("target", juce::var(targetObj));
-    obj->setProperty("amount", mod.amount);
 
     return juce::var(obj);
 }
@@ -529,12 +529,24 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
         }
     }
 
-    // Legacy target/amount.
-    auto targetVar = obj->getProperty("target");
-    if (targetVar.isObject()) {
-        deserializeControlTarget(targetVar.getDynamicObject(), outMod.target);
+    // One-shot migration of pre-#1149 projects: if no `links` were stored but
+    // a populated legacy single `target` was, lift it (and the legacy `amount`)
+    // into links so the modulator keeps working. New projects never write
+    // `target`/`amount`, so this branch is dead for anything saved after this
+    // commit.
+    if (outMod.links.empty()) {
+        auto targetVar = obj->getProperty("target");
+        if (targetVar.isObject()) {
+            ControlTarget legacy;
+            deserializeControlTarget(targetVar.getDynamicObject(), legacy);
+            if (legacy.isValid()) {
+                ModLink link;
+                link.target = legacy;
+                link.amount = static_cast<float>(obj->getProperty("amount"));
+                outMod.links.push_back(link);
+            }
+        }
     }
-    outMod.amount = obj->getProperty("amount");
 
     return true;
 }

@@ -722,10 +722,6 @@ std::map<magda::DeviceId, std::vector<juce::String>> RackComponent::getDevicePar
 
 // === Virtual callback overrides for mod/macro persistence ===
 
-void RackComponent::onModAmountChangedInternal(int modIndex, float amount) {
-    magda::TrackManager::getInstance().setModAmount(rackPath_, modIndex, amount);
-}
-
 void RackComponent::onModTargetChangedInternal(int modIndex, magda::ControlTarget target) {
     magda::TrackManager::getInstance().setModTarget(rackPath_, modIndex, target);
 }

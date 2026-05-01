@@ -505,27 +505,6 @@ TEST_CASE("Device mod property changes fire deviceModifiersChanged", "[mod][noti
         REQUIRE(dev->mods[0].phaseOffset == Catch::Approx(1.0f));
     }
 
-    SECTION("setModAmount does NOT fire notification") {
-        fixture.tm().setModAmount(devicePath, 0, 0.85f);
-
-        // Amount changes are silent — no UI rebuild needed
-        REQUIRE(spy.modifiersChangedCount == 0);
-        REQUIRE(spy.devicesChangedCount == 0);
-
-        auto* dev = fixture.tm().getDeviceInChainByPath(devicePath);
-        REQUIRE(dev->mods[0].amount == Catch::Approx(0.85f));
-    }
-
-    SECTION("setModAmount clamps to -1 to 1") {
-        fixture.tm().setModAmount(devicePath, 0, -0.5f);
-        auto* dev = fixture.tm().getDeviceInChainByPath(devicePath);
-        REQUIRE(dev->mods[0].amount == Catch::Approx(-0.5f));
-
-        fixture.tm().setModAmount(devicePath, 0, -1.5f);
-        dev = fixture.tm().getDeviceInChainByPath(devicePath);
-        REQUIRE(dev->mods[0].amount == Catch::Approx(-1.0f));
-    }
-
     SECTION("setModName does NOT fire notification") {
         fixture.tm().setModName(devicePath, 0, "My LFO");
 
@@ -614,7 +593,7 @@ TEST_CASE("Device mod target fires deviceModifiersChanged", "[mod][notification]
         REQUIRE(spy.lastModifiersTrackId == trackId);
 
         auto* dev = fixture.tm().getDeviceInChainByPath(devicePath);
-        REQUIRE(dev->mods[0].target == target);
+        REQUIRE(dev->mods[0].getLink(target) != nullptr);
     }
 
     SECTION("setModTarget creates link automatically") {
@@ -637,8 +616,6 @@ TEST_CASE("Device mod target fires deviceModifiersChanged", "[mod][notification]
 
         auto* dev = fixture.tm().getDeviceInChainByPath(devicePath);
         REQUIRE(dev->mods[0].getLink(target) == nullptr);
-        // Target should also be cleared
-        REQUIRE_FALSE(dev->mods[0].target.isValid());
     }
 
     fixture.tm().removeListener(&spy);
@@ -766,13 +743,6 @@ TEST_CASE("Rack mod property changes fire deviceModifiersChanged", "[mod][notifi
         fixture.tm().setModLinkAmount(rackPath, 0, target, 0.6f);
 
         REQUIRE(spy.modifiersChangedCount == 1);
-    }
-
-    SECTION("setModAmount does NOT fire notification") {
-        fixture.tm().setModAmount(rackPath, 0, 0.7f);
-
-        REQUIRE(spy.modifiersChangedCount == 0);
-        REQUIRE(spy.devicesChangedCount == 0);
     }
 
     SECTION("setModName does NOT fire notification") {

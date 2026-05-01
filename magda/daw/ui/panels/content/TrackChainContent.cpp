@@ -725,11 +725,6 @@ TrackChainContent::~TrackChainContent() {
 
 void TrackChainContent::initGlobalModsPanel() {
     globalModsPanel_ = std::make_unique<ModsPanelComponent>();
-    globalModsPanel_->onModAmountChanged = [this](int modIndex, float amount) {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().setModAmount(
-                ChainNodePath::trackLevel(selectedTrackId_), modIndex, amount);
-    };
     globalModsPanel_->onModTargetChanged = [this](int modIndex, magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().setModTarget(

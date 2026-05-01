@@ -17,13 +17,6 @@ std::vector<ResolvedModLink> getLinkedMods(const ParamLinkContext& ctx) {
         if (const auto* link = mod.getLink(thisTarget)) {
             linked.push_back({ctx.selectedModIndex, *link});
         }
-        // Legacy check: old single-target field
-        else if (mod.target.deviceId() == ctx.deviceId && mod.target.paramIndex == ctx.paramIndex) {
-            magda::ModLink legacyLink;
-            legacyLink.target = mod.target;
-            legacyLink.amount = mod.amount;
-            linked.push_back({ctx.selectedModIndex, legacyLink});
-        }
         return linked;
     }
 
@@ -33,14 +26,6 @@ std::vector<ResolvedModLink> getLinkedMods(const ParamLinkContext& ctx) {
             const auto& mod = (*ctx.deviceMods)[i];
             if (const auto* link = mod.getLink(thisTarget)) {
                 linked.push_back({static_cast<int>(i), *link, ResolvedModLink::Scope::Device});
-            }
-            // Legacy: also check old target field
-            else if (mod.target.deviceId() == ctx.deviceId &&
-                     mod.target.paramIndex == ctx.paramIndex) {
-                magda::ModLink legacyLink;
-                legacyLink.target = mod.target;
-                legacyLink.amount = mod.amount;
-                linked.push_back({static_cast<int>(i), legacyLink, ResolvedModLink::Scope::Device});
             }
         }
     }

@@ -274,11 +274,6 @@ struct ModInfo {
 
     std::vector<ModLink> links;  // All parameter links for this mod
 
-    // Legacy single target/amount — kept for setModAmount() / clearAllModLinks().
-    // New code should use links[]; these are pruned together with their setter.
-    ControlTarget target;
-    float amount = 0.5f;
-
     // Default constructor
     ModInfo() = default;
 

@@ -110,12 +110,6 @@ void ModsPanelComponent::ensureKnobCount(int count) {
         auto knob = std::make_unique<ModKnobComponent>(i);
 
         // Wire up callbacks with mod index
-        knob->onAmountChanged = [this, i](float amount) {
-            if (onModAmountChanged) {
-                onModAmountChanged(i, amount);
-            }
-        };
-
         knob->onTargetChanged = [this, i](magda::ControlTarget target) {
             if (onModTargetChanged) {
                 onModTargetChanged(i, target);

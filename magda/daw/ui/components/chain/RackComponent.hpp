@@ -141,7 +141,6 @@ class RackComponent : public NodeComponent, public juce::Timer {
     std::map<magda::DeviceId, std::vector<juce::String>> getDeviceParamNames() const override;
 
     // === Virtual callback overrides for mod/macro persistence ===
-    void onModAmountChangedInternal(int modIndex, float amount) override;
     void onModTargetChangedInternal(int modIndex, magda::ControlTarget target) override;
     void onModNameChangedInternal(int modIndex, const juce::String& name) override;
     void onModTypeChangedInternal(int modIndex, magda::ModType type) override;
