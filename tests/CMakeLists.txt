@@ -86,6 +86,8 @@ set(TEST_SOURCES
     test_magda_api_lua_bindings.cpp
     # Lua controller tests (issue #592 — MIDI dispatch)
     test_lua_controller.cpp
+    # Focused device API tests
+    test_focused_api_live.cpp
     # SelectionManager listener reentrancy
     test_selection_manager_listeners.cpp
     # Configurable user data paths

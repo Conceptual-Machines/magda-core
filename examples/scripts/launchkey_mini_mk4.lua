@@ -185,7 +185,7 @@ local SCENE_NEXT = 0x6B   -- 107 - bottom button (Track >), scrolls down
 local TRACK_PREV = 0x68   -- 104 - top right, previous track
 local TRACK_NEXT = 0x69   -- 105 - bottom right, next track
 
--- Device-cycle buttons: walk the focused track's chain prev/next.
+-- Device-cycle buttons: select prev/next device on the selected track.
 local DEVICE_PREV = 0x33  -- 51
 local DEVICE_NEXT = 0x34  -- 52
 

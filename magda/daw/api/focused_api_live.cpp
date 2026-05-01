@@ -145,23 +145,11 @@ void FocusedApiLive::cycleDevice(int direction) {
     direction = direction > 0 ? 1 : -1;
 
     auto& sel = SelectionManager::getInstance();
-    if (!sel.hasChainNodeSelection())
+    const auto selectedTrack = sel.getSelectedTrack();
+    if (selectedTrack == INVALID_TRACK_ID)
         return;
 
-    const auto current = sel.getSelectedChainNode();
-    if (!current.isValid() || current.trackId == INVALID_TRACK_ID)
-        return;
-
-    // Only handle top-level chain navigation. If focus is inside a rack
-    // (steps non-empty for the current path), bail rather than guess —
-    // the user can navigate up to the rack header first.
-    const auto type = current.getType();
-    const bool isTopLevel = (type == ChainNodeType::TopLevelDevice) ||
-                            (type == ChainNodeType::Rack && current.steps.size() == 1);
-    if (!isTopLevel)
-        return;
-
-    const auto& elements = TrackManager::getInstance().getChainElements(current.trackId);
+    const auto& elements = TrackManager::getInstance().getChainElements(selectedTrack);
     if (elements.empty())
         return;
 
@@ -169,27 +157,28 @@ void FocusedApiLive::cycleDevice(int direction) {
     chainPaths.reserve(elements.size());
     for (const auto& elem : elements) {
         if (isRack(elem)) {
-            chainPaths.push_back(ChainNodePath::rack(current.trackId, getRack(elem).id));
+            chainPaths.push_back(ChainNodePath::rack(selectedTrack, getRack(elem).id));
         } else {
-            chainPaths.push_back(
-                ChainNodePath::topLevelDevice(current.trackId, getDevice(elem).id));
+            chainPaths.push_back(ChainNodePath::topLevelDevice(selectedTrack, getDevice(elem).id));
         }
     }
     if (chainPaths.empty())
         return;
 
     int currentIdx = -1;
-    for (int i = 0; i < static_cast<int>(chainPaths.size()); ++i) {
-        if (chainPaths[static_cast<size_t>(i)] == current) {
-            currentIdx = i;
-            break;
+    if (sel.hasChainNodeSelection()) {
+        const auto current = sel.getSelectedChainNode();
+        for (int i = 0; i < static_cast<int>(chainPaths.size()); ++i) {
+            if (chainPaths[static_cast<size_t>(i)] == current) {
+                currentIdx = i;
+                break;
+            }
         }
     }
-    if (currentIdx < 0)
-        return;
 
     const int n = static_cast<int>(chainPaths.size());
-    const int nextIdx = ((currentIdx + direction) % n + n) % n;
+    const int nextIdx =
+        currentIdx < 0 ? (direction > 0 ? 0 : n - 1) : ((currentIdx + direction) % n + n) % n;
     sel.selectChainNode(chainPaths[static_cast<size_t>(nextIdx)]);
 }
 
