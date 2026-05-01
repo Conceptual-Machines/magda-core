@@ -68,16 +68,6 @@ void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce:
     owner.addAndMakeVisible(header);
 }
 
-void setupShortcutLabel(juce::Component& owner, juce::Label& label, const juce::String& action,
-                        const juce::String& shortcut) {
-    label.setText(action + ":  " + shortcut, juce::dontSendNotification);
-    label.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
-    label.setColour(juce::Label::textColourId,
-                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
-    label.setJustificationType(juce::Justification::centredLeft);
-    owner.addAndMakeVisible(label);
-}
-
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -1305,51 +1295,192 @@ class ShortcutsPage : public juce::Component {
   public:
     ShortcutsPage() {
         setupSectionHeader(*this, shortcutsHeader, tr("preferences.section.keyboard_shortcuts"));
-#if JUCE_MAC
-        setupShortcutLabel(*this, addTrackShortcut, tr("preferences.shortcut.add_track"),
-                           juce::String::fromUTF8("\u2318T"));
-        setupShortcutLabel(*this, deleteTrackShortcut, tr("preferences.shortcut.delete_track"),
-                           juce::String::fromUTF8("\u232B"));
-        setupShortcutLabel(*this, duplicateTrackShortcut,
-                           tr("preferences.shortcut.duplicate_track"),
-                           juce::String::fromUTF8("\u2318D"));
-#else
-        setupShortcutLabel(*this, addTrackShortcut, tr("preferences.shortcut.add_track"), "Ctrl+T");
-        setupShortcutLabel(*this, deleteTrackShortcut, tr("preferences.shortcut.delete_track"),
-                           "Delete");
-        setupShortcutLabel(*this, duplicateTrackShortcut,
-                           tr("preferences.shortcut.duplicate_track"), "Ctrl+D");
-#endif
-        setupShortcutLabel(*this, muteTrackShortcut, tr("preferences.shortcut.mute_track"), "M");
-        setupShortcutLabel(*this, soloTrackShortcut, tr("preferences.shortcut.solo_track"), "S");
+        viewport.setViewedComponent(&content, false);
+        viewport.setScrollBarsShown(true, false);
+        viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::all);
+        addAndMakeVisible(viewport);
+
+        addSection("File");
+        addShortcut("Save Project", cmd("S"), "Global");
+        addShortcut("Save Project As", shiftCmd("S"), "Global");
+
+        addSection("Edit");
+        addShortcut("Undo", cmd("Z"), "Global");
+        addShortcut("Redo", shiftCmd("Z"), "Global");
+        addShortcut("Cut", cmd("X"), "Clips");
+        addShortcut("Copy", cmd("C"), "Clips");
+        addShortcut("Paste", cmd("V"), "Clips");
+        addShortcut("Duplicate selected clip(s) or track(s)", cmd("D"), "Context");
+        addShortcut("Delete selected item or time selection", "Delete / Backspace", "Context");
+        addShortcut("Select All", cmd("A"), "Context");
+        addShortcut("Split / Trim", cmd("E"), "Clips");
+        addShortcut("Blade split at edit cursor", "B", "Arrange");
+        addShortcut("Join Clips", cmd("J"), "Clips");
+        addShortcut("Render Clip", cmd("B"), "Clips");
+        addShortcut("Render Time Selection", shiftCmd("B"), "Arrange");
+        addShortcut("Set Loop from Clip", shiftCmd("L"), "Clips");
+        addShortcut("Toggle Clip Loop", cmd("L"), "Clips");
+
+        addSection("Track");
+        addShortcut("New Track", cmd("T"), "Global");
+        addShortcut("New Group Track", shiftCmd("T"), "Global");
+        addShortcut("Duplicate Track without content", shiftCmd("D"), "Track selection");
+        addShortcut("Duplicate Track content only", altCmd("D"), "Track selection");
+        addShortcut("Toggle Mute", "M", "Track selection");
+        addShortcut("Toggle Solo", "Shift+S", "Track selection");
+
+        addSection("Transport and View");
+        addShortcut("Play / Stop", "Space", "Global");
+        addShortcut("Exit link mode / clear selection", "Escape", "Context");
+        addShortcut("Create loop from selection or clip", "L", "Arrange");
+        addShortcut("Reset Zoom to Fit", cmd("0"), "Arrange");
+        addShortcut("Toggle Arrangement Lock", "F4", "Arrange");
+        addShortcut("Increase UI Scale", cmd("=") + " / " + shiftCmd("+"), "Global");
+        addShortcut("Decrease UI Scale", cmd("-") + " / " + shiftCmd("_"), "Global");
+
+        addSection("Console");
+        addShortcut("Execute DSL", cmd("Return"), "DSL tab");
+        addShortcut("Clear DSL output", cmd("L"), "DSL tab");
+        addShortcut("Send AI message", "Return", "AI tab");
+        addShortcut("New line in AI message", "Shift+Return", "AI tab");
+        addShortcut("Accept autocomplete", "Tab / Return", "AI tab");
+
+        addSection("Development");
+        addShortcut("Open Debug Dialog", shiftAltCmd("D"), "Global");
     }
 
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
-        const int rowH = 32;
         const int headerH = 28;
 
         shortcutsHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
 
-        addTrackShortcut.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(4);
-        deleteTrackShortcut.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(4);
-        duplicateTrackShortcut.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(4);
-        muteTrackShortcut.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(4);
-        soloTrackShortcut.setBounds(bounds.removeFromTop(rowH));
+        viewport.setBounds(bounds);
+        layoutRows(bounds.getWidth());
     }
 
     void loadSettings(Config& /*config*/) {}
     void applySettings(Config& /*config*/) {}
 
   private:
+    struct ShortcutRow {
+        bool section = false;
+        juce::Label action;
+        juce::Label shortcut;
+        juce::Label scope;
+    };
+
+    static juce::String commandPrefix() {
+#if JUCE_MAC
+        return juce::String::fromUTF8("\u2318");
+#else
+        return "Ctrl+";
+#endif
+    }
+
+    static juce::String shiftPrefix() {
+#if JUCE_MAC
+        return juce::String::fromUTF8("\u21E7");
+#else
+        return "Shift+";
+#endif
+    }
+
+    static juce::String altPrefix() {
+#if JUCE_MAC
+        return juce::String::fromUTF8("\u2325");
+#else
+        return "Alt+";
+#endif
+    }
+
+    static juce::String cmd(const juce::String& key) {
+        return commandPrefix() + key;
+    }
+
+    static juce::String shiftCmd(const juce::String& key) {
+        return shiftPrefix() + commandPrefix() + key;
+    }
+
+    static juce::String altCmd(const juce::String& key) {
+        return altPrefix() + commandPrefix() + key;
+    }
+
+    static juce::String shiftAltCmd(const juce::String& key) {
+        return shiftPrefix() + altPrefix() + commandPrefix() + key;
+    }
+
+    void addSection(const juce::String& title) {
+        auto row = std::make_unique<ShortcutRow>();
+        row->section = true;
+        row->action.setText(title, juce::dontSendNotification);
+        row->action.setFont(FontManager::getInstance().getUIFontBold(13.0f));
+        row->action.setColour(juce::Label::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        row->action.setJustificationType(juce::Justification::centredLeft);
+        content.addAndMakeVisible(row->action);
+        rows_.push_back(std::move(row));
+    }
+
+    void addShortcut(const juce::String& action, const juce::String& shortcut,
+                     const juce::String& scope) {
+        auto row = std::make_unique<ShortcutRow>();
+
+        auto setupLabel = [](juce::Label& label, const juce::String& text, float size,
+                             juce::Colour colour, juce::Justification justification) {
+            label.setText(text, juce::dontSendNotification);
+            label.setFont(FontManager::getInstance().getUIFont(size));
+            label.setColour(juce::Label::textColourId, colour);
+            label.setJustificationType(justification);
+        };
+
+        setupLabel(row->action, action, 12.0f, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY),
+                   juce::Justification::centredLeft);
+        setupLabel(row->shortcut, shortcut, 12.0f, DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
+                   juce::Justification::centredRight);
+        setupLabel(row->scope, scope, 11.0f, DarkTheme::getColour(DarkTheme::TEXT_DIM),
+                   juce::Justification::centredLeft);
+
+        content.addAndMakeVisible(row->action);
+        content.addAndMakeVisible(row->shortcut);
+        content.addAndMakeVisible(row->scope);
+        rows_.push_back(std::move(row));
+    }
+
+    void layoutRows(int width) {
+        const int rowH = 26;
+        const int sectionH = 30;
+        const int gap = 3;
+        const int shortcutW = 150;
+        const int scopeW = 118;
+        int y = 0;
+
+        for (auto& row : rows_) {
+            if (row->section) {
+                y += y == 0 ? 0 : 8;
+                row->action.setBounds(0, y, width, sectionH);
+                y += sectionH;
+                continue;
+            }
+
+            auto bounds = juce::Rectangle<int>(0, y, width, rowH);
+            row->action.setBounds(
+                bounds.removeFromLeft(juce::jmax(120, width - shortcutW - scopeW - (gap * 2))));
+            bounds.removeFromLeft(gap);
+            row->shortcut.setBounds(bounds.removeFromLeft(shortcutW));
+            bounds.removeFromLeft(gap);
+            row->scope.setBounds(bounds);
+            y += rowH;
+        }
+
+        content.setSize(width, y + 8);
+    }
+
     juce::Label shortcutsHeader;
-    juce::Label addTrackShortcut, deleteTrackShortcut, duplicateTrackShortcut;
-    juce::Label muteTrackShortcut, soloTrackShortcut;
+    juce::Viewport viewport;
+    juce::Component content;
+    std::vector<std::unique_ptr<ShortcutRow>> rows_;
 };
 
 // ---------------------------------------------------------------------------
