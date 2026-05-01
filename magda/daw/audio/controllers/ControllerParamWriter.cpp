@@ -29,19 +29,7 @@ void DefaultControllerParamWriter::write(const ResolvedTarget& resolved, float v
 }
 
 void DefaultControllerParamWriter::writePluginParam(const ResolvedTarget& resolved, float clamped) {
-    DeviceId deviceId = resolved.devicePath.getDeviceId();
-    if (deviceId == INVALID_DEVICE_ID)
-        return;
-
-    auto plugin = bridge_.getPlugin(deviceId);
-    if (!plugin)
-        return;
-
-    auto params = plugin->getAutomatableParameters();
-    if (resolved.paramIndex < 0 || resolved.paramIndex >= static_cast<int>(params.size()))
-        return;
-
-    auto* param = params[static_cast<size_t>(resolved.paramIndex)];
+    auto* param = bridge_.resolveControlTarget(resolved.toControlTarget());
     if (!param)
         return;
 
