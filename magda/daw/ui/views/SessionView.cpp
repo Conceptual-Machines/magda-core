@@ -1839,16 +1839,14 @@ void SessionView::paintControllerSceneWindowHighlight(juce::Graphics& g) {
 
     auto highlight = juce::Rectangle<int>(gridViewport->getX(), y,
                                           sceneContainer->getRight() - gridViewport->getX(), h)
-                         .getIntersection(clipArea)
-                         .reduced(3);
+                         .expanded(3)
+                         .getIntersection(clipArea.reduced(1));
     if (highlight.isEmpty())
         return;
 
     auto accent = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
-    g.setColour(accent.withAlpha(0.08f));
-    g.fillRoundedRectangle(highlight.toFloat(), 6.0f);
-    g.setColour(accent.withAlpha(0.72f));
-    g.drawRoundedRectangle(highlight.toFloat(), 6.0f, 2.0f);
+    g.setColour(accent.withAlpha(0.82f));
+    g.drawRoundedRectangle(highlight.toFloat(), 7.0f, 3.0f);
 }
 
 void SessionView::resized() {

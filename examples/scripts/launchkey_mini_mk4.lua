@@ -24,6 +24,9 @@
 -- pad Custom Modes) and a "DAW" port (control surface). Select the DAW
 -- protocol ports as Port Out / Port In in MAGDA's Lua Scripts row.
 
+local SCRIPT_LABEL = "LK Mini"
+local DISPLAY_VALUE_MAX_CHARS = 16
+
 -- Scene offset = sceneIndex of the top pad row. Bottom row is offset+1.
 local scene_offset = 0
 
@@ -81,12 +84,49 @@ end
 -- Reference p.17-19. The stationary display (target 0x20) is what's
 -- shown when no temp display is up. We configure it once with
 -- arrangement 1 (2-line: Parameter Name + Text Parameter Value) and
--- write the Name field, leaving the Value field empty. Bits 6+5 of
--- the config byte stay set (default) so encoder Temp Displays still
+-- write MAGDA to the Name field and version/script info to the Value
+-- field. Bits 6+5 of the config byte stay set (default) so encoder Temp Displays still
 -- trigger normally on knob change/touch.
 local STATIONARY_TARGET = 0x20
 
-local function show_stationary_banner(out, text)
+local function send_display_text(out, target, field, text)
+  local payload = {0x00, 0x20, 0x29, 0x02, 0x13, 0x06, target, field}
+  for i = 1, #text do
+    local b = text:byte(i)
+    if b < 0x20 or b > 0x7E then b = 0x3F end
+    table.insert(payload, b)
+  end
+  magda.midi.send_sysex(out, payload)
+end
+
+local function get_app_version()
+  if magda and magda.app and magda.app.version then
+    local ok, version = pcall(magda.app.version)
+    if ok and version and version ~= "" then return version end
+  end
+
+  local ok, info = pcall(magda.project.info)
+  if ok and info and info.version and info.version ~= "" then return info.version end
+
+  return "dev"
+end
+
+local function display_subtitle()
+  local version = get_app_version()
+  local full = "v"..version.." "..SCRIPT_LABEL
+  if #full <= DISPLAY_VALUE_MAX_CHARS then return full end
+
+  local baseVersion = version:match("^[^-+]+") or version
+  local compact = "v"..baseVersion.." "..SCRIPT_LABEL
+  if #compact <= DISPLAY_VALUE_MAX_CHARS then return compact end
+
+  local versionOnly = "v"..baseVersion
+  if #versionOnly <= DISPLAY_VALUE_MAX_CHARS then return versionOnly end
+
+  return versionOnly:sub(1, DISPLAY_VALUE_MAX_CHARS)
+end
+
+local function show_stationary_banner(out, title, subtitle)
   if not out then
     magda.log.warn("[launchkey] banner: no DAW Out port")
     return
@@ -94,15 +134,8 @@ local function show_stationary_banner(out, text)
   -- Configure: bit 6 (auto temp on Change) + bit 5 (auto temp on Touch)
   -- + arrangement 1 = 0x60 | 0x01 = 0x61.
   magda.midi.send_sysex(out, {0x00, 0x20, 0x29, 0x02, 0x13, 0x04, STATIONARY_TARGET, 0x61})
-  -- Set field 0 (Name).
-  local payload = {0x00, 0x20, 0x29, 0x02, 0x13, 0x06,
-                   STATIONARY_TARGET, 0x00}
-  for i = 1, #text do
-    local b = text:byte(i)
-    if b < 0x20 or b > 0x7E then b = 0x3F end
-    table.insert(payload, b)
-  end
-  magda.midi.send_sysex(out, payload)
+  send_display_text(out, STATIONARY_TARGET, 0x00, title)
+  send_display_text(out, STATIONARY_TARGET, 0x01, subtitle)
   -- Trigger the display so the new contents come up immediately
   -- (config byte 0x7F per reference p.18, "compact way to trigger
   -- display").
@@ -181,7 +214,7 @@ function on_load()
   -- Paint "MAGDA" on the device's stationary display so the LCD reads
   -- our brand at rest. Temp displays (encoder names, etc.) overlay on
   -- top and revert to MAGDA after their timeout.
-  show_stationary_banner(find_daw_out(), "MAGDA")
+  show_stationary_banner(find_daw_out(), "MAGDA", display_subtitle())
 end
 
 function on_unload()

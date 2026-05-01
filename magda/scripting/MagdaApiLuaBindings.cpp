@@ -19,6 +19,7 @@
 #include "magda/daw/core/TrackTypes.hpp"
 #include "magda/daw/core/TypeIds.hpp"
 #include "magda/daw/project/ProjectInfo.hpp"
+#include "version.hpp"
 
 extern "C" {
 #include <lauxlib.h>
@@ -575,6 +576,13 @@ int lua_project_info(lua_State* L) {
     return 1;
 }
 
+// ---- app -------------------------------------------------------------------
+
+int lua_app_version(lua_State* L) {
+    lua_pushstring(L, MAGDA_VERSION);
+    return 1;
+}
+
 // ---- midi ------------------------------------------------------------------
 
 // Read a 1-indexed Lua array of byte values into a vector. luaL_error on
@@ -866,6 +874,11 @@ const FnReg kProjectFns[] = {
     {nullptr, nullptr},
 };
 
+const FnReg kAppFns[] = {
+    {"version", lua_app_version},
+    {nullptr, nullptr},
+};
+
 const FnReg kMidiFns[] = {
     {"send", lua_midi_send},
     {"send_cc", lua_midi_send_cc},
@@ -924,6 +937,7 @@ void registerMagdaApi(lua_State* L, MagdaApi& api) {
     installSubtable(L, "clips", kClipFns);
     installSubtable(L, "session", kSessionFns);
     installSubtable(L, "project", kProjectFns);
+    installSubtable(L, "app", kAppFns);
     installSubtable(L, "midi", kMidiFns);
     installSubtable(L, "transport", kTransportFns);
     installSubtable(L, "focused", kFocusedFns);

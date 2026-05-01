@@ -343,6 +343,16 @@ TEST_CASE("magda.project.info returns tempo and time-sig fields", "[lua_bindings
     REQUIRE(tempo->contains("128.5"));
 }
 
+TEST_CASE("magda.app.version returns application version", "[lua_bindings][app]") {
+    MockMagdaApi mock;
+    LuaRuntime rt;
+    registerMagdaApi(rt.state(), mock);
+
+    auto version = rt.evalToString("magda.app.version()");
+    REQUIRE(version.has_value());
+    REQUIRE(version->isNotEmpty());
+}
+
 // ---- midi ------------------------------------------------------------------
 
 TEST_CASE("magda.midi.send_cc forwards a controller-event MidiMessage", "[lua_bindings][midi]") {
