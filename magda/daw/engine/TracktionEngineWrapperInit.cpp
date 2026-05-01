@@ -1,7 +1,7 @@
 #include "../api/magda_api_live.hpp"
 #include "../audio/AudioBridge.hpp"
-#include "../audio/controllers/ControllerRouter.hpp"
 #include "../audio/MidiBridge.hpp"
+#include "../audio/controllers/ControllerRouter.hpp"
 #include "../audio/session/SessionClipScheduler.hpp"
 #include "../audio/session/SessionRecorder.hpp"
 #include "../core/Config.hpp"
@@ -339,6 +339,10 @@ void TracktionEngineWrapper::createEditAndBridges() {
     if (!isHeadless) {
         sessionScheduler_ = std::make_unique<SessionClipScheduler>(
             *audioBridge_, *currentEdit_, audioBridge_->getSessionAudioMonitor());
+        // Install the session monitor plugin up-front so the audio-thread
+        // pulse (transport position, beat indicator) keeps ticking even
+        // before any session clip has been launched.
+        audioBridge_->ensureSessionMonitorPlugin();
         sessionRecorder_ = std::make_unique<SessionRecorder>(*currentEdit_);
         sessionRecorder_->setRecordingPreviews(&recordingPreviews_);
         sessionRecorder_->setPlayStateQuery([this](ClipId clipId) {

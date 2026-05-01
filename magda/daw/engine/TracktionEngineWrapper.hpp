@@ -75,6 +75,8 @@ class TracktionEngineWrapper : public AudioEngine,
     std::unordered_map<ClipId, double> getActiveClipPlayheadPositions() const override;
     SessionClipPlayState getSessionClipPlayState(ClipId clipId) const override;
     void stopSessionTrack(TrackId trackId) override;
+    bool isSessionTrackStopPending(TrackId trackId) const override;
+    double getAudioThreadTransportSeconds() const override;
     void deactivateAllSessionClips() override;
     void setTempo(double bpm) override;
     double getTempo() const override;
