@@ -154,7 +154,7 @@ class SessionView : public juce::Component,
     std::unique_ptr<SvgButton> showSendsToggle_;
     std::unique_ptr<SvgButton> showRecordMonitorToggle_;
     void updateMixerToggleStates();
-    static constexpr int MIXER_TOGGLES_HEIGHT = 22;
+    static constexpr int MIXER_TOGGLES_HEIGHT = 26;
 
     // Custom grid content component that draws track separators
     class GridContent;

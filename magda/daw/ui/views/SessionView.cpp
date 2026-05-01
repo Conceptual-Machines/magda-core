@@ -339,9 +339,6 @@ class SessionView::IOContainer : public juce::Component {
 // dot on each side and are hit-tested directly (no child components).
 class SessionView::BeatBandContainer : public juce::Component {
   public:
-    static constexpr int kIconSize = 12;
-    static constexpr int kIconPad = 4;
-
     BeatBandContainer() {
         setInterceptsMouseClicks(true, false);
         rateIcon_ = magda::ManagedDrawable::create(BinaryData::rate_svg, BinaryData::rate_svgSize);
@@ -415,7 +412,6 @@ class SessionView::BeatBandContainer : public juce::Component {
         g.fillRect(0, 0, getWidth(), 1);
 
         const auto pulseColour = DarkTheme::getColour(DarkTheme::ACCENT_CYAN);
-        const auto iconColour = DarkTheme::getColour(DarkTheme::TEXT_SECONDARY);
         constexpr float kDotRadius = 2.5f;
 
         int cursor = -scrollOffset_;
@@ -434,13 +430,13 @@ class SessionView::BeatBandContainer : public juce::Component {
                               kDotRadius * 2.0f);
             }
 
-            if (rateIcon_) {
-                rateIcon_->drawWithin(g, layout.rateIconBounds.toFloat(),
-                                      juce::RectanglePlacement::centred, 0.3f);
-            }
             if (hideIcon_) {
                 hideIcon_->drawWithin(g, layout.hideIconBounds.toFloat(),
                                       juce::RectanglePlacement::centred, hidden ? 0.55f : 0.3f);
+            }
+            if (rateIcon_) {
+                rateIcon_->drawWithin(g, layout.rateIconBounds.toFloat(),
+                                      juce::RectanglePlacement::centred, 0.3f);
             }
 
             cursor += w;
@@ -460,8 +456,9 @@ class SessionView::BeatBandContainer : public juce::Component {
         juce::Point<float> dotCentre;
     };
 
-    /** Compute icon and dot positions for a visible track index. Icons flank
-        the dot at fixed offsets; the dot sits in the centre of the segment. */
+    /** Layout per track column:
+          left half  → beat-pulse dot (vertically centred)
+          right half → [hide] stacked above [rate]              */
     TrackLayout layoutForTrack(int trackIdx) const {
         TrackLayout out;
         if (trackIdx < 0 || trackIdx >= numTracks_ ||
@@ -474,17 +471,19 @@ class SessionView::BeatBandContainer : public juce::Component {
         int w = trackWidths_[trackIdx];
 
         const int yCentre = getHeight() / 2;
-        const int iconY = yCentre - kIconSize / 2;
-        const int xCentre = cursor + w / 2;
+        // Dot sits in the centre of the column.
+        out.dotCentre = {static_cast<float>(cursor + w / 2), static_cast<float>(yCentre)};
 
-        // Dot in the middle, icons immediately to either side with a small
-        // gap so the dot isn't crowded.
-        constexpr int kDotSpacing = 12;
-        out.dotCentre = {static_cast<float>(xCentre), static_cast<float>(yCentre)};
-        out.rateIconBounds =
-            juce::Rectangle<int>(xCentre - kDotSpacing - kIconSize, iconY, kIconSize, kIconSize);
-        out.hideIconBounds =
-            juce::Rectangle<int>(xCentre + kDotSpacing, iconY, kIconSize, kIconSize);
+        // Icons stacked in the right half, derived from band height.
+        constexpr int kGap = 2;
+        const int iconH = (getHeight() - 1 - kGap) / 2;
+        constexpr int kRightPad = 3;
+        const int xIcon = cursor + w - iconH - kRightPad;
+        const int stackH = iconH + kGap + iconH;
+        const int yTop = (getHeight() - stackH) / 2;
+
+        out.hideIconBounds = juce::Rectangle<int>(xIcon, yTop, iconH, iconH);
+        out.rateIconBounds = juce::Rectangle<int>(xIcon, yTop + iconH + kGap, iconH, iconH);
         return out;
     }
 
@@ -2189,6 +2188,8 @@ void SessionView::setupSceneButtons() {
 
     setupToggle(showIOToggle_, "ShowIO", BinaryData::io_routing_svg, BinaryData::io_routing_svgSize,
                 [this]() {
+                    if (trackColumnWidths_.empty())
+                        return;
                     ioRowVisible_ = !ioRowVisible_;
                     updateMixerToggleStates();
                     resized();
@@ -2197,6 +2198,8 @@ void SessionView::setupSceneButtons() {
 
     setupToggle(showSendsToggle_, "ShowSends", BinaryData::send_svg, BinaryData::send_svgSize,
                 [this]() {
+                    if (trackColumnWidths_.empty())
+                        return;
                     sendRowVisible_ = !sendRowVisible_;
                     updateMixerToggleStates();
                     resized();
@@ -2205,6 +2208,8 @@ void SessionView::setupSceneButtons() {
 
     setupToggle(showRecordMonitorToggle_, "ShowRecordMonitor", BinaryData::record_circle_svg,
                 BinaryData::record_circle_svgSize, [this]() {
+                    if (trackColumnWidths_.empty())
+                        return;
                     recordMonitorVisible_ = !recordMonitorVisible_;
                     for (auto& strip : trackMiniStrips_)
                         strip->setShowRecordMonitor(recordMonitorVisible_);
