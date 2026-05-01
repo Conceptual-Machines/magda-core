@@ -88,6 +88,7 @@ void Config::save() {
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+    root->setProperty("openMacrosOnSelect", openMacrosOnSelect);
     root->setProperty("previewOutputChannel", previewOutputChannel);
 
     // Auto-save
@@ -180,6 +181,7 @@ void Config::save() {
     root->setProperty("totalPluginCount", totalPluginCount);
     root->setProperty("scanPluginsOnStartup", scanPluginsOnStartup);
     root->setProperty("loadModelOnStartup", loadModelOnStartup);
+    root->setProperty("stopUpdatesPlayhead", stopUpdatesPlayhead);
 
     // Clip colour mode
     root->setProperty("clipColourMode", clipColourMode);
@@ -203,6 +205,12 @@ void Config::save() {
     // Controller devices
     if (!controllers_.isVoid())
         root->setProperty("controllers", controllers_);
+
+    // Lua controller scripts
+    if (!luaScripts_.isVoid())
+        root->setProperty("luaScripts", luaScripts_);
+    if (!activeLuaScript_.empty())
+        root->setProperty("activeLuaScript", toJuceString(activeLuaScript_));
 
     // Global bindings
     if (!globalBindings_.isVoid())
@@ -319,6 +327,7 @@ void Config::load() {
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+    openMacrosOnSelect = getBool("openMacrosOnSelect", openMacrosOnSelect);
     previewOutputChannel = getInt("previewOutputChannel", previewOutputChannel);
 
     autoSaveEnabled = getBool("autoSaveEnabled", autoSaveEnabled);
@@ -486,6 +495,7 @@ void Config::load() {
     totalPluginCount = getInt("totalPluginCount", totalPluginCount);
     scanPluginsOnStartup = getBool("scanPluginsOnStartup", scanPluginsOnStartup);
     loadModelOnStartup = getBool("loadModelOnStartup", loadModelOnStartup);
+    stopUpdatesPlayhead = getBool("stopUpdatesPlayhead", stopUpdatesPlayhead);
 
     clipColourMode = getInt("clipColourMode", clipColourMode);
 
@@ -513,6 +523,11 @@ void Config::load() {
     // Controller devices
     if (obj->hasProperty("controllers"))
         controllers_ = obj->getProperty("controllers");
+
+    // Lua controller scripts
+    if (obj->hasProperty("luaScripts"))
+        luaScripts_ = obj->getProperty("luaScripts");
+    activeLuaScript_ = getString("activeLuaScript", activeLuaScript_);
 
     // Global bindings
     if (obj->hasProperty("globalBindings"))

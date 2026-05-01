@@ -525,7 +525,8 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
 
         double sensitivity = baseSensitivity;
         if (isShiftHeld) {
-            sensitivity = config.getZoomInSensitivityShift();  // 8.0 - turbo fast
+            sensitivity = deltaY >= 0 ? config.getZoomInSensitivityShift()
+                                      : config.getZoomOutSensitivityShift();
         } else if (isAltHeld) {
             sensitivity = baseSensitivity * 3.0;  // Alt/Option: fine zoom (slower)
         }

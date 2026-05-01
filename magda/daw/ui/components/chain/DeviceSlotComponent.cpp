@@ -16,6 +16,7 @@
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/transport/StepClock.hpp"
 #include "core/ClipManager.hpp"
+#include "core/Config.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/ModInfo.hpp"
@@ -2671,9 +2672,35 @@ void DeviceSlotComponent::goToNextPage() {
     }
 }
 
+void DeviceSlotComponent::openMacroPanelForSelectionIfNeeded() {
+    if (!magda::Config::getInstance().getOpenMacrosOnSelect() || paramPanelVisible_ ||
+        !macroButton_ || !nodePath_.isValid()) {
+        return;
+    }
+
+    const auto& selectedPath = magda::SelectionManager::getInstance().getSelectedChainNode();
+    if (selectedPath != nodePath_) {
+        return;
+    }
+
+    macroButton_->setToggleState(true, juce::dontSendNotification);
+    macroButton_->setActive(true);
+    setParamPanelVisible(true);
+}
+
 // ============================================================================
 // SelectionManagerListener
 // ============================================================================
+
+void DeviceSlotComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
+    NodeComponent::chainNodeSelectionChanged(path);
+
+    if (!nodePath_.isValid() || path != nodePath_) {
+        return;
+    }
+
+    openMacroPanelForSelectionIfNeeded();
+}
 
 void DeviceSlotComponent::selectionTypeChanged(magda::SelectionType newType) {
     // Call base class first (handles node deselection)

@@ -382,6 +382,7 @@
 
     "section.zoom": "Zoom",
     "section.timeline": "Timeline",
+    "section.transport": "Transport",
     "section.autosave": "Auto-Save",
     "section.panels": "Panels",
     "section.layout": "Layout",
@@ -402,12 +403,14 @@
     "slider.interval": "Interval",
 
     "toggle.enable_autosave": "Enable auto-save",
+    "toggle.stop_updates_playhead": "Stop updates playhead",
     "toggle.expand_left_panel": "Expand Left Panel (Browser)",
     "toggle.expand_right_panel": "Expand Right Panel (Inspector)",
     "toggle.expand_bottom_panel": "Expand Bottom Panel (Mixer)",
     "toggle.headers_on_right": "Headers on the Right",
     "toggle.confirm_track_delete": "Confirm before deleting tracks",
     "toggle.auto_monitor": "Auto-monitor selected track",
+    "toggle.open_macros_on_select": "Open macros when selecting devices or racks",
     "toggle.show_tooltips": "Show tooltips",
 
     "button.add_colour": "+ Add Colour",
@@ -485,6 +488,9 @@
     "connected": "Connected",
     "not_connected": "Not connected",
     "disabled": "Disabled",
+    "port.none": "None",
+    "port.port_in": "Port In",
+    "port.port_out": "Port Out",
     "scripts.active": "active",
     "scripts.no_scripts": "No scripts in folder",
     "scripts.reload": "Reload",

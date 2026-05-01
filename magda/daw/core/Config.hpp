@@ -257,6 +257,17 @@ class Config {
         loadModelOnStartup = enabled;
     }
 
+    // Transport: when true, pressing Stop snaps the playhead (editPosition)
+    // to wherever playback was at the moment of stopping, so the next Play
+    // resumes from there. When false (default), the playhead stays put and
+    // Play always restarts from the playhead's current location.
+    bool getStopUpdatesPlayhead() const {
+        return stopUpdatesPlayhead;
+    }
+    void setStopUpdatesPlayhead(bool enabled) {
+        stopUpdatesPlayhead = enabled;
+    }
+
     // Recent Projects
     std::vector<std::string> getRecentProjects() const {
         return recentProjects;
@@ -595,6 +606,14 @@ class Config {
         autoMonitorSelectedTrack = enabled;
     }
 
+    // Device chain behaviour
+    bool getOpenMacrosOnSelect() const {
+        return openMacrosOnSelect;
+    }
+    void setOpenMacrosOnSelect(bool enabled) {
+        openMacrosOnSelect = enabled;
+    }
+
     // Preview output channel (stereo pair offset: 0 = outputs 1-2, 2 = outputs 3-4, etc.)
     int getPreviewOutputChannel() const {
         return previewOutputChannel;
@@ -644,6 +663,21 @@ class Config {
     }
     void setControllers(const juce::var& c) {
         controllers_ = c;
+    }
+
+    // Lua controller script assignments (serialized to/from config.json "luaScripts" key).
+    juce::var getLuaScripts() const {
+        return luaScripts_;
+    }
+    void setLuaScripts(const juce::var& scripts) {
+        luaScripts_ = scripts;
+    }
+
+    std::string getActiveLuaScript() const {
+        return activeLuaScript_;
+    }
+    void setActiveLuaScript(const std::string& scriptName) {
+        activeLuaScript_ = scriptName;
     }
 
     // Global bindings (serialized to/from config.json "globalBindings" key)
@@ -717,6 +751,9 @@ class Config {
     // Auto-monitor settings
     bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track
 
+    // Device chain behaviour
+    bool openMacrosOnSelect = true;  // Open macro panel when selecting a device/rack
+
     // Auto-save settings
     bool autoSaveEnabled = true;       // Auto-save enabled by default
     int autoSaveIntervalSeconds = 60;  // Save every 60 seconds
@@ -750,6 +787,10 @@ class Config {
 
     // Load AI model on startup (off by default)
     bool loadModelOnStartup = false;
+
+    // See getStopUpdatesPlayhead — default keeps the playhead in place
+    // across Stop/Play cycles (Bitwig-style "play from playhead").
+    bool stopUpdatesPlayhead = false;
 
     // Browser filter settings (media explorer)
     bool browserFilterAudio = true;  // Show audio files by default
@@ -818,6 +859,10 @@ class Config {
 
     // Controller devices (opaque JSON blob, managed by ControllerRegistry)
     juce::var controllers_;
+
+    // Lua controller scripts (opaque JSON blob, managed by scripting_app)
+    juce::var luaScripts_;
+    std::string activeLuaScript_;
 
     // Global bindings (opaque JSON blob, managed by BindingRegistry)
     juce::var globalBindings_;

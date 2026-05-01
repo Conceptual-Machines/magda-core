@@ -1,8 +1,10 @@
 #include "MainWindow.hpp"
 
+#include "../../api/magda_api_live.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/SelectionManager.hpp"
+#include "../../engine/TracktionEngineWrapper.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
@@ -816,6 +818,20 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         }
     };
     positionTimer_->start();  // Start once and keep running
+
+    // Route Lua-script transport calls through the same TimelineController
+    // dispatch the on-screen buttons use, so script play() honours MAGDA's
+    // playhead (issue: script play resumed from Tracktion's stop position
+    // instead of editPosition because it bypassed the TimelineController
+    // -> locate -> play sequence).
+    if (auto* tew = dynamic_cast<TracktionEngineWrapper*>(engine)) {
+        if (auto* live = dynamic_cast<magda::MagdaApiLive*>(&tew->getMagdaApi())) {
+            live->setTransportPlayDispatcher(
+                [this]() { mainView->getTimelineController().dispatch(StartPlaybackEvent{}); });
+            live->setTransportStopDispatcher(
+                [this]() { mainView->getTimelineController().dispatch(StopPlaybackEvent{}); });
+        }
+    }
 
     // Wire transport callbacks - just dispatch events, TimelineController notifies audio engine
     transportPanel->onPlay = [this]() {
