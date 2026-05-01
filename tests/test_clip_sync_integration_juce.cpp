@@ -5,7 +5,7 @@
 
 // TE internal test utilities (not exposed via module public headers)
 #include "SharedTestEngine.hpp"
-#include "magda/daw/audio/ClipSynchronizer.hpp"
+#include "magda/daw/audio/session/ClipSynchronizer.hpp"
 #include "magda/daw/audio/TrackController.hpp"
 #include "magda/daw/audio/WarpMarkerManager.hpp"
 #include "magda/daw/core/ClipInfo.hpp"

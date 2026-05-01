@@ -3,7 +3,7 @@
 #include <juce_llm/juce_llm.h>
 
 #include "../../../../agents/llm_client_factory.hpp"
-#include "audio/StepClock.hpp"
+#include "audio/transport/StepClock.hpp"
 #include "core/Config.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"

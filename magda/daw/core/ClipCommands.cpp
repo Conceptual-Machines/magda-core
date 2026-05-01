@@ -3,9 +3,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "../audio/AudioBridge.hpp"
-#include "../audio/DrumGridPlugin.hpp"
-#include "../audio/InstrumentRackManager.hpp"
-#include "../audio/MagdaSamplerPlugin.hpp"
+#include "../audio/plugins/DrumGridPlugin.hpp"
+#include "../audio/racks/InstrumentRackManager.hpp"
+#include "../audio/plugins/MagdaSamplerPlugin.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"

@@ -3,7 +3,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "../audio/RecordingNoteQueue.hpp"
+#include "../audio/midi/RecordingNoteQueue.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../ui/state/TransportStateListener.hpp"
 

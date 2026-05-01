@@ -1,7 +1,7 @@
 #include <cmath>
 #include <set>
 
-#include "../audio/SidechainTriggerBus.hpp"
+#include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"

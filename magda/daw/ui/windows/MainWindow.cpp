@@ -27,7 +27,7 @@
 #include "../views/SessionView.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/MidiBridge.hpp"
-#include "audio/QwertyMidiKeyboard.hpp"
+#include "audio/midi/QwertyMidiKeyboard.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ModulatorEngine.hpp"

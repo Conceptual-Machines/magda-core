@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "../../../audio/QwertyMidiKeyboard.hpp"
+#include "../../../audio/midi/QwertyMidiKeyboard.hpp"
 
 namespace magda {
 

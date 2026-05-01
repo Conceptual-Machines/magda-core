@@ -10,10 +10,10 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
-#include "MagdaSamplerPlugin.hpp"
-#include "MidiChordEnginePlugin.hpp"
-#include "SessionMonitorPlugin.hpp"
-#include "SidechainTriggerBus.hpp"
+#include "plugins/MagdaSamplerPlugin.hpp"
+#include "plugins/MidiChordEnginePlugin.hpp"
+#include "session/SessionMonitorPlugin.hpp"
+#include "plugins/SidechainTriggerBus.hpp"
 
 namespace magda {
 

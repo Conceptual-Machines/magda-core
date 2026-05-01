@@ -7,7 +7,7 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
-#include "audio/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"

@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "TypeIds.hpp"
-#include "audio/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "core/Config.hpp"
 #include "music/ChordEngine.hpp"
 #include "music/Scales.hpp"

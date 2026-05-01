@@ -1,6 +1,6 @@
 #include "TracktionEngineWrapper.hpp"
 
-#include "../audio/SessionClipScheduler.hpp"
+#include "../audio/session/SessionClipScheduler.hpp"
 
 namespace magda {
 

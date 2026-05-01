@@ -1,6 +1,6 @@
 #include "MidiLearnCoordinator.hpp"
 
-#include "../../audio/ControllerRouter.hpp"
+#include "../../audio/controllers/ControllerRouter.hpp"
 #include "../aliases/AliasRegistry.hpp"
 #include "../aliases/AliasReverseIndex.hpp"
 

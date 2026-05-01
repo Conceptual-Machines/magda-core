@@ -5,7 +5,7 @@
 #include <functional>
 #include <memory>
 
-#include "../../audio/MidiLearnSession.hpp"
+#include "../../audio/midi/MidiLearnSession.hpp"
 #include "Binding.hpp"
 #include "BindingRegistry.hpp"
 
