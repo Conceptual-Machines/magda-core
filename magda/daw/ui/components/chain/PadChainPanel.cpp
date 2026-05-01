@@ -2,7 +2,7 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
-#include "audio/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"

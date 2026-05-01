@@ -2,7 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/audio/MidiDeviceMatch.hpp"
+#include "../magda/daw/audio/midi/MidiDeviceMatch.hpp"
 
 namespace magda::midi {
 namespace {

@@ -4,7 +4,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "DeviceSlotHeaderLayout.hpp"
-#include "audio/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"

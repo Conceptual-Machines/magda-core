@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "audio/StepSequencerPlugin.hpp"
+#include "audio/plugins/StepSequencerPlugin.hpp"
 #include "core/Config.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/RampCurveDisplay.hpp"

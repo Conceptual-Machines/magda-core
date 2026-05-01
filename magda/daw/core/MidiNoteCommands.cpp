@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "audio/StepClock.hpp"
+#include "audio/transport/StepClock.hpp"
 
 namespace magda {
 

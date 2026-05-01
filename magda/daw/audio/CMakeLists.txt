@@ -5,18 +5,18 @@ target_sources(magda_daw PRIVATE
     AudioBridge.cpp
     AudioThumbnailManager.cpp
     DeviceMeteringManager.cpp
-    DeviceProcessor.cpp
+    processors/DeviceProcessor.cpp
     MidiBridge.cpp
-    MidiDeviceMatch.cpp
-    QwertyMidiKeyboard.cpp
-    SessionClipScheduler.cpp
-    SessionClipAudioMonitor.cpp
-    SessionMonitorPlugin.cpp
-    SessionRecorder.cpp
+    midi/MidiDeviceMatch.cpp
+    midi/QwertyMidiKeyboard.cpp
+    session/SessionClipScheduler.cpp
+    session/SessionClipAudioMonitor.cpp
+    session/SessionMonitorPlugin.cpp
+    session/SessionRecorder.cpp
     # Phase 1: Pure data managers
-    TransportStateManager.cpp
-    MidiActivityMonitor.cpp
-    ParameterManager.cpp
+    transport/TransportStateManager.cpp
+    midi/MidiActivityMonitor.cpp
+    params/ParameterManager.cpp
     # Phase 2: Independent features
     PluginWindowBridge.cpp
     WarpMarkerManager.cpp
@@ -27,58 +27,58 @@ target_sources(magda_daw PRIVATE
     plugin_manager/PluginManagerMacros.cpp
     plugin_manager/PluginManagerModifiers.cpp
     plugin_manager/PluginManagerSidechain.cpp
-    InstrumentRackManager.cpp
-    RackSyncManager.cpp
-    ModifierSync.cpp
-    AutomationPlaybackEngine.cpp
-    AutomationRecordingEngine.cpp
-    AutomationCurveSimplifier.cpp
-    ClipSynchronizer.cpp
-    SidechainMonitorPlugin.cpp
-    AudioSidechainMonitorPlugin.cpp
-    MidiReceivePlugin.cpp
-    MagdaSamplerPlugin.cpp
-    DrumGridPlugin.cpp
-    MidiChordEnginePlugin.cpp
-    ArpeggiatorPlugin.cpp
-    MidiDevicePlugin.cpp
-    StepClock.cpp
-    StepSequencerPlugin.cpp
+    racks/InstrumentRackManager.cpp
+    racks/RackSyncManager.cpp
+    modifiers/ModifierSync.cpp
+    automation/AutomationPlaybackEngine.cpp
+    automation/AutomationRecordingEngine.cpp
+    automation/AutomationCurveSimplifier.cpp
+    session/ClipSynchronizer.cpp
+    plugins/SidechainMonitorPlugin.cpp
+    plugins/AudioSidechainMonitorPlugin.cpp
+    plugins/MidiReceivePlugin.cpp
+    plugins/MagdaSamplerPlugin.cpp
+    plugins/DrumGridPlugin.cpp
+    plugins/MidiChordEnginePlugin.cpp
+    plugins/ArpeggiatorPlugin.cpp
+    plugins/MidiDevicePlugin.cpp
+    transport/StepClock.cpp
+    plugins/StepSequencerPlugin.cpp
     # Controller routing (issue #1050 -- Phase C)
-    ControllerParamWriter.cpp
-    ControllerRouter.cpp
+    controllers/ControllerParamWriter.cpp
+    controllers/ControllerRouter.cpp
     # Headers (listed for IDE visibility)
     AudioBridge.hpp
-    SessionClipScheduler.hpp
-    SessionClipAudioMonitor.hpp
-    SessionClipCommandQueue.hpp
-    SessionClipStateQueue.hpp
-    SessionMonitorPlugin.hpp
+    session/SessionClipScheduler.hpp
+    session/SessionClipAudioMonitor.hpp
+    session/SessionClipCommandQueue.hpp
+    session/SessionClipStateQueue.hpp
+    session/SessionMonitorPlugin.hpp
     MeteringBuffer.hpp
-    ParameterQueue.hpp
-    TransportStateManager.hpp
-    MidiActivityMonitor.hpp
-    ParameterManager.hpp
+    params/ParameterQueue.hpp
+    transport/TransportStateManager.hpp
+    midi/MidiActivityMonitor.hpp
+    params/ParameterManager.hpp
     PluginWindowBridge.hpp
     WarpMarkerManager.hpp
     TrackController.hpp
     plugin_manager/PluginManager.hpp
-    InstrumentRackManager.hpp
-    RackSyncManager.hpp
-    AutomationPlaybackEngine.hpp
-    ClipSynchronizer.hpp
-    SidechainTriggerBus.hpp
-    SidechainMonitorPlugin.hpp
-    AudioSidechainMonitorPlugin.hpp
-    MidiBroadcastBus.hpp
-    MidiReceivePlugin.hpp
-    MagdaSamplerPlugin.hpp
-    DrumGridPlugin.hpp
-    MidiChordEnginePlugin.hpp
-    ArpeggiatorPlugin.hpp
-    MidiDevicePlugin.hpp
-    StepClock.hpp
-    StepSequencerPlugin.hpp
+    racks/InstrumentRackManager.hpp
+    racks/RackSyncManager.hpp
+    automation/AutomationPlaybackEngine.hpp
+    session/ClipSynchronizer.hpp
+    plugins/SidechainTriggerBus.hpp
+    plugins/SidechainMonitorPlugin.hpp
+    plugins/AudioSidechainMonitorPlugin.hpp
+    midi/MidiBroadcastBus.hpp
+    plugins/MidiReceivePlugin.hpp
+    plugins/MagdaSamplerPlugin.hpp
+    plugins/DrumGridPlugin.hpp
+    plugins/MidiChordEnginePlugin.hpp
+    plugins/ArpeggiatorPlugin.hpp
+    plugins/MidiDevicePlugin.hpp
+    transport/StepClock.hpp
+    plugins/StepSequencerPlugin.hpp
 )
 
 target_sources(magda_daw_app PRIVATE

@@ -1,7 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "magda/daw/audio/DrumGridPlugin.hpp"
+#include "magda/daw/audio/plugins/DrumGridPlugin.hpp"
 
 using DrumGridPlugin = magda::daw::audio::DrumGridPlugin;
 

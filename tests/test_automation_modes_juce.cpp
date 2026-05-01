@@ -1,7 +1,7 @@
 #include <juce_core/juce_core.h>
 
 #include "SharedTestEngine.hpp"
-#include "magda/daw/audio/AutomationRecordingEngine.hpp"
+#include "magda/daw/audio/automation/AutomationRecordingEngine.hpp"
 
 using namespace magda;
 

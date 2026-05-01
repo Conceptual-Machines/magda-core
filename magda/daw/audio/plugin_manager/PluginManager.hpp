@@ -12,11 +12,11 @@
 #include "../../core/DeviceInfo.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TypeIds.hpp"
-#include "../CurveSnapshot.hpp"
-#include "../DeviceProcessor.hpp"
-#include "../DrumGridPlugin.hpp"
-#include "../InstrumentRackManager.hpp"
-#include "../RackSyncManager.hpp"
+#include "modifiers/CurveSnapshot.hpp"
+#include "processors/DeviceProcessor.hpp"
+#include "plugins/DrumGridPlugin.hpp"
+#include "racks/InstrumentRackManager.hpp"
+#include "racks/RackSyncManager.hpp"
 
 namespace magda {
 

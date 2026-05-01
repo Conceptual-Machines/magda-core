@@ -4,7 +4,7 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
-#include "../audio/SidechainTriggerBus.hpp"
+#include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "Config.hpp"
 #include "ModulatorEngine.hpp"

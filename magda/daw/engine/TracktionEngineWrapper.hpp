@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "../audio/RecordingNoteQueue.hpp"
+#include "../audio/midi/RecordingNoteQueue.hpp"
 #include "../command.hpp"
 #include "../interfaces/clip_interface.hpp"
 #include "../interfaces/mixer_interface.hpp"
