@@ -3,6 +3,12 @@
 namespace magda {
 
 void SessionClipAudioMonitor::process(double transportPositionSeconds) {
+    // 0. Snapshot transport position for any UI element that needs to read
+    //    from the audio thread (beat indicator, etc.). Always written, even
+    //    when no clips are monitored, since the master plugin runs every
+    //    block.
+    transportPositionSeconds_.store(transportPositionSeconds, std::memory_order_relaxed);
+
     // 1. Drain command queue — add/remove monitored clips
     SessionClipCommand cmd;
     while (commandQueue_.pop(cmd)) {
