@@ -1,7 +1,7 @@
 #include <array>
 #include <catch2/catch_test_macros.hpp>
 
-#include "magda/daw/audio/MonoNoteProcessor.hpp"
+#include "magda/daw/audio/midi/MonoNoteProcessor.hpp"
 
 using MonoNoteProcessor = magda::daw::audio::MonoNoteProcessor;
 using Step = MonoNoteProcessor::Step;

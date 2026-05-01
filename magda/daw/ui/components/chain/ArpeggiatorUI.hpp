@@ -2,7 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "audio/ArpeggiatorPlugin.hpp"
+#include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/RampCurveDisplay.hpp"
 #include "ui/themes/DarkTheme.hpp"

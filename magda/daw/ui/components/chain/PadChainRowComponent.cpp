@@ -2,7 +2,7 @@
 
 #include <BinaryData.h>
 
-#include "audio/DrumGridPlugin.hpp"
+#include "audio/plugins/DrumGridPlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"

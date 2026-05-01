@@ -1,6 +1,6 @@
 #include "TransportPanel.hpp"
 
-#include "../../audio/QwertyMidiKeyboard.hpp"
+#include "../../audio/midi/QwertyMidiKeyboard.hpp"
 #include "../components/common/QwertyKeyboardPopup.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"

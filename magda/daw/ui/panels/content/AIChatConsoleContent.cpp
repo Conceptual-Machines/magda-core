@@ -40,8 +40,8 @@
 #include "BinaryData.h"
 #include "PluginBrowserContent.hpp"
 #include "audio/AudioBridge.hpp"
-#include "audio/DrumGridPlugin.hpp"
-#include "audio/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
 

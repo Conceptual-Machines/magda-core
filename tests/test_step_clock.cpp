@@ -1,7 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "magda/daw/audio/StepClock.hpp"
+#include "magda/daw/audio/transport/StepClock.hpp"
 
 using StepClock = magda::daw::audio::StepClock;
 using Approx = Catch::Approx;

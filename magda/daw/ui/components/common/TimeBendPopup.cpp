@@ -1,6 +1,6 @@
 #include "TimeBendPopup.hpp"
 
-#include "audio/StepClock.hpp"
+#include "audio/transport/StepClock.hpp"
 #include "core/ClipManager.hpp"
 
 namespace magda::daw::ui {

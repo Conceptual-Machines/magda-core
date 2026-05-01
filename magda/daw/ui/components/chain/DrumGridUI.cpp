@@ -5,8 +5,8 @@
 
 #include <set>
 
-#include "audio/DrumGridPlugin.hpp"
-#include "audio/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "ui/components/chain/DeviceSlotHeaderLayout.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/DarkTheme.hpp"

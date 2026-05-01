@@ -1,6 +1,6 @@
 #include "BindingRegistry.hpp"
 
-#include "../../audio/MidiDeviceMatch.hpp"
+#include "../../audio/midi/MidiDeviceMatch.hpp"
 #include "../aliases/AliasRegistry.hpp"
 #include "../aliases/ChainContext.hpp"
 #include "../aliases/ResolverRegistry.hpp"

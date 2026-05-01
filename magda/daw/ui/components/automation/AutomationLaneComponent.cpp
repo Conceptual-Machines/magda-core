@@ -4,7 +4,7 @@
 #include <cmath>
 #include <vector>
 
-#include "../../../audio/AutomationCurveSimplifier.hpp"
+#include "../../../audio/automation/AutomationCurveSimplifier.hpp"
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/UndoManager.hpp"

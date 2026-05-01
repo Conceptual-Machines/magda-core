@@ -4,7 +4,7 @@
 
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
-#include "audio/MidiDeviceMatch.hpp"
+#include "audio/midi/MidiDeviceMatch.hpp"
 #include "core/StringTable.hpp"
 
 namespace magda {
