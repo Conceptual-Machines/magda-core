@@ -5,7 +5,7 @@
 #include "../core/ParameterUtils.hpp"
 #include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
-#include "PluginManager.hpp"
+#include "PluginManager/PluginManager.hpp"
 
 namespace magda {
 

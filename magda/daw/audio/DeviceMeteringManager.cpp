@@ -1,6 +1,6 @@
 #include "DeviceMeteringManager.hpp"
 
-#include "PluginManager.hpp"
+#include "PluginManager/PluginManager.hpp"
 
 namespace magda {
 

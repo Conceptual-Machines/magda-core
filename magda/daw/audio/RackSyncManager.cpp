@@ -3,7 +3,7 @@
 #include "CurveSnapshot.hpp"
 #include "ModifierHelpers.hpp"
 #include "ModifierSync.hpp"
-#include "PluginManager.hpp"
+#include "PluginManager/PluginManager.hpp"
 #include "TracktionHelpers.hpp"
 #include "core/TrackManager.hpp"
 

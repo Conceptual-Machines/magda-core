@@ -1,6 +1,6 @@
 #include "AudioSidechainMonitorPlugin.hpp"
 
-#include "PluginManager.hpp"
+#include "PluginManager/PluginManager.hpp"
 #include "SidechainTriggerBus.hpp"
 
 namespace magda {
