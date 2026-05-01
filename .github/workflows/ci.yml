@@ -362,7 +362,7 @@ jobs:
       run: echo "✅ macOS build and tests completed successfully"
 
   build-and-test-windows:
-    runs-on: windows-latest
+    runs-on: windows-latest-8core
     if: |
       github.event_name != 'workflow_dispatch' ||
       github.event.inputs.skip-cpp-build != 'true'

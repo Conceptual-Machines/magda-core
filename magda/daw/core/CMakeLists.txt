@@ -8,6 +8,7 @@ target_sources(magda_daw PRIVATE
     UIScale.cpp
     UpdateChecker.cpp
     ViewModeController.cpp
+    SessionViewState.cpp
     TrackManager.cpp
     TrackManagerModulation.cpp
     TrackManagerDevices.cpp
@@ -61,6 +62,7 @@ target_sources(magda_daw PRIVATE
     ViewModeState.hpp
     ViewModeEvents.hpp
     ViewModeController.hpp
+    SessionViewState.hpp
     TrackInfo.hpp
     TrackManager.hpp
     TrackTypes.hpp

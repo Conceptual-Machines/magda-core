@@ -3,6 +3,7 @@
 #include "../core/ClipManager.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../core/TrackManager.hpp"
+#include "../engine/AudioEngine.hpp"
 
 namespace magda {
 
@@ -28,6 +29,17 @@ void SessionApiLive::stopAll() {
 ClipId SessionApiLive::getActiveClipOnTrack(TrackId trackId) const {
     auto* track = TrackManager::getInstance().getTrack(trackId);
     return track != nullptr ? track->activeSessionClipId : INVALID_CLIP_ID;
+}
+
+ClipId SessionApiLive::getClipInSlot(TrackId trackId, int sceneIndex) const {
+    return ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
+}
+
+SessionClipPlayState SessionApiLive::getClipPlayState(ClipId clipId) const {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    if (engine == nullptr || clipId == INVALID_CLIP_ID)
+        return SessionClipPlayState::Stopped;
+    return engine->getSessionClipPlayState(clipId);
 }
 
 }  // namespace magda

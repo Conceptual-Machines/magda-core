@@ -9,6 +9,9 @@ target_sources(magda_daw PRIVATE
     session_api_live.cpp
     project_api_live.cpp
     undo_api_live.cpp
+    midi_api_live.cpp
+    transport_api_live.cpp
+    focused_api_live.cpp
     # Headers (listed for IDE visibility)
     magda_api.hpp
     magda_api_live.hpp
@@ -27,4 +30,10 @@ target_sources(magda_daw PRIVATE
     project_api_live.hpp
     undo_api.hpp
     undo_api_live.hpp
+    midi_api.hpp
+    midi_api_live.hpp
+    transport_api.hpp
+    transport_api_live.hpp
+    focused_api.hpp
+    focused_api_live.hpp
 )

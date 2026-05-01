@@ -423,7 +423,10 @@ void TracktionEngineWrapper::createEditAndBridges() {
 
     // Programmatic facade onto DAW state — shared with AI Chat panel and
     // app-level Lua controller wiring.
-    magdaApi_ = std::make_unique<MagdaApiLive>();
+    auto live = std::make_unique<MagdaApiLive>();
+    live->setMidiBridge(midiBridge_.get());
+    live->setEditAccessor([this]() -> tracktion::Edit* { return currentEdit_.get(); });
+    magdaApi_ = std::move(live);
 
     DBG("Tracktion Engine initialized with Edit, AudioBridge, and MidiBridge");
 }

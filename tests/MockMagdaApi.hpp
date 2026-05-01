@@ -13,6 +13,7 @@
 
 #include <cassert>
 #include <cstdlib>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -20,11 +21,14 @@
 #include "magda/daw/api/alias_api.hpp"
 #include "magda/daw/api/automation_api.hpp"
 #include "magda/daw/api/clip_api.hpp"
+#include "magda/daw/api/focused_api.hpp"
 #include "magda/daw/api/magda_api.hpp"
+#include "magda/daw/api/midi_api.hpp"
 #include "magda/daw/api/project_api.hpp"
 #include "magda/daw/api/selection_api.hpp"
 #include "magda/daw/api/session_api.hpp"
 #include "magda/daw/api/track_api.hpp"
+#include "magda/daw/api/transport_api.hpp"
 #include "magda/daw/api/undo_api.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipTypes.hpp"
@@ -57,8 +61,7 @@ class StubAutomationApi : public AutomationApi {
     const AutomationLaneInfo* getLane(AutomationLaneId) const override {
         std::abort();
     }
-    AutomationPointId addPoint(AutomationLaneId, double, double,
-                               AutomationCurveType) override {
+    AutomationPointId addPoint(AutomationLaneId, double, double, AutomationCurveType) override {
         std::abort();
     }
     void clearLanePoints(AutomationLaneId) override {
@@ -310,6 +313,20 @@ class MockSessionApi : public SessionApi {
         auto it = activeOnTrack.find(id);
         return it != activeOnTrack.end() ? it->second : INVALID_CLIP_ID;
     }
+
+    // Tests can populate slots[(trackId, sceneIndex)] = clipId.
+    std::map<std::pair<TrackId, int>, ClipId> slots;
+    ClipId getClipInSlot(TrackId trackId, int sceneIndex) const override {
+        auto it = slots.find({trackId, sceneIndex});
+        return it != slots.end() ? it->second : INVALID_CLIP_ID;
+    }
+
+    // Tests can populate clipStates[clipId].
+    std::unordered_map<ClipId, SessionClipPlayState> clipStates;
+    SessionClipPlayState getClipPlayState(ClipId clipId) const override {
+        auto it = clipStates.find(clipId);
+        return it != clipStates.end() ? it->second : SessionClipPlayState::Stopped;
+    }
 };
 
 class MockProjectApi : public ProjectApi {
@@ -317,6 +334,123 @@ class MockProjectApi : public ProjectApi {
     ProjectInfo info;
     const ProjectInfo& getCurrentProjectInfo() const override {
         return info;
+    }
+};
+
+class MockFocusedApi : public FocusedApi {
+  public:
+    bool focused = false;
+    juce::String focusedName;
+    std::vector<juce::String> macroNames;  // index → name
+    std::vector<float> macroValues;        // index → value
+
+    struct MacroWrite {
+        int idx;
+        float value;
+    };
+    std::vector<MacroWrite> macroWrites;
+
+    bool hasFocus() const override {
+        return focused;
+    }
+    juce::String getFocusedName() const override {
+        return focusedName;
+    }
+    juce::String getMacroName(int idx) const override {
+        if (idx < 0 || idx >= static_cast<int>(macroNames.size()))
+            return {};
+        return macroNames[static_cast<size_t>(idx)];
+    }
+    float getMacroValue(int idx) const override {
+        if (idx < 0 || idx >= static_cast<int>(macroValues.size()))
+            return 0.0f;
+        return macroValues[static_cast<size_t>(idx)];
+    }
+    void setMacroValue(int idx, float value) override {
+        macroWrites.push_back({idx, value});
+    }
+
+    int engageAutoMapCalls = 0;
+    int clearAutoMapCalls = 0;
+    void engageAutoMap() override {
+        ++engageAutoMapCalls;
+    }
+    void clearAutoMap() override {
+        ++clearAutoMapCalls;
+    }
+
+    std::vector<int> cycleDeviceCalls;
+    void cycleDevice(int direction) override {
+        cycleDeviceCalls.push_back(direction);
+    }
+};
+
+class MockTransportApi : public TransportApi {
+  public:
+    bool playing = false;
+    bool recording = false;
+    bool loopEnabled = false;
+    double positionBeats = 0.0;
+
+    int playCalls = 0;
+    int stopCalls = 0;
+
+    void play() override {
+        ++playCalls;
+        playing = true;
+    }
+    void stop() override {
+        ++stopCalls;
+        playing = false;
+        recording = false;
+    }
+    void setRecording(bool r) override {
+        recording = r;
+    }
+    bool isPlaying() const override {
+        return playing;
+    }
+    bool isRecording() const override {
+        return recording;
+    }
+    bool isLoopEnabled() const override {
+        return loopEnabled;
+    }
+    void setLoopEnabled(bool e) override {
+        loopEnabled = e;
+    }
+    double getPositionBeats() const override {
+        return positionBeats;
+    }
+    void setPositionBeats(double b) override {
+        positionBeats = b;
+    }
+};
+
+class MockMidiApi : public MidiApi {
+  public:
+    struct Send {
+        juce::String port;
+        juce::MidiMessage msg;
+    };
+    std::vector<Send> sends;
+    std::vector<juce::String> outputPortNames;
+    juce::String defaultOutputPort;
+
+    bool sendMidi(const juce::String& port, const juce::MidiMessage& msg) override {
+        sends.push_back({port, msg});
+        return true;
+    }
+    bool sendSysEx(const juce::String& port, const juce::uint8* data, size_t numBytes) override {
+        sends.push_back(
+            {port, juce::MidiMessage::createSysExMessage(data, static_cast<int>(numBytes))});
+        return true;
+    }
+    std::vector<juce::String> getOutputPortNames() const override {
+        return outputPortNames;
+    }
+    juce::String getDefaultOutputPort() const override {
+        return defaultOutputPort;
     }
 };
 
@@ -332,6 +466,9 @@ class MockMagdaApi : public MagdaApi {
     MockSessionApi session_;
     MockProjectApi project_;
     StubUndoApi undo_;
+    MockMidiApi midi_;
+    MockTransportApi transport_;
+    MockFocusedApi focused_;
 
     SelectionApi& selection() override {
         return selection_;
@@ -356,6 +493,15 @@ class MockMagdaApi : public MagdaApi {
     }
     UndoApi& undo() override {
         return undo_;
+    }
+    MidiApi& midi() override {
+        return midi_;
+    }
+    TransportApi& transport() override {
+        return transport_;
+    }
+    FocusedApi& focused() override {
+        return focused_;
     }
 };
 

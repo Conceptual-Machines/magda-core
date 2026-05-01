@@ -428,6 +428,12 @@ class TracktionEngineWrapper : public AudioEngine,
     /** Callback for startup plugin detection status (shown on splash screen). */
     std::function<void(const juce::String&)> onPluginScanStatus;
 
+    /** Fires the first time MIDI devices become available (and on subsequent
+     *  device-list changes). Use this to defer work that needs MIDI output
+     *  ports to be open — e.g. controller scripts whose `on_load` sends
+     *  SysEx, since sends issued before JUCE opens the port are dropped. */
+    std::function<void()> onMidiDevicesReady;
+
     // =========================================================================
     // TransportControl::Listener implementation
     // =========================================================================

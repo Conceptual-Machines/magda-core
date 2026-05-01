@@ -1,7 +1,7 @@
 #pragma once
 
-#include <juce_core/juce_core.h>
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_core/juce_core.h>
 
 #include <memory>
 
@@ -63,6 +63,9 @@ class LuaController : public RawMidiListener {
     /** Filename of the currently loaded script, or empty if none. */
     juce::String currentScriptName() const;
 
+    /** Restrict on_midi to one selected DAW-protocol input. Empty means all inputs. */
+    void setDawInputPort(const juce::String& port);
+
     /** Last load/eval error, or empty if the last loadScript succeeded. */
     juce::String lastError() const;
 
@@ -72,17 +75,32 @@ class LuaController : public RawMidiListener {
 
     /** Test seam: synchronously dispatch an event without going through the
      *  MIDI thread → message thread bridge. */
-    void dispatchEventForTest(const juce::String& deviceName,
-                              const juce::MidiMessage& msg);
+    void dispatchEventForTest(const juce::String& deviceName, const juce::MidiMessage& msg);
+
+    /** Test seam: synchronously fire one on_tick(dt) call. Production code
+     *  uses a juce::Timer that drives this internally. */
+    void tickForTest(double dt);
 
   private:
     void dispatchToLua(const juce::String& deviceName, const juce::MidiMessage& msg);
+
+    /** Call a global Lua function with no args. No-op if not defined.
+     *  Errors are logged. */
+    void callOptionalNullary(const char* name);
+
+    /** Call on_tick(dt) if defined. */
+    void callOnTick(double dt);
+
+    class TickTimer;
 
     MagdaApi& api_;
     MidiBridge* bridge_ = nullptr;  // non-owning; nullptr until attach() is called
     std::unique_ptr<LuaRuntime> rt_;
     juce::String currentScriptName_;
+    juce::String dawInputPort_;
     juce::String lastError_;
+    std::unique_ptr<TickTimer> tickTimer_;
+    juce::int64 lastTickMs_ = 0;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE(LuaController)
 };
