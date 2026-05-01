@@ -17,9 +17,9 @@ namespace magda {
 namespace {
 
 constexpr int kPollIntervalMs = 2000;
-constexpr int kProfileMidiOutWidth = 170;
-constexpr int kScriptPortInWidth = 170;
+constexpr int kProfilePortOutWidth = 170;
 constexpr int kScriptPortOutWidth = 170;
+constexpr int kScriptPortInWidth = 170;
 
 void styleListBox(juce::ListBox& lb) {
     lb.setColour(juce::ListBox::backgroundColourId, DarkTheme::getColour(DarkTheme::SURFACE));
@@ -232,7 +232,7 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
     const int dotSize = 8;
     const int dotX = pad;
     const int textX = dotX + dotSize + 8;
-    const int portX = width - kProfileMidiOutWidth - pad;
+    const int portX = width - kProfilePortOutWidth - pad;
     const int nameW = juce::jmax(40, portX - textX - 8);
     const int lineH = (height - 2 * pad) / 2;
 
@@ -268,12 +268,12 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
 
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    g.drawText(tr("controllers.port.midi_out"), portX, 4, kProfileMidiOutWidth, 12,
+    g.drawText(tr("controllers.port.port_out"), portX, 4, kProfilePortOutWidth, 12,
                juce::Justification::centredLeft, true);
 
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
-    g.drawText(portText, portX, 18, kProfileMidiOutWidth, 18, juce::Justification::centredLeft,
+    g.drawText(portText, portX, 18, kProfilePortOutWidth, 18, juce::Justification::centredLeft,
                true);
 }
 
@@ -434,7 +434,7 @@ void ControllerProfilesPage::onRowClicked(int row, const juce::MouseEvent& e) {
         onRowRemoveRequested(row);
         return;
     }
-    const int portX = list_ ? list_->getWidth() - kProfileMidiOutWidth - 6 : 0;
+    const int portX = list_ ? list_->getWidth() - kProfilePortOutWidth - 6 : 0;
     if (e.x >= portX) {
         onRowPortRequested(row);
         return;
@@ -656,13 +656,13 @@ class LuaScriptsPage : public juce::Component {
             onRowMenu(row);
             return;
         }
-        const int outX = list_ ? list_->getWidth() - kScriptPortOutWidth - 6 : 0;
-        const int inX = outX - kScriptPortInWidth - 8;
-        if (e.x >= outX) {
+        const int portInX = list_ ? list_->getWidth() - kScriptPortInWidth - 6 : 0;
+        const int portOutX = portInX - kScriptPortOutWidth - 8;
+        if (e.x >= portInX) {
             onRowOutputRequested(row);
             return;
         }
-        if (e.x >= inX) {
+        if (e.x >= portOutX) {
             onRowDawInputRequested(row);
             return;
         }
@@ -840,9 +840,9 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
     const int dotX = pad;
     const int textX = dotX + dotSize + 8;
     const int dotY = (height - dotSize) / 2;
-    const int outX = width - kScriptPortOutWidth - pad;
-    const int inX = outX - kScriptPortInWidth - 8;
-    const int nameW = juce::jmax(40, outX - textX - 8);
+    const int portInX = width - kScriptPortInWidth - pad;
+    const int portOutX = portInX - kScriptPortOutWidth - 8;
+    const int nameW = juce::jmax(40, portOutX - textX - 8);
 
     if (isActive) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_GREEN));
@@ -868,27 +868,28 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
     }
 
     auto ports = portsForScript ? portsForScript(name) : scripting_app::LuaScriptPorts{};
-    auto outputText = liveOutputs != nullptr
+    auto portInText = liveOutputs != nullptr
                           ? displayNameForDevice(*liveOutputs, ports.midiOutputPort)
                           : ports.midiOutputPort;
-    auto inputText = liveInputs != nullptr ? displayNameForDevice(*liveInputs, ports.dawInputPort)
-                                           : ports.dawInputPort;
-    if (outputText.isEmpty())
-        outputText = tr("controllers.port.none");
-    if (inputText.isEmpty())
-        inputText = tr("controllers.port.none");
+    auto portOutText = liveInputs != nullptr ? displayNameForDevice(*liveInputs, ports.dawInputPort)
+                                             : ports.dawInputPort;
+    if (portInText.isEmpty())
+        portInText = tr("controllers.port.none");
+    if (portOutText.isEmpty())
+        portOutText = tr("controllers.port.none");
 
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    g.drawText(tr("controllers.port.port_in"), inX, 4, kScriptPortInWidth, 12,
+    g.drawText(tr("controllers.port.port_out"), portOutX, 4, kScriptPortOutWidth, 12,
                juce::Justification::centredLeft, true);
-    g.drawText(tr("controllers.port.port_out"), outX, 4, kScriptPortOutWidth, 12,
+    g.drawText(tr("controllers.port.port_in"), portInX, 4, kScriptPortInWidth, 12,
                juce::Justification::centredLeft, true);
 
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
-    g.drawText(inputText, inX, 18, kScriptPortInWidth, 18, juce::Justification::centredLeft, true);
-    g.drawText(outputText, outX, 18, kScriptPortOutWidth, 18, juce::Justification::centredLeft,
+    g.drawText(portOutText, portOutX, 18, kScriptPortOutWidth, 18, juce::Justification::centredLeft,
+               true);
+    g.drawText(portInText, portInX, 18, kScriptPortInWidth, 18, juce::Justification::centredLeft,
                true);
 }
 

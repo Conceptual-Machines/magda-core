@@ -22,7 +22,7 @@
 ----------------------------------------------------------------
 -- The MK4 exposes two USB MIDI interfaces: a "MIDI" port (keys / wheels /
 -- pad Custom Modes) and a "DAW" port (control surface). Select the DAW
--- protocol ports as From Controller / To Controller in MAGDA's Lua Scripts row.
+-- protocol ports as Port Out / Port In in MAGDA's Lua Scripts row.
 
 local function is_daw_port(port)
   return port:lower():find("launchkey") and port:lower():find("daw")
