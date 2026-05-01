@@ -1,0 +1,25 @@
+target_sources(magda_daw_app PRIVATE
+    ControllersDialog.cpp
+    AISettingsDialog.cpp
+    AudioSettingsDialog.cpp
+    ChainTreeDialog.cpp
+    ExportAudioDialog.cpp
+    ExportMidiDialog.cpp
+    ParameterConfigDialog.cpp
+    PluginSettingsDialog.cpp
+    PreferencesDialog.cpp
+    TrackManagerDialog.cpp
+    AboutDialog.cpp
+    SplashScreen.cpp
+    AISettingsDialog.hpp
+    AudioSettingsDialog.hpp
+    ChainTreeDialog.hpp
+    ExportAudioDialog.hpp
+    ExportMidiDialog.hpp
+    ParameterConfigDialog.hpp
+    PluginSettingsDialog.hpp
+    PreferencesDialog.hpp
+    TrackManagerDialog.hpp
+    AboutDialog.hpp
+    SplashScreen.hpp
+)

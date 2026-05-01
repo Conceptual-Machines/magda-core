@@ -1,0 +1,35 @@
+target_sources(magda_daw_app PRIVATE
+    PanelContentFactory.cpp
+    PluginBrowserContent.cpp
+    MediaExplorerContent.cpp
+    PresetBrowserContent.cpp
+    EmptyContent.cpp
+    AIChatConsoleContent.cpp
+    SlashCommands.cpp
+    ScriptingConsoleContent.cpp
+    ChatPromptTokeniser.cpp
+    DSLTokeniser.cpp
+    PanelContent.cpp
+    TrackChainContent.cpp
+    MidiEditorContent.cpp
+    PianoRollContent.cpp
+    DrumGridClipContent.cpp
+    WaveformEditorContent.cpp
+    AudioClipPropertiesContent.cpp
+    ChordPanelContent.cpp
+    PanelContent.hpp
+    PanelContentFactory.hpp
+    PluginBrowserContent.hpp
+    MediaExplorerContent.hpp
+    PresetBrowserContent.hpp
+    EmptyContent.hpp
+    AIChatConsoleContent.hpp
+    ScriptingConsoleContent.hpp
+    ChatPromptTokeniser.hpp
+    DSLTokeniser.hpp
+    TrackChainContent.hpp
+    PianoRollContent.hpp
+    WaveformEditorContent.hpp
+)
+
+add_subdirectory(inspector)

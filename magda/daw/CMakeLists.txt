@@ -1,5 +1,7 @@
 # DAW Domain - Digital Audio Workstation Core + UI
-# Simple version focusing on Tracktion Engine integration
+# This file declares the magda_daw library, the magda_daw_app GUI target,
+# and the magda_plugin_scanner helper. Per-directory CMakeLists.txt files
+# under this tree contribute their own sources via target_sources().
 
 # Generate version header from project version
 configure_file(version.hpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp" @ONLY)
@@ -217,593 +219,19 @@ juce_add_binary_data(MagdaAssets
     ../../assets/aliases/curated_index.json
 )
 
-# DAW Core sources
-set(DAW_CORE_SOURCES
+# =============================================================================
+# Targets
+# =============================================================================
+
+# Core library — populated by per-subdir CMakeLists.txt below.
+add_library(magda_daw STATIC
     command.cpp
     magda.cpp
-    core/Config.cpp
-    core/AppPaths.cpp
-    core/UIScale.cpp
-    core/UpdateChecker.cpp
-    core/ViewModeController.cpp
-    core/TrackManager.cpp
-    core/TrackManagerModulation.cpp
-    core/TrackManagerDevices.cpp
-    core/ModulatorEngine.cpp
-    core/ClipManager.cpp
-    core/MidiFileWriter.cpp
-    core/SelectionManager.cpp
-    core/AutomationInfo.cpp
-    core/AutomationManager.cpp
-    core/LinkModeManager.cpp
-    core/UndoManager.cpp
-    core/ClipCommands.cpp
-    core/ClipPropertyCommands.cpp
-    core/WarpMarkerCommands.cpp
-    core/TrackCommands.cpp
-    core/TrackPropertyCommands.cpp
-    core/AutomationCommands.cpp
-    core/MidiNoteCommands.cpp
-    core/ParameterInfo.cpp
-    core/ParameterUtils.cpp
-    core/StringTable.cpp
-    core/ParameterDetector.cpp
-    # Parameter alias system (PR 1 -- data model and normalisation)
-    core/aliases/Target.cpp
-    core/aliases/ParamNameNormalize.cpp
-    core/aliases/ParamSigilParser.cpp
-    # Parameter alias system (PR 2 -- AliasRegistry and persistence)
-    core/aliases/AliasRegistry.cpp
-    # MIDI Learn reverse index helpers
-    core/aliases/AliasReverseIndex.cpp
-    # Parameter alias system (PR 3 -- ResolverRegistry, ChainContext, TargetResolver)
-    core/aliases/ChainContext.cpp
-    core/aliases/ResolverRegistry.cpp
-    core/aliases/TargetResolver.cpp
-    # Parameter alias system (PR 4 -- AutoAliasGenerator)
-    core/aliases/AutoAliasGenerator.cpp
-    # Parameter alias system (PR 5 -- CuratedAliasLoader)
-    core/aliases/CuratedAliasLoader.cpp
-    core/aliases/InternalPluginAliases.cpp
-    # MagdaApi -- programmatic facade for the agent layer (issue #1113)
-    api/selection_api_live.cpp
-    api/automation_api_live.cpp
-    api/alias_api_live.cpp
-    api/track_api_live.cpp
-    api/clip_api_live.cpp
-    api/session_api_live.cpp
-    api/project_api_live.cpp
-    api/undo_api_live.cpp
-    # Controller data model (issue #1050 -- Phase A)
-    core/controllers/Controller.cpp
-    core/controllers/Binding.cpp
-    core/controllers/BindingTransform.cpp
-    # Controller registries (issue #1050 -- Phase B)
-    core/controllers/ControllerRegistry.cpp
-    core/controllers/BindingRegistry.cpp
-    # Controller profiles (issue #1052 -- hardware profile layer)
-    core/controllers/ControllerProfile.cpp
-    core/controllers/ControllerProfileRegistry.cpp
-    # Controller router + param writer (issue #1050 -- Phase C)
-    audio/ControllerParamWriter.cpp
-    audio/ControllerRouter.cpp
-    # MIDI Learn coordinator (issue #924)
-    core/controllers/MidiLearnCoordinator.cpp
-    # Platform-neutral MIDI device identifier matcher (issue #1050)
-    audio/MidiDeviceMatch.cpp
-    engine/TracktionEngineWrapper.cpp
-    engine/TracktionEngineWrapperInit.cpp
-    engine/TracktionEngineWrapperDevices.cpp
-    engine/TracktionEngineWrapperTransport.cpp
-    engine/TracktionEngineWrapperTracks.cpp
-    engine/TracktionEngineWrapperClips.cpp
-    engine/TracktionEngineWrapperRecording.cpp
-    engine/TracktionEngineWrapperPlugins.cpp
-    engine/MagdaUIBehaviour.cpp
-    engine/PluginExclusions.cpp
-    engine/PluginScanner.cpp
-    engine/PluginScanCoordinator.cpp
-    engine/ScanWorker.cpp
-    engine/PluginWindowManager.cpp
-    # Audio integration
-    audio/AudioBridge.cpp
-    audio/AudioThumbnailManager.cpp
-    audio/DeviceMeteringManager.cpp
-    audio/DeviceProcessor.cpp
-    audio/MidiBridge.cpp
-    audio/QwertyMidiKeyboard.cpp
-    audio/SessionClipScheduler.cpp
-    audio/SessionClipAudioMonitor.cpp
-    audio/SessionMonitorPlugin.cpp
-    audio/SessionRecorder.cpp
-    # Phase 1 refactoring: Pure data managers
-    audio/TransportStateManager.cpp
-    audio/MidiActivityMonitor.cpp
-    audio/ParameterManager.cpp
-    # Phase 2 refactoring: Independent features
-    audio/PluginWindowBridge.cpp
-    audio/WarpMarkerManager.cpp
-    # Phase 3 refactoring: Core controllers
-    audio/TrackController.cpp
-    audio/PluginManager.cpp
-    audio/InstrumentRackManager.cpp
-    audio/RackSyncManager.cpp
-    audio/ModifierSync.cpp
-    audio/AutomationPlaybackEngine.cpp
-    audio/AutomationRecordingEngine.cpp
-    audio/AutomationCurveSimplifier.cpp
-    audio/ClipSynchronizer.cpp
-    audio/SidechainMonitorPlugin.cpp
-    audio/AudioSidechainMonitorPlugin.cpp
-    audio/MidiReceivePlugin.cpp
-    audio/MagdaSamplerPlugin.cpp
-    audio/DrumGridPlugin.cpp
-    audio/MidiChordEnginePlugin.cpp
-    audio/ArpeggiatorPlugin.cpp
-    audio/MidiDevicePlugin.cpp
-    audio/StepClock.cpp
-    audio/StepSequencerPlugin.cpp
-    # Project serialization
-    project/serialization/ProjectSerializer.cpp
-    project/serialization/TrackSerializer.cpp
-    project/serialization/ClipSerializer.cpp
-    project/serialization/AutomationModSerializer.cpp
-    project/ProjectManager.cpp
-    # Preset management
-    core/PresetManager.cpp
-    core/PluginPresetScanner.cpp
-    # Music theory (chord detection, suggestion, scales)
-    music/ChordEngine.cpp
-    music/ChordSuggestionEngine.cpp
-    # UI components needed by tests
-    ui/components/timeline/LoopMarkerInteraction.cpp
-    ui/components/timeline/TimelineComponent.cpp
-    # State management
-    ui/state/TimelineController.cpp
-)
-
-# DAW UI sources
-set(DAW_UI_SOURCES
-    magda_daw_main.cpp
-    # Engine (UI layer integration)
-    engine/PlaybackPositionTimer.cpp
-    # Themes
-    ui/themes/DarkTheme.cpp
-    ui/themes/FontManager.cpp
-    ui/themes/CursorManager.cpp
-    ui/themes/MixerLookAndFeel.cpp
-    # Windows
-    ui/windows/MainWindow.cpp
-    ui/windows/MainWindowMenus.cpp
-    ui/windows/MainWindowCommands.cpp
-    ui/windows/MainWindowExport.cpp
-    ui/windows/MenuManager.cpp
-    # Dialogs
-    ui/dialogs/ControllersDialog.cpp
-    ui/dialogs/AISettingsDialog.cpp
-    ui/dialogs/AudioSettingsDialog.cpp
-    ui/dialogs/ChainTreeDialog.cpp
-    ui/dialogs/ExportAudioDialog.cpp
-    ui/dialogs/ExportMidiDialog.cpp
-    ui/dialogs/ParameterConfigDialog.cpp
-    ui/dialogs/PluginSettingsDialog.cpp
-    ui/dialogs/PreferencesDialog.cpp
-    ui/dialogs/TrackManagerDialog.cpp
-    ui/dialogs/AboutDialog.cpp
-    ui/dialogs/SplashScreen.cpp
-    # Debug
-    ui/debug/DebugDialog.cpp
-    # Panels
-    ui/panels/TransportPanel.cpp
-    ui/panels/TimelineHeaderPanel.cpp
-    ui/panels/LeftPanel.cpp
-    ui/panels/RightPanel.cpp
-    ui/panels/BottomPanel.cpp
-    ui/panels/FooterBar.cpp
-    ui/panels/PanelTabBar.cpp
-    ui/panels/TabbedPanel.cpp
-    # Panel State
-    ui/panels/state/PanelController.cpp
-    # Panel Content
-    ui/panels/content/PanelContentFactory.cpp
-    ui/panels/content/PluginBrowserContent.cpp
-    ui/panels/content/MediaExplorerContent.cpp
-    ui/panels/content/PresetBrowserContent.cpp
-    ui/panels/content/EmptyContent.cpp
-    # Inspector refactoring (decomposition into specialized inspectors)
-    ui/panels/content/inspector/TrackInspector.cpp
-    ui/panels/content/inspector/clip/ClipInspectorInit.cpp
-    ui/panels/content/inspector/clip/ClipInspectorSections.cpp
-    ui/panels/content/inspector/clip/ClipInspectorLifecycle.cpp
-    ui/panels/content/inspector/clip/ClipInspectorLayout.cpp
-    ui/panels/content/inspector/clip/ClipInspectorSelection.cpp
-    ui/panels/content/inspector/clip/ClipInspectorState.cpp
-    ui/panels/content/inspector/NoteInspector.cpp
-    ui/panels/content/inspector/DeviceInspector.cpp
-    ui/panels/content/inspector/InspectorFactory.cpp
-    ui/panels/content/inspector/InspectorContainer.cpp
-    ui/panels/content/AIChatConsoleContent.cpp
-    ui/panels/content/SlashCommands.cpp
-    ui/panels/content/ScriptingConsoleContent.cpp
-    ui/panels/content/ChatPromptTokeniser.cpp
-    ui/panels/content/DSLTokeniser.cpp
-    ui/panels/content/PanelContent.cpp
-    ui/panels/content/TrackChainContent.cpp
-    ui/panels/content/MidiEditorContent.cpp
-    ui/panels/content/PianoRollContent.cpp
-    ui/panels/content/DrumGridClipContent.cpp
-    ui/panels/content/WaveformEditorContent.cpp
-    ui/panels/content/AudioClipPropertiesContent.cpp
-    ui/panels/content/ChordPanelContent.cpp
-    ui/components/chord/ChordBlockComponent.cpp
-    # Audio
-    audio/AudioEngineOptimizer.cpp
-    # Views
-    ui/views/MainView.cpp
-    ui/views/SessionView.cpp
-    ui/views/SessionClipEditor.cpp
-    ui/views/MixerView.cpp
-    # Components - Common
-    ui/components/common/RampCurveDisplay.cpp
-    ui/components/common/TimeBendPopup.cpp
-    ui/components/common/SvgButton.cpp
-    ui/components/common/QwertyKeyboardPopup.cpp
-    ui/components/common/IconSelector.cpp
-    ui/components/common/ZoomControls.cpp
-    ui/components/common/LayoutDebugPanel.cpp
-    ui/components/common/MixerDebugPanel.cpp
-    ui/components/common/GridOverlayComponent.cpp
-    ui/components/common/LinkableTextSlider.cpp
-    ui/components/common/Toast.cpp
-    ui/components/common/DraggableValueLabel.cpp
-    ui/components/common/BarsBeatsTicksLabel.cpp
-    # Components - Timeline
-    ui/components/timeline/LoopMarkerInteraction.cpp
-    ui/components/timeline/TimelineComponent.cpp
-    ui/components/timeline/TimelineFiller.cpp
-    ui/components/timeline/TimeRuler.cpp
-    ui/components/timeline/ZoomScrollBar.cpp
-    # Components - Tracks
-    ui/components/tracks/TrackHeadersPanel.cpp
-    ui/components/tracks/TrackContentPanel.cpp
-    ui/components/tracks/TrackContentPanelClipDrag.cpp
-    # Components - Clips
-    ui/components/clips/ClipComponent.cpp
-    # Components - Piano Roll
-    ui/components/pianoroll/NoteComponent.cpp
-    ui/components/pianoroll/PianoRollGridComponent.cpp
-    ui/components/pianoroll/PianoRollKeyboard.cpp
-    ui/components/pianoroll/VelocityLaneComponent.cpp
-    ui/components/pianoroll/CCLaneComponent.cpp
-    ui/components/pianoroll/MidiDrawerComponent.cpp
-    # Components - Waveform
-    ui/components/waveform/WaveformGridComponent.cpp
-    # Components - Common Curve Editor
-    ui/components/common/curve/CurveEditorBase.cpp
-    ui/components/common/curve/CurvePointComponent.cpp
-    ui/components/common/curve/CurveTensionHandle.cpp
-    ui/components/common/curve/CurveBezierHandle.cpp
-    # Components - Automation
-    ui/components/automation/AutomationCurveEditor.cpp
-    ui/components/automation/AutomationLaneComponent.cpp
-    ui/components/automation/AutomationClipComponent.cpp
-    # Components - Mixer
-    ui/components/mixer/MasterChannelStrip.cpp
-    ui/components/mixer/InputTypeSelector.cpp
-    ui/components/mixer/RoutingSelector.cpp
-    # Components - Chain
-    ui/components/chain/NodeComponent.cpp
-    ui/components/chain/ChainRowComponent.cpp
-    ui/components/chain/RackComponent.cpp
-    ui/components/chain/ChainPanel.cpp
-    ui/components/chain/DeviceSlotComponent.cpp
-    ui/components/chain/ParamGridComponent.cpp
-    ui/components/chain/ToneGeneratorUI.cpp
-    ui/components/chain/SamplerUI.cpp
-    ui/components/chain/DrumGridUI.cpp
-    ui/components/chain/EqualiserUI.cpp
-    ui/components/chain/CompressorUI.cpp
-    ui/components/chain/ReverbUI.cpp
-    ui/components/chain/DelayUI.cpp
-    ui/components/chain/ChorusUI.cpp
-    ui/components/chain/PhaserUI.cpp
-    ui/components/chain/FilterUI.cpp
-    ui/components/chain/PitchShiftUI.cpp
-    ui/components/chain/ImpulseResponseUI.cpp
-    ui/components/chain/UtilityUI.cpp
-    ui/components/chain/FourOscUI.cpp
-    ui/components/chain/ArpeggiatorUI.cpp
-    ui/components/chain/StepSequencerUI.cpp
-    ui/components/chain/PadChainPanel.cpp
-    ui/components/chain/PadDeviceSlot.cpp
-    ui/components/chain/PadChainRangeRowComponent.cpp
-    ui/components/chain/PadChainRowComponent.cpp
-    ui/components/chain/ParamSlotComponent.cpp
-    ui/components/chain/ParamLinkResolver.cpp
-    ui/components/chain/ParamModulationPainter.cpp
-    ui/components/chain/ParamLinkMenu.cpp
-    ui/components/chain/ParamWidgetSetup.cpp
-    ui/components/chain/PagedControlPanel.cpp
-    ui/components/chain/MacroKnobComponent.cpp
-    ui/components/chain/MacroPanelComponent.cpp
-    ui/components/chain/ModKnobComponent.cpp
-    ui/components/chain/ModsPanelComponent.cpp
-    ui/components/chain/ModulatorEditorPanel.cpp
-    ui/components/chain/MacroEditorPanel.cpp
-    ui/components/chain/LFOCurveEditor.cpp
-    ui/components/chain/LFOCurveEditorWindow.cpp
-    ui/components/chain/LFOPhaseOverlay.cpp
-)
-
-# All DAW headers
-set(DAW_HEADERS
     command.hpp
     magda.hpp
-    # Profiling (header-only)
-    profiling/PerformanceProfiler.hpp
-    profiling/BenchmarkSuite.hpp
-    core/Config.hpp
-    core/AppPaths.hpp
-    core/UIScale.hpp
-    core/DeviceInfo.hpp
-    core/ViewModeState.hpp
-    core/ViewModeEvents.hpp
-    core/ViewModeController.hpp
-    core/TrackInfo.hpp
-    core/TrackManager.hpp
-    core/TrackTypes.hpp
-    core/RackInfo.hpp
-    core/ChainNode.hpp
-    core/TrackViewSettings.hpp
-    core/ClipTypes.hpp
-    core/ClipInfo.hpp
-    core/ClipManager.hpp
-    core/MidiFileWriter.hpp
-    core/SelectionManager.hpp
-    core/LinkModeManager.hpp
-    core/UndoManager.hpp
-    core/ClipCommands.hpp
-    core/ClipPropertyCommands.hpp
-    core/WarpMarkerCommands.hpp
-    core/TrackCommands.hpp
-    core/TrackPropertyCommands.hpp
-    core/AutomationCommands.hpp
-    core/MidiNoteCommands.hpp
-    core/ChordAnnotationCommands.hpp
-    engine/AudioEngine.hpp
-    engine/TracktionEngineWrapper.hpp
-    engine/MagdaUIBehaviour.hpp
-    engine/PlaybackPositionTimer.hpp
-    # Interfaces
-    interfaces/clip_interface.hpp
-    interfaces/mixer_interface.hpp
-    interfaces/prompt_interface.hpp
-    interfaces/track_interface.hpp
-    interfaces/transport_interface.hpp
-    # MagdaApi (issue #1113)
-    api/magda_api.hpp
-    api/selection_api.hpp
-    api/automation_api.hpp
-    api/alias_api.hpp
-    api/track_api.hpp
-    api/clip_api.hpp
-    api/session_api.hpp
-    api/project_api.hpp
-    api/undo_api.hpp
-    api/magda_api_live.hpp
-    api/selection_api_live.hpp
-    api/automation_api_live.hpp
-    api/alias_api_live.hpp
-    api/track_api_live.hpp
-    api/clip_api_live.hpp
-    api/project_api_live.hpp
-    api/undo_api_live.hpp
-    # Themes
-    ui/themes/DarkTheme.hpp
-    ui/themes/FontManager.hpp
-    ui/themes/CursorManager.hpp
-    ui/themes/MixerLookAndFeel.hpp
-    # Windows
-    ui/windows/MainWindow.hpp
-    ui/windows/MenuManager.hpp
-    # Dialogs
-    ui/dialogs/AISettingsDialog.hpp
-    ui/dialogs/AudioSettingsDialog.hpp
-    ui/dialogs/ChainTreeDialog.hpp
-    ui/dialogs/ExportAudioDialog.hpp
-    ui/dialogs/ExportMidiDialog.hpp
-    ui/dialogs/ParameterConfigDialog.hpp
-    ui/dialogs/PluginSettingsDialog.hpp
-    ui/dialogs/PreferencesDialog.hpp
-    ui/dialogs/TrackManagerDialog.hpp
-    ui/dialogs/AboutDialog.hpp
-    ui/dialogs/SplashScreen.hpp
-    # Panels
-    ui/panels/TransportPanel.hpp
-    ui/panels/TimelineHeaderPanel.hpp
-    ui/panels/LeftPanel.hpp
-    ui/panels/RightPanel.hpp
-    ui/panels/BottomPanel.hpp
-    ui/panels/FooterBar.hpp
-    ui/panels/PanelTabBar.hpp
-    ui/panels/TabbedPanel.hpp
-    # Panel State
-    ui/panels/state/PanelState.hpp
-    ui/panels/state/PanelEvents.hpp
-    ui/panels/state/PanelController.hpp
-    # Panel Content
-    ui/panels/content/PanelContent.hpp
-    ui/panels/content/PanelContentFactory.hpp
-    ui/panels/content/PluginBrowserContent.hpp
-    ui/panels/content/MediaExplorerContent.hpp
-    ui/panels/content/PresetBrowserContent.hpp
-    ui/panels/content/EmptyContent.hpp
-    # Inspector refactoring (decomposition into specialized inspectors)
-    ui/panels/content/inspector/BaseInspector.hpp
-    ui/panels/content/inspector/TrackInspector.hpp
-    ui/panels/content/inspector/ClipInspector.hpp
-    ui/panels/content/inspector/NoteInspector.hpp
-    ui/panels/content/inspector/DeviceInspector.hpp
-    ui/panels/content/inspector/InspectorFactory.hpp
-    ui/panels/content/inspector/InspectorContainer.hpp
-    ui/panels/content/AIChatConsoleContent.hpp
-    ui/panels/content/ScriptingConsoleContent.hpp
-    ui/panels/content/ChatPromptTokeniser.hpp
-    ui/panels/content/DSLTokeniser.hpp
-    ui/panels/content/TrackChainContent.hpp
-    ui/panels/content/PianoRollContent.hpp
-    ui/panels/content/WaveformEditorContent.hpp
-    # Audio
-    audio/AudioEngineOptimizer.hpp
-    audio/AudioBridge.hpp
-    audio/SessionClipScheduler.hpp
-    audio/SessionClipAudioMonitor.hpp
-    audio/SessionClipCommandQueue.hpp
-    audio/SessionClipStateQueue.hpp
-    audio/SessionMonitorPlugin.hpp
-    audio/MeteringBuffer.hpp
-    audio/ParameterQueue.hpp
-    # Phase 1 refactoring: Pure data managers
-    audio/TransportStateManager.hpp
-    audio/MidiActivityMonitor.hpp
-    audio/ParameterManager.hpp
-    # Phase 2 refactoring: Independent features
-    audio/PluginWindowBridge.hpp
-    audio/WarpMarkerManager.hpp
-    # Phase 3 refactoring: Core controllers
-    audio/TrackController.hpp
-    audio/PluginManager.hpp
-    audio/InstrumentRackManager.hpp
-    audio/RackSyncManager.hpp
-    audio/AutomationPlaybackEngine.hpp
-    audio/ClipSynchronizer.hpp
-    audio/SidechainTriggerBus.hpp
-    audio/SidechainMonitorPlugin.hpp
-    audio/AudioSidechainMonitorPlugin.hpp
-    audio/MidiBroadcastBus.hpp
-    audio/MidiReceivePlugin.hpp
-    audio/MagdaSamplerPlugin.hpp
-    audio/DrumGridPlugin.hpp
-    audio/MidiChordEnginePlugin.hpp
-    audio/ArpeggiatorPlugin.hpp
-    audio/MidiDevicePlugin.hpp
-    audio/StepClock.hpp
-    audio/StepSequencerPlugin.hpp
-    # Views
-    ui/views/MainView.hpp
-    ui/views/SessionView.hpp
-    ui/views/MixerView.hpp
-    ui/views/ArrangementView.hpp
-    ui/views/PerformanceView.hpp
-    # Layout
-    ui/layout/LayoutConfig.hpp
-    # State management
-    ui/state/TimelineState.hpp
-    ui/state/TimelineEvents.hpp
-    ui/state/TimelineController.hpp
-    # Components - Common
-    ui/components/common/SvgButton.hpp
-    ui/components/common/IconSelector.hpp
-    ui/components/common/ZoomControls.hpp
-    ui/components/common/ModeSwitcher.hpp
-    ui/components/common/LayoutDebugPanel.hpp
-    ui/components/common/MixerDebugPanel.hpp
-    ui/components/common/GridOverlayComponent.hpp
-    ui/components/common/LinkableTextSlider.hpp
-    ui/components/common/DraggableValueLabel.hpp
-    ui/components/common/BarsBeatsTicksLabel.hpp
-    # Components - Timeline
-    ui/components/timeline/LoopMarkerInteraction.hpp
-    ui/components/timeline/TimelineComponent.hpp
-    ui/components/timeline/TimelineFiller.hpp
-    ui/components/timeline/TimeRuler.hpp
-    ui/components/timeline/ZoomScrollBar.hpp
-    # Components - Tracks
-    ui/components/tracks/TrackHeadersPanel.hpp
-    ui/components/tracks/TrackContentPanel.hpp
-    # Components - Clips
-    ui/components/clips/ClipComponent.hpp
-    # Components - Piano Roll
-    ui/components/pianoroll/NoteComponent.hpp
-    ui/components/pianoroll/PianoRollGridComponent.hpp
-    ui/components/pianoroll/PianoRollKeyboard.hpp
-    ui/components/pianoroll/VelocityLaneComponent.hpp
-    ui/components/pianoroll/CCLaneComponent.hpp
-    ui/components/pianoroll/MidiDrawerComponent.hpp
-    # Components - Waveform
-    ui/components/waveform/WaveformGridComponent.hpp
-    # Components - Mixer
-    ui/components/mixer/MasterChannelStrip.hpp
-    ui/components/mixer/InputTypeSelector.hpp
-    ui/components/mixer/RoutingSelector.hpp
-    ui/components/mixer/MidiNoteStrip.hpp
-    # Components - Chain
-    ui/components/chain/NodeComponent.hpp
-    ui/components/chain/ChainRowComponent.hpp
-    ui/components/chain/RackComponent.hpp
-    ui/components/chain/ChainPanel.hpp
-    ui/components/chain/PadChainPanel.hpp
-    ui/components/chain/PadDeviceSlot.hpp
-    ui/components/chain/ToneGeneratorUI.hpp
-    ui/components/chain/EqualiserUI.hpp
-    ui/components/chain/CompressorUI.hpp
-    ui/components/chain/ReverbUI.hpp
-    ui/components/chain/DelayUI.hpp
-    ui/components/chain/ChorusUI.hpp
-    ui/components/chain/PhaserUI.hpp
-    ui/components/chain/FilterUI.hpp
-    ui/components/chain/PitchShiftUI.hpp
-    ui/components/chain/ImpulseResponseUI.hpp
-    ui/components/chain/UtilityUI.hpp
-    ui/components/chain/FourOscUI.hpp
-    ui/components/chain/ArpeggiatorUI.hpp
-    ui/components/chain/StepSequencerUI.hpp
-    ui/components/chain/PagedControlPanel.hpp
-    ui/components/chain/MacroKnobComponent.hpp
-    ui/components/chain/MacroPanelComponent.hpp
-    ui/components/chain/ModKnobComponent.hpp
-    ui/components/chain/ModsPanelComponent.hpp
-    ui/components/chain/ModulatorEditorPanel.hpp
-    ui/components/chain/MacroEditorPanel.hpp
-    ui/components/chain/LFOCurveEditor.hpp
-    ui/components/chain/ParamLinkResolver.hpp
-    ui/components/chain/ParamModulationPainter.hpp
-    ui/components/chain/ParamLinkMenu.hpp
-    ui/components/chain/ParamWidgetSetup.hpp
-    # Core - Macro and Mod
-    core/MacroInfo.hpp
-    core/ModInfo.hpp
-    # Core - Parameter
-    core/ParameterInfo.hpp
-    core/ParameterDetector.hpp
-    core/ParameterUtils.hpp
-    # Core - Automation
-    core/AutomationTypes.hpp
-    core/AutomationInfo.hpp
-    core/AutomationManager.hpp
-    # Project serialization
-    project/ProjectInfo.hpp
-    project/serialization/ProjectSerializer.hpp
-    project/ProjectManager.hpp
-    # Preset management
-    core/PresetManager.hpp
-    core/PluginPresetScanner.hpp
-    # Components - Common Curve Editor
-    ui/components/common/curve/CurveTypes.hpp
-    ui/components/common/curve/CurveEditorBase.hpp
-    ui/components/common/curve/CurvePointComponent.hpp
-    ui/components/common/curve/CurveTensionHandle.hpp
-    ui/components/common/curve/CurveBezierHandle.hpp
-    # Components - Automation
-    ui/components/automation/AutomationCurveEditor.hpp
-    ui/components/automation/AutomationLaneComponent.hpp
-    ui/components/automation/AutomationClipComponent.hpp
 )
 
-# Create DAW library (core functionality)
-add_library(magda_daw STATIC ${DAW_CORE_SOURCES})
-
-# Create DAW executable as JUCE application
+# JUCE GUI app — sources contributed below via add_subdirectory().
 juce_add_gui_app(magda_daw_app
     VERSION "0.1.0"
     COMPANY_NAME "MAGDA"
@@ -840,30 +268,39 @@ juce_add_gui_app(magda_daw_app
     </dict></plist>"
 )
 
-# Add UI sources to the JUCE app target
-target_sources(magda_daw_app PRIVATE ${DAW_UI_SOURCES})
-
-# Link required libraries for DAW core
-target_link_libraries(magda_daw
-    PUBLIC
-    juce::juce_core
-    juce::juce_data_structures
-    juce::juce_audio_basics
-    juce::juce_audio_devices
-    juce::juce_audio_formats
-    juce::juce_audio_utils
-    juce::juce_gui_basics
-    juce::juce_gui_extra
-    tracktion::tracktion_engine
-    juce_llm
-    MagdaAssets
-    # Link GTK/WebKit and curl dependencies on Linux
-    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
-    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
+target_sources(magda_daw_app PRIVATE
+    magda_daw_main.cpp
 )
 
-# Enable plugin hosting for external VST3/AU plugins
-# Enable SoundTouch time stretching for audio clip time/pitch manipulation
+# Out-of-process plugin scanner.
+juce_add_console_app(magda_plugin_scanner
+    VERSION "1.0.0"
+    COMPANY_NAME "MAGDA"
+    PRODUCT_NAME "MAGDA Plugin Scanner"
+)
+
+target_sources(magda_plugin_scanner PRIVATE
+    engine/plugin_scanner_main.cpp
+)
+
+# =============================================================================
+# Per-subdirectory sources
+# =============================================================================
+
+add_subdirectory(core)
+add_subdirectory(audio)
+add_subdirectory(engine)
+add_subdirectory(project)
+add_subdirectory(music)
+add_subdirectory(api)
+add_subdirectory(interfaces)
+add_subdirectory(profiling)
+add_subdirectory(ui)
+
+# =============================================================================
+# Linking, compile defs, includes
+# =============================================================================
+
 # Auto-detect Steinberg ASIO SDK for Windows ASIO support
 if(WIN32)
     find_path(ASIO_SDK_DIR
@@ -884,6 +321,24 @@ if(WIN32)
     endif()
 endif()
 
+target_link_libraries(magda_daw
+    PUBLIC
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_audio_basics
+    juce::juce_audio_devices
+    juce::juce_audio_formats
+    juce::juce_audio_utils
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+    tracktion::tracktion_engine
+    juce_llm
+    MagdaAssets
+    # Link GTK/WebKit and curl dependencies on Linux
+    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
+    $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
+)
+
 target_compile_definitions(magda_daw
     PUBLIC
     JUCE_PLUGINHOST_VST3=1
@@ -893,7 +348,6 @@ target_compile_definitions(magda_daw
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )
 
-# Link required libraries for DAW application
 target_link_libraries(magda_daw_app
     PRIVATE
     magda_daw
@@ -907,13 +361,10 @@ target_link_libraries(magda_daw_app
     juce::juce_audio_processors
     juce::juce_audio_utils
     tracktion::tracktion_engine
-    # Link GTK/WebKit and curl dependencies on Linux
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_BROWSER_LINUX_DEPS>
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
 )
 
-# Enable plugin hosting for the app target as well
-# (needed because JUCE modules are compiled per-target)
 target_compile_definitions(magda_daw_app
     PRIVATE
     JUCE_PLUGINHOST_VST3=1
@@ -922,7 +373,6 @@ target_compile_definitions(magda_daw_app
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
 )
 
-# Add ASIO SDK include paths when available
 if(JUCE_ASIO_ENABLED)
     target_include_directories(magda_daw PUBLIC
         "${ASIO_SDK_DIR}/common"
@@ -934,7 +384,6 @@ if(JUCE_ASIO_ENABLED)
     )
 endif()
 
-# Include directories for DAW library
 target_include_directories(magda_daw
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -949,7 +398,6 @@ target_include_directories(magda_daw
     ${CMAKE_SOURCE_DIR}
 )
 
-# Include directories for DAW application
 target_include_directories(magda_daw_app
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -978,40 +426,12 @@ target_include_directories(magda_daw_app
     ${CMAKE_SOURCE_DIR}
 )
 
-# On MSVC Release builds, generate a PDB for crash symbolization.
-# /Zi is applied here (not globally) so llama.cpp and other third-party targets
-# are not affected and don't hit parallel PDB write conflicts when using sccache.
-if(MSVC)
-    target_compile_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/Zi>)
-    target_link_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/DEBUG /OPT:REF /OPT:ICF>)
-endif()
-
-# Install targets
-install(TARGETS magda_daw_app DESTINATION bin)
-install(FILES ${DAW_HEADERS} DESTINATION include/magda/daw)
-
-# =============================================================================
-# Plugin Scanner Executable (for out-of-process plugin scanning)
-# =============================================================================
-
-# Create the plugin scanner as a console app
-juce_add_console_app(magda_plugin_scanner
-    VERSION "1.0.0"
-    COMPANY_NAME "MAGDA"
-    PRODUCT_NAME "MAGDA Plugin Scanner"
-)
-
-target_sources(magda_plugin_scanner PRIVATE
-    engine/plugin_scanner_main.cpp
-)
-
 target_link_libraries(magda_plugin_scanner
     PRIVATE
     juce::juce_core
     juce::juce_events
     juce::juce_audio_basics
     juce::juce_audio_processors
-    # Link curl dependencies on Linux for networking
     $<$<PLATFORM_ID:Linux>:juce::pkgconfig_JUCE_CURL_LINUX_DEPS>
 )
 
@@ -1022,7 +442,6 @@ target_compile_definitions(magda_plugin_scanner
     JUCE_WEB_BROWSER=0
 )
 
-# Link AudioUnit framework for AU plugin hosting on macOS
 if(APPLE)
     target_link_libraries(magda_plugin_scanner
         PRIVATE
@@ -1038,7 +457,21 @@ target_include_directories(magda_plugin_scanner
     ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
-# Copy scanner executable alongside the main app
+# On MSVC Release builds, generate a PDB for crash symbolization.
+# /Zi is applied here (not globally) so llama.cpp and other third-party targets
+# are not affected and don't hit parallel PDB write conflicts when using sccache.
+if(MSVC)
+    target_compile_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/Zi>)
+    target_link_options(magda_daw_app PRIVATE $<$<CONFIG:Release>:/DEBUG /OPT:REF /OPT:ICF>)
+endif()
+
+install(TARGETS magda_daw_app DESTINATION bin)
+
+# =============================================================================
+# Post-build resource copies
+# =============================================================================
+
+# Copy the plugin scanner executable next to the main app.
 if(APPLE)
     add_custom_command(TARGET magda_daw_app POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
@@ -1054,7 +487,6 @@ elseif(WIN32)
         COMMENT "Copying plugin scanner alongside app executable"
     )
 else()
-    # Linux: copy scanner next to the main executable
     add_custom_command(TARGET magda_daw_app POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy
             "$<TARGET_FILE:magda_plugin_scanner>"
