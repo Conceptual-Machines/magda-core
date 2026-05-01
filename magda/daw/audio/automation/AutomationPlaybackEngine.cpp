@@ -591,61 +591,7 @@ void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneI
 
 te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
     const AutomationTarget& target) {
-    switch (target.kind) {
-        case ControlTarget::Kind::TrackVolume: {
-            auto* track = bridge_.getAudioTrack(target.devicePath.trackId);
-            if (!track)
-                return nullptr;
-            if (auto* vp = track->getVolumePlugin()) {
-                return vp->volParam.get();
-            }
-            return nullptr;
-        }
-
-        case ControlTarget::Kind::TrackPan: {
-            auto* track = bridge_.getAudioTrack(target.devicePath.trackId);
-            if (!track)
-                return nullptr;
-            if (auto* vp = track->getVolumePlugin()) {
-                return vp->panParam.get();
-            }
-            return nullptr;
-        }
-
-        case ControlTarget::Kind::SendLevel: {
-            auto* track = bridge_.getAudioTrack(target.devicePath.trackId);
-            if (!track)
-                return nullptr;
-            if (auto* auxSend = track->getAuxSendPlugin(target.sendBusIndex)) {
-                return auxSend->gain.get();
-            }
-            return nullptr;
-        }
-
-        case ControlTarget::Kind::PluginParam: {
-            DeviceId deviceId = target.devicePath.getDeviceId();
-            if (deviceId == INVALID_DEVICE_ID)
-                return nullptr;
-            auto plugin = bridge_.getPlugin(deviceId);
-            if (!plugin)
-                return nullptr;
-            auto params = plugin->getAutomatableParameters();
-            if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size())) {
-                return params[static_cast<size_t>(target.paramIndex)];
-            }
-            return nullptr;
-        }
-
-        case ControlTarget::Kind::DeviceMacro:
-            return bridge_.getPluginManager().findMacroParameterForAutomation(
-                target.devicePath.trackId, target.devicePath, target.paramIndex);
-
-        case ControlTarget::Kind::ModParam:
-            return bridge_.getPluginManager().findModifierParameterForAutomation(
-                target.devicePath.trackId, target.devicePath, target.modId, target.modParamIndex);
-    }
-
-    return nullptr;
+    return bridge_.resolveControlTarget(target);
 }
 
 double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& target,
