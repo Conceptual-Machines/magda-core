@@ -113,7 +113,7 @@ TEST_CASE("AutoAliasGenerator - round-trip via AliasRegistry lookup", "[aliases]
     auto entries = AutoAliasGenerator::computeForDevice(dev, path);
     reg.replaceAutoForDevice(path, entries);
 
-    // lookup() should return StaticTarget since path is present
+    // lookup() should return ControlTarget since path is present
     auto result = reg.lookup("serum_2.filter_1_cutoff");
     REQUIRE(result.has_value());
     REQUIRE(result->paramIndex == 0);

@@ -116,7 +116,7 @@ void ModsPanelComponent::ensureKnobCount(int count) {
             }
         };
 
-        knob->onTargetChanged = [this, i](magda::ModTarget target) {
+        knob->onTargetChanged = [this, i](magda::ControlTarget target) {
             if (onModTargetChanged) {
                 onModTargetChanged(i, target);
             }

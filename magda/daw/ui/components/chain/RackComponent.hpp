@@ -142,7 +142,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
 
     // === Virtual callback overrides for mod/macro persistence ===
     void onModAmountChangedInternal(int modIndex, float amount) override;
-    void onModTargetChangedInternal(int modIndex, magda::ModTarget target) override;
+    void onModTargetChangedInternal(int modIndex, magda::ControlTarget target) override;
     void onModNameChangedInternal(int modIndex, const juce::String& name) override;
     void onModTypeChangedInternal(int modIndex, magda::ModType type) override;
     void onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) override;
@@ -155,7 +155,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
     void onModAudioReleaseChangedInternal(int modIndex, float ms) override;
     void onModCurveChangedInternal(int modIndex) override;
     void onMacroValueChangedInternal(int macroIndex, float value) override;
-    void onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) override;
+    void onMacroTargetChangedInternal(int macroIndex, magda::ControlTarget target) override;
     void onMacroNameChangedInternal(int macroIndex, const juce::String& name) override;
     void onModClickedInternal(int modIndex) override;
     void onMacroClickedInternal(int macroIndex) override;

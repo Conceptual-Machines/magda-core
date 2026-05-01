@@ -14,14 +14,14 @@ ResolvedTarget TargetResolver::resolve(const Target& target) const {
         [this](const auto& t) -> ResolvedTarget {
             using T = std::decay_t<decltype(t)>;
 
-            if constexpr (std::is_same_v<T, StaticTarget>) {
+            if constexpr (std::is_same_v<T, ControlTarget>) {
                 if (!t.isValid())
-                    return ResolvedTarget::failure("StaticTarget is invalid");
+                    return ResolvedTarget::failure("ControlTarget is invalid");
 
                 ResolvedTarget r;
                 r.devicePath = t.devicePath;
                 r.paramIndex = t.paramIndex;
-                r.owner = t.owner;
+                r.kind = t.kind;
                 r.modId = t.modId;
                 r.modParamIndex = t.modParamIndex;
                 r.sourceLabel = "static";
@@ -78,12 +78,12 @@ ResolvedTarget TargetResolver::resolve(const Target& target) const {
                 ResolvedTarget r;
                 r.devicePath = result->devicePath;
                 r.paramIndex = result->paramIndex;
-                r.owner = result->owner;
+                r.kind = result->kind;
                 r.sourceLabel = "resolver:" + t.kind;
                 r.resolved = true;
                 DBG("[AUTOMAP] TargetResolver(ResolverRef): kind="
-                    << t.kind << " -> paramIndex=" << r.paramIndex << " owner="
-                    << (r.owner == StaticTarget::Owner::DeviceMacro ? "DeviceMacro"
+                    << t.kind << " -> paramIndex=" << r.paramIndex << " controlKind="
+                    << (r.kind == ControlTarget::Kind::DeviceMacro ? "DeviceMacro"
                                                                     : "PluginParam"));
                 return r;
             }

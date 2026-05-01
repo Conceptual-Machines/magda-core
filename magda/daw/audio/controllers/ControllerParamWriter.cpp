@@ -15,33 +15,21 @@ void DefaultControllerParamWriter::write(const ResolvedTarget& resolved, float v
 
     const float clamped = juce::jlimit(0.0f, 1.0f, value);
 
-    switch (resolved.owner) {
-        case StaticTarget::Owner::PluginParam:
+    switch (resolved.kind) {
+        case ControlTarget::Kind::PluginParam:
             writePluginParam(resolved, clamped);
             break;
-        case StaticTarget::Owner::DeviceMacro:
+        case ControlTarget::Kind::DeviceMacro:
             writeMacro(resolved, clamped);
             break;
-        case StaticTarget::Owner::ModParam:
+        case ControlTarget::Kind::ModParam:
             writeModParam(resolved, clamped);
             break;
     }
 }
 
 void DefaultControllerParamWriter::writePluginParam(const ResolvedTarget& resolved, float clamped) {
-    DeviceId deviceId = resolved.devicePath.getDeviceId();
-    if (deviceId == INVALID_DEVICE_ID)
-        return;
-
-    auto plugin = bridge_.getPlugin(deviceId);
-    if (!plugin)
-        return;
-
-    auto params = plugin->getAutomatableParameters();
-    if (resolved.paramIndex < 0 || resolved.paramIndex >= static_cast<int>(params.size()))
-        return;
-
-    auto* param = params[static_cast<size_t>(resolved.paramIndex)];
+    auto* param = bridge_.resolveControlTarget(resolved.toControlTarget());
     if (!param)
         return;
 
@@ -60,21 +48,12 @@ void DefaultControllerParamWriter::writePluginParam(const ResolvedTarget& resolv
 }
 
 void DefaultControllerParamWriter::writeMacro(const ResolvedTarget& resolved, float clamped) {
-    auto& tm = TrackManager::getInstance();
-    switch (resolved.devicePath.getType()) {
-        case ChainNodeType::Track:
-            tm.setMacroValue(ChainNodePath::trackLevel(resolved.devicePath.trackId), resolved.paramIndex, clamped);
-            break;
-        case ChainNodeType::Rack:
-            tm.setMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
-            break;
-        case ChainNodeType::TopLevelDevice:
-        case ChainNodeType::Device:
-            tm.setMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
-            break;
-        default:
-            break;
-    }
+    if (!resolved.devicePath.isValid())
+        return;
+    // setMacroValue takes the macro's owning ChainNodePath unchanged for every
+    // valid scope (Track/Rack/Device). The previous per-getType() switch
+    // dispatched to the same call in each arm.
+    TrackManager::getInstance().setMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
 }
 
 void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved, float clamped) {
@@ -86,16 +65,15 @@ void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved,
     // all stay in sync. A linear interp on TE's raw Hz range crammed every
     // audible rate change into the bottom 5% of the slider.
     AutomationTarget t;
-    t.type = AutomationTargetType::ModParameter;
-    t.trackId = resolved.devicePath.trackId;
+    t.kind = ControlTarget::Kind::ModParam;
     t.devicePath = resolved.devicePath;
     t.modId = resolved.modId;
     t.modParamIndex = resolved.modParamIndex;
 
-    ParameterInfo info = t.getParameterInfo();
+    ParameterInfo info = getParameterInfoForTarget(t);
     auto& trackMgr = TrackManager::getInstance();
 
-    auto* track = trackMgr.getTrack(t.trackId);
+    auto* track = trackMgr.getTrack(t.devicePath.trackId);
     const ModInfo* mod = nullptr;
     if (track) {
         if (t.devicePath.isValid()) {
@@ -124,42 +102,24 @@ void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved,
     }
     const bool sync = mod && mod->tempoSync;
 
-    if (sync) {
-        float real = ParameterUtils::normalizedToReal(clamped, info);
-        int ordinal = juce::jlimit(1, 23, static_cast<int>(std::round(real)) + 1);
-        SyncDivision division = teRateOrdinalToSyncDivision(ordinal);
-        if (t.devicePath.isValid()) {
-            switch (t.devicePath.getType()) {
-                case ChainNodeType::Rack:
-                    trackMgr.setModSyncDivision(t.devicePath, t.modId, division);
-                    return;
-                case ChainNodeType::TopLevelDevice:
-                case ChainNodeType::Device:
-                    trackMgr.setModSyncDivision(t.devicePath, t.modId, division);
-                    return;
-                default:
-                    break;
-            }
-        }
-        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(t.trackId), t.modId, division);
-        return;
-    }
+    // setModRate / setModSyncDivision accept the modifier's owning path
+    // directly for Rack/TopLevelDevice/Device scopes; track-level modifiers
+    // need the trackLevel path. Pick once instead of dispatching on getType().
+    auto type = t.devicePath.getType();
+    auto pathForWrite =
+        (type == ChainNodeType::Rack || type == ChainNodeType::TopLevelDevice ||
+         type == ChainNodeType::Device)
+            ? t.devicePath
+            : ChainNodePath::trackLevel(t.devicePath.trackId);
 
     float real = ParameterUtils::normalizedToReal(clamped, info);
-    if (t.devicePath.isValid()) {
-        switch (t.devicePath.getType()) {
-            case ChainNodeType::Rack:
-                trackMgr.setModRate(t.devicePath, t.modId, real);
-                return;
-            case ChainNodeType::TopLevelDevice:
-            case ChainNodeType::Device:
-                trackMgr.setModRate(t.devicePath, t.modId, real);
-                return;
-            default:
-                break;
-        }
+    if (sync) {
+        int ordinal = juce::jlimit(1, 23, static_cast<int>(std::round(real)) + 1);
+        SyncDivision division = teRateOrdinalToSyncDivision(ordinal);
+        trackMgr.setModSyncDivision(pathForWrite, t.modId, division);
+        return;
     }
-    trackMgr.setModRate(ChainNodePath::trackLevel(t.trackId), t.modId, real);
+    trackMgr.setModRate(pathForWrite, t.modId, real);
 }
 
 }  // namespace magda

@@ -90,7 +90,7 @@ TEST_CASE("AliasRegistry - path-absent alias excluded from lookup but returned b
             makeAlias("serum", 3, "Filter Cutoff"));  // path = nullopt
 
     auto staticResult = reg.lookup("filter_cutoff");
-    REQUIRE_FALSE(staticResult.has_value());  // no path -> no StaticTarget
+    REQUIRE_FALSE(staticResult.has_value());  // no path -> no ControlTarget
 
     auto storedResult = reg.lookupStored("filter_cutoff");
     REQUIRE(storedResult.has_value());

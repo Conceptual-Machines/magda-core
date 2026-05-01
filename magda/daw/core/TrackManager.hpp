@@ -437,13 +437,13 @@ class TrackManager {
 
     // Unified macro management — works for Track, Rack, and Device scopes.
     void setMacroValue(const ChainNodePath& path, int macroIndex, float value);
-    void setMacroTarget(const ChainNodePath& path, int macroIndex, MacroTarget target);
-    void setMacroLinkAmount(const ChainNodePath& path, int macroIndex, MacroTarget target,
+    void setMacroTarget(const ChainNodePath& path, int macroIndex, ControlTarget target);
+    void setMacroLinkAmount(const ChainNodePath& path, int macroIndex, ControlTarget target,
                             float amount);
-    void setMacroLinkBipolar(const ChainNodePath& path, int macroIndex, MacroTarget target,
+    void setMacroLinkBipolar(const ChainNodePath& path, int macroIndex, ControlTarget target,
                              bool bipolar);
     void setMacroName(const ChainNodePath& path, int macroIndex, const juce::String& name);
-    void removeMacroLink(const ChainNodePath& path, int macroIndex, MacroTarget target);
+    void removeMacroLink(const ChainNodePath& path, int macroIndex, ControlTarget target);
     void clearAllMacroLinks(const ChainNodePath& path, int macroIndex);
     void addMacroPage(const ChainNodePath& path);
     void removeMacroPage(const ChainNodePath& path);
@@ -453,9 +453,9 @@ class TrackManager {
                 LFOWaveform waveform = LFOWaveform::Sine);
     void removeMod(const ChainNodePath& path, int modIndex);
     void setModAmount(const ChainNodePath& path, int modIndex, float amount);
-    void setModTarget(const ChainNodePath& path, int modIndex, ModTarget target);
-    void setModLinkAmount(const ChainNodePath& path, int modIndex, ModTarget target, float amount);
-    void setModLinkBipolar(const ChainNodePath& path, int modIndex, ModTarget target, bool bipolar);
+    void setModTarget(const ChainNodePath& path, int modIndex, ControlTarget target);
+    void setModLinkAmount(const ChainNodePath& path, int modIndex, ControlTarget target, float amount);
+    void setModLinkBipolar(const ChainNodePath& path, int modIndex, ControlTarget target, bool bipolar);
     void setModName(const ChainNodePath& path, int modIndex, const juce::String& name);
     void setModType(const ChainNodePath& path, int modIndex, ModType type);
     void setModWaveform(const ChainNodePath& path, int modIndex, LFOWaveform waveform);
@@ -468,7 +468,7 @@ class TrackManager {
     void notifyModCurveChanged(const ChainNodePath& path);
     void setModAudioAttack(const ChainNodePath& path, int modIndex, float ms);
     void setModAudioRelease(const ChainNodePath& path, int modIndex, float ms);
-    void removeModLink(const ChainNodePath& path, int modIndex, ModTarget target);
+    void removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target);
     void setModEnabled(const ChainNodePath& path, int modIndex, bool enabled);
     void addModPage(const ChainNodePath& path);
     void removeModPage(const ChainNodePath& path);

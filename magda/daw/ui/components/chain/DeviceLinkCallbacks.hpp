@@ -33,7 +33,7 @@ void wireModMacroCallbacks(Widget* widget,
     // onModLinked — ParamSlotComponent only (no-amount version)
     // -------------------------------------------------------------------------
     if constexpr (std::is_same_v<Widget, ParamSlotComponent>) {
-        widget->onModLinked = [safeThis = owner](int modIndex, magda::ModTarget target) {
+        widget->onModLinked = [safeThis = owner](int modIndex, magda::ControlTarget target) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -46,7 +46,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onModLinkedWithAmount
     // -------------------------------------------------------------------------
-    widget->onModLinkedWithAmount = [safeThis = owner](int modIndex, magda::ModTarget target,
+    widget->onModLinkedWithAmount = [safeThis = owner](int modIndex, magda::ControlTarget target,
                                                        float amount) {
         auto self = safeThis;
         if (!self)
@@ -85,7 +85,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onModUnlinked
     // -------------------------------------------------------------------------
-    widget->onModUnlinked = [safeThis = owner](int modIndex, magda::ModTarget target) {
+    widget->onModUnlinked = [safeThis = owner](int modIndex, magda::ControlTarget target) {
         auto self = safeThis;
         if (!self)
             return;
@@ -99,7 +99,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onTrackModUnlinked
     // -------------------------------------------------------------------------
-    widget->onTrackModUnlinked = [safeThis = owner](int modIndex, magda::ModTarget target) {
+    widget->onTrackModUnlinked = [safeThis = owner](int modIndex, magda::ControlTarget target) {
         auto self = safeThis;
         if (!self)
             return;
@@ -115,7 +115,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onModAmountChanged
     // -------------------------------------------------------------------------
-    widget->onModAmountChanged = [safeThis = owner](int modIndex, magda::ModTarget target,
+    widget->onModAmountChanged = [safeThis = owner](int modIndex, magda::ControlTarget target,
                                                     float amount) {
         auto self = safeThis;
         if (!self)
@@ -142,7 +142,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onMacroLinked
     // -------------------------------------------------------------------------
-    widget->onMacroLinked = [safeThis = owner](int macroIndex, magda::MacroTarget target) {
+    widget->onMacroLinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
         auto self = safeThis;
         if (!self)
             return;
@@ -169,7 +169,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onMacroLinkedWithAmount
     // -------------------------------------------------------------------------
-    widget->onMacroLinkedWithAmount = [safeThis = owner](int macroIndex, magda::MacroTarget target,
+    widget->onMacroLinkedWithAmount = [safeThis = owner](int macroIndex, magda::ControlTarget target,
                                                          float amount) {
         auto self = safeThis;
         if (!self)
@@ -208,7 +208,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onMacroUnlinked
     // -------------------------------------------------------------------------
-    widget->onMacroUnlinked = [safeThis = owner](int macroIndex, magda::MacroTarget target) {
+    widget->onMacroUnlinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
         auto self = safeThis;
         if (!self)
             return;
@@ -223,7 +223,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onTrackMacroUnlinked
     // -------------------------------------------------------------------------
-    widget->onTrackMacroUnlinked = [safeThis = owner](int macroIndex, magda::MacroTarget target) {
+    widget->onTrackMacroUnlinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
         auto self = safeThis;
         if (!self)
             return;
@@ -239,7 +239,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onRackMacroLinked
     // -------------------------------------------------------------------------
-    widget->onRackMacroLinked = [safeThis = owner](int macroIndex, magda::MacroTarget target) {
+    widget->onRackMacroLinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
         auto self = safeThis;
         if (!self)
             return;
@@ -253,7 +253,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onTrackMacroLinked
     // -------------------------------------------------------------------------
-    widget->onTrackMacroLinked = [safeThis = owner](int macroIndex, magda::MacroTarget target) {
+    widget->onTrackMacroLinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
         auto self = safeThis;
         if (!self)
             return;
@@ -267,7 +267,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onRackMacroUnlinked
     // -------------------------------------------------------------------------
-    widget->onRackMacroUnlinked = [safeThis = owner](int macroIndex, magda::MacroTarget target) {
+    widget->onRackMacroUnlinked = [safeThis = owner](int macroIndex, magda::ControlTarget target) {
         auto self = safeThis;
         if (!self)
             return;
@@ -283,7 +283,7 @@ void wireModMacroCallbacks(Widget* widget,
     // -------------------------------------------------------------------------
     // onMacroAmountChanged
     // -------------------------------------------------------------------------
-    widget->onMacroAmountChanged = [safeThis = owner](int macroIndex, magda::MacroTarget target,
+    widget->onMacroAmountChanged = [safeThis = owner](int macroIndex, magda::ControlTarget target,
                                                       float amount) {
         auto self = safeThis;
         if (!self)

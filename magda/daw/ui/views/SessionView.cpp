@@ -806,8 +806,8 @@ class SessionView::MiniChannelStrip : public juce::Component {
         volumeSlider_->onDragEnd = [this]() { multiTrackBaseVolumes_.clear(); };
         {
             AutomationTarget volTarget;
-            volTarget.type = AutomationTargetType::TrackVolume;
-            volTarget.trackId = trackId_;
+            volTarget.kind = ControlTarget::Kind::TrackVolume;
+            volTarget.devicePath = magda::ChainNodePath::trackLevel(trackId_);
             volumeSlider_->setAutomationTarget(volTarget);
         }
         addAndMakeVisible(*volumeSlider_);
@@ -954,8 +954,8 @@ class SessionView::MiniChannelStrip : public juce::Component {
         panSlider_->onDragEnd = [this]() { multiTrackBasePans_.clear(); };
         {
             AutomationTarget panTarget;
-            panTarget.type = AutomationTargetType::TrackPan;
-            panTarget.trackId = trackId_;
+            panTarget.kind = ControlTarget::Kind::TrackPan;
+            panTarget.devicePath = magda::ChainNodePath::trackLevel(trackId_);
             panSlider_->setAutomationTarget(panTarget);
         }
         addAndMakeVisible(*panSlider_);

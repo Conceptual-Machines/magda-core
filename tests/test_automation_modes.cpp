@@ -23,15 +23,15 @@ void resetState() {
 
 AutomationTarget volumeTarget(TrackId id) {
     AutomationTarget t;
-    t.type = AutomationTargetType::TrackVolume;
-    t.trackId = id;
+    t.kind = ControlTarget::Kind::TrackVolume;
+    t.devicePath = ChainNodePath::trackLevel(id);
     return t;
 }
 
 AutomationTarget panTarget(TrackId id) {
     AutomationTarget t;
-    t.type = AutomationTargetType::TrackPan;
-    t.trackId = id;
+    t.kind = ControlTarget::Kind::TrackPan;
+    t.devicePath = ChainNodePath::trackLevel(id);
     return t;
 }
 

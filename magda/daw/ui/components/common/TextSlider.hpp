@@ -432,7 +432,7 @@ class TextSlider : public juce::Component,
                 // ParameterInfo. Track volume / pan have their own engine-
                 // internal baseline path and don't strictly need this, but
                 // it's harmless — the engine prefers its own when both exist.
-                magda::ParameterInfo info = automationTarget_.getParameterInfo();
+                magda::ParameterInfo info = magda::getParameterInfoForTarget(automationTarget_);
                 double normalized = static_cast<double>(magda::ParameterUtils::realToNormalized(
                     static_cast<float>(dragStartValue_), info));
                 magda::AutomationManager::getInstance().setTouchBaseline(automationTarget_,
