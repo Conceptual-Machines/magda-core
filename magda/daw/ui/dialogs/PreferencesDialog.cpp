@@ -105,6 +105,10 @@ class GeneralPage : public juce::Component {
         setupSlider(*this, viewDurationSlider, viewDurationLabel,
                     tr("preferences.slider.default_view"), 4.0, 128.0, 1.0, " bars");
 
+        setupSectionHeader(*this, transportHeader, tr("preferences.section.transport"));
+        setupToggle(*this, stopUpdatesPlayheadToggle,
+                    tr("preferences.toggle.stop_updates_playhead"));
+
         setupSectionHeader(*this, autoSaveHeader, tr("preferences.section.autosave"));
         setupToggle(*this, autoSaveToggle, tr("preferences.toggle.enable_autosave"));
         setupSlider(*this, autoSaveIntervalSlider, autoSaveIntervalLabel,
@@ -137,6 +141,12 @@ class GeneralPage : public juce::Component {
         layoutSliderRow(bounds, viewDurationLabel, viewDurationSlider, rowH, labelW, sliderH);
         bounds.removeFromTop(secGap);
 
+        // Transport
+        transportHeader.setBounds(bounds.removeFromTop(headerH));
+        bounds.removeFromTop(4);
+        stopUpdatesPlayheadToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(secGap);
+
         // Auto-Save
         autoSaveHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
@@ -155,6 +165,8 @@ class GeneralPage : public juce::Component {
         timelineLengthSlider.setValue(config.getDefaultTimelineLengthBars(),
                                       juce::dontSendNotification);
         viewDurationSlider.setValue(config.getDefaultZoomViewBars(), juce::dontSendNotification);
+        stopUpdatesPlayheadToggle.setToggleState(config.getStopUpdatesPlayhead(),
+                                                 juce::dontSendNotification);
         autoSaveToggle.setToggleState(config.getAutoSaveEnabled(), juce::dontSendNotification);
         autoSaveIntervalSlider.setValue(config.getAutoSaveIntervalSeconds(),
                                         juce::dontSendNotification);
@@ -167,6 +179,7 @@ class GeneralPage : public juce::Component {
         config.setZoomOutSensitivityShift(zoomShiftSensitivitySlider.getValue());
         config.setDefaultTimelineLengthBars(static_cast<int>(timelineLengthSlider.getValue()));
         config.setDefaultZoomViewBars(static_cast<int>(viewDurationSlider.getValue()));
+        config.setStopUpdatesPlayhead(stopUpdatesPlayheadToggle.getToggleState());
         config.setAutoSaveEnabled(autoSaveToggle.getToggleState());
         config.setAutoSaveIntervalSeconds(static_cast<int>(autoSaveIntervalSlider.getValue()));
     }
@@ -179,11 +192,12 @@ class GeneralPage : public juce::Component {
         slider.setBounds(row.reduced(0, (rowH - sliderH) / 2));
     }
 
-    juce::Label zoomHeader, timelineHeader, autoSaveHeader;
+    juce::Label zoomHeader, timelineHeader, transportHeader, autoSaveHeader;
     juce::Slider zoomInSensitivitySlider, zoomOutSensitivitySlider, zoomShiftSensitivitySlider;
     juce::Label zoomInLabel, zoomOutLabel, zoomShiftLabel;
     juce::Slider timelineLengthSlider, viewDurationSlider;
     juce::Label timelineLengthLabel, viewDurationLabel;
+    juce::ToggleButton stopUpdatesPlayheadToggle;
     juce::ToggleButton autoSaveToggle;
     juce::Slider autoSaveIntervalSlider;
     juce::Label autoSaveIntervalLabel;

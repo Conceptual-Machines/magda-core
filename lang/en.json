@@ -382,6 +382,7 @@
 
     "section.zoom": "Zoom",
     "section.timeline": "Timeline",
+    "section.transport": "Transport",
     "section.autosave": "Auto-Save",
     "section.panels": "Panels",
     "section.layout": "Layout",
@@ -402,6 +403,7 @@
     "slider.interval": "Interval",
 
     "toggle.enable_autosave": "Enable auto-save",
+    "toggle.stop_updates_playhead": "Stop updates playhead",
     "toggle.expand_left_panel": "Expand Left Panel (Browser)",
     "toggle.expand_right_panel": "Expand Right Panel (Inspector)",
     "toggle.expand_bottom_panel": "Expand Bottom Panel (Mixer)",
