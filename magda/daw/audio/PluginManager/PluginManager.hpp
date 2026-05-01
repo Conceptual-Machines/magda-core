@@ -9,14 +9,14 @@
 #include <memory>
 #include <optional>
 
-#include "../core/DeviceInfo.hpp"
-#include "../core/SelectionManager.hpp"
-#include "../core/TypeIds.hpp"
-#include "CurveSnapshot.hpp"
-#include "DeviceProcessor.hpp"
-#include "DrumGridPlugin.hpp"
-#include "InstrumentRackManager.hpp"
-#include "RackSyncManager.hpp"
+#include "../../core/DeviceInfo.hpp"
+#include "../../core/SelectionManager.hpp"
+#include "../../core/TypeIds.hpp"
+#include "../CurveSnapshot.hpp"
+#include "../DeviceProcessor.hpp"
+#include "../DrumGridPlugin.hpp"
+#include "../InstrumentRackManager.hpp"
+#include "../RackSyncManager.hpp"
 
 namespace magda {
 
