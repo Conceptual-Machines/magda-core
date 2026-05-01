@@ -675,4 +675,59 @@ bool ProjectSerializer::deserializeModLink(const juce::var& json, ModLink& data)
     return true;
 }
 
+// ============================================================================
+// Pre-#1149 legacy link trackId fixup
+// ============================================================================
+
+namespace {
+
+void fixupLinks(std::vector<ModLink>& links, TrackId trackId) {
+    for (auto& link : links) {
+        if (link.target.devicePath.trackId == 0)
+            link.target.devicePath.trackId = trackId;
+    }
+}
+
+void fixupLinks(std::vector<MacroLink>& links, TrackId trackId) {
+    for (auto& link : links) {
+        if (link.target.devicePath.trackId == 0)
+            link.target.devicePath.trackId = trackId;
+    }
+}
+
+void fixupChain(std::vector<ChainElement>& elements, TrackId trackId);
+
+void fixupRack(RackInfo& rack, TrackId trackId) {
+    for (auto& m : rack.mods)
+        fixupLinks(m.links, trackId);
+    for (auto& m : rack.macros)
+        fixupLinks(m.links, trackId);
+    for (auto& chain : rack.chains)
+        fixupChain(chain.elements, trackId);
+}
+
+void fixupChain(std::vector<ChainElement>& elements, TrackId trackId) {
+    for (auto& el : elements) {
+        if (isDevice(el)) {
+            auto& dev = getDevice(el);
+            for (auto& m : dev.mods)
+                fixupLinks(m.links, trackId);
+            for (auto& m : dev.macros)
+                fixupLinks(m.links, trackId);
+        } else if (isRack(el)) {
+            fixupRack(getRack(el), trackId);
+        }
+    }
+}
+
+}  // namespace
+
+void ProjectSerializer::fixupLegacyLinkTrackIds(TrackInfo& track) {
+    for (auto& m : track.mods)
+        fixupLinks(m.links, track.id);
+    for (auto& m : track.macros)
+        fixupLinks(m.links, track.id);
+    fixupChain(track.chainElements, track.id);
+}
+
 }  // namespace magda
