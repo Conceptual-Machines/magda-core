@@ -231,6 +231,8 @@ class ClipSlotButton : public juce::TextButton {
             auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
             auto centre = playArea.getCentre().toFloat();
 
+            // Selected: cyan over black strip. Unselected: black icon over
+            // the grey strip — high-contrast on either side of the toggle.
             const auto iconColour =
                 isSelected ? DarkTheme::getColour(DarkTheme::ACCENT_CYAN) : juce::Colours::black;
 
@@ -296,6 +298,47 @@ class ClipSlotButton : public juce::TextButton {
                 g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
                                                   size * 2.0f, size * 2.0f));
             }
+        }
+    }
+};
+
+/// Scene-launch button (right column of the session view). Mirrors
+/// ClipSlotButton's left-strip styling so the master/scene column reads as
+/// part of the same row visually — strip on the left, larger icon, content
+/// area to the right.
+class SceneButton : public juce::TextButton {
+  public:
+    static constexpr int STRIP_WIDTH = ClipSlotButton::PLAY_BUTTON_WIDTH;
+
+    bool hasAnyClip = true;      // false = row empty → render stop glyph
+    bool hasAnyPlaying = false;  // true → row has at least one playing/queued clip
+
+    void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
+                     bool shouldDrawButtonAsDown) override {
+        // Render the button's rounded BG (via SmallButtonLookAndFeel) so the
+        // master column reads as a column of buttons, not floating glyphs.
+        juce::TextButton::paintButton(g, shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+
+        // Icon on the left side. Cyan when something in the scene is
+        // playing/queued (matches the track play strip), white when idle
+        // but available to launch. Stop square for fully-empty rows.
+        auto leftArea = getLocalBounds().toFloat().removeFromLeft(STRIP_WIDTH);
+        auto centre = leftArea.getCentre();
+
+        if (hasAnyClip) {
+            juce::Path triangle;
+            float size = 6.0f;
+            triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
+                                 centre.getX() - size * 0.7f, centre.getY() + size,
+                                 centre.getX() + size, centre.getY());
+            g.setColour(hasAnyPlaying ? DarkTheme::getColour(DarkTheme::ACCENT_CYAN)
+                                      : juce::Colours::white);
+            g.fillPath(triangle);
+        } else {
+            float size = 5.0f;
+            g.setColour(juce::Colour(0xFFA0A0A0));
+            g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
+                                              size * 2.0f, size * 2.0f));
         }
     }
 };

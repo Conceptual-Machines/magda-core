@@ -198,15 +198,12 @@ class SessionView::HeaderContainer : public juce::Component {
     int scrollOffset_ = 0;
 };
 
-// Container for scene buttons with clipping
+// Container for scene buttons with clipping. No background fill — the
+// master/scene column blends into the parent so only the buttons read.
 class SessionView::SceneContainer : public juce::Component {
   public:
     SceneContainer() {
         setInterceptsMouseClicks(false, true);
-    }
-
-    void paint(juce::Graphics& g) override {
-        g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
     }
 };
 
@@ -1664,12 +1661,6 @@ void SessionView::rebuildTracks() {
 
 void SessionView::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::BACKGROUND));
-
-    // Fill the fader row background in the master fader area (scene column)
-    auto faderBounds = faderContainer->getBounds();
-    g.setColour(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
-    g.fillRect(faderBounds.getRight(), faderBounds.getY(), getWidth() - faderBounds.getRight(),
-               faderBounds.getHeight());
 }
 
 void SessionView::paintOverChildren(juce::Graphics& g) {
@@ -1976,8 +1967,7 @@ void SessionView::setupSceneButtons() {
     sceneButtons.clear();
 
     for (int i = 0; i < numScenes_; ++i) {
-        auto btn = std::make_unique<juce::TextButton>();
-        btn->setButtonText(juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6")));  // ▶
+        auto btn = std::make_unique<SceneButton>();
         btn->setColour(juce::TextButton::buttonColourId,
                        DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
         btn->setColour(juce::TextButton::textColourOffId,
@@ -2053,10 +2043,8 @@ void SessionView::addScene() {
 
     // Add a new scene button
     int sceneIndex = numScenes_ - 1;
-    auto btn = std::make_unique<juce::TextButton>();
-    btn->setButtonText(juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6")));  // ▶
-    btn->setColour(juce::TextButton::buttonColourId,
-                   DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+    auto btn = std::make_unique<SceneButton>();
+    btn->setColour(juce::TextButton::buttonColourId, DarkTheme::getColour(DarkTheme::SURFACE));
     btn->setColour(juce::TextButton::textColourOffId,
                    DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     btn->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
@@ -2270,18 +2258,12 @@ void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
     ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
 
     if (clipId != INVALID_CLIP_ID) {
-        // Select the clip so the inspector shows it
+        // Filled-slot strip is "trigger this clip". Re-clicking a playing
+        // clip re-triggers (or, for Toggle-mode clips, the scheduler still
+        // honours toggle — that's a per-clip setting, not a UI default).
+        // Stopping is the empty-slot affordance now.
         SelectionManager::getInstance().selectClip(clipId);
-
-        // Check current play state — stop if playing/queued, play if stopped
-        auto playState = audioEngine_ ? audioEngine_->getSessionClipPlayState(clipId)
-                                      : SessionClipPlayState::Stopped;
-        if (playState == SessionClipPlayState::Playing ||
-            playState == SessionClipPlayState::Queued) {
-            ClipManager::getInstance().stopClip(clipId);
-        } else {
-            ClipManager::getInstance().triggerClip(clipId);
-        }
+        ClipManager::getInstance().triggerClip(clipId);
     }
 }
 
@@ -2709,6 +2691,8 @@ void SessionView::clipPlaybackStateChanged(ClipId clipId) {
             }
         }
     }
+
+    updateSceneButtonIcon(clip->sceneIndex);
 }
 
 void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
@@ -2838,17 +2822,29 @@ void SessionView::updateSceneButtonIcon(int sceneIndex) {
         return;
 
     bool anyClips = false;
+    bool anyPlaying = false;
     auto& cm = ClipManager::getInstance();
     for (TrackId tid : visibleTrackIds_) {
-        if (cm.getClipInSlot(tid, sceneIndex) != INVALID_CLIP_ID) {
-            anyClips = true;
-            break;
+        ClipId cid = cm.getClipInSlot(tid, sceneIndex);
+        if (cid == INVALID_CLIP_ID)
+            continue;
+        anyClips = true;
+        if (audioEngine_) {
+            auto state = audioEngine_->getSessionClipPlayState(cid);
+            if (state == SessionClipPlayState::Playing || state == SessionClipPlayState::Queued) {
+                anyPlaying = true;
+                break;
+            }
         }
     }
 
-    // ▶ = U+25B6, ■ = U+25A0
-    const char* glyph = anyClips ? "\xe2\x96\xb6" : "\xe2\x96\xa0";
-    sceneButtons[sceneIndex]->setButtonText(juce::String(juce::CharPointer_UTF8(glyph)));
+    if (auto* sb = dynamic_cast<SceneButton*>(sceneButtons[sceneIndex].get())) {
+        if (sb->hasAnyClip != anyClips || sb->hasAnyPlaying != anyPlaying) {
+            sb->hasAnyClip = anyClips;
+            sb->hasAnyPlaying = anyPlaying;
+            sb->repaint();
+        }
+    }
 }
 
 void SessionView::updateAllSceneButtonIcons() {
