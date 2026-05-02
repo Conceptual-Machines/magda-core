@@ -72,7 +72,12 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
         if (bpm > 0.0) {
             clip.startBeats = (startTime * bpm) / 60.0;
             clip.lengthBeats = (length * bpm) / 60.0;
-            clip.loopLengthBeats = clip.lengthBeats;
+            // Issue #1157: do NOT seed loopLengthBeats from lengthBeats —
+            // they live in different beat domains (source-beat vs project-
+            // beat). Use the sentinel 0 to mean "loop the full source"; the
+            // detection callback below populates it from sourceNumBeats once
+            // the file's intrinsic BPM is known.
+            clip.loopLengthBeats = 0.0;
         }
         clip.length = length;
         clips_[clip.id] = clip;
@@ -104,8 +109,16 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
                 if (auto* thumb =
                         AudioThumbnailManager::getInstance().getThumbnail(c->audioFilePath)) {
                     double fileDuration = thumb->getTotalLength();
-                    if (fileDuration > 0.0)
-                        u.sourceNumBeats = fileDuration * detectedBPM / 60.0;
+                    if (fileDuration > 0.0) {
+                        double srcBeats = fileDuration * detectedBPM / 60.0;
+                        u.sourceNumBeats = srcBeats;
+                        // First-time detection on a freshly-dropped clip:
+                        // initialise the loop region to the full source.
+                        // loopLengthBeats == 0 is the sentinel set by
+                        // createAudioClip (see issue #1157).
+                        if (c->loopLengthBeats <= 0.0)
+                            u.loopLengthBeats = srcBeats;
+                    }
                 }
                 double live = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
                 mgr.applyAudioClipBeats(cid, u, live);
@@ -657,10 +670,13 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
             if (enabled && clip->timeStretchMode == 0)
                 clip->timeStretchMode = 4;  // soundtouchBetter
 
-            double newLength = (enabled && clip->lengthBeats > 0.0 && bpm > 0.0)
-                                   ? (clip->lengthBeats * 60.0 / bpm)
-                                   : clip->length;
-            resizeClip(clipId, newLength, false, bpm);
+            // Issue #1157: ClipOperations::setAutoTempo already wrote
+            // lengthBeats from clip.length × bpm / 60 (the legitimate
+            // one-time conversion at the autoTempo boundary). The previous
+            // code then called resizeClip(lengthBeats × 60 / bpm) — a pure
+            // beats→seconds→beats round-trip that accumulated FP drift each
+            // toggle. Just refresh the seconds cache from beats and notify.
+            refreshDerivedSeconds(clipId, bpm);
             notifyClipPropertyChanged(clipId);
         }
     }

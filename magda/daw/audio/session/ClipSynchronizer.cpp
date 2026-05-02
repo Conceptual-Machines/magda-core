@@ -155,10 +155,16 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                 // disrupting a playing LaunchHandle.
                 auto* teClip = getSessionTeClip(clipId);
                 if (teClip) {
-                    // Update clip length only if changed
+                    // Issue #1157: read clip length through the accessor —
+                    // for autoTempo session clips this is lengthBeats × 60 /
+                    // projectBPM regardless of whether the seconds cache is
+                    // fresh, so TE never gets a stale length after a project
+                    // tempo change.
+                    const double syncBPM = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                    const double clipLengthSeconds = clip->getTimelineLength(syncBPM);
                     auto currentLength = teClip->getPosition().getLength();
-                    if (std::abs(currentLength.inSeconds() - clip->length) > 0.0001) {
-                        teClip->setLength(te::TimeDuration::fromSeconds(clip->length), false);
+                    if (std::abs(currentLength.inSeconds() - clipLengthSeconds) > 0.0001) {
+                        teClip->setLength(te::TimeDuration::fromSeconds(clipLengthSeconds), false);
                     }
 
                     // Update launch quantization (lightweight CachedValue, always safe)

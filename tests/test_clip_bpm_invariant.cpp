@@ -195,3 +195,136 @@ TEST_CASE("applyAudioClipBeats - sourceBPM unknown leaves source-seconds intact"
     // window.
     REQUIRE(c->loopLength == Approx(0.0));
 }
+
+// ============================================================================
+// BPM-change invariants — the core regression suite for issue #1157.
+//
+// Project BPM and source BPM live in different domains. The visible drift
+// reported in the issue was the seconds cache going stale after a project
+// tempo change because session clips were skipped by the tempo-change
+// handler. These tests pin every direction:
+//   - project BPM up → autoTempo clip's lengthBeats unchanged, length
+//     contracts proportionally.
+//   - project BPM down → length expands, beats unchanged.
+//   - sourceBPM correction → lengthBeats AND length unchanged on the
+//     timeline (BPM is just metadata); only the source-domain loop seconds
+//     change because the source's beat-to-seconds ratio shifted.
+//   - accessor consistency: getTimelineLength matches the cached length
+//     after every operation.
+// ============================================================================
+
+TEST_CASE("Project-BPM change preserves autoTempo lengthBeats", "[clip][bpm][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    ClipManager::getInstance().restoreClip(seed);
+
+    // Apply with PROJECT_BPM = 120 first to populate the seconds cache.
+    ClipManager::AudioClipBeatsUpdate u;
+    u.lengthBeats = 24.0;
+    u.loopLengthBeats = 4.0;
+    ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
+
+    const auto* c = ClipManager::getInstance().getClip(seed.id);
+    REQUIRE(c->lengthBeats == Approx(24.0));
+    REQUIRE(c->length == Approx(12.0));  // 24 × 60/120
+
+    SECTION("Project BPM up: length contracts, lengthBeats unchanged") {
+        ClipManager::getInstance().refreshDerivedSeconds(seed.id, 240.0);
+        c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c->lengthBeats == Approx(24.0));
+        REQUIRE(c->length == Approx(6.0));
+        REQUIRE(c->getTimelineLength(240.0) == Approx(c->length));
+    }
+
+    SECTION("Project BPM down: length expands, lengthBeats unchanged") {
+        ClipManager::getInstance().refreshDerivedSeconds(seed.id, 60.0);
+        c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c->lengthBeats == Approx(24.0));
+        REQUIRE(c->length == Approx(24.0));  // 24 × 60/60
+        REQUIRE(c->getTimelineLength(60.0) == Approx(c->length));
+    }
+
+    SECTION("Accessor stays correct between cache writes") {
+        // After applyAudioClipBeats with old BPM, ask the accessor at a NEW
+        // BPM — it must return the live value, not the cached one. This is
+        // what protects renderers when the tempo-change listener hasn't run
+        // yet but the project state is already at the new BPM.
+        REQUIRE(c->getTimelineLength(240.0) == Approx(6.0));
+        REQUIRE(c->getTimelineLength(60.0) == Approx(24.0));
+        REQUIRE(c->getTimelineLength(PROJECT_BPM) == Approx(12.0));
+    }
+}
+
+TEST_CASE("sourceBPM correction does not move the clip on the timeline",
+          "[clip][bpm][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    ClipManager::getInstance().restoreClip(seed);
+
+    // Initial state: clip is 24 timeline beats long, file detected at 120 BPM,
+    // loop covers all 16 source beats (loopLengthBeats matches sourceNumBeats).
+    seed.lengthBeats = 24.0;
+    seed.loopLengthBeats = 16.0;
+    seed.sourceBPM = 120.0;
+    seed.sourceNumBeats = 16.0;
+    ClipManager::getInstance().restoreClip(
+        seed);  // no-op (already there) — values applied directly
+    ClipManager::AudioClipBeatsUpdate prime;
+    prime.lengthBeats = 24.0;
+    prime.loopLengthBeats = 16.0;
+    prime.sourceBPM = 120.0;
+    prime.sourceNumBeats = 16.0;
+    ClipManager::getInstance().applyAudioClipBeats(seed.id, prime, PROJECT_BPM);
+
+    const auto* c = ClipManager::getInstance().getClip(seed.id);
+    REQUIRE(c->length == Approx(12.0));  // 24 × 60 / 120
+
+    SECTION("Doubling sourceBPM: timeline length unchanged, source seconds halve") {
+        ClipManager::AudioClipBeatsUpdate u;
+        u.sourceBPM = 240.0;
+        u.sourceNumBeats = 32.0;
+        ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
+
+        c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c->lengthBeats == Approx(24.0));
+        REQUIRE(c->length == Approx(12.0));
+        REQUIRE(c->loopLengthBeats == Approx(16.0));
+        REQUIRE(c->loopLength == Approx(4.0));  // 16 × 60/240
+    }
+
+    SECTION("Halving sourceBPM: timeline length unchanged, source seconds double") {
+        ClipManager::AudioClipBeatsUpdate u;
+        u.sourceBPM = 60.0;
+        u.sourceNumBeats = 8.0;
+        ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
+
+        c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c->lengthBeats == Approx(24.0));
+        REQUIRE(c->length == Approx(12.0));
+        REQUIRE(c->loopLength == Approx(16.0));  // 16 × 60/60
+    }
+}
+
+TEST_CASE("Beats-only edits never drift through float round-trips", "[clip][bpm][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    ClipManager::getInstance().restoreClip(seed);
+
+    // Stress: bounce the project BPM around and confirm lengthBeats is bit-stable.
+    ClipManager::AudioClipBeatsUpdate u;
+    u.lengthBeats = 24.0;
+    ClipManager::getInstance().applyAudioClipBeats(seed.id, u, 120.0);
+
+    const auto* c = ClipManager::getInstance().getClip(seed.id);
+    const double originalBeats = c->lengthBeats;
+
+    for (double bpm : {88.0, 99.0, 137.5, 60.0, 240.0, 120.0}) {
+        ClipManager::getInstance().refreshDerivedSeconds(seed.id, bpm);
+        c = ClipManager::getInstance().getClip(seed.id);
+        REQUIRE(c->lengthBeats == originalBeats);  // exact equality
+        REQUIRE(c->getTimelineLength(bpm) == Approx(originalBeats * 60.0 / bpm));
+    }
+}

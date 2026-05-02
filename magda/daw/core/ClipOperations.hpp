@@ -130,12 +130,19 @@ class ClipOperations {
             }
         }
 
-        clip.startTime = newStartTime;
-        clip.length = newLength;
-        if (bpm > 0.0)
-            clip.startBeats = newStartTime * bpm / 60.0;
+        // Issue #1157: same boundary-conversion rule as resizeContainerFromRight —
+        // for beat-authoritative clips, write beats (canonical) and derive
+        // seconds from them.
         if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.lengthBeats = newLength * bpm / 60.0;
+            clip.startBeats = newStartTime * bpm / 60.0;
+            clip.length = clip.lengthBeats * 60.0 / bpm;
+            clip.startTime = clip.startBeats * 60.0 / bpm;
+        } else {
+            clip.startTime = newStartTime;
+            clip.length = newLength;
+            if (bpm > 0.0)
+                clip.startBeats = newStartTime * bpm / 60.0;
         }
     }
 
@@ -152,9 +159,16 @@ class ClipOperations {
     static inline void resizeContainerFromRight(ClipInfo& clip, double newLength,
                                                 double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
-        clip.length = newLength;
+        // Issue #1157: for beat-authoritative clips, beats are the canonical
+        // storage. Convert the seconds-domain input to beats at the API
+        // boundary, then derive the seconds cache from beats. This keeps the
+        // (lengthBeats, length) pair consistent and removes one of the
+        // round-trip sites that previously corrupted state on tempo change.
         if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.lengthBeats = newLength * bpm / 60.0;
+            clip.length = clip.lengthBeats * 60.0 / bpm;
+        } else {
+            clip.length = newLength;
         }
     }
 
