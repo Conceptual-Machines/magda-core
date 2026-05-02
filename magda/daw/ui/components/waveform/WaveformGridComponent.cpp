@@ -1285,6 +1285,14 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             if (dragStartFileDuration_ > 0.0)
                 newOffset = juce::jmin(newOffset, dragStartFileDuration_);
             newOffset = juce::jmax(0.0, newOffset);
+            if (snapEnabled_) {
+                double timelineOffset = displayInfo_.sourceToTimeline(newOffset);
+                timelineOffset = snapTimeToGrid(timelineOffset);
+                newOffset = displayInfo_.timelineToSource(timelineOffset);
+                if (dragStartFileDuration_ > 0.0)
+                    newOffset = juce::jmin(newOffset, dragStartFileDuration_);
+                newOffset = juce::jmax(0.0, newOffset);
+            }
 
             if (clip->loopEnabled) {
                 magda::ClipOperations::moveLoopStart(*clip, newOffset, dragStartFileDuration_);
@@ -1320,6 +1328,17 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
                                      clip->loopLength);
             } else {
                 newPhase = juce::jmax(0.0, newPhase);
+            }
+            if (snapEnabled_) {
+                double timelinePhase = displayInfo_.sourceToTimeline(newPhase);
+                timelinePhase = snapTimeToGrid(timelinePhase);
+                newPhase = displayInfo_.timelineToSource(timelinePhase);
+                if (clip->loopLength > 0.0) {
+                    newPhase = std::fmod(std::fmod(newPhase, clip->loopLength) + clip->loopLength,
+                                         clip->loopLength);
+                } else {
+                    newPhase = juce::jmax(0.0, newPhase);
+                }
             }
             clip->offset = clip->loopStart + newPhase;
             if (clip->autoTempo && clip->sourceBPM > 0.0)

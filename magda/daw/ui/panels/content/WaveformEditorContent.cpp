@@ -316,9 +316,11 @@ WaveformEditorContent::WaveformEditorContent() {
     auto applyGridBeats = [this]() {
         if (!gridVisible_ || gridNumerator_ <= 0) {
             gridComponent_->setGridResolutionBeats(0.0);
+            timeRuler_->setGridResolution(0.0);
         } else {
             double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
             gridComponent_->setGridResolutionBeats(beats);
+            timeRuler_->setGridResolution(beats);
         }
     };
 
@@ -387,9 +389,7 @@ WaveformEditorContent::WaveformEditorContent() {
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     snapButton_->setWantsKeyboardFocus(false);
     snapButton_->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
-    snapButton_->onClick = [this]() {
-        gridComponent_->setSnapEnabled(snapButton_->getToggleState());
-    };
+    snapButton_->onClick = [this]() { setSnapEnabledFromUI(snapButton_->getToggleState()); };
     addAndMakeVisible(snapButton_.get());
 
     // Grid visibility toggle button
@@ -412,8 +412,10 @@ WaveformEditorContent::WaveformEditorContent() {
         if (gridVisible_ && gridNumerator_ > 0) {
             double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
             gridComponent_->setGridResolutionBeats(beats);
+            timeRuler_->setGridResolution(beats);
         } else {
             gridComponent_->setGridResolutionBeats(0.0);
+            timeRuler_->setGridResolution(0.0);
         }
     };
     addAndMakeVisible(gridButton_.get());
@@ -428,6 +430,7 @@ WaveformEditorContent::WaveformEditorContent() {
     if (gridNumerator_ > 0) {
         double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
         gridComponent_->setGridResolutionBeats(beats);
+        timeRuler_->setGridResolution(beats);
     }
 
     // Create viewport and add grid
@@ -1067,6 +1070,16 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
         scrollToClipStart();
         repaint();
     }
+}
+
+void WaveformEditorContent::setSnapEnabledFromUI(bool enabled) {
+    snapEnabled_ = enabled;
+    if (snapButton_)
+        snapButton_->setToggleState(enabled, juce::dontSendNotification);
+    if (gridComponent_)
+        gridComponent_->setSnapEnabled(enabled);
+    if (timeRuler_)
+        timeRuler_->setSnapEnabled(enabled);
 }
 
 // ============================================================================

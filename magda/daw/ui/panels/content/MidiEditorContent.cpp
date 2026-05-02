@@ -328,6 +328,7 @@ void MidiEditorContent::updateTimeRuler() {
     // Set zoom and grid resolution (pixels per beat)
     timeRuler_->setZoom(horizontalZoom_);
     timeRuler_->setGridResolution(gridResolutionBeats_);
+    timeRuler_->setSnapEnabled(snapEnabled_);
 
     // Set clip info for boundary drawing.
     // Looped clips show the loop region starting from bar 1 — the editor
@@ -601,6 +602,8 @@ void MidiEditorContent::setSnapEnabledFromUI(bool enabled) {
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         magda::ClipManager::getInstance().setClipSnapEnabled(editingClipId_, enabled);
         snapEnabled_ = enabled;
+        if (timeRuler_)
+            timeRuler_->setSnapEnabled(snapEnabled_);
     }
 }
 

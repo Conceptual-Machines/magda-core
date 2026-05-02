@@ -434,6 +434,8 @@ void BottomPanel::setupHeaderControls() {
         auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
         if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
             midiEditor->setSnapEnabledFromUI(isSnapEnabled_);
+        } else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content)) {
+            waveEditor->setSnapEnabledFromUI(isSnapEnabled_);
         } else if (auto* controller = TimelineController::getCurrent()) {
             controller->dispatch(SetSnapEnabledEvent{isSnapEnabled_});
         }
@@ -1072,6 +1074,8 @@ void BottomPanel::syncGridControlsFromContent() {
         gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                         juce::dontSendNotification);
     snapButton_->setToggleState(isSnapEnabled_, juce::dontSendNotification);
+    if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
+        waveEditor->setSnapEnabledFromUI(isSnapEnabled_);
 
     gridNumeratorLabel_->setEnabled(!isAutoGrid_);
     gridDenominatorLabel_->setEnabled(!isAutoGrid_);
