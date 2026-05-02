@@ -2201,15 +2201,13 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
     if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
         const auto& selectedClips = selectionManager.getSelectedClips();
         if (!selectedClips.empty()) {
-            // Use compound operation to group all duplicates into single undo step
-            if (selectedClips.size() > 1) {
-                UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
-            }
+            auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempoBPM);
+            if (commands.empty())
+                return false;
 
-            std::vector<std::unique_ptr<DuplicateClipCommand>> commands;
-            for (ClipId clipId : selectedClips) {
-                auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
-                commands.push_back(std::move(cmd));
+            // Use compound operation to group all duplicates into single undo step
+            if (commands.size() > 1) {
+                UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
             }
 
             // Execute commands and collect new IDs
@@ -2223,7 +2221,7 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
                 }
             }
 
-            if (selectedClips.size() > 1) {
+            if (commands.size() > 1) {
                 UndoManager::getInstance().endCompoundOperation();
             }
 

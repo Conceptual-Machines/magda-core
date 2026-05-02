@@ -375,18 +375,6 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     double iterStart = originDisplay + startK * secondsPerGrid;
     double iterEnd = visibleEndDisplay + secondsPerGrid;
 
-    DBG("WaveformGrid::paintBeatGrid"
-        << " relative=" << static_cast<int>(relativeMode_)
-        << " clipId=" << static_cast<int>(editingClipId_)
-        << " displayStartTime=" << displayStartTime << " fileExtent=" << fileExtent
-        << " clipStartCache=" << clipStartTime_ << " clipLengthCache=" << clipLength_
-        << " sourceOffset=" << (getClip() ? getClip()->offset : -1.0)
-        << " offsetPos=" << displayInfo_.offsetPositionSeconds << " originDisplay=" << originDisplay
-        << " visibleStartDisplay=" << visibleStartDisplay
-        << " visibleEndDisplay=" << visibleEndDisplay << " iterStart=" << iterStart
-        << " iterEnd=" << iterEnd << " scrollX=" << scrollOffsetX_ << " zoom=" << horizontalZoom_
-        << " bar1X=" << timeToPixel(originDisplay));
-
     auto& fontMgr = FontManager::getInstance();
 
     for (double displayTime = iterStart; displayTime < iterEnd; displayTime += secondsPerGrid) {
@@ -1007,34 +995,7 @@ double WaveformGridComponent::getDisplayStartTime() const {
 }
 
 void WaveformGridComponent::debugLogGeometry(const char* context) const {
-    const auto* clip = getClip();
-    double baseTime = getDisplayStartTime();
-    double activeOffset = relativeMode_ ? 0.0 : displayInfo_.offsetPositionSeconds;
-    double activeStart = baseTime + activeOffset;
-    double activeEnd = activeStart + clipLength_;
-    double bpm = timeRuler_ ? timeRuler_->getTempo() : 0.0;
-    double beatsPerBar =
-        timeRuler_ ? static_cast<double>(juce::jmax(1, timeRuler_->getTimeSigNumerator())) : 4.0;
-    auto secondsToBar = [bpm, beatsPerBar](double seconds) {
-        if (bpm <= 0.0 || beatsPerBar <= 0.0)
-            return 0.0;
-        return seconds * bpm / 60.0 / beatsPerBar + 1.0;
-    };
-
-    DBG("WaveformGrid[" << context << "]"
-                        << " relative=" << static_cast<int>(relativeMode_)
-                        << " clipId=" << static_cast<int>(editingClipId_)
-                        << " clip.startTime=" << (clip ? clip->startTime : -1.0)
-                        << " clip.placement.startBeat=" << (clip ? clip->placement.startBeat : -1.0)
-                        << " clipStartCache=" << clipStartTime_ << " clipLengthCache="
-                        << clipLength_ << " sourceOffset=" << (clip ? clip->offset : -1.0)
-                        << " offsetPos=" << displayInfo_.offsetPositionSeconds << " baseTime="
-                        << baseTime << " activeStart=" << activeStart << " activeEnd=" << activeEnd
-                        << " activeStartBar=" << secondsToBar(activeStart)
-                        << " timeRuler.offset=" << (timeRuler_ ? timeRuler_->getTimeOffset() : -1.0)
-                        << " timeRuler.barOrigin="
-                        << (timeRuler_ ? timeRuler_->getBarOrigin() : -1.0)
-                        << " scrollX=" << scrollOffsetX_ << " zoom=" << horizontalZoom_);
+    juce::ignoreUnused(context);
 }
 
 // ============================================================================

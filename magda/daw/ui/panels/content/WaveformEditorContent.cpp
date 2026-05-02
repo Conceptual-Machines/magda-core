@@ -985,16 +985,6 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             } else {
                 timeRuler_->setBarOrigin(0.0);
             }
-
-            DBG("WaveformEditor::setClip"
-                << " relative=" << static_cast<int>(relativeTimeMode_) << " clipId="
-                << static_cast<int>(clipId) << " startSec=" << clip->getTimelineStart(bpm)
-                << " lengthSec=" << clip->getTimelineLength(bpm)
-                << " placementStartBeat=" << clip->placement.startBeat << " placementLengthBeats="
-                << clip->placement.lengthBeats << " sourceOffsetSec=" << clip->offset
-                << " displayOffsetPosSec=" << cachedDisplayInfo_.offsetPositionSeconds
-                << " rulerTimeOffset=" << timeRuler_->getTimeOffset()
-                << " rulerBarOrigin=" << timeRuler_->getBarOrigin());
         }
 
         // Update warp mode state
@@ -1054,15 +1044,6 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
             timeRuler_->setClipLength(clip->getTimelineLength(bpm));
 
             timeRuler_->setBarOrigin(0.0);
-
-            DBG("WaveformEditor::setRelativeTimeMode"
-                << " relative=" << static_cast<int>(relative) << " clipId="
-                << static_cast<int>(editingClipId_) << " startSec=" << clip->getTimelineStart(bpm)
-                << " lengthSec=" << clip->getTimelineLength(bpm) << " placementStartBeat="
-                << clip->placement.startBeat << " sourceOffsetSec=" << clip->offset
-                << " displayOffsetPosSec=" << cachedDisplayInfo_.offsetPositionSeconds
-                << " rulerTimeOffset=" << timeRuler_->getTimeOffset()
-                << " rulerBarOrigin=" << timeRuler_->getBarOrigin());
         }
 
         // Update grid size and scroll
@@ -1099,7 +1080,6 @@ int WaveformEditorContent::getMaxVirtualScrollX() const {
 }
 
 void WaveformEditorContent::setVirtualScrollX(int x) {
-    int requestedX = x;
     x = juce::jlimit(0, getMaxVirtualScrollX(), x);
     virtualScrollX_ = x;
     if (gridComponent_)
@@ -1108,10 +1088,6 @@ void WaveformEditorContent::setVirtualScrollX(int x) {
         timeRuler_->setScrollOffset(x);
     if (playheadOverlay_)
         playheadOverlay_->repaint();
-
-    DBG("WaveformEditor::setVirtualScrollX"
-        << " relative=" << static_cast<int>(relativeTimeMode_) << " requested=" << requestedX
-        << " applied=" << x << " max=" << getMaxVirtualScrollX() << " zoom=" << horizontalZoom_);
 }
 
 void WaveformEditorContent::updateGridSize() {
@@ -1159,15 +1135,6 @@ void WaveformEditorContent::updateGridSize() {
             double rulerLength =
                 juce::jmax(totalTime + barSeconds * 4.0, viewportEndTime + barSeconds);
             timeRuler_->setTimelineLength(rulerLength);
-
-            DBG("WaveformEditor::updateGridSize"
-                << " relative=" << static_cast<int>(relativeTimeMode_)
-                << " clipId=" << static_cast<int>(editingClipId_) << " totalTime=" << totalTime
-                << " rulerLength=" << rulerLength << " viewportEndTime=" << viewportEndTime
-                << " virtualScrollX=" << virtualScrollX_
-                << " clipStartSec=" << clip->getTimelineStart(bpmForPad) << " clipLengthSec="
-                << clip->getTimelineLength(bpmForPad) << " sourceOffsetSec=" << clip->offset
-                << " displayOffsetPosSec=" << cachedDisplayInfo_.offsetPositionSeconds);
         }
     }
 }

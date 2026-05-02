@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <numeric>
+#include <unordered_set>
 
 #include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineEvents.hpp"
@@ -2512,14 +2513,31 @@ void ClipComponent::showContextMenu() {
             case 4: {  // Duplicate
                 auto selectedClips = selectionManager.getSelectedClips();
                 if (!selectedClips.empty()) {
-                    if (selectedClips.size() > 1)
+                    double tempo = 120.0;
+                    if (parentPanel_ && parentPanel_->getTimelineController())
+                        tempo = parentPanel_->getTimelineController()->getState().tempo.bpm;
+
+                    auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempo);
+                    if (commands.empty())
+                        break;
+
+                    if (commands.size() > 1)
                         UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
-                    for (auto clipId : selectedClips) {
-                        auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
+
+                    std::unordered_set<ClipId> newClipIds;
+                    for (auto& cmd : commands) {
+                        auto* cmdPtr = cmd.get();
                         UndoManager::getInstance().executeCommand(std::move(cmd));
+                        ClipId newId = cmdPtr->getDuplicatedClipId();
+                        if (newId != INVALID_CLIP_ID)
+                            newClipIds.insert(newId);
                     }
-                    if (selectedClips.size() > 1)
+
+                    if (commands.size() > 1)
                         UndoManager::getInstance().endCompoundOperation();
+
+                    if (!newClipIds.empty())
+                        selectionManager.selectClips(newClipIds);
                 }
                 break;
             }

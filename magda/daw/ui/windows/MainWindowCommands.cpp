@@ -19,6 +19,7 @@
 #include "core/LinkModeManager.hpp"
 #include "core/ViewModeController.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -483,11 +484,14 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 }
 
                 std::vector<ClipId> newClips;
-                if (selectedClips.size() > 1) {
+                const double tempo =
+                    mainView ? mainView->getTimelineController().getState().tempo.bpm
+                             : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+                auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempo);
+                if (commands.size() > 1) {
                     UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
                 }
-                for (auto clipId : selectedClips) {
-                    auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
+                for (auto& cmd : commands) {
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
                     ClipId newId = cmdPtr->getDuplicatedClipId();
@@ -495,7 +499,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                         newClips.push_back(newId);
                     }
                 }
-                if (selectedClips.size() > 1) {
+                if (commands.size() > 1) {
                     UndoManager::getInstance().endCompoundOperation();
                 }
                 if (!newClips.empty()) {

@@ -2,6 +2,10 @@
 
 #include <juce_core/juce_core.h>
 
+#include <memory>
+#include <unordered_set>
+#include <vector>
+
 #include "ClipInfo.hpp"
 #include "ClipManager.hpp"
 #include "CommandPattern.hpp"
@@ -231,6 +235,9 @@ class DuplicateClipCommand : public ValidatedCommand {
     int targetSceneIndex_;   // -1 = keep/unplaced; session clips only
     ClipId duplicatedClipId_ = INVALID_CLIP_ID;
 };
+
+std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplicateCommands(
+    const std::unordered_set<ClipId>& clipIds, double tempo);
 
 /**
  * @brief Command for pasting clips from clipboard

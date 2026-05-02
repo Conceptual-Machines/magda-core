@@ -2,6 +2,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <algorithm>
+#include <limits>
+
 #include "../audio/AudioBridge.hpp"
 #include "../audio/plugins/DrumGridPlugin.hpp"
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
@@ -492,6 +495,70 @@ void DuplicateClipCommand::undo() {
 
     duplicatedClipId_ = INVALID_CLIP_ID;
     clipManager.forceNotifyClipsChanged();
+}
+
+std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplicateCommands(
+    const std::unordered_set<ClipId>& clipIds, double tempo) {
+    auto& clipManager = ClipManager::getInstance();
+
+    std::vector<ClipId> arrangementClipIds;
+    arrangementClipIds.reserve(clipIds.size());
+    for (ClipId clipId : clipIds) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip && clip->view == ClipView::Arrangement)
+            arrangementClipIds.push_back(clipId);
+    }
+
+    if (arrangementClipIds.empty())
+        return {};
+
+    std::sort(arrangementClipIds.begin(), arrangementClipIds.end(),
+              [&clipManager](ClipId a, ClipId b) {
+                  const auto* clipA = clipManager.getClip(a);
+                  const auto* clipB = clipManager.getClip(b);
+                  if (!clipA || !clipB)
+                      return a < b;
+                  if (clipA->startTime != clipB->startTime)
+                      return clipA->startTime < clipB->startTime;
+                  if (clipA->trackId != clipB->trackId)
+                      return clipA->trackId < clipB->trackId;
+                  return a < b;
+              });
+
+    std::vector<std::unique_ptr<DuplicateClipCommand>> commands;
+    commands.reserve(arrangementClipIds.size());
+
+    if (arrangementClipIds.size() == 1) {
+        commands.push_back(std::make_unique<DuplicateClipCommand>(arrangementClipIds.front()));
+        return commands;
+    }
+
+    double selectionStart = std::numeric_limits<double>::max();
+    double selectionEnd = 0.0;
+    for (ClipId clipId : arrangementClipIds) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip)
+            continue;
+        const double clipStart = clip->getTimelineStart(tempo);
+        const double clipEnd = clipStart + clip->getTimelineLength(tempo);
+        selectionStart = std::min(selectionStart, clipStart);
+        selectionEnd = std::max(selectionEnd, clipEnd);
+    }
+
+    const double blockLength = selectionEnd - selectionStart;
+    if (blockLength <= 0.0)
+        return commands;
+
+    for (ClipId clipId : arrangementClipIds) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip)
+            continue;
+        const double newStart = clip->getTimelineStart(tempo) + blockLength;
+        commands.push_back(
+            std::make_unique<DuplicateClipCommand>(clipId, newStart, INVALID_TRACK_ID, tempo));
+    }
+
+    return commands;
 }
 
 // ============================================================================
