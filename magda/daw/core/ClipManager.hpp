@@ -73,6 +73,7 @@ class ClipManager {
      */
     void shutdown() {
         clips_.clear();
+        sessionSlotIndex_.clear();
     }
 
     // ========================================================================
@@ -555,6 +556,23 @@ class ClipManager {
 
     // Unified clip storage — ClipView is a property, not storage identity
     std::unordered_map<ClipId, ClipInfo> clips_;
+
+    // Fast (TrackId, sceneIndex) -> ClipId lookup for session-view slots.
+    // Maintained by every code path that creates/deletes a session clip or
+    // changes its trackId/sceneIndex. Read-only consumers go through
+    // getClipInSlot() — never poke the map directly.
+    //
+    // Why: getClipInSlot is called O(tracks * scenes) per SessionView paint
+    // and from multiple drag/drop and command paths. Scanning all clips on
+    // every call doesn't scale to large grids.
+    std::unordered_map<uint64_t, ClipId> sessionSlotIndex_;
+
+    static uint64_t makeSessionSlotKey(TrackId trackId, int sceneIndex) {
+        return (static_cast<uint64_t>(static_cast<uint32_t>(trackId)) << 32) |
+               static_cast<uint64_t>(static_cast<uint32_t>(sceneIndex));
+    }
+    void addToSessionSlotIndex(const ClipInfo& clip);
+    void removeFromSessionSlotIndex(const ClipInfo& clip);
 
     // Clipboard storage
     std::vector<ClipInfo> clipboard_;

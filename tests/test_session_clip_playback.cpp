@@ -457,6 +457,95 @@ TEST_CASE("MidiClipSlotAppearance — clip slot shows as occupied after MIDI cli
     REQUIRE(clip->type == ClipType::MIDI);
 }
 
+TEST_CASE("getClipInSlot stays correct across mutation paths",
+          "[session][slot][index][regression]") {
+    // The slot-index cache must stay in sync with clips_ on every mutation
+    // path (create / setSceneIndex / moveClipToTrack / delete / clearAll).
+    // Pre-index, getClipInSlot scanned every clip — the failure mode here was
+    // performance, not correctness. With the cache, a missing hook would
+    // return a stale or empty result.
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+
+    SECTION("Empty index returns INVALID_CLIP_ID") {
+        REQUIRE(cm.getClipInSlot(1, 0) == INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(99, 99) == INVALID_CLIP_ID);
+    }
+
+    SECTION("Negative sceneIndex never resolves") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        REQUIRE(cm.getClipInSlot(1, -1) == INVALID_CLIP_ID);
+        cm.deleteClip(id);
+    }
+
+    SECTION("createMidiClip+setClipSceneIndex registers in slot") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 2);
+        REQUIRE(cm.getClipInSlot(1, 2) == id);
+        REQUIRE(cm.getClipInSlot(1, 0) == INVALID_CLIP_ID);
+    }
+
+    SECTION("Arrangement clips are NOT registered in session slot index") {
+        ClipId id = cm.createAudioClip(1, 0.0, 4.0, "x.wav", ClipView::Arrangement);
+        REQUIRE(id != INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(1, 0) == INVALID_CLIP_ID);
+    }
+
+    SECTION("setClipSceneIndex moves the clip between slots") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 1);
+        REQUIRE(cm.getClipInSlot(1, 1) == id);
+
+        cm.setClipSceneIndex(id, 5);
+        REQUIRE(cm.getClipInSlot(1, 1) == INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(1, 5) == id);
+    }
+
+    SECTION("moveClipToTrack moves the clip between tracks") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 3);
+        REQUIRE(cm.getClipInSlot(1, 3) == id);
+
+        cm.moveClipToTrack(id, 7);
+        REQUIRE(cm.getClipInSlot(1, 3) == INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(7, 3) == id);
+    }
+
+    SECTION("deleteClip clears the slot") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 0);
+        REQUIRE(cm.getClipInSlot(1, 0) == id);
+
+        cm.deleteClip(id);
+        REQUIRE(cm.getClipInSlot(1, 0) == INVALID_CLIP_ID);
+    }
+
+    SECTION("clearAllClips empties the slot index") {
+        ClipId a = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(a, 0);
+        ClipId b = cm.createMidiClip(2, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(b, 1);
+
+        cm.clearAllClips();
+        REQUIRE(cm.getClipInSlot(1, 0) == INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(2, 1) == INVALID_CLIP_ID);
+    }
+
+    SECTION("restoreClip re-registers the slot (undo path)") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 4);
+        const auto* cached = cm.getClip(id);
+        REQUIRE(cached != nullptr);
+        ClipInfo snapshot = *cached;
+
+        cm.deleteClip(id);
+        REQUIRE(cm.getClipInSlot(1, 4) == INVALID_CLIP_ID);
+
+        cm.restoreClip(snapshot);
+        REQUIRE(cm.getClipInSlot(1, 4) == id);
+    }
+}
+
 TEST_CASE("Session MIDI clip loop offset", "[session][midi][loop]") {
     auto& cm = ClipManager::getInstance();
     cm.clearAllClips();

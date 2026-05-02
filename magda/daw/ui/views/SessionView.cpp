@@ -24,6 +24,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/SessionLaunchService.hpp"
 #include "core/SessionViewState.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -2465,17 +2466,7 @@ void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
 }
 
 void SessionView::onSceneLaunched(int sceneIndex) {
-    auto& cm = ClipManager::getInstance();
-    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        TrackId trackId = visibleTrackIds_[i];
-        ClipId clipId = cm.getClipInSlot(trackId, sceneIndex);
-        if (clipId != INVALID_CLIP_ID) {
-            cm.triggerClip(clipId);
-        } else if (audioEngine_) {
-            // Empty slot: stop the active clip on this track
-            audioEngine_->stopSessionTrack(trackId);
-        }
-    }
+    SessionLaunchService::launchScene(visibleTrackIds_, sceneIndex);
 }
 
 void SessionView::triggerGroupScene(TrackId groupId, int sceneIndex) {
@@ -3155,7 +3146,11 @@ void SessionView::setAudioEngine(AudioEngine* engine) {
 }
 
 void SessionView::midiDeviceListChanged() {
-    juce::MessageManager::callAsync([this]() { tracksChanged(); });
+    auto safeThis = juce::Component::SafePointer<SessionView>(this);
+    juce::MessageManager::callAsync([safeThis]() {
+        if (auto* self = safeThis.getComponent())
+            self->tracksChanged();
+    });
 }
 
 void SessionView::timerCallback() {

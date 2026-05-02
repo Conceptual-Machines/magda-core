@@ -14,6 +14,7 @@ target_sources(magda_daw PRIVATE
     TrackManagerDevices.cpp
     ModulatorEngine.cpp
     ClipManager.cpp
+    SessionLaunchService.cpp
     MidiFileWriter.cpp
     SelectionManager.cpp
     AutomationInfo.cpp
@@ -72,6 +73,7 @@ target_sources(magda_daw PRIVATE
     ClipTypes.hpp
     ClipInfo.hpp
     ClipManager.hpp
+    SessionLaunchService.hpp
     MidiFileWriter.hpp
     SelectionManager.hpp
     LinkModeManager.hpp

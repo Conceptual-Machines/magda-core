@@ -40,12 +40,25 @@ class SessionClipStateQueue {
         int readIdx = readIndex_.load(std::memory_order_acquire);
 
         int nextWrite = (writeIdx + 1) & (kQueueSize - 1);
-        if (nextWrite == readIdx)
+        if (nextWrite == readIdx) {
+            droppedCount_.fetch_add(1, std::memory_order_relaxed);
             return false;
+        }
 
         buffer_[writeIdx] = event;
         writeIndex_.store(nextWrite, std::memory_order_release);
         return true;
+    }
+
+    /// Total number of pushes that were dropped because the queue was full.
+    /// Pushed from the audio thread on overflow — atomic increment is RT-safe.
+    /// Drained periodically from the message thread to surface lost state
+    /// transitions that would otherwise disappear silently.
+    uint32_t getDroppedCount() const {
+        return droppedCount_.load(std::memory_order_relaxed);
+    }
+    void clearDroppedCount() {
+        droppedCount_.store(0, std::memory_order_relaxed);
     }
 
     bool pop(SessionClipStateEvent& event) {
@@ -63,12 +76,14 @@ class SessionClipStateQueue {
     void clear() {
         writeIndex_.store(0, std::memory_order_relaxed);
         readIndex_.store(0, std::memory_order_relaxed);
+        droppedCount_.store(0, std::memory_order_relaxed);
     }
 
   private:
     std::array<SessionClipStateEvent, kQueueSize> buffer_;
     std::atomic<int> writeIndex_{0};
     std::atomic<int> readIndex_{0};
+    std::atomic<uint32_t> droppedCount_{0};
 };
 
 }  // namespace magda
