@@ -140,7 +140,6 @@ class DeviceSlotComponent : public NodeComponent,
     std::map<magda::DeviceId, std::vector<juce::String>> getDeviceParamNames() const override;
 
     // Mod/macro callbacks
-    void onModAmountChangedInternal(int modIndex, float amount) override;
     void onModTargetChangedInternal(int modIndex, magda::ControlTarget target) override;
     void onModNameChangedInternal(int modIndex, const juce::String& name) override;
     void onModTypeChangedInternal(int modIndex, magda::ModType type) override;

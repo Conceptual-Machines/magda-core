@@ -18,7 +18,7 @@ using Catch::Approx;
 // ============================================================================
 
 struct WriteCapture {
-    ResolvedTarget target;
+    ResolveResult result;
     float value = 0.0f;
 };
 
@@ -26,7 +26,7 @@ class FakeParamWriter : public ControllerParamWriter {
   public:
     std::vector<WriteCapture> writes;
 
-    void write(const ResolvedTarget& resolved, float value) override {
+    void write(const ResolveResult& resolved, float value) override {
         writes.push_back({resolved, value});
     }
 };
@@ -133,7 +133,7 @@ TEST_CASE("ControllerRouter - enabled controller, Absolute CC -> one write",
     // will be skipped by the real writer. But the fake writer doesn't care about
     // resolved.ok(). Let's verify the fake writer receives the call with the
     // correct resolved target (even though ok() is false in test context).
-    // The ResolvedTarget for a ControlTarget always sets resolved=true and
+    // The ResolveResult for a ControlTarget always sets resolved=true and
     // copies the path/paramIndex, even in tests without a live DAW.
     auto msg = juce::MidiMessage::controllerEvent(1, 74, 64);  // CC 74 ch1 value 64
     ControllerRouter::getInstance().injectMessageForTest("test_port_1", msg);
@@ -144,7 +144,7 @@ TEST_CASE("ControllerRouter - enabled controller, Absolute CC -> one write",
     // (no live plugin behind the ControlTarget). But the TargetResolver for
     // ControlTarget always returns resolved=true. Let's verify:
     // ControlTarget::isValid() just checks path and paramIndex. Since both
-    // are set, ResolvedTarget::ok() returns true. So write() IS called.
+    // are set, ResolveResult::ok() returns true. So write() IS called.
     REQUIRE(fix.writer->writes.size() == 1);
     REQUIRE(fix.writer->writes[0].value == Approx(64.0f / 127.0f));
 }
@@ -267,8 +267,8 @@ TEST_CASE("ControllerRouter - static PluginParam shadows focused-device-macro re
 
     // Only the static PluginParam binding should fire.
     REQUIRE(fix.writer->writes.size() == 1);
-    REQUIRE(fix.writer->writes[0].target.kind == ControlTarget::Kind::PluginParam);
-    REQUIRE(fix.writer->writes[0].target.paramIndex == 5);
+    REQUIRE(fix.writer->writes[0].result.target.kind == ControlTarget::Kind::PluginParam);
+    REQUIRE(fix.writer->writes[0].result.target.paramIndex == 5);
 
     SelectionManager::getInstance().clearChainNodeSelection();
 }

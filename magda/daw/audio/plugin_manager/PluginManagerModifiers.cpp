@@ -26,6 +26,33 @@
 
 namespace magda {
 
+te::Plugin* PluginManager::lookupTargetPluginForModifier(DeviceId id) const {
+    te::Plugin::Ptr plugin;
+    {
+        juce::ScopedLock lock(pluginLock_);
+        auto sdIt = syncedDevices_.find(id);
+        if (sdIt != syncedDevices_.end())
+            plugin = sdIt->second.plugin;
+    }
+    if (plugin)
+        return plugin.get();
+    return instrumentRackManager_.getInnerPlugin(id);
+}
+
+namespace {
+
+// Adapter exposing PluginManager's syncedDevices_ + instrument-rack manager
+// as a TargetPluginLookup. Stored on the stack at the call site; non-owning.
+struct DeviceTargetLookup : TargetPluginLookup {
+    const PluginManager& pm;
+    explicit DeviceTargetLookup(const PluginManager& p) : pm(p) {}
+    te::Plugin* getPlugin(DeviceId id) const override {
+        return pm.lookupTargetPluginForModifier(id);
+    }
+};
+
+}  // namespace
+
 // =============================================================================
 // Device-Level Modifier Sync
 // =============================================================================
@@ -36,21 +63,10 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
     if (!trackInfo || !teTrack)
         return;
 
-    auto lookupTarget = [this](DeviceId id) -> te::Plugin* {
-        te::Plugin::Ptr plugin;
-        {
-            juce::ScopedLock lock(pluginLock_);
-            auto sdIt = syncedDevices_.find(id);
-            if (sdIt != syncedDevices_.end())
-                plugin = sdIt->second.plugin;
-        }
-        if (plugin)
-            return plugin.get();
-        return instrumentRackManager_.getInnerPlugin(id);
-    };
+    DeviceTargetLookup lookup(*this);
 
     ModifierSyncContext ctx;
-    ctx.lookupTargetPlugin = lookupTarget;
+    ctx.lookup = &lookup;
 
     // Per-device: in-place LFO + assignment depth update.
     for (const auto& element : trackInfo->chainElements) {
@@ -136,18 +152,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
         }
     };
 
-    auto lookupTarget = [this](DeviceId id) -> te::Plugin* {
-        te::Plugin::Ptr plugin;
-        {
-            juce::ScopedLock lock(pluginLock_);
-            auto sdIt = syncedDevices_.find(id);
-            if (sdIt != syncedDevices_.end())
-                plugin = sdIt->second.plugin;
-        }
-        if (plugin)
-            return plugin.get();
-        return instrumentRackManager_.getInnerPlugin(id);
-    };
+    DeviceTargetLookup lookup(*this);
 
     // ---- Per-device mods + macros ----
     for (const auto& element : trackInfo->chainElements) {
@@ -178,7 +183,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
         ModifierSyncContext ctx;
         ctx.modifierList = modList;
         ctx.macroList = &teTrack->getMacroParameterListForWriting();
-        ctx.lookupTargetPlugin = lookupTarget;
+        ctx.lookup = &lookup;
         ctx.forEachScopePlugin = forEachPlugin;
         ctx.hasCrossTrackSidechain = device.sidechain.sourceTrackId != INVALID_TRACK_ID;
 
@@ -200,7 +205,7 @@ void PluginManager::syncDeviceModifiers(TrackId trackId, te::AudioTrack* teTrack
     ModifierSyncContext trackCtx;
     trackCtx.modifierList = teTrack->getModifierList();
     trackCtx.macroList = &teTrack->getMacroParameterListForWriting();
-    trackCtx.lookupTargetPlugin = lookupTarget;
+    trackCtx.lookup = &lookup;
     trackCtx.forEachScopePlugin = forEachPlugin;
     trackCtx.hasCrossTrackSidechain = false;
 

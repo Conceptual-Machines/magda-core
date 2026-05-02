@@ -211,21 +211,6 @@ void MacroEditorPanel::updateFromMacro() {
         rows.push_back(row);
     }
 
-    // Legacy fallback: single target
-    if (rows.empty() && currentMacro_.target.isValid()) {
-        MacroLinkMatrixContent::LinkRow row;
-        row.target = currentMacro_.target;
-        row.amount = 1.0f;
-        if (paramNameResolver_) {
-            row.paramName =
-                paramNameResolver_(currentMacro_.target.deviceId(), currentMacro_.target.paramIndex);
-        } else {
-            row.paramName = "Device " + juce::String(currentMacro_.target.deviceId()) + " P" +
-                            juce::String(currentMacro_.target.paramIndex + 1);
-        }
-        rows.push_back(row);
-    }
-
     linkMatrixContent_.setLinks(rows);
     resized();
 }

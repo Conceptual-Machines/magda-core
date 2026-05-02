@@ -73,9 +73,7 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
         juce::PopupMenu modsMenu;
         for (size_t i = 0; i < ctx.deviceMods->size(); ++i) {
             const auto& mod = (*ctx.deviceMods)[i];
-            bool alreadyLinked =
-                mod.getLink(thisTarget) != nullptr ||
-                (mod.target.deviceId() == ctx.deviceId && mod.target.paramIndex == ctx.paramIndex);
+            bool alreadyLinked = mod.getLink(thisTarget) != nullptr;
 
             if (!alreadyLinked) {
                 modsMenu.addItem(3000 + static_cast<int>(i), mod.name);
@@ -97,7 +95,7 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
             for (size_t i = 0; i < ctx.deviceMacros->size(); ++i) {
                 const auto& macro = (*ctx.deviceMacros)[i];
                 bool alreadyLinked =
-                    macro.getLink(thisTarget) != nullptr || macro.target == thisTarget;
+                    macro.getLink(thisTarget) != nullptr;
                 macrosMenu.addItem(4000 + static_cast<int>(i), macro.name, true, alreadyLinked);
             }
             hasAnyMacros = true;
@@ -108,7 +106,7 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
             for (size_t i = 0; i < ctx.rackMacros->size(); ++i) {
                 const auto& macro = (*ctx.rackMacros)[i];
                 bool alreadyLinked =
-                    macro.getLink(thisTarget) != nullptr || macro.target == thisTarget;
+                    macro.getLink(thisTarget) != nullptr;
                 macrosMenu.addItem(4100 + static_cast<int>(i), macro.name, true, alreadyLinked);
             }
             hasAnyMacros = true;
@@ -119,7 +117,7 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
             for (size_t i = 0; i < ctx.trackMacros->size(); ++i) {
                 const auto& macro = (*ctx.trackMacros)[i];
                 bool alreadyLinked =
-                    macro.getLink(thisTarget) != nullptr || macro.target == thisTarget;
+                    macro.getLink(thisTarget) != nullptr;
                 macrosMenu.addItem(4200 + static_cast<int>(i), macro.name, true, alreadyLinked);
             }
             hasAnyMacros = true;
@@ -137,11 +135,12 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
     // MIDI section
     menu.addSeparator();
     {
-        bool isLearning =
-            magda::MidiLearnCoordinator::getInstance().isLearning(ctx.devicePath, ctx.paramIndex);
-        int mappingCount = static_cast<int>(magda::BindingRegistry::getInstance()
-                                                .findForTarget(ctx.devicePath, ctx.paramIndex)
-                                                .size());
+        bool isLearning = magda::MidiLearnCoordinator::getInstance().isLearning(
+            magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex));
+        int mappingCount = static_cast<int>(
+            magda::BindingRegistry::getInstance()
+                .findFor(magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex))
+                .size());
 
         juce::String learnLabel = isLearning ? "Cancel MIDI Learn" : "Learn MIDI";
         menu.addItem(6000, learnLabel);
@@ -215,8 +214,8 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
                 if (cbs.onShowAutomationLane)
                     cbs.onShowAutomationLane();
             } else if (result == 6000) {
-                bool isCurrentlyLearning =
-                    magda::MidiLearnCoordinator::getInstance().isLearning(devicePath, paramIdx);
+                bool isCurrentlyLearning = magda::MidiLearnCoordinator::getInstance().isLearning(
+                    magda::ControlTarget::pluginParam(devicePath, paramIdx));
                 if (isCurrentlyLearning) {
                     magda::MidiLearnCoordinator::getInstance().cancelLearn();
                 } else {

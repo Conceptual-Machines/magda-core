@@ -40,21 +40,16 @@ void MidiLearnCoordinator::removeListener(MidiLearnCoordinatorListener* l) {
 // Learn control
 // ============================================================================
 
-void MidiLearnCoordinator::beginLearn(const ChainNodePath& path, int paramIndex,
+void MidiLearnCoordinator::beginLearn(const ControlTarget& target,
                                       const juce::String& displayName) {
-    armSession(path, paramIndex, ControlTarget::Kind::PluginParam, INVALID_MOD_ID, -1, displayName);
-}
-
-void MidiLearnCoordinator::beginLearnMacro(const ChainNodePath& path, int macroIndex,
-                                           const juce::String& displayName) {
-    armSession(path, macroIndex, ControlTarget::Kind::DeviceMacro, INVALID_MOD_ID, -1, displayName);
-}
-
-void MidiLearnCoordinator::beginLearnModParam(const ChainNodePath& path, ModId modId,
-                                              int modParamIndex, const juce::String& displayName) {
-    // paramIndex is unused for ModParam; pass -1 so any (path, paramIndex)-based
-    // listener comparison naturally fails to match this session.
-    armSession(path, -1, ControlTarget::Kind::ModParam, modId, modParamIndex, displayName);
+    // ModParam carries identity in (modId, modParamIndex); paramIndex stays -1
+    // so listener comparisons keyed on (path, paramIndex) don't false-match.
+    if (target.kind == ControlTarget::Kind::ModParam) {
+        armSession(target.devicePath, /*paramIndex=*/-1, target.kind, target.modId,
+                   target.modParamIndex, displayName);
+        return;
+    }
+    armSession(target.devicePath, target.paramIndex, target.kind, INVALID_MOD_ID, -1, displayName);
 }
 
 void MidiLearnCoordinator::armSession(const ChainNodePath& path, int paramIndex,
@@ -132,66 +127,38 @@ void MidiLearnCoordinator::cancelLearn() {
     DBG("MidiLearnCoordinator: cancelled");
 }
 
-bool MidiLearnCoordinator::isLearning(const ChainNodePath& path, int paramIndex) const {
-    return armed_ && armedOwner_ == ControlTarget::Kind::PluginParam && armedPath_ == path &&
-           armedParam_ == paramIndex;
+bool MidiLearnCoordinator::isLearning(const ControlTarget& target) const {
+    if (!armed_ || armedOwner_ != target.kind || armedPath_ != target.devicePath)
+        return false;
+    if (target.kind == ControlTarget::Kind::ModParam)
+        return armedModId_ == target.modId && armedModParamIndex_ == target.modParamIndex;
+    return armedParam_ == target.paramIndex;
 }
 
-bool MidiLearnCoordinator::isLearningMacro(const ChainNodePath& path, int macroIndex) const {
-    return armed_ && armedOwner_ == ControlTarget::Kind::DeviceMacro && armedPath_ == path &&
-           armedParam_ == macroIndex;
-}
-
-bool MidiLearnCoordinator::isLearningModParam(const ChainNodePath& path, ModId modId,
-                                              int modParamIndex) const {
-    return armed_ && armedOwner_ == ControlTarget::Kind::ModParam && armedPath_ == path &&
-           armedModId_ == modId && armedModParamIndex_ == modParamIndex;
-}
-
-int MidiLearnCoordinator::clearMappings(const ChainNodePath& path, int paramIndex) {
+int MidiLearnCoordinator::clearMappings(const ControlTarget& target) {
     jassert(juce::MessageManager::getInstanceWithoutCreating() == nullptr ||
             juce::MessageManager::getInstanceWithoutCreating()->isThisTheMessageThread());
 
-    int removed = BindingRegistry::getInstance().removeForTarget(path, paramIndex);
-    if (removed > 0) {
-        auto copyListeners = listeners_;
-        for (auto* l : copyListeners)
-            if (l)
-                l->midiLearnCleared(path, paramIndex, ControlTarget::Kind::PluginParam, removed);
+    auto& reg = BindingRegistry::getInstance();
+    int removed = 0;
+    int notifyParam = target.paramIndex;
+    if (target.kind == ControlTarget::Kind::DeviceMacro) {
+        // Leave focused-device-macro resolver (automap profile) bindings intact
+        // so the macro falls back to its profile mapping after the override is cleared.
+        removed = reg.removeStaticBindingsForMacro(target.devicePath, target.paramIndex);
+    } else if (target.kind == ControlTarget::Kind::ModParam) {
+        removed = reg.removeFor(target);
+        // Listener API is keyed by paramIndex; carry modParamIndex so observers
+        // keyed on (path, modParamIndex) can match.
+        notifyParam = target.modParamIndex;
+    } else {
+        removed = reg.removeFor(target);
     }
-    return removed;
-}
-
-int MidiLearnCoordinator::clearMacroMappings(const ChainNodePath& path, int macroIndex) {
-    jassert(juce::MessageManager::getInstanceWithoutCreating() == nullptr ||
-            juce::MessageManager::getInstanceWithoutCreating()->isThisTheMessageThread());
-
-    // Only remove the user Learn'd Static binding; leave any focused-device-macro
-    // resolver (automap profile) binding untouched so the macro falls back to its
-    // profile mapping after the override is cleared.
-    int removed = BindingRegistry::getInstance().removeStaticBindingsForMacro(path, macroIndex);
     if (removed > 0) {
         auto copyListeners = listeners_;
         for (auto* l : copyListeners)
             if (l)
-                l->midiLearnCleared(path, macroIndex, ControlTarget::Kind::DeviceMacro, removed);
-    }
-    return removed;
-}
-
-int MidiLearnCoordinator::clearModParamMappings(const ChainNodePath& path, ModId modId,
-                                                int modParamIndex) {
-    jassert(juce::MessageManager::getInstanceWithoutCreating() == nullptr ||
-            juce::MessageManager::getInstanceWithoutCreating()->isThisTheMessageThread());
-
-    int removed = BindingRegistry::getInstance().removeForModParam(path, modId, modParamIndex);
-    if (removed > 0) {
-        auto copyListeners = listeners_;
-        for (auto* l : copyListeners)
-            if (l)
-                // Existing listener API is keyed by paramIndex; pass modParamIndex so
-                // anyone observing a specific mod-param can match by (path, modParamIndex).
-                l->midiLearnCleared(path, modParamIndex, ControlTarget::Kind::ModParam, removed);
+                l->midiLearnCleared(target.devicePath, notifyParam, target.kind, removed);
     }
     return removed;
 }

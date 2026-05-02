@@ -127,8 +127,8 @@ void MacroKnobComponent::updateAutomationTarget() {
 
 void MacroKnobComponent::refreshAutomapState() {
     auto& reg = magda::BindingRegistry::getInstance();
-    bool active = reg.hasActiveBindingForTarget(parentPath_, macroIndex_,
-                                                magda::ControlTarget::Kind::DeviceMacro);
+    bool active =
+        reg.hasActiveBindingFor(magda::ControlTarget::deviceMacro(parentPath_, macroIndex_));
     bool shadowed = active && reg.isAutomapShadowedForMacro(parentPath_, macroIndex_);
     bool learned = reg.hasActiveStaticBindingForMacro(parentPath_, macroIndex_);
     if (active != hasAutomap_ || shadowed != automapShadowed_ || learned != hasLearnedBinding_) {
@@ -524,10 +524,10 @@ void MacroKnobComponent::showLinkMenu() {
     if (parentPath_.isValid()) {
         auto& reg = magda::BindingRegistry::getInstance();
         auto& learn = magda::MidiLearnCoordinator::getInstance();
-        const bool isLearning = learn.isLearningMacro(parentPath_, macroIndex_);
+        const bool isLearning =
+            learn.isLearning(magda::ControlTarget::deviceMacro(parentPath_, macroIndex_));
         const int mappingCount = static_cast<int>(
-            reg.findForTarget(parentPath_, macroIndex_, magda::ControlTarget::Kind::DeviceMacro)
-                .size());
+            reg.findFor(magda::ControlTarget::deviceMacro(parentPath_, macroIndex_)).size());
 
         menu.addSeparator();
         menu.addItem(kLearnId, isLearning ? "Cancel MIDI Learn" : "Learn MIDI");
@@ -560,18 +560,20 @@ void MacroKnobComponent::showLinkMenu() {
         constexpr int kClearMidiId = 50001;
         if (result == kLearnId) {
             auto& learn = magda::MidiLearnCoordinator::getInstance();
-            if (learn.isLearningMacro(parentPath, macroIndex)) {
+            const auto target = magda::ControlTarget::deviceMacro(parentPath, macroIndex);
+            if (learn.isLearning(target)) {
                 learn.cancelLearn();
             } else {
                 juce::String name = displayName.isNotEmpty()
                                         ? displayName
                                         : "Macro " + juce::String(macroIndex + 1);
-                learn.beginLearnMacro(parentPath, macroIndex, name);
+                learn.beginLearn(target, name);
             }
             return;
         }
         if (result == kClearMidiId) {
-            magda::MidiLearnCoordinator::getInstance().clearMacroMappings(parentPath, macroIndex);
+            magda::MidiLearnCoordinator::getInstance().clearMappings(
+                magda::ControlTarget::deviceMacro(parentPath, macroIndex));
             return;
         }
 
@@ -606,7 +608,6 @@ void MacroKnobComponent::showLinkMenu() {
 
         // Clear all links
         if (result == clearAllId) {
-            safeThis->currentMacro_.target = magda::ControlTarget{};
             safeThis->currentMacro_.links.clear();
             safeThis->repaint();
             if (safeThis->onAllLinksCleared) {

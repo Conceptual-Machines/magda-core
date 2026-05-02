@@ -512,6 +512,10 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
     // DrumGridPlugin::Listener
     void drumGridChainsChanged(daw::audio::DrumGridPlugin* plugin) override;
 
+    // Resolve a DeviceId to a te::Plugin* for ModifierSync's TargetPluginLookup.
+    // Track-bound plugin first; falls back to instrument-rack inner plugin.
+    te::Plugin* lookupTargetPluginForModifier(DeviceId id) const;
+
   private:
     // Internal device → plugin conversion (used by syncTrackPlugins)
     te::Plugin::Ptr loadDeviceAsPlugin(TrackId trackId, const DeviceInfo& device,

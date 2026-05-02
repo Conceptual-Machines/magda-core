@@ -379,13 +379,6 @@ void TrackManager::removeMod(const ChainNodePath& path, int modIndex) {
     });
 }
 
-void TrackManager::setModAmount(const ChainNodePath& path, int modIndex, float amount) {
-    auto node = resolveChainNode(path);
-    if (!indexInRange(node.mods, modIndex))
-        return;
-    (*node.mods)[modIndex].amount = juce::jlimit(-1.0f, 1.0f, amount);
-}
-
 void TrackManager::setModTarget(const ChainNodePath& path, int modIndex, ControlTarget target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
@@ -396,8 +389,6 @@ void TrackManager::setModTarget(const ChainNodePath& path, int modIndex, Control
         const float defaultAmount = target.kind == ControlTarget::Kind::ModParam ? 1.0f : 0.0f;
         mod.addLink(target, defaultAmount);
     }
-    if (target.kind != ControlTarget::Kind::ModParam)
-        mod.target = target;
     notifyDeviceModifiersChanged(path.trackId);
 }
 
@@ -411,9 +402,6 @@ void TrackManager::setModLinkAmount(const ChainNodePath& path, int modIndex, Con
         link->amount = amount;
     } else {
         mod.links.push_back({target, amount});
-    }
-    if (mod.target == target) {
-        mod.amount = amount;
     }
     notifyDeviceModifiersChanged(path.trackId);
 }
@@ -534,11 +522,7 @@ void TrackManager::removeModLink(const ChainNodePath& path, int modIndex, Contro
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
-    auto& mod = (*node.mods)[modIndex];
-    mod.removeLink(target);
-    if (mod.target == target) {
-        mod.target = ControlTarget{};
-    }
+    (*node.mods)[modIndex].removeLink(target);
     notifyDeviceModifiersChanged(path.trackId);
 }
 

@@ -218,6 +218,10 @@ class RackSyncManager {
 
   private:
     bool renderingActive_ = false;
+
+    // Forward declaration for the TargetPluginLookup adapter defined in the .cpp.
+    struct InnerPluginLookup;
+
     /**
      * @brief Internal state for a synced rack
      */

@@ -154,8 +154,7 @@ std::vector<Binding> BindingRegistry::findForPort(const juce::String& liveIdenti
 // Target reverse queries
 // ============================================================================
 
-std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& devicePath, int paramIndex,
-                                                    ControlTarget::Kind owner) const {
+std::vector<Binding> BindingRegistry::findFor(const ControlTarget& query) const {
     std::vector<Binding> results;
 
     DefaultChainContext ctx;
@@ -166,8 +165,7 @@ std::vector<Binding> BindingRegistry::findForTarget(const ChainNodePath& deviceP
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
-                resolved.kind == owner)
+            if (resolved.target == query)
                 results.push_back(b);
         }
     };
@@ -231,7 +229,8 @@ bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.kind == owner)
+            const auto& t = resolved.target;
+            if (t.devicePath == devicePath && t.kind == owner)
                 return true;
         }
         return false;
@@ -240,8 +239,7 @@ bool BindingRegistry::hasBindingForDevice(const ChainNodePath& devicePath,
     return check(globalBindings_) || check(projectBindings_);
 }
 
-bool BindingRegistry::hasActiveBindingForTarget(const ChainNodePath& devicePath, int paramIndex,
-                                                ControlTarget::Kind owner) const {
+bool BindingRegistry::hasActiveBindingFor(const ControlTarget& query) const {
     DefaultChainContext ctx;
     TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
 
@@ -250,8 +248,7 @@ bool BindingRegistry::hasActiveBindingForTarget(const ChainNodePath& devicePath,
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
-                resolved.kind == owner)
+            if (resolved.target == query)
                 return true;
         }
         return false;
@@ -270,7 +267,7 @@ bool BindingRegistry::hasResolverBindingForDevice(const ChainNodePath& devicePat
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath)
+            if (resolved.target.devicePath == devicePath)
                 return true;
         }
         return false;
@@ -288,7 +285,7 @@ bool BindingRegistry::hasUserMappingForDevice(const ChainNodePath& devicePath) c
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath)
+            if (resolved.target.devicePath == devicePath)
                 return true;
         }
         return false;
@@ -353,8 +350,9 @@ bool BindingRegistry::isAutomapShadowedForMacro(const ChainNodePath& devicePath,
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.paramIndex == macroIndex &&
-                resolved.kind == ControlTarget::Kind::DeviceMacro)
+            const auto& t = resolved.target;
+            if (t.devicePath == devicePath && t.paramIndex == macroIndex &&
+                t.kind == ControlTarget::Kind::DeviceMacro)
                 automapSources.push_back(b.source);
         }
     };
@@ -392,8 +390,9 @@ bool BindingRegistry::isPluginParamOverridingMacro(const ChainNodePath& devicePa
             auto resolved = resolver.resolve(b.target);
             if (!resolved.ok())
                 continue;
-            if (resolved.devicePath == devicePath && resolved.paramIndex == paramIndex &&
-                resolved.kind == ControlTarget::Kind::PluginParam)
+            const auto& t = resolved.target;
+            if (t.devicePath == devicePath && t.paramIndex == paramIndex &&
+                t.kind == ControlTarget::Kind::PluginParam)
                 staticSources.push_back(b.source);
         }
     };
@@ -419,9 +418,8 @@ bool BindingRegistry::isPluginParamOverridingMacro(const ChainNodePath& devicePa
     return hasShadowed(globalBindings_) || hasShadowed(projectBindings_);
 }
 
-int BindingRegistry::removeForTarget(const ChainNodePath& devicePath, int paramIndex,
-                                     ControlTarget::Kind owner) {
-    auto toRemove = findForTarget(devicePath, paramIndex, owner);
+int BindingRegistry::removeFor(const ControlTarget& query) {
+    auto toRemove = findFor(query);
 
     for (const auto& b : toRemove) {
         // Determine scope by checking which vector contains this binding
@@ -436,52 +434,6 @@ int BindingRegistry::removeForTarget(const ChainNodePath& devicePath, int paramI
     }
 
     return static_cast<int>(toRemove.size());
-}
-
-std::vector<Binding> BindingRegistry::findForModParam(const ChainNodePath& devicePath, ModId modId,
-                                                      int modParamIndex) const {
-    std::vector<Binding> results;
-
-    DefaultChainContext ctx;
-    TargetResolver resolver{AliasRegistry::getInstance(), ResolverRegistry::getInstance(), ctx};
-
-    auto checkScope = [&](const std::vector<Binding>& vec) {
-        for (const auto& b : vec) {
-            auto resolved = resolver.resolve(b.target);
-            if (!resolved.ok())
-                continue;
-            if (resolved.kind == ControlTarget::Kind::ModParam &&
-                resolved.devicePath == devicePath && resolved.modId == modId &&
-                resolved.modParamIndex == modParamIndex)
-                results.push_back(b);
-        }
-    };
-
-    checkScope(globalBindings_);
-    checkScope(projectBindings_);
-
-    return results;
-}
-
-int BindingRegistry::removeForModParam(const ChainNodePath& devicePath, ModId modId,
-                                       int modParamIndex) {
-    auto toRemove = findForModParam(devicePath, modId, modParamIndex);
-    for (const auto& b : toRemove) {
-        bool inGlobal = false;
-        for (const auto& gb : globalBindings_) {
-            if (gb.id == b.id) {
-                inGlobal = true;
-                break;
-            }
-        }
-        remove(inGlobal ? BindingScope::Global : BindingScope::Project, b.id);
-    }
-    return static_cast<int>(toRemove.size());
-}
-
-bool BindingRegistry::hasActiveBindingForModParam(const ChainNodePath& devicePath, ModId modId,
-                                                  int modParamIndex) const {
-    return !findForModParam(devicePath, modId, modParamIndex).empty();
 }
 
 // ============================================================================

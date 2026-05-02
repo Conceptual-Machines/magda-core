@@ -245,7 +245,7 @@ TEST_CASE("BindingRegistry - hasActiveStaticBindingForMacro excludes resolver bi
     ControllerId cid = juce::Uuid();
 
     // Resolver binding (focused.macro automap profile) — counts as active
-    // for hasActiveBindingForTarget but NOT for hasActiveStaticBindingForMacro,
+    // for hasActiveBindingFor but NOT for hasActiveStaticBindingForMacro,
     // since it isn't a user-mapped Learn target.
     Binding bResolver = makeBinding(cid, BindingMsgType::CC, 1, 20);
     ResolverRef rr;

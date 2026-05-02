@@ -288,7 +288,6 @@ class NodeComponent : public juce::Component,
     }
 
     // Virtual callbacks for mod/macro changes (subclasses implement to persist changes)
-    virtual void onModAmountChangedInternal(int /*modIndex*/, float /*amount*/) {}
     virtual void onModTargetChangedInternal(int /*modIndex*/, magda::ControlTarget /*target*/) {}
     virtual void onModNameChangedInternal(int /*modIndex*/, const juce::String& /*name*/) {}
     virtual void onModTypeChangedInternal(int /*modIndex*/, magda::ModType /*type*/) {}

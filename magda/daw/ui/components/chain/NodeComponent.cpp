@@ -1019,9 +1019,6 @@ void NodeComponent::mouseWheelMove(const juce::MouseEvent& e,
 void NodeComponent::initializeModsMacrosPanels() {
     // Create mods panel
     modsPanel_ = std::make_unique<ModsPanelComponent>();
-    modsPanel_->onModAmountChanged = [this](int modIndex, float amount) {
-        onModAmountChangedInternal(modIndex, amount);
-    };
     modsPanel_->onModTargetChanged = [this](int modIndex, magda::ControlTarget target) {
         onModTargetChangedInternal(modIndex, target);
     };

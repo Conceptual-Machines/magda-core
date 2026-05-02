@@ -2433,11 +2433,6 @@ std::map<magda::DeviceId, std::vector<juce::String>> DeviceSlotComponent::getDev
     return result;
 }
 
-void DeviceSlotComponent::onModAmountChangedInternal(int modIndex, float amount) {
-    magda::TrackManager::getInstance().setModAmount(nodePath_, modIndex, amount);
-    updateParamModulation();  // Refresh param indicators to show new amount
-}
-
 void DeviceSlotComponent::onModTargetChangedInternal(int modIndex, magda::ControlTarget target) {
     magda::TrackManager::getInstance().setModTarget(nodePath_, modIndex, target);
     // Note: caller must check SafePointer before calling updateParamModulation()

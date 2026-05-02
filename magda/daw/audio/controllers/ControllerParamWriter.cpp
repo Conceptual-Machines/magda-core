@@ -9,27 +9,27 @@
 
 namespace magda {
 
-void DefaultControllerParamWriter::write(const ResolvedTarget& resolved, float value) {
+void DefaultControllerParamWriter::write(const ResolveResult& resolved, float value) {
     if (!resolved.ok())
         return;
 
     const float clamped = juce::jlimit(0.0f, 1.0f, value);
 
-    switch (resolved.kind) {
+    switch (resolved.target.kind) {
         case ControlTarget::Kind::PluginParam:
-            writePluginParam(resolved, clamped);
+            writePluginParam(resolved.target, clamped);
             break;
         case ControlTarget::Kind::DeviceMacro:
-            writeMacro(resolved, clamped);
+            writeMacro(resolved.target, clamped);
             break;
         case ControlTarget::Kind::ModParam:
-            writeModParam(resolved, clamped);
+            writeModParam(resolved.target, clamped);
             break;
     }
 }
 
-void DefaultControllerParamWriter::writePluginParam(const ResolvedTarget& resolved, float clamped) {
-    auto* param = bridge_.resolveControlTarget(resolved.toControlTarget());
+void DefaultControllerParamWriter::writePluginParam(const ControlTarget& target, float clamped) {
+    auto* param = bridge_.resolveControlTarget(target);
     if (!param)
         return;
 
@@ -43,20 +43,20 @@ void DefaultControllerParamWriter::writePluginParam(const ResolvedTarget& resolv
     // Mirror the write into DeviceInfo and notify MAGDA listeners so param
     // sliders / inspector UIs update. Same path the plugin's native UI uses
     // when a knob is dragged on the plugin window.
-    TrackManager::getInstance().setDeviceParameterValueFromPlugin(resolved.devicePath,
-                                                                  resolved.paramIndex, raw);
+    TrackManager::getInstance().setDeviceParameterValueFromPlugin(target.devicePath,
+                                                                  target.paramIndex, raw);
 }
 
-void DefaultControllerParamWriter::writeMacro(const ResolvedTarget& resolved, float clamped) {
-    if (!resolved.devicePath.isValid())
+void DefaultControllerParamWriter::writeMacro(const ControlTarget& target, float clamped) {
+    if (!target.devicePath.isValid())
         return;
     // setMacroValue takes the macro's owning ChainNodePath unchanged for every
     // valid scope (Track/Rack/Device). The previous per-getType() switch
     // dispatched to the same call in each arm.
-    TrackManager::getInstance().setMacroValue(resolved.devicePath, resolved.paramIndex, clamped);
+    TrackManager::getInstance().setMacroValue(target.devicePath, target.paramIndex, clamped);
 }
 
-void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved, float clamped) {
+void DefaultControllerParamWriter::writeModParam(const ControlTarget& target, float clamped) {
     // Mirror the path used by AutomationPlaybackEngine::writeModRateFromCurve:
     // build an AutomationTarget for the rate, take its perceptual ParameterInfo
     // (logarithmic Hz or discrete sync division depending on the modifier's
@@ -64,29 +64,23 @@ void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved,
     // via TrackManager so MAGDA state, the slider UI, and the live TE param
     // all stay in sync. A linear interp on TE's raw Hz range crammed every
     // audible rate change into the bottom 5% of the slider.
-    AutomationTarget t;
-    t.kind = ControlTarget::Kind::ModParam;
-    t.devicePath = resolved.devicePath;
-    t.modId = resolved.modId;
-    t.modParamIndex = resolved.modParamIndex;
-
-    ParameterInfo info = getParameterInfoForTarget(t);
+    ParameterInfo info = getParameterInfoForTarget(target);
     auto& trackMgr = TrackManager::getInstance();
 
-    auto* track = trackMgr.getTrack(t.devicePath.trackId);
+    auto* track = trackMgr.getTrack(target.devicePath.trackId);
     const ModInfo* mod = nullptr;
     if (track) {
-        if (t.devicePath.isValid()) {
-            auto resolvedPath = trackMgr.resolvePath(t.devicePath);
+        if (target.devicePath.isValid()) {
+            auto resolvedPath = trackMgr.resolvePath(target.devicePath);
             if (resolvedPath.valid && resolvedPath.rack) {
                 for (const auto& m : resolvedPath.rack->mods)
-                    if (m.id == t.modId) {
+                    if (m.id == target.modId) {
                         mod = &m;
                         break;
                     }
             } else if (resolvedPath.valid && resolvedPath.device) {
                 for (const auto& m : resolvedPath.device->mods)
-                    if (m.id == t.modId) {
+                    if (m.id == target.modId) {
                         mod = &m;
                         break;
                     }
@@ -94,7 +88,7 @@ void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved,
         }
         if (!mod) {
             for (const auto& m : track->mods)
-                if (m.id == t.modId) {
+                if (m.id == target.modId) {
                     mod = &m;
                     break;
                 }
@@ -105,21 +99,21 @@ void DefaultControllerParamWriter::writeModParam(const ResolvedTarget& resolved,
     // setModRate / setModSyncDivision accept the modifier's owning path
     // directly for Rack/TopLevelDevice/Device scopes; track-level modifiers
     // need the trackLevel path. Pick once instead of dispatching on getType().
-    auto type = t.devicePath.getType();
+    auto type = target.devicePath.getType();
     auto pathForWrite =
         (type == ChainNodeType::Rack || type == ChainNodeType::TopLevelDevice ||
          type == ChainNodeType::Device)
-            ? t.devicePath
-            : ChainNodePath::trackLevel(t.devicePath.trackId);
+            ? target.devicePath
+            : ChainNodePath::trackLevel(target.devicePath.trackId);
 
     float real = ParameterUtils::normalizedToReal(clamped, info);
     if (sync) {
         int ordinal = juce::jlimit(1, 23, static_cast<int>(std::round(real)) + 1);
         SyncDivision division = teRateOrdinalToSyncDivision(ordinal);
-        trackMgr.setModSyncDivision(pathForWrite, t.modId, division);
+        trackMgr.setModSyncDivision(pathForWrite, target.modId, division);
         return;
     }
-    trackMgr.setModRate(pathForWrite, t.modId, real);
+    trackMgr.setModRate(pathForWrite, target.modId, real);
 }
 
 }  // namespace magda

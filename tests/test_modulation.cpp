@@ -17,7 +17,6 @@ TEST_CASE("MacroInfo - Basic structure and initialization", "[modulation][macro]
         REQUIRE(macro.id == INVALID_MACRO_ID);
         REQUIRE(macro.name.isEmpty());
         REQUIRE(macro.value == Catch::Approx(0.5f));
-        REQUIRE_FALSE(macro.target.isValid());
         REQUIRE(macro.links.empty());
     }
 
@@ -145,7 +144,6 @@ TEST_CASE("ModInfo - Basic structure and initialization", "[modulation][mod]") {
         REQUIRE(mod.id == 2);
         REQUIRE(mod.name == "LFO 3");
         REQUIRE(mod.type == ModType::LFO);
-        REQUIRE(mod.amount == Catch::Approx(0.5f));
         REQUIRE(mod.rate == Catch::Approx(1.0f));
         REQUIRE_FALSE(mod.isLinked());
     }
@@ -440,15 +438,6 @@ TEST_CASE("TrackManager - Device mod operations", "[modulation][mod][integration
     devicePath.trackId = trackId;
     devicePath.topLevelDeviceId = deviceId;
 
-    SECTION("Set device mod amount") {
-        // Devices start with 0 mods - add one first
-        trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-        trackManager.setModAmount(devicePath, 0, 0.85f);
-
-        auto* device = trackManager.getDeviceInChainByPath(devicePath);
-        REQUIRE(device->mods[0].amount == Catch::Approx(0.85f));
-    }
-
     SECTION("Set device mod target and link amount") {
         trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
         ControlTarget target = ControlTarget::fromDeviceId(deviceId, 4);
@@ -572,20 +561,15 @@ TEST_CASE("TrackManager - Modulation calculation scenarios", "[modulation][integ
         REQUIRE(totalModulation == Catch::Approx(0.7f));
     }
 
-    SECTION("Mod modulation calculation") {
-        // Mod amount = 0.7, link amount = 0.6
-        // Expected modulation = 0.7 * 0.6 = 0.42
+    SECTION("Mod link amount drives modulation depth") {
         trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
         ControlTarget target = ControlTarget::fromDeviceId(deviceId, 2);
-        trackManager.setModAmount(devicePath, 0, 0.7f);
         trackManager.setModLinkAmount(devicePath, 0, target, 0.6f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);
-        float modAmount = device->mods[0].amount;
         const auto* link = device->mods[0].getLink(target);
-
-        float expectedModulation = modAmount * link->amount;
-        REQUIRE(expectedModulation == Catch::Approx(0.42f));
+        REQUIRE(link != nullptr);
+        REQUIRE(link->amount == Catch::Approx(0.6f));
     }
 
     // Cleanup
