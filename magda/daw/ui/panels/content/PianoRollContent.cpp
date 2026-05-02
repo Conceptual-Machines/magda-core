@@ -1025,6 +1025,11 @@ void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
                         self->setRelativeTimeMode(true);
                     }
                 }
+                const bool placementMoved =
+                    clip && !self->relativeTimeMode_ &&
+                    (std::isnan(self->lastScrolledPlacementStartBeat_) ||
+                     std::abs(clip->placement.startBeat - self->lastScrolledPlacementStartBeat_) >
+                         0.0001);
 
                 // Sync chord annotations with their linked notes
                 self->syncChordAnnotations(clipId);
@@ -1038,6 +1043,8 @@ void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
                 self->updateGridSize();
                 self->updateTimeRuler();
                 self->updateVelocityLane();
+                if (placementMoved)
+                    self->scrollToClipStartForTimeMode();
                 self->repaint();
             }
         });

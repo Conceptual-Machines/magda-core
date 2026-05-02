@@ -391,6 +391,8 @@ void MidiEditorContent::scrollToClipStartForTimeMode() {
         scrollX = static_cast<int>(std::round(clip->placement.startBeat * horizontalZoom_));
 
     viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
+    lastScrolledPlacementStartBeat_ =
+        clip ? clip->placement.startBeat : std::numeric_limits<double>::quiet_NaN();
 
     DBG("MidiEditorContent::scrollToClipStartForTimeMode"
         << " relative=" << static_cast<int>(relativeTimeMode_)
@@ -418,11 +420,20 @@ void MidiEditorContent::clipsChanged() {
 void MidiEditorContent::clipPropertyChanged(magda::ClipId clipId) {
     if (clipId == editingClipId_) {
         juce::Component::SafePointer<MidiEditorContent> safeThis(this);
-        juce::MessageManager::callAsync([safeThis]() {
+        juce::MessageManager::callAsync([safeThis, clipId]() {
             if (auto* self = safeThis.getComponent()) {
+                const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+                const bool placementMoved =
+                    clip && !self->relativeTimeMode_ &&
+                    (std::isnan(self->lastScrolledPlacementStartBeat_) ||
+                     std::abs(clip->placement.startBeat - self->lastScrolledPlacementStartBeat_) >
+                         0.0001);
+
                 self->applyClipGridSettings();
                 self->updateGridSize();
                 self->updateTimeRuler();
+                if (placementMoved)
+                    self->scrollToClipStartForTimeMode();
                 self->repaint();
             }
         });

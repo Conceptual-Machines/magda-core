@@ -773,6 +773,7 @@ void WaveformEditorContent::clipsChanged() {
 void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
     if (clipId == editingClipId_) {
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+        bool placementMoved = false;
         if (clip) {
             // Issue #1157: read clip position/length through the accessors —
             // for autoTempo clips these compute from beats × projectBPM live,
@@ -787,16 +788,8 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
             const double clipStart = clip->getTimelineStart(currentBpm);
             const double clipLength = clip->getTimelineLength(currentBpm);
 
-            // In absolute mode, adjust scroll when clip position changes
-            // so the waveform stays visible (e.g. after editing start field)
-            if (!relativeTimeMode_ && gridComponent_) {
-                double oldStart = gridComponent_->getClipStartTime();
-                if (std::abs(clipStart - oldStart) > 0.001) {
-                    double deltaPixels = (clipStart - oldStart) * horizontalZoom_;
-                    setVirtualScrollX(
-                        juce::jmax(0, virtualScrollX_ + static_cast<int>(deltaPixels)));
-                }
-            }
+            placementMoved = !relativeTimeMode_ && gridComponent_ &&
+                             std::abs(clipStart - gridComponent_->getClipStartTime()) > 0.001;
 
             // Update clip boundaries (needed for resize)
             // and display info (offset marker, loop markers).
@@ -846,6 +839,8 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
         }
 
         updateGridSize();
+        if (placementMoved)
+            scrollToClipStart();
         repaint();
     }
 }
