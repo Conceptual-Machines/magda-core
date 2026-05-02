@@ -52,7 +52,7 @@ class TransportPanel : public juce::Component {
     std::function<void(bool)> onPunchOutToggle;
     std::function<void(double, double)> onPunchRegionEdit;    // startSeconds, endSeconds
     std::function<void(double, double)> onTimeSelectionEdit;  // startSeconds, endSeconds
-    std::function<void(double)> onEditCursorEdit;             // positionInSeconds
+    std::function<void(double)> onEditCursorEdit;             // beats
     std::function<void()> onBackToArrangement;
 
     // Update displays - simplified API

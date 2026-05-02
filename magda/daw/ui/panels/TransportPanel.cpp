@@ -869,9 +869,8 @@ void TransportPanel::setupTimeDisplayBoxes() {
     setupBBTLabel(editCursorLabel, "E", accentOrange);
     editCursorLabel->onValueChange = [this]() {
         double beats = editCursorLabel->getValue();
-        double seconds = (beats * 60.0) / currentTempo;
         if (onEditCursorEdit)
-            onEditCursorEdit(seconds);
+            onEditCursorEdit(beats);
     };
 
     // Punch start/end — stacked box in time display area

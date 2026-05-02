@@ -323,9 +323,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     double pasteOffset = clipManager.getNoteClipboardMinBeat();
                     if (mainView) {
                         const auto& state = mainView->getTimelineController().getState();
-                        if (state.editCursorPosition >= 0) {
+                        if (state.editCursorBeats >= 0) {
                             double bpm = state.tempo.bpm;
-                            double editCursorBeats = state.editCursorPosition * bpm / 60.0;
+                            double editCursorBeats = state.editCursorBeats;
                             double clipStartBeats = targetClip->getStartBeats(bpm);
                             pasteOffset = editCursorBeats - clipStartBeats;
                             if (pasteOffset < 0)
@@ -531,7 +531,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                 // Move edit cursor to deletion point and clear selection
                 auto& timelineController = mainView->getTimelineController();
-                timelineController.dispatch(SetEditCursorEvent{sel.startTime});
+                double cursorBeats =
+                    sel.startBeats >= 0.0 ? sel.startBeats : sel.startTime * state.tempo.bpm / 60.0;
+                timelineController.dispatch(SetEditCursorEvent{cursorBeats});
                 timelineController.dispatch(ClearTimeSelectionEvent{});
                 return true;
             }
@@ -736,7 +738,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                         // Move cursor to end of selection
                         auto& timelineController = mainView->getTimelineController();
-                        timelineController.dispatch(SetEditCursorEvent{trimEnd});
+                        timelineController.dispatch(
+                            SetEditCursorEvent{trimEnd * state.tempo.bpm / 60.0});
                     }
                 } else {
                     // NO TIME SELECTION → Split at edit cursor

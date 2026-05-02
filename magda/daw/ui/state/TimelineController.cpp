@@ -426,18 +426,19 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditCursorEvent& e) {
-    double newPos = e.position;
+    double newBeats = e.positionBeats;
 
-    // Allow -1.0 to hide the cursor, otherwise clamp to valid range
-    if (newPos >= 0.0) {
-        newPos = juce::jlimit(0.0, state.timelineLength, newPos);
+    // Allow -1.0 to hide the cursor, otherwise clamp to the timeline in beats.
+    if (newBeats >= 0.0) {
+        newBeats = juce::jlimit(0.0, state.secondsToBeats(state.timelineLength), newBeats);
     }
 
-    if (newPos == state.editCursorPosition) {
+    if (newBeats == state.editCursorBeats) {
         return ChangeFlags::None;
     }
 
-    state.editCursorPosition = newPos;
+    state.editCursorBeats = newBeats;
+    state.editCursorPosition = newBeats >= 0.0 ? state.beatsToSeconds(newBeats) : -1.0;
     // Use Selection flag since edit cursor is an editing-related visual
     return ChangeFlags::Selection;
 }
@@ -705,7 +706,18 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
     // Update all beat-anchored positions to maintain bar/beat positions
     uint32_t extraFlags = 0;
 
-    // --- Edit cursor ---
+    // --- Edit cursor (split/paste cursor) ---
+    if (state.editCursorPosition >= 0.0) {
+        if (state.editCursorBeats < 0.0) {
+            state.editCursorBeats =
+                magda::TimelineUtils::secondsToBeats(state.editCursorPosition, oldBpm);
+        }
+        state.editCursorPosition =
+            magda::TimelineUtils::beatsToSeconds(state.editCursorBeats, newBpm);
+        extraFlags |= static_cast<uint32_t>(ChangeFlags::Selection);
+    }
+
+    // --- Playhead edit position ---
     if (state.playhead.editPosition > 0.0) {
         // Migration: calculate beat position if it was never set
         if (state.playhead.editPositionBeats <= 0.0 && state.playhead.editPosition > 0.0) {
@@ -1055,6 +1067,11 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
     state.playhead.editPosition = juce::jmin(state.playhead.editPosition, state.timelineLength);
     state.playhead.playbackPosition =
         juce::jmin(state.playhead.playbackPosition, state.timelineLength);
+    if (state.editCursorBeats >= 0.0) {
+        state.editCursorBeats =
+            juce::jmin(state.editCursorBeats, state.secondsToBeats(state.timelineLength));
+        state.editCursorPosition = state.beatsToSeconds(state.editCursorBeats);
+    }
 
     if (state.loop.isValid()) {
         state.loop.endTime = juce::jmin(state.loop.endTime, state.timelineLength);

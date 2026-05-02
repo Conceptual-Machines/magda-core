@@ -1059,17 +1059,10 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
 }
 
 void MainView::updateContentSizes() {
-    // Use the same content width calculation as ZoomManager for consistency
-    // horizontalZoom is ppb, convert timeline length to beats. Round so the
-    // integer width matches TrackContentPanel::resized()'s own rounded
-    // computation — truncating here while TCP rounds produces a 1 px drift
-    // that fires resized() every frame.
+    // Use the controller's width calculation for every horizontal surface so
+    // the ruler, track content, and scroll limits agree exactly.
     const auto& st = timelineController->getState();
-    double beats = st.secondsToBeats(timelineLength);
-    auto baseWidth = static_cast<int>(std::round(beats * horizontalZoom));
-    auto viewportWidth = timelineViewport->getWidth();
-    auto minWidth = viewportWidth + (viewportWidth / 2);  // 1.5x viewport width for centering
-    auto contentWidth = juce::jmax(baseWidth, minWidth);
+    auto contentWidth = st.getContentWidth();
 
     // getTotalTracksHeight already applies verticalZoom per track, so do NOT
     // multiply again.
@@ -1086,6 +1079,7 @@ void MainView::updateContentSizes() {
     // Tell the content panel the minimum height so its own resized() (which
     // re-computes content size from zoom/timeline) doesn't shrink below the
     // viewport — needed for DnD to work in the empty region below tracks.
+    trackContentPanel->setMinWidth(contentWidth);
     trackContentPanel->setMinHeight(viewportFloor);
 
     // Update timeline size with enhanced content width

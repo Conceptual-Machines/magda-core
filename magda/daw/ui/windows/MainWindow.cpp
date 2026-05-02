@@ -930,8 +930,8 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     transportPanel->onTimeSelectionEdit = [this](double startSec, double endSec) {
         mainView->getTimelineController().dispatch(SetTimeSelectionEvent{startSec, endSec, {}});
     };
-    transportPanel->onEditCursorEdit = [this](double positionSec) {
-        mainView->getTimelineController().dispatch(SetEditCursorEvent{positionSec});
+    transportPanel->onEditCursorEdit = [this](double positionBeats) {
+        mainView->getTimelineController().dispatch(SetEditCursorEvent{positionBeats});
     };
 
     // Punch in/out callbacks
