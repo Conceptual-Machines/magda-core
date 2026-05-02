@@ -99,10 +99,14 @@ struct ClipInfo {
 
     /// Populate source metadata from engine (only sets if not already populated)
     void setSourceMetadata(double numBeats, double bpm) {
-        if (numBeats > 0.0 && sourceNumBeats <= 0.0)
+        if (numBeats > 0.0 && sourceNumBeats <= 0.0) {
+            DBG("[1157] setSourceMetadata clip=" << id << " sourceNumBeats 0 -> " << numBeats);
             sourceNumBeats = numBeats;
-        if (bpm > 0.0 && sourceBPM <= 0.0)
+        }
+        if (bpm > 0.0 && sourceBPM <= 0.0) {
+            DBG("[1157] setSourceMetadata clip=" << id << " sourceBPM 0 -> " << bpm);
             sourceBPM = bpm;
+        }
     }
 
     // =========================================================================

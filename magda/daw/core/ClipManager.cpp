@@ -794,8 +794,11 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
 
     // (1) Detected metadata — write-only role. Inspector "BPM" corrections
     // and BPM-detection callbacks land here. Never touched by the beat slider.
-    if (update.sourceBPM)
+    if (update.sourceBPM) {
+        DBG("[1157] applyAudioClipBeats clip=" << clipId << " sourceBPM " << clip->sourceBPM
+                                               << " -> " << juce::jmax(0.0, *update.sourceBPM));
         clip->sourceBPM = juce::jmax(0.0, *update.sourceBPM);
+    }
     if (update.sourceNumBeats)
         clip->sourceNumBeats = juce::jmax(0.0, *update.sourceNumBeats);
 
