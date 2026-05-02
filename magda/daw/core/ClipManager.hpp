@@ -259,7 +259,6 @@ class ClipManager {
     void setFadeInBehaviour(ClipId clipId, int behaviour);
     void setFadeOutBehaviour(ClipId clipId, int behaviour);
     void setAutoCrossfade(ClipId clipId, bool enabled);
-    void setLoopCrossfade(ClipId clipId, double seconds);
     void setLaunchFadeSamples(ClipId clipId, int samples);
 
     // Channels

@@ -201,31 +201,6 @@ void ClipFadesSection::initControls() {
 
     // ── Session-only controls ──
 
-    loopCrossfadeLabel_.setText("Xfade", juce::dontSendNotification);
-    loopCrossfadeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    loopCrossfadeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addChildComponent(loopCrossfadeLabel_);
-
-    loopCrossfadeValue_ =
-        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Raw);
-    loopCrossfadeValue_->setRange(0.0, 10.0, 0.0);
-    loopCrossfadeValue_->setSuffix(" s");
-    loopCrossfadeValue_->setDecimalPlaces(3);
-    loopCrossfadeValue_->setDrawBackground(false);
-    loopCrossfadeValue_->setDrawBorder(true);
-    loopCrossfadeValue_->setShowFillIndicator(false);
-    loopCrossfadeValue_->setTooltip("Loop crossfade at seam");
-    loopCrossfadeValue_->onValueChange = [this]() {
-        double newVal = juce::jmax(0.0, loopCrossfadeValue_->getValue());
-        for (auto cid : selectedClipIds_) {
-            const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio && c->view == magda::ClipView::Session)
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipLoopCrossfadeCommand>(cid, newVal));
-        }
-    };
-    addChildComponent(*loopCrossfadeValue_);
-
     launchFadeLabel_.setText("Launch", juce::dontSendNotification);
     launchFadeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     launchFadeLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
@@ -300,14 +275,11 @@ void ClipFadesSection::update() {
     autoCrossfadeToggle_.setVisible(!isSession);
 
     // Session controls
-    loopCrossfadeLabel_.setVisible(isSession);
-    loopCrossfadeValue_->setVisible(isSession);
     launchFadeLabel_.setVisible(isSession);
     launchFadeValue_->setVisible(isSession);
 
     // Update values
     if (isSession) {
-        loopCrossfadeValue_->setValue(clip->loopCrossfade, juce::dontSendNotification);
         launchFadeValue_->setValue(samplesToMs(clip->launchFadeSamples),
                                    juce::dontSendNotification);
     } else {
@@ -370,7 +342,6 @@ void ClipFadesSection::update() {
 bool ClipFadesSection::isAnyValueDragging() const {
     return (fadeInValue_ && fadeInValue_->isDragging()) ||
            (fadeOutValue_ && fadeOutValue_->isDragging()) ||
-           (loopCrossfadeValue_ && loopCrossfadeValue_->isDragging()) ||
            (launchFadeValue_ && launchFadeValue_->isDragging());
 }
 
@@ -386,8 +357,8 @@ int ClipFadesSection::getPreferredHeight() const {
     bool isSession = (clip->view == magda::ClipView::Session);
 
     if (isSession) {
-        // Section label + gap + xfade row + gap + launch row
-        return SECTION_H + GAP + ROW_H + GAP + ROW_H;
+        // Section label + gap + launch row
+        return SECTION_H + GAP + ROW_H;
     } else {
         // Section label + gap + fadeIn|fadeOut row + gap + type btns + gap + behaviour btns + gap +
         // AUTO-XFADE
@@ -414,23 +385,12 @@ void ClipFadesSection::resized() {
     bool isSession = (clip->view == magda::ClipView::Session);
 
     if (isSession) {
-        // Xfade row: label (42px) + gap (4px) + value
-        {
-            auto row = b.removeFromTop(ROW_H);
-            loopCrossfadeLabel_.setBounds(row.removeFromLeft(42));
-            row.removeFromLeft(GAP);
-            if (loopCrossfadeValue_)
-                loopCrossfadeValue_->setBounds(row);
-        }
-        b.removeFromTop(GAP);
         // Launch row: label (42px) + gap (4px) + value
-        {
-            auto row = b.removeFromTop(ROW_H);
-            launchFadeLabel_.setBounds(row.removeFromLeft(42));
-            row.removeFromLeft(GAP);
-            if (launchFadeValue_)
-                launchFadeValue_->setBounds(row);
-        }
+        auto row = b.removeFromTop(ROW_H);
+        launchFadeLabel_.setBounds(row.removeFromLeft(42));
+        row.removeFromLeft(GAP);
+        if (launchFadeValue_)
+            launchFadeValue_->setBounds(row);
     } else {
         const int colGap = 8;
         int halfW = juce::jmax(1, (b.getWidth() - colGap) / 2);

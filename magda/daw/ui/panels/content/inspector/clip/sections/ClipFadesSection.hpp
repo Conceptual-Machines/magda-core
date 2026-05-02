@@ -58,8 +58,6 @@ class ClipFadesSection : public juce::Component {
     juce::TextButton autoCrossfadeToggle_;
 
     // Session-only controls
-    juce::Label loopCrossfadeLabel_;
-    std::unique_ptr<magda::DraggableValueLabel> loopCrossfadeValue_;
     juce::Label launchFadeLabel_;
     std::unique_ptr<magda::DraggableValueLabel> launchFadeValue_;
 

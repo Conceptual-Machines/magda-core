@@ -259,13 +259,6 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                             }
                             if (std::abs(audioClip->getPan() - clip->pan) > 0.001f)
                                 audioClip->setPan(clip->pan);
-                            // Loop crossfade (session clips only)
-                            {
-                                double teXfade = audioClip->getLoopCrossfade().inSeconds();
-                                if (std::abs(teXfade - clip->loopCrossfade) > 0.001)
-                                    audioClip->setLoopCrossfade(
-                                        te::TimeDuration::fromSeconds(clip->loopCrossfade));
-                            }
                             // Launch fade smoothing
                             if (audioClip->getLaunchFadeSamples() != clip->launchFadeSamples)
                                 audioClip->setLaunchFadeSamples(clip->launchFadeSamples);
@@ -573,9 +566,6 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
             audioClipPtr->setFadeOut(te::TimeDuration::fromSeconds(fadeOutVal));
         }
 
-        // Loop crossfade and launch fade smoothing
-        if (clip->loopCrossfade > 0.0)
-            audioClipPtr->setLoopCrossfade(te::TimeDuration::fromSeconds(clip->loopCrossfade));
         audioClipPtr->setLaunchFadeSamples(clip->launchFadeSamples);
 
         // Set LaunchHandle looping state at creation time so it's ready before first launch
@@ -1697,11 +1687,6 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             static_cast<te::AudioClipBase::FadeBehaviour>(clip->fadeOutBehaviour));
     if (clip->autoCrossfade != audioClipPtr->getAutoCrossfade())
         audioClipPtr->setAutoCrossfade(clip->autoCrossfade);
-    {
-        double teLoopXfade = audioClipPtr->getLoopCrossfade().inSeconds();
-        if (std::abs(teLoopXfade - clip->loopCrossfade) > 0.001)
-            audioClipPtr->setLoopCrossfade(te::TimeDuration::fromSeconds(clip->loopCrossfade));
-    }
     if (audioClipPtr->getLaunchFadeSamples() != clip->launchFadeSamples)
         audioClipPtr->setLaunchFadeSamples(clip->launchFadeSamples);
 
