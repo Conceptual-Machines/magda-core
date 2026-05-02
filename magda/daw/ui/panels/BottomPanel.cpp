@@ -1037,15 +1037,6 @@ void BottomPanel::applyTimeModeToContent() {
     timeModeButton_->setVisible(!isSession);
     timeModeButton_->setEnabled(!forceRelative);
     timeModeButton_->setAlpha(forceRelative ? 0.4f : 1.0f);
-
-    DBG("BottomPanel::applyTimeModeToContent"
-        << " targetRelative=" << static_cast<int>(targetRelative)
-        << " panelRelative=" << static_cast<int>(relativeTimeMode_)
-        << " activeContent=" << static_cast<int>(content->getContentType()) << " clipId="
-        << static_cast<int>(activeClipId) << " isSession=" << static_cast<int>(isSession)
-        << " forceRelative=" << static_cast<int>(forceRelative)
-        << " buttonVisible=" << static_cast<int>(timeModeButton_->isVisible())
-        << " buttonEnabled=" << static_cast<int>(timeModeButton_->isEnabled()));
 }
 
 void BottomPanel::syncGridControlsFromContent() {

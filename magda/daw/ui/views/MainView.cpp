@@ -1749,51 +1749,46 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     startX = juce::jmax(0, startX);
     endX = juce::jmin(getWidth(), endX);
 
-    int selectionWidth = endX - startX;
+    const int selectionWidth = endX - startX;
+    const auto bandFill = DarkTheme::getColour(DarkTheme::TIME_SELECTION);
+    const auto edgeColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.8f);
 
-    // Check if this is an all-tracks selection
+    // Translucent fill so empty areas inside the band still read as selected.
+    // The overlay sits above clips in z-order, so this tint layers over the
+    // clip's own dark-blue body too (slight extra blueing on the body and a
+    // faintly bluish white waveform — both still legible).
     if (state.selection.isAllTracks()) {
-        // Draw full-height selection (backward compatible behavior)
-        g.setColour(DarkTheme::getColour(DarkTheme::TIME_SELECTION));
+        g.setColour(bandFill);
         g.fillRect(startX, 0, selectionWidth, getHeight());
 
-        // Draw selection edges
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.8f));
+        g.setColour(edgeColour);
         g.drawLine(static_cast<float>(startX), 0.0f, static_cast<float>(startX),
                    static_cast<float>(getHeight()), 2.0f);
         g.drawLine(static_cast<float>(endX), 0.0f, static_cast<float>(endX),
                    static_cast<float>(getHeight()), 2.0f);
     } else {
-        // Per-track selection: draw only on selected tracks
         int scrollY = owner.trackContentViewport->getViewPositionY();
         int numTracks = owner.trackContentPanel->getNumTracks();
 
         for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex) {
             if (state.selection.includesTrack(trackIndex)) {
-                // Get track position and height
                 int trackY = owner.trackContentPanel->getTrackYPosition(trackIndex) - scrollY;
                 int trackHeight = owner.trackContentPanel->getTrackHeight(trackIndex);
-
-                // Apply vertical zoom
                 trackHeight = static_cast<int>(trackHeight * owner.verticalZoom);
 
-                // Skip if track is not visible vertically
                 if (trackY + trackHeight < 0 || trackY > getHeight()) {
                     continue;
                 }
 
-                // Clamp to visible area vertically
                 int drawY = juce::jmax(0, trackY);
                 int drawBottom = juce::jmin(getHeight(), trackY + trackHeight);
                 int drawHeight = drawBottom - drawY;
 
                 if (drawHeight > 0) {
-                    // Draw semi-transparent selection highlight for this track
-                    g.setColour(DarkTheme::getColour(DarkTheme::TIME_SELECTION));
+                    g.setColour(bandFill);
                     g.fillRect(startX, drawY, selectionWidth, drawHeight);
 
-                    // Draw selection edges within track bounds
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.8f));
+                    g.setColour(edgeColour);
                     g.drawLine(static_cast<float>(startX), static_cast<float>(drawY),
                                static_cast<float>(startX), static_cast<float>(drawBottom), 2.0f);
                     g.drawLine(static_cast<float>(endX), static_cast<float>(drawY),
