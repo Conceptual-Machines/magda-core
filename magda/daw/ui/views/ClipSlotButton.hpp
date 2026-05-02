@@ -14,7 +14,7 @@ class ClipSlotButton : public juce::TextButton {
   public:
     static constexpr int PLAY_BUTTON_WIDTH = 22;
 
-    std::function<void()> onSingleClick;
+    std::function<void(const juce::MouseEvent&)> onSingleClick;
     std::function<void()> onDoubleClick;
     std::function<void()> onPlayButtonClick;
     std::function<void()> onEmptySlotStopClick;    // strip click on empty slot, track not armed
@@ -161,7 +161,7 @@ class ClipSlotButton : public juce::TextButton {
         }
 
         if (onSingleClick) {
-            onSingleClick();
+            onSingleClick(event);
         }
     }
 

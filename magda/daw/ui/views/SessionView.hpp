@@ -70,6 +70,7 @@ class SessionView : public juce::Component,
     // SelectionManagerListener
     void selectionTypeChanged(SelectionType newType) override;
     void multiTrackSelectionChanged(const std::unordered_set<TrackId>& trackIds) override;
+    void multiClipSelectionChanged(const std::unordered_set<ClipId>& clipIds) override;
 
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
@@ -236,13 +237,14 @@ class SessionView : public juce::Component,
     void removeSceneAsync(int sceneIndex);
 
     void wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, int sceneIndex);
-    void onClipSlotClicked(int trackIndex, int sceneIndex);
+    void onClipSlotClicked(int trackIndex, int sceneIndex, juce::ModifierKeys mods);
     void onPlayButtonClicked(int trackIndex, int sceneIndex);
     void onSceneLaunched(int sceneIndex);
     void triggerGroupScene(TrackId groupId, int sceneIndex);
     void openClipEditor(int trackIndex, int sceneIndex);
     void onCreateMidiClipClicked(int trackIndex, int sceneIndex);
     ClipId duplicateSessionClipToNextEmptyScene(ClipId clipId);
+    bool deleteSelectedSessionClips();
 
     // View mode state
     ViewMode currentViewMode_ = ViewMode::Live;

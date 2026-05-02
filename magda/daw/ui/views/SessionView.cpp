@@ -2361,8 +2361,8 @@ void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, in
         return;
     }
 
-    slot.onSingleClick = [this, trackIndex, sceneIndex]() {
-        onClipSlotClicked(trackIndex, sceneIndex);
+    slot.onSingleClick = [this, trackIndex, sceneIndex](const juce::MouseEvent& event) {
+        onClipSlotClicked(trackIndex, sceneIndex, event.mods);
     };
     slot.onPlayButtonClick = [this, trackIndex, sceneIndex]() {
         onPlayButtonClicked(trackIndex, sceneIndex);
@@ -2383,7 +2383,13 @@ void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, in
         TrackId tId = visibleTrackIds_[trackIndex];
         ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
         if (cId != INVALID_CLIP_ID) {
-            UndoManager::getInstance().executeCommand(std::make_unique<DeleteClipCommand>(cId));
+            auto& selection = SelectionManager::getInstance();
+            if (selection.isClipSelected(cId) && selection.getSelectedClipCount() > 1) {
+                deleteSelectedSessionClips();
+            } else {
+                UndoManager::getInstance().executeCommand(std::make_unique<DeleteClipCommand>(cId));
+                selection.clearSelection();
+            }
         }
     };
     slot.onCopyClip = [this, trackIndex, sceneIndex]() {
@@ -2411,8 +2417,13 @@ void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, in
     slot.onDuplicateClip = [this, trackIndex, sceneIndex]() {
         TrackId tId = visibleTrackIds_[trackIndex];
         ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
-        if (cId != INVALID_CLIP_ID)
-            duplicateSessionClipToNextEmptyScene(cId);
+        if (cId != INVALID_CLIP_ID) {
+            auto& selection = SelectionManager::getInstance();
+            if (selection.isClipSelected(cId) && selection.getSelectedClipCount() > 1)
+                duplicateSelectedSessionClips();
+            else
+                duplicateSessionClipToNextEmptyScene(cId);
+        }
     };
     slot.onAddScene = [this]() { addScene(); };
     slot.onRemoveScene = [this]() { removeScene(); };
@@ -2487,7 +2498,38 @@ bool SessionView::duplicateSelectedSessionClips() {
     return !duplicatedClipIds.empty();
 }
 
-void SessionView::onClipSlotClicked(int trackIndex, int sceneIndex) {
+bool SessionView::deleteSelectedSessionClips() {
+    auto selectedClips = SelectionManager::getInstance().getSelectedClips();
+    if (selectedClips.empty())
+        return false;
+
+    std::vector<ClipId> sessionClipIds;
+    sessionClipIds.reserve(selectedClips.size());
+    auto& clipManager = ClipManager::getInstance();
+    for (ClipId clipId : selectedClips) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip && clip->view == ClipView::Session)
+            sessionClipIds.push_back(clipId);
+    }
+    if (sessionClipIds.empty())
+        return false;
+
+    if (sessionClipIds.size() > 1)
+        UndoManager::getInstance().beginCompoundOperation("Delete Session Clips");
+
+    for (ClipId clipId : sessionClipIds) {
+        auto cmd = std::make_unique<DeleteClipCommand>(clipId);
+        UndoManager::getInstance().executeCommand(std::move(cmd));
+    }
+
+    if (sessionClipIds.size() > 1)
+        UndoManager::getInstance().endCompoundOperation();
+
+    SelectionManager::getInstance().clearSelection();
+    return true;
+}
+
+void SessionView::onClipSlotClicked(int trackIndex, int sceneIndex, juce::ModifierKeys mods) {
     if (trackIndex < 0 || trackIndex >= static_cast<int>(visibleTrackIds_.size())) {
         return;
     }
@@ -2497,8 +2539,10 @@ void SessionView::onClipSlotClicked(int trackIndex, int sceneIndex) {
 
     if (clipId != INVALID_CLIP_ID) {
         // Select the clip (update inspector) - no playback change
-        SelectionManager::getInstance().selectClip(clipId);
-        ClipManager::getInstance().setSelectedClip(clipId);
+        if (mods.isCommandDown())
+            SelectionManager::getInstance().toggleClipSelection(clipId);
+        else
+            SelectionManager::getInstance().selectClip(clipId);
     } else {
         // Empty slot - select the track
         selectTrack(trackId);
@@ -2900,6 +2944,11 @@ void SessionView::clipSelectionChanged(ClipId /*clipId*/) {
     updateAllClipSlots();
 }
 
+void SessionView::multiClipSelectionChanged(const std::unordered_set<ClipId>& /*clipIds*/) {
+    // Refresh all slots to update multi-selection highlight
+    updateAllClipSlots();
+}
+
 void SessionView::clipPlaybackStateChanged(ClipId clipId) {
     // Update slot appearance when playback state changes
     const auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -3002,7 +3051,6 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     }
 
     ClipId clipId = ClipManager::getInstance().getClipInSlot(trackId, sceneIndex);
-    ClipId selectedClipId = ClipManager::getInstance().getSelectedClip();
 
     if (clipId != INVALID_CLIP_ID) {
         const auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -3016,7 +3064,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             slot->clipId = clipId;
             slot->clipIsPlaying = (playState == SessionClipPlayState::Playing);
             slot->clipIsQueued = (playState == SessionClipPlayState::Queued);
-            slot->isSelected = (clipId == selectedClipId);
+            slot->isSelected = SelectionManager::getInstance().isClipSelected(clipId);
             // Issue #1157: read through the accessor — for autoTempo clips
             // this computes lengthBeats × 60 / projectBPM live, so the slot
             // progress overlay stays correct after a project-tempo change
