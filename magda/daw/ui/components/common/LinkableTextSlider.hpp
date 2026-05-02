@@ -77,7 +77,8 @@ class LinkableTextSlider : public juce::Component,
     std::function<void(double)> onValueChanged;
 
     // === Mod/macro link callbacks (wired by DeviceSlotComponent) ===
-    std::function<void(int modIndex, magda::ControlTarget target, float amount)> onModLinkedWithAmount;
+    std::function<void(int modIndex, magda::ControlTarget target, float amount)>
+        onModLinkedWithAmount;
     std::function<void(int modIndex, magda::ControlTarget target)> onModUnlinked;
     std::function<void(int modIndex, magda::ControlTarget target)> onTrackModUnlinked;
     std::function<void(int modIndex, magda::ControlTarget target, float amount)> onModAmountChanged;

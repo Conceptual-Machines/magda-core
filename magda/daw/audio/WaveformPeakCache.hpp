@@ -67,8 +67,12 @@ class WaveformPeakCache {
      */
     MinMax getMinMaxForRange(int channel, juce::int64 startSample, juce::int64 endSample) const;
 
-    int getNumChannels() const noexcept { return numChannels_; }
-    juce::int64 getNumSourceSamples() const noexcept { return sourceLengthSamples_; }
+    int getNumChannels() const noexcept {
+        return numChannels_;
+    }
+    juce::int64 getNumSourceSamples() const noexcept {
+        return sourceLengthSamples_;
+    }
 
   private:
     WaveformPeakCache() = default;

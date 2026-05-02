@@ -88,7 +88,7 @@ const StoredAlias* walkLayers(const std::map<juce::String, StoredAlias>& userPro
 // ============================================================================
 
 std::optional<ControlTarget> AliasRegistry::lookup(const juce::String& canonicalName,
-                                                  const juce::String& pluginTypeHint) const {
+                                                   const juce::String& pluginTypeHint) const {
     const auto* sa = walkLayers(userProjectLayer_, userGlobalLayer_, curatedLayer_, autoGenLayer_,
                                 canonicalName, pluginTypeHint);
     if (sa == nullptr)

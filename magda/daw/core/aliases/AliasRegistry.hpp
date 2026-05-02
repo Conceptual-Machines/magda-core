@@ -120,7 +120,7 @@ class AliasRegistry {
      * @param pluginTypeHint Optional hint for disambiguation (may be empty).
      */
     std::optional<ControlTarget> lookup(const juce::String& canonicalName,
-                                       const juce::String& pluginTypeHint = {}) const;
+                                        const juce::String& pluginTypeHint = {}) const;
 
     /**
      * @brief Look up the raw StoredAlias (for TargetResolver in PR 3).

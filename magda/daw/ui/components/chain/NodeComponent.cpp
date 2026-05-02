@@ -1249,31 +1249,31 @@ void NodeComponent::initializeModsMacrosPanels() {
     };
 
     // Mod matrix: toggle bipolar
-    modulatorEditorPanel_->onModLinkBipolarChanged = [this](int modIndex, magda::ControlTarget target,
-                                                            bool bipolar) {
-        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-        if (device) {
-            magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
-                                                                 bipolar);
-        } else {
-            magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
-                                                                 bipolar);
-        }
-        updateModulatorEditor();
-    };
+    modulatorEditorPanel_->onModLinkBipolarChanged =
+        [this](int modIndex, magda::ControlTarget target, bool bipolar) {
+            auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+            if (device) {
+                magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
+                                                                     bipolar);
+            } else {
+                magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
+                                                                     bipolar);
+            }
+            updateModulatorEditor();
+        };
 
     // Mod matrix: change link amount
-    modulatorEditorPanel_->onModLinkAmountChanged = [this](int modIndex, magda::ControlTarget target,
-                                                           float amount) {
-        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-        if (device) {
-            magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
-                                                                amount);
-        } else {
-            magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
-                                                                amount);
-        }
-    };
+    modulatorEditorPanel_->onModLinkAmountChanged =
+        [this](int modIndex, magda::ControlTarget target, float amount) {
+            auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+            if (device) {
+                magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
+                                                                    amount);
+            } else {
+                magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
+                                                                    amount);
+            }
+        };
 
     addChildComponent(*modulatorEditorPanel_);
 

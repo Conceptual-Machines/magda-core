@@ -208,7 +208,28 @@ void SessionClipScheduler::retainLaunchHandle(ClipId clipId) {
 }
 
 void SessionClipScheduler::releaseLaunchHandle(ClipId clipId) {
-    activeLaunchHandles_.erase(clipId);
+    auto it = activeLaunchHandles_.find(clipId);
+    if (it == activeLaunchHandles_.end())
+        return;
+    // Park the shared_ptr until the next processStateEvents() pass — see
+    // header comment on deferredHandlesCurrent_ for why we can't drop it now.
+    deferredHandlesCurrent_.push_back(std::move(it->second));
+    activeLaunchHandles_.erase(it);
+}
+
+void SessionClipScheduler::releaseAllLaunchHandles() {
+    deferredHandlesCurrent_.reserve(deferredHandlesCurrent_.size() + activeLaunchHandles_.size());
+    for (auto& [_, h] : activeLaunchHandles_)
+        deferredHandlesCurrent_.push_back(std::move(h));
+    activeLaunchHandles_.clear();
+}
+
+void SessionClipScheduler::drainDeferredHandles() {
+    // Destructors of last cycle's parked handles run here on the message
+    // thread — by now the audio thread has had at least one full block to
+    // drain any Unmonitor commands referencing them.
+    deferredHandlesPrevious_.clear();
+    deferredHandlesPrevious_.swap(deferredHandlesCurrent_);
 }
 
 void SessionClipScheduler::sendMonitorCommand(ClipId clipId) {
@@ -239,6 +260,22 @@ void SessionClipScheduler::processStateEvents() {
     auto& cm = ClipManager::getInstance();
     auto& tm = TrackManager::getInstance();
 
+    // Surface queue overflow. Both queues silently drop on full, so without
+    // this telemetry a flurry of scene launches or rapid controller mashing
+    // can lose Monitor/Unmonitor commands or state transitions and the only
+    // symptom is "the UI looks wrong but no logs say why."
+    if (uint32_t cmdDropped = audioMonitor_.commandQueue().getDroppedCount()) {
+        DBG("SessionClip command queue dropped " << static_cast<int>(cmdDropped)
+                                                 << " push(es) — bursty scene launches exceeding "
+                                                    "queue size?");
+        audioMonitor_.commandQueue().clearDroppedCount();
+    }
+    if (uint32_t stateDropped = audioMonitor_.stateQueue().getDroppedCount()) {
+        DBG("SessionClip state queue dropped " << static_cast<int>(stateDropped)
+                                               << " push(es) — message thread fell behind audio");
+        audioMonitor_.stateQueue().clearDroppedCount();
+    }
+
     // Drain stale events from the audio monitor state queue
     SessionClipStateEvent event;
     while (audioMonitor_.stateQueue().pop(event)) {
@@ -263,8 +300,10 @@ void SessionClipScheduler::processStateEvents() {
                 c->sessionPlayheadPos = -1.0;
             cm.notifyClipPlaybackStateChanged(clipId);
         }
-        // Clear ALL retained handles/state — not just active clips
-        activeLaunchHandles_.clear();
+        // Clear ALL retained handles/state — not just active clips.
+        // releaseAllLaunchHandles parks shared_ptrs in the deferred queue
+        // so the audio thread keeps a valid handle until the next sweep.
+        releaseAllLaunchHandles();
         clipLaunchData_.clear();
         lastNotifiedState_.clear();
         stopPendingTracks_.clear();
@@ -343,6 +382,13 @@ void SessionClipScheduler::processStateEvents() {
     // Update playhead tracking
     if (playheadClipId_ != INVALID_CLIP_ID && !hasActiveClips())
         playheadClipId_ = INVALID_CLIP_ID;
+
+    // Last step: drop the LaunchHandles parked in the previous cycle. By now
+    // the audio thread has run many blocks and has either processed every
+    // Unmonitor command we queued or — at worst — its stale entry pointed
+    // at a still-alive handle. Doing this AFTER the polling loop above
+    // ensures any handle we re-park in this cycle survives one more pass.
+    drainDeferredHandles();
 }
 
 // =============================================================================
@@ -508,7 +554,7 @@ void SessionClipScheduler::deactivateAllSessionClips() {
         cm.notifyClipPlaybackStateChanged(clipId);
     }
 
-    activeLaunchHandles_.clear();
+    releaseAllLaunchHandles();
     clipLaunchData_.clear();
     lastNotifiedState_.clear();
     stopPendingTracks_.clear();

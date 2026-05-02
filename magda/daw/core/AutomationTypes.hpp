@@ -32,7 +32,6 @@ enum class AutomationDrawMode {
     Curve    // Draw smooth curves
 };
 
-
 /**
  * @brief Get display name for lane type
  */

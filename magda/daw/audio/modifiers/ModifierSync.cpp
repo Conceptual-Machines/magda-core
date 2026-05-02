@@ -218,8 +218,8 @@ void ModifierSyncWalker::syncStructure(
                     continue;
                 }
 
-                if (auto* param =
-                        resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(), link.target.paramIndex))
+                if (auto* param = resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(),
+                                                         link.target.paramIndex))
                     param->addModifier(sourceMod, link.amount);
             }
         }
@@ -255,8 +255,8 @@ void ModifierSyncWalker::syncStructure(
                     continue;
                 }
 
-                auto* param =
-                    resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(), link.target.paramIndex);
+                auto* param = resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(),
+                                                     link.target.paramIndex);
                 if (!param)
                     continue;
 
@@ -310,8 +310,8 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                         continue;  // Self-target — skipped, see syncStructure.
                     param = resolveSameScopeModParam(link, *node.mods, state.modifiers);
                 } else {
-                    param =
-                        resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(), link.target.paramIndex);
+                    param = resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(),
+                                                   link.target.paramIndex);
                 }
                 if (!param)
                     continue;
@@ -345,8 +345,8 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                     param = node.mods ? resolveSameScopeModParam(link, *node.mods, state.modifiers)
                                       : nullptr;
                 } else {
-                    param =
-                        resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(), link.target.paramIndex);
+                    param = resolveLinkTargetParam(ctx, link.target.devicePath.getDeviceId(),
+                                                   link.target.paramIndex);
                 }
                 if (!param)
                     continue;

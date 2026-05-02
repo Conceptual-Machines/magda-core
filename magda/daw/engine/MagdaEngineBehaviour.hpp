@@ -7,9 +7,9 @@
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
 #include "../audio/plugins/MidiChordEnginePlugin.hpp"
 #include "../audio/plugins/MidiReceivePlugin.hpp"
-#include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../audio/plugins/SidechainMonitorPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
+#include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
 
 namespace magda {

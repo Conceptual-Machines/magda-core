@@ -237,7 +237,8 @@ class ModulatorEditorPanel : public juce::Component,
     std::function<void(int modIndex, magda::ControlTarget target)> onModLinkDeleted;
     std::function<void(int modIndex, magda::ControlTarget target, bool bipolar)>
         onModLinkBipolarChanged;
-    std::function<void(int modIndex, magda::ControlTarget target, float amount)> onModLinkAmountChanged;
+    std::function<void(int modIndex, magda::ControlTarget target, float amount)>
+        onModLinkAmountChanged;
 
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;

@@ -1,8 +1,8 @@
 #include "magda/scripting/LuaScriptStore.hpp"
 
-#include "magda/daw/core/AppPaths.hpp"
-
 #include <algorithm>
+
+#include "magda/daw/core/AppPaths.hpp"
 
 namespace magda::scripting {
 
@@ -22,16 +22,14 @@ std::vector<juce::File> LuaScriptStore::enumerate() const {
     if (!root_.isDirectory())
         return out;
 
-    auto found = root_.findChildFiles(juce::File::findFiles, /*searchRecursively*/ false,
-                                      "*.lua");
+    auto found = root_.findChildFiles(juce::File::findFiles, /*searchRecursively*/ false, "*.lua");
     out.reserve(static_cast<size_t>(found.size()));
     for (auto& f : found)
         out.push_back(f);
 
-    std::sort(out.begin(), out.end(),
-              [](const juce::File& a, const juce::File& b) {
-                  return a.getFileName().compareIgnoreCase(b.getFileName()) < 0;
-              });
+    std::sort(out.begin(), out.end(), [](const juce::File& a, const juce::File& b) {
+        return a.getFileName().compareIgnoreCase(b.getFileName()) < 0;
+    });
 
     return out;
 }

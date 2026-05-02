@@ -1,7 +1,5 @@
 #include "ParameterDetector.hpp"
 
-#include "AppPaths.hpp"
-
 #include <juce_events/juce_events.h>
 #include <juce_llm/juce_llm.h>
 
@@ -12,6 +10,7 @@
 #include <thread>
 
 #include "../../agents/llm_client_factory.hpp"
+#include "AppPaths.hpp"
 #include "Config.hpp"
 
 namespace magda {

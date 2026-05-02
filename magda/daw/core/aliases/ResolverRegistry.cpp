@@ -45,7 +45,7 @@ void ResolverRegistry::registerResolver(std::unique_ptr<AliasResolver> resolver)
 // ============================================================================
 
 std::optional<ControlTarget> FocusedDeviceMacroResolver::resolve(const juce::StringPairArray& args,
-                                                                const ChainContext& ctx) const {
+                                                                 const ChainContext& ctx) const {
     // Use focusedMacroOwner() rather than focusedDevice() so that focusing
     // a user-created rack auto-maps the controller to the rack's macros.
     // See DefaultChainContext::focusedMacroOwner() for the exact mapping;
@@ -88,8 +88,8 @@ std::optional<ControlTarget> SelectedTrackVolumeResolver::resolve(
 // SelectedTrackPanResolver
 // ============================================================================
 
-std::optional<ControlTarget> SelectedTrackPanResolver::resolve(const juce::StringPairArray& /*args*/,
-                                                              const ChainContext& ctx) const {
+std::optional<ControlTarget> SelectedTrackPanResolver::resolve(
+    const juce::StringPairArray& /*args*/, const ChainContext& ctx) const {
     TrackId trackId = ctx.selectedTrack();
     if (trackId == INVALID_TRACK_ID)
         return std::nullopt;
@@ -105,7 +105,7 @@ std::optional<ControlTarget> SelectedTrackPanResolver::resolve(const juce::Strin
 // ============================================================================
 
 std::optional<ControlTarget> MasterVolumeResolver::resolve(const juce::StringPairArray& /*args*/,
-                                                          const ChainContext& /*ctx*/) const {
+                                                           const ChainContext& /*ctx*/) const {
     ControlTarget t;
     t.devicePath = ChainNodePath::trackLevel(MASTER_TRACK_ID);
     t.paramIndex = 0;  // volume
@@ -117,7 +117,7 @@ std::optional<ControlTarget> MasterVolumeResolver::resolve(const juce::StringPai
 // ============================================================================
 
 std::optional<ControlTarget> MasterPanResolver::resolve(const juce::StringPairArray& /*args*/,
-                                                       const ChainContext& /*ctx*/) const {
+                                                        const ChainContext& /*ctx*/) const {
     ControlTarget t;
     t.devicePath = ChainNodePath::trackLevel(MASTER_TRACK_ID);
     t.paramIndex = 1;  // pan

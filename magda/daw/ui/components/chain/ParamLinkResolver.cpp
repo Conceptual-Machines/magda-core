@@ -8,7 +8,8 @@ std::vector<ResolvedModLink> getLinkedMods(const ParamLinkContext& ctx) {
         return linked;
     }
 
-    magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
+    magda::ControlTarget thisTarget =
+        magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
 
     // If a mod is selected, only check that specific mod
     if (ctx.selectedModIndex >= 0 && ctx.deviceMods &&
@@ -54,7 +55,8 @@ std::vector<ResolvedMacroLink> getLinkedMacros(const ParamLinkContext& ctx) {
         return linked;
     }
 
-    magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
+    magda::ControlTarget thisTarget =
+        magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
 
     // If a macro is selected, only check that specific macro
     if (ctx.selectedMacroIndex >= 0 && ctx.deviceMacros &&
@@ -99,7 +101,8 @@ bool hasActiveLinks(const ParamLinkContext& ctx) {
         return false;
     }
 
-    magda::ControlTarget modTarget = magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
+    magda::ControlTarget modTarget =
+        magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
 
     // Check device-level mods
     if (ctx.deviceMods) {
@@ -120,7 +123,8 @@ bool hasActiveLinks(const ParamLinkContext& ctx) {
     }
 
     // Check device-level macros
-    magda::ControlTarget macroTarget = magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
+    magda::ControlTarget macroTarget =
+        magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
     if (ctx.deviceMacros) {
         for (const auto& macro : *ctx.deviceMacros) {
             if (macro.getLink(macroTarget) != nullptr) {
@@ -165,7 +169,8 @@ float computeTotalModModulation(const ParamLinkContext& ctx) {
         return total;
     }
 
-    magda::ControlTarget modTarget = magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
+    magda::ControlTarget modTarget =
+        magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
 
     // Device-level mods
     if (ctx.deviceMods) {
@@ -206,7 +211,8 @@ float computeTotalMacroModulation(const ParamLinkContext& ctx) {
         return total;
     }
 
-    magda::ControlTarget macroTarget = magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
+    magda::ControlTarget macroTarget =
+        magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
 
     // Device-level macros
     if (ctx.deviceMacros) {

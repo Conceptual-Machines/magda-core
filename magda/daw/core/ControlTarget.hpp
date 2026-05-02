@@ -43,10 +43,10 @@ struct ControlTarget {
     Kind kind = Kind::PluginParam;
     ChainNodePath devicePath;
 
-    int paramIndex = -1;            // PluginParam, DeviceMacro
-    ModId modId = INVALID_MOD_ID;   // ModParam
-    int modParamIndex = -1;         // ModParam (0 = Rate)
-    int sendBusIndex = -1;          // SendLevel
+    int paramIndex = -1;           // PluginParam, DeviceMacro
+    ModId modId = INVALID_MOD_ID;  // ModParam
+    int modParamIndex = -1;        // ModParam (0 = Rate)
+    int sendBusIndex = -1;         // SendLevel
 
     bool isValid() const {
         if (!devicePath.isValid())
@@ -157,12 +157,18 @@ struct ControlTarget {
 
 inline const char* toString(ControlTarget::Kind kind) {
     switch (kind) {
-        case ControlTarget::Kind::PluginParam: return "plugin_param";
-        case ControlTarget::Kind::DeviceMacro: return "device_macro";
-        case ControlTarget::Kind::ModParam:    return "mod_param";
-        case ControlTarget::Kind::TrackVolume: return "track_volume";
-        case ControlTarget::Kind::TrackPan:    return "track_pan";
-        case ControlTarget::Kind::SendLevel:   return "send_level";
+        case ControlTarget::Kind::PluginParam:
+            return "plugin_param";
+        case ControlTarget::Kind::DeviceMacro:
+            return "device_macro";
+        case ControlTarget::Kind::ModParam:
+            return "mod_param";
+        case ControlTarget::Kind::TrackVolume:
+            return "track_volume";
+        case ControlTarget::Kind::TrackPan:
+            return "track_pan";
+        case ControlTarget::Kind::SendLevel:
+            return "send_level";
     }
     return "unknown";
 }

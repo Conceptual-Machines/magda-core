@@ -101,8 +101,24 @@ class SessionClipScheduler : public ClipManagerListener {
     /** Ensure a LaunchHandle shared_ptr is held for a clip (keeps it alive for audio thread). */
     void retainLaunchHandle(ClipId clipId);
 
-    /** Release the LaunchHandle shared_ptr for a clip. */
+    /** Release the LaunchHandle shared_ptr for a clip.
+     *
+     *  Two-phase: the handle is parked in `deferredHandlesCurrent_` and only
+     *  destroyed in a subsequent `processStateEvents()` once the audio thread
+     *  has had at least one full block to drain pending Unmonitor commands.
+     *  Without the delay, a queue-overflow drop or a not-yet-processed command
+     *  would leave the audio thread holding a raw pointer to a freed handle.
+     */
     void releaseLaunchHandle(ClipId clipId);
+
+    /** Bulk variant of releaseLaunchHandle — moves every entry out of
+     *  activeLaunchHandles_ into the deferred-release queue. */
+    void releaseAllLaunchHandles();
+
+    /** Drain handles parked one cycle ago. Called from processStateEvents()
+     *  AFTER the audio thread has had an opportunity to see queued Unmonitor
+     *  commands; the shared_ptr destructors run here on the message thread. */
+    void drainDeferredHandles();
 
     /** Set up audio-thread monitoring for a clip's playhead position. */
     void sendMonitorCommand(ClipId clipId);
@@ -122,6 +138,19 @@ class SessionClipScheduler : public ClipManagerListener {
 
     // LaunchHandle shared_ptrs kept alive while clips are active.
     std::unordered_map<ClipId, std::shared_ptr<te::LaunchHandle>> activeLaunchHandles_;
+
+    // Two-phase release of LaunchHandles. When releaseLaunchHandle() is
+    // called we move the shared_ptr into `deferredHandlesCurrent_` rather
+    // than dropping it. Each processStateEvents() pass first runs the
+    // destructors of the previous cycle (`deferredHandlesPrevious_`) — the
+    // audio thread has already had a full block to drain Unmonitor
+    // commands, so the raw pointer it held is no longer in use — and then
+    // rotates current → previous. Costs one extra ~33ms of memory liveness
+    // per stopped clip; in exchange the audio thread can never see a raw
+    // pointer to a freed te::LaunchHandle, even if the command queue
+    // dropped the Unmonitor.
+    std::vector<std::shared_ptr<te::LaunchHandle>> deferredHandlesCurrent_;
+    std::vector<std::shared_ptr<te::LaunchHandle>> deferredHandlesPrevious_;
 
     // Tracks last-notified play state per clip to avoid redundant UI notifications
     std::unordered_map<ClipId, SessionClipPlayState> lastNotifiedState_;

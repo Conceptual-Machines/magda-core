@@ -78,6 +78,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
         clips_[clip.id] = clip;
     }
 
+    addToSessionSlotIndex(clips_[clip.id]);
     notifyClipsChanged();
 
     return clip.id;
@@ -121,6 +122,7 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
         clips_[clip.id] = clip;
     }
 
+    addToSessionSlotIndex(clips_[clip.id]);
     notifyClipsChanged();
 
     return clip.id;
@@ -153,6 +155,7 @@ void ClipManager::deleteClip(ClipId clipId) {
         lastTriggeredSessionClipId_ = INVALID_CLIP_ID;
     }
 
+    removeFromSessionSlotIndex(it->second);
     clips_.erase(it);
     notifyClipsChanged();
 }
@@ -162,6 +165,7 @@ void ClipManager::restoreClip(const ClipInfo& clipInfo) {
         return;
 
     clips_[clipInfo.id] = clipInfo;
+    addToSessionSlotIndex(clips_[clipInfo.id]);
 
     // Ensure nextClipId_ is beyond any restored clip IDs
     if (clipInfo.id >= nextClipId_) {
@@ -220,6 +224,7 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
         newClip.loopEnabled = true;
     }
     clips_[newClip.id] = newClip;
+    addToSessionSlotIndex(clips_[newClip.id]);
 
     notifyClipsChanged();
 
@@ -253,6 +258,7 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
         newClip.loopEnabled = true;
         clips_[newClip.id] = newClip;
     }
+    addToSessionSlotIndex(clips_[newClip.id]);
 
     notifyClipsChanged();
 
@@ -299,7 +305,9 @@ void ClipManager::moveClip(ClipId clipId, double newStartTime, double tempo) {
 void ClipManager::moveClipToTrack(ClipId clipId, TrackId newTrackId) {
     if (auto* clip = getClip(clipId)) {
         if (clip->trackId != newTrackId) {
+            removeFromSessionSlotIndex(*clip);
             clip->trackId = newTrackId;
+            addToSessionSlotIndex(*clip);
             notifyClipsChanged();  // Track assignment change affects layout
         }
     }
@@ -487,6 +495,7 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
 
     // Add right clip to the clip pool
     clips_[rightClip.id] = rightClip;
+    addToSessionSlotIndex(clips_[rightClip.id]);
 
     notifyClipsChanged();
 
@@ -1262,19 +1271,36 @@ void ClipManager::clearClipSelection() {
 // Session View (Clip Launcher)
 // ============================================================================
 
+void ClipManager::addToSessionSlotIndex(const ClipInfo& clip) {
+    if (clip.view != ClipView::Session || clip.sceneIndex < 0)
+        return;
+    sessionSlotIndex_[makeSessionSlotKey(clip.trackId, clip.sceneIndex)] = clip.id;
+}
+
+void ClipManager::removeFromSessionSlotIndex(const ClipInfo& clip) {
+    if (clip.view != ClipView::Session || clip.sceneIndex < 0)
+        return;
+    auto it = sessionSlotIndex_.find(makeSessionSlotKey(clip.trackId, clip.sceneIndex));
+    // Only erase if the cached entry still points at this clip — guards against
+    // sequences where a slot was already overwritten by another mutation.
+    if (it != sessionSlotIndex_.end() && it->second == clip.id)
+        sessionSlotIndex_.erase(it);
+}
+
 ClipId ClipManager::getClipInSlot(TrackId trackId, int sceneIndex) const {
-    for (const auto& [id, clip] : clips_) {
-        if (clip.view == ClipView::Session && clip.trackId == trackId &&
-            clip.sceneIndex == sceneIndex) {
-            return clip.id;
-        }
-    }
-    return INVALID_CLIP_ID;
+    if (sceneIndex < 0)
+        return INVALID_CLIP_ID;
+    auto it = sessionSlotIndex_.find(makeSessionSlotKey(trackId, sceneIndex));
+    return it != sessionSlotIndex_.end() ? it->second : INVALID_CLIP_ID;
 }
 
 void ClipManager::setClipSceneIndex(ClipId clipId, int sceneIndex) {
     if (auto* clip = getClip(clipId)) {
+        if (clip->sceneIndex == sceneIndex)
+            return;
+        removeFromSessionSlotIndex(*clip);
         clip->sceneIndex = sceneIndex;
+        addToSessionSlotIndex(*clip);
         notifyClipsChanged();  // Structural change: old slot must also refresh
     }
 }
@@ -1326,6 +1352,7 @@ void ClipManager::removeListener(ClipManagerListener* listener) {
 
 void ClipManager::clearAllClips() {
     clips_.clear();
+    sessionSlotIndex_.clear();
     selectedClipId_ = INVALID_CLIP_ID;
     nextClipId_ = 1;
     notifyClipsChanged();
@@ -1796,7 +1823,11 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     while (getClipInSlot(newTrackId, sceneForThisClip) != INVALID_CLIP_ID) {
                         sceneForThisClip++;
                     }
+                    // The clip was inserted by createAudioClip/createMidiClip
+                    // with sceneIndex=-1, so the slot index has no entry yet.
+                    // Just add now that we know the final scene.
                     newClip->sceneIndex = sceneForThisClip;
+                    addToSessionSlotIndex(*newClip);
                     trackSceneMap[newTrackId] = sceneForThisClip + 1;
                     newClip->loopEnabled = true;
                     newClip->launchMode = clipData.launchMode;

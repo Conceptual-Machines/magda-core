@@ -1,7 +1,7 @@
 #include "plugins/DrumGridPlugin.hpp"
 
-#include "plugins/MagdaSamplerPlugin.hpp"
 #include "core/TrackManager.hpp"
+#include "plugins/MagdaSamplerPlugin.hpp"
 
 namespace magda::daw::audio {
 

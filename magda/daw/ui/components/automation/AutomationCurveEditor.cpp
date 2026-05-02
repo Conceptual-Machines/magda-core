@@ -455,7 +455,8 @@ double AutomationCurveEditor::applyValueSnap(double normalized) const {
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
     if (!lane || !lane->snapValue)
         return normalized;
-    return ParameterUtils::snapNormalizedToGrid(normalized, getParameterInfoForTarget(lane->target));
+    return ParameterUtils::snapNormalizedToGrid(normalized,
+                                                getParameterInfoForTarget(lane->target));
 }
 
 void AutomationCurveEditor::onPointDeleted(uint32_t pointId) {

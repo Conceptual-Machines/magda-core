@@ -4,8 +4,8 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/plugins/DrumGridPlugin.hpp"
-#include "../audio/racks/InstrumentRackManager.hpp"
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
+#include "../audio/racks/InstrumentRackManager.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"

@@ -309,11 +309,13 @@ class NodeComponent : public juce::Component,
                                              float /*amount*/) {}
     virtual void onModLinkRemovedInternal(int /*modIndex*/, magda::ControlTarget /*target*/) {}
     virtual void onMacroValueChangedInternal(int /*macroIndex*/, float /*value*/) {}
-    virtual void onMacroTargetChangedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/) {}
+    virtual void onMacroTargetChangedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/) {
+    }
     virtual void onMacroNameChangedInternal(int /*macroIndex*/, const juce::String& /*name*/) {}
     virtual void onMacroAllLinksClearedInternal(int /*macroIndex*/) {}
     // Contextual link callbacks for macros (similar to mods)
-    virtual void onMacroLinkAmountChangedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/,
+    virtual void onMacroLinkAmountChangedInternal(int /*macroIndex*/,
+                                                  magda::ControlTarget /*target*/,
                                                   float /*amount*/) {}
     virtual void onMacroNewLinkCreatedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/,
                                                float /*amount*/) {}

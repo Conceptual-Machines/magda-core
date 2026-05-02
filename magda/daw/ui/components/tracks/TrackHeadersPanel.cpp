@@ -3421,7 +3421,7 @@ void TrackHeadersPanel::showAutomationMenu(TrackId trackId, juce::Component* rel
                                 target.devicePath.trackId = trackId;
                                 target.devicePath = devicePath;
                                 target.paramIndex = i;
-                                                   device.parameters[static_cast<size_t>(i)].name;
+                                device.parameters[static_cast<size_t>(i)].name;
 
                                 int itemId =
                                     kDeviceParamBase + static_cast<int>(deviceParamTargets->size());

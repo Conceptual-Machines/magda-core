@@ -89,7 +89,8 @@ std::unique_ptr<WaveformPeakCache> WaveformPeakCache::loadFromDisk(const juce::F
     cache->numBuckets_ = static_cast<juce::int64>(header.numBucketsPerChannel);
     cache->peaks_.resize(static_cast<size_t>(cache->numChannels_));
 
-    const size_t bytesPerChannel = static_cast<size_t>(cache->numBuckets_) * 2 * sizeof(std::int16_t);
+    const size_t bytesPerChannel =
+        static_cast<size_t>(cache->numBuckets_) * 2 * sizeof(std::int16_t);
     for (auto& chPeaks : cache->peaks_) {
         chPeaks.resize(static_cast<size_t>(cache->numBuckets_) * 2);
         if (bytesPerChannel > 0) {
@@ -214,9 +215,8 @@ std::unique_ptr<WaveformPeakCache> WaveformPeakCache::computeAndWrite(
     return cache;
 }
 
-WaveformPeakCache::MinMax WaveformPeakCache::getMinMaxForRange(int channel,
-                                                                juce::int64 startSample,
-                                                                juce::int64 endSample) const {
+WaveformPeakCache::MinMax WaveformPeakCache::getMinMaxForRange(int channel, juce::int64 startSample,
+                                                               juce::int64 endSample) const {
     MinMax result;
 
     if (channel < 0 || channel >= numChannels_)
@@ -231,8 +231,7 @@ WaveformPeakCache::MinMax WaveformPeakCache::getMinMaxForRange(int channel,
 
     const juce::int64 firstBucket = startSample / SAMPLES_PER_PEAK;
     // -1 to make the range half-open in bucket space.
-    const juce::int64 lastBucket =
-        std::min(numBuckets_ - 1, (endSample - 1) / SAMPLES_PER_PEAK);
+    const juce::int64 lastBucket = std::min(numBuckets_ - 1, (endSample - 1) / SAMPLES_PER_PEAK);
 
     const auto& chPeaks = peaks_[static_cast<size_t>(channel)];
 

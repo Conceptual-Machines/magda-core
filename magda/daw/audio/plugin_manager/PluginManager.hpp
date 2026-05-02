@@ -13,8 +13,8 @@
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TypeIds.hpp"
 #include "modifiers/CurveSnapshot.hpp"
-#include "processors/DeviceProcessor.hpp"
 #include "plugins/DrumGridPlugin.hpp"
+#include "processors/DeviceProcessor.hpp"
 #include "racks/InstrumentRackManager.hpp"
 #include "racks/RackSyncManager.hpp"
 

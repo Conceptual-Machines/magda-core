@@ -49,11 +49,11 @@ int errorMessageHandler(lua_State* L) {
 
 bool runChunk(lua_State* L, juce::String& errorOut) {
     // Stack: [ ..., chunk ]
-    int base = lua_gettop(L);                 // index of the chunk function
+    int base = lua_gettop(L);  // index of the chunk function
     lua_pushcfunction(L, errorMessageHandler);
-    lua_insert(L, base);                      // move handler below the chunk
-    int rc = lua_pcall(L, 0, 0, base);        // 0 args, 0 results, handler at `base`
-    lua_remove(L, base);                      // remove handler
+    lua_insert(L, base);                // move handler below the chunk
+    int rc = lua_pcall(L, 0, 0, base);  // 0 args, 0 results, handler at `base`
+    lua_remove(L, base);                // remove handler
     if (rc != LUA_OK) {
         size_t len = 0;
         const char* msg = lua_tolstring(L, -1, &len);
@@ -67,8 +67,7 @@ bool runChunk(lua_State* L, juce::String& errorOut) {
 
 }  // namespace
 
-LuaRuntime::LuaRuntime()
-    : L_(luaL_newstate()) {
+LuaRuntime::LuaRuntime() : L_(luaL_newstate()) {
     if (L_ == nullptr) {
         // Out of memory at startup — extremely unlikely. Leave L_ null;
         // every subsequent call short-circuits via the null check.
@@ -90,8 +89,7 @@ LuaRuntime::~LuaRuntime() {
 }
 
 LuaRuntime::LuaRuntime(LuaRuntime&& other) noexcept
-    : L_(std::exchange(other.L_, nullptr)),
-      lastError_(std::move(other.lastError_)) {}
+    : L_(std::exchange(other.L_, nullptr)), lastError_(std::move(other.lastError_)) {}
 
 LuaRuntime& LuaRuntime::operator=(LuaRuntime&& other) noexcept {
     if (this != &other) {

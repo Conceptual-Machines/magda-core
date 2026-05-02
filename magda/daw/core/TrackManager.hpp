@@ -453,8 +453,10 @@ class TrackManager {
                 LFOWaveform waveform = LFOWaveform::Sine);
     void removeMod(const ChainNodePath& path, int modIndex);
     void setModTarget(const ChainNodePath& path, int modIndex, ControlTarget target);
-    void setModLinkAmount(const ChainNodePath& path, int modIndex, ControlTarget target, float amount);
-    void setModLinkBipolar(const ChainNodePath& path, int modIndex, ControlTarget target, bool bipolar);
+    void setModLinkAmount(const ChainNodePath& path, int modIndex, ControlTarget target,
+                          float amount);
+    void setModLinkBipolar(const ChainNodePath& path, int modIndex, ControlTarget target,
+                           bool bipolar);
     void setModName(const ChainNodePath& path, int modIndex, const juce::String& name);
     void setModType(const ChainNodePath& path, int modIndex, ModType type);
     void setModWaveform(const ChainNodePath& path, int modIndex, LFOWaveform waveform);

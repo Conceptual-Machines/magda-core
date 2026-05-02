@@ -350,8 +350,8 @@ TEST_CASE("BindingRegistry - findFor returns bindings resolving to a ControlTarg
     auto bOther = makeStaticBinding(c1.id, BindingMsgType::CC, 0, 23, otherPath, 0);
     BindingRegistry::getInstance().add(BindingScope::Global, bOther);
 
-    auto found = BindingRegistry::getInstance().findFor(
-        ControlTarget::pluginParam(targetPath, targetParam));
+    auto found =
+        BindingRegistry::getInstance().findFor(ControlTarget::pluginParam(targetPath, targetParam));
     REQUIRE(found.size() == 2);
 
     // Both ids should be present
@@ -369,8 +369,7 @@ TEST_CASE("BindingRegistry - findFor returns bindings resolving to a ControlTarg
     clearAll();
 }
 
-TEST_CASE("BindingRegistry - removeFor removes all matching bindings",
-          "[midi-learn][bindings]") {
+TEST_CASE("BindingRegistry - removeFor removes all matching bindings", "[midi-learn][bindings]") {
     clearAll();
 
     ChainNodePath targetPath = ChainNodePath::topLevelDevice(7, 70);
@@ -389,8 +388,8 @@ TEST_CASE("BindingRegistry - removeFor removes all matching bindings",
     REQUIRE(removed == 2);
 
     // After removal, findFor returns empty
-    auto remaining = BindingRegistry::getInstance().findFor(
-        ControlTarget::pluginParam(targetPath, targetParam));
+    auto remaining =
+        BindingRegistry::getInstance().findFor(ControlTarget::pluginParam(targetPath, targetParam));
     REQUIRE(remaining.empty());
 
     clearAll();
