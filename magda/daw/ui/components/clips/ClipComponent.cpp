@@ -105,6 +105,12 @@ void ClipComponent::paint(juce::Graphics& g) {
             static_cast<float>(loopLengthBeats / beatRange) * clipBounds.getWidth();
         float clipHeight = static_cast<float>(clipBounds.getHeight());
 
+        // Below this per-loop pixel width the markers pack so densely they
+        // turn the clip into a solid black mass — hide them entirely.
+        constexpr float MIN_LOOP_MARKER_PIXEL_WIDTH = 32.0f;
+        if (loopPixelWidth < MIN_LOOP_MARKER_PIXEL_WIDTH)
+            numBoundaries = 0;
+
         for (int i = 1; i <= numBoundaries; ++i) {
             double boundaryBeat = i * loopLengthBeats;
             if (boundaryBeat >= clipLengthInBeats)

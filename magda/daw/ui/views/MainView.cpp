@@ -1807,41 +1807,66 @@ void MainView::SelectionOverlayComponent::paintTimeSelectionBand(juce::Graphics&
     if (panelRect.isEmpty())
         return;
 
+    // RGB-invert clip pixels in the band (with damped saturation so coloured
+    // bodies don't go full acid). Empty TRACK_BACKGROUND pixels are written
+    // transparent so the band passes through to the real panel bg there.
     auto snapshot = owner.trackContentPanel->createComponentSnapshot(panelRect, false, 1.0f);
-    if (!snapshot.isValid() || snapshot.getWidth() == 0 || snapshot.getHeight() == 0)
-        return;
-
-    // Empty track-row background pixels are written transparent so
-    // drawImageAt leaves them showing the real panel bg — tinting them would
-    // create a horizontal strip above each clip that reads as a fake header.
-    // Everything else gets RGB-inverted with damped saturation so coloured
-    // clip bodies don't go full acid.
-    const auto bg = DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
-    const auto bgR = bg.getRed();
-    const auto bgG = bg.getGreen();
-    const auto bgB = bg.getBlue();
-    constexpr float saturationFactor = 0.45f;
-    {
-        juce::Image::BitmapData data(snapshot, juce::Image::BitmapData::readWrite);
-        for (int y = 0; y < data.height; ++y) {
-            for (int x = 0; x < data.width; ++x) {
-                const auto px = data.getPixelColour(x, y);
-                if (px.getRed() == bgR && px.getGreen() == bgG && px.getBlue() == bgB) {
-                    data.setPixelColour(x, y, juce::Colours::transparentBlack);
-                    continue;
+    if (snapshot.isValid() && snapshot.getWidth() > 0 && snapshot.getHeight() > 0) {
+        const auto bg = DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
+        const auto bgR = bg.getRed();
+        const auto bgG = bg.getGreen();
+        const auto bgB = bg.getBlue();
+        constexpr float saturationFactor = 0.45f;
+        {
+            juce::Image::BitmapData data(snapshot, juce::Image::BitmapData::readWrite);
+            for (int y = 0; y < data.height; ++y) {
+                for (int x = 0; x < data.width; ++x) {
+                    const auto px = data.getPixelColour(x, y);
+                    if (px.getRed() == bgR && px.getGreen() == bgG && px.getBlue() == bgB) {
+                        data.setPixelColour(x, y, juce::Colours::transparentBlack);
+                        continue;
+                    }
+                    const auto inverted =
+                        juce::Colour::fromRGB(static_cast<juce::uint8>(255 - px.getRed()),
+                                              static_cast<juce::uint8>(255 - px.getGreen()),
+                                              static_cast<juce::uint8>(255 - px.getBlue()));
+                    // Pixels that invert to near-white (originally near-black,
+                    // e.g., waveform/MIDI-note interiors and their AA edges)
+                    // snap to pure white so they don't pick up a muted tint
+                    // from the saturation reduction below.
+                    const juce::Colour finalColour =
+                        (inverted.getBrightness() > 0.85f)
+                            ? juce::Colours::white
+                            : inverted.withSaturation(inverted.getSaturation() * saturationFactor);
+                    data.setPixelColour(x, y, finalColour.withAlpha(px.getAlpha()));
                 }
-                const auto inverted =
-                    juce::Colour::fromRGB(static_cast<juce::uint8>(255 - px.getRed()),
-                                          static_cast<juce::uint8>(255 - px.getGreen()),
-                                          static_cast<juce::uint8>(255 - px.getBlue()));
-                const auto softened =
-                    inverted.withSaturation(inverted.getSaturation() * saturationFactor);
-                data.setPixelColour(x, y, softened.withAlpha(px.getAlpha()));
             }
         }
+        g.drawImageAt(snapshot, panelRect.getX() - scrollX, panelRect.getY() - scrollY);
     }
 
-    g.drawImageAt(snapshot, panelRect.getX() - scrollX, panelRect.getY() - scrollY);
+    // Grid overlay sits between the panel and us in z-order; the inverted
+    // panel snapshot we just drew covered the lines that were on screen.
+    // Snapshot the grid overlay for the band, RGB-invert, and draw on top.
+    if (owner.gridOverlay) {
+        auto gridSnapshot = owner.gridOverlay->createComponentSnapshot(bandRect, false, 1.0f);
+        if (gridSnapshot.isValid() && gridSnapshot.getWidth() > 0 && gridSnapshot.getHeight() > 0) {
+            juce::Image::BitmapData data(gridSnapshot, juce::Image::BitmapData::readWrite);
+            for (int y = 0; y < data.height; ++y) {
+                for (int x = 0; x < data.width; ++x) {
+                    const auto px = data.getPixelColour(x, y);
+                    if (px.getAlpha() == 0)
+                        continue;
+                    const auto inverted =
+                        juce::Colour::fromRGB(static_cast<juce::uint8>(255 - px.getRed()),
+                                              static_cast<juce::uint8>(255 - px.getGreen()),
+                                              static_cast<juce::uint8>(255 - px.getBlue()));
+                    data.setPixelColour(x, y, inverted.withAlpha(px.getAlpha()));
+                }
+            }
+            g.drawImageAt(gridSnapshot, bandRect.getX(), bandRect.getY());
+        }
+    }
 }
 
 void MainView::SelectionOverlayComponent::drawLoopRegion(juce::Graphics& g) {
