@@ -130,12 +130,19 @@ class ClipOperations {
             }
         }
 
-        clip.startTime = newStartTime;
-        clip.length = newLength;
-        if (bpm > 0.0)
-            clip.startBeats = newStartTime * bpm / 60.0;
+        // Issue #1157: same boundary-conversion rule as resizeContainerFromRight —
+        // for beat-authoritative clips, write beats (canonical) and derive
+        // seconds from them.
         if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.lengthBeats = newLength * bpm / 60.0;
+            clip.startBeats = newStartTime * bpm / 60.0;
+            clip.length = clip.lengthBeats * 60.0 / bpm;
+            clip.startTime = clip.startBeats * 60.0 / bpm;
+        } else {
+            clip.startTime = newStartTime;
+            clip.length = newLength;
+            if (bpm > 0.0)
+                clip.startBeats = newStartTime * bpm / 60.0;
         }
     }
 
@@ -152,9 +159,16 @@ class ClipOperations {
     static inline void resizeContainerFromRight(ClipInfo& clip, double newLength,
                                                 double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
-        clip.length = newLength;
+        // Issue #1157: for beat-authoritative clips, beats are the canonical
+        // storage. Convert the seconds-domain input to beats at the API
+        // boundary, then derive the seconds cache from beats. This keeps the
+        // (lengthBeats, length) pair consistent and removes one of the
+        // round-trip sites that previously corrupted state on tempo change.
         if (clip.isBeatsAuthoritative() && bpm > 0.0) {
             clip.lengthBeats = newLength * bpm / 60.0;
+            clip.length = clip.lengthBeats * 60.0 / bpm;
+        } else {
+            clip.length = newLength;
         }
     }
 
@@ -548,16 +562,29 @@ class ClipOperations {
                 clip.setLoopLengthFromTimeline(clip.length);
             }
 
-            // Preserve the clip's current timeline length in beats — switching to
-            // beat mode should lock the existing position, not resize the clip
-            // to match the source file's beat count (which may be at a different BPM).
-            clip.lengthBeats = clip.getLengthInBeats(bpm);
+            // Issue #1157: when the file carries tempo metadata (sourceBPM +
+            // sourceNumBeats from TE's loopInfo), default lengthBeats to the
+            // file's intrinsic beat count so a freshly-dropped loop becomes
+            // exactly its musical length on toggling BEAT (e.g. a 4-bar loop
+            // is 16 beats long, not 24 derived from timeline-seconds × project
+            // BPM). For files without metadata, fall back to the
+            // length × projectBPM derivation.
+            if (clip.sourceNumBeats > 0.0)
+                clip.lengthBeats = clip.sourceNumBeats;
+            else
+                clip.lengthBeats = clip.getLengthInBeats(bpm);
 
+            // loopLengthBeats lives in the SOURCE-beat domain, so it is
+            // derived from sourceBPM (not projectBPM). When sourceBPM is
+            // unknown we fall back to projectBPM — the two agree until
+            // detection / metadata lands.
+            double srcBpm = clip.sourceBPM > 0.0 ? clip.sourceBPM : bpm;
             if (clip.loopEnabled && clip.loopLength > 0.0) {
-                clip.loopLengthBeats = clip.loopLength * bpm / 60.0;
-                clip.loopStartBeats = clip.loopStart * bpm / 60.0;
+                clip.loopLengthBeats = clip.loopLength * srcBpm / 60.0;
+                clip.loopStartBeats = clip.loopStart * srcBpm / 60.0;
             } else {
-                clip.loopLengthBeats = clip.lengthBeats;
+                clip.loopLengthBeats =
+                    clip.sourceNumBeats > 0.0 ? clip.sourceNumBeats : clip.lengthBeats;
                 clip.loopStartBeats = 0.0;
             }
 

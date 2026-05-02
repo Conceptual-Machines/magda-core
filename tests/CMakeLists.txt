@@ -5,6 +5,7 @@ set(TEST_SOURCES
     test_audiobridge_plugin_cleanup_bug.cpp
     test_auto_tempo.cpp
     test_audio_clip_stretch.cpp
+    test_clip_bpm_invariant.cpp
     test_audio_source_length.cpp
     test_audio_export.cpp
     test_command.cpp

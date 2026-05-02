@@ -97,12 +97,25 @@ struct ClipInfo {
     double sourceNumBeats = 0.0;  // Beat count from source file metadata (TE loopInfo)
     double sourceBPM = 0.0;       // Source file BPM (from TE loopInfo, 0 = unknown)
 
-    /// Populate source metadata from engine (only sets if not already populated)
+    /// Populate source metadata from engine (only sets if not already populated).
+    ///
+    /// Issue #1157: when the file's tempo metadata first lands on an autoTempo
+    /// clip, also snap the beat-domain canonicals to the file's natural beat
+    /// count. createAudioClip(Session) seeded lengthBeats from project tempo
+    /// as a best-guess (no metadata yet); metadata wins. After this call, the
+    /// caller should refreshDerivedSeconds and notify so renderers re-read.
     void setSourceMetadata(double numBeats, double bpm) {
+        bool wasUnset = sourceNumBeats <= 0.0 && sourceBPM <= 0.0;
         if (numBeats > 0.0 && sourceNumBeats <= 0.0)
             sourceNumBeats = numBeats;
         if (bpm > 0.0 && sourceBPM <= 0.0)
             sourceBPM = bpm;
+
+        if (wasUnset && autoTempo && sourceNumBeats > 0.0) {
+            lengthBeats = sourceNumBeats;
+            if (loopLengthBeats <= 0.0)
+                loopLengthBeats = sourceNumBeats;
+        }
     }
 
     // =========================================================================
@@ -403,6 +416,67 @@ struct ClipInfo {
         double startB = (startTime * bpm) / 60.0;
         double lenB = (length * bpm) / 60.0;
         return startB + lenB;
+    }
+
+    // =========================================================================
+    // Robust seconds accessors (issue #1157)
+    //
+    // For autoTempo audio clips and MIDI clips, beats are AUTHORITATIVE — the
+    // seconds fields (length, startTime, offset, loopStart, loopLength) are
+    // derived caches that go stale every time projectBPM or sourceBPM changes.
+    // Renderers, sync code, and inspector readouts that go through these
+    // accessors compute the live value from beats and never depend on cache
+    // freshness. The cached fields are still maintained (so non-migrated
+    // readers stay correct), but new code should prefer the accessors.
+    // =========================================================================
+
+    /// Timeline-domain seconds for the clip's length. For beat-authoritative
+    /// clips, computed live from lengthBeats × 60 / projectBPM. For
+    /// time-authoritative clips, returns the stored field.
+    double getTimelineLength(double projectBPM) const {
+        if (isBeatsAuthoritative() && lengthBeats > 0.0 && projectBPM > 0.0) {
+            return lengthBeats * 60.0 / projectBPM;
+        }
+        return length;
+    }
+
+    /// Timeline-domain seconds for the clip's start position.
+    double getTimelineStart(double projectBPM) const {
+        if (isBeatsAuthoritative() && projectBPM > 0.0) {
+            return startBeats * 60.0 / projectBPM;
+        }
+        return startTime;
+    }
+
+    /// Timeline-domain end position (start + length).
+    double getTimelineEnd(double projectBPM) const {
+        return getTimelineStart(projectBPM) + getTimelineLength(projectBPM);
+    }
+
+    /// Source-domain seconds for the loop start. For autoTempo clips, computed
+    /// live from loopStartBeats × 60 / sourceBPM. For non-autoTempo clips,
+    /// returns the stored field.
+    double getSourceLoopStart() const {
+        if (autoTempo && sourceBPM > 0.0) {
+            return loopStartBeats * 60.0 / sourceBPM;
+        }
+        return loopStart;
+    }
+
+    /// Source-domain seconds for the loop length.
+    double getSourceLoopLength() const {
+        if (autoTempo && sourceBPM > 0.0 && loopLengthBeats > 0.0) {
+            return loopLengthBeats * 60.0 / sourceBPM;
+        }
+        return loopLength;
+    }
+
+    /// Source-domain seconds for the read-position offset.
+    double getSourceOffset() const {
+        if (autoTempo && sourceBPM > 0.0) {
+            return offsetBeats * 60.0 / sourceBPM;
+        }
+        return offset;
     }
 };
 

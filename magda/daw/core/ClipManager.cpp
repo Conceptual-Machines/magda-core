@@ -72,7 +72,12 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
         if (bpm > 0.0) {
             clip.startBeats = (startTime * bpm) / 60.0;
             clip.lengthBeats = (length * bpm) / 60.0;
-            clip.loopLengthBeats = clip.lengthBeats;
+            // Issue #1157: do NOT seed loopLengthBeats from lengthBeats —
+            // they live in different beat domains (source-beat vs project-
+            // beat). Use the sentinel 0 to mean "loop the full source"; the
+            // detection callback below populates it from sourceNumBeats once
+            // the file's intrinsic BPM is known.
+            clip.loopLengthBeats = 0.0;
         }
         clip.length = length;
         clips_[clip.id] = clip;
@@ -80,6 +85,54 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
 
     addToSessionSlotIndex(clips_[clip.id]);
     notifyClipsChanged();
+
+    // Issue #1157: kick off BPM detection at creation time for session audio
+    // clips. The detection callback funnels through applyAudioClipBeats so
+    // sourceBPM/sourceNumBeats land on the canonical update path. Cached
+    // results fire synchronously on the message thread; cache misses run on
+    // a background thread and patch the clip when the scan completes.
+    // Skip when the file doesn't exist on disk — tests pass synthetic paths
+    // and don't run a MessageManager loop, so the detection pool would leak.
+    if (view == ClipView::Session && audioFilePath.isNotEmpty() &&
+        juce::File(audioFilePath).existsAsFile()) {
+        ClipId cid = clip.id;
+        AudioThumbnailManager::getInstance().requestBPMDetection(
+            audioFilePath, [cid](double detectedBPM) {
+                if (detectedBPM <= 0.0)
+                    return;
+                auto& mgr = ClipManager::getInstance();
+                auto* c = mgr.getClip(cid);
+                if (!c)
+                    return;
+                // Issue #1157: file metadata (via TE's loopInfo →
+                // setSourceMetadata) is authoritative when present. Audio
+                // analysis (tracktion::TempoDetect) is a fallback used only
+                // when the file carries no tempo tag — it sometimes
+                // misdetects (half-time / double-time / outright wrong, e.g.
+                // 80→107 on the user's drum loop). Skip applying the result
+                // if sourceBPM is already populated.
+                if (c->sourceBPM > 0.0)
+                    return;
+                AudioClipBeatsUpdate u;
+                u.sourceBPM = detectedBPM;
+                if (auto* thumb =
+                        AudioThumbnailManager::getInstance().getThumbnail(c->audioFilePath)) {
+                    double fileDuration = thumb->getTotalLength();
+                    if (fileDuration > 0.0) {
+                        double srcBeats = fileDuration * detectedBPM / 60.0;
+                        u.sourceNumBeats = srcBeats;
+                        // First-time detection on a freshly-dropped clip:
+                        // initialise the loop region to the full source.
+                        // loopLengthBeats == 0 is the sentinel set by
+                        // createAudioClip (see issue #1157).
+                        if (c->loopLengthBeats <= 0.0)
+                            u.loopLengthBeats = srcBeats;
+                    }
+                }
+                double live = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+                mgr.applyAudioClipBeats(cid, u, live);
+            });
+    }
 
     return clip.id;
 }
@@ -626,10 +679,13 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
             if (enabled && clip->timeStretchMode == 0)
                 clip->timeStretchMode = 4;  // soundtouchBetter
 
-            double newLength = (enabled && clip->lengthBeats > 0.0 && bpm > 0.0)
-                                   ? (clip->lengthBeats * 60.0 / bpm)
-                                   : clip->length;
-            resizeClip(clipId, newLength, false, bpm);
+            // Issue #1157: ClipOperations::setAutoTempo already wrote
+            // lengthBeats from clip.length × bpm / 60 (the legitimate
+            // one-time conversion at the autoTempo boundary). The previous
+            // code then called resizeClip(lengthBeats × 60 / bpm) — a pure
+            // beats→seconds→beats round-trip that accumulated FP drift each
+            // toggle. Just refresh the seconds cache from beats and notify.
+            refreshDerivedSeconds(clipId, bpm);
             notifyClipPropertyChanged(clipId);
         }
     }
@@ -698,14 +754,24 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
 void ClipManager::setLoopStartAndLength(ClipId clipId, double loopStart, double loopLength,
                                         double bpm) {
     if (auto* clip = getClip(clipId)) {
+        const double oldLoopStart = clip->loopStart;
         clip->loopStart = juce::jmax(0.0, loopStart);
         clip->loopLength = juce::jmax(0.0, loopLength);
 
         if (clip->type == ClipType::Audio) {
+            // Moving the loop START snaps the phase (clip.offset relative to loopStart) back to 0
+            // — the user's drag intent is to relocate the loop, not to compensate for a stale
+            // phase. Loop END moves don't touch the phase.
+            const bool loopStartMoved = std::abs(clip->loopStart - oldLoopStart) > 1e-9;
+            if (loopStartMoved)
+                clip->offset = clip->loopStart;
+
             if (clip->autoTempo) {
                 double convBpm = (clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
                 clip->loopStartBeats = (clip->loopStart * convBpm) / 60.0;
                 clip->loopLengthBeats = (clip->loopLength * convBpm) / 60.0;
+                if (loopStartMoved && clip->sourceBPM > 0.0)
+                    clip->offsetBeats = clip->offset * clip->sourceBPM / 60.0;
             }
             sanitizeAudioClip(*clip);
         } else if (clip->type == ClipType::MIDI) {
@@ -717,44 +783,96 @@ void ClipManager::setLoopStartAndLength(ClipId clipId, double loopStart, double 
 }
 
 void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
-    if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio && clip->autoTempo && bpm > 0.0) {
-            double minBeats = ClipInfo::MIN_CLIP_LENGTH * bpm / 60.0;
-            newBeats = juce::jmax(minBeats, newBeats);
+    auto* clip = getClip(clipId);
+    if (!clip || clip->type != ClipType::Audio || !clip->autoTempo || bpm <= 0.0)
+        return;
 
-            // Source audio length stays constant — we change sourceBPM to stretch
-            double sourceSeconds =
-                clip->loopLength > 0.0 ? clip->loopLength : clip->getSourceLength();
-            if (sourceSeconds <= 0.0)
-                return;
+    // Issue #1157: the beat-length slider edits USER INTENT only — how many
+    // timeline beats the clip occupies. Source-file metadata (sourceBPM /
+    // sourceNumBeats) is NOT touched here. Stretch is determined by TE from
+    // (projectBPM / sourceBPM) at sync time.
+    //
+    // We also scale loopLengthBeats so that a clip whose timeline length
+    // matches its loop length stays in lockstep — but only when the user
+    // hasn't already shrunk the loop region below the clip length.
+    AudioClipBeatsUpdate u;
+    u.lengthBeats = newBeats;
+    bool loopMatchesLength =
+        clip->loopLengthBeats <= 0.0 || std::abs(clip->loopLengthBeats - clip->lengthBeats) < 1e-6;
+    if (loopMatchesLength)
+        u.loopLengthBeats = newBeats;
 
-            // Compute new sourceBPM so TE stretches the same audio to fill newBeats
-            // Formula: sourceBPM = beats * 60 / sourceSeconds
-            double oldSourceBPM = clip->sourceBPM;
-            clip->sourceBPM = newBeats * 60.0 / sourceSeconds;
+    applyAudioClipBeats(clipId, u, bpm);
+}
 
-            // Scale sourceNumBeats proportionally
-            if (oldSourceBPM > 0.0 && clip->sourceNumBeats > 0.0) {
-                clip->sourceNumBeats *= clip->sourceBPM / oldSourceBPM;
-            }
+void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update,
+                                      double projectBPM) {
+    auto* clip = getClip(clipId);
+    if (!clip || clip->type != ClipType::Audio || !clip->autoTempo)
+        return;
 
-            // Update beat values — scale lengthBeats proportionally for sub-loop case
-            double oldLoopLengthBeats = clip->loopLengthBeats;
-            clip->loopLengthBeats = newBeats;
-            if (oldLoopLengthBeats > 0.0) {
-                clip->lengthBeats = clip->lengthBeats * newBeats / oldLoopLengthBeats;
-            } else {
-                clip->lengthBeats = newBeats;
-            }
+    // (1) Detected metadata — write-only role. Inspector "BPM" corrections
+    // and BPM-detection callbacks land here. Never touched by the beat slider.
+    if (update.sourceBPM)
+        clip->sourceBPM = juce::jmax(0.0, *update.sourceBPM);
+    if (update.sourceNumBeats)
+        clip->sourceNumBeats = juce::jmax(0.0, *update.sourceNumBeats);
 
-            // Update loopStartBeats to match new sourceBPM domain
-            clip->loopStartBeats = clip->loopStart * clip->sourceBPM / 60.0;
+    // (2) User-intent fields — beat-domain canonicals.
+    if (update.lengthBeats) {
+        double minBeats =
+            (projectBPM > 0.0) ? (ClipInfo::MIN_CLIP_LENGTH * projectBPM / 60.0) : 0.0;
+        clip->lengthBeats = juce::jmax(minBeats, *update.lengthBeats);
+    }
+    if (update.loopStartBeats)
+        clip->loopStartBeats = juce::jmax(0.0, *update.loopStartBeats);
+    if (update.loopLengthBeats)
+        clip->loopLengthBeats = juce::jmax(0.0, *update.loopLengthBeats);
+    if (update.offsetBeats)
+        clip->offsetBeats = juce::jmax(0.0, *update.offsetBeats);
+    if (update.startBeats)
+        clip->startBeats = juce::jmax(0.0, *update.startBeats);
 
-            // Update clip timeline duration from new beat length
-            clip->length = clip->lengthBeats * 60.0 / bpm;
+    // (3) Recompute the seconds cache from beats atomically.
+    refreshDerivedSeconds(clipId, projectBPM);
 
-            notifyClipPropertyChanged(clipId);
-        }
+    notifyClipPropertyChanged(clipId);
+}
+
+void ClipManager::refreshDerivedSeconds(ClipId clipId, double projectBPM) {
+    auto* clip = getClip(clipId);
+    if (!clip)
+        return;
+
+    // Beat-authoritative clips: seconds are caches of beats × BPM.
+    // Time-authoritative clips: seconds ARE the canonical state — leave alone.
+    if (!clip->isBeatsAuthoritative())
+        return;
+
+    // TE requires speedRatio == 1.0 in autoTempo mode.
+    if (clip->autoTempo)
+        clip->speedRatio = 1.0;
+
+    // Timeline-domain seconds (length, startTime): depend on PROJECT BPM.
+    if (projectBPM > 0.0) {
+        if (clip->lengthBeats > 0.0)
+            clip->length = clip->lengthBeats * 60.0 / projectBPM;
+        clip->startTime = clip->startBeats * 60.0 / projectBPM;
+    }
+
+    // Source-domain seconds (offset, loopStart, loopLength) for autoTempo
+    // audio: depend on SOURCE BPM (a property of the file, not the project).
+    // For MIDI clips loopLengthBeats lives in the project-beat domain, so
+    // loopLength uses projectBPM. When sourceBPM is unknown (detection
+    // pending), leave the source-domain seconds alone — readers fall back to
+    // the lengthBeats × 60 / projectBPM path.
+    if (clip->type == ClipType::Audio && clip->autoTempo && clip->sourceBPM > 0.0) {
+        clip->offset = clip->offsetBeats * 60.0 / clip->sourceBPM;
+        clip->loopStart = clip->loopStartBeats * 60.0 / clip->sourceBPM;
+        if (clip->loopLengthBeats > 0.0)
+            clip->loopLength = clip->loopLengthBeats * 60.0 / clip->sourceBPM;
+    } else if (clip->type == ClipType::MIDI && projectBPM > 0.0 && clip->loopLengthBeats > 0.0) {
+        clip->loopLength = clip->loopLengthBeats * 60.0 / projectBPM;
     }
 }
 

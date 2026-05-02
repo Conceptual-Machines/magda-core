@@ -155,10 +155,16 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                 // disrupting a playing LaunchHandle.
                 auto* teClip = getSessionTeClip(clipId);
                 if (teClip) {
-                    // Update clip length only if changed
+                    // Issue #1157: read clip length through the accessor —
+                    // for autoTempo session clips this is lengthBeats × 60 /
+                    // projectBPM regardless of whether the seconds cache is
+                    // fresh, so TE never gets a stale length after a project
+                    // tempo change.
+                    const double syncBPM = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                    const double clipLengthSeconds = clip->getTimelineLength(syncBPM);
                     auto currentLength = teClip->getPosition().getLength();
-                    if (std::abs(currentLength.inSeconds() - clip->length) > 0.0001) {
-                        teClip->setLength(te::TimeDuration::fromSeconds(clip->length), false);
+                    if (std::abs(currentLength.inSeconds() - clipLengthSeconds) > 0.0001) {
+                        teClip->setLength(te::TimeDuration::fromSeconds(clipLengthSeconds), false);
                     }
 
                     // Update launch quantization (lightweight CachedValue, always safe)
@@ -296,8 +302,8 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                     }
 
                 }  // if (teClip)
-            }      // else (already synced)
-        }          // if (sceneIndex >= 0)
+            }  // else (already synced)
+        }  // if (sceneIndex >= 0)
         return;
     }
 
@@ -467,13 +473,25 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
 
         auto* audioClipPtr = clipRef.get();
 
-        // Populate source file metadata from TE's loopInfo
+        // Populate source file metadata from TE's loopInfo. Issue #1157:
+        // when this is the first time metadata lands on an autoTempo clip,
+        // setSourceMetadata also snaps lengthBeats/loopLengthBeats to the
+        // file's natural beat count (instead of the project-tempo guess seeded
+        // by createAudioClip Session). Refresh the seconds cache from the new
+        // beat values so renderers reading clip->length see the right number.
         {
             auto& loopInfoRef = audioClipPtr->getLoopInfo();
             auto waveInfo = audioClipPtr->getWaveInfo();
-            if (auto* mutableClip = cm.getClip(clipId))
+            if (auto* mutableClip = cm.getClip(clipId)) {
+                bool sourceBpmWasUnset = mutableClip->sourceBPM <= 0.0;
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
+                if (sourceBpmWasUnset && mutableClip->autoTempo) {
+                    double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                    cm.refreshDerivedSeconds(clipId, projectBpm);
+                    cm.forceNotifyClipPropertyChanged(clipId);
+                }
+            }
         }
 
         if (clip->autoTempo) {
@@ -1406,13 +1424,23 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         }
         audioClipPtr->setUsesProxy(false);
 
-        // Populate source file metadata from TE's loopInfo
+        // Populate source file metadata from TE's loopInfo. Issue #1157: see
+        // matching block in the session-clip path above — when metadata first
+        // lands on an autoTempo clip, refresh seconds + notify.
         {
             auto& loopInfoRef = audioClipPtr->getLoopInfo();
             auto waveInfo = audioClipPtr->getWaveInfo();
-            if (auto* mutableClip = ClipManager::getInstance().getClip(clipId))
+            auto& cm = ClipManager::getInstance();
+            if (auto* mutableClip = cm.getClip(clipId)) {
+                bool sourceBpmWasUnset = mutableClip->sourceBPM <= 0.0;
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
+                if (sourceBpmWasUnset && mutableClip->autoTempo) {
+                    double projectBpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
+                    cm.refreshDerivedSeconds(clipId, projectBpm);
+                    cm.forceNotifyClipPropertyChanged(clipId);
+                }
+            }
         }
 
         // Store bidirectional mapping

@@ -793,52 +793,59 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         }
     }
 
-    // Update auto-tempo clips when tempo changes
-    // Beats are authoritative — update derived seconds and notify AudioBridge to re-sync TE.
-    // UI reads beats directly so the notification doesn't cause stale-BPM layout issues.
+    // Update beat-authoritative clips when project tempo changes.
+    //
+    // Beats are the canonical state for these clips — seconds are a derived
+    // cache. ClipManager::refreshDerivedSeconds is the single source of truth
+    // for that derivation; calling it here keeps every reader (renderers,
+    // ClipSynchronizer, inspector readouts) consistent without duplicating
+    // formulas. Process clips of every view (arrangement AND session) — the
+    // earlier session-only skip caused issue #1157: session autoTempo clips
+    // kept stale `length` / `startTime` after a project-tempo change, which
+    // made the inspector beat readout disagree with the rendered loop region.
     if (std::abs(newBpm - oldBpm) > 0.01) {
         auto& clipManager = ClipManager::getInstance();
         auto allClips = clipManager.getClips();
 
-        // First pass: update all seconds from beats
         std::vector<ClipId> updatedClipIds;
         for (const auto& clip : allClips) {
-            if (clip.view != ClipView::Arrangement)
-                continue;
-
             auto* mutableClip = clipManager.getClip(clip.id);
             if (!mutableClip)
                 continue;
 
-            // Migration: populate startBeats if not set (default 0 with non-zero startTime)
-            if (mutableClip->startBeats <= 0.0 && mutableClip->startTime > 0.0) {
-                mutableClip->startBeats =
-                    magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
-            }
-
-            // All arrangement clips: update startTime from beats
-            mutableClip->startTime =
-                magda::TimelineUtils::beatsToSeconds(mutableClip->startBeats, newBpm);
-
-            // Beat-authoritative clips (MIDI, autoTempo audio): also update length
+            // Migration: populate startBeats / lengthBeats if absent (legacy
+            // projects saved before beats-authoritative storage existed).
             if (mutableClip->isBeatsAuthoritative()) {
-                if (mutableClip->lengthBeats <= 0.0) {
+                if (mutableClip->startBeats <= 0.0 && mutableClip->startTime > 0.0) {
+                    mutableClip->startBeats =
+                        magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
+                }
+                if (mutableClip->lengthBeats <= 0.0 && mutableClip->length > 0.0) {
                     mutableClip->lengthBeats =
                         magda::TimelineUtils::secondsToBeats(clip.length, oldBpm);
                 }
-                mutableClip->length =
-                    magda::TimelineUtils::beatsToSeconds(mutableClip->lengthBeats, newBpm);
-
-                if (mutableClip->type == ClipType::MIDI && mutableClip->loopLengthBeats > 0.0) {
-                    mutableClip->loopLength =
-                        magda::TimelineUtils::beatsToSeconds(mutableClip->loopLengthBeats, newBpm);
+            } else if (clip.view == ClipView::Arrangement) {
+                // Time-authoritative arrangement clips: keep startTime fixed
+                // in beats so the clip stays at the same musical position.
+                if (mutableClip->startBeats <= 0.0 && mutableClip->startTime > 0.0) {
+                    mutableClip->startBeats =
+                        magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
                 }
+                mutableClip->startTime =
+                    magda::TimelineUtils::beatsToSeconds(mutableClip->startBeats, newBpm);
+                updatedClipIds.push_back(clip.id);
+                continue;
+            } else {
+                // Session time-authoritative clips: nothing to update.
+                continue;
             }
 
+            // Beat-authoritative path: refresh the seconds cache from beats.
+            clipManager.refreshDerivedSeconds(clip.id, newBpm);
             updatedClipIds.push_back(clip.id);
         }
 
-        // Second pass: notify so AudioBridge re-syncs TE clip positions
+        // Notify so AudioBridge re-syncs TE positions and the UI re-reads.
         for (auto clipId : updatedClipIds) {
             clipManager.forceNotifyClipPropertyChanged(clipId);
         }

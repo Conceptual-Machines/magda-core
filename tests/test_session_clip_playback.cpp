@@ -930,17 +930,20 @@ TEST_CASE("AutoTempo session clip timing: 172bpm clip in 120bpm project",
     constexpr double PROJECT_BPM = 120.0;
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
-    SECTION("lengthBeats preserves timeline length in project beats") {
-        // New behavior: lengthBeats = length * bpm / 60
-        double expectedBeats = clip.length * PROJECT_BPM / 60.0;
-        REQUIRE(clip.lengthBeats == Catch::Approx(expectedBeats));
+    SECTION("lengthBeats stays at the file's musical beat count") {
+        // Issue #1157: in beat mode, beats are beats. A 2-bar (8-beat) loop is
+        // 8 beats long regardless of project tempo. The wall-clock duration
+        // adapts to project BPM; the beat count does not.
+        REQUIRE(clip.lengthBeats == Catch::Approx(8.0));
     }
 
-    SECTION("Wall-clock duration preserves original timeline length") {
+    SECTION("Wall-clock duration scales with project BPM in beat mode") {
         auto [clipLen, loopLen] = computeAutoTempoTimings(clip, PROJECT_BPM);
-        // lengthBeats * 60 / bpm == original length (round-trip)
-        REQUIRE(clipLen == Catch::Approx(clip.length));
-        REQUIRE(loopLen == Catch::Approx(clip.length));
+        // lengthBeats × 60 / projectBPM = 8 × 60 / 120 = 4s. The original
+        // ~2.79s duration is no longer relevant — the clip has been retuned
+        // to play at the project tempo.
+        REQUIRE(clipLen == Catch::Approx(8.0 * 60.0 / PROJECT_BPM));
+        REQUIRE(loopLen == Catch::Approx(8.0 * 60.0 / PROJECT_BPM));
     }
 
     SECTION("Playhead wraps at clip duration") {
@@ -987,10 +990,11 @@ TEST_CASE("AutoTempo session clip timing: sub-loop region",
     // lengthBeats preserves timeline length, loopLengthBeats preserves loop length
     auto [clipLen, loopLen] = computeAutoTempoTimings(clip, PROJECT_BPM);
 
-    SECTION("Clip length preserves timeline length") {
-        double expectedBeats = clip.length * PROJECT_BPM / 60.0;
-        REQUIRE(clip.lengthBeats == Catch::Approx(expectedBeats));
-        REQUIRE(clipLen == Catch::Approx(clip.length));
+    SECTION("Clip length stays at file's musical beat count") {
+        // Issue #1157: lengthBeats = sourceNumBeats. clipLen derives from
+        // lengthBeats × 60 / projectBPM.
+        REQUIRE(clip.lengthBeats == Catch::Approx(8.0));
+        REQUIRE(clipLen == Catch::Approx(8.0 * 60.0 / PROJECT_BPM));
     }
 
     SECTION("Loop length uses loopLengthBeats") {

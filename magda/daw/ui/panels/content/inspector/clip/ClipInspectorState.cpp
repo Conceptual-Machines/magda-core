@@ -175,7 +175,11 @@ void ClipInspector::updateFromSelectedClip() {
             clipBeatsLengthValue_->setVisible(true);
             clipBeatsLengthValue_->setEnabled(true);
             clipBeatsLengthValue_->setAlpha(1.0f);
-            clipBeatsLengthValue_->setValue(clip->loopLengthBeats, juce::dontSendNotification);
+            // Issue #1157: display lengthBeats (timeline beats — what the slider
+            // writes), not loopLengthBeats (source-beat domain). Showing the
+            // source-domain value made this readout drift away from the right-side
+            // Clip panel as soon as sourceBPM differed from project BPM.
+            clipBeatsLengthValue_->setValue(clip->lengthBeats, juce::dontSendNotification);
         } else {
             clipBeatsLengthValue_->setVisible(false);
         }
