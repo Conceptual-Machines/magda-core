@@ -289,22 +289,36 @@ TEST_CASE("setAutoTempo - respects existing loop region", "[clip][auto-tempo][lo
 // Round-trip: enable → disable → enable
 // ─────────────────────────────────────────────────────────────
 
-TEST_CASE("setAutoTempo - disable clears beat values", "[clip][auto-tempo]") {
+TEST_CASE("setAutoTempo - disable preserves source seconds", "[clip][auto-tempo]") {
     auto clip = makeAmenClip();
+    clip.loopEnabled = true;
+    clip.loopStart = 0.25;
+    clip.loopLength = 0.75;
+    clip.offset = 0.5;
+
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
-    // Verify beat values were set
+    // Verify beat values were set and are authoritative in auto-tempo mode.
     REQUIRE(clip.lengthBeats > 0.0);
     REQUIRE(clip.loopLengthBeats > 0.0);
     REQUIRE(clip.startBeats >= 0.0);
 
+    const double expectedOffset = clip.getSourceOffset();
+    const double expectedLoopStart = clip.getSourceLoopStart();
+    const double expectedLoopLength = clip.getSourceLoopLength();
+    const double expectedPhase = wrapPhase(expectedOffset - expectedLoopStart, expectedLoopLength);
+
     ClipOperations::setAutoTempo(clip, false, PROJECT_BPM);
 
-    SECTION("Beat values are cleared") {
-        REQUIRE(clip.startBeats == -1.0);
+    SECTION("Source seconds are preserved") {
+        REQUIRE(clip.offset == Approx(expectedLoopStart + expectedPhase));
+        REQUIRE(clip.loopStart == Approx(expectedLoopStart));
+        REQUIRE(clip.loopLength == Approx(expectedLoopLength));
+    }
+
+    SECTION("Source beat-loop values are cleared") {
         REQUIRE(clip.loopStartBeats == 0.0);
         REQUIRE(clip.loopLengthBeats == 0.0);
-        REQUIRE(clip.lengthBeats == 0.0);
     }
 
     SECTION("autoTempo is false") {

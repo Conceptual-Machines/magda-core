@@ -691,17 +691,7 @@ void ClipInspector::initClipPropertiesSection() {
             }
         }
 
-        magda::ClipOperations::setAutoTempo(*clip, enable, bpm);
-
-        // Issue #1157: setAutoTempo already wrote lengthBeats inside the
-        // clip via the legitimate one-time conversion at the autoTempo
-        // boundary. The previous resizeClip(lengthBeats × 60 / bpm) call
-        // here was a redundant seconds→beats round-trip — beats came in,
-        // were converted to seconds, were converted back to beats, and
-        // floating-point drift accumulated each toggle. Refresh the
-        // seconds cache and notify, no round-trip.
-        magda::ClipManager::getInstance().refreshDerivedSeconds(primaryClipId(), bpm);
-        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
+        magda::ClipManager::getInstance().setAutoTempo(primaryClipId(), enable, bpm);
         updateFromSelectedClip();
     };
 

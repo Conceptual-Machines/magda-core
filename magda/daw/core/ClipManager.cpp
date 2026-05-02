@@ -656,6 +656,14 @@ void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
 void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
+            const bool wasAutoTempo = clip->autoTempo;
+            const double beforeOffset = clip->getSourceOffset();
+            const double beforeLoopStart = clip->getSourceLoopStart();
+            const double beforeLoopLength = clip->getSourceLoopLength();
+            const double beforePhase =
+                beforeLoopLength > 0.0 ? wrapPhase(beforeOffset - beforeLoopStart, beforeLoopLength)
+                                       : 0.0;
+
             ClipOperations::setAutoTempo(*clip, enabled, bpm);
 
             // Ensure time-stretching is enabled when beat mode is on
@@ -669,6 +677,20 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
             // beats→seconds→beats round-trip that accumulated FP drift each
             // toggle. Just refresh the seconds cache from beats and notify.
             refreshDerivedSeconds(clipId, bpm);
+            const double afterOffset = clip->getSourceOffset();
+            const double afterLoopStart = clip->getSourceLoopStart();
+            const double afterLoopLength = clip->getSourceLoopLength();
+            const double afterPhase = afterLoopLength > 0.0
+                                          ? wrapPhase(afterOffset - afterLoopStart, afterLoopLength)
+                                          : 0.0;
+            DBG("ClipManager::setAutoTempo"
+                << " clipId=" << static_cast<int>(clipId) << " " << (wasAutoTempo ? 1 : 0) << "->"
+                << (clip->autoTempo ? 1 : 0) << " bpm=" << bpm << " sourceBPM=" << clip->sourceBPM
+                << " offset " << beforeOffset << "->" << afterOffset << " loopStart "
+                << beforeLoopStart << "->" << afterLoopStart << " loopLength " << beforeLoopLength
+                << "->" << afterLoopLength << " phase " << beforePhase << "->" << afterPhase
+                << " offsetBeats=" << clip->offsetBeats << " loopStartBeats="
+                << clip->loopStartBeats << " loopLengthBeats=" << clip->loopLengthBeats);
             notifyClipPropertyChanged(clipId);
         }
     }

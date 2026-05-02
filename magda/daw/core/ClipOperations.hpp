@@ -528,6 +528,10 @@ class ClipOperations {
         if (enabled && bpm <= 0.0)
             return;
 
+        const double currentSourceOffset = clip.getSourceOffset();
+        const double currentLoopStart = clip.getSourceLoopStart();
+        const double currentLoopLength = clip.getSourceLoopLength();
+
         clip.autoTempo = enabled;
 
         if (enabled) {
@@ -595,6 +599,13 @@ class ClipOperations {
             clip.speedRatio = 1.0;
         } else {
             // Timeline placement remains beat-domain; only disable source auto-tempo behavior.
+            clip.offset = juce::jmax(0.0, currentSourceOffset);
+            clip.loopStart = juce::jmax(0.0, currentLoopStart);
+            clip.loopLength = juce::jmax(0.0, currentLoopLength);
+            if (clip.loopEnabled && clip.loopLength > 0.0) {
+                clip.offset =
+                    clip.loopStart + wrapPhase(clip.offset - clip.loopStart, clip.loopLength);
+            }
             clip.loopStartBeats = 0.0;
             clip.loopLengthBeats = 0.0;
         }

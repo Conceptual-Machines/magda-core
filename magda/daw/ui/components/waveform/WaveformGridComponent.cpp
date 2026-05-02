@@ -623,11 +623,15 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.drawText("L", loopEndX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
     }
 
-    // Offset marker (orange) — greyed out when looped (offset is driven by loopStart + phase)
-    {
+    const bool hasVisibleLoopPhase =
+        isLooped && displayInfo_.sourceLength > 0.0 && std::abs(displayInfo_.loopOffset) > 1e-6;
+
+    // Offset marker (orange) — only meaningful in non-loop mode. In loop mode
+    // offset is represented by the phase marker inside the loop region.
+    if (!isLooped) {
         int offsetX = timeToPixel(baseTime + activeOffset);
         auto offsetColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
-        float offsetAlpha = isLooped ? 0.25f : 0.8f;
+        float offsetAlpha = 0.8f;
         g.setColour(offsetColour.withAlpha(offsetAlpha));
         g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -635,7 +639,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     }
 
     // Loop phase marker (orange) — only visible when looped, shows phase within loop region
-    if (isLooped) {
+    if (hasVisibleLoopPhase) {
         int phaseX = timeToPixel(baseTime + displayInfo_.loopPhasePositionSeconds);
         auto phaseColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
         g.setColour(phaseColour.withAlpha(0.8f));
@@ -1509,6 +1513,8 @@ bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) 
 
 bool WaveformGridComponent::isNearPhaseMarker(int x, const magda::ClipInfo& clip) const {
     if (!clip.loopEnabled || displayInfo_.loopLengthSeconds <= 0.0)
+        return false;
+    if (displayInfo_.sourceLength <= 0.0 || std::abs(displayInfo_.loopOffset) <= 1e-6)
         return false;
     int phaseX = timeToPixel(getDisplayStartTime() + displayInfo_.loopPhasePositionSeconds);
     return std::abs(x - phaseX) <= EDGE_GRAB_DISTANCE;
