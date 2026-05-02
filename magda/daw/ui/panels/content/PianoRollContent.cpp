@@ -1,5 +1,6 @@
 #include "PianoRollContent.hpp"
 
+#include <cmath>
 #include <limits>
 
 #include "../../core/SelectionManager.hpp"
@@ -886,9 +887,19 @@ void PianoRollContent::setRelativeTimeMode(bool relative) {
         updateTimeRuler();
         updateVelocityLane();
 
-        // In ABS mode, scroll to show bar 1 at the left
-        // In REL mode, reset scroll to show the start of the clip
-        viewport_->setViewPosition(0, viewport_->getViewPositionY());
+        int scrollX = 0;
+        if (!relative && editingClipId_ != magda::INVALID_CLIP_ID) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+            if (clip && clip->view != magda::ClipView::Session && !clip->loopEnabled) {
+                double tempo = 120.0;
+                if (auto* controller = magda::TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                scrollX = static_cast<int>(
+                    std::round(clip->startTime * (tempo / 60.0) * horizontalZoom_));
+            }
+        }
+        viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
     }
 }
 

@@ -130,19 +130,14 @@ class ClipOperations {
             }
         }
 
-        // Issue #1157: same boundary-conversion rule as resizeContainerFromRight —
-        // for beat-authoritative clips, write beats (canonical) and derive
-        // seconds from them.
-        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
-            clip.lengthBeats = newLength * bpm / 60.0;
-            clip.startBeats = newStartTime * bpm / 60.0;
-            clip.length = clip.lengthBeats * 60.0 / bpm;
-            clip.startTime = clip.startBeats * 60.0 / bpm;
+        // Clip placement is beat-domain. Seconds are derived cache values for
+        // callers that still operate at the UI/bridge boundary.
+        if (bpm > 0.0) {
+            clip.setPlacementBeats(newStartTime * bpm / 60.0, newLength * bpm / 60.0);
+            clip.deriveTimesFromBeats(bpm);
         } else {
             clip.startTime = newStartTime;
             clip.length = newLength;
-            if (bpm > 0.0)
-                clip.startBeats = newStartTime * bpm / 60.0;
         }
     }
 
@@ -159,14 +154,9 @@ class ClipOperations {
     static inline void resizeContainerFromRight(ClipInfo& clip, double newLength,
                                                 double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
-        // Issue #1157: for beat-authoritative clips, beats are the canonical
-        // storage. Convert the seconds-domain input to beats at the API
-        // boundary, then derive the seconds cache from beats. This keeps the
-        // (lengthBeats, length) pair consistent and removes one of the
-        // round-trip sites that previously corrupted state on tempo change.
-        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
-            clip.lengthBeats = newLength * bpm / 60.0;
-            clip.length = clip.lengthBeats * 60.0 / bpm;
+        if (bpm > 0.0) {
+            clip.setPlacementBeats(clip.placement.startBeat, newLength * bpm / 60.0);
+            clip.deriveTimesFromBeats(bpm);
         } else {
             clip.length = newLength;
         }
@@ -201,10 +191,8 @@ class ClipOperations {
         clip.startTime = juce::jmax(0.0, clip.startTime + timelineDelta);
         clip.length = juce::jmax(MIN_CLIP_LENGTH, clip.length - timelineDelta);
 
-        if (bpm > 0.0)
-            clip.startBeats = clip.startTime * bpm / 60.0;
-        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
-            clip.lengthBeats = clip.length * bpm / 60.0;
+        if (bpm > 0.0) {
+            clip.setPlacementBeats(clip.startTime * bpm / 60.0, clip.length * bpm / 60.0);
         }
     }
 
@@ -227,8 +215,8 @@ class ClipOperations {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         clip.length = newLength;
 
-        if (clip.isBeatsAuthoritative() && bpm > 0.0) {
-            clip.lengthBeats = newLength * bpm / 60.0;
+        if (bpm > 0.0) {
+            clip.setPlacementBeats(clip.placement.startBeat, newLength * bpm / 60.0);
         }
     }
 
@@ -363,7 +351,8 @@ class ClipOperations {
             return;
 
         // Compute stretch ratio from total beats (handles multiple loop cycles)
-        double oldTotalBeats = clip.lengthBeats > 0.0 ? clip.lengthBeats : clip.loopLengthBeats;
+        double oldTotalBeats =
+            clip.placement.lengthBeats > 0.0 ? clip.placement.lengthBeats : clip.loopLengthBeats;
         if (oldTotalBeats <= 0.0)
             return;
 
@@ -381,7 +370,7 @@ class ClipOperations {
         }
 
         clip.loopLengthBeats = newLoopBeats;
-        clip.lengthBeats = newTotalBeats;
+        clip.setPlacementBeats(clip.placement.startBeat, newTotalBeats);
         clip.loopStartBeats = clip.loopStart * clip.sourceBPM / 60.0;
     }
 
@@ -515,7 +504,7 @@ class ClipOperations {
     static inline void setClipLengthBeats(ClipInfo& clip, double lengthBeats, double loopStartBeats,
                                           double loopLengthBeats, double bpm) {
         clip.autoTempo = true;
-        clip.lengthBeats = lengthBeats;
+        clip.setPlacementBeats(clip.placement.startBeat, lengthBeats);
         clip.loopLengthBeats = loopLengthBeats > 0.0 ? loopLengthBeats : lengthBeats;
         clip.loopStartBeats = loopStartBeats;
 
@@ -553,7 +542,7 @@ class ClipOperations {
                 clip.offsetBeats = clip.offset * clip.sourceBPM / 60.0;
 
             // Convert current timeline position to beats
-            clip.startBeats = (clip.startTime * bpm) / 60.0;
+            clip.setPlacementBeats((clip.startTime * bpm) / 60.0, clip.placement.lengthBeats);
 
             // Enable looping (required for TE's autoTempo beat range to work)
             if (!clip.loopEnabled) {
@@ -570,9 +559,9 @@ class ClipOperations {
             // BPM). For files without metadata, fall back to the
             // length × projectBPM derivation.
             if (clip.sourceNumBeats > 0.0)
-                clip.lengthBeats = clip.sourceNumBeats;
+                clip.setPlacementBeats(clip.placement.startBeat, clip.sourceNumBeats);
             else
-                clip.lengthBeats = clip.getLengthInBeats(bpm);
+                clip.setPlacementBeats(clip.placement.startBeat, clip.getLengthInBeats(bpm));
 
             // loopLengthBeats lives in the SOURCE-beat domain, so it is
             // derived from sourceBPM (not projectBPM). When sourceBPM is
@@ -584,7 +573,7 @@ class ClipOperations {
                 clip.loopStartBeats = clip.loopStart * srcBpm / 60.0;
             } else {
                 clip.loopLengthBeats =
-                    clip.sourceNumBeats > 0.0 ? clip.sourceNumBeats : clip.lengthBeats;
+                    clip.sourceNumBeats > 0.0 ? clip.sourceNumBeats : clip.placement.lengthBeats;
                 clip.loopStartBeats = 0.0;
             }
 
@@ -605,12 +594,9 @@ class ClipOperations {
             // Force speedRatio to 1.0 (TE requirement for autoTempo)
             clip.speedRatio = 1.0;
         } else {
-            // Switching to time-based mode: keep current derived time values
-            // Clear beat values (no longer used)
-            clip.startBeats = -1.0;
+            // Timeline placement remains beat-domain; only disable source auto-tempo behavior.
             clip.loopStartBeats = 0.0;
             clip.loopLengthBeats = 0.0;
-            clip.lengthBeats = 0.0;
         }
     }
 
@@ -624,8 +610,8 @@ class ClipOperations {
                                                   double bpm) {
         newLengthBeats = juce::jmax(MIN_CLIP_LENGTH * bpm / 60.0, newLengthBeats);
 
-        clip.lengthBeats = newLengthBeats;
-        clip.setLengthFromBeats(newLengthBeats, bpm);
+        clip.setPlacementBeats(clip.placement.startBeat, newLengthBeats);
+        clip.deriveTimesFromBeats(bpm);
     }
 
     /**
@@ -639,12 +625,14 @@ class ClipOperations {
         newLengthBeats = juce::jmax(MIN_CLIP_LENGTH * bpm / 60.0, newLengthBeats);
 
         double oldLength = clip.length;
-        clip.lengthBeats = newLengthBeats;
-        clip.setLengthFromBeats(newLengthBeats, bpm);
+        clip.setPlacementBeats(clip.placement.startBeat, newLengthBeats);
+        clip.deriveTimesFromBeats(bpm);
 
-        // Adjust startTime to keep right edge fixed
+        // Adjust placement start to keep right edge fixed.
         double lengthDelta = oldLength - clip.length;
-        clip.startTime = juce::jmax(0.0, clip.startTime + lengthDelta);
+        double newStartTime = juce::jmax(0.0, clip.startTime + lengthDelta);
+        clip.setPlacementBeats(newStartTime * bpm / 60.0, newLengthBeats);
+        clip.deriveTimesFromBeats(bpm);
     }
 
     // ========================================================================

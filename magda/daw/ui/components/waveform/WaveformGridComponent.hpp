@@ -313,10 +313,9 @@ class WaveformGridComponent : public juce::Component {
     double snapToNearestTransient(double time) const;
     static constexpr int WARP_MARKER_HIT_DISTANCE = 5;
 
-    // Display start time (0.0 in relative mode, clipStartTime_ in absolute)
-    double getDisplayStartTime() const {
-        return relativeMode_ ? 0.0 : clipStartTime_;
-    }
+    // Display start time for the full source file.
+    double getDisplayStartTime() const;
+    void debugLogGeometry(const char* context) const;
 
     // Get current clip
     const magda::ClipInfo* getClip() const;

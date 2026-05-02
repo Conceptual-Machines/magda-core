@@ -1,5 +1,7 @@
 #include "MidiEditorContent.hpp"
 
+#include <cmath>
+
 #include "core/MidiNoteCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
@@ -309,6 +311,7 @@ void MidiEditorContent::updateTimeRuler() {
                                      state.tempo.timeSignatureDenominator);
     }
     timeRuler_->setTempo(tempo);
+    timeRuler_->setBarOrigin(0.0);
 
     // Get timeline length
     double timelineLength = 300.0;
@@ -365,6 +368,21 @@ void MidiEditorContent::setRelativeTimeMode(bool relative) {
         relativeTimeMode_ = relative;
         updateGridSize();
         updateTimeRuler();
+        int scrollX = 0;
+        if (!relative && editingClipId_ != magda::INVALID_CLIP_ID) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+            if (clip && clip->view != magda::ClipView::Session && !clip->loopEnabled) {
+                double tempo = 120.0;
+                if (auto* controller = magda::TimelineController::getCurrent()) {
+                    tempo = controller->getState().tempo.bpm;
+                }
+                scrollX = static_cast<int>(
+                    std::round(clip->startTime * (tempo / 60.0) * horizontalZoom_));
+            }
+        }
+        if (viewport_) {
+            viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
+        }
         repaint();
     }
 }

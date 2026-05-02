@@ -41,45 +41,31 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     } else {
         clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
     }
-    clip.startTime = startTime;
-    clip.length = length;
     clip.audioFilePath = audioFilePath;
     clip.offset = 0.0;
     clip.speedRatio = 1.0;
+
+    double bpm =
+        projectBPM > 0.0 ? projectBPM : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+    if (bpm <= 0.0)
+        bpm = 120.0;
+
+    clip.setPlacementBeats(startTime * bpm / 60.0, length * bpm / 60.0);
+    clip.deriveTimesFromBeats(bpm);
 
     // Set loopStart to offset (0), loopLength to the clip's source extent
     clip.loopStart = 0.0;
     clip.setLoopLengthFromTimeline(length);
 
     if (view == ClipView::Arrangement) {
-        // Set beat position for tempo-independent placement
-        double bpm = projectBPM > 0.0 ? projectBPM
-                                      : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-        if (bpm > 0.0) {
-            clip.startBeats = startTime * bpm / 60.0;
-            // Don't set lengthBeats for non-autoTempo audio clips — time is
-            // authoritative and beats should be derived at display time so the
-            // clip width updates correctly when BPM changes.
-            clip.lengthBeats = 0.0;
-        }
         clips_[clip.id] = clip;
     } else {
         // Session clips loop by default and follow project tempo
         clip.loopEnabled = true;
         clip.autoTempo = true;
-        double bpm = projectBPM > 0.0 ? projectBPM
-                                      : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-        if (bpm > 0.0) {
-            clip.startBeats = (startTime * bpm) / 60.0;
-            clip.lengthBeats = (length * bpm) / 60.0;
-            // Issue #1157: do NOT seed loopLengthBeats from lengthBeats —
-            // they live in different beat domains (source-beat vs project-
-            // beat). Use the sentinel 0 to mean "loop the full source"; the
-            // detection callback below populates it from sourceNumBeats once
-            // the file's intrinsic BPM is known.
-            clip.loopLengthBeats = 0.0;
-        }
-        clip.length = length;
+        // Source loop beats live in the source-beat domain. Use 0 as "full
+        // source" until metadata detection populates sourceNumBeats.
+        clip.loopLengthBeats = 0.0;
         clips_[clip.id] = clip;
     }
 
@@ -152,17 +138,14 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
         clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
     }
 
-    // Beats are authoritative.
-    clip.startBeats = startBeats;
-    clip.lengthBeats = lengthBeats;
+    clip.setPlacementBeats(startBeats, lengthBeats);
 
     // Derive seconds for display caches only — never round-tripped back into
     // beats. ClipSynchronizer reads clip->startBeats / lengthBeats directly
     // when positioning the TE clip, so the seconds stored here are advisory.
     double tempo = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
     if (tempo > 0.0) {
-        clip.startTime = (startBeats * 60.0) / tempo;
-        clip.length = (lengthBeats * 60.0) / tempo;
+        clip.deriveTimesFromBeats(tempo);
     }
 
     if (view == ClipView::Arrangement) {
@@ -170,7 +153,7 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
     } else {
         // Session clips loop by default
         clip.loopEnabled = true;
-        clip.loopLengthBeats = clip.lengthBeats;
+        clip.loopLengthBeats = clip.placement.lengthBeats;
         clip.loopLength = clip.length;
         clips_[clip.id] = clip;
     }
@@ -265,12 +248,12 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
         // beats-driven re-derivation snapped the duplicate back on top of
         // the original.
         double bpm = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-        double clipLengthBeats = (original->isBeatsAuthoritative() && original->lengthBeats > 0.0)
-                                     ? original->lengthBeats
-                                     : (bpm > 0.0 ? original->length * bpm / 60.0 : 0.0);
-        newClip.startBeats = original->startBeats + clipLengthBeats;
-        newClip.startTime = (bpm > 0.0) ? (newClip.startBeats * 60.0 / bpm)
-                                        : original->startTime + original->length;
+        double clipLengthBeats = original->placement.lengthBeats;
+        newClip.setPlacementBeats(original->placement.startBeat + clipLengthBeats, clipLengthBeats);
+        if (bpm > 0.0)
+            newClip.deriveTimesFromBeats(bpm);
+        else
+            newClip.startTime = original->startTime + original->length;
     } else {
         // Session clips always loop
         newClip.startTime = 0.0;
@@ -301,9 +284,12 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
     }
 
     if (newClip.view == ClipView::Arrangement) {
-        newClip.startTime = startTime;
-        if (tempo > 0.0)
-            newClip.startBeats = startTime * tempo / 60.0;
+        if (tempo > 0.0) {
+            newClip.setPlacementBeats(startTime * tempo / 60.0, original->placement.lengthBeats);
+            newClip.deriveTimesFromBeats(tempo);
+        } else {
+            newClip.startTime = startTime;
+        }
         clips_[newClip.id] = newClip;
     } else {
         // Session clips always loop
@@ -323,7 +309,7 @@ void ClipManager::resetLoopedClipLength(ClipInfo& clip) {
         return;
 
     if (clip.isBeatsAuthoritative() && clip.loopLengthBeats > 0.0) {
-        clip.lengthBeats = clip.loopLengthBeats;
+        clip.setPlacementBeats(clip.placement.startBeat, clip.loopLengthBeats);
     } else if (clip.loopLength > 0.0) {
         clip.length = clip.sourceToTimeline(clip.loopLength);
     }
@@ -348,7 +334,7 @@ void ClipManager::moveClip(ClipId clipId, double newStartTime, double tempo) {
         double bpm =
             tempo > 0.0 ? tempo : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
         if (bpm > 0.0)
-            clip->startBeats = clip->startTime * bpm / 60.0;
+            clip->setPlacementBeats(clip->startTime * bpm / 60.0, clip->placement.lengthBeats);
         // Notes maintain their relative position within the clip (startBeat unchanged)
         // so they move with the clip on the timeline
         notifyClipPropertyChanged(clipId);
@@ -469,12 +455,10 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     clip->name = clip->name + " L";
 
     // Update beat fields for both halves
-    if (tempo > 0.0)
-        rightClip.startBeats = splitTime * tempo / 60.0;
-    if (clip->isBeatsAuthoritative() && tempo > 0.0) {
+    if (tempo > 0.0) {
         // Left clip: lengthBeats changes, startBeats stays the same
-        clip->lengthBeats = leftLength * tempo / 60.0;
-        rightClip.lengthBeats = rightLength * tempo / 60.0;
+        clip->setPlacementBeats(clip->placement.startBeat, leftLength * tempo / 60.0);
+        rightClip.setPlacementBeats(splitTime * tempo / 60.0, rightLength * tempo / 60.0);
     }
 
     // Sync loop region after split
@@ -559,10 +543,9 @@ void ClipManager::trimClip(ClipId clipId, double newStartTime, double newLength,
     if (auto* clip = getClip(clipId)) {
         clip->startTime = newStartTime;
         clip->length = newLength;
-        if (tempo > 0.0)
-            clip->startBeats = newStartTime * tempo / 60.0;
-        if (clip->isBeatsAuthoritative() && tempo > 0.0) {
-            clip->lengthBeats = newLength * tempo / 60.0;
+        if (tempo > 0.0) {
+            clip->setPlacementBeats(newStartTime * tempo / 60.0, newLength * tempo / 60.0);
+            clip->deriveTimesFromBeats(tempo);
         }
         notifyClipPropertyChanged(clipId);
     }
@@ -822,7 +805,8 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
     if (update.lengthBeats) {
         double minBeats =
             (projectBPM > 0.0) ? (ClipInfo::MIN_CLIP_LENGTH * projectBPM / 60.0) : 0.0;
-        clip->lengthBeats = juce::jmax(minBeats, *update.lengthBeats);
+        clip->setPlacementBeats(clip->placement.startBeat,
+                                juce::jmax(minBeats, *update.lengthBeats));
     }
     if (update.loopStartBeats)
         clip->loopStartBeats = juce::jmax(0.0, *update.loopStartBeats);
@@ -831,7 +815,7 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
     if (update.offsetBeats)
         clip->offsetBeats = juce::jmax(0.0, *update.offsetBeats);
     if (update.startBeats)
-        clip->startBeats = juce::jmax(0.0, *update.startBeats);
+        clip->setPlacementBeats(juce::jmax(0.0, *update.startBeats), clip->placement.lengthBeats);
 
     // (3) Recompute the seconds cache from beats atomically.
     refreshDerivedSeconds(clipId, projectBPM);
@@ -844,20 +828,17 @@ void ClipManager::refreshDerivedSeconds(ClipId clipId, double projectBPM) {
     if (!clip)
         return;
 
-    // Beat-authoritative clips: seconds are caches of beats × BPM.
-    // Time-authoritative clips: seconds ARE the canonical state — leave alone.
-    if (!clip->isBeatsAuthoritative())
-        return;
-
     // TE requires speedRatio == 1.0 in autoTempo mode.
     if (clip->autoTempo)
         clip->speedRatio = 1.0;
 
     // Timeline-domain seconds (length, startTime): depend on PROJECT BPM.
     if (projectBPM > 0.0) {
-        if (clip->lengthBeats > 0.0)
-            clip->length = clip->lengthBeats * 60.0 / projectBPM;
-        clip->startTime = clip->startBeats * 60.0 / projectBPM;
+        if (clip->placement.lengthBeats > 0.0)
+            clip->length = clip->placement.lengthBeats * 60.0 / projectBPM;
+        clip->startTime = clip->placement.startBeat * 60.0 / projectBPM;
+        clip->startBeats = clip->placement.startBeat;
+        clip->lengthBeats = clip->placement.lengthBeats;
     }
 
     // Source-domain seconds (offset, loopStart, loopLength) for autoTempo
