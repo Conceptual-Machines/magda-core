@@ -82,7 +82,7 @@ WaveformGridComponent::WaveformLayout WaveformGridComponent::computeWaveformLayo
     double displayStartTime = getDisplayStartTime();
     int positionPixels = timeToPixel(displayStartTime);
 
-    double displayLength = relativeMode_ ? clipLength_ : displayInfo_.effectiveSourceExtentSeconds;
+    double displayLength = getDrawableTimelineLength();
 
     int clipEndPixel = timeToPixel(displayStartTime + displayLength);
     int widthPixels = clipEndPixel - positionPixels;
@@ -183,8 +183,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
                 displayEnd = fileDuration;
 
             // Compute the time range for the visible portion only
-            double drawableTimelineLength =
-                relativeMode_ ? clipLength_ : displayInfo_.effectiveSourceExtentSeconds;
+            double drawableTimelineLength = getDrawableTimelineLength();
             int audioWidthPixels =
                 static_cast<int>(std::ceil(drawableTimelineLength * horizontalZoom_));
             int audioLeft = waveformRect.getX();
@@ -332,7 +331,8 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
         return;
 
     double displayStartTime = getDisplayStartTime();
-    double fileExtent = relativeMode_ ? clipLength_ : displayInfo_.fullSourceExtentSeconds;
+    double fileExtent =
+        relativeMode_ ? getDrawableTimelineLength() : displayInfo_.fullSourceExtentSeconds;
     int positionPixels = timeToPixel(displayStartTime);
     int widthPixels = static_cast<int>(fileExtent * horizontalZoom_);
     if (widthPixels <= 0)
@@ -834,6 +834,7 @@ void WaveformGridComponent::updateClipPosition(double startTime, double length) 
 
 void WaveformGridComponent::setDisplayInfo(const magda::ClipDisplayInfo& info) {
     displayInfo_ = info;
+    updateGridSize();
     debugLogGeometry("setDisplayInfo");
     repaint();
 }
@@ -951,7 +952,9 @@ void WaveformGridComponent::updateGridSize() {
     // Calculate total virtual content width based on mode
     double totalTime = 0.0;
     if (relativeMode_) {
-        totalTime = displayInfo_.fullSourceExtentSeconds + 10.0;
+        double displayLength =
+            juce::jmax(displayInfo_.fullSourceExtentSeconds, getDrawableTimelineLength());
+        totalTime = displayLength + 10.0;
     } else {
         double displayClipLength = displayInfo_.effectiveSourceExtentSeconds;
         double leftPaddingTime = std::max(10.0, clipStartTime_ * 0.5);
@@ -992,6 +995,19 @@ double WaveformGridComponent::getDisplayStartTime() const {
     if (relativeMode_)
         return 0.0;
     return clipStartTime_ - displayInfo_.offsetPositionSeconds;
+}
+
+double WaveformGridComponent::getDrawableTimelineLength() const {
+    if (!relativeMode_)
+        return displayInfo_.effectiveSourceExtentSeconds;
+
+    // In REL mode the editor is source-domain. For looped clips, extending the
+    // arrangement container adds loop cycles; it must not stretch the source
+    // waveform across the longer container.
+    if (displayInfo_.isLooped() && displayInfo_.sourceExtentSeconds > 0.0)
+        return displayInfo_.sourceExtentSeconds;
+
+    return clipLength_;
 }
 
 void WaveformGridComponent::debugLogGeometry(const char* context) const {

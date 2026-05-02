@@ -315,6 +315,7 @@ class WaveformGridComponent : public juce::Component {
 
     // Display start time for the full source file.
     double getDisplayStartTime() const;
+    double getDrawableTimelineLength() const;
     void debugLogGeometry(const char* context) const;
 
     // Get current clip
