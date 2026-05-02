@@ -70,7 +70,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testLoopTimeBasedWarpEnabled();
         testSplitAudioClip();
         testFadeInOut();
-        testLoopCrossfade();
         testLaunchFadeSamples();
         testGainAndPan();
         testPitchChange();
@@ -579,29 +578,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         expectWithinAbsoluteError(teClip->getFadeIn().inSeconds(), 0.5, 0.01);
         expectWithinAbsoluteError(teClip->getFadeOut().inSeconds(), 0.3, 0.01);
-    }
-
-    void testLoopCrossfade() {
-        beginTest("Loop crossfade syncs to TE AudioClipBase");
-
-        Fixture f;
-        auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(),
-                                                                 ClipView::Arrangement, 60.0);
-        f.clipSync->syncClipToEngine(clipId);
-
-        auto* teClip = f.getTeAudioClip(clipId);
-        expect(teClip != nullptr);
-        // Default is 0 — no crossfade.
-        expectWithinAbsoluteError(teClip->getLoopCrossfade().inSeconds(), 0.0, 0.0001);
-
-        ClipManager::getInstance().setLoopCrossfade(clipId, 0.05);
-        f.clipSync->syncClipToEngine(clipId);
-        expectWithinAbsoluteError(teClip->getLoopCrossfade().inSeconds(), 0.05, 0.001);
-
-        // Negative input clamps to 0.
-        ClipManager::getInstance().setLoopCrossfade(clipId, -1.0);
-        f.clipSync->syncClipToEngine(clipId);
-        expectWithinAbsoluteError(teClip->getLoopCrossfade().inSeconds(), 0.0, 0.0001);
     }
 
     void testLaunchFadeSamples() {

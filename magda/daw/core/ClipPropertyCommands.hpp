@@ -368,42 +368,6 @@ class SetClipFadeOutCommand : public UndoableCommand {
 };
 
 /**
- * @brief Command for setting clip loop-seam crossfade duration (supports merging)
- */
-class SetClipLoopCrossfadeCommand : public UndoableCommand {
-  public:
-    SetClipLoopCrossfadeCommand(ClipId clipId, double newSeconds)
-        : clipId_(clipId), newSeconds_(newSeconds) {
-        auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip)
-            oldSeconds_ = clip->loopCrossfade;
-    }
-
-    void execute() override {
-        ClipManager::getInstance().setLoopCrossfade(clipId_, newSeconds_);
-    }
-    void undo() override {
-        ClipManager::getInstance().setLoopCrossfade(clipId_, oldSeconds_);
-    }
-    juce::String getDescription() const override {
-        return "Set Clip Loop Crossfade";
-    }
-
-    bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipLoopCrossfadeCommand*>(other))
-            return o->clipId_ == clipId_;
-        return false;
-    }
-    void mergeWith(const UndoableCommand* other) override {
-        newSeconds_ = static_cast<const SetClipLoopCrossfadeCommand*>(other)->newSeconds_;
-    }
-
-  private:
-    ClipId clipId_;
-    double oldSeconds_ = 0.0, newSeconds_;
-};
-
-/**
  * @brief Command for setting clip launch-fade length in samples (supports merging)
  */
 class SetClipLaunchFadeSamplesCommand : public UndoableCommand {

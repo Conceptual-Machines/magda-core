@@ -199,11 +199,8 @@ struct ClipInfo {
     int fadeOutBehaviour = 0;
     bool autoCrossfade = false;
 
-    // Session-clip seam shaping (audio only, launcher path).
-    // loopCrossfade: equal-power blend across the loop seam (seconds, 0 = off).
     // launchFadeSamples: ramp on the stopped→playing transition. Default 256
     // matches TE's prior hard-coded behaviour; 0 preserves the leading transient.
-    double loopCrossfade = 0.0;
     int launchFadeSamples = 256;
 
     // Channels

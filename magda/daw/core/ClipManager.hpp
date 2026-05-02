@@ -261,8 +261,6 @@ class ClipManager {
     void setFadeOutBehaviour(ClipId clipId, int behaviour);
     void setAutoCrossfade(ClipId clipId, bool enabled);
 
-    // Session-clip seam shaping (audio only)
-    void setLoopCrossfade(ClipId clipId, double seconds);
     void setLaunchFadeSamples(ClipId clipId, int samples);
 
     // Channels
