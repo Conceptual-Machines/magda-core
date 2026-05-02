@@ -383,6 +383,17 @@ void ClipInspector::resized() {
         launchQuantizeCombo_.setBounds(addRow(22).reduced(0, 1));
     }
 
+    // Session-clip seam shaping (audio only). Row: [loop xfade] | [launch fade]
+    if (loopCrossfadeValue_ && loopCrossfadeValue_->isVisible()) {
+        addSpace(6);
+        const int colGap = 8;
+        int halfWidth = (containerWidth - colGap) / 2;
+        auto row = addRow(22);
+        loopCrossfadeValue_->setBounds(row.removeFromLeft(halfWidth));
+        row.removeFromLeft(colGap);
+        launchFadeValue_->setBounds(row.removeFromLeft(halfWidth));
+    }
+
     // Set container bounds to accommodate all content
     clipPropsContainer_.setBounds(cb);
 }

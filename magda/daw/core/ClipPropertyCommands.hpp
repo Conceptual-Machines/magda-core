@@ -368,6 +368,78 @@ class SetClipFadeOutCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for setting clip loop-seam crossfade duration (supports merging)
+ */
+class SetClipLoopCrossfadeCommand : public UndoableCommand {
+  public:
+    SetClipLoopCrossfadeCommand(ClipId clipId, double newSeconds)
+        : clipId_(clipId), newSeconds_(newSeconds) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldSeconds_ = clip->loopCrossfade;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setLoopCrossfade(clipId_, newSeconds_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setLoopCrossfade(clipId_, oldSeconds_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Loop Crossfade";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetClipLoopCrossfadeCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newSeconds_ = static_cast<const SetClipLoopCrossfadeCommand*>(other)->newSeconds_;
+    }
+
+  private:
+    ClipId clipId_;
+    double oldSeconds_ = 0.0, newSeconds_;
+};
+
+/**
+ * @brief Command for setting clip launch-fade length in samples (supports merging)
+ */
+class SetClipLaunchFadeSamplesCommand : public UndoableCommand {
+  public:
+    SetClipLaunchFadeSamplesCommand(ClipId clipId, int newSamples)
+        : clipId_(clipId), newSamples_(newSamples) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldSamples_ = clip->launchFadeSamples;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setLaunchFadeSamples(clipId_, newSamples_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setLaunchFadeSamples(clipId_, oldSamples_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Launch Fade";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetClipLaunchFadeSamplesCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newSamples_ = static_cast<const SetClipLaunchFadeSamplesCommand*>(other)->newSamples_;
+    }
+
+  private:
+    ClipId clipId_;
+    int oldSamples_ = 256, newSamples_;
+};
+
+/**
  * @brief Command for setting clip length in beats (supports merging)
  */
 class SetClipLengthBeatsCommand : public UndoableCommand {

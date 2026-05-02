@@ -175,6 +175,9 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::ComboBox launchModeCombo_;
     juce::Label launchQuantizeLabel_;
     juce::ComboBox launchQuantizeCombo_;
+    // Session-clip seam shaping (audio only)
+    std::unique_ptr<magda::DraggableValueLabel> loopCrossfadeValue_;
+    std::unique_ptr<magda::DraggableValueLabel> launchFadeValue_;
 
     // Scrollable container for clip properties
     juce::Viewport clipPropsViewport_;

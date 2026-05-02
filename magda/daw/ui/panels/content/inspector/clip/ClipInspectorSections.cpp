@@ -947,6 +947,48 @@ void ClipInspector::initSessionLaunchSection() {
         }
     };
     clipPropsContainer_.addChildComponent(launchQuantizeCombo_);
+
+    // Loop crossfade — equal-power blend across the loop seam (audio session clips).
+    loopCrossfadeValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
+    loopCrossfadeValue_->setRange(0.0, 1.0, 0.0);
+    loopCrossfadeValue_->setSuffix(" s");
+    loopCrossfadeValue_->setDecimalPlaces(3);
+    loopCrossfadeValue_->setTooltip("Loop seam crossfade duration");
+    loopCrossfadeValue_->onValueChange = [this]() {
+        if (selectedClipIds_.empty())
+            return;
+        double newVal = juce::jmax(0.0, loopCrossfadeValue_->getValue());
+        for (auto cid : selectedClipIds_) {
+            const auto* c = magda::ClipManager::getInstance().getClip(cid);
+            if (c && c->type == magda::ClipType::Audio) {
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipLoopCrossfadeCommand>(cid, newVal));
+            }
+        }
+    };
+    clipPropsContainer_.addChildComponent(*loopCrossfadeValue_);
+
+    // Launch fade — ramp on the stopped→playing transition (samples).
+    // 0 preserves the leading transient; default 256 matches prior TE behaviour.
+    launchFadeValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
+    launchFadeValue_->setRange(0.0, 16384.0, 0.0);
+    launchFadeValue_->setSuffix(" smp");
+    launchFadeValue_->setDecimalPlaces(0);
+    launchFadeValue_->setTooltip(
+        "Launch fade length in samples — 0 preserves the leading transient");
+    launchFadeValue_->onValueChange = [this]() {
+        if (selectedClipIds_.empty())
+            return;
+        int newVal = juce::jlimit(0, 16384, (int)std::round(launchFadeValue_->getValue()));
+        for (auto cid : selectedClipIds_) {
+            const auto* c = magda::ClipManager::getInstance().getClip(cid);
+            if (c && c->type == magda::ClipType::Audio) {
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetClipLaunchFadeSamplesCommand>(cid, newVal));
+            }
+        }
+    };
+    clipPropsContainer_.addChildComponent(*launchFadeValue_);
 }
 
 // ========================================================================

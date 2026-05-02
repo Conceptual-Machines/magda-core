@@ -259,6 +259,20 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                             }
                             if (std::abs(audioClip->getPan() - clip->pan) > 0.001f)
                                 audioClip->setPan(clip->pan);
+
+                            // Session-clip seam shaping. Writing these CachedValues
+                            // triggers AudioClipBase::valueTreePropertyChanged →
+                            // graph rebuild, which is how the new value reaches
+                            // BeatRangeReader (loopCrossfade) and SlotControlNode
+                            // (launchFadeSamples).
+                            {
+                                double teLoopXf = audioClip->getLoopCrossfade().inSeconds();
+                                if (std::abs(teLoopXf - clip->loopCrossfade) > 0.0001)
+                                    audioClip->setLoopCrossfade(
+                                        te::TimeDuration::fromSeconds(clip->loopCrossfade));
+                            }
+                            if (audioClip->getLaunchFadeSamples() != clip->launchFadeSamples)
+                                audioClip->setLaunchFadeSamples(clip->launchFadeSamples);
                         }
                     }
 
@@ -558,8 +572,12 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         // No setFadeIn/setFadeOut here: te::EditNodeBuilder skips
         // FadeInOutNode for ClipRole::launcher, so any value written to
         // te::AudioClipBase::fadeIn/fadeOut never reaches the audio graph
-        // for session clips. The actual launch fade is the 256-sample ramp
-        // hard-coded in te::SlotControlNode::processSection.
+        // for session clips. Per-clip launch shaping uses launchFadeSamples
+        // (read by SlotControlNode) and loopCrossfade (read by BeatRangeReader).
+        if (clip->loopCrossfade > 0.0)
+            audioClipPtr->setLoopCrossfade(te::TimeDuration::fromSeconds(clip->loopCrossfade));
+        if (clip->launchFadeSamples != 256)
+            audioClipPtr->setLaunchFadeSamples(clip->launchFadeSamples);
 
         // Set LaunchHandle looping state at creation time so it's ready before first launch
         if (auto lh = audioClipPtr->getLaunchHandle()) {
@@ -1680,6 +1698,17 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             static_cast<te::AudioClipBase::FadeBehaviour>(clip->fadeOutBehaviour));
     if (clip->autoCrossfade != audioClipPtr->getAutoCrossfade())
         audioClipPtr->setAutoCrossfade(clip->autoCrossfade);
+
+    // Session-clip seam shaping (loopCrossfade/launchFadeSamples) — TE only
+    // honours these on the launcher path, but the value lives on AudioClipBase
+    // so we keep the ValueTree consistent regardless of view. Cheap, idempotent.
+    {
+        double teLoopXf = audioClipPtr->getLoopCrossfade().inSeconds();
+        if (std::abs(teLoopXf - clip->loopCrossfade) > 0.0001)
+            audioClipPtr->setLoopCrossfade(te::TimeDuration::fromSeconds(clip->loopCrossfade));
+    }
+    if (audioClipPtr->getLaunchFadeSamples() != clip->launchFadeSamples)
+        audioClipPtr->setLaunchFadeSamples(clip->launchFadeSamples);
 
     // 13. CHANNELS — removed (L/R controls removed from Inspector)
 }

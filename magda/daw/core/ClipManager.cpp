@@ -1006,6 +1006,24 @@ void ClipManager::setAutoCrossfade(ClipId clipId, bool enabled) {
     }
 }
 
+void ClipManager::setLoopCrossfade(ClipId clipId, double seconds) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->loopCrossfade = juce::jmax(0.0, seconds);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
+void ClipManager::setLaunchFadeSamples(ClipId clipId, int samples) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->type == ClipType::Audio) {
+            clip->launchFadeSamples = juce::jlimit(0, 16384, samples);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
 // ============================================================================
 // Channels
 // ============================================================================

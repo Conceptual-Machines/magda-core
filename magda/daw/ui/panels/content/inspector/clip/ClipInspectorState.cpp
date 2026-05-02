@@ -360,9 +360,18 @@ void ClipInspector::updateFromSelectedClip() {
         launchQuantizeLabel_.setVisible(isSessionClip);
         launchQuantizeCombo_.setVisible(isSessionClip);
 
+        // Loop crossfade and launch fade — session audio only
+        bool showSessionSeam = isSessionClip && isAudioClip;
+        loopCrossfadeValue_->setVisible(showSessionSeam);
+        launchFadeValue_->setVisible(showSessionSeam);
+
         if (isSessionClip) {
             launchQuantizeCombo_.setSelectedId(static_cast<int>(clip->launchQuantize) + 1,
                                                juce::dontSendNotification);
+        }
+        if (showSessionSeam) {
+            loopCrossfadeValue_->setValue(clip->loopCrossfade, juce::dontSendNotification);
+            launchFadeValue_->setValue(clip->launchFadeSamples, juce::dontSendNotification);
         }
 
         // ====================================================================
@@ -563,6 +572,10 @@ void ClipInspector::showClipControls(bool show) {
         launchModeCombo_.setVisible(false);
         launchQuantizeLabel_.setVisible(false);
         launchQuantizeCombo_.setVisible(false);
+        if (loopCrossfadeValue_)
+            loopCrossfadeValue_->setVisible(false);
+        if (launchFadeValue_)
+            launchFadeValue_->setVisible(false);
 
         // New sections
         pitchSectionLabel_.setVisible(false);
