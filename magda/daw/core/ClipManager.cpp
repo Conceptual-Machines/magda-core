@@ -104,6 +104,15 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
                 auto* c = mgr.getClip(cid);
                 if (!c)
                     return;
+                // Issue #1157: file metadata (via TE's loopInfo →
+                // setSourceMetadata) is authoritative when present. Audio
+                // analysis (tracktion::TempoDetect) is a fallback used only
+                // when the file carries no tempo tag — it sometimes
+                // misdetects (half-time / double-time / outright wrong, e.g.
+                // 80→107 on the user's drum loop). Skip applying the result
+                // if sourceBPM is already populated.
+                if (c->sourceBPM > 0.0)
+                    return;
                 AudioClipBeatsUpdate u;
                 u.sourceBPM = detectedBPM;
                 if (auto* thumb =
@@ -794,11 +803,8 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
 
     // (1) Detected metadata — write-only role. Inspector "BPM" corrections
     // and BPM-detection callbacks land here. Never touched by the beat slider.
-    if (update.sourceBPM) {
-        DBG("[1157] applyAudioClipBeats clip=" << clipId << " sourceBPM " << clip->sourceBPM
-                                               << " -> " << juce::jmax(0.0, *update.sourceBPM));
+    if (update.sourceBPM)
         clip->sourceBPM = juce::jmax(0.0, *update.sourceBPM);
-    }
     if (update.sourceNumBeats)
         clip->sourceNumBeats = juce::jmax(0.0, *update.sourceNumBeats);
 

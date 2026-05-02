@@ -649,7 +649,11 @@ void ClipInspector::initClipPropertiesSection() {
         // (pre-setAutoTempo, before the canonical path is open); cache miss
         // kicks off background detection and the callback funnels through
         // applyAudioClipBeats once autoTempo is on.
-        if (enable && clip->type == magda::ClipType::Audio) {
+        if (enable && clip->type == magda::ClipType::Audio && clip->sourceBPM <= 0.0) {
+            // Issue #1157: only seed from AudioThumbnailManager when the file
+            // didn't carry tempo metadata. setSourceMetadata (from TE's
+            // loopInfo) is authoritative when present; TempoDetect can be
+            // wrong by ~1.3x on syncopated loops.
             auto& thumbs = magda::AudioThumbnailManager::getInstance();
             double cached = thumbs.getCachedBPM(clip->audioFilePath);
             if (cached > 0.0) {
@@ -667,6 +671,10 @@ void ClipInspector::initClipPropertiesSection() {
                     auto& mgr = magda::ClipManager::getInstance();
                     auto* c = mgr.getClip(cid);
                     if (!c)
+                        return;
+                    // Issue #1157: file metadata wins over audio analysis.
+                    // TempoDetect can be wrong by ~1.3x on syncopated loops.
+                    if (c->sourceBPM > 0.0)
                         return;
                     magda::ClipManager::AudioClipBeatsUpdate u;
                     u.sourceBPM = detectedBPM;

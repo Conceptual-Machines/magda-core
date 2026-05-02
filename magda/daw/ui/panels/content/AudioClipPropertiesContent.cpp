@@ -146,11 +146,10 @@ void AudioClipPropertiesContent::createControls() {
         if (auto* tc = magda::TimelineController::getCurrent())
             bpm = tc->getState().tempo.bpm;
 
-        if (enable && clip->type == magda::ClipType::Audio) {
-            // Cached BPM applies immediately (pre-setAutoTempo, before the
-            // canonical path is open); cache miss kicks off background
-            // detection and the callback funnels through applyAudioClipBeats
-            // once autoTempo is on. See issue #1157.
+        if (enable && clip->type == magda::ClipType::Audio && clip->sourceBPM <= 0.0) {
+            // Issue #1157: only seed from AudioThumbnailManager when the
+            // file didn't carry tempo metadata. setSourceMetadata (from TE's
+            // loopInfo) is authoritative when present.
             auto& thumbs = magda::AudioThumbnailManager::getInstance();
             double cached = thumbs.getCachedBPM(clip->audioFilePath);
             if (cached > 0.0) {
@@ -168,6 +167,9 @@ void AudioClipPropertiesContent::createControls() {
                     auto& mgr = magda::ClipManager::getInstance();
                     auto* c = mgr.getClip(cid);
                     if (!c)
+                        return;
+                    // Issue #1157: file metadata wins over audio analysis.
+                    if (c->sourceBPM > 0.0)
                         return;
                     magda::ClipManager::AudioClipBeatsUpdate u;
                     u.sourceBPM = detectedBPM;

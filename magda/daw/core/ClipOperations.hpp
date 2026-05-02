@@ -586,9 +586,6 @@ class ClipOperations {
                     double fileDuration = clip.sourceNumBeats * 60.0 / clip.sourceBPM;
                     clip.sourceNumBeats = effectiveBPM * fileDuration / 60.0;
                 }
-                DBG("[1157] setAutoTempo calibrate sourceBPM "
-                    << clip.sourceBPM << " -> " << effectiveBPM << " (projectBpm=" << bpm
-                    << " speedRatio=" << clip.speedRatio << ")");
                 clip.sourceBPM = effectiveBPM;
             }
 
