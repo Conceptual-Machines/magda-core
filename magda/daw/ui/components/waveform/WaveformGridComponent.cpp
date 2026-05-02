@@ -1080,11 +1080,19 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         return;
     }
 
-    // Non-warp mode: standard trim/stretch interaction
-    if (isNearLeftEdge(x, *clip)) {
+    // Non-warp mode: standard trim/stretch interaction.
+    // Phase marker takes priority over edge resize so a click on the "P" marker doesn't
+    // fall through to the source-extent right-edge hit-test (which used to silently shorten
+    // the loop when the phase landed near the file end).
+    if (isNearPhaseMarker(x, *clip)) {
+        dragMode_ = DragMode::PhaseMarker;
+    } else if (isNearLeftEdge(x, *clip)) {
         dragMode_ = shiftHeld ? DragMode::StretchLeft : DragMode::ResizeLeft;
-    } else if (isNearRightEdge(x, *clip)) {
-        dragMode_ = shiftHeld ? DragMode::StretchRight : DragMode::ResizeRight;
+    } else if (isNearRightEdge(x, *clip) && shiftHeld) {
+        // Right-edge resize is intentionally disabled — only Shift+drag (stretch) survives.
+        // Plain right-edge drag used to call resizeSourceExtent → setLoopLengthFromTimeline,
+        // which is the loop-end edit and is handled on the timeline ruler instead.
+        dragMode_ = DragMode::StretchRight;
     } else if (isInsideWaveform(x, *clip)) {
         // Inside waveform but not near edges — zoom drag
         dragMode_ = DragMode::Zoom;
@@ -1105,6 +1113,17 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     dragStartStartTime_ = clip->startTime;
     dragStartSpeedRatio_ = clip->speedRatio;
     dragStartClipLength_ = clip->length;  // Save original clip.length for stretch operations
+
+    if (dragMode_ == DragMode::PhaseMarker) {
+        double phase = clip->offset - clip->loopStart;
+        if (clip->loopLength > 0.0) {
+            phase = std::fmod(std::fmod(phase, clip->loopLength) + clip->loopLength,
+                              clip->loopLength);
+        } else {
+            phase = juce::jmax(0.0, phase);
+        }
+        dragStartLoopOffset_ = phase;
+    }
 
     // Use source extent for resize operations (visual boundary in waveform editor)
     // This may differ from clip.length in loop mode
@@ -1233,19 +1252,21 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             }
             break;
         }
-        case DragMode::ResizeRight: {
-            // Calculate new source extent (in timeline seconds)
-            double newExtent = dragStartLength_ + deltaSeconds;
-            newExtent = juce::jmax(magda::ClipOperations::MIN_CLIP_LENGTH, newExtent);
-
-            // Constrain to file bounds
-            if (dragStartFileDuration_ > 0.0) {
-                double maxExtent =
-                    (dragStartFileDuration_ - dragStartAudioOffset_) / dragStartSpeedRatio_;
-                newExtent = juce::jmin(newExtent, maxExtent);
+        case DragMode::PhaseMarker: {
+            // Phase is in source seconds, wrapped into [0, loopLength). Convert the timeline-
+            // pixel delta to a source-time delta and add it to the captured start phase.
+            double timelineDelta = (event.x - dragStartX_) / horizontalZoom_;
+            double sourceDelta = displayInfo_.timelineToSource(timelineDelta);
+            double newPhase = dragStartLoopOffset_ + sourceDelta;
+            if (clip->loopLength > 0.0) {
+                newPhase = std::fmod(std::fmod(newPhase, clip->loopLength) + clip->loopLength,
+                                     clip->loopLength);
+            } else {
+                newPhase = juce::jmax(0.0, newPhase);
             }
-
-            magda::ClipOperations::resizeSourceExtent(*clip, newExtent);
+            clip->offset = clip->loopStart + newPhase;
+            if (clip->autoTempo && clip->sourceBPM > 0.0)
+                clip->offsetBeats = clip->offset * clip->sourceBPM / 60.0;
             break;
         }
         case DragMode::StretchRight: {
@@ -1373,12 +1394,20 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
         return;
     }
 
-    if (isNearLeftEdge(x, *clip) || isNearRightEdge(x, *clip)) {
+    if (isNearPhaseMarker(x, *clip)) {
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    } else if (isNearLeftEdge(x, *clip)) {
         if (event.mods.isShiftDown()) {
             setMouseCursor(juce::MouseCursor::UpDownLeftRightResizeCursor);
         } else {
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
         }
+    } else if (isNearRightEdge(x, *clip)) {
+        // Right-edge resize is disabled; only Shift+drag stretches.
+        if (event.mods.isShiftDown())
+            setMouseCursor(juce::MouseCursor::UpDownLeftRightResizeCursor);
+        else
+            setMouseCursor(juce::MouseCursor::NormalCursor);
     } else if (isInsideWaveform(x, *clip)) {
         setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
     } else {
@@ -1400,6 +1429,13 @@ bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) 
     juce::ignoreUnused(clip);
     int rightEdgeX = timeToPixel(getDisplayStartTime() + displayInfo_.effectiveSourceExtentSeconds);
     return std::abs(x - rightEdgeX) <= EDGE_GRAB_DISTANCE;
+}
+
+bool WaveformGridComponent::isNearPhaseMarker(int x, const magda::ClipInfo& clip) const {
+    if (!clip.loopEnabled || displayInfo_.loopLengthSeconds <= 0.0)
+        return false;
+    int phaseX = timeToPixel(getDisplayStartTime() + displayInfo_.loopPhasePositionSeconds);
+    return std::abs(x - phaseX) <= EDGE_GRAB_DISTANCE;
 }
 
 bool WaveformGridComponent::isInsideWaveform(int x, const magda::ClipInfo& clip) const {

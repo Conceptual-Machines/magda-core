@@ -231,12 +231,14 @@ class WaveformGridComponent : public juce::Component {
         StretchRight,
         MoveWarpMarker,
         RepositionWarpMarker,
+        PhaseMarker,
         Zoom
     };
     DragMode dragMode_ = DragMode::None;
     double dragStartAudioOffset_ = 0.0;
     double dragStartLength_ = 0.0;
     double dragStartStartTime_ = 0.0;
+    double dragStartLoopOffset_ = 0.0;  // Source-seconds phase at start of PhaseMarker drag
     int dragStartX_ = 0;
     int zoomDragStartY_ = 0;
     int zoomDragAnchorX_ = 0;
@@ -303,6 +305,7 @@ class WaveformGridComponent : public juce::Component {
     // Hit testing helpers
     bool isNearLeftEdge(int x, const magda::ClipInfo& clip) const;
     bool isNearRightEdge(int x, const magda::ClipInfo& clip) const;
+    bool isNearPhaseMarker(int x, const magda::ClipInfo& clip) const;
     bool isInsideWaveform(int x, const magda::ClipInfo& clip) const;
 
     // Warp marker helpers

@@ -754,14 +754,24 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
 void ClipManager::setLoopStartAndLength(ClipId clipId, double loopStart, double loopLength,
                                         double bpm) {
     if (auto* clip = getClip(clipId)) {
+        const double oldLoopStart = clip->loopStart;
         clip->loopStart = juce::jmax(0.0, loopStart);
         clip->loopLength = juce::jmax(0.0, loopLength);
 
         if (clip->type == ClipType::Audio) {
+            // Moving the loop START snaps the phase (clip.offset relative to loopStart) back to 0
+            // — the user's drag intent is to relocate the loop, not to compensate for a stale
+            // phase. Loop END moves don't touch the phase.
+            const bool loopStartMoved = std::abs(clip->loopStart - oldLoopStart) > 1e-9;
+            if (loopStartMoved)
+                clip->offset = clip->loopStart;
+
             if (clip->autoTempo) {
                 double convBpm = (clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
                 clip->loopStartBeats = (clip->loopStart * convBpm) / 60.0;
                 clip->loopLengthBeats = (clip->loopLength * convBpm) / 60.0;
+                if (loopStartMoved && clip->sourceBPM > 0.0)
+                    clip->offsetBeats = clip->offset * clip->sourceBPM / 60.0;
             }
             sanitizeAudioClip(*clip);
         } else if (clip->type == ClipType::MIDI) {

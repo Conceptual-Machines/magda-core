@@ -264,14 +264,7 @@ WaveformEditorContent::WaveformEditorContent() {
         zoomToTimeRange(startTime, endTime);
     };
 
-    // Wire up ruler loop region drag callback — visual preview only during drag
-    timeRuler_->onLoopRegionChanged = [](double /*displayStart*/, double /*displayEnd*/) {
-        // Visual feedback is handled by LoopMarkerInteraction/TimeRuler repaint.
-        // No ClipManager commit during drag to avoid flickering rebuilds.
-    };
-
-    // Commit loop region change on drag end
-    timeRuler_->onLoopDragEnded = [this](double displayStart, double displayEnd) {
+    auto commitLoopFromDisplay = [this](double displayStart, double displayEnd) {
         if (editingClipId_ == magda::INVALID_CLIP_ID)
             return;
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
@@ -297,6 +290,13 @@ WaveformEditorContent::WaveformEditorContent() {
         magda::ClipManager::getInstance().setLoopStartAndLength(editingClipId_, newLoopStart,
                                                                 newLoopLength, bpm);
     };
+
+    // Push every drag tick through to ClipManager so the looped audio reflects the new region
+    // immediately. TE coalesces graph rebuilds via a 1ms restart timer and crossfades the
+    // switchover, so even a fast drag produces smooth audio (the previous "flickering rebuild"
+    // concern was masking TE #8 — the bleed made each rebuild sound different).
+    timeRuler_->onLoopRegionChanged = commitLoopFromDisplay;
+    timeRuler_->onLoopDragEnded = commitLoopFromDisplay;
 
     addAndMakeVisible(timeRuler_.get());
 
