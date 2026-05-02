@@ -322,147 +322,8 @@ void AudioClipPropertiesContent::createControls() {
     };
 
     // ===================== FADES SECTION =====================
-    fadesSectionLabel_ = makeSectionLabel("Fades");
-
-    fadeInLabel_ = makeLabel("In");
-    fadeInValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
-    fadeInValue_->setRange(0.0, 10.0, 0.0);
-    fadeInValue_->setDecimalPlaces(3);
-    fadeInValue_->setSuffix("s");
-    fadeInValue_->setDrawBackground(false);
-    fadeInValue_->setDrawBorder(true);
-    fadeInValue_->setShowFillIndicator(false);
-    fadeInValue_->setFontSize(11.0f);
-    fadeInValue_->setDoubleClickResetsValue(false);
-    fadeInValue_->onValueChange = [this]() {
-        if (clipId_ == magda::INVALID_CLIP_ID)
-            return;
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetClipFadeInCommand>(clipId_, fadeInValue_->getValue()));
-    };
-    addAndMakeVisible(*fadeInValue_);
-
-    fadeOutLabel_ = makeLabel("Out");
-    fadeOutValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
-    fadeOutValue_->setRange(0.0, 10.0, 0.0);
-    fadeOutValue_->setDecimalPlaces(3);
-    fadeOutValue_->setSuffix("s");
-    fadeOutValue_->setDrawBackground(false);
-    fadeOutValue_->setDrawBorder(true);
-    fadeOutValue_->setShowFillIndicator(false);
-    fadeOutValue_->setFontSize(11.0f);
-    fadeOutValue_->setDoubleClickResetsValue(false);
-    fadeOutValue_->onValueChange = [this]() {
-        if (clipId_ == magda::INVALID_CLIP_ID)
-            return;
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetClipFadeOutCommand>(clipId_, fadeOutValue_->getValue()));
-    };
-    addAndMakeVisible(*fadeOutValue_);
-
-    // Fade curve type buttons (Linear, Convex, Concave, S-Curve)
-    {
-        struct FadeTypeIcon {
-            const char* name;
-            const char* data;
-            size_t size;
-            const char* tooltip;
-        };
-        FadeTypeIcon fadeTypeIcons[] = {
-            {"Linear", BinaryData::fade_linear_svg, BinaryData::fade_linear_svgSize, "Linear"},
-            {"Convex", BinaryData::fade_convex_svg, BinaryData::fade_convex_svgSize, "Convex"},
-            {"Concave", BinaryData::fade_concave_svg, BinaryData::fade_concave_svgSize, "Concave"},
-            {"SCurve", BinaryData::fade_scurve_svg, BinaryData::fade_scurve_svgSize, "S-Curve"},
-        };
-
-        auto setupFadeTypeButton = [this](std::unique_ptr<magda::SvgButton>& btn,
-                                          const FadeTypeIcon& icon) {
-            btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
-            btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
-            btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-            btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-            btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-            btn->setBorderThickness(1.0f);
-            btn->setTooltip(icon.tooltip);
-            btn->setClickingTogglesState(false);
-            addAndMakeVisible(*btn);
-        };
-
-        for (int i = 0; i < 4; ++i) {
-            setupFadeTypeButton(fadeInTypeButtons_[i], fadeTypeIcons[i]);
-            int fadeType = i + 1;
-            fadeInTypeButtons_[i]->onClick = [this, i, fadeType]() {
-                if (clipId_ == magda::INVALID_CLIP_ID)
-                    return;
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeInTypeCommand>(clipId_, fadeType));
-                for (int j = 0; j < 4; ++j)
-                    fadeInTypeButtons_[j]->setActive(j == i);
-            };
-
-            setupFadeTypeButton(fadeOutTypeButtons_[i], fadeTypeIcons[i]);
-            fadeOutTypeButtons_[i]->onClick = [this, i, fadeType]() {
-                if (clipId_ == magda::INVALID_CLIP_ID)
-                    return;
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeOutTypeCommand>(clipId_, fadeType));
-                for (int j = 0; j < 4; ++j)
-                    fadeOutTypeButtons_[j]->setActive(j == i);
-            };
-        }
-    }
-
-    // Fade behaviour buttons (Gain Fade, Speed Ramp)
-    {
-        struct FadeBehaviourIcon {
-            const char* name;
-            const char* data;
-            size_t size;
-            const char* tooltip;
-        };
-        FadeBehaviourIcon fadeBehaviourIcons[] = {
-            {"GainFade", BinaryData::fade_gain_svg, BinaryData::fade_gain_svgSize, "Gain Fade"},
-            {"SpeedRamp", BinaryData::fade_speedramp_svg, BinaryData::fade_speedramp_svgSize,
-             "Speed Ramp"},
-        };
-
-        auto setupFadeBehaviourButton = [this](std::unique_ptr<magda::SvgButton>& btn,
-                                               const FadeBehaviourIcon& icon) {
-            btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
-            btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
-            btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-            btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-            btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-            btn->setBorderThickness(1.0f);
-            btn->setTooltip(icon.tooltip);
-            btn->setClickingTogglesState(false);
-            addAndMakeVisible(*btn);
-        };
-
-        for (int i = 0; i < 2; ++i) {
-            setupFadeBehaviourButton(fadeInBehaviourButtons_[i], fadeBehaviourIcons[i]);
-            fadeInBehaviourButtons_[i]->onClick = [this, i]() {
-                if (clipId_ == magda::INVALID_CLIP_ID)
-                    return;
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeInBehaviourCommand>(clipId_, i));
-                for (int j = 0; j < 2; ++j)
-                    fadeInBehaviourButtons_[j]->setActive(j == i);
-            };
-
-            setupFadeBehaviourButton(fadeOutBehaviourButtons_[i], fadeBehaviourIcons[i]);
-            fadeOutBehaviourButtons_[i]->onClick = [this, i]() {
-                if (clipId_ == magda::INVALID_CLIP_ID)
-                    return;
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeOutBehaviourCommand>(clipId_, i));
-                for (int j = 0; j < 2; ++j)
-                    fadeOutBehaviourButtons_[j]->setActive(j == i);
-            };
-        }
-    }
+    fadesSection_ = std::make_unique<ClipFadesSection>();
+    addAndMakeVisible(*fadesSection_);
 
     // ===================== TRANSIENT DETECTION SECTION =====================
     transientSectionLabel_ = makeSectionLabel("Transient Detection");
@@ -565,22 +426,12 @@ void AudioClipPropertiesContent::updateFromClip() {
         beatsValue_->setValue(clip->lengthBeats > 0.0 ? clip->lengthBeats : 4.0,
                               juce::dontSendNotification);
         pitchValue_->setValue(static_cast<double>(clip->pitchChange), juce::dontSendNotification);
-        fadeInValue_->setValue(clip->fadeIn, juce::dontSendNotification);
-        fadeOutValue_->setValue(clip->fadeOut, juce::dontSendNotification);
-
-        for (int i = 0; i < 4; ++i) {
-            fadeInTypeButtons_[i]->setActive(i == clip->fadeInType - 1);
-            fadeOutTypeButtons_[i]->setActive(i == clip->fadeOutType - 1);
-        }
-        for (int i = 0; i < 2; ++i) {
-            fadeInBehaviourButtons_[i]->setActive(i == clip->fadeInBehaviour);
-            fadeOutBehaviourButtons_[i]->setActive(i == clip->fadeOutBehaviour);
-        }
-
         volumeValue_->setValue(static_cast<double>(clip->volumeDB), juce::dontSendNotification);
         gainValue_->setValue(static_cast<double>(clip->gainDB), juce::dontSendNotification);
         panValue_->setValue(static_cast<double>(clip->pan), juce::dontSendNotification);
     }
+
+    fadesSection_->setClip(clipId_);
 
     bool enabled = hasClip;
     bool isAutoTempo = hasClip && clip->autoTempo;
@@ -590,8 +441,6 @@ void AudioClipPropertiesContent::updateFromClip() {
     beatsValue_->setEnabled(enabled && isAutoTempo);
     pitchValue_->setEnabled(enabled);
     analogPitchToggle_->setEnabled(enabled && !isAutoTempo && !(hasClip && clip->warpEnabled));
-    fadeInValue_->setEnabled(enabled);
-    fadeOutValue_->setEnabled(enabled);
     transientSensValue_->setEnabled(enabled);
     volumeValue_->setEnabled(enabled);
     gainValue_->setEnabled(enabled);
@@ -713,32 +562,10 @@ void AudioClipPropertiesContent::resized() {
 
     // --- RIGHT COLUMN: Fades, Mix ---
 
-    fadesSectionLabel_->setBounds(addRow(rightCol, SECTION_LABEL_HEIGHT));
-
-    layoutLabelValue(addRow(rightCol, ROW_HEIGHT), *fadeInLabel_, *fadeInValue_, labelW);
     {
-        auto row = addRow(rightCol, ROW_HEIGHT);
-        row.removeFromLeft(labelW + 2);
-        layoutIconButtons(row, fadeInTypeButtons_, 4);
-    }
-    {
-        auto row = addRow(rightCol, ROW_HEIGHT);
-        row.removeFromLeft(labelW + 2);
-        layoutIconButtons(row, fadeInBehaviourButtons_, 2);
-    }
-
-    rightCol.removeFromTop(ROW_GAP);
-
-    layoutLabelValue(addRow(rightCol, ROW_HEIGHT), *fadeOutLabel_, *fadeOutValue_, labelW);
-    {
-        auto row = addRow(rightCol, ROW_HEIGHT);
-        row.removeFromLeft(labelW + 2);
-        layoutIconButtons(row, fadeOutTypeButtons_, 4);
-    }
-    {
-        auto row = addRow(rightCol, ROW_HEIGHT);
-        row.removeFromLeft(labelW + 2);
-        layoutIconButtons(row, fadeOutBehaviourButtons_, 2);
+        int ph = fadesSection_ ? fadesSection_->getPreferredHeight() : 0;
+        if (ph > 0)
+            fadesSection_->setBounds(addRow(rightCol, ph));
     }
 
     addSeparator(rightCol);

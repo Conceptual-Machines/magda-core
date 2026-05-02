@@ -198,6 +198,8 @@ struct ClipInfo {
     int fadeInBehaviour = 0;  // 0=gainFade, 1=speedRamp
     int fadeOutBehaviour = 0;
     bool autoCrossfade = false;
+    double loopCrossfade = 0.0;   // Loop-seam blend duration (seconds); session clips only
+    int launchFadeSamples = 256;  // Launch smoothing (samples); 0 = preserve leading transient
 
     // Channels
     bool leftChannelActive = true;
