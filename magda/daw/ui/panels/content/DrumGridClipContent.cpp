@@ -1836,6 +1836,7 @@ void DrumGridClipContent::setClip(magda::ClipId clipId) {
     updateGridSize();
     updateTimeRuler();
     updateVelocityLane();
+    scrollToClipStartForTimeMode();
 
     // Center on notes (or C-2 if empty)
     centerOnNotes();
@@ -1907,9 +1908,9 @@ void DrumGridClipContent::updateGridSize() {
         if (clip->loopEnabled || clip->view == magda::ClipView::Session) {
             clipStartBeats = 0.0;
         } else {
-            clipStartBeats = clip->startTime / secondsPerBeat;
+            clipStartBeats = clip->placement.startBeat;
         }
-        clipLengthBeats = clip->length / secondsPerBeat;
+        clipLengthBeats = clip->placement.lengthBeats;
     }
 
     int numRows = juce::jmax(1, static_cast<int>(padRows_.size()));

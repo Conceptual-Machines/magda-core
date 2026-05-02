@@ -193,7 +193,7 @@ void PianoRollContent::setupGridCallbacks() {
                 tempo = controller->getState().tempo.bpm;
             }
             double beatsPerSecond = tempo / 60.0;
-            double clipLengthBeats = clip->length * beatsPerSecond;
+            double clipLengthBeats = clip->placement.lengthBeats;
 
             // Check if note is outside visible range [offset, offset + length]
             double effectiveOffset = (clip->view == magda::ClipView::Session || clip->loopEnabled)
@@ -208,7 +208,7 @@ void PianoRollContent::setupGridCallbacks() {
                 // Find which clip would show this note
                 // Note: startBeat is in content coordinates, so subtract offset to get timeline
                 // position
-                double clipStartBeats = clip->startTime * beatsPerSecond;
+                double clipStartBeats = clip->placement.startBeat;
                 double absoluteBeat = clipStartBeats + note.startBeat - effectiveOffset;
                 double absoluteSeconds = absoluteBeat / beatsPerSecond;
 
@@ -221,7 +221,7 @@ void PianoRollContent::setupGridCallbacks() {
                     if (destClip && destClip->type == magda::ClipType::MIDI) {
                         // Calculate position in destination clip's content coordinates
                         // absoluteBeat is timeline position, convert to content position
-                        double destClipStartBeats = destClip->startTime * beatsPerSecond;
+                        double destClipStartBeats = destClip->placement.startBeat;
                         double destOffset =
                             (destClip->view == magda::ClipView::Session || destClip->loopEnabled)
                                 ? destClip->midiOffset
@@ -766,25 +766,25 @@ void PianoRollContent::updateGridSize() {
     // When multiple clips are selected, compute the combined range
     const auto& selectedClipIds = gridComponent_->getSelectedClipIds();
     if (selectedClipIds.size() > 1) {
-        double earliestStart = std::numeric_limits<double>::max();
-        double latestEnd = 0.0;
+        double earliestStartBeat = std::numeric_limits<double>::max();
+        double latestEndBeat = 0.0;
         for (magda::ClipId id : selectedClipIds) {
             const auto* c = clipManager.getClip(id);
             if (!c)
                 continue;
-            earliestStart = juce::jmin(earliestStart, c->startTime);
-            latestEnd = juce::jmax(latestEnd, c->startTime + c->length);
+            earliestStartBeat = juce::jmin(earliestStartBeat, c->placement.startBeat);
+            latestEndBeat = juce::jmax(latestEndBeat, c->placement.endBeat());
         }
-        clipStartBeats = earliestStart / secondsPerBeat;
-        clipLengthBeats = (latestEnd - earliestStart) / secondsPerBeat;
+        clipStartBeats = earliestStartBeat;
+        clipLengthBeats = latestEndBeat - earliestStartBeat;
     } else if (clip) {
         if (clip->loopEnabled || clip->view == magda::ClipView::Session) {
             // Looped clips and session clips: show content from bar 1
             clipStartBeats = 0.0;
-            clipLengthBeats = clip->length / secondsPerBeat;
+            clipLengthBeats = clip->placement.lengthBeats;
         } else {
-            clipStartBeats = clip->startTime / secondsPerBeat;
-            clipLengthBeats = clip->length / secondsPerBeat;
+            clipStartBeats = clip->placement.startBeat;
+            clipLengthBeats = clip->placement.lengthBeats;
         }
     }
 
@@ -887,19 +887,7 @@ void PianoRollContent::setRelativeTimeMode(bool relative) {
         updateTimeRuler();
         updateVelocityLane();
 
-        int scrollX = 0;
-        if (!relative && editingClipId_ != magda::INVALID_CLIP_ID) {
-            const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-            if (clip && clip->view != magda::ClipView::Session && !clip->loopEnabled) {
-                double tempo = 120.0;
-                if (auto* controller = magda::TimelineController::getCurrent()) {
-                    tempo = controller->getState().tempo.bpm;
-                }
-                scrollX = static_cast<int>(
-                    std::round(clip->startTime * (tempo / 60.0) * horizontalZoom_));
-            }
-        }
-        viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
+        scrollToClipStartForTimeMode();
     }
 }
 
@@ -1130,17 +1118,7 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
             updateTimeRuler();
             updateVelocityLane();
 
-            // Scroll to clip start position
-            int scrollX = 0;
-            if (!relativeTimeMode_ && clip->view != magda::ClipView::Session) {
-                double tempo = 120.0;
-                if (auto* controller = magda::TimelineController::getCurrent()) {
-                    tempo = controller->getState().tempo.bpm;
-                }
-                double clipStartBeats = clip->startTime * (tempo / 60.0);
-                scrollX = static_cast<int>(clipStartBeats * horizontalZoom_);
-            }
-            viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
+            scrollToClipStartForTimeMode();
 
             repaint();
         }
@@ -1224,6 +1202,7 @@ void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda:
     updateGridSize();
     updateTimeRuler();
     updateVelocityLane();
+    scrollToClipStartForTimeMode();
     repaint();
 }
 
@@ -1243,20 +1222,7 @@ void PianoRollContent::setClip(magda::ClipId clipId) {
         updateTimeRuler();
         updateVelocityLane();
 
-        // Scroll to clip start position
-        int scrollX = 0;
-        if (!relativeTimeMode_) {
-            const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-            if (clip && clip->view != magda::ClipView::Session) {
-                double tempo = 120.0;
-                if (auto* controller = magda::TimelineController::getCurrent()) {
-                    tempo = controller->getState().tempo.bpm;
-                }
-                double clipStartBeats = clip->startTime * (tempo / 60.0);
-                scrollX = static_cast<int>(clipStartBeats * horizontalZoom_);
-            }
-        }
-        viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
+        scrollToClipStartForTimeMode();
 
         // Center vertically on existing notes (or C4 if empty)
         centerOnNotes();
@@ -1310,10 +1276,7 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
     // must offset annotation positions by the clip's start beat.
     double clipStartBeats = 0.0;
     if (!relativeTimeMode_ && clip->view != magda::ClipView::Session) {
-        double tempo = 120.0;
-        if (auto* controller = magda::TimelineController::getCurrent())
-            tempo = controller->getState().tempo.bpm;
-        clipStartBeats = clip->startTime * (tempo / 60.0);
+        clipStartBeats = clip->placement.startBeat;
     }
 
     for (const auto& annotation : clip->chordAnnotations) {
@@ -1524,20 +1487,16 @@ void PianoRollContent::updateVelocityLane() {
         const auto& selectedClipIds =
             gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
         if (selectedClipIds.size() > 1) {
-            double tempo = 120.0;
-            if (auto* controller = magda::TimelineController::getCurrent()) {
-                tempo = controller->getState().tempo.bpm;
-            }
             double earliestStart = std::numeric_limits<double>::max();
             auto& clipManager = magda::ClipManager::getInstance();
             for (magda::ClipId id : selectedClipIds) {
                 const auto* c = clipManager.getClip(id);
                 if (c) {
-                    earliestStart = juce::jmin(earliestStart, c->startTime);
+                    earliestStart = juce::jmin(earliestStart, c->placement.startBeat);
                 }
             }
             if (earliestStart < std::numeric_limits<double>::max()) {
-                midiDrawer_->setClipStartBeats(earliestStart * (tempo / 60.0));
+                midiDrawer_->setClipStartBeats(earliestStart);
             }
         }
 
@@ -1566,20 +1525,16 @@ void PianoRollContent::updateVelocityLane() {
     const auto& selectedClipIds =
         gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
     if (selectedClipIds.size() > 1) {
-        double tempo = 120.0;
-        if (auto* controller = magda::TimelineController::getCurrent()) {
-            tempo = controller->getState().tempo.bpm;
-        }
         double earliestStart = std::numeric_limits<double>::max();
         auto& clipManager = magda::ClipManager::getInstance();
         for (magda::ClipId id : selectedClipIds) {
             const auto* c = clipManager.getClip(id);
             if (c) {
-                earliestStart = juce::jmin(earliestStart, c->startTime);
+                earliestStart = juce::jmin(earliestStart, c->placement.startBeat);
             }
         }
         if (earliestStart < std::numeric_limits<double>::max()) {
-            velocityLane_->setClipStartBeats(earliestStart * (tempo / 60.0));
+            velocityLane_->setClipStartBeats(earliestStart);
         }
     }
 

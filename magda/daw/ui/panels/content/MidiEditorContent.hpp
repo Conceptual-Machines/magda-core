@@ -153,6 +153,7 @@ class MidiEditorContent : public PanelContent,
 
     // --- Shared TimeRuler method (virtual for subclass extension) ---
     virtual void updateTimeRuler();
+    void scrollToClipStartForTimeMode();
 
     // --- Pure virtual methods for subclasses ---
     virtual int getLeftPanelWidth() const = 0;
