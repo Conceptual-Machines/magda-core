@@ -1091,6 +1091,7 @@ int WaveformEditorContent::getMaxVirtualScrollX() const {
 }
 
 void WaveformEditorContent::setVirtualScrollX(int x) {
+    int requestedX = x;
     x = juce::jlimit(0, getMaxVirtualScrollX(), x);
     virtualScrollX_ = x;
     if (gridComponent_)
@@ -1099,6 +1100,10 @@ void WaveformEditorContent::setVirtualScrollX(int x) {
         timeRuler_->setScrollOffset(x);
     if (playheadOverlay_)
         playheadOverlay_->repaint();
+
+    DBG("WaveformEditor::setVirtualScrollX"
+        << " relative=" << static_cast<int>(relativeTimeMode_) << " requested=" << requestedX
+        << " applied=" << x << " max=" << getMaxVirtualScrollX() << " zoom=" << horizontalZoom_);
 }
 
 void WaveformEditorContent::updateGridSize() {
@@ -1146,6 +1151,15 @@ void WaveformEditorContent::updateGridSize() {
             double rulerLength =
                 juce::jmax(totalTime + barSeconds * 4.0, viewportEndTime + barSeconds);
             timeRuler_->setTimelineLength(rulerLength);
+
+            DBG("WaveformEditor::updateGridSize"
+                << " relative=" << static_cast<int>(relativeTimeMode_)
+                << " clipId=" << static_cast<int>(editingClipId_) << " totalTime=" << totalTime
+                << " rulerLength=" << rulerLength << " viewportEndTime=" << viewportEndTime
+                << " virtualScrollX=" << virtualScrollX_
+                << " clipStartSec=" << clip->getTimelineStart(bpmForPad) << " clipLengthSec="
+                << clip->getTimelineLength(bpmForPad) << " sourceOffsetSec=" << clip->offset
+                << " displayOffsetPosSec=" << cachedDisplayInfo_.offsetPositionSeconds);
         }
     }
 }

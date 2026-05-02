@@ -529,6 +529,21 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         startStep = 0;
 
     double totalTimelineBeats = timelineLength * tempo / 60.0;
+    {
+        int bar1X =
+            static_cast<int>(std::round(barOriginBeats * zoom)) - currentScrollOffset + leftPadding;
+        int contentStartX = static_cast<int>(std::round((timeOffset * tempo / 60.0) * zoom)) -
+                            currentScrollOffset + leftPadding;
+        DBG("TimeRuler::drawBarsBeats"
+            << " relative=" << static_cast<int>(relativeMode) << " timeOffset=" << timeOffset
+            << " barOriginSeconds=" << barOriginSeconds
+            << " clipContentOffset=" << clipContentOffset << " clipLength=" << clipLength
+            << " timelineLength=" << timelineLength << " tempo=" << tempo << " zoomPPB=" << zoom
+            << " scroll=" << currentScrollOffset << " leftPadding=" << leftPadding
+            << " firstVisibleBeat=" << firstVisibleBeat << " barOriginBeats=" << barOriginBeats
+            << " startStep=" << startStep << " bar1X=" << bar1X
+            << " contentStartX=" << contentStartX << " width=" << width);
+    }
 
     // Determine which musical subdivision level to label (must be power-of-2 division of a beat).
     // We pick the coarsest level where labels fit without overlap (~65px per label).

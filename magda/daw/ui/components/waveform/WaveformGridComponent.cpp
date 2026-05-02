@@ -375,6 +375,18 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     double iterStart = originDisplay + startK * secondsPerGrid;
     double iterEnd = visibleEndDisplay + secondsPerGrid;
 
+    DBG("WaveformGrid::paintBeatGrid"
+        << " relative=" << static_cast<int>(relativeMode_)
+        << " clipId=" << static_cast<int>(editingClipId_)
+        << " displayStartTime=" << displayStartTime << " fileExtent=" << fileExtent
+        << " clipStartCache=" << clipStartTime_ << " clipLengthCache=" << clipLength_
+        << " sourceOffset=" << (getClip() ? getClip()->offset : -1.0)
+        << " offsetPos=" << displayInfo_.offsetPositionSeconds << " originDisplay=" << originDisplay
+        << " visibleStartDisplay=" << visibleStartDisplay
+        << " visibleEndDisplay=" << visibleEndDisplay << " iterStart=" << iterStart
+        << " iterEnd=" << iterEnd << " scrollX=" << scrollOffsetX_ << " zoom=" << horizontalZoom_
+        << " bar1X=" << timeToPixel(originDisplay));
+
     auto& fontMgr = FontManager::getInstance();
 
     for (double displayTime = iterStart; displayTime < iterEnd; displayTime += secondsPerGrid) {

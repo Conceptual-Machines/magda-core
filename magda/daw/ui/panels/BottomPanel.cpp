@@ -291,6 +291,9 @@ void BottomPanel::setupHeaderControls() {
     timeModeButton_->onClick = [this]() {
         relativeTimeMode_ = timeModeButton_->getToggleState();
         timeModeButton_->setButtonText(relativeTimeMode_ ? "REL" : "ABS");
+        DBG("BottomPanel::timeModeButtonClick requestedRelative="
+            << static_cast<int>(relativeTimeMode_)
+            << " activeContent=" << static_cast<int>(getActiveContentType()));
         applyTimeModeToContent();
     };
     addChildComponent(timeModeButton_.get());
@@ -996,12 +999,6 @@ void BottomPanel::applyTimeModeToContent() {
     if (!content)
         return;
 
-    if (auto* pianoRoll = dynamic_cast<daw::ui::PianoRollContent*>(content)) {
-        pianoRoll->setRelativeTimeMode(relativeTimeMode_);
-    } else if (auto* drumGrid = dynamic_cast<daw::ui::DrumGridClipContent*>(content)) {
-        drumGrid->setRelativeTimeMode(relativeTimeMode_);
-    }
-
     // ABS/REL toggle policy:
     //   - Session-view clips never expose the toggle (session is always relative — there is no
     //     arrangement timeline to be absolute against). The button is hidden, not just disabled.
@@ -1014,14 +1011,39 @@ void BottomPanel::applyTimeModeToContent() {
     else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
         activeClipId = waveEditor->getEditingClipId();
 
-    const ClipInfo* clip =
-        (activeClipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(activeClipId) : nullptr;
+    const ClipInfo* clip = (activeClipId != INVALID_CLIP_ID)
+                               ? ClipManager::getInstance().getClip(activeClipId)
+                               : nullptr;
     const bool isSession = clip && clip->view == ClipView::Session;
     const bool forceRelative = clip && (isSession || clip->loopEnabled);
+    const bool targetRelative = forceRelative ? true : relativeTimeMode_;
+
+    if (forceRelative)
+        relativeTimeMode_ = true;
+
+    if (auto* pianoRoll = dynamic_cast<daw::ui::PianoRollContent*>(content)) {
+        pianoRoll->setRelativeTimeMode(targetRelative);
+    } else if (auto* drumGrid = dynamic_cast<daw::ui::DrumGridClipContent*>(content)) {
+        drumGrid->setRelativeTimeMode(targetRelative);
+    } else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content)) {
+        waveEditor->setRelativeTimeMode(targetRelative);
+    }
+
+    timeModeButton_->setButtonText(relativeTimeMode_ ? "REL" : "ABS");
+    timeModeButton_->setToggleState(relativeTimeMode_, juce::dontSendNotification);
 
     timeModeButton_->setVisible(!isSession);
     timeModeButton_->setEnabled(!forceRelative);
     timeModeButton_->setAlpha(forceRelative ? 0.4f : 1.0f);
+
+    DBG("BottomPanel::applyTimeModeToContent"
+        << " targetRelative=" << static_cast<int>(targetRelative)
+        << " panelRelative=" << static_cast<int>(relativeTimeMode_)
+        << " activeContent=" << static_cast<int>(content->getContentType()) << " clipId="
+        << static_cast<int>(activeClipId) << " isSession=" << static_cast<int>(isSession)
+        << " forceRelative=" << static_cast<int>(forceRelative)
+        << " buttonVisible=" << static_cast<int>(timeModeButton_->isVisible())
+        << " buttonEnabled=" << static_cast<int>(timeModeButton_->isEnabled()));
 }
 
 void BottomPanel::syncGridControlsFromContent() {
