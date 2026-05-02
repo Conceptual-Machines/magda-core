@@ -199,6 +199,10 @@ struct ClipInfo {
     int fadeOutBehaviour = 0;
     bool autoCrossfade = false;
 
+    // launchFadeSamples: ramp on the stopped→playing transition. Default 256
+    // matches TE's prior hard-coded behaviour; 0 preserves the leading transient.
+    int launchFadeSamples = 256;
+
     // Channels
     bool leftChannelActive = true;
     bool rightChannelActive = true;

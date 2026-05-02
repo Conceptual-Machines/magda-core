@@ -44,6 +44,7 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("fadeInBehaviour", clip.fadeInBehaviour);
     obj->setProperty("fadeOutBehaviour", clip.fadeOutBehaviour);
     obj->setProperty("autoCrossfade", clip.autoCrossfade);
+    obj->setProperty("launchFadeSamples", clip.launchFadeSamples);
 
     // Pitch
     obj->setProperty("pitchChange", clip.pitchChange);
@@ -212,6 +213,10 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.fadeInBehaviour = obj->getProperty("fadeInBehaviour");
     outClip.fadeOutBehaviour = obj->getProperty("fadeOutBehaviour");
     outClip.autoCrossfade = static_cast<bool>(obj->getProperty("autoCrossfade"));
+    // launchFadeSamples: if absent in the JSON (older projects), keep the
+    // ClipInfo default (256) so they play back exactly as before.
+    if (obj->hasProperty("launchFadeSamples"))
+        outClip.launchFadeSamples = obj->getProperty("launchFadeSamples");
 
     // Pitch
     outClip.pitchChange = static_cast<float>(static_cast<double>(obj->getProperty("pitchChange")));

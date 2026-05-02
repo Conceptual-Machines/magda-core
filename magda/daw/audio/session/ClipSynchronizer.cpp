@@ -259,6 +259,9 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                             }
                             if (std::abs(audioClip->getPan() - clip->pan) > 0.001f)
                                 audioClip->setPan(clip->pan);
+
+                            if (audioClip->getLaunchFadeSamples() != clip->launchFadeSamples)
+                                audioClip->setLaunchFadeSamples(clip->launchFadeSamples);
                         }
                     }
 
@@ -293,8 +296,8 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                     }
 
                 }  // if (teClip)
-            }  // else (already synced)
-        }  // if (sceneIndex >= 0)
+            }      // else (already synced)
+        }          // if (sceneIndex >= 0)
         return;
     }
 
@@ -555,15 +558,13 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         if (std::abs(clip->pan) > 0.001f)
             audioClipPtr->setPan(clip->pan);
 
-        // Set a small fade-in/out to prevent clicks on launch/stop transitions.
-        // Session clips don't have user-configurable fades, so apply a minimal
-        // ~2ms fade that's inaudible but prevents discontinuities.
-        {
-            double fadeInVal = (clip->fadeIn <= 0.0) ? 0.002 : clip->fadeIn;
-            double fadeOutVal = (clip->fadeOut <= 0.0) ? 0.002 : clip->fadeOut;
-            audioClipPtr->setFadeIn(te::TimeDuration::fromSeconds(fadeInVal));
-            audioClipPtr->setFadeOut(te::TimeDuration::fromSeconds(fadeOutVal));
-        }
+        // No setFadeIn/setFadeOut here: te::EditNodeBuilder skips
+        // FadeInOutNode for ClipRole::launcher, so any value written to
+        // te::AudioClipBase::fadeIn/fadeOut never reaches the audio graph
+        // for session clips. Per-clip launch shaping uses launchFadeSamples
+        // (read by SlotControlNode).
+        if (clip->launchFadeSamples != 256)
+            audioClipPtr->setLaunchFadeSamples(clip->launchFadeSamples);
 
         // Set LaunchHandle looping state at creation time so it's ready before first launch
         if (auto lh = audioClipPtr->getLaunchHandle()) {
@@ -1684,6 +1685,9 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             static_cast<te::AudioClipBase::FadeBehaviour>(clip->fadeOutBehaviour));
     if (clip->autoCrossfade != audioClipPtr->getAutoCrossfade())
         audioClipPtr->setAutoCrossfade(clip->autoCrossfade);
+
+    if (audioClipPtr->getLaunchFadeSamples() != clip->launchFadeSamples)
+        audioClipPtr->setLaunchFadeSamples(clip->launchFadeSamples);
 
     // 13. CHANNELS — removed (L/R controls removed from Inspector)
 }

@@ -70,6 +70,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testLoopTimeBasedWarpEnabled();
         testSplitAudioClip();
         testFadeInOut();
+        testLaunchFadeSamples();
         testGainAndPan();
         testPitchChange();
         testRenderVerification();
@@ -577,6 +578,37 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         expectWithinAbsoluteError(teClip->getFadeIn().inSeconds(), 0.5, 0.01);
         expectWithinAbsoluteError(teClip->getFadeOut().inSeconds(), 0.3, 0.01);
+    }
+
+    void testLaunchFadeSamples() {
+        beginTest("Launch fade samples sync to TE AudioClipBase");
+
+        Fixture f;
+        auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(),
+                                                                 ClipView::Arrangement, 60.0);
+        f.clipSync->syncClipToEngine(clipId);
+
+        auto* teClip = f.getTeAudioClip(clipId);
+        expect(teClip != nullptr);
+        // Default = 256 to preserve TE's prior hard-coded behaviour.
+        expectEquals(teClip->getLaunchFadeSamples(), 256);
+
+        ClipManager::getInstance().setLaunchFadeSamples(clipId, 0);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(teClip->getLaunchFadeSamples(), 0);
+
+        ClipManager::getInstance().setLaunchFadeSamples(clipId, 1024);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(teClip->getLaunchFadeSamples(), 1024);
+
+        // Out-of-range values clamp.
+        ClipManager::getInstance().setLaunchFadeSamples(clipId, -10);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(teClip->getLaunchFadeSamples(), 0);
+
+        ClipManager::getInstance().setLaunchFadeSamples(clipId, 999999);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(teClip->getLaunchFadeSamples(), 16384);
     }
 
     void testGainAndPan() {

@@ -8,6 +8,7 @@
 #include "core/ClipManager.hpp"
 #include "core/ClipTypes.hpp"
 #include "ui/components/common/SvgButton.hpp"
+#include "ui/panels/content/inspector/clip/sections/ClipFadesSection.hpp"
 
 namespace magda {
 
@@ -53,6 +54,7 @@ class SessionClipEditor : public juce::Component, public ClipManagerListener {
     // Footer controls
     std::unique_ptr<juce::Slider> offsetSlider_;
     std::unique_ptr<juce::Label> offsetLabel_;
+    std::unique_ptr<magda::daw::ui::ClipFadesSection> fadesSection_;
 
     void setupHeader();
     void setupWaveform();
@@ -62,7 +64,7 @@ class SessionClipEditor : public juce::Component, public ClipManagerListener {
 
     // Layout constants
     static constexpr int HEADER_HEIGHT = 50;
-    static constexpr int FOOTER_HEIGHT = 60;
+    static constexpr int FOOTER_HEIGHT = 100;
     static constexpr int MARGIN = 10;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SessionClipEditor)

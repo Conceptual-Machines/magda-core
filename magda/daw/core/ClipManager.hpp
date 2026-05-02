@@ -261,6 +261,8 @@ class ClipManager {
     void setFadeOutBehaviour(ClipId clipId, int behaviour);
     void setAutoCrossfade(ClipId clipId, bool enabled);
 
+    void setLaunchFadeSamples(ClipId clipId, int samples);
+
     // Channels
     void setLeftChannelActive(ClipId clipId, bool active);
     void setRightChannelActive(ClipId clipId, bool active);
