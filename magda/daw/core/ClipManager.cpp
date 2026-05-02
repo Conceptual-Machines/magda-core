@@ -258,6 +258,7 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
         // Session clips always loop
         newClip.startTime = 0.0;
         newClip.loopEnabled = true;
+        newClip.sceneIndex = -1;
     }
     clips_[newClip.id] = newClip;
     addToSessionSlotIndex(clips_[newClip.id]);
@@ -295,6 +296,7 @@ ClipId ClipManager::duplicateClipAt(ClipId clipId, double startTime, TrackId tra
         // Session clips always loop
         newClip.startTime = 0.0;
         newClip.loopEnabled = true;
+        newClip.sceneIndex = -1;
         clips_[newClip.id] = newClip;
     }
     addToSessionSlotIndex(clips_[newClip.id]);

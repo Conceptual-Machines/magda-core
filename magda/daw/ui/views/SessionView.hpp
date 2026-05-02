@@ -100,6 +100,9 @@ class SessionView : public juce::Component,
     /** Set the audio engine for metering. */
     void setAudioEngine(AudioEngine* engine);
 
+    /** Duplicate selected session clips to the next empty scene below each source. */
+    bool duplicateSelectedSessionClips();
+
   private:
     // ScrollBar::Listener
     void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override;
@@ -239,6 +242,7 @@ class SessionView : public juce::Component,
     void triggerGroupScene(TrackId groupId, int sceneIndex);
     void openClipEditor(int trackIndex, int sceneIndex);
     void onCreateMidiClipClicked(int trackIndex, int sceneIndex);
+    ClipId duplicateSessionClipToNextEmptyScene(ClipId clipId);
 
     // View mode state
     ViewMode currentViewMode_ = ViewMode::Live;

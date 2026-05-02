@@ -446,11 +446,13 @@ void CreateClipCommand::undo() {
 // ============================================================================
 
 DuplicateClipCommand::DuplicateClipCommand(ClipId sourceClipId, double startTime,
-                                           TrackId targetTrackId, double tempo)
+                                           TrackId targetTrackId, double tempo,
+                                           int targetSceneIndex)
     : sourceClipId_(sourceClipId),
       startTime_(startTime),
       targetTrackId_(targetTrackId),
-      tempo_(tempo) {}
+      tempo_(tempo),
+      targetSceneIndex_(targetSceneIndex) {}
 
 bool DuplicateClipCommand::canExecute() const {
     return ClipManager::getInstance().getClip(sourceClipId_) != nullptr;
@@ -462,15 +464,18 @@ void DuplicateClipCommand::execute() {
 
     auto& clipManager = ClipManager::getInstance();
 
-    if (!executed_) {
-        arrangementSnapshot_ = clipManager.getArrangementClips();
-    }
-
     if (startTime_ < 0) {
         duplicatedClipId_ = clipManager.duplicateClip(sourceClipId_);
     } else {
         duplicatedClipId_ =
             clipManager.duplicateClipAt(sourceClipId_, startTime_, targetTrackId_, tempo_);
+    }
+    if (duplicatedClipId_ != INVALID_CLIP_ID) {
+        if (targetTrackId_ != INVALID_TRACK_ID)
+            clipManager.moveClipToTrack(duplicatedClipId_, targetTrackId_);
+        const auto* duplicatedClip = clipManager.getClip(duplicatedClipId_);
+        if (targetSceneIndex_ >= 0 && duplicatedClip && duplicatedClip->view == ClipView::Session)
+            clipManager.setClipSceneIndex(duplicatedClipId_, targetSceneIndex_);
     }
 
     executed_ = true;
@@ -482,14 +487,8 @@ void DuplicateClipCommand::undo() {
 
     auto& clipManager = ClipManager::getInstance();
 
-    auto currentClips = clipManager.getArrangementClips();
-    for (const auto& clip : currentClips) {
-        clipManager.deleteClip(clip.id);
-    }
-
-    for (const auto& clip : arrangementSnapshot_) {
-        clipManager.restoreClip(clip);
-    }
+    if (duplicatedClipId_ != INVALID_CLIP_ID)
+        clipManager.deleteClip(duplicatedClipId_);
 
     duplicatedClipId_ = INVALID_CLIP_ID;
     clipManager.forceNotifyClipsChanged();

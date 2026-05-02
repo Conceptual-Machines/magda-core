@@ -134,6 +134,35 @@ TEST_CASE("DuplicateClipCommand - undo/redo", "[clip][command][duplicate][undo]"
     REQUIRE(ClipManager::getInstance().getClip(original) != nullptr);
 }
 
+TEST_CASE("DuplicateClipCommand - session undo removes duplicate only",
+          "[clip][command][duplicate][session][undo]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack();
+    ClipId original = cm.createMidiClip(track, 0.0, 4.0, ClipView::Session);
+    cm.setClipSceneIndex(original, 0);
+
+    DuplicateClipCommand cmd(original, -1.0, INVALID_TRACK_ID, 0.0, 2);
+    cmd.execute();
+
+    ClipId duplicateId = cmd.getDuplicatedClipId();
+    REQUIRE(duplicateId != INVALID_CLIP_ID);
+    REQUIRE(cm.getClipInSlot(track, 0) == original);
+    REQUIRE(cm.getClipInSlot(track, 2) == duplicateId);
+
+    cmd.undo();
+
+    REQUIRE(cm.getClip(duplicateId) == nullptr);
+    REQUIRE(cm.getClipInSlot(track, 0) == original);
+    REQUIRE(cm.getClipInSlot(track, 2) == INVALID_CLIP_ID);
+
+    cmd.execute();
+    ClipId redoDuplicateId = cmd.getDuplicatedClipId();
+    REQUIRE(redoDuplicateId != INVALID_CLIP_ID);
+    REQUIRE(cm.getClipInSlot(track, 0) == original);
+    REQUIRE(cm.getClipInSlot(track, 2) == redoDuplicateId);
+}
+
 TEST_CASE("DuplicateClipCommand - audio clip", "[clip][command][duplicate]") {
     resetState();
     TrackId track = createTrack("Audio Track", TrackType::Audio);

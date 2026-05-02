@@ -2,6 +2,7 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <set>
@@ -2410,23 +2411,80 @@ void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, in
     slot.onDuplicateClip = [this, trackIndex, sceneIndex]() {
         TrackId tId = visibleTrackIds_[trackIndex];
         ClipId cId = ClipManager::getInstance().getClipInSlot(tId, sceneIndex);
-        if (cId != INVALID_CLIP_ID) {
-            int targetScene = sceneIndex + 1;
-            if (targetScene >= numScenes_)
-                addScene();
-            if (ClipManager::getInstance().getClipInSlot(tId, targetScene) != INVALID_CLIP_ID)
-                return;
-            auto cmd = std::make_unique<DuplicateClipCommand>(cId);
-            auto* cmdPtr = cmd.get();
-            UndoManager::getInstance().executeCommand(std::move(cmd));
-            ClipId newClipId = cmdPtr->getDuplicatedClipId();
-            if (newClipId != INVALID_CLIP_ID) {
-                ClipManager::getInstance().setClipSceneIndex(newClipId, targetScene);
-            }
-        }
+        if (cId != INVALID_CLIP_ID)
+            duplicateSessionClipToNextEmptyScene(cId);
     };
     slot.onAddScene = [this]() { addScene(); };
     slot.onRemoveScene = [this]() { removeScene(); };
+}
+
+ClipId SessionView::duplicateSessionClipToNextEmptyScene(ClipId clipId) {
+    auto& clipManager = ClipManager::getInstance();
+    const auto* clip = clipManager.getClip(clipId);
+    if (!clip || clip->view != ClipView::Session || clip->sceneIndex < 0)
+        return INVALID_CLIP_ID;
+
+    int targetScene = clip->sceneIndex + 1;
+    while (targetScene < numScenes_ &&
+           clipManager.getClipInSlot(clip->trackId, targetScene) != INVALID_CLIP_ID) {
+        ++targetScene;
+    }
+    while (targetScene >= numScenes_)
+        addScene();
+
+    auto cmd =
+        std::make_unique<DuplicateClipCommand>(clipId, -1.0, INVALID_TRACK_ID, 0.0, targetScene);
+    auto* cmdPtr = cmd.get();
+    UndoManager::getInstance().executeCommand(std::move(cmd));
+    return cmdPtr->getDuplicatedClipId();
+}
+
+bool SessionView::duplicateSelectedSessionClips() {
+    auto selectedClips = SelectionManager::getInstance().getSelectedClips();
+    if (selectedClips.empty())
+        return false;
+
+    std::vector<ClipId> sessionClipIds;
+    sessionClipIds.reserve(selectedClips.size());
+    auto& clipManager = ClipManager::getInstance();
+    for (ClipId clipId : selectedClips) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip && clip->view == ClipView::Session)
+            sessionClipIds.push_back(clipId);
+    }
+    if (sessionClipIds.empty())
+        return false;
+
+    std::sort(sessionClipIds.begin(), sessionClipIds.end(), [&clipManager](ClipId a, ClipId b) {
+        const auto* clipA = clipManager.getClip(a);
+        const auto* clipB = clipManager.getClip(b);
+        int sceneA = clipA ? clipA->sceneIndex : 0;
+        int sceneB = clipB ? clipB->sceneIndex : 0;
+        if (sceneA != sceneB)
+            return sceneA < sceneB;
+        TrackId trackA = clipA ? clipA->trackId : INVALID_TRACK_ID;
+        TrackId trackB = clipB ? clipB->trackId : INVALID_TRACK_ID;
+        return trackA < trackB;
+    });
+
+    if (sessionClipIds.size() > 1)
+        UndoManager::getInstance().beginCompoundOperation("Duplicate Session Clips");
+
+    std::vector<ClipId> duplicatedClipIds;
+    for (ClipId clipId : sessionClipIds) {
+        ClipId duplicateId = duplicateSessionClipToNextEmptyScene(clipId);
+        if (duplicateId != INVALID_CLIP_ID)
+            duplicatedClipIds.push_back(duplicateId);
+    }
+
+    if (sessionClipIds.size() > 1)
+        UndoManager::getInstance().endCompoundOperation();
+
+    if (!duplicatedClipIds.empty()) {
+        std::unordered_set<ClipId> newSelection(duplicatedClipIds.begin(), duplicatedClipIds.end());
+        SelectionManager::getInstance().selectClips(newSelection);
+    }
+    return !duplicatedClipIds.empty();
 }
 
 void SessionView::onClipSlotClicked(int trackIndex, int sceneIndex) {
@@ -3710,14 +3768,9 @@ void SessionView::itemDropped(const SourceDetails& details) {
         bool isAltHeld = juce::ModifierKeys::getCurrentModifiers().isAltDown();
         if (isAltHeld) {
             // Alt+drag = duplicate clip to target slot
-            auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
-            auto* cmdPtr = cmd.get();
+            auto cmd = std::make_unique<DuplicateClipCommand>(clipId, -1.0, targetTrackId, 0.0,
+                                                              targetSceneIndex);
             UndoManager::getInstance().executeCommand(std::move(cmd));
-            ClipId newClipId = cmdPtr->getDuplicatedClipId();
-            if (newClipId != INVALID_CLIP_ID) {
-                clipManager.moveClipToTrack(newClipId, targetTrackId);
-                clipManager.setClipSceneIndex(newClipId, targetSceneIndex);
-            }
         } else {
             // Regular drag = move clip to target slot
             auto cmd =

@@ -544,6 +544,19 @@ TEST_CASE("getClipInSlot stays correct across mutation paths",
         cm.restoreClip(snapshot);
         REQUIRE(cm.getClipInSlot(1, 4) == id);
     }
+
+    SECTION("duplicateClip does not overwrite the source session slot") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 0);
+
+        ClipId duplicateId = cm.duplicateClip(id);
+        REQUIRE(duplicateId != INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(1, 0) == id);
+
+        cm.setClipSceneIndex(duplicateId, 2);
+        REQUIRE(cm.getClipInSlot(1, 0) == id);
+        REQUIRE(cm.getClipInSlot(1, 2) == duplicateId);
+    }
 }
 
 TEST_CASE("Session MIDI clip loop offset", "[session][midi][loop]") {

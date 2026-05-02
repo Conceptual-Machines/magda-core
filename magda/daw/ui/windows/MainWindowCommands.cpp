@@ -13,6 +13,7 @@
 #include "../state/TimelineEvents.hpp"
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
+#include "../views/SessionView.hpp"
 #include "MainWindow.hpp"
 #include "audio/AudioBridge.hpp"
 #include "core/LinkModeManager.hpp"
@@ -476,6 +477,11 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 return true;
             }
             if (!selectedClips.empty()) {
+                if (ViewModeController::getInstance().getViewMode() == ViewMode::Live &&
+                    sessionView && sessionView->duplicateSelectedSessionClips()) {
+                    return true;
+                }
+
                 std::vector<ClipId> newClips;
                 if (selectedClips.size() > 1) {
                     UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
