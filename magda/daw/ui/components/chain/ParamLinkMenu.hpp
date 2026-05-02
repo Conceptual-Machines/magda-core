@@ -14,7 +14,8 @@ namespace magda::daw::ui {
 struct ParamLinkMenuCallbacks {
     std::function<void(int modIndex, magda::ControlTarget target)> onModUnlinked;
     std::function<void(int modIndex, magda::ControlTarget target)> onTrackModUnlinked;
-    std::function<void(int modIndex, magda::ControlTarget target, float amount)> onModLinkedWithAmount;
+    std::function<void(int modIndex, magda::ControlTarget target, float amount)>
+        onModLinkedWithAmount;
     std::function<void(int macroIndex, magda::ControlTarget target)> onMacroLinked;
     std::function<void(int macroIndex, magda::ControlTarget target, float amount)>
         onMacroLinkedWithAmount;

@@ -1,7 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <juce_core/juce_core.h>
 
+#include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 
 #include "magda/daw/core/AppPaths.hpp"
@@ -70,9 +69,8 @@ TEST_CASE("paths::dataDir defaults to OS appdata/MAGDA", "[app_paths]") {
     magda::Config::getInstance().setDataDir({});
     paths::resolve();
 
-    auto expected =
-        juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-            .getChildFile("MAGDA");
+    auto expected = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                        .getChildFile("MAGDA");
     REQUIRE(paths::dataDir() == expected);
     REQUIRE_FALSE(paths::dataDirOverriddenByEnv());
 }
@@ -111,32 +109,26 @@ TEST_CASE("paths subpaths compose under dataDir", "[app_paths]") {
     setEnv("MAGDA_DATA_DIR", "/tmp/magda-subpath-test");
     paths::resolve();
 
-    REQUIRE(paths::logsDir() ==
-            juce::File("/tmp/magda-subpath-test/Logs"));
+    REQUIRE(paths::logsDir() == juce::File("/tmp/magda-subpath-test/Logs"));
     REQUIRE(paths::controllerScriptsDir() ==
             juce::File("/tmp/magda-subpath-test/Scripts/Controllers"));
-    REQUIRE(paths::controllerProfilesDir() ==
-            juce::File("/tmp/magda-subpath-test/controllers"));
-    REQUIRE(paths::pluginConfigsDir() ==
-            juce::File("/tmp/magda-subpath-test/PluginConfigs"));
-    REQUIRE(paths::pluginListFile() ==
-            juce::File("/tmp/magda-subpath-test/PluginList.xml"));
+    REQUIRE(paths::controllerProfilesDir() == juce::File("/tmp/magda-subpath-test/controllers"));
+    REQUIRE(paths::pluginConfigsDir() == juce::File("/tmp/magda-subpath-test/PluginConfigs"));
+    REQUIRE(paths::pluginListFile() == juce::File("/tmp/magda-subpath-test/PluginList.xml"));
     REQUIRE(paths::pluginExclusionsFile() ==
             juce::File("/tmp/magda-subpath-test/plugin_exclusions.txt"));
     REQUIRE(paths::lastScanReportFile() ==
             juce::File("/tmp/magda-subpath-test/last_scan_report.txt"));
     REQUIRE(paths::pluginFavoritesFile() ==
             juce::File("/tmp/magda-subpath-test/plugin_favorites.xml"));
-    REQUIRE(paths::pluginAliasesFile() ==
-            juce::File("/tmp/magda-subpath-test/plugin_aliases.xml"));
+    REQUIRE(paths::pluginAliasesFile() == juce::File("/tmp/magda-subpath-test/plugin_aliases.xml"));
     REQUIRE(paths::pluginScanMarkerFile("VST3") ==
             juce::File("/tmp/magda-subpath-test/scanning_VST3.txt"));
     REQUIRE(paths::parameterDetectorLog() ==
             juce::File("/tmp/magda-subpath-test/param_detector.log"));
 }
 
-TEST_CASE("paths::configFile is anchored to OS default regardless of override",
-          "[app_paths]") {
+TEST_CASE("paths::configFile is anchored to OS default regardless of override", "[app_paths]") {
     EnvScope scope;
     setEnv("MAGDA_DATA_DIR", "/tmp/magda-anchor-test/data");
     paths::resolve();

@@ -130,7 +130,8 @@ class ParamSlotComponent : public juce::Component,
     // Callbacks
     std::function<void(double)> onValueChanged;
     std::function<void(int modIndex, magda::ControlTarget target)> onModLinked;
-    std::function<void(int modIndex, magda::ControlTarget target, float amount)> onModLinkedWithAmount;
+    std::function<void(int modIndex, magda::ControlTarget target, float amount)>
+        onModLinkedWithAmount;
     std::function<void(int modIndex, magda::ControlTarget target)> onModUnlinked;
     std::function<void(int modIndex, magda::ControlTarget target)> onTrackModUnlinked;
     std::function<void(int modIndex, magda::ControlTarget target, float amount)> onModAmountChanged;

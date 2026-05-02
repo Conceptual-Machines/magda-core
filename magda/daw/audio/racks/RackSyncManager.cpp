@@ -1,11 +1,11 @@
 #include "racks/RackSyncManager.hpp"
 
+#include "TracktionHelpers.hpp"
+#include "core/TrackManager.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
 #include "plugin_manager/PluginManager.hpp"
-#include "TracktionHelpers.hpp"
-#include "core/TrackManager.hpp"
 
 namespace magda {
 

@@ -1,8 +1,8 @@
 #include "ControllerProfileRegistry.hpp"
 
-#include "../AppPaths.hpp"
-
 #include <algorithm>
+
+#include "../AppPaths.hpp"
 
 namespace magda {
 

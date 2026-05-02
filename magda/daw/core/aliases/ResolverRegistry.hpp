@@ -40,7 +40,7 @@ class AliasResolver {
      * @return      Populated ControlTarget on success, nullopt on failure.
      */
     virtual std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
-                                                const ChainContext& ctx) const = 0;
+                                                 const ChainContext& ctx) const = 0;
 };
 
 // ============================================================================
@@ -58,7 +58,7 @@ class FocusedDeviceMacroResolver : public AliasResolver {
         return "focused.macro";
     }
     std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
-                                        const ChainContext& ctx) const override;
+                                         const ChainContext& ctx) const override;
 };
 
 /**
@@ -72,7 +72,7 @@ class SelectedTrackVolumeResolver : public AliasResolver {
         return "selected.volume";
     }
     std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
-                                        const ChainContext& ctx) const override;
+                                         const ChainContext& ctx) const override;
 };
 
 /**
@@ -86,7 +86,7 @@ class SelectedTrackPanResolver : public AliasResolver {
         return "selected.pan";
     }
     std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
-                                        const ChainContext& ctx) const override;
+                                         const ChainContext& ctx) const override;
 };
 
 /**
@@ -100,7 +100,7 @@ class MasterVolumeResolver : public AliasResolver {
         return "master.volume";
     }
     std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
-                                        const ChainContext& ctx) const override;
+                                         const ChainContext& ctx) const override;
 };
 
 /**
@@ -114,7 +114,7 @@ class MasterPanResolver : public AliasResolver {
         return "master.pan";
     }
     std::optional<ControlTarget> resolve(const juce::StringPairArray& args,
-                                        const ChainContext& ctx) const override;
+                                         const ChainContext& ctx) const override;
 };
 
 // ============================================================================

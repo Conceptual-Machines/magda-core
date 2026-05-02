@@ -26,8 +26,8 @@ void serializeControlTarget(juce::DynamicObject* targetObj, const ControlTarget&
 
 void deserializeControlTarget(juce::DynamicObject* targetObj, ControlTarget& target) {
     if (targetObj->hasProperty("kind"))
-        target.kind = static_cast<ControlTarget::Kind>(
-            static_cast<int>(targetObj->getProperty("kind")));
+        target.kind =
+            static_cast<ControlTarget::Kind>(static_cast<int>(targetObj->getProperty("kind")));
     if (targetObj->hasProperty("trackId")) {
         target.devicePath.trackId = static_cast<int>(targetObj->getProperty("trackId"));
         target.devicePath.topLevelDeviceId =
@@ -278,8 +278,7 @@ bool ProjectSerializer::deserializeAutomationTarget(const juce::var& json,
     outTarget.paramIndex = obj->getProperty("paramIndex");
     // Pre-unification format used a separate macroIndex field for Macro kind;
     // collapse onto paramIndex.
-    if (obj->hasProperty("macroIndex") &&
-        outTarget.kind == ControlTarget::Kind::DeviceMacro)
+    if (obj->hasProperty("macroIndex") && outTarget.kind == ControlTarget::Kind::DeviceMacro)
         outTarget.paramIndex = obj->getProperty("macroIndex");
     outTarget.modId = obj->getProperty("modId");
     outTarget.modParamIndex = obj->getProperty("modParamIndex");

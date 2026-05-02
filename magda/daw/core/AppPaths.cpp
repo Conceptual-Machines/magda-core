@@ -1,11 +1,11 @@
 #include "AppPaths.hpp"
 
-#include "Config.hpp"
-
 #include <atomic>
 #include <cstdlib>
 #include <memory>
 #include <mutex>
+
+#include "Config.hpp"
 
 namespace magda::paths {
 
@@ -83,14 +83,13 @@ struct ResolveOne {
     bool fromEnv;
 };
 
-ResolveOne resolveOne(const juce::String& envVal,
-                      const std::string& configVal,
+ResolveOne resolveOne(const juce::String& envVal, const std::string& configVal,
                       const juce::File& fallback) {
     if (envVal.isNotEmpty())
         return {juce::File(envVal), true};
     if (!configVal.empty())
-        return {juce::File(juce::String::fromUTF8(configVal.c_str(),
-                                                   static_cast<int>(configVal.size()))),
+        return {juce::File(
+                    juce::String::fromUTF8(configVal.c_str(), static_cast<int>(configVal.size()))),
                 false};
     return {fallback, false};
 }

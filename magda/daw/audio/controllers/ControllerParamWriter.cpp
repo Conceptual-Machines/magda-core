@@ -100,11 +100,10 @@ void DefaultControllerParamWriter::writeModParam(const ControlTarget& target, fl
     // directly for Rack/TopLevelDevice/Device scopes; track-level modifiers
     // need the trackLevel path. Pick once instead of dispatching on getType().
     auto type = target.devicePath.getType();
-    auto pathForWrite =
-        (type == ChainNodeType::Rack || type == ChainNodeType::TopLevelDevice ||
-         type == ChainNodeType::Device)
-            ? target.devicePath
-            : ChainNodePath::trackLevel(target.devicePath.trackId);
+    auto pathForWrite = (type == ChainNodeType::Rack || type == ChainNodeType::TopLevelDevice ||
+                         type == ChainNodeType::Device)
+                            ? target.devicePath
+                            : ChainNodePath::trackLevel(target.devicePath.trackId);
 
     float real = ParameterUtils::normalizedToReal(clamped, info);
     if (sync) {

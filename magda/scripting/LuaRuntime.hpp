@@ -20,7 +20,7 @@ namespace magda::scripting {
  * draining MIDI events on the message thread before calling into Lua.
  */
 class LuaRuntime {
-public:
+  public:
     LuaRuntime();
     ~LuaRuntime();
 
@@ -48,13 +48,17 @@ public:
 
     /** Last error message captured by eval/evalFile, or empty if the last call
      *  succeeded (or no call has been made). */
-    const juce::String& lastError() const noexcept { return lastError_; }
+    const juce::String& lastError() const noexcept {
+        return lastError_;
+    }
 
     /** Raw VM access — for binding code in #30 and beyond.
      *  Returns nullptr only if this instance has been moved-from. */
-    lua_State* state() noexcept { return L_; }
+    lua_State* state() noexcept {
+        return L_;
+    }
 
-private:
+  private:
     lua_State* L_ = nullptr;
     juce::String lastError_;
 };

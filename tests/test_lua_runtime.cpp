@@ -1,6 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <juce_core/juce_core.h>
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "magda/scripting/LuaRuntime.hpp"
 
@@ -11,17 +11,23 @@ namespace {
 // Captures every line passed to juce::Logger::writeToLog while installed.
 // Restores the previous logger on destruction.
 class CapturingLogger : public juce::Logger {
-public:
+  public:
     CapturingLogger() : previous_(juce::Logger::getCurrentLogger()) {
         juce::Logger::setCurrentLogger(this);
     }
-    ~CapturingLogger() override { juce::Logger::setCurrentLogger(previous_); }
+    ~CapturingLogger() override {
+        juce::Logger::setCurrentLogger(previous_);
+    }
 
-    void logMessage(const juce::String& message) override { lines_.add(message); }
+    void logMessage(const juce::String& message) override {
+        lines_.add(message);
+    }
 
-    const juce::StringArray& lines() const noexcept { return lines_; }
+    const juce::StringArray& lines() const noexcept {
+        return lines_;
+    }
 
-private:
+  private:
     juce::Logger* previous_;
     juce::StringArray lines_;
 };
@@ -103,8 +109,7 @@ TEST_CASE("LuaRuntime sandbox: read-only os timing helpers stay available",
     REQUIRE(rt.evalToString("type(os.difftime)") == std::optional<juce::String>{"function"});
 }
 
-TEST_CASE("LuaRuntime sandbox: io.open errors with a sandbox message",
-          "[lua_runtime][sandbox]") {
+TEST_CASE("LuaRuntime sandbox: io.open errors with a sandbox message", "[lua_runtime][sandbox]") {
     LuaRuntime rt;
     REQUIRE_FALSE(rt.eval("io.open('/tmp/x', 'w')"));
     REQUIRE(rt.lastError().contains("'io'"));
@@ -131,8 +136,7 @@ TEST_CASE("LuaRuntime sandbox: blocked tables error on read, write, and call",
     }
 }
 
-TEST_CASE("LuaRuntime sandbox: chunk loaders error with their name",
-          "[lua_runtime][sandbox]") {
+TEST_CASE("LuaRuntime sandbox: chunk loaders error with their name", "[lua_runtime][sandbox]") {
     for (const char* name : {"dofile", "loadfile", "load", "loadstring", "require"}) {
         LuaRuntime rt;
         auto chunk = juce::String(name) + "('x')";
@@ -158,8 +162,7 @@ TEST_CASE("LuaRuntime instances are isolated", "[lua_runtime]") {
     REQUIRE(*seen_in_b == "nil");
 }
 
-TEST_CASE("LuaRuntime evalFile loads a file and reports its filename on error",
-          "[lua_runtime]") {
+TEST_CASE("LuaRuntime evalFile loads a file and reports its filename on error", "[lua_runtime]") {
     // Lua truncates the chunk source name to LUA_IDSIZE (60) chars and keeps
     // the tail when the name starts with '@', so the bare filename always
     // survives even on long temp-directory paths.

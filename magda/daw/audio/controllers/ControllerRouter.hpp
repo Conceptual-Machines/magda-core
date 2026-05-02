@@ -10,9 +10,9 @@
 #include "../../core/controllers/BindingRegistry.hpp"
 #include "../../core/controllers/BindingTransform.hpp"
 #include "../../core/controllers/ControllerRegistry.hpp"
+#include "MidiBridge.hpp"
 #include "controllers/ControllerFeedback.hpp"
 #include "controllers/ControllerParamWriter.hpp"
-#include "MidiBridge.hpp"
 #include "midi/MidiLearnSession.hpp"
 
 namespace magda {

@@ -6,23 +6,35 @@ namespace {
 
 juce::String kindToJsonString(ControlTarget::Kind k) {
     switch (k) {
-        case ControlTarget::Kind::PluginParam: return "plugin_param";
-        case ControlTarget::Kind::DeviceMacro: return "device_macro";
-        case ControlTarget::Kind::ModParam:    return "mod_param";
-        case ControlTarget::Kind::TrackVolume: return "track_volume";
-        case ControlTarget::Kind::TrackPan:    return "track_pan";
-        case ControlTarget::Kind::SendLevel:   return "send_level";
+        case ControlTarget::Kind::PluginParam:
+            return "plugin_param";
+        case ControlTarget::Kind::DeviceMacro:
+            return "device_macro";
+        case ControlTarget::Kind::ModParam:
+            return "mod_param";
+        case ControlTarget::Kind::TrackVolume:
+            return "track_volume";
+        case ControlTarget::Kind::TrackPan:
+            return "track_pan";
+        case ControlTarget::Kind::SendLevel:
+            return "send_level";
     }
     return "plugin_param";
 }
 
 std::optional<ControlTarget::Kind> kindFromJsonString(const juce::String& s) {
-    if (s == "plugin_param" || s.isEmpty()) return ControlTarget::Kind::PluginParam;
-    if (s == "device_macro")                return ControlTarget::Kind::DeviceMacro;
-    if (s == "mod_param")                   return ControlTarget::Kind::ModParam;
-    if (s == "track_volume")                return ControlTarget::Kind::TrackVolume;
-    if (s == "track_pan")                   return ControlTarget::Kind::TrackPan;
-    if (s == "send_level")                  return ControlTarget::Kind::SendLevel;
+    if (s == "plugin_param" || s.isEmpty())
+        return ControlTarget::Kind::PluginParam;
+    if (s == "device_macro")
+        return ControlTarget::Kind::DeviceMacro;
+    if (s == "mod_param")
+        return ControlTarget::Kind::ModParam;
+    if (s == "track_volume")
+        return ControlTarget::Kind::TrackVolume;
+    if (s == "track_pan")
+        return ControlTarget::Kind::TrackPan;
+    if (s == "send_level")
+        return ControlTarget::Kind::SendLevel;
     return std::nullopt;
 }
 

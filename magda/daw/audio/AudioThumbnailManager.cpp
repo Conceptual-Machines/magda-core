@@ -400,8 +400,7 @@ void AudioThumbnailManager::drawWaveformFromSamples(
         //   2. Full in-memory buffer: when the full range fits in 2M samples.
         //   3. Per-column chunked reads: long files without a cache yet.
         const bool usePeakCache =
-            (peakCache != nullptr) &&
-            (peakCache->getNumChannels() >= numChannels) &&
+            (peakCache != nullptr) && (peakCache->getNumChannels() >= numChannels) &&
             (samplesPerPixel >= static_cast<double>(WaveformPeakCache::SAMPLES_PER_PEAK));
 
         const juce::int64 maxBufferSamples = 2 * 1024 * 1024;  // 2M samples max
@@ -444,8 +443,8 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                 float maxVal = -1.0f;
 
                 if (usePeakCache) {
-                    const auto mm = peakCache->getMinMaxForRange(
-                        ch, startSample + colStart, startSample + colEnd);
+                    const auto mm = peakCache->getMinMaxForRange(ch, startSample + colStart,
+                                                                 startSample + colEnd);
                     minVal = mm.min;
                     maxVal = mm.max;
                 } else if (useFullBuffer) {

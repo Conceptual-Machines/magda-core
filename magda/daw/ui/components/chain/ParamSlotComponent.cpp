@@ -85,7 +85,8 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
         }
 
         const auto& selectedMod = (*availableMods_)[static_cast<size_t>(selectedModIndex_)];
-        magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+        magda::ControlTarget thisTarget =
+            magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = selectedMod.getLink(thisTarget);
         bool isLinked = existingLink != nullptr;
@@ -113,7 +114,8 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
         if (!isModAmountDrag_ || modAmountDragModIndex_ < 0) {
             return;
         }
-        magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+        magda::ControlTarget thisTarget =
+            magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
         if (onModAmountChanged) {
             onModAmountChanged(modAmountDragModIndex_, thisTarget, newAmount);
         }
@@ -136,7 +138,8 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
         }
 
         const auto& selectedMod = (*availableMods_)[static_cast<size_t>(selectedModIndex_)];
-        magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+        magda::ControlTarget thisTarget =
+            magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = selectedMod.getLink(thisTarget);
         bool isLinked = existingLink != nullptr;
@@ -316,7 +319,8 @@ void ParamSlotComponent::handleLinkModeClick() {
                                        availableTrackMods_);
 
     if (modPtr) {
-        magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+        magda::ControlTarget thisTarget =
+            magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = modPtr->getLink(thisTarget);
         bool isLinked = existingLink != nullptr;
@@ -335,7 +339,8 @@ void ParamSlotComponent::handleLinkModeClick() {
                                                availableRackMacros_, availableTrackMacros_);
 
         if (macroPtr) {
-            magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+            magda::ControlTarget thisTarget =
+                magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
             const auto* existingLink = macroPtr->getLink(thisTarget);
             bool isLinked = existingLink != nullptr;
@@ -370,10 +375,12 @@ void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmo
             float amount = static_cast<float>(safeThis->linkModeSlider_->getValue() / 100.0);
 
             if (safeThis->activeMod_.isValid() && safeThis->onModAmountChanged) {
-                magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(safeThis->devicePath_, safeThis->paramIndex_);
+                magda::ControlTarget thisTarget =
+                    magda::ControlTarget::pluginParam(safeThis->devicePath_, safeThis->paramIndex_);
                 safeThis->onModAmountChanged(safeThis->activeMod_.modIndex, thisTarget, amount);
             } else if (safeThis->activeMacro_.isValid() && safeThis->onMacroAmountChanged) {
-                magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(safeThis->devicePath_, safeThis->paramIndex_);
+                magda::ControlTarget thisTarget =
+                    magda::ControlTarget::pluginParam(safeThis->devicePath_, safeThis->paramIndex_);
                 safeThis->onMacroAmountChanged(safeThis->activeMacro_.macroIndex, thisTarget,
                                                amount);
             }
@@ -638,7 +645,8 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             bool isLinked = false;
 
             if (modPtr) {
-                magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+                magda::ControlTarget thisTarget =
+                    magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
                 if (const auto* existingLink = modPtr->getLink(thisTarget)) {
                     isLinked = true;
                     initialAmount = existingLink->amount;
@@ -678,7 +686,8 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             bool isLinked = false;
 
             if (macroPtr) {
-                magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+                magda::ControlTarget thisTarget =
+                    magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
                 const auto* existingLink = macroPtr->getLink(thisTarget);
                 isLinked = existingLink != nullptr;
                 if (isLinked) {
@@ -737,7 +746,8 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
                                            availableRackMods_, availableTrackMods_);
 
         if (modPtr) {
-            magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+            magda::ControlTarget thisTarget =
+                magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
             const auto* existingLink = modPtr->getLink(thisTarget);
             bool isLinked = existingLink != nullptr;
@@ -756,7 +766,8 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
             const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
                                                    availableRackMacros_, availableTrackMacros_);
             if (macroPtr) {
-                magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+                magda::ControlTarget thisTarget =
+                    magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
                 const auto* existingLink = macroPtr->getLink(thisTarget);
                 bool isLinked = existingLink != nullptr;
@@ -787,8 +798,10 @@ void ParamSlotComponent::mouseUp(const juce::MouseEvent& /*e*/) {
         constexpr float kDefaultLinkAmount = 0.3f;
         const bool noDragHappened = linkModeDragStartAmount_ == linkModeDragCurrentAmount_;
         if (noDragHappened) {
-            magda::ControlTarget modTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
-            magda::ControlTarget macroTarget = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+            magda::ControlTarget modTarget =
+                magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+            magda::ControlTarget macroTarget =
+                magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
             if (activeMod_.isValid()) {
                 const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_,
                                                    availableRackMods_, availableTrackMods_);

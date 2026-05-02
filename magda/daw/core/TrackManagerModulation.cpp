@@ -250,8 +250,8 @@ void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex, Con
     }
 }
 
-void TrackManager::setMacroLinkAmount(const ChainNodePath& path, int macroIndex, ControlTarget target,
-                                      float amount) {
+void TrackManager::setMacroLinkAmount(const ChainNodePath& path, int macroIndex,
+                                      ControlTarget target, float amount) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -298,7 +298,8 @@ void TrackManager::setMacroName(const ChainNodePath& path, int macroIndex,
     // Don't notify - rename doesn't need UI rebuild
 }
 
-void TrackManager::removeMacroLink(const ChainNodePath& path, int macroIndex, ControlTarget target) {
+void TrackManager::removeMacroLink(const ChainNodePath& path, int macroIndex,
+                                   ControlTarget target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;

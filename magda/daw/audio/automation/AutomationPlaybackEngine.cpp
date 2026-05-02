@@ -560,8 +560,8 @@ void AutomationPlaybackEngine::automationPointDragPreview(AutomationLaneId laneI
                     break;
             }
         } else {
-            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId), target.paramIndex,
-                                   value);
+            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId),
+                                   target.paramIndex, value);
         }
     } else if (target.kind == ControlTarget::Kind::ModParam && target.modParamIndex == 0) {
         writeModRateFromCurve(target, previewValue);
@@ -746,8 +746,8 @@ void AutomationPlaybackEngine::currentValueChanged(te::AutomatableParameter& par
                     break;
             }
         } else {
-            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId), target.paramIndex,
-                                   value);
+            trackMgr.setMacroValue(ChainNodePath::trackLevel(target.devicePath.trackId),
+                                   target.paramIndex, value);
         }
     } else if (target.kind == ControlTarget::Kind::ModParam && target.modParamIndex == 0) {
         // Mirror the curve value back into MAGDA's mod state. The lane is
@@ -814,8 +814,8 @@ void AutomationPlaybackEngine::writeModRateFromCurve(const AutomationTarget& tar
                     break;
             }
         }
-        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(target.devicePath.trackId), target.modId,
-                                    division);
+        trackMgr.setModSyncDivision(ChainNodePath::trackLevel(target.devicePath.trackId),
+                                    target.modId, division);
         return;
     }
 

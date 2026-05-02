@@ -336,7 +336,7 @@ TEST_CASE("ResolverRegistry - custom resolver can be registered", "[aliases][res
             return "dummy.test_resolver";
         }
         std::optional<ControlTarget> resolve(const juce::StringPairArray&,
-                                            const ChainContext&) const override {
+                                             const ChainContext&) const override {
             return std::nullopt;
         }
     };

@@ -340,8 +340,8 @@ void MixerView::ChannelStrip::setupControls() {
     panSlider->setFont(FontManager::getInstance().getUIFont(10.0f));
     panSlider->onValueChanged = [this](double val) {
         auto& sel = SelectionManager::getInstance();
-        const bool multi = !isMaster_ && sel.isTrackSelected(trackId_) &&
-                           sel.getSelectedTrackCount() > 1;
+        const bool multi =
+            !isMaster_ && sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
         if (multi) {
             if (multiTrackBasePans_.empty()) {
                 auto& tm = TrackManager::getInstance();
@@ -417,8 +417,8 @@ void MixerView::ChannelStrip::setupControls() {
         const float currentGain = dbToGain(currentDb);
 
         auto& sel = SelectionManager::getInstance();
-        const bool multi = !isMaster_ && sel.isTrackSelected(trackId_) &&
-                           sel.getSelectedTrackCount() > 1;
+        const bool multi =
+            !isMaster_ && sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
         if (multi) {
             if (multiTrackBaseVolumes_.empty()) {
                 auto& tm = TrackManager::getInstance();

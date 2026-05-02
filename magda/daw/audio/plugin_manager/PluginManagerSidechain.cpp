@@ -1,5 +1,3 @@
-#include "PluginManager.hpp"
-
 #include <set>
 #include <unordered_set>
 #include <vector>
@@ -8,20 +6,21 @@
 #include "../../core/TrackManager.hpp"
 #include "../../core/aliases/AutoAliasGenerator.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
+#include "../PluginWindowBridge.hpp"
+#include "../TrackController.hpp"
+#include "../TracktionHelpers.hpp"
+#include "PluginManager.hpp"
+#include "modifiers/CurveSnapshot.hpp"
+#include "modifiers/ModifierHelpers.hpp"
+#include "modifiers/ModifierSync.hpp"
 #include "plugins/ArpeggiatorPlugin.hpp"
 #include "plugins/AudioSidechainMonitorPlugin.hpp"
-#include "modifiers/CurveSnapshot.hpp"
 #include "plugins/DrumGridPlugin.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
-#include "modifiers/ModifierHelpers.hpp"
-#include "modifiers/ModifierSync.hpp"
-#include "../PluginWindowBridge.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
-#include "../TrackController.hpp"
-#include "../TracktionHelpers.hpp"
 #include "transport/TransportStateManager.hpp"
 
 namespace magda {

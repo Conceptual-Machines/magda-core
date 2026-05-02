@@ -12,8 +12,8 @@
 #include "AudioThumbnailManager.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
-#include "session/SessionMonitorPlugin.hpp"
 #include "plugins/SidechainTriggerBus.hpp"
+#include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
 
@@ -811,15 +811,12 @@ te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget&
         }
 
         case ControlTarget::Kind::DeviceMacro:
-            return pluginManager_.findMacroParameterForAutomation(target.devicePath.trackId,
-                                                                   target.devicePath,
-                                                                   target.paramIndex);
+            return pluginManager_.findMacroParameterForAutomation(
+                target.devicePath.trackId, target.devicePath, target.paramIndex);
 
         case ControlTarget::Kind::ModParam:
-            return pluginManager_.findModifierParameterForAutomation(target.devicePath.trackId,
-                                                                      target.devicePath,
-                                                                      target.modId,
-                                                                      target.modParamIndex);
+            return pluginManager_.findModifierParameterForAutomation(
+                target.devicePath.trackId, target.devicePath, target.modId, target.modParamIndex);
     }
     return nullptr;
 }
