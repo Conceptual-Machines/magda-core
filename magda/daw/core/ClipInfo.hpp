@@ -97,12 +97,25 @@ struct ClipInfo {
     double sourceNumBeats = 0.0;  // Beat count from source file metadata (TE loopInfo)
     double sourceBPM = 0.0;       // Source file BPM (from TE loopInfo, 0 = unknown)
 
-    /// Populate source metadata from engine (only sets if not already populated)
+    /// Populate source metadata from engine (only sets if not already populated).
+    ///
+    /// Issue #1157: when the file's tempo metadata first lands on an autoTempo
+    /// clip, also snap the beat-domain canonicals to the file's natural beat
+    /// count. createAudioClip(Session) seeded lengthBeats from project tempo
+    /// as a best-guess (no metadata yet); metadata wins. After this call, the
+    /// caller should refreshDerivedSeconds and notify so renderers re-read.
     void setSourceMetadata(double numBeats, double bpm) {
+        bool wasUnset = sourceNumBeats <= 0.0 && sourceBPM <= 0.0;
         if (numBeats > 0.0 && sourceNumBeats <= 0.0)
             sourceNumBeats = numBeats;
         if (bpm > 0.0 && sourceBPM <= 0.0)
             sourceBPM = bpm;
+
+        if (wasUnset && autoTempo && sourceNumBeats > 0.0) {
+            lengthBeats = sourceNumBeats;
+            if (loopLengthBeats <= 0.0)
+                loopLengthBeats = sourceNumBeats;
+        }
     }
 
     // =========================================================================
