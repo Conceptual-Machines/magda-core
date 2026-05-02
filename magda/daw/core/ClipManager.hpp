@@ -259,6 +259,15 @@ class ClipManager {
      *         BPM-detection callbacks. No-op for non-autoTempo / non-audio
      *         clips. */
     void applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update, double projectBPM);
+
+    /** @brief Refresh the seconds-domain cache (length, startTime, offset,
+     *         loopStart, loopLength) on a beat-authoritative clip from its
+     *         canonical beat fields. No-op for time-authoritative clips.
+     *
+     *  Called by applyAudioClipBeats and by TimelineController on project-BPM
+     *  change. Does NOT notify listeners — caller's responsibility. */
+    void refreshDerivedSeconds(ClipId clipId, double projectBPM);
+
     /** @brief Enable/disable auto-tempo (beat-locked) mode for an audio clip */
     void setAutoTempo(ClipId clipId, bool enabled, double bpm);
     /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:

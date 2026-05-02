@@ -798,31 +798,47 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
     if (update.startBeats)
         clip->startBeats = juce::jmax(0.0, *update.startBeats);
 
-    // (3) Atomically recompute every derived field. Order matters only in that
-    // every read site after this call sees a consistent (beats, seconds) pair.
+    // (3) Recompute the seconds cache from beats atomically.
+    refreshDerivedSeconds(clipId, projectBPM);
 
-    // TE requires speedRatio == 1.0 in autoTempo mode; the slider never changes
-    // it, so pin it here as part of the invariant.
-    clip->speedRatio = 1.0;
+    notifyClipPropertyChanged(clipId);
+}
 
-    // Timeline seconds derive from project BPM.
+void ClipManager::refreshDerivedSeconds(ClipId clipId, double projectBPM) {
+    auto* clip = getClip(clipId);
+    if (!clip)
+        return;
+
+    // Beat-authoritative clips: seconds are caches of beats × BPM.
+    // Time-authoritative clips: seconds ARE the canonical state — leave alone.
+    if (!clip->isBeatsAuthoritative())
+        return;
+
+    // TE requires speedRatio == 1.0 in autoTempo mode.
+    if (clip->autoTempo)
+        clip->speedRatio = 1.0;
+
+    // Timeline-domain seconds (length, startTime): depend on PROJECT BPM.
     if (projectBPM > 0.0) {
-        clip->length = clip->lengthBeats * 60.0 / projectBPM;
+        if (clip->lengthBeats > 0.0)
+            clip->length = clip->lengthBeats * 60.0 / projectBPM;
         clip->startTime = clip->startBeats * 60.0 / projectBPM;
     }
 
-    // Source-domain seconds derive from the file's intrinsic BPM. When sourceBPM
-    // is unknown (detection pending), leave the seconds fields alone — display
-    // code falls back to projectBPM and ClipSynchronizer skips the sourceBPM
-    // override path. The next detection callback comes back through here and
-    // refreshes them.
-    if (clip->sourceBPM > 0.0) {
+    // Source-domain seconds (offset, loopStart, loopLength) for autoTempo
+    // audio: depend on SOURCE BPM (a property of the file, not the project).
+    // For MIDI clips loopLengthBeats lives in the project-beat domain, so
+    // loopLength uses projectBPM. When sourceBPM is unknown (detection
+    // pending), leave the source-domain seconds alone — readers fall back to
+    // the lengthBeats × 60 / projectBPM path.
+    if (clip->type == ClipType::Audio && clip->autoTempo && clip->sourceBPM > 0.0) {
         clip->offset = clip->offsetBeats * 60.0 / clip->sourceBPM;
         clip->loopStart = clip->loopStartBeats * 60.0 / clip->sourceBPM;
-        clip->loopLength = clip->loopLengthBeats * 60.0 / clip->sourceBPM;
+        if (clip->loopLengthBeats > 0.0)
+            clip->loopLength = clip->loopLengthBeats * 60.0 / clip->sourceBPM;
+    } else if (clip->type == ClipType::MIDI && projectBPM > 0.0 && clip->loopLengthBeats > 0.0) {
+        clip->loopLength = clip->loopLengthBeats * 60.0 / projectBPM;
     }
-
-    notifyClipPropertyChanged(clipId);
 }
 
 void ClipManager::setSpeedRatio(ClipId clipId, double speedRatio) {
