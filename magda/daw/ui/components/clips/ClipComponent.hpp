@@ -178,8 +178,6 @@ class ClipComponent : public juce::Component, public ClipManagerListener, privat
     void paintMidiNotes(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> noteArea,
                         juce::Colour noteColour);
     void paintClipHeader(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
-    void paintTimeSelectionBand(juce::Graphics& g, const ClipInfo& clip,
-                                juce::Rectangle<int> bounds);
     void paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> bounds);
     void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
                            juce::Rectangle<int> waveformArea, double pixelsPerSecond);

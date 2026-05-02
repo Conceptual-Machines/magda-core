@@ -1750,16 +1750,12 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     endX = juce::jmin(getWidth(), endX);
 
     const int selectionWidth = endX - startX;
-    const auto bandFill = DarkTheme::getColour(DarkTheme::TIME_SELECTION);
     const auto edgeColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.8f);
 
-    // Translucent fill so empty areas inside the band still read as selected.
-    // The overlay sits above clips in z-order, so this tint layers over the
-    // clip's own dark-blue body too (slight extra blueing on the body and a
-    // faintly bluish white waveform — both still legible).
+    // Pure colour inversion of whatever is in the band rect — desaturated to
+    // avoid acid complementaries. No translucent fill.
     if (state.selection.isAllTracks()) {
-        g.setColour(bandFill);
-        g.fillRect(startX, 0, selectionWidth, getHeight());
+        paintTimeSelectionBand(g, {startX, 0, selectionWidth, getHeight()});
 
         g.setColour(edgeColour);
         g.drawLine(static_cast<float>(startX), 0.0f, static_cast<float>(startX),
@@ -1785,8 +1781,7 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
                 int drawHeight = drawBottom - drawY;
 
                 if (drawHeight > 0) {
-                    g.setColour(bandFill);
-                    g.fillRect(startX, drawY, selectionWidth, drawHeight);
+                    paintTimeSelectionBand(g, {startX, drawY, selectionWidth, drawHeight});
 
                     g.setColour(edgeColour);
                     g.drawLine(static_cast<float>(startX), static_cast<float>(drawY),
@@ -1797,6 +1792,56 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
             }
         }
     }
+}
+
+void MainView::SelectionOverlayComponent::paintTimeSelectionBand(juce::Graphics& g,
+                                                                 juce::Rectangle<int> bandRect) {
+    if (bandRect.isEmpty() || !owner.trackContentPanel || !owner.trackContentViewport)
+        return;
+
+    const int scrollX = owner.trackContentViewport->getViewPositionX();
+    const int scrollY = owner.trackContentViewport->getViewPositionY();
+
+    auto panelRect = bandRect.translated(scrollX, scrollY)
+                         .getIntersection(owner.trackContentPanel->getLocalBounds());
+    if (panelRect.isEmpty())
+        return;
+
+    auto snapshot = owner.trackContentPanel->createComponentSnapshot(panelRect, false, 1.0f);
+    if (!snapshot.isValid() || snapshot.getWidth() == 0 || snapshot.getHeight() == 0)
+        return;
+
+    // Empty track-row background pixels are written transparent so
+    // drawImageAt leaves them showing the real panel bg — tinting them would
+    // create a horizontal strip above each clip that reads as a fake header.
+    // Everything else gets RGB-inverted with damped saturation so coloured
+    // clip bodies don't go full acid.
+    const auto bg = DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
+    const auto bgR = bg.getRed();
+    const auto bgG = bg.getGreen();
+    const auto bgB = bg.getBlue();
+    constexpr float saturationFactor = 0.45f;
+    {
+        juce::Image::BitmapData data(snapshot, juce::Image::BitmapData::readWrite);
+        for (int y = 0; y < data.height; ++y) {
+            for (int x = 0; x < data.width; ++x) {
+                const auto px = data.getPixelColour(x, y);
+                if (px.getRed() == bgR && px.getGreen() == bgG && px.getBlue() == bgB) {
+                    data.setPixelColour(x, y, juce::Colours::transparentBlack);
+                    continue;
+                }
+                const auto inverted =
+                    juce::Colour::fromRGB(static_cast<juce::uint8>(255 - px.getRed()),
+                                          static_cast<juce::uint8>(255 - px.getGreen()),
+                                          static_cast<juce::uint8>(255 - px.getBlue()));
+                const auto softened =
+                    inverted.withSaturation(inverted.getSaturation() * saturationFactor);
+                data.setPixelColour(x, y, softened.withAlpha(px.getAlpha()));
+            }
+        }
+    }
+
+    g.drawImageAt(snapshot, panelRect.getX() - scrollX, panelRect.getY() - scrollY);
 }
 
 void MainView::SelectionOverlayComponent::drawLoopRegion(juce::Graphics& g) {

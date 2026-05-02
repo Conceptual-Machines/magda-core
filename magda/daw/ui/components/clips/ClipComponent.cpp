@@ -78,11 +78,6 @@ void ClipComponent::paint(juce::Graphics& g) {
         paintMidiClip(g, *clip, bounds);
     }
 
-    // Time-selection band: re-paint the overlapping portion of this clip with
-    // a fixed dark blue body and a white waveform. Inserted before the header
-    // paint so the header survives unchanged inside the band.
-    paintTimeSelectionBand(g, *clip, bounds);
-
     // Draw header (name, loop indicator)
     paintClipHeader(g, *clip, bounds);
 
@@ -603,74 +598,6 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                 icon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
         }
     }
-}
-
-void ClipComponent::paintTimeSelectionBand(juce::Graphics& g, const ClipInfo& clip,
-                                           juce::Rectangle<int> bounds) {
-    if (!parentPanel_)
-        return;
-    auto* tc = parentPanel_->getTimelineController();
-    if (!tc)
-        return;
-    const auto& sel = tc->getState().selection;
-    if (!sel.isVisuallyActive())
-        return;
-
-    if (!sel.isAllTracks()) {
-        bool included = false;
-        const auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
-            ViewModeController::getInstance().getViewMode());
-        for (int i = 0; i < static_cast<int>(visibleTracks.size()); ++i) {
-            if (visibleTracks[i] == clip.trackId) {
-                included = sel.includesTrack(i);
-                break;
-            }
-        }
-        if (!included)
-            return;
-    }
-
-    if (clip.length <= 0.0)
-        return;
-    const double clipStart = clip.startTime;
-    const double clipEnd = clipStart + clip.length;
-    const double overlapStart = juce::jmax(sel.startTime, clipStart);
-    const double overlapEnd = juce::jmin(sel.endTime, clipEnd);
-    if (overlapEnd <= overlapStart)
-        return;
-
-    const double widthPx = static_cast<double>(getWidth());
-    const int x0 = static_cast<int>(std::round((overlapStart - clipStart) / clip.length * widthPx));
-    const int x1 = static_cast<int>(std::round((overlapEnd - clipStart) / clip.length * widthPx));
-    const juce::Rectangle<int> bandRect(x0, 0, x1 - x0, bounds.getHeight());
-    if (bandRect.isEmpty())
-        return;
-
-    g.saveState();
-    g.reduceClipRegion(bandRect);
-
-    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).darker(0.4f));
-    g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
-
-    if (clip.type == ClipType::Audio) {
-        auto waveformArea =
-            bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
-        double clipDisplayLength = clip.length;
-        if (isDragging_) {
-            const bool isResizeMode =
-                (dragMode_ == DragMode::ResizeLeft || dragMode_ == DragMode::ResizeRight);
-            const bool isStretchMode =
-                (dragMode_ == DragMode::StretchLeft || dragMode_ == DragMode::StretchRight);
-            if ((isResizeMode || isStretchMode) && previewLength_ > 0.0)
-                clipDisplayLength = previewLength_;
-        }
-        paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength, juce::Colours::white);
-    } else {
-        auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
-        paintMidiNotes(g, clip, noteArea, juce::Colours::white);
-    }
-
-    g.restoreState();
 }
 
 void ClipComponent::paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> bounds) {
