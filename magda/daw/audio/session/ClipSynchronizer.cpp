@@ -555,15 +555,11 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         if (std::abs(clip->pan) > 0.001f)
             audioClipPtr->setPan(clip->pan);
 
-        // Set a small fade-in/out to prevent clicks on launch/stop transitions.
-        // Session clips don't have user-configurable fades, so apply a minimal
-        // ~2ms fade that's inaudible but prevents discontinuities.
-        {
-            double fadeInVal = (clip->fadeIn <= 0.0) ? 0.002 : clip->fadeIn;
-            double fadeOutVal = (clip->fadeOut <= 0.0) ? 0.002 : clip->fadeOut;
-            audioClipPtr->setFadeIn(te::TimeDuration::fromSeconds(fadeInVal));
-            audioClipPtr->setFadeOut(te::TimeDuration::fromSeconds(fadeOutVal));
-        }
+        // No setFadeIn/setFadeOut here: te::EditNodeBuilder skips
+        // FadeInOutNode for ClipRole::launcher, so any value written to
+        // te::AudioClipBase::fadeIn/fadeOut never reaches the audio graph
+        // for session clips. The actual launch fade is the 256-sample ramp
+        // hard-coded in te::SlotControlNode::processSection.
 
         // Set LaunchHandle looping state at creation time so it's ready before first launch
         if (auto lh = audioClipPtr->getLaunchHandle()) {
