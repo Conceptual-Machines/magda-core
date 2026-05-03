@@ -138,6 +138,26 @@ Two optional callbacks are also dispatched: `on_load()` once at script start, an
 
 Only one script can be active at a time. Loading a new script replaces the previous one. Reload picks up file edits without restarting MAGDA.
 
+### Scripts Tab
+
+The Scripts tab in the Controllers dialog lists every `.lua` file in your scripts folder, one row each. Each row shows:
+
+| Column | Description |
+|---|---|
+| **Status dot** | Green when this is the active script; outlined when it isn't |
+| **Name** | Script filename (e.g. `launchkey_mini_mk4.lua`) |
+| **Active label** | An `Active` tag appears under the name when this is the loaded script |
+| **MIDI Out port** | The MIDI **output** the script sends feedback to (assignable per script) |
+| **DAW In port** | The MIDI **input** the script's `on_midi` listens to (empty = all inputs) |
+
+Header buttons:
+
+- **Open Folder** — reveals the scripts folder in the OS file browser
+- **Import…** — pick a `.lua` from disk, copy it into the scripts folder, refresh the list
+- **Reload** — re-evaluate the active script (or load the alphabetically-first script if none is active). Picks up file edits without restarting MAGDA.
+
+Click a row's port columns to assign / change the MIDI ports for that script. Right-click a row to remove the script file.
+
 ### Scripts Folder
 
 | Platform | Path |
@@ -146,7 +166,7 @@ Only one script can be active at a time. Loading a new script replaces the previ
 | Windows | `%APPDATA%\MAGDA\scripts\` |
 | Linux | `~/.config/MAGDA/scripts/` |
 
-The folder is created on first launch. Drop `.lua` files in there and they show up in the Controllers dialog's Scripts tab. Per-script port assignments (which MIDI input the script listens to, which output it writes feedback to) are saved alongside.
+The folder is created on first launch. Drop `.lua` files in there and they show up in the Scripts tab. Per-script port assignments are saved alongside.
 
 ### Footer Indicator
 

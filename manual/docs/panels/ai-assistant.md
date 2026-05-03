@@ -151,6 +151,8 @@ For example prompts and recipes, see the [4OSC Synth — AI Sound Design](../dev
 
 Sound-design generation is also available without leaving the device chain. Every device slot exposes an **AI** icon in its header — click it to open a docked panel attached to that device.
 
+![4OSC with the AI panel docked on its left, showing a prompt echo, the model's preset description, an apply status, and a yellow "starting point only" disclaimer.](../assets/images/panels/4osc-ai-panel.png)
+
 The panel has three rows:
 
 - **Output area** — streams the model's response token-by-token, then appends a one-line apply status (`→ applied N params, M waves, …`). The history persists across slot rebuilds (preset loads, plugin reloads, sidechain edits) — your last result stays put until you clear it.
