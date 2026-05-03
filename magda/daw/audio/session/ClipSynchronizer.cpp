@@ -1607,29 +1607,32 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         // Auto-tempo mode: ALWAYS set beat-based loop range
         // The loop range defines the clip's musical extent (not just the loop region)
 
-        // Get tempo for beat calculations
-        double bpm = edit_.tempoSequence.getTempo(0)->getBpm();
+        if (clip->loopEnabled) {
+            // Get tempo for beat calculations
+            double bpm = edit_.tempoSequence.getTempo(0)->getBpm();
 
-        // Override TE's loopInfo BPM to match our calibrated sourceBPM.
-        // setAutoTempo calibrates sourceBPM = projectBPM / speedRatio so that
-        // enabling autoTempo doesn't change playback speed.  TE uses loopInfo
-        // to map source beats ↔ source time, so the two must agree.
-        if (clip->sourceBPM > 0.0) {
-            auto waveInfo = audioClipPtr->getWaveInfo();
-            auto& li = audioClipPtr->getLoopInfo();
-            double currentLoopInfoBpm = li.getBpm(waveInfo);
-            if (std::abs(currentLoopInfoBpm - clip->sourceBPM) > 0.1) {
-                li.setBpm(clip->sourceBPM, waveInfo);
+            // Override TE's loopInfo BPM to match our calibrated sourceBPM.
+            // setAutoTempo calibrates sourceBPM = projectBPM / speedRatio so that
+            // enabling autoTempo doesn't change playback speed.  TE uses loopInfo
+            // to map source beats ↔ source time, so the two must agree.
+            if (clip->sourceBPM > 0.0) {
+                auto waveInfo = audioClipPtr->getWaveInfo();
+                auto& li = audioClipPtr->getLoopInfo();
+                double currentLoopInfoBpm = li.getBpm(waveInfo);
+                if (std::abs(currentLoopInfoBpm - clip->sourceBPM) > 0.1) {
+                    li.setBpm(clip->sourceBPM, waveInfo);
+                }
             }
+
+            auto [loopStartBeats, loopLengthBeats] =
+                ClipOperations::getAutoTempoBeatRange(*clip, bpm);
+
+            auto loopRange = te::BeatRange(te::BeatPosition::fromBeats(loopStartBeats),
+                                           te::BeatDuration::fromBeats(loopLengthBeats));
+            audioClipPtr->setLoopRangeBeats(loopRange);
+        } else if (audioClipPtr->isLooping()) {
+            audioClipPtr->setLoopRangeBeats({});
         }
-
-        // Calculate beat range using centralized helper
-        auto [loopStartBeats, loopLengthBeats] = ClipOperations::getAutoTempoBeatRange(*clip, bpm);
-
-        // Set the beat-based loop range in TE
-        auto loopRange = te::BeatRange(te::BeatPosition::fromBeats(loopStartBeats),
-                                       te::BeatDuration::fromBeats(loopLengthBeats));
-        audioClipPtr->setLoopRangeBeats(loopRange);
     } else {
         // Time-based mode: Use time-based loop range
         // Only use setLoopRange (time-based), NOT setLoopRangeBeats which forces

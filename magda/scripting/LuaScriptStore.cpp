@@ -34,4 +34,34 @@ std::vector<juce::File> LuaScriptStore::enumerate() const {
     return out;
 }
 
+juce::File LuaScriptStore::findBundledScriptsDirectory() {
+    auto appFile = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
+
+    juce::Array<juce::File> candidates;
+#if JUCE_MAC
+    candidates.add(appFile.getChildFile("Contents/Resources/controllers/scripts"));
+#endif
+#if JUCE_LINUX
+    if (auto real = juce::File("/proc/self/exe").getLinkedTarget(); real.exists())
+        candidates.add(real.getParentDirectory().getChildFile("controllers/scripts"));
+#endif
+    candidates.add(appFile.getParentDirectory().getChildFile("controllers/scripts"));
+
+    auto walk = appFile.getParentDirectory();
+    for (int i = 0; i < 8 && walk.exists(); ++i) {
+        auto maybe =
+            walk.getChildFile("resources").getChildFile("controllers").getChildFile("scripts");
+        if (maybe.isDirectory()) {
+            candidates.add(maybe);
+            break;
+        }
+        walk = walk.getParentDirectory();
+    }
+
+    for (const auto& c : candidates)
+        if (c.isDirectory())
+            return c;
+    return {};
+}
+
 }  // namespace magda::scripting

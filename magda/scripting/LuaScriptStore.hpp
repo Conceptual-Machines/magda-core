@@ -17,6 +17,9 @@ namespace magda::scripting {
  *   ~/.config/MAGDA/Scripts/Controllers/      (Linux)
  *
  * Per-project storage is deferred to a follow-up; v1 is global only.
+ *
+ * Factory scripts shipped in resources/controllers/scripts/ are not enumerated
+ * by this class — see findBundledScriptsDirectory() for that pool.
  */
 class LuaScriptStore {
   public:
@@ -36,6 +39,11 @@ class LuaScriptStore {
 
     /** All `*.lua` files directly under root, sorted by name. */
     std::vector<juce::File> enumerate() const;
+
+    /** Locate the bundled (factory) controller scripts directory. Returns an
+     *  invalid juce::File if not found. Mirrors
+     *  ControllerProfileRegistry::findBundledControllersDirectory(). */
+    static juce::File findBundledScriptsDirectory();
 
   private:
     juce::File root_;
