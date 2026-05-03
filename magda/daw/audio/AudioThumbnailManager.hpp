@@ -63,6 +63,14 @@ class AudioThumbnailManager {
     double getCachedBPM(const juce::String& filePath) const;
 
     /**
+     * @brief Seed the BPM cache without scanning audio.
+     *
+     * Intended for deterministic model tests and for callers that already have
+     * a trusted external detection result.
+     */
+    void cacheBPM(const juce::String& filePath, double bpm);
+
+    /**
      * @brief Request asynchronous BPM detection.
      *
      * If the result is already cached, @p onComplete fires synchronously on the

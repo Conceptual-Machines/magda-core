@@ -12,6 +12,42 @@
 
 namespace magda {
 
+namespace {
+
+bool sourceBpmLooksDefaulted(const ClipInfo& clip, double projectBPM) {
+    if (clip.sourceBPM <= 0.0)
+        return true;
+    return projectBPM > 0.0 && std::abs(clip.sourceBPM - projectBPM) < 0.1;
+}
+
+bool seedSourceMetadataFromCachedDetection(ClipInfo& clip, double projectBPM) {
+    if (clip.type != ClipType::Audio || clip.audioFilePath.isEmpty() ||
+        !sourceBpmLooksDefaulted(clip, projectBPM)) {
+        return false;
+    }
+
+    auto& thumbs = AudioThumbnailManager::getInstance();
+    double cachedBPM = thumbs.getCachedBPM(clip.audioFilePath);
+    if (cachedBPM <= 0.0)
+        return false;
+
+    clip.sourceBPM = cachedBPM;
+    double fileDuration = 0.0;
+    if (juce::File(clip.audioFilePath).existsAsFile()) {
+        if (auto* thumbnail = thumbs.getThumbnail(clip.audioFilePath)) {
+            fileDuration = thumbnail->getTotalLength();
+        }
+    }
+    if (fileDuration <= 0.0)
+        fileDuration = clip.getSourceLength();
+    if (fileDuration > 0.0)
+        clip.sourceNumBeats = fileDuration * cachedBPM / 60.0;
+
+    return true;
+}
+
+}  // namespace
+
 ClipManager& ClipManager::getInstance() {
     static ClipManager instance;
     return instance;
@@ -658,6 +694,9 @@ void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
 void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
     if (auto* clip = getClip(clipId)) {
         if (clip->type == ClipType::Audio) {
+            if (enabled)
+                seedSourceMetadataFromCachedDetection(*clip, bpm);
+
             ClipOperations::setAutoTempo(*clip, enabled, bpm);
 
             // Ensure time-stretching is enabled when beat mode is on

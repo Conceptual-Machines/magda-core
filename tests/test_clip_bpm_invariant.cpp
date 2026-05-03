@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "magda/daw/audio/AudioThumbnailManager.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 
@@ -194,6 +195,50 @@ TEST_CASE("applyAudioClipBeats - sourceBPM unknown leaves source-seconds intact"
     // is known. ClipDisplayInfo and TE have fallback paths for the pre-detection
     // window.
     REQUIRE(c->loopLength == Approx(0.0));
+}
+
+TEST_CASE("setAutoTempo adopts cached detected BPM when clip BPM is project default",
+          "[clip][bpm][auto-tempo][issue-1157]") {
+    ClipManager::getInstance().shutdown();
+    AudioThumbnailManager::getInstance().clearCache();
+
+    constexpr double detectedBPM = 135.0;
+    constexpr double sourceDuration = 6.0;
+    constexpr double expectedSourceBeats = sourceDuration * detectedBPM / 60.0;
+    const juce::String path = "/tmp/cached-detection-defaulted-source.wav";
+
+    ClipInfo seed;
+    seed.id = 77;
+    seed.trackId = 1;
+    seed.type = ClipType::Audio;
+    seed.view = ClipView::Arrangement;
+    seed.audioFilePath = path;
+    seed.loopEnabled = false;
+    seed.autoTempo = false;
+    seed.speedRatio = 1.0;
+    seed.startTime = 0.0;
+    seed.length = sourceDuration;
+    seed.loopStart = 0.0;
+    seed.loopLength = sourceDuration;
+    seed.sourceBPM = PROJECT_BPM;  // defaulted placeholder, not trusted metadata
+    seed.sourceNumBeats = 0.0;
+    seed.setPlacementBeats(0.0, sourceDuration * PROJECT_BPM / 60.0);
+
+    ClipManager::getInstance().restoreClip(seed);
+    AudioThumbnailManager::getInstance().cacheBPM(path, detectedBPM);
+
+    ClipManager::getInstance().setAutoTempo(seed.id, true, PROJECT_BPM);
+
+    const auto* c = ClipManager::getInstance().getClip(seed.id);
+    REQUIRE(c != nullptr);
+    REQUIRE(c->autoTempo);
+    REQUIRE(c->sourceBPM == Approx(detectedBPM));
+    REQUIRE(c->sourceNumBeats == Approx(expectedSourceBeats));
+    REQUIRE(c->lengthBeats == Approx(expectedSourceBeats));
+    REQUIRE(c->placement.lengthBeats == Approx(expectedSourceBeats));
+    REQUIRE(c->length == Approx(expectedSourceBeats * 60.0 / PROJECT_BPM));
+
+    AudioThumbnailManager::getInstance().clearCache();
 }
 
 // ============================================================================

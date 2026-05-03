@@ -649,7 +649,9 @@ void ClipInspector::initClipPropertiesSection() {
         // (pre-setAutoTempo, before the canonical path is open); cache miss
         // kicks off background detection and the callback funnels through
         // applyAudioClipBeats once autoTempo is on.
-        if (enable && clip->type == magda::ClipType::Audio && clip->sourceBPM <= 0.0) {
+        const bool sourceBpmLooksDefaulted =
+            clip->sourceBPM <= 0.0 || (bpm > 0.0 && std::abs(clip->sourceBPM - bpm) < 0.1);
+        if (enable && clip->type == magda::ClipType::Audio && sourceBpmLooksDefaulted) {
             // Issue #1157: only seed from AudioThumbnailManager when the file
             // didn't carry tempo metadata. setSourceMetadata (from TE's
             // loopInfo) is authoritative when present; TempoDetect can be
@@ -674,7 +676,11 @@ void ClipInspector::initClipPropertiesSection() {
                         return;
                     // Issue #1157: file metadata wins over audio analysis.
                     // TempoDetect can be wrong by ~1.3x on syncopated loops.
-                    if (c->sourceBPM > 0.0)
+                    double live =
+                        magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+                    bool existingLooksDefaulted =
+                        c->sourceBPM > 0.0 && live > 0.0 && std::abs(c->sourceBPM - live) < 0.1;
+                    if (c->sourceBPM > 0.0 && !existingLooksDefaulted)
                         return;
                     magda::ClipManager::AudioClipBeatsUpdate u;
                     u.sourceBPM = detectedBPM;
@@ -684,8 +690,6 @@ void ClipInspector::initClipPropertiesSection() {
                         if (fileDuration > 0.0)
                             u.sourceNumBeats = fileDuration * detectedBPM / 60.0;
                     }
-                    double live =
-                        magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
                     mgr.applyAudioClipBeats(cid, u, live);
                 });
             }
