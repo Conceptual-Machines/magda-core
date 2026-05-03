@@ -50,9 +50,10 @@ Click **Browse…** next to a path to relocate that folder. MAGDA does not move 
 
 ## Rendering
 
-- **Default format** — Choose the default audio format for renders (WAV, AIFF, FLAC, OGG)
 - **Sample rate** — Default sample rate for rendered files
-- **Bit depth** — Default bit depth for rendered files
+- **Export bit depth** — Default bit depth for audio exports
+- **Bounce bit depth** — Default bit depth for bounced and frozen audio
+- Audio export format is chosen in the export dialog: WAV 16-bit, WAV 24-bit, WAV 32-bit float, or FLAC
 
 ## AI
 

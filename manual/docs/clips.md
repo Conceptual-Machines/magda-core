@@ -6,7 +6,7 @@ Clips are the containers that hold audio and MIDI data on tracks. They appear as
 
 | Type | Description |
 |------|-------------|
-| **Audio** | Contains a reference to an audio file (WAV, AIFF, FLAC, MP3, OGG) with start/end points and gain |
+| **Audio** | Contains a reference to an audio file (WAV, AIFF/AIF, FLAC, OGG, MP3 where a platform decoder is available) with start/end points and gain |
 | **MIDI** | Contains MIDI note and automation data |
 
 Because MAGDA uses a [hybrid track system](tracks.md#hybrid-track-system), any track can hold both audio and MIDI clips.
