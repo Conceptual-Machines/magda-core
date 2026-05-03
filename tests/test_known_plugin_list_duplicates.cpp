@@ -17,6 +17,20 @@
 
 namespace {
 
+juce::File testTempRoot() {
+    auto envTmp = juce::SystemStats::getEnvironmentVariable("TMPDIR", {});
+    auto root = envTmp.isNotEmpty() ? juce::File(envTmp)
+                                    : juce::File::getSpecialLocation(juce::File::tempDirectory);
+    root.createDirectory();
+    return root;
+}
+
+juce::File createExistingPluginFile(const juce::String& suffix) {
+    auto file = testTempRoot().getNonexistentChildFile("plugin", suffix);
+    REQUIRE(file.create().wasOk());
+    return file;
+}
+
 juce::PluginDescription makeDesc(const juce::String& name, const juce::String& fileOrId,
                                  int uniqueId, const juce::String& format = "VST3") {
     juce::PluginDescription d;
@@ -97,9 +111,8 @@ TEST_CASE("pruneMissingPlugins does not collapse name collisions", "[plugin][dup
     // names. So it cannot rescue the user from any of the duplicate-by-uid
     // or duplicate-by-path cases above; it only removes entries whose file
     // is missing.
-    juce::TemporaryFile temp(".vst3");
-    REQUIRE(temp.getFile().create().wasOk());
-    const auto path = temp.getFile().getFullPathName();
+    auto temp = createExistingPluginFile(".vst3");
+    const auto path = temp.getFullPathName();
 
     juce::AudioPluginFormatManager formatManager;
 #if JUCE_PLUGINHOST_VST3

@@ -249,19 +249,6 @@ class ProjectSerializer {
     static juce::var serializeModInfo(const ModInfo& mod);
     static bool deserializeModInfo(const juce::var& json, ModInfo& outMod);
 
-    /**
-     * @brief Post-deserialize fixup for pre-#1149 projects.
-     *
-     * Walks every mod/macro link on the track (track-level + every device and
-     * rack inside the chain, recursively) and rewrites any link whose target
-     * has `devicePath.trackId == 0` to use the parent track's id. The 0
-     * sentinel comes from `deserializeControlTarget`'s legacy fallback when
-     * an old project's `target` carried only a flat `deviceId` (no full
-     * ChainNodePath). Without this fixup such links don't compare equal to
-     * the live UI's targets and the right-click "linked mods" menu drops them.
-     */
-    static void fixupLegacyLinkTrackIds(TrackInfo& track);
-
     static juce::var serializeParameterInfo(const ParameterInfo& data);
     static bool deserializeParameterInfo(const juce::var& json, ParameterInfo& data);
 

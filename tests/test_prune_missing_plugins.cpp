@@ -8,13 +8,27 @@ using magda::TracktionEngineWrapper;
 
 namespace {
 
+juce::File testTempRoot() {
+    auto envTmp = juce::SystemStats::getEnvironmentVariable("TMPDIR", {});
+    auto root = envTmp.isNotEmpty() ? juce::File(envTmp)
+                                    : juce::File::getSpecialLocation(juce::File::tempDirectory);
+    root.createDirectory();
+    return root;
+}
+
+juce::File createExistingPluginFile(const juce::String& suffix) {
+    auto file = testTempRoot().getNonexistentChildFile("plugin", suffix);
+    REQUIRE(file.create().wasOk());
+    return file;
+}
+
 // Build a platform-correct absolute path that is guaranteed not to exist.
 // Hard-coded "/foo/bar" style paths are NOT absolute on Windows
 // (juce::File::isAbsolutePath needs a drive letter or leading backslash),
 // so a path-based existence check would skip them and the test would
 // falsely pass on Unix while reporting 0 removals on Windows.
 juce::String makeAbsentAbsolutePath(const juce::String& filename) {
-    auto path = juce::File::getSpecialLocation(juce::File::tempDirectory)
+    auto path = testTempRoot()
                     .getChildFile("magda_prune_test_does_not_exist_" + juce::Uuid().toString())
                     .getChildFile(filename);
     REQUIRE(juce::File::isAbsolutePath(path.getFullPathName()));
@@ -57,14 +71,13 @@ void registerTestFormats(juce::AudioPluginFormatManager& fm) {
 
 TEST_CASE("pruneMissingPlugins removes stale entries across formats", "[plugin][prune]") {
     // Real temp file stands in for an installed VST3.
-    juce::TemporaryFile temp(".vst3");
-    REQUIRE(temp.getFile().create().wasOk());
+    auto temp = createExistingPluginFile(".vst3");
 
     juce::AudioPluginFormatManager formatManager;
     registerTestFormats(formatManager);
 
     juce::KnownPluginList list;
-    list.addType(makeDesc("ExistingVST3", temp.getFile().getFullPathName()));
+    list.addType(makeDesc("ExistingVST3", temp.getFullPathName()));
     list.addType(makeDesc("MissingVST3", makeAbsentAbsolutePath("Missing.vst3")));
     // Bogus AU identifier: AudioComponentFindNext returns null for
     // unregistered OSTypes, so this must be pruned on macOS. On platforms
@@ -84,14 +97,13 @@ TEST_CASE("pruneMissingPlugins removes stale entries across formats", "[plugin][
 }
 
 TEST_CASE("pruneMissingPlugins is a no-op when nothing is stale", "[plugin][prune]") {
-    juce::TemporaryFile temp(".vst3");
-    REQUIRE(temp.getFile().create().wasOk());
+    auto temp = createExistingPluginFile(".vst3");
 
     juce::AudioPluginFormatManager formatManager;
     registerTestFormats(formatManager);
 
     juce::KnownPluginList list;
-    list.addType(makeDesc("Existing", temp.getFile().getFullPathName()));
+    list.addType(makeDesc("Existing", temp.getFullPathName()));
 
     const int removed = TracktionEngineWrapper::pruneMissingPlugins(list, formatManager);
 

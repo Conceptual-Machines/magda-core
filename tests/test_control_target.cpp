@@ -10,7 +10,7 @@ using namespace magda;
 // ============================================================================
 
 TEST_CASE("ControlTarget - PluginParam validity", "[control_target]") {
-    auto path = ChainNodePath::topLevelDevice(0, 5);
+    auto path = ChainNodePath::topLevelDevice(1, 5);
     auto t = ControlTarget::pluginParam(path, 3);
 
     REQUIRE(t.kind == ControlTarget::Kind::PluginParam);
@@ -71,7 +71,7 @@ TEST_CASE("ControlTarget - SendLevel validity", "[control_target]") {
 }
 
 TEST_CASE("ControlTarget - operator== distinguishes by kind", "[control_target]") {
-    auto path = ChainNodePath::topLevelDevice(0, 5);
+    auto path = ChainNodePath::topLevelDevice(1, 5);
     auto plug = ControlTarget::pluginParam(path, 0);
     auto macro = ControlTarget::deviceMacro(path, 0);
 
@@ -90,10 +90,12 @@ TEST_CASE("ControlTarget - operator== matches all secondary fields", "[control_t
     REQUIRE(a != d);  // different modId
 }
 
-TEST_CASE("ControlTarget - fromDeviceId convenience", "[control_target]") {
-    auto t = ControlTarget::fromDeviceId(42, 7);
+TEST_CASE("ControlTarget - pluginParam factory requires a scoped device path", "[control_target]") {
+    auto path = ChainNodePath::topLevelDevice(1, 42);
+    auto t = ControlTarget::pluginParam(path, 7);
 
     REQUIRE(t.kind == ControlTarget::Kind::PluginParam);
+    REQUIRE(t.devicePath == path);
     REQUIRE(t.deviceId() == 42);
     REQUIRE(t.paramIndex == 7);
     REQUIRE(t.isValid());
