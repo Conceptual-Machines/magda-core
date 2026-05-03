@@ -91,6 +91,17 @@ void remapDuplicatedLinks(MacroArray& macros, ModArray& mods, const ChainNodePat
     }
 }
 
+juce::String formatClipIds(const std::vector<ClipId>& clipIds) {
+    juce::String text("[");
+    for (size_t i = 0; i < clipIds.size(); ++i) {
+        if (i > 0)
+            text << ",";
+        text << clipIds[i];
+    }
+    text << "]";
+    return text;
+}
+
 juce::String stripDuplicateRuntimePluginState(const juce::String& pluginState) {
     if (pluginState.isEmpty())
         return pluginState;
@@ -273,8 +284,12 @@ void TrackManager::deleteTrack(TrackId trackId) {
 
     auto& clipManager = magda::ClipManager::getInstance();
     auto clipIds = clipManager.getClipsOnTrack(trackId);
+    DBG("TrackManager::deleteTrack clip cleanup trackId=" << trackId
+                                                          << " clipIds=" << formatClipIds(clipIds));
     for (auto clipId : clipIds)
         clipManager.deleteClip(clipId);
+    DBG("TrackManager::deleteTrack clip cleanup complete trackId="
+        << trackId << " remainingClipIds=" << formatClipIds(clipManager.getClipsOnTrack(trackId)));
 
     // If this track has a parent, remove it from parent's children
     if (track->hasParent()) {
