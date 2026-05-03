@@ -2,6 +2,8 @@
 
 The Drum Grid is MAGDA's chain-based drum machine. Each pad is a full audio chain, giving you independent processing per drum voice.
 
+![Drum Grid device with macros panel and the pad grid showing two pages of pads](../assets/images/devices/drum-grid.png)
+
 ## Overview
 
 The Drum Grid maps incoming MIDI notes to individual pads. Each pad has its own sample, FX chain, and mixer controls, making it a self-contained drum kit in a single device.
