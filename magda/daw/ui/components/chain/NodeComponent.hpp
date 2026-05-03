@@ -19,6 +19,7 @@ namespace magda::daw::ui {
 // Forward declarations for panel components
 class ModsPanelComponent;
 class MacroPanelComponent;
+class AIPanelComponent;
 class ModulatorEditorPanel;
 class MacroEditorPanel;
 
@@ -91,6 +92,9 @@ class NodeComponent : public juce::Component,
     bool isGainPanelVisible() const {
         return gainPanelVisible_;
     }
+    bool isAIPanelVisible() const {
+        return aiPanelVisible_;
+    }
 
     // Selection
     void setSelected(bool selected);
@@ -110,6 +114,7 @@ class NodeComponent : public juce::Component,
     std::function<void(bool)> onModPanelToggled;
     std::function<void(bool)> onParamPanelToggled;
     std::function<void(bool)> onGainPanelToggled;
+    std::function<void(bool)> onAIPanelToggled;
     std::function<void()> onLayoutChanged;         // Called when size changes (e.g., panel toggle)
     std::function<void()> onSelected;              // Called when node is clicked/selected
     std::function<void(bool)> onCollapsedChanged;  // Called when collapsed state changes
@@ -119,6 +124,7 @@ class NodeComponent : public juce::Component,
     void setModPanelVisible(bool visible);
     void setParamPanelVisible(bool visible);
     void setGainPanelVisible(bool visible);
+    void setAIPanelVisible(bool visible);
 
     // Drag-to-reorder callbacks (for parent container coordination)
     std::function<void(NodeComponent*, const juce::MouseEvent&)> onDragStart;
@@ -172,6 +178,8 @@ class NodeComponent : public juce::Component,
                                 juce::Rectangle<int> panelArea);  // Gain is below content
     virtual void paintExtraRightPanel(juce::Graphics& g,
                                       juce::Rectangle<int> panelArea);  // After macros
+    virtual void paintAIPanel(juce::Graphics& g,
+                              juce::Rectangle<int> panelArea);  // After mod editor
 
     // Override to layout custom panel content
     virtual void resizedModPanel(juce::Rectangle<int> panelArea);
@@ -179,6 +187,7 @@ class NodeComponent : public juce::Component,
     virtual void resizedParamPanel(juce::Rectangle<int> panelArea);
     virtual void resizedGainPanel(juce::Rectangle<int> panelArea);
     virtual void resizedExtraRightPanel(juce::Rectangle<int> panelArea);  // After macros
+    virtual void resizedAIPanel(juce::Rectangle<int> panelArea);          // After mod editor
 
     // Override to add extra buttons when collapsed (area is below bypass/delete)
     virtual void resizedCollapsed(juce::Rectangle<int>& area);
@@ -194,6 +203,11 @@ class NodeComponent : public juce::Component,
     }
     virtual int getGainPanelWidth() const {
         return GAIN_PANEL_WIDTH;
+    }
+    // AI side panel (sound design prompt + output) — wider than the macro
+    // panel because it hosts a text input.
+    virtual int getAIPanelWidth() const {
+        return AI_PANEL_WIDTH;
     }
     // Extra right panel (after macros) - returns macro editor width when visible
     virtual int getExtraRightPanelWidth() const;
@@ -222,6 +236,7 @@ class NodeComponent : public juce::Component,
     bool modPanelVisible_ = false;
     bool paramPanelVisible_ = false;
     bool gainPanelVisible_ = false;
+    bool aiPanelVisible_ = false;
 
     // Selection state
     bool selected_ = false;
@@ -265,6 +280,7 @@ class NodeComponent : public juce::Component,
     static constexpr int HEADER_HEIGHT = 24;
     static constexpr int BUTTON_SIZE = 18;
     static constexpr int DEFAULT_PANEL_WIDTH = 150;  // Width for 2-column panels (params, macros)
+    static constexpr int AI_PANEL_WIDTH = 200;       // Width for AI sound-design panel
     static constexpr int SINGLE_COLUMN_PANEL_WIDTH = 70;  // Width for 1-column panels (mods)
     static constexpr int GAIN_PANEL_WIDTH = 32;           // Width for gain panel (right side)
 
@@ -339,6 +355,7 @@ class NodeComponent : public juce::Component,
     // Panel components (created by NodeComponent, populated by subclass data)
     std::unique_ptr<ModsPanelComponent> modsPanel_;
     std::unique_ptr<MacroPanelComponent> macroPanel_;
+    std::unique_ptr<AIPanelComponent> aiPanel_;
     std::unique_ptr<ModulatorEditorPanel> modulatorEditorPanel_;
     std::unique_ptr<MacroEditorPanel> macroEditorPanel_;
 

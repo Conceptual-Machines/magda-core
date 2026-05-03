@@ -2,6 +2,8 @@
 
 #include <BinaryData.h>
 
+#include "../../../../agents/sound_design_agent.hpp"
+#include "AIPanelComponent.hpp"
 #include "DeviceSlotHeaderLayout.hpp"
 #include "MacroPanelComponent.hpp"
 #include "ModsPanelComponent.hpp"
@@ -220,8 +222,36 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     };
     addAndMakeVisible(*macroButton_);
 
+    // AI button (toggle AI sound-design panel). Visibility is gated on
+    // whether the device's pluginId has a registered SoundDesignAgent —
+    // updated in the resizedHeaderExtra path so it tracks device changes.
+    aiButton_ =
+        std::make_unique<magda::SvgButton>("AI", BinaryData::ai_svg, BinaryData::ai_svgSize);
+    applyHeaderIconStyle(*aiButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    aiButton_->setToggleState(aiPanelVisible_, juce::dontSendNotification);
+    aiButton_->setActive(aiPanelVisible_);
+    aiButton_->onClick = [this]() {
+        aiButton_->setActive(aiButton_->getToggleState());
+        setAIPanelVisible(aiButton_->getToggleState());
+    };
+    addAndMakeVisible(*aiButton_);
+
     // Initialize mods/macros panels from base class
     initializeModsMacrosPanels();
+
+    // Bind the AI panel (created by initializeModsMacrosPanels) to this slot's
+    // device — generations apply to this path, not the focused selection.
+    if (aiPanel_) {
+        aiPanel_->setDevicePath(nodePath_);
+        aiPanel_->setDevicePluginId(device_.pluginId);
+    }
+
+    onAIPanelToggled = [this](bool visible) {
+        if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+            dev->aiPanelOpen = visible;
+        if (onDeviceLayoutChanged)
+            onDeviceLayoutChanged();
+    };
 
     // Gain label in header (dB format, draggable)
     gainLabel_.setRange(-60.0, 12.0, 0.0);
@@ -2204,19 +2234,33 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     const bool isDrumGrid = drumGridUI_ != nullptr;
     gainLabel_.setVisible(false);  // gain has moved to the meter-strip slider
 
-    // Left side: macro, mod
+    // Left side: macro, mod, AI (AI only when this device has a registered
+    // SoundDesignAgent — currently 4OSC; extends with the registry).
+    const bool aiSupported = magda::isSoundDesignSupported(device_.pluginId);
+    auto placeAIButton = [&]() {
+        if (aiSupported) {
+            aiButton_->setVisible(true);
+            aiButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+            headerArea.removeFromLeft(4);
+        } else {
+            aiButton_->setVisible(false);
+        }
+    };
     if (device_.deviceType != magda::DeviceType::MIDI || isDrumGrid) {
         macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
         modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
+        placeAIButton();
     } else if (isArpeggiator_ || isStepSequencer_) {
         macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
         modButton_->setVisible(false);
+        placeAIButton();
     } else {
         macroButton_->setVisible(false);
         modButton_->setVisible(false);
+        aiButton_->setVisible(false);
     }
 
     // place(): right→left removal of one button, with gap, only if visible.

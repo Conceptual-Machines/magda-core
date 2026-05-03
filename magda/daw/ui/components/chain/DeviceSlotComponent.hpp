@@ -218,6 +218,7 @@ class DeviceSlotComponent : public NodeComponent,
     // Header controls
     std::unique_ptr<magda::SvgButton> modButton_;
     std::unique_ptr<magda::SvgButton> macroButton_;
+    std::unique_ptr<magda::SvgButton> aiButton_;
     magda::DraggableValueLabel gainLabel_{magda::DraggableValueLabel::Format::Decibels};
     std::unique_ptr<juce::TextButton> scButton_;        // Sidechain source selector
     std::unique_ptr<magda::SvgButton> multiOutButton_;  // Multi-output routing

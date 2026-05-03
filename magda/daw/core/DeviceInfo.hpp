@@ -87,6 +87,7 @@ struct DeviceInfo {
     bool modPanelOpen = false;    // Modulator panel visible
     bool gainPanelOpen = false;   // Gain panel visible
     bool paramPanelOpen = false;  // Parameter panel visible
+    bool aiPanelOpen = false;     // AI sound-design panel visible
 
     // Device parameters (populated by DeviceProcessor)
     std::vector<ParameterInfo> parameters;
