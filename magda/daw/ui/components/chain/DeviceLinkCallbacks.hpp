@@ -14,6 +14,20 @@ class ParamSlotComponent;
 
 namespace magda::daw::ui {
 
+inline magda::ChainNodePath nearestRackPathForWidgetPath(const magda::ChainNodePath& path) {
+    magda::ChainNodePath rackPath;
+    rackPath.trackId = path.trackId;
+    int rackStepIndex = -1;
+    for (int i = 0; i < static_cast<int>(path.steps.size()); ++i) {
+        if (path.steps[static_cast<size_t>(i)].type == magda::ChainStepType::Rack)
+            rackStepIndex = i;
+    }
+    if (rackStepIndex >= 0) {
+        rackPath.steps.assign(path.steps.begin(), path.steps.begin() + rackStepIndex + 1);
+    }
+    return rackPath;
+}
+
 /**
  * @brief Wire all mod/macro link callbacks onto a widget (ParamSlotComponent or
  * LinkableTextSlider).
@@ -100,13 +114,9 @@ void wireModMacroCallbacks(Widget* widget,
         auto self = safeThis;
         if (!self)
             return;
-        magda::ChainNodePath rackPath;
-        rackPath.trackId = self->nodePath_.trackId;
-        if (!self->nodePath_.steps.empty() &&
-            self->nodePath_.steps[0].type == magda::ChainStepType::Rack) {
-            rackPath.steps.push_back(self->nodePath_.steps[0]);
+        auto rackPath = nearestRackPathForWidgetPath(self->nodePath_);
+        if (rackPath.isValid())
             magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
-        }
         if (!self)
             return;
         self->updateParamModulation();
@@ -263,7 +273,7 @@ void wireModMacroCallbacks(Widget* widget,
         auto self = safeThis;
         if (!self)
             return;
-        auto rackPath = self->nodePath_.parent();
+        auto rackPath = nearestRackPathForWidgetPath(self->nodePath_);
         if (rackPath.isValid())
             magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex, target);
         if (self)
@@ -292,7 +302,7 @@ void wireModMacroCallbacks(Widget* widget,
         auto self = safeThis;
         if (!self)
             return;
-        auto rackPath = self->nodePath_.parent();
+        auto rackPath = nearestRackPathForWidgetPath(self->nodePath_);
         if (rackPath.isValid())
             magda::TrackManager::getInstance().removeMacroLink(rackPath, macroIndex, target);
         if (!self)

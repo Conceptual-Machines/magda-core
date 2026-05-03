@@ -46,11 +46,18 @@ using node_header::applyHeaderIconStyle;
 using node_header::FlatGainSliderLookAndFeel;
 using node_header::GainSliderWithMeterTooltip;
 
-magda::ChainNodePath firstRackPathForDevicePath(const magda::ChainNodePath& devicePath) {
+magda::ChainNodePath nearestRackPathForDevicePath(const magda::ChainNodePath& devicePath) {
     magda::ChainNodePath rackPath;
     rackPath.trackId = devicePath.trackId;
-    if (!devicePath.steps.empty() && devicePath.steps[0].type == magda::ChainStepType::Rack)
-        rackPath.steps.push_back(devicePath.steps[0]);
+    int rackStepIndex = -1;
+    for (int i = 0; i < static_cast<int>(devicePath.steps.size()); ++i) {
+        if (devicePath.steps[static_cast<size_t>(i)].type == magda::ChainStepType::Rack)
+            rackStepIndex = i;
+    }
+    if (rackStepIndex >= 0) {
+        rackPath.steps.assign(devicePath.steps.begin(),
+                              devicePath.steps.begin() + rackStepIndex + 1);
+    }
     return rackPath;
 }
 
@@ -521,7 +528,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
             auto self = safeThis;
             if (!self)
                 return;
-            auto rackPath = firstRackPathForDevicePath(self->nodePath_);
+            auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
             if (rackPath.isValid())
                 magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
             if (!self)
@@ -698,7 +705,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 auto self = safeThis;
                 if (!self)
                     return;
-                auto rackPath = self->nodePath_.parent();
+                auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
                 if (rackPath.isValid())
                     magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex, target);
                 if (self)
@@ -723,7 +730,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
             auto self = safeThis;
             if (!self)
                 return;
-            auto rackPath = self->nodePath_.parent();
+            auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
             if (rackPath.isValid())
                 magda::TrackManager::getInstance().removeMacroLink(rackPath, macroIndex, target);
             if (self) {
@@ -1793,14 +1800,10 @@ void DeviceSlotComponent::updateParamModulation() {
     const auto* mods = getModsData();
     const auto* macros = getMacrosData();
 
-    // Get rack-level mods and macros from parent rack
+    // Get rack-level mods and macros from nearest parent rack
     const magda::ModArray* rackMods = nullptr;
     const magda::MacroArray* rackMacros = nullptr;
-    // Build rack path by taking only the rack step (first step should be the rack)
-    if (!nodePath_.steps.empty() && nodePath_.steps[0].type == magda::ChainStepType::Rack) {
-        magda::ChainNodePath rackPath;
-        rackPath.trackId = nodePath_.trackId;
-        rackPath.steps.push_back(nodePath_.steps[0]);  // Just the rack step
+    if (auto rackPath = nearestRackPathForDevicePath(nodePath_); rackPath.isValid()) {
         if (auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath)) {
             rackMods = &rack->mods;
             rackMacros = &rack->macros;
@@ -4240,7 +4243,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 auto self = safeThis;
                 if (!self)
                     return;
-                auto rackPath = firstRackPathForDevicePath(self->nodePath_);
+                auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
                 if (rackPath.isValid())
                     magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
                 if (self) {
@@ -4443,7 +4446,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 auto self = safeThis;
                 if (!self)
                     return;
-                auto rackPath = firstRackPathForDevicePath(self->nodePath_);
+                auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
                 if (rackPath.isValid())
                     magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
                 if (self) {
@@ -4749,7 +4752,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
             auto self = safeThis;
             if (!self)
                 return;
-            auto rackPath = firstRackPathForDevicePath(self->nodePath_);
+            auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
             if (rackPath.isValid())
                 magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
             if (!self)
@@ -4875,7 +4878,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
             auto self = safeThis;
             if (!self)
                 return;
-            auto rackPath = self->nodePath_.parent();
+            auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
             if (rackPath.isValid())
                 magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex, target);
             if (self)
@@ -4898,7 +4901,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
             auto self = safeThis;
             if (!self)
                 return;
-            auto rackPath = self->nodePath_.parent();
+            auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
             if (rackPath.isValid())
                 magda::TrackManager::getInstance().removeMacroLink(rackPath, macroIndex, target);
             if (!self)

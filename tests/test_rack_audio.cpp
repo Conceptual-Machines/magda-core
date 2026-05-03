@@ -180,6 +180,107 @@ TEST_CASE("MAGDA track presets retarget top-level macro and mod links",
     CHECK(liveDevice.mods[0].links[0].target.paramIndex == 6);
 }
 
+TEST_CASE("MAGDA duplicate track retargets copied macro and mod links",
+          "[rack_audio][duplicate_track][macros][mods]") {
+    RackAudioTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Duplicate Source");
+
+    DeviceInfo topDevice;
+    topDevice.name = "Top Delay";
+    topDevice.format = PluginFormat::Internal;
+    topDevice.pluginId = "delay";
+    auto topDeviceId = fixture.tm().addDeviceToTrack(trackId, topDevice);
+    auto topPath = ChainNodePath::topLevelDevice(trackId, topDeviceId);
+
+    auto rackId = fixture.tm().addRackToTrack(trackId, "Rack");
+    auto rackPath = ChainNodePath::rack(trackId, rackId);
+    auto* rack = fixture.tm().getRackByPath(rackPath);
+    REQUIRE(rack != nullptr);
+    REQUIRE(!rack->chains.empty());
+
+    DeviceInfo rackDevice;
+    rackDevice.name = "Rack EQ";
+    rackDevice.format = PluginFormat::Internal;
+    rackDevice.pluginId = "eq";
+    rackDevice.pluginState = "<PLUGIN><MODIFIERASSIGNMENTS><LFO source=\"1\" paramID=\"freq\" "
+                             "value=\"0.5\"/></MODIFIERASSIGNMENTS></PLUGIN>";
+
+    auto chainId = rack->chains[0].id;
+    auto chainPath = ChainNodePath::chain(trackId, rackId, chainId);
+    auto rackDeviceId = fixture.tm().addDeviceToChainByPath(chainPath, rackDevice);
+    auto rackDevicePath = ChainNodePath::chainDevice(trackId, rackId, chainId, rackDeviceId);
+
+    fixture.tm().setMacroTarget(ChainNodePath::trackLevel(trackId), 0,
+                                ControlTarget::pluginParam(topPath, 3));
+    fixture.tm().setMacroLinkAmount(ChainNodePath::trackLevel(trackId), 0,
+                                    ControlTarget::pluginParam(topPath, 3), 0.25f);
+    fixture.tm().addMod(ChainNodePath::trackLevel(trackId), 0, ModType::LFO, LFOWaveform::Sine);
+    fixture.tm().setModTarget(ChainNodePath::trackLevel(trackId), 0,
+                              ControlTarget::pluginParam(topPath, 4));
+    fixture.tm().setModLinkAmount(ChainNodePath::trackLevel(trackId), 0,
+                                  ControlTarget::pluginParam(topPath, 4), 0.5f);
+
+    fixture.tm().setMacroTarget(rackPath, 0, ControlTarget::pluginParam(rackDevicePath, 5));
+    fixture.tm().setMacroLinkAmount(rackPath, 0, ControlTarget::pluginParam(rackDevicePath, 5),
+                                    0.25f);
+
+    auto* originalRackDevice = fixture.tm().getDeviceInChainByPath(rackDevicePath);
+    REQUIRE(originalRackDevice != nullptr);
+    fixture.tm().addMod(rackDevicePath, 0, ModType::LFO, LFOWaveform::Sine);
+    fixture.tm().setModTarget(rackDevicePath, 0, ControlTarget::pluginParam(rackDevicePath, 6));
+    fixture.tm().setModLinkAmount(rackDevicePath, 0, ControlTarget::pluginParam(rackDevicePath, 6),
+                                  0.5f);
+
+    auto* originalTopDevice = fixture.tm().getDeviceInChainByPath(topPath);
+    REQUIRE(originalTopDevice != nullptr);
+    ControlTarget legacyModRateTarget;
+    legacyModRateTarget.kind = ControlTarget::Kind::ModParam;
+    legacyModRateTarget.modId = 1;
+    legacyModRateTarget.modParamIndex = 0;
+    fixture.tm().setMacroTarget(topPath, 0, legacyModRateTarget);
+    fixture.tm().setMacroLinkAmount(topPath, 0, legacyModRateTarget, 0.5f);
+
+    auto duplicateTrackId = fixture.tm().duplicateTrack(trackId, true);
+    REQUIRE(duplicateTrackId != INVALID_TRACK_ID);
+
+    auto* duplicateTrack = fixture.tm().getTrack(duplicateTrackId);
+    REQUIRE(duplicateTrack != nullptr);
+    REQUIRE(duplicateTrack->chainElements.size() == 2);
+    REQUIRE(isDevice(duplicateTrack->chainElements[0]));
+    REQUIRE(isRack(duplicateTrack->chainElements[1]));
+
+    auto& duplicateTopDevice = getDevice(duplicateTrack->chainElements[0]);
+    auto duplicateTopPath = ChainNodePath::topLevelDevice(duplicateTrackId, duplicateTopDevice.id);
+    REQUIRE(!duplicateTrack->macros.empty());
+    REQUIRE(!duplicateTrack->mods.empty());
+    REQUIRE(!duplicateTrack->macros[0].links.empty());
+    REQUIRE(!duplicateTrack->mods[0].links.empty());
+    CHECK(duplicateTrack->macros[0].links[0].target.devicePath == duplicateTopPath);
+    CHECK(duplicateTrack->mods[0].links[0].target.devicePath == duplicateTopPath);
+    REQUIRE(!duplicateTopDevice.macros.empty());
+    REQUIRE(duplicateTopDevice.macros[0].links.size() == 1);
+    CHECK(duplicateTopDevice.macros[0].links[0].target.isValid());
+    CHECK(duplicateTopDevice.macros[0].links[0].target.devicePath == duplicateTopPath);
+    CHECK(duplicateTopDevice.macros[0].links[0].target.kind == ControlTarget::Kind::ModParam);
+
+    auto& duplicateRack = getRack(duplicateTrack->chainElements[1]);
+    REQUIRE(duplicateRack.chains.size() == 1);
+    REQUIRE(duplicateRack.chains[0].elements.size() == 1);
+    REQUIRE(isDevice(duplicateRack.chains[0].elements[0]));
+
+    auto& duplicateRackDevice = getDevice(duplicateRack.chains[0].elements[0]);
+    auto duplicateRackDevicePath = ChainNodePath::chainDevice(
+        duplicateTrackId, duplicateRack.id, duplicateRack.chains[0].id, duplicateRackDevice.id);
+    REQUIRE(!duplicateRack.macros.empty());
+    REQUIRE(!duplicateRack.macros[0].links.empty());
+    REQUIRE(!duplicateRackDevice.mods.empty());
+    REQUIRE(!duplicateRackDevice.mods[0].links.empty());
+    CHECK(duplicateRack.macros[0].links[0].target.devicePath == duplicateRackDevicePath);
+    CHECK(duplicateRackDevice.mods[0].links[0].target.devicePath == duplicateRackDevicePath);
+    CHECK(!duplicateRackDevice.pluginState.contains("MODIFIERASSIGNMENTS"));
+}
+
 // ============================================================================
 // Rack Data Model Integration Tests
 // ============================================================================

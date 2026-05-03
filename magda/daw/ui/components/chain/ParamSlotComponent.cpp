@@ -876,9 +876,7 @@ void ParamSlotComponent::itemDropped(const SourceDetails& details) {
         }
 
         int macroIndex = parts[2].getIntValue();
-        magda::ControlTarget target;
-        target.devicePath = magda::ChainNodePath::topLevelDevice(0, deviceId_);
-        target.paramIndex = paramIndex_;
+        magda::ControlTarget target = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
         if (onMacroLinked) {
             onMacroLinked(macroIndex, target);
         }
