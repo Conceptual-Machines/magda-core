@@ -9,6 +9,7 @@
 #include "../../magda/agents/llama_model_manager.hpp"
 #include "../../magda/agents/llm_presets.hpp"
 #include "api/magda_api_live.hpp"
+#include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
@@ -458,6 +459,8 @@ bool MagdaDAWApplication::reloadActiveLuaScript() {
     if (scripts.empty()) {
         juce::Logger::writeToLog("[lua-debug] reloadActiveLuaScript: no scripts, unloading");
         luaController_->unloadScript();
+        if (auto* audioBridge = daw_engine_->getAudioBridge())
+            audioBridge->clearSurfaceOnlyMidiInputPorts();
         return false;
     }
 
@@ -481,6 +484,8 @@ bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
 
     const auto ports = getLuaScriptPortsFromConfig(file.getFileName());
     luaController_->setDawInputPort(ports.dawInputPort);
+    if (auto* audioBridge = daw_engine_->getAudioBridge())
+        audioBridge->setSurfaceOnlyMidiInputPort(ports.dawInputPort);
     if (auto* liveApi = dynamic_cast<magda::MagdaApiLive*>(&daw_engine_->getMagdaApi()))
         liveApi->setDefaultMidiOutputPort(ports.midiOutputPort);
 
@@ -491,6 +496,8 @@ bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
         cfg.save();
         return true;
     }
+    if (auto* audioBridge = daw_engine_->getAudioBridge())
+        audioBridge->clearSurfaceOnlyMidiInputPorts();
     juce::Logger::writeToLog("[lua] Failed to load " + file.getFileName() + ": " +
                              luaController_->lastError());
     return false;
@@ -499,6 +506,10 @@ bool MagdaDAWApplication::loadLuaScript(const juce::File& file) {
 void MagdaDAWApplication::unloadLuaScript() {
     if (luaController_ != nullptr)
         luaController_->unloadScript();
+    if (daw_engine_ != nullptr) {
+        if (auto* audioBridge = daw_engine_->getAudioBridge())
+            audioBridge->clearSurfaceOnlyMidiInputPorts();
+    }
     auto& cfg = magda::Config::getInstance();
     cfg.setActiveLuaScript(std::string{});
     cfg.save();

@@ -10,6 +10,7 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
+#include "midi/MidiDeviceMatch.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/SidechainTriggerBus.hpp"
@@ -1534,6 +1535,51 @@ void AudioBridge::enableAllMidiInputDevices() {
     DBG("All MIDI input devices enabled in Tracktion Engine");
 }
 
+bool AudioBridge::isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
+                                         const juce::String& liveName) const {
+    juce::StringArray keys;
+    {
+        juce::ScopedLock lock(surfaceOnlyMidiInputLock_);
+        keys = surfaceOnlyMidiInputPorts_;
+    }
+
+    for (const auto& key : keys) {
+        if (magda::midi::matches(key, liveIdentifier, liveName))
+            return true;
+    }
+
+    return false;
+}
+
+void AudioBridge::removeSurfaceOnlyMidiInputTargets() {
+    auto* playbackContext = edit_.getCurrentPlaybackContext();
+    if (!playbackContext)
+        return;
+
+    bool removedAnyRouting = false;
+    auto& tm = TrackManager::getInstance();
+
+    for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+        if (auto* midiDevice = dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+            if (!isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName()))
+                continue;
+
+            for (const auto& trackInfo : tm.getTracks()) {
+                auto* track = getAudioTrack(trackInfo.id);
+                if (!track)
+                    continue;
+
+                auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                if (result)
+                    removedAnyRouting = true;
+            }
+        }
+    }
+
+    if (removedAnyRouting && playbackContext->isPlaybackGraphAllocated())
+        playbackContext->reallocate();
+}
+
 void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId) {
     auto* track = getAudioTrack(trackId);
     if (!track) {
@@ -1574,6 +1620,7 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
     } else if (midiDeviceId == "all") {
         // Route ALL MIDI input devices to this track
         bool addedAnyRouting = false;
+        bool removedAnyRouting = false;
         DBG("  -> Routing ALL MIDI inputs to track. Total inputs in context: "
             << playbackContext->getAllInputs().size());
 
@@ -1593,10 +1640,19 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                 if (midiDevice->getName() == "All MIDI Ins")
                     continue;
 
-                // Controller ports are NOT excluded from track routing — a
-                // typical MIDI keyboard exposes a single port for both notes
-                // and knob CCs. ControllerRouter intercepts only bound CC
-                // numbers; everything else reaches the track.
+                // Script-owned DAW/control-surface ports are excluded from
+                // track routing. A Launchkey-style device can expose a
+                // separate musical MIDI port for notes while its DAW port
+                // feeds Lua session controls only.
+                if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName())) {
+                    auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                    if (result) {
+                        removedAnyRouting = true;
+                        DBG("  -> Skipped surface-only MIDI input '" << midiDevice->getName()
+                                                                     << "'");
+                    }
+                    continue;
+                }
 
                 // Make sure the device is enabled
                 if (!midiDevice->isEnabled()) {
@@ -1636,7 +1692,7 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
         }
 
         // Reallocate the playback graph to include the new MIDI input nodes
-        if (addedAnyRouting) {
+        if (addedAnyRouting || removedAnyRouting) {
             if (playbackContext->isPlaybackGraphAllocated()) {
                 DBG("  -> Reallocating playback graph to include MIDI input nodes");
                 playbackContext->reallocate();
@@ -1682,6 +1738,27 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
         }
 
         if (midiDevice) {
+            if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName())) {
+                bool removedAnyRouting = false;
+                for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+                    if (&inputDeviceInstance->owner == midiDevice) {
+                        auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                        if (!result) {
+                            DBG("  -> Warning: Could not remove surface-only MIDI target - "
+                                << result.getErrorMessage());
+                        } else {
+                            removedAnyRouting = true;
+                        }
+                        break;
+                    }
+                }
+                if (removedAnyRouting && playbackContext->isPlaybackGraphAllocated())
+                    playbackContext->reallocate();
+                DBG("  -> Refusing to route surface-only MIDI input '" << midiDevice->getName()
+                                                                       << "' to track");
+                return;
+            }
+
             if (!midiDevice->isEnabled()) {
                 midiDevice->setEnabled(true);
             }
@@ -1725,6 +1802,34 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
             }
         }
     }
+}
+
+void AudioBridge::setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName) {
+    {
+        juce::ScopedLock lock(surfaceOnlyMidiInputLock_);
+        surfaceOnlyMidiInputPorts_.clear();
+        if (midiDeviceIdOrName.isNotEmpty()) {
+            surfaceOnlyMidiInputPorts_.addIfNotAlreadyThere(midiDeviceIdOrName);
+
+            if (auto resolved = magda::midi::resolve(juce::MidiInput::getAvailableDevices(),
+                                                     midiDeviceIdOrName)) {
+                surfaceOnlyMidiInputPorts_.addIfNotAlreadyThere(resolved->identifier);
+                surfaceOnlyMidiInputPorts_.addIfNotAlreadyThere(resolved->name);
+            }
+        }
+    }
+
+    removeSurfaceOnlyMidiInputTargets();
+    updateMidiRoutingForSelection();
+}
+
+void AudioBridge::clearSurfaceOnlyMidiInputPorts() {
+    {
+        juce::ScopedLock lock(surfaceOnlyMidiInputLock_);
+        surfaceOnlyMidiInputPorts_.clear();
+    }
+
+    updateMidiRoutingForSelection();
 }
 
 juce::String AudioBridge::getTrackMidiInput(TrackId trackId) const {
