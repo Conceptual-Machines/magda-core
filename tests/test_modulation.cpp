@@ -7,6 +7,14 @@
 
 using namespace magda;
 
+namespace {
+
+ControlTarget testPluginParam(DeviceId deviceId, int paramIndex, TrackId trackId = 1) {
+    return ControlTarget::pluginParam(ChainNodePath::topLevelDevice(trackId, deviceId), paramIndex);
+}
+
+}  // namespace
+
 // ============================================================================
 // MacroInfo Tests
 // ============================================================================
@@ -31,7 +39,7 @@ TEST_CASE("MacroInfo - Basic structure and initialization", "[modulation][macro]
 
 TEST_CASE("MacroInfo - Single link management", "[modulation][macro]") {
     MacroInfo macro(0);
-    ControlTarget target = ControlTarget::fromDeviceId(42, 5);
+    ControlTarget target = testPluginParam(42, 5);
 
     SECTION("Get link from empty macro") {
         REQUIRE(macro.getLink(target) == nullptr);
@@ -62,9 +70,9 @@ TEST_CASE("MacroInfo - Single link management", "[modulation][macro]") {
 TEST_CASE("MacroInfo - Multiple links support", "[modulation][macro]") {
     MacroInfo macro(0);
 
-    ControlTarget target1 = ControlTarget::fromDeviceId(10, 0);
-    ControlTarget target2 = ControlTarget::fromDeviceId(10, 1);
-    ControlTarget target3 = ControlTarget::fromDeviceId(20, 0);
+    ControlTarget target1 = testPluginParam(10, 0);
+    ControlTarget target2 = testPluginParam(10, 1);
+    ControlTarget target3 = testPluginParam(20, 0);
 
     SECTION("Add multiple links") {
         macro.links.push_back(MacroLink{target1, 0.25f});
@@ -117,7 +125,7 @@ TEST_CASE("MacroInfo - Multiple links support", "[modulation][macro]") {
 
 TEST_CASE("MacroInfo - Link uniqueness", "[modulation][macro]") {
     MacroInfo macro(0);
-    ControlTarget target = ControlTarget::fromDeviceId(42, 5);
+    ControlTarget target = testPluginParam(42, 5);
 
     SECTION("Cannot have duplicate links to same target") {
         macro.links.push_back(MacroLink{target, 0.25f});
@@ -151,7 +159,7 @@ TEST_CASE("ModInfo - Basic structure and initialization", "[modulation][mod]") {
 
 TEST_CASE("ModInfo - Link management", "[modulation][mod]") {
     ModInfo mod(0);
-    ControlTarget target = ControlTarget::fromDeviceId(100, 3);
+    ControlTarget target = testPluginParam(100, 3);
 
     SECTION("Add and retrieve link") {
         ModLink link{target, 0.65f};
@@ -164,8 +172,8 @@ TEST_CASE("ModInfo - Link management", "[modulation][mod]") {
     }
 
     SECTION("Multiple links for mod") {
-        ControlTarget target1 = ControlTarget::fromDeviceId(100, 0);
-        ControlTarget target2 = ControlTarget::fromDeviceId(100, 1);
+        ControlTarget target1 = testPluginParam(100, 0);
+        ControlTarget target2 = testPluginParam(100, 1);
 
         mod.links.push_back(ModLink{target1, 0.3f});
         mod.links.push_back(ModLink{target2, 0.7f});
@@ -189,15 +197,15 @@ TEST_CASE("ControlTarget - Validity and comparison", "[modulation][macro]") {
     }
 
     SECTION("Valid target") {
-        ControlTarget target = ControlTarget::fromDeviceId(10, 5);
+        ControlTarget target = testPluginParam(10, 5);
         REQUIRE(target.isValid());
     }
 
     SECTION("Equality comparison") {
-        ControlTarget target1 = ControlTarget::fromDeviceId(10, 5);
-        ControlTarget target2 = ControlTarget::fromDeviceId(10, 5);
-        ControlTarget target3 = ControlTarget::fromDeviceId(10, 6);
-        ControlTarget target4 = ControlTarget::fromDeviceId(11, 5);
+        ControlTarget target1 = testPluginParam(10, 5);
+        ControlTarget target2 = testPluginParam(10, 5);
+        ControlTarget target3 = testPluginParam(10, 6);
+        ControlTarget target4 = testPluginParam(11, 5);
 
         REQUIRE(target1 == target2);
         REQUIRE_FALSE(target1 == target3);
@@ -213,14 +221,14 @@ TEST_CASE("ControlTarget - Validity and comparison", "[modulation][mod]") {
     }
 
     SECTION("Valid target") {
-        ControlTarget target = ControlTarget::fromDeviceId(20, 3);
+        ControlTarget target = testPluginParam(20, 3);
         REQUIRE(target.isValid());
     }
 
     SECTION("Equality comparison") {
-        ControlTarget target1 = ControlTarget::fromDeviceId(20, 3);
-        ControlTarget target2 = ControlTarget::fromDeviceId(20, 3);
-        ControlTarget target3 = ControlTarget::fromDeviceId(21, 3);
+        ControlTarget target1 = testPluginParam(20, 3);
+        ControlTarget target2 = testPluginParam(20, 3);
+        ControlTarget target3 = testPluginParam(21, 3);
 
         REQUIRE(target1 == target2);
         REQUIRE_FALSE(target1 == target3);
@@ -328,7 +336,7 @@ TEST_CASE("TrackManager - Device macro operations", "[modulation][macro][integra
     }
 
     SECTION("Set device macro target and link amount") {
-        ControlTarget target = ControlTarget::fromDeviceId(deviceId, 3);
+        ControlTarget target = testPluginParam(deviceId, 3, trackId);
 
         trackManager.setMacroTarget(devicePath, 0, target);
         trackManager.setMacroLinkAmount(devicePath, 0, target, 0.8f);
@@ -342,8 +350,8 @@ TEST_CASE("TrackManager - Device macro operations", "[modulation][macro][integra
     }
 
     SECTION("Create multiple macro links on same device") {
-        ControlTarget target1 = ControlTarget::fromDeviceId(deviceId, 0);
-        ControlTarget target2 = ControlTarget::fromDeviceId(deviceId, 1);
+        ControlTarget target1 = testPluginParam(deviceId, 0, trackId);
+        ControlTarget target2 = testPluginParam(deviceId, 1, trackId);
 
         trackManager.setMacroLinkAmount(devicePath, 0, target1, 0.3f);
         trackManager.setMacroLinkAmount(devicePath, 0, target2, 0.7f);
@@ -388,7 +396,7 @@ TEST_CASE("TrackManager - Rack macro operations", "[modulation][macro][integrati
     SECTION("Set rack macro link amount") {
         // Add a device to one of the rack's chains
         DeviceId deviceId(100);  // Mock device ID
-        ControlTarget target = ControlTarget::fromDeviceId(deviceId, 2);
+        ControlTarget target = testPluginParam(deviceId, 2, trackId);
 
         trackManager.setMacroLinkAmount(rackPath, 0, target, 0.9f);
 
@@ -403,8 +411,8 @@ TEST_CASE("TrackManager - Rack macro operations", "[modulation][macro][integrati
     SECTION("Rack macro can link to multiple devices") {
         DeviceId device1(100);
         DeviceId device2(200);
-        ControlTarget target1 = ControlTarget::fromDeviceId(device1, 0);
-        ControlTarget target2 = ControlTarget::fromDeviceId(device2, 5);
+        ControlTarget target1 = testPluginParam(device1, 0, trackId);
+        ControlTarget target2 = testPluginParam(device2, 5, trackId);
 
         trackManager.setMacroLinkAmount(rackPath, 1, target1, 0.4f);
         trackManager.setMacroLinkAmount(rackPath, 1, target2, 0.6f);
@@ -440,7 +448,7 @@ TEST_CASE("TrackManager - Device mod operations", "[modulation][mod][integration
 
     SECTION("Set device mod target and link amount") {
         trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-        ControlTarget target = ControlTarget::fromDeviceId(deviceId, 4);
+        ControlTarget target = testPluginParam(deviceId, 4, trackId);
 
         trackManager.setModTarget(devicePath, 0, target);
         trackManager.setModLinkAmount(devicePath, 0, target, 0.55f);
@@ -487,7 +495,7 @@ TEST_CASE("TrackManager - Rack vs Device macro isolation", "[modulation][macro][
 
     // Add a device (in simplified form for this test)
     DeviceId deviceId(123);
-    ControlTarget target = ControlTarget::fromDeviceId(deviceId, 0);
+    ControlTarget target = testPluginParam(deviceId, 0, trackId);
 
     SECTION("Rack and device macros are independent") {
         // Set rack macro link
@@ -528,7 +536,7 @@ TEST_CASE("TrackManager - Modulation calculation scenarios", "[modulation][integ
     SECTION("Single macro modulation") {
         // Macro value = 0.5, link amount = 0.8
         // Expected modulation = 0.5 * 0.8 = 0.4
-        ControlTarget target = ControlTarget::fromDeviceId(deviceId, 0);
+        ControlTarget target = testPluginParam(deviceId, 0, trackId);
         trackManager.setMacroValue(devicePath, 0, 0.5f);
         trackManager.setMacroLinkAmount(devicePath, 0, target, 0.8f);
 
@@ -544,7 +552,7 @@ TEST_CASE("TrackManager - Modulation calculation scenarios", "[modulation][integ
         // Macro 0: value=0.6, amount=0.5 → 0.3
         // Macro 1: value=0.4, amount=1.0 → 0.4
         // Total modulation = 0.3 + 0.4 = 0.7
-        ControlTarget target = ControlTarget::fromDeviceId(deviceId, 0);
+        ControlTarget target = testPluginParam(deviceId, 0, trackId);
 
         trackManager.setMacroValue(devicePath, 0, 0.6f);
         trackManager.setMacroLinkAmount(devicePath, 0, target, 0.5f);
@@ -563,7 +571,7 @@ TEST_CASE("TrackManager - Modulation calculation scenarios", "[modulation][integ
 
     SECTION("Mod link amount drives modulation depth") {
         trackManager.addMod(devicePath, 0, ModType::LFO, LFOWaveform::Sine);
-        ControlTarget target = ControlTarget::fromDeviceId(deviceId, 2);
+        ControlTarget target = testPluginParam(deviceId, 2, trackId);
         trackManager.setModLinkAmount(devicePath, 0, target, 0.6f);
 
         auto* device = trackManager.getDeviceInChainByPath(devicePath);

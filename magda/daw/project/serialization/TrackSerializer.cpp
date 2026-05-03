@@ -252,13 +252,6 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
         outTrack.selectedGlobalMacroIndex =
             static_cast<int>(obj->getProperty("selectedGlobalMacroIndex"));
 
-    // Pre-#1149 projects may carry legacy mod/macro link targets whose
-    // ChainNodePath has trackId=0 (the old `deviceId`-only format). Now that
-    // the deserializer migrates such targets into links[], rewrite their
-    // trackId to the owning track's id so they compare equal to the live
-    // UI's targets — otherwise right-click "linked mods" silently misses them.
-    fixupLegacyLinkTrackIds(outTrack);
-
     return true;
 }
 
@@ -545,6 +538,8 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
     obj->setProperty("name", rack.name);
     obj->setProperty("bypassed", rack.bypassed);
     obj->setProperty("expanded", rack.expanded);
+    obj->setProperty("modPanelOpen", rack.modPanelOpen);
+    obj->setProperty("paramPanelOpen", rack.paramPanelOpen);
     obj->setProperty("volume", rack.volume);
     obj->setProperty("pan", rack.pan);
 
@@ -592,6 +587,10 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
     outRack.name = obj->getProperty("name").toString();
     outRack.bypassed = obj->getProperty("bypassed");
     outRack.expanded = obj->getProperty("expanded");
+    if (obj->hasProperty("modPanelOpen"))
+        outRack.modPanelOpen = static_cast<bool>(obj->getProperty("modPanelOpen"));
+    if (obj->hasProperty("paramPanelOpen"))
+        outRack.paramPanelOpen = static_cast<bool>(obj->getProperty("paramPanelOpen"));
     outRack.volume = obj->getProperty("volume");
     outRack.pan = obj->getProperty("pan");
 

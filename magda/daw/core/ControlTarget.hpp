@@ -137,18 +137,6 @@ struct ControlTarget {
         return t;
     }
 
-    // Legacy-style factory: build a PluginParam target from a top-level DeviceId.
-    // Used by call sites that originally constructed MacroTarget{deviceId, paramIndex}.
-    // Uses trackId 0 as a sentinel because DeviceId is globally unique within a
-    // project; the trackId is only consulted by path-rewriting machinery.
-    static ControlTarget fromDeviceId(DeviceId deviceId, int paramIndex) {
-        ControlTarget t;
-        t.kind = Kind::PluginParam;
-        t.devicePath = ChainNodePath::topLevelDevice(0, deviceId);
-        t.paramIndex = paramIndex;
-        return t;
-    }
-
     // Legacy convenience — extract the leaf device id from devicePath.
     DeviceId deviceId() const {
         return devicePath.getDeviceId();

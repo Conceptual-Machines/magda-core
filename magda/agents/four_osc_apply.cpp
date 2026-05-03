@@ -186,16 +186,20 @@ juce::String applyFourOscPresetToPath(const FourOscAgent::Preset& preset,
     }
 
     // Capture the now-mutated live plugin state into MAGDA's
-    // DeviceInfo.pluginState BEFORE notifying — otherwise the
-    // trackDevicesChanged → syncTrackPlugins path will re-push the
-    // stale pluginState and clobber the waveShape/filterType writes
-    // we just made on the live ValueTree.
+    // DeviceInfo.pluginState so a later trackDevicesChanged → syncTrackPlugins
+    // doesn't re-push the stale pluginState and clobber the waveShape /
+    // filterType writes we just made on the live ValueTree.
+    //
+    // Intentionally do NOT call tm.notifyTrackDevicesChanged here. That
+    // tears the chain UI down (rebuildNodeComponents) immediately, which
+    // destroys the AI panel that's about to display the apply status and
+    // disclaimer. The caller (AIPanelComponent::onGenerationFinished)
+    // fires the notify once the panel has persisted its final text.
     if (auto* engine = tm.getAudioEngine()) {
         if (auto* bridge = engine->getAudioBridge()) {
             bridge->getPluginManager().capturePluginState(device->id);
         }
     }
-    tm.notifyTrackDevicesChanged(path.trackId);
 
     // Stash the agent's preset name as the default for the next save
     // dialog on this device. If the agent picked a category, prepend it

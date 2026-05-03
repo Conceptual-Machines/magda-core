@@ -44,6 +44,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     valueSlider_.onRightClicked = [this]() {
         showParamLinkMenu(this, buildLinkContext(),
                           {.onModUnlinked = onModUnlinked,
+                           .onRackModUnlinked = onRackModUnlinked,
                            .onTrackModUnlinked = onTrackModUnlinked,
                            .onModLinkedWithAmount = onModLinkedWithAmount,
                            .onMacroLinked = onMacroLinked,
@@ -619,6 +620,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
         }
         showParamLinkMenu(this, buildLinkContext(),
                           {.onModUnlinked = onModUnlinked,
+                           .onRackModUnlinked = onRackModUnlinked,
                            .onTrackModUnlinked = onTrackModUnlinked,
                            .onModLinkedWithAmount = onModLinkedWithAmount,
                            .onMacroLinked = onMacroLinked,
@@ -874,9 +876,7 @@ void ParamSlotComponent::itemDropped(const SourceDetails& details) {
         }
 
         int macroIndex = parts[2].getIntValue();
-        magda::ControlTarget target;
-        target.devicePath = magda::ChainNodePath::topLevelDevice(0, deviceId_);
-        target.paramIndex = paramIndex_;
+        magda::ControlTarget target = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
         if (onMacroLinked) {
             onMacroLinked(macroIndex, target);
         }

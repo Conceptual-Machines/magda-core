@@ -164,6 +164,38 @@ class NodeComponent : public juce::Component,
     // Override to add extra header buttons (between name and delete)
     virtual void resizedHeaderExtra(juce::Rectangle<int>& headerArea);
 
+    /**
+     * Override to expose a preset menu button. The base class reserves a
+     * slot for it between the power button and whatever resizedHeaderExtra
+     * positions, locking the right-side icon order to:
+     *
+     *     [...subclass extras...][preset][power][delete]
+     *
+     * Subclasses MUST NOT position this button themselves — the base
+     * owns its bounds. Returning nullptr (default) means no preset slot.
+     *
+     * Existed to fix a recurring class of bugs where new buttons added
+     * inside resizedHeaderExtra ended up to the right of the preset
+     * button, breaking the [preset][power][delete] right-edge contract.
+     */
+    virtual juce::Component* getHeaderPresetButton() {
+        return nullptr;
+    }
+
+    /**
+     * Override to substitute a different power/bypass button. Defaults to
+     * the base's own bypassButton_; subclasses that want a custom-styled
+     * button (e.g. DeviceSlotComponent's red/green SvgButton onButton_)
+     * return their own and hide bypassButton_ via setBypassButtonVisible.
+     *
+     * The base reserves the slot to the LEFT of [delete], so the right
+     * edge is always [preset][power][delete] regardless of which subclass
+     * supplied the buttons.
+     */
+    virtual juce::Component* getHeaderPowerButton() {
+        return bypassButton_.get();
+    }
+
     // Override to provide a name for the collapsed rotated label
     virtual juce::String getCollapsedName() const {
         return nameLabel_.getText();

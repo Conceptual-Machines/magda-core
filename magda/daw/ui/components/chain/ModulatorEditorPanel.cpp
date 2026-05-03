@@ -774,6 +774,7 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
         if (e.kind == SrcKind::Macro) {
             magda::ControlTarget t;
             t.kind = magda::ControlTarget::Kind::ModParam;
+            t.devicePath = learnPath;
             t.modId = rateModId;
             t.modParamIndex = 0;
             if (e.parentPath.isTrackLevel) {
@@ -786,6 +787,7 @@ void ModulatorEditorPanel::showRateSliderContextMenu() {
         } else {
             magda::ControlTarget t;
             t.kind = magda::ControlTarget::Kind::ModParam;
+            t.devicePath = learnPath;
             t.modId = rateModId;
             t.modParamIndex = 0;
             if (e.parentPath.isTrackLevel) {
@@ -1270,6 +1272,7 @@ void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
                     if (sel.macroIndex >= 0 && sel.macroIndex < static_cast<int>(macros->size())) {
                         magda::ControlTarget t;
                         t.kind = magda::ControlTarget::Kind::ModParam;
+                        t.devicePath = ownerDevicePath_;
                         t.modId = currentMod_.id;
                         t.modParamIndex = 0;
                         if (auto* link = (*macros)[static_cast<size_t>(sel.macroIndex)].getLink(t))
@@ -1282,6 +1285,7 @@ void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
                     if (sel.modIndex >= 0 && sel.modIndex < static_cast<int>(mods->size())) {
                         magda::ControlTarget t;
                         t.kind = magda::ControlTarget::Kind::ModParam;
+                        t.devicePath = ownerDevicePath_;
                         t.modId = currentMod_.id;
                         t.modParamIndex = 0;
                         if (auto* link = (*mods)[static_cast<size_t>(sel.modIndex)].getLink(t))
@@ -1417,6 +1421,7 @@ void ModulatorEditorPanel::writeLinkAmountFromActiveSource(float amount) {
             return;
         magda::ControlTarget target;
         target.kind = magda::ControlTarget::Kind::ModParam;
+        target.devicePath = ownerDevicePath_;
         target.modId = currentMod_.id;
         target.modParamIndex = 0;  // Rate
 
@@ -1436,6 +1441,7 @@ void ModulatorEditorPanel::writeLinkAmountFromActiveSource(float amount) {
             return;
         magda::ControlTarget target;
         target.kind = magda::ControlTarget::Kind::ModParam;
+        target.devicePath = ownerDevicePath_;
         target.modId = currentMod_.id;
         target.modParamIndex = 0;  // Rate
 

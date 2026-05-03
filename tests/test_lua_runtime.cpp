@@ -8,6 +8,15 @@ using magda::scripting::LuaRuntime;
 
 namespace {
 
+juce::File testTempRoot() {
+    auto envTmp = juce::SystemStats::getEnvironmentVariable("TMPDIR", {});
+    auto root = envTmp.isNotEmpty() ? juce::File(envTmp)
+                                    : juce::File::getSpecialLocation(juce::File::tempDirectory);
+    auto luaRoot = root.getChildFile("magda_tests");
+    luaRoot.createDirectory();
+    return luaRoot;
+}
+
 // Captures every line passed to juce::Logger::writeToLog while installed.
 // Restores the previous logger on destruction.
 class CapturingLogger : public juce::Logger {
@@ -166,8 +175,7 @@ TEST_CASE("LuaRuntime evalFile loads a file and reports its filename on error", 
     // Lua truncates the chunk source name to LUA_IDSIZE (60) chars and keeps
     // the tail when the name starts with '@', so the bare filename always
     // survives even on long temp-directory paths.
-    auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
-    auto scriptFile = tempDir.getChildFile("magda_test_lua_runtime.lua");
+    auto scriptFile = testTempRoot().getChildFile("magda_test_lua_runtime.lua");
     scriptFile.replaceWithText("error('intentional')\n");
 
     LuaRuntime rt;

@@ -245,6 +245,7 @@ void ModKnobComponent::showContextMenu() {
         juce::PopupMenu perModMenu;
         magda::ControlTarget t;
         t.kind = magda::ControlTarget::Kind::ModParam;
+        t.devicePath = parentPath_;
         t.modId = modId;
         t.modParamIndex = 0;  // Rate
         const bool isCurrentTarget = currentMod_.getLink(t) != nullptr;
@@ -266,7 +267,7 @@ void ModKnobComponent::showContextMenu() {
     auto modifiers = availableModifiers_;  // Capture by value for async safety
 
     menu.showMenuAsync(juce::PopupMenu::Options(),
-                       [safeThis, capturedEnabled, modifiers, kModRateBaseId](int result) {
+                       [safeThis, capturedEnabled, modifiers](int result) {
                            if (safeThis == nullptr || result == 0) {
                                return;
                            }
@@ -296,6 +297,7 @@ void ModKnobComponent::showContextMenu() {
                            if (modSlot >= 0 && modSlot < static_cast<int>(modifiers.size())) {
                                magda::ControlTarget t;
                                t.kind = magda::ControlTarget::Kind::ModParam;
+                               t.devicePath = safeThis->parentPath_;
                                t.modId = modifiers[static_cast<size_t>(modSlot)].first;
                                t.modParamIndex = 0;  // Rate
                                if (safeThis->onTargetChanged)

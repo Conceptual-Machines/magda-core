@@ -496,9 +496,19 @@ void NodeComponent::resized() {
             headerArea.removeFromRight(4);
         }
 
-        // Bypass/power button next to delete (if visible)
-        if (bypassButton_->isVisible()) {
-            bypassButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        // Power slot — defaults to base's bypassButton_, but subclasses can
+        // substitute a custom-styled button via getHeaderPowerButton().
+        if (auto* power = getHeaderPowerButton(); power != nullptr && power->isVisible()) {
+            power->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+            headerArea.removeFromRight(4);
+        }
+
+        // Preset slot — base class reserves the position so the right-edge
+        // icon order is locked to [preset][power][delete] and a subclass
+        // can't accidentally tuck a button between them in
+        // resizedHeaderExtra.
+        if (auto* preset = getHeaderPresetButton(); preset != nullptr && preset->isVisible()) {
+            preset->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
             headerArea.removeFromRight(4);
         }
 

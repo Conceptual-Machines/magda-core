@@ -56,6 +56,9 @@ class AIPanelComponent : public juce::Component {
     void setBusy(bool busy);
     // Mirror output_'s text onto the bound DeviceInfo so slot rebuilds restore it.
     void persistOutput();
+    // Re-insert persisted text in coloured sections so the disclaimer keeps
+    // its yellow tint after a rebuild.
+    void restoreOutput(const juce::String& text);
 
     juce::String pluginId_;
     ChainNodePath path_;

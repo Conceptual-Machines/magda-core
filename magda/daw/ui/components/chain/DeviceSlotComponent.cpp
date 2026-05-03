@@ -46,6 +46,21 @@ using node_header::applyHeaderIconStyle;
 using node_header::FlatGainSliderLookAndFeel;
 using node_header::GainSliderWithMeterTooltip;
 
+magda::ChainNodePath nearestRackPathForDevicePath(const magda::ChainNodePath& devicePath) {
+    magda::ChainNodePath rackPath;
+    rackPath.trackId = devicePath.trackId;
+    int rackStepIndex = -1;
+    for (int i = 0; i < static_cast<int>(devicePath.steps.size()); ++i) {
+        if (devicePath.steps[static_cast<size_t>(i)].type == magda::ChainStepType::Rack)
+            rackStepIndex = i;
+    }
+    if (rackStepIndex >= 0) {
+        rackPath.steps.assign(devicePath.steps.begin(),
+                              devicePath.steps.begin() + rackStepIndex + 1);
+    }
+    return rackPath;
+}
+
 // LookAndFeel for the plugin-presets header button. Visually a flat label
 // with a chevron on the right, so it reads as a menu trigger rather than a
 // "select one of these values" combo.
@@ -508,6 +523,19 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
             self->updateParamModulation();
             self->updateModsPanel();
         };
+        paramGrid_->getSlot(i)->onRackModUnlinked = [safeThis = juce::Component::SafePointer(this)](
+                                                        int modIndex, magda::ControlTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
+            if (rackPath.isValid())
+                magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
+            if (!self)
+                return;
+            self->updateParamModulation();
+            self->updateModsPanel();
+        };
         paramGrid_->getSlot(i)->onTrackModUnlinked =
             [safeThis = juce::Component::SafePointer(this)](int modIndex,
                                                             magda::ControlTarget target) {
@@ -677,7 +705,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 auto self = safeThis;
                 if (!self)
                     return;
-                auto rackPath = self->nodePath_.parent();
+                auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
                 if (rackPath.isValid())
                     magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex, target);
                 if (self)
@@ -702,7 +730,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
             auto self = safeThis;
             if (!self)
                 return;
-            auto rackPath = self->nodePath_.parent();
+            auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
             if (rackPath.isValid())
                 magda::TrackManager::getInstance().removeMacroLink(rackPath, macroIndex, target);
             if (self) {
@@ -1772,14 +1800,10 @@ void DeviceSlotComponent::updateParamModulation() {
     const auto* mods = getModsData();
     const auto* macros = getMacrosData();
 
-    // Get rack-level mods and macros from parent rack
+    // Get rack-level mods and macros from nearest parent rack
     const magda::ModArray* rackMods = nullptr;
     const magda::MacroArray* rackMacros = nullptr;
-    // Build rack path by taking only the rack step (first step should be the rack)
-    if (!nodePath_.steps.empty() && nodePath_.steps[0].type == magda::ChainStepType::Rack) {
-        magda::ChainNodePath rackPath;
-        rackPath.trackId = nodePath_.trackId;
-        rackPath.steps.push_back(nodePath_.steps[0]);  // Just the rack step
+    if (auto rackPath = nearestRackPathForDevicePath(nodePath_); rackPath.isValid()) {
         if (auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath)) {
             rackMods = &rack->mods;
             rackMacros = &rack->macros;
@@ -2280,7 +2304,12 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         headerArea.removeFromRight(4);
     };
 
-    // MIDI branch: preset, exportClip, power, X
+    // The right edge of the header — [preset][power][delete] — is now owned
+    // by NodeComponent (preset slot reserved via getHeaderPresetButton(),
+    // bypass + delete by the base class itself). Subclass placements here
+    // sit to the LEFT of that triplet and can't accidentally split it.
+
+    // MIDI branch: exportClip, [preset, power, delete]
     if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
         learnButton_->setVisible(false);
         if (scButton_)
@@ -2288,18 +2317,20 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         if (multiOutButton_)
             multiOutButton_->setVisible(false);
         onButton_->setVisible(true);
+        // Chord engine state is meant to live in clips on the timeline (use
+        // the copy-pattern / export button to bake a progression into a
+        // clip), so the .mps preset surface would just duplicate that flow
+        // and confuse users. Hide it; arp + step sequencer keep theirs.
         if (presetButton_)
-            presetButton_->setVisible(true);
+            presetButton_->setVisible(!isChordEngine_);
         if (exportClipButton_)
             exportClipButton_->setVisible(true);
 
-        place(onButton_.get());
         place(exportClipButton_ ? exportClipButton_.get() : nullptr);
-        place(presetButton_ ? presetButton_.get() : nullptr);
         return;
     }
 
-    // Non-MIDI: ui, learn, sc, multiOut, preset, power, X
+    // Non-MIDI: ui, learn, sc, multiOut, [preset, power, delete]
     if (exportClipButton_)
         exportClipButton_->setVisible(false);
 
@@ -2313,8 +2344,6 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     if (presetButton_)
         presetButton_->setVisible(true);
 
-    place(onButton_.get());
-    place(presetButton_ ? presetButton_.get() : nullptr);
     place(scButton_ ? scButton_.get() : nullptr);
     place(multiOutButton_ ? multiOutButton_.get() : nullptr);
     place(uiButton_.get());
@@ -4210,6 +4239,19 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 }
             };
 
+            slider->onRackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
+                auto self = safeThis;
+                if (!self)
+                    return;
+                auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
+                if (rackPath.isValid())
+                    magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
+                if (self) {
+                    self->updateParamModulation();
+                    self->updateModsPanel();
+                }
+            };
+
             slider->onTrackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
@@ -4394,6 +4436,19 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 if (!self)
                     return;
                 magda::TrackManager::getInstance().removeModLink(self->nodePath_, modIndex, target);
+                if (self) {
+                    self->updateParamModulation();
+                    self->updateModsPanel();
+                }
+            };
+
+            ps->onRackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
+                auto self = safeThis;
+                if (!self)
+                    return;
+                auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
+                if (rackPath.isValid())
+                    magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
                 if (self) {
                     self->updateParamModulation();
                     self->updateModsPanel();
@@ -4692,6 +4747,19 @@ void DeviceSlotComponent::setupCustomUILinking() {
             self->updateParamModulation();
             self->updateModsPanel();
         };
+        slider->onRackModUnlinked = [safeThis = juce::Component::SafePointer(this)](
+                                        int modIndex, magda::ControlTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
+            if (rackPath.isValid())
+                magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
+            if (!self)
+                return;
+            self->updateParamModulation();
+            self->updateModsPanel();
+        };
         slider->onTrackModUnlinked = [safeThis = juce::Component::SafePointer(this)](
                                          int modIndex, magda::ControlTarget target) {
             auto self = safeThis;
@@ -4810,7 +4878,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
             auto self = safeThis;
             if (!self)
                 return;
-            auto rackPath = self->nodePath_.parent();
+            auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
             if (rackPath.isValid())
                 magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex, target);
             if (self)
@@ -4833,7 +4901,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
             auto self = safeThis;
             if (!self)
                 return;
-            auto rackPath = self->nodePath_.parent();
+            auto rackPath = nearestRackPathForDevicePath(self->nodePath_);
             if (rackPath.isValid())
                 magda::TrackManager::getInstance().removeMacroLink(rackPath, macroIndex, target);
             if (!self)

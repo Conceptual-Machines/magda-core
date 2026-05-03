@@ -16,8 +16,17 @@ using magda::test::MockMagdaApi;
 
 namespace {
 
+juce::File testTempRoot() {
+    auto envTmp = juce::SystemStats::getEnvironmentVariable("TMPDIR", {});
+    auto root = envTmp.isNotEmpty() ? juce::File(envTmp)
+                                    : juce::File::getSpecialLocation(juce::File::tempDirectory);
+    auto luaRoot = root.getChildFile("magda_tests");
+    luaRoot.createDirectory();
+    return luaRoot;
+}
+
 juce::File writeTempScript(const juce::String& source, const juce::String& name) {
-    auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile(name);
+    auto file = testTempRoot().getChildFile(name);
     file.replaceWithText(source);
     return file;
 }

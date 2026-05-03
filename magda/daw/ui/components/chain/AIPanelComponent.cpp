@@ -124,16 +124,74 @@ AIPanelComponent::~AIPanelComponent() {
     }
 }
 
+namespace {
+// Marker that begins the disclaimer line so we can locate it when restoring
+// from the persisted output and recolour it yellow. Kept here so the writer
+// (onGenerationFinished) and the restorer (setDevicePath) agree on the
+// exact bytes — the leading "\n\n" is part of the marker so split logic
+// works on the first occurrence with no ambiguity.
+constexpr const char* kDisclaimerMarker = "\n\nnote: starting point only";
+
+// Extract the value of a top-level JSON string field. The streamed content
+// has had its curly braces replaced with spaces (see appendStreamingToken),
+// but `"<field>":"<value>"` survives intact. Returns empty if not found or
+// the closing quote is missing.
+juce::String extractStringField(const juce::String& text, const juce::String& field) {
+    auto key = "\"" + field + "\":\"";
+    int start = text.indexOf(key);
+    if (start < 0)
+        return {};
+    start += key.length();
+    int end = start;
+    const int len = text.length();
+    while (end < len) {
+        auto c = text[end];
+        if (c == '"' && (end == 0 || text[end - 1] != '\\'))
+            break;
+        ++end;
+    }
+    if (end >= len)
+        return {};
+    return text.substring(start, end);
+}
+}  // namespace
+
 void AIPanelComponent::setDevicePath(const ChainNodePath& path) {
     path_ = path;
     // Restore any prior output for this device — DeviceInfo persists across
     // DeviceSlotComponent rebuilds (which happen on notifyTrackDevicesChanged
     // for plugin loads, preset apply, sidechain edits, etc.), so the user's
     // streamed result and prompt history survive a slot teardown.
-    if (auto* dev = TrackManager::getInstance().getDeviceInChainByPath(path_)) {
-        output_.setText(dev->aiPanelOutput, juce::dontSendNotification);
-        output_.moveCaretToEnd();
+    if (auto* dev = TrackManager::getInstance().getDeviceInChainByPath(path_))
+        restoreOutput(dev->aiPanelOutput);
+}
+
+void AIPanelComponent::restoreOutput(const juce::String& text) {
+    // Re-insert the persisted text section-by-section so the disclaimer keeps
+    // its yellow tint after a slot rebuild. setText would put everything in
+    // one section using the current textColourId — recolouring afterwards is
+    // not something juce::TextEditor supports per range, so we have to insert
+    // the prefix and the disclaimer separately.
+    output_.setText({}, juce::dontSendNotification);
+    if (text.isEmpty())
+        return;
+
+    output_.moveCaretToEnd();
+    const int markerIdx = text.indexOf(juce::String(kDisclaimerMarker));
+    if (markerIdx < 0) {
+        output_.setColour(juce::TextEditor::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        output_.insertTextAtCaret(text);
+    } else {
+        output_.setColour(juce::TextEditor::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        output_.insertTextAtCaret(text.substring(0, markerIdx));
+        output_.setColour(juce::TextEditor::textColourId, juce::Colours::yellow);
+        output_.insertTextAtCaret(text.substring(markerIdx));
+        output_.setColour(juce::TextEditor::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     }
+    output_.moveCaretToEnd();
 }
 
 void AIPanelComponent::setDevicePluginId(const juce::String& pluginId) {
@@ -172,6 +230,11 @@ void AIPanelComponent::resized() {
 
 void AIPanelComponent::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND));
+    // NodeComponent paints a border around the panel strip, but our fillAll
+    // above wipes the left / right / bottom edges of it. Redraw the border
+    // here so the panel has a consistent outline on all four sides.
+    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+    g.drawRect(getLocalBounds(), 1);
 }
 
 void AIPanelComponent::submitPrompt() {
@@ -202,15 +265,16 @@ void AIPanelComponent::submitPrompt() {
 
     setBusy(true);
 
-    // Mark where the streamed response starts so onGenerationFinished can
-    // replace the raw JSON we showed during streaming with a clean status
-    // line. Add a trailing newline so the first token lands on its own row.
-    auto text = output_.getText();
-    if (text.isNotEmpty() && !text.endsWithChar('\n'))
-        text += "\n";
-    streamingStart_ = text.length();
-    output_.setText(text, juce::dontSendNotification);
+    // Make sure streaming starts on its own row. insertTextAtCaret keeps any
+    // earlier coloured sections intact, where setText would flatten them.
     output_.moveCaretToEnd();
+    auto current = output_.getText();
+    if (current.isNotEmpty() && !current.endsWithChar('\n')) {
+        output_.setColour(juce::TextEditor::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        output_.insertTextAtCaret("\n");
+    }
+    streamingStart_ = output_.getText().length();
     persistOutput();
 
     thread_ = std::make_unique<GenerateThread>(*this, std::move(agent), prompt, path_);
@@ -230,16 +294,63 @@ void AIPanelComponent::appendStreamingToken(const juce::String& token) {
 }
 
 void AIPanelComponent::onGenerationFinished(juce::String status) {
-    // Keep the streamed response visible — append the status line after it.
-    auto text = output_.getText();
-    if (text.isNotEmpty() && !text.endsWithChar('\n'))
-        text += "\n";
-    text += juce::String(juce::CharPointer_UTF8("\xe2\x86\x92 ")) + status;
-    output_.setText(text, juce::dontSendNotification);
+    const bool succeeded = status.startsWith("applied");
+
+    // On success, replace the streamed JSON dump with just the preset's
+    // description — the param/wave/fx blocks are noise once the apply has
+    // already run. On error / cancel keep the raw stream so the user can
+    // see what came back. Falls back to the streamed text untouched if the
+    // description field can't be located.
+    if (succeeded && streamingStart_ >= 0 && streamingStart_ < output_.getText().length()) {
+        auto streamed = output_.getText().substring(streamingStart_);
+        auto description = extractStringField(streamed, "description");
+        if (description.isNotEmpty()) {
+            output_.setHighlightedRegion(
+                juce::Range<int>(streamingStart_, output_.getText().length()));
+            output_.setColour(juce::TextEditor::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            output_.insertTextAtCaret(description);
+        }
+    }
+
+    output_.moveCaretToEnd();
+    auto current = output_.getText();
+    if (current.isNotEmpty() && !current.endsWithChar('\n')) {
+        output_.setColour(juce::TextEditor::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        output_.insertTextAtCaret("\n");
+    }
+    output_.setColour(juce::TextEditor::textColourId,
+                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    output_.insertTextAtCaret(juce::String(juce::CharPointer_UTF8("\xe2\x86\x92 ")) + status);
+
+    // Remind the user the preset is a starting point — only on a successful
+    // apply (status messages from cancel / error / timeout shouldn't suggest
+    // tweaking a preset that was never written). The disclaimer is rendered
+    // in yellow so it doesn't drown in the streamed text above; the marker
+    // string matches kDisclaimerMarker so restoreOutput can recolour it
+    // after a slot rebuild.
+    if (succeeded) {
+        output_.setColour(juce::TextEditor::textColourId, juce::Colours::yellow);
+        // Wrap with CharPointer_UTF8 (matching the convention used for the
+        // arrow above) so the em-dash byte sequence isn't decoded as Latin-1
+        // by juce::String's const char* constructor and rendered as "â".
+        output_.insertTextAtCaret(juce::String(juce::CharPointer_UTF8(
+            "\n\nnote: starting point only \xe2\x80\x94 tweak by ear before saving.")));
+        output_.setColour(juce::TextEditor::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    }
     output_.moveCaretToEnd();
     streamingStart_ = -1;
     setBusy(false);
     persistOutput();
+
+    // Now that the final text is in place and persisted, fire the
+    // tree-changed notification four_osc_apply intentionally skipped. The
+    // resulting rebuild tears this panel down; the replacement panel reads
+    // aiPanelOutput on setDevicePath and shows the same status + disclaimer.
+    if (succeeded && path_.trackId != INVALID_TRACK_ID)
+        TrackManager::getInstance().notifyTrackDevicesChanged(path_.trackId);
 }
 
 void AIPanelComponent::setBusy(bool busy) {
@@ -247,11 +358,12 @@ void AIPanelComponent::setBusy(bool busy) {
 }
 
 void AIPanelComponent::appendOutput(const juce::String& line) {
-    auto existing = output_.getText();
-    if (existing.isNotEmpty())
-        existing += "\n";
-    existing += line;
-    output_.setText(existing, juce::dontSendNotification);
+    output_.moveCaretToEnd();
+    output_.setColour(juce::TextEditor::textColourId,
+                      DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+    if (output_.getText().isNotEmpty())
+        output_.insertTextAtCaret("\n");
+    output_.insertTextAtCaret(line);
     output_.moveCaretToEnd();
     persistOutput();
 }

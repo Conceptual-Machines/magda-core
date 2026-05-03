@@ -78,7 +78,7 @@ class ClipOperations {
         // be updated when the user explicitly changes it, not during tempo-driven resizes.
 
         if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty()) {
-            bool isAutoTempo = clip.isBeatsAuthoritative() && clip.sourceBPM > 0.0 && bpm > 0.0;
+            bool isAutoTempo = clip.autoTempo && clip.sourceBPM > 0.0 && bpm > 0.0;
 
             if (isAutoTempo) {
                 // Auto-tempo: work in beats (authoritative), derive seconds
@@ -155,7 +155,7 @@ class ClipOperations {
                                                 double bpm = 120.0) {
         newLength = juce::jmax(MIN_CLIP_LENGTH, newLength);
         if (bpm > 0.0) {
-            clip.setPlacementBeats(clip.placement.startBeat, newLength * bpm / 60.0);
+            clip.setPlacementBeats(clip.startTime * bpm / 60.0, newLength * bpm / 60.0);
             clip.deriveTimesFromBeats(bpm);
         } else {
             clip.length = newLength;
