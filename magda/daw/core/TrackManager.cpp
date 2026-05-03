@@ -8,6 +8,7 @@
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "ClipManager.hpp"
 #include "Config.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
@@ -269,6 +270,11 @@ void TrackManager::deleteTrack(TrackId trackId) {
     // will become invalid after deletion.
     auto& sm = magda::SelectionManager::getInstance();
     sm.clearSelection();
+
+    auto& clipManager = magda::ClipManager::getInstance();
+    auto clipIds = clipManager.getClipsOnTrack(trackId);
+    for (auto clipId : clipIds)
+        clipManager.deleteClip(clipId);
 
     // If this track has a parent, remove it from parent's children
     if (track->hasParent()) {

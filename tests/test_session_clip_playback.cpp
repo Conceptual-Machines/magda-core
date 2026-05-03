@@ -6,6 +6,7 @@
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
+#include "magda/daw/core/TrackManager.hpp"
 
 using namespace magda;
 
@@ -557,6 +558,35 @@ TEST_CASE("getClipInSlot stays correct across mutation paths",
         REQUIRE(cm.getClipInSlot(1, 0) == id);
         REQUIRE(cm.getClipInSlot(1, 2) == duplicateId);
     }
+}
+
+TEST_CASE("Deleting a track removes its session clips from slots",
+          "[session][slot][track-delete][regression]") {
+    auto& tm = TrackManager::getInstance();
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    tm.clearAllTracks();
+
+    TrackId deletedTrackId = tm.createTrack("Deleted");
+    REQUIRE(deletedTrackId != INVALID_TRACK_ID);
+
+    ClipId clipId = cm.createMidiClip(deletedTrackId, 0.0, 4.0, ClipView::Session);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+    cm.setClipSceneIndex(clipId, 0);
+    REQUIRE(cm.getClipInSlot(deletedTrackId, 0) == clipId);
+
+    tm.deleteTrack(deletedTrackId);
+
+    REQUIRE(cm.getClip(clipId) == nullptr);
+    REQUIRE(cm.getClipsOnTrack(deletedTrackId).empty());
+    REQUIRE(cm.getClipInSlot(deletedTrackId, 0) == INVALID_CLIP_ID);
+
+    TrackId newTrackId = tm.createTrack("New");
+    REQUIRE(newTrackId != INVALID_TRACK_ID);
+    REQUIRE(cm.getClipInSlot(newTrackId, 0) == INVALID_CLIP_ID);
+
+    cm.clearAllClips();
+    tm.clearAllTracks();
 }
 
 TEST_CASE("Session MIDI clip loop offset", "[session][midi][loop]") {
