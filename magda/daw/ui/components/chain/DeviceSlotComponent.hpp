@@ -115,6 +115,12 @@ class DeviceSlotComponent : public NodeComponent,
     juce::Point<float> getControllerIndicatorAnchor() const override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
+    juce::Component* getHeaderPresetButton() override {
+        return presetButton_.get();
+    }
+    juce::Component* getHeaderPowerButton() override {
+        return onButton_.get();
+    }
     void mouseDrag(const juce::MouseEvent& e) override;
     void resizedCollapsed(juce::Rectangle<int>& area) override;
     juce::String getCollapsedName() const override;

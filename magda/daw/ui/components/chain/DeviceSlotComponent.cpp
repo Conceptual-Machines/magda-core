@@ -2280,7 +2280,12 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         headerArea.removeFromRight(4);
     };
 
-    // MIDI branch: preset, exportClip, power, X
+    // The right edge of the header — [preset][power][delete] — is now owned
+    // by NodeComponent (preset slot reserved via getHeaderPresetButton(),
+    // bypass + delete by the base class itself). Subclass placements here
+    // sit to the LEFT of that triplet and can't accidentally split it.
+
+    // MIDI branch: exportClip, [preset, power, delete]
     if (isChordEngine_ || isArpeggiator_ || isStepSequencer_) {
         learnButton_->setVisible(false);
         if (scButton_)
@@ -2293,13 +2298,11 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         if (exportClipButton_)
             exportClipButton_->setVisible(true);
 
-        place(onButton_.get());
         place(exportClipButton_ ? exportClipButton_.get() : nullptr);
-        place(presetButton_ ? presetButton_.get() : nullptr);
         return;
     }
 
-    // Non-MIDI: ui, learn, sc, multiOut, preset, power, X
+    // Non-MIDI: ui, learn, sc, multiOut, [preset, power, delete]
     if (exportClipButton_)
         exportClipButton_->setVisible(false);
 
@@ -2313,8 +2316,6 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     if (presetButton_)
         presetButton_->setVisible(true);
 
-    place(onButton_.get());
-    place(presetButton_ ? presetButton_.get() : nullptr);
     place(scButton_ ? scButton_.get() : nullptr);
     place(multiOutButton_ ? multiOutButton_.get() : nullptr);
     place(uiButton_.get());

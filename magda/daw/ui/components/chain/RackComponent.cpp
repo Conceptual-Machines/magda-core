@@ -355,17 +355,12 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    // Use BUTTON_SIZE + 4px gap consistently — matches DeviceSlotComponent's
-    // header so rack and device icons have identical sizing and spacing.
-    // Base class has already pulled bypass + delete from the right with a
-    // 4px gap, so the preset button can be removed directly from the right
-    // (no extra leading gap) and ends up flush against the bypass cluster.
+    // Right edge — [preset][power][delete] — is owned by NodeComponent. Only
+    // place left-side header icons here; do not touch presetButton_.
     macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
     headerArea.removeFromLeft(4);
     modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
     headerArea.removeFromLeft(4);
-    if (presetButton_)
-        presetButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
 }
 
 juce::String RackComponent::getCollapsedName() const {

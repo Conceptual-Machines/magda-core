@@ -72,6 +72,9 @@ class RackComponent : public NodeComponent, public juce::Timer {
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
+    juce::Component* getHeaderPresetButton() override {
+        return presetButton_.get();
+    }
     void resizedCollapsed(juce::Rectangle<int>& area) override;
     juce::String getCollapsedName() const override;
 
