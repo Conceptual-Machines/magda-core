@@ -37,6 +37,18 @@ Each cell in the grid is a clip slot. A slot can be empty or contain a clip.
 - **Click** an occupied slot to trigger (play) the clip
 - **Click** a playing slot to stop it
 - Only one clip per track plays at a time — triggering a new clip in the same column stops the previous one
+- A clip slot has an explicit **play** ▶ and **stop** ■ control on hover for unambiguous launch / stop separate from the clip body click
+
+### Selecting Clips
+
+- **Click** a clip slot to select it
+- **++shift++-click** another slot to extend the selection to a rectangular range
+- **++cmd++-click** (++ctrl++-click on Windows/Linux) to toggle individual slots in or out of the selection
+- Right-click a multi-selection to delete, duplicate, or change properties on every selected clip in one action
+
+### Launch Fade
+
+Each session clip has an optional **launch fade** — a per-clip crossfade applied when the clip launches over the clip it replaces on the same track. Set the fade length in the clip's [Inspector](panels/inspector.md) under the launch section. Useful for pad and atmosphere clips where the hard cut between launches is jarring.
 
 ## Scenes
 

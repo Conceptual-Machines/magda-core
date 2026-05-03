@@ -76,6 +76,10 @@ A common use case is keeping the Arrangement View clean while having full contro
 - Right-click a track header for options: rename, duplicate, delete, freeze
 - Click the track name to rename it
 
+### Multi-Track Selection
+
+Click a track header to select it. Hold ++shift++ and click another header to extend the selection to a contiguous range; ++cmd++-click (++ctrl++-click on Windows/Linux) to toggle individual tracks in or out of the selection. Most track-level actions — mute, solo, delete, freeze, group — apply to every selected track in one operation.
+
 ## Duplicating Tracks
 
 MAGDA offers three duplication modes, available from the **Track** menu, the track header right-click menu, and via keyboard:

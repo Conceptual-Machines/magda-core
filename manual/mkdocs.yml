@@ -81,6 +81,7 @@ nav:
   - Reference:
       - DSL Reference: reference/dsl.md
       - Controller Profile Format: reference/controller-profile-format.md
+      - Lua Scripting: reference/lua-scripting.md
       - Keyboard Shortcuts: reference/keyboard-shortcuts.md
       - File Formats: reference/file-formats.md
       - Troubleshooting: reference/troubleshooting.md
