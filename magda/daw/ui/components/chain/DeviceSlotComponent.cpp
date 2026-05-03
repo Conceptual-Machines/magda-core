@@ -2293,8 +2293,12 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
         if (multiOutButton_)
             multiOutButton_->setVisible(false);
         onButton_->setVisible(true);
+        // Chord engine state is meant to live in clips on the timeline (use
+        // the copy-pattern / export button to bake a progression into a
+        // clip), so the .mps preset surface would just duplicate that flow
+        // and confuse users. Hide it; arp + step sequencer keep theirs.
         if (presetButton_)
-            presetButton_->setVisible(true);
+            presetButton_->setVisible(!isChordEngine_);
         if (exportClipButton_)
             exportClipButton_->setVisible(true);
 
