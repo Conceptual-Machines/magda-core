@@ -1985,11 +1985,15 @@ void SessionView::resized() {
     faderContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                    trackHeaderScrollOffset);
 
-    // Position mini channel strips within fader container (synced with grid horizontal scroll)
+    // Position mini channel strips within fader container (synced with grid horizontal scroll).
+    // Use the container's actual height — faderRowHeight_ counts the toggles
+    // band that was carved off the top, so sizing strips to faderRowHeight_ - 2
+    // would overhang the container and clip the mute/solo row at the bottom.
+    const int miniStripHeight = faderContainer->getHeight() - 2;
     for (int i = 0; i < numTracks && i < static_cast<int>(trackMiniStrips_.size()); ++i) {
         int x = getTrackX(i) - trackHeaderScrollOffset;
         int w = trackColumnWidths_[i];
-        trackMiniStrips_[i]->setBounds(x + 1, 1, w - 2, faderRowHeight_ - 2);
+        trackMiniStrips_[i]->setBounds(x + 1, 1, w - 2, miniStripHeight);
     }
 
     // Resize handle between IO/stop row and fader row
@@ -2107,10 +2111,11 @@ void SessionView::scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStar
                                         trackHeaderScrollOffset);
 
         // Reposition mini channel strips to sync with horizontal scroll
+        const int miniStripHeight = faderContainer->getHeight() - 2;
         for (int i = 0; i < numTracks && i < static_cast<int>(trackMiniStrips_.size()); ++i) {
             int x = getTrackX(i) - trackHeaderScrollOffset;
             int w = trackColumnWidths_[i];
-            trackMiniStrips_[i]->setBounds(x + 1, 1, w - 2, faderRowHeight_ - 2);
+            trackMiniStrips_[i]->setBounds(x + 1, 1, w - 2, miniStripHeight);
         }
         faderContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
                                        trackHeaderScrollOffset);
