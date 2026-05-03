@@ -72,7 +72,7 @@ juce::String applyFourOscPresetToPath(const FourOscAgent::Preset& preset,
     auto& tm = TrackManager::getInstance();
     auto* device = tm.getDeviceInChainByPath(path);
     if (device == nullptr || internalPluginFromId(device->pluginId) != InternalPlugin::FourOsc)
-        return "(target device is not a 4OSC)";
+        return "target device is not a 4OSC";
 
     // Map every param name on the device to its index, normalized the same
     // way AutoAliasGenerator does, so the preset's alias-style keys
@@ -207,23 +207,22 @@ juce::String applyFourOscPresetToPath(const FourOscAgent::Preset& preset,
         PresetManager::getInstance().setSuggestedPresetName(device->id, suggested);
     }
 
-    juce::String status = "applied " + juce::String(applied) + " param(s)";
+    juce::String status = "applied " + juce::String(applied) + " params";
     if (wavesApplied > 0)
-        status += " + " + juce::String(wavesApplied) + " wave(s)";
+        status += ", " + juce::String(wavesApplied) + " waves";
     if (filterTypeApplied)
-        status += " + filter=" + juce::String(preset.filterType);
+        status += ", filter " + juce::String(preset.filterType);
     if (voiceModeApplied)
-        status += " + voice=" + juce::String(preset.voiceMode);
+        status += ", voice " + juce::String(preset.voiceMode);
     if (fxToggled > 0)
-        status += " + " + juce::String(fxToggled) + " fx gate(s)";
+        status += ", " + juce::String(fxToggled) + " fx gates";
     status += " to " + device->name;
     if (skipped > 0 || wavesSkipped > 0) {
-        status += " (skipped";
+        status += ", skipped";
         if (skipped > 0)
-            status += " " + juce::String(skipped) + " param";
+            status += " " + juce::String(skipped) + " params";
         if (wavesSkipped > 0)
-            status += " " + juce::String(wavesSkipped) + " wave";
-        status += ")";
+            status += " " + juce::String(wavesSkipped) + " waves";
     }
     return status;
 }

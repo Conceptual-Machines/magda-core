@@ -49,12 +49,21 @@ class AIPanelComponent : public juce::Component {
   private:
     void submitPrompt();
     void appendOutput(const juce::String& line);
+    void appendStreamingToken(const juce::String& token);
+    void onGenerationFinished(juce::String status);
+    void setBusy(bool busy);
+    // Mirror output_'s text onto the bound DeviceInfo so slot rebuilds restore it.
+    void persistOutput();
 
     juce::String pluginId_;
     ChainNodePath path_;
 
     juce::TextEditor output_;  // multiline read-only
     juce::TextEditor input_;   // single-line, Enter = submit
+
+    // Track where the streaming response started so we can replace the
+    // raw JSON the model emits with a clean status line on completion.
+    int streamingStart_ = -1;
 
     // Background generation. juce::Thread + SafePointer pattern matches the
     // /design slash command flow in AIChatConsoleContent.

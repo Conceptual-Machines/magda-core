@@ -139,6 +139,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Restore panel visibility from device state
     modPanelVisible_ = device.modPanelOpen;
     paramPanelVisible_ = device.paramPanelOpen;
+    aiPanelVisible_ = device.aiPanelOpen;
 
     // Hide built-in bypass button - we'll add our own in the header
     setBypassButtonVisible(false);
@@ -236,15 +237,10 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     };
     addAndMakeVisible(*aiButton_);
 
-    // Initialize mods/macros panels from base class
+    // Initialize mods/macros panels from base class. The AI panel is also
+    // created here; setNodePath() binds it to the device path once it's
+    // resolved (the path isn't valid yet at construction time).
     initializeModsMacrosPanels();
-
-    // Bind the AI panel (created by initializeModsMacrosPanels) to this slot's
-    // device — generations apply to this path, not the focused selection.
-    if (aiPanel_) {
-        aiPanel_->setDevicePath(nodePath_);
-        aiPanel_->setDevicePluginId(device_.pluginId);
-    }
 
     onAIPanelToggled = [this](bool visible) {
         if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
@@ -1092,6 +1088,15 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     // Now that nodePath_ is valid, update param slots with the device path
     updateParamModulation();
 
+    // Bind the AI panel to the now-resolved path. Doing this in the
+    // constructor caught the panel before nodePath_ was set, so generations
+    // were running with an empty path and the apply step was bailing with
+    // "target device is not a 4OSC".
+    if (aiPanel_) {
+        aiPanel_->setDevicePath(nodePath_);
+        aiPanel_->setDevicePluginId(device_.pluginId);
+    }
+
     // Initial compute for the controller indicator dots — listeners only fire
     // on change, so a slot built after the binding was added wouldn't otherwise
     // pick up the current state.
@@ -1673,6 +1678,10 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         currentPresetName_.clear();
         pluginPresetName_.clear();
         currentPluginPresetFile_ = juce::File();
+        // AI panel output is plugin-specific too — wipe so we don't show
+        // stale 4OSC results on a slot that now holds a different plugin.
+        if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+            live->aiPanelOutput.clear();
     }
 
     device_ = device;
