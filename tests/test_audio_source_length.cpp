@@ -127,6 +127,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
 
     SECTION("Loop mode with loopLength set: uses loopLength directly") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 16.0;  // Long clip (multiple loop cycles)
         clip.offset = 0.0;
@@ -145,6 +146,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
 
     SECTION("Loop mode with loopLength=0: falls back to clip.length * speedRatio") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 8.0;
         clip.offset = 0.0;
@@ -162,6 +164,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
 
     SECTION("Loop mode with speed ratio: sourceExtentSeconds = sourceLength / speedRatio") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 16.0;
         clip.offset = 0.0;
@@ -184,6 +187,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in non-loop mode derives from clip.len
 
     SECTION("Non-loop mode: sourceLength = clip.length * speedRatio") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.offset = 0.0;
@@ -200,6 +204,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in non-loop mode derives from clip.len
 
     SECTION("Non-loop mode with speed ratio: sourceLength = clip.length * speedRatio") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.offset = 0.0;
@@ -220,6 +225,7 @@ TEST_CASE("ClipDisplayInfo - sourceFileEnd in non-loop mode", "[clip][display][s
 
     SECTION("Non-loop mode: sourceFileEnd = offset + sourceLength") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.offset = 1.0;
@@ -237,6 +243,7 @@ TEST_CASE("ClipDisplayInfo - sourceFileEnd in non-loop mode", "[clip][display][s
 
     SECTION("Non-loop mode with speed ratio: sourceFileEnd accounts for speed") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 8.0;  // 8s on timeline
         clip.offset = 0.5;
@@ -263,6 +270,7 @@ TEST_CASE("ClipDisplayInfo - sourceExtentSeconds and loopEndPositionSeconds for 
 
     SECTION("Source extent controls waveform editor visible region") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 16.0;  // Long clip
         clip.offset = 0.0;
@@ -281,6 +289,7 @@ TEST_CASE("ClipDisplayInfo - sourceExtentSeconds and loopEndPositionSeconds for 
 
     SECTION("Source extent equals loop - loopEndPositionSeconds matches") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 16.0;
         clip.offset = 0.0;

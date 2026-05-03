@@ -1,6 +1,6 @@
 #include "RampCurveDisplay.hpp"
 
-#include "audio/StepClock.hpp"
+#include "audio/transport/StepClock.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {

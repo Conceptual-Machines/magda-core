@@ -147,7 +147,7 @@ class ModMatrixContent : public juce::Component {
     static constexpr int ROW_HEIGHT = 18;
 
     struct LinkRow {
-        magda::ModTarget target;
+        magda::ControlTarget target;
         juce::String paramName;
         float amount = 0.0f;
         bool bipolar = false;
@@ -157,12 +157,12 @@ class ModMatrixContent : public juce::Component {
     bool isDragging() const {
         return draggingRow_ >= 0;
     }
-    bool updateLinkAmount(magda::ModTarget target, float amount, bool bipolar);
+    bool updateLinkAmount(magda::ControlTarget target, float amount, bool bipolar);
 
     // Callbacks
-    std::function<void(magda::ModTarget target)> onDeleteLink;
-    std::function<void(magda::ModTarget target, bool bipolar)> onToggleBipolar;
-    std::function<void(magda::ModTarget target, float amount)> onAmountChanged;
+    std::function<void(magda::ControlTarget target)> onDeleteLink;
+    std::function<void(magda::ControlTarget target, bool bipolar)> onToggleBipolar;
+    std::function<void(magda::ControlTarget target, float amount)> onAmountChanged;
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
@@ -234,10 +234,11 @@ class ModulatorEditorPanel : public juce::Component,
     std::function<void()> onAdvancedClicked;
     std::function<void(float ms)> onAudioAttackChanged;
     std::function<void(float ms)> onAudioReleaseChanged;
-    std::function<void(int modIndex, magda::ModTarget target)> onModLinkDeleted;
-    std::function<void(int modIndex, magda::ModTarget target, bool bipolar)>
+    std::function<void(int modIndex, magda::ControlTarget target)> onModLinkDeleted;
+    std::function<void(int modIndex, magda::ControlTarget target, bool bipolar)>
         onModLinkBipolarChanged;
-    std::function<void(int modIndex, magda::ModTarget target, float amount)> onModLinkAmountChanged;
+    std::function<void(int modIndex, magda::ControlTarget target, float amount)>
+        onModLinkAmountChanged;
 
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
@@ -256,11 +257,11 @@ class ModulatorEditorPanel : public juce::Component,
     // when a Learn'd binding is added, removed, or mid-learn.
     void bindingRegistryChanged(magda::BindingScope scope) override;
     void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
-                               magda::StaticTarget::Owner owner, bool learning) override;
+                               magda::ControlTarget::Kind owner, bool learning) override;
     void midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
-                            magda::StaticTarget::Owner owner, const magda::Binding&) override;
+                            magda::ControlTarget::Kind owner, const magda::Binding&) override;
     void midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
-                          magda::StaticTarget::Owner owner, int numRemoved) override;
+                          magda::ControlTarget::Kind owner, int numRemoved) override;
 
     // Preferred width for this panel
     static constexpr int PREFERRED_WIDTH = 150;

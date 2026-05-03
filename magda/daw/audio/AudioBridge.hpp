@@ -7,25 +7,26 @@
 #include <memory>
 
 #include "../core/ClipManager.hpp"
+#include "../core/ControlTarget.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
-#include "AutomationPlaybackEngine.hpp"
-#include "AutomationRecordingEngine.hpp"
-#include "ClipSynchronizer.hpp"
 #include "DeviceMeteringManager.hpp"
-#include "DeviceProcessor.hpp"
 #include "MeteringBuffer.hpp"
-#include "MidiActivityMonitor.hpp"
-#include "ParameterManager.hpp"
-#include "ParameterQueue.hpp"
-#include "PluginManager.hpp"
 #include "PluginWindowBridge.hpp"
-#include "SessionClipAudioMonitor.hpp"
-#include "SidechainTriggerBus.hpp"
 #include "TrackController.hpp"
-#include "TransportStateManager.hpp"
 #include "WarpMarkerManager.hpp"
+#include "automation/AutomationPlaybackEngine.hpp"
+#include "automation/AutomationRecordingEngine.hpp"
+#include "midi/MidiActivityMonitor.hpp"
+#include "params/ParameterManager.hpp"
+#include "params/ParameterQueue.hpp"
+#include "plugin_manager/PluginManager.hpp"
+#include "plugins/SidechainTriggerBus.hpp"
+#include "processors/DeviceProcessor.hpp"
+#include "session/ClipSynchronizer.hpp"
+#include "session/SessionClipAudioMonitor.hpp"
+#include "transport/TransportStateManager.hpp"
 
 namespace magda {
 
@@ -175,6 +176,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     SessionClipAudioMonitor& getSessionAudioMonitor() {
         return sessionAudioMonitor_;
     }
+    const SessionClipAudioMonitor& getSessionAudioMonitor() const {
+        return sessionAudioMonitor_;
+    }
 
     /** Ensure the SessionMonitorPlugin is installed on a track for audio-thread monitoring. */
     void ensureSessionMonitorPlugin();
@@ -302,6 +306,17 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
      * @return The Plugin, or nullptr if not found
      */
     te::Plugin::Ptr getPlugin(DeviceId deviceId) const;
+
+    /**
+     * @brief Resolve any ControlTarget to its writable te::AutomatableParameter.
+     *
+     * Single dispatch site for the unified parameter addressing scheme — used
+     * by AutomationPlaybackEngine, ModifierSync, and any other consumer that
+     * needs to write into a TE-side parameter from a MAGDA-side address.
+     * Returns nullptr if the target's path / index doesn't resolve to a live TE
+     * parameter (device removed, plugin gone, etc.).
+     */
+    te::AutomatableParameter* resolveControlTarget(const ControlTarget& target) const;
 
     /**
      * @brief Get the DeviceProcessor for a MAGDA device

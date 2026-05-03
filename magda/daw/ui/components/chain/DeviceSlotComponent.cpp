@@ -2,19 +2,21 @@
 
 #include <BinaryData.h>
 
+#include "../../../../agents/sound_design_agent.hpp"
+#include "AIPanelComponent.hpp"
 #include "DeviceSlotHeaderLayout.hpp"
 #include "MacroPanelComponent.hpp"
 #include "ModsPanelComponent.hpp"
 #include "NodeHeaderStyles.hpp"
 #include "ParamGridComponent.hpp"
 #include "ParamSlotComponent.hpp"
-#include "audio/ArpeggiatorPlugin.hpp"
 #include "audio/AudioBridge.hpp"
-#include "audio/DrumGridPlugin.hpp"
-#include "audio/MagdaSamplerPlugin.hpp"
-#include "audio/MidiChordEnginePlugin.hpp"
-#include "audio/PluginManager.hpp"
-#include "audio/StepClock.hpp"
+#include "audio/plugin_manager/PluginManager.hpp"
+#include "audio/plugins/ArpeggiatorPlugin.hpp"
+#include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/transport/StepClock.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/MacroInfo.hpp"
@@ -137,6 +139,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Restore panel visibility from device state
     modPanelVisible_ = device.modPanelOpen;
     paramPanelVisible_ = device.paramPanelOpen;
+    aiPanelVisible_ = device.aiPanelOpen;
 
     // Hide built-in bypass button - we'll add our own in the header
     setBypassButtonVisible(false);
@@ -220,8 +223,31 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     };
     addAndMakeVisible(*macroButton_);
 
-    // Initialize mods/macros panels from base class
+    // AI button (toggle AI sound-design panel). Visibility is gated on
+    // whether the device's pluginId has a registered SoundDesignAgent —
+    // updated in the resizedHeaderExtra path so it tracks device changes.
+    aiButton_ =
+        std::make_unique<magda::SvgButton>("AI", BinaryData::ai_svg, BinaryData::ai_svgSize);
+    applyHeaderIconStyle(*aiButton_, DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    aiButton_->setToggleState(aiPanelVisible_, juce::dontSendNotification);
+    aiButton_->setActive(aiPanelVisible_);
+    aiButton_->onClick = [this]() {
+        aiButton_->setActive(aiButton_->getToggleState());
+        setAIPanelVisible(aiButton_->getToggleState());
+    };
+    addAndMakeVisible(*aiButton_);
+
+    // Initialize mods/macros panels from base class. The AI panel is also
+    // created here; setNodePath() binds it to the device path once it's
+    // resolved (the path isn't valid yet at construction time).
     initializeModsMacrosPanels();
+
+    onAIPanelToggled = [this](bool visible) {
+        if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+            dev->aiPanelOpen = visible;
+        if (onDeviceLayoutChanged)
+            onDeviceLayoutChanged();
+    };
 
     // Gain label in header (dB format, draggable)
     gainLabel_.setRange(-60.0, 12.0, 0.0);
@@ -416,18 +442,18 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         paramGrid_->getSlot(i)->setDeviceId(device.id);
 
         // Wire up mod/macro linking callbacks
-        paramGrid_->getSlot(i)->onModLinked =
-            [safeThis = juce::Component::SafePointer(this)](int modIndex, magda::ModTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                self->onModTargetChangedInternal(modIndex, target);
-                if (self)
-                    self->updateParamModulation();
-            };
+        paramGrid_->getSlot(i)->onModLinked = [safeThis = juce::Component::SafePointer(this)](
+                                                  int modIndex, magda::ControlTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            self->onModTargetChangedInternal(modIndex, target);
+            if (self)
+                self->updateParamModulation();
+        };
         paramGrid_->getSlot(i)->onModLinkedWithAmount =
-            [safeThis = juce::Component::SafePointer(this)](int modIndex, magda::ModTarget target,
-                                                            float amount) {
+            [safeThis = juce::Component::SafePointer(this)](
+                int modIndex, magda::ControlTarget target, float amount) {
                 // Copy SafePointer to a local so it survives if the lambda's storage
                 // is freed during a UI rebuild triggered by the calls below.
                 auto self = safeThis;
@@ -470,20 +496,21 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 if (self)
                     self->updateParamModulation();
             };
-        paramGrid_->getSlot(i)->onModUnlinked =
-            [safeThis = juce::Component::SafePointer(this)](int modIndex, magda::ModTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                auto nodePath = self->nodePath_;
-                magda::TrackManager::getInstance().removeModLink(nodePath, modIndex, target);
-                if (!self)
-                    return;
-                self->updateParamModulation();
-                self->updateModsPanel();
-            };
+        paramGrid_->getSlot(i)->onModUnlinked = [safeThis = juce::Component::SafePointer(this)](
+                                                    int modIndex, magda::ControlTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto nodePath = self->nodePath_;
+            magda::TrackManager::getInstance().removeModLink(nodePath, modIndex, target);
+            if (!self)
+                return;
+            self->updateParamModulation();
+            self->updateModsPanel();
+        };
         paramGrid_->getSlot(i)->onTrackModUnlinked =
-            [safeThis = juce::Component::SafePointer(this)](int modIndex, magda::ModTarget target) {
+            [safeThis = juce::Component::SafePointer(this)](int modIndex,
+                                                            magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -497,8 +524,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 self->updateModsPanel();
             };
         paramGrid_->getSlot(i)->onModAmountChanged =
-            [safeThis = juce::Component::SafePointer(this)](int modIndex, magda::ModTarget target,
-                                                            float amount) {
+            [safeThis = juce::Component::SafePointer(this)](
+                int modIndex, magda::ControlTarget target, float amount) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -526,7 +553,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                     self->updateParamModulation();
             };
         paramGrid_->getSlot(i)->onMacroLinked = [safeThis = juce::Component::SafePointer(this)](
-                                                    int macroIndex, magda::MacroTarget target) {
+                                                    int macroIndex, magda::ControlTarget target) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -553,7 +580,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         };
         paramGrid_->getSlot(i)->onMacroLinkedWithAmount = [safeThis = juce::Component::SafePointer(
                                                                this)](int macroIndex,
-                                                                      magda::MacroTarget target,
+                                                                      magda::ControlTarget target,
                                                                       float amount) {
             auto self = safeThis;
             if (!self)
@@ -593,7 +620,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         };
         paramGrid_->getSlot(i)->onMacroAmountChanged = [safeThis = juce::Component::SafePointer(
                                                             this)](int macroIndex,
-                                                                   magda::MacroTarget target,
+                                                                   magda::ControlTarget target,
                                                                    float amount) {
             auto self = safeThis;
             if (!self)
@@ -619,7 +646,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 self->updateParamModulation();
         };
         paramGrid_->getSlot(i)->onMacroUnlinked = [safeThis = juce::Component::SafePointer(this)](
-                                                      int macroIndex, magda::MacroTarget target) {
+                                                      int macroIndex, magda::ControlTarget target) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -631,7 +658,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         };
         paramGrid_->getSlot(i)->onTrackMacroUnlinked =
             [safeThis = juce::Component::SafePointer(this)](int macroIndex,
-                                                            magda::MacroTarget target) {
+                                                            magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -644,20 +671,21 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                     self->updateMacroPanel();
                 }
             };
-        paramGrid_->getSlot(i)->onRackMacroLinked = [safeThis = juce::Component::SafePointer(this)](
-                                                        int macroIndex, magda::MacroTarget target) {
-            auto self = safeThis;
-            if (!self)
-                return;
-            auto rackPath = self->nodePath_.parent();
-            if (rackPath.isValid())
-                magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex, target);
-            if (self)
-                self->updateParamModulation();
-        };
+        paramGrid_->getSlot(i)->onRackMacroLinked =
+            [safeThis = juce::Component::SafePointer(this)](int macroIndex,
+                                                            magda::ControlTarget target) {
+                auto self = safeThis;
+                if (!self)
+                    return;
+                auto rackPath = self->nodePath_.parent();
+                if (rackPath.isValid())
+                    magda::TrackManager::getInstance().setMacroTarget(rackPath, macroIndex, target);
+                if (self)
+                    self->updateParamModulation();
+            };
         paramGrid_->getSlot(i)->onTrackMacroLinked =
             [safeThis = juce::Component::SafePointer(this)](int macroIndex,
-                                                            magda::MacroTarget target) {
+                                                            magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -670,7 +698,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
             };
         paramGrid_->getSlot(i)->onRackMacroUnlinked = [safeThis = juce::Component::SafePointer(
                                                            this)](int macroIndex,
-                                                                  magda::MacroTarget target) {
+                                                                  magda::ControlTarget target) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -947,14 +975,13 @@ void DeviceSlotComponent::showAutomationLaneForParam(int paramIndex) {
     if (trackId == magda::INVALID_TRACK_ID)
         return;
     magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::DeviceParameter;
-    target.trackId = trackId;
+    target.kind = magda::ControlTarget::Kind::PluginParam;
+    target.devicePath.trackId = trackId;
     target.devicePath = nodePath_;
     target.paramIndex = paramIndex;
     juce::String pName = "Param " + juce::String(paramIndex);
     if (paramIndex >= 0 && paramIndex < static_cast<int>(device_.parameters.size()))
         pName = device_.parameters[static_cast<size_t>(paramIndex)].name;
-    target.paramName = device_.name + " - " + pName;
     auto& automationMgr = magda::AutomationManager::getInstance();
     auto laneId = automationMgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
     automationMgr.setLaneVisible(laneId, true);
@@ -970,7 +997,7 @@ void DeviceSlotComponent::automationValueChanged(magda::AutomationLaneId laneId,
     if (!lane)
         return;
 
-    if (lane->target.type != magda::AutomationTargetType::DeviceParameter)
+    if (lane->target.kind != magda::ControlTarget::Kind::PluginParam)
         return;
 
     if (lane->target.devicePath.getDeviceId() != device_.id)
@@ -1060,6 +1087,15 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
     // Now that nodePath_ is valid, update param slots with the device path
     updateParamModulation();
+
+    // Bind the AI panel to the now-resolved path. Doing this in the
+    // constructor caught the panel before nodePath_ was set, so generations
+    // were running with an empty path and the apply step was bailing with
+    // "target device is not a 4OSC".
+    if (aiPanel_) {
+        aiPanel_->setDevicePath(nodePath_);
+        aiPanel_->setDevicePluginId(device_.pluginId);
+    }
 
     // Initial compute for the controller indicator dots — listeners only fire
     // on change, so a slot built after the binding was added wouldn't otherwise
@@ -1642,6 +1678,10 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         currentPresetName_.clear();
         pluginPresetName_.clear();
         currentPluginPresetFile_ = juce::File();
+        // AI panel output is plugin-specific too — wipe so we don't show
+        // stale 4OSC results on a slot that now holds a different plugin.
+        if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+            live->aiPanelOutput.clear();
     }
 
     device_ = device;
@@ -2203,19 +2243,33 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     const bool isDrumGrid = drumGridUI_ != nullptr;
     gainLabel_.setVisible(false);  // gain has moved to the meter-strip slider
 
-    // Left side: macro, mod
+    // Left side: macro, mod, AI (AI only when this device has a registered
+    // SoundDesignAgent — currently 4OSC; extends with the registry).
+    const bool aiSupported = magda::isSoundDesignSupported(device_.pluginId);
+    auto placeAIButton = [&]() {
+        if (aiSupported) {
+            aiButton_->setVisible(true);
+            aiButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
+            headerArea.removeFromLeft(4);
+        } else {
+            aiButton_->setVisible(false);
+        }
+    };
     if (device_.deviceType != magda::DeviceType::MIDI || isDrumGrid) {
         macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
         modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
+        placeAIButton();
     } else if (isArpeggiator_ || isStepSequencer_) {
         macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
         headerArea.removeFromLeft(4);
         modButton_->setVisible(false);
+        placeAIButton();
     } else {
         macroButton_->setVisible(false);
         modButton_->setVisible(false);
+        aiButton_->setVisible(false);
     }
 
     // place(): right→left removal of one button, with gap, only if visible.
@@ -2434,15 +2488,10 @@ std::map<magda::DeviceId, std::vector<juce::String>> DeviceSlotComponent::getDev
     return result;
 }
 
-void DeviceSlotComponent::onModAmountChangedInternal(int modIndex, float amount) {
-    magda::TrackManager::getInstance().setModAmount(nodePath_, modIndex, amount);
-    updateParamModulation();  // Refresh param indicators to show new amount
-}
-
-void DeviceSlotComponent::onModTargetChangedInternal(int modIndex, magda::ModTarget target) {
+void DeviceSlotComponent::onModTargetChangedInternal(int modIndex, magda::ControlTarget target) {
     magda::TrackManager::getInstance().setModTarget(nodePath_, modIndex, target);
     // Note: caller must check SafePointer before calling updateParamModulation()
-    // because setModTarget may trigger notifyTrackDevicesChanged which rebuilds UI
+    // because setControlTarget may trigger notifyTrackDevicesChanged which rebuilds UI
 }
 
 void DeviceSlotComponent::onModNameChangedInternal(int modIndex, const juce::String& name) {
@@ -2498,7 +2547,8 @@ void DeviceSlotComponent::onMacroValueChangedInternal(int macroIndex, float valu
     updateParamModulation();  // Refresh param indicators to show new value
 }
 
-void DeviceSlotComponent::onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) {
+void DeviceSlotComponent::onMacroTargetChangedInternal(int macroIndex,
+                                                       magda::ControlTarget target) {
     // Check if the active macro is from this device or a parent rack
     auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
     if (activeMacroSelection.isValid() && activeMacroSelection.parentPath == nodePath_) {
@@ -2523,13 +2573,13 @@ void DeviceSlotComponent::onMacroAllLinksClearedInternal(int macroIndex) {
 }
 
 void DeviceSlotComponent::onMacroLinkAmountChangedInternal(int macroIndex,
-                                                           magda::MacroTarget target,
+                                                           magda::ControlTarget target,
                                                            float amount) {
     magda::TrackManager::getInstance().setMacroLinkAmount(nodePath_, macroIndex, target, amount);
     updateParamModulation();
 }
 
-void DeviceSlotComponent::onMacroNewLinkCreatedInternal(int macroIndex, magda::MacroTarget target,
+void DeviceSlotComponent::onMacroNewLinkCreatedInternal(int macroIndex, magda::ControlTarget target,
                                                         float amount) {
     magda::TrackManager::getInstance().setMacroTarget(nodePath_, macroIndex, target);
     magda::TrackManager::getInstance().setMacroLinkAmount(nodePath_, macroIndex, target, amount);
@@ -2540,14 +2590,14 @@ void DeviceSlotComponent::onMacroNewLinkCreatedInternal(int macroIndex, magda::M
         magda::SelectionManager::getInstance().selectParam(nodePath_, target.paramIndex);
 }
 
-void DeviceSlotComponent::onMacroLinkRemovedInternal(int macroIndex, magda::MacroTarget target) {
+void DeviceSlotComponent::onMacroLinkRemovedInternal(int macroIndex, magda::ControlTarget target) {
     magda::TrackManager::getInstance().removeMacroLink(nodePath_, macroIndex, target);
     updateMacroPanel();
     updateParamModulation();
 }
 
 void DeviceSlotComponent::onMacroLinkBipolarChangedInternal(int macroIndex,
-                                                            magda::MacroTarget target,
+                                                            magda::ControlTarget target,
                                                             bool bipolar) {
     magda::TrackManager::getInstance().setMacroLinkBipolar(nodePath_, macroIndex, target, bipolar);
     updateParamModulation();
@@ -2561,13 +2611,13 @@ void DeviceSlotComponent::onMacroClickedInternal(int macroIndex) {
     magda::SelectionManager::getInstance().selectMacro(nodePath_, macroIndex);
 }
 
-void DeviceSlotComponent::onModLinkAmountChangedInternal(int modIndex, magda::ModTarget target,
+void DeviceSlotComponent::onModLinkAmountChangedInternal(int modIndex, magda::ControlTarget target,
                                                          float amount) {
     magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target, amount);
     updateParamModulation();
 }
 
-void DeviceSlotComponent::onModNewLinkCreatedInternal(int modIndex, magda::ModTarget target,
+void DeviceSlotComponent::onModNewLinkCreatedInternal(int modIndex, magda::ControlTarget target,
                                                       float amount) {
     magda::TrackManager::getInstance().setModTarget(nodePath_, modIndex, target);
     magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target, amount);
@@ -2579,7 +2629,7 @@ void DeviceSlotComponent::onModNewLinkCreatedInternal(int modIndex, magda::ModTa
     }
 }
 
-void DeviceSlotComponent::onModLinkRemovedInternal(int modIndex, magda::ModTarget target) {
+void DeviceSlotComponent::onModLinkRemovedInternal(int modIndex, magda::ControlTarget target) {
     magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
     updateModsPanel();
     updateParamModulation();
@@ -4119,7 +4169,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
         // Wire sampler's LinkableTextSliders
         auto sliders = slot.getLinkableSliders();
         for (auto* slider : sliders) {
-            slider->onModLinkedWithAmount = [safeThis](int modIndex, magda::ModTarget target,
+            slider->onModLinkedWithAmount = [safeThis](int modIndex, magda::ControlTarget target,
                                                        float amount) {
                 auto self = safeThis;
                 if (!self)
@@ -4149,7 +4199,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                     self->updateParamModulation();
             };
 
-            slider->onModUnlinked = [safeThis](int modIndex, magda::ModTarget target) {
+            slider->onModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -4160,7 +4210,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 }
             };
 
-            slider->onTrackModUnlinked = [safeThis](int modIndex, magda::ModTarget target) {
+            slider->onTrackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -4174,7 +4224,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 }
             };
 
-            slider->onModAmountChanged = [safeThis](int modIndex, magda::ModTarget target,
+            slider->onModAmountChanged = [safeThis](int modIndex, magda::ControlTarget target,
                                                     float amount) {
                 auto self = safeThis;
                 if (!self)
@@ -4199,7 +4249,8 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                     self->updateParamModulation();
             };
 
-            slider->onMacroLinkedWithAmount = [safeThis](int macroIndex, magda::MacroTarget target,
+            slider->onMacroLinkedWithAmount = [safeThis](int macroIndex,
+                                                         magda::ControlTarget target,
                                                          float amount) {
                 auto self = safeThis;
                 if (!self)
@@ -4231,7 +4282,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                     self->updateParamModulation();
             };
 
-            slider->onMacroLinked = [safeThis](int macroIndex, magda::MacroTarget target) {
+            slider->onMacroLinked = [safeThis](int macroIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -4240,7 +4291,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                     self->updateParamModulation();
             };
 
-            slider->onMacroUnlinked = [safeThis](int macroIndex, magda::MacroTarget target) {
+            slider->onMacroUnlinked = [safeThis](int macroIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -4252,7 +4303,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 }
             };
 
-            slider->onTrackMacroUnlinked = [safeThis](int macroIndex, magda::MacroTarget target) {
+            slider->onTrackMacroUnlinked = [safeThis](int macroIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -4266,7 +4317,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 }
             };
 
-            slider->onMacroAmountChanged = [safeThis](int macroIndex, magda::MacroTarget target,
+            slider->onMacroAmountChanged = [safeThis](int macroIndex, magda::ControlTarget target,
                                                       float amount) {
                 auto self = safeThis;
                 if (!self)
@@ -4308,7 +4359,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
             if (!ps)
                 continue;
 
-            ps->onModLinkedWithAmount = [safeThis](int modIndex, magda::ModTarget target,
+            ps->onModLinkedWithAmount = [safeThis](int modIndex, magda::ControlTarget target,
                                                    float amount) {
                 auto self = safeThis;
                 if (!self)
@@ -4338,7 +4389,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                     self->updateParamModulation();
             };
 
-            ps->onModUnlinked = [safeThis](int modIndex, magda::ModTarget target) {
+            ps->onModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -4349,7 +4400,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 }
             };
 
-            ps->onTrackModUnlinked = [safeThis](int modIndex, magda::ModTarget target) {
+            ps->onTrackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -4363,7 +4414,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 }
             };
 
-            ps->onModAmountChanged = [safeThis](int modIndex, magda::ModTarget target,
+            ps->onModAmountChanged = [safeThis](int modIndex, magda::ControlTarget target,
                                                 float amount) {
                 auto self = safeThis;
                 if (!self)
@@ -4388,7 +4439,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                     self->updateParamModulation();
             };
 
-            ps->onMacroLinkedWithAmount = [safeThis](int macroIndex, magda::MacroTarget target,
+            ps->onMacroLinkedWithAmount = [safeThis](int macroIndex, magda::ControlTarget target,
                                                      float amount) {
                 auto self = safeThis;
                 if (!self)
@@ -4420,7 +4471,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                     self->updateParamModulation();
             };
 
-            ps->onMacroLinked = [safeThis](int macroIndex, magda::MacroTarget target) {
+            ps->onMacroLinked = [safeThis](int macroIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -4429,7 +4480,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                     self->updateParamModulation();
             };
 
-            ps->onMacroUnlinked = [safeThis](int macroIndex, magda::MacroTarget target) {
+            ps->onMacroUnlinked = [safeThis](int macroIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -4441,7 +4492,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 }
             };
 
-            ps->onTrackMacroUnlinked = [safeThis](int macroIndex, magda::MacroTarget target) {
+            ps->onTrackMacroUnlinked = [safeThis](int macroIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
                     return;
@@ -4455,7 +4506,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 }
             };
 
-            ps->onMacroAmountChanged = [safeThis](int macroIndex, magda::MacroTarget target,
+            ps->onMacroAmountChanged = [safeThis](int macroIndex, magda::ControlTarget target,
                                                   float amount) {
                 auto self = safeThis;
                 if (!self)
@@ -4593,7 +4644,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
 
         // Wire mod/macro callbacks — same lambdas as paramSlots_
         slider->onModLinkedWithAmount = [safeThis = juce::Component::SafePointer(this)](
-                                            int modIndex, magda::ModTarget target, float amount) {
+                                            int modIndex, magda::ControlTarget target,
+                                            float amount) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -4629,19 +4681,19 @@ void DeviceSlotComponent::setupCustomUILinking() {
                 self->updateParamModulation();
         };
 
-        slider->onModUnlinked =
-            [safeThis = juce::Component::SafePointer(this)](int modIndex, magda::ModTarget target) {
-                auto self = safeThis;
-                if (!self)
-                    return;
-                magda::TrackManager::getInstance().removeModLink(self->nodePath_, modIndex, target);
-                if (!self)
-                    return;
-                self->updateParamModulation();
-                self->updateModsPanel();
-            };
+        slider->onModUnlinked = [safeThis = juce::Component::SafePointer(this)](
+                                    int modIndex, magda::ControlTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            magda::TrackManager::getInstance().removeModLink(self->nodePath_, modIndex, target);
+            if (!self)
+                return;
+            self->updateParamModulation();
+            self->updateModsPanel();
+        };
         slider->onTrackModUnlinked = [safeThis = juce::Component::SafePointer(this)](
-                                         int modIndex, magda::ModTarget target) {
+                                         int modIndex, magda::ControlTarget target) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -4656,7 +4708,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
         };
 
         slider->onModAmountChanged = [safeThis = juce::Component::SafePointer(this)](
-                                         int modIndex, magda::ModTarget target, float amount) {
+                                         int modIndex, magda::ControlTarget target, float amount) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -4681,7 +4733,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
         };
 
         slider->onMacroLinkedWithAmount = [safeThis = juce::Component::SafePointer(this)](
-                                              int macroIndex, magda::MacroTarget target,
+                                              int macroIndex, magda::ControlTarget target,
                                               float amount) {
             auto self = safeThis;
             if (!self)
@@ -4719,7 +4771,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
         };
 
         slider->onMacroLinked = [safeThis = juce::Component::SafePointer(this)](
-                                    int macroIndex, magda::MacroTarget target) {
+                                    int macroIndex, magda::ControlTarget target) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -4729,7 +4781,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
         };
 
         slider->onMacroUnlinked = [safeThis = juce::Component::SafePointer(this)](
-                                      int macroIndex, magda::MacroTarget target) {
+                                      int macroIndex, magda::ControlTarget target) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -4740,7 +4792,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
             self->updateMacroPanel();
         };
         slider->onTrackMacroUnlinked = [safeThis = juce::Component::SafePointer(this)](
-                                           int macroIndex, magda::MacroTarget target) {
+                                           int macroIndex, magda::ControlTarget target) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -4754,7 +4806,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
             self->updateMacroPanel();
         };
         slider->onRackMacroLinked = [safeThis = juce::Component::SafePointer(this)](
-                                        int macroIndex, magda::MacroTarget target) {
+                                        int macroIndex, magda::ControlTarget target) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -4765,7 +4817,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
                 self->updateParamModulation();
         };
         slider->onTrackMacroLinked = [safeThis = juce::Component::SafePointer(this)](
-                                         int macroIndex, magda::MacroTarget target) {
+                                         int macroIndex, magda::ControlTarget target) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -4777,7 +4829,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
                 self->updateParamModulation();
         };
         slider->onRackMacroUnlinked = [safeThis = juce::Component::SafePointer(this)](
-                                          int macroIndex, magda::MacroTarget target) {
+                                          int macroIndex, magda::ControlTarget target) {
             auto self = safeThis;
             if (!self)
                 return;
@@ -4791,7 +4843,7 @@ void DeviceSlotComponent::setupCustomUILinking() {
         };
 
         slider->onMacroAmountChanged = [safeThis = juce::Component::SafePointer(this)](
-                                           int macroIndex, magda::MacroTarget target,
+                                           int macroIndex, magda::ControlTarget target,
                                            float amount) {
             auto self = safeThis;
             if (!self)

@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include "ControlTarget.hpp"
 #include "TypeIds.hpp"
 
 namespace magda {
@@ -13,83 +14,31 @@ constexpr int DEFAULT_MACRO_PAGES = 2;
 constexpr int NUM_MACROS = MACROS_PER_PAGE * DEFAULT_MACRO_PAGES;
 
 /**
- * @brief Target for a macro link.
+ * @brief A single macro link with per-link amount.
  *
- * Two kinds:
- *  - DeviceParam: macro drives a device's automatable parameter (deviceId +
- *    paramIndex). The original / only kind before unified mod-rate addressing.
- *  - ModParam:    macro drives a modifier's parameter (modId + modParamIndex,
- *    typically a Rate at index 0). The owning scope (track/rack/device) is
- *    inferred from the macro's parent path at resolution time, same scope
- *    walk PluginManager / RackSyncManager already uses.
- *
- * Default kind is DeviceParam so legacy serialized targets without an
- * explicit kind round-trip unchanged.
- */
-struct MacroTarget {
-    enum class Kind { DeviceParam, ModParam };
-
-    // Field order intentionally puts the legacy DeviceParam fields first so
-    // existing positional aggregate-init (MacroTarget{deviceId, paramIndex})
-    // in tests and call sites keeps compiling without modification.
-    DeviceId deviceId = INVALID_DEVICE_ID;  // DeviceParam: target device
-    int paramIndex = -1;                    // DeviceParam: parameter on the device
-
-    ModId modId = INVALID_MOD_ID;  // ModParam: target modifier
-    int modParamIndex = -1;        // ModParam: 0 = Rate (only kind today)
-
-    Kind kind = Kind::DeviceParam;
-
-    bool isValid() const {
-        switch (kind) {
-            case Kind::DeviceParam:
-                return deviceId != INVALID_DEVICE_ID && paramIndex >= 0;
-            case Kind::ModParam:
-                return modId != INVALID_MOD_ID && modParamIndex >= 0;
-        }
-        return false;
-    }
-
-    bool operator==(const MacroTarget& other) const {
-        if (kind != other.kind)
-            return false;
-        switch (kind) {
-            case Kind::DeviceParam:
-                return deviceId == other.deviceId && paramIndex == other.paramIndex;
-            case Kind::ModParam:
-                return modId == other.modId && modParamIndex == other.modParamIndex;
-        }
-        return false;
-    }
-
-    bool operator!=(const MacroTarget& other) const {
-        return !(*this == other);
-    }
-};
-
-/**
- * @brief A single macro link with per-link amount
+ * The target is a ControlTarget which addresses any parameter the system can
+ * write to (plugin params, device macros, modifier params, etc.). Macros
+ * targeting a modifier parameter use Kind::ModParam.
  */
 struct MacroLink {
-    MacroTarget target;
+    ControlTarget target;
     float amount = 0.0f;   // Per-link amount (-1.0 to 1.0)
     bool bipolar = false;  // true: macro 0-1 maps to -1..+1; false: stays 0..+1
 };
 
 /**
- * @brief A macro knob that can be linked to device parameters
+ * @brief A macro knob that can be linked to device parameters.
  *
  * Macros provide quick access to key parameters without opening device UIs.
  * Each rack and chain has 16 macro knobs.
  *
- * Supports multiple links: one macro can control multiple parameters simultaneously.
+ * Supports multiple links: one macro can control multiple parameters.
  */
 struct MacroInfo {
     MacroId id = INVALID_MACRO_ID;
     juce::String name;             // e.g., "Macro 1" or user-defined
     float value = 0.5f;            // 0.0 to 1.0, normalized (global macro value)
-    MacroTarget target;            // Legacy: single linked parameter (for backward compatibility)
-    std::vector<MacroLink> links;  // New: multiple links with per-link amounts
+    std::vector<MacroLink> links;  // Multiple links with per-link amounts
 
     // Default constructor
     MacroInfo() = default;
@@ -98,11 +47,11 @@ struct MacroInfo {
     explicit MacroInfo(int index) : id(index), name("Macro " + juce::String(index + 1)) {}
 
     bool isLinked() const {
-        return target.isValid() || !links.empty();
+        return !links.empty();
     }
 
     // Get link for a specific target
-    const MacroLink* getLink(const MacroTarget& target) const {
+    const MacroLink* getLink(const ControlTarget& target) const {
         for (const auto& link : links) {
             if (link.target == target) {
                 return &link;
@@ -112,7 +61,7 @@ struct MacroInfo {
     }
 
     // Get mutable link for a specific target
-    MacroLink* getLink(const MacroTarget& target) {
+    MacroLink* getLink(const ControlTarget& target) {
         for (auto& link : links) {
             if (link.target == target) {
                 return &link;
@@ -122,7 +71,7 @@ struct MacroInfo {
     }
 
     // Remove link to a specific target
-    void removeLink(const MacroTarget& t) {
+    void removeLink(const ControlTarget& t) {
         links.erase(std::remove_if(links.begin(), links.end(),
                                    [&t](const MacroLink& link) { return link.target == t; }),
                     links.end());

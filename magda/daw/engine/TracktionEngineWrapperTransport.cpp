@@ -1,6 +1,6 @@
 #include "../audio/AudioBridge.hpp"
-#include "../audio/SessionClipScheduler.hpp"
-#include "../audio/SessionRecorder.hpp"
+#include "../audio/session/SessionClipScheduler.hpp"
+#include "../audio/session/SessionRecorder.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/ViewModeController.hpp"

@@ -14,6 +14,7 @@ class SessionApiLive : public SessionApi {
     void stopClip(ClipId clipId) override;
     void stopTrack(TrackId trackId) override;
     void stopAll() override;
+    void launchScene(int sceneIndex) override;
     ClipId getActiveClipOnTrack(TrackId trackId) const override;
     ClipId getClipInSlot(TrackId trackId, int sceneIndex) const override;
     SessionClipPlayState getClipPlayState(ClipId clipId) const override;

@@ -1,6 +1,6 @@
 #include "ControllerRegistry.hpp"
 
-#include "../../audio/MidiDeviceMatch.hpp"
+#include "../../audio/midi/MidiDeviceMatch.hpp"
 
 namespace magda {
 

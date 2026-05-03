@@ -340,8 +340,8 @@ void MixerView::ChannelStrip::setupControls() {
     panSlider->setFont(FontManager::getInstance().getUIFont(10.0f));
     panSlider->onValueChanged = [this](double val) {
         auto& sel = SelectionManager::getInstance();
-        const bool multi = !isMaster_ && sel.isTrackSelected(trackId_) &&
-                           sel.getSelectedTrackCount() > 1;
+        const bool multi =
+            !isMaster_ && sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
         if (multi) {
             if (multiTrackBasePans_.empty()) {
                 auto& tm = TrackManager::getInstance();
@@ -364,8 +364,8 @@ void MixerView::ChannelStrip::setupControls() {
     panSlider->onDragEnd = [this]() { multiTrackBasePans_.clear(); };
     if (!isMaster_) {
         AutomationTarget panTarget;
-        panTarget.type = AutomationTargetType::TrackPan;
-        panTarget.trackId = trackId_;
+        panTarget.kind = ControlTarget::Kind::TrackPan;
+        panTarget.devicePath = magda::ChainNodePath::trackLevel(trackId_);
         panSlider->setAutomationTarget(panTarget);
     }
     addAndMakeVisible(*panSlider);
@@ -417,8 +417,8 @@ void MixerView::ChannelStrip::setupControls() {
         const float currentGain = dbToGain(currentDb);
 
         auto& sel = SelectionManager::getInstance();
-        const bool multi = !isMaster_ && sel.isTrackSelected(trackId_) &&
-                           sel.getSelectedTrackCount() > 1;
+        const bool multi =
+            !isMaster_ && sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
         if (multi) {
             if (multiTrackBaseVolumes_.empty()) {
                 auto& tm = TrackManager::getInstance();
@@ -443,8 +443,8 @@ void MixerView::ChannelStrip::setupControls() {
     volumeSlider->onDragEnd = [this]() { multiTrackBaseVolumes_.clear(); };
     if (!isMaster_) {
         AutomationTarget volTarget;
-        volTarget.type = AutomationTargetType::TrackVolume;
-        volTarget.trackId = trackId_;
+        volTarget.kind = ControlTarget::Kind::TrackVolume;
+        volTarget.devicePath = magda::ChainNodePath::trackLevel(trackId_);
         volumeSlider->setAutomationTarget(volTarget);
     }
     addAndMakeVisible(*volumeSlider);

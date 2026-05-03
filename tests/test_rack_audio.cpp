@@ -180,14 +180,14 @@ TEST_CASE("Rack audio sync: macro and mod structure", "[rack_audio][macros][mods
         // Link macro 0 to the delay's parameter 0
         rack = fixture.tm().getRack(trackId, rackId);
         MacroLink link;
-        link.target.deviceId = delayId;
+        link.target.devicePath = ChainNodePath::topLevelDevice(0, delayId);
         link.target.paramIndex = 0;
         link.amount = 0.75f;
         rack->macros[0].links.push_back(link);
 
         REQUIRE(rack->macros[0].isLinked());
         REQUIRE(rack->macros[0].links.size() == 1);
-        REQUIRE(rack->macros[0].links[0].target.deviceId == delayId);
+        REQUIRE(rack->macros[0].links[0].target.deviceId() == delayId);
     }
 
     SECTION("Rack mod can link to device parameter") {
@@ -210,7 +210,7 @@ TEST_CASE("Rack audio sync: macro and mod structure", "[rack_audio][macros][mods
         REQUIRE(rack->mods.size() > 0);
 
         ModLink link;
-        link.target.deviceId = eqId;
+        link.target.devicePath = ChainNodePath::topLevelDevice(0, eqId);
         link.target.paramIndex = 0;
         link.amount = 0.5f;
         rack->mods[0].addLink(link.target, link.amount);

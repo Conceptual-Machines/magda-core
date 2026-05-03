@@ -83,6 +83,7 @@ class WaveformEditorContent : public PanelContent,
     bool isRelativeTimeMode() const {
         return relativeTimeMode_;
     }
+    void setSnapEnabledFromUI(bool enabled);
 
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
@@ -117,6 +118,7 @@ class WaveformEditorContent : public PanelContent,
     std::unique_ptr<juce::TextButton> snapButton_;
     std::unique_ptr<juce::TextButton> gridButton_;
     bool gridVisible_ = true;
+    bool snapEnabled_ = false;
     int gridNumerator_ = 1;
     int gridDenominator_ = 4;
 

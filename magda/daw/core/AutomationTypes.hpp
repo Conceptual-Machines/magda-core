@@ -33,18 +33,6 @@ enum class AutomationDrawMode {
 };
 
 /**
- * @brief Type of automation target
- */
-enum class AutomationTargetType {
-    TrackVolume,      // Track volume fader
-    TrackPan,         // Track pan knob
-    SendLevel,        // Aux send level on a track
-    DeviceParameter,  // Parameter on a device (synth, effect)
-    Macro,            // Macro control on a rack
-    ModParameter      // Parameter on a modulator
-};
-
-/**
  * @brief Get display name for lane type
  */
 inline const char* getLaneTypeName(AutomationLaneType type) {
@@ -85,27 +73,6 @@ inline const char* getDrawModeName(AutomationDrawMode mode) {
             return "Line";
         case AutomationDrawMode::Curve:
             return "Curve";
-    }
-    return "Unknown";
-}
-
-/**
- * @brief Get display name for target type
- */
-inline const char* getTargetTypeName(AutomationTargetType type) {
-    switch (type) {
-        case AutomationTargetType::TrackVolume:
-            return "Track Volume";
-        case AutomationTargetType::TrackPan:
-            return "Track Pan";
-        case AutomationTargetType::SendLevel:
-            return "Send Level";
-        case AutomationTargetType::DeviceParameter:
-            return "Parameter";
-        case AutomationTargetType::Macro:
-            return "Macro";
-        case AutomationTargetType::ModParameter:
-            return "Mod Parameter";
     }
     return "Unknown";
 }

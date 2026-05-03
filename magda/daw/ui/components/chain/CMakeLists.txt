@@ -35,6 +35,7 @@ target_sources(magda_daw_app PRIVATE
     MacroPanelComponent.cpp
     ModKnobComponent.cpp
     ModsPanelComponent.cpp
+    AIPanelComponent.cpp
     ModulatorEditorPanel.cpp
     MacroEditorPanel.cpp
     LFOCurveEditor.cpp

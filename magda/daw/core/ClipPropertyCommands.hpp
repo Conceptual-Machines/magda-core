@@ -68,6 +68,140 @@ class SetClipOffsetCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for setting a clip's loop start (source-time seconds).
+ *
+ * Used for inspector edits where the caller separately handles offset/phase
+ * via SetClipOffsetCommand. For drag edits in editors that intentionally snap
+ * the phase, prefer SetClipLoopRangeCommand which captures both fields.
+ */
+class SetClipLoopStartCommand : public UndoableCommand {
+  public:
+    SetClipLoopStartCommand(ClipId clipId, double newLoopStart, double bpm = 120.0)
+        : clipId_(clipId), newLoopStart_(newLoopStart), bpm_(bpm) {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId))
+            oldLoopStart_ = clip->loopStart;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setLoopStart(clipId_, newLoopStart_, bpm_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setLoopStart(clipId_, oldLoopStart_, bpm_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Loop Start";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetClipLoopStartCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        auto* o = static_cast<const SetClipLoopStartCommand*>(other);
+        newLoopStart_ = o->newLoopStart_;
+        bpm_ = o->bpm_;
+    }
+
+  private:
+    ClipId clipId_;
+    double oldLoopStart_ = 0.0, newLoopStart_;
+    double bpm_;
+};
+
+/**
+ * @brief Command for setting a clip's loop length (source-time seconds).
+ */
+class SetClipLoopLengthCommand : public UndoableCommand {
+  public:
+    SetClipLoopLengthCommand(ClipId clipId, double newLoopLength, double bpm = 120.0)
+        : clipId_(clipId), newLoopLength_(newLoopLength), bpm_(bpm) {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId))
+            oldLoopLength_ = clip->loopLength;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setLoopLength(clipId_, newLoopLength_, bpm_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setLoopLength(clipId_, oldLoopLength_, bpm_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Loop Length";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetClipLoopLengthCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        auto* o = static_cast<const SetClipLoopLengthCommand*>(other);
+        newLoopLength_ = o->newLoopLength_;
+        bpm_ = o->bpm_;
+    }
+
+  private:
+    ClipId clipId_;
+    double oldLoopLength_ = 0.0, newLoopLength_;
+    double bpm_;
+};
+
+/**
+ * @brief Command for setting a clip's loop start and length together.
+ *
+ * Use for editor drags that intentionally snap the offset to the new loop
+ * start (the behaviour inside ClipManager::setLoopStartAndLength). Captures
+ * the original offset so undo restores the pre-drag phase too.
+ */
+class SetClipLoopRangeCommand : public UndoableCommand {
+  public:
+    SetClipLoopRangeCommand(ClipId clipId, double newLoopStart, double newLoopLength,
+                            double bpm = 120.0)
+        : clipId_(clipId), newLoopStart_(newLoopStart), newLoopLength_(newLoopLength), bpm_(bpm) {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId)) {
+            oldLoopStart_ = clip->loopStart;
+            oldLoopLength_ = clip->loopLength;
+            oldOffset_ = (clip->type == ClipType::MIDI) ? clip->midiOffset : clip->offset;
+        }
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setLoopStartAndLength(clipId_, newLoopStart_, newLoopLength_,
+                                                         bpm_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setLoopStartAndLength(clipId_, oldLoopStart_, oldLoopLength_,
+                                                         bpm_);
+        // setLoopStartAndLength snaps the offset for audio clips when
+        // loopStart moves; restore the captured pre-drag offset on top.
+        ClipManager::getInstance().setOffset(clipId_, oldOffset_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Loop Range";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetClipLoopRangeCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        auto* o = static_cast<const SetClipLoopRangeCommand*>(other);
+        newLoopStart_ = o->newLoopStart_;
+        newLoopLength_ = o->newLoopLength_;
+        bpm_ = o->bpm_;
+    }
+
+  private:
+    ClipId clipId_;
+    double oldLoopStart_ = 0.0, newLoopStart_;
+    double oldLoopLength_ = 0.0, newLoopLength_;
+    double oldOffset_ = 0.0;
+    double bpm_;
+};
+
+/**
  * @brief Command for setting clip pitch change (supports merging)
  */
 class SetClipPitchCommand : public UndoableCommand {
@@ -365,6 +499,42 @@ class SetClipFadeOutCommand : public UndoableCommand {
   private:
     ClipId clipId_;
     double oldFadeOut_ = 0.0, newFadeOut_;
+};
+
+/**
+ * @brief Command for setting clip launch-fade length in samples (supports merging)
+ */
+class SetClipLaunchFadeSamplesCommand : public UndoableCommand {
+  public:
+    SetClipLaunchFadeSamplesCommand(ClipId clipId, int newSamples)
+        : clipId_(clipId), newSamples_(newSamples) {
+        auto* clip = ClipManager::getInstance().getClip(clipId);
+        if (clip)
+            oldSamples_ = clip->launchFadeSamples;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setLaunchFadeSamples(clipId_, newSamples_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setLaunchFadeSamples(clipId_, oldSamples_);
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Launch Fade";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (auto* o = dynamic_cast<const SetClipLaunchFadeSamplesCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newSamples_ = static_cast<const SetClipLaunchFadeSamplesCommand*>(other)->newSamples_;
+    }
+
+  private:
+    ClipId clipId_;
+    int oldSamples_ = 256, newSamples_;
 };
 
 /**

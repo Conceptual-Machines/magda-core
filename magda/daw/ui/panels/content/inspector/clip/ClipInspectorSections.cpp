@@ -19,6 +19,7 @@
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -367,22 +368,32 @@ void ClipInspector::initClipPropertiesSection() {
 
         double bpm = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
 
-        // Update source metadata using actual file duration (not timeline length)
-        double sourceDuration = clip->getSourceLength();
-        clip->sourceBPM = newBPM;
-        if (sourceDuration > 0.0) {
-            clip->sourceNumBeats = sourceDuration * newBPM / 60.0;
-        }
-
-        // If autoTempo is active, recalculate beat values and resize
+        // Issue #1157: BPM edit is a CORRECTION of the detected file metadata,
+        // not a stretch control. We write only sourceBPM (and recompute
+        // sourceNumBeats from the file's true duration). Timeline length and
+        // loop region are user-intent and untouched — TE will adapt the
+        // playback stretch ratio to the new sourceBPM at the next sync.
         if (clip->autoTempo) {
-            clip->lengthBeats = clip->sourceNumBeats;
-            clip->loopLengthBeats = clip->sourceNumBeats;
-            double newLength = clip->lengthBeats * 60.0 / bpm;
-            magda::ClipManager::getInstance().resizeClip(primaryClipId(), newLength, false, bpm);
+            magda::ClipManager::AudioClipBeatsUpdate u;
+            u.sourceBPM = newBPM;
+            if (auto* thumb =
+                    magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath)) {
+                double fileDuration = thumb->getTotalLength();
+                if (fileDuration > 0.0)
+                    u.sourceNumBeats = fileDuration * newBPM / 60.0;
+            }
+            magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u, bpm);
         } else {
-            // Trigger sync even without autoTempo (sourceBPM stored for later use)
-            magda::ClipManager::getInstance().resizeClip(primaryClipId(), clip->length, false, bpm);
+            // Non-autoTempo audio: sourceBPM is just stored metadata, no
+            // dependent fields to recompute. Direct write is fine.
+            clip->sourceBPM = newBPM;
+            if (auto* thumb =
+                    magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath)) {
+                double fileDuration = thumb->getTotalLength();
+                if (fileDuration > 0.0)
+                    clip->sourceNumBeats = fileDuration * newBPM / 60.0;
+            }
+            magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
         }
 
         // Re-display with suffix
@@ -632,44 +643,59 @@ void ClipInspector::initClipPropertiesSection() {
             bpm = timelineController_->getState().tempo.bpm;
         }
 
-        // When enabling, update sourceBPM from detected BPM (AudioThumbnailManager)
-        // since the clip model may have stale metadata from TE's default loopInfo.
-        // Cached value is applied immediately; cache miss kicks off background
-        // detection and patches the clip when the result arrives. Beat mode is
-        // enabled optimistically with the existing sourceBPM in the meantime.
-        if (enable && clip->type == magda::ClipType::Audio) {
+        // When enabling, seed sourceBPM/sourceNumBeats from detected BPM
+        // (AudioThumbnailManager) since the clip model may have stale metadata
+        // from TE's default loopInfo. Cached value is applied immediately
+        // (pre-setAutoTempo, before the canonical path is open); cache miss
+        // kicks off background detection and the callback funnels through
+        // applyAudioClipBeats once autoTempo is on.
+        const bool sourceBpmLooksDefaulted =
+            clip->sourceBPM <= 0.0 || (bpm > 0.0 && std::abs(clip->sourceBPM - bpm) < 0.1);
+        if (enable && clip->type == magda::ClipType::Audio && sourceBpmLooksDefaulted) {
+            // Issue #1157: only seed from AudioThumbnailManager when the file
+            // didn't carry tempo metadata. setSourceMetadata (from TE's
+            // loopInfo) is authoritative when present; TempoDetect can be
+            // wrong by ~1.3x on syncopated loops.
             auto& thumbs = magda::AudioThumbnailManager::getInstance();
             double cached = thumbs.getCachedBPM(clip->audioFilePath);
             if (cached > 0.0) {
                 clip->sourceBPM = cached;
-                double sourceDuration = clip->getSourceLength();
-                if (sourceDuration > 0.0) {
-                    clip->sourceNumBeats = sourceDuration * cached / 60.0;
+                if (auto* thumb = thumbs.getThumbnail(clip->audioFilePath)) {
+                    double fileDuration = thumb->getTotalLength();
+                    if (fileDuration > 0.0)
+                        clip->sourceNumBeats = fileDuration * cached / 60.0;
                 }
             } else {
                 auto cid = primaryClipId();
                 thumbs.requestBPMDetection(clip->audioFilePath, [cid](double detectedBPM) {
                     if (detectedBPM <= 0.0)
                         return;
-                    auto* c = magda::ClipManager::getInstance().getClip(cid);
+                    auto& mgr = magda::ClipManager::getInstance();
+                    auto* c = mgr.getClip(cid);
                     if (!c)
                         return;
-                    c->sourceBPM = detectedBPM;
-                    double sd = c->getSourceLength();
-                    if (sd > 0.0)
-                        c->sourceNumBeats = sd * detectedBPM / 60.0;
-                    magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(cid);
+                    // Issue #1157: file metadata wins over audio analysis.
+                    // TempoDetect can be wrong by ~1.3x on syncopated loops.
+                    double live =
+                        magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+                    bool existingLooksDefaulted =
+                        c->sourceBPM > 0.0 && live > 0.0 && std::abs(c->sourceBPM - live) < 0.1;
+                    if (c->sourceBPM > 0.0 && !existingLooksDefaulted)
+                        return;
+                    magda::ClipManager::AudioClipBeatsUpdate u;
+                    u.sourceBPM = detectedBPM;
+                    if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                            c->audioFilePath)) {
+                        double fileDuration = thumb->getTotalLength();
+                        if (fileDuration > 0.0)
+                            u.sourceNumBeats = fileDuration * detectedBPM / 60.0;
+                    }
+                    mgr.applyAudioClipBeats(cid, u, live);
                 });
             }
         }
 
-        magda::ClipOperations::setAutoTempo(*clip, enable, bpm);
-
-        // In autoTempo mode, timeline length is derived from beat count
-        double newLength = (enable && clip->lengthBeats > 0.0 && bpm > 0.0)
-                               ? (clip->lengthBeats * 60.0 / bpm)
-                               : clip->length;
-        magda::ClipManager::getInstance().resizeClip(primaryClipId(), newLength, false, bpm);
+        magda::ClipManager::getInstance().setAutoTempo(primaryClipId(), enable, bpm);
         updateFromSelectedClip();
     };
 
@@ -790,9 +816,15 @@ void ClipInspector::initClipPropertiesSection() {
             magda::TimelineUtils::beatsToSeconds(newLoopStartBeats, loopBpm);
         newLoopStartSeconds = std::max(0.0, newLoopStartSeconds);
         double newOffset = newLoopStartSeconds + currentPhase;
-        magda::ClipManager::getInstance().setLoopStart(primaryClipId(), newLoopStartSeconds, bpm);
+        // Atomic: change loopStart, then place offset to preserve phase. Undo
+        // collapses both in a single step.
+        magda::UndoManager::getInstance().beginCompoundOperation("Set Clip Loop Start");
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetClipLoopStartCommand>(primaryClipId(), newLoopStartSeconds,
+                                                             bpm));
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newOffset));
+        magda::UndoManager::getInstance().endCompoundOperation();
     };
     clipPropsContainer_.addChildComponent(*clipLoopStartValue_);
 
@@ -851,7 +883,9 @@ void ClipInspector::initClipPropertiesSection() {
             }
         }
 
-        magda::ClipManager::getInstance().setLoopLength(primaryClipId(), newLoopLengthSeconds, bpm);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetClipLoopLengthCommand>(primaryClipId(), newLoopLengthSeconds,
+                                                              bpm));
     };
     clipPropsContainer_.addChildComponent(*clipLoopEndValue_);
 
@@ -1415,188 +1449,8 @@ void ClipInspector::initPlaybackSection() {
 // ========================================================================
 
 void ClipInspector::initFadesSection() {
-    fadesSectionLabel_.setText("Fades", juce::dontSendNotification);
-    fadesSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    fadesSectionLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    clipPropsContainer_.addChildComponent(fadesSectionLabel_);
-
-    fadeInValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
-    fadeInValue_->setRange(0.0, 30.0, 0.0);
-    fadeInValue_->setSuffix(" s");
-    fadeInValue_->setDecimalPlaces(3);
-    fadeInValue_->onValueChange = [this]() {
-        if (selectedClipIds_.empty())
-            return;
-        double currentValue = fadeInValue_->getValue();
-        double delta = currentValue - multiFadeInDragStart_;
-        for (auto cid : selectedClipIds_) {
-            const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio) {
-                double newVal = juce::jmax(0.0, c->fadeIn + delta);
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeInCommand>(cid, newVal));
-            }
-        }
-        multiFadeInDragStart_ = currentValue;
-        computeClipRange();
-        refreshClipRangeDisplay();
-    };
-    clipPropsContainer_.addChildComponent(*fadeInValue_);
-
-    fadeOutValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
-    fadeOutValue_->setRange(0.0, 30.0, 0.0);
-    fadeOutValue_->setSuffix(" s");
-    fadeOutValue_->setDecimalPlaces(3);
-    fadeOutValue_->onValueChange = [this]() {
-        if (selectedClipIds_.empty())
-            return;
-        double currentValue = fadeOutValue_->getValue();
-        double delta = currentValue - multiFadeOutDragStart_;
-        for (auto cid : selectedClipIds_) {
-            const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio) {
-                double newVal = juce::jmax(0.0, c->fadeOut + delta);
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeOutCommand>(cid, newVal));
-            }
-        }
-        multiFadeOutDragStart_ = currentValue;
-        computeClipRange();
-        refreshClipRangeDisplay();
-    };
-    clipPropsContainer_.addChildComponent(*fadeOutValue_);
-
-    // Fade type icon buttons: matches AudioFadeCurve::Type (1=linear, 2=convex, 3=concave,
-    // 4=sCurve)
-    struct FadeTypeIcon {
-        const char* name;
-        const char* data;
-        size_t size;
-        const char* tooltip;
-    };
-    FadeTypeIcon fadeTypeIcons[] = {
-        {"Linear", BinaryData::fade_linear_svg, BinaryData::fade_linear_svgSize, "Linear"},
-        {"Convex", BinaryData::fade_convex_svg, BinaryData::fade_convex_svgSize, "Convex"},
-        {"Concave", BinaryData::fade_concave_svg, BinaryData::fade_concave_svgSize, "Concave"},
-        {"SCurve", BinaryData::fade_scurve_svg, BinaryData::fade_scurve_svgSize, "S-Curve"},
-    };
-
-    auto setupFadeTypeButton = [this](std::unique_ptr<magda::SvgButton>& btn,
-                                      const FadeTypeIcon& icon) {
-        btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
-        btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
-        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-        btn->setBorderThickness(1.0f);
-        btn->setTooltip(icon.tooltip);
-        btn->setClickingTogglesState(false);
-        clipPropsContainer_.addChildComponent(*btn);
-    };
-
-    for (int i = 0; i < 4; ++i) {
-        setupFadeTypeButton(fadeInTypeButtons_[i], fadeTypeIcons[i]);
-        int fadeType =
-            i + 1;  // AudioFadeCurve::Type is 1-based (1=linear,2=convex,3=concave,4=sCurve)
-        fadeInTypeButtons_[i]->onClick = [this, i, fadeType]() {
-            if (selectedClipIds_.empty())
-                return;
-            for (auto cid : selectedClipIds_) {
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeInTypeCommand>(cid, fadeType));
-            }
-            for (int j = 0; j < 4; ++j)
-                fadeInTypeButtons_[j]->setActive(j == i);
-        };
-
-        setupFadeTypeButton(fadeOutTypeButtons_[i], fadeTypeIcons[i]);
-        fadeOutTypeButtons_[i]->onClick = [this, i, fadeType]() {
-            if (selectedClipIds_.empty())
-                return;
-            for (auto cid : selectedClipIds_) {
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeOutTypeCommand>(cid, fadeType));
-            }
-            for (int j = 0; j < 4; ++j)
-                fadeOutTypeButtons_[j]->setActive(j == i);
-        };
-    }
-
-    // Fade behaviour icon buttons: 0=gainFade, 1=speedRamp
-    struct FadeBehaviourIcon {
-        const char* name;
-        const char* data;
-        size_t size;
-        const char* tooltip;
-    };
-    FadeBehaviourIcon fadeBehaviourIcons[] = {
-        {"GainFade", BinaryData::fade_gain_svg, BinaryData::fade_gain_svgSize, "Gain Fade"},
-        {"SpeedRamp", BinaryData::fade_speedramp_svg, BinaryData::fade_speedramp_svgSize,
-         "Speed Ramp"},
-    };
-
-    auto setupFadeBehaviourButton = [this](std::unique_ptr<magda::SvgButton>& btn,
-                                           const FadeBehaviourIcon& icon) {
-        btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
-        btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
-        btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-        btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-        btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-        btn->setBorderThickness(1.0f);
-        btn->setTooltip(icon.tooltip);
-        btn->setClickingTogglesState(false);
-        clipPropsContainer_.addChildComponent(*btn);
-    };
-
-    for (int i = 0; i < 2; ++i) {
-        setupFadeBehaviourButton(fadeInBehaviourButtons_[i], fadeBehaviourIcons[i]);
-        fadeInBehaviourButtons_[i]->onClick = [this, i]() {
-            if (selectedClipIds_.empty())
-                return;
-            for (auto cid : selectedClipIds_) {
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeInBehaviourCommand>(cid, i));
-            }
-            for (int j = 0; j < 2; ++j)
-                fadeInBehaviourButtons_[j]->setActive(j == i);
-        };
-
-        setupFadeBehaviourButton(fadeOutBehaviourButtons_[i], fadeBehaviourIcons[i]);
-        fadeOutBehaviourButtons_[i]->onClick = [this, i]() {
-            if (selectedClipIds_.empty())
-                return;
-            for (auto cid : selectedClipIds_) {
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeOutBehaviourCommand>(cid, i));
-            }
-            for (int j = 0; j < 2; ++j)
-                fadeOutBehaviourButtons_[j]->setActive(j == i);
-        };
-    }
-
-    autoCrossfadeToggle_.setButtonText("AUTO-XFADE");
-    autoCrossfadeToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    autoCrossfadeToggle_.setColour(juce::TextButton::buttonColourId,
-                                   DarkTheme::getColour(DarkTheme::SURFACE));
-    autoCrossfadeToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                   DarkTheme::getAccentColour().withAlpha(0.3f));
-    autoCrossfadeToggle_.setColour(juce::TextButton::textColourOffId,
-                                   DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-    autoCrossfadeToggle_.setColour(juce::TextButton::textColourOnId, DarkTheme::getAccentColour());
-    autoCrossfadeToggle_.onClick = [this]() {
-        if (selectedClipIds_.empty())
-            return;
-        auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-        if (!clip)
-            return;
-        bool newState = !clip->autoCrossfade;
-        for (auto cid : selectedClipIds_) {
-            magda::ClipManager::getInstance().setAutoCrossfade(cid, newState);
-        }
-    };
-    clipPropsContainer_.addChildComponent(autoCrossfadeToggle_);
+    fadesSection_ = std::make_unique<ClipFadesSection>();
+    clipPropsContainer_.addChildComponent(*fadesSection_);
 }
 
 // ========================================================================

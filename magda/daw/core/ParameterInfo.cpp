@@ -2,7 +2,7 @@
 
 #include "TrackManager.hpp"
 #include "audio/AudioBridge.hpp"
-#include "audio/DeviceProcessor.hpp"
+#include "audio/processors/DeviceProcessor.hpp"
 #include "engine/AudioEngine.hpp"
 
 namespace magda {

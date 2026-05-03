@@ -18,8 +18,8 @@ static Binding makeBinding(const ControllerId& controllerId, BindingMsgType msgT
     b.source.msgType = msgType;
     b.source.channel = channel;
     b.source.number = number;
-    // Use a simple StaticTarget
-    StaticTarget st;
+    // Use a simple ControlTarget
+    ControlTarget st;
     st.devicePath = ChainNodePath::topLevelDevice(1, 10);
     st.paramIndex = 0;
     b.target = Target{st};
@@ -205,35 +205,35 @@ TEST_CASE("BindingRegistry - hasBindingForDevice distinguishes PluginParam from 
 
     // Build a PluginParam binding for devicePath
     Binding bParam = makeBinding(cid, BindingMsgType::CC, 1, 7);
-    StaticTarget stParam;
+    ControlTarget stParam;
     stParam.devicePath = devicePath;
     stParam.paramIndex = 2;
-    stParam.owner = StaticTarget::Owner::PluginParam;
+    stParam.kind = ControlTarget::Kind::PluginParam;
     bParam.target = Target{stParam};
     reg.add(BindingScope::Global, bParam);
 
     // Build a DeviceMacro binding for devicePath (project scope)
     Binding bMacro = makeBinding(cid, BindingMsgType::CC, 1, 8);
     bMacro.id = juce::Uuid();  // fresh id
-    StaticTarget stMacro;
+    ControlTarget stMacro;
     stMacro.devicePath = devicePath;
     stMacro.paramIndex = 0;
-    stMacro.owner = StaticTarget::Owner::DeviceMacro;
+    stMacro.kind = ControlTarget::Kind::DeviceMacro;
     bMacro.target = Target{stMacro};
     reg.add(BindingScope::Project, bMacro);
 
     // devicePath should have both
-    REQUIRE(reg.hasBindingForDevice(devicePath, StaticTarget::Owner::PluginParam));
-    REQUIRE(reg.hasBindingForDevice(devicePath, StaticTarget::Owner::DeviceMacro));
+    REQUIRE(reg.hasBindingForDevice(devicePath, ControlTarget::Kind::PluginParam));
+    REQUIRE(reg.hasBindingForDevice(devicePath, ControlTarget::Kind::DeviceMacro));
 
     // otherPath has neither
-    REQUIRE_FALSE(reg.hasBindingForDevice(otherPath, StaticTarget::Owner::PluginParam));
-    REQUIRE_FALSE(reg.hasBindingForDevice(otherPath, StaticTarget::Owner::DeviceMacro));
+    REQUIRE_FALSE(reg.hasBindingForDevice(otherPath, ControlTarget::Kind::PluginParam));
+    REQUIRE_FALSE(reg.hasBindingForDevice(otherPath, ControlTarget::Kind::DeviceMacro));
 
     // Remove DeviceMacro binding - DeviceMacro should now be false for devicePath
     reg.remove(BindingScope::Project, bMacro.id);
-    REQUIRE(reg.hasBindingForDevice(devicePath, StaticTarget::Owner::PluginParam));
-    REQUIRE_FALSE(reg.hasBindingForDevice(devicePath, StaticTarget::Owner::DeviceMacro));
+    REQUIRE(reg.hasBindingForDevice(devicePath, ControlTarget::Kind::PluginParam));
+    REQUIRE_FALSE(reg.hasBindingForDevice(devicePath, ControlTarget::Kind::DeviceMacro));
 }
 
 TEST_CASE("BindingRegistry - hasActiveStaticBindingForMacro excludes resolver bindings",
@@ -245,7 +245,7 @@ TEST_CASE("BindingRegistry - hasActiveStaticBindingForMacro excludes resolver bi
     ControllerId cid = juce::Uuid();
 
     // Resolver binding (focused.macro automap profile) — counts as active
-    // for hasActiveBindingForTarget but NOT for hasActiveStaticBindingForMacro,
+    // for hasActiveBindingFor but NOT for hasActiveStaticBindingForMacro,
     // since it isn't a user-mapped Learn target.
     Binding bResolver = makeBinding(cid, BindingMsgType::CC, 1, 20);
     ResolverRef rr;
@@ -256,13 +256,13 @@ TEST_CASE("BindingRegistry - hasActiveStaticBindingForMacro excludes resolver bi
 
     REQUIRE_FALSE(reg.hasActiveStaticBindingForMacro(devicePath, 3));
 
-    // Add an explicit DeviceMacro StaticTarget — now Learn'd, helper returns true.
+    // Add an explicit DeviceMacro ControlTarget — now Learn'd, helper returns true.
     Binding bMacro = makeBinding(cid, BindingMsgType::CC, 1, 21);
     bMacro.id = juce::Uuid();
-    StaticTarget stMacro;
+    ControlTarget stMacro;
     stMacro.devicePath = devicePath;
     stMacro.paramIndex = 3;
-    stMacro.owner = StaticTarget::Owner::DeviceMacro;
+    stMacro.kind = ControlTarget::Kind::DeviceMacro;
     bMacro.target = Target{stMacro};
     reg.add(BindingScope::Project, bMacro);
 

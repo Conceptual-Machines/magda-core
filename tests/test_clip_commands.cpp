@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <unordered_set>
 
 #include "magda/daw/core/ClipCommands.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -134,6 +135,35 @@ TEST_CASE("DuplicateClipCommand - undo/redo", "[clip][command][duplicate][undo]"
     REQUIRE(ClipManager::getInstance().getClip(original) != nullptr);
 }
 
+TEST_CASE("DuplicateClipCommand - session undo removes duplicate only",
+          "[clip][command][duplicate][session][undo]") {
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack();
+    ClipId original = cm.createMidiClip(track, 0.0, 4.0, ClipView::Session);
+    cm.setClipSceneIndex(original, 0);
+
+    DuplicateClipCommand cmd(original, -1.0, INVALID_TRACK_ID, 0.0, 2);
+    cmd.execute();
+
+    ClipId duplicateId = cmd.getDuplicatedClipId();
+    REQUIRE(duplicateId != INVALID_CLIP_ID);
+    REQUIRE(cm.getClipInSlot(track, 0) == original);
+    REQUIRE(cm.getClipInSlot(track, 2) == duplicateId);
+
+    cmd.undo();
+
+    REQUIRE(cm.getClip(duplicateId) == nullptr);
+    REQUIRE(cm.getClipInSlot(track, 0) == original);
+    REQUIRE(cm.getClipInSlot(track, 2) == INVALID_CLIP_ID);
+
+    cmd.execute();
+    ClipId redoDuplicateId = cmd.getDuplicatedClipId();
+    REQUIRE(redoDuplicateId != INVALID_CLIP_ID);
+    REQUIRE(cm.getClipInSlot(track, 0) == original);
+    REQUIRE(cm.getClipInSlot(track, 2) == redoDuplicateId);
+}
+
 TEST_CASE("DuplicateClipCommand - audio clip", "[clip][command][duplicate]") {
     resetState();
     TrackId track = createTrack("Audio Track", TrackType::Audio);
@@ -186,6 +216,35 @@ TEST_CASE("DuplicateClipCommand - audio clip startBeats stays in sync with start
     REQUIRE(dup->startBeats != Catch::Approx(origAfter->startBeats));
 
     proj.setTempo(originalTempo);
+}
+
+TEST_CASE("Arrangement multi-clip duplicate preserves selection spacing",
+          "[clip][command][duplicate][multi]") {
+    resetState();
+    TrackId track = createTrack();
+    ClipId left = createMidi(track, 0.0, 1.0);
+    ClipId right = createMidi(track, 1.0, 1.0);
+
+    auto commands = createArrangementBlockDuplicateCommands({left, right}, 120.0);
+    REQUIRE(commands.size() == 2);
+
+    std::vector<ClipId> duplicates;
+    for (auto& command : commands) {
+        auto* commandPtr = command.get();
+        command->execute();
+        duplicates.push_back(commandPtr->getDuplicatedClipId());
+    }
+
+    REQUIRE(duplicates.size() == 2);
+    auto* dupLeft = ClipManager::getInstance().getClip(duplicates[0]);
+    auto* dupRight = ClipManager::getInstance().getClip(duplicates[1]);
+    REQUIRE(dupLeft != nullptr);
+    REQUIRE(dupRight != nullptr);
+
+    REQUIRE(dupLeft->startTime == Catch::Approx(2.0));
+    REQUIRE(dupRight->startTime == Catch::Approx(3.0));
+    REQUIRE(dupLeft->trackId == track);
+    REQUIRE(dupRight->trackId == track);
 }
 
 // Regression: time-range duplicate (Cmd+D over an active time selection)

@@ -1,5 +1,7 @@
 #include "AudioThumbnailManager.hpp"
 
+#include "WaveformPeakCache.hpp"
+
 // clang-format off
 #include <tracktion_engine/tracktion_engine.h>
 #include <tracktion_engine/timestretch/tracktion_TempoDetect.h>
@@ -67,13 +69,19 @@ juce::AudioThumbnail* AudioThumbnailManager::createThumbnail(const juce::String&
         << audioFilePath << " (channels: " << thumbnailPtr->getNumChannels()
         << ", length: " << thumbnailPtr->getTotalLength() << "s)");
 
+    // First time we've seen this file in this session — load (or compute and
+    // persist) its high-resolution peak cache off the message thread. The
+    // smooth renderer will fall back to per-paint reader reads until this
+    // completes.
+    requestPeakCacheLoad(audioFilePath);
+
     return thumbnailPtr;
 }
 
 void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                                          const juce::String& audioFilePath, double startTime,
                                          double endTime, const juce::Colour& colour,
-                                         float verticalZoom, bool useHighRes) {
+                                         float verticalZoom, bool useHighRes, bool thick) {
     if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0)
         return;
 
@@ -90,9 +98,11 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
     startTime = juce::jlimit(0.0, totalLength, startTime);
     endTime = juce::jlimit(startTime, totalLength, endTime);
 
-    // When useHighRes is enabled (waveform editor), use raw samples only when
-    // zoomed in enough that the JUCE thumbnail (512 samples/point) lacks resolution.
-    // At moderate zoom, the thumbnail is sufficient and much faster (no disk IO).
+    // useHighRes opts into the path-based smooth renderer (drawWaveformFromSamples).
+    // Below the samples-per-pixel threshold the smooth envelope is visibly
+    // better; above it (zoomed far out) the cheap JUCE thumbnail is used, since
+    // the smooth path's disk read would be a waste when the result is the same
+    // pixel soup.
     if (useHighRes) {
         auto* reader = getOrCreateReader(audioFilePath);
         if (reader != nullptr && reader->sampleRate > 0.0) {
@@ -100,19 +110,48 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
             double samplesInRange = timeRange * reader->sampleRate;
             double samplesPerPixel = samplesInRange / bounds.getWidth();
 
-            // 512 = thumbnail resolution (samples per point). Below this threshold,
-            // raw samples provide visibly better quality than the thumbnail.
-            if (samplesPerPixel < 512.0) {
-                drawWaveformFromSamples(g, bounds, reader, startTime, endTime, colour,
-                                        verticalZoom);
+            // ~8192 samples/pixel ≈ 186 ms/pixel at 44.1k — keeps the smooth
+            // path active at most realistic arrangement-view zooms; only true
+            // multi-minute overviews drop to the thumbnail.
+            // Log mode transitions per-file so the dev console reflects when
+            // zoom crosses the smooth/thumbnail boundary — without spamming
+            // every paint frame.
+            static std::unordered_map<juce::String, bool> lastWasLowResByFile;
+            bool& last = lastWasLowResByFile[audioFilePath];
+            if (samplesPerPixel < 8192.0) {
+                if (last) {
+                    DBG("AudioThumbnailManager: smooth (samples) for "
+                        << audioFilePath << " — samplesPerPixel=" << samplesPerPixel
+                        << " (threshold 8192, " << bounds.getWidth() << "px wide)");
+                    last = false;
+                }
+                const WaveformPeakCache* peakCache = nullptr;
+                auto pcIt = peakCaches_.find(audioFilePath);
+                if (pcIt != peakCaches_.end())
+                    peakCache = pcIt->second.get();
+
+                drawWaveformFromSamples(g, bounds, reader, peakCache, startTime, endTime, colour,
+                                        verticalZoom, thick);
                 return;
+            }
+            if (!last) {
+                DBG("AudioThumbnailManager: low-res (thumbnail) for "
+                    << audioFilePath << " — samplesPerPixel=" << samplesPerPixel
+                    << " (threshold 8192, " << bounds.getWidth() << "px wide)");
+                last = true;
             }
         }
     }
 
-    // Draw the waveform from thumbnail (zoomed out)
+    // Draw the waveform from thumbnail (zoomed out).
+    // For "thick" mode (selected clips), draw a second pass shifted by 1px
+    // vertically so the columns paint as 2px-tall blocks. JUCE's thumbnail
+    // renderer fills 1px-wide columns and offers no line-width control.
     g.setColour(colour);
     thumbnail->drawChannels(g, bounds, startTime, endTime, verticalZoom);
+    if (thick) {
+        thumbnail->drawChannels(g, bounds.translated(0, 1), startTime, endTime, verticalZoom);
+    }
 }
 
 namespace {
@@ -165,6 +204,11 @@ double AudioThumbnailManager::getCachedBPM(const juce::String& filePath) const {
     return it != bpmCache_.end() ? it->second : 0.0;
 }
 
+void AudioThumbnailManager::cacheBPM(const juce::String& filePath, double bpm) {
+    if (bpm > 0.0)
+        bpmCache_[filePath] = bpm;
+}
+
 void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
                                                 std::function<void(double)> onComplete) {
     // Caches and pending-callback map are message-thread only (no locks).
@@ -192,11 +236,7 @@ void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
     if (onComplete)
         callbacks.push_back(std::move(onComplete));
 
-    if (!bpmThreadPool_) {
-        bpmThreadPool_ = std::make_unique<juce::ThreadPool>(1);
-    }
-
-    bpmThreadPool_->addJob([filePath]() {
+    getOrCreateBackgroundPool().addJob([filePath]() {
         const double result = runBpmDetection(filePath);
         DBG("AudioThumbnailManager: Detected BPM for " << filePath << ": " << result);
 
@@ -275,7 +315,8 @@ juce::AudioFormatReader* AudioThumbnailManager::getOrCreateReader(
 
 void AudioThumbnailManager::drawWaveformFromSamples(
     juce::Graphics& g, const juce::Rectangle<int>& bounds, juce::AudioFormatReader* reader,
-    double startTime, double endTime, const juce::Colour& colour, float verticalZoom) {
+    const WaveformPeakCache* peakCache, double startTime, double endTime,
+    const juce::Colour& colour, float verticalZoom, bool thick) {
     const int width = bounds.getWidth();
     const int height = bounds.getHeight();
     const int numChannels = static_cast<int>(reader->numChannels);
@@ -348,13 +389,27 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                     path.lineTo(px, y);
             }
 
-            g.strokePath(path, juce::PathStrokeType(1.5f));
+            // Thick mode: fade stroke width from 2.5 (deep zoom, ~1 sample/px) up
+            // to 3.5 (near the envelope boundary at 8 samples/px) so the visual
+            // weight roughly matches the filled envelope on the other side.
+            const float thickStroke = juce::jlimit(
+                2.5f, 3.5f, 2.5f + static_cast<float>(samplesPerPixel - 1.0) * (1.0f / 7.0f));
+            g.strokePath(path, juce::PathStrokeType(thick ? thickStroke : 1.5f));
         }
     } else {
         // ENVELOPE MODE: multiple samples per pixel — draw filled min/max envelope.
-        // Cap buffer size to avoid huge allocations.
+        //
+        // Three sources of per-column min/max, in priority order:
+        //   1. peakCache: if loaded AND each pixel column spans at least one
+        //      full 64-sample bucket. Avoids any reader read.
+        //   2. Full in-memory buffer: when the full range fits in 2M samples.
+        //   3. Per-column chunked reads: long files without a cache yet.
+        const bool usePeakCache =
+            (peakCache != nullptr) && (peakCache->getNumChannels() >= numChannels) &&
+            (samplesPerPixel >= static_cast<double>(WaveformPeakCache::SAMPLES_PER_PEAK));
+
         const juce::int64 maxBufferSamples = 2 * 1024 * 1024;  // 2M samples max
-        const bool useFullBuffer = (totalSamples <= maxBufferSamples);
+        const bool useFullBuffer = !usePeakCache && (totalSamples <= maxBufferSamples);
 
         juce::AudioBuffer<float> buffer;
         if (useFullBuffer) {
@@ -363,7 +418,7 @@ void AudioThumbnailManager::drawWaveformFromSamples(
         }
 
         juce::AudioBuffer<float> chunkBuffer;
-        if (!useFullBuffer) {
+        if (!usePeakCache && !useFullBuffer) {
             int maxChunk = static_cast<int>(std::min<juce::int64>(totalSamples / width + 2, 65536));
             chunkBuffer.setSize(numChannels, maxChunk);
         }
@@ -392,7 +447,12 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                 float minVal = 1.0f;
                 float maxVal = -1.0f;
 
-                if (useFullBuffer) {
+                if (usePeakCache) {
+                    const auto mm = peakCache->getMinMaxForRange(ch, startSample + colStart,
+                                                                 startSample + colEnd);
+                    minVal = mm.min;
+                    maxVal = mm.max;
+                } else if (useFullBuffer) {
                     const float* samples = buffer.getReadPointer(ch);
                     for (juce::int64 s = colStart; s < colEnd; ++s) {
                         const float v = samples[s];
@@ -439,6 +499,11 @@ void AudioThumbnailManager::drawWaveformFromSamples(
 
             path.closeSubPath();
             g.fillPath(path);
+            if (thick) {
+                // Bulk up the envelope by re-filling the path shifted 1px down,
+                // matching the thumbnail-path "thick" treatment.
+                g.fillPath(path, juce::AffineTransform::translation(0.0f, 1.0f));
+            }
         }
     }
 }
@@ -451,18 +516,65 @@ void AudioThumbnailManager::clearCache() {
     transientCache_.clear();
     readerIndex_.clear();
     readerLru_.clear();
+    peakCaches_.clear();
+    pendingPeakComputes_.clear();
     DBG("AudioThumbnailManager: Cache cleared");
 }
 
+juce::ThreadPool& AudioThumbnailManager::getOrCreateBackgroundPool() {
+    if (!backgroundThreadPool_)
+        backgroundThreadPool_ = std::make_unique<juce::ThreadPool>(1);
+    return *backgroundThreadPool_;
+}
+
+void AudioThumbnailManager::requestPeakCacheLoad(const juce::String& audioFilePath) {
+    JUCE_ASSERT_MESSAGE_THREAD;
+
+    if (peakCaches_.find(audioFilePath) != peakCaches_.end())
+        return;
+    if (!pendingPeakComputes_.insert(audioFilePath).second)
+        return;  // already in flight
+
+    getOrCreateBackgroundPool().addJob([audioFilePath]() {
+        juce::File audioFile(audioFilePath);
+
+        // Try the on-disk cache first. The header re-validates against file
+        // size + mtime, so a stale cache fails the load and falls through to
+        // recompute.
+        std::shared_ptr<WaveformPeakCache> cache = WaveformPeakCache::loadFromDisk(audioFile);
+
+        if (!cache) {
+            // Local format manager — juce::AudioFormatManager isn't safe to
+            // share across threads.
+            juce::AudioFormatManager fm;
+            fm.registerBasicFormats();
+            std::unique_ptr<juce::AudioFormatReader> reader(fm.createReaderFor(audioFile));
+            if (reader) {
+                cache = WaveformPeakCache::computeAndWrite(audioFile, *reader);
+            }
+        }
+
+        juce::MessageManager::callAsync([audioFilePath, cache]() {
+            auto& self = AudioThumbnailManager::getInstance();
+            self.pendingPeakComputes_.erase(audioFilePath);
+            if (cache)
+                self.peakCaches_[audioFilePath] = cache;
+        });
+    });
+}
+
 void AudioThumbnailManager::shutdown() {
-    // Stop any in-flight BPM detection jobs before tearing down state. The
-    // 5000ms timeout caps the wait — TempoDetect doesn't honour interruption
-    // mid-scan, but a single scan should fit comfortably under that bound.
-    if (bpmThreadPool_) {
-        bpmThreadPool_->removeAllJobs(true, 5000);
-        bpmThreadPool_.reset();
+    // Stop any in-flight background jobs (BPM detection or peak compute)
+    // before tearing down state. The 5000ms timeout caps the wait —
+    // TempoDetect doesn't honour interruption mid-scan, but a single scan
+    // should fit comfortably under that bound.
+    if (backgroundThreadPool_) {
+        backgroundThreadPool_->removeAllJobs(true, 5000);
+        backgroundThreadPool_.reset();
     }
     pendingBpmCallbacks_.clear();
+    pendingPeakComputes_.clear();
+    peakCaches_.clear();
 
     // Clear the cache first — this cancels any pending background thumbnail jobs
     // in the internal thread pool before we destroy the AudioThumbnail objects.

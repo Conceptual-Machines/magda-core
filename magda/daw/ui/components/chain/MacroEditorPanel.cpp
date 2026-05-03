@@ -144,15 +144,15 @@ MacroEditorPanel::MacroEditorPanel() {
     addAndMakeVisible(valueSlider_);
 
     // Link matrix viewport + content
-    linkMatrixContent_.onDeleteLink = [this](magda::MacroTarget target) {
+    linkMatrixContent_.onDeleteLink = [this](magda::ControlTarget target) {
         if (onLinkRemoved)
             onLinkRemoved(target);
     };
-    linkMatrixContent_.onAmountChanged = [this](magda::MacroTarget target, float amount) {
+    linkMatrixContent_.onAmountChanged = [this](magda::ControlTarget target, float amount) {
         if (onLinkAmountChanged)
             onLinkAmountChanged(target, amount);
     };
-    linkMatrixContent_.onToggleBipolar = [this](magda::MacroTarget target, bool bipolar) {
+    linkMatrixContent_.onToggleBipolar = [this](magda::ControlTarget target, bool bipolar) {
         if (onLinkBipolarToggled)
             onLinkBipolarToggled(target, bipolar);
     };
@@ -193,7 +193,7 @@ void MacroEditorPanel::updateFromMacro() {
         row.target = link.target;
         row.amount = link.amount;
         row.bipolar = link.bipolar;
-        if (link.target.kind == magda::MacroTarget::Kind::ModParam) {
+        if (link.target.kind == magda::ControlTarget::Kind::ModParam) {
             // ModParam link: resolve via the mod-name callback. Falls back to
             // a generic "Mod <id> Rate" so the row never appears blank.
             juce::String modName;
@@ -203,25 +203,10 @@ void MacroEditorPanel::updateFromMacro() {
                 modName = "Mod " + juce::String(link.target.modId) + " Rate";
             row.paramName = modName;
         } else if (paramNameResolver_) {
-            row.paramName = paramNameResolver_(link.target.deviceId, link.target.paramIndex);
+            row.paramName = paramNameResolver_(link.target.deviceId(), link.target.paramIndex);
         } else {
-            row.paramName = "Device " + juce::String(link.target.deviceId) + " P" +
+            row.paramName = "Device " + juce::String(link.target.deviceId()) + " P" +
                             juce::String(link.target.paramIndex + 1);
-        }
-        rows.push_back(row);
-    }
-
-    // Legacy fallback: single target
-    if (rows.empty() && currentMacro_.target.isValid()) {
-        MacroLinkMatrixContent::LinkRow row;
-        row.target = currentMacro_.target;
-        row.amount = 1.0f;
-        if (paramNameResolver_) {
-            row.paramName =
-                paramNameResolver_(currentMacro_.target.deviceId, currentMacro_.target.paramIndex);
-        } else {
-            row.paramName = "Device " + juce::String(currentMacro_.target.deviceId) + " P" +
-                            juce::String(currentMacro_.target.paramIndex + 1);
         }
         rows.push_back(row);
     }

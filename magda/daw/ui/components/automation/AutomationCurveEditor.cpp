@@ -188,7 +188,7 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
         return;
     }
 
-    auto paramInfo = lane->target.getParameterInfo();
+    auto paramInfo = getParameterInfoForTarget(lane->target);
 
     // Build list of normalized grid positions based on parameter type
     std::vector<double> gridNorms;
@@ -200,7 +200,7 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
             float norm = ParameterUtils::realToNormalized(static_cast<float>(db), paramInfo);
             gridNorms.push_back(static_cast<double>(norm));
         }
-    } else if (lane->target.type == AutomationTargetType::TrackPan) {
+    } else if (lane->target.kind == ControlTarget::Kind::TrackPan) {
         // Pan: fine divisions from -1 to +1
         for (double pan = -1.0; pan <= 1.0; pan += 0.25) {
             float norm = ParameterUtils::realToNormalized(static_cast<float>(pan), paramInfo);
@@ -249,7 +249,7 @@ juce::String AutomationCurveEditor::formatValueLabel(double y) const {
     if (!lane)
         return CurveEditorBase::formatValueLabel(y);
 
-    auto paramInfo = lane->target.getParameterInfo();
+    auto paramInfo = getParameterInfoForTarget(lane->target);
     float realValue = ParameterUtils::normalizedToReal(static_cast<float>(y), paramInfo);
     return ParameterUtils::formatValue(realValue, paramInfo);
 }
@@ -455,7 +455,8 @@ double AutomationCurveEditor::applyValueSnap(double normalized) const {
     const auto* lane = AutomationManager::getInstance().getLane(laneId_);
     if (!lane || !lane->snapValue)
         return normalized;
-    return ParameterUtils::snapNormalizedToGrid(normalized, lane->target.getParameterInfo());
+    return ParameterUtils::snapNormalizedToGrid(normalized,
+                                                getParameterInfoForTarget(lane->target));
 }
 
 void AutomationCurveEditor::onPointDeleted(uint32_t pointId) {

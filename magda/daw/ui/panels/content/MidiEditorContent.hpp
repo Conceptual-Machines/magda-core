@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -105,6 +106,7 @@ class MidiEditorContent : public PanelContent,
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
     double horizontalZoom_ = 50.0;  // pixels per beat
     bool relativeTimeMode_ = false;
+    double lastScrolledPlacementStartBeat_ = std::numeric_limits<double>::quiet_NaN();
 
     // --- Grid resolution (from BottomPanel grid controls) ---
     double gridResolutionBeats_ = 0.25;  // Current grid resolution in beats (default 1/16)
@@ -153,6 +155,7 @@ class MidiEditorContent : public PanelContent,
 
     // --- Shared TimeRuler method (virtual for subclass extension) ---
     virtual void updateTimeRuler();
+    void scrollToClipStartForTimeMode();
 
     // --- Pure virtual methods for subclasses ---
     virtual int getLeftPanelWidth() const = 0;

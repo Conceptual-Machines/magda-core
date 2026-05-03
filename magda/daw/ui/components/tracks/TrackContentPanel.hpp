@@ -392,9 +392,14 @@ class TrackContentPanel : public juce::Component,
     // ========================================================================
     bool showPluginDropOverlay_ = false;
     int pluginDropTrackIndex_ = -1;  // -1 = empty area (new track)
+    int minWidth_ = 0;               // Floor set by MainView so ruler/content widths match
     int minHeight_ = 0;              // Floor set by MainView so DnD works below last track
 
   public:
+    void setMinWidth(int w) {
+        minWidth_ = w;
+    }
+
     void setMinHeight(int h) {
         minHeight_ = h;
     }

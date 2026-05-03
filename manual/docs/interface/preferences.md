@@ -2,7 +2,7 @@
 
 Open the Preferences dialog from **Settings > Preferences**.
 
-![Preferences](../assets/images/interface/preferences.png)
+The dialog is organised into sections; each section is described below.
 
 ## General
 
@@ -29,6 +29,18 @@ Pick a global scale factor for the whole interface. Useful on HiDPI / 4K screens
 | **100% – 200%** | Fixed multiplier, ignoring DPI auto-detection. Common picks: 125% on a regular 4K monitor, 150% on a Retina laptop with external scaling, 200% if you want to see fewer rows from across the room. |
 
 Changes apply live — no restart required. The shortcuts ++cmd+plus++ and ++cmd+minus++ also bump the scale up and down by one preset.
+
+## Storage
+
+MAGDA keeps user data in three configurable folders. Each can be redirected to any path on disk — point them at an external drive, a synced folder, or a per-project staging area.
+
+| Folder | Holds | Default location |
+|---|---|---|
+| **Data** | App config, controller profiles, Lua scripts, locale overrides | `~/Library/MAGDA` (macOS), `%APPDATA%\MAGDA` (Windows), `~/.config/MAGDA` (Linux) |
+| **Presets** | `.mps` device presets and the per-plugin preset cache | `<Data>/presets` |
+| **Render** | Bounce / freeze / export output | `<Data>/render` |
+
+Click **Browse…** next to a path to relocate that folder. MAGDA does not move existing content for you — copy or symlink the contents over before switching if you want to keep what's there.
 
 ## Colours
 

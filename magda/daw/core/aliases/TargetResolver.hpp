@@ -13,35 +13,28 @@
 namespace magda {
 
 // ============================================================================
-// ResolvedTarget
+// ResolveResult
 // ============================================================================
 
 /**
- * @brief The result of resolving any Target form to a concrete location.
+ * @brief The result of resolving any Target form to a concrete ControlTarget.
+ *
+ * Thin wrapper composing a ControlTarget with provenance metadata. The
+ * resolver populates `target` and `sourceLabel`; `ok()` is shorthand for
+ * "resolution succeeded AND the target is valid."
  */
-struct ResolvedTarget {
-    ChainNodePath devicePath;
-    int paramIndex = -1;
-    StaticTarget::Owner owner = StaticTarget::Owner::PluginParam;
-
-    // Populated only when owner == ModParam.
-    ModId modId = INVALID_MOD_ID;
-    int modParamIndex = -1;
-
+struct ResolveResult {
+    ControlTarget target;
     juce::String sourceLabel;  // Human-readable provenance (for error messages)
     bool resolved = false;
 
     bool ok() const {
-        if (!resolved || !devicePath.isValid())
-            return false;
-        if (owner == StaticTarget::Owner::ModParam)
-            return modId != INVALID_MOD_ID && modParamIndex >= 0;
-        return paramIndex >= 0;
+        return resolved && target.isValid();
     }
 
     /** Convenience factory for failure results. */
-    static ResolvedTarget failure(const juce::String& reason) {
-        ResolvedTarget r;
+    static ResolveResult failure(const juce::String& reason) {
+        ResolveResult r;
         r.sourceLabel = reason;
         r.resolved = false;
         return r;
@@ -53,7 +46,7 @@ struct ResolvedTarget {
 // ============================================================================
 
 /**
- * @brief Resolves any Target variant or ParsedSigil to a concrete ResolvedTarget.
+ * @brief Resolves any Target variant or ParsedSigil to a concrete ResolveResult.
  *
  * Holds non-owning references; callers are responsible for lifetime.
  *
@@ -79,9 +72,9 @@ class TargetResolver {
     // ========================================================================
 
     /**
-     * @brief Resolve a Target (variant) to a concrete ResolvedTarget.
+     * @brief Resolve a Target (variant) to a concrete ResolveResult.
      */
-    ResolvedTarget resolve(const Target& target) const;
+    ResolveResult resolve(const Target& target) const;
 
     /**
      * @brief Resolve a parsed '@'-sigil token.
@@ -89,11 +82,11 @@ class TargetResolver {
      * Only '@'-sigil ParsedSigils are accepted. '#' and '$' tokens are
      * rejected at the parser level and will never reach this function.
      */
-    ResolvedTarget resolveSigil(const ParsedSigil& sigil) const;
+    ResolveResult resolveSigil(const ParsedSigil& sigil) const;
 
   private:
     // ---- @ sigil implementation ----
-    ResolvedTarget resolveAt(const ParsedSigil& sigil) const;
+    ResolveResult resolveAt(const ParsedSigil& sigil) const;
 
     // ---- helpers ----
 

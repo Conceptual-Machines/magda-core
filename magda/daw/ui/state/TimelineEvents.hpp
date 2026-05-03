@@ -137,10 +137,10 @@ struct MovePlayheadByDeltaEvent {
  *
  * The edit cursor is used for split/edit operations and is independent
  * from the playhead position. Set by clicking in the lower track zone.
- * Use position = -1.0 to hide/clear the edit cursor.
+ * Use positionBeats = -1.0 to hide/clear the edit cursor.
  */
 struct SetEditCursorEvent {
-    double position;
+    double positionBeats;
 };
 
 /**

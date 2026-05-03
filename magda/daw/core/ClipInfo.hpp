@@ -75,6 +75,22 @@ struct MidiPitchBendData {
 };
 
 /**
+ * @brief Clip placement on a musical timeline.
+ *
+ * This is content-agnostic: audio, MIDI, automation, and future clip-like
+ * objects all occupy a project beat range. Audio source offsets and loop
+ * regions are separate source-domain data.
+ */
+struct ClipPlacement {
+    double startBeat = 0.0;
+    double lengthBeats = 4.0;
+
+    double endBeat() const {
+        return startBeat + lengthBeats;
+    }
+};
+
+/**
  * @brief Clip data structure containing all clip properties
  */
 struct ClipInfo {
@@ -85,24 +101,43 @@ struct ClipInfo {
     ClipType type = ClipType::MIDI;
     ClipView view = ClipView::Arrangement;  // Which view this clip belongs to
 
-    // Timeline position
-    double startTime = 0.0;  // Position on timeline (seconds) - only for Arrangement view
-    double length = 4.0;     // Duration (seconds)
+    // Timeline position. This is the canonical placement model for every clip type.
+    ClipPlacement placement;
 
-    // Beat-based position (authoritative for MIDI clips; used when autoTempo = true for Audio)
-    double startBeats = 0.0;  // Start position in beats
+    // Derived timeline seconds cache. Kept only for bridge/UI call sites that
+    // have not moved to beats yet; do not treat these as model authority.
+    double startTime = 0.0;
+    double length = 4.0;
+
+    // Transitional mirrors for call sites that still access beat fields directly.
+    // Keep in sync via setPlacementBeats / deriveTimesFromBeats while the refactor
+    // removes direct field access.
+    double startBeats = 0.0;
 
     // Audio-specific properties (flat model: one clip = one file reference)
     juce::String audioFilePath;   // Path to audio file
     double sourceNumBeats = 0.0;  // Beat count from source file metadata (TE loopInfo)
     double sourceBPM = 0.0;       // Source file BPM (from TE loopInfo, 0 = unknown)
 
-    /// Populate source metadata from engine (only sets if not already populated)
+    /// Populate source metadata from engine (only sets if not already populated).
+    ///
+    /// Issue #1157: when the file's tempo metadata first lands on an autoTempo
+    /// clip, also snap the beat-domain canonicals to the file's natural beat
+    /// count. createAudioClip(Session) seeded lengthBeats from project tempo
+    /// as a best-guess (no metadata yet); metadata wins. After this call, the
+    /// caller should refreshDerivedSeconds and notify so renderers re-read.
     void setSourceMetadata(double numBeats, double bpm) {
+        bool wasUnset = sourceNumBeats <= 0.0 && sourceBPM <= 0.0;
         if (numBeats > 0.0 && sourceNumBeats <= 0.0)
             sourceNumBeats = numBeats;
         if (bpm > 0.0 && sourceBPM <= 0.0)
             sourceBPM = bpm;
+
+        if (wasUnset && autoTempo && sourceNumBeats > 0.0) {
+            lengthBeats = sourceNumBeats;
+            if (loopLengthBeats <= 0.0)
+                loopLengthBeats = sourceNumBeats;
+        }
     }
 
     // =========================================================================
@@ -143,23 +178,22 @@ struct ClipInfo {
     std::vector<WarpMarker> warpMarkers;
 
     // =========================================================================
-    // Auto-tempo / Musical mode (beat-based length)
+    // Auto-tempo / Musical mode
     // =========================================================================
     // When autoTempo=true:
     // - Beat values are authoritative, time values are derived from BPM
     // - TE's autoTempo is enabled, clips maintain fixed musical length
     // - speedRatio must be 1.0 (TE requirement)
-    // When autoTempo=false (default):
-    // - Time values are authoritative (current behavior)
-    // - Clips maintain fixed absolute time length regardless of BPM
+    // When autoTempo=false:
+    // - Timeline placement is still beat-domain
+    // - Source playback uses offset/loop/source seconds without implying timeline position
     bool autoTempo = false;  // Enable beat-based length (musical mode)
 
     // Beat-based loop properties (only used when autoTempo = true)
     // TE: AudioClipBase::loopStartBeats, loopLengthBeats
     double loopStartBeats = 0.0;   // Loop start in beats (relative to file start)
     double loopLengthBeats = 0.0;  // Loop length in beats (0 = derive from clip length)
-    double lengthBeats =
-        4.0;  // Clip timeline length in project beats (authoritative for MIDI and autoTempo Audio)
+    double lengthBeats = 4.0;      // Transitional mirror of placement.lengthBeats
 
     // Pitch
     bool autoPitch = false;
@@ -168,11 +202,10 @@ struct ClipInfo {
         return analogPitch && !autoTempo && !warpEnabled;
     }
 
-    /// Whether this clip uses beat-based timing as authoritative.
-    /// True for MIDI clips (always beat-based), audio clips with autoTempo,
-    /// and audio clips with warp markers enabled.
+    /// Clip timeline placement is always beat-authoritative. Audio source
+    /// offsets/loops remain source-domain data and are converted at the bridge.
     bool isBeatsAuthoritative() const {
-        return type == ClipType::MIDI || autoTempo || warpEnabled;
+        return true;
     }
     int autoPitchMode = 0;     // 0=pitchTrack, 1=chordTrackMono, 2=chordTrackPoly
     float pitchChange = 0.0f;  // -48 to +48 semitones
@@ -198,6 +231,10 @@ struct ClipInfo {
     int fadeInBehaviour = 0;  // 0=gainFade, 1=speedRamp
     int fadeOutBehaviour = 0;
     bool autoCrossfade = false;
+
+    // launchFadeSamples: ramp on the stopped→playing transition. Default 256
+    // matches TE's prior hard-coded behaviour; 0 preserves the leading transient.
+    int launchFadeSamples = 256;
 
     // Channels
     bool leftChannelActive = true;
@@ -246,23 +283,32 @@ struct ClipInfo {
     static constexpr double MIN_CLIP_LENGTH = 0.1;
 
     // Helpers
+    void setPlacementBeats(double startBeat, double beatLength) {
+        placement.startBeat = juce::jmax(0.0, startBeat);
+        placement.lengthBeats = juce::jmax(0.0, beatLength);
+        startBeats = placement.startBeat;
+        lengthBeats = placement.lengthBeats;
+    }
+
     double getEndTime() const {
         return startTime + length;
     }
 
-    /// Derive startTime/length from beat values using the given BPM (for MIDI clips)
+    /// Derive startTime/length from placement beats using the given BPM.
     void deriveTimesFromBeats(double bpm) {
         if (bpm > 0.0) {
-            if (lengthBeats > 0.0) {
-                startTime = (startBeats * 60.0) / bpm;
-                length = (lengthBeats * 60.0) / bpm;
+            if (placement.lengthBeats <= 0.0 && lengthBeats > 0.0)
+                setPlacementBeats(startBeats, lengthBeats);
+            if (placement.lengthBeats > 0.0) {
+                startTime = (placement.startBeat * 60.0) / bpm;
+                length = (placement.lengthBeats * 60.0) / bpm;
             }
         }
     }
 
     /// Get end position in beats without BPM conversion (beats are always valid for MIDI)
     double getEndBeatsRaw() const {
-        return startBeats + lengthBeats;
+        return placement.endBeat();
     }
 
     /// Convert source-time to timeline-time (speed-factor semantics: timeline = source /
@@ -369,36 +415,85 @@ struct ClipInfo {
 
     /// Convert clip length to beats (using current tempo)
     double getLengthInBeats(double bpm) const {
-        // beats = (seconds * bpm) / 60
-        return (length * bpm) / 60.0;
+        juce::ignoreUnused(bpm);
+        return placement.lengthBeats;
     }
 
-    /// Set clip length from beats (updates `length` field based on BPM)
+    /// Set clip length from beats (updates placement and derived seconds cache)
     void setLengthFromBeats(double beats, double bpm) {
-        // seconds = (beats * 60) / bpm
-        length = (beats * 60.0) / bpm;
+        setPlacementBeats(placement.startBeat, beats);
+        deriveTimesFromBeats(bpm);
     }
 
-    /// Get clip start position in beats (single source of truth for display)
-    /// Returns stored beat value for MIDI/autoTempo, calculates from time otherwise
+    /// Get clip start position in project beats.
     double getStartBeats(double bpm) const {
-        if (isBeatsAuthoritative()) {
-            return startBeats;  // Authoritative beat value
-        }
-        // Calculate from time
-        return (startTime * bpm) / 60.0;
+        juce::ignoreUnused(bpm);
+        return placement.startBeat;
     }
 
-    /// Get clip end position in beats (single source of truth for display)
-    /// Returns start + length in beats, using authoritative values based on mode
+    /// Get clip end position in project beats.
     double getEndBeats(double bpm) const {
-        if (isBeatsAuthoritative() && lengthBeats > 0.0) {
-            return startBeats + lengthBeats;
+        juce::ignoreUnused(bpm);
+        return placement.endBeat();
+    }
+
+    // =========================================================================
+    // Robust seconds accessors (issue #1157)
+    //
+    // For autoTempo audio clips and MIDI clips, beats are AUTHORITATIVE — the
+    // seconds fields (length, startTime, offset, loopStart, loopLength) are
+    // derived caches that go stale every time projectBPM or sourceBPM changes.
+    // Renderers, sync code, and inspector readouts that go through these
+    // accessors compute the live value from beats and never depend on cache
+    // freshness. The cached fields are still maintained (so non-migrated
+    // readers stay correct), but new code should prefer the accessors.
+    // =========================================================================
+
+    /// Timeline-domain seconds for the clip's length, derived from placement.
+    double getTimelineLength(double projectBPM) const {
+        if (placement.lengthBeats > 0.0 && projectBPM > 0.0) {
+            return placement.lengthBeats * 60.0 / projectBPM;
         }
-        // Calculate from time
-        double startB = (startTime * bpm) / 60.0;
-        double lenB = (length * bpm) / 60.0;
-        return startB + lenB;
+        return length;
+    }
+
+    /// Timeline-domain seconds for the clip's start position, derived from placement.
+    double getTimelineStart(double projectBPM) const {
+        if (projectBPM > 0.0) {
+            return placement.startBeat * 60.0 / projectBPM;
+        }
+        return startTime;
+    }
+
+    /// Timeline-domain end position (start + length).
+    double getTimelineEnd(double projectBPM) const {
+        return getTimelineStart(projectBPM) + getTimelineLength(projectBPM);
+    }
+
+    /// Source-domain seconds for the loop start. For autoTempo clips, computed
+    /// live from loopStartBeats × 60 / sourceBPM. For non-autoTempo clips,
+    /// returns the stored field.
+    double getSourceLoopStart() const {
+        if (autoTempo && sourceBPM > 0.0) {
+            return loopStartBeats * 60.0 / sourceBPM;
+        }
+        return loopStart;
+    }
+
+    /// Source-domain seconds for the loop length.
+    double getSourceLoopLength() const {
+        if (autoTempo && sourceBPM > 0.0 && loopLengthBeats > 0.0) {
+            return loopLengthBeats * 60.0 / sourceBPM;
+        }
+        return loopLength;
+    }
+
+    /// Source-domain seconds for the read-position offset.
+    double getSourceOffset() const {
+        if (autoTempo && sourceBPM > 0.0) {
+            return offsetBeats * 60.0 / sourceBPM;
+        }
+        return offset;
     }
 };
 

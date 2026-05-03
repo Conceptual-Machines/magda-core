@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -73,6 +74,7 @@ class ClipManager {
      */
     void shutdown() {
         clips_.clear();
+        sessionSlotIndex_.clear();
     }
 
     // ========================================================================
@@ -224,6 +226,48 @@ class ClipManager {
                                double bpm = 120.0);
     /** @brief Set the clip timeline length in beats (autoTempo mode only) */
     void setLengthBeats(ClipId clipId, double beats, double bpm);
+
+    // =====================================================================
+    // Session audio-clip canonical update path (issue #1157)
+    //
+    // For session/autoTempo audio clips, ClipInfo holds two roles:
+    //   - DETECTED METADATA — sourceBPM, sourceNumBeats. Properties of the
+    //     audio file. Only ever written via this struct. Inspector "BPM"
+    //     edits write here (a correction, not a stretch).
+    //   - USER INTENT — lengthBeats (timeline beats the clip occupies on
+    //     the session/timeline), loopStartBeats / loopLengthBeats (sub-loop
+    //     region in source-beat domain), offsetBeats, startBeats. The beat
+    //     slider edits lengthBeats and never touches sourceBPM.
+    //
+    // Time-domain fields (length, startTime, offset, loopStart, loopLength)
+    // are DERIVED inside applyAudioClipBeats and must not be set directly
+    // by callers in this path. speedRatio is forced to 1.0.
+    // =====================================================================
+    struct AudioClipBeatsUpdate {
+        std::optional<double> sourceBPM;
+        std::optional<double> sourceNumBeats;
+        std::optional<double> lengthBeats;
+        std::optional<double> loopStartBeats;
+        std::optional<double> loopLengthBeats;
+        std::optional<double> offsetBeats;
+        std::optional<double> startBeats;
+    };
+
+    /** @brief Apply a partial canonical update to a session/autoTempo audio
+     *         clip and atomically recompute every derived field. Single
+     *         update path for inspector BPM edit, beat-length slider, and
+     *         BPM-detection callbacks. No-op for non-autoTempo / non-audio
+     *         clips. */
+    void applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update, double projectBPM);
+
+    /** @brief Refresh the seconds-domain cache (length, startTime, offset,
+     *         loopStart, loopLength) on a beat-authoritative clip from its
+     *         canonical beat fields. No-op for time-authoritative clips.
+     *
+     *  Called by applyAudioClipBeats and by TimelineController on project-BPM
+     *  change. Does NOT notify listeners — caller's responsibility. */
+    void refreshDerivedSeconds(ClipId clipId, double projectBPM);
+
     /** @brief Enable/disable auto-tempo (beat-locked) mode for an audio clip */
     void setAutoTempo(ClipId clipId, bool enabled, double bpm);
     /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:
@@ -259,6 +303,8 @@ class ClipManager {
     void setFadeInBehaviour(ClipId clipId, int behaviour);
     void setFadeOutBehaviour(ClipId clipId, int behaviour);
     void setAutoCrossfade(ClipId clipId, bool enabled);
+
+    void setLaunchFadeSamples(ClipId clipId, int samples);
 
     // Channels
     void setLeftChannelActive(ClipId clipId, bool active);
@@ -555,6 +601,23 @@ class ClipManager {
 
     // Unified clip storage — ClipView is a property, not storage identity
     std::unordered_map<ClipId, ClipInfo> clips_;
+
+    // Fast (TrackId, sceneIndex) -> ClipId lookup for session-view slots.
+    // Maintained by every code path that creates/deletes a session clip or
+    // changes its trackId/sceneIndex. Read-only consumers go through
+    // getClipInSlot() — never poke the map directly.
+    //
+    // Why: getClipInSlot is called O(tracks * scenes) per SessionView paint
+    // and from multiple drag/drop and command paths. Scanning all clips on
+    // every call doesn't scale to large grids.
+    std::unordered_map<uint64_t, ClipId> sessionSlotIndex_;
+
+    static uint64_t makeSessionSlotKey(TrackId trackId, int sceneIndex) {
+        return (static_cast<uint64_t>(static_cast<uint32_t>(trackId)) << 32) |
+               static_cast<uint64_t>(static_cast<uint32_t>(sceneIndex));
+    }
+    void addToSessionSlotIndex(const ClipInfo& clip);
+    void removeFromSessionSlotIndex(const ClipInfo& clip);
 
     // Clipboard storage
     std::vector<ClipInfo> clipboard_;

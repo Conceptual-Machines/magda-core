@@ -8,8 +8,8 @@
 
 #include "../core/MidiTypes.hpp"
 #include "../core/TypeIds.hpp"
-#include "MidiEventQueue.hpp"
-#include "RecordingNoteQueue.hpp"
+#include "midi/MidiEventQueue.hpp"
+#include "midi/RecordingNoteQueue.hpp"
 
 namespace magda {
 

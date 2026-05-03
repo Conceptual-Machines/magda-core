@@ -3,7 +3,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "../magda/daw/audio/ControllerRouter.hpp"
+#include "../magda/daw/audio/controllers/ControllerRouter.hpp"
 #include "../magda/daw/core/SelectionManager.hpp"
 #include "../magda/daw/core/aliases/AliasRegistry.hpp"
 #include "../magda/daw/core/aliases/ChainContext.hpp"
@@ -18,7 +18,7 @@ using Catch::Approx;
 // ============================================================================
 
 struct WriteCapture {
-    ResolvedTarget target;
+    ResolveResult result;
     float value = 0.0f;
 };
 
@@ -26,7 +26,7 @@ class FakeParamWriter : public ControllerParamWriter {
   public:
     std::vector<WriteCapture> writes;
 
-    void write(const ResolvedTarget& resolved, float value) override {
+    void write(const ResolveResult& resolved, float value) override {
         writes.push_back({resolved, value});
     }
 };
@@ -55,9 +55,9 @@ static void pumpMessages(int ms = 1) {
         mm->runDispatchLoopUntil(ms);
 }
 
-// Build a StaticTarget pointing to a known device/param
-static Target makeStaticTarget() {
-    StaticTarget st;
+// Build a ControlTarget pointing to a known device/param
+static Target makeControlTarget() {
+    ControlTarget st;
     st.devicePath = ChainNodePath::topLevelDevice(1, 10);
     st.paramIndex = 0;
     return Target{st};
@@ -79,7 +79,7 @@ static Binding makeBinding(const ControllerId& cid, BindingMsgType msgType, int 
     b.source.msgType = msgType;
     b.source.channel = channel;
     b.source.number = number;
-    b.target = makeStaticTarget();
+    b.target = makeControlTarget();
     b.mode = mode;
     b.range = BindingRange{0.0f, 1.0f, BindingCurve::Linear};
     return b;
@@ -129,11 +129,11 @@ TEST_CASE("ControllerRouter - enabled controller, Absolute CC -> one write",
     auto b = makeBinding(c.id, BindingMsgType::CC, 1, 74, BindingMode::Absolute);
     BindingRegistry::getInstance().add(BindingScope::Global, b);
 
-    // StaticTarget with no real plugin -- resolver will fail to find it, so write
+    // ControlTarget with no real plugin -- resolver will fail to find it, so write
     // will be skipped by the real writer. But the fake writer doesn't care about
     // resolved.ok(). Let's verify the fake writer receives the call with the
     // correct resolved target (even though ok() is false in test context).
-    // The ResolvedTarget for a StaticTarget always sets resolved=true and
+    // The ResolveResult for a ControlTarget always sets resolved=true and
     // copies the path/paramIndex, even in tests without a live DAW.
     auto msg = juce::MidiMessage::controllerEvent(1, 74, 64);  // CC 74 ch1 value 64
     ControllerRouter::getInstance().injectMessageForTest("test_port_1", msg);
@@ -141,10 +141,10 @@ TEST_CASE("ControllerRouter - enabled controller, Absolute CC -> one write",
     pumpMessages();
 
     // Fake writer doesn't call write() because resolved.ok() is false
-    // (no live plugin behind the StaticTarget). But the TargetResolver for
-    // StaticTarget always returns resolved=true. Let's verify:
-    // StaticTarget::isValid() just checks path and paramIndex. Since both
-    // are set, ResolvedTarget::ok() returns true. So write() IS called.
+    // (no live plugin behind the ControlTarget). But the TargetResolver for
+    // ControlTarget always returns resolved=true. Let's verify:
+    // ControlTarget::isValid() just checks path and paramIndex. Since both
+    // are set, ResolveResult::ok() returns true. So write() IS called.
     REQUIRE(fix.writer->writes.size() == 1);
     REQUIRE(fix.writer->writes[0].value == Approx(64.0f / 127.0f));
 }
@@ -254,10 +254,10 @@ TEST_CASE("ControllerRouter - static PluginParam shadows focused-device-macro re
 
     // Learn-style binding: CC 21 -> static PluginParam on the same controller
     Binding bParam = makeBinding(c.id, BindingMsgType::CC, 1, 21);
-    StaticTarget st;
+    ControlTarget st;
     st.devicePath = devicePath;
     st.paramIndex = 5;
-    st.owner = StaticTarget::Owner::PluginParam;
+    st.kind = ControlTarget::Kind::PluginParam;
     bParam.target = Target{st};
     BindingRegistry::getInstance().add(BindingScope::Project, bParam);
 
@@ -267,8 +267,8 @@ TEST_CASE("ControllerRouter - static PluginParam shadows focused-device-macro re
 
     // Only the static PluginParam binding should fire.
     REQUIRE(fix.writer->writes.size() == 1);
-    REQUIRE(fix.writer->writes[0].target.owner == StaticTarget::Owner::PluginParam);
-    REQUIRE(fix.writer->writes[0].target.paramIndex == 5);
+    REQUIRE(fix.writer->writes[0].result.target.kind == ControlTarget::Kind::PluginParam);
+    REQUIRE(fix.writer->writes[0].result.target.paramIndex == 5);
 
     SelectionManager::getInstance().clearChainNodeSelection();
 }
@@ -309,10 +309,10 @@ TEST_CASE("BindingRegistry - shadow + override queries flag both sides of confli
 
     // Add the Learn override: CC 21 -> static PluginParam on the same controller.
     Binding bParam = makeBinding(c.id, BindingMsgType::CC, 1, 21);
-    StaticTarget st;
+    ControlTarget st;
     st.devicePath = devicePath;
     st.paramIndex = 5;
-    st.owner = StaticTarget::Owner::PluginParam;
+    st.kind = ControlTarget::Kind::PluginParam;
     bParam.target = Target{st};
     reg.add(BindingScope::Project, bParam);
 

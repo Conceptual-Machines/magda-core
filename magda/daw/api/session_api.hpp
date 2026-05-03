@@ -40,6 +40,11 @@ class SessionApi {
     /// Stop every active session clip.
     virtual void stopAll() = 0;
 
+    /// Launch a whole scene row: triggers every clip in that scene and
+    /// stops the active clip on tracks whose slot is empty (matching the
+    /// UI's scene-button behaviour).
+    virtual void launchScene(int sceneIndex) = 0;
+
     /// Return the active session clip on the given track, or
     /// INVALID_CLIP_ID if nothing is currently launched there.
     virtual ClipId getActiveClipOnTrack(TrackId trackId) const = 0;

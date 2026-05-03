@@ -231,12 +231,14 @@ class WaveformGridComponent : public juce::Component {
         StretchRight,
         MoveWarpMarker,
         RepositionWarpMarker,
+        PhaseMarker,
         Zoom
     };
     DragMode dragMode_ = DragMode::None;
     double dragStartAudioOffset_ = 0.0;
     double dragStartLength_ = 0.0;
     double dragStartStartTime_ = 0.0;
+    double dragStartLoopOffset_ = 0.0;  // Source-seconds phase at start of PhaseMarker drag
     int dragStartX_ = 0;
     int zoomDragStartY_ = 0;
     int zoomDragAnchorX_ = 0;
@@ -303,6 +305,7 @@ class WaveformGridComponent : public juce::Component {
     // Hit testing helpers
     bool isNearLeftEdge(int x, const magda::ClipInfo& clip) const;
     bool isNearRightEdge(int x, const magda::ClipInfo& clip) const;
+    bool isNearPhaseMarker(int x, const magda::ClipInfo& clip) const;
     bool isInsideWaveform(int x, const magda::ClipInfo& clip) const;
 
     // Warp marker helpers
@@ -310,10 +313,10 @@ class WaveformGridComponent : public juce::Component {
     double snapToNearestTransient(double time) const;
     static constexpr int WARP_MARKER_HIT_DISTANCE = 5;
 
-    // Display start time (0.0 in relative mode, clipStartTime_ in absolute)
-    double getDisplayStartTime() const {
-        return relativeMode_ ? 0.0 : clipStartTime_;
-    }
+    // Display start time for the full source file.
+    double getDisplayStartTime() const;
+    double getDrawableTimelineLength() const;
+    void debugLogGeometry(const char* context) const;
 
     // Get current clip
     const magda::ClipInfo* getClip() const;

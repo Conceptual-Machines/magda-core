@@ -10,10 +10,10 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
-#include "MagdaSamplerPlugin.hpp"
-#include "MidiChordEnginePlugin.hpp"
-#include "SessionMonitorPlugin.hpp"
-#include "SidechainTriggerBus.hpp"
+#include "plugins/MagdaSamplerPlugin.hpp"
+#include "plugins/MidiChordEnginePlugin.hpp"
+#include "plugins/SidechainTriggerBus.hpp"
+#include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
 
@@ -471,8 +471,8 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     // value) don't need this, but the rebake is coalesced via needsRebake_.
     auto& autoMgr = AutomationManager::getInstance();
     for (const auto& lane : autoMgr.getLanes()) {
-        if (lane.target.type == AutomationTargetType::ModParameter &&
-            lane.target.trackId == trackId) {
+        if (lane.target.kind == ControlTarget::Kind::ModParam &&
+            lane.target.devicePath.trackId == trackId) {
             autoMgr.invalidateLane(lane.id);
         }
     }
@@ -766,6 +766,59 @@ TrackId AudioBridge::getTrackIdForTeTrack(te::EditItemID itemId) const {
 
 te::Plugin::Ptr AudioBridge::getPlugin(DeviceId deviceId) const {
     return pluginManager_.getPlugin(deviceId);
+}
+
+te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget& target) const {
+    switch (target.kind) {
+        case ControlTarget::Kind::TrackVolume: {
+            auto* track = getAudioTrack(target.devicePath.trackId);
+            if (!track)
+                return nullptr;
+            if (auto* vp = track->getVolumePlugin())
+                return vp->volParam.get();
+            return nullptr;
+        }
+
+        case ControlTarget::Kind::TrackPan: {
+            auto* track = getAudioTrack(target.devicePath.trackId);
+            if (!track)
+                return nullptr;
+            if (auto* vp = track->getVolumePlugin())
+                return vp->panParam.get();
+            return nullptr;
+        }
+
+        case ControlTarget::Kind::SendLevel: {
+            auto* track = getAudioTrack(target.devicePath.trackId);
+            if (!track)
+                return nullptr;
+            if (auto* auxSend = track->getAuxSendPlugin(target.sendBusIndex))
+                return auxSend->gain.get();
+            return nullptr;
+        }
+
+        case ControlTarget::Kind::PluginParam: {
+            DeviceId deviceId = target.devicePath.getDeviceId();
+            if (deviceId == INVALID_DEVICE_ID)
+                return nullptr;
+            auto plugin = getPlugin(deviceId);
+            if (!plugin)
+                return nullptr;
+            auto params = plugin->getAutomatableParameters();
+            if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size()))
+                return params[static_cast<size_t>(target.paramIndex)];
+            return nullptr;
+        }
+
+        case ControlTarget::Kind::DeviceMacro:
+            return pluginManager_.findMacroParameterForAutomation(
+                target.devicePath.trackId, target.devicePath, target.paramIndex);
+
+        case ControlTarget::Kind::ModParam:
+            return pluginManager_.findModifierParameterForAutomation(
+                target.devicePath.trackId, target.devicePath, target.modId, target.modParamIndex);
+    }
+    return nullptr;
 }
 
 DeviceProcessor* AudioBridge::getDeviceProcessor(DeviceId deviceId) const {

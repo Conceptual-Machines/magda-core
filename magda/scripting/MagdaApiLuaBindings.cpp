@@ -488,6 +488,16 @@ int lua_session_stop_all(lua_State* L) {
     return 0;
 }
 
+// magda.session.launch_scene(sceneIndex) — sceneIndex is 0-based.
+// Triggers every clip in that scene; tracks whose slot is empty have their
+// active clip stopped (matches the UI scene-button click).
+int lua_session_launch_scene(lua_State* L) {
+    auto* api = getApi(L);
+    int sceneIndex = static_cast<int>(luaL_checkinteger(L, 1));
+    api->session().launchScene(sceneIndex);
+    return 0;
+}
+
 int lua_session_active_clip_on_track(lua_State* L) {
     auto* api = getApi(L);
     auto trackId = static_cast<TrackId>(luaL_checkinteger(L, 1));
@@ -862,6 +872,7 @@ const FnReg kSessionFns[] = {
     {"stop_clip", lua_session_stop_clip},
     {"stop_track", lua_session_stop_track},
     {"stop_all", lua_session_stop_all},
+    {"launch_scene", lua_session_launch_scene},
     {"active_clip_on_track", lua_session_active_clip_on_track},
     {"clip_in_slot", lua_session_clip_in_slot},
     {"clip_play_state", lua_session_clip_play_state},

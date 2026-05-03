@@ -252,6 +252,13 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
         outTrack.selectedGlobalMacroIndex =
             static_cast<int>(obj->getProperty("selectedGlobalMacroIndex"));
 
+    // Pre-#1149 projects may carry legacy mod/macro link targets whose
+    // ChainNodePath has trackId=0 (the old `deviceId`-only format). Now that
+    // the deserializer migrates such targets into links[], rewrite their
+    // trackId to the owning track's id so they compare equal to the live
+    // UI's targets — otherwise right-click "linked mods" silently misses them.
+    fixupLegacyLinkTrackIds(outTrack);
+
     return true;
 }
 

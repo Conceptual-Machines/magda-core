@@ -1,15 +1,15 @@
 #pragma once
 #include <tracktion_engine/tracktion_engine.h>
 
-#include "../audio/ArpeggiatorPlugin.hpp"
-#include "../audio/AudioSidechainMonitorPlugin.hpp"
-#include "../audio/DrumGridPlugin.hpp"
-#include "../audio/MagdaSamplerPlugin.hpp"
-#include "../audio/MidiChordEnginePlugin.hpp"
-#include "../audio/MidiReceivePlugin.hpp"
-#include "../audio/SessionMonitorPlugin.hpp"
-#include "../audio/SidechainMonitorPlugin.hpp"
-#include "../audio/StepSequencerPlugin.hpp"
+#include "../audio/plugins/ArpeggiatorPlugin.hpp"
+#include "../audio/plugins/AudioSidechainMonitorPlugin.hpp"
+#include "../audio/plugins/DrumGridPlugin.hpp"
+#include "../audio/plugins/MagdaSamplerPlugin.hpp"
+#include "../audio/plugins/MidiChordEnginePlugin.hpp"
+#include "../audio/plugins/MidiReceivePlugin.hpp"
+#include "../audio/plugins/SidechainMonitorPlugin.hpp"
+#include "../audio/plugins/StepSequencerPlugin.hpp"
+#include "../audio/session/SessionMonitorPlugin.hpp"
 #include "../project/ProjectManager.hpp"
 
 namespace magda {

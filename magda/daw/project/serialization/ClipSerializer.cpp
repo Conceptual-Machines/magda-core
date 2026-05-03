@@ -15,15 +15,16 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("name", clip.name);
     obj->setProperty("colour", colourToString(clip.colour));
     obj->setProperty("type", static_cast<int>(clip.type));
-    obj->setProperty("startTime", clip.startTime);
-    obj->setProperty("length", clip.length);
     obj->setProperty("view", static_cast<int>(clip.view));
     obj->setProperty("loopEnabled", clip.loopEnabled);
-    obj->setProperty("loopStart", clip.loopStart);
-    obj->setProperty("loopLength", clip.loopLength);
     obj->setProperty("sceneIndex", clip.sceneIndex);
     obj->setProperty("launchMode", static_cast<int>(clip.launchMode));
     obj->setProperty("launchQuantize", static_cast<int>(clip.launchQuantize));
+
+    auto* placementObj = new juce::DynamicObject();
+    placementObj->setProperty("startBeat", clip.placement.startBeat);
+    placementObj->setProperty("lengthBeats", clip.placement.lengthBeats);
+    obj->setProperty("placement", juce::var(placementObj));
 
     // Per-clip grid settings
     obj->setProperty("gridAutoGrid", clip.gridAutoGrid);
@@ -44,6 +45,7 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("fadeInBehaviour", clip.fadeInBehaviour);
     obj->setProperty("fadeOutBehaviour", clip.fadeOutBehaviour);
     obj->setProperty("autoCrossfade", clip.autoCrossfade);
+    obj->setProperty("launchFadeSamples", clip.launchFadeSamples);
 
     // Pitch
     obj->setProperty("pitchChange", clip.pitchChange);
@@ -62,19 +64,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("leftChannelActive", clip.leftChannelActive);
     obj->setProperty("rightChannelActive", clip.rightChannelActive);
 
-    // Auto-tempo / Musical mode & beat-based properties
+    // Auto-tempo / Musical mode
     obj->setProperty("autoTempo", clip.autoTempo);
-    obj->setProperty("startBeats", clip.startBeats);
-    obj->setProperty("lengthBeats", clip.lengthBeats);
-    obj->setProperty("loopStartBeats", clip.loopStartBeats);
-    obj->setProperty("loopLengthBeats", clip.loopLengthBeats);
-    obj->setProperty("offsetBeats", clip.offsetBeats);
-
-    // Source metadata
-    if (clip.sourceNumBeats > 0.0)
-        obj->setProperty("sourceNumBeats", clip.sourceNumBeats);
-    if (clip.sourceBPM > 0.0)
-        obj->setProperty("sourceBPM", clip.sourceBPM);
 
     // MIDI offset
     if (clip.midiOffset != 0.0)
@@ -88,13 +79,25 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     if (clip.grooveStrength > 0.0f)
         obj->setProperty("grooveStrength", clip.grooveStrength);
 
-    // Audio properties (TE-aligned model)
+    // Audio source properties. These describe source content only, never
+    // timeline placement.
     if (clip.audioFilePath.isNotEmpty()) {
-        obj->setProperty("audioFilePath", clip.audioFilePath);
-        obj->setProperty("offset", clip.offset);
-        obj->setProperty("speedRatio", clip.speedRatio);
+        auto* sourceObj = new juce::DynamicObject();
+        sourceObj->setProperty("filePath", clip.audioFilePath);
+        sourceObj->setProperty("offsetSeconds", clip.offset);
+        sourceObj->setProperty("offsetBeats", clip.offsetBeats);
+        sourceObj->setProperty("loopStartSeconds", clip.loopStart);
+        sourceObj->setProperty("loopLengthSeconds", clip.loopLength);
+        sourceObj->setProperty("loopStartBeats", clip.loopStartBeats);
+        sourceObj->setProperty("loopLengthBeats", clip.loopLengthBeats);
+        sourceObj->setProperty("speedRatio", clip.speedRatio);
+        if (clip.sourceNumBeats > 0.0)
+            sourceObj->setProperty("sourceNumBeats", clip.sourceNumBeats);
+        if (clip.sourceBPM > 0.0)
+            sourceObj->setProperty("sourceBPM", clip.sourceBPM);
+
         if (clip.warpEnabled) {
-            obj->setProperty("warpEnabled", clip.warpEnabled);
+            sourceObj->setProperty("warpEnabled", clip.warpEnabled);
 
             // Serialize warp markers
             if (!clip.warpMarkers.empty()) {
@@ -105,15 +108,16 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
                     wmObj->setProperty("warpTime", wm.warpTime);
                     warpArray.add(juce::var(wmObj));
                 }
-                obj->setProperty("warpMarkers", warpArray);
+                sourceObj->setProperty("warpMarkers", warpArray);
             }
         }
         if (clip.analogPitch) {
-            obj->setProperty("analogPitch", clip.analogPitch);
+            sourceObj->setProperty("analogPitch", clip.analogPitch);
         }
         if (clip.timeStretchMode != 0) {
-            obj->setProperty("timeStretchMode", clip.timeStretchMode);
+            sourceObj->setProperty("timeStretchMode", clip.timeStretchMode);
         }
+        obj->setProperty("audioSource", juce::var(sourceObj));
     }
 
     // MIDI notes
@@ -175,17 +179,19 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.name = obj->getProperty("name").toString();
     outClip.colour = stringToColour(obj->getProperty("colour").toString());
     outClip.type = static_cast<ClipType>(static_cast<int>(obj->getProperty("type")));
-    outClip.startTime = obj->getProperty("startTime");
-    outClip.length = obj->getProperty("length");
-    // View type (backward compatible - defaults to Arrangement if missing)
-    auto viewVar = obj->getProperty("view");
-    if (!viewVar.isVoid()) {
-        outClip.view = static_cast<ClipView>(static_cast<int>(viewVar));
+    outClip.view = static_cast<ClipView>(static_cast<int>(obj->getProperty("view")));
+
+    auto* placementObj = obj->getProperty("placement").getDynamicObject();
+    if (placementObj == nullptr) {
+        lastError_ = "Clip is missing placement";
+        return false;
     }
+    outClip.setPlacementBeats(placementObj->getProperty("startBeat"),
+                              placementObj->getProperty("lengthBeats"));
+    outClip.deriveTimesFromBeats(projectTempo);
+
     // Loop settings
     outClip.loopEnabled = static_cast<bool>(obj->getProperty("loopEnabled"));
-    outClip.loopStart = obj->getProperty("loopStart");
-    outClip.loopLength = obj->getProperty("loopLength");
     outClip.sceneIndex = obj->getProperty("sceneIndex");
 
     // Launch properties
@@ -212,6 +218,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.fadeInBehaviour = obj->getProperty("fadeInBehaviour");
     outClip.fadeOutBehaviour = obj->getProperty("fadeOutBehaviour");
     outClip.autoCrossfade = static_cast<bool>(obj->getProperty("autoCrossfade"));
+    outClip.launchFadeSamples = obj->getProperty("launchFadeSamples");
 
     // Pitch
     outClip.pitchChange = static_cast<float>(static_cast<double>(obj->getProperty("pitchChange")));
@@ -231,17 +238,8 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.leftChannelActive = static_cast<bool>(obj->getProperty("leftChannelActive"));
     outClip.rightChannelActive = static_cast<bool>(obj->getProperty("rightChannelActive"));
 
-    // Auto-tempo / Musical mode & beat-based properties
+    // Auto-tempo / Musical mode
     outClip.autoTempo = static_cast<bool>(obj->getProperty("autoTempo"));
-    outClip.startBeats = obj->getProperty("startBeats");
-    outClip.lengthBeats = obj->getProperty("lengthBeats");
-    outClip.loopStartBeats = obj->getProperty("loopStartBeats");
-    outClip.loopLengthBeats = obj->getProperty("loopLengthBeats");
-    outClip.offsetBeats = obj->getProperty("offsetBeats");
-
-    // Source metadata
-    outClip.sourceNumBeats = obj->getProperty("sourceNumBeats");
-    outClip.sourceBPM = obj->getProperty("sourceBPM");
 
     // MIDI offset
     outClip.midiOffset = obj->getProperty("midiOffset");
@@ -252,20 +250,26 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.grooveStrength =
         static_cast<float>(static_cast<double>(obj->getProperty("grooveStrength")));
 
-    // Audio properties
-    auto audioFilePathVar = obj->getProperty("audioFilePath");
-    if (!audioFilePathVar.isVoid()) {
-        outClip.audioFilePath = audioFilePathVar.toString();
-        outClip.offset = obj->getProperty("offset");
-        outClip.speedRatio = obj->getProperty("speedRatio");
+    // Audio source properties
+    if (auto* sourceObj = obj->getProperty("audioSource").getDynamicObject()) {
+        outClip.audioFilePath = sourceObj->getProperty("filePath").toString();
+        outClip.offset = sourceObj->getProperty("offsetSeconds");
+        outClip.offsetBeats = sourceObj->getProperty("offsetBeats");
+        outClip.loopStart = sourceObj->getProperty("loopStartSeconds");
+        outClip.loopLength = sourceObj->getProperty("loopLengthSeconds");
+        outClip.loopStartBeats = sourceObj->getProperty("loopStartBeats");
+        outClip.loopLengthBeats = sourceObj->getProperty("loopLengthBeats");
+        outClip.speedRatio = sourceObj->getProperty("speedRatio");
         if (outClip.speedRatio <= 0.0)
             outClip.speedRatio = 1.0;
-        outClip.warpEnabled = static_cast<bool>(obj->getProperty("warpEnabled"));
-        outClip.analogPitch = static_cast<bool>(obj->getProperty("analogPitch"));
-        outClip.timeStretchMode = obj->getProperty("timeStretchMode");
+        outClip.sourceNumBeats = sourceObj->getProperty("sourceNumBeats");
+        outClip.sourceBPM = sourceObj->getProperty("sourceBPM");
+        outClip.warpEnabled = static_cast<bool>(sourceObj->getProperty("warpEnabled"));
+        outClip.analogPitch = static_cast<bool>(sourceObj->getProperty("analogPitch"));
+        outClip.timeStretchMode = sourceObj->getProperty("timeStretchMode");
 
         // Warp markers
-        auto warpMarkersVar = obj->getProperty("warpMarkers");
+        auto warpMarkersVar = sourceObj->getProperty("warpMarkers");
         if (warpMarkersVar.isArray()) {
             auto* arr = warpMarkersVar.getArray();
             for (const auto& wmVar : *arr) {
@@ -335,15 +339,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     if (obj->hasProperty("nextChordGroupId"))
         outClip.nextChordGroupId = static_cast<int>(obj->getProperty("nextChordGroupId"));
 
-    // MIDI clips: ensure beats are populated (backward compat with old project files)
-    if (outClip.type == ClipType::MIDI) {
-        if (outClip.lengthBeats <= 0.0 && projectTempo > 0.0) {
-            outClip.startBeats = (outClip.startTime * projectTempo) / 60.0;
-            outClip.lengthBeats = (outClip.length * projectTempo) / 60.0;
-        }
-        // Derive seconds cache from authoritative beats
-        outClip.deriveTimesFromBeats(projectTempo);
-    }
+    outClip.deriveTimesFromBeats(projectTempo);
 
     return true;
 }

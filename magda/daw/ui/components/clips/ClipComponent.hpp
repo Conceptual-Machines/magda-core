@@ -175,6 +175,8 @@ class ClipComponent : public juce::Component, public ClipManagerListener, privat
     // Painting helpers
     void paintAudioClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintMidiClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
+    void paintMidiNotes(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> noteArea,
+                        juce::Colour noteColour);
     void paintClipHeader(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> bounds);
     void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
@@ -208,7 +210,8 @@ class ClipComponent : public juce::Component, public ClipManagerListener, privat
 
     static size_t computeWaveformHash(const ClipInfo& clip);
     void paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip,
-                              juce::Rectangle<int> waveformArea, double clipDisplayLength);
+                              juce::Rectangle<int> waveformArea, double clipDisplayLength,
+                              juce::Colour waveColourOverride = {});
     void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ClipComponent)

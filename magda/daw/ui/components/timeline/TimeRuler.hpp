@@ -44,6 +44,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
     double getGridResolution() const {
         return gridResolutionBeats;
     }
+    void setSnapEnabled(bool enabled);
+    bool isSnapEnabled() const {
+        return snapEnabled;
+    }
 
     // Time offset for piano roll (absolute vs relative mode)
     // When set, displayed times are offset by this amount (e.g., clip starts at bar 5)
@@ -138,6 +142,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     int timeSigNumerator = 4;
     int timeSigDenominator = 4;
     double gridResolutionBeats = 0.0;  // 0 = auto-compute from zoom
+    bool snapEnabled = false;
 
     // Offset and relative mode (for piano roll)
     double timeOffset = 0.0;        // seconds - absolute position of content start
@@ -188,6 +193,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     // Coordinate conversion
     double pixelToTime(int pixel) const;
     int timeToPixel(double time) const;
+    double snapTimeToGrid(double time) const;
 
     // Timer callback for real-time scroll sync
     void timerCallback() override;

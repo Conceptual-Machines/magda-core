@@ -61,8 +61,8 @@ class MacroPanelComponent : public PagedControlPanel {
 
     // Callbacks
     std::function<void(int macroIndex, float value)> onMacroValueChanged;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onMacroTargetChanged;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onMacroLinkRemoved;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onMacroTargetChanged;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onMacroLinkRemoved;
     std::function<void(int macroIndex)> onMacroAllLinksCleared;  // Clear all links for a macro
     std::function<void(int macroIndex, juce::String name)> onMacroNameChanged;
     std::function<void(int macroIndex)> onMacroClicked;  // Selection callback

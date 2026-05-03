@@ -143,8 +143,7 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     }
 
     // Callbacks
-    std::function<void(float)> onAmountChanged;
-    std::function<void(magda::ModTarget)> onTargetChanged;
+    std::function<void(magda::ControlTarget)> onTargetChanged;
     std::function<void(juce::String)> onNameChanged;
     std::function<void()> onClicked;            // Opens modulator editor panel
     std::function<void()> onRemoveRequested;    // Remove this mod
@@ -171,7 +170,6 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
 
     int modIndex_;
     juce::Label nameLabel_;
-    TextSlider amountSlider_{TextSlider::Format::Decimal};
     MiniWaveformDisplay waveformDisplay_;
     std::unique_ptr<magda::SvgButton> linkButton_;
     magda::ModInfo currentMod_;

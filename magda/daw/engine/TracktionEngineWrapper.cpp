@@ -1,6 +1,8 @@
 #include "TracktionEngineWrapper.hpp"
 
-#include "../audio/SessionClipScheduler.hpp"
+#include "../audio/AudioBridge.hpp"
+#include "../audio/session/SessionClipAudioMonitor.hpp"
+#include "../audio/session/SessionClipScheduler.hpp"
 
 namespace magda {
 
@@ -78,6 +80,15 @@ SessionClipPlayState TracktionEngineWrapper::getSessionClipPlayState(ClipId clip
 void TracktionEngineWrapper::stopSessionTrack(TrackId trackId) {
     if (sessionScheduler_)
         sessionScheduler_->stopSessionTrack(trackId);
+}
+
+bool TracktionEngineWrapper::isSessionTrackStopPending(TrackId trackId) const {
+    return sessionScheduler_ && sessionScheduler_->isSessionTrackStopPending(trackId);
+}
+
+double TracktionEngineWrapper::getAudioThreadTransportSeconds() const {
+    return audioBridge_ ? audioBridge_->getSessionAudioMonitor().getTransportPositionSeconds()
+                        : -1.0;
 }
 
 void TracktionEngineWrapper::deactivateAllSessionClips() {

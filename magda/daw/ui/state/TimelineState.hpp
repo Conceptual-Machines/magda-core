@@ -350,7 +350,8 @@ struct TimelineState {
 
     // Edit cursor - separate from playhead, used for split/edit operations
     // Set by clicking in lower track zone, independent of playback position
-    double editCursorPosition = -1.0;  // -1 means not set/hidden
+    double editCursorPosition = -1.0;  // seconds cache derived from editCursorBeats
+    double editCursorBeats = -1.0;     // beat position, -1 means not set/hidden
 
     // Sub-states
     ZoomState zoom;
@@ -559,7 +560,8 @@ struct TimelineState {
      */
     int getContentWidth() const {
         double beats = secondsToBeats(timelineLength);
-        int baseWidth = static_cast<int>(beats * zoom.horizontalZoom);
+        int baseWidth = static_cast<int>(std::round(beats * zoom.horizontalZoom)) +
+                        LayoutConfig::TIMELINE_LEFT_PADDING;
         int minWidth = zoom.viewportWidth + (zoom.viewportWidth / 2);
         return juce::jmax(baseWidth, minWidth);
     }
@@ -568,7 +570,10 @@ struct TimelineState {
      * Calculate maximum scroll position
      */
     int getMaxScrollX() const {
-        return juce::jmax(0, getContentWidth() - zoom.viewportWidth);
+        double beats = secondsToBeats(timelineLength);
+        int timelineWidth = static_cast<int>(std::round(beats * zoom.horizontalZoom)) +
+                            LayoutConfig::TIMELINE_LEFT_PADDING;
+        return juce::jmax(0, timelineWidth - zoom.viewportWidth);
     }
 
     /**

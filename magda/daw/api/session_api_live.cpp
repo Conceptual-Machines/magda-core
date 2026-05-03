@@ -1,6 +1,7 @@
 #include "session_api_live.hpp"
 
 #include "../core/ClipManager.hpp"
+#include "../core/SessionLaunchService.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../engine/AudioEngine.hpp"
@@ -24,6 +25,10 @@ void SessionApiLive::stopTrack(TrackId trackId) {
 
 void SessionApiLive::stopAll() {
     ClipManager::getInstance().stopAllClips();
+}
+
+void SessionApiLive::launchScene(int sceneIndex) {
+    SessionLaunchService::launchSceneAllTracks(sceneIndex);
 }
 
 ClipId SessionApiLive::getActiveClipOnTrack(TrackId trackId) const {

@@ -1,7 +1,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
 
-#include "magda/daw/audio/MidiEventQueue.hpp"
+#include "magda/daw/audio/midi/MidiEventQueue.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"

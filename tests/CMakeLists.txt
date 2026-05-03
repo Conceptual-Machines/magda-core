@@ -5,6 +5,7 @@ set(TEST_SOURCES
     test_audiobridge_plugin_cleanup_bug.cpp
     test_auto_tempo.cpp
     test_audio_clip_stretch.cpp
+    test_clip_bpm_invariant.cpp
     test_audio_source_length.cpp
     test_audio_export.cpp
     test_command.cpp
@@ -16,6 +17,7 @@ set(TEST_SOURCES
     test_nested_racks.cpp
     test_rack_audio.cpp
     test_modulation.cpp
+    test_control_target.cpp
     test_chain_fingerprint.cpp
     test_group_tracks_and_macros.cpp
     test_parameter_utils.cpp

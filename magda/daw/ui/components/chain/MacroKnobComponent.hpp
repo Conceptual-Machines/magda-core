@@ -80,8 +80,8 @@ class MacroKnobComponent : public juce::Component,
 
     // Callbacks
     std::function<void(float)> onValueChanged;
-    std::function<void(magda::MacroTarget)> onTargetChanged;
-    std::function<void(magda::MacroTarget)>
+    std::function<void(magda::ControlTarget)> onTargetChanged;
+    std::function<void(magda::ControlTarget)>
         onLinkRemoved;                        // Called when individual link is removed
     std::function<void()> onAllLinksCleared;  // Called when "Clear All Links" clears all links
     std::function<void(juce::String)> onNameChanged;
@@ -133,7 +133,7 @@ class MacroKnobComponent : public juce::Component,
     bool automapShadowed_ = false;    // automap binding exists but a Learn
                                       // override on the same CC is in effect —
                                       // dot paints grey instead of green.
-    bool hasLearnedBinding_ = false;  // user-mapped (StaticTarget DeviceMacro)
+    bool hasLearnedBinding_ = false;  // user-mapped (ControlTarget DeviceMacro)
                                       // binding for this macro — paints orange
                                       // instead of green to flag "your mapping,
                                       // not a profile default".
