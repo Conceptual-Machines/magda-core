@@ -552,14 +552,35 @@ void setLuaScriptPorts(const juce::String& scriptName, const LuaScriptPorts& por
 }
 
 bool hasAnyLuaScripts() {
-    magda::scripting::LuaScriptStore store;
-    return !store.enumerate().empty();
+    return !enumerateLuaScripts().empty();
 }
 
 std::vector<juce::File> enumerateLuaScripts() {
     magda::scripting::LuaScriptStore store;
     store.ensureExists();
-    return store.enumerate();
+    auto userScripts = store.enumerate();
+
+    auto bundledDir = magda::scripting::LuaScriptStore::findBundledScriptsDirectory();
+    if (!bundledDir.isDirectory())
+        return userScripts;
+
+    juce::StringArray userFilenames;
+    for (const auto& f : userScripts)
+        userFilenames.add(f.getFileName());
+
+    std::vector<juce::File> merged = userScripts;
+    auto bundled =
+        bundledDir.findChildFiles(juce::File::findFiles, /*searchRecursively*/ false, "*.lua");
+    for (auto& f : bundled) {
+        // User pool wins on filename collision (matches profile precedence).
+        if (!userFilenames.contains(f.getFileName()))
+            merged.push_back(f);
+    }
+
+    std::sort(merged.begin(), merged.end(), [](const juce::File& a, const juce::File& b) {
+        return a.getFileName().compareIgnoreCase(b.getFileName()) < 0;
+    });
+    return merged;
 }
 
 juce::File luaScriptsFolder() {
