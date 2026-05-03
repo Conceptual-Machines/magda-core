@@ -45,6 +45,10 @@ dsl_grammar.hpp
     daw_agent.cpp
     four_osc_agent.hpp
     four_osc_agent.cpp
+    four_osc_apply.hpp
+    four_osc_apply.cpp
+    sound_design_agent.hpp
+    sound_design_agent.cpp
 )
 
 # Create the agents library
