@@ -8,6 +8,7 @@
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "ClipManager.hpp"
 #include "Config.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
@@ -88,6 +89,17 @@ void remapDuplicatedLinks(MacroArray& macros, ModArray& mods, const ChainNodePat
         for (auto& link : mod.links)
             remapDuplicatedTarget(link.target, ownerPath, remap);
     }
+}
+
+juce::String formatClipIds(const std::vector<ClipId>& clipIds) {
+    juce::String text("[");
+    for (size_t i = 0; i < clipIds.size(); ++i) {
+        if (i > 0)
+            text << ",";
+        text << clipIds[i];
+    }
+    text << "]";
+    return text;
 }
 
 juce::String stripDuplicateRuntimePluginState(const juce::String& pluginState) {
@@ -269,6 +281,15 @@ void TrackManager::deleteTrack(TrackId trackId) {
     // will become invalid after deletion.
     auto& sm = magda::SelectionManager::getInstance();
     sm.clearSelection();
+
+    auto& clipManager = magda::ClipManager::getInstance();
+    auto clipIds = clipManager.getClipsOnTrack(trackId);
+    DBG("TrackManager::deleteTrack clip cleanup trackId=" << trackId
+                                                          << " clipIds=" << formatClipIds(clipIds));
+    for (auto clipId : clipIds)
+        clipManager.deleteClip(clipId);
+    DBG("TrackManager::deleteTrack clip cleanup complete trackId="
+        << trackId << " remainingClipIds=" << formatClipIds(clipManager.getClipsOnTrack(trackId)));
 
     // If this track has a parent, remove it from parent's children
     if (track->hasParent()) {

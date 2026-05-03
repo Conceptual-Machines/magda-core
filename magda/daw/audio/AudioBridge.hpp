@@ -695,6 +695,17 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId);
 
     /**
+     * @brief Mark one MIDI input as control-surface-only.
+     *
+     * Surface-only inputs remain available to raw MIDI listeners (Lua scripts,
+     * controller routing, monitors) but are excluded from Tracktion Engine live
+     * track input routing, including "all" routing. Empty clears the current
+     * surface-only input.
+     */
+    void setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName);
+    void clearSurfaceOnlyMidiInputPorts();
+
+    /**
      * @brief Get current MIDI input source for a track
      * @param trackId The MAGDA track ID
      * @return MIDI device ID, or empty if none
@@ -794,6 +805,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;
 
+    bool isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
+                                const juce::String& liveName) const;
+    void removeSurfaceOnlyMidiInputTargets();
+
     // Create track mapping
     void ensureTrackMapping(TrackId trackId);
 
@@ -821,6 +836,11 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     // Bidirectional mappings
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
+
+    // MIDI ports owned by Lua/controller scripts. These should never feed
+    // instrument tracks through Tracktion's native live MIDI graph.
+    juce::StringArray surfaceOnlyMidiInputPorts_;
+    mutable juce::CriticalSection surfaceOnlyMidiInputLock_;
 
     // (Session clips use ClipSlot-based mapping via trackId + sceneIndex — no ID maps needed)
 

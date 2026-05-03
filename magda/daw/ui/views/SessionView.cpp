@@ -38,6 +38,39 @@ namespace magda {
 namespace {
 constexpr float MIN_DB = -60.0f;
 
+juce::String formatTrackIds(const std::vector<TrackId>& trackIds) {
+    juce::String text("[");
+    for (size_t i = 0; i < trackIds.size(); ++i) {
+        if (i > 0)
+            text << ",";
+        text << trackIds[i];
+    }
+    text << "]";
+    return text;
+}
+
+juce::String formatSessionClips() {
+    auto clips = ClipManager::getInstance().getSessionClips();
+    std::sort(clips.begin(), clips.end(), [](const ClipInfo& a, const ClipInfo& b) {
+        if (a.trackId != b.trackId)
+            return a.trackId < b.trackId;
+        if (a.sceneIndex != b.sceneIndex)
+            return a.sceneIndex < b.sceneIndex;
+        return a.id < b.id;
+    });
+
+    juce::String text("[");
+    for (size_t i = 0; i < clips.size(); ++i) {
+        const auto& clip = clips[i];
+        if (i > 0)
+            text << ",";
+        text << "{id=" << clip.id << ",track=" << clip.trackId << ",scene=" << clip.sceneIndex
+             << ",name=\"" << clip.name << "\"}";
+    }
+    text << "]";
+    return text;
+}
+
 float gainToDb(float gain) {
     if (gain <= 0.0f)
         return MIN_DB;
@@ -1509,6 +1542,8 @@ SessionView::~SessionView() {
 }
 
 void SessionView::tracksChanged() {
+    DBG("SessionView::tracksChanged oldVisibleTracks=" << formatTrackIds(visibleTrackIds_)
+                                                       << " sessionClips=" << formatSessionClips());
     rebuildTracks();
 }
 
@@ -1614,6 +1649,10 @@ int SessionView::getTrackIndexAtX(int x) const {
 }
 
 void SessionView::rebuildTracks() {
+    DBG("SessionView::rebuildTracks begin oldVisibleTracks="
+        << formatTrackIds(visibleTrackIds_) << " gridChildren="
+        << gridContent->getNumChildComponents() << " sessionClips=" << formatSessionClips());
+
     // Clear existing track headers, clip slots, strips, IO strips, and send strips
     trackHeaders.clear();
     clipSlots.clear();
@@ -1649,6 +1688,8 @@ void SessionView::rebuildTracks() {
     }
 
     int numTracks = static_cast<int>(visibleTrackIds_.size());
+    DBG("SessionView::rebuildTracks visibleTracks=" << formatTrackIds(visibleTrackIds_)
+                                                    << " sessionClips=" << formatSessionClips());
 
     // Initialize per-track widths (preserve existing widths where possible)
     std::vector<int> oldWidths = trackColumnWidths_;
@@ -1845,6 +1886,10 @@ void SessionView::rebuildTracks() {
 
     // Populate all clip slots with their current clip data
     updateAllClipSlots();
+
+    DBG("SessionView::rebuildTracks end visibleTracks="
+        << formatTrackIds(visibleTrackIds_) << " gridChildren="
+        << gridContent->getNumChildComponents() << " sessionClips=" << formatSessionClips());
 }
 
 void SessionView::paint(juce::Graphics& g) {
@@ -2902,6 +2947,9 @@ void SessionView::showMixerContextMenu() {
 // ============================================================================
 
 void SessionView::clipsChanged() {
+    DBG("SessionView::clipsChanged visibleTracks=" << formatTrackIds(visibleTrackIds_)
+                                                   << " sessionClips=" << formatSessionClips());
+
     // Clear any stale drag overlay state — structural changes (add/remove clip)
     // can interrupt drag operations without proper exit callbacks.
     showPluginDropOverlay_ = false;
@@ -3060,6 +3108,11 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     if (clipId != INVALID_CLIP_ID) {
         const auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip) {
+            DBG("SessionView::slotOccupied trackIndex="
+                << trackIndex << " trackId=" << trackId << " scene=" << sceneIndex << " clipId="
+                << clipId << " clipTrackId=" << clip->trackId << " clipScene=" << clip->sceneIndex
+                << " visibleTracks=" << formatTrackIds(visibleTrackIds_));
+
             // Query play state from the scheduler (single source of truth)
             auto playState = audioEngine_ ? audioEngine_->getSessionClipPlayState(clipId)
                                           : SessionClipPlayState::Stopped;
@@ -3095,6 +3148,12 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         }
     } else {
         // Empty slot
+        if (slot->hasClip || slot->clipId != INVALID_CLIP_ID) {
+            DBG("SessionView::slotCleared trackIndex="
+                << trackIndex << " trackId=" << trackId << " scene=" << sceneIndex << " oldClipId="
+                << slot->clipId << " visibleTracks=" << formatTrackIds(visibleTrackIds_));
+        }
+
         slot->hasClip = false;
         slot->clipId = INVALID_CLIP_ID;
         slot->clipIsPlaying = false;
