@@ -37,8 +37,6 @@ Creating a new track still works either way — just be explicit in the request 
 
 ### Setup
 
-![AI Settings](../assets/images/panels/ai-settings.png){ width="400" }
-
 The AI Assistant supports multiple LLM providers. Open the AI Settings dialog from **Settings > AI Settings** to configure your providers.
 
 The settings dialog has three tabs:

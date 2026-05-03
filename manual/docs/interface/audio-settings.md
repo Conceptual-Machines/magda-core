@@ -1,8 +1,6 @@
 # Audio Settings
 
-Open audio settings from **Settings > Audio Settings**.
-
-![Audio/MIDI Settings](../assets/images/interface/audio-settings.png)
+Open audio settings from **Settings > Audio Settings**. The dialog is organised into the sections below.
 
 ## Audio Device
 

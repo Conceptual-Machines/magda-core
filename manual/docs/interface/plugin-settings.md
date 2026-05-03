@@ -1,8 +1,6 @@
 # Plugin Settings
 
-The Plugin Settings dialog manages VST3 plugin directories, scanning, and exclusions. Open it from **Settings > Plugin Scan**.
-
-![Plugin Settings](../assets/images/interface/plugin-settings.png)
+The Plugin Settings dialog manages VST3 plugin directories, scanning, and exclusions. Open it from **Settings > Plugin Scan**. Sections below.
 
 ## System Plugin Directories
 

@@ -10,11 +10,20 @@ Profile and Learn'd bindings can coexist — a Learn'd binding shadows automap o
 
 ## Controllers Dialog
 
-Open from **Settings > Controllers**.
+Open from **Settings > Controllers**. The dialog has two tabs:
 
-![Controllers Dialog](../assets/images/interface/controllers.png)
+- **Profiles** — registered hardware controllers with their assigned MIDI input ports
+- **Scripts** — `.lua` controller scripts (see [Lua Controller Scripts](#lua-controller-scripts))
 
-The dialog lists every controller MAGDA knows about. Each row shows the manufacturer and model, the live MIDI input port the controller is connected to, and a connection-status indicator (green dot when the named port is currently available).
+### Profiles tab
+
+One row per registered controller. Each row shows:
+
+| Column | Description |
+|---|---|
+| **Status dot** | Green when the assigned MIDI input is currently connected, dim when it isn't |
+| **Name** | Manufacturer + model |
+| **Input port** | The live MIDI input the controller is bound to |
 
 Two buttons sit in the header:
 
