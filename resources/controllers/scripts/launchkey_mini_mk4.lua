@@ -3,7 +3,7 @@
 --
 -- What it does:
 --   * Enters DAW mode on load (so pads / transport row report on the DAW port).
---   * Pads (2x8) launch session clips on tracks 1..8, two clip slots per track.
+--   * Pads (2x8) launch session clips on the first 8 tracks, two clip slots per track.
 --   * Transport row drives MAGDA's transport (play / stop / record / loop).
 --   * Knobs are NOT handled here — they're already wired to focused-device
 --     macros via resources/controllers/novation.launchkey_mini_mk4.macros.json.
@@ -148,15 +148,23 @@ end
 -- DAW-mode pad notes (Channel 1):
 --   Top row:    96..103 (0x60..0x67)
 --   Bottom row: 112..119 (0x70..0x77)
--- Columns map to tracks 1..8. Rows map to scene indices in visual
--- order: top pad row = scene 0 (visually highest in MAGDA's session
--- view), bottom pad row = scene 1.
+-- Columns map to the first 8 tracks in MAGDA's current track order. Track IDs
+-- are persistent IDs, not display columns, so resolve the current column
+-- through magda.tracks.list() every time instead of assuming IDs are 1..8.
+-- Rows map to scene indices in visual order: top pad row = scene 0 (visually
+-- highest in MAGDA's session view), bottom pad row = scene 1.
+
+local function track_id_for_column(col)
+  local tracks = magda.tracks.list()
+  local track = tracks[col + 1]
+  return track and track.id or nil
+end
 
 local function pad_to_track_and_scene(note)
   if note >= 0x60 and note <= 0x67 then
-    return note - 0x60 + 1, scene_offset       -- top row -> scene_offset
+    return track_id_for_column(note - 0x60), scene_offset       -- top row -> scene_offset
   elseif note >= 0x70 and note <= 0x77 then
-    return note - 0x70 + 1, scene_offset + 1   -- bottom row -> scene_offset + 1
+    return track_id_for_column(note - 0x70), scene_offset + 1   -- bottom row -> scene_offset + 1
   end
   return nil, nil
 end
@@ -287,9 +295,9 @@ local function refresh_leds()
   for row = 0, 1 do
     for col = 0, 7 do
       local note = PAD_NOTES[row][col + 1]
-      local track = col + 1
+      local track = track_id_for_column(col)
       local scene = scene_offset + row
-      local clip = magda.session.clip_in_slot(track, scene)
+      local clip = track and magda.session.clip_in_slot(track, scene) or nil
 
       if not clip then
         send_palette(out, note, 1, 0)        -- off
@@ -415,6 +423,9 @@ local function handle_pad_press(e)
   if not track then return end
 
   local clip = magda.session.clip_in_slot(track, scene)
+  magda.log.info(string.format(
+    "[launchkey] pad note=%d -> track_id=%d scene=%d clip=%s",
+    e.number, track, scene, tostring(clip)))
   if clip then
     magda.session.launch_clip(clip)
   end
