@@ -75,6 +75,10 @@ class FooterBar : public juce::Component,
     juce::Array<juce::MidiDeviceInfo> liveInputs_;
     bool refreshLiveInputs();  // returns true when the live set changed
 
+    // Cached active Lua script name so timerCallback can detect load/unload
+    // without reading scripting_app every frame.
+    juce::String lastActiveLuaScriptName_;
+
     void setupButtons();
     void setupBottomCollapseButton();
     void updateBottomCollapseIcon();
