@@ -152,43 +152,46 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
 
     // Show full menu
     auto safeAnchor = juce::Component::SafePointer<juce::Component>(anchor);
-    auto deviceId = ctx.deviceId;
     auto paramIdx = ctx.paramIndex;
     auto devicePath = ctx.devicePath;
     auto cbs = callbacks;
 
     menu.showMenuAsync(
-        juce::PopupMenu::Options(), [safeAnchor, deviceId, paramIdx, devicePath, cbs](int result) {
+        juce::PopupMenu::Options(), [safeAnchor, paramIdx, devicePath, cbs](int result) {
             if (safeAnchor == nullptr || result == 0) {
                 return;
             }
 
-            magda::ControlTarget target = magda::ControlTarget::fromDeviceId(deviceId, paramIdx);
+            magda::ControlTarget target = magda::ControlTarget::pluginParam(devicePath, paramIdx);
 
             if (result >= 1700 && result < 1800) {
                 int modIndex = result - 1700;
                 if (cbs.onTrackModUnlinked)
                     cbs.onTrackModUnlinked(modIndex, target);
-            } else if (result >= 1500 && result < 1700) {
-                int modIndex = (result >= 1600) ? result - 1600 : result - 1500;
+            } else if (result >= 1600 && result < 1700) {
+                int modIndex = result - 1600;
+                if (cbs.onRackModUnlinked)
+                    cbs.onRackModUnlinked(modIndex, target);
+            } else if (result >= 1500 && result < 1600) {
+                int modIndex = result - 1500;
                 if (cbs.onModUnlinked)
                     cbs.onModUnlinked(modIndex, target);
             } else if (result >= 2200 && result < 2300) {
                 int macroIndex = result - 2200;
                 magda::ControlTarget macroTarget =
-                    magda::ControlTarget::fromDeviceId(deviceId, paramIdx);
+                    magda::ControlTarget::pluginParam(devicePath, paramIdx);
                 if (cbs.onTrackMacroUnlinked)
                     cbs.onTrackMacroUnlinked(macroIndex, macroTarget);
             } else if (result >= 2100 && result < 2200) {
                 int macroIndex = result - 2100;
                 magda::ControlTarget macroTarget =
-                    magda::ControlTarget::fromDeviceId(deviceId, paramIdx);
+                    magda::ControlTarget::pluginParam(devicePath, paramIdx);
                 if (cbs.onRackMacroUnlinked)
                     cbs.onRackMacroUnlinked(macroIndex, macroTarget);
             } else if (result >= 2000 && result < 2100) {
                 int macroIndex = result - 2000;
                 magda::ControlTarget macroTarget =
-                    magda::ControlTarget::fromDeviceId(deviceId, paramIdx);
+                    magda::ControlTarget::pluginParam(devicePath, paramIdx);
                 if (cbs.onMacroUnlinked)
                     cbs.onMacroUnlinked(macroIndex, macroTarget);
             } else if (result >= 3000 && result < 4000) {
@@ -199,20 +202,20 @@ void showParamLinkMenu(juce::Component* anchor, const ParamLinkContext& ctx,
             } else if (result >= 4200 && result < 4300) {
                 int macroIndex = result - 4200;
                 magda::ControlTarget macroTarget =
-                    magda::ControlTarget::fromDeviceId(deviceId, paramIdx);
+                    magda::ControlTarget::pluginParam(devicePath, paramIdx);
                 if (cbs.onTrackMacroLinked)
                     cbs.onTrackMacroLinked(macroIndex, macroTarget);
             } else if (result >= 4100 && result < 4200) {
                 int macroIndex = result - 4100;
                 magda::ControlTarget macroTarget =
-                    magda::ControlTarget::fromDeviceId(deviceId, paramIdx);
+                    magda::ControlTarget::pluginParam(devicePath, paramIdx);
                 if (cbs.onRackMacroLinked)
                     cbs.onRackMacroLinked(macroIndex, macroTarget);
             } else if (result >= 4000 && result < 4100) {
                 int macroIndex = result - 4000;
                 if (cbs.onMacroLinked) {
                     magda::ControlTarget macroTarget =
-                        magda::ControlTarget::fromDeviceId(deviceId, paramIdx);
+                        magda::ControlTarget::pluginParam(devicePath, paramIdx);
                     cbs.onMacroLinked(macroIndex, macroTarget);
                 }
             } else if (result == 5000) {

@@ -46,6 +46,14 @@ using node_header::applyHeaderIconStyle;
 using node_header::FlatGainSliderLookAndFeel;
 using node_header::GainSliderWithMeterTooltip;
 
+magda::ChainNodePath firstRackPathForDevicePath(const magda::ChainNodePath& devicePath) {
+    magda::ChainNodePath rackPath;
+    rackPath.trackId = devicePath.trackId;
+    if (!devicePath.steps.empty() && devicePath.steps[0].type == magda::ChainStepType::Rack)
+        rackPath.steps.push_back(devicePath.steps[0]);
+    return rackPath;
+}
+
 // LookAndFeel for the plugin-presets header button. Visually a flat label
 // with a chevron on the right, so it reads as a menu trigger rather than a
 // "select one of these values" combo.
@@ -503,6 +511,19 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 return;
             auto nodePath = self->nodePath_;
             magda::TrackManager::getInstance().removeModLink(nodePath, modIndex, target);
+            if (!self)
+                return;
+            self->updateParamModulation();
+            self->updateModsPanel();
+        };
+        paramGrid_->getSlot(i)->onRackModUnlinked = [safeThis = juce::Component::SafePointer(this)](
+                                                        int modIndex, magda::ControlTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto rackPath = firstRackPathForDevicePath(self->nodePath_);
+            if (rackPath.isValid())
+                magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
             if (!self)
                 return;
             self->updateParamModulation();
@@ -4215,6 +4236,19 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 }
             };
 
+            slider->onRackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
+                auto self = safeThis;
+                if (!self)
+                    return;
+                auto rackPath = firstRackPathForDevicePath(self->nodePath_);
+                if (rackPath.isValid())
+                    magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
+                if (self) {
+                    self->updateParamModulation();
+                    self->updateModsPanel();
+                }
+            };
+
             slider->onTrackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
                 auto self = safeThis;
                 if (!self)
@@ -4399,6 +4433,19 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
                 if (!self)
                     return;
                 magda::TrackManager::getInstance().removeModLink(self->nodePath_, modIndex, target);
+                if (self) {
+                    self->updateParamModulation();
+                    self->updateModsPanel();
+                }
+            };
+
+            ps->onRackModUnlinked = [safeThis](int modIndex, magda::ControlTarget target) {
+                auto self = safeThis;
+                if (!self)
+                    return;
+                auto rackPath = firstRackPathForDevicePath(self->nodePath_);
+                if (rackPath.isValid())
+                    magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
                 if (self) {
                     self->updateParamModulation();
                     self->updateModsPanel();
@@ -4692,6 +4739,19 @@ void DeviceSlotComponent::setupCustomUILinking() {
             if (!self)
                 return;
             magda::TrackManager::getInstance().removeModLink(self->nodePath_, modIndex, target);
+            if (!self)
+                return;
+            self->updateParamModulation();
+            self->updateModsPanel();
+        };
+        slider->onRackModUnlinked = [safeThis = juce::Component::SafePointer(this)](
+                                        int modIndex, magda::ControlTarget target) {
+            auto self = safeThis;
+            if (!self)
+                return;
+            auto rackPath = firstRackPathForDevicePath(self->nodePath_);
+            if (rackPath.isValid())
+                magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
             if (!self)
                 return;
             self->updateParamModulation();

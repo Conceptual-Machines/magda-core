@@ -96,6 +96,23 @@ void wireModMacroCallbacks(Widget* widget,
         self->updateModsPanel();
     };
 
+    widget->onRackModUnlinked = [safeThis = owner](int modIndex, magda::ControlTarget target) {
+        auto self = safeThis;
+        if (!self)
+            return;
+        magda::ChainNodePath rackPath;
+        rackPath.trackId = self->nodePath_.trackId;
+        if (!self->nodePath_.steps.empty() &&
+            self->nodePath_.steps[0].type == magda::ChainStepType::Rack) {
+            rackPath.steps.push_back(self->nodePath_.steps[0]);
+            magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
+        }
+        if (!self)
+            return;
+        self->updateParamModulation();
+        self->updateModsPanel();
+    };
+
     // -------------------------------------------------------------------------
     // onTrackModUnlinked
     // -------------------------------------------------------------------------

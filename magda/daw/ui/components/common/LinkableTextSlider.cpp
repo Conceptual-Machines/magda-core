@@ -115,6 +115,7 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
         if (deviceId_ != magda::INVALID_DEVICE_ID) {
             showParamLinkMenu(this, buildLinkContext(),
                               {.onModUnlinked = onModUnlinked,
+                               .onRackModUnlinked = onRackModUnlinked,
                                .onTrackModUnlinked = onTrackModUnlinked,
                                .onModLinkedWithAmount = onModLinkedWithAmount,
                                .onMacroLinked = onMacroLinked,
@@ -486,6 +487,7 @@ void LinkableTextSlider::mouseDown(const juce::MouseEvent& e) {
     if (e.mods.isPopupMenu() && deviceId_ != magda::INVALID_DEVICE_ID) {
         showParamLinkMenu(this, buildLinkContext(),
                           {.onModUnlinked = onModUnlinked,
+                           .onRackModUnlinked = onRackModUnlinked,
                            .onTrackModUnlinked = onTrackModUnlinked,
                            .onModLinkedWithAmount = onModLinkedWithAmount,
                            .onMacroLinked = onMacroLinked,

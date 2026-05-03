@@ -26,6 +26,160 @@ class RackAudioTestFixture {
     }
 };
 
+TEST_CASE("MAGDA device presets retarget device-local macro and mod links",
+          "[rack_audio][device_presets][macros][mods]") {
+    RackAudioTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Preset Target");
+
+    DeviceInfo liveTemplate;
+    liveTemplate.name = "4OSC Synth";
+    liveTemplate.format = PluginFormat::Internal;
+    liveTemplate.pluginId = "4osc";
+
+    auto liveDeviceId = fixture.tm().addDeviceToTrack(trackId, liveTemplate);
+    auto livePath = ChainNodePath::topLevelDevice(trackId, liveDeviceId);
+
+    DeviceInfo preset = liveTemplate;
+    preset.id = 99;
+    preset.parameters.resize(64);
+    preset.pluginState = "<PLUGIN><MODIFIERASSIGNMENTS><LFO source=\"1\" paramID=\"filterFreq\" "
+                         "value=\"0.5\"/></MODIFIERASSIGNMENTS></PLUGIN>";
+
+    MacroInfo macro(0);
+    macro.links.push_back(
+        {ControlTarget::pluginParam(ChainNodePath::topLevelDevice(123, preset.id), 7), 0.25f,
+         false});
+    preset.macros = {macro};
+
+    ModInfo mod(0);
+    mod.links.push_back(
+        {ControlTarget::pluginParam(ChainNodePath::topLevelDevice(123, preset.id), 8), 0.5f, true});
+    preset.mods = {mod};
+
+    REQUIRE(fixture.tm().applyDevicePreset(livePath, preset));
+
+    auto* live = fixture.tm().getDeviceInChainByPath(livePath);
+    REQUIRE(live != nullptr);
+    REQUIRE(live->macros.size() == 1);
+    REQUIRE(live->mods.size() == 1);
+    REQUIRE(live->macros[0].links.size() == 1);
+    REQUIRE(live->mods[0].links.size() == 1);
+
+    CHECK(live->macros[0].links[0].target.devicePath == livePath);
+    CHECK(live->mods[0].links[0].target.devicePath == livePath);
+    CHECK(live->macros[0].links[0].target.paramIndex == 7);
+    CHECK(live->mods[0].links[0].target.paramIndex == 8);
+    CHECK(!live->pluginState.contains("MODIFIERASSIGNMENTS"));
+}
+
+TEST_CASE("MAGDA rack presets retarget internal macro and mod links",
+          "[rack_audio][rack_presets][macros][mods]") {
+    RackAudioTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Rack Preset Target");
+    auto liveRackId = fixture.tm().addRackToTrack(trackId, "Live Rack");
+    auto liveRackPath = ChainNodePath::rack(trackId, liveRackId);
+
+    RackInfo presetRack;
+    presetRack.id = 90;
+    presetRack.name = "Preset Rack";
+
+    ChainInfo presetChain;
+    presetChain.id = 91;
+
+    DeviceInfo presetDevice;
+    presetDevice.id = 92;
+    presetDevice.name = "Delay";
+    presetDevice.format = PluginFormat::Internal;
+    presetDevice.pluginId = "delay";
+    presetDevice.pluginState = "<PLUGIN><MODIFIERASSIGNMENTS><LFO source=\"1\" paramID=\"mix\" "
+                               "value=\"0.5\"/></MODIFIERASSIGNMENTS></PLUGIN>";
+
+    auto oldTarget =
+        ChainNodePath::chainDevice(123, presetRack.id, presetChain.id, presetDevice.id);
+
+    MacroInfo rackMacro(0);
+    rackMacro.links.push_back({ControlTarget::pluginParam(oldTarget, 3), 0.25f, false});
+    presetRack.macros = {rackMacro};
+
+    ModInfo deviceMod(0);
+    deviceMod.links.push_back({ControlTarget::pluginParam(oldTarget, 4), 0.5f, true});
+    presetDevice.mods = {deviceMod};
+
+    presetChain.elements.push_back(makeDeviceElement(presetDevice));
+    presetRack.chains.push_back(std::move(presetChain));
+
+    REQUIRE(fixture.tm().applyRackPreset(liveRackPath, presetRack));
+
+    auto* liveRack = fixture.tm().getRackByPath(liveRackPath);
+    REQUIRE(liveRack != nullptr);
+    REQUIRE(liveRack->chains.size() == 1);
+    REQUIRE(liveRack->chains[0].elements.size() == 1);
+    REQUIRE(isDevice(liveRack->chains[0].elements[0]));
+
+    auto& liveDevice = getDevice(liveRack->chains[0].elements[0]);
+    auto expectedTarget =
+        ChainNodePath::chainDevice(trackId, liveRackId, liveRack->chains[0].id, liveDevice.id);
+
+    REQUIRE(liveRack->macros.size() == 1);
+    REQUIRE(liveRack->macros[0].links.size() == 1);
+    REQUIRE(liveDevice.mods.size() == 1);
+    REQUIRE(liveDevice.mods[0].links.size() == 1);
+
+    CHECK(liveRack->macros[0].links[0].target.devicePath == expectedTarget);
+    CHECK(liveDevice.mods[0].links[0].target.devicePath == expectedTarget);
+    CHECK(liveRack->macros[0].links[0].target.paramIndex == 3);
+    CHECK(liveDevice.mods[0].links[0].target.paramIndex == 4);
+    CHECK(!liveDevice.pluginState.contains("MODIFIERASSIGNMENTS"));
+}
+
+TEST_CASE("MAGDA track presets retarget top-level macro and mod links",
+          "[rack_audio][track_presets][macros][mods]") {
+    RackAudioTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Track Preset Target");
+
+    DeviceInfo presetDevice;
+    presetDevice.id = 200;
+    presetDevice.name = "Delay";
+    presetDevice.format = PluginFormat::Internal;
+    presetDevice.pluginId = "delay";
+
+    auto oldTarget = ChainNodePath::topLevelDevice(123, presetDevice.id);
+
+    MacroInfo macro(0);
+    macro.links.push_back({ControlTarget::pluginParam(oldTarget, 5), 0.25f, false});
+    presetDevice.macros = {macro};
+
+    ModInfo mod(0);
+    mod.links.push_back({ControlTarget::pluginParam(oldTarget, 6), 0.5f, true});
+    presetDevice.mods = {mod};
+
+    std::vector<ChainElement> presetElements;
+    presetElements.push_back(makeDeviceElement(presetDevice));
+
+    REQUIRE(fixture.tm().applyChainPreset(trackId, std::move(presetElements)));
+
+    auto* track = fixture.tm().getTrack(trackId);
+    REQUIRE(track != nullptr);
+    REQUIRE(track->chainElements.size() == 1);
+    REQUIRE(isDevice(track->chainElements[0]));
+
+    auto& liveDevice = getDevice(track->chainElements[0]);
+    auto expectedTarget = ChainNodePath::topLevelDevice(trackId, liveDevice.id);
+
+    REQUIRE(liveDevice.macros.size() == 1);
+    REQUIRE(liveDevice.mods.size() == 1);
+    REQUIRE(liveDevice.macros[0].links.size() == 1);
+    REQUIRE(liveDevice.mods[0].links.size() == 1);
+
+    CHECK(liveDevice.macros[0].links[0].target.devicePath == expectedTarget);
+    CHECK(liveDevice.mods[0].links[0].target.devicePath == expectedTarget);
+    CHECK(liveDevice.macros[0].links[0].target.paramIndex == 5);
+    CHECK(liveDevice.mods[0].links[0].target.paramIndex == 6);
+}
+
 // ============================================================================
 // Rack Data Model Integration Tests
 // ============================================================================

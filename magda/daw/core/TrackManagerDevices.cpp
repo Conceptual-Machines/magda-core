@@ -1,9 +1,140 @@
+#include <map>
+
 #include "../audio/AudioBridge.hpp"
+#include "../audio/TracktionHelpers.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
 
 namespace magda {
+
+namespace {
+
+struct PresetIdRemap {
+    TrackId trackId = INVALID_TRACK_ID;
+    std::map<DeviceId, DeviceId> devices;
+    std::map<RackId, RackId> racks;
+    std::map<ChainId, ChainId> chains;
+};
+
+bool targetPointsAtDevice(const ControlTarget& target, DeviceId deviceId) {
+    return deviceId != INVALID_DEVICE_ID && target.devicePath.getDeviceId() == deviceId;
+}
+
+void retargetPresetLink(ControlTarget& target, DeviceId presetDeviceId,
+                        const ChainNodePath& liveDevicePath) {
+    if (targetPointsAtDevice(target, presetDeviceId))
+        target.devicePath = liveDevicePath;
+}
+
+void retargetPresetLinks(MacroArray& macros, ModArray& mods, DeviceId presetDeviceId,
+                         const ChainNodePath& liveDevicePath) {
+    for (auto& macro : macros) {
+        for (auto& link : macro.links)
+            retargetPresetLink(link.target, presetDeviceId, liveDevicePath);
+    }
+
+    for (auto& mod : mods) {
+        for (auto& link : mod.links)
+            retargetPresetLink(link.target, presetDeviceId, liveDevicePath);
+    }
+}
+
+template <typename Id> bool remapId(std::map<Id, Id> const& ids, int& value) {
+    auto it = ids.find(value);
+    if (it == ids.end())
+        return false;
+    value = it->second;
+    return true;
+}
+
+void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
+    bool touched = false;
+
+    if (path.isTrackLevel) {
+        path.trackId = remap.trackId;
+        return;
+    }
+
+    if (path.topLevelDeviceId != INVALID_DEVICE_ID)
+        touched = remapId(remap.devices, path.topLevelDeviceId) || touched;
+
+    for (auto& step : path.steps) {
+        switch (step.type) {
+            case ChainStepType::Rack:
+                touched = remapId(remap.racks, step.id) || touched;
+                break;
+            case ChainStepType::Chain:
+                touched = remapId(remap.chains, step.id) || touched;
+                break;
+            case ChainStepType::Device:
+                touched = remapId(remap.devices, step.id) || touched;
+                break;
+        }
+    }
+
+    if (touched)
+        path.trackId = remap.trackId;
+}
+
+void remapPresetTarget(ControlTarget& target, const PresetIdRemap& remap) {
+    remapPresetPath(target.devicePath, remap);
+}
+
+void remapPresetLinks(MacroArray& macros, ModArray& mods, const PresetIdRemap& remap) {
+    for (auto& macro : macros) {
+        for (auto& link : macro.links)
+            remapPresetTarget(link.target, remap);
+    }
+
+    for (auto& mod : mods) {
+        for (auto& link : mod.links)
+            remapPresetTarget(link.target, remap);
+    }
+}
+
+juce::String stripPresetRuntimePluginState(const juce::String& pluginState) {
+    if (pluginState.isEmpty())
+        return pluginState;
+
+    auto xml = juce::parseXML(pluginState);
+    if (!xml)
+        return pluginState;
+
+    auto state = juce::ValueTree::fromXml(*xml);
+    if (!state.isValid())
+        return pluginState;
+
+    stripTracktionIdsRecursive(state);
+    stripModifierAssignmentsRecursive(state);
+
+    if (auto strippedXml = state.createXml())
+        return strippedXml->toString();
+
+    return pluginState;
+}
+
+void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const PresetIdRemap& remap);
+
+void remapRackPresetLinks(RackInfo& rack, const PresetIdRemap& remap) {
+    remapPresetLinks(rack.macros, rack.mods, remap);
+    for (auto& chain : rack.chains)
+        remapPresetLinksRecursive(chain.elements, remap);
+}
+
+void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const PresetIdRemap& remap) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            remapPresetLinks(device.macros, device.mods, remap);
+            device.pluginState = stripPresetRuntimePluginState(device.pluginState);
+        } else if (magda::isRack(element)) {
+            remapRackPresetLinks(magda::getRack(element), remap);
+        }
+    }
+}
+
+}  // namespace
 
 // ============================================================================
 // Device Management in Chains
@@ -567,14 +698,18 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
         return false;
     }
 
+    auto presetMacros = presetDevice.macros;
+    auto presetMods = presetDevice.mods;
+    retargetPresetLinks(presetMacros, presetMods, presetDevice.id, devicePath);
+
     // Copy state-y fields; preserve identity (id, name, format, fileOrIdentifier,
     // capabilities, sidechain wiring, current track placement).
     live->parameters = presetDevice.parameters;
-    live->macros = presetDevice.macros;
-    live->mods = presetDevice.mods;
+    live->macros = std::move(presetMacros);
+    live->mods = std::move(presetMods);
     live->gainDb = presetDevice.gainDb;
     live->gainValue = std::pow(10.0f, presetDevice.gainDb / 20.0f);
-    live->pluginState = presetDevice.pluginState;
+    live->pluginState = stripPresetRuntimePluginState(presetDevice.pluginState);
 
     // Push the new pluginState into the running plugin.
     if (audioEngine_) {
@@ -617,6 +752,10 @@ bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo
     *live = presetRack;
     live->id = preservedId;
 
+    PresetIdRemap remap;
+    remap.trackId = rackPath.trackId;
+    remap.racks[presetRack.id] = preservedId;
+
     // Reassign every chain / device / nested-rack id under this rack so the
     // freshly-loaded subtree doesn't collide with other live elements'
     // runtime IDs. Macros and mods are indexed within their parent and don't
@@ -625,21 +764,31 @@ bool TrackManager::applyRackPreset(const ChainNodePath& rackPath, const RackInfo
     reassignIds = [&](std::vector<ChainElement>& elements) {
         for (auto& element : elements) {
             if (magda::isDevice(element)) {
-                magda::getDevice(element).id = nextDeviceId_++;
+                auto& device = magda::getDevice(element);
+                const auto oldId = device.id;
+                device.id = nextDeviceId_++;
+                remap.devices[oldId] = device.id;
             } else if (magda::isRack(element)) {
                 auto& nested = magda::getRack(element);
+                const auto oldRackId = nested.id;
                 nested.id = nextRackId_++;
+                remap.racks[oldRackId] = nested.id;
                 for (auto& chain : nested.chains) {
+                    const auto oldChainId = chain.id;
                     chain.id = nextChainId_++;
+                    remap.chains[oldChainId] = chain.id;
                     reassignIds(chain.elements);
                 }
             }
         }
     };
     for (auto& chain : live->chains) {
+        const auto oldChainId = chain.id;
         chain.id = nextChainId_++;
+        remap.chains[oldChainId] = chain.id;
         reassignIds(chain.elements);
     }
+    remapRackPresetLinks(*live, remap);
 
     // Trigger a full track resync — AudioBridge::trackDevicesChanged tears
     // down and rebuilds the rack via RackSyncManager from the updated model.
@@ -657,22 +806,32 @@ bool TrackManager::applyChainPreset(TrackId trackId, std::vector<ChainElement> p
     // Reassign every chain / device / nested-rack id in the preset so they
     // don't collide with other live elements' runtime IDs. Same recursive
     // walk applyRackPreset uses.
+    PresetIdRemap remap;
+    remap.trackId = trackId;
     std::function<void(std::vector<ChainElement>&)> reassignIds;
     reassignIds = [&](std::vector<ChainElement>& elements) {
         for (auto& element : elements) {
             if (magda::isDevice(element)) {
-                magda::getDevice(element).id = nextDeviceId_++;
+                auto& device = magda::getDevice(element);
+                const auto oldId = device.id;
+                device.id = nextDeviceId_++;
+                remap.devices[oldId] = device.id;
             } else if (magda::isRack(element)) {
                 auto& nested = magda::getRack(element);
+                const auto oldRackId = nested.id;
                 nested.id = nextRackId_++;
+                remap.racks[oldRackId] = nested.id;
                 for (auto& chain : nested.chains) {
+                    const auto oldChainId = chain.id;
                     chain.id = nextChainId_++;
+                    remap.chains[oldChainId] = chain.id;
                     reassignIds(chain.elements);
                 }
             }
         }
     };
     reassignIds(presetElements);
+    remapPresetLinksRecursive(presetElements, remap);
 
     track->chainElements = std::move(presetElements);
 

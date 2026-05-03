@@ -44,6 +44,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     valueSlider_.onRightClicked = [this]() {
         showParamLinkMenu(this, buildLinkContext(),
                           {.onModUnlinked = onModUnlinked,
+                           .onRackModUnlinked = onRackModUnlinked,
                            .onTrackModUnlinked = onTrackModUnlinked,
                            .onModLinkedWithAmount = onModLinkedWithAmount,
                            .onMacroLinked = onMacroLinked,
@@ -619,6 +620,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
         }
         showParamLinkMenu(this, buildLinkContext(),
                           {.onModUnlinked = onModUnlinked,
+                           .onRackModUnlinked = onRackModUnlinked,
                            .onTrackModUnlinked = onTrackModUnlinked,
                            .onModLinkedWithAmount = onModLinkedWithAmount,
                            .onMacroLinked = onMacroLinked,
