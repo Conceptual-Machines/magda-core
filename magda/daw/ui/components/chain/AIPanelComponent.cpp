@@ -1,7 +1,11 @@
 #include "AIPanelComponent.hpp"
 
+#include <BinaryData.h>
+
+#include "../../../../agents/llm_presets.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "core/Config.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda::daw::ui {
@@ -85,6 +89,32 @@ AIPanelComponent::AIPanelComponent() {
     input_.setFont(FontManager::getInstance().getUIFont(11.0f));
     input_.onReturnKey = [this]() { submitPrompt(); };
     addAndMakeVisible(input_);
+
+    // Footer model label — small, dim, left-aligned. The text gets refreshed
+    // from Config every time the panel resizes / shows so a settings change
+    // surfaces without a restart.
+    modelLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    modelLabel_.setColour(juce::Label::textColourId,
+                          DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.5f));
+    modelLabel_.setJustificationType(juce::Justification::centredLeft);
+    modelLabel_.setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(modelLabel_);
+
+    auto deleteSvg =
+        juce::Drawable::createFromImageData(BinaryData::delete_svg, BinaryData::delete_svgSize);
+    clearButton_.setImages(deleteSvg.get());
+    clearButton_.setEdgeIndent(2);
+    clearButton_.setColour(juce::DrawableButton::backgroundColourId,
+                           juce::Colours::transparentBlack);
+    clearButton_.setColour(juce::DrawableButton::backgroundOnColourId,
+                           juce::Colours::transparentBlack);
+    clearButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    clearButton_.setTooltip("Clear chat");
+    clearButton_.setAlpha(0.5f);
+    clearButton_.onClick = [this]() { clearChat(); };
+    addAndMakeVisible(clearButton_);
+
+    refreshModelLabel();
 }
 
 AIPanelComponent::~AIPanelComponent() {
@@ -124,10 +154,20 @@ void AIPanelComponent::setDevicePluginId(const juce::String& pluginId) {
 
 void AIPanelComponent::resized() {
     auto bounds = getLocalBounds().reduced(4);
+    // Footer strip at the very bottom: model label + clear-chat button.
+    auto footerArea = bounds.removeFromBottom(16);
+    constexpr int footerButtonSize = 16;
+    clearButton_.setBounds(footerArea.removeFromRight(footerButtonSize));
+    footerArea.removeFromRight(2);
+    modelLabel_.setBounds(footerArea);
+
+    bounds.removeFromBottom(2);
     auto inputArea = bounds.removeFromBottom(22);
     bounds.removeFromBottom(4);
     output_.setBounds(bounds);
     input_.setBounds(inputArea);
+
+    refreshModelLabel();
 }
 
 void AIPanelComponent::paint(juce::Graphics& g) {
@@ -222,6 +262,18 @@ void AIPanelComponent::persistOutput() {
     // is transient (not serialized to disk).
     if (auto* dev = TrackManager::getInstance().getDeviceInChainByPath(path_))
         dev->aiPanelOutput = output_.getText();
+}
+
+void AIPanelComponent::clearChat() {
+    output_.setText("", juce::dontSendNotification);
+    persistOutput();
+}
+
+void AIPanelComponent::refreshModelLabel() {
+    auto cfg = Config::getInstance().getAgentLLMConfig(role::MUSIC);
+    juce::String text =
+        cfg.model.empty() ? juce::String("(no model configured)") : juce::String(cfg.model);
+    modelLabel_.setText(text, juce::dontSendNotification);
 }
 
 }  // namespace magda::daw::ui

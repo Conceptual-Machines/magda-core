@@ -465,6 +465,11 @@ void NodeComponent::resized() {
     if (aiPanelVisible_) {
         auto aiArea = bounds.removeFromLeft(getAIPanelWidth());
         resizedAIPanel(aiArea);
+    } else if (aiPanel_) {
+        // Without this, the panel keeps painting at its last bounds after the
+        // AI button is toggled off — the side strip is gone, but the output
+        // text / input box / footer linger over the device's main content.
+        aiPanel_->setVisible(false);
     }
 
     // === RIGHT SIDE PANEL: [Gain] ===

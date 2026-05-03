@@ -29,6 +29,8 @@ namespace magda::daw::ui {
  * +------------------+
  * | [prompt input]   |  <- single-line TextEditor, Enter to submit
  * +------------------+
+ * | model name   [X] |  <- footer: model id + clear-chat button
+ * +------------------+
  */
 class AIPanelComponent : public juce::Component {
   public:
@@ -60,6 +62,13 @@ class AIPanelComponent : public juce::Component {
 
     juce::TextEditor output_;  // multiline read-only
     juce::TextEditor input_;   // single-line, Enter = submit
+
+    // Footer: model id (left) + clear-chat button (right).
+    juce::Label modelLabel_;
+    juce::DrawableButton clearButton_{"clear", juce::DrawableButton::ImageFitted};
+
+    void clearChat();
+    void refreshModelLabel();
 
     // Track where the streaming response started so we can replace the
     // raw JSON the model emits with a clean status line on completion.
