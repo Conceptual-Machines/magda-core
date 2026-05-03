@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "core/ClipPropertyCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
@@ -104,8 +105,9 @@ MidiEditorContent::MidiEditorContent() {
             relativeTimeMode_ ? displayStart : (displayStart - clip->getTimelineStart(bpm));
         double newLoopLength = displayEnd - displayStart;
 
-        magda::ClipManager::getInstance().setLoopStartAndLength(editingClipId_, newLoopStart,
-                                                                newLoopLength, bpm);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetClipLoopRangeCommand>(editingClipId_, newLoopStart,
+                                                             newLoopLength, bpm));
     };
 
     // TimeRuler phase marker drag callback — visual preview only

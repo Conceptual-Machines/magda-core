@@ -812,9 +812,15 @@ void ClipInspector::initClipPropertiesSection() {
             magda::TimelineUtils::beatsToSeconds(newLoopStartBeats, loopBpm);
         newLoopStartSeconds = std::max(0.0, newLoopStartSeconds);
         double newOffset = newLoopStartSeconds + currentPhase;
-        magda::ClipManager::getInstance().setLoopStart(primaryClipId(), newLoopStartSeconds, bpm);
+        // Atomic: change loopStart, then place offset to preserve phase. Undo
+        // collapses both in a single step.
+        magda::UndoManager::getInstance().beginCompoundOperation("Set Clip Loop Start");
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetClipLoopStartCommand>(primaryClipId(), newLoopStartSeconds,
+                                                             bpm));
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newOffset));
+        magda::UndoManager::getInstance().endCompoundOperation();
     };
     clipPropsContainer_.addChildComponent(*clipLoopStartValue_);
 
@@ -873,7 +879,9 @@ void ClipInspector::initClipPropertiesSection() {
             }
         }
 
-        magda::ClipManager::getInstance().setLoopLength(primaryClipId(), newLoopLengthSeconds, bpm);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetClipLoopLengthCommand>(primaryClipId(), newLoopLengthSeconds,
+                                                              bpm));
     };
     clipPropsContainer_.addChildComponent(*clipLoopEndValue_);
 

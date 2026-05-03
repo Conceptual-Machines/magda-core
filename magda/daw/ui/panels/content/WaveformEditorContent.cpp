@@ -12,7 +12,9 @@
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
+#include "core/ClipPropertyCommands.hpp"
 #include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
 #include "core/WarpMarkerCommands.hpp"
 #include "engine/AudioEngine.hpp"
 
@@ -287,8 +289,9 @@ WaveformEditorContent::WaveformEditorContent() {
         double newLoopStart = timelineToSrc(displayStart);
         double newLoopLength = timelineToSrc(displayEnd - displayStart);
 
-        magda::ClipManager::getInstance().setLoopStartAndLength(editingClipId_, newLoopStart,
-                                                                newLoopLength, bpm);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetClipLoopRangeCommand>(editingClipId_, newLoopStart,
+                                                             newLoopLength, bpm));
     };
 
     // Push every drag tick through to ClipManager so the looped audio reflects the new region
