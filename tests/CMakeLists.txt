@@ -58,6 +58,7 @@ set(TEST_SOURCES
     test_compact_executor_context.cpp
     # Faust pool refactor (Phase 1: metadata parser)
     test_faust_metadata_parser.cpp
+    test_faust_param_pool.cpp
     # Parameter alias system tests (PR 1)
     test_param_name_normalize.cpp
     test_alias_parser.cpp

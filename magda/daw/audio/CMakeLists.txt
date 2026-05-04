@@ -46,6 +46,7 @@ target_sources(magda_daw PRIVATE
     plugins/MidiDevicePlugin.cpp
     plugins/FaustPlugin.cpp
     plugins/FaustMetadataParser.cpp
+    plugins/FaustParamPool.cpp
     transport/StepClock.cpp
     plugins/StepSequencerPlugin.cpp
     # Controller routing (issue #1050 -- Phase C)
@@ -85,6 +86,7 @@ target_sources(magda_daw PRIVATE
     plugins/FaustPlugin.hpp
     plugins/FaustParamSlot.hpp
     plugins/FaustMetadataParser.hpp
+    plugins/FaustParamPool.hpp
     transport/StepClock.hpp
     plugins/StepSequencerPlugin.hpp
 )
