@@ -99,8 +99,10 @@ TEST_CASE("ClipInfo::setSourceMetadata - populates unset fields", "[clip][auto-t
 // clip's current timeline length (not source beats).
 // ─────────────────────────────────────────────────────────────
 
-// Expected lengthBeats: clip.length * PROJECT_BPM / 60.0
-static constexpr double AMEN_EXPECTED_LENGTH_BEATS = AMEN_DURATION * PROJECT_BPM / 60.0;
+// Issue #1157: when the file carries tempo metadata (sourceBPM/sourceNumBeats),
+// setAutoTempo defaults lengthBeats to sourceNumBeats so a freshly-dropped loop
+// becomes its natural musical length, not (length × projectBPM / 60).
+static constexpr double AMEN_EXPECTED_LENGTH_BEATS = AMEN_SOURCE_BEATS;
 
 TEST_CASE("setAutoTempo - preserves real detected BPM", "[clip][auto-tempo]") {
     auto clip = makeAmenClip();
@@ -122,7 +124,10 @@ TEST_CASE("setAutoTempo - preserves real detected BPM", "[clip][auto-tempo]") {
 
     SECTION("lengthBeats == loopLengthBeats at initial setup (no sub-loop)") {
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-        REQUIRE(clip.lengthBeats == Approx(clip.loopLengthBeats));
+        // Slight tolerance because AMEN_DURATION (1.513s) doesn't exactly
+        // round-trip through AMEN_ORIGINAL_BPM (158.6) to give 4.0 source
+        // beats — within a thousandth.
+        REQUIRE(clip.lengthBeats == Approx(clip.loopLengthBeats).margin(0.01));
     }
 
     SECTION("startBeats is in project beats") {
@@ -193,15 +198,17 @@ TEST_CASE("getAutoTempoBeatRange - source beat range", "[clip][auto-tempo][te-sy
         REQUIRE(lengthBeats == Approx(clip.loopLengthBeats));
     }
 
-    SECTION("Beat range maps to correct project-time positions") {
+    SECTION("Beat range maps to file's natural beat count") {
+        // Issue #1157: in beat mode, beats are beats. The loop range returned
+        // here is the source's musical extent — sourceNumBeats for a fresh
+        // clip with the whole file as the loop region. Margin allows for
+        // AMEN_DURATION/AMEN_ORIGINAL_BPM rounding (~4.0008 vs 4.0).
         auto clip = makeAmenClip();
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
         auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, PROJECT_BPM);
 
-        // lengthBeats is in project-BPM space: loopLength * projectBPM / 60
-        double recoveredLength = lengthBeats * 60.0 / PROJECT_BPM;
-        REQUIRE(recoveredLength == Approx(clip.loopLength).margin(0.01));
+        REQUIRE(lengthBeats == Approx(AMEN_SOURCE_BEATS).margin(0.01));
     }
 
     SECTION("Returns {0,0} when autoTempo is off") {
@@ -268,9 +275,12 @@ TEST_CASE("setAutoTempo - respects existing loop region", "[clip][auto-tempo][lo
         REQUIRE(clip.loopLength == Approx(0.8));
     }
 
-    SECTION("loopLengthBeats uses project beats for loop region") {
-        // loopLengthBeats = loopLength * projectBPM / 60.0
-        double expectedLoopBeats = 0.8 * PROJECT_BPM / 60.0;
+    SECTION("loopLengthBeats is in beats — derived from sourceBPM") {
+        // Issue #1157: beats are beats. loopLengthBeats describes the loop
+        // region's musical extent in beats, regardless of project tempo. For
+        // a 0.8-second loop in a file recorded at sourceBPM=158.6, that's
+        // 0.8 × 158.6 / 60 ≈ 2.115 beats.
+        double expectedLoopBeats = 0.8 * AMEN_ORIGINAL_BPM / 60.0;
         REQUIRE(clip.loopLengthBeats == Approx(expectedLoopBeats));
     }
 }
@@ -279,22 +289,36 @@ TEST_CASE("setAutoTempo - respects existing loop region", "[clip][auto-tempo][lo
 // Round-trip: enable → disable → enable
 // ─────────────────────────────────────────────────────────────
 
-TEST_CASE("setAutoTempo - disable clears beat values", "[clip][auto-tempo]") {
+TEST_CASE("setAutoTempo - disable preserves source seconds", "[clip][auto-tempo]") {
     auto clip = makeAmenClip();
+    clip.loopEnabled = true;
+    clip.loopStart = 0.25;
+    clip.loopLength = 0.75;
+    clip.offset = 0.5;
+
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
-    // Verify beat values were set
+    // Verify beat values were set and are authoritative in auto-tempo mode.
     REQUIRE(clip.lengthBeats > 0.0);
     REQUIRE(clip.loopLengthBeats > 0.0);
     REQUIRE(clip.startBeats >= 0.0);
 
+    const double expectedOffset = clip.getSourceOffset();
+    const double expectedLoopStart = clip.getSourceLoopStart();
+    const double expectedLoopLength = clip.getSourceLoopLength();
+    const double expectedPhase = wrapPhase(expectedOffset - expectedLoopStart, expectedLoopLength);
+
     ClipOperations::setAutoTempo(clip, false, PROJECT_BPM);
 
-    SECTION("Beat values are cleared") {
-        REQUIRE(clip.startBeats == -1.0);
+    SECTION("Source seconds are preserved") {
+        REQUIRE(clip.offset == Approx(expectedLoopStart + expectedPhase));
+        REQUIRE(clip.loopStart == Approx(expectedLoopStart));
+        REQUIRE(clip.loopLength == Approx(expectedLoopLength));
+    }
+
+    SECTION("Source beat-loop values are cleared") {
         REQUIRE(clip.loopStartBeats == 0.0);
         REQUIRE(clip.loopLengthBeats == 0.0);
-        REQUIRE(clip.lengthBeats == 0.0);
     }
 
     SECTION("autoTempo is false") {
@@ -409,6 +433,8 @@ TEST_CASE("stretchAutoTempoBeats - halves tempo when doubling beats", "[clip][au
     }
 
     SECTION("loopLengthBeats doubles") {
-        REQUIRE(clip.loopLengthBeats == Approx(originalLoopLengthBeats * 2.0));
+        // Slight tolerance — stretchAutoTempoBeats scales by lengthBeats vs
+        // loopLengthBeats ratio which can differ by FP rounding.
+        REQUIRE(clip.loopLengthBeats == Approx(originalLoopLengthBeats * 2.0).margin(0.01));
     }
 }

@@ -1,10 +1,13 @@
 #include "automation_agent.hpp"
 
-#include "../daw/core/AutomationManager.hpp"
+#include "../daw/api/automation_api.hpp"
+#include "../daw/api/magda_api.hpp"
+#include "../daw/api/selection_api.hpp"
+#include "../daw/api/track_api.hpp"
+#include "../daw/core/AutomationInfo.hpp"
 #include "../daw/core/Config.hpp"
 #include "../daw/core/ParameterInfo.hpp"
-#include "../daw/core/SelectionManager.hpp"
-#include "../daw/core/TrackManager.hpp"
+#include "../daw/core/TrackInfo.hpp"
 #include "llm_client_factory.hpp"
 
 namespace magda {
@@ -76,25 +79,26 @@ AUTO freeform points=(0,0.1)(2,0.9)(8,0) target=selected)PROMPT";
 namespace {
 
 /** Multi-line selection context appended to the system prompt. */
-juce::String buildSelectionContext() {
-    auto& sel = SelectionManager::getInstance();
-    auto& amgr = AutomationManager::getInstance();
-    auto& tmgr = TrackManager::getInstance();
+juce::String buildSelectionContext(MagdaApi& api) {
+    auto& sel = api.selection();
+    auto& amgr = api.automation();
+    auto& tmgr = api.tracks();
     juce::String out;
 
     TrackId contextTrackId = sel.getSelectedTrack();
 
-    if (sel.hasAutomationLaneSelection()) {
-        auto laneId = sel.getAutomationLaneSelection().laneId;
+    auto selLaneId = sel.getSelectedAutomationLaneId();
+    if (selLaneId != INVALID_AUTOMATION_LANE_ID) {
+        auto laneId = selLaneId;
         if (auto* lane = amgr.getLane(laneId)) {
-            auto info = lane->target.getParameterInfo();
+            auto info = getParameterInfoForTarget(lane->target);
             out << "Selected lane: \"" << lane->getDisplayName() << "\" (laneId=" << laneId
                 << ", range " << info.minValue << ".." << info.maxValue;
             if (info.unit.isNotEmpty())
                 out << " " << info.unit;
             out << ").\n";
             if (contextTrackId == INVALID_TRACK_ID)
-                contextTrackId = lane->target.trackId;
+                contextTrackId = lane->target.devicePath.trackId;
         }
     } else {
         out << "No automation lane is currently selected.\n";
@@ -129,9 +133,9 @@ std::string cleanOutput(const juce::String& raw) {
     return text.toStdString();
 }
 
-llm::Request buildRequest(const std::string& message) {
+llm::Request buildRequest(MagdaApi& api, const std::string& message) {
     auto systemPrompt = juce::String::fromUTF8(AutomationAgent::getSystemPrompt());
-    auto ctx = buildSelectionContext();
+    auto ctx = buildSelectionContext(api);
     if (ctx.isNotEmpty())
         systemPrompt += "\n\nContext:\n" + ctx;
 
@@ -166,7 +170,7 @@ AutomationAgent::GenerateResult AutomationAgent::generate(const std::string& mes
     }
 
     auto client = createLLMClient(agentConfig, "automation");
-    auto request = buildRequest(message);
+    auto request = buildRequest(api_, message);
 
     auto response = client->sendRequest(request);
 
@@ -214,7 +218,7 @@ AutomationAgent::GenerateResult AutomationAgent::generateStreaming(const std::st
     }
 
     auto client = createLLMClient(agentConfig, "automation");
-    auto request = buildRequest(message);
+    auto request = buildRequest(api_, message);
 
     auto response = client->sendStreamingRequest(request, [&](const juce::String& token) {
         if (shouldStop_.load())

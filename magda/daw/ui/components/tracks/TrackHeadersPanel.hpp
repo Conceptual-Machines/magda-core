@@ -216,6 +216,16 @@ class TrackHeadersPanel : public juce::Component,
     };
     std::vector<std::unique_ptr<AutoLaneHeaderButtons>> laneHeaderButtons_;
     std::unordered_set<int> selectedTrackIndices_;
+
+    // Multi-track relative drag state for volume/pan: when the user drags a
+    // strip belonging to a multi-selection, every selected track shifts by the
+    // same delta from its own base value (captured at drag start). Cleared on
+    // drag end via onDragEnd. Mirrors the pattern in TrackInspector.
+    std::unordered_map<TrackId, float> multiTrackBaseVolumes_;
+    std::unordered_map<TrackId, float> multiTrackBasePans_;
+    double multiTrackDragStartDb_ = 0.0;
+    double multiTrackDragStartPan_ = 0.0;
+
     double verticalZoom = 1.0;  // Track height multiplier
     ViewMode currentViewMode_ = ViewMode::Arrange;
     MixerLookAndFeel sliderLookAndFeel_;  // Custom look and feel for sliders

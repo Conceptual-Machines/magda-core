@@ -9,6 +9,7 @@
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "../windows/MainWindow.hpp"
+#include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/UIScale.hpp"
@@ -67,16 +68,6 @@ void setupSectionHeader(juce::Component& owner, juce::Label& header, const juce:
     owner.addAndMakeVisible(header);
 }
 
-void setupShortcutLabel(juce::Component& owner, juce::Label& label, const juce::String& action,
-                        const juce::String& shortcut) {
-    label.setText(action + ":  " + shortcut, juce::dontSendNotification);
-    label.setFont(magda::FontManager::getInstance().getUIFont(12.0f));
-    label.setColour(juce::Label::textColourId,
-                    magda::DarkTheme::getColour(magda::DarkTheme::TEXT_PRIMARY));
-    label.setJustificationType(juce::Justification::centredLeft);
-    owner.addAndMakeVisible(label);
-}
-
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -84,7 +75,7 @@ void setupShortcutLabel(juce::Component& owner, juce::Label& label, const juce::
 // ---------------------------------------------------------------------------
 namespace magda {
 
-// ---- General tab: Zoom, Timeline ------------------------------------------
+// ---- General tab: Zoom, Timeline, UI behaviour -----------------------------
 
 class GeneralPage : public juce::Component {
   public:
@@ -104,99 +95,14 @@ class GeneralPage : public juce::Component {
         setupSlider(*this, viewDurationSlider, viewDurationLabel,
                     tr("preferences.slider.default_view"), 4.0, 128.0, 1.0, " bars");
 
+        setupSectionHeader(*this, transportHeader, tr("preferences.section.transport"));
+        setupToggle(*this, stopUpdatesPlayheadToggle,
+                    tr("preferences.toggle.stop_updates_playhead"));
+
         setupSectionHeader(*this, autoSaveHeader, tr("preferences.section.autosave"));
         setupToggle(*this, autoSaveToggle, tr("preferences.toggle.enable_autosave"));
         setupSlider(*this, autoSaveIntervalSlider, autoSaveIntervalLabel,
                     tr("preferences.slider.interval"), 10.0, 300.0, 10.0, " sec");
-    }
-
-    void resized() override {
-        auto bounds = getLocalBounds().reduced(16);
-        const int rowH = 32;
-        const int labelW = 180;
-        const int sliderH = 24;
-        const int headerH = 28;
-        const int secGap = 12;
-
-        // Zoom
-        zoomHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutSliderRow(bounds, zoomInLabel, zoomInSensitivitySlider, rowH, labelW, sliderH);
-        bounds.removeFromTop(4);
-        layoutSliderRow(bounds, zoomOutLabel, zoomOutSensitivitySlider, rowH, labelW, sliderH);
-        bounds.removeFromTop(4);
-        layoutSliderRow(bounds, zoomShiftLabel, zoomShiftSensitivitySlider, rowH, labelW, sliderH);
-        bounds.removeFromTop(secGap);
-
-        // Timeline
-        timelineHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutSliderRow(bounds, timelineLengthLabel, timelineLengthSlider, rowH, labelW, sliderH);
-        bounds.removeFromTop(4);
-        layoutSliderRow(bounds, viewDurationLabel, viewDurationSlider, rowH, labelW, sliderH);
-        bounds.removeFromTop(secGap);
-
-        // Auto-Save
-        autoSaveHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        autoSaveToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
-        bounds.removeFromTop(4);
-        layoutSliderRow(bounds, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, labelW,
-                        sliderH);
-    }
-
-    void loadSettings(Config& config) {
-        zoomInSensitivitySlider.setValue(config.getZoomInSensitivity(), juce::dontSendNotification);
-        zoomOutSensitivitySlider.setValue(config.getZoomOutSensitivity(),
-                                          juce::dontSendNotification);
-        zoomShiftSensitivitySlider.setValue(config.getZoomInSensitivityShift(),
-                                            juce::dontSendNotification);
-        timelineLengthSlider.setValue(config.getDefaultTimelineLengthBars(),
-                                      juce::dontSendNotification);
-        viewDurationSlider.setValue(config.getDefaultZoomViewBars(), juce::dontSendNotification);
-        autoSaveToggle.setToggleState(config.getAutoSaveEnabled(), juce::dontSendNotification);
-        autoSaveIntervalSlider.setValue(config.getAutoSaveIntervalSeconds(),
-                                        juce::dontSendNotification);
-    }
-
-    void applySettings(Config& config) {
-        config.setZoomInSensitivity(zoomInSensitivitySlider.getValue());
-        config.setZoomOutSensitivity(zoomOutSensitivitySlider.getValue());
-        config.setZoomInSensitivityShift(zoomShiftSensitivitySlider.getValue());
-        config.setZoomOutSensitivityShift(zoomShiftSensitivitySlider.getValue());
-        config.setDefaultTimelineLengthBars(static_cast<int>(timelineLengthSlider.getValue()));
-        config.setDefaultZoomViewBars(static_cast<int>(viewDurationSlider.getValue()));
-        config.setAutoSaveEnabled(autoSaveToggle.getToggleState());
-        config.setAutoSaveIntervalSeconds(static_cast<int>(autoSaveIntervalSlider.getValue()));
-    }
-
-  private:
-    static void layoutSliderRow(juce::Rectangle<int>& bounds, juce::Label& label,
-                                juce::Slider& slider, int rowH, int labelW, int sliderH) {
-        auto row = bounds.removeFromTop(rowH);
-        label.setBounds(row.removeFromLeft(labelW));
-        slider.setBounds(row.reduced(0, (rowH - sliderH) / 2));
-    }
-
-    juce::Label zoomHeader, timelineHeader, autoSaveHeader;
-    juce::Slider zoomInSensitivitySlider, zoomOutSensitivitySlider, zoomShiftSensitivitySlider;
-    juce::Label zoomInLabel, zoomOutLabel, zoomShiftLabel;
-    juce::Slider timelineLengthSlider, viewDurationSlider;
-    juce::Label timelineLengthLabel, viewDurationLabel;
-    juce::ToggleButton autoSaveToggle;
-    juce::Slider autoSaveIntervalSlider;
-    juce::Label autoSaveIntervalLabel;
-};
-
-// ---- UI tab: Panels, Behavior (incl. showTooltips), Layout ----------------
-
-class UIPage : public juce::Component {
-  public:
-    UIPage() {
-        setupSectionHeader(*this, panelsHeader, tr("preferences.section.panels"));
-        setupToggle(*this, showLeftPanelToggle, tr("preferences.toggle.expand_left_panel"));
-        setupToggle(*this, showRightPanelToggle, tr("preferences.toggle.expand_right_panel"));
-        setupToggle(*this, showBottomPanelToggle, tr("preferences.toggle.expand_bottom_panel"));
 
         setupSectionHeader(*this, layoutHeader, tr("preferences.section.layout"));
         setupToggle(*this, headersOnRightToggle, tr("preferences.toggle.headers_on_right"));
@@ -204,9 +110,10 @@ class UIPage : public juce::Component {
         setupSectionHeader(*this, behaviorHeader, tr("preferences.section.behavior"));
         setupToggle(*this, confirmTrackDeleteToggle, tr("preferences.toggle.confirm_track_delete"));
         setupToggle(*this, autoMonitorToggle, tr("preferences.toggle.auto_monitor"));
+        setupToggle(*this, openMacrosOnSelectToggle,
+                    tr("preferences.toggle.open_macros_on_select"));
         setupToggle(*this, showTooltipsToggle, tr("preferences.toggle.show_tooltips"));
 
-        // Language section
         setupSectionHeader(*this, languageHeader, tr("preferences.language.header"));
         setupComboLabel(languageLabel, tr("preferences.language.label"));
         styleCombo(languageCombo);
@@ -226,7 +133,6 @@ class UIPage : public juce::Component {
                 restartHint.setVisible(availableLanguages_[idx] != initialLanguage_);
         };
 
-        // UI scale section (HiDPI / accessibility)
         setupSectionHeader(*this, scaleHeader, tr("preferences.section.scale"));
         setupComboLabel(scaleLabel, tr("preferences.scale.label"));
         styleCombo(scaleCombo);
@@ -241,66 +147,105 @@ class UIPage : public juce::Component {
 
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
-        const int toggleH = 24;
+        const int rowH = 32;
+        const int labelW = 180;
+        const int sliderH = 24;
         const int headerH = 28;
         const int secGap = 12;
-        const int labelW = 160;
+        const int colGap = 28;
+        const int toggleH = 24;
 
-        // Panels
-        panelsHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        showLeftPanelToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
-        bounds.removeFromTop(4);
-        showRightPanelToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
-        bounds.removeFromTop(4);
-        showBottomPanelToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
-        bounds.removeFromTop(secGap);
+        const int colW = (bounds.getWidth() - colGap) / 2;
+        auto left = bounds.removeFromLeft(colW);
+        bounds.removeFromLeft(colGap);
+        auto right = bounds;
+
+        // Zoom
+        zoomHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        layoutSliderRow(left, zoomInLabel, zoomInSensitivitySlider, rowH, labelW, sliderH);
+        left.removeFromTop(4);
+        layoutSliderRow(left, zoomOutLabel, zoomOutSensitivitySlider, rowH, labelW, sliderH);
+        left.removeFromTop(4);
+        layoutSliderRow(left, zoomShiftLabel, zoomShiftSensitivitySlider, rowH, labelW, sliderH);
+        left.removeFromTop(secGap);
+
+        // Timeline
+        timelineHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        layoutSliderRow(left, timelineLengthLabel, timelineLengthSlider, rowH, labelW, sliderH);
+        left.removeFromTop(4);
+        layoutSliderRow(left, viewDurationLabel, viewDurationSlider, rowH, labelW, sliderH);
+        left.removeFromTop(secGap);
+
+        // Transport
+        transportHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        stopUpdatesPlayheadToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
+        left.removeFromTop(secGap);
+
+        // Auto-Save
+        autoSaveHeader.setBounds(left.removeFromTop(headerH));
+        left.removeFromTop(4);
+        autoSaveToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
+        left.removeFromTop(4);
+        layoutSliderRow(left, autoSaveIntervalLabel, autoSaveIntervalSlider, rowH, labelW, sliderH);
 
         // Layout
-        layoutHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        headersOnRightToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
-        bounds.removeFromTop(secGap);
+        layoutHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        headersOnRightToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
+        right.removeFromTop(secGap);
 
-        // Behavior
-        behaviorHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        confirmTrackDeleteToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
-        bounds.removeFromTop(4);
-        autoMonitorToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
-        bounds.removeFromTop(4);
-        showTooltipsToggle.setBounds(bounds.removeFromTop(toggleH + 8).reduced(0, 4));
-        bounds.removeFromTop(secGap);
+        // Behaviour
+        behaviorHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        confirmTrackDeleteToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
+        right.removeFromTop(4);
+        autoMonitorToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
+        right.removeFromTop(4);
+        openMacrosOnSelectToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
+        right.removeFromTop(4);
+        showTooltipsToggle.setBounds(right.removeFromTop(toggleH + 8).reduced(0, 4));
+        right.removeFromTop(secGap);
 
         // Language
-        languageHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, languageLabel, languageCombo, toggleH + 8, labelW);
-        restartHint.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(secGap);
+        languageHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        layoutComboRow(right, languageLabel, languageCombo, toggleH + 8);
+        restartHint.setBounds(right.removeFromTop(18));
+        right.removeFromTop(secGap);
 
         // UI scale
-        scaleHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, scaleLabel, scaleCombo, toggleH + 8, labelW);
+        scaleHeader.setBounds(right.removeFromTop(headerH));
+        right.removeFromTop(4);
+        layoutComboRow(right, scaleLabel, scaleCombo, toggleH + 8);
     }
 
     void loadSettings(Config& config) {
-        showLeftPanelToggle.setToggleState(!config.getLeftPanelCollapsed(),
-                                           juce::dontSendNotification);
-        showRightPanelToggle.setToggleState(!config.getRightPanelCollapsed(),
+        zoomInSensitivitySlider.setValue(config.getZoomInSensitivity(), juce::dontSendNotification);
+        zoomOutSensitivitySlider.setValue(config.getZoomOutSensitivity(),
+                                          juce::dontSendNotification);
+        zoomShiftSensitivitySlider.setValue(config.getZoomInSensitivityShift(),
                                             juce::dontSendNotification);
-        showBottomPanelToggle.setToggleState(!config.getBottomPanelCollapsed(),
-                                             juce::dontSendNotification);
+        timelineLengthSlider.setValue(config.getDefaultTimelineLengthBars(),
+                                      juce::dontSendNotification);
+        viewDurationSlider.setValue(config.getDefaultZoomViewBars(), juce::dontSendNotification);
+        stopUpdatesPlayheadToggle.setToggleState(config.getStopUpdatesPlayhead(),
+                                                 juce::dontSendNotification);
+        autoSaveToggle.setToggleState(config.getAutoSaveEnabled(), juce::dontSendNotification);
+        autoSaveIntervalSlider.setValue(config.getAutoSaveIntervalSeconds(),
+                                        juce::dontSendNotification);
         headersOnRightToggle.setToggleState(config.getScrollbarOnLeft(),
                                             juce::dontSendNotification);
         confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
                                                 juce::dontSendNotification);
         autoMonitorToggle.setToggleState(config.getAutoMonitorSelectedTrack(),
                                          juce::dontSendNotification);
+        openMacrosOnSelectToggle.setToggleState(config.getOpenMacrosOnSelect(),
+                                                juce::dontSendNotification);
         showTooltipsToggle.setToggleState(config.getShowTooltips(), juce::dontSendNotification);
 
-        // Populate language combo from available lang/*.json files
         languageCombo.clear(juce::dontSendNotification);
         availableLanguages_.clear();
 
@@ -328,15 +273,21 @@ class UIPage : public juce::Component {
     }
 
     void applySettings(Config& config) {
-        config.setLeftPanelCollapsed(!showLeftPanelToggle.getToggleState());
-        config.setRightPanelCollapsed(!showRightPanelToggle.getToggleState());
-        config.setBottomPanelCollapsed(!showBottomPanelToggle.getToggleState());
+        config.setZoomInSensitivity(zoomInSensitivitySlider.getValue());
+        config.setZoomOutSensitivity(zoomOutSensitivitySlider.getValue());
+        config.setZoomInSensitivityShift(zoomShiftSensitivitySlider.getValue());
+        config.setZoomOutSensitivityShift(zoomShiftSensitivitySlider.getValue());
+        config.setDefaultTimelineLengthBars(static_cast<int>(timelineLengthSlider.getValue()));
+        config.setDefaultZoomViewBars(static_cast<int>(viewDurationSlider.getValue()));
+        config.setStopUpdatesPlayhead(stopUpdatesPlayheadToggle.getToggleState());
+        config.setAutoSaveEnabled(autoSaveToggle.getToggleState());
+        config.setAutoSaveIntervalSeconds(static_cast<int>(autoSaveIntervalSlider.getValue()));
         config.setScrollbarOnLeft(headersOnRightToggle.getToggleState());
         config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
+        config.setOpenMacrosOnSelect(openMacrosOnSelectToggle.getToggleState());
         config.setShowTooltips(showTooltipsToggle.getToggleState());
 
-        // Apply language selection
         int selIdx = languageCombo.getSelectedId() - 1;
         if (selIdx >= 0 && selIdx < static_cast<int>(availableLanguages_.size())) {
             auto newLang = availableLanguages_[selIdx];
@@ -346,9 +297,6 @@ class UIPage : public juce::Component {
             }
         }
 
-        // Apply UI scale live. "Auto" resolves from display DPI only (ignoring
-        // env var / config) so the user sees the actual auto-detected value,
-        // and we persist 0 as the Auto sentinel in a single config write.
         double newScale = scaleValueForId(scaleCombo.getSelectedId());
         if (newScale > 0.0) {
             applyUIScale(newScale);
@@ -376,15 +324,21 @@ class UIPage : public juce::Component {
         combo.setColour(juce::ComboBox::outlineColourId, DarkTheme::getColour(DarkTheme::BORDER));
     }
 
+    static void layoutSliderRow(juce::Rectangle<int>& bounds, juce::Label& label,
+                                juce::Slider& slider, int rowH, int labelW, int sliderH) {
+        auto row = bounds.removeFromTop(rowH);
+        label.setBounds(row.removeFromLeft(labelW));
+        slider.setBounds(row.reduced(0, (rowH - sliderH) / 2));
+    }
+
     static void layoutComboRow(juce::Rectangle<int>& bounds, juce::Label& label,
-                               juce::ComboBox& combo, int rowH, int labelW) {
+                               juce::ComboBox& combo, int rowH) {
+        const int labelW = juce::jlimit(95, 135, bounds.getWidth() / 3);
         auto row = bounds.removeFromTop(rowH);
         label.setBounds(row.removeFromLeft(labelW));
         combo.setBounds(row.reduced(0, 4));
     }
 
-    // UI-scale combo: ID 1=Auto(0), 2=100%(1.0), 3=125%(1.25), 4=150%(1.5),
-    // 5=175%(1.75), 6=200%(2.0). Anything else falls back to Auto.
     static int scaleIdForValue(double v) {
         if (v <= 0.0)
             return 1;
@@ -403,19 +357,34 @@ class UIPage : public juce::Component {
 
     static double scaleValueForId(int id) {
         switch (id) {
-            case 2: return 1.0;
-            case 3: return 1.25;
-            case 4: return 1.5;
-            case 5: return 1.75;
-            case 6: return 2.0;
-            default: return 0.0;  // Auto
+            case 2:
+                return 1.0;
+            case 3:
+                return 1.25;
+            case 4:
+                return 1.5;
+            case 5:
+                return 1.75;
+            case 6:
+                return 2.0;
+            default:
+                return 0.0;
         }
     }
 
-    juce::Label panelsHeader, layoutHeader, behaviorHeader, languageHeader, scaleHeader;
-    juce::ToggleButton showLeftPanelToggle, showRightPanelToggle, showBottomPanelToggle;
+    juce::Label zoomHeader, timelineHeader, transportHeader, autoSaveHeader;
+    juce::Slider zoomInSensitivitySlider, zoomOutSensitivitySlider, zoomShiftSensitivitySlider;
+    juce::Label zoomInLabel, zoomOutLabel, zoomShiftLabel;
+    juce::Slider timelineLengthSlider, viewDurationSlider;
+    juce::Label timelineLengthLabel, viewDurationLabel;
+    juce::ToggleButton stopUpdatesPlayheadToggle;
+    juce::ToggleButton autoSaveToggle;
+    juce::Slider autoSaveIntervalSlider;
+    juce::Label autoSaveIntervalLabel;
+    juce::Label layoutHeader, behaviorHeader, languageHeader, scaleHeader;
     juce::ToggleButton headersOnRightToggle;
-    juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, showTooltipsToggle;
+    juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle, openMacrosOnSelectToggle;
+    juce::ToggleButton showTooltipsToggle;
     juce::Label languageLabel;
     juce::ComboBox languageCombo;
     juce::Label restartHint;
@@ -955,57 +924,563 @@ class RenderingPage : public juce::Component {
     std::unique_ptr<juce::FileChooser> fileChooser_;
 };
 
+// ---- Paths tab (configurable user-data locations) -------------------------
+//
+// Two pickers: Data Folder (logs, config, scripts, plugin caches) and
+// Presets Folder (Chains, Racks, Devices). Render Folder lives on the
+// Rendering tab — kept there to avoid duplication.
+//
+// UX: when the user picks a new folder via Browse, immediately surface a
+// migration prompt (Copy / Don't copy / Cancel). The user's answer is
+// remembered as `pendingCopyData_` / `pendingCopyPresets_`. Cancel reverts
+// the pick entirely. When the user clicks OK / Apply on the dialog,
+// PreferencesDialog::applySettings persists the new path(s) to Config,
+// runs any pending copy, and (for the data folder) quits so the app
+// restarts at the new path.
+
+class PathsPage : public juce::Component {
+  public:
+    PathsPage() {
+        // --- Data Folder ---
+        setupSectionHeader(*this, dataHeader_, tr("preferences.paths.section.data"));
+
+        dataLabel_.setText(tr("preferences.paths.label.folder"), juce::dontSendNotification);
+        dataLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        dataLabel_.setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        dataLabel_.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(dataLabel_);
+
+        dataValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        dataValue_.setColour(juce::Label::textColourId,
+                             DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        dataValue_.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(dataValue_);
+
+        dataBrowse_.setButtonText(tr("preferences.button.browse"));
+        dataBrowse_.onClick = [this]() {
+            pickFolder(Kind::Data, tr("preferences.paths.dialog.choose_data"));
+        };
+        addAndMakeVisible(dataBrowse_);
+
+        dataReveal_.setButtonText(tr(
+#if JUCE_MAC
+            "preferences.button.reveal_finder"
+#elif JUCE_WINDOWS
+            "preferences.button.reveal_explorer"
+#else
+            "preferences.button.reveal_files"
+#endif
+            ));
+        dataReveal_.onClick = [this]() {
+            revealConfigured(dataPath_, magda::paths::alwaysOSDefault());
+        };
+        addAndMakeVisible(dataReveal_);
+
+        dataReset_.setButtonText(tr("preferences.button.reset"));
+        dataReset_.onClick = [this]() {
+            dataPath_.clear();
+            updateDisplay();
+        };
+        addAndMakeVisible(dataReset_);
+
+        dataNote_.setFont(FontManager::getInstance().getUIFont(11.0f));
+        dataNote_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        dataNote_.setJustificationType(juce::Justification::centredLeft);
+        dataNote_.setText(tr("preferences.paths.note.data"), juce::dontSendNotification);
+        addAndMakeVisible(dataNote_);
+
+        // --- Presets Folder ---
+        setupSectionHeader(*this, presetsHeader_, tr("preferences.paths.section.presets"));
+
+        presetsLabel_.setText(tr("preferences.paths.label.folder"), juce::dontSendNotification);
+        presetsLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        presetsLabel_.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+        presetsLabel_.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(presetsLabel_);
+
+        presetsValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        presetsValue_.setColour(juce::Label::textColourId,
+                                DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        presetsValue_.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(presetsValue_);
+
+        presetsBrowse_.setButtonText(tr("preferences.button.browse"));
+        presetsBrowse_.onClick = [this]() {
+            pickFolder(Kind::Presets, tr("preferences.paths.dialog.choose_presets"));
+        };
+        addAndMakeVisible(presetsBrowse_);
+
+        presetsReveal_.setButtonText(tr(
+#if JUCE_MAC
+            "preferences.button.reveal_finder"
+#elif JUCE_WINDOWS
+            "preferences.button.reveal_explorer"
+#else
+            "preferences.button.reveal_files"
+#endif
+            ));
+        presetsReveal_.onClick = [this]() { revealConfigured(presetsPath_, presetsDefaultDir()); };
+        addAndMakeVisible(presetsReveal_);
+
+        presetsReset_.setButtonText(tr("preferences.button.reset"));
+        presetsReset_.onClick = [this]() {
+            presetsPath_.clear();
+            updateDisplay();
+        };
+        addAndMakeVisible(presetsReset_);
+
+        presetsNote_.setFont(FontManager::getInstance().getUIFont(11.0f));
+        presetsNote_.setColour(juce::Label::textColourId,
+                               DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        presetsNote_.setJustificationType(juce::Justification::centredLeft);
+        presetsNote_.setText(tr("preferences.paths.note.presets"), juce::dontSendNotification);
+        addAndMakeVisible(presetsNote_);
+
+        // --- Hint about Render Folder ---
+        renderHint_.setFont(FontManager::getInstance().getUIFont(11.0f));
+        renderHint_.setColour(juce::Label::textColourId, DarkTheme::getColour(DarkTheme::TEXT_DIM));
+        renderHint_.setJustificationType(juce::Justification::centredLeft);
+        renderHint_.setText(tr("preferences.paths.note.render_hint"), juce::dontSendNotification);
+        addAndMakeVisible(renderHint_);
+    }
+
+    void resized() override {
+        auto bounds = getLocalBounds().reduced(20);
+        const int rowH = 28;
+        const int gap = 6;
+        const int sectionGap = 18;
+        const int revealW = 130;
+        const int browseW = 100;
+        const int resetW = 80;
+
+        // Data section: header → button row (Reveal + Browse + Reset, left-
+        // aligned) → path row (Folder: <value>) → note.
+        dataHeader_.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(gap);
+        auto dataButtons = bounds.removeFromTop(rowH);
+        dataReveal_.setBounds(dataButtons.removeFromLeft(revealW));
+        dataButtons.removeFromLeft(gap);
+        dataBrowse_.setBounds(dataButtons.removeFromLeft(browseW));
+        dataButtons.removeFromLeft(gap);
+        dataReset_.setBounds(dataButtons.removeFromLeft(resetW));
+        bounds.removeFromTop(gap);
+        auto dataPathRow = bounds.removeFromTop(rowH);
+        dataLabel_.setBounds(dataPathRow.removeFromLeft(60));
+        dataValue_.setBounds(dataPathRow);
+        bounds.removeFromTop(gap);
+        dataNote_.setBounds(bounds.removeFromTop(rowH));
+
+        bounds.removeFromTop(sectionGap);
+
+        // Presets section
+        presetsHeader_.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(gap);
+        auto presetsButtons = bounds.removeFromTop(rowH);
+        presetsReveal_.setBounds(presetsButtons.removeFromLeft(revealW));
+        presetsButtons.removeFromLeft(gap);
+        presetsBrowse_.setBounds(presetsButtons.removeFromLeft(browseW));
+        presetsButtons.removeFromLeft(gap);
+        presetsReset_.setBounds(presetsButtons.removeFromLeft(resetW));
+        bounds.removeFromTop(gap);
+        auto presetsPathRow = bounds.removeFromTop(rowH);
+        presetsLabel_.setBounds(presetsPathRow.removeFromLeft(60));
+        presetsValue_.setBounds(presetsPathRow);
+        bounds.removeFromTop(gap);
+        presetsNote_.setBounds(bounds.removeFromTop(rowH));
+
+        bounds.removeFromTop(sectionGap);
+
+        renderHint_.setBounds(bounds.removeFromTop(rowH));
+    }
+
+    enum class Kind { Data, Presets };
+
+    void loadSettings(Config& config) {
+        dataPath_ = config.getDataDir();
+        presetsPath_ = config.getPresetsDir();
+        originalDataPath_ = dataPath_;
+        originalPresetsPath_ = presetsPath_;
+        pendingCopyData_ = false;
+        pendingCopyPresets_ = false;
+        updateDisplay();
+    }
+
+    void applySettings(Config& /*config*/) {
+        // Path commits run from PreferencesDialog::applySettings — it knows
+        // the order in which to commit and how to handle the data-folder
+        // restart. Migration prompts already happened at Browse time; this
+        // page only carries the user's answers forward.
+    }
+
+    bool dataDirChanged() const {
+        return dataPath_ != originalDataPath_;
+    }
+    bool presetsDirChanged() const {
+        return presetsPath_ != originalPresetsPath_;
+    }
+    bool shouldCopyData() const {
+        return pendingCopyData_;
+    }
+    bool shouldCopyPresets() const {
+        return pendingCopyPresets_;
+    }
+    std::string getOriginalDataPath() const {
+        return originalDataPath_;
+    }
+    std::string getNewDataPath() const {
+        return dataPath_;
+    }
+    std::string getOriginalPresetsPath() const {
+        return originalPresetsPath_;
+    }
+    std::string getNewPresetsPath() const {
+        return presetsPath_;
+    }
+
+  private:
+    static juce::File presetsDefaultDir() {
+        return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+            .getChildFile("MAGDA")
+            .getChildFile("Presets");
+    }
+
+    // Reveal the configured folder if it exists on disk, falling back to the
+    // platform default. If neither exists yet, create the default first so
+    // revealToUser has something to point at.
+    static void revealConfigured(const std::string& configured, const juce::File& defaultDir) {
+        juce::File target = configured.empty() ? defaultDir : juce::File(juce::String(configured));
+        if (!target.isDirectory())
+            target = defaultDir;
+        if (!target.isDirectory())
+            target.createDirectory();
+        target.revealToUser();
+    }
+
+    void pickFolder(Kind kind, const juce::String& title) {
+        const juce::File defaultDir =
+            (kind == Kind::Data) ? magda::paths::alwaysOSDefault() : presetsDefaultDir();
+        const std::string& target = (kind == Kind::Data) ? dataPath_ : presetsPath_;
+
+        // Only pass `initial` to FileChooser when it actually resolves to a
+        // real directory. Passing a non-existent path can make NSOpenPanel
+        // on macOS silently drop the dialog.
+        juce::File initial = target.empty() ? juce::File() : juce::File(juce::String(target));
+        if (!initial.isDirectory())
+            initial = defaultDir;
+        if (!initial.isDirectory())
+            initial = juce::File();
+
+        fileChooser_ = initial == juce::File()
+                           ? std::make_unique<juce::FileChooser>(title)
+                           : std::make_unique<juce::FileChooser>(title, initial);
+
+        juce::Component::SafePointer<PathsPage> self(this);
+        fileChooser_->launchAsync(juce::FileBrowserComponent::openMode |
+                                      juce::FileBrowserComponent::canSelectDirectories,
+                                  [self, kind](const juce::FileChooser& fc) {
+                                      auto result = fc.getResult();
+                                      if (auto* page = self.getComponent()) {
+                                          if (result.exists() && result.isDirectory())
+                                              page->onFolderPicked(kind, result);
+                                      }
+                                  });
+    }
+
+    void onFolderPicked(Kind kind, const juce::File& picked) {
+        const std::string newPathStr = picked.getFullPathName().toStdString();
+        std::string& target = (kind == Kind::Data) ? dataPath_ : presetsPath_;
+        const std::string& original =
+            (kind == Kind::Data) ? originalDataPath_ : originalPresetsPath_;
+
+        // No-op pick: same as the currently-stored path. Nothing to ask.
+        if (newPathStr == target)
+            return;
+
+        // If the user has effectively re-selected the original path, just
+        // wipe the in-flight change without prompting.
+        if (newPathStr == original) {
+            target = newPathStr;
+            (kind == Kind::Data ? pendingCopyData_ : pendingCopyPresets_) = false;
+            updateDisplay();
+            return;
+        }
+
+        // Resolve from/to for the prompt body. Empty `original` means the
+        // user is on the platform default.
+        const juce::File defaultDir =
+            (kind == Kind::Data) ? magda::paths::alwaysOSDefault() : presetsDefaultDir();
+        juce::String oldPath =
+            original.empty() ? defaultDir.getFullPathName() : juce::String(original);
+        juce::String newPath = picked.getFullPathName();
+
+        const juce::String titleKey = (kind == Kind::Data)
+                                          ? "preferences.paths.migration.data_title"
+                                          : "preferences.paths.migration.presets_title";
+        const juce::String messageKey = (kind == Kind::Data)
+                                            ? "preferences.paths.migration.data_message"
+                                            : "preferences.paths.migration.presets_message";
+
+        juce::Component::SafePointer<PathsPage> self(this);
+        juce::AlertWindow::showAsync(
+            juce::MessageBoxOptions()
+                .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                .withTitle(tr(titleKey))
+                .withMessage(tr(messageKey).replace("{0}", oldPath).replace("{1}", newPath))
+                .withButton(tr("preferences.paths.migration.button.copy"))
+                .withButton(tr("preferences.paths.migration.button.dont_copy"))
+                .withButton(tr("preferences.paths.migration.button.cancel")),
+            [self, kind, newPathStr](int result) {
+                auto* page = self.getComponent();
+                if (page == nullptr)
+                    return;
+                // JUCE 3-button mapping: 1=first ("Copy"), 2=second
+                // ("Don't copy"), 0=third/escape ("Cancel").
+                if (result == 0)
+                    return;  // Cancel: leave configured path untouched.
+                page->setPendingPath(kind, newPathStr, /*copyFiles=*/result == 1);
+            });
+    }
+
+    void setPendingPath(Kind kind, const std::string& newPath, bool copyFiles) {
+        if (kind == Kind::Data) {
+            dataPath_ = newPath;
+            pendingCopyData_ = copyFiles;
+        } else {
+            presetsPath_ = newPath;
+            pendingCopyPresets_ = copyFiles;
+        }
+        updateDisplay();
+    }
+
+    void updateDisplay() {
+        if (dataPath_.empty()) {
+            dataValue_.setText("default: " + magda::paths::alwaysOSDefault().getFullPathName(),
+                               juce::dontSendNotification);
+        } else {
+            dataValue_.setText(juce::String(dataPath_), juce::dontSendNotification);
+        }
+
+        if (presetsPath_.empty()) {
+            auto def = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                           .getChildFile("MAGDA")
+                           .getChildFile("Presets");
+            presetsValue_.setText("default: " + def.getFullPathName(), juce::dontSendNotification);
+        } else {
+            presetsValue_.setText(juce::String(presetsPath_), juce::dontSendNotification);
+        }
+    }
+
+    juce::Label dataHeader_, dataLabel_, dataValue_, dataNote_;
+    juce::TextButton dataBrowse_, dataReveal_, dataReset_;
+    std::string dataPath_;
+    std::string originalDataPath_;
+    bool pendingCopyData_ = false;
+
+    juce::Label presetsHeader_, presetsLabel_, presetsValue_, presetsNote_;
+    juce::TextButton presetsBrowse_, presetsReveal_, presetsReset_;
+    std::string presetsPath_;
+    std::string originalPresetsPath_;
+    bool pendingCopyPresets_ = false;
+
+    juce::Label renderHint_;
+
+    std::unique_ptr<juce::FileChooser> fileChooser_;
+};
+
 // ---- Shortcuts tab (read-only) --------------------------------------------
 
 class ShortcutsPage : public juce::Component {
   public:
     ShortcutsPage() {
         setupSectionHeader(*this, shortcutsHeader, tr("preferences.section.keyboard_shortcuts"));
-#if JUCE_MAC
-        setupShortcutLabel(*this, addTrackShortcut, tr("preferences.shortcut.add_track"),
-                           juce::String::fromUTF8("\u2318T"));
-        setupShortcutLabel(*this, deleteTrackShortcut, tr("preferences.shortcut.delete_track"),
-                           juce::String::fromUTF8("\u232B"));
-        setupShortcutLabel(*this, duplicateTrackShortcut,
-                           tr("preferences.shortcut.duplicate_track"),
-                           juce::String::fromUTF8("\u2318D"));
-#else
-        setupShortcutLabel(*this, addTrackShortcut, tr("preferences.shortcut.add_track"), "Ctrl+T");
-        setupShortcutLabel(*this, deleteTrackShortcut, tr("preferences.shortcut.delete_track"),
-                           "Delete");
-        setupShortcutLabel(*this, duplicateTrackShortcut,
-                           tr("preferences.shortcut.duplicate_track"), "Ctrl+D");
-#endif
-        setupShortcutLabel(*this, muteTrackShortcut, tr("preferences.shortcut.mute_track"), "M");
-        setupShortcutLabel(*this, soloTrackShortcut, tr("preferences.shortcut.solo_track"), "S");
+        viewport.setViewedComponent(&content, false);
+        viewport.setScrollBarsShown(true, false);
+        viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::all);
+        addAndMakeVisible(viewport);
+
+        addSection("File");
+        addShortcut("Save Project", cmd("S"), "Global");
+        addShortcut("Save Project As", shiftCmd("S"), "Global");
+
+        addSection("Edit");
+        addShortcut("Undo", cmd("Z"), "Global");
+        addShortcut("Redo", shiftCmd("Z"), "Global");
+        addShortcut("Cut", cmd("X"), "Clips");
+        addShortcut("Copy", cmd("C"), "Clips");
+        addShortcut("Paste", cmd("V"), "Clips");
+        addShortcut("Duplicate selected clip(s) or track(s)", cmd("D"), "Context");
+        addShortcut("Delete selected item or time selection", "Delete / Backspace", "Context");
+        addShortcut("Select All", cmd("A"), "Context");
+        addShortcut("Split / Trim", cmd("E"), "Clips");
+        addShortcut("Blade split at edit cursor", "B", "Arrange");
+        addShortcut("Join Clips", cmd("J"), "Clips");
+        addShortcut("Render Clip", cmd("B"), "Clips");
+        addShortcut("Render Time Selection", shiftCmd("B"), "Arrange");
+        addShortcut("Set Loop from Clip", shiftCmd("L"), "Clips");
+        addShortcut("Toggle Clip Loop", cmd("L"), "Clips");
+
+        addSection("Track");
+        addShortcut("New Track", cmd("T"), "Global");
+        addShortcut("New Group Track", shiftCmd("T"), "Global");
+        addShortcut("Duplicate Track without content", shiftCmd("D"), "Track selection");
+        addShortcut("Duplicate Track content only", altCmd("D"), "Track selection");
+        addShortcut("Toggle Mute", "M", "Track selection");
+        addShortcut("Toggle Solo", "Shift+S", "Track selection");
+
+        addSection("Transport and View");
+        addShortcut("Play / Stop", "Space", "Global");
+        addShortcut("Exit link mode / clear selection", "Escape", "Context");
+        addShortcut("Create loop from selection or clip", "L", "Arrange");
+        addShortcut("Reset Zoom to Fit", cmd("0"), "Arrange");
+        addShortcut("Toggle Arrangement Lock", "F4", "Arrange");
+        addShortcut("Increase UI Scale", cmd("=") + " / " + shiftCmd("+"), "Global");
+        addShortcut("Decrease UI Scale", cmd("-") + " / " + shiftCmd("_"), "Global");
+
+        addSection("Console");
+        addShortcut("Execute DSL", cmd("Return"), "DSL tab");
+        addShortcut("Clear DSL output", cmd("L"), "DSL tab");
+        addShortcut("Send AI message", "Return", "AI tab");
+        addShortcut("New line in AI message", "Shift+Return", "AI tab");
+        addShortcut("Accept autocomplete", "Tab / Return", "AI tab");
+
+        addSection("Development");
+        addShortcut("Open Debug Dialog", shiftAltCmd("D"), "Global");
     }
 
     void resized() override {
         auto bounds = getLocalBounds().reduced(16);
-        const int rowH = 32;
         const int headerH = 28;
 
         shortcutsHeader.setBounds(bounds.removeFromTop(headerH));
         bounds.removeFromTop(4);
 
-        addTrackShortcut.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(4);
-        deleteTrackShortcut.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(4);
-        duplicateTrackShortcut.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(4);
-        muteTrackShortcut.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(4);
-        soloTrackShortcut.setBounds(bounds.removeFromTop(rowH));
+        viewport.setBounds(bounds);
+        layoutRows(bounds.getWidth());
     }
 
     void loadSettings(Config& /*config*/) {}
     void applySettings(Config& /*config*/) {}
 
   private:
+    struct ShortcutRow {
+        bool section = false;
+        juce::Label action;
+        juce::Label shortcut;
+        juce::Label scope;
+    };
+
+    static juce::String commandPrefix() {
+#if JUCE_MAC
+        return juce::String::fromUTF8("\u2318");
+#else
+        return "Ctrl+";
+#endif
+    }
+
+    static juce::String shiftPrefix() {
+#if JUCE_MAC
+        return juce::String::fromUTF8("\u21E7");
+#else
+        return "Shift+";
+#endif
+    }
+
+    static juce::String altPrefix() {
+#if JUCE_MAC
+        return juce::String::fromUTF8("\u2325");
+#else
+        return "Alt+";
+#endif
+    }
+
+    static juce::String cmd(const juce::String& key) {
+        return commandPrefix() + key;
+    }
+
+    static juce::String shiftCmd(const juce::String& key) {
+        return shiftPrefix() + commandPrefix() + key;
+    }
+
+    static juce::String altCmd(const juce::String& key) {
+        return altPrefix() + commandPrefix() + key;
+    }
+
+    static juce::String shiftAltCmd(const juce::String& key) {
+        return shiftPrefix() + altPrefix() + commandPrefix() + key;
+    }
+
+    void addSection(const juce::String& title) {
+        auto row = std::make_unique<ShortcutRow>();
+        row->section = true;
+        row->action.setText(title, juce::dontSendNotification);
+        row->action.setFont(FontManager::getInstance().getUIFontBold(13.0f));
+        row->action.setColour(juce::Label::textColourId,
+                              DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        row->action.setJustificationType(juce::Justification::centredLeft);
+        content.addAndMakeVisible(row->action);
+        rows_.push_back(std::move(row));
+    }
+
+    void addShortcut(const juce::String& action, const juce::String& shortcut,
+                     const juce::String& scope) {
+        auto row = std::make_unique<ShortcutRow>();
+
+        auto setupLabel = [](juce::Label& label, const juce::String& text, float size,
+                             juce::Colour colour, juce::Justification justification) {
+            label.setText(text, juce::dontSendNotification);
+            label.setFont(FontManager::getInstance().getUIFont(size));
+            label.setColour(juce::Label::textColourId, colour);
+            label.setJustificationType(justification);
+        };
+
+        setupLabel(row->action, action, 12.0f, DarkTheme::getColour(DarkTheme::TEXT_PRIMARY),
+                   juce::Justification::centredLeft);
+        setupLabel(row->shortcut, shortcut, 12.0f, DarkTheme::getColour(DarkTheme::ACCENT_BLUE),
+                   juce::Justification::centredRight);
+        setupLabel(row->scope, scope, 11.0f, DarkTheme::getColour(DarkTheme::TEXT_DIM),
+                   juce::Justification::centredLeft);
+
+        content.addAndMakeVisible(row->action);
+        content.addAndMakeVisible(row->shortcut);
+        content.addAndMakeVisible(row->scope);
+        rows_.push_back(std::move(row));
+    }
+
+    void layoutRows(int width) {
+        const int rowH = 26;
+        const int sectionH = 30;
+        const int gap = 3;
+        const int shortcutW = 150;
+        const int scopeW = 118;
+        int y = 0;
+
+        for (auto& row : rows_) {
+            if (row->section) {
+                y += y == 0 ? 0 : 8;
+                row->action.setBounds(0, y, width, sectionH);
+                y += sectionH;
+                continue;
+            }
+
+            auto bounds = juce::Rectangle<int>(0, y, width, rowH);
+            row->action.setBounds(
+                bounds.removeFromLeft(juce::jmax(120, width - shortcutW - scopeW - (gap * 2))));
+            bounds.removeFromLeft(gap);
+            row->shortcut.setBounds(bounds.removeFromLeft(shortcutW));
+            bounds.removeFromLeft(gap);
+            row->scope.setBounds(bounds);
+            y += rowH;
+        }
+
+        content.setSize(width, y + 8);
+    }
+
     juce::Label shortcutsHeader;
-    juce::Label addTrackShortcut, deleteTrackShortcut, duplicateTrackShortcut;
-    juce::Label muteTrackShortcut, soloTrackShortcut;
+    juce::Viewport viewport;
+    juce::Component content;
+    std::vector<std::unique_ptr<ShortcutRow>> rows_;
 };
 
 // ---------------------------------------------------------------------------
@@ -1016,17 +1491,18 @@ PreferencesDialog::PreferencesDialog() {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
 
     generalPage = std::make_unique<GeneralPage>();
-    uiPage = std::make_unique<UIPage>();
     coloursPage = std::make_unique<ColoursPage>();
     renderingPage = std::make_unique<RenderingPage>();
+    pathsPage = std::make_unique<PathsPage>();
     shortcutsPage = std::make_unique<ShortcutsPage>();
 
     auto tabBg = DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND);
     tabbedComponent.addTab(tr("preferences.tab.general"), tabBg, generalPage.get(), false);
-    tabbedComponent.addTab(tr("preferences.tab.ui"), tabBg, uiPage.get(), false);
     tabbedComponent.addTab(tr("preferences.tab.colours"), tabBg, coloursPage.get(), false);
     tabbedComponent.addTab(tr("preferences.tab.rendering"), tabBg, renderingPage.get(), false);
+    tabbedComponent.addTab(tr("preferences.tab.paths"), tabBg, pathsPage.get(), false);
     tabbedComponent.addTab(tr("preferences.tab.shortcuts"), tabBg, shortcutsPage.get(), false);
+    tabbedComponent.setTabBarDepth(36);
     addAndMakeVisible(tabbedComponent);
 
     okButton.setButtonText(tr("dialogs.ok"));
@@ -1049,7 +1525,7 @@ PreferencesDialog::PreferencesDialog() {
     addAndMakeVisible(applyButton);
 
     loadCurrentSettings();
-    setSize(500, 650);
+    setSize(760, 620);
 }
 
 PreferencesDialog::~PreferencesDialog() {
@@ -1087,19 +1563,64 @@ void PreferencesDialog::resized() {
 void PreferencesDialog::loadCurrentSettings() {
     auto& config = Config::getInstance();
     generalPage->loadSettings(config);
-    uiPage->loadSettings(config);
     coloursPage->loadSettings(config);
     renderingPage->loadSettings(config);
+    pathsPage->loadSettings(config);
     shortcutsPage->loadSettings(config);
 }
 
+namespace {
+
+void showMigrationFailureAsync(const juce::File& from, const juce::File& to) {
+    juce::AlertWindow::showAsync(juce::MessageBoxOptions()
+                                     .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                     .withTitle(tr("preferences.paths.migration.fail_title"))
+                                     .withMessage(tr("preferences.paths.migration.fail_message")
+                                                      .replace("{0}", from.getFullPathName())
+                                                      .replace("{1}", to.getFullPathName()))
+                                     .withButton(tr("dialogs.ok")),
+                                 nullptr);
+}
+
+// Copy `from` into `to`. No-op if either is missing or the paths are equal.
+// The destination is created if needed so copyDirectoryTo has a target.
+bool copyFolderIfNeeded(const juce::File& from, const juce::File& to) {
+    if (!from.isDirectory() || from.getFullPathName() == to.getFullPathName())
+        return true;
+    to.createDirectory();
+    return from.copyDirectoryTo(to);
+}
+
+}  // namespace
+
 void PreferencesDialog::applySettings() {
     auto& config = Config::getInstance();
+
+    // Snapshot the path changes the user committed at Browse time. Capture
+    // these before applying pages so the values don't shift mid-flight.
+    const bool dataChanged = pathsPage->dataDirChanged();
+    const bool presetsChanged = pathsPage->presetsDirChanged();
+    const bool copyData = pathsPage->shouldCopyData();
+    const bool copyPresets = pathsPage->shouldCopyPresets();
+    const juce::File dataFrom(juce::String(pathsPage->getOriginalDataPath()).isEmpty()
+                                  ? magda::paths::alwaysOSDefault().getFullPathName()
+                                  : juce::String(pathsPage->getOriginalDataPath()));
+    const juce::File dataTo(juce::String(pathsPage->getNewDataPath()));
+    const juce::File presetsFrom(
+        juce::String(pathsPage->getOriginalPresetsPath()).isEmpty()
+            ? juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                  .getChildFile("MAGDA")
+                  .getChildFile("Presets")
+                  .getFullPathName()
+            : juce::String(pathsPage->getOriginalPresetsPath()));
+    const juce::File presetsTo(juce::String(pathsPage->getNewPresetsPath()));
+
+    // Apply non-path pages and persist.
     generalPage->applySettings(config);
-    uiPage->applySettings(config);
     coloursPage->applySettings(config);
     renderingPage->applySettings(config);
     shortcutsPage->applySettings(config);
+    pathsPage->applySettings(config);  // no-op for path values
     config.save();
 
     // Apply auto-save settings
@@ -1119,6 +1640,31 @@ void PreferencesDialog::applySettings() {
             mw->applyLayoutFromConfig();
             break;
         }
+    }
+
+    // Presets path: hot-apply (no restart needed). The user already chose
+    // copy / don't-copy at Browse time; here we just commit.
+    if (presetsChanged) {
+        config.setPresetsDir(pathsPage->getNewPresetsPath());
+        config.save();
+        magda::paths::resolve();
+        if (copyPresets && !copyFolderIfNeeded(presetsFrom, presetsTo))
+            showMigrationFailureAsync(presetsFrom, presetsTo);
+    }
+
+    // Data path: needs a restart so the logger / plugin scanner / etc.
+    // re-open at the new location. Persist Config, copy if requested, quit.
+    // The Browse-time prompt already told the user the app would restart on
+    // Apply, so no second confirmation is shown here.
+    if (dataChanged) {
+        config.setDataDir(pathsPage->getNewDataPath());
+        config.save();
+        magda::paths::resolve();
+        if (copyData && !copyFolderIfNeeded(dataFrom, dataTo)) {
+            showMigrationFailureAsync(dataFrom, dataTo);
+            return;  // Don't quit if the copy failed — let the user investigate.
+        }
+        juce::JUCEApplication::quit();
     }
 }
 

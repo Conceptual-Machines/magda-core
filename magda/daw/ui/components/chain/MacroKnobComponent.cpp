@@ -52,6 +52,60 @@ juce::String buildQualifiedMacroName(const magda::ChainNodePath& path, int macro
 
     return ownerName + ": " + macroDisplay;
 }
+
+bool findDevicePathInElements(const std::vector<magda::ChainElement>& elements,
+                              const magda::ChainNodePath& parentPath, magda::DeviceId deviceId,
+                              magda::ChainNodePath& outPath) {
+    for (const auto& element : elements) {
+        if (magda::isDevice(element)) {
+            const auto& device = magda::getDevice(element);
+            if (device.id == deviceId) {
+                outPath = parentPath.isTrackLevel
+                              ? magda::ChainNodePath::topLevelDevice(parentPath.trackId, deviceId)
+                              : parentPath.withDevice(deviceId);
+                return true;
+            }
+        } else if (magda::isRack(element)) {
+            const auto& rack = magda::getRack(element);
+            auto rackPath = parentPath.isTrackLevel
+                                ? magda::ChainNodePath::rack(parentPath.trackId, rack.id)
+                                : parentPath.withRack(rack.id);
+            for (const auto& chain : rack.chains) {
+                if (findDevicePathInElements(chain.elements, rackPath.withChain(chain.id), deviceId,
+                                             outPath)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+magda::ChainNodePath resolveTargetDevicePath(const magda::ChainNodePath& parentPath,
+                                             magda::DeviceId deviceId) {
+    if (parentPath.getDeviceId() == deviceId)
+        return parentPath;
+
+    auto& tm = magda::TrackManager::getInstance();
+    magda::ChainNodePath resolved;
+    if (parentPath.isTrackLevel) {
+        if (const auto* track = tm.getTrack(parentPath.trackId)) {
+            if (findDevicePathInElements(track->chainElements, parentPath, deviceId, resolved))
+                return resolved;
+        }
+    } else if (parentPath.getType() == magda::ChainNodeType::Rack) {
+        if (const auto* rack = tm.getRackByPath(parentPath)) {
+            for (const auto& chain : rack->chains) {
+                if (findDevicePathInElements(chain.elements, parentPath.withChain(chain.id),
+                                             deviceId, resolved)) {
+                    return resolved;
+                }
+            }
+        }
+    }
+
+    return magda::ChainNodePath::topLevelDevice(parentPath.trackId, deviceId);
+}
 }  // namespace
 
 MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex) {
@@ -118,18 +172,17 @@ void MacroKnobComponent::updateAutomationTarget() {
     }
 
     magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::Macro;
-    target.trackId = parentPath_.trackId;
+    target.kind = magda::ControlTarget::Kind::DeviceMacro;
+    target.devicePath.trackId = parentPath_.trackId;
     target.devicePath = parentPath_;
-    target.macroIndex = macroIndex_;
-    target.paramName = buildQualifiedMacroName(parentPath_, macroIndex_, currentMacro_.name);
+    target.paramIndex = macroIndex_;
     valueSlider_.setAutomationTarget(target);
 }
 
 void MacroKnobComponent::refreshAutomapState() {
     auto& reg = magda::BindingRegistry::getInstance();
-    bool active = reg.hasActiveBindingForTarget(parentPath_, macroIndex_,
-                                                magda::StaticTarget::Owner::DeviceMacro);
+    bool active =
+        reg.hasActiveBindingFor(magda::ControlTarget::deviceMacro(parentPath_, macroIndex_));
     bool shadowed = active && reg.isAutomapShadowedForMacro(parentPath_, macroIndex_);
     bool learned = reg.hasActiveStaticBindingForMacro(parentPath_, macroIndex_);
     if (active != hasAutomap_ || shadowed != automapShadowed_ || learned != hasLearnedBinding_) {
@@ -415,8 +468,9 @@ void MacroKnobComponent::showLinkMenu() {
         for (size_t mi = 0; mi < availableModifiers_.size(); ++mi) {
             const auto& [modId, modName] = availableModifiers_[mi];
             juce::PopupMenu perModMenu;
-            magda::MacroTarget t;
-            t.kind = magda::MacroTarget::Kind::ModParam;
+            magda::ControlTarget t;
+            t.kind = magda::ControlTarget::Kind::ModParam;
+            t.devicePath = parentPath_;
             t.modId = modId;
             t.modParamIndex = 0;  // Rate
             const bool isCurrentTarget = currentMacro_.getLink(t) != nullptr;
@@ -472,8 +526,8 @@ void MacroKnobComponent::showLinkMenu() {
                     : "Parameter " + juce::String(paramIdx + 1);
 
             // Check if this param is in the links vector
-            magda::MacroTarget t;
-            t.deviceId = deviceId;
+            magda::ControlTarget t;
+            t.devicePath = resolveTargetDevicePath(parentPath_, deviceId);
             t.paramIndex = paramIdx;
             bool isCurrentTarget = currentMacro_.getLink(t) != nullptr;
 
@@ -489,12 +543,12 @@ void MacroKnobComponent::showLinkMenu() {
 
     // Individual unlink items for each existing link
     int unlinkBaseId = 10000;
-    std::vector<magda::MacroTarget> unlinkTargets;
+    std::vector<magda::ControlTarget> unlinkTargets;
     for (const auto& link : currentMacro_.links) {
         if (!link.target.isValid())
             continue;
         juce::String paramName;
-        auto it = deviceParamNames_.find(link.target.deviceId);
+        auto it = deviceParamNames_.find(link.target.deviceId());
         if (it != deviceParamNames_.end() && link.target.paramIndex >= 0 &&
             link.target.paramIndex < static_cast<int>(it->second.size())) {
             paramName = it->second[static_cast<size_t>(link.target.paramIndex)];
@@ -503,7 +557,7 @@ void MacroKnobComponent::showLinkMenu() {
         }
         // Find device name for context
         for (const auto& [devId, devName] : availableTargets_) {
-            if (devId == link.target.deviceId) {
+            if (devId == link.target.deviceId()) {
                 paramName = devName + " - " + paramName;
                 break;
             }
@@ -525,10 +579,10 @@ void MacroKnobComponent::showLinkMenu() {
     if (parentPath_.isValid()) {
         auto& reg = magda::BindingRegistry::getInstance();
         auto& learn = magda::MidiLearnCoordinator::getInstance();
-        const bool isLearning = learn.isLearningMacro(parentPath_, macroIndex_);
+        const bool isLearning =
+            learn.isLearning(magda::ControlTarget::deviceMacro(parentPath_, macroIndex_));
         const int mappingCount = static_cast<int>(
-            reg.findForTarget(parentPath_, macroIndex_, magda::StaticTarget::Owner::DeviceMacro)
-                .size());
+            reg.findFor(magda::ControlTarget::deviceMacro(parentPath_, macroIndex_)).size());
 
         menu.addSeparator();
         menu.addItem(kLearnId, isLearning ? "Cancel MIDI Learn" : "Learn MIDI");
@@ -549,7 +603,7 @@ void MacroKnobComponent::showLinkMenu() {
 
     menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, targets, paramNames, modifiers,
                                                     unlinkBaseId, unlinkTargets, clearAllId,
-                                                    kModRateBaseId, parentPath, macroIndex,
+                                                    parentPath, macroIndex,
                                                     displayName](int result) {
         if (safeThis == nullptr || result == 0) {
             return;
@@ -561,29 +615,32 @@ void MacroKnobComponent::showLinkMenu() {
         constexpr int kClearMidiId = 50001;
         if (result == kLearnId) {
             auto& learn = magda::MidiLearnCoordinator::getInstance();
-            if (learn.isLearningMacro(parentPath, macroIndex)) {
+            const auto target = magda::ControlTarget::deviceMacro(parentPath, macroIndex);
+            if (learn.isLearning(target)) {
                 learn.cancelLearn();
             } else {
                 juce::String name = displayName.isNotEmpty()
                                         ? displayName
                                         : "Macro " + juce::String(macroIndex + 1);
-                learn.beginLearnMacro(parentPath, macroIndex, name);
+                learn.beginLearn(target, name);
             }
             return;
         }
         if (result == kClearMidiId) {
-            magda::MidiLearnCoordinator::getInstance().clearMacroMappings(parentPath, macroIndex);
+            magda::MidiLearnCoordinator::getInstance().clearMappings(
+                magda::ControlTarget::deviceMacro(parentPath, macroIndex));
             return;
         }
 
         // Modulator-rate link selection. The parent's onTargetChanged routes
-        // through TrackManager::setXxxMacroTarget, which materialises the
+        // through TrackManager::setXxxControlTarget, which materialises the
         // link (with an audible default amount for ModParam kind) and
         // triggers a refresh — so we don't need to mutate currentMacro_.
         int modSlot = result - kModRateBaseId;
         if (modSlot >= 0 && modSlot < static_cast<int>(modifiers.size())) {
-            magda::MacroTarget t;
-            t.kind = magda::MacroTarget::Kind::ModParam;
+            magda::ControlTarget t;
+            t.kind = magda::ControlTarget::Kind::ModParam;
+            t.devicePath = parentPath;
             t.modId = modifiers[static_cast<size_t>(modSlot)].first;
             t.modParamIndex = 0;  // Rate
             if (safeThis->onTargetChanged)
@@ -595,12 +652,10 @@ void MacroKnobComponent::showLinkMenu() {
         constexpr int kShowAutomationLaneId = 30000;
         if (result == kShowAutomationLaneId) {
             magda::AutomationTarget target;
-            target.type = magda::AutomationTargetType::Macro;
-            target.trackId = safeThis->parentPath_.trackId;
+            target.kind = magda::ControlTarget::Kind::DeviceMacro;
+            target.devicePath.trackId = safeThis->parentPath_.trackId;
             target.devicePath = safeThis->parentPath_;
-            target.macroIndex = safeThis->macroIndex_;
-            target.paramName = buildQualifiedMacroName(safeThis->parentPath_, safeThis->macroIndex_,
-                                                       safeThis->currentMacro_.name);
+            target.paramIndex = safeThis->macroIndex_;
             auto& mgr = magda::AutomationManager::getInstance();
             auto laneId = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
             mgr.setLaneVisible(laneId, true);
@@ -609,7 +664,6 @@ void MacroKnobComponent::showLinkMenu() {
 
         // Clear all links
         if (result == clearAllId) {
-            safeThis->currentMacro_.target = magda::MacroTarget{};
             safeThis->currentMacro_.links.clear();
             safeThis->repaint();
             if (safeThis->onAllLinksCleared) {
@@ -638,8 +692,8 @@ void MacroKnobComponent::showLinkMenu() {
             for (int paramIdx = 0; paramIdx < paramCount; ++paramIdx) {
                 if (itemId == result) {
                     // Add to links vector (not legacy target)
-                    magda::MacroTarget t;
-                    t.deviceId = deviceId;
+                    magda::ControlTarget t;
+                    t.devicePath = resolveTargetDevicePath(parentPath, deviceId);
                     t.paramIndex = paramIdx;
                     if (!safeThis->currentMacro_.getLink(t)) {
                         magda::MacroLink link;

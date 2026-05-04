@@ -104,8 +104,8 @@ TEST_CASE("tryParse - dot at end (empty param key)", "[aliases][parser]") {
 // Target encode/decode round-trip
 // ============================================================================
 
-TEST_CASE("Target encodeTarget/decodeTarget - StaticTarget round-trip", "[aliases][target]") {
-    StaticTarget st;
+TEST_CASE("Target encodeTarget/decodeTarget - ControlTarget round-trip", "[aliases][target]") {
+    ControlTarget st;
     st.devicePath = ChainNodePath::chainDevice(1, 10, 20, 30);
     st.paramIndex = 7;
 
@@ -114,36 +114,36 @@ TEST_CASE("Target encodeTarget/decodeTarget - StaticTarget round-trip", "[aliase
     auto decoded = decodeTarget(encoded);
 
     REQUIRE(decoded.has_value());
-    REQUIRE(std::holds_alternative<StaticTarget>(*decoded));
+    REQUIRE(std::holds_alternative<ControlTarget>(*decoded));
 
-    const auto& dSt = std::get<StaticTarget>(*decoded);
+    const auto& dSt = std::get<ControlTarget>(*decoded);
     REQUIRE(dSt.paramIndex == 7);
     REQUIRE(dSt.devicePath == st.devicePath);
 }
 
-TEST_CASE("Target encodeTarget/decodeTarget - StaticTarget DeviceMacro round-trip",
+TEST_CASE("Target encodeTarget/decodeTarget - ControlTarget DeviceMacro round-trip",
           "[aliases][target]") {
-    StaticTarget st;
+    ControlTarget st;
     st.devicePath = ChainNodePath::trackLevel(1);
     st.paramIndex = 3;
-    st.owner = StaticTarget::Owner::DeviceMacro;
+    st.kind = ControlTarget::Kind::DeviceMacro;
 
     Target t{st};
     auto decoded = decodeTarget(encodeTarget(t));
 
     REQUIRE(decoded.has_value());
-    REQUIRE(std::holds_alternative<StaticTarget>(*decoded));
-    const auto& dSt = std::get<StaticTarget>(*decoded);
-    REQUIRE(dSt.owner == StaticTarget::Owner::DeviceMacro);
+    REQUIRE(std::holds_alternative<ControlTarget>(*decoded));
+    const auto& dSt = std::get<ControlTarget>(*decoded);
+    REQUIRE(dSt.kind == ControlTarget::Kind::DeviceMacro);
     REQUIRE(dSt.paramIndex == 3);
     REQUIRE(dSt.devicePath == st.devicePath);
 }
 
-TEST_CASE("Target encodeTarget/decodeTarget - StaticTarget ModParam round-trip",
+TEST_CASE("Target encodeTarget/decodeTarget - ControlTarget ModParam round-trip",
           "[aliases][target]") {
-    StaticTarget st;
+    ControlTarget st;
     st.devicePath = ChainNodePath::trackLevel(2);
-    st.owner = StaticTarget::Owner::ModParam;
+    st.kind = ControlTarget::Kind::ModParam;
     st.modId = 42;
     st.modParamIndex = 0;
 
@@ -151,30 +151,30 @@ TEST_CASE("Target encodeTarget/decodeTarget - StaticTarget ModParam round-trip",
     auto decoded = decodeTarget(encodeTarget(t));
 
     REQUIRE(decoded.has_value());
-    REQUIRE(std::holds_alternative<StaticTarget>(*decoded));
-    const auto& dSt = std::get<StaticTarget>(*decoded);
-    REQUIRE(dSt.owner == StaticTarget::Owner::ModParam);
+    REQUIRE(std::holds_alternative<ControlTarget>(*decoded));
+    const auto& dSt = std::get<ControlTarget>(*decoded);
+    REQUIRE(dSt.kind == ControlTarget::Kind::ModParam);
     REQUIRE(dSt.modId == 42);
     REQUIRE(dSt.modParamIndex == 0);
     REQUIRE(dSt.devicePath == st.devicePath);
 }
 
-TEST_CASE("StaticTarget - isValid honors owner kind", "[aliases][target]") {
-    StaticTarget plug;
+TEST_CASE("ControlTarget - isValid honors owner kind", "[aliases][target]") {
+    ControlTarget plug;
     plug.devicePath = ChainNodePath::trackLevel(1);
     plug.paramIndex = 0;
     REQUIRE(plug.isValid());
 
-    StaticTarget mp;
+    ControlTarget mp;
     mp.devicePath = ChainNodePath::trackLevel(1);
-    mp.owner = StaticTarget::Owner::ModParam;
+    mp.kind = ControlTarget::Kind::ModParam;
     REQUIRE_FALSE(mp.isValid());  // modId / modParamIndex unset
     mp.modId = 5;
     mp.modParamIndex = 0;
     REQUIRE(mp.isValid());
 
     // ModParam with mismatched fields compares unequal even if path & owner match
-    StaticTarget mp2 = mp;
+    ControlTarget mp2 = mp;
     mp2.modId = 6;
     REQUIRE(mp != mp2);
 }
@@ -220,7 +220,7 @@ TEST_CASE("Target decodeTarget - malformed JSON returns nullopt", "[aliases][tar
 }
 
 TEST_CASE("toDebugString - returns non-empty string for all variants", "[aliases][target]") {
-    Target st{StaticTarget{}};
+    Target st{ControlTarget{}};
     REQUIRE(toDebugString(st).isNotEmpty());
 
     Target ar{AliasRef{"filter_cutoff", "serum"}};

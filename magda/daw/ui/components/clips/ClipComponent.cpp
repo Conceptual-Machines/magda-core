@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <numeric>
+#include <unordered_set>
 
 #include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineEvents.hpp"
@@ -104,6 +105,12 @@ void ClipComponent::paint(juce::Graphics& g) {
             static_cast<float>(loopLengthBeats / beatRange) * clipBounds.getWidth();
         float clipHeight = static_cast<float>(clipBounds.getHeight());
 
+        // Below this per-loop pixel width the markers pack so densely they
+        // turn the clip into a solid black mass — hide them entirely.
+        constexpr float MIN_LOOP_MARKER_PIXEL_WIDTH = 32.0f;
+        if (loopPixelWidth < MIN_LOOP_MARKER_PIXEL_WIDTH)
+            numBoundaries = 0;
+
         for (int i = 1; i <= numBoundaries; ++i) {
             double boundaryBeat = i * loopLengthBeats;
             if (boundaryBeat >= clipLengthInBeats)
@@ -159,7 +166,7 @@ void ClipComponent::paint(juce::Graphics& g) {
     // Draw volume line (audio clips with non-zero volume, or when hovering/dragging)
     if (clip->type == ClipType::Audio && (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
                                           dragMode_ == DragMode::VolumeDrag)) {
-        auto wfArea = bounds.reduced(2, HEADER_HEIGHT + 2);
+        auto wfArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
         paintVolumeLine(g, *clip, wfArea);
     }
 
@@ -167,12 +174,6 @@ void ClipComponent::paint(juce::Graphics& g) {
     if (isMarqueeHighlighted_) {
         g.setColour(juce::Colours::white.withAlpha(0.2f));
         g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
-    }
-
-    // Selection border - show for both single selection and multi-selection
-    if (isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_)) {
-        g.setColour(juce::Colours::white);
-        g.drawRect(bounds, 2);
     }
 
     // Frozen overlay — dim clip on frozen tracks
@@ -218,7 +219,8 @@ void ClipComponent::timerCallback() {
 
 void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip,
                                          juce::Rectangle<int> waveformArea,
-                                         double clipDisplayLength) {
+                                         double clipDisplayLength,
+                                         juce::Colour waveColourOverride) {
     auto& thumbnailManager = AudioThumbnailManager::getInstance();
 
     double pixelsPerSecond = (clipDisplayLength > 0.0)
@@ -268,7 +270,9 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
     if (isDragging_ && dragMode_ == DragMode::ResizeLeft)
         displayOffset = resizePreviewClip_.offset;
 
-    auto waveColour = clip.colour.brighter(0.2f);
+    const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
+    const auto waveColour =
+        waveColourOverride.isTransparent() ? juce::Colours::black : waveColourOverride;
     float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
 
     double fileDuration = 0.0;
@@ -328,7 +332,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             if (finalSrcEnd > finalSrcStart &&
                 clipToVisible(drawRect, finalSrcStart, finalSrcEnd)) {
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, finalSrcStart,
-                                              finalSrcEnd, waveColour, gainLinear);
+                                              finalSrcEnd, waveColour, gainLinear, true, selected);
             }
         }
     } else if (di.isLooped()) {
@@ -369,7 +373,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
             }
             if (clipToVisible(drawRect, tileFileStart, tileFileEnd))
                 thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, tileFileStart,
-                                              tileFileEnd, waveColour, gainLinear);
+                                              tileFileEnd, waveColour, gainLinear, true, selected);
             timePos += tileFullDuration;
         }
     } else {
@@ -384,7 +388,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
                                              waveformArea.getHeight());
         if (clipToVisible(drawRect, fileStart, fileEnd))
             thumbnailManager.drawWaveform(g, drawRect, clip.audioFilePath, fileStart, fileEnd,
-                                          waveColour, gainLinear);
+                                          waveColour, gainLinear, true, selected);
     }
 
     if (clip.isReversed)
@@ -393,7 +397,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
 
 void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
                                    juce::Rectangle<int> bounds) {
-    auto waveformArea = bounds.reduced(2, HEADER_HEIGHT + 2);
+    auto waveformArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
 
     double clipDisplayLength = clip.length;
     if (isDragging_) {
@@ -437,106 +441,72 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
 
 void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
                                   juce::Rectangle<int> bounds) {
-    // Background
     auto bgColour = clip.colour.darker(0.3f);
     g.setColour(bgColour);
     g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
 
-    // MIDI note representation area
     auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
+    paintMidiNotes(g, clip, noteArea, juce::Colours::black);
 
-    // Calculate clip length in beats using actual tempo
-    // During resize drag, use preview length so notes stay fixed
+    g.setColour(clip.colour.withAlpha(0.45f));
+    g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
+}
+
+void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
+                                   juce::Rectangle<int> noteArea, juce::Colour noteColour) {
+    if (clip.midiNotes.empty() || noteArea.getHeight() <= 5)
+        return;
+
+    g.setColour(noteColour);
+
     double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
     double beatsPerSecond = tempo / 60.0;
     double displayLength = (isDragging_ && previewLength_ > 0.0) ? previewLength_ : clip.length;
     double clipLengthInBeats = displayLength * beatsPerSecond;
-    // Draw MIDI notes if we have them
-    if (!clip.midiNotes.empty() && noteArea.getHeight() > 5) {
-        g.setColour(clip.colour.brighter(0.3f));
 
-        // Calculate actual note range for proportional vertical scaling (like Ableton)
-        int minNote = 127, maxNote = 0;
-        for (const auto& note : clip.midiNotes) {
-            minNote = juce::jmin(minNote, note.noteNumber);
-            maxNote = juce::jmax(maxNote, note.noteNumber);
-        }
-        // Add padding so notes aren't flush against edges, minimum 12 semitones range
-        int rawRange = maxNote - minNote;
-        int padding = juce::jmax(6, rawRange / 4);
-        minNote = juce::jmax(0, minNote - padding);
-        maxNote = juce::jmin(127, maxNote + padding);
-        int noteRange = juce::jmax(12, maxNote - minNote);
-        double beatRange = juce::jmax(1.0, clipLengthInBeats);
+    int minNote = 127, maxNote = 0;
+    for (const auto& note : clip.midiNotes) {
+        minNote = juce::jmin(minNote, note.noteNumber);
+        maxNote = juce::jmax(maxNote, note.noteNumber);
+    }
+    int rawRange = maxNote - minNote;
+    int padding = juce::jmax(6, rawRange / 4);
+    minNote = juce::jmax(0, minNote - padding);
+    maxNote = juce::jmin(127, maxNote + padding);
+    int noteRange = juce::jmax(12, maxNote - minNote);
+    double beatRange = juce::jmax(1.0, clipLengthInBeats);
 
-        // For MIDI clips, convert source region to beats
-        double midiSrcLength =
-            clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
-        double loopLengthBeats =
-            midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
+    double midiSrcLength = clip.loopLength > 0.0 ? clip.loopLength : clip.length * clip.speedRatio;
+    double loopLengthBeats = midiSrcLength > 0 ? midiSrcLength * beatsPerSecond : clipLengthInBeats;
 
-        // Compute the effective content offset for the arrangement thumbnail.
-        // Looped clips use midiOffset (phase within loop).
-        // Non-looped clips use midiTrimOffset (cumulative left-resize trim).
-        // During left-resize drag, use the preview clip's values.
-        double midiOffset;
-        if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
-            midiOffset = clip.loopEnabled ? resizePreviewClip_.midiOffset
-                                          : resizePreviewClip_.midiTrimOffset;
-        } else {
-            midiOffset = clip.loopEnabled ? clip.midiOffset : clip.midiTrimOffset;
-        }
-        if (clip.loopEnabled && loopLengthBeats > 0.0) {
-            // Looping: draw notes repeating across the full clip length
-            double loopStart = clip.loopStart * beatsPerSecond;
-            double loopEnd = loopStart + loopLengthBeats;
-            int numRepetitions = static_cast<int>(std::ceil(clipLengthInBeats / loopLengthBeats));
+    double midiOffset;
+    if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
+        midiOffset =
+            clip.loopEnabled ? resizePreviewClip_.midiOffset : resizePreviewClip_.midiTrimOffset;
+    } else {
+        midiOffset = clip.loopEnabled ? clip.midiOffset : clip.midiTrimOffset;
+    }
 
-            for (int rep = 0; rep < numRepetitions; ++rep) {
-                for (const auto& note : clip.midiNotes) {
-                    // Wrap note position within the loop region so notes
-                    // shifted past a boundary reappear at the other end.
-                    double noteBeat = loopStart + wrapPhase(note.startBeat - midiOffset - loopStart,
-                                                            loopLengthBeats);
+    if (clip.loopEnabled && loopLengthBeats > 0.0) {
+        double loopStart = clip.loopStart * beatsPerSecond;
+        double loopEnd = loopStart + loopLengthBeats;
+        int numRepetitions = static_cast<int>(std::ceil(clipLengthInBeats / loopLengthBeats));
 
-                    if (noteBeat < loopStart || noteBeat >= loopEnd)
-                        continue;
-
-                    double displayStart = (noteBeat - loopStart) + rep * loopLengthBeats;
-                    double displayEnd = displayStart + note.lengthBeats;
-
-                    // Clamp note end to the loop boundary within this repetition
-                    double repEnd = (rep + 1) * loopLengthBeats;
-                    displayEnd = juce::jmin(displayEnd, repEnd);
-
-                    // Skip notes completely outside clip bounds
-                    if (displayEnd <= 0.0 || displayStart >= clipLengthInBeats)
-                        continue;
-
-                    // Clip to visible range
-                    double visibleStart = juce::jmax(0.0, displayStart);
-                    double visibleEnd = juce::jmin(clipLengthInBeats, displayEnd);
-                    double visibleLength = visibleEnd - visibleStart;
-
-                    float noteY = noteArea.getY() + static_cast<float>(maxNote - note.noteNumber) /
-                                                        (noteRange + 1) * noteArea.getHeight();
-                    float noteHeight = juce::jmax(2.0f, static_cast<float>(noteArea.getHeight()) /
-                                                            (noteRange + 1));
-                    float noteX = noteArea.getX() + static_cast<float>(visibleStart / beatRange) *
-                                                        noteArea.getWidth();
-                    float noteWidth = juce::jmax(
-                        2.0f, static_cast<float>(visibleLength / beatRange) * noteArea.getWidth());
-
-                    g.fillRoundedRectangle(noteX, noteY, noteWidth, noteHeight, 1.0f);
-                }
-            }
-        } else {
-            // Non-looping: draw notes once (existing behavior)
+        for (int rep = 0; rep < numRepetitions; ++rep) {
             for (const auto& note : clip.midiNotes) {
-                double displayStart = note.startBeat - midiOffset;
+                double noteBeat =
+                    loopStart + wrapPhase(note.startBeat - midiOffset - loopStart, loopLengthBeats);
+
+                if (noteBeat < loopStart || noteBeat >= loopEnd)
+                    continue;
+
+                double displayStart = (noteBeat - loopStart) + rep * loopLengthBeats;
                 double displayEnd = displayStart + note.lengthBeats;
 
-                if (displayEnd <= 0 || displayStart >= clipLengthInBeats)
+                double repEnd = (rep + 1) * loopLengthBeats;
+                displayEnd = juce::jmin(displayEnd, repEnd);
+
+                if (displayEnd <= 0.0 || displayStart >= clipLengthInBeats)
                     continue;
 
                 double visibleStart = juce::jmax(0.0, displayStart);
@@ -555,25 +525,51 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
                 g.fillRoundedRectangle(noteX, noteY, noteWidth, noteHeight, 1.0f);
             }
         }
-    }
+    } else {
+        for (const auto& note : clip.midiNotes) {
+            double displayStart = note.startBeat - midiOffset;
+            double displayEnd = displayStart + note.lengthBeats;
 
-    // Border
-    g.setColour(clip.colour.withAlpha(0.45f));
-    g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
+            if (displayEnd <= 0 || displayStart >= clipLengthInBeats)
+                continue;
+
+            double visibleStart = juce::jmax(0.0, displayStart);
+            double visibleEnd = juce::jmin(clipLengthInBeats, displayEnd);
+            double visibleLength = visibleEnd - visibleStart;
+
+            float noteY = noteArea.getY() + static_cast<float>(maxNote - note.noteNumber) /
+                                                (noteRange + 1) * noteArea.getHeight();
+            float noteHeight =
+                juce::jmax(2.0f, static_cast<float>(noteArea.getHeight()) / (noteRange + 1));
+            float noteX = noteArea.getX() +
+                          static_cast<float>(visibleStart / beatRange) * noteArea.getWidth();
+            float noteWidth = juce::jmax(2.0f, static_cast<float>(visibleLength / beatRange) *
+                                                   noteArea.getWidth());
+
+            g.fillRoundedRectangle(noteX, noteY, noteWidth, noteHeight, 1.0f);
+        }
+    }
 }
 
 void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                                     juce::Rectangle<int> bounds) {
     auto headerArea = bounds.removeFromTop(HEADER_HEIGHT);
 
-    // Header background
-    g.setColour(clip.colour);
+    // Selected clips paint a black header in place of the clip-coloured one.
+    // This replaces the old white selection rectangle so it can't fight overlay
+    // UI (e.g. controller scene-view rectangles).
+    const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
+    const auto headerColour = selected ? juce::Colours::black : clip.colour;
+    const auto headerForeground =
+        selected ? juce::Colours::white : DarkTheme::getColour(DarkTheme::BACKGROUND);
+
+    g.setColour(headerColour);
     g.fillRoundedRectangle(headerArea.toFloat().withBottom(headerArea.getBottom() + 2),
                            CORNER_RADIUS);
 
     // Clip name
     if (bounds.getWidth() > MIN_WIDTH_FOR_NAME) {
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.setColour(headerForeground);
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText(clip.name, headerArea.reduced(4, 0), juce::Justification::centredLeft, true);
     }
@@ -581,28 +577,31 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     // Musical mode indicator (auto-tempo)
     if (clip.autoTempo && clip.type == ClipType::Audio && headerArea.getWidth() > 16) {
         auto musicalArea = headerArea.removeFromRight(14).reduced(2);
-        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND));
+        g.setColour(headerForeground);
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         g.drawText(juce::CharPointer_UTF8("\xe2\x99\xa9"), musicalArea,
                    juce::Justification::centred, false);
     }
 
-    // Loop indicator (infinito/infinity icon)
+    // Loop indicator (infinito/infinity icon).
+    // Cache one drawable per foreground variant — selection flips foreground,
+    // so we can't bake a single colour at construction.
     if (clip.loopEnabled && headerArea.getWidth() > 16) {
         headerArea.removeFromRight(2);  // right padding
         auto loopArea = headerArea.removeFromRight(14).reduced(1);
         if (loopArea.getWidth() > 0 && loopArea.getHeight() > 0) {
-            static auto loopIcon = [] {
+            static auto makeIcon = [](juce::Colour fg) {
                 auto icon = juce::Drawable::createFromImageData(BinaryData::infinito_svg,
                                                                 BinaryData::infinito_svgSize);
                 if (icon)
-                    icon->replaceColour(juce::Colour(0xFFB3B3B3),
-                                        DarkTheme::getColour(DarkTheme::BACKGROUND));
+                    icon->replaceColour(juce::Colour(0xFFB3B3B3), fg);
                 return icon;
-            }();
-            if (loopIcon)
-                loopIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred,
-                                     1.0f);
+            };
+            static auto normalIcon = makeIcon(DarkTheme::getColour(DarkTheme::BACKGROUND));
+            static auto selectedIcon = makeIcon(juce::Colours::white);
+            const auto& icon = selected ? selectedIcon : normalIcon;
+            if (icon)
+                icon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred, 1.0f);
         }
     }
 }
@@ -724,7 +723,7 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
 
 void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
                                      juce::Rectangle<int> bounds) {
-    auto waveformArea = bounds.reduced(2, HEADER_HEIGHT + 2);
+    auto waveformArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
     if (waveformArea.getWidth() <= 0 || waveformArea.getHeight() <= 0)
         return;
 
@@ -2507,14 +2506,31 @@ void ClipComponent::showContextMenu() {
             case 4: {  // Duplicate
                 auto selectedClips = selectionManager.getSelectedClips();
                 if (!selectedClips.empty()) {
-                    if (selectedClips.size() > 1)
+                    double tempo = 120.0;
+                    if (parentPanel_ && parentPanel_->getTimelineController())
+                        tempo = parentPanel_->getTimelineController()->getState().tempo.bpm;
+
+                    auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempo);
+                    if (commands.empty())
+                        break;
+
+                    if (commands.size() > 1)
                         UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
-                    for (auto clipId : selectedClips) {
-                        auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
+
+                    std::unordered_set<ClipId> newClipIds;
+                    for (auto& cmd : commands) {
+                        auto* cmdPtr = cmd.get();
                         UndoManager::getInstance().executeCommand(std::move(cmd));
+                        ClipId newId = cmdPtr->getDuplicatedClipId();
+                        if (newId != INVALID_CLIP_ID)
+                            newClipIds.insert(newId);
                     }
-                    if (selectedClips.size() > 1)
+
+                    if (commands.size() > 1)
                         UndoManager::getInstance().endCompoundOperation();
+
+                    if (!newClipIds.empty())
+                        selectionManager.selectClips(newClipIds);
                 }
                 break;
             }

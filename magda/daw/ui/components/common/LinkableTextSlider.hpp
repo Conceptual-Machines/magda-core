@@ -65,7 +65,7 @@ class LinkableTextSlider : public juce::Component,
     // Switch this slider into "modifier rate" mode — used by the LFO / mod
     // rate slider. MIDI Learn becomes a ModParam binding instead of a
     // PluginParam binding, and the mapped-dot indicator queries
-    // BindingRegistry::hasActiveBindingForModParam.
+    // BindingRegistry::hasActiveBindingFor with a ModParam target.
     void setModRateContext(const magda::ChainNodePath& path, magda::ModId modId, int modParamIndex);
     void clearModRateContext();
 
@@ -77,19 +77,21 @@ class LinkableTextSlider : public juce::Component,
     std::function<void(double)> onValueChanged;
 
     // === Mod/macro link callbacks (wired by DeviceSlotComponent) ===
-    std::function<void(int modIndex, magda::ModTarget target, float amount)> onModLinkedWithAmount;
-    std::function<void(int modIndex, magda::ModTarget target)> onModUnlinked;
-    std::function<void(int modIndex, magda::ModTarget target)> onTrackModUnlinked;
-    std::function<void(int modIndex, magda::ModTarget target, float amount)> onModAmountChanged;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onMacroLinked;
-    std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
+    std::function<void(int modIndex, magda::ControlTarget target, float amount)>
+        onModLinkedWithAmount;
+    std::function<void(int modIndex, magda::ControlTarget target)> onModUnlinked;
+    std::function<void(int modIndex, magda::ControlTarget target)> onRackModUnlinked;
+    std::function<void(int modIndex, magda::ControlTarget target)> onTrackModUnlinked;
+    std::function<void(int modIndex, magda::ControlTarget target, float amount)> onModAmountChanged;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onMacroLinked;
+    std::function<void(int macroIndex, magda::ControlTarget target, float amount)>
         onMacroLinkedWithAmount;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onMacroUnlinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onRackMacroLinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroLinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onRackMacroUnlinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroUnlinked;
-    std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
+    std::function<void(int macroIndex, magda::ControlTarget target)> onMacroUnlinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onRackMacroLinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onTrackMacroLinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onRackMacroUnlinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onTrackMacroUnlinked;
+    std::function<void(int macroIndex, magda::ControlTarget target, float amount)>
         onMacroAmountChanged;
     std::function<void()> onShowAutomationLane;
 
@@ -112,11 +114,11 @@ class LinkableTextSlider : public juce::Component,
 
     // === MidiLearnCoordinatorListener ===
     void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
-                               magda::StaticTarget::Owner owner, bool learning) override;
+                               magda::ControlTarget::Kind owner, bool learning) override;
     void midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
-                            magda::StaticTarget::Owner owner, const magda::Binding&) override;
+                            magda::ControlTarget::Kind owner, const magda::Binding&) override;
     void midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
-                          magda::StaticTarget::Owner owner, int numRemoved) override;
+                          magda::ControlTarget::Kind owner, int numRemoved) override;
 
     // === BindingRegistryListener ===
     void bindingRegistryChanged(magda::BindingScope scope) override;

@@ -49,7 +49,8 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
         // Draw MACRO amount line at TOP - only for the ACTIVE macro in link mode
         if (ctx.activeMacro.isValid() && ctx.activeMacro.macroIndex >= 0) {
             int y = sliderBounds.getY() + 2;
-            magda::MacroTarget thisTarget{ctx.linkCtx.deviceId, ctx.linkCtx.paramIndex};
+            magda::ControlTarget thisTarget =
+                magda::ControlTarget::pluginParam(ctx.linkCtx.devicePath, ctx.linkCtx.paramIndex);
 
             const auto* macro =
                 resolveMacroPtr(ctx.activeMacro, ctx.linkCtx.devicePath, ctx.linkCtx.deviceMacros,
@@ -84,7 +85,8 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
 
             if (modPtr) {
                 int y = sliderBounds.getBottom() - 6;
-                magda::ModTarget thisTarget{ctx.linkCtx.deviceId, ctx.linkCtx.paramIndex};
+                magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(
+                    ctx.linkCtx.devicePath, ctx.linkCtx.paramIndex);
 
                 if (const auto* link = modPtr->getLink(thisTarget)) {
                     float linkAmount = link->amount;

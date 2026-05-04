@@ -251,7 +251,7 @@ jobs:
         rm -rf build
 
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-latest-8core
     env:
       NSIS_VERSION: "3.10"
     steps:
@@ -441,6 +441,29 @@ jobs:
           exit 1
         }
 
+        # Controller profiles + Lua scripts. POST_BUILD already places
+        # controllers/ next to MAGDA.exe; mirror that exact layout into
+        # staging so runtime probes (<exe>/controllers/{profiles,scripts})
+        # find them after install.
+        $controllersSrc = Join-Path $exeDir "controllers"
+        $controllersDst = Join-Path $stage "controllers"
+        if (-not (Test-Path $controllersSrc)) {
+          Write-Error "controllers/ missing next to MAGDA.exe at $controllersSrc"
+          exit 1
+        }
+        New-Item -ItemType Directory -Path $controllersDst -ErrorAction Stop | Out-Null
+        Copy-Item -Recurse "$controllersSrc\*" $controllersDst -ErrorAction Stop
+        Write-Output "Staged controllers/ for installer"
+
+        if (-not (Test-Path "$controllersDst\profiles")) {
+          Write-Error "controllers/profiles missing from installer staging"
+          exit 1
+        }
+        if (-not (Test-Path "$controllersDst\scripts")) {
+          Write-Error "controllers/scripts missing from installer staging"
+          exit 1
+        }
+
         & $env:MAKENSIS /DVERSION=$env:VERSION "$stage\magda-installer.nsi"
 
         $installerName = "MAGDA-$env:VERSION-Windows-x86_64-Setup.exe"
@@ -588,6 +611,22 @@ jobs:
         # shipped with missing translations because staging silently dropped it.
         test -f "$APPDIR/usr/bin/lang/en.json" \
           || { echo "lang/en.json missing from AppDir staging"; exit 1; }
+
+        # Controller profiles + Lua scripts. POST_BUILD already places
+        # controllers/ next to the binary; mirror that exact layout into
+        # the AppDir so runtime probes (<exe>/controllers/{profiles,scripts})
+        # find them after install.
+        CONTROLLERS_SRC="$(dirname "$BINARY")/controllers"
+        if [ ! -d "$CONTROLLERS_SRC" ]; then
+          echo "controllers/ missing next to MAGDA binary at $CONTROLLERS_SRC"
+          exit 1
+        fi
+        cp -r "$CONTROLLERS_SRC" "$APPDIR/usr/bin/controllers"
+
+        test -d "$APPDIR/usr/bin/controllers/profiles" \
+          || { echo "controllers/profiles missing from AppDir staging"; exit 1; }
+        test -d "$APPDIR/usr/bin/controllers/scripts" \
+          || { echo "controllers/scripts missing from AppDir staging"; exit 1; }
 
         # Copy icon
         cp assets/app_icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/magda.png"

@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 
-#include "../magda/daw/audio/AutomationCurveSimplifier.hpp"
+#include "../magda/daw/audio/automation/AutomationCurveSimplifier.hpp"
 
 using namespace magda;
 using Point = AutomationCurveSimplifier::Point;

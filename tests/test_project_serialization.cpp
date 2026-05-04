@@ -10,6 +10,22 @@
 
 using namespace magda;
 
+namespace {
+
+juce::File testTempRoot() {
+    auto envTmp = juce::SystemStats::getEnvironmentVariable("TMPDIR", {});
+    auto root = envTmp.isNotEmpty() ? juce::File(envTmp)
+                                    : juce::File::getSpecialLocation(juce::File::tempDirectory);
+    root.createDirectory();
+    return root;
+}
+
+juce::File createTestTempFile(const juce::String& suffix) {
+    return testTempRoot().getNonexistentChildFile("temp", suffix);
+}
+
+}  // namespace
+
 // Test fixture to ensure clean state and temp file cleanup between tests
 struct ProjectTestFixture {
     std::vector<juce::File> tempFiles;
@@ -46,7 +62,7 @@ struct ProjectTestFixture {
     // Helper to create unique temp file with automatic cleanup
     // suffix: The file extension/suffix to append (e.g., ".mgd")
     juce::File createTempFile(const juce::String& suffix) {
-        auto file = juce::File::createTempFile(suffix);
+        auto file = createTestTempFile(suffix);
         tempFiles.push_back(file);
         return file;
     }
@@ -65,7 +81,7 @@ struct ProjectTestFixture {
 
     // Create a temp file and register its wrapper directory for cleanup
     juce::File createTempProjectFile(const juce::String& suffix) {
-        auto file = juce::File::createTempFile(suffix);
+        auto file = createTestTempFile(suffix);
         tempFiles.push_back(file);
         // Register the wrapper directory for cleanup
         auto wrapperDir =
@@ -272,9 +288,7 @@ TEST_CASE("Error Handling", "[project][serialization][errors]") {
         auto& projectManager = ProjectManager::getInstance();
 
         auto nonExistentFile =
-            juce::File::getSpecialLocation(juce::File::tempDirectory)
-                .getChildFile("this_does_not_exist_" +
-                              juce::String(juce::Random::getSystemRandom().nextInt()) + ".mgd");
+            testTempRoot().getNonexistentChildFile("this_does_not_exist", ".mgd");
 
         bool loaded = projectManager.loadProject(nonExistentFile);
         REQUIRE(loaded == false);
@@ -286,8 +300,7 @@ TEST_CASE("Error Handling", "[project][serialization][errors]") {
 
         // Use a path inside a regular file (not a directory) so directory
         // creation fails — you can't create a subdirectory inside a file.
-        auto blockingFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                                .getChildFile("blocking_file_for_project_test");
+        auto blockingFile = testTempRoot().getChildFile("blocking_file_for_project_test");
         blockingFile.create();
         auto invalidFile = blockingFile.getChildFile("sub").getChildFile("test.mgd");
 
@@ -541,4 +554,30 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
         const auto& restoredDevice = getDevice(tracks[0].chainElements[0]);
         REQUIRE(restoredDevice.pluginState.isEmpty());
     }
+}
+
+TEST_CASE("RackInfo panel UI state roundtrip", "[project][serialization][rack][ui_state]") {
+    RackInfo rack;
+    rack.id = 7;
+    rack.name = "Panel Rack";
+    rack.expanded = false;
+    rack.modPanelOpen = true;
+    rack.paramPanelOpen = true;
+
+    ChainInfo chain;
+    chain.id = 8;
+    chain.name = "Chain 1";
+    rack.chains.push_back(std::move(chain));
+
+    auto json = ProjectSerializer::serializeRackInfo(rack);
+
+    RackInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeRackInfo(json, loaded));
+
+    REQUIRE(loaded.id == rack.id);
+    REQUIRE(loaded.name == rack.name);
+    REQUIRE(loaded.expanded == false);
+    REQUIRE(loaded.modPanelOpen == true);
+    REQUIRE(loaded.paramPanelOpen == true);
+    REQUIRE(loaded.chains.size() == 1);
 }

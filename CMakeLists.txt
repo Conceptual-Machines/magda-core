@@ -68,7 +68,7 @@ endif()
 
 # Options
 option(MAGDA_BUILD_TESTS "Build tests" ON)
-option(MAGDA_BUILD_EXAMPLES "Build examples" ON)
+option(MAGDA_BUILD_EXAMPLES "Build developer example tools (e.g. lua_smoke REPL)" OFF)
 option(MAGDA_BUILD_JUCE_ADAPTER "Build JUCE/Tracktion adapter" OFF)
 
 # Find packages
@@ -194,10 +194,22 @@ if(MAGDA_BUILD_TESTS)
     FetchContent_MakeAvailable(Catch2)
 endif()
 
+# Lua 5.4 — embedded scripting runtime (issue #29).
+# Lua's official source distribution ships no CMakeLists.txt, so
+# FetchContent_MakeAvailable just populates lua_SOURCE_DIR; the actual
+# static library is built by magda/scripting/CMakeLists.txt.
+FetchContent_Declare(
+    lua
+    URL https://www.lua.org/ftp/lua-5.4.7.tar.gz
+    URL_HASH SHA256=9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30
+)
+FetchContent_MakeAvailable(lua)
+
 # Simple agent system - no external dependencies needed
 
 # Product-based subdirectories
 add_subdirectory(magda/daw)
+add_subdirectory(magda/scripting)
 add_subdirectory(magda/agents)
 
 # Examples

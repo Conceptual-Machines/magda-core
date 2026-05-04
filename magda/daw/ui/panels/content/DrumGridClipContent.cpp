@@ -1,6 +1,7 @@
 #include "DrumGridClipContent.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 
 #include "../../components/pianoroll/PhaseMarker.hpp"
@@ -9,8 +10,8 @@
 #include "AudioBridge.hpp"
 #include "AudioEngine.hpp"
 #include "BinaryData.h"
-#include "audio/DrumGridPlugin.hpp"
-#include "audio/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -97,12 +98,23 @@ class DrumGridClipGrid : public juce::Component,
     }
     void setClipStartBeats(double b) {
         clipStartBeats_ = b;
+        updateNoteComponentBounds();
+        repaint();
     }
     void setClipLengthBeats(double b) {
         clipLengthBeats_ = b;
+        repaint();
     }
     void setTimelineLengthBeats(double b) {
         timelineLengthBeats_ = b;
+        repaint();
+    }
+    void setRelativeMode(bool relative) {
+        if (relativeMode_ != relative) {
+            relativeMode_ = relative;
+            updateNoteComponentBounds();
+            repaint();
+        }
     }
     void setPlayheadPosition(double pos) {
         playheadPosition_ = pos;
@@ -258,7 +270,7 @@ class DrumGridClipGrid : public juce::Component,
         if (rowIndex < 0)
             return;
 
-        int x = static_cast<int>(beat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+        int x = beatToPixel(clipBeatToDisplayBeat(beat));
         int y = rowIndex * rowHeight_;
         int w = juce::jmax(4, static_cast<int>(length * pixelsPerBeat_));
         int h = rowHeight_ - 2;
@@ -470,9 +482,8 @@ class DrumGridClipGrid : public juce::Component,
 
         // Draw clip boundaries
         if (clipLengthBeats_ > 0.0) {
-            int clipStartX = static_cast<int>(clipStartBeats_ * pixelsPerBeat_) + GRID_LEFT_PADDING;
-            int clipEndX = static_cast<int>((clipStartBeats_ + clipLengthBeats_) * pixelsPerBeat_) +
-                           GRID_LEFT_PADDING;
+            int clipStartX = beatToPixel(relativeMode_ ? 0.0 : clipStartBeats_);
+            int clipEndX = beatToPixel((relativeMode_ ? 0.0 : clipStartBeats_) + clipLengthBeats_);
 
             g.setColour(juce::Colours::black.withAlpha(0.3f));
             if (clipStartX > 0)
@@ -483,11 +494,8 @@ class DrumGridClipGrid : public juce::Component,
 
         // Draw loop region markers
         if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-            int loopStartX =
-                static_cast<int>(loopOffsetBeats_ * pixelsPerBeat_) + GRID_LEFT_PADDING;
-            int loopEndX =
-                static_cast<int>((loopOffsetBeats_ + loopLengthBeats_) * pixelsPerBeat_) +
-                GRID_LEFT_PADDING;
+            int loopStartX = beatToPixel(clipBeatToDisplayBeat(loopOffsetBeats_));
+            int loopEndX = beatToPixel(clipBeatToDisplayBeat(loopOffsetBeats_ + loopLengthBeats_));
 
             juce::Colour loopColour = DarkTheme::getColour(DarkTheme::LOOP_MARKER);
 
@@ -506,7 +514,7 @@ class DrumGridClipGrid : public juce::Component,
             const auto* offsetClip = magda::ClipManager::getInstance().getClip(clipId_);
             if (offsetClip && offsetClip->loopEnabled) {
                 double offset = phasePreviewActive_ ? phasePreviewBeats_ : offsetClip->midiOffset;
-                int offsetX = static_cast<int>(offset * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                int offsetX = beatToPixel(clipBeatToDisplayBeat(offset));
                 if (offsetX >= 0 && offsetX <= bounds.getWidth()) {
                     magda::paintPhaseMarker(g, offsetClip, offsetX, numRows * rowHeight_,
                                             nearPhaseMarker_, phasePreviewActive_);
@@ -518,7 +526,7 @@ class DrumGridClipGrid : public juce::Component,
         for (const auto& ghost : copyDragGhosts_) {
             int rowIndex = findRowForNote(ghost.noteNumber);
             if (rowIndex >= 0) {
-                int gx = static_cast<int>(ghost.beat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                int gx = beatToPixel(clipBeatToDisplayBeat(ghost.beat));
                 int gy = rowIndex * rowHeight_;
                 int gw = juce::jmax(4, static_cast<int>(ghost.length * pixelsPerBeat_));
                 int gh = rowHeight_ - 2;
@@ -539,7 +547,7 @@ class DrumGridClipGrid : public juce::Component,
                 tempo = controller->getState().tempo.bpm;
             }
             double cursorBeat = editCursorPosition_ * (tempo / 60.0);
-            int cursorX = static_cast<int>(cursorBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+            int cursorX = beatToPixel(cursorBeat);
 
             if (cursorX >= 0 && cursorX <= bounds.getWidth()) {
                 g.setColour(juce::Colours::black.withAlpha(0.5f));
@@ -563,15 +571,17 @@ class DrumGridClipGrid : public juce::Component,
             double relBeat = playheadBeat - clipStartBeats_;
 
             if (relBeat >= 0.0 && relBeat <= clipLengthBeats_) {
+                double displayBeat = relativeMode_ ? relBeat : playheadBeat;
+
                 // Wrap playhead within loop region when looping is enabled
                 if (loopEnabled_ && loopLengthBeats_ > 0.0) {
                     double beatPos = std::fmod(relBeat - loopOffsetBeats_, loopLengthBeats_);
                     if (beatPos < 0.0)
                         beatPos += loopLengthBeats_;
-                    playheadBeat = loopOffsetBeats_ + beatPos;
+                    displayBeat = clipBeatToDisplayBeat(loopOffsetBeats_ + beatPos);
                 }
 
-                int playheadX = static_cast<int>(playheadBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+                int playheadX = beatToPixel(displayBeat);
 
                 if (playheadX >= 0 && playheadX <= bounds.getWidth()) {
                     g.setColour(juce::Colour(0xFFFF4444));
@@ -732,7 +742,7 @@ class DrumGridClipGrid : public juce::Component,
         int row = e.y / rowHeight_;
         if (row >= 0 && row < static_cast<int>(padRows_->size())) {
             emptyClickRow_ = row;
-            double rawBeat = static_cast<double>(e.x - GRID_LEFT_PADDING) / pixelsPerBeat_;
+            double rawBeat = displayBeatToClipBeat(pixelToBeat(e.x));
             if (rawBeat < 0.0)
                 rawBeat = 0.0;
             emptyClickBeat_ = rawBeat;
@@ -766,7 +776,6 @@ class DrumGridClipGrid : public juce::Component,
             isEditCursorClick_ = false;
             double gridBeat = getNearestGridLineBeat(e.x);
 
-            // Drum grid is always relative mode, convert to absolute seconds
             double tempo = 120.0;
             if (auto* controller = magda::TimelineController::getCurrent()) {
                 tempo = controller->getState().tempo.bpm;
@@ -916,17 +925,33 @@ class DrumGridClipGrid : public juce::Component,
     bool isNearGridLine(int mouseX) const {
         if (gridResolutionBeats_ <= 0.0)
             return false;
-        double beat = static_cast<double>(mouseX - GRID_LEFT_PADDING) / pixelsPerBeat_;
+        double beat = pixelToBeat(mouseX);
         double nearestBeat = std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
-        int gridX = static_cast<int>(nearestBeat * pixelsPerBeat_) + GRID_LEFT_PADDING;
+        int gridX = beatToPixel(nearestBeat);
         return std::abs(mouseX - gridX) <= GRID_LINE_HIT_TOLERANCE;
     }
 
     double getNearestGridLineBeat(int mouseX) const {
-        double beat = static_cast<double>(mouseX - GRID_LEFT_PADDING) / pixelsPerBeat_;
+        double beat = pixelToBeat(mouseX);
         if (gridResolutionBeats_ <= 0.0)
             return beat;
         return std::round(beat / gridResolutionBeats_) * gridResolutionBeats_;
+    }
+
+    int beatToPixel(double beat) const {
+        return static_cast<int>(std::round(beat * pixelsPerBeat_)) + GRID_LEFT_PADDING;
+    }
+
+    double pixelToBeat(int x) const {
+        return static_cast<double>(x - GRID_LEFT_PADDING) / pixelsPerBeat_;
+    }
+
+    double clipBeatToDisplayBeat(double beat) const {
+        return relativeMode_ ? beat : clipStartBeats_ + beat;
+    }
+
+    double displayBeatToClipBeat(double beat) const {
+        return juce::jmax(0.0, relativeMode_ ? beat : beat - clipStartBeats_);
     }
 
     // Rubber band selection state
@@ -950,6 +975,7 @@ class DrumGridClipGrid : public juce::Component,
     double gridResolutionBeats_ = 0.25;
     bool snapEnabled_ = true;
     int timeSigNumerator_ = 4;
+    bool relativeMode_ = true;
 
     // Loop region
     double loopOffsetBeats_ = 0.0;
@@ -1810,6 +1836,7 @@ void DrumGridClipContent::setClip(magda::ClipId clipId) {
     updateGridSize();
     updateTimeRuler();
     updateVelocityLane();
+    scrollToClipStartForTimeMode();
 
     // Center on notes (or C-2 if empty)
     centerOnNotes();
@@ -1881,9 +1908,9 @@ void DrumGridClipContent::updateGridSize() {
         if (clip->loopEnabled || clip->view == magda::ClipView::Session) {
             clipStartBeats = 0.0;
         } else {
-            clipStartBeats = clip->startTime / secondsPerBeat;
+            clipStartBeats = clip->placement.startBeat;
         }
-        clipLengthBeats = clip->length / secondsPerBeat;
+        clipLengthBeats = clip->placement.lengthBeats;
     }
 
     int numRows = juce::jmax(1, static_cast<int>(padRows_.size()));
@@ -1892,6 +1919,7 @@ void DrumGridClipContent::updateGridSize() {
     int gridHeight = numRows * ROW_HEIGHT;
 
     gridComponent_->setSize(gridWidth, gridHeight);
+    gridComponent_->setRelativeMode(relativeTimeMode_);
     gridComponent_->setClipStartBeats(clipStartBeats);
     gridComponent_->setClipLengthBeats(clipLengthBeats);
     gridComponent_->setTimelineLengthBeats(displayLengthBeats);

@@ -8,8 +8,8 @@
 
 #include "../core/MidiTypes.hpp"
 #include "../core/TypeIds.hpp"
-#include "MidiEventQueue.hpp"
-#include "RecordingNoteQueue.hpp"
+#include "midi/MidiEventQueue.hpp"
+#include "midi/RecordingNoteQueue.hpp"
 
 namespace magda {
 
@@ -122,6 +122,29 @@ class MidiBridge : public juce::MidiInputCallback {
      * @return Vector of device info
      */
     std::vector<MidiDeviceInfo> getAvailableMidiOutputs() const;
+
+    // =========================================================================
+    // MIDI Output (host → device)
+    // =========================================================================
+
+    /**
+     * @brief Send a MIDI message to an output device, opening it lazily on
+     *        first use.
+     *
+     * `deviceNameOrId` matches against either the device's display name
+     * (what scripts see in `e.port`) or its JUCE identifier. The output
+     * stays open for the lifetime of MidiBridge so subsequent sends are
+     * cheap.
+     *
+     * Thread-safe. Returns false if the device cannot be found or opened.
+     */
+    bool sendMidi(const juce::String& deviceNameOrId, const juce::MidiMessage& msg);
+
+    /**
+     * @brief Convenience: build a SysEx message from a byte payload (without
+     *        F0/F7 framing) and dispatch via sendMidi.
+     */
+    bool sendSysEx(const juce::String& deviceNameOrId, const juce::uint8* data, size_t numBytes);
 
     // =========================================================================
     // MIDI Device Enable/Disable
@@ -262,6 +285,10 @@ class MidiBridge : public juce::MidiInputCallback {
 
     // Active MIDI input listeners (deviceId → MidiInput)
     std::unordered_map<juce::String, std::unique_ptr<juce::MidiInput>> activeMidiInputs_;
+
+    // Active MIDI outputs (JUCE identifier → MidiOutput). Opened lazily by
+    // sendMidi() and kept alive until MidiBridge is destroyed.
+    std::unordered_map<juce::String, std::unique_ptr<juce::MidiOutput>> activeMidiOutputs_;
 
     // Synchronization for UI thread access
     mutable juce::CriticalSection routingLock_;

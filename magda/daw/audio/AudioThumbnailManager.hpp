@@ -8,9 +8,12 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 namespace magda {
+
+class WaveformPeakCache;
 
 /**
  * @brief Manages audio waveform thumbnails for visualization
@@ -41,7 +44,7 @@ class AudioThumbnailManager {
     void drawWaveform(juce::Graphics& g, const juce::Rectangle<int>& bounds,
                       const juce::String& audioFilePath, double startTime, double endTime,
                       const juce::Colour& colour, float verticalZoom = 1.0f,
-                      bool useHighRes = false);
+                      bool useHighRes = false, bool thick = false);
 
     /**
      * @brief Detect BPM of an audio file using Tracktion's TempoDetect.
@@ -58,6 +61,14 @@ class AudioThumbnailManager {
      * @return Cached BPM, or 0.0 if not yet detected.
      */
     double getCachedBPM(const juce::String& filePath) const;
+
+    /**
+     * @brief Seed the BPM cache without scanning audio.
+     *
+     * Intended for deterministic model tests and for callers that already have
+     * a trusted external detection result.
+     */
+    void cacheBPM(const juce::String& filePath, double bpm);
 
     /**
      * @brief Request asynchronous BPM detection.
@@ -123,9 +134,11 @@ class AudioThumbnailManager {
     // Message-thread only — never touched from background detection threads.
     std::map<juce::String, double> bpmCache_;
 
-    // Background thread pool for async BPM detection. Lazy-initialized on first
-    // request. Single thread — BPM scans serialize to keep disk I/O sane.
-    std::unique_ptr<juce::ThreadPool> bpmThreadPool_;
+    // Background thread pool shared by BPM detection and peak-cache compute
+    // jobs. Lazy-initialized on first use. Single thread — disk I/O serializes
+    // and the work is bursty, so a pool of 1 keeps things predictable.
+    std::unique_ptr<juce::ThreadPool> backgroundThreadPool_;
+    juce::ThreadPool& getOrCreateBackgroundPool();
 
     // In-flight BPM detection requests. Keyed by file path; value is the list of
     // callbacks to fire when detection completes. Used to dedupe concurrent
@@ -150,10 +163,30 @@ class AudioThumbnailManager {
 
     juce::AudioFormatReader* getOrCreateReader(const juce::String& audioFilePath);
 
-    // Draw waveform directly from raw samples (used when zoomed in)
+    // Persistent peak cache (64 samples/point) per file. Populated lazily on
+    // first thumbnail creation; the smooth renderer reads from here in
+    // envelope mode instead of falling back to AudioFormatReader::read(). The
+    // value is a shared_ptr so the background-compute lambda can hand it back
+    // to the message thread through std::function (which needs copyable
+    // captures).
+    std::map<juce::String, std::shared_ptr<WaveformPeakCache>> peakCaches_;
+    // Files whose peak compute is in flight on the background pool — prevents
+    // double-enqueue when the same file shows up multiple times in quick
+    // succession. Message-thread only.
+    std::set<juce::String> pendingPeakComputes_;
+
+    // Kick off background load-or-compute of the peak cache for @p filePath.
+    // No-op if already cached or already in flight. Message-thread only.
+    void requestPeakCacheLoad(const juce::String& audioFilePath);
+
+    // Draw waveform directly from raw samples (used when zoomed in). When
+    // @p peakCache is non-null and the zoom level is coarse enough to use it,
+    // peak data short-circuits the per-column reader read.
     void drawWaveformFromSamples(juce::Graphics& g, const juce::Rectangle<int>& bounds,
-                                 juce::AudioFormatReader* reader, double startTime, double endTime,
-                                 const juce::Colour& colour, float verticalZoom);
+                                 juce::AudioFormatReader* reader,
+                                 const WaveformPeakCache* peakCache, double startTime,
+                                 double endTime, const juce::Colour& colour, float verticalZoom,
+                                 bool thick = false);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioThumbnailManager)
 };

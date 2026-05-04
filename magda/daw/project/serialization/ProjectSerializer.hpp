@@ -111,6 +111,24 @@ class ProjectSerializer {
         return lastError_;
     }
 
+    // ========================================================================
+    // Per-element (de)serialization helpers — public so PresetManager and
+    // other clients can build sub-document JSON for chain / rack / device
+    // presets without re-implementing the schema.
+    // ========================================================================
+
+    static juce::var serializeChainElement(const ChainElement& element);
+    static bool deserializeChainElement(const juce::var& json, ChainElement& outElement);
+
+    static juce::var serializeDeviceInfo(const DeviceInfo& device);
+    static bool deserializeDeviceInfo(const juce::var& json, DeviceInfo& outDevice);
+
+    static juce::var serializeRackInfo(const RackInfo& rack);
+    static bool deserializeRackInfo(const juce::var& json, RackInfo& outRack);
+
+    static juce::var serializeChainInfo(const ChainInfo& chain);
+    static bool deserializeChainInfo(const juce::var& json, ChainInfo& outChain);
+
   private:
     // ========================================================================
     // Atomic deserialization helpers
@@ -167,17 +185,8 @@ class ProjectSerializer {
     static juce::var serializeTrackInfo(const TrackInfo& track);
     static bool deserializeTrackInfo(const juce::var& json, TrackInfo& outTrack);
 
-    static juce::var serializeChainElement(const ChainElement& element);
-    static bool deserializeChainElement(const juce::var& json, ChainElement& outElement);
-
-    static juce::var serializeDeviceInfo(const DeviceInfo& device);
-    static bool deserializeDeviceInfo(const juce::var& json, DeviceInfo& outDevice);
-
-    static juce::var serializeRackInfo(const RackInfo& rack);
-    static bool deserializeRackInfo(const juce::var& json, RackInfo& outRack);
-
-    static juce::var serializeChainInfo(const ChainInfo& chain);
-    static bool deserializeChainInfo(const juce::var& json, ChainInfo& outChain);
+    // serializeChainElement / DeviceInfo / RackInfo / ChainInfo are declared
+    // public above so PresetManager can use them.
 
     // ========================================================================
     // Clip serialization helpers

@@ -5,6 +5,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+#include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
@@ -855,11 +856,8 @@ void ParameterConfigDialog::resetParameterConfiguration() {
     // reloads this plugin) applyConfigToDevice finds nothing and the plugin
     // keeps its native metadata.
     if (!pluginUniqueId_.isEmpty()) {
-        auto configFile =
-            juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                .getChildFile("MAGDA")
-                .getChildFile("PluginConfigs")
-                .getChildFile(pluginUniqueId_.replaceCharacters(":/\\,; ", "______") + ".xml");
+        auto configFile = magda::paths::pluginConfigsDir().getChildFile(
+            pluginUniqueId_.replaceCharacters(":/\\,; ", "______") + ".xml");
         if (configFile.existsAsFile()) {
             configFile.deleteFile();
             DBG("Deleted parameter config: " << configFile.getFullPathName());
@@ -1102,9 +1100,7 @@ void ParameterConfigDialog::saveParameterConfiguration() {
     }
 
     // Get the config directory
-    auto configDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                         .getChildFile("MAGDA")
-                         .getChildFile("PluginConfigs");
+    auto configDir = magda::paths::pluginConfigsDir();
 
     if (!configDir.exists()) {
         configDir.createDirectory();
@@ -1167,9 +1163,7 @@ void ParameterConfigDialog::loadParameterConfiguration() {
         return;
     }
 
-    auto configDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                         .getChildFile("MAGDA")
-                         .getChildFile("PluginConfigs");
+    auto configDir = magda::paths::pluginConfigsDir();
 
     auto configFile =
         configDir.getChildFile(pluginUniqueId_.replaceCharacters(":/\\,; ", "______") + ".xml");
@@ -1250,9 +1244,7 @@ bool ParameterConfigDialog::applyConfigToDevice(const juce::String& uniqueId,
         return false;
     }
 
-    auto configDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                         .getChildFile("MAGDA")
-                         .getChildFile("PluginConfigs");
+    auto configDir = magda::paths::pluginConfigsDir();
 
     auto configFile =
         configDir.getChildFile(uniqueId.replaceCharacters(":/\\,; ", "______") + ".xml");

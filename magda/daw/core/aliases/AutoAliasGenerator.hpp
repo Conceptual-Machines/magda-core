@@ -33,7 +33,7 @@ class AutoAliasGenerator {
      *
      * Does NOT access any global state. Safe to call from tests without a
      * live DAW engine. The devicePath is stored in each StoredAlias so that
-     * lookup() can materialise a concrete StaticTarget.
+     * lookup() can materialise a concrete ControlTarget.
      *
      * @param deviceInfo  The device whose parameters should be aliased.
      * @param devicePath  The concrete path to the device in the chain tree.

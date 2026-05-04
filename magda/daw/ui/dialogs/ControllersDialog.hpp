@@ -11,19 +11,23 @@
 
 namespace magda {
 
+class ControllerProfilesPage;
+class LuaScriptsPage;
+
 /**
- * Dialog that lets the user manage controller instances. Users click
- * [+ Add profile] to pick a bundled profile and assign a MIDI port;
- * click a row to toggle enabled; right-click a row to remove.
+ * Two-tab dialog for managing controllers:
  *
- * Layout:
- *   Section header + [+ Add profile] button
- *   Controllers list (click to toggle enabled, right-click to remove)
- *   Close button
+ *   [ MIDI Profiles ] [ Lua Scripts ]
+ *
+ * Profiles tab: list of vendor/uploaded controller profiles bound to MIDI
+ *   inputs. Click a row to toggle enabled (one enabled per port), right-
+ *   click for Remove / Show profile in Finder.
+ *
+ * Scripts tab: list of `.lua` files in the per-user scripts folder. Click a
+ *   row to make it active (one active script at a time), right-click for
+ *   Reveal / Unload. Reload re-runs the active script.
  */
-class ControllersDialog : public juce::Component,
-                          private ControllerRegistryListener,
-                          private juce::Timer {
+class ControllersDialog : public juce::Component {
   public:
     ControllersDialog();
     ~ControllersDialog() override;
@@ -33,70 +37,10 @@ class ControllersDialog : public juce::Component,
 
     static void showDialog(juce::Component* parent);
 
-    // ControllerRegistryListener
-    void controllerRegistryChanged() override;
-
-    // juce::Timer
-    void timerCallback() override;
-
   private:
-    // -------------------------------------------------------------------------
-    // Inner ListBoxModel
-    // -------------------------------------------------------------------------
-    struct ControllerListModel : public juce::ListBoxModel {
-        std::vector<Controller>* controllers = nullptr;
-        // Returns true when the controller's inputPort matches a live MIDI input.
-        std::function<bool(const Controller&)> isConnected;
-        // Returns true when the controller has any binding registered against
-        // its id — i.e. is currently active. False = user has toggled it off.
-        std::function<bool(const Controller&)> isEnabled;
-        std::function<void(int, const juce::MouseEvent&)> onRowClicked;
-
-        int getNumRows() override {
-            return controllers ? static_cast<int>(controllers->size()) : 0;
-        }
-        void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height,
-                              bool rowIsSelected) override;
-        void listBoxItemClicked(int row, const juce::MouseEvent& e) override {
-            if (onRowClicked)
-                onRowClicked(row, e);
-        }
-    };
-
-    // -------------------------------------------------------------------------
-    // Data
-    // -------------------------------------------------------------------------
-    std::vector<Controller> controllers_;
-    juce::Array<juce::MidiDeviceInfo> liveInputs_;
-
-    // -------------------------------------------------------------------------
-    // UI components
-    // -------------------------------------------------------------------------
-    juce::Label sectionLabel_;
-    juce::TextButton addButton_;
-    juce::TextButton uploadButton_;
-    ControllerListModel listModel_;
-    std::unique_ptr<juce::ListBox> list_;
-    std::unique_ptr<juce::FileChooser> uploadChooser_;
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-    void refreshLiveInputs();
-    void rebuildList();
-    void persist();
-
-    void onAddClicked();
-    void onUploadClicked();
-    void importProfileFile(const juce::File& file, const juce::String& title);
-    void onProfilePicked(const ControllerProfile& profile);
-    void onPortPicked(const ControllerProfile& profile, const juce::MidiDeviceInfo& dev);
-
-    void onRowClicked(int row, const juce::MouseEvent& e);
-    void onRowToggled(int row);
-    void onRowRemoveRequested(int row);
-
-    bool isControllerConnected(const Controller& c) const;
+    juce::TabbedComponent tabbedComponent_{juce::TabbedButtonBar::TabsAtTop};
+    std::unique_ptr<ControllerProfilesPage> profilesPage_;
+    std::unique_ptr<LuaScriptsPage> scriptsPage_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ControllersDialog)
 };

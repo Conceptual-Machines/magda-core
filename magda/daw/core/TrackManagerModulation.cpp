@@ -1,7 +1,7 @@
 #include <cmath>
 #include <set>
 
-#include "../audio/SidechainTriggerBus.hpp"
+#include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
@@ -231,7 +231,7 @@ void TrackManager::setMacroValue(const ChainNodePath& path, int macroIndex, floa
     notifyMacroValueChanged(path.trackId, node.scope, node.notifyId(), macroIndex, clampedValue);
 }
 
-void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex, MacroTarget target) {
+void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex, ControlTarget target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -243,15 +243,15 @@ void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex, Mac
         // ModParam picks come from a menu (no drag overlay); 100% so the link
         // is immediately audible. Knob-target picks default to 30% to leave
         // headroom for the overlay drag.
-        newLink.amount = target.kind == MacroTarget::Kind::ModParam ? 1.0f : 0.3f;
+        newLink.amount = target.kind == ControlTarget::Kind::ModParam ? 1.0f : 0.3f;
         newLink.bipolar = false;
         macro.links.push_back(newLink);
         notifyDeviceModifiersChanged(path.trackId);
     }
 }
 
-void TrackManager::setMacroLinkAmount(const ChainNodePath& path, int macroIndex, MacroTarget target,
-                                      float amount) {
+void TrackManager::setMacroLinkAmount(const ChainNodePath& path, int macroIndex,
+                                      ControlTarget target, float amount) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -271,7 +271,7 @@ void TrackManager::setMacroLinkAmount(const ChainNodePath& path, int macroIndex,
     // notification so an open mod editor isn't torn down. Newly-created
     // DeviceParam links need TE modifier assignment, which trackDevices
     // covers.
-    if (created && target.kind != MacroTarget::Kind::ModParam) {
+    if (created && target.kind != ControlTarget::Kind::ModParam) {
         notifyTrackDevicesChanged(path.trackId);
     } else {
         notifyDeviceModifiersChanged(path.trackId);
@@ -279,7 +279,7 @@ void TrackManager::setMacroLinkAmount(const ChainNodePath& path, int macroIndex,
 }
 
 void TrackManager::setMacroLinkBipolar(const ChainNodePath& path, int macroIndex,
-                                       MacroTarget target, bool bipolar) {
+                                       ControlTarget target, bool bipolar) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -298,7 +298,8 @@ void TrackManager::setMacroName(const ChainNodePath& path, int macroIndex,
     // Don't notify - rename doesn't need UI rebuild
 }
 
-void TrackManager::removeMacroLink(const ChainNodePath& path, int macroIndex, MacroTarget target) {
+void TrackManager::removeMacroLink(const ChainNodePath& path, int macroIndex,
+                                   ControlTarget target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -314,7 +315,6 @@ void TrackManager::clearAllMacroLinks(const ChainNodePath& path, int macroIndex)
         return;
     auto& macro = (*node.macros)[macroIndex];
     macro.links.clear();
-    macro.target = MacroTarget{};
     notifyDeviceModifiersChanged(path.trackId);
 }
 
@@ -380,29 +380,20 @@ void TrackManager::removeMod(const ChainNodePath& path, int modIndex) {
     });
 }
 
-void TrackManager::setModAmount(const ChainNodePath& path, int modIndex, float amount) {
-    auto node = resolveChainNode(path);
-    if (!indexInRange(node.mods, modIndex))
-        return;
-    (*node.mods)[modIndex].amount = juce::jlimit(-1.0f, 1.0f, amount);
-}
-
-void TrackManager::setModTarget(const ChainNodePath& path, int modIndex, ModTarget target) {
+void TrackManager::setModTarget(const ChainNodePath& path, int modIndex, ControlTarget target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
     auto& mod = (*node.mods)[modIndex];
 
     if (target.isValid()) {
-        const float defaultAmount = target.kind == ModTarget::Kind::ModParam ? 1.0f : 0.0f;
+        const float defaultAmount = target.kind == ControlTarget::Kind::ModParam ? 1.0f : 0.0f;
         mod.addLink(target, defaultAmount);
     }
-    if (target.kind != ModTarget::Kind::ModParam)
-        mod.target = target;
     notifyDeviceModifiersChanged(path.trackId);
 }
 
-void TrackManager::setModLinkAmount(const ChainNodePath& path, int modIndex, ModTarget target,
+void TrackManager::setModLinkAmount(const ChainNodePath& path, int modIndex, ControlTarget target,
                                     float amount) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
@@ -413,13 +404,10 @@ void TrackManager::setModLinkAmount(const ChainNodePath& path, int modIndex, Mod
     } else {
         mod.links.push_back({target, amount});
     }
-    if (mod.target == target) {
-        mod.amount = amount;
-    }
     notifyDeviceModifiersChanged(path.trackId);
 }
 
-void TrackManager::setModLinkBipolar(const ChainNodePath& path, int modIndex, ModTarget target,
+void TrackManager::setModLinkBipolar(const ChainNodePath& path, int modIndex, ControlTarget target,
                                      bool bipolar) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
@@ -531,15 +519,11 @@ void TrackManager::setModAudioRelease(const ChainNodePath& path, int modIndex, f
     (*node.mods)[modIndex].audioReleaseMs = juce::jlimit(1.0f, 2000.0f, ms);
 }
 
-void TrackManager::removeModLink(const ChainNodePath& path, int modIndex, ModTarget target) {
+void TrackManager::removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
-    auto& mod = (*node.mods)[modIndex];
-    mod.removeLink(target);
-    if (mod.target == target) {
-        mod.target = ModTarget{};
-    }
+    (*node.mods)[modIndex].removeLink(target);
     notifyDeviceModifiersChanged(path.trackId);
 }
 
@@ -774,7 +758,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                 float modTotal = 0.0f;
                 for (const auto& m : scopeMacros) {
                     for (const auto& l : m.links) {
-                        if (l.target.kind != MacroTarget::Kind::ModParam ||
+                        if (l.target.kind != ControlTarget::Kind::ModParam ||
                             l.target.modId != mod.id || l.target.modParamIndex != 0)
                             continue;
                         float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;
@@ -785,7 +769,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
                     if (m.id == mod.id)
                         continue;
                     for (const auto& l : m.links) {
-                        if (l.target.kind != ModTarget::Kind::ModParam ||
+                        if (l.target.kind != ControlTarget::Kind::ModParam ||
                             l.target.modId != mod.id || l.target.modParamIndex != 0)
                             continue;
                         float offset = l.bipolar ? (m.value * 2.0f - 1.0f) : m.value;

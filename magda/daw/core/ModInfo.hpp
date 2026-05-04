@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "ControlTarget.hpp"
 #include "TypeIds.hpp"
 
 namespace magda {
@@ -203,65 +204,13 @@ enum class LFOTriggerMode {
 };
 
 /**
- * @brief Target for a mod link.
+ * @brief A single mod-to-parameter link with its own amount.
  *
- * Two kinds:
- *  - DeviceParam: modifier drives a device's automatable parameter (deviceId +
- *    paramIndex). The original / only kind before mod-on-mod addressing.
- *  - ModParam:    modifier drives ANOTHER modifier's parameter (modId +
- *    modParamIndex, typically Rate at index 0). The owning scope is inferred
- *    from the modifier's parent path at resolution time. A modifier never
- *    targets itself — UI filters that out before creating the link.
- *
- * Default kind is DeviceParam so legacy serialized targets without an
- * explicit kind round-trip unchanged.
- */
-struct ModTarget {
-    enum class Kind { DeviceParam, ModParam };
-
-    // Field order intentionally puts the legacy DeviceParam fields first so
-    // existing positional aggregate-init (ModTarget{deviceId, paramIndex})
-    // in tests and call sites keeps compiling without modification.
-    DeviceId deviceId = INVALID_DEVICE_ID;  // DeviceParam: target device
-    int paramIndex = -1;                    // DeviceParam: parameter on the device
-
-    ModId modId = INVALID_MOD_ID;  // ModParam: target modifier
-    int modParamIndex = -1;        // ModParam: 0 = Rate (only kind today)
-
-    Kind kind = Kind::DeviceParam;
-
-    bool isValid() const {
-        switch (kind) {
-            case Kind::DeviceParam:
-                return deviceId != INVALID_DEVICE_ID && paramIndex >= 0;
-            case Kind::ModParam:
-                return modId != INVALID_MOD_ID && modParamIndex >= 0;
-        }
-        return false;
-    }
-
-    bool operator==(const ModTarget& other) const {
-        if (kind != other.kind)
-            return false;
-        switch (kind) {
-            case Kind::DeviceParam:
-                return deviceId == other.deviceId && paramIndex == other.paramIndex;
-            case Kind::ModParam:
-                return modId == other.modId && modParamIndex == other.modParamIndex;
-        }
-        return false;
-    }
-
-    bool operator!=(const ModTarget& other) const {
-        return !(*this == other);
-    }
-};
-
-/**
- * @brief A single mod-to-parameter link with its own amount
+ * The target is a ControlTarget which addresses any parameter the system can
+ * write to. Modifiers driving another modifier's parameter use Kind::ModParam.
  */
 struct ModLink {
-    ModTarget target;
+    ControlTarget target;
     float amount = 0.0f;   // -1.0 to 1.0, modulation depth for this link
     bool bipolar = false;  // true: LFO 0-1 maps to -1..+1; false: stays 0..+1
 
@@ -325,11 +274,6 @@ struct ModInfo {
 
     std::vector<ModLink> links;  // All parameter links for this mod
 
-    // Legacy single target/amount for backward compatibility
-    // TODO: Remove after migration
-    ModTarget target;     // Deprecated - use links instead
-    float amount = 0.5f;  // Deprecated - use links instead
-
     // Default constructor
     ModInfo() = default;
 
@@ -338,11 +282,11 @@ struct ModInfo {
         : id(index), name(getDefaultName(index, ModType::LFO)), type(ModType::LFO) {}
 
     bool isLinked() const {
-        return !links.empty() || target.isValid();
+        return !links.empty();
     }
 
     // Add a link to a parameter
-    void addLink(const ModTarget& t, float amt = 0.0f) {
+    void addLink(const ControlTarget& t, float amt = 0.0f) {
         // Check if already linked to this target
         for (auto& link : links) {
             if (link.target == t) {
@@ -354,14 +298,14 @@ struct ModInfo {
     }
 
     // Remove a link to a parameter
-    void removeLink(const ModTarget& t) {
+    void removeLink(const ControlTarget& t) {
         links.erase(std::remove_if(links.begin(), links.end(),
                                    [&t](const ModLink& link) { return link.target == t; }),
                     links.end());
     }
 
     // Get link for a specific target (or nullptr if not linked)
-    ModLink* getLink(const ModTarget& t) {
+    ModLink* getLink(const ControlTarget& t) {
         for (auto& link : links) {
             if (link.target == t) {
                 return &link;
@@ -370,7 +314,7 @@ struct ModInfo {
         return nullptr;
     }
 
-    const ModLink* getLink(const ModTarget& t) const {
+    const ModLink* getLink(const ControlTarget& t) const {
         for (const auto& link : links) {
             if (link.target == t) {
                 return &link;

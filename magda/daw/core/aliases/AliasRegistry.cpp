@@ -87,8 +87,8 @@ const StoredAlias* walkLayers(const std::map<juce::String, StoredAlias>& userPro
 // lookup
 // ============================================================================
 
-std::optional<StaticTarget> AliasRegistry::lookup(const juce::String& canonicalName,
-                                                  const juce::String& pluginTypeHint) const {
+std::optional<ControlTarget> AliasRegistry::lookup(const juce::String& canonicalName,
+                                                   const juce::String& pluginTypeHint) const {
     const auto* sa = walkLayers(userProjectLayer_, userGlobalLayer_, curatedLayer_, autoGenLayer_,
                                 canonicalName, pluginTypeHint);
     if (sa == nullptr)
@@ -100,7 +100,7 @@ std::optional<StaticTarget> AliasRegistry::lookup(const juce::String& canonicalN
 
     // Apply drift fallback if path is present but we can't verify now
     // (device param list not accessible here without TrackManager — see note in header)
-    StaticTarget t;
+    ControlTarget t;
     t.devicePath = *sa->path;
     t.paramIndex = sa->paramIndex;
     return t;

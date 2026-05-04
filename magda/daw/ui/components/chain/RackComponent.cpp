@@ -4,7 +4,10 @@
 
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
+#include "NodeHeaderStyles.hpp"
 #include "audio/AudioBridge.hpp"
+#include "core/Config.hpp"
+#include "core/PresetManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -40,6 +43,15 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     modPanelVisible_ = rack.modPanelOpen;
     paramPanelVisible_ = rack.paramPanelOpen;
 
+    // Restore collapsed state from rack state. The model field is the single
+    // source of truth — TrackChainContent's save/restore-state map skips
+    // racks so a freshly-loaded preset's `expanded` value isn't shadowed.
+    setCollapsed(!rack.expanded);
+    onCollapsedChanged = [this](bool collapsed) {
+        if (auto* rackInfo = magda::TrackManager::getInstance().getRackByPath(rackPath_))
+            rackInfo->expanded = !collapsed;
+    };
+
     onBypassChanged = [this](bool bypassed) {
         magda::TrackManager::getInstance().setRackBypassed(trackId_, rackId_, bypassed);
     };
@@ -73,11 +85,8 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // MOD button (modulators toggle) - bare sine icon
     modButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::bare_sine_svg,
                                                     BinaryData::bare_sine_svgSize);
-    modButton_->setClickingTogglesState(true);
     modButton_->setToggleState(modPanelVisible_, juce::dontSendNotification);
-    modButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    modButton_->setActiveColor(juce::Colours::white);
-    modButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
+    node_header::applyHeaderIconStyle(*modButton_, DarkTheme::getColour(DarkTheme::ACCENT_ORANGE));
     modButton_->setActive(modPanelVisible_);
     modButton_->onClick = [this]() {
         modButton_->setActive(modButton_->getToggleState());
@@ -88,11 +97,9 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     // MACRO button (macros toggle) - knob icon
     macroButton_ =
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
-    macroButton_->setClickingTogglesState(true);
     macroButton_->setToggleState(paramPanelVisible_, juce::dontSendNotification);
-    macroButton_->setNormalColor(DarkTheme::getSecondaryTextColour());
-    macroButton_->setActiveColor(juce::Colours::white);
-    macroButton_->setActiveBackgroundColor(DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
+    node_header::applyHeaderIconStyle(*macroButton_,
+                                      DarkTheme::getColour(DarkTheme::ACCENT_PURPLE));
     macroButton_->setActive(paramPanelVisible_);
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
@@ -100,17 +107,49 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     };
     addAndMakeVisible(*macroButton_);
 
-    // Volume label (dB format, draggable)
-    volumeLabel_.setRange(-60.0, 6.0, 0.0);
-    volumeLabel_.setValue(rack.volume, juce::dontSendNotification);
-    volumeLabel_.setFontSize(10.0f);
-    volumeLabel_.setFillColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.2f));
-    volumeLabel_.onValueChange = [this]() {
-        magda::TrackManager::getInstance().setRackVolume(
-            rackPath_, static_cast<float>(volumeLabel_.getValue()));
-    };
-    addAndMakeVisible(volumeLabel_);
+    // PRESET button (MAGDA rack presets menu) — same indigo pill recipe as
+    // DeviceSlotComponent's preset button so device and rack presets read
+    // as the same feature visually.
+    presetButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::preset_svg,
+                                                       BinaryData::preset_svgSize);
+    constexpr juce::uint32 PRESET_INDIGO = 0xFF5577CC;
+    node_header::applyHeaderIconStyle(*presetButton_, juce::Colour(PRESET_INDIGO),
+                                      /*toggling*/ false);
+    presetButton_->setActive(true);
+    presetButton_->setIconPadding(4.5f);
+    presetButton_->setTooltip("MAGDA Rack Presets");
+    presetButton_->onClick = [this]() { showPresetMenu(); };
+    addAndMakeVisible(*presetButton_);
+
+    // Gain slider — vertical, overlaid on the level meter strip in the
+    // content area. Same pattern (and LookAndFeel) as DeviceSlotComponent so
+    // the visual reads consistently.
     addAndMakeVisible(levelMeter_);
+    gainSlider_ = std::make_unique<node_header::GainSliderWithMeterTooltip>(
+        juce::Slider::LinearVertical, juce::Slider::NoTextBox, levelMeter_);
+    gainSlider_->setRange(-60.0, 6.0, 0.1);
+    // Match LevelMeter's dbToMeterPos curve (METER_CURVE_EXPONENT = 2). JUCE
+    // applies the skew as value = min + (max-min) * pow(prop, 1/skew), so the
+    // skew that inverts the meter's exponent is the exponent itself, not its
+    // reciprocal — skew = 2.0 puts 0 dB at the same ~83% position as the
+    // meter's 0 dB tick, instead of the ~91% a linear slider would land on.
+    gainSlider_->setSkewFactor(2.0);
+    gainSlider_->setValue(rack.volume, juce::dontSendNotification);
+    gainSlider_->setTooltip("Rack Gain (dB)");
+    gainSlider_->setLookAndFeel(&node_header::FlatGainSliderLookAndFeel::getInstance());
+    gainSlider_->setColour(juce::Slider::backgroundColourId, juce::Colours::transparentBlack);
+    gainSlider_->setColour(juce::Slider::trackColourId, juce::Colours::transparentBlack);
+    // Without this, a click anywhere on the strip jumps the thumb to the
+    // cursor before the double-click handler runs, so resetting to 0 dB looks
+    // like the thumb darts twice. Disabling it makes the first click a no-op
+    // and the double-click goes straight to unity.
+    gainSlider_->setSliderSnapsToMousePosition(false);
+    gainSlider_->setDoubleClickReturnValue(true, 0.0);
+    gainSlider_->onValueChange = [this]() {
+        magda::TrackManager::getInstance().setRackVolume(
+            rackPath_, static_cast<float>(gainSlider_->getValue()));
+    };
+    addAndMakeVisible(*gainSlider_);
 
     // === CONTENT AREA SETUP ===
 
@@ -224,7 +263,10 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
         if (chainPanel_) {
             chainPanel_->setVisible(false);
         }
-        volumeLabel_.setVisible(false);
+        if (gainSlider_)
+            gainSlider_->setVisible(false);
+        if (presetButton_)
+            presetButton_->setVisible(false);
         // levelMeter_ visibility handled by resizedCollapsed
         return;
     }
@@ -235,14 +277,21 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     chainViewport_.setVisible(true);
     modButton_->setVisible(true);
     macroButton_->setVisible(true);
-    volumeLabel_.setVisible(true);
+    if (presetButton_)
+        presetButton_->setVisible(true);
     levelMeter_.setVisible(true);
 
-    // Position the level meter on the right edge of the content area
+    // Position the level meter on the right edge of the content area, with
+    // the gain slider overlaid on top so dragging the thumb sets rack volume.
     {
         auto meterBounds = contentArea.removeFromRight(METER_STRIP_WIDTH).reduced(1, 3);
         contentArea.removeFromRight(4);  // Padding between content and meter
         levelMeter_.setBounds(meterBounds);
+        if (gainSlider_) {
+            gainSlider_->setBounds(meterBounds);
+            gainSlider_->setVisible(true);
+            gainSlider_->toFront(false);
+        }
     }
 
     // Calculate chain panel positioning
@@ -306,14 +355,12 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    macroButton_->setBounds(headerArea.removeFromLeft(20));
+    // Right edge — [preset][power][delete] — is owned by NodeComponent. Only
+    // place left-side header icons here; do not touch presetButton_.
+    macroButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
     headerArea.removeFromLeft(4);
-    modButton_->setBounds(headerArea.removeFromLeft(20));
+    modButton_->setBounds(headerArea.removeFromLeft(BUTTON_SIZE));
     headerArea.removeFromLeft(4);
-
-    // Volume slider on the right side of header (same width as device slots)
-    volumeLabel_.setBounds(headerArea.removeFromRight(70));
-    headerArea.removeFromRight(4);
 }
 
 juce::String RackComponent::getCollapsedName() const {
@@ -394,6 +441,8 @@ void RackComponent::setAvailableWidth(int width) {
 void RackComponent::updateFromRack(const magda::RackInfo& rack) {
     setNodeName(rack.name);
     setBypassed(rack.bypassed);
+    if (gainSlider_)
+        gainSlider_->setValue(rack.volume, juce::dontSendNotification);
     rebuildChainRows();
 
     // Refresh both panels if either is visible.
@@ -520,6 +569,10 @@ void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) 
     // First let base class handle visual selection state
     NodeComponent::chainNodeSelectionChanged(path);
 
+    if (rackPath_.isValid() && path == rackPath_) {
+        openMacroPanelForSelectionIfNeeded();
+    }
+
     // Check if the selected path is one of our chains
     if (path.trackId != trackId_) {
         return;  // Not our track
@@ -552,6 +605,22 @@ void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) 
     if (onChainSelected) {
         onChainSelected(trackId_, rackId_, chainId);
     }
+}
+
+void RackComponent::openMacroPanelForSelectionIfNeeded() {
+    if (!magda::Config::getInstance().getOpenMacrosOnSelect() || paramPanelVisible_ ||
+        !macroButton_ || !rackPath_.isValid()) {
+        return;
+    }
+
+    const auto& selectedPath = magda::SelectionManager::getInstance().getSelectedChainNode();
+    if (selectedPath != rackPath_) {
+        return;
+    }
+
+    macroButton_->setToggleState(true, juce::dontSendNotification);
+    macroButton_->setActive(true);
+    setParamPanelVisible(true);
 }
 
 void RackComponent::onAddChainClicked() {
@@ -648,11 +717,7 @@ std::map<magda::DeviceId, std::vector<juce::String>> RackComponent::getDevicePar
 
 // === Virtual callback overrides for mod/macro persistence ===
 
-void RackComponent::onModAmountChangedInternal(int modIndex, float amount) {
-    magda::TrackManager::getInstance().setModAmount(rackPath_, modIndex, amount);
-}
-
-void RackComponent::onModTargetChangedInternal(int modIndex, magda::ModTarget target) {
+void RackComponent::onModTargetChangedInternal(int modIndex, magda::ControlTarget target) {
     magda::TrackManager::getInstance().setModTarget(rackPath_, modIndex, target);
 }
 
@@ -711,7 +776,7 @@ void RackComponent::onMacroValueChangedInternal(int macroIndex, float value) {
     }
 }
 
-void RackComponent::onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) {
+void RackComponent::onMacroTargetChangedInternal(int macroIndex, magda::ControlTarget target) {
     magda::TrackManager::getInstance().setMacroTarget(rackPath_, macroIndex, target);
 }
 
@@ -778,6 +843,179 @@ int RackComponent::getParamPanelWidth() const {
 int RackComponent::getModPanelWidth() const {
     // Width for 2 columns of mod knobs (2x4 grid)
     return DEFAULT_PANEL_WIDTH;
+}
+
+// =============================================================================
+// MAGDA Rack Presets — UI wiring for PresetManager::save/loadRackPreset
+// =============================================================================
+
+namespace {
+void showRackPresetErrorAsync(const juce::String& title, const juce::String& message) {
+    juce::AlertWindow::showAsync(juce::MessageBoxOptions()
+                                     .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                     .withTitle(title)
+                                     .withMessage(message)
+                                     .withButton("OK"),
+                                 nullptr);
+}
+
+// Recursively walk the rack-presets directory and append items / submenus to
+// `menu`. `outIndex` collects the relative path of every preset file in click
+// order so the chosen menu id can be resolved back to a path. Mirrors the
+// equivalent helper in DeviceSlotComponent.
+void buildRackPresetSubmenu(juce::PopupMenu& menu, const juce::File& dir,
+                            const juce::String& prefix, int idBase,
+                            const juce::String& currentLoaded, juce::StringArray& outIndex) {
+    if (!dir.isDirectory())
+        return;
+    auto subdirs = dir.findChildFiles(juce::File::findDirectories, false);
+    auto files = dir.findChildFiles(juce::File::findFiles, false, "*.mps");
+    subdirs.sort();
+    files.sort();
+
+    for (const auto& sub : subdirs) {
+        juce::PopupMenu submenu;
+        buildRackPresetSubmenu(submenu, sub, prefix + sub.getFileName() + "/", idBase,
+                               currentLoaded, outIndex);
+        menu.addSubMenu(sub.getFileName(), submenu);
+    }
+    for (const auto& f : files) {
+        const auto displayName = f.getFileNameWithoutExtension();
+        const auto relPath = prefix + displayName;
+        outIndex.add(relPath);
+        const bool ticked = (relPath == currentLoaded);
+        menu.addItem(idBase + outIndex.size() - 1, displayName, /*isActive*/ true, ticked);
+    }
+}
+}  // namespace
+
+void RackComponent::showPresetMenu() {
+    auto& pm = magda::PresetManager::getInstance();
+
+    constexpr int kSaveOverwrite = 1;
+    constexpr int kSaveAs = 2;
+    constexpr int kRevealInFinder = 3;
+    constexpr int kPresetIdBase = 1000;
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("MAGDA Rack Presets");
+
+    juce::StringArray index;  // relative paths, indexed by chosen-id - kPresetIdBase
+    buildRackPresetSubmenu(menu, pm.getRacksDirectory(), "", kPresetIdBase, currentPresetName_,
+                           index);
+
+    if (index.isEmpty())
+        menu.addItem(kPresetIdBase, "(no presets yet)", /*isActive*/ false);
+
+    menu.addSeparator();
+    if (currentPresetName_.isNotEmpty())
+        menu.addItem(kSaveOverwrite, "Save \"" + currentPresetName_ + "\"");
+    menu.addItem(kSaveAs, "Save as MAGDA Rack Preset...");
+    menu.addItem(kRevealInFinder, "Reveal in Finder");
+
+    const auto indexCopy = index;
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(presetButton_.get()),
+        [this, indexCopy](int chosen) {
+            if (chosen == 0)
+                return;
+            if (chosen == kSaveAs) {
+                showSaveRackPresetDialog();
+            } else if (chosen == kSaveOverwrite) {
+                saveCurrentRackPreset();
+            } else if (chosen == kRevealInFinder) {
+                magda::PresetManager::getInstance().getRacksDirectory().revealToUser();
+            } else if (chosen >= kPresetIdBase) {
+                const int idx = chosen - kPresetIdBase;
+                if (idx >= 0 && idx < indexCopy.size())
+                    loadRackPresetByName(indexCopy[idx]);
+            }
+        });
+}
+
+void RackComponent::showSaveRackPresetDialog() {
+    const auto* live = magda::TrackManager::getInstance().getRackByPath(rackPath_);
+    const juce::String defaultName =
+        currentPresetName_.isNotEmpty() ? currentPresetName_ : (live ? live->name : "Rack");
+
+    auto* aw = new juce::AlertWindow(
+        "Save MAGDA Rack Preset",
+        "Enter a name for this rack preset (use \"/\" to nest, e.g. \"Drums/808 Stack\"):",
+        juce::MessageBoxIconType::NoIcon);
+    aw->addTextEditor("name", defaultName, "Name:");
+    aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    aw->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<RackComponent> self(this);
+    aw->enterModalState(
+        true, juce::ModalCallbackFunction::create([aw, self](int result) {
+            if (result != 1) {
+                delete aw;
+                return;
+            }
+            auto name = aw->getTextEditorContents("name").trim();
+            delete aw;
+            if (name.isEmpty() || self == nullptr)
+                return;
+
+            auto doSave = [name, self]() {
+                if (self == nullptr)
+                    return;
+                const auto* fresh =
+                    magda::TrackManager::getInstance().getRackByPath(self->rackPath_);
+                if (fresh == nullptr) {
+                    showRackPresetErrorAsync("Save Rack Preset Failed", "Rack no longer exists.");
+                    return;
+                }
+                auto& mgr = magda::PresetManager::getInstance();
+                if (!mgr.saveRackPreset(*fresh, name)) {
+                    showRackPresetErrorAsync("Save Rack Preset Failed", mgr.getLastError());
+                    return;
+                }
+                self->currentPresetName_ = name;
+            };
+
+            if (magda::PresetManager::getInstance().getRackPresets().contains(name)) {
+                juce::AlertWindow::showAsync(
+                    juce::MessageBoxOptions()
+                        .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                        .withTitle("Overwrite Rack Preset?")
+                        .withMessage("\"" + name + "\" already exists. Overwrite?")
+                        .withButton("Overwrite")
+                        .withButton("Cancel"),
+                    [doSave](int r) {
+                        if (r == 1)
+                            doSave();
+                    });
+            } else {
+                doSave();
+            }
+        }));
+}
+
+void RackComponent::saveCurrentRackPreset() {
+    if (currentPresetName_.isEmpty())
+        return;
+    const auto* live = magda::TrackManager::getInstance().getRackByPath(rackPath_);
+    if (live == nullptr)
+        return;
+    auto& pm = magda::PresetManager::getInstance();
+    if (!pm.saveRackPreset(*live, currentPresetName_))
+        showRackPresetErrorAsync("Save Rack Preset Failed", pm.getLastError());
+}
+
+void RackComponent::loadRackPresetByName(const juce::String& presetName) {
+    auto& pm = magda::PresetManager::getInstance();
+    magda::RackInfo preset;
+    if (!pm.loadRackPreset(presetName, preset)) {
+        showRackPresetErrorAsync("Load Rack Preset Failed", pm.getLastError());
+        return;
+    }
+    if (!magda::TrackManager::getInstance().applyRackPreset(rackPath_, preset)) {
+        showRackPresetErrorAsync("Load Rack Preset Failed", "Failed to apply preset to live rack.");
+        return;
+    }
+    currentPresetName_ = presetName;
 }
 
 }  // namespace magda::daw::ui

@@ -257,6 +257,17 @@ class Config {
         loadModelOnStartup = enabled;
     }
 
+    // Transport: when true, pressing Stop snaps the playhead (editPosition)
+    // to wherever playback was at the moment of stopping, so the next Play
+    // resumes from there. When false (default), the playhead stays put and
+    // Play always restarts from the playhead's current location.
+    bool getStopUpdatesPlayhead() const {
+        return stopUpdatesPlayhead;
+    }
+    void setStopUpdatesPlayhead(bool enabled) {
+        stopUpdatesPlayhead = enabled;
+    }
+
     // Recent Projects
     std::vector<std::string> getRecentProjects() const {
         return recentProjects;
@@ -331,6 +342,31 @@ class Config {
     }
     void setRenderFolder(const std::string& folder) {
         renderFolder = folder;
+    }
+
+    // ----- Configurable user-data paths --------------------------------
+    // Empty string means "use OS default". Resolution + env-var override
+    // happens in magda::paths (AppPaths.hpp); these are just the persisted
+    // override strings.
+
+    /** Override for `userApplicationDataDirectory/MAGDA/` — logs, scripts,
+     *  controller profiles, plugin caches. Empty = OS default. Changes
+     *  require a restart to fully apply (file logger + plugin scanner
+     *  hold open file handles). */
+    std::string getDataDir() const {
+        return dataDir;
+    }
+    void setDataDir(const std::string& d) {
+        dataDir = d;
+    }
+
+    /** Override for `userDocumentsDirectory/MAGDA/Presets/` — Chains, Racks,
+     *  Devices. Empty = OS default. Hot-swappable via Config listeners. */
+    std::string getPresetsDir() const {
+        return presetsDir;
+    }
+    void setPresetsDir(const std::string& d) {
+        presetsDir = d;
     }
 
     double getRenderSampleRate() const {
@@ -570,6 +606,14 @@ class Config {
         autoMonitorSelectedTrack = enabled;
     }
 
+    // Device chain behaviour
+    bool getOpenMacrosOnSelect() const {
+        return openMacrosOnSelect;
+    }
+    void setOpenMacrosOnSelect(bool enabled) {
+        openMacrosOnSelect = enabled;
+    }
+
     // Preview output channel (stereo pair offset: 0 = outputs 1-2, 2 = outputs 3-4, etc.)
     int getPreviewOutputChannel() const {
         return previewOutputChannel;
@@ -619,6 +663,32 @@ class Config {
     }
     void setControllers(const juce::var& c) {
         controllers_ = c;
+    }
+
+    // Lua controller script assignments (serialized to/from config.json "luaScripts" key).
+    juce::var getLuaScripts() const {
+        return luaScripts_;
+    }
+    void setLuaScripts(const juce::var& scripts) {
+        luaScripts_ = scripts;
+    }
+
+    std::string getActiveLuaScript() const {
+        return activeLuaScript_;
+    }
+    void setActiveLuaScript(const std::string& scriptName) {
+        activeLuaScript_ = scriptName;
+    }
+
+    // Filenames of bundled (factory) Lua scripts the user has explicitly
+    // enabled in the Controllers dialog. Bundled scripts not in this list
+    // stay hidden from the active scripts list and the auto-load picker;
+    // user-imported scripts are unaffected.
+    std::vector<std::string> getEnabledFactoryLuaScripts() const {
+        return enabledFactoryLuaScripts_;
+    }
+    void setEnabledFactoryLuaScripts(std::vector<std::string> filenames) {
+        enabledFactoryLuaScripts_ = std::move(filenames);
     }
 
     // Global bindings (serialized to/from config.json "globalBindings" key)
@@ -692,6 +762,9 @@ class Config {
     // Auto-monitor settings
     bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track
 
+    // Device chain behaviour
+    bool openMacrosOnSelect = true;  // Open macro panel when selecting a device/rack
+
     // Auto-save settings
     bool autoSaveEnabled = true;       // Auto-save enabled by default
     int autoSaveIntervalSeconds = 60;  // Save every 60 seconds
@@ -726,6 +799,10 @@ class Config {
     // Load AI model on startup (off by default)
     bool loadModelOnStartup = false;
 
+    // See getStopUpdatesPlayhead — default keeps the playhead in place
+    // across Stop/Play cycles (Bitwig-style "play from playhead").
+    bool stopUpdatesPlayhead = false;
+
     // Browser filter settings (media explorer)
     bool browserFilterAudio = true;  // Show audio files by default
     bool browserFilterMidi = false;  // Hide MIDI files by default
@@ -741,6 +818,11 @@ class Config {
     // Export audio settings
     std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC
     double exportSampleRate = 48000.0;   // 44100, 48000, 96000, 192000
+
+    // Configurable user-data path overrides (resolved by magda::paths).
+    // Empty = OS default. Persisted in config.json.
+    std::string dataDir = "";     // userApplicationDataDirectory/MAGDA/
+    std::string presetsDir = "";  // userDocumentsDirectory/MAGDA/Presets/
 
     // Render settings
     std::string renderFolder = "";  // Custom render output folder (empty = renders/ beside source)
@@ -788,6 +870,11 @@ class Config {
 
     // Controller devices (opaque JSON blob, managed by ControllerRegistry)
     juce::var controllers_;
+
+    // Lua controller scripts (opaque JSON blob, managed by scripting_app)
+    juce::var luaScripts_;
+    std::string activeLuaScript_;
+    std::vector<std::string> enabledFactoryLuaScripts_;
 
     // Global bindings (opaque JSON blob, managed by BindingRegistry)
     juce::var globalBindings_;

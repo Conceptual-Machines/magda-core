@@ -44,8 +44,8 @@ void ResolverRegistry::registerResolver(std::unique_ptr<AliasResolver> resolver)
 // FocusedDeviceMacroResolver
 // ============================================================================
 
-std::optional<StaticTarget> FocusedDeviceMacroResolver::resolve(const juce::StringPairArray& args,
-                                                                const ChainContext& ctx) const {
+std::optional<ControlTarget> FocusedDeviceMacroResolver::resolve(const juce::StringPairArray& args,
+                                                                 const ChainContext& ctx) const {
     // Use focusedMacroOwner() rather than focusedDevice() so that focusing
     // a user-created rack auto-maps the controller to the rack's macros.
     // See DefaultChainContext::focusedMacroOwner() for the exact mapping;
@@ -60,10 +60,10 @@ std::optional<StaticTarget> FocusedDeviceMacroResolver::resolve(const juce::Stri
 
     int macroIndex = args.getValue("macroIndex", "0").getIntValue();
 
-    StaticTarget t;
+    ControlTarget t;
     t.devicePath = ownerPath;
     t.paramIndex = macroIndex;
-    t.owner = StaticTarget::Owner::DeviceMacro;
+    t.kind = ControlTarget::Kind::DeviceMacro;
     return t;
 }
 
@@ -71,14 +71,14 @@ std::optional<StaticTarget> FocusedDeviceMacroResolver::resolve(const juce::Stri
 // SelectedTrackVolumeResolver
 // ============================================================================
 
-std::optional<StaticTarget> SelectedTrackVolumeResolver::resolve(
+std::optional<ControlTarget> SelectedTrackVolumeResolver::resolve(
     const juce::StringPairArray& /*args*/, const ChainContext& ctx) const {
     TrackId trackId = ctx.selectedTrack();
     if (trackId == INVALID_TRACK_ID)
         return std::nullopt;
 
     // Track volume is represented as a track-level path with paramIndex 0
-    StaticTarget t;
+    ControlTarget t;
     t.devicePath = ChainNodePath::trackLevel(trackId);
     t.paramIndex = 0;  // volume
     return t;
@@ -88,13 +88,13 @@ std::optional<StaticTarget> SelectedTrackVolumeResolver::resolve(
 // SelectedTrackPanResolver
 // ============================================================================
 
-std::optional<StaticTarget> SelectedTrackPanResolver::resolve(const juce::StringPairArray& /*args*/,
-                                                              const ChainContext& ctx) const {
+std::optional<ControlTarget> SelectedTrackPanResolver::resolve(
+    const juce::StringPairArray& /*args*/, const ChainContext& ctx) const {
     TrackId trackId = ctx.selectedTrack();
     if (trackId == INVALID_TRACK_ID)
         return std::nullopt;
 
-    StaticTarget t;
+    ControlTarget t;
     t.devicePath = ChainNodePath::trackLevel(trackId);
     t.paramIndex = 1;  // pan
     return t;
@@ -104,9 +104,9 @@ std::optional<StaticTarget> SelectedTrackPanResolver::resolve(const juce::String
 // MasterVolumeResolver
 // ============================================================================
 
-std::optional<StaticTarget> MasterVolumeResolver::resolve(const juce::StringPairArray& /*args*/,
-                                                          const ChainContext& /*ctx*/) const {
-    StaticTarget t;
+std::optional<ControlTarget> MasterVolumeResolver::resolve(const juce::StringPairArray& /*args*/,
+                                                           const ChainContext& /*ctx*/) const {
+    ControlTarget t;
     t.devicePath = ChainNodePath::trackLevel(MASTER_TRACK_ID);
     t.paramIndex = 0;  // volume
     return t;
@@ -116,9 +116,9 @@ std::optional<StaticTarget> MasterVolumeResolver::resolve(const juce::StringPair
 // MasterPanResolver
 // ============================================================================
 
-std::optional<StaticTarget> MasterPanResolver::resolve(const juce::StringPairArray& /*args*/,
-                                                       const ChainContext& /*ctx*/) const {
-    StaticTarget t;
+std::optional<ControlTarget> MasterPanResolver::resolve(const juce::StringPairArray& /*args*/,
+                                                        const ChainContext& /*ctx*/) const {
+    ControlTarget t;
     t.devicePath = ChainNodePath::trackLevel(MASTER_TRACK_ID);
     t.paramIndex = 1;  // pan
     return t;

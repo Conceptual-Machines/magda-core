@@ -2,10 +2,13 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <algorithm>
+#include <limits>
+
 #include "../audio/AudioBridge.hpp"
-#include "../audio/DrumGridPlugin.hpp"
-#include "../audio/InstrumentRackManager.hpp"
-#include "../audio/MagdaSamplerPlugin.hpp"
+#include "../audio/plugins/DrumGridPlugin.hpp"
+#include "../audio/plugins/MagdaSamplerPlugin.hpp"
+#include "../audio/racks/InstrumentRackManager.hpp"
 #include "../engine/TracktionEngineWrapper.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
@@ -446,11 +449,13 @@ void CreateClipCommand::undo() {
 // ============================================================================
 
 DuplicateClipCommand::DuplicateClipCommand(ClipId sourceClipId, double startTime,
-                                           TrackId targetTrackId, double tempo)
+                                           TrackId targetTrackId, double tempo,
+                                           int targetSceneIndex)
     : sourceClipId_(sourceClipId),
       startTime_(startTime),
       targetTrackId_(targetTrackId),
-      tempo_(tempo) {}
+      tempo_(tempo),
+      targetSceneIndex_(targetSceneIndex) {}
 
 bool DuplicateClipCommand::canExecute() const {
     return ClipManager::getInstance().getClip(sourceClipId_) != nullptr;
@@ -462,15 +467,18 @@ void DuplicateClipCommand::execute() {
 
     auto& clipManager = ClipManager::getInstance();
 
-    if (!executed_) {
-        arrangementSnapshot_ = clipManager.getArrangementClips();
-    }
-
     if (startTime_ < 0) {
         duplicatedClipId_ = clipManager.duplicateClip(sourceClipId_);
     } else {
         duplicatedClipId_ =
             clipManager.duplicateClipAt(sourceClipId_, startTime_, targetTrackId_, tempo_);
+    }
+    if (duplicatedClipId_ != INVALID_CLIP_ID) {
+        if (targetTrackId_ != INVALID_TRACK_ID)
+            clipManager.moveClipToTrack(duplicatedClipId_, targetTrackId_);
+        const auto* duplicatedClip = clipManager.getClip(duplicatedClipId_);
+        if (targetSceneIndex_ >= 0 && duplicatedClip && duplicatedClip->view == ClipView::Session)
+            clipManager.setClipSceneIndex(duplicatedClipId_, targetSceneIndex_);
     }
 
     executed_ = true;
@@ -482,17 +490,75 @@ void DuplicateClipCommand::undo() {
 
     auto& clipManager = ClipManager::getInstance();
 
-    auto currentClips = clipManager.getArrangementClips();
-    for (const auto& clip : currentClips) {
-        clipManager.deleteClip(clip.id);
-    }
-
-    for (const auto& clip : arrangementSnapshot_) {
-        clipManager.restoreClip(clip);
-    }
+    if (duplicatedClipId_ != INVALID_CLIP_ID)
+        clipManager.deleteClip(duplicatedClipId_);
 
     duplicatedClipId_ = INVALID_CLIP_ID;
     clipManager.forceNotifyClipsChanged();
+}
+
+std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplicateCommands(
+    const std::unordered_set<ClipId>& clipIds, double tempo) {
+    auto& clipManager = ClipManager::getInstance();
+
+    std::vector<ClipId> arrangementClipIds;
+    arrangementClipIds.reserve(clipIds.size());
+    for (ClipId clipId : clipIds) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip && clip->view == ClipView::Arrangement)
+            arrangementClipIds.push_back(clipId);
+    }
+
+    if (arrangementClipIds.empty())
+        return {};
+
+    std::sort(arrangementClipIds.begin(), arrangementClipIds.end(),
+              [&clipManager](ClipId a, ClipId b) {
+                  const auto* clipA = clipManager.getClip(a);
+                  const auto* clipB = clipManager.getClip(b);
+                  if (!clipA || !clipB)
+                      return a < b;
+                  if (clipA->startTime != clipB->startTime)
+                      return clipA->startTime < clipB->startTime;
+                  if (clipA->trackId != clipB->trackId)
+                      return clipA->trackId < clipB->trackId;
+                  return a < b;
+              });
+
+    std::vector<std::unique_ptr<DuplicateClipCommand>> commands;
+    commands.reserve(arrangementClipIds.size());
+
+    if (arrangementClipIds.size() == 1) {
+        commands.push_back(std::make_unique<DuplicateClipCommand>(arrangementClipIds.front()));
+        return commands;
+    }
+
+    double selectionStart = std::numeric_limits<double>::max();
+    double selectionEnd = 0.0;
+    for (ClipId clipId : arrangementClipIds) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip)
+            continue;
+        const double clipStart = clip->getTimelineStart(tempo);
+        const double clipEnd = clipStart + clip->getTimelineLength(tempo);
+        selectionStart = std::min(selectionStart, clipStart);
+        selectionEnd = std::max(selectionEnd, clipEnd);
+    }
+
+    const double blockLength = selectionEnd - selectionStart;
+    if (blockLength <= 0.0)
+        return commands;
+
+    for (ClipId clipId : arrangementClipIds) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip)
+            continue;
+        const double newStart = clip->getTimelineStart(tempo) + blockLength;
+        commands.push_back(
+            std::make_unique<DuplicateClipCommand>(clipId, newStart, INVALID_TRACK_ID, tempo));
+    }
+
+    return commands;
 }
 
 // ============================================================================

@@ -22,19 +22,6 @@ ModKnobComponent::ModKnobComponent(int modIndex) : modIndex_(modIndex) {
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
 
-    // Amount slider (modulation depth) - hidden, amount is set per-parameter link
-    amountSlider_.setRange(0.0, 1.0, 0.01);
-    amountSlider_.setValue(currentMod_.amount, juce::dontSendNotification);
-    amountSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    amountSlider_.onValueChanged = [this](double value) {
-        currentMod_.amount = static_cast<float>(value);
-        if (onAmountChanged) {
-            onAmountChanged(currentMod_.amount);
-        }
-    };
-    amountSlider_.setVisible(false);  // Hide - amount is per-parameter, not global
-    addChildComponent(amountSlider_);
-
     // Waveform display (don't intercept mouse clicks - pass through to parent)
     waveformDisplay_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(waveformDisplay_);
@@ -67,7 +54,6 @@ void ModKnobComponent::setModInfo(const magda::ModInfo& mod, const magda::ModInf
     // Use live mod pointer if available (for animation), otherwise use local copy
     waveformDisplay_.setModInfo(liveMod ? liveMod : &currentMod_);
     nameLabel_.setText(mod.name, juce::dontSendNotification);
-    amountSlider_.setValue(mod.amount, juce::dontSendNotification);
     repaint();
 }
 
@@ -257,8 +243,9 @@ void ModKnobComponent::showContextMenu() {
         if (modId == currentMod_.id)
             continue;  // Skip self
         juce::PopupMenu perModMenu;
-        magda::ModTarget t;
-        t.kind = magda::ModTarget::Kind::ModParam;
+        magda::ControlTarget t;
+        t.kind = magda::ControlTarget::Kind::ModParam;
+        t.devicePath = parentPath_;
         t.modId = modId;
         t.modParamIndex = 0;  // Rate
         const bool isCurrentTarget = currentMod_.getLink(t) != nullptr;
@@ -280,7 +267,7 @@ void ModKnobComponent::showContextMenu() {
     auto modifiers = availableModifiers_;  // Capture by value for async safety
 
     menu.showMenuAsync(juce::PopupMenu::Options(),
-                       [safeThis, capturedEnabled, modifiers, kModRateBaseId](int result) {
+                       [safeThis, capturedEnabled, modifiers](int result) {
                            if (safeThis == nullptr || result == 0) {
                                return;
                            }
@@ -302,14 +289,15 @@ void ModKnobComponent::showContextMenu() {
 
                            // Modulator-rate link selection. The parent's
                            // onTargetChanged routes through TrackManager::
-                           // setXxxModTarget, which materialises the link
+                           // setXxxControlTarget, which materialises the link
                            // (with an audible default amount for ModParam
                            // kind) and triggers a refresh — so we don't
                            // need to mutate currentMod_ here.
                            int modSlot = result - kModRateBaseId;
                            if (modSlot >= 0 && modSlot < static_cast<int>(modifiers.size())) {
-                               magda::ModTarget t;
-                               t.kind = magda::ModTarget::Kind::ModParam;
+                               magda::ControlTarget t;
+                               t.kind = magda::ControlTarget::Kind::ModParam;
+                               t.devicePath = safeThis->parentPath_;
                                t.modId = modifiers[static_cast<size_t>(modSlot)].first;
                                t.modParamIndex = 0;  // Rate
                                if (safeThis->onTargetChanged)

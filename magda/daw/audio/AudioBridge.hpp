@@ -7,25 +7,26 @@
 #include <memory>
 
 #include "../core/ClipManager.hpp"
+#include "../core/ControlTarget.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
-#include "AutomationPlaybackEngine.hpp"
-#include "AutomationRecordingEngine.hpp"
-#include "ClipSynchronizer.hpp"
 #include "DeviceMeteringManager.hpp"
-#include "DeviceProcessor.hpp"
 #include "MeteringBuffer.hpp"
-#include "MidiActivityMonitor.hpp"
-#include "ParameterManager.hpp"
-#include "ParameterQueue.hpp"
-#include "PluginManager.hpp"
 #include "PluginWindowBridge.hpp"
-#include "SessionClipAudioMonitor.hpp"
-#include "SidechainTriggerBus.hpp"
 #include "TrackController.hpp"
-#include "TransportStateManager.hpp"
 #include "WarpMarkerManager.hpp"
+#include "automation/AutomationPlaybackEngine.hpp"
+#include "automation/AutomationRecordingEngine.hpp"
+#include "midi/MidiActivityMonitor.hpp"
+#include "params/ParameterManager.hpp"
+#include "params/ParameterQueue.hpp"
+#include "plugin_manager/PluginManager.hpp"
+#include "plugins/SidechainTriggerBus.hpp"
+#include "processors/DeviceProcessor.hpp"
+#include "session/ClipSynchronizer.hpp"
+#include "session/SessionClipAudioMonitor.hpp"
+#include "transport/TransportStateManager.hpp"
 
 namespace magda {
 
@@ -175,6 +176,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     SessionClipAudioMonitor& getSessionAudioMonitor() {
         return sessionAudioMonitor_;
     }
+    const SessionClipAudioMonitor& getSessionAudioMonitor() const {
+        return sessionAudioMonitor_;
+    }
 
     /** Ensure the SessionMonitorPlugin is installed on a track for audio-thread monitoring. */
     void ensureSessionMonitorPlugin();
@@ -304,11 +308,44 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     te::Plugin::Ptr getPlugin(DeviceId deviceId) const;
 
     /**
+     * @brief Resolve any ControlTarget to its writable te::AutomatableParameter.
+     *
+     * Single dispatch site for the unified parameter addressing scheme — used
+     * by AutomationPlaybackEngine, ModifierSync, and any other consumer that
+     * needs to write into a TE-side parameter from a MAGDA-side address.
+     * Returns nullptr if the target's path / index doesn't resolve to a live TE
+     * parameter (device removed, plugin gone, etc.).
+     */
+    te::AutomatableParameter* resolveControlTarget(const ControlTarget& target) const;
+
+    /**
      * @brief Get the DeviceProcessor for a MAGDA device
      * @param deviceId MAGDA device ID
      * @return The DeviceProcessor, or nullptr if not found
      */
     DeviceProcessor* getDeviceProcessor(DeviceId deviceId) const;
+
+    // ------------------------------------------------------------------------
+    // VST/AU plugin program (factory preset) access for hosted external plugins.
+    // All return zero/empty for non-external (internal/MAGDA) devices.
+    // ------------------------------------------------------------------------
+    int getPluginNumPrograms(DeviceId deviceId) const;
+    int getPluginCurrentProgram(DeviceId deviceId) const;
+    juce::String getPluginProgramName(DeviceId deviceId, int programIndex) const;
+    /** Switch the plugin's current program. Returns true on success. */
+    bool setPluginCurrentProgram(DeviceId deviceId, int programIndex);
+
+    // ------------------------------------------------------------------------
+    // Disk-based plugin preset loading / saving (.vstpreset / .aupreset).
+    //
+    // VST3: routed through JUCE's ExtensionsVisitor::VST3Client which feeds
+    //       raw .vstpreset bytes to IComponent::setState / IEditController::setState.
+    // AU:   uses AudioPluginInstance::setCurrentProgramStateInformation, which
+    //       parses the .aupreset plist and calls
+    //       AudioUnitSetProperty(kAudioUnitProperty_ClassInfo).
+    // ------------------------------------------------------------------------
+    bool loadPluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
+    bool savePluginPresetFile(DeviceId deviceId, const juce::File& presetFile);
 
     /**
      * @brief Get (or lazily create) the virtual MIDI input device used by
@@ -658,6 +695,17 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     void setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId);
 
     /**
+     * @brief Mark one MIDI input as control-surface-only.
+     *
+     * Surface-only inputs remain available to raw MIDI listeners (Lua scripts,
+     * controller routing, monitors) but are excluded from Tracktion Engine live
+     * track input routing, including "all" routing. Empty clears the current
+     * surface-only input.
+     */
+    void setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName);
+    void clearSurfaceOnlyMidiInputPorts();
+
+    /**
      * @brief Get current MIDI input source for a track
      * @param trackId The MAGDA track ID
      * @return MIDI device ID, or empty if none
@@ -757,6 +805,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;
 
+    bool isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
+                                const juce::String& liveName) const;
+    void removeSurfaceOnlyMidiInputTargets();
+
     // Create track mapping
     void ensureTrackMapping(TrackId trackId);
 
@@ -784,6 +836,11 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     // Bidirectional mappings
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
+
+    // MIDI ports owned by Lua/controller scripts. These should never feed
+    // instrument tracks through Tracktion's native live MIDI graph.
+    juce::StringArray surfaceOnlyMidiInputPorts_;
+    mutable juce::CriticalSection surfaceOnlyMidiInputLock_;
 
     // (Session clips use ClipSlot-based mapping via trackId + sceneIndex — no ID maps needed)
 

@@ -12,17 +12,19 @@ namespace magda::daw::ui {
  * @brief Callbacks invoked by the link menu when the user picks an option.
  */
 struct ParamLinkMenuCallbacks {
-    std::function<void(int modIndex, magda::ModTarget target)> onModUnlinked;
-    std::function<void(int modIndex, magda::ModTarget target)> onTrackModUnlinked;
-    std::function<void(int modIndex, magda::ModTarget target, float amount)> onModLinkedWithAmount;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onMacroLinked;
-    std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
+    std::function<void(int modIndex, magda::ControlTarget target)> onModUnlinked;
+    std::function<void(int modIndex, magda::ControlTarget target)> onRackModUnlinked;
+    std::function<void(int modIndex, magda::ControlTarget target)> onTrackModUnlinked;
+    std::function<void(int modIndex, magda::ControlTarget target, float amount)>
+        onModLinkedWithAmount;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onMacroLinked;
+    std::function<void(int macroIndex, magda::ControlTarget target, float amount)>
         onMacroLinkedWithAmount;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onMacroUnlinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onRackMacroLinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroLinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onRackMacroUnlinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroUnlinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onMacroUnlinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onRackMacroLinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onTrackMacroLinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onRackMacroUnlinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onTrackMacroUnlinked;
     std::function<void()> onShowAutomationLane;
 
     // MIDI Learn callbacks (item IDs 6000-6009)

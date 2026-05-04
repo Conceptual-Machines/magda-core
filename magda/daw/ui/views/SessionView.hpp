@@ -3,12 +3,15 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
+#include "../components/common/SvgButton.hpp"
 #include "audio/MidiBridge.hpp"
 #include "core/ClipManager.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -36,6 +39,7 @@ class SessionView : public juce::Component,
                     public juce::Timer,
                     public TrackManagerListener,
                     public ClipManagerListener,
+                    public SelectionManagerListener,
                     public ViewModeListener,
                     public MidiBridge::Listener {
   public:
@@ -62,6 +66,11 @@ class SessionView : public juce::Component,
     void clipPropertyChanged(ClipId clipId) override;
     void clipSelectionChanged(ClipId clipId) override;
     void clipPlaybackStateChanged(ClipId clipId) override;
+
+    // SelectionManagerListener
+    void selectionTypeChanged(SelectionType newType) override;
+    void multiTrackSelectionChanged(const std::unordered_set<TrackId>& trackIds) override;
+    void multiClipSelectionChanged(const std::unordered_set<ClipId>& clipIds) override;
 
     // ViewModeListener
     void viewModeChanged(ViewMode mode, const AudioEngineProfile& profile) override;
@@ -91,6 +100,9 @@ class SessionView : public juce::Component,
 
     /** Set the audio engine for metering. */
     void setAudioEngine(AudioEngine* engine);
+
+    /** Duplicate selected session clips to the next empty scene below each source. */
+    bool duplicateSelectedSessionClips();
 
   private:
     // ScrollBar::Listener
@@ -134,9 +146,19 @@ class SessionView : public juce::Component,
     // Scene launch buttons
     std::vector<std::unique_ptr<juce::TextButton>> sceneButtons;
 
-    // Master header (top-right corner) and stop all button
+    // Master header (top-right corner)
     std::unique_ptr<juce::TextButton> masterLabel_;
-    std::unique_ptr<juce::TextButton> stopAllButton;
+
+    // Mixer-row visibility toggles, pinned to the corner above the master fader
+    // (the slot vacated by the old stop-all button). Click toggles, right-click
+    // still opens the full mixer context menu. Reuses the same SvgButton +
+    // io_routing/send/record_circle assets as MainView's arrangement toolbar so
+    // the visual language stays consistent across views.
+    std::unique_ptr<SvgButton> showIOToggle_;
+    std::unique_ptr<SvgButton> showSendsToggle_;
+    std::unique_ptr<SvgButton> showRecordMonitorToggle_;
+    void updateMixerToggleStates();
+    static constexpr int MIXER_TOGGLES_HEIGHT = 26;
 
     // Custom grid content component that draws track separators
     class GridContent;
@@ -149,12 +171,6 @@ class SessionView : public juce::Component,
     class SceneContainer;
     std::unique_ptr<HeaderContainer> headerContainer;
     std::unique_ptr<SceneContainer> sceneContainer;
-
-    // Per-track stop buttons row (pinned between grid and faders)
-    class StopButtonContainer;
-    std::unique_ptr<StopButtonContainer> stopButtonContainer;
-    std::vector<std::unique_ptr<juce::TextButton>> trackStopButtons;
-    static constexpr int STOP_BUTTON_ROW_HEIGHT = 28;
 
     // Resize handle between stop buttons and fader row
     class ResizeHandle;
@@ -187,6 +203,23 @@ class SessionView : public juce::Component,
     bool recordMonitorVisible_ = true;
     void showMixerContextMenu();
 
+    // Beat indicator band — sits in the otherwise-empty toggles band over
+    // the track area. Each track gets its own segment that pulses on the
+    // beat (or a per-track subdivision). Right-click a segment to change
+    // its rate. State is in-memory only, like the other view-mode toggles.
+    // Musical-time rate names: Whole = 1 (one bar in 4/4), Half = 1/2,
+    // Quarter = 1/4 (one beat), Eighth = 1/8 (half a beat).
+    enum class BeatRate { Whole, Half, Quarter, Eighth };
+    class BeatBandContainer;
+    std::unique_ptr<BeatBandContainer> beatBandContainer_;
+    std::unordered_map<TrackId, BeatRate> trackBeatRates_;
+    std::unordered_set<TrackId> beatHiddenTracks_;
+    BeatRate getTrackBeatRate(TrackId trackId) const;
+    void setTrackBeatRate(TrackId trackId, BeatRate rate);
+    void showBeatRateMenuFor(TrackId trackId);
+    void toggleBeatHidden(TrackId trackId);
+    bool isBeatHidden(TrackId trackId) const;
+
     // Fader row at bottom of each track column - MiniChannelStrip per track
     class FaderContainer;
     std::unique_ptr<FaderContainer> faderContainer;
@@ -204,13 +237,14 @@ class SessionView : public juce::Component,
     void removeSceneAsync(int sceneIndex);
 
     void wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, int sceneIndex);
-    void onClipSlotClicked(int trackIndex, int sceneIndex);
+    void onClipSlotClicked(int trackIndex, int sceneIndex, juce::ModifierKeys mods);
     void onPlayButtonClicked(int trackIndex, int sceneIndex);
     void onSceneLaunched(int sceneIndex);
-    void onStopAllClicked();
     void triggerGroupScene(TrackId groupId, int sceneIndex);
     void openClipEditor(int trackIndex, int sceneIndex);
     void onCreateMidiClipClicked(int trackIndex, int sceneIndex);
+    ClipId duplicateSessionClipToNextEmptyScene(ClipId clipId);
+    bool deleteSelectedSessionClips();
 
     // View mode state
     ViewMode currentViewMode_ = ViewMode::Live;
@@ -223,6 +257,11 @@ class SessionView : public juce::Component,
     // Clip slot display
     void updateClipSlotAppearance(int trackIndex, int sceneIndex);
     void updateAllClipSlots();
+
+    // Scene-button icons: play when any track has a clip in that scene,
+    // stop when the row is fully empty (acts as a row-stop affordance).
+    void updateSceneButtonIcon(int sceneIndex);
+    void updateAllSceneButtonIcons();
 
     // Drag & drop state (file drops)
     int dragHoverTrackIndex_ = -1;
@@ -243,6 +282,14 @@ class SessionView : public juce::Component,
     int headerDragIndex_ = -1;
     int headerDragStartX_ = 0;
     bool headerIsDragging_ = false;
+
+    // Captured at the start of a track-header click (TrackHeaderButton's
+    // mouseDown) and consumed in its onClick. We can't read modifiers in
+    // onClick directly because TextButton drops them, and we want
+    // Cmd/Shift+click to drive multi-selection rather than the default
+    // single-select + collapse-toggle.
+    bool lastHeaderClickCmd_ = false;
+    bool lastHeaderClickShift_ = false;
     HeaderDropType headerDropType_ = HeaderDropType::None;
     int headerDropIndex_ = -1;
     static constexpr int HEADER_DRAG_THRESHOLD = 5;
@@ -251,6 +298,12 @@ class SessionView : public juce::Component,
     void executeHeaderDrop();
     void resetHeaderDragState();
     void paintHeaderDragFeedback(juce::Graphics& g);
+    void updateControllerSceneWindowHighlight();
+    void paintControllerSceneWindowHighlight(juce::Graphics& g);
+
+    int controllerSceneOffset_ = -1;
+    int controllerSceneCount_ = 0;
+    std::uint64_t controllerSceneWindowRevision_ = 0;
 
     // Session playhead position (looped, seconds). -1.0 = inactive.
     std::unordered_map<ClipId, double> clipPlayheadPositions_;

@@ -34,7 +34,7 @@ If MAGDA misbehaves and the in-app settings can't help — typically when it cra
 
 | Platform | Path |
 |---|---|
-| macOS | `~/Library/Application Support/MAGDA/config.json` |
+| macOS | `~/Library/MAGDA/config.json` |
 | Windows | `%APPDATA%\MAGDA\config.json` |
 | Linux | `~/.config/MAGDA/config.json` |
 
@@ -46,9 +46,21 @@ Deleting `config.json` wipes every user preference: audio device selection, rece
 
 MAGDA writes a rolling log next to the config file under `Logs/magda.log`. When filing a bug report, attach the log — it usually contains the last few seconds before a crash.
 
+### Waveform peak cache
+
+MAGDA stores generated waveform peak files separately from projects and the configurable MAGDA data folder. These `.mpk` files are used to draw audio waveforms faster and are safe to delete; MAGDA rebuilds them automatically when the source audio is displayed again.
+
+| Platform | Path |
+|---|---|
+| macOS | `~/Library/magda/peaks` |
+| Windows | `%APPDATA%\magda\peaks` |
+| Linux | `~/.config/magda/peaks` |
+
+If waveform display looks stale or the cache grows too large, quit MAGDA and delete the `peaks` folder.
+
 ### Nuclear option
 
-To wipe everything MAGDA has on disk (config + logs + cached thumbnails), delete the whole `MAGDA` folder at the platform path above. Project files live elsewhere (wherever you saved them) and are safe.
+To wipe everything MAGDA has on disk, delete the `MAGDA` config folder at the platform path above and the generated cache folder listed under **Waveform peak cache**. Project files live elsewhere (wherever you saved them) and are safe.
 
 !!! tip
     If your issue isn't listed here, check the [GitHub Issues](https://github.com/Conceptual-Machines/magda-core/issues) page or open a new issue.

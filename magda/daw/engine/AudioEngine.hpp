@@ -3,7 +3,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "../audio/RecordingNoteQueue.hpp"
+#include "../audio/midi/RecordingNoteQueue.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../ui/state/TransportStateListener.hpp"
 
@@ -55,6 +55,17 @@ class AudioEngine : public AudioEngineListener {
 
     /** Schedule a quantized stop for the active clip on a track (empty slot in scene). */
     virtual void stopSessionTrack(TrackId trackId) = 0;
+
+    /** True while a quantized stop on this track is in flight (between
+        `stopSessionTrack` and the LaunchHandle reporting Stopped). The UI
+        uses this to blink the empty-slot stop affordance. */
+    virtual bool isSessionTrackStopPending(TrackId trackId) const = 0;
+
+    /** Latest transport position (seconds) sampled by the audio thread.
+        Returns -1.0 if the audio thread has not run yet. Used by
+        beat-aligned visuals (beat indicator, etc.) so they stay phase-locked
+        with audio rather than drifting at the message-thread sampling rate. */
+    virtual double getAudioThreadTransportSeconds() const = 0;
 
     /** Stop all session clips, clear active state, revert to arrangement. */
     virtual void deactivateAllSessionClips() = 0;

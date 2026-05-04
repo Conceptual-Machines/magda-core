@@ -20,6 +20,13 @@ void TracktionEngineWrapper::handleMidiDeviceChanges(tracktion::DeviceManager& d
     if (hasMidiDevices && audioBridge_) {
         audioBridge_->onMidiDevicesAvailable();
     }
+
+    // Notify the app layer so deferred work (e.g. Lua controller script
+    // loading whose on_load sends SysEx through ports JUCE has now opened)
+    // can fire after ports are actually live.
+    if (hasMidiDevices && onMidiDevicesReady) {
+        onMidiDevicesReady();
+    }
 }
 
 void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::DeviceManager& dm) {

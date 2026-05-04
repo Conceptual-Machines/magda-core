@@ -10,10 +10,11 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
-#include "MagdaSamplerPlugin.hpp"
-#include "MidiChordEnginePlugin.hpp"
-#include "SessionMonitorPlugin.hpp"
-#include "SidechainTriggerBus.hpp"
+#include "midi/MidiDeviceMatch.hpp"
+#include "plugins/MagdaSamplerPlugin.hpp"
+#include "plugins/MidiChordEnginePlugin.hpp"
+#include "plugins/SidechainTriggerBus.hpp"
+#include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
 
@@ -471,8 +472,8 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     // value) don't need this, but the rebake is coalesced via needsRebake_.
     auto& autoMgr = AutomationManager::getInstance();
     for (const auto& lane : autoMgr.getLanes()) {
-        if (lane.target.type == AutomationTargetType::ModParameter &&
-            lane.target.trackId == trackId) {
+        if (lane.target.kind == ControlTarget::Kind::ModParam &&
+            lane.target.devicePath.trackId == trackId) {
             autoMgr.invalidateLane(lane.id);
         }
     }
@@ -768,8 +769,203 @@ te::Plugin::Ptr AudioBridge::getPlugin(DeviceId deviceId) const {
     return pluginManager_.getPlugin(deviceId);
 }
 
+te::AutomatableParameter* AudioBridge::resolveControlTarget(const ControlTarget& target) const {
+    switch (target.kind) {
+        case ControlTarget::Kind::TrackVolume: {
+            auto* track = getAudioTrack(target.devicePath.trackId);
+            if (!track)
+                return nullptr;
+            if (auto* vp = track->getVolumePlugin())
+                return vp->volParam.get();
+            return nullptr;
+        }
+
+        case ControlTarget::Kind::TrackPan: {
+            auto* track = getAudioTrack(target.devicePath.trackId);
+            if (!track)
+                return nullptr;
+            if (auto* vp = track->getVolumePlugin())
+                return vp->panParam.get();
+            return nullptr;
+        }
+
+        case ControlTarget::Kind::SendLevel: {
+            auto* track = getAudioTrack(target.devicePath.trackId);
+            if (!track)
+                return nullptr;
+            if (auto* auxSend = track->getAuxSendPlugin(target.sendBusIndex))
+                return auxSend->gain.get();
+            return nullptr;
+        }
+
+        case ControlTarget::Kind::PluginParam: {
+            DeviceId deviceId = target.devicePath.getDeviceId();
+            if (deviceId == INVALID_DEVICE_ID)
+                return nullptr;
+            auto plugin = getPlugin(deviceId);
+            if (!plugin)
+                return nullptr;
+            auto params = plugin->getAutomatableParameters();
+            if (target.paramIndex >= 0 && target.paramIndex < static_cast<int>(params.size()))
+                return params[static_cast<size_t>(target.paramIndex)];
+            return nullptr;
+        }
+
+        case ControlTarget::Kind::DeviceMacro:
+            return pluginManager_.findMacroParameterForAutomation(
+                target.devicePath.trackId, target.devicePath, target.paramIndex);
+
+        case ControlTarget::Kind::ModParam:
+            return pluginManager_.findModifierParameterForAutomation(
+                target.devicePath.trackId, target.devicePath, target.modId, target.modParamIndex);
+    }
+    return nullptr;
+}
+
 DeviceProcessor* AudioBridge::getDeviceProcessor(DeviceId deviceId) const {
     return pluginManager_.getDeviceProcessor(deviceId);
+}
+
+namespace {
+te::ExternalPlugin* asExternalPlugin(te::Plugin::Ptr plugin) {
+    return dynamic_cast<te::ExternalPlugin*>(plugin.get());
+}
+}  // namespace
+
+int AudioBridge::getPluginNumPrograms(DeviceId deviceId) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
+        if (auto* pi = ext->getAudioPluginInstance())
+            return pi->getNumPrograms();
+    }
+    return 0;
+}
+
+int AudioBridge::getPluginCurrentProgram(DeviceId deviceId) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
+        if (auto* pi = ext->getAudioPluginInstance())
+            return pi->getCurrentProgram();
+    }
+    return 0;
+}
+
+juce::String AudioBridge::getPluginProgramName(DeviceId deviceId, int programIndex) const {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
+        if (auto* pi = ext->getAudioPluginInstance()) {
+            if (programIndex >= 0 && programIndex < pi->getNumPrograms())
+                return pi->getProgramName(programIndex);
+        }
+    }
+    return {};
+}
+
+bool AudioBridge::setPluginCurrentProgram(DeviceId deviceId, int programIndex) {
+    if (auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId))) {
+        if (auto* pi = ext->getAudioPluginInstance()) {
+            if (programIndex >= 0 && programIndex < pi->getNumPrograms()) {
+                pi->setCurrentProgram(programIndex);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+namespace {
+
+// Loads / saves a .vstpreset blob via JUCE's VST3Client extension. Two-mode
+// visitor: when `dataIn` is non-empty we apply it as a preset; otherwise we
+// pull the current state into `dataOut`.
+struct Vst3PresetVisitor : juce::ExtensionsVisitor {
+    juce::MemoryBlock dataIn;
+    juce::MemoryBlock dataOut;
+    bool ok = false;
+    bool save = false;
+
+    void visitVST3Client(const VST3Client& client) override {
+        if (save) {
+            dataOut = client.getPreset();
+            ok = dataOut.getSize() > 0;
+        } else {
+            ok = client.setPreset(dataIn);
+        }
+    }
+};
+
+}  // namespace
+
+bool AudioBridge::loadPluginPresetFile(DeviceId deviceId, const juce::File& presetFile) {
+    if (!presetFile.existsAsFile())
+        return false;
+
+    auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId));
+    if (ext == nullptr)
+        return false;
+    auto* pi = ext->getAudioPluginInstance();
+    if (pi == nullptr)
+        return false;
+
+    const auto extension = presetFile.getFileExtension().toLowerCase();
+    bool applied = false;
+
+    if (extension == ".vstpreset") {
+        juce::MemoryBlock raw;
+        if (!presetFile.loadFileAsData(raw))
+            return false;
+        Vst3PresetVisitor visitor;
+        visitor.save = false;
+        visitor.dataIn = std::move(raw);
+        pi->getExtensions(visitor);
+        applied = visitor.ok;
+    } else if (extension == ".aupreset") {
+        juce::MemoryBlock raw;
+        if (!presetFile.loadFileAsData(raw))
+            return false;
+        // JUCE's AU wrapper reads the plist directly and pushes it to the
+        // unit via kAudioUnitProperty_ClassInfo. Note: setStateInformation
+        // is NOT what we want — that's JUCE's own state envelope, which
+        // wraps the AU class-info plist and would not match a bare .aupreset.
+        pi->setCurrentProgramStateInformation(raw.getData(), (int)raw.getSize());
+        applied = true;  // AU API doesn't report success; assume ok.
+    }
+
+    if (applied) {
+        // Persist the new state into TE's ValueTree so project save / undo
+        // / param refresh sees it. Mirrors PluginManager::capturePluginState.
+        ext->flushPluginStateToValueTree();
+    }
+    return applied;
+}
+
+bool AudioBridge::savePluginPresetFile(DeviceId deviceId, const juce::File& presetFile) {
+    auto* ext = asExternalPlugin(pluginManager_.getPlugin(deviceId));
+    if (ext == nullptr)
+        return false;
+    auto* pi = ext->getAudioPluginInstance();
+    if (pi == nullptr)
+        return false;
+
+    const auto extension = presetFile.getFileExtension().toLowerCase();
+
+    if (extension == ".vstpreset") {
+        Vst3PresetVisitor visitor;
+        visitor.save = true;
+        pi->getExtensions(visitor);
+        if (!visitor.ok)
+            return false;
+        presetFile.getParentDirectory().createDirectory();
+        return presetFile.replaceWithData(visitor.dataOut.getData(), visitor.dataOut.getSize());
+    }
+
+    if (extension == ".aupreset") {
+        juce::MemoryBlock raw;
+        pi->getCurrentProgramStateInformation(raw);
+        if (raw.getSize() == 0)
+            return false;
+        presetFile.getParentDirectory().createDirectory();
+        return presetFile.replaceWithData(raw.getData(), raw.getSize());
+    }
+
+    return false;
 }
 
 te::VirtualMidiInputDevice* AudioBridge::getQwertyMidiDevice() {
@@ -1339,6 +1535,51 @@ void AudioBridge::enableAllMidiInputDevices() {
     DBG("All MIDI input devices enabled in Tracktion Engine");
 }
 
+bool AudioBridge::isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
+                                         const juce::String& liveName) const {
+    juce::StringArray keys;
+    {
+        juce::ScopedLock lock(surfaceOnlyMidiInputLock_);
+        keys = surfaceOnlyMidiInputPorts_;
+    }
+
+    for (const auto& key : keys) {
+        if (magda::midi::matches(key, liveIdentifier, liveName))
+            return true;
+    }
+
+    return false;
+}
+
+void AudioBridge::removeSurfaceOnlyMidiInputTargets() {
+    auto* playbackContext = edit_.getCurrentPlaybackContext();
+    if (!playbackContext)
+        return;
+
+    bool removedAnyRouting = false;
+    auto& tm = TrackManager::getInstance();
+
+    for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+        if (auto* midiDevice = dynamic_cast<te::MidiInputDevice*>(&inputDeviceInstance->owner)) {
+            if (!isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName()))
+                continue;
+
+            for (const auto& trackInfo : tm.getTracks()) {
+                auto* track = getAudioTrack(trackInfo.id);
+                if (!track)
+                    continue;
+
+                auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                if (result)
+                    removedAnyRouting = true;
+            }
+        }
+    }
+
+    if (removedAnyRouting && playbackContext->isPlaybackGraphAllocated())
+        playbackContext->reallocate();
+}
+
 void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId) {
     auto* track = getAudioTrack(trackId);
     if (!track) {
@@ -1379,6 +1620,7 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
     } else if (midiDeviceId == "all") {
         // Route ALL MIDI input devices to this track
         bool addedAnyRouting = false;
+        bool removedAnyRouting = false;
         DBG("  -> Routing ALL MIDI inputs to track. Total inputs in context: "
             << playbackContext->getAllInputs().size());
 
@@ -1398,10 +1640,19 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
                 if (midiDevice->getName() == "All MIDI Ins")
                     continue;
 
-                // Controller ports are NOT excluded from track routing — a
-                // typical MIDI keyboard exposes a single port for both notes
-                // and knob CCs. ControllerRouter intercepts only bound CC
-                // numbers; everything else reaches the track.
+                // Script-owned DAW/control-surface ports are excluded from
+                // track routing. A Launchkey-style device can expose a
+                // separate musical MIDI port for notes while its DAW port
+                // feeds Lua session controls only.
+                if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName())) {
+                    auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                    if (result) {
+                        removedAnyRouting = true;
+                        DBG("  -> Skipped surface-only MIDI input '" << midiDevice->getName()
+                                                                     << "'");
+                    }
+                    continue;
+                }
 
                 // Make sure the device is enabled
                 if (!midiDevice->isEnabled()) {
@@ -1441,7 +1692,7 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
         }
 
         // Reallocate the playback graph to include the new MIDI input nodes
-        if (addedAnyRouting) {
+        if (addedAnyRouting || removedAnyRouting) {
             if (playbackContext->isPlaybackGraphAllocated()) {
                 DBG("  -> Reallocating playback graph to include MIDI input nodes");
                 playbackContext->reallocate();
@@ -1487,6 +1738,27 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
         }
 
         if (midiDevice) {
+            if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName())) {
+                bool removedAnyRouting = false;
+                for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
+                    if (&inputDeviceInstance->owner == midiDevice) {
+                        auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
+                        if (!result) {
+                            DBG("  -> Warning: Could not remove surface-only MIDI target - "
+                                << result.getErrorMessage());
+                        } else {
+                            removedAnyRouting = true;
+                        }
+                        break;
+                    }
+                }
+                if (removedAnyRouting && playbackContext->isPlaybackGraphAllocated())
+                    playbackContext->reallocate();
+                DBG("  -> Refusing to route surface-only MIDI input '" << midiDevice->getName()
+                                                                       << "' to track");
+                return;
+            }
+
             if (!midiDevice->isEnabled()) {
                 midiDevice->setEnabled(true);
             }
@@ -1530,6 +1802,34 @@ void AudioBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDev
             }
         }
     }
+}
+
+void AudioBridge::setSurfaceOnlyMidiInputPort(const juce::String& midiDeviceIdOrName) {
+    {
+        juce::ScopedLock lock(surfaceOnlyMidiInputLock_);
+        surfaceOnlyMidiInputPorts_.clear();
+        if (midiDeviceIdOrName.isNotEmpty()) {
+            surfaceOnlyMidiInputPorts_.addIfNotAlreadyThere(midiDeviceIdOrName);
+
+            if (auto resolved = magda::midi::resolve(juce::MidiInput::getAvailableDevices(),
+                                                     midiDeviceIdOrName)) {
+                surfaceOnlyMidiInputPorts_.addIfNotAlreadyThere(resolved->identifier);
+                surfaceOnlyMidiInputPorts_.addIfNotAlreadyThere(resolved->name);
+            }
+        }
+    }
+
+    removeSurfaceOnlyMidiInputTargets();
+    updateMidiRoutingForSelection();
+}
+
+void AudioBridge::clearSurfaceOnlyMidiInputPorts() {
+    {
+        juce::ScopedLock lock(surfaceOnlyMidiInputLock_);
+        surfaceOnlyMidiInputPorts_.clear();
+    }
+
+    updateMidiRoutingForSelection();
 }
 
 juce::String AudioBridge::getTrackMidiInput(TrackId trackId) const {

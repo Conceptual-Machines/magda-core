@@ -6,6 +6,7 @@
 #include <string>
 #include <variant>
 
+#include "../ControlTarget.hpp"
 #include "../SelectionManager.hpp"
 #include "../TypeIds.hpp"
 
@@ -14,65 +15,6 @@ namespace magda {
 // ============================================================================
 // Target types
 // ============================================================================
-
-/**
- * @brief A fully-resolved, concrete reference to a plugin parameter.
- *
- * Carries the exact path to the device and the parameter index within it.
- * This is the "materialized" form -- all alias resolution ends here.
- */
-struct StaticTarget {
-    /**
-     * @brief Identifies which value domain the secondary fields belong to.
-     *
-     * PluginParam  -- paramIndex is an index into plugin->getAutomatableParameters()
-     * DeviceMacro  -- paramIndex is a macro index on the macro array attached to the
-     *                 path's owner. The owner is determined by devicePath.getType():
-     *                 Track -> track macros, Rack -> rack macros, Device/TopLevelDevice
-     *                 -> device macros. (Name is historical -- predates track / rack
-     *                 macro support.)
-     *  ModParam    -- modId + modParamIndex address a TE modifier living in the scope
-     *                 named by devicePath; modParamIndex 0 is Rate (resolves to "rate"
-     *                 or "rateType" depending on the modifier's tempoSync flag).
-     *                 paramIndex is unused.
-     *
-     * Defaulting to PluginParam preserves backward compatibility for all
-     * existing targets that do not carry an explicit owner field.
-     */
-    enum class Owner {
-        PluginParam,  // default
-        DeviceMacro,
-        ModParam,
-    };
-
-    ChainNodePath devicePath;
-    int paramIndex = -1;
-    Owner owner = Owner::PluginParam;
-
-    // ModParam-only fields. Ignored for PluginParam / DeviceMacro.
-    ModId modId = INVALID_MOD_ID;
-    int modParamIndex = -1;
-
-    bool isValid() const {
-        if (!devicePath.isValid())
-            return false;
-        if (owner == Owner::ModParam)
-            return modId != INVALID_MOD_ID && modParamIndex >= 0;
-        return paramIndex >= 0;
-    }
-
-    bool operator==(const StaticTarget& other) const {
-        if (devicePath != other.devicePath || owner != other.owner)
-            return false;
-        if (owner == Owner::ModParam)
-            return modId == other.modId && modParamIndex == other.modParamIndex;
-        return paramIndex == other.paramIndex;
-    }
-
-    bool operator!=(const StaticTarget& other) const {
-        return !(*this == other);
-    }
-};
 
 /**
  * @brief A reference to a named alias stored in AliasRegistry.
@@ -114,19 +56,16 @@ struct ResolverRef {
 };
 
 /**
- * @brief A Target is one of: StaticTarget, AliasRef, or ResolverRef.
+ * @brief A Target is one of: ControlTarget, AliasRef, or ResolverRef.
  *
  * Use std::visit to dispatch on the active variant.
  */
-using Target = std::variant<StaticTarget, AliasRef, ResolverRef>;
+using Target = std::variant<ControlTarget, AliasRef, ResolverRef>;
 
 // ============================================================================
 // Debug helpers
 // ============================================================================
 
-/**
- * @brief Return a human-readable description of a Target (for logging/debugging).
- */
 juce::String toDebugString(const Target& target);
 
 // ============================================================================
@@ -134,18 +73,14 @@ juce::String toDebugString(const Target& target);
 // ============================================================================
 
 /**
- * @brief Encode a Target to a JSON string (for storage / transport).
- *
  * Format:
- *   StaticTarget:  {"kind":"static","path":{...},"paramIndex":N}
+ *   ControlTarget: {"kind":"static","controlKind":"...","path":{...},...}
  *   AliasRef:      {"kind":"alias","name":"...","pluginType":"..."}
  *   ResolverRef:   {"kind":"resolver","resolverKind":"...","args":{...}}
  */
 juce::String encodeTarget(const Target& target);
 
 /**
- * @brief Decode a Target from a JSON string produced by encodeTarget().
- *
  * Returns nullopt when the string is malformed or the "kind" is unknown.
  */
 std::optional<Target> decodeTarget(const juce::String& json);

@@ -36,8 +36,8 @@ MacroInfo makeMacro(int id, std::vector<MacroLink> links) {
 
 ModLink modLink(DeviceId targetDev, int paramIdx, float amount = 0.5f, bool bipolar = false) {
     ModLink link;
-    link.target.kind = ModTarget::Kind::DeviceParam;
-    link.target.deviceId = targetDev;
+    link.target.kind = ControlTarget::Kind::PluginParam;
+    link.target.devicePath = ChainNodePath::topLevelDevice(1, targetDev);
     link.target.paramIndex = paramIdx;
     link.amount = amount;
     link.bipolar = bipolar;
@@ -46,8 +46,8 @@ ModLink modLink(DeviceId targetDev, int paramIdx, float amount = 0.5f, bool bipo
 
 MacroLink macroLink(DeviceId targetDev, int paramIdx, float amount = 0.5f, bool bipolar = false) {
     MacroLink link;
-    link.target.kind = MacroTarget::Kind::DeviceParam;
-    link.target.deviceId = targetDev;
+    link.target.kind = ControlTarget::Kind::PluginParam;
+    link.target.devicePath = ChainNodePath::topLevelDevice(1, targetDev);
     link.target.paramIndex = paramIdx;
     link.amount = amount;
     link.bipolar = bipolar;

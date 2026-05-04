@@ -10,6 +10,7 @@
 #include "DelayUI.hpp"
 #include "DrumGridUI.hpp"
 #include "EqualiserUI.hpp"
+#include "FaustUI.hpp"
 #include "FilterUI.hpp"
 #include "FourOscUI.hpp"
 #include "ImpulseResponseUI.hpp"
@@ -23,10 +24,9 @@
 #include "StepSequencerUI.hpp"
 #include "ToneGeneratorUI.hpp"
 #include "UtilityUI.hpp"
-#include "FaustUI.hpp"
-#include "audio/ArpeggiatorPlugin.hpp"
-#include "audio/MidiChordEnginePlugin.hpp"
-#include "audio/StepSequencerPlugin.hpp"
+#include "audio/plugins/ArpeggiatorPlugin.hpp"
+#include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/StepSequencerPlugin.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackManager.hpp"
@@ -67,10 +67,10 @@ class DeviceSlotComponent : public NodeComponent,
     static constexpr int BASE_SLOT_WIDTH = 450;  // Maximum width (8 columns)
     static constexpr int NUM_PARAMS_PER_PAGE = 32;
     static constexpr int PARAMS_PER_ROW = 8;  // Maximum columns
-    static constexpr int PARAM_CELL_WIDTH = 48;
+    static constexpr int PARAM_CELL_WIDTH = 54;
     static constexpr int PARAM_CELL_HEIGHT = 24;
     static constexpr int PAGINATION_HEIGHT = 18;
-    static constexpr int CONTENT_HEADER_HEIGHT = 18;
+    static constexpr int CONTENT_HEADER_HEIGHT = 26;
     DeviceSlotComponent(const magda::DeviceInfo& device);
     ~DeviceSlotComponent() override;
 
@@ -116,6 +116,12 @@ class DeviceSlotComponent : public NodeComponent,
     juce::Point<float> getControllerIndicatorAnchor() const override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
+    juce::Component* getHeaderPresetButton() override {
+        return presetButton_.get();
+    }
+    juce::Component* getHeaderPowerButton() override {
+        return onButton_.get();
+    }
     void mouseDrag(const juce::MouseEvent& e) override;
     void resizedCollapsed(juce::Rectangle<int>& area) override;
     juce::String getCollapsedName() const override;
@@ -141,8 +147,7 @@ class DeviceSlotComponent : public NodeComponent,
     std::map<magda::DeviceId, std::vector<juce::String>> getDeviceParamNames() const override;
 
     // Mod/macro callbacks
-    void onModAmountChangedInternal(int modIndex, float amount) override;
-    void onModTargetChangedInternal(int modIndex, magda::ModTarget target) override;
+    void onModTargetChangedInternal(int modIndex, magda::ControlTarget target) override;
     void onModNameChangedInternal(int modIndex, const juce::String& name) override;
     void onModTypeChangedInternal(int modIndex, magda::ModType type) override;
     void onModWaveformChangedInternal(int modIndex, magda::LFOWaveform waveform) override;
@@ -155,16 +160,16 @@ class DeviceSlotComponent : public NodeComponent,
     void onModAudioReleaseChangedInternal(int modIndex, float ms) override;
     void onModCurveChangedInternal(int modIndex) override;
     void onMacroValueChangedInternal(int macroIndex, float value) override;
-    void onMacroTargetChangedInternal(int macroIndex, magda::MacroTarget target) override;
+    void onMacroTargetChangedInternal(int macroIndex, magda::ControlTarget target) override;
     void onMacroNameChangedInternal(int macroIndex, const juce::String& name) override;
     void onMacroAllLinksClearedInternal(int macroIndex) override;
     // Contextual link callbacks for macros (similar to mods)
-    void onMacroLinkAmountChangedInternal(int macroIndex, magda::MacroTarget target,
+    void onMacroLinkAmountChangedInternal(int macroIndex, magda::ControlTarget target,
                                           float amount) override;
-    void onMacroNewLinkCreatedInternal(int macroIndex, magda::MacroTarget target,
+    void onMacroNewLinkCreatedInternal(int macroIndex, magda::ControlTarget target,
                                        float amount) override;
-    void onMacroLinkRemovedInternal(int macroIndex, magda::MacroTarget target) override;
-    void onMacroLinkBipolarChangedInternal(int macroIndex, magda::MacroTarget target,
+    void onMacroLinkRemovedInternal(int macroIndex, magda::ControlTarget target) override;
+    void onMacroLinkBipolarChangedInternal(int macroIndex, magda::ControlTarget target,
                                            bool bipolar) override;
     void onModClickedInternal(int modIndex) override;
     void onMacroClickedInternal(int macroIndex) override;
@@ -177,14 +182,16 @@ class DeviceSlotComponent : public NodeComponent,
     void onMacroPageAddRequested(int itemsToAdd) override;
     void onMacroPageRemoveRequested(int itemsToRemove) override;
     // Contextual link callbacks (when param is selected and mod amount slider is used)
-    void onModLinkAmountChangedInternal(int modIndex, magda::ModTarget target,
+    void onModLinkAmountChangedInternal(int modIndex, magda::ControlTarget target,
                                         float amount) override;
-    void onModNewLinkCreatedInternal(int modIndex, magda::ModTarget target, float amount) override;
-    void onModLinkRemovedInternal(int modIndex, magda::ModTarget target) override;
+    void onModNewLinkCreatedInternal(int modIndex, magda::ControlTarget target,
+                                     float amount) override;
+    void onModLinkRemovedInternal(int modIndex, magda::ControlTarget target) override;
 
     // SelectionManagerListener overrides — chain-node + binding/controller
     // listeners now live on NodeComponent (the base class), which fans
     // refreshControllerIndicators() out for us.
+    void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
     void selectionTypeChanged(magda::SelectionType newType) override;
     void modSelectionChanged(const magda::ModSelection& selection) override;
     void macroSelectionChanged(const magda::MacroSelection& selection) override;
@@ -218,6 +225,7 @@ class DeviceSlotComponent : public NodeComponent,
     // Header controls
     std::unique_ptr<magda::SvgButton> modButton_;
     std::unique_ptr<magda::SvgButton> macroButton_;
+    std::unique_ptr<magda::SvgButton> aiButton_;
     magda::DraggableValueLabel gainLabel_{magda::DraggableValueLabel::Format::Decibels};
     std::unique_ptr<juce::TextButton> scButton_;        // Sidechain source selector
     std::unique_ptr<magda::SvgButton> multiOutButton_;  // Multi-output routing
@@ -260,9 +268,19 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;
 
-    static constexpr int METER_STRIP_WIDTH = 10;
+    static constexpr int METER_STRIP_WIDTH = 18;  // wide enough for slider thumb overlay
     magda::LevelMeter levelMeter_;
     magda::MidiNoteStrip midiNoteStrip_;
+
+    // MAGDA preset menu button (lives in top header, replaces gainLabel_ slot)
+    std::unique_ptr<magda::SvgButton> presetButton_;
+    // Plugin preset menu button (second/content header, plugin-hosted only).
+    // Hidden when neither disk presets nor built-in programs are available so
+    // plugins with proprietary preset systems (Vital, Serum 2, etc.) don't
+    // show a dead control.
+    std::unique_ptr<juce::TextButton> presetsButton_;
+    // Vertical gain slider overlaid on the meter
+    std::unique_ptr<juce::Slider> gainSlider_;
     daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;
     daw::audio::StepSequencerPlugin* stepSeqPlugin_ = nullptr;
     int lastArpNote_ = -1;
@@ -272,6 +290,33 @@ class DeviceSlotComponent : public NodeComponent,
 
     // Controller indicator state + refresh now live on NodeComponent
     // (the base class) so racks share the same logic.
+
+    // Plugin presets button helpers (disk-scanned .vstpreset / .aupreset).
+    void refreshPresetsButton();             // re-paint label + recompute visibility
+    bool hasPluginPresetsAvailable() const;  // disk presets OR >1 built-in programs
+    void showPluginPresetMenu();
+    void loadPluginPresetFile(const juce::File& file);
+    void showSavePluginPresetDialog();
+
+    // Most-recently loaded plugin preset (cleared when the device's pluginId
+    // changes). pluginPresetName_ is the display label; currentPluginPresetFile_
+    // is the source file used to tick the entry in the popup menu.
+    juce::File currentPluginPresetFile_;
+    juce::String pluginPresetName_;
+
+    // MAGDA preset dialogs / actions
+    void showPresetMenu();
+    void showSaveMagdaPresetDialog();
+    void saveCurrentMagdaPreset();  // overwrite currentPresetName_
+    void loadMagdaPreset(const juce::String& presetRelativePath);
+    // Trigger PluginManager::capturePluginState and return a fresh DeviceInfo
+    // copy from TrackManager — used as the source-of-truth for a save.
+    magda::DeviceInfo snapshotForPreset();
+
+    // Name of the .mps file last loaded (or saved-as) on this device.
+    // Empty until the user touches the preset surface; cleared when the
+    // device's pluginId changes (different plugin loaded into the slot).
+    juce::String currentPresetName_;
 
     void updateParameterSlots();   // Reload parameter data for current page
     void updateParameterValues();  // Update only parameter values (for polling)
@@ -300,6 +345,7 @@ class DeviceSlotComponent : public NodeComponent,
     void wirePadChainLinkCallbacks();  // Wire link mode on PadDeviceSlot param slots
 
     void showAutomationLaneForParam(int paramIndex);
+    void openMacroPanelForSelectionIfNeeded();
 
     // Dynamic layout helpers
     int getVisibleParamCount() const;

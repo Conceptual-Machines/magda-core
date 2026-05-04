@@ -13,11 +13,13 @@
 #include "../state/TimelineEvents.hpp"
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
+#include "../views/SessionView.hpp"
 #include "MainWindow.hpp"
 #include "audio/AudioBridge.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ViewModeController.hpp"
 #include "engine/TracktionEngineWrapper.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -191,13 +193,13 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.setInfo("Increase UI Scale", "Make the UI larger", "View", 0);
             result.addDefaultKeypress('=', juce::ModifierKeys::commandModifier);
             result.addDefaultKeypress('+', juce::ModifierKeys::commandModifier |
-                                              juce::ModifierKeys::shiftModifier);
+                                               juce::ModifierKeys::shiftModifier);
             break;
         case uiScaleDown:
             result.setInfo("Decrease UI Scale", "Make the UI smaller", "View", 0);
             result.addDefaultKeypress('-', juce::ModifierKeys::commandModifier);
             result.addDefaultKeypress('_', juce::ModifierKeys::commandModifier |
-                                              juce::ModifierKeys::shiftModifier);
+                                               juce::ModifierKeys::shiftModifier);
             break;
 
         // Help
@@ -321,9 +323,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     double pasteOffset = clipManager.getNoteClipboardMinBeat();
                     if (mainView) {
                         const auto& state = mainView->getTimelineController().getState();
-                        if (state.editCursorPosition >= 0) {
+                        if (state.editCursorBeats >= 0) {
                             double bpm = state.tempo.bpm;
-                            double editCursorBeats = state.editCursorPosition * bpm / 60.0;
+                            double editCursorBeats = state.editCursorBeats;
                             double clipStartBeats = targetClip->getStartBeats(bpm);
                             pasteOffset = editCursorBeats - clipStartBeats;
                             if (pasteOffset < 0)
@@ -476,12 +478,20 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 return true;
             }
             if (!selectedClips.empty()) {
+                if (ViewModeController::getInstance().getViewMode() == ViewMode::Live &&
+                    sessionView && sessionView->duplicateSelectedSessionClips()) {
+                    return true;
+                }
+
                 std::vector<ClipId> newClips;
-                if (selectedClips.size() > 1) {
+                const double tempo =
+                    mainView ? mainView->getTimelineController().getState().tempo.bpm
+                             : ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+                auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempo);
+                if (commands.size() > 1) {
                     UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
                 }
-                for (auto clipId : selectedClips) {
-                    auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
+                for (auto& cmd : commands) {
                     auto* cmdPtr = cmd.get();
                     UndoManager::getInstance().executeCommand(std::move(cmd));
                     ClipId newId = cmdPtr->getDuplicatedClipId();
@@ -489,7 +499,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                         newClips.push_back(newId);
                     }
                 }
-                if (selectedClips.size() > 1) {
+                if (commands.size() > 1) {
                     UndoManager::getInstance().endCompoundOperation();
                 }
                 if (!newClips.empty()) {
@@ -521,7 +531,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                 // Move edit cursor to deletion point and clear selection
                 auto& timelineController = mainView->getTimelineController();
-                timelineController.dispatch(SetEditCursorEvent{sel.startTime});
+                double cursorBeats =
+                    sel.startBeats >= 0.0 ? sel.startBeats : sel.startTime * state.tempo.bpm / 60.0;
+                timelineController.dispatch(SetEditCursorEvent{cursorBeats});
                 timelineController.dispatch(ClearTimeSelectionEvent{});
                 return true;
             }
@@ -726,7 +738,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
                         // Move cursor to end of selection
                         auto& timelineController = mainView->getTimelineController();
-                        timelineController.dispatch(SetEditCursorEvent{trimEnd});
+                        timelineController.dispatch(
+                            SetEditCursorEvent{trimEnd * state.tempo.bpm / 60.0});
                     }
                 } else {
                     // NO TIME SELECTION → Split at edit cursor

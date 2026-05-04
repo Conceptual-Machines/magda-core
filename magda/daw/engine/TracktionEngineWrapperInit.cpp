@@ -1,8 +1,9 @@
+#include "../api/magda_api_live.hpp"
 #include "../audio/AudioBridge.hpp"
-#include "../audio/ControllerRouter.hpp"
 #include "../audio/MidiBridge.hpp"
-#include "../audio/SessionClipScheduler.hpp"
-#include "../audio/SessionRecorder.hpp"
+#include "../audio/controllers/ControllerRouter.hpp"
+#include "../audio/session/SessionClipScheduler.hpp"
+#include "../audio/session/SessionRecorder.hpp"
 #include "../core/Config.hpp"
 #include "../core/ViewModeController.hpp"
 #include "../core/controllers/BindingRegistry.hpp"
@@ -338,6 +339,10 @@ void TracktionEngineWrapper::createEditAndBridges() {
     if (!isHeadless) {
         sessionScheduler_ = std::make_unique<SessionClipScheduler>(
             *audioBridge_, *currentEdit_, audioBridge_->getSessionAudioMonitor());
+        // Install the session monitor plugin up-front so the audio-thread
+        // pulse (transport position, beat indicator) keeps ticking even
+        // before any session clip has been launched.
+        audioBridge_->ensureSessionMonitorPlugin();
         sessionRecorder_ = std::make_unique<SessionRecorder>(*currentEdit_);
         sessionRecorder_->setRecordingPreviews(&recordingPreviews_);
         sessionRecorder_->setPlayStateQuery([this](ClipId clipId) {
@@ -419,6 +424,13 @@ void TracktionEngineWrapper::createEditAndBridges() {
 
     // Register as transport listener for recording callbacks
     currentEdit_->getTransport().addListener(this);
+
+    // Programmatic facade onto DAW state — shared with AI Chat panel and
+    // app-level Lua controller wiring.
+    auto live = std::make_unique<MagdaApiLive>();
+    live->setMidiBridge(midiBridge_.get());
+    live->setEditAccessor([this]() -> tracktion::Edit* { return currentEdit_.get(); });
+    magdaApi_ = std::move(live);
 
     DBG("Tracktion Engine initialized with Edit, AudioBridge, and MidiBridge");
 }
@@ -564,6 +576,10 @@ void TracktionEngineWrapper::shutdown() {
         DBG("Destroying MidiBridge...");
         midiBridge_.reset();
     }
+
+    // MagdaApi is a thin facade over singletons — safe to reset anytime,
+    // but match teardown order with construction.
+    magdaApi_.reset();
 
     // Close audio/MIDI devices before destroying engine
     if (engine_) {

@@ -78,8 +78,7 @@ class ModsPanelComponent : public PagedControlPanel {
     void repaintWaveforms();
 
     // Callbacks
-    std::function<void(int modIndex, float amount)> onModAmountChanged;
-    std::function<void(int modIndex, magda::ModTarget target)> onModTargetChanged;
+    std::function<void(int modIndex, magda::ControlTarget target)> onModTargetChanged;
     std::function<void(int modIndex, juce::String name)> onModNameChanged;
     std::function<void(int modIndex)> onModClicked;  // Opens modulator editor
     std::function<void(int slotIndex, magda::ModType type, magda::LFOWaveform waveform)>

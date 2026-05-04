@@ -6,12 +6,13 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
-#include "audio/ArpeggiatorPlugin.hpp"
-#include "audio/DrumGridPlugin.hpp"
-#include "audio/FaustPlugin.hpp"
-#include "audio/MagdaSamplerPlugin.hpp"
-#include "audio/MidiChordEnginePlugin.hpp"
-#include "audio/StepSequencerPlugin.hpp"
+#include "audio/plugins/ArpeggiatorPlugin.hpp"
+#include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/FaustPlugin.hpp"
+#include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/StepSequencerPlugin.hpp"
+#include "core/AppPaths.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
 #include "core/TrackManager.hpp"
@@ -670,9 +671,7 @@ void PluginBrowserContent::toggleFavorite(const PluginBrowserInfo& plugin) {
 }
 
 juce::File PluginBrowserContent::getFavoritesFile() const {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("plugin_favorites.xml");
+    return magda::paths::pluginFavoritesFile();
 }
 
 void PluginBrowserContent::saveFavorites() {
@@ -714,9 +713,7 @@ void PluginBrowserContent::loadFavorites() {
 }
 
 juce::File PluginBrowserContent::getAliasesFile() const {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("plugin_aliases.xml");
+    return magda::paths::pluginAliasesFile();
 }
 
 void PluginBrowserContent::saveAliases() {

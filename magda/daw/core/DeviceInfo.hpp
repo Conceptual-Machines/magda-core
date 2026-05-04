@@ -87,6 +87,13 @@ struct DeviceInfo {
     bool modPanelOpen = false;    // Modulator panel visible
     bool gainPanelOpen = false;   // Gain panel visible
     bool paramPanelOpen = false;  // Parameter panel visible
+    bool aiPanelOpen = false;     // AI sound-design panel visible
+
+    // AI panel output text — transient runtime state, NOT serialized to disk.
+    // Lives on DeviceInfo so the streamed prompt/result history survives slot
+    // rebuilds (TrackChainContent::rebuildNodeComponents tears down the
+    // owning DeviceSlotComponent on any notifyTrackDevicesChanged).
+    juce::String aiPanelOutput;
 
     // Device parameters (populated by DeviceProcessor)
     std::vector<ParameterInfo> parameters;

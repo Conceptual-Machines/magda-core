@@ -2,8 +2,10 @@
 
 #include <cmath>
 
-#include "../daw/core/AutomationManager.hpp"
-#include "../daw/core/SelectionManager.hpp"
+#include "../daw/api/alias_api.hpp"
+#include "../daw/api/automation_api.hpp"
+#include "../daw/api/magda_api.hpp"
+#include "../daw/api/selection_api.hpp"
 #include "../daw/core/aliases/AliasRegistry.hpp"
 #include "../daw/core/aliases/ChainContext.hpp"
 #include "../daw/core/aliases/ParamSigilParser.hpp"
@@ -26,16 +28,16 @@ double clampNorm(double v) {
 }
 
 /** Get selected track id, or INVALID if none. */
-TrackId getSelectedTrack(juce::String& err) {
-    auto& sel = SelectionManager::getInstance();
+TrackId getSelectedTrack(MagdaApi& api, juce::String& err) {
+    auto& sel = api.selection();
     auto trackId = sel.getSelectedTrack();
     if (trackId == INVALID_TRACK_ID) {
         // Also consult the automation-lane selection for its track, so that
         // clicking a lane counts as "having a track context" too.
-        if (sel.hasAutomationLaneSelection()) {
-            auto laneId = sel.getAutomationLaneSelection().laneId;
-            if (auto* lane = AutomationManager::getInstance().getLane(laneId))
-                return lane->target.trackId;
+        auto laneId = sel.getSelectedAutomationLaneId();
+        if (laneId != INVALID_AUTOMATION_LANE_ID) {
+            if (auto* lane = api.automation().getLane(laneId))
+                return lane->target.devicePath.trackId;
         }
         err = "No track is selected. Click a track first.";
         return INVALID_TRACK_ID;
@@ -44,8 +46,8 @@ TrackId getSelectedTrack(juce::String& err) {
 }
 
 /** Look up an existing lane for a target, creating it if needed. */
-AutomationLaneId ensureLaneForTarget(const AutomationTarget& target) {
-    auto& mgr = AutomationManager::getInstance();
+AutomationLaneId ensureLaneForTarget(MagdaApi& api, const AutomationTarget& target) {
+    auto& mgr = api.automation();
     auto existing = mgr.getLaneForTarget(target);
     if (existing != INVALID_AUTOMATION_LANE_ID)
         return existing;
@@ -53,10 +55,10 @@ AutomationLaneId ensureLaneForTarget(const AutomationTarget& target) {
 }
 
 /** Resolve an AutoTarget into a concrete lane id, or INVALID. */
-AutomationLaneId resolveTarget(const AutoTarget& target, juce::String& err) {
+AutomationLaneId resolveTarget(MagdaApi& api, const AutoTarget& target, juce::String& err) {
     switch (target.kind) {
         case AutoTarget::Kind::LaneId: {
-            auto* lane = AutomationManager::getInstance().getLane(target.laneId);
+            auto* lane = api.automation().getLane(target.laneId);
             if (lane == nullptr) {
                 err = "Lane " + juce::String(target.laneId) + " does not exist";
                 return INVALID_AUTOMATION_LANE_ID;
@@ -64,36 +66,37 @@ AutomationLaneId resolveTarget(const AutoTarget& target, juce::String& err) {
             return target.laneId;
         }
         case AutoTarget::Kind::Selected: {
-            auto& sel = SelectionManager::getInstance();
-            if (sel.hasAutomationLaneSelection())
-                return sel.getAutomationLaneSelection().laneId;
+            auto& sel = api.selection();
+            auto laneId = sel.getSelectedAutomationLaneId();
+            if (laneId != INVALID_AUTOMATION_LANE_ID)
+                return laneId;
             // Fall back to trackVolume on the selected track — the most
             // common default for "automate this track".
-            auto trackId = getSelectedTrack(err);
+            auto trackId = getSelectedTrack(api, err);
             if (trackId == INVALID_TRACK_ID)
                 return INVALID_AUTOMATION_LANE_ID;
             AutomationTarget t;
-            t.type = AutomationTargetType::TrackVolume;
-            t.trackId = trackId;
-            return ensureLaneForTarget(t);
+            t.kind = ControlTarget::Kind::TrackVolume;
+            t.devicePath = ChainNodePath::trackLevel(trackId);
+            return ensureLaneForTarget(api, t);
         }
         case AutoTarget::Kind::TrackVolume: {
-            auto trackId = getSelectedTrack(err);
+            auto trackId = getSelectedTrack(api, err);
             if (trackId == INVALID_TRACK_ID)
                 return INVALID_AUTOMATION_LANE_ID;
             AutomationTarget t;
-            t.type = AutomationTargetType::TrackVolume;
-            t.trackId = trackId;
-            return ensureLaneForTarget(t);
+            t.kind = ControlTarget::Kind::TrackVolume;
+            t.devicePath = ChainNodePath::trackLevel(trackId);
+            return ensureLaneForTarget(api, t);
         }
         case AutoTarget::Kind::TrackPan: {
-            auto trackId = getSelectedTrack(err);
+            auto trackId = getSelectedTrack(api, err);
             if (trackId == INVALID_TRACK_ID)
                 return INVALID_AUTOMATION_LANE_ID;
             AutomationTarget t;
-            t.type = AutomationTargetType::TrackPan;
-            t.trackId = trackId;
-            return ensureLaneForTarget(t);
+            t.kind = ControlTarget::Kind::TrackPan;
+            t.devicePath = ChainNodePath::trackLevel(trackId);
+            return ensureLaneForTarget(api, t);
         }
         case AutoTarget::Kind::Alias: {
             auto sigil = tryParse(target.aliasToken);
@@ -102,7 +105,7 @@ AutomationLaneId resolveTarget(const AutoTarget& target, juce::String& err) {
                 return INVALID_AUTOMATION_LANE_ID;
             }
             DefaultChainContext ctx;
-            TargetResolver resolver(AliasRegistry::getInstance(), ResolverRegistry::getInstance(),
+            TargetResolver resolver(api.aliases().aliasRegistry(), api.aliases().resolverRegistry(),
                                     ctx);
             auto resolved = resolver.resolveSigil(*sigil);
             if (!resolved.ok()) {
@@ -111,12 +114,10 @@ AutomationLaneId resolveTarget(const AutoTarget& target, juce::String& err) {
                 return INVALID_AUTOMATION_LANE_ID;
             }
             AutomationTarget t;
-            t.type = AutomationTargetType::DeviceParameter;
-            t.devicePath = resolved.devicePath;
-            t.paramIndex = resolved.paramIndex;
-            // Derive track id from device path
-            t.trackId = resolved.devicePath.trackId;
-            return ensureLaneForTarget(t);
+            t.kind = ControlTarget::Kind::PluginParam;
+            t.devicePath = resolved.target.devicePath;
+            t.paramIndex = resolved.target.paramIndex;
+            return ensureLaneForTarget(api, t);
         }
     }
     err = "Unknown target kind";
@@ -124,9 +125,7 @@ AutomationLaneId resolveTarget(const AutoTarget& target, juce::String& err) {
 }
 
 /** Emit points into a lane for a given shape op. Values already normalized. */
-void emitShapePoints(AutomationLaneId laneId, const AutoShapeOp& op) {
-    auto& mgr = AutomationManager::getInstance();
-
+void emitShapePoints(AutomationApi& mgr, AutomationLaneId laneId, const AutoShapeOp& op) {
     const double minV = clampNorm(op.minV);
     const double maxV = clampNorm(op.maxV);
     const double center = 0.5 * (minV + maxV);
@@ -227,7 +226,7 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
     error_.clear();
     results_.clear();
 
-    auto& mgr = AutomationManager::getInstance();
+    auto& mgr = api_.automation();
     int laneCount = 0;
     int pointCount = 0;
 
@@ -236,14 +235,14 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
     // AutomationPlaybackEngine answers with a full bakeLane() — producing
     // O(n) bakes for an n-point curve and a visible stall between the agent
     // completing and the curve appearing.
-    AutomationManager::BatchScope batchScope;
+    AutomationApi::BatchScope batchScope(mgr);
 
     for (const auto& inst : instructions) {
         juce::String err;
 
         if (std::holds_alternative<AutoClearOp>(inst.payload)) {
             auto& op = std::get<AutoClearOp>(inst.payload);
-            auto laneId = resolveTarget(op.target, err);
+            auto laneId = resolveTarget(api_, op.target, err);
             if (laneId == INVALID_AUTOMATION_LANE_ID) {
                 error_ = err;
                 return false;
@@ -255,7 +254,7 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
 
         if (std::holds_alternative<AutoFreeformOp>(inst.payload)) {
             auto& op = std::get<AutoFreeformOp>(inst.payload);
-            auto laneId = resolveTarget(op.target, err);
+            auto laneId = resolveTarget(api_, op.target, err);
             if (laneId == INVALID_AUTOMATION_LANE_ID) {
                 error_ = err;
                 return false;
@@ -270,7 +269,7 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
 
         if (std::holds_alternative<AutoShapeOp>(inst.payload)) {
             auto& op = std::get<AutoShapeOp>(inst.payload);
-            auto laneId = resolveTarget(op.target, err);
+            auto laneId = resolveTarget(api_, op.target, err);
             if (laneId == INVALID_AUTOMATION_LANE_ID) {
                 error_ = err;
                 return false;
@@ -278,7 +277,7 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
             int before = 0;
             if (auto* lane = mgr.getLane(laneId))
                 before = static_cast<int>(lane->absolutePoints.size());
-            emitShapePoints(laneId, op);
+            emitShapePoints(mgr, laneId, op);
             int after = 0;
             if (auto* lane = mgr.getLane(laneId))
                 after = static_cast<int>(lane->absolutePoints.size());

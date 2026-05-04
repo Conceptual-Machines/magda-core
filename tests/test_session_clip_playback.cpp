@@ -6,6 +6,7 @@
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
+#include "magda/daw/core/TrackManager.hpp"
 
 using namespace magda;
 
@@ -457,6 +458,137 @@ TEST_CASE("MidiClipSlotAppearance — clip slot shows as occupied after MIDI cli
     REQUIRE(clip->type == ClipType::MIDI);
 }
 
+TEST_CASE("getClipInSlot stays correct across mutation paths",
+          "[session][slot][index][regression]") {
+    // The slot-index cache must stay in sync with clips_ on every mutation
+    // path (create / setSceneIndex / moveClipToTrack / delete / clearAll).
+    // Pre-index, getClipInSlot scanned every clip — the failure mode here was
+    // performance, not correctness. With the cache, a missing hook would
+    // return a stale or empty result.
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+
+    SECTION("Empty index returns INVALID_CLIP_ID") {
+        REQUIRE(cm.getClipInSlot(1, 0) == INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(99, 99) == INVALID_CLIP_ID);
+    }
+
+    SECTION("Negative sceneIndex never resolves") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        REQUIRE(cm.getClipInSlot(1, -1) == INVALID_CLIP_ID);
+        cm.deleteClip(id);
+    }
+
+    SECTION("createMidiClip+setClipSceneIndex registers in slot") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 2);
+        REQUIRE(cm.getClipInSlot(1, 2) == id);
+        REQUIRE(cm.getClipInSlot(1, 0) == INVALID_CLIP_ID);
+    }
+
+    SECTION("Arrangement clips are NOT registered in session slot index") {
+        ClipId id = cm.createAudioClip(1, 0.0, 4.0, "x.wav", ClipView::Arrangement);
+        REQUIRE(id != INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(1, 0) == INVALID_CLIP_ID);
+    }
+
+    SECTION("setClipSceneIndex moves the clip between slots") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 1);
+        REQUIRE(cm.getClipInSlot(1, 1) == id);
+
+        cm.setClipSceneIndex(id, 5);
+        REQUIRE(cm.getClipInSlot(1, 1) == INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(1, 5) == id);
+    }
+
+    SECTION("moveClipToTrack moves the clip between tracks") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 3);
+        REQUIRE(cm.getClipInSlot(1, 3) == id);
+
+        cm.moveClipToTrack(id, 7);
+        REQUIRE(cm.getClipInSlot(1, 3) == INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(7, 3) == id);
+    }
+
+    SECTION("deleteClip clears the slot") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 0);
+        REQUIRE(cm.getClipInSlot(1, 0) == id);
+
+        cm.deleteClip(id);
+        REQUIRE(cm.getClipInSlot(1, 0) == INVALID_CLIP_ID);
+    }
+
+    SECTION("clearAllClips empties the slot index") {
+        ClipId a = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(a, 0);
+        ClipId b = cm.createMidiClip(2, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(b, 1);
+
+        cm.clearAllClips();
+        REQUIRE(cm.getClipInSlot(1, 0) == INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(2, 1) == INVALID_CLIP_ID);
+    }
+
+    SECTION("restoreClip re-registers the slot (undo path)") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 4);
+        const auto* cached = cm.getClip(id);
+        REQUIRE(cached != nullptr);
+        ClipInfo snapshot = *cached;
+
+        cm.deleteClip(id);
+        REQUIRE(cm.getClipInSlot(1, 4) == INVALID_CLIP_ID);
+
+        cm.restoreClip(snapshot);
+        REQUIRE(cm.getClipInSlot(1, 4) == id);
+    }
+
+    SECTION("duplicateClip does not overwrite the source session slot") {
+        ClipId id = cm.createMidiClip(1, 0.0, 4.0, ClipView::Session);
+        cm.setClipSceneIndex(id, 0);
+
+        ClipId duplicateId = cm.duplicateClip(id);
+        REQUIRE(duplicateId != INVALID_CLIP_ID);
+        REQUIRE(cm.getClipInSlot(1, 0) == id);
+
+        cm.setClipSceneIndex(duplicateId, 2);
+        REQUIRE(cm.getClipInSlot(1, 0) == id);
+        REQUIRE(cm.getClipInSlot(1, 2) == duplicateId);
+    }
+}
+
+TEST_CASE("Deleting a track removes its session clips from slots",
+          "[session][slot][track-delete][regression]") {
+    auto& tm = TrackManager::getInstance();
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    tm.clearAllTracks();
+
+    TrackId deletedTrackId = tm.createTrack("Deleted");
+    REQUIRE(deletedTrackId != INVALID_TRACK_ID);
+
+    ClipId clipId = cm.createMidiClip(deletedTrackId, 0.0, 4.0, ClipView::Session);
+    REQUIRE(clipId != INVALID_CLIP_ID);
+    cm.setClipSceneIndex(clipId, 0);
+    REQUIRE(cm.getClipInSlot(deletedTrackId, 0) == clipId);
+
+    tm.deleteTrack(deletedTrackId);
+
+    REQUIRE(cm.getClip(clipId) == nullptr);
+    REQUIRE(cm.getClipsOnTrack(deletedTrackId).empty());
+    REQUIRE(cm.getClipInSlot(deletedTrackId, 0) == INVALID_CLIP_ID);
+
+    TrackId newTrackId = tm.createTrack("New");
+    REQUIRE(newTrackId != INVALID_TRACK_ID);
+    REQUIRE(cm.getClipInSlot(newTrackId, 0) == INVALID_CLIP_ID);
+
+    cm.clearAllClips();
+    tm.clearAllTracks();
+}
+
 TEST_CASE("Session MIDI clip loop offset", "[session][midi][loop]") {
     auto& cm = ClipManager::getInstance();
     cm.clearAllClips();
@@ -841,17 +973,20 @@ TEST_CASE("AutoTempo session clip timing: 172bpm clip in 120bpm project",
     constexpr double PROJECT_BPM = 120.0;
     ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
 
-    SECTION("lengthBeats preserves timeline length in project beats") {
-        // New behavior: lengthBeats = length * bpm / 60
-        double expectedBeats = clip.length * PROJECT_BPM / 60.0;
-        REQUIRE(clip.lengthBeats == Catch::Approx(expectedBeats));
+    SECTION("lengthBeats stays at the file's musical beat count") {
+        // Issue #1157: in beat mode, beats are beats. A 2-bar (8-beat) loop is
+        // 8 beats long regardless of project tempo. The wall-clock duration
+        // adapts to project BPM; the beat count does not.
+        REQUIRE(clip.lengthBeats == Catch::Approx(8.0));
     }
 
-    SECTION("Wall-clock duration preserves original timeline length") {
+    SECTION("Wall-clock duration scales with project BPM in beat mode") {
         auto [clipLen, loopLen] = computeAutoTempoTimings(clip, PROJECT_BPM);
-        // lengthBeats * 60 / bpm == original length (round-trip)
-        REQUIRE(clipLen == Catch::Approx(clip.length));
-        REQUIRE(loopLen == Catch::Approx(clip.length));
+        // lengthBeats × 60 / projectBPM = 8 × 60 / 120 = 4s. The original
+        // ~2.79s duration is no longer relevant — the clip has been retuned
+        // to play at the project tempo.
+        REQUIRE(clipLen == Catch::Approx(8.0 * 60.0 / PROJECT_BPM));
+        REQUIRE(loopLen == Catch::Approx(8.0 * 60.0 / PROJECT_BPM));
     }
 
     SECTION("Playhead wraps at clip duration") {
@@ -898,10 +1033,11 @@ TEST_CASE("AutoTempo session clip timing: sub-loop region",
     // lengthBeats preserves timeline length, loopLengthBeats preserves loop length
     auto [clipLen, loopLen] = computeAutoTempoTimings(clip, PROJECT_BPM);
 
-    SECTION("Clip length preserves timeline length") {
-        double expectedBeats = clip.length * PROJECT_BPM / 60.0;
-        REQUIRE(clip.lengthBeats == Catch::Approx(expectedBeats));
-        REQUIRE(clipLen == Catch::Approx(clip.length));
+    SECTION("Clip length stays at file's musical beat count") {
+        // Issue #1157: lengthBeats = sourceNumBeats. clipLen derives from
+        // lengthBeats × 60 / projectBPM.
+        REQUIRE(clip.lengthBeats == Catch::Approx(8.0));
+        REQUIRE(clipLen == Catch::Approx(8.0 * 60.0 / PROJECT_BPM));
     }
 
     SECTION("Loop length uses loopLengthBeats") {

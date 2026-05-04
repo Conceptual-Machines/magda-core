@@ -1,6 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "../magda/daw/ui/state/TimelineController.hpp"
+#include "../magda/daw/ui/state/TimelineEvents.hpp"
 #include "../magda/daw/ui/state/TimelineState.hpp"
 
 using magda::GridConstants;
@@ -177,4 +179,50 @@ TEST_CASE("computeGridInterval - auto mode low zoom falls to bar multiples", "[g
     double interval = GridConstants::computeGridInterval(gq, 1.0, 4, 10);
     // Should be a bar multiple: timeSigNumerator * mult
     REQUIRE(interval >= 4.0);  // At least 1 bar in 4/4
+}
+
+TEST_CASE("TimelineState max scroll clamps to real timeline width", "[timeline][zoom][scroll]") {
+    magda::TimelineState state;
+    state.tempo.bpm = 120.0;
+    state.tempo.timeSignatureNumerator = 4;
+    state.timelineLength = 1024.0;  // 512 bars at 120 BPM
+    state.zoom.viewportWidth = 1600;
+
+    SECTION("zoomed out timeline cannot scroll into synthetic padding") {
+        state.zoom.horizontalZoom = 0.25;  // 512 px of actual timeline
+
+        REQUIRE(state.getContentWidth() > state.zoom.viewportWidth);
+        REQUIRE(state.getMaxScrollX() == 0);
+    }
+
+    SECTION("zoomed in timeline still scrolls to the real end") {
+        state.zoom.horizontalZoom = 2.0;  // 4096 px of actual timeline
+
+        REQUIRE(state.getMaxScrollX() > 0);
+        REQUIRE(state.getMaxScrollX() ==
+                static_cast<int>(std::round(state.secondsToBeats(state.timelineLength) *
+                                            state.zoom.horizontalZoom)) +
+                    magda::LayoutConfig::TIMELINE_LEFT_PADDING - state.zoom.viewportWidth);
+    }
+}
+
+TEST_CASE("Timeline edit cursor is beat-authoritative across tempo changes",
+          "[timeline][edit-cursor][tempo]") {
+    magda::TimelineController controller;
+
+    controller.dispatch(magda::SetTempoEvent{120.0});
+    controller.dispatch(magda::SetTimelineLengthEvent{100.0});
+    controller.dispatch(magda::SetEditCursorEvent{8.0});
+
+    const auto& state = controller.getState();
+    REQUIRE(state.editCursorBeats == Catch::Approx(8.0));
+    REQUIRE(state.editCursorPosition == Catch::Approx(4.0));
+
+    controller.dispatch(magda::SetTempoEvent{60.0});
+    REQUIRE(state.editCursorBeats == Catch::Approx(8.0));
+    REQUIRE(state.editCursorPosition == Catch::Approx(8.0));
+
+    controller.dispatch(magda::SetEditCursorEvent{-1.0});
+    REQUIRE(state.editCursorBeats == Catch::Approx(-1.0));
+    REQUIRE(state.editCursorPosition == Catch::Approx(-1.0));
 }

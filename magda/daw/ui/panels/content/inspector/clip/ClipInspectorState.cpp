@@ -175,7 +175,11 @@ void ClipInspector::updateFromSelectedClip() {
             clipBeatsLengthValue_->setVisible(true);
             clipBeatsLengthValue_->setEnabled(true);
             clipBeatsLengthValue_->setAlpha(1.0f);
-            clipBeatsLengthValue_->setValue(clip->loopLengthBeats, juce::dontSendNotification);
+            // Issue #1157: display lengthBeats (timeline beats — what the slider
+            // writes), not loopLengthBeats (source-beat domain). Showing the
+            // source-domain value made this readout drift away from the right-side
+            // Clip panel as soon as sourceBPM differed from project BPM.
+            clipBeatsLengthValue_->setValue(clip->lengthBeats, juce::dontSendNotification);
         } else {
             clipBeatsLengthValue_->setVisible(false);
         }
@@ -449,33 +453,9 @@ void ClipInspector::updateFromSelectedClip() {
         transientSensitivityLabel_.setVisible(showAudioProps && !isMulti);
         transientSensitivityValue_->setVisible(showAudioProps && !isMulti);
 
-        // Fades section (arrangement audio clips only, hidden for session, collapsible)
-        bool showFades = showAudioProps && !isSessionClip;
-        fadesSectionLabel_.setVisible(showFades);
-        fadeInValue_->setVisible(showFades);
-        fadeOutValue_->setVisible(showFades);
-        for (int i = 0; i < 4; ++i) {
-            fadeInTypeButtons_[i]->setVisible(showFades);
-            fadeOutTypeButtons_[i]->setVisible(showFades);
-        }
-        for (int i = 0; i < 2; ++i) {
-            fadeInBehaviourButtons_[i]->setVisible(showFades);
-            fadeOutBehaviourButtons_[i]->setVisible(showFades);
-        }
-        autoCrossfadeToggle_.setVisible(showFades);
-        if (showFades) {
-            fadeInValue_->setValue(clip->fadeIn, juce::dontSendNotification);
-            fadeOutValue_->setValue(clip->fadeOut, juce::dontSendNotification);
-            for (int i = 0; i < 4; ++i) {
-                fadeInTypeButtons_[i]->setActive(i == clip->fadeInType - 1);
-                fadeOutTypeButtons_[i]->setActive(i == clip->fadeOutType - 1);
-            }
-            for (int i = 0; i < 2; ++i) {
-                fadeInBehaviourButtons_[i]->setActive(i == clip->fadeInBehaviour);
-                fadeOutBehaviourButtons_[i]->setActive(i == clip->fadeOutBehaviour);
-            }
-            autoCrossfadeToggle_.setToggleState(clip->autoCrossfade, juce::dontSendNotification);
-        }
+        // Fades section — ClipFadesSection handles session vs arrangement internally
+        fadesSection_->setSelectedClips(selectedClipIds_);
+        fadesSection_->setVisible(showAudioProps);
 
         // Channels section label hidden (controls moved to Mix section)
         channelsSectionLabel_.setVisible(false);
@@ -492,10 +472,6 @@ void ClipInspector::updateFromSelectedClip() {
                                     juce::dontSendNotification);
             clipGainValue_->setValue((clipRange_.minGainDB + clipRange_.maxGainDB) / 2.0,
                                      juce::dontSendNotification);
-            fadeInValue_->setValue((clipRange_.minFadeIn + clipRange_.maxFadeIn) / 2.0,
-                                   juce::dontSendNotification);
-            fadeOutValue_->setValue((clipRange_.minFadeOut + clipRange_.maxFadeOut) / 2.0,
-                                    juce::dontSendNotification);
             clipStretchValue_->setValue((clipRange_.minSpeedRatio + clipRange_.maxSpeedRatio) / 2.0,
                                         juce::dontSendNotification);
         }
@@ -506,8 +482,6 @@ void ClipInspector::updateFromSelectedClip() {
             multiVolumeDragStart_ = clipVolumeValue_->getValue();
             multiPanDragStart_ = clipPanValue_->getValue();
             multiGainDragStart_ = clipGainValue_->getValue();
-            multiFadeInDragStart_ = fadeInValue_->getValue();
-            multiFadeOutDragStart_ = fadeOutValue_->getValue();
             multiSpeedRatioDragStart_ = clipStretchValue_->getValue();
         }
         if (!isSessionClip) {
@@ -563,6 +537,8 @@ void ClipInspector::showClipControls(bool show) {
         launchModeCombo_.setVisible(false);
         launchQuantizeLabel_.setVisible(false);
         launchQuantizeCombo_.setVisible(false);
+        if (fadesSection_)
+            fadesSection_->setVisible(false);
 
         // New sections
         pitchSectionLabel_.setVisible(false);
@@ -588,22 +564,6 @@ void ClipInspector::showClipControls(bool show) {
         transientSectionLabel_.setVisible(false);
         transientSensitivityLabel_.setVisible(false);
         transientSensitivityValue_->setVisible(false);
-        fadesSectionLabel_.setVisible(false);
-        fadeInValue_->setVisible(false);
-        fadeOutValue_->setVisible(false);
-        for (auto& btn : fadeInTypeButtons_)
-            if (btn)
-                btn->setVisible(false);
-        for (auto& btn : fadeOutTypeButtons_)
-            if (btn)
-                btn->setVisible(false);
-        for (auto& btn : fadeInBehaviourButtons_)
-            if (btn)
-                btn->setVisible(false);
-        for (auto& btn : fadeOutBehaviourButtons_)
-            if (btn)
-                btn->setVisible(false);
-        autoCrossfadeToggle_.setVisible(false);
         channelsSectionLabel_.setVisible(false);
         leftChannelToggle_.setVisible(false);
         rightChannelToggle_.setVisible(false);
@@ -652,8 +612,6 @@ void ClipInspector::computeClipRange() {
             clipRange_.minVolumeDB = clipRange_.maxVolumeDB = c->volumeDB;
             clipRange_.minPan = clipRange_.maxPan = c->pan;
             clipRange_.minGainDB = clipRange_.maxGainDB = c->gainDB;
-            clipRange_.minFadeIn = clipRange_.maxFadeIn = c->fadeIn;
-            clipRange_.minFadeOut = clipRange_.maxFadeOut = c->fadeOut;
             clipRange_.minSpeedRatio = clipRange_.maxSpeedRatio = c->speedRatio;
             clipRange_.minStartSeconds = clipRange_.maxStartSeconds = c->startTime;
             clipRange_.minLengthSeconds = clipRange_.maxLengthSeconds = c->length;
@@ -668,10 +626,6 @@ void ClipInspector::computeClipRange() {
             clipRange_.maxPan = juce::jmax(clipRange_.maxPan, c->pan);
             clipRange_.minGainDB = juce::jmin(clipRange_.minGainDB, c->gainDB);
             clipRange_.maxGainDB = juce::jmax(clipRange_.maxGainDB, c->gainDB);
-            clipRange_.minFadeIn = juce::jmin(clipRange_.minFadeIn, c->fadeIn);
-            clipRange_.maxFadeIn = juce::jmax(clipRange_.maxFadeIn, c->fadeIn);
-            clipRange_.minFadeOut = juce::jmin(clipRange_.minFadeOut, c->fadeOut);
-            clipRange_.maxFadeOut = juce::jmax(clipRange_.maxFadeOut, c->fadeOut);
             clipRange_.minSpeedRatio = juce::jmin(clipRange_.minSpeedRatio, c->speedRatio);
             clipRange_.maxSpeedRatio = juce::jmax(clipRange_.maxSpeedRatio, c->speedRatio);
             clipRange_.minStartSeconds = juce::jmin(clipRange_.minStartSeconds, c->startTime);
@@ -691,8 +645,6 @@ void ClipInspector::refreshClipRangeDisplay() {
         clipVolumeValue_->clearTextOverride();
         clipPanValue_->clearTextOverride();
         clipGainValue_->clearTextOverride();
-        fadeInValue_->clearTextOverride();
-        fadeOutValue_->clearTextOverride();
         if (clipStretchValue_)
             clipStretchValue_->clearTextOverride();
         clipStartValue_->clearTextOverride();
@@ -710,8 +662,6 @@ void ClipInspector::refreshClipRangeDisplay() {
     clipVolumeValue_->setTextOverride(multiDash);
     clipPanValue_->setTextOverride(multiDash);
     clipGainValue_->setTextOverride(multiDash);
-    fadeInValue_->setTextOverride(multiDash);
-    fadeOutValue_->setTextOverride(multiDash);
     if (clipStretchValue_)
         clipStretchValue_->setTextOverride(multiDash);
     clipStartValue_->setTextOverride(multiDash);

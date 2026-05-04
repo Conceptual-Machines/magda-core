@@ -53,7 +53,7 @@ The Media Explorer lets you browse files on your system and preview audio before
 ### Importing
 
 - **Drag and drop** — Drag files from the explorer onto a track or clip slot to import
-- Supported audio formats: WAV, AIFF, FLAC, OGG, MP3
+- Supported audio formats: WAV, AIFF/AIF, FLAC, OGG, MP3 where a platform decoder is available
 - Supported MIDI formats: .mid files
 
 ### Multi-Select

@@ -223,6 +223,9 @@ void SessionClipEditor::setupFooter() {
         waveformDisplay_->repaint();
     };
     addAndMakeVisible(*offsetSlider_);
+
+    fadesSection_ = std::make_unique<magda::daw::ui::ClipFadesSection>();
+    addAndMakeVisible(*fadesSection_);
 }
 
 void SessionClipEditor::paint(juce::Graphics& g) {
@@ -257,14 +260,18 @@ void SessionClipEditor::resized() {
 
     clipNameLabel_->setBounds(headerBounds);
 
-    // Footer
+    // Footer — offset row on top, fades section below
     auto footerBounds = bounds.removeFromBottom(FOOTER_HEIGHT);
     footerBounds.reduce(MARGIN, MARGIN);
 
-    offsetLabel_->setBounds(footerBounds.removeFromLeft(80));
-    footerBounds.removeFromLeft(MARGIN);
+    auto offsetRow = footerBounds.removeFromTop(30);
+    offsetLabel_->setBounds(offsetRow.removeFromLeft(80));
+    offsetRow.removeFromLeft(MARGIN);
+    offsetSlider_->setBounds(offsetRow);
 
-    offsetSlider_->setBounds(footerBounds);
+    footerBounds.removeFromTop(4);
+    if (fadesSection_)
+        fadesSection_->setBounds(footerBounds);
 
     // Waveform takes remaining space
     bounds.reduce(MARGIN, MARGIN);
@@ -313,6 +320,8 @@ void SessionClipEditor::updateControls() {
     if (clip->audioFilePath.isNotEmpty()) {
         offsetSlider_->setValue(clip->offset, juce::dontSendNotification);
     }
+
+    fadesSection_->setClip(clipId_);
 }
 
 // ============================================================================

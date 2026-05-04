@@ -5,9 +5,9 @@
 
 // TE internal test utilities (not exposed via module public headers)
 #include "SharedTestEngine.hpp"
-#include "magda/daw/audio/ClipSynchronizer.hpp"
 #include "magda/daw/audio/TrackController.hpp"
 #include "magda/daw/audio/WarpMarkerManager.hpp"
+#include "magda/daw/audio/session/ClipSynchronizer.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
@@ -70,6 +70,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testLoopTimeBasedWarpEnabled();
         testSplitAudioClip();
         testFadeInOut();
+        testLaunchFadeSamples();
         testGainAndPan();
         testPitchChange();
         testRenderVerification();
@@ -289,8 +290,11 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
     }
 
     void testSpeedRatio() {
-        beginTest("Speed ratio syncs to TE");
+        beginTest("Speed ratio is pinned to 1.0 (auto-tempo invariant)");
 
+        // Audio clips are beat-authoritative; TE's auto-tempo path requires
+        // speedRatio = 1.0. Even when the model says otherwise, sync must
+        // pin TE to 1.0.
         Fixture f;
         auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(),
                                                                  ClipView::Arrangement, 60.0);
@@ -300,11 +304,10 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expect(teClip != nullptr);
         expectWithinAbsoluteError(teClip->getSpeedRatio(), 1.0, 0.01);
 
-        // Set speed ratio to 2.0
         ClipManager::getInstance().setSpeedRatio(clipId, 2.0);
         f.clipSync->syncClipToEngine(clipId);
 
-        expectWithinAbsoluteError(teClip->getSpeedRatio(), 2.0, 0.01);
+        expectWithinAbsoluteError(teClip->getSpeedRatio(), 1.0, 0.01);
     }
 
     void testLoopEnableDisable() {
@@ -318,21 +321,24 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         auto* teClip = f.getTeAudioClip(clipId);
         expect(teClip != nullptr);
 
-        // Enable looping with explicit loop region
+        // Auto-tempo + beat-domain loop region (clips are beat-authoritative).
         auto* clip = ClipManager::getInstance().getClip(clipId);
+        clip->autoTempo = true;
+        clip->sourceBPM = 60.0;
+        clip->sourceNumBeats = 5.0;  // 5s sine WAV at 60 BPM
         clip->loopEnabled = true;
-        clip->loopStart = 0.0;
-        clip->loopLength = 2.0;
+        clip->loopStartBeats = 0.0;
+        clip->loopLengthBeats = 2.0;
+        clip->loopStart = clip->loopStartBeats * 60.0 / clip->sourceBPM;
+        clip->loopLength = clip->loopLengthBeats * 60.0 / clip->sourceBPM;
         f.clipSync->syncClipToEngine(clipId);
 
         expect(teClip->isLooping(), "TE clip should be looping");
 
-        // Verify loop range
-        auto loopRange = teClip->getLoopRange();
-        expectWithinAbsoluteError(loopRange.getStart().inSeconds(), clip->getTeLoopStart(), 0.01);
-        expectWithinAbsoluteError(loopRange.getEnd().inSeconds(), clip->getTeLoopEnd(), 0.01);
+        auto loopRange = teClip->getLoopRangeBeats();
+        expectWithinAbsoluteError(loopRange.getStart().inBeats(), 0.0, 0.01);
+        expectWithinAbsoluteError(loopRange.getLength().inBeats(), 2.0, 0.01);
 
-        // Disable looping
         clip->loopEnabled = false;
         f.clipSync->syncClipToEngine(clipId);
 
@@ -340,36 +346,43 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
     }
 
     void testLoopTimeBased() {
-        beginTest("Time-based loop: clip container longer than loop region (non-integer multiple)");
+        beginTest("Loop with container longer than region (non-integer multiple): partial second cycle plays");
 
         // Reproduces the bug from the screenshot:
-        //   120 BPM, clip = 3 bars (6s), loop region = 2 bars (4s).
+        //   120 BPM, clip = 3 bars, loop region = 2 bars.
         //   Expected: bars 1-2 play first loop cycle, bar 3 plays start of second cycle.
-        //   Bug: bar 3 is silent — the partial second loop cycle doesn't play.
+        //   Bug: bar 3 was silent — the partial second loop cycle didn't play.
 
         Fixture f;
 
-        // Use 60 BPM edit (from createTestEdit) so 1 beat = 1s, easy math.
-        // Scenario: 2s loop region inside a 3s clip container.
-        // The loop should play [0-2s] then [2-3s] is the first 1s of the loop again.
+        // 60 BPM edit (from createTestEdit) so 1 beat = 1s — keeps the
+        // render-time RMS checks readable.
+        // Scenario: 2-beat loop region inside a 3-beat clip container.
+        // Should play [0-2s] (one full cycle) then [2-3s] (first 1s of next).
 
-        // Create clip at 2s length (matching one full loop cycle)
         auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 2.0, f.audioPath(),
                                                                  ClipView::Arrangement, 60.0);
         expect(clipId != INVALID_CLIP_ID);
 
-        // Enable looping — sets loopStart=0.0, loopLength=2.0
-        ClipManager::getInstance().setClipLoopEnabled(clipId, true, 60.0);
-
-        // Extend clip container to 3s (1.5× the loop region)
         auto* clip = ClipManager::getInstance().getClip(clipId);
         expect(clip != nullptr);
-        ClipOperations::resizeContainerFromRight(*clip, 3.0);
 
-        // Verify model state
+        // Auto-tempo + beat-domain loop region. Container extends to 3 beats
+        // (1.5× the loop region) via setPlacementBeats; deriveTimesFromBeats
+        // refreshes the seconds cache so the renderer agrees with TE.
+        clip->autoTempo = true;
+        clip->sourceBPM = 60.0;
+        clip->sourceNumBeats = 5.0;
+        clip->loopEnabled = true;
+        clip->loopStartBeats = 0.0;
+        clip->loopLengthBeats = 2.0;
+        clip->loopStart = 0.0;
+        clip->loopLength = 2.0;
+        clip->setPlacementBeats(0.0, 3.0);
+        clip->deriveTimesFromBeats(60.0);
+
         expect(clip->loopEnabled, "Model: loopEnabled should be true");
-        expectWithinAbsoluteError(clip->loopStart, 0.0, 0.01);
-        expectWithinAbsoluteError(clip->loopLength, 2.0, 0.01);
+        expectWithinAbsoluteError(clip->loopLengthBeats, 2.0, 0.01);
         expectWithinAbsoluteError(clip->length, 3.0, 0.01);
 
         f.clipSync->syncClipToEngine(clipId);
@@ -384,9 +397,9 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         expectWithinAbsoluteError(pos.getStart().inSeconds(), 0.0, 0.01);
         expectWithinAbsoluteError(pos.getEnd().inSeconds(), 3.0, 0.01);
 
-        // TE loop range should be 2s
-        auto loopRange = teClip->getLoopRange();
-        expectWithinAbsoluteError(loopRange.getLength().inSeconds(), 2.0, 0.01);
+        // TE loop range in beats — at 60 BPM, 2 beats = 2 seconds.
+        auto loopRange = teClip->getLoopRangeBeats();
+        expectWithinAbsoluteError(loopRange.getLength().inBeats(), 2.0, 0.01);
 
         // --- Render: audio must be present throughout all 3s ---
         auto result = te::test_utilities::renderToAudioBuffer(*f.edit);
@@ -577,6 +590,37 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         expectWithinAbsoluteError(teClip->getFadeIn().inSeconds(), 0.5, 0.01);
         expectWithinAbsoluteError(teClip->getFadeOut().inSeconds(), 0.3, 0.01);
+    }
+
+    void testLaunchFadeSamples() {
+        beginTest("Launch fade samples sync to TE AudioClipBase");
+
+        Fixture f;
+        auto clipId = ClipManager::getInstance().createAudioClip(f.trackId, 0.0, 4.0, f.audioPath(),
+                                                                 ClipView::Arrangement, 60.0);
+        f.clipSync->syncClipToEngine(clipId);
+
+        auto* teClip = f.getTeAudioClip(clipId);
+        expect(teClip != nullptr);
+        // Default = 256 to preserve TE's prior hard-coded behaviour.
+        expectEquals(teClip->getLaunchFadeSamples(), 256);
+
+        ClipManager::getInstance().setLaunchFadeSamples(clipId, 0);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(teClip->getLaunchFadeSamples(), 0);
+
+        ClipManager::getInstance().setLaunchFadeSamples(clipId, 1024);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(teClip->getLaunchFadeSamples(), 1024);
+
+        // Out-of-range values clamp.
+        ClipManager::getInstance().setLaunchFadeSamples(clipId, -10);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(teClip->getLaunchFadeSamples(), 0);
+
+        ClipManager::getInstance().setLaunchFadeSamples(clipId, 999999);
+        f.clipSync->syncClipToEngine(clipId);
+        expectEquals(teClip->getLaunchFadeSamples(), 16384);
     }
 
     void testGainAndPan() {

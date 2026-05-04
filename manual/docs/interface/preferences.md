@@ -2,7 +2,7 @@
 
 Open the Preferences dialog from **Settings > Preferences**.
 
-![Preferences](../assets/images/interface/preferences.png)
+The dialog is organised into sections; each section is described below.
 
 ## General
 
@@ -30,6 +30,18 @@ Pick a global scale factor for the whole interface. Useful on HiDPI / 4K screens
 
 Changes apply live — no restart required. The shortcuts ++cmd+plus++ and ++cmd+minus++ also bump the scale up and down by one preset.
 
+## Storage
+
+MAGDA keeps user data in three configurable folders. Each can be redirected to any path on disk — point them at an external drive, a synced folder, or a per-project staging area.
+
+| Folder | Holds | Default location |
+|---|---|---|
+| **Data** | App config, controller profiles, Lua scripts, locale overrides | `~/Library/MAGDA` (macOS), `%APPDATA%\MAGDA` (Windows), `~/.config/MAGDA` (Linux) |
+| **Presets** | `.mps` device presets and the per-plugin preset cache | `<Data>/presets` |
+| **Render** | Bounce / freeze / export output | `<Data>/render` |
+
+Click **Browse…** next to a path to relocate that folder. MAGDA does not move existing content for you — copy or symlink the contents over before switching if you want to keep what's there.
+
 ## Colours
 
 - **Custom colour palette** — Define a custom set of colours for tracks and clips
@@ -38,9 +50,10 @@ Changes apply live — no restart required. The shortcuts ++cmd+plus++ and ++cmd
 
 ## Rendering
 
-- **Default format** — Choose the default audio format for renders (WAV, AIFF, FLAC, OGG)
 - **Sample rate** — Default sample rate for rendered files
-- **Bit depth** — Default bit depth for rendered files
+- **Export bit depth** — Default bit depth for audio exports
+- **Bounce bit depth** — Default bit depth for bounced and frozen audio
+- Audio export format is chosen in the export dialog: WAV 16-bit, WAV 24-bit, WAV 32-bit float, or FLAC
 
 ## AI
 

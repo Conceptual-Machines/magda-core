@@ -2,9 +2,10 @@
 
 #include <BinaryData.h>
 
+#include "../../scripting_app.hpp"
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
-#include "audio/MidiDeviceMatch.hpp"
+#include "audio/midi/MidiDeviceMatch.hpp"
 #include "core/StringTable.hpp"
 
 namespace magda {
@@ -56,25 +57,50 @@ bool FooterBar::refreshLiveInputs() {
 
 void FooterBar::refreshControllerBadges() {
     controllerBadges_.clear();
-    for (const auto& c : ControllerRegistry::getInstance().all()) {
-        if (!BindingRegistry::getInstance().hasAnyBindingForController(c.id))
-            continue;
 
+    // A Lua script and the controller-profile system are mutually exclusive
+    // input layers — only one is actually driving the engine at a time. When
+    // a script is loaded it owns the strip; the profile pills come back when
+    // the script is unloaded.
+    auto luaName = scripting_app::activeLuaScriptName();
+    lastActiveLuaScriptName_ = luaName;
+    if (luaName.isNotEmpty()) {
         ControllerBadge b;
-        b.label = c.name;
-        b.connected = false;
-        // Use the shared port matcher rather than strict equality: stored
-        // inputPort can be either a JUCE identifier or a display name, with
-        // varying case, depending on platform — magda::midi::matches handles
-        // all of those consistently.
-        for (const auto& dev : liveInputs_) {
-            if (magda::midi::matches(c.inputPort, dev.identifier, dev.name)) {
-                b.connected = true;
-                break;
+        b.label = luaName;
+        b.connected = true;
+        auto ports = scripting_app::luaScriptPorts(luaName);
+        if (ports.dawInputPort.isNotEmpty()) {
+            b.connected = false;
+            for (const auto& dev : liveInputs_) {
+                if (magda::midi::matches(ports.dawInputPort, dev.identifier, dev.name)) {
+                    b.connected = true;
+                    break;
+                }
             }
         }
         controllerBadges_.push_back(std::move(b));
+    } else {
+        for (const auto& c : ControllerRegistry::getInstance().all()) {
+            if (!BindingRegistry::getInstance().hasAnyBindingForController(c.id))
+                continue;
+
+            ControllerBadge b;
+            b.label = c.name;
+            b.connected = false;
+            // Use the shared port matcher rather than strict equality: stored
+            // inputPort can be either a JUCE identifier or a display name,
+            // with varying case, depending on platform — magda::midi::matches
+            // handles all of those consistently.
+            for (const auto& dev : liveInputs_) {
+                if (magda::midi::matches(c.inputPort, dev.identifier, dev.name)) {
+                    b.connected = true;
+                    break;
+                }
+            }
+            controllerBadges_.push_back(std::move(b));
+        }
     }
+
     resized();  // recompute badge hit areas
     repaint();
 }
@@ -88,7 +114,13 @@ void FooterBar::controllerRegistryChanged() {
 }
 
 void FooterBar::timerCallback() {
-    if (refreshLiveInputs())
+    bool needsRefresh = refreshLiveInputs();
+    // No listener API on LuaController — poll for a change in the active
+    // script so a load / unload from the Controllers dialog reflects in the
+    // footer without waiting for a binding-registry change.
+    if (scripting_app::activeLuaScriptName() != lastActiveLuaScriptName_)
+        needsRefresh = true;
+    if (needsRefresh)
         refreshControllerBadges();
 }
 

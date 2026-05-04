@@ -12,7 +12,9 @@
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
+#include "core/ClipPropertyCommands.hpp"
 #include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
 #include "core/WarpMarkerCommands.hpp"
 #include "engine/AudioEngine.hpp"
 
@@ -264,14 +266,7 @@ WaveformEditorContent::WaveformEditorContent() {
         zoomToTimeRange(startTime, endTime);
     };
 
-    // Wire up ruler loop region drag callback — visual preview only during drag
-    timeRuler_->onLoopRegionChanged = [](double /*displayStart*/, double /*displayEnd*/) {
-        // Visual feedback is handled by LoopMarkerInteraction/TimeRuler repaint.
-        // No ClipManager commit during drag to avoid flickering rebuilds.
-    };
-
-    // Commit loop region change on drag end
-    timeRuler_->onLoopDragEnded = [this](double displayStart, double displayEnd) {
+    auto commitLoopFromDisplay = [this](double displayStart, double displayEnd) {
         if (editingClipId_ == magda::INVALID_CLIP_ID)
             return;
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
@@ -294,9 +289,17 @@ WaveformEditorContent::WaveformEditorContent() {
         double newLoopStart = timelineToSrc(displayStart);
         double newLoopLength = timelineToSrc(displayEnd - displayStart);
 
-        magda::ClipManager::getInstance().setLoopStartAndLength(editingClipId_, newLoopStart,
-                                                                newLoopLength, bpm);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetClipLoopRangeCommand>(editingClipId_, newLoopStart,
+                                                             newLoopLength, bpm));
     };
+
+    // Push every drag tick through to ClipManager so the looped audio reflects the new region
+    // immediately. TE coalesces graph rebuilds via a 1ms restart timer and crossfades the
+    // switchover, so even a fast drag produces smooth audio (the previous "flickering rebuild"
+    // concern was masking TE #8 — the bleed made each rebuild sound different).
+    timeRuler_->onLoopRegionChanged = commitLoopFromDisplay;
+    timeRuler_->onLoopDragEnded = commitLoopFromDisplay;
 
     addAndMakeVisible(timeRuler_.get());
 
@@ -316,9 +319,11 @@ WaveformEditorContent::WaveformEditorContent() {
     auto applyGridBeats = [this]() {
         if (!gridVisible_ || gridNumerator_ <= 0) {
             gridComponent_->setGridResolutionBeats(0.0);
+            timeRuler_->setGridResolution(0.0);
         } else {
             double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
             gridComponent_->setGridResolutionBeats(beats);
+            timeRuler_->setGridResolution(beats);
         }
     };
 
@@ -387,9 +392,7 @@ WaveformEditorContent::WaveformEditorContent() {
                                    juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     snapButton_->setWantsKeyboardFocus(false);
     snapButton_->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
-    snapButton_->onClick = [this]() {
-        gridComponent_->setSnapEnabled(snapButton_->getToggleState());
-    };
+    snapButton_->onClick = [this]() { setSnapEnabledFromUI(snapButton_->getToggleState()); };
     addAndMakeVisible(snapButton_.get());
 
     // Grid visibility toggle button
@@ -412,8 +415,10 @@ WaveformEditorContent::WaveformEditorContent() {
         if (gridVisible_ && gridNumerator_ > 0) {
             double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
             gridComponent_->setGridResolutionBeats(beats);
+            timeRuler_->setGridResolution(beats);
         } else {
             gridComponent_->setGridResolutionBeats(0.0);
+            timeRuler_->setGridResolution(0.0);
         }
     };
     addAndMakeVisible(gridButton_.get());
@@ -428,6 +433,7 @@ WaveformEditorContent::WaveformEditorContent() {
     if (gridNumerator_ > 0) {
         double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
         gridComponent_->setGridResolutionBeats(beats);
+        timeRuler_->setGridResolution(beats);
     }
 
     // Create viewport and add grid
@@ -773,29 +779,34 @@ void WaveformEditorContent::clipsChanged() {
 void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
     if (clipId == editingClipId_) {
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+        bool placementMoved = false;
         if (clip) {
-            // In absolute mode, adjust scroll when clip position changes
-            // so the waveform stays visible (e.g. after editing start field)
-            if (!relativeTimeMode_ && gridComponent_) {
-                double oldStart = gridComponent_->getClipStartTime();
-                if (std::abs(clip->startTime - oldStart) > 0.001) {
-                    double deltaPixels = (clip->startTime - oldStart) * horizontalZoom_;
-                    setVirtualScrollX(
-                        juce::jmax(0, virtualScrollX_ + static_cast<int>(deltaPixels)));
-                }
-            }
+            // Issue #1157: read clip position/length through the accessors —
+            // for autoTempo clips these compute from beats × projectBPM live,
+            // so the loop bar in the waveform editor stays aligned with the
+            // inspector beat readout after a project-tempo change. Reading
+            // clip->startTime / clip->length directly was the cause of the
+            // user-reported drift where the green loop bracket spanned a
+            // different number of bars than `lengthBeats` claimed.
+            double currentBpm = 120.0;
+            if (auto* tc = magda::TimelineController::getCurrent())
+                currentBpm = tc->getState().tempo.bpm;
+            const double clipStart = clip->getTimelineStart(currentBpm);
+            const double clipLength = clip->getTimelineLength(currentBpm);
+
+            placementMoved = !relativeTimeMode_ && gridComponent_ &&
+                             std::abs(clipStart - gridComponent_->getClipStartTime()) > 0.001;
 
             // Update clip boundaries (needed for resize)
             // and display info (offset marker, loop markers).
-            gridComponent_->updateClipPosition(clip->startTime, clip->length);
-            timeRuler_->setClipLength(clip->length);
+            gridComponent_->updateClipPosition(clipStart, clipLength);
+            timeRuler_->setClipLength(clipLength);
 
             updateDisplayInfo(*clip);
 
-            // Keep ruler bar origin in sync with clip position
+            // Bar/grid origin is timeline-domain. Source offset must not move it.
             if (clip->view != magda::ClipView::Session && !clip->loopEnabled) {
-                timeRuler_->setBarOrigin(cachedDisplayInfo_.offsetPositionSeconds -
-                                         clip->startTime);
+                timeRuler_->setBarOrigin(0.0);
             }
 
             // Update warp mode state
@@ -834,6 +845,8 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
         }
 
         updateGridSize();
+        if (placementMoved)
+            scrollToClipStart();
         repaint();
     }
 }
@@ -894,6 +907,24 @@ void WaveformEditorContent::timelineStateChanged(const TimelineState& state, Cha
         timeRuler_->setTempo(newBpm);
         timeRuler_->setTimeSignature(state.tempo.timeSignatureNumerator,
                                      state.tempo.timeSignatureDenominator);
+
+        // Issue #1157: refresh the ruler's clipLength here too. For autoTempo
+        // clips length-in-seconds = lengthBeats × 60 / bpm, so a tempo change
+        // changes it. Without this, the ruler kept the old-tempo seconds and
+        // drew the loop bar at the wrong number of bars (the user-visible
+        // drift in the screenshots: green loop region spanning 9-10 bars
+        // when lengthBeats said 16 = 4 bars).
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+            if (clip) {
+                const double clipLength = clip->getTimelineLength(newBpm);
+                const double clipStart = clip->getTimelineStart(newBpm);
+                timeRuler_->setClipLength(clipLength);
+                if (gridComponent_)
+                    gridComponent_->updateClipPosition(clipStart, clipLength);
+                updateDisplayInfo(*clip);
+            }
+        }
         gridComponent_->repaint();
     }
 }
@@ -938,25 +969,22 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
 
             timeRuler_->setZoom(horizontalZoom_ * 60.0 / bpm);
             timeRuler_->setTempo(bpm);
-            timeRuler_->setTimeOffset(relativeTimeMode_ ? 0.0 : clip->startTime);
-            timeRuler_->setClipLength(clip->length);
+            // Issue #1157: read through the accessors so autoTempo clips get
+            // a length/start derived live from beats × bpm.
+            const double clipStart = clip->getTimelineStart(bpm);
+            const double clipLength = clip->getTimelineLength(bpm);
+            gridComponent_->updateClipPosition(clipStart, clipLength);
+            timeRuler_->setTimeOffset(relativeTimeMode_ ? 0.0 : clipStart);
+            timeRuler_->setClipLength(clipLength);
 
             // Compute display info first — needed for bar origin calculation
             updateDisplayInfo(*clip);
 
-            // For arrangement audio clips (non-loop), shift bar origin so bar 1
-            // aligns with the offset marker (where playback starts on the timeline).
-            // offset point in editor = offsetPositionSeconds
-            // offset point on timeline = clip->startTime
-            // therefore bar 1 (timeline 0) in editor = offsetPositionSeconds - startTime
-            if (clip->view != magda::ClipView::Session && !clip->loopEnabled) {
-                double barOrigin = cachedDisplayInfo_.offsetPositionSeconds - clip->startTime;
-                DBG("WaveformEditor::setClip barOrigin="
-                    << barOrigin << " offsetPosSec=" << cachedDisplayInfo_.offsetPositionSeconds
-                    << " startTime=" << clip->startTime << " offset=" << clip->offset
-                    << " speedRatio=" << clip->speedRatio << " autoTempo=" << (int)clip->autoTempo
-                    << " relativeMode=" << (int)relativeTimeMode_);
-                timeRuler_->setBarOrigin(barOrigin);
+            // Source offset describes which audio samples play at the clip boundary.
+            // It must not shift the timeline/bar origin.
+            if (!relativeTimeMode_ && clip->view != magda::ClipView::Session &&
+                !clip->loopEnabled) {
+                timeRuler_->setBarOrigin(0.0);
             } else {
                 timeRuler_->setBarOrigin(0.0);
             }
@@ -1010,10 +1038,15 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
         gridComponent_->setRelativeMode(relative);
         timeRuler_->setRelativeMode(relative);
 
-        // Update time ruler offset for the new mode
+        // Update time ruler offset/origin for the new mode
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && timeRuler_) {
-            timeRuler_->setTimeOffset(relative ? 0.0 : clip->startTime);
+            double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+            updateDisplayInfo(*clip);
+            timeRuler_->setTimeOffset(relative ? 0.0 : clip->getTimelineStart(bpm));
+            timeRuler_->setClipLength(clip->getTimelineLength(bpm));
+
+            timeRuler_->setBarOrigin(0.0);
         }
 
         // Update grid size and scroll
@@ -1021,6 +1054,16 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
         scrollToClipStart();
         repaint();
     }
+}
+
+void WaveformEditorContent::setSnapEnabledFromUI(bool enabled) {
+    snapEnabled_ = enabled;
+    if (snapButton_)
+        snapButton_->setToggleState(enabled, juce::dontSendNotification);
+    if (gridComponent_)
+        gridComponent_->setSnapEnabled(enabled);
+    if (timeRuler_)
+        timeRuler_->setSnapEnabled(enabled);
 }
 
 // ============================================================================
@@ -1080,7 +1123,8 @@ void WaveformEditorContent::updateGridSize() {
                 if (barOrigin < 0.0)
                     totalTime -= barOrigin;
             } else {
-                totalTime = clip->startTime + clip->length;
+                double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
+                totalTime = clip->getTimelineStart(bpm) + clip->getTimelineLength(bpm);
             }
             // Ensure the ruler extends at least to the right edge of the viewport.
             // Padding is in whole bars so the ruler ends on a musically sensible boundary.
@@ -1100,33 +1144,15 @@ void WaveformEditorContent::updateGridSize() {
 
 void WaveformEditorContent::scrollToClipStart() {
     if (relativeTimeMode_) {
-        // In relative mode, scroll to the offset position so user sees the relevant audio
-        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-        if (clip && gridComponent_) {
-            double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
-            double fileDuration = 0.0;
-            if (clip->audioFilePath.isNotEmpty()) {
-                auto* thumbnail =
-                    magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
-                if (thumbnail) {
-                    fileDuration = thumbnail->getTotalLength();
-                }
-            }
-            auto info = magda::ClipDisplayInfo::from(*clip, bpm, fileDuration);
-            // timeToPixel now incorporates scrollOffsetX_, so compute raw pixel position
-            int offsetPixel =
-                static_cast<int>(info.offsetPositionSeconds * horizontalZoom_) + GRID_LEFT_PADDING;
-            int viewportWidth = viewport_->getWidth();
-            setVirtualScrollX(juce::jmax(0, offsetPixel - viewportWidth / 4));
-        } else {
-            setVirtualScrollX(0);
-        }
+        // REL is clip-local: the active clip boundary is at 0, regardless of source offset.
+        setVirtualScrollX(0);
     } else {
         // In absolute mode, scroll to clip start position
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && gridComponent_) {
+            double bpm = cachedBpm_ > 0.0 ? cachedBpm_ : 120.0;
             int clipStartPixel =
-                static_cast<int>(clip->startTime * horizontalZoom_) + GRID_LEFT_PADDING;
+                static_cast<int>(clip->getTimelineStart(bpm) * horizontalZoom_) + GRID_LEFT_PADDING;
             setVirtualScrollX(clipStartPixel);
         }
     }
@@ -1162,8 +1188,8 @@ void WaveformEditorContent::updateDisplayInfo(const magda::ClipInfo& clip) {
         double loopLen = info.loopLengthSeconds;
         timeRuler_->setLoopRegion(loopStartPos, loopLen, showMarkers, loopIsActive);
 
-        // Shift clip boundary markers by the content offset
-        timeRuler_->setClipContentOffset(info.offsetPositionSeconds);
+        // REL is clip-local: clip start is always bar 1, independent of source offset.
+        timeRuler_->setClipContentOffset(relativeTimeMode_ ? 0.0 : info.offsetPositionSeconds);
 
         // Offset marker is shown on the waveform grid; no separate ruler marker needed
         timeRuler_->setLoopPhaseMarker(0.0, false);

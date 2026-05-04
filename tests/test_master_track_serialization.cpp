@@ -10,6 +10,22 @@
 
 using namespace magda;
 
+namespace {
+
+juce::File testTempRoot() {
+    auto envTmp = juce::SystemStats::getEnvironmentVariable("TMPDIR", {});
+    auto root = envTmp.isNotEmpty() ? juce::File(envTmp)
+                                    : juce::File::getSpecialLocation(juce::File::tempDirectory);
+    root.createDirectory();
+    return root;
+}
+
+juce::File createTestTempFile(const juce::String& suffix) {
+    return testTempRoot().getNonexistentChildFile("temp", suffix);
+}
+
+}  // namespace
+
 // ============================================================================
 // Test Fixture
 // ============================================================================
@@ -39,7 +55,7 @@ struct MasterSerializationFixture {
     }
 
     juce::File createTempProjectFile(const juce::String& suffix) {
-        auto file = juce::File::createTempFile(suffix);
+        auto file = createTestTempFile(suffix);
         tempFiles.push_back(file);
         auto wrapperDir =
             file.getParentDirectory().getChildFile(file.getFileNameWithoutExtension());

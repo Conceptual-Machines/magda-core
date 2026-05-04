@@ -1,19 +1,29 @@
 # Controllers
 
-MAGDA can be driven by any class-compliant MIDI controller. Hardware knobs, sliders, pads, and pitch/mod wheels can all map to plugin parameters, macros, and LFO rates — with two complementary mapping systems:
+MAGDA can be driven by any class-compliant MIDI controller. Hardware knobs, sliders, pads, and pitch/mod wheels can all map to plugin parameters, macros, and LFO rates — with three complementary mapping systems:
 
 - **Automap profiles** — a controller-specific profile maps each control to a focused-device macro automatically. Plug in a supported keyboard, focus a device, and the eight macro knobs already drive that device's macros. No setup.
 - **MIDI Learn** — right-click any parameter, macro, or LFO Rate, choose **Learn MIDI**, move a controller, done. The mapping is yours and persists with the project.
+- **Lua scripts** — for controllers that need behaviour profiles can't express (DAW protocols like Mackie Control, motorised feedback, mode switching), load a `.lua` script that handles raw MIDI directly. See [Lua Controller Scripts](#lua-controller-scripts) below.
 
-Both can coexist. A Learn'd binding shadows automap on the same CC so your custom mapping wins.
+Profile and Learn'd bindings can coexist — a Learn'd binding shadows automap on the same CC so your custom mapping wins. A loaded Lua script takes the input layer entirely; it owns the controller for as long as it's active.
 
 ## Controllers Dialog
 
-Open from **Settings > Controllers**.
+Open from **Settings > Controllers**. The dialog has two tabs:
 
-![Controllers Dialog](../assets/images/interface/controllers.png)
+- **Profiles** — registered hardware controllers with their assigned MIDI input ports
+- **Scripts** — `.lua` controller scripts (see [Lua Controller Scripts](#lua-controller-scripts))
 
-The dialog lists every controller MAGDA knows about. Each row shows the manufacturer and model, the live MIDI input port the controller is connected to, and a connection-status indicator (green dot when the named port is currently available).
+### Profiles tab
+
+One row per registered controller. Each row shows:
+
+| Column | Description |
+|---|---|
+| **Status dot** | Green when the assigned MIDI input is currently connected, dim when it isn't |
+| **Name** | Manufacturer + model |
+| **Input port** | The live MIDI input the controller is bound to |
 
 Two buttons sit in the header:
 
@@ -104,6 +114,65 @@ The AI generates a profile JSON, drops it in your [controllers directory](#profi
 To tweak the generated JSON by hand — fix a CC number, switch a knob to drive `selected.pan` instead of a focused-device macro — the [Controller Profile Format reference](../reference/controller-profile-format.md) explains every field.
 
 See [AI Assistant — Slash Commands](../panels/ai-assistant.md#slash-commands).
+
+## Lua Controller Scripts
+
+Some controllers can't be expressed as a static CC → target mapping — Mackie Control surfaces, controllers with motorised faders that need feedback, controllers that change mode based on app state. For those, MAGDA hosts a **Lua scripting layer**: load a `.lua` file from the **Lua Scripts** tab in the Controllers dialog and it receives every incoming MIDI event for the assigned port.
+
+The script is just Lua 5.4 (sandboxed — no `io`, `os`, `require`) with a `magda.*` API for talking back to the DAW: `magda.transport`, `magda.session`, `magda.tracks`, `magda.devices`, `magda.midi`. Define a top-level `on_midi(event)` and it fires for every event matching the assigned input port (or every input, if the port is left blank).
+
+```lua
+-- Toggle play/stop on a single CC.
+function on_midi(e)
+    if e.type == "cc" and e.cc == 117 and e.value > 0 then
+        if magda.transport.is_playing() then
+            magda.transport.stop()
+        else
+            magda.transport.play()
+        end
+    end
+end
+```
+
+Two optional callbacks are also dispatched: `on_load()` once at script start, and `on_tick(dt)` on a periodic timer (use it to drive feedback, e.g. push the playhead position back to motorised LEDs).
+
+Only one script can be active at a time. Loading a new script replaces the previous one. Reload picks up file edits without restarting MAGDA.
+
+### Scripts Tab
+
+The Scripts tab in the Controllers dialog lists every `.lua` file in your scripts folder, one row each. Each row shows:
+
+| Column | Description |
+|---|---|
+| **Status dot** | Green when this is the active script; outlined when it isn't |
+| **Name** | Script filename (e.g. `launchkey_mini_mk4.lua`) |
+| **Active label** | An `Active` tag appears under the name when this is the loaded script |
+| **MIDI Out port** | The MIDI **output** the script sends feedback to (assignable per script) |
+| **DAW In port** | The MIDI **input** the script's `on_midi` listens to (empty = all inputs) |
+
+Header buttons:
+
+- **Open Folder** — reveals the scripts folder in the OS file browser
+- **Import…** — pick a `.lua` from disk, copy it into the scripts folder, refresh the list
+- **Reload** — re-evaluate the active script (or load the alphabetically-first script if none is active). Picks up file edits without restarting MAGDA.
+
+Click a row's port columns to assign / change the MIDI ports for that script. Right-click a row to remove the script file.
+
+### Scripts Folder
+
+| Platform | Path |
+|---|---|
+| macOS | `~/Library/MAGDA/scripts/` |
+| Windows | `%APPDATA%\MAGDA\scripts\` |
+| Linux | `~/.config/MAGDA/scripts/` |
+
+The folder is created on first launch. Drop `.lua` files in there and they show up in the Scripts tab. Per-script port assignments are saved alongside.
+
+### Footer Indicator
+
+When a Lua script is loaded, the app footer (the bar with the Live / Arrange / Mix view icons) shows a pill with the script's filename and a connection dot — green when its assigned input is plugged in, dim when it's not. Click the pill to jump back into the Controllers dialog. While the script is loaded, controller-profile pills are hidden — the script owns input.
+
+Full API reference: [Lua Scripting](../reference/lua-scripting.md).
 
 ## Tips
 

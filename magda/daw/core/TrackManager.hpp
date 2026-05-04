@@ -340,6 +340,47 @@ class TrackManager {
     void setDeviceParameterValue(const ChainNodePath& devicePath, int paramIndex, float value);
 
     /**
+     * @brief Apply a deserialized DeviceInfo (from a .mps preset) to a live device.
+     *
+     * Copies the state-y fields (parameters, macros, mods, gainDb, pluginState)
+     * onto the existing device at devicePath; preserves identity (id, name,
+     * pluginId, format, etc.). Pushes the plugin state to the running plugin
+     * and notifies UI listeners.
+     *
+     * Returns false if the path doesn't resolve to a device or the preset's
+     * plugin identity doesn't match the live device.
+     */
+    bool applyDevicePreset(const ChainNodePath& devicePath, const DeviceInfo& presetDevice);
+
+    /**
+     * @brief Apply a loaded rack preset to a live rack at the given path.
+     *
+     * Replaces the rack's state (chains, macros, mods, volume/pan/bypass,
+     * sidechain) with the preset's. The rack's own id and its position on
+     * the track are preserved so existing references stay valid; chain /
+     * device / nested-rack IDs inside the preset are reassigned to fresh
+     * runtime values to avoid collisions with other live elements. Triggers
+     * notifyTrackDevicesChanged so AudioBridge resyncs the track's plugins.
+     *
+     * Returns false if the path doesn't resolve to a rack.
+     */
+    bool applyRackPreset(const ChainNodePath& rackPath, const RackInfo& presetRack);
+
+    /**
+     * @brief Replace a track's FX chain with a loaded chain preset's elements.
+     *
+     * Replaces track.chainElements wholesale with the preset's elements. The
+     * track's identity (id, name, type, send routing, master volume/pan/etc.)
+     * is preserved — only the inline chain is swapped. All chain / device /
+     * nested-rack ids in the preset are reassigned to fresh runtime values to
+     * avoid collisions with other live elements. Triggers
+     * notifyTrackDevicesChanged so AudioBridge resyncs the track's plugins.
+     *
+     * Returns false if trackId doesn't resolve to a live track.
+     */
+    bool applyChainPreset(TrackId trackId, std::vector<ChainElement> presetElements);
+
+    /**
      * @brief Set a device parameter value from the plugin's native UI
      *
      * This method is called when the plugin's native UI changes a parameter.
@@ -396,13 +437,13 @@ class TrackManager {
 
     // Unified macro management — works for Track, Rack, and Device scopes.
     void setMacroValue(const ChainNodePath& path, int macroIndex, float value);
-    void setMacroTarget(const ChainNodePath& path, int macroIndex, MacroTarget target);
-    void setMacroLinkAmount(const ChainNodePath& path, int macroIndex, MacroTarget target,
+    void setMacroTarget(const ChainNodePath& path, int macroIndex, ControlTarget target);
+    void setMacroLinkAmount(const ChainNodePath& path, int macroIndex, ControlTarget target,
                             float amount);
-    void setMacroLinkBipolar(const ChainNodePath& path, int macroIndex, MacroTarget target,
+    void setMacroLinkBipolar(const ChainNodePath& path, int macroIndex, ControlTarget target,
                              bool bipolar);
     void setMacroName(const ChainNodePath& path, int macroIndex, const juce::String& name);
-    void removeMacroLink(const ChainNodePath& path, int macroIndex, MacroTarget target);
+    void removeMacroLink(const ChainNodePath& path, int macroIndex, ControlTarget target);
     void clearAllMacroLinks(const ChainNodePath& path, int macroIndex);
     void addMacroPage(const ChainNodePath& path);
     void removeMacroPage(const ChainNodePath& path);
@@ -411,10 +452,11 @@ class TrackManager {
     void addMod(const ChainNodePath& path, int slotIndex, ModType type,
                 LFOWaveform waveform = LFOWaveform::Sine);
     void removeMod(const ChainNodePath& path, int modIndex);
-    void setModAmount(const ChainNodePath& path, int modIndex, float amount);
-    void setModTarget(const ChainNodePath& path, int modIndex, ModTarget target);
-    void setModLinkAmount(const ChainNodePath& path, int modIndex, ModTarget target, float amount);
-    void setModLinkBipolar(const ChainNodePath& path, int modIndex, ModTarget target, bool bipolar);
+    void setModTarget(const ChainNodePath& path, int modIndex, ControlTarget target);
+    void setModLinkAmount(const ChainNodePath& path, int modIndex, ControlTarget target,
+                          float amount);
+    void setModLinkBipolar(const ChainNodePath& path, int modIndex, ControlTarget target,
+                           bool bipolar);
     void setModName(const ChainNodePath& path, int modIndex, const juce::String& name);
     void setModType(const ChainNodePath& path, int modIndex, ModType type);
     void setModWaveform(const ChainNodePath& path, int modIndex, LFOWaveform waveform);
@@ -427,7 +469,7 @@ class TrackManager {
     void notifyModCurveChanged(const ChainNodePath& path);
     void setModAudioAttack(const ChainNodePath& path, int modIndex, float ms);
     void setModAudioRelease(const ChainNodePath& path, int modIndex, float ms);
-    void removeModLink(const ChainNodePath& path, int modIndex, ModTarget target);
+    void removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target);
     void setModEnabled(const ChainNodePath& path, int modIndex, bool enabled);
     void addModPage(const ChainNodePath& path);
     void removeModPage(const ChainNodePath& path);

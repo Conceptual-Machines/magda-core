@@ -4,17 +4,15 @@
 
 #include <algorithm>
 
+#include "AppPaths.hpp"
+
 // ---------------------------------------------------------------------------
 // Path helper
 // ---------------------------------------------------------------------------
-
-namespace {
-juce::File getConfigFile() {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("config.json");
-}
-}  // namespace
+// config.json itself is anchored to the OS default location (paths::configFile
+// returns alwaysOSDefault() / "config.json"). It cannot move with the
+// configurable data dir override — Config has to be loaded BEFORE the
+// override is known.
 
 namespace {
 // Use fromUTF8 to avoid juce_String.cpp:327 assertion when std::string contains non-ASCII bytes
@@ -90,6 +88,7 @@ void Config::save() {
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+    root->setProperty("openMacrosOnSelect", openMacrosOnSelect);
     root->setProperty("previewOutputChannel", previewOutputChannel);
 
     // Auto-save
@@ -99,6 +98,11 @@ void Config::save() {
     // Export audio
     root->setProperty("exportFormat", toJuceString(exportFormat));
     root->setProperty("exportSampleRate", exportSampleRate);
+
+    // Configurable user-data paths (empty string = OS default; resolved by
+    // magda::paths::resolve()). Render folder uses the same field as before.
+    root->setProperty("dataDir", toJuceString(dataDir));
+    root->setProperty("presetsDir", toJuceString(presetsDir));
 
     // Render
     root->setProperty("renderFolder", toJuceString(renderFolder));
@@ -177,6 +181,7 @@ void Config::save() {
     root->setProperty("totalPluginCount", totalPluginCount);
     root->setProperty("scanPluginsOnStartup", scanPluginsOnStartup);
     root->setProperty("loadModelOnStartup", loadModelOnStartup);
+    root->setProperty("stopUpdatesPlayhead", stopUpdatesPlayhead);
 
     // Clip colour mode
     root->setProperty("clipColourMode", clipColourMode);
@@ -201,6 +206,18 @@ void Config::save() {
     if (!controllers_.isVoid())
         root->setProperty("controllers", controllers_);
 
+    // Lua controller scripts
+    if (!luaScripts_.isVoid())
+        root->setProperty("luaScripts", luaScripts_);
+    if (!activeLuaScript_.empty())
+        root->setProperty("activeLuaScript", toJuceString(activeLuaScript_));
+    if (!enabledFactoryLuaScripts_.empty()) {
+        juce::Array<juce::var> arr;
+        for (const auto& name : enabledFactoryLuaScripts_)
+            arr.add(toJuceString(name));
+        root->setProperty("enabledFactoryLuaScripts", arr);
+    }
+
     // Global bindings
     if (!globalBindings_.isVoid())
         root->setProperty("globalBindings", globalBindings_);
@@ -214,7 +231,7 @@ void Config::save() {
     }
 
     // Write to disk
-    auto configFile = getConfigFile();
+    auto configFile = magda::paths::configFile();
     configFile.getParentDirectory().createDirectory();
 
     auto json = juce::JSON::toString(juce::var(root.get()));
@@ -234,7 +251,7 @@ void Config::save() {
 // ---------------------------------------------------------------------------
 
 void Config::load() {
-    auto configFile = getConfigFile();
+    auto configFile = magda::paths::configFile();
     if (!configFile.existsAsFile()) {
         DBG("Config::load - file not found, using defaults: " + configFile.getFullPathName());
         return;
@@ -316,6 +333,7 @@ void Config::load() {
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+    openMacrosOnSelect = getBool("openMacrosOnSelect", openMacrosOnSelect);
     previewOutputChannel = getInt("previewOutputChannel", previewOutputChannel);
 
     autoSaveEnabled = getBool("autoSaveEnabled", autoSaveEnabled);
@@ -324,6 +342,8 @@ void Config::load() {
     exportFormat = getString("exportFormat", exportFormat);
     exportSampleRate = getDouble("exportSampleRate", exportSampleRate);
 
+    dataDir = getString("dataDir", dataDir);
+    presetsDir = getString("presetsDir", presetsDir);
     renderFolder = getString("renderFolder", renderFolder);
     renderSampleRate = getDouble("renderSampleRate", renderSampleRate);
     renderBitDepth = getInt("renderBitDepth", renderBitDepth);
@@ -481,6 +501,7 @@ void Config::load() {
     totalPluginCount = getInt("totalPluginCount", totalPluginCount);
     scanPluginsOnStartup = getBool("scanPluginsOnStartup", scanPluginsOnStartup);
     loadModelOnStartup = getBool("loadModelOnStartup", loadModelOnStartup);
+    stopUpdatesPlayhead = getBool("stopUpdatesPlayhead", stopUpdatesPlayhead);
 
     clipColourMode = getInt("clipColourMode", clipColourMode);
 
@@ -508,6 +529,19 @@ void Config::load() {
     // Controller devices
     if (obj->hasProperty("controllers"))
         controllers_ = obj->getProperty("controllers");
+
+    // Lua controller scripts
+    if (obj->hasProperty("luaScripts"))
+        luaScripts_ = obj->getProperty("luaScripts");
+    activeLuaScript_ = getString("activeLuaScript", activeLuaScript_);
+    enabledFactoryLuaScripts_.clear();
+    if (obj->hasProperty("enabledFactoryLuaScripts")) {
+        auto v = obj->getProperty("enabledFactoryLuaScripts");
+        if (v.isArray()) {
+            for (const auto& item : *v.getArray())
+                enabledFactoryLuaScripts_.push_back(item.toString().toStdString());
+        }
+    }
 
     // Global bindings
     if (obj->hasProperty("globalBindings"))

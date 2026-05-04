@@ -89,7 +89,7 @@ class AliasRegistryListener {
  * Priority order (highest to lowest): UserProject, UserGlobal, Curated, AutoGen.
  *
  * Key design constraints:
- * - lookup() returns a concrete StaticTarget only when a path is already known.
+ * - lookup() returns a concrete ControlTarget only when a path is already known.
  * - lookupStored() exposes the raw StoredAlias (including path-absent entries)
  *   for use by TargetResolver (PR 3).
  * - Param-index drift: on lookup, if path is present the stored paramIndex is
@@ -107,7 +107,7 @@ class AliasRegistry {
     // ========================================================================
 
     /**
-     * @brief Look up an alias, returning a concrete StaticTarget when possible.
+     * @brief Look up an alias, returning a concrete ControlTarget when possible.
      *
      * Walks layers highest-to-lowest. Returns a value when:
      *   - A hit is found AND the stored alias has a concrete path.
@@ -119,8 +119,8 @@ class AliasRegistry {
      * @param canonicalName  Normalized alias name (e.g. "filter_cutoff").
      * @param pluginTypeHint Optional hint for disambiguation (may be empty).
      */
-    std::optional<StaticTarget> lookup(const juce::String& canonicalName,
-                                       const juce::String& pluginTypeHint = {}) const;
+    std::optional<ControlTarget> lookup(const juce::String& canonicalName,
+                                        const juce::String& pluginTypeHint = {}) const;
 
     /**
      * @brief Look up the raw StoredAlias (for TargetResolver in PR 3).

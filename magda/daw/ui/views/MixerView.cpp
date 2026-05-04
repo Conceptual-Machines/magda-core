@@ -69,6 +69,18 @@ float meterPosToDb(float pos) {
     return MIN_DB + normalized * (MAX_DB - MIN_DB);
 }
 
+// Multi-track edit fan-out: when a non-master strip is part of a
+// multi-selection, every selected track receives the same edit. Otherwise
+// only the clicked track is touched. Master is always single-track.
+std::vector<TrackId> getMultiEditTargets(TrackId clickedId, bool isMaster) {
+    auto& sel = SelectionManager::getInstance();
+    if (!isMaster && sel.isTrackSelected(clickedId) && sel.getSelectedTrackCount() > 1) {
+        const auto& set = sel.getSelectedTracks();
+        return std::vector<TrackId>(set.begin(), set.end());
+    }
+    return {clickedId};
+}
+
 }  // namespace
 
 // Use shared LevelMeter component (extracted to components/mixer/LevelMeter.hpp)
@@ -327,13 +339,33 @@ void MixerView::ChannelStrip::setupControls() {
     panSlider->setValue(0.0, juce::dontSendNotification);
     panSlider->setFont(FontManager::getInstance().getUIFont(10.0f));
     panSlider->onValueChanged = [this](double val) {
-        UndoManager::getInstance().executeCommand(
-            std::make_unique<SetTrackPanCommand>(trackId_, static_cast<float>(val)));
+        auto& sel = SelectionManager::getInstance();
+        const bool multi =
+            !isMaster_ && sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
+        if (multi) {
+            if (multiTrackBasePans_.empty()) {
+                auto& tm = TrackManager::getInstance();
+                for (auto tid : sel.getSelectedTracks())
+                    if (auto* t = tm.getTrack(tid))
+                        multiTrackBasePans_[tid] = t->pan;
+                multiTrackDragStartPan_ = val;
+            }
+            const double delta = val - multiTrackDragStartPan_;
+            for (auto& [tid, basePan] : multiTrackBasePans_) {
+                float newPan = juce::jlimit(-1.0f, 1.0f, static_cast<float>(basePan + delta));
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackPanCommand>(tid, newPan));
+            }
+        } else {
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackPanCommand>(trackId_, static_cast<float>(val)));
+        }
     };
+    panSlider->onDragEnd = [this]() { multiTrackBasePans_.clear(); };
     if (!isMaster_) {
         AutomationTarget panTarget;
-        panTarget.type = AutomationTargetType::TrackPan;
-        panTarget.trackId = trackId_;
+        panTarget.kind = ControlTarget::Kind::TrackPan;
+        panTarget.devicePath = magda::ChainNodePath::trackLevel(trackId_);
         panSlider->setAutomationTarget(panTarget);
     }
     addAndMakeVisible(*panSlider);
@@ -381,15 +413,38 @@ void MixerView::ChannelStrip::setupControls() {
         return static_cast<double>(dbToMeterPos(db));
     });
     volumeSlider->onValueChanged = [this](double pos) {
-        float db = meterPosToDb(static_cast<float>(pos));
-        float gain = dbToGain(db);
-        UndoManager::getInstance().executeCommand(
-            std::make_unique<SetTrackVolumeCommand>(trackId_, gain));
+        const float currentDb = meterPosToDb(static_cast<float>(pos));
+        const float currentGain = dbToGain(currentDb);
+
+        auto& sel = SelectionManager::getInstance();
+        const bool multi =
+            !isMaster_ && sel.isTrackSelected(trackId_) && sel.getSelectedTrackCount() > 1;
+        if (multi) {
+            if (multiTrackBaseVolumes_.empty()) {
+                auto& tm = TrackManager::getInstance();
+                for (auto tid : sel.getSelectedTracks())
+                    if (auto* t = tm.getTrack(tid))
+                        multiTrackBaseVolumes_[tid] = t->volume;
+                multiTrackDragStartDb_ = currentDb;
+            }
+            const double deltaDb = currentDb - multiTrackDragStartDb_;
+            for (auto& [tid, baseVol] : multiTrackBaseVolumes_) {
+                float baseDb = gainToDb(baseVol);
+                float newDb = juce::jlimit(MIN_DB, MAX_DB, static_cast<float>(baseDb + deltaDb));
+                float newGain = dbToGain(newDb);
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackVolumeCommand>(tid, newGain));
+            }
+        } else {
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackVolumeCommand>(trackId_, currentGain));
+        }
     };
+    volumeSlider->onDragEnd = [this]() { multiTrackBaseVolumes_.clear(); };
     if (!isMaster_) {
         AutomationTarget volTarget;
-        volTarget.type = AutomationTargetType::TrackVolume;
-        volTarget.trackId = trackId_;
+        volTarget.kind = ControlTarget::Kind::TrackVolume;
+        volTarget.devicePath = magda::ChainNodePath::trackLevel(trackId_);
         volumeSlider->setAutomationTarget(volTarget);
     }
     addAndMakeVisible(*volumeSlider);
@@ -408,8 +463,10 @@ void MixerView::ChannelStrip::setupControls() {
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     muteButton->setClickingTogglesState(true);
     muteButton->onClick = [this]() {
-        UndoManager::getInstance().executeCommand(
-            std::make_unique<SetTrackMuteCommand>(trackId_, muteButton->getToggleState()));
+        const bool newState = muteButton->getToggleState();
+        for (auto tid : getMultiEditTargets(trackId_, isMaster_))
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackMuteCommand>(tid, newState));
     };
     addAndMakeVisible(*muteButton);
 
@@ -427,8 +484,10 @@ void MixerView::ChannelStrip::setupControls() {
                           DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
     soloButton->setClickingTogglesState(true);
     soloButton->onClick = [this]() {
-        UndoManager::getInstance().executeCommand(
-            std::make_unique<SetTrackSoloCommand>(trackId_, soloButton->getToggleState()));
+        const bool newState = soloButton->getToggleState();
+        for (auto tid : getMultiEditTargets(trackId_, isMaster_))
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SetTrackSoloCommand>(tid, newState));
     };
     addAndMakeVisible(*soloButton);
 
@@ -448,8 +507,9 @@ void MixerView::ChannelStrip::setupControls() {
                                 DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
         recordButton->setClickingTogglesState(true);
         recordButton->onClick = [this]() {
-            TrackManager::getInstance().setTrackRecordArmed(trackId_,
-                                                            recordButton->getToggleState());
+            const bool armed = recordButton->getToggleState();
+            for (auto tid : getMultiEditTargets(trackId_, isMaster_))
+                TrackManager::getInstance().setTrackRecordArmed(tid, armed);
         };
         addAndMakeVisible(*recordButton);
 
@@ -483,8 +543,9 @@ void MixerView::ChannelStrip::setupControls() {
                     nextMode = InputMonitorMode::Off;
                     break;
             }
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetTrackInputMonitorCommand>(trackId_, nextMode));
+            for (auto tid : getMultiEditTargets(trackId_, isMaster_))
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackInputMonitorCommand>(tid, nextMode));
         };
         addAndMakeVisible(*monitorButton);
 
@@ -565,6 +626,14 @@ void MixerView::ChannelStrip::setupControls() {
 
         setupRoutingCallbacks();
     }
+
+    // Listen recursively to all child clicks so Cmd/Shift-click anywhere on
+    // the strip — including on the fader, mute button, etc. — reaches the
+    // strip's mouseDown and can be routed to multi-selection. Without this,
+    // most of the strip's surface is covered by interactive children that
+    // would swallow the modifier click. The child's own mouseDown still
+    // fires (so cmd-clicking mute still toggles mute); accepted trade-off.
+    addMouseListener(this, true);
 }
 
 void MixerView::ChannelStrip::setupRoutingCallbacks() {
@@ -1161,7 +1230,15 @@ void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
 }
 
 void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
+    // Clicks on children are forwarded to us via addMouseListener so that
+    // Cmd/Shift-click anywhere on the strip can drive multi-selection. A
+    // plain click on a child must NOT also single-select the track (otherwise
+    // clicking mute on track B would steal selection from track A).
+    const bool fromChild = event.originalComponent != this;
+
     if (event.mods.isPopupMenu()) {
+        if (fromChild)
+            return;  // children manage their own right-click behaviour
         juce::PopupMenu menu;
 
         // Add Send submenu (not for master)
@@ -1217,7 +1294,33 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
                 TrackManager::getInstance().addSend(trackId_, static_cast<TrackId>(result));
             }
         });
-    } else if (onClicked) {
+    } else if (!isMaster_ && event.mods.isCommandDown()) {
+        // Cmd+click: toggle this strip in the multi-selection
+        SelectionManager::getInstance().toggleTrackSelection(trackId_);
+    } else if (!isMaster_ && event.mods.isShiftDown()) {
+        // Shift+click: range-select from the anchor track to this one (using
+        // the visible track order from TrackManager).
+        auto& sel = SelectionManager::getInstance();
+        TrackId anchor = sel.getAnchorTrack();
+        const auto& tracks = TrackManager::getInstance().getTracks();
+        int anchorIdx = -1, clickedIdx = -1;
+        for (size_t i = 0; i < tracks.size(); ++i) {
+            if (tracks[i].id == anchor)
+                anchorIdx = static_cast<int>(i);
+            if (tracks[i].id == trackId_)
+                clickedIdx = static_cast<int>(i);
+        }
+        if (anchorIdx >= 0 && clickedIdx >= 0) {
+            int lo = std::min(anchorIdx, clickedIdx);
+            int hi = std::max(anchorIdx, clickedIdx);
+            std::unordered_set<TrackId> rangeIds;
+            for (int k = lo; k <= hi; ++k)
+                rangeIds.insert(tracks[k].id);
+            sel.selectTracks(rangeIds);
+        } else if (onClicked) {
+            onClicked(trackId_, isMaster_);
+        }
+    } else if (!fromChild && onClicked) {
         onClicked(trackId_, isMaster_);
     }
 }
@@ -1280,6 +1383,9 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
 
+    // Register as SelectionManager listener so multi-selected strips light up
+    SelectionManager::getInstance().addListener(this);
+
     // Register as ViewModeController listener
     ViewModeController::getInstance().addListener(this);
 
@@ -1313,6 +1419,7 @@ MixerView::~MixerView() {
     }
     stopTimer();
     TrackManager::getInstance().removeListener(this);
+    SelectionManager::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
 
     // Explicitly clear all UI components before automatic member destruction
@@ -1885,52 +1992,44 @@ void MixerView::selectChannel(int index, bool isMaster) {
     }
 }
 
-void MixerView::trackSelectionChanged(TrackId trackId) {
-    // Sync our visual selection with TrackManager's selection
-    // Deselect all first
+void MixerView::trackSelectionChanged(TrackId /*trackId*/) {
+    syncSelectionVisuals();
+}
+
+void MixerView::selectionTypeChanged(SelectionType /*newType*/) {
+    syncSelectionVisuals();
+}
+
+void MixerView::multiTrackSelectionChanged(const std::unordered_set<TrackId>& /*trackIds*/) {
+    syncSelectionVisuals();
+}
+
+void MixerView::syncSelectionVisuals() {
+    // Drive every strip's highlight from SelectionManager. This is one path
+    // for both single- and multi-track selection: each strip lights up iff
+    // its track is in the current selection set. Master is master-track-id.
+    auto& sel = SelectionManager::getInstance();
+    const TrackId primary = sel.getSelectedTrack();
+
     for (auto& strip : channelStrips) {
-        strip->setSelected(false);
+        strip->setSelected(sel.isTrackSelected(strip->getTrackId()));
     }
     for (auto& strip : auxChannelStrips) {
-        strip->setSelected(false);
+        strip->setSelected(sel.isTrackSelected(strip->getTrackId()));
     }
     if (masterStrip)
-        masterStrip->setSelected(false);
-    selectedIsMaster = false;
+        masterStrip->setSelected(primary == MASTER_TRACK_ID);
+
+    selectedIsMaster = (primary == MASTER_TRACK_ID);
     selectedChannelIndex = -1;
-
-    if (trackId == INVALID_TRACK_ID) {
-        return;
-    }
-
-    // Handle master track selection
-    if (trackId == MASTER_TRACK_ID) {
-        selectedIsMaster = true;
-        selectedChannelIndex = -1;
-        if (masterStrip)
-            masterStrip->setSelected(true);
-        if (onChannelSelected) {
-            onChannelSelected(selectedChannelIndex, selectedIsMaster);
-        }
-        return;
-    }
-
-    // Find and select the matching channel strip
     for (size_t i = 0; i < channelStrips.size(); ++i) {
-        if (channelStrips[i]->getTrackId() == trackId) {
-            channelStrips[i]->setSelected(true);
+        if (channelStrips[i]->getTrackId() == primary) {
             selectedChannelIndex = static_cast<int>(i);
-            return;
+            break;
         }
     }
-
-    // Check aux strips
-    for (size_t i = 0; i < auxChannelStrips.size(); ++i) {
-        if (auxChannelStrips[i]->getTrackId() == trackId) {
-            auxChannelStrips[i]->setSelected(true);
-            return;
-        }
-    }
+    if (onChannelSelected)
+        onChannelSelected(selectedChannelIndex, selectedIsMaster);
 }
 
 // ============================================================================

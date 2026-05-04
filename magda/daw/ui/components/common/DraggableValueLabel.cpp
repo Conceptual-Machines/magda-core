@@ -301,12 +301,14 @@ void DraggableValueLabel::paint(juce::Graphics& g) {
         g.fillRoundedRectangle(bounds, 2.0f);
     }
 
-    // Border: automation tint wins over drag so the state reads at a glance.
+    // Border: automation tint wins over drag/co-edit so the state reads at
+    // a glance. coEditing_ paints the same blue as a real drag — it signals
+    // "this label is also being changed right now" during a multi-track edit.
     if (drawBorder_) {
         juce::Colour borderColour;
         if (hasTint)
             borderColour = tintColour;
-        else if (isDragging_)
+        else if (isDragging_ || coEditing_)
             borderColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE);
         else
             borderColour = DarkTheme::getColour(DarkTheme::BORDER);
@@ -339,6 +341,9 @@ void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
     dragStartValue_ = value_;
     dragStartY_ = e.y;
 
+    if (onDragStart)
+        onDragStart();
+
     // Suppress playback write-back for the duration of the gesture so the
     // engine doesn't fight a drag-in-progress. This is transient (cleared on
     // mouseUp) and is NOT the same as the persistent override/bypass — that
@@ -354,7 +359,7 @@ void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
         // Capture pre-drag value as the Touch-mode bounce-back baseline. Same
         // mechanism TextSlider uses; needed here for any DraggableValueLabel
         // wired to a Macro / ModParameter / device target.
-        ParameterInfo info = automationTarget_.getParameterInfo();
+        ParameterInfo info = getParameterInfoForTarget(automationTarget_);
         double normalized = static_cast<double>(
             ParameterUtils::realToNormalized(static_cast<float>(dragStartValue_), info));
         AutomationManager::getInstance().setTouchBaseline(automationTarget_, normalized);

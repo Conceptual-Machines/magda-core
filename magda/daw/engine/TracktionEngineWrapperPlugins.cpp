@@ -3,6 +3,7 @@
 #include <thread>
 #include <utility>
 
+#include "../core/AppPaths.hpp"
 #include "PluginScanCoordinator.hpp"
 #include "TracktionEngineWrapper.hpp"
 #include "core/Config.hpp"
@@ -189,19 +190,11 @@ const juce::KnownPluginList& TracktionEngineWrapper::getKnownPluginList() const 
 }
 
 juce::File TracktionEngineWrapper::getPluginListFile() const {
-    // Store plugin list in app data directory
-    // macOS: ~/Library/Application Support/MAGDA/
-    // Windows: %APPDATA%/MAGDA/
-    // Linux: ~/.config/MAGDA/
-    auto appDataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                          .getChildFile("MAGDA");
-
-    // Create directory if it doesn't exist
-    if (!appDataDir.exists()) {
-        appDataDir.createDirectory();
-    }
-
-    return appDataDir.getChildFile("PluginList.xml");
+    // Routed via paths::pluginListFile() — respects MAGDA_DATA_DIR /
+    // Config::getDataDir() override. Defaults to userApplicationDataDirectory.
+    auto file = magda::paths::pluginListFile();
+    file.getParentDirectory().createDirectory();
+    return file;
 }
 
 void TracktionEngineWrapper::savePluginList() {

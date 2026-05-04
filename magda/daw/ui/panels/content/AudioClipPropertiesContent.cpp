@@ -7,10 +7,12 @@
 #include "BinaryData.h"
 #include "audio/AudioBridge.hpp"
 #include "audio/AudioThumbnailManager.hpp"
+#include "core/ClipManager.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "project/ProjectManager.hpp"
 #include "state/TimelineController.hpp"
 
 namespace magda::daw::ui {
@@ -144,30 +146,46 @@ void AudioClipPropertiesContent::createControls() {
         if (auto* tc = magda::TimelineController::getCurrent())
             bpm = tc->getState().tempo.bpm;
 
-        if (enable && clip->type == magda::ClipType::Audio) {
-            // Cached BPM applies immediately; cache miss kicks off background
-            // detection and patches the clip when the result arrives. Beat mode
-            // enables optimistically with the existing sourceBPM in the meantime.
+        const bool sourceBpmLooksDefaulted =
+            clip->sourceBPM <= 0.0 || (bpm > 0.0 && std::abs(clip->sourceBPM - bpm) < 0.1);
+        if (enable && clip->type == magda::ClipType::Audio && sourceBpmLooksDefaulted) {
+            // Issue #1157: only seed from AudioThumbnailManager when the
+            // file didn't carry tempo metadata. setSourceMetadata (from TE's
+            // loopInfo) is authoritative when present.
             auto& thumbs = magda::AudioThumbnailManager::getInstance();
             double cached = thumbs.getCachedBPM(clip->audioFilePath);
             if (cached > 0.0) {
-                double sourceDuration = clip->getSourceLength();
                 clip->sourceBPM = cached;
-                if (sourceDuration > 0.0)
-                    clip->sourceNumBeats = sourceDuration * cached / 60.0;
+                if (auto* thumb = thumbs.getThumbnail(clip->audioFilePath)) {
+                    double fileDuration = thumb->getTotalLength();
+                    if (fileDuration > 0.0)
+                        clip->sourceNumBeats = fileDuration * cached / 60.0;
+                }
             } else {
                 auto cid = clipId_;
                 thumbs.requestBPMDetection(clip->audioFilePath, [cid](double detectedBPM) {
                     if (detectedBPM <= 0.0)
                         return;
-                    auto* c = magda::ClipManager::getInstance().getClip(cid);
+                    auto& mgr = magda::ClipManager::getInstance();
+                    auto* c = mgr.getClip(cid);
                     if (!c)
                         return;
-                    c->sourceBPM = detectedBPM;
-                    double sd = c->getSourceLength();
-                    if (sd > 0.0)
-                        c->sourceNumBeats = sd * detectedBPM / 60.0;
-                    magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(cid);
+                    // Issue #1157: file metadata wins over audio analysis.
+                    double live =
+                        magda::ProjectManager::getInstance().getCurrentProjectInfo().tempo;
+                    bool existingLooksDefaulted =
+                        c->sourceBPM > 0.0 && live > 0.0 && std::abs(c->sourceBPM - live) < 0.1;
+                    if (c->sourceBPM > 0.0 && !existingLooksDefaulted)
+                        return;
+                    magda::ClipManager::AudioClipBeatsUpdate u;
+                    u.sourceBPM = detectedBPM;
+                    if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                            c->audioFilePath)) {
+                        double fileDuration = thumb->getTotalLength();
+                        if (fileDuration > 0.0)
+                            u.sourceNumBeats = fileDuration * detectedBPM / 60.0;
+                    }
+                    mgr.applyAudioClipBeats(cid, u, live);
                 });
             }
         }
@@ -246,20 +264,34 @@ void AudioClipPropertiesContent::createControls() {
             return;
 
         double newBPM = bpmValue_->getValue();
-        double sourceDuration = clip->getSourceLength();
-        clip->sourceBPM = newBPM;
-        if (sourceDuration > 0.0)
-            clip->sourceNumBeats = sourceDuration * newBPM / 60.0;
 
+        // Issue #1157: BPM edit is a CORRECTION of detected file metadata,
+        // not a stretch control. Mirror ClipInspectorSections — for autoTempo
+        // clips, route through the canonical setter so length/loopLengthBeats
+        // are not clobbered. Use the file's actual duration (not the loop
+        // region) to derive sourceNumBeats.
         if (clip->autoTempo) {
             double bpm = 120.0;
             if (auto* tc = magda::TimelineController::getCurrent())
                 bpm = tc->getState().tempo.bpm;
-            clip->lengthBeats = clip->sourceNumBeats;
-            clip->loopLengthBeats = clip->sourceNumBeats;
-            double newLength = clip->lengthBeats * 60.0 / bpm;
-            magda::ClipManager::getInstance().resizeClip(clipId_, newLength, false, bpm);
+            magda::ClipManager::AudioClipBeatsUpdate u;
+            u.sourceBPM = newBPM;
+            if (auto* thumb =
+                    magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath)) {
+                double fileDuration = thumb->getTotalLength();
+                if (fileDuration > 0.0)
+                    u.sourceNumBeats = fileDuration * newBPM / 60.0;
+            }
+            magda::ClipManager::getInstance().applyAudioClipBeats(clipId_, u, bpm);
         } else {
+            // Non-autoTempo audio: sourceBPM is just stored metadata.
+            clip->sourceBPM = newBPM;
+            if (auto* thumb =
+                    magda::AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath)) {
+                double fileDuration = thumb->getTotalLength();
+                if (fileDuration > 0.0)
+                    clip->sourceNumBeats = fileDuration * newBPM / 60.0;
+            }
             magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
         }
     };
@@ -322,147 +354,8 @@ void AudioClipPropertiesContent::createControls() {
     };
 
     // ===================== FADES SECTION =====================
-    fadesSectionLabel_ = makeSectionLabel("Fades");
-
-    fadeInLabel_ = makeLabel("In");
-    fadeInValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
-    fadeInValue_->setRange(0.0, 10.0, 0.0);
-    fadeInValue_->setDecimalPlaces(3);
-    fadeInValue_->setSuffix("s");
-    fadeInValue_->setDrawBackground(false);
-    fadeInValue_->setDrawBorder(true);
-    fadeInValue_->setShowFillIndicator(false);
-    fadeInValue_->setFontSize(11.0f);
-    fadeInValue_->setDoubleClickResetsValue(false);
-    fadeInValue_->onValueChange = [this]() {
-        if (clipId_ == magda::INVALID_CLIP_ID)
-            return;
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetClipFadeInCommand>(clipId_, fadeInValue_->getValue()));
-    };
-    addAndMakeVisible(*fadeInValue_);
-
-    fadeOutLabel_ = makeLabel("Out");
-    fadeOutValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
-    fadeOutValue_->setRange(0.0, 10.0, 0.0);
-    fadeOutValue_->setDecimalPlaces(3);
-    fadeOutValue_->setSuffix("s");
-    fadeOutValue_->setDrawBackground(false);
-    fadeOutValue_->setDrawBorder(true);
-    fadeOutValue_->setShowFillIndicator(false);
-    fadeOutValue_->setFontSize(11.0f);
-    fadeOutValue_->setDoubleClickResetsValue(false);
-    fadeOutValue_->onValueChange = [this]() {
-        if (clipId_ == magda::INVALID_CLIP_ID)
-            return;
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetClipFadeOutCommand>(clipId_, fadeOutValue_->getValue()));
-    };
-    addAndMakeVisible(*fadeOutValue_);
-
-    // Fade curve type buttons (Linear, Convex, Concave, S-Curve)
-    {
-        struct FadeTypeIcon {
-            const char* name;
-            const char* data;
-            size_t size;
-            const char* tooltip;
-        };
-        FadeTypeIcon fadeTypeIcons[] = {
-            {"Linear", BinaryData::fade_linear_svg, BinaryData::fade_linear_svgSize, "Linear"},
-            {"Convex", BinaryData::fade_convex_svg, BinaryData::fade_convex_svgSize, "Convex"},
-            {"Concave", BinaryData::fade_concave_svg, BinaryData::fade_concave_svgSize, "Concave"},
-            {"SCurve", BinaryData::fade_scurve_svg, BinaryData::fade_scurve_svgSize, "S-Curve"},
-        };
-
-        auto setupFadeTypeButton = [this](std::unique_ptr<magda::SvgButton>& btn,
-                                          const FadeTypeIcon& icon) {
-            btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
-            btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
-            btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-            btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-            btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-            btn->setBorderThickness(1.0f);
-            btn->setTooltip(icon.tooltip);
-            btn->setClickingTogglesState(false);
-            addAndMakeVisible(*btn);
-        };
-
-        for (int i = 0; i < 4; ++i) {
-            setupFadeTypeButton(fadeInTypeButtons_[i], fadeTypeIcons[i]);
-            int fadeType = i + 1;
-            fadeInTypeButtons_[i]->onClick = [this, i, fadeType]() {
-                if (clipId_ == magda::INVALID_CLIP_ID)
-                    return;
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeInTypeCommand>(clipId_, fadeType));
-                for (int j = 0; j < 4; ++j)
-                    fadeInTypeButtons_[j]->setActive(j == i);
-            };
-
-            setupFadeTypeButton(fadeOutTypeButtons_[i], fadeTypeIcons[i]);
-            fadeOutTypeButtons_[i]->onClick = [this, i, fadeType]() {
-                if (clipId_ == magda::INVALID_CLIP_ID)
-                    return;
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeOutTypeCommand>(clipId_, fadeType));
-                for (int j = 0; j < 4; ++j)
-                    fadeOutTypeButtons_[j]->setActive(j == i);
-            };
-        }
-    }
-
-    // Fade behaviour buttons (Gain Fade, Speed Ramp)
-    {
-        struct FadeBehaviourIcon {
-            const char* name;
-            const char* data;
-            size_t size;
-            const char* tooltip;
-        };
-        FadeBehaviourIcon fadeBehaviourIcons[] = {
-            {"GainFade", BinaryData::fade_gain_svg, BinaryData::fade_gain_svgSize, "Gain Fade"},
-            {"SpeedRamp", BinaryData::fade_speedramp_svg, BinaryData::fade_speedramp_svgSize,
-             "Speed Ramp"},
-        };
-
-        auto setupFadeBehaviourButton = [this](std::unique_ptr<magda::SvgButton>& btn,
-                                               const FadeBehaviourIcon& icon) {
-            btn = std::make_unique<magda::SvgButton>(icon.name, icon.data, icon.size);
-            btn->setOriginalColor(juce::Colour(0xFFE3E3E3));
-            btn->setNormalColor(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-            btn->setHoverColor(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-            btn->setActiveColor(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
-            btn->setBorderColor(DarkTheme::getColour(DarkTheme::BORDER));
-            btn->setBorderThickness(1.0f);
-            btn->setTooltip(icon.tooltip);
-            btn->setClickingTogglesState(false);
-            addAndMakeVisible(*btn);
-        };
-
-        for (int i = 0; i < 2; ++i) {
-            setupFadeBehaviourButton(fadeInBehaviourButtons_[i], fadeBehaviourIcons[i]);
-            fadeInBehaviourButtons_[i]->onClick = [this, i]() {
-                if (clipId_ == magda::INVALID_CLIP_ID)
-                    return;
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeInBehaviourCommand>(clipId_, i));
-                for (int j = 0; j < 2; ++j)
-                    fadeInBehaviourButtons_[j]->setActive(j == i);
-            };
-
-            setupFadeBehaviourButton(fadeOutBehaviourButtons_[i], fadeBehaviourIcons[i]);
-            fadeOutBehaviourButtons_[i]->onClick = [this, i]() {
-                if (clipId_ == magda::INVALID_CLIP_ID)
-                    return;
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipFadeOutBehaviourCommand>(clipId_, i));
-                for (int j = 0; j < 2; ++j)
-                    fadeOutBehaviourButtons_[j]->setActive(j == i);
-            };
-        }
-    }
+    fadesSection_ = std::make_unique<ClipFadesSection>();
+    addAndMakeVisible(*fadesSection_);
 
     // ===================== TRANSIENT DETECTION SECTION =====================
     transientSectionLabel_ = makeSectionLabel("Transient Detection");
@@ -565,22 +458,12 @@ void AudioClipPropertiesContent::updateFromClip() {
         beatsValue_->setValue(clip->lengthBeats > 0.0 ? clip->lengthBeats : 4.0,
                               juce::dontSendNotification);
         pitchValue_->setValue(static_cast<double>(clip->pitchChange), juce::dontSendNotification);
-        fadeInValue_->setValue(clip->fadeIn, juce::dontSendNotification);
-        fadeOutValue_->setValue(clip->fadeOut, juce::dontSendNotification);
-
-        for (int i = 0; i < 4; ++i) {
-            fadeInTypeButtons_[i]->setActive(i == clip->fadeInType - 1);
-            fadeOutTypeButtons_[i]->setActive(i == clip->fadeOutType - 1);
-        }
-        for (int i = 0; i < 2; ++i) {
-            fadeInBehaviourButtons_[i]->setActive(i == clip->fadeInBehaviour);
-            fadeOutBehaviourButtons_[i]->setActive(i == clip->fadeOutBehaviour);
-        }
-
         volumeValue_->setValue(static_cast<double>(clip->volumeDB), juce::dontSendNotification);
         gainValue_->setValue(static_cast<double>(clip->gainDB), juce::dontSendNotification);
         panValue_->setValue(static_cast<double>(clip->pan), juce::dontSendNotification);
     }
+
+    fadesSection_->setClip(clipId_);
 
     bool enabled = hasClip;
     bool isAutoTempo = hasClip && clip->autoTempo;
@@ -590,8 +473,6 @@ void AudioClipPropertiesContent::updateFromClip() {
     beatsValue_->setEnabled(enabled && isAutoTempo);
     pitchValue_->setEnabled(enabled);
     analogPitchToggle_->setEnabled(enabled && !isAutoTempo && !(hasClip && clip->warpEnabled));
-    fadeInValue_->setEnabled(enabled);
-    fadeOutValue_->setEnabled(enabled);
     transientSensValue_->setEnabled(enabled);
     volumeValue_->setEnabled(enabled);
     gainValue_->setEnabled(enabled);
@@ -632,7 +513,6 @@ void AudioClipPropertiesContent::resized() {
     int toggleW = TOGGLE_WIDTH;
     int gap = 4;
     int colGap = 8;
-    int iconBtnSize = ROW_HEIGHT;
 
     auto addRow = [&](juce::Rectangle<int>& area, int height) -> juce::Rectangle<int> {
         auto row = area.removeFromTop(height);
@@ -651,14 +531,6 @@ void AudioClipPropertiesContent::resized() {
         safeBounds(label, row.removeFromLeft(labelW));
         row.removeFromLeft(2);
         safeBounds(value, row);
-    };
-
-    auto layoutIconButtons = [&](juce::Rectangle<int> row, auto* buttons, int count) {
-        for (int i = 0; i < count; ++i) {
-            safeBounds(*buttons[i], row.removeFromLeft(iconBtnSize));
-            if (i < count - 1)
-                row.removeFromLeft(2);
-        }
     };
 
     auto addSeparator = [&](juce::Rectangle<int>& area) {
@@ -713,32 +585,10 @@ void AudioClipPropertiesContent::resized() {
 
     // --- RIGHT COLUMN: Fades, Mix ---
 
-    fadesSectionLabel_->setBounds(addRow(rightCol, SECTION_LABEL_HEIGHT));
-
-    layoutLabelValue(addRow(rightCol, ROW_HEIGHT), *fadeInLabel_, *fadeInValue_, labelW);
     {
-        auto row = addRow(rightCol, ROW_HEIGHT);
-        row.removeFromLeft(labelW + 2);
-        layoutIconButtons(row, fadeInTypeButtons_, 4);
-    }
-    {
-        auto row = addRow(rightCol, ROW_HEIGHT);
-        row.removeFromLeft(labelW + 2);
-        layoutIconButtons(row, fadeInBehaviourButtons_, 2);
-    }
-
-    rightCol.removeFromTop(ROW_GAP);
-
-    layoutLabelValue(addRow(rightCol, ROW_HEIGHT), *fadeOutLabel_, *fadeOutValue_, labelW);
-    {
-        auto row = addRow(rightCol, ROW_HEIGHT);
-        row.removeFromLeft(labelW + 2);
-        layoutIconButtons(row, fadeOutTypeButtons_, 4);
-    }
-    {
-        auto row = addRow(rightCol, ROW_HEIGHT);
-        row.removeFromLeft(labelW + 2);
-        layoutIconButtons(row, fadeOutBehaviourButtons_, 2);
+        int ph = fadesSection_ ? fadesSection_->getPreferredHeight() : 0;
+        if (ph > 0)
+            fadesSection_->setBounds(addRow(rightCol, ph));
     }
 
     addSeparator(rightCol);

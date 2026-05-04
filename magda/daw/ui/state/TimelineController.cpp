@@ -359,11 +359,25 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StopPlayba
         return ChangeFlags::None;  // Already stopped
     }
 
+    // Capture where playback was at the moment of stopping, before any
+    // resets. The "stop updates playhead" preference uses this to move
+    // editPosition to the stop point so the next Play resumes from there.
+    const double stopPosition = state.playhead.playbackPosition;
+
     state.playhead.isPlaying = false;
     state.playhead.isRecording = false;
     punchArmed_ = false;
-    // Reset playbackPosition to editPosition (Bitwig behavior)
-    state.playhead.playbackPosition = state.playhead.editPosition;
+
+    if (magda::Config::getInstance().getStopUpdatesPlayhead()) {
+        state.playhead.editPosition = stopPosition;
+        state.playhead.editPositionBeats =
+            magda::TimelineUtils::secondsToBeats(stopPosition, state.tempo.bpm);
+        state.playhead.playbackPosition = stopPosition;
+    } else {
+        // Default Bitwig behavior: rewind playbackPosition to editPosition
+        // so the next Play restarts from where the playhead was before.
+        state.playhead.playbackPosition = state.playhead.editPosition;
+    }
 
     // Notify transport listeners to stop playback
     for (auto* listener : audioEngineListeners) {
@@ -412,18 +426,19 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditCursorEvent& e) {
-    double newPos = e.position;
+    double newBeats = e.positionBeats;
 
-    // Allow -1.0 to hide the cursor, otherwise clamp to valid range
-    if (newPos >= 0.0) {
-        newPos = juce::jlimit(0.0, state.timelineLength, newPos);
+    // Allow -1.0 to hide the cursor, otherwise clamp to the timeline in beats.
+    if (newBeats >= 0.0) {
+        newBeats = juce::jlimit(0.0, state.secondsToBeats(state.timelineLength), newBeats);
     }
 
-    if (newPos == state.editCursorPosition) {
+    if (newBeats == state.editCursorBeats) {
         return ChangeFlags::None;
     }
 
-    state.editCursorPosition = newPos;
+    state.editCursorBeats = newBeats;
+    state.editCursorPosition = newBeats >= 0.0 ? state.beatsToSeconds(newBeats) : -1.0;
     // Use Selection flag since edit cursor is an editing-related visual
     return ChangeFlags::Selection;
 }
@@ -691,7 +706,18 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
     // Update all beat-anchored positions to maintain bar/beat positions
     uint32_t extraFlags = 0;
 
-    // --- Edit cursor ---
+    // --- Edit cursor (split/paste cursor) ---
+    if (state.editCursorPosition >= 0.0) {
+        if (state.editCursorBeats < 0.0) {
+            state.editCursorBeats =
+                magda::TimelineUtils::secondsToBeats(state.editCursorPosition, oldBpm);
+        }
+        state.editCursorPosition =
+            magda::TimelineUtils::beatsToSeconds(state.editCursorBeats, newBpm);
+        extraFlags |= static_cast<uint32_t>(ChangeFlags::Selection);
+    }
+
+    // --- Playhead edit position ---
     if (state.playhead.editPosition > 0.0) {
         // Migration: calculate beat position if it was never set
         if (state.playhead.editPositionBeats <= 0.0 && state.playhead.editPosition > 0.0) {
@@ -779,52 +805,59 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
         }
     }
 
-    // Update auto-tempo clips when tempo changes
-    // Beats are authoritative — update derived seconds and notify AudioBridge to re-sync TE.
-    // UI reads beats directly so the notification doesn't cause stale-BPM layout issues.
+    // Update beat-authoritative clips when project tempo changes.
+    //
+    // Beats are the canonical state for these clips — seconds are a derived
+    // cache. ClipManager::refreshDerivedSeconds is the single source of truth
+    // for that derivation; calling it here keeps every reader (renderers,
+    // ClipSynchronizer, inspector readouts) consistent without duplicating
+    // formulas. Process clips of every view (arrangement AND session) — the
+    // earlier session-only skip caused issue #1157: session autoTempo clips
+    // kept stale `length` / `startTime` after a project-tempo change, which
+    // made the inspector beat readout disagree with the rendered loop region.
     if (std::abs(newBpm - oldBpm) > 0.01) {
         auto& clipManager = ClipManager::getInstance();
         auto allClips = clipManager.getClips();
 
-        // First pass: update all seconds from beats
         std::vector<ClipId> updatedClipIds;
         for (const auto& clip : allClips) {
-            if (clip.view != ClipView::Arrangement)
-                continue;
-
             auto* mutableClip = clipManager.getClip(clip.id);
             if (!mutableClip)
                 continue;
 
-            // Migration: populate startBeats if not set (default 0 with non-zero startTime)
-            if (mutableClip->startBeats <= 0.0 && mutableClip->startTime > 0.0) {
-                mutableClip->startBeats =
-                    magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
-            }
-
-            // All arrangement clips: update startTime from beats
-            mutableClip->startTime =
-                magda::TimelineUtils::beatsToSeconds(mutableClip->startBeats, newBpm);
-
-            // Beat-authoritative clips (MIDI, autoTempo audio): also update length
+            // Migration: populate startBeats / lengthBeats if absent (legacy
+            // projects saved before beats-authoritative storage existed).
             if (mutableClip->isBeatsAuthoritative()) {
-                if (mutableClip->lengthBeats <= 0.0) {
+                if (mutableClip->startBeats <= 0.0 && mutableClip->startTime > 0.0) {
+                    mutableClip->startBeats =
+                        magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
+                }
+                if (mutableClip->lengthBeats <= 0.0 && mutableClip->length > 0.0) {
                     mutableClip->lengthBeats =
                         magda::TimelineUtils::secondsToBeats(clip.length, oldBpm);
                 }
-                mutableClip->length =
-                    magda::TimelineUtils::beatsToSeconds(mutableClip->lengthBeats, newBpm);
-
-                if (mutableClip->type == ClipType::MIDI && mutableClip->loopLengthBeats > 0.0) {
-                    mutableClip->loopLength =
-                        magda::TimelineUtils::beatsToSeconds(mutableClip->loopLengthBeats, newBpm);
+            } else if (clip.view == ClipView::Arrangement) {
+                // Time-authoritative arrangement clips: keep startTime fixed
+                // in beats so the clip stays at the same musical position.
+                if (mutableClip->startBeats <= 0.0 && mutableClip->startTime > 0.0) {
+                    mutableClip->startBeats =
+                        magda::TimelineUtils::secondsToBeats(clip.startTime, oldBpm);
                 }
+                mutableClip->startTime =
+                    magda::TimelineUtils::beatsToSeconds(mutableClip->startBeats, newBpm);
+                updatedClipIds.push_back(clip.id);
+                continue;
+            } else {
+                // Session time-authoritative clips: nothing to update.
+                continue;
             }
 
+            // Beat-authoritative path: refresh the seconds cache from beats.
+            clipManager.refreshDerivedSeconds(clip.id, newBpm);
             updatedClipIds.push_back(clip.id);
         }
 
-        // Second pass: notify so AudioBridge re-syncs TE clip positions
+        // Notify so AudioBridge re-syncs TE positions and the UI re-reads.
         for (auto clipId : updatedClipIds) {
             clipManager.forceNotifyClipPropertyChanged(clipId);
         }
@@ -1034,6 +1067,11 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTimelin
     state.playhead.editPosition = juce::jmin(state.playhead.editPosition, state.timelineLength);
     state.playhead.playbackPosition =
         juce::jmin(state.playhead.playbackPosition, state.timelineLength);
+    if (state.editCursorBeats >= 0.0) {
+        state.editCursorBeats =
+            juce::jmin(state.editCursorBeats, state.secondsToBeats(state.timelineLength));
+        state.editCursorPosition = state.beatsToSeconds(state.editCursorBeats);
+    }
 
     if (state.loop.isValid()) {
         state.loop.endTime = juce::jmin(state.loop.endTime, state.timelineLength);

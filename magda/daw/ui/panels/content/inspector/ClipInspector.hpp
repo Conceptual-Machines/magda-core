@@ -6,6 +6,7 @@
 #include "../../common/DraggableValueLabel.hpp"
 #include "../../common/SvgButton.hpp"
 #include "BaseInspector.hpp"
+#include "clip/sections/ClipFadesSection.hpp"
 #include "core/ClipManager.hpp"
 
 namespace magda::daw::ui {
@@ -156,14 +157,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     std::unique_ptr<magda::DraggableValueLabel> clipGainValue_;
 
     // Fades section
-    juce::Label fadesSectionLabel_;
-    std::unique_ptr<magda::DraggableValueLabel> fadeInValue_;
-    std::unique_ptr<magda::DraggableValueLabel> fadeOutValue_;
-    std::unique_ptr<magda::SvgButton> fadeInTypeButtons_[4];
-    std::unique_ptr<magda::SvgButton> fadeOutTypeButtons_[4];
-    std::unique_ptr<magda::SvgButton> fadeInBehaviourButtons_[2];
-    std::unique_ptr<magda::SvgButton> fadeOutBehaviourButtons_[2];
-    juce::TextButton autoCrossfadeToggle_;
+    std::unique_ptr<ClipFadesSection> fadesSection_;
 
     // Channels section
     juce::Label channelsSectionLabel_;
@@ -175,7 +169,6 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     juce::ComboBox launchModeCombo_;
     juce::Label launchQuantizeLabel_;
     juce::ComboBox launchQuantizeCombo_;
-
     // Scrollable container for clip properties
     juce::Viewport clipPropsViewport_;
     class ClipPropsContainer : public juce::Component {
@@ -192,8 +185,6 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
         float minVolumeDB = 0.0f, maxVolumeDB = 0.0f;
         float minPan = 0.0f, maxPan = 0.0f;
         float minGainDB = 0.0f, maxGainDB = 0.0f;
-        double minFadeIn = 0.0, maxFadeIn = 0.0;
-        double minFadeOut = 0.0, maxFadeOut = 0.0;
         double minSpeedRatio = 1.0, maxSpeedRatio = 1.0;
         double minStartSeconds = 0.0, maxStartSeconds = 0.0;
         double minLengthSeconds = 0.0, maxLengthSeconds = 0.0;
@@ -209,8 +200,6 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     double multiVolumeDragStart_ = 0.0;
     double multiPanDragStart_ = 0.0;
     double multiGainDragStart_ = 0.0;
-    double multiFadeInDragStart_ = 0.0;
-    double multiFadeOutDragStart_ = 0.0;
     double multiSpeedRatioDragStart_ = 0.0;
     double multiStartDragStart_ = 0.0;
     double multiEndDragStart_ = 0.0;

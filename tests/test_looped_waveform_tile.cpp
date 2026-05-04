@@ -27,6 +27,10 @@
 
 namespace {
 
+void syncPlacement(magda::ClipInfo& clip, double bpm = 120.0) {
+    clip.setPlacementBeats(clip.startTime * bpm / 60.0, clip.length * bpm / 60.0);
+}
+
 /// Mirrors the tile source-range calculation used in ClipComponent::paintAudioClip
 /// and WaveformGridComponent::paintWaveformThumbnail for looped clips.
 struct TileSourceRange {
@@ -60,6 +64,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Non-looped clip: source range spans full clip") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.offset = 1.0;
@@ -68,6 +73,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.loopStart = 0.0;
         clip.loopLength = 0.0;  // Not set, derived from clip length
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         REQUIRE(di.sourceFileStart == Catch::Approx(1.0));
@@ -77,6 +83,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Looped clip: source range covers one loop cycle") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 8.0;  // clip is 8s long
         clip.speedRatio = 1.0;
@@ -86,6 +93,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.offset = clip.loopStart;  // phase=0 within loop
 
         double bpm = 120.0;
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, bpm);
 
         REQUIRE(di.loopLengthSeconds == Catch::Approx(2.0));  // sourceLength * speedRatio
@@ -100,6 +108,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Looped clip with stretch: source range accounts for stretch") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 16.0;     // stretched clip
         clip.speedRatio = 2.0;  // 2x faster
@@ -109,6 +118,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.offset = clip.loopStart;  // phase=0 within loop
 
         double bpm = 120.0;
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, bpm);
 
         REQUIRE(di.loopLengthSeconds ==
@@ -122,6 +132,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Loop active when loopLength is zero but loopEnabled is true") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 1.0;
         clip.offset = 0.0;
@@ -131,6 +142,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.loopStart = 0.0;
         clip.loopLength = 0.0;  // No source region defined
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // With loopLength=0, sourceLength falls back to clip.length * speedRatio
@@ -140,6 +152,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Clip shorter than loop cycle: source range covers full loop region") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 1.0;  // 1s clip, shorter than 2s loop cycle
         clip.speedRatio = 1.0;
@@ -148,6 +161,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.loopLength = 2.0;         // 2s source region
         clip.offset = clip.loopStart;  // phase=0 within loop
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // sourceFileStart/End represent the full loop source region for waveform drawing.
@@ -158,6 +172,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Looped clip with stretch: clip covers multiple cycles") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 1.0;  // 1s on timeline
         clip.offset = 0.0;
@@ -167,6 +182,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.loopStart = 0.0;
         clip.loopLength = 1.0;  // 1s source region → 0.5s on timeline → clip has 2 full cycles
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // At 2x speed: 1.0s on timeline = 2.0s of source, loop cycle = 0.5s on timeline
@@ -177,6 +193,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Clip equal to loop cycle: source range not clamped") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 2.0;  // exactly one loop cycle on timeline
         clip.offset = 0.0;
@@ -186,6 +203,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.loopStart = 0.0;
         clip.loopLength = 2.0;  // 2s source = 2s on timeline
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // Clip length == loop cycle, no clamping needed
@@ -195,6 +213,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Clip longer than loop cycle: source range not clamped") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 6.0;  // 3x the loop cycle
         clip.offset = 0.0;
@@ -204,6 +223,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
         clip.loopStart = 0.0;
         clip.loopLength = 2.0;  // 2s source = 2s loop on timeline
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // Full loop cycle source range, no clamping

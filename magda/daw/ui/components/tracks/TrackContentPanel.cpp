@@ -37,6 +37,10 @@ TrackContentPanel::TrackContentPanel() {
     // Register as ClipManager listener
     ClipManager::getInstance().addListener(this);
 
+    // Register as SelectionManager listener so multi-track selection drives
+    // lane highlights, not just the single selectedTrackIndex.
+    SelectionManager::getInstance().addListener(this);
+
     // Register as ViewModeController listener
     ViewModeController::getInstance().addListener(this);
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
@@ -60,6 +64,9 @@ TrackContentPanel::~TrackContentPanel() {
 
     // Unregister from ClipManager
     ClipManager::getInstance().removeListener(this);
+
+    // Unregister from SelectionManager
+    SelectionManager::getInstance().removeListener(this);
 
     // Unregister from ViewModeController
     ViewModeController::getInstance().removeListener(this);
@@ -287,11 +294,16 @@ void TrackContentPanel::paint(juce::Graphics& g) {
 
     // Grid is now drawn by GridOverlayComponent in MainView
     // This component only draws track lanes with horizontal separators
+    auto& sel = SelectionManager::getInstance();
     for (size_t i = 0; i < trackLanes.size(); ++i) {
         auto laneArea = getTrackLaneArea(static_cast<int>(i));
         if (laneArea.intersects(g.getClipBounds())) {
-            paintTrackLane(g, *trackLanes[i], laneArea, static_cast<int>(i) == selectedTrackIndex,
-                           static_cast<int>(i));
+            // Highlight every track that's part of the current selection
+            // (single or multi), not just the primary one — so multi-selected
+            // lanes match the multi-selected headers visually.
+            const bool laneSelected =
+                i < visibleTrackIds_.size() && sel.isTrackSelected(visibleTrackIds_[i]);
+            paintTrackLane(g, *trackLanes[i], laneArea, laneSelected, static_cast<int>(i));
         }
     }
 
@@ -384,7 +396,9 @@ void TrackContentPanel::resized() {
     // viewport" by showing the component at its natural size with no
     // scrollbar.
     double beats = timelineLength * tempoBPM / 60.0;
-    int contentWidth = static_cast<int>(std::round(beats * currentZoom));
+    int timelineWidth =
+        static_cast<int>(std::round(beats * currentZoom)) + LayoutConfig::TIMELINE_LEFT_PADDING;
+    int contentWidth = juce::jmax(timelineWidth, minWidth_);
     int contentHeight = juce::jmax(getTotalTracksHeight(), minHeight_);
 
     setSize(contentWidth, contentHeight);
@@ -430,6 +444,17 @@ void TrackContentPanel::trackSelectionChanged(TrackId trackId) {
 void TrackContentPanel::trackPropertyChanged(int /*trackId*/) {
     // Repaint when track properties change (e.g. playback mode switching
     // between Arrangement and Session) to update visual overlays.
+    repaintVisible();
+}
+
+void TrackContentPanel::selectionTypeChanged(SelectionType /*newType*/) {
+    // Multi-selection visuals are read straight from SelectionManager in
+    // paint(); just trigger a repaint when the selection set changes.
+    repaintVisible();
+}
+
+void TrackContentPanel::multiTrackSelectionChanged(
+    const std::unordered_set<TrackId>& /*trackIds*/) {
     repaintVisible();
 }
 
@@ -1273,7 +1298,7 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
         if (timelineController) {
             double cursorPosition =
                 currentDragType_ == DragType::ResizeSelectionLeft ? newStart : newEnd;
-            timelineController->dispatch(SetEditCursorEvent{cursorPosition});
+            timelineController->dispatch(SetEditCursorEvent{cursorPosition * tempoBPM / 60.0});
         }
 
         // Update time selection to reflect new bounds
@@ -1345,12 +1370,16 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
     if (wasClick && wasInUpperZone && !clickedOnClip &&
         isInSelectableArea(mouseDownX, mouseDownY)) {
         // Simple click in upper zone empty space - set edit cursor
-        double clickTime = juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
+        double maxBeats = timelineLength * tempoBPM / 60.0;
+        double clickBeats = juce::jlimit(0.0, maxBeats, pixelToBeats(event.x));
 
         // Apply snap to grid if callback is set
-        if (snapTimeToGrid) {
-            clickTime = snapTimeToGrid(clickTime);
+        if (snapBeatsToGrid) {
+            clickBeats = snapBeatsToGrid(clickBeats);
+        } else if (snapTimeToGrid) {
+            clickBeats = snapTimeToGrid(clickBeats * 60.0 / tempoBPM) * tempoBPM / 60.0;
         }
+        clickBeats = juce::jlimit(0.0, maxBeats, clickBeats);
 
         // Select the track that was clicked on so cursor is visible
         int trackIndex = getTrackIndexAtY(mouseDownY);
@@ -1360,7 +1389,7 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 
         // Dispatch edit cursor change through controller
         if (timelineController) {
-            timelineController->dispatch(SetEditCursorEvent{clickTime});
+            timelineController->dispatch(SetEditCursorEvent{clickBeats});
         }
 
         // Re-grab keyboard focus after track selection (which may trigger callbacks that steal
@@ -1383,13 +1412,16 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
             // Don't set edit cursor if clicking on existing time selection
             // (user might be about to double-click to create clip)
             if (!isOnExistingSelection(event.x, event.y)) {
-                double clickTime =
-                    juce::jmax(0.0, juce::jmin(timelineLength, pixelToTime(event.x)));
+                double maxBeats = timelineLength * tempoBPM / 60.0;
+                double clickBeats = juce::jlimit(0.0, maxBeats, pixelToBeats(event.x));
 
                 // Apply snap to grid if callback is set
-                if (snapTimeToGrid) {
-                    clickTime = snapTimeToGrid(clickTime);
+                if (snapBeatsToGrid) {
+                    clickBeats = snapBeatsToGrid(clickBeats);
+                } else if (snapTimeToGrid) {
+                    clickBeats = snapTimeToGrid(clickBeats * 60.0 / tempoBPM) * tempoBPM / 60.0;
                 }
+                clickBeats = juce::jlimit(0.0, maxBeats, clickBeats);
 
                 // Only select track if no clips are currently selected
                 // (selectTrack triggers SelectionManager which clears clip selection)
@@ -1402,7 +1434,7 @@ void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
 
                 // Dispatch edit cursor change through controller (separate from playhead)
                 if (timelineController) {
-                    timelineController->dispatch(SetEditCursorEvent{clickTime});
+                    timelineController->dispatch(SetEditCursorEvent{clickBeats});
                 }
 
                 // Re-grab keyboard focus after track selection (which may trigger callbacks that
@@ -1715,8 +1747,12 @@ void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
 }
 
 void TrackContentPanel::clipSelectionChanged(ClipId clipId) {
-    // Grab keyboard focus to ensure shortcuts work after selection changes
-    grabKeyboardFocus();
+    // Grab keyboard focus to ensure shortcuts work after selection changes.
+    // Guarded by isShowing(): selection events can arrive while the panel is
+    // off-screen (e.g. during undo tear-down, or when another view is active),
+    // and grabbing focus on a hidden component fires juce_Component.cpp:2752.
+    if (isShowing())
+        grabKeyboardFocus();
 
     // Derive selected track from clip so edit cursor draws on the right lane
     if (clipId != INVALID_CLIP_ID) {
@@ -2140,7 +2176,9 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
                                                                     trackIds, state.tempo.bpm);
             UndoManager::getInstance().executeCommand(std::move(cmd));
 
-            timelineController->dispatch(SetEditCursorEvent{sel.startTime});
+            double cursorBeats =
+                sel.startBeats >= 0.0 ? sel.startBeats : sel.startTime * state.tempo.bpm / 60.0;
+            timelineController->dispatch(SetEditCursorEvent{cursorBeats});
             timelineController->dispatch(ClearTimeSelectionEvent{});
             return true;
         }
@@ -2174,15 +2212,13 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
     if (key == juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0)) {
         const auto& selectedClips = selectionManager.getSelectedClips();
         if (!selectedClips.empty()) {
-            // Use compound operation to group all duplicates into single undo step
-            if (selectedClips.size() > 1) {
-                UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
-            }
+            auto commands = createArrangementBlockDuplicateCommands(selectedClips, tempoBPM);
+            if (commands.empty())
+                return false;
 
-            std::vector<std::unique_ptr<DuplicateClipCommand>> commands;
-            for (ClipId clipId : selectedClips) {
-                auto cmd = std::make_unique<DuplicateClipCommand>(clipId);
-                commands.push_back(std::move(cmd));
+            // Use compound operation to group all duplicates into single undo step
+            if (commands.size() > 1) {
+                UndoManager::getInstance().beginCompoundOperation("Duplicate Clips");
             }
 
             // Execute commands and collect new IDs
@@ -2196,7 +2232,7 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
                 }
             }
 
-            if (selectedClips.size() > 1) {
+            if (commands.size() > 1) {
                 UndoManager::getInstance().endCompoundOperation();
             }
 

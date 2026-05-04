@@ -19,6 +19,7 @@ namespace magda::daw::ui {
 // Forward declarations for panel components
 class ModsPanelComponent;
 class MacroPanelComponent;
+class AIPanelComponent;
 class ModulatorEditorPanel;
 class MacroEditorPanel;
 
@@ -91,6 +92,9 @@ class NodeComponent : public juce::Component,
     bool isGainPanelVisible() const {
         return gainPanelVisible_;
     }
+    bool isAIPanelVisible() const {
+        return aiPanelVisible_;
+    }
 
     // Selection
     void setSelected(bool selected);
@@ -110,6 +114,7 @@ class NodeComponent : public juce::Component,
     std::function<void(bool)> onModPanelToggled;
     std::function<void(bool)> onParamPanelToggled;
     std::function<void(bool)> onGainPanelToggled;
+    std::function<void(bool)> onAIPanelToggled;
     std::function<void()> onLayoutChanged;         // Called when size changes (e.g., panel toggle)
     std::function<void()> onSelected;              // Called when node is clicked/selected
     std::function<void(bool)> onCollapsedChanged;  // Called when collapsed state changes
@@ -119,6 +124,7 @@ class NodeComponent : public juce::Component,
     void setModPanelVisible(bool visible);
     void setParamPanelVisible(bool visible);
     void setGainPanelVisible(bool visible);
+    void setAIPanelVisible(bool visible);
 
     // Drag-to-reorder callbacks (for parent container coordination)
     std::function<void(NodeComponent*, const juce::MouseEvent&)> onDragStart;
@@ -158,6 +164,38 @@ class NodeComponent : public juce::Component,
     // Override to add extra header buttons (between name and delete)
     virtual void resizedHeaderExtra(juce::Rectangle<int>& headerArea);
 
+    /**
+     * Override to expose a preset menu button. The base class reserves a
+     * slot for it between the power button and whatever resizedHeaderExtra
+     * positions, locking the right-side icon order to:
+     *
+     *     [...subclass extras...][preset][power][delete]
+     *
+     * Subclasses MUST NOT position this button themselves — the base
+     * owns its bounds. Returning nullptr (default) means no preset slot.
+     *
+     * Existed to fix a recurring class of bugs where new buttons added
+     * inside resizedHeaderExtra ended up to the right of the preset
+     * button, breaking the [preset][power][delete] right-edge contract.
+     */
+    virtual juce::Component* getHeaderPresetButton() {
+        return nullptr;
+    }
+
+    /**
+     * Override to substitute a different power/bypass button. Defaults to
+     * the base's own bypassButton_; subclasses that want a custom-styled
+     * button (e.g. DeviceSlotComponent's red/green SvgButton onButton_)
+     * return their own and hide bypassButton_ via setBypassButtonVisible.
+     *
+     * The base reserves the slot to the LEFT of [delete], so the right
+     * edge is always [preset][power][delete] regardless of which subclass
+     * supplied the buttons.
+     */
+    virtual juce::Component* getHeaderPowerButton() {
+        return bypassButton_.get();
+    }
+
     // Override to provide a name for the collapsed rotated label
     virtual juce::String getCollapsedName() const {
         return nameLabel_.getText();
@@ -172,6 +210,8 @@ class NodeComponent : public juce::Component,
                                 juce::Rectangle<int> panelArea);  // Gain is below content
     virtual void paintExtraRightPanel(juce::Graphics& g,
                                       juce::Rectangle<int> panelArea);  // After macros
+    virtual void paintAIPanel(juce::Graphics& g,
+                              juce::Rectangle<int> panelArea);  // After mod editor
 
     // Override to layout custom panel content
     virtual void resizedModPanel(juce::Rectangle<int> panelArea);
@@ -179,6 +219,7 @@ class NodeComponent : public juce::Component,
     virtual void resizedParamPanel(juce::Rectangle<int> panelArea);
     virtual void resizedGainPanel(juce::Rectangle<int> panelArea);
     virtual void resizedExtraRightPanel(juce::Rectangle<int> panelArea);  // After macros
+    virtual void resizedAIPanel(juce::Rectangle<int> panelArea);          // After mod editor
 
     // Override to add extra buttons when collapsed (area is below bypass/delete)
     virtual void resizedCollapsed(juce::Rectangle<int>& area);
@@ -194,6 +235,11 @@ class NodeComponent : public juce::Component,
     }
     virtual int getGainPanelWidth() const {
         return GAIN_PANEL_WIDTH;
+    }
+    // AI side panel (sound design prompt + output) — wider than the macro
+    // panel because it hosts a text input.
+    virtual int getAIPanelWidth() const {
+        return AI_PANEL_WIDTH;
     }
     // Extra right panel (after macros) - returns macro editor width when visible
     virtual int getExtraRightPanelWidth() const;
@@ -222,6 +268,7 @@ class NodeComponent : public juce::Component,
     bool modPanelVisible_ = false;
     bool paramPanelVisible_ = false;
     bool gainPanelVisible_ = false;
+    bool aiPanelVisible_ = false;
 
     // Selection state
     bool selected_ = false;
@@ -265,6 +312,7 @@ class NodeComponent : public juce::Component,
     static constexpr int HEADER_HEIGHT = 24;
     static constexpr int BUTTON_SIZE = 18;
     static constexpr int DEFAULT_PANEL_WIDTH = 150;  // Width for 2-column panels (params, macros)
+    static constexpr int AI_PANEL_WIDTH = 200;       // Width for AI sound-design panel
     static constexpr int SINGLE_COLUMN_PANEL_WIDTH = 70;  // Width for 1-column panels (mods)
     static constexpr int GAIN_PANEL_WIDTH = 32;           // Width for gain panel (right side)
 
@@ -288,8 +336,7 @@ class NodeComponent : public juce::Component,
     }
 
     // Virtual callbacks for mod/macro changes (subclasses implement to persist changes)
-    virtual void onModAmountChangedInternal(int /*modIndex*/, float /*amount*/) {}
-    virtual void onModTargetChangedInternal(int /*modIndex*/, magda::ModTarget /*target*/) {}
+    virtual void onModTargetChangedInternal(int /*modIndex*/, magda::ControlTarget /*target*/) {}
     virtual void onModNameChangedInternal(int /*modIndex*/, const juce::String& /*name*/) {}
     virtual void onModTypeChangedInternal(int /*modIndex*/, magda::ModType /*type*/) {}
     virtual void onModWaveformChangedInternal(int /*modIndex*/, magda::LFOWaveform /*waveform*/) {}
@@ -304,23 +351,25 @@ class NodeComponent : public juce::Component,
     virtual void onModAudioReleaseChangedInternal(int /*modIndex*/, float /*ms*/) {}
     virtual void onModCurveChangedInternal(int /*modIndex*/) {}
     // Contextual link callbacks (when param is selected and mod amount slider is used)
-    virtual void onModLinkAmountChangedInternal(int /*modIndex*/, magda::ModTarget /*target*/,
+    virtual void onModLinkAmountChangedInternal(int /*modIndex*/, magda::ControlTarget /*target*/,
                                                 float /*amount*/) {}
-    virtual void onModNewLinkCreatedInternal(int /*modIndex*/, magda::ModTarget /*target*/,
+    virtual void onModNewLinkCreatedInternal(int /*modIndex*/, magda::ControlTarget /*target*/,
                                              float /*amount*/) {}
-    virtual void onModLinkRemovedInternal(int /*modIndex*/, magda::ModTarget /*target*/) {}
+    virtual void onModLinkRemovedInternal(int /*modIndex*/, magda::ControlTarget /*target*/) {}
     virtual void onMacroValueChangedInternal(int /*macroIndex*/, float /*value*/) {}
-    virtual void onMacroTargetChangedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/) {}
+    virtual void onMacroTargetChangedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/) {
+    }
     virtual void onMacroNameChangedInternal(int /*macroIndex*/, const juce::String& /*name*/) {}
     virtual void onMacroAllLinksClearedInternal(int /*macroIndex*/) {}
     // Contextual link callbacks for macros (similar to mods)
-    virtual void onMacroLinkAmountChangedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/,
+    virtual void onMacroLinkAmountChangedInternal(int /*macroIndex*/,
+                                                  magda::ControlTarget /*target*/,
                                                   float /*amount*/) {}
-    virtual void onMacroNewLinkCreatedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/,
+    virtual void onMacroNewLinkCreatedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/,
                                                float /*amount*/) {}
-    virtual void onMacroLinkRemovedInternal(int /*macroIndex*/, magda::MacroTarget /*target*/) {}
+    virtual void onMacroLinkRemovedInternal(int /*macroIndex*/, magda::ControlTarget /*target*/) {}
     virtual void onMacroLinkBipolarChangedInternal(int /*macroIndex*/,
-                                                   magda::MacroTarget /*target*/,
+                                                   magda::ControlTarget /*target*/,
                                                    bool /*bipolar*/) {}
     virtual void onModClickedInternal(int /*modIndex*/) {}
     virtual void onMacroClickedInternal(int /*macroIndex*/) {}
@@ -338,6 +387,7 @@ class NodeComponent : public juce::Component,
     // Panel components (created by NodeComponent, populated by subclass data)
     std::unique_ptr<ModsPanelComponent> modsPanel_;
     std::unique_ptr<MacroPanelComponent> macroPanel_;
+    std::unique_ptr<AIPanelComponent> aiPanel_;
     std::unique_ptr<ModulatorEditorPanel> modulatorEditorPanel_;
     std::unique_ptr<MacroEditorPanel> macroEditorPanel_;
 

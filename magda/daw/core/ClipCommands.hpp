@@ -2,6 +2,10 @@
 
 #include <juce_core/juce_core.h>
 
+#include <memory>
+#include <unordered_set>
+#include <vector>
+
 #include "ClipInfo.hpp"
 #include "ClipManager.hpp"
 #include "CommandPattern.hpp"
@@ -208,7 +212,8 @@ class CreateClipCommand : public ValidatedCommand {
 class DuplicateClipCommand : public ValidatedCommand {
   public:
     DuplicateClipCommand(ClipId sourceClipId, double startTime = -1.0,
-                         TrackId targetTrackId = INVALID_TRACK_ID, double tempo = 0.0);
+                         TrackId targetTrackId = INVALID_TRACK_ID, double tempo = 0.0,
+                         int targetSceneIndex = -1);
 
     juce::String getDescription() const override {
         return "Duplicate Clip";
@@ -227,9 +232,12 @@ class DuplicateClipCommand : public ValidatedCommand {
     double startTime_;       // -1 = use default (after source)
     TrackId targetTrackId_;  // INVALID = same track
     double tempo_;           // BPM for beat field sync (0 = skip)
+    int targetSceneIndex_;   // -1 = keep/unplaced; session clips only
     ClipId duplicatedClipId_ = INVALID_CLIP_ID;
-    std::vector<ClipInfo> arrangementSnapshot_;
 };
+
+std::vector<std::unique_ptr<DuplicateClipCommand>> createArrangementBlockDuplicateCommands(
+    const std::unordered_set<ClipId>& clipIds, double tempo);
 
 /**
  * @brief Command for pasting clips from clipboard

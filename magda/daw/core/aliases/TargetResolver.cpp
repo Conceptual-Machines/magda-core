@@ -9,21 +9,17 @@ namespace magda {
 // resolve(Target)
 // ============================================================================
 
-ResolvedTarget TargetResolver::resolve(const Target& target) const {
+ResolveResult TargetResolver::resolve(const Target& target) const {
     return std::visit(
-        [this](const auto& t) -> ResolvedTarget {
+        [this](const auto& t) -> ResolveResult {
             using T = std::decay_t<decltype(t)>;
 
-            if constexpr (std::is_same_v<T, StaticTarget>) {
+            if constexpr (std::is_same_v<T, ControlTarget>) {
                 if (!t.isValid())
-                    return ResolvedTarget::failure("StaticTarget is invalid");
+                    return ResolveResult::failure("ControlTarget is invalid");
 
-                ResolvedTarget r;
-                r.devicePath = t.devicePath;
-                r.paramIndex = t.paramIndex;
-                r.owner = t.owner;
-                r.modId = t.modId;
-                r.modParamIndex = t.modParamIndex;
+                ResolveResult r;
+                r.target = t;
                 r.sourceLabel = "static";
                 r.resolved = true;
                 return r;
@@ -31,12 +27,12 @@ ResolvedTarget TargetResolver::resolve(const Target& target) const {
             } else if constexpr (std::is_same_v<T, AliasRef>) {
                 auto stored = aliasRegistry_.lookupStored(t.name, t.pluginType);
                 if (!stored.has_value())
-                    return ResolvedTarget::failure("Alias not found: " + t.name);
+                    return ResolveResult::failure("Alias not found: " + t.name);
 
                 if (stored->path.has_value()) {
-                    ResolvedTarget r;
-                    r.devicePath = *stored->path;
-                    r.paramIndex = stored->paramIndex;
+                    ResolveResult r;
+                    r.target.devicePath = *stored->path;
+                    r.target.paramIndex = stored->paramIndex;
                     r.sourceLabel = "@" + t.name;
                     r.resolved = true;
                     return r;
@@ -53,38 +49,36 @@ ResolvedTarget TargetResolver::resolve(const Target& target) const {
                         if (paramIdx < 0)
                             paramIdx = stored->paramIndex;  // fallback to stored index
 
-                        ResolvedTarget r;
-                        r.devicePath = dw.path;
-                        r.paramIndex = paramIdx;
+                        ResolveResult r;
+                        r.target.devicePath = dw.path;
+                        r.target.paramIndex = paramIdx;
                         r.sourceLabel = "@" + t.name + " (materialised)";
                         r.resolved = true;
                         return r;
                     }
                 }
 
-                return ResolvedTarget::failure("Alias path absent and no matching device in "
-                                               "focused chain: " +
-                                               t.name);
+                return ResolveResult::failure("Alias path absent and no matching device in "
+                                              "focused chain: " +
+                                              t.name);
 
             } else if constexpr (std::is_same_v<T, ResolverRef>) {
                 const auto* resolver = resolverRegistry_.findResolver(t.kind);
                 if (resolver == nullptr)
-                    return ResolvedTarget::failure("Unknown resolver kind: " + t.kind);
+                    return ResolveResult::failure("Unknown resolver kind: " + t.kind);
 
                 auto result = resolver->resolve(t.args, chainContext_);
                 if (!result.has_value())
-                    return ResolvedTarget::failure("Resolver failed: " + t.kind);
+                    return ResolveResult::failure("Resolver failed: " + t.kind);
 
-                ResolvedTarget r;
-                r.devicePath = result->devicePath;
-                r.paramIndex = result->paramIndex;
-                r.owner = result->owner;
+                ResolveResult r;
+                r.target = *result;
                 r.sourceLabel = "resolver:" + t.kind;
                 r.resolved = true;
                 DBG("[AUTOMAP] TargetResolver(ResolverRef): kind="
-                    << t.kind << " -> paramIndex=" << r.paramIndex << " owner="
-                    << (r.owner == StaticTarget::Owner::DeviceMacro ? "DeviceMacro"
-                                                                    : "PluginParam"));
+                    << t.kind << " -> paramIndex=" << r.target.paramIndex << " controlKind="
+                    << (r.target.kind == ControlTarget::Kind::DeviceMacro ? "DeviceMacro"
+                                                                          : "PluginParam"));
                 return r;
             }
         },
@@ -95,7 +89,7 @@ ResolvedTarget TargetResolver::resolve(const Target& target) const {
 // resolveSigil
 // ============================================================================
 
-ResolvedTarget TargetResolver::resolveSigil(const ParsedSigil& sigil) const {
+ResolveResult TargetResolver::resolveSigil(const ParsedSigil& sigil) const {
     return resolveAt(sigil);
 }
 
@@ -103,7 +97,7 @@ ResolvedTarget TargetResolver::resolveSigil(const ParsedSigil& sigil) const {
 // @ sigil
 // ============================================================================
 
-ResolvedTarget TargetResolver::resolveAt(const ParsedSigil& sigil) const {
+ResolveResult TargetResolver::resolveAt(const ParsedSigil& sigil) const {
     // Handle scoped forms: @focused.*, @selected.*, @master.*
     if (sigil.isScoped) {
         if (sigil.pluginKey == "master") {
@@ -114,15 +108,14 @@ ResolvedTarget TargetResolver::resolveAt(const ParsedSigil& sigil) const {
                 juce::StringPairArray args;
                 auto result = resolver->resolve(args, chainContext_);
                 if (result.has_value()) {
-                    ResolvedTarget r;
-                    r.devicePath = result->devicePath;
-                    r.paramIndex = result->paramIndex;
+                    ResolveResult r;
+                    r.target = *result;
                     r.sourceLabel = "@" + sigil.pluginKey + "." + sigil.paramKey;
                     r.resolved = true;
                     return r;
                 }
             }
-            return ResolvedTarget::failure("@master." + sigil.paramKey + " not supported");
+            return ResolveResult::failure("@master." + sigil.paramKey + " not supported");
         }
 
         if (sigil.pluginKey == "selected") {
@@ -132,42 +125,41 @@ ResolvedTarget TargetResolver::resolveAt(const ParsedSigil& sigil) const {
                 juce::StringPairArray args;
                 auto result = resolver->resolve(args, chainContext_);
                 if (result.has_value()) {
-                    ResolvedTarget r;
-                    r.devicePath = result->devicePath;
-                    r.paramIndex = result->paramIndex;
+                    ResolveResult r;
+                    r.target = *result;
                     r.sourceLabel = "@" + sigil.pluginKey + "." + sigil.paramKey;
                     r.resolved = true;
                     return r;
                 }
             }
-            return ResolvedTarget::failure("@selected." + sigil.paramKey +
-                                           " not supported or no track selected");
+            return ResolveResult::failure("@selected." + sigil.paramKey +
+                                          " not supported or no track selected");
         }
 
         if (sigil.pluginKey == "focused") {
             // @focused.macro_N -> FocusedDeviceMacroResolver
             auto devicePath = chainContext_.focusedDevice();
             if (!devicePath.isValid())
-                return ResolvedTarget::failure("@focused.* -- no device focused");
+                return ResolveResult::failure("@focused.* -- no device focused");
 
             const auto* device = chainContext_.deviceAt(devicePath);
             if (device == nullptr)
-                return ResolvedTarget::failure("@focused.* -- device not found at path");
+                return ResolveResult::failure("@focused.* -- device not found at path");
 
             int paramIdx = findParamByKey(*device, normalizeParamName(sigil.paramKey));
             if (paramIdx < 0)
-                return ResolvedTarget::failure("@focused." + sigil.paramKey +
-                                               " -- param not found on focused device");
+                return ResolveResult::failure("@focused." + sigil.paramKey +
+                                              " -- param not found on focused device");
 
-            ResolvedTarget r;
-            r.devicePath = devicePath;
-            r.paramIndex = paramIdx;
+            ResolveResult r;
+            r.target.devicePath = devicePath;
+            r.target.paramIndex = paramIdx;
             r.sourceLabel = "@focused." + sigil.paramKey;
             r.resolved = true;
             return r;
         }
 
-        return ResolvedTarget::failure("Unknown scope: " + sigil.pluginKey);
+        return ResolveResult::failure("Unknown scope: " + sigil.pluginKey);
     }
 
     // Non-scoped @name.param
@@ -179,9 +171,9 @@ ResolvedTarget TargetResolver::resolveAt(const ParsedSigil& sigil) const {
         if (match != nullptr && match->device != nullptr) {
             int paramIdx = findParamByKey(*match->device, normalizeParamName(sigil.paramKey));
             if (paramIdx >= 0) {
-                ResolvedTarget r;
-                r.devicePath = match->path;
-                r.paramIndex = paramIdx;
+                ResolveResult r;
+                r.target.devicePath = match->path;
+                r.target.paramIndex = paramIdx;
                 r.sourceLabel = "@" + sigil.pluginKey + "." + sigil.paramKey + " (selected chain)";
                 r.resolved = true;
                 return r;
@@ -198,13 +190,13 @@ ResolvedTarget TargetResolver::resolveAt(const ParsedSigil& sigil) const {
     }
 
     if (!stored.has_value())
-        return ResolvedTarget::failure("Alias not found: @" + sigil.pluginKey + "." +
-                                       sigil.paramKey);
+        return ResolveResult::failure("Alias not found: @" + sigil.pluginKey + "." +
+                                      sigil.paramKey);
 
     if (stored->path.has_value()) {
-        ResolvedTarget r;
-        r.devicePath = *stored->path;
-        r.paramIndex = stored->paramIndex;
+        ResolveResult r;
+        r.target.devicePath = *stored->path;
+        r.target.paramIndex = stored->paramIndex;
         r.sourceLabel = "@" + sigil.pluginKey + "." + sigil.paramKey;
         r.resolved = true;
         return r;
@@ -221,17 +213,17 @@ ResolvedTarget TargetResolver::resolveAt(const ParsedSigil& sigil) const {
             if (paramIdx < 0)
                 paramIdx = stored->paramIndex;
 
-            ResolvedTarget r;
-            r.devicePath = dw.path;
-            r.paramIndex = paramIdx;
+            ResolveResult r;
+            r.target.devicePath = dw.path;
+            r.target.paramIndex = paramIdx;
             r.sourceLabel = "@" + sigil.pluginKey + "." + sigil.paramKey + " (chain scan)";
             r.resolved = true;
             return r;
         }
     }
 
-    return ResolvedTarget::failure("@" + sigil.pluginKey + "." + sigil.paramKey +
-                                   ": alias has no path and no matching device in focused chain");
+    return ResolveResult::failure("@" + sigil.pluginKey + "." + sigil.paramKey +
+                                  ": alias has no path and no matching device in focused chain");
 }
 
 // ============================================================================

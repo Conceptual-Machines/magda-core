@@ -28,6 +28,30 @@ The chain can contain:
 
 See [Plugin Parameters](plugin-parameters.md) for per-plugin parameter visibility, custom units and ranges, and AI-assisted classification.
 
+## Presets
+
+Three preset systems share the device header:
+
+### MAGDA Presets (.mps)
+
+Each device exposes a preset menu in its header. Saving a preset captures **everything MAGDA knows about the device** — parameter values, plugin state, macros, modulators, sidechain wiring, gain — in a single `.mps` file.
+
+- **Save Preset** — pops a name + category dialog. The selected category becomes a folder under the preset directory.
+- **Load Preset** — submenu organised by category. Loading replaces the live device's state in place; the device's id, name, and slot in the chain are preserved.
+- The dialog auto-fills the most recently used name and category, so re-saving an iteration takes two clicks.
+
+`.mps` is portable across MAGDA installations. The format is plugin-aware — loading a preset onto a slot whose plugin id doesn't match is rejected with a one-line error rather than silently overwriting state.
+
+### Plugin Disk Presets
+
+When the device is a third-party plugin (VST3 / AU), MAGDA also scans the standard `.vstpreset` / `.aupreset` directories on disk and exposes them as a second menu in the header. The native preset format is used directly — your existing factory and user banks are picked up without a copy step.
+
+The legacy "Program N" menu that VST3 plugins like Vital and Serum 2 expose has been retired — those entries resolve to identical state and provided no information. Disk presets are the only source.
+
+### Track Chain Presets
+
+The track FX header carries a chain-level preset menu. A track-chain preset captures the **entire chain** — every device, every nested rack, every modulator binding — for a single track. Useful for stashing a finished mix-bus chain, a vocal chain, or a synth-and-FX combo and dropping it onto a fresh track later.
+
 ## Racks
 
 ![Rack](assets/images/devices/rack.png)

@@ -10,15 +10,19 @@
 #include <thread>
 
 #include "../../agents/llm_client_factory.hpp"
+#include "AppPaths.hpp"
 #include "Config.hpp"
 
 namespace magda {
 namespace {
 
-// File-based logging for parameter detection (avoids flooding console)
+// File-based logging for parameter detection (avoids flooding console).
+// Lives under the configurable data dir alongside the main MAGDA log.
+// Pre-refactor this lived at ~/Library/MAGDA/ (macOS only) which was a
+// stray location — folded into the standard data dir as part of the
+// configurable-paths refactor.
 juce::File getDetectorLogFile() {
-    return juce::File::getSpecialLocation(juce::File::userHomeDirectory)
-        .getChildFile("Library/MAGDA/param_detector.log");
+    return magda::paths::parameterDetectorLog();
 }
 
 void logDetector(const juce::String& msg) {

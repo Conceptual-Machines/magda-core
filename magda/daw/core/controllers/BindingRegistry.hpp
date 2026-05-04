@@ -109,46 +109,27 @@ class BindingRegistry {
                                      int channel, int number) const;
 
     /**
-     * @brief Find all bindings whose target resolves to a given (devicePath, paramIndex, owner).
+     * @brief Find all bindings whose target resolves to a given ControlTarget.
      *
      * Resolves each binding's target using a DefaultChainContext + TargetResolver.
      * Must be called on the message thread.
      *
-     * Owner-filtered so a macro-targeted binding at (path, 0, DeviceMacro) does NOT
-     * match a plugin-param query at (path, 0, PluginParam). Default owner is
-     * PluginParam to preserve pre-owner-field behaviour for existing callers.
+     * Kind-filtered so a macro-targeted binding at (path, 0, DeviceMacro) does NOT
+     * match a plugin-param query at (path, 0, PluginParam).
      *
-     * @param devicePath   Concrete device path to match.
-     * @param paramIndex   Parameter index to match.
-     * @param owner        Target owner kind to match (default: PluginParam).
      * @return All matching bindings from both Global and Project scopes.
      */
-    std::vector<Binding> findForTarget(
-        const ChainNodePath& devicePath, int paramIndex,
-        StaticTarget::Owner owner = StaticTarget::Owner::PluginParam) const;
+    std::vector<Binding> findFor(const ControlTarget& target) const;
 
     /**
-     * @brief Remove all bindings whose target resolves to a given (devicePath, paramIndex, owner).
+     * @brief Remove all bindings whose target resolves to the given ControlTarget.
      *
-     * Convenience wrapper: calls findForTarget, then removes each match from its scope.
+     * Convenience wrapper: calls findFor, then removes each match from its scope.
      * Must be called on the message thread.
      *
      * @return Number of bindings removed.
      */
-    int removeForTarget(const ChainNodePath& devicePath, int paramIndex,
-                        StaticTarget::Owner owner = StaticTarget::Owner::PluginParam);
-
-    /**
-     * @brief Find/remove bindings whose target is a ModParam (path, modId, modParamIndex).
-     *
-     * ModParam targets carry their identity in (modId, modParamIndex), not paramIndex,
-     * so the regular paramIndex-keyed overloads can't match them.
-     */
-    std::vector<Binding> findForModParam(const ChainNodePath& devicePath, ModId modId,
-                                         int modParamIndex) const;
-    int removeForModParam(const ChainNodePath& devicePath, ModId modId, int modParamIndex);
-    bool hasActiveBindingForModParam(const ChainNodePath& devicePath, ModId modId,
-                                     int modParamIndex) const;
+    int removeFor(const ControlTarget& target);
 
     /**
      * @brief Return true if any binding (Global + Project) resolves to a target
@@ -162,7 +143,7 @@ class BindingRegistry {
      *
      * Must be called on the message thread.
      */
-    bool hasBindingForDevice(const ChainNodePath& devicePath, StaticTarget::Owner owner) const;
+    bool hasBindingForDevice(const ChainNodePath& devicePath, ControlTarget::Kind owner) const;
 
     /**
      * @brief Return true if any active focused-device-macro resolver binding
@@ -172,35 +153,33 @@ class BindingRegistry {
     bool hasResolverBindingForDevice(const ChainNodePath& devicePath) const;
 
     /**
-     * @brief Return true if any active explicit user mapping (StaticTarget or
+     * @brief Return true if any active explicit user mapping (ControlTarget or
      * AliasRef) targets a parameter / macro / mod on this device. Excludes
      * resolver-based automap-profile bindings.
      */
     bool hasUserMappingForDevice(const ChainNodePath& devicePath) const;
 
     /**
-     * @brief Return true if any active binding (Global + Project) resolves to a
-     * specific (devicePath, paramIndex, owner) target.
+     * @brief Return true if any active binding (Global + Project) resolves to the
+     * given ControlTarget.
      *
      * Same "active" semantics as hasBindingForDevice — bindings whose source
      * controller is registered but disabled are skipped. Use this for
      * per-parameter indicators (macro knobs, param slots, linkable sliders)
-     * instead of `!findForTarget(...).empty()` so the indicator disappears
-     * when the binding's controller is disabled.
+     * instead of `!findFor(...).empty()` so the indicator disappears when the
+     * binding's controller is disabled.
      *
      * Must be called on the message thread.
      */
-    bool hasActiveBindingForTarget(
-        const ChainNodePath& devicePath, int paramIndex,
-        StaticTarget::Owner owner = StaticTarget::Owner::PluginParam) const;
+    bool hasActiveBindingFor(const ControlTarget& target) const;
 
     /**
      * @brief Return true if any active binding (Global + Project) for this macro
-     * is an explicit static target (StaticTarget owner=DeviceMacro) — i.e. came
+     * is an explicit static target (ControlTarget owner=DeviceMacro) — i.e. came
      * from a user MIDI Learn gesture, not an automap profile resolver.
      *
      * Used to paint the macro indicator orange (Learn override) vs green (profile
-     * default). Same "active" semantics as hasActiveBindingForTarget.
+     * default). Same "active" semantics as hasActiveBindingFor.
      */
     bool hasActiveStaticBindingForMacro(const ChainNodePath& devicePath, int macroIndex) const;
 

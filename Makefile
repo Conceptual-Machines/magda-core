@@ -5,6 +5,9 @@
 BUILD_DIR = cmake-build-debug
 BUILD_DIR_RELEASE = cmake-build-release
 BUILD_DIR_ASAN = cmake-build-asan
+CACHE_ROOT = $(CURDIR)/.cache
+BUILD_ENV = CCACHE_DIR=$(CACHE_ROOT)/ccache TMPDIR=$(CACHE_ROOT)/tmp XDG_CACHE_HOME=$(CACHE_ROOT)/xdg
+TEST_ENV = $(BUILD_ENV) HOME=$(CACHE_ROOT)/home CFFIXED_USER_HOME=$(CACHE_ROOT)/home
 
 # Platform-specific binary layout.
 # macOS: JUCE wraps the exe in a .app bundle (MAGDA.app/Contents/MacOS/MAGDA)
@@ -45,27 +48,27 @@ setup:
 .PHONY: debug
 debug:
 	@echo "🔨 Building MAGDA DAW (Debug)..."
-	@mkdir -p $(BUILD_DIR)
+	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project..."; \
-		cd $(BUILD_DIR) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
 	fi
-	cd $(BUILD_DIR) && ninja
+	cd $(BUILD_DIR) && $(BUILD_ENV) ninja
 
 # Reconfigure build (force CMake to run)
 .PHONY: configure
 configure:
 	@echo "📝 Reconfiguring MAGDA DAW (Debug)..."
-	@mkdir -p $(BUILD_DIR)
-	cd $(BUILD_DIR) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
+	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
 
 # Release build
 .PHONY: release
 release:
 	@echo "🚀 Building MAGDA DAW (Release)..."
-	@mkdir -p $(BUILD_DIR_RELEASE)
-	cd $(BUILD_DIR_RELEASE) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
-	cd $(BUILD_DIR_RELEASE) && ninja
+	@mkdir -p $(BUILD_DIR_RELEASE) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR_RELEASE) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
+	cd $(BUILD_DIR_RELEASE) && $(BUILD_ENV) ninja
 
 # Run the release application
 .PHONY: run-release
@@ -77,17 +80,17 @@ run-release: release
 .PHONY: asan
 asan:
 	@echo "🔬 Building MAGDA DAW (Debug + AddressSanitizer)..."
-	@mkdir -p $(BUILD_DIR_ASAN)
+	@mkdir -p $(BUILD_DIR_ASAN) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR_ASAN)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project with ASAN..."; \
-		cd $(BUILD_DIR_ASAN) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+		cd $(BUILD_DIR_ASAN) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
 			-DCMAKE_CXX_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=address" \
 			-DCMAKE_C_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=address" \
 			-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
 			-DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address" \
 			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
 	fi
-	cd $(BUILD_DIR_ASAN) && ninja
+	cd $(BUILD_DIR_ASAN) && $(BUILD_ENV) ninja
 
 # Run with ASAN
 .PHONY: run-asan
@@ -120,54 +123,61 @@ run-profile: debug
 .PHONY: test-build
 test-build:
 	@echo "🔨 Building tests..."
-	@mkdir -p $(BUILD_DIR)
+	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project with tests enabled..."; \
-		cd $(BUILD_DIR) && cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
 	fi
-	cd $(BUILD_DIR) && ninja magda_tests
+	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_tests
 
 # Run all tests
 .PHONY: test
 test: test-build
 	@echo "🧪 Running all tests..."
-	cd $(BUILD_DIR) && ./tests/magda_tests
+	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests
 
 # Run tests using CTest
 .PHONY: test-ctest
 test-ctest: test-build
 	@echo "🧪 Running tests via CTest..."
-	cd $(BUILD_DIR) && ctest --output-on-failure
+	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR) && $(TEST_ENV) ctest --output-on-failure
 
 # Run tests with verbose output
 .PHONY: test-verbose
 test-verbose: test-build
 	@echo "🧪 Running tests (verbose)..."
-	cd $(BUILD_DIR) && ./tests/magda_tests -s
+	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests -s
 
 # Run plugin window manager tests only
 .PHONY: test-window
 test-window: test-build
 	@echo "🪟 Running plugin window tests..."
-	cd $(BUILD_DIR) && ./tests/magda_tests "[ui][plugin][window]"
+	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests "[ui][plugin][window]"
 
 # Run shutdown sequence tests only
 .PHONY: test-shutdown
 test-shutdown: test-build
 	@echo "🔚 Running shutdown tests..."
-	cd $(BUILD_DIR) && ./tests/magda_tests "[ui][shutdown]"
+	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests "[ui][shutdown]"
 
 # Run thread safety tests only
 .PHONY: test-threading
 test-threading: test-build
 	@echo "🧵 Running thread safety tests..."
-	cd $(BUILD_DIR) && ./tests/magda_tests "[threading]"
+	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests "[threading]"
 
 # List all available tests
 .PHONY: test-list
 test-list: test-build
 	@echo "📋 Available tests:"
-	cd $(BUILD_DIR) && ./tests/magda_tests --list-tests
+	@mkdir -p $(CACHE_ROOT)/home $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	cd $(BUILD_DIR) && $(TEST_ENV) ./tests/magda_tests --list-tests
 
 # Clean build artifacts
 .PHONY: clean
@@ -185,7 +195,7 @@ rebuild: clean debug
 format:
 	@echo "🎨 Formatting code..."
 	@if command -v clang-format >/dev/null 2>&1; then \
-		find . -name "*.cpp" -o -name "*.hpp" -o -name "*.h" | grep -E "(daw|agents|tests)" | xargs clang-format -i; \
+		find magda tests \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) | xargs clang-format -i; \
 		echo "✅ Code formatting complete"; \
 	else \
 		echo "❌ clang-format not found. Please install it first."; \

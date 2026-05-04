@@ -129,20 +129,22 @@ class ParamSlotComponent : public juce::Component,
 
     // Callbacks
     std::function<void(double)> onValueChanged;
-    std::function<void(int modIndex, magda::ModTarget target)> onModLinked;
-    std::function<void(int modIndex, magda::ModTarget target, float amount)> onModLinkedWithAmount;
-    std::function<void(int modIndex, magda::ModTarget target)> onModUnlinked;
-    std::function<void(int modIndex, magda::ModTarget target)> onTrackModUnlinked;
-    std::function<void(int modIndex, magda::ModTarget target, float amount)> onModAmountChanged;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onMacroLinked;
-    std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
+    std::function<void(int modIndex, magda::ControlTarget target)> onModLinked;
+    std::function<void(int modIndex, magda::ControlTarget target, float amount)>
+        onModLinkedWithAmount;
+    std::function<void(int modIndex, magda::ControlTarget target)> onModUnlinked;
+    std::function<void(int modIndex, magda::ControlTarget target)> onRackModUnlinked;
+    std::function<void(int modIndex, magda::ControlTarget target)> onTrackModUnlinked;
+    std::function<void(int modIndex, magda::ControlTarget target, float amount)> onModAmountChanged;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onMacroLinked;
+    std::function<void(int macroIndex, magda::ControlTarget target, float amount)>
         onMacroLinkedWithAmount;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onMacroUnlinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onRackMacroLinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroLinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onRackMacroUnlinked;
-    std::function<void(int macroIndex, magda::MacroTarget target)> onTrackMacroUnlinked;
-    std::function<void(int macroIndex, magda::MacroTarget target, float amount)>
+    std::function<void(int macroIndex, magda::ControlTarget target)> onMacroUnlinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onRackMacroLinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onTrackMacroLinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onRackMacroUnlinked;
+    std::function<void(int macroIndex, magda::ControlTarget target)> onTrackMacroUnlinked;
+    std::function<void(int macroIndex, magda::ControlTarget target, float amount)>
         onMacroAmountChanged;
     std::function<void(int macroIndex, float value)> onMacroValueChanged;
     std::function<void()> onShowAutomationLane;
@@ -176,11 +178,11 @@ class ParamSlotComponent : public juce::Component,
 
     // MidiLearnCoordinatorListener implementation
     void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
-                               magda::StaticTarget::Owner owner, bool learning) override;
+                               magda::ControlTarget::Kind owner, bool learning) override;
     void midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
-                            magda::StaticTarget::Owner owner, const magda::Binding&) override;
+                            magda::ControlTarget::Kind owner, const magda::Binding&) override;
     void midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
-                          magda::StaticTarget::Owner owner, int numRemoved) override;
+                          magda::ControlTarget::Kind owner, int numRemoved) override;
 
     // BindingRegistryListener implementation
     void bindingRegistryChanged(magda::BindingScope scope) override;

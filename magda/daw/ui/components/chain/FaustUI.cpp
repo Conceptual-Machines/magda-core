@@ -3,8 +3,8 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "FaustCodeEditorWindow.hpp"
-#include "audio/FaustPlugin.hpp"
 #include "audio/FaustResources.hpp"
+#include "audio/plugins/FaustPlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -52,8 +52,8 @@ void FaustUI::rebuildFromPlugin() {
                        juce::dontSendNotification);
 
     auto params = plugin_->getAutomatableParameters();
-    DBG("[FaustUI] rebuildFromPlugin: found " << params.size() << " params, bounds=("
-        << getWidth() << "x" << getHeight() << ")");
+    DBG("[FaustUI] rebuildFromPlugin: found " << params.size() << " params, bounds=(" << getWidth()
+                                              << "x" << getHeight() << ")");
     for (auto p : params) {
         auto slot = std::make_unique<ParamSlot>();
         slot->param = p;
@@ -111,28 +111,27 @@ void FaustUI::showLoadMenu() {
     menu.addItem(fromFileId, "From file...");
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&loadButton_),
-        [this, starters, fromFileId](int result) {
-            if (result <= 0)
-                return;
-            if (result == fromFileId) {
-                loadFromFile();
-                return;
-            }
-            const int idx = result - 1;
-            if (idx < 0 || idx >= static_cast<int>(starters.size()))
-                return;
-            const auto& s = starters[static_cast<size_t>(idx)];
-            tryLoad(s.name, s.source);
-        });
+                       [this, starters, fromFileId](int result) {
+                           if (result <= 0)
+                               return;
+                           if (result == fromFileId) {
+                               loadFromFile();
+                               return;
+                           }
+                           const int idx = result - 1;
+                           if (idx < 0 || idx >= static_cast<int>(starters.size()))
+                               return;
+                           const auto& s = starters[static_cast<size_t>(idx)];
+                           tryLoad(s.name, s.source);
+                       });
 }
 
 void FaustUI::loadFromFile() {
     fileChooser_ = std::make_unique<juce::FileChooser>(
-        "Choose a .dsp file",
-        juce::File::getSpecialLocation(juce::File::userHomeDirectory),
+        "Choose a .dsp file", juce::File::getSpecialLocation(juce::File::userHomeDirectory),
         "*.dsp");
-    fileChooser_->launchAsync(juce::FileBrowserComponent::openMode |
-                                  juce::FileBrowserComponent::canSelectFiles,
+    fileChooser_->launchAsync(
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this](const juce::FileChooser& fc) {
             auto file = fc.getResult();
             if (!file.existsAsFile() || !plugin_)
@@ -153,8 +152,7 @@ void FaustUI::showCodeEditor() {
         "Faust DSP — " + plugin_->state.getProperty("dspName", juce::String()).toString();
     const auto source = plugin_->state.getProperty("dspSource", juce::String()).toString();
     editorWindow_ = std::make_unique<FaustCodeEditorWindow>(
-        title, source,
-        [this](const juce::String& src, juce::String& err) -> bool {
+        title, source, [this](const juce::String& src, juce::String& err) -> bool {
             if (!plugin_)
                 return false;
             const auto editedName =

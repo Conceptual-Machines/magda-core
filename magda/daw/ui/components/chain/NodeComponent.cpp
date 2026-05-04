@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 
+#include "AIPanelComponent.hpp"
 #include "MacroEditorPanel.hpp"
 #include "MacroPanelComponent.hpp"
 #include "ModsPanelComponent.hpp"
@@ -238,6 +239,16 @@ void NodeComponent::paint(juce::Graphics& g) {
         paintExtraLeftPanel(g, extraArea);
     }
 
+    // AI panel — sits between the mod editor and the main content
+    if (aiPanelVisible_) {
+        auto aiArea = bounds.removeFromLeft(getAIPanelWidth());
+        g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.02f));
+        g.fillRect(aiArea);
+        g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
+        g.drawRect(aiArea);
+        paintAIPanel(g, aiArea);
+    }
+
     // === RIGHT SIDE PANEL: [Gain] (squared corners) ===
     if (gainPanelVisible_) {
         auto gainArea = bounds.removeFromRight(getGainPanelWidth());
@@ -450,6 +461,17 @@ void NodeComponent::resized() {
         resizedExtraLeftPanel(extraArea);
     }
 
+    // AI panel — between mod editor and main content
+    if (aiPanelVisible_) {
+        auto aiArea = bounds.removeFromLeft(getAIPanelWidth());
+        resizedAIPanel(aiArea);
+    } else if (aiPanel_) {
+        // Without this, the panel keeps painting at its last bounds after the
+        // AI button is toggled off — the side strip is gone, but the output
+        // text / input box / footer linger over the device's main content.
+        aiPanel_->setVisible(false);
+    }
+
     // === RIGHT SIDE PANEL: [Gain] ===
     if (gainPanelVisible_) {
         auto gainArea = bounds.removeFromRight(getGainPanelWidth());
@@ -474,9 +496,19 @@ void NodeComponent::resized() {
             headerArea.removeFromRight(4);
         }
 
-        // Bypass/power button next to delete (if visible)
-        if (bypassButton_->isVisible()) {
-            bypassButton_->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+        // Power slot — defaults to base's bypassButton_, but subclasses can
+        // substitute a custom-styled button via getHeaderPowerButton().
+        if (auto* power = getHeaderPowerButton(); power != nullptr && power->isVisible()) {
+            power->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
+            headerArea.removeFromRight(4);
+        }
+
+        // Preset slot — base class reserves the position so the right-edge
+        // icon order is locked to [preset][power][delete] and a subclass
+        // can't accidentally tuck a button between them in
+        // resizedHeaderExtra.
+        if (auto* preset = getHeaderPresetButton(); preset != nullptr && preset->isVisible()) {
+            preset->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
             headerArea.removeFromRight(4);
         }
 
@@ -588,6 +620,20 @@ void NodeComponent::setGainPanelVisible(bool visible) {
     }
 }
 
+void NodeComponent::setAIPanelVisible(bool visible) {
+    if (aiPanelVisible_ != visible) {
+        aiPanelVisible_ = visible;
+        if (onAIPanelToggled) {
+            onAIPanelToggled(aiPanelVisible_);
+        }
+        resized();
+        repaint();
+        if (onLayoutChanged) {
+            onLayoutChanged();
+        }
+    }
+}
+
 void NodeComponent::setBypassButtonVisible(bool visible) {
     bypassButton_->setVisible(visible);
 }
@@ -617,6 +663,8 @@ int NodeComponent::getLeftPanelsWidth() const {
         width += getParamPanelWidth();
     width += getExtraRightPanelWidth();  // Extra "right" panel (e.g., macro editor) - still left of
                                          // main content
+    if (aiPanelVisible_)
+        width += getAIPanelWidth();
     return width;
 }
 
@@ -772,6 +820,23 @@ void NodeComponent::resizedParamPanel(juce::Rectangle<int> panelArea) {
 
 void NodeComponent::resizedGainPanel(juce::Rectangle<int> /*panelArea*/) {
     // Default: nothing - gain meter drawn in paintGainPanel
+}
+
+void NodeComponent::paintAIPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
+    // Header label — the AIPanelComponent (when mounted) draws the input/
+    // output below this strip; resizedAIPanel positions it skipping the 16px
+    // header band.
+    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE));
+    g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
+    g.drawText("AI", panelArea.removeFromTop(16), juce::Justification::centred);
+}
+
+void NodeComponent::resizedAIPanel(juce::Rectangle<int> panelArea) {
+    panelArea.removeFromTop(16);  // skip header
+    if (aiPanel_) {
+        aiPanel_->setBounds(panelArea);
+        aiPanel_->setVisible(true);
+    }
 }
 
 void NodeComponent::paintExtraRightPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
@@ -1019,10 +1084,7 @@ void NodeComponent::mouseWheelMove(const juce::MouseEvent& e,
 void NodeComponent::initializeModsMacrosPanels() {
     // Create mods panel
     modsPanel_ = std::make_unique<ModsPanelComponent>();
-    modsPanel_->onModAmountChanged = [this](int modIndex, float amount) {
-        onModAmountChangedInternal(modIndex, amount);
-    };
-    modsPanel_->onModTargetChanged = [this](int modIndex, magda::ModTarget target) {
+    modsPanel_->onModTargetChanged = [this](int modIndex, magda::ControlTarget target) {
         onModTargetChangedInternal(modIndex, target);
     };
     modsPanel_->onModNameChanged = [this](int modIndex, juce::String name) {
@@ -1061,13 +1123,13 @@ void NodeComponent::initializeModsMacrosPanels() {
     macroPanel_->onMacroValueChanged = [this](int macroIndex, float value) {
         onMacroValueChangedInternal(macroIndex, value);
     };
-    macroPanel_->onMacroTargetChanged = [this](int macroIndex, magda::MacroTarget target) {
+    macroPanel_->onMacroTargetChanged = [this](int macroIndex, magda::ControlTarget target) {
         onMacroTargetChangedInternal(macroIndex, target);
     };
     macroPanel_->onMacroNameChanged = [this](int macroIndex, juce::String name) {
         onMacroNameChangedInternal(macroIndex, name);
     };
-    macroPanel_->onMacroLinkRemoved = [this](int macroIndex, magda::MacroTarget target) {
+    macroPanel_->onMacroLinkRemoved = [this](int macroIndex, magda::ControlTarget target) {
         onMacroLinkRemovedInternal(macroIndex, target);
         updateMacroPanel();
         updateMacroEditor();
@@ -1240,7 +1302,7 @@ void NodeComponent::initializeModsMacrosPanels() {
     });
 
     // Mod matrix: delete link
-    modulatorEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ModTarget target) {
+    modulatorEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ControlTarget target) {
         auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
         if (device) {
             magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
@@ -1252,31 +1314,31 @@ void NodeComponent::initializeModsMacrosPanels() {
     };
 
     // Mod matrix: toggle bipolar
-    modulatorEditorPanel_->onModLinkBipolarChanged = [this](int modIndex, magda::ModTarget target,
-                                                            bool bipolar) {
-        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-        if (device) {
-            magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
-                                                                 bipolar);
-        } else {
-            magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
-                                                                 bipolar);
-        }
-        updateModulatorEditor();
-    };
+    modulatorEditorPanel_->onModLinkBipolarChanged =
+        [this](int modIndex, magda::ControlTarget target, bool bipolar) {
+            auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+            if (device) {
+                magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
+                                                                     bipolar);
+            } else {
+                magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
+                                                                     bipolar);
+            }
+            updateModulatorEditor();
+        };
 
     // Mod matrix: change link amount
-    modulatorEditorPanel_->onModLinkAmountChanged = [this](int modIndex, magda::ModTarget target,
-                                                           float amount) {
-        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-        if (device) {
-            magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
-                                                                amount);
-        } else {
-            magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
-                                                                amount);
-        }
-    };
+    modulatorEditorPanel_->onModLinkAmountChanged =
+        [this](int modIndex, magda::ControlTarget target, float amount) {
+            auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+            if (device) {
+                magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
+                                                                    amount);
+            } else {
+                magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
+                                                                    amount);
+            }
+        };
 
     addChildComponent(*modulatorEditorPanel_);
 
@@ -1292,18 +1354,18 @@ void NodeComponent::initializeModsMacrosPanels() {
             onMacroValueChangedInternal(selectedMacroIndex_, value);
         }
     };
-    macroEditorPanel_->onLinkAmountChanged = [this](magda::MacroTarget target, float amount) {
+    macroEditorPanel_->onLinkAmountChanged = [this](magda::ControlTarget target, float amount) {
         if (selectedMacroIndex_ >= 0) {
             onMacroLinkAmountChangedInternal(selectedMacroIndex_, target, amount);
         }
     };
-    macroEditorPanel_->onLinkRemoved = [this](magda::MacroTarget target) {
+    macroEditorPanel_->onLinkRemoved = [this](magda::ControlTarget target) {
         if (selectedMacroIndex_ >= 0) {
             onMacroLinkRemovedInternal(selectedMacroIndex_, target);
             updateMacroEditor();
         }
     };
-    macroEditorPanel_->onLinkBipolarToggled = [this](magda::MacroTarget target, bool bipolar) {
+    macroEditorPanel_->onLinkBipolarToggled = [this](magda::ControlTarget target, bool bipolar) {
         if (selectedMacroIndex_ >= 0) {
             onMacroLinkBipolarChangedInternal(selectedMacroIndex_, target, bipolar);
             updateMacroEditor();
@@ -1336,6 +1398,11 @@ void NodeComponent::initializeModsMacrosPanels() {
             return {};
         });
     addChildComponent(*macroEditorPanel_);
+
+    // AI panel — created lazily; bound to a device path / pluginId by
+    // DeviceSlotComponent (or whichever subclass mounts on a real device).
+    aiPanel_ = std::make_unique<AIPanelComponent>();
+    addChildComponent(*aiPanel_);
 }
 
 void NodeComponent::updateModsPanel() {

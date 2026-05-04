@@ -4,7 +4,7 @@
 #include <cmath>
 #include <vector>
 
-#include "../../../audio/AutomationCurveSimplifier.hpp"
+#include "../../../audio/automation/AutomationCurveSimplifier.hpp"
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/UndoManager.hpp"
@@ -447,7 +447,7 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
         return;
 
     // Get parameter info for this target
-    ParameterInfo paramInfo = lane->target.getParameterInfo();
+    ParameterInfo paramInfo = getParameterInfoForTarget(lane->target);
 
     g.setColour(juce::Colour(0xFF888888));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
@@ -485,7 +485,7 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
         for (const auto& [db, label] : dbLabels) {
             drawLabelAtRealValue(db, label);
         }
-    } else if (lane->target.type == AutomationTargetType::TrackPan) {
+    } else if (lane->target.kind == ControlTarget::Kind::TrackPan) {
         // Pan: L, C, R (real values -1, 0, +1)
         drawLabelAtRealValue(1.0, "R");
         drawLabelAtRealValue(0.0, "C");
@@ -590,7 +590,7 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
         return juce::String(static_cast<int>(normalizedValue * 100)) + "%";
 
     // Get parameter info and convert to real value
-    ParameterInfo paramInfo = lane->target.getParameterInfo();
+    ParameterInfo paramInfo = getParameterInfoForTarget(lane->target);
     float realValue =
         ParameterUtils::normalizedToReal(static_cast<float>(normalizedValue), paramInfo);
 
@@ -620,7 +620,7 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
     }
 
     // Handle pan specially (unit is empty but it's a special case)
-    if (lane->target.type == AutomationTargetType::TrackPan) {
+    if (lane->target.kind == ControlTarget::Kind::TrackPan) {
         if (realValue < -0.02f) {
             int percent = static_cast<int>(std::abs(realValue) * 100);
             return juce::String(percent) + "L";

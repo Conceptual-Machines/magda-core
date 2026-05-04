@@ -5,6 +5,14 @@
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 
+namespace {
+
+void syncPlacement(magda::ClipInfo& clip, double bpm = 120.0) {
+    clip.setPlacementBeats(clip.startTime * bpm / 60.0, clip.length * bpm / 60.0);
+}
+
+}  // namespace
+
 /**
  * Tests for source region - preserving source extent when enabling loop mode
  *
@@ -127,6 +135,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
 
     SECTION("Loop mode with loopLength set: uses loopLength directly") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 16.0;  // Long clip (multiple loop cycles)
         clip.offset = 0.0;
@@ -136,6 +145,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
         clip.loopStart = 0.0;
         clip.loopLength = 3.0;  // User's selected source extent
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // sourceLength should be loopLength
@@ -145,6 +155,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
 
     SECTION("Loop mode with loopLength=0: falls back to clip.length * speedRatio") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 8.0;
         clip.offset = 0.0;
@@ -154,6 +165,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
         clip.loopStart = 0.0;
         clip.loopLength = 0.0;  // Not set
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // Falls back to clip.length * speedRatio
@@ -162,6 +174,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
 
     SECTION("Loop mode with speed ratio: sourceExtentSeconds = sourceLength / speedRatio") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 16.0;
         clip.offset = 0.0;
@@ -171,6 +184,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in loop mode uses loopLength",
         clip.loopStart = 0.0;
         clip.loopLength = 3.0;  // 3s of source audio
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         REQUIRE(di.sourceLength == Catch::Approx(3.0));
@@ -184,6 +198,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in non-loop mode derives from clip.len
 
     SECTION("Non-loop mode: sourceLength = clip.length * speedRatio") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.offset = 0.0;
@@ -191,6 +206,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in non-loop mode derives from clip.len
         clip.loopEnabled = false;
         clip.loopLength = 10.0;  // This should be ignored in non-loop mode
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // In non-loop mode, sourceLength derives from clip.length * speedRatio
@@ -200,6 +216,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in non-loop mode derives from clip.len
 
     SECTION("Non-loop mode with speed ratio: sourceLength = clip.length * speedRatio") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.offset = 0.0;
@@ -207,6 +224,7 @@ TEST_CASE("ClipDisplayInfo - sourceLength in non-loop mode derives from clip.len
         clip.loopEnabled = false;
         clip.loopLength = 0.0;
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // sourceLength = 4.0 * 2.0 = 8.0
@@ -220,6 +238,7 @@ TEST_CASE("ClipDisplayInfo - sourceFileEnd in non-loop mode", "[clip][display][s
 
     SECTION("Non-loop mode: sourceFileEnd = offset + sourceLength") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.offset = 1.0;
@@ -227,6 +246,7 @@ TEST_CASE("ClipDisplayInfo - sourceFileEnd in non-loop mode", "[clip][display][s
         clip.loopEnabled = false;
         clip.loopLength = 0.0;
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // sourceLength = 4.0 * 1.0 = 4.0
@@ -237,6 +257,7 @@ TEST_CASE("ClipDisplayInfo - sourceFileEnd in non-loop mode", "[clip][display][s
 
     SECTION("Non-loop mode with speed ratio: sourceFileEnd accounts for speed") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 8.0;  // 8s on timeline
         clip.offset = 0.5;
@@ -244,6 +265,7 @@ TEST_CASE("ClipDisplayInfo - sourceFileEnd in non-loop mode", "[clip][display][s
         clip.loopEnabled = false;
         clip.loopLength = 0.0;
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // At 2x speed, 8s on timeline consumes 16s of source (timelineToSource = length *
@@ -263,6 +285,7 @@ TEST_CASE("ClipDisplayInfo - sourceExtentSeconds and loopEndPositionSeconds for 
 
     SECTION("Source extent controls waveform editor visible region") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 16.0;  // Long clip
         clip.offset = 0.0;
@@ -272,6 +295,7 @@ TEST_CASE("ClipDisplayInfo - sourceExtentSeconds and loopEndPositionSeconds for 
         clip.loopStart = 0.0;
         clip.loopLength = 5.0;  // 5s of source
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         // Loop length is the source extent
@@ -281,6 +305,7 @@ TEST_CASE("ClipDisplayInfo - sourceExtentSeconds and loopEndPositionSeconds for 
 
     SECTION("Source extent equals loop - loopEndPositionSeconds matches") {
         ClipInfo clip;
+        clip.type = ClipType::Audio;
         clip.startTime = 0.0;
         clip.length = 16.0;
         clip.offset = 0.0;
@@ -290,6 +315,7 @@ TEST_CASE("ClipDisplayInfo - sourceExtentSeconds and loopEndPositionSeconds for 
         clip.loopStart = 0.0;
         clip.loopLength = 2.0;  // 2s loop
 
+        syncPlacement(clip);
         auto di = ClipDisplayInfo::from(clip, 120.0);
 
         REQUIRE(di.loopLengthSeconds == Catch::Approx(2.0));

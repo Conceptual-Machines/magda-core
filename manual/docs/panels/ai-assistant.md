@@ -37,8 +37,6 @@ Creating a new track still works either way — just be explicit in the request 
 
 ### Setup
 
-![AI Settings](../assets/images/panels/ai-settings.png){ width="400" }
-
 The AI Assistant supports multiple LLM providers. Open the AI Settings dialog from **Settings > AI Settings** to configure your providers.
 
 The settings dialog has three tabs:
@@ -132,5 +130,48 @@ Prefix your message with a slash command to constrain the AI to a specific domai
 | Command | Description |
 |---------|-------------|
 | `/groove <request>` | Create or apply swing/groove timing templates |
+| `/design <description>` | Generate a 4OSC preset from a natural-language description and apply it to the focused 4OSC device |
 
 Typing `/` shows an autocomplete popup with available commands.
+
+#### `/design` — AI Sound Design
+
+Select a 4OSC device, then type `/design <description>`. The assistant produces a preset (waves, filter type, voice mode, FX gates, ADSR, levels) and applies it directly to the focused device.
+
+The chat shows a categorised summary of what changed, plus a one-line apply status. The preset name and category the AI chose become the default values when you save the preset from the device header — just click save and hit Enter.
+
+Built-in safeguards:
+
+- A **master-level safety cap** estimates worst-case peak gain from the active oscillator count, distortion drive, and filter resonance, then clamps the master `level` to keep peaks in a sensible range. The AI's choices are only overridden when they would clip.
+- The result is a **starting point**, not a final preset. Tweak by ear before saving.
+
+For example prompts and recipes, see the [4OSC Synth — AI Sound Design](../devices/4osc.md#ai-sound-design-design) section.
+
+## Per-Device AI Panel
+
+Sound-design generation is also available without leaving the device chain. Every device slot exposes an **AI** icon in its header — click it to open a docked panel attached to that device.
+
+![4OSC with the AI panel docked on its left, showing a prompt echo, the model's preset description, an apply status, and a yellow "starting point only" disclaimer.](../assets/images/panels/4osc-ai-panel.png)
+
+The panel has three rows:
+
+- **Output area** — streams the model's response token-by-token, then appends a one-line apply status (`→ applied N params, M waves, …`). The history persists across slot rebuilds (preset loads, plugin reloads, sidechain edits) — your last result stays put until you clear it.
+- **Prompt input** — type a description and press ++enter++ to submit. Submitting cancels any in-flight generation on the same device.
+- **Footer** — shows the active model id on the left and a delete button on the right. The delete button clears the chat for that device only.
+
+Generations are scoped to the device the panel is mounted on. Devices without a sound-design agent (everything except 4OSC at the moment) show **AI design not supported for this device** in place of the prompt placeholder.
+
+This is the same engine as the chat-based `/design` command — same agent, same safeguards, same preset name/category propagation to the save dialog. The panel is just a more direct path: focus the synth, prompt it, hear it.
+
+## Param Aliases (`@`)
+
+The AI chat understands **`@aliases`** as a shorthand for paths. Type `@` in the chat input to open an autocomplete list of available aliases — focused track, focused device, named macros, named modulators. Picking one expands to the full path the AI agent resolves.
+
+Useful for tying a request to a specific scope without spelling the path out:
+
+```
+@focused.macro = 0.7
+modulate @focused.cutoff with a slow LFO
+```
+
+Aliases are resolved server-side to the same `ChainNodePath` the DSL uses, so any command that takes a path takes an alias.

@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "../audio/RecordingNoteQueue.hpp"
+#include "../audio/midi/RecordingNoteQueue.hpp"
 #include "../command.hpp"
 #include "../interfaces/clip_interface.hpp"
 #include "../interfaces/mixer_interface.hpp"
@@ -19,6 +19,7 @@ namespace magda {
 
 // Forward declarations
 class AudioBridge;
+class MagdaApi;
 class MidiBridge;
 class PluginScanCoordinator;
 class PluginWindowManager;
@@ -74,6 +75,8 @@ class TracktionEngineWrapper : public AudioEngine,
     std::unordered_map<ClipId, double> getActiveClipPlayheadPositions() const override;
     SessionClipPlayState getSessionClipPlayState(ClipId clipId) const override;
     void stopSessionTrack(TrackId trackId) override;
+    bool isSessionTrackStopPending(TrackId trackId) const override;
+    double getAudioThreadTransportSeconds() const override;
     void deactivateAllSessionClips() override;
     void setTempo(double bpm) override;
     double getTempo() const override;
@@ -236,6 +239,13 @@ class TracktionEngineWrapper : public AudioEngine,
     }
     const tracktion::Edit* getEdit() const {
         return currentEdit_.get();
+    }
+
+    /** Programmatic facade onto MAGDA's DAW state. Owned by the wrapper and
+     *  shared across consumers (AI Chat panel, Lua controller, future CLI).
+     *  The reference is valid for the lifetime of the wrapper. */
+    MagdaApi& getMagdaApi() {
+        return *magdaApi_;
     }
 
     // =========================================================================
@@ -420,6 +430,12 @@ class TracktionEngineWrapper : public AudioEngine,
     /** Callback for startup plugin detection status (shown on splash screen). */
     std::function<void(const juce::String&)> onPluginScanStatus;
 
+    /** Fires the first time MIDI devices become available (and on subsequent
+     *  device-list changes). Use this to defer work that needs MIDI output
+     *  ports to be open — e.g. controller scripts whose `on_load` sends
+     *  SysEx, since sends issued before JUCE opens the port are dropped. */
+    std::function<void()> onMidiDevicesReady;
+
     // =========================================================================
     // TransportControl::Listener implementation
     // =========================================================================
@@ -461,6 +477,13 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // MIDI bridge for MIDI device management and routing
     std::unique_ptr<MidiBridge> midiBridge_;
+
+    // Programmatic facade onto MAGDA's DAW state. Owned here and shared
+    // with consumers (AI Chat, Lua controller, future CLI) via getMagdaApi().
+    // No Lua / scripting types referenced from this lib — the Lua controller
+    // lives in the magda_daw_app layer to avoid a circular link with
+    // magda_scripting.
+    std::unique_ptr<MagdaApi> magdaApi_;
 
     // Plugin window manager for safe window lifecycle
     std::unique_ptr<PluginWindowManager> pluginWindowManager_;

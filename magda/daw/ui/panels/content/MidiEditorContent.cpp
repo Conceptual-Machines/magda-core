@@ -1,5 +1,8 @@
 #include "MidiEditorContent.hpp"
 
+#include <cmath>
+
+#include "core/ClipPropertyCommands.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
@@ -63,15 +66,18 @@ MidiEditorContent::MidiEditorContent() {
         if (!clip || !clip->loopEnabled)
             return;
 
-        double newLoopStart = relativeTimeMode_ ? displayStart : (displayStart - clip->startTime);
+        double bpm = 120.0;
+        if (auto* controller = magda::TimelineController::getCurrent())
+            bpm = controller->getState().tempo.bpm;
+
+        double newLoopStart =
+            relativeTimeMode_ ? displayStart : (displayStart - clip->getTimelineStart(bpm));
         double newLoopLength = displayEnd - displayStart;
 
         // Update TimeRuler's loop state so the background tint follows the drag
         timeRuler_->setLoopRegion(newLoopStart, newLoopLength, true);
 
         // Update grid loop region visually (lightweight — no note rebuild)
-        auto* controller = magda::TimelineController::getCurrent();
-        double bpm = controller ? controller->getState().tempo.bpm : 120.0;
         double beatsPerSecond = bpm / 60.0;
 
         previewLoopStartBeats_ = newLoopStart * beatsPerSecond;
@@ -91,14 +97,17 @@ MidiEditorContent::MidiEditorContent() {
         if (!clip || !clip->loopEnabled)
             return;
 
-        double newLoopStart = relativeTimeMode_ ? displayStart : (displayStart - clip->startTime);
+        double bpm = 120.0;
+        if (auto* controller = magda::TimelineController::getCurrent())
+            bpm = controller->getState().tempo.bpm;
+
+        double newLoopStart =
+            relativeTimeMode_ ? displayStart : (displayStart - clip->getTimelineStart(bpm));
         double newLoopLength = displayEnd - displayStart;
 
-        auto* controller = magda::TimelineController::getCurrent();
-        double bpm = controller ? controller->getState().tempo.bpm : 120.0;
-
-        magda::ClipManager::getInstance().setLoopStartAndLength(editingClipId_, newLoopStart,
-                                                                newLoopLength, bpm);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetClipLoopRangeCommand>(editingClipId_, newLoopStart,
+                                                             newLoopLength, bpm));
     };
 
     // TimeRuler phase marker drag callback — visual preview only
@@ -309,6 +318,7 @@ void MidiEditorContent::updateTimeRuler() {
                                      state.tempo.timeSignatureDenominator);
     }
     timeRuler_->setTempo(tempo);
+    timeRuler_->setBarOrigin(0.0);
 
     // Get timeline length
     double timelineLength = 300.0;
@@ -320,6 +330,7 @@ void MidiEditorContent::updateTimeRuler() {
     // Set zoom and grid resolution (pixels per beat)
     timeRuler_->setZoom(horizontalZoom_);
     timeRuler_->setGridResolution(gridResolutionBeats_);
+    timeRuler_->setSnapEnabled(snapEnabled_);
 
     // Set clip info for boundary drawing.
     // Looped clips show the loop region starting from bar 1 — the editor
@@ -327,10 +338,10 @@ void MidiEditorContent::updateTimeRuler() {
     if (clip) {
         if (clip->loopEnabled || clip->view == magda::ClipView::Session) {
             timeRuler_->setTimeOffset(0.0);
-            timeRuler_->setClipLength(clip->length);
+            timeRuler_->setClipLength(clip->getTimelineLength(tempo));
         } else {
-            timeRuler_->setTimeOffset(clip->startTime);
-            timeRuler_->setClipLength(clip->length);
+            timeRuler_->setTimeOffset(clip->getTimelineStart(tempo));
+            timeRuler_->setClipLength(clip->getTimelineLength(tempo));
         }
     } else {
         timeRuler_->setTimeOffset(0.0);
@@ -365,8 +376,32 @@ void MidiEditorContent::setRelativeTimeMode(bool relative) {
         relativeTimeMode_ = relative;
         updateGridSize();
         updateTimeRuler();
+        scrollToClipStartForTimeMode();
         repaint();
     }
+}
+
+void MidiEditorContent::scrollToClipStartForTimeMode() {
+    if (!viewport_)
+        return;
+
+    int scrollX = 0;
+    const auto* clip = editingClipId_ != magda::INVALID_CLIP_ID
+                           ? magda::ClipManager::getInstance().getClip(editingClipId_)
+                           : nullptr;
+
+    if (!relativeTimeMode_ && clip && clip->view != magda::ClipView::Session)
+        scrollX = static_cast<int>(std::round(clip->placement.startBeat * horizontalZoom_));
+
+    viewport_->setViewPosition(scrollX, viewport_->getViewPositionY());
+    lastScrolledPlacementStartBeat_ =
+        clip ? clip->placement.startBeat : std::numeric_limits<double>::quiet_NaN();
+
+    DBG("MidiEditorContent::scrollToClipStartForTimeMode"
+        << " relative=" << static_cast<int>(relativeTimeMode_)
+        << " clipId=" << static_cast<int>(editingClipId_)
+        << " placementStartBeat=" << (clip ? clip->placement.startBeat : -1.0)
+        << " scrollX=" << scrollX << " zoomPPB=" << horizontalZoom_);
 }
 
 // ============================================================================
@@ -388,11 +423,20 @@ void MidiEditorContent::clipsChanged() {
 void MidiEditorContent::clipPropertyChanged(magda::ClipId clipId) {
     if (clipId == editingClipId_) {
         juce::Component::SafePointer<MidiEditorContent> safeThis(this);
-        juce::MessageManager::callAsync([safeThis]() {
+        juce::MessageManager::callAsync([safeThis, clipId]() {
             if (auto* self = safeThis.getComponent()) {
+                const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
+                const bool placementMoved =
+                    clip && !self->relativeTimeMode_ &&
+                    (std::isnan(self->lastScrolledPlacementStartBeat_) ||
+                     std::abs(clip->placement.startBeat - self->lastScrolledPlacementStartBeat_) >
+                         0.0001);
+
                 self->applyClipGridSettings();
                 self->updateGridSize();
                 self->updateTimeRuler();
+                if (placementMoved)
+                    self->scrollToClipStartForTimeMode();
                 self->repaint();
             }
         });
@@ -560,6 +604,8 @@ void MidiEditorContent::setSnapEnabledFromUI(bool enabled) {
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         magda::ClipManager::getInstance().setClipSnapEnabled(editingClipId_, enabled);
         snapEnabled_ = enabled;
+        if (timeRuler_)
+            timeRuler_->setSnapEnabled(snapEnabled_);
     }
 }
 
@@ -600,13 +646,7 @@ void MidiEditorContent::updateVelocityLane() {
                            : nullptr;
 
     if (clip) {
-        double tempo = 120.0;
-        if (auto* controller = magda::TimelineController::getCurrent()) {
-            tempo = controller->getState().tempo.bpm;
-        }
-        double secondsPerBeat = 60.0 / tempo;
-        double clipStartBeats = clip->startTime / secondsPerBeat;
-        velocityLane_->setClipStartBeats(clipStartBeats);
+        velocityLane_->setClipStartBeats(clip->placement.startBeat);
     } else {
         velocityLane_->setClipStartBeats(0.0);
     }
@@ -691,13 +731,7 @@ void MidiEditorContent::updateMidiDrawer() {
                            : nullptr;
 
     if (clip) {
-        double tempo = 120.0;
-        if (auto* controller = magda::TimelineController::getCurrent()) {
-            tempo = controller->getState().tempo.bpm;
-        }
-        double secondsPerBeat = 60.0 / tempo;
-        double clipStartBeats = clip->startTime / secondsPerBeat;
-        midiDrawer_->setClipStartBeats(clipStartBeats);
+        midiDrawer_->setClipStartBeats(clip->placement.startBeat);
     } else {
         midiDrawer_->setClipStartBeats(0.0);
     }

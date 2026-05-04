@@ -1,9 +1,9 @@
 #include "DeviceCustomUIManager.hpp"
 
 #include "audio/AudioBridge.hpp"
-#include "audio/DrumGridPlugin.hpp"
-#include "audio/FaustPlugin.hpp"
-#include "audio/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/FaustPlugin.hpp"
+#include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"

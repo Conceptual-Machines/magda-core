@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "../AppPaths.hpp"
+
 namespace magda {
 
 ControllerProfileRegistry& ControllerProfileRegistry::getInstance() {
@@ -18,7 +20,7 @@ juce::File ControllerProfileRegistry::findBundledControllersDirectory() {
 
     juce::Array<juce::File> candidates;
 #if JUCE_MAC
-    candidates.add(appFile.getChildFile("Contents/Resources/controllers"));
+    candidates.add(appFile.getChildFile("Contents/Resources/controllers/profiles"));
 #endif
 #if JUCE_LINUX
     // Under an AppImage, JUCE's currentApplicationFile returns the outer
@@ -26,15 +28,16 @@ juce::File ControllerProfileRegistry::findBundledControllersDirectory() {
     // looked for next to the launcher instead of inside the mount.
     // /proc/self/exe always resolves to the real binary inside the AppImage mount.
     if (auto real = juce::File("/proc/self/exe").getLinkedTarget(); real.exists())
-        candidates.add(real.getParentDirectory().getChildFile("controllers"));
+        candidates.add(real.getParentDirectory().getChildFile("controllers/profiles"));
 #endif
     // Next to the binary (Windows/Linux, and macOS portable layout).
-    candidates.add(appFile.getParentDirectory().getChildFile("controllers"));
+    candidates.add(appFile.getParentDirectory().getChildFile("controllers/profiles"));
 
-    // Dev-tree fallback: walk up looking for a resources/controllers sibling.
+    // Dev-tree fallback: walk up looking for a resources/controllers/profiles sibling.
     auto walk = appFile.getParentDirectory();
     for (int i = 0; i < 8 && walk.exists(); ++i) {
-        auto maybe = walk.getChildFile("resources").getChildFile("controllers");
+        auto maybe =
+            walk.getChildFile("resources").getChildFile("controllers").getChildFile("profiles");
         if (maybe.isDirectory()) {
             candidates.add(maybe);
             break;
@@ -49,9 +52,7 @@ juce::File ControllerProfileRegistry::findBundledControllersDirectory() {
 }
 
 juce::File ControllerProfileRegistry::userControllersDirectory() {
-    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("MAGDA")
-        .getChildFile("controllers");
+    return magda::paths::controllerProfilesDir();
 }
 
 juce::String ControllerProfileRegistry::filenameForProfileId(const juce::String& id) {
@@ -65,28 +66,33 @@ juce::File ControllerProfileRegistry::userFileForProfileId(const juce::String& i
 }
 
 juce::File ControllerProfileRegistry::findSourceFileForProfileId(const juce::String& id) const {
-    // Try the canonical filename first — fast path for user-created profiles.
+    // Try the canonical filename in the user dir first — fast path for
+    // user-imported profiles (matches load() precedence: user wins over bundled).
     auto direct = userFileForProfileId(id);
     if (direct.existsAsFile())
         return direct;
 
+    // Walk both pools and pick the file whose JSON body advertises this id.
     // Bundled profiles use shipping filenames that don't always match the id
     // (e.g. id "novation.launchkey_mini_mk4" lives in
-    // novation_launchkey_mini_mk4.json). Walk the directory and pick the file
-    // whose JSON body advertises this id.
-    auto dir = userControllersDirectory();
-    if (!dir.isDirectory())
+    // novation_launchkey_mini_mk4.json), so we have to read each file.
+    auto matchInDir = [&id](const juce::File& dir) -> juce::File {
+        if (!dir.isDirectory())
+            return {};
+        for (const auto& f : dir.findChildFiles(juce::File::findFiles, false, "*.json")) {
+            auto parsed = juce::JSON::parse(f.loadFileAsString());
+            if (parsed.isVoid())
+                continue;
+            auto profileOpt = decodeControllerProfile(parsed);
+            if (profileOpt.has_value() && profileOpt->id == id)
+                return f;
+        }
         return {};
+    };
 
-    for (const auto& f : dir.findChildFiles(juce::File::findFiles, false, "*.json")) {
-        auto parsed = juce::JSON::parse(f.loadFileAsString());
-        if (parsed.isVoid())
-            continue;
-        auto profileOpt = decodeControllerProfile(parsed);
-        if (profileOpt.has_value() && profileOpt->id == id)
-            return f;
-    }
-    return {};
+    if (auto user = matchInDir(userControllersDirectory()); user.existsAsFile())
+        return user;
+    return matchInDir(findBundledControllersDirectory());
 }
 
 // ============================================================================
@@ -96,46 +102,13 @@ juce::File ControllerProfileRegistry::findSourceFileForProfileId(const juce::Str
 void ControllerProfileRegistry::load() {
     profiles_.clear();
 
-    auto userDir = userControllersDirectory();
+    // Bundled (factory) pool first; user pool second so user entries override
+    // bundled entries with the same id.
+    if (auto bundledDir = findBundledControllersDirectory(); bundledDir.isDirectory())
+        loadFromDirectory(bundledDir);
 
-    // Additive seed: copy any bundled profile whose filename isn't already in
-    // the user dir. This runs every launch so newly-bundled or renamed profiles
-    // flow through. We never overwrite — if a user has edited or removed a
-    // bundled file, the seed leaves it alone.
-    seedUserDirectory(userDir);
-
-    if (userDir.isDirectory())
+    if (auto userDir = userControllersDirectory(); userDir.isDirectory())
         loadFromDirectory(userDir);
-}
-
-void ControllerProfileRegistry::seedUserDirectory(const juce::File& userDir) {
-    auto bundledDir = findBundledControllersDirectory();
-    if (!bundledDir.isDirectory()) {
-        DBG("ControllerProfileRegistry: bundled controllers directory not found, "
-            "skipping seed");
-        return;
-    }
-
-    if (auto res = userDir.createDirectory(); res.failed()) {
-        DBG("ControllerProfileRegistry: failed to create user dir "
-            << userDir.getFullPathName() << ": " << res.getErrorMessage());
-        return;
-    }
-
-    int seeded = 0;
-    auto files = bundledDir.findChildFiles(juce::File::findFiles, false, "*.json");
-    for (const auto& src : files) {
-        auto dest = userDir.getChildFile(src.getFileName());
-        if (dest.existsAsFile())
-            continue;
-        if (src.copyFileTo(dest))
-            ++seeded;
-        else
-            DBG("ControllerProfileRegistry: failed to seed " << dest.getFullPathName());
-    }
-    if (seeded > 0)
-        DBG("ControllerProfileRegistry: seeded " << seeded << " new profile(s) into "
-                                                 << userDir.getFullPathName());
 }
 
 void ControllerProfileRegistry::loadFromDirectory(const juce::File& dir) {

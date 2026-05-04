@@ -44,6 +44,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     valueSlider_.onRightClicked = [this]() {
         showParamLinkMenu(this, buildLinkContext(),
                           {.onModUnlinked = onModUnlinked,
+                           .onRackModUnlinked = onRackModUnlinked,
                            .onTrackModUnlinked = onTrackModUnlinked,
                            .onModLinkedWithAmount = onModLinkedWithAmount,
                            .onMacroLinked = onMacroLinked,
@@ -85,19 +86,19 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
         }
 
         const auto& selectedMod = (*availableMods_)[static_cast<size_t>(selectedModIndex_)];
-        magda::ModTarget thisTarget{deviceId_, paramIndex_};
+        magda::ControlTarget thisTarget =
+            magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = selectedMod.getLink(thisTarget);
-        bool isLinked = existingLink != nullptr || (selectedMod.target.deviceId == deviceId_ &&
-                                                    selectedMod.target.paramIndex == paramIndex_);
+        bool isLinked = existingLink != nullptr;
 
         float startAmount = 0.5f;
         if (!isLinked) {
             if (onModLinkedWithAmount) {
                 onModLinkedWithAmount(selectedModIndex_, thisTarget, 0.5f);
             }
-        } else {
-            startAmount = existingLink ? existingLink->amount : selectedMod.amount;
+        } else if (existingLink) {
+            startAmount = existingLink->amount;
         }
         valueSlider_.setShiftDragStartValue(startAmount);
 
@@ -114,7 +115,8 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
         if (!isModAmountDrag_ || modAmountDragModIndex_ < 0) {
             return;
         }
-        magda::ModTarget thisTarget{deviceId_, paramIndex_};
+        magda::ControlTarget thisTarget =
+            magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
         if (onModAmountChanged) {
             onModAmountChanged(modAmountDragModIndex_, thisTarget, newAmount);
         }
@@ -137,11 +139,11 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
         }
 
         const auto& selectedMod = (*availableMods_)[static_cast<size_t>(selectedModIndex_)];
-        magda::ModTarget thisTarget{deviceId_, paramIndex_};
+        magda::ControlTarget thisTarget =
+            magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = selectedMod.getLink(thisTarget);
-        bool isLinked = existingLink != nullptr || (selectedMod.target.deviceId == deviceId_ &&
-                                                    selectedMod.target.paramIndex == paramIndex_);
+        bool isLinked = existingLink != nullptr;
 
         if (!isLinked && onModLinkedWithAmount) {
             onModLinkedWithAmount(selectedModIndex_, thisTarget, 0.5f);
@@ -154,10 +156,12 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     // Default MIDI Learn wiring: delegate to MidiLearnCoordinator singleton
     onMidiLearn = [this](magda::ChainNodePath path, int paramIdx, juce::String paramName) {
         juce::String displayName = paramName.isNotEmpty() ? paramName : nameLabel_.getText();
-        magda::MidiLearnCoordinator::getInstance().beginLearn(path, paramIdx, displayName);
+        magda::MidiLearnCoordinator::getInstance().beginLearn(
+            magda::ControlTarget::pluginParam(path, paramIdx), displayName);
     };
     onMidiClear = [](magda::ChainNodePath path, int paramIdx) {
-        magda::MidiLearnCoordinator::getInstance().clearMappings(path, paramIdx);
+        magda::MidiLearnCoordinator::getInstance().clearMappings(
+            magda::ControlTarget::pluginParam(path, paramIdx));
     };
 
     setInterceptsMouseClicks(true, true);
@@ -264,8 +268,8 @@ void ParamSlotComponent::macroLinkModeChanged(bool active, const magda::MacroSel
 // ============================================================================
 
 void ParamSlotComponent::midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,
-                                               magda::StaticTarget::Owner owner, bool learning) {
-    if (owner != magda::StaticTarget::Owner::PluginParam)
+                                               magda::ControlTarget::Kind owner, bool learning) {
+    if (owner != magda::ControlTarget::Kind::PluginParam)
         return;  // ParamSlot only cares about plugin-param Learn
     bool isMe = (path == devicePath_ && paramIndex == paramIndex_);
     isInMidiLearnMode_ = learning && isMe;
@@ -273,17 +277,17 @@ void ParamSlotComponent::midiLearnStateChanged(const magda::ChainNodePath& path,
 }
 
 void ParamSlotComponent::midiLearnCompleted(const magda::ChainNodePath& path, int paramIndex,
-                                            magda::StaticTarget::Owner owner,
+                                            magda::ControlTarget::Kind owner,
                                             const magda::Binding&) {
-    if (owner != magda::StaticTarget::Owner::PluginParam)
+    if (owner != magda::ControlTarget::Kind::PluginParam)
         return;
     if (path == devicePath_ && paramIndex == paramIndex_)
         refreshMidiBindingState();
 }
 
 void ParamSlotComponent::midiLearnCleared(const magda::ChainNodePath& path, int paramIndex,
-                                          magda::StaticTarget::Owner owner, int) {
-    if (owner != magda::StaticTarget::Owner::PluginParam)
+                                          magda::ControlTarget::Kind owner, int) {
+    if (owner != magda::ControlTarget::Kind::PluginParam)
         return;
     if (path == devicePath_ && paramIndex == paramIndex_)
         refreshMidiBindingState();
@@ -295,8 +299,8 @@ void ParamSlotComponent::bindingRegistryChanged(magda::BindingScope) {
 }
 
 void ParamSlotComponent::refreshMidiBindingState() {
-    bool newState =
-        magda::BindingRegistry::getInstance().hasActiveBindingForTarget(devicePath_, paramIndex_);
+    bool newState = magda::BindingRegistry::getInstance().hasActiveBindingFor(
+        magda::ControlTarget::pluginParam(devicePath_, paramIndex_));
     if (newState != hasMidiBinding_) {
         hasMidiBinding_ = newState;
         repaint();
@@ -316,14 +320,13 @@ void ParamSlotComponent::handleLinkModeClick() {
                                        availableTrackMods_);
 
     if (modPtr) {
-        magda::ModTarget thisTarget{deviceId_, paramIndex_};
+        magda::ControlTarget thisTarget =
+            magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
         const auto* existingLink = modPtr->getLink(thisTarget);
-        bool isLinked = existingLink != nullptr || (modPtr->target.deviceId == deviceId_ &&
-                                                    modPtr->target.paramIndex == paramIndex_);
+        bool isLinked = existingLink != nullptr;
 
-        float initialAmount =
-            isLinked ? (existingLink ? existingLink->amount : modPtr->amount) : 0.3f;
+        float initialAmount = existingLink ? existingLink->amount : 0.3f;
 
         if (!isLinked) {
             if (onModLinkedWithAmount) {
@@ -337,13 +340,13 @@ void ParamSlotComponent::handleLinkModeClick() {
                                                availableRackMacros_, availableTrackMacros_);
 
         if (macroPtr) {
-            magda::MacroTarget thisTarget{deviceId_, paramIndex_};
+            magda::ControlTarget thisTarget =
+                magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
             const auto* existingLink = macroPtr->getLink(thisTarget);
-            bool isLinked = existingLink != nullptr || (macroPtr->target.deviceId == deviceId_ &&
-                                                        macroPtr->target.paramIndex == paramIndex_);
+            bool isLinked = existingLink != nullptr;
 
-            float initialAmount = isLinked ? (existingLink ? existingLink->amount : 0.3f) : 0.3f;
+            float initialAmount = existingLink ? existingLink->amount : 0.3f;
 
             if (!isLinked) {
                 if (onMacroLinkedWithAmount) {
@@ -373,10 +376,12 @@ void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmo
             float amount = static_cast<float>(safeThis->linkModeSlider_->getValue() / 100.0);
 
             if (safeThis->activeMod_.isValid() && safeThis->onModAmountChanged) {
-                magda::ModTarget thisTarget{safeThis->deviceId_, safeThis->paramIndex_};
+                magda::ControlTarget thisTarget =
+                    magda::ControlTarget::pluginParam(safeThis->devicePath_, safeThis->paramIndex_);
                 safeThis->onModAmountChanged(safeThis->activeMod_.modIndex, thisTarget, amount);
             } else if (safeThis->activeMacro_.isValid() && safeThis->onMacroAmountChanged) {
-                magda::MacroTarget thisTarget{safeThis->deviceId_, safeThis->paramIndex_};
+                magda::ControlTarget thisTarget =
+                    magda::ControlTarget::pluginParam(safeThis->devicePath_, safeThis->paramIndex_);
                 safeThis->onMacroAmountChanged(safeThis->activeMacro_.macroIndex, thisTarget,
                                                amount);
             }
@@ -427,8 +432,8 @@ void ParamSlotComponent::setParamValue(double value) {
 
 void ParamSlotComponent::refreshAutomationTarget() {
     magda::AutomationTarget target;
-    target.type = magda::AutomationTargetType::DeviceParameter;
-    target.trackId = devicePath_.trackId;
+    target.kind = magda::ControlTarget::Kind::PluginParam;
+    target.devicePath.trackId = devicePath_.trackId;
     target.devicePath = devicePath_;
     target.paramIndex = paramIndex_;
     if (target.isValid())
@@ -615,6 +620,7 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
         }
         showParamLinkMenu(this, buildLinkContext(),
                           {.onModUnlinked = onModUnlinked,
+                           .onRackModUnlinked = onRackModUnlinked,
                            .onTrackModUnlinked = onTrackModUnlinked,
                            .onModLinkedWithAmount = onModLinkedWithAmount,
                            .onMacroLinked = onMacroLinked,
@@ -641,12 +647,11 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             bool isLinked = false;
 
             if (modPtr) {
-                magda::ModTarget thisTarget{deviceId_, paramIndex_};
-                const auto* existingLink = modPtr->getLink(thisTarget);
-                isLinked = existingLink != nullptr || (modPtr->target.deviceId == deviceId_ &&
-                                                       modPtr->target.paramIndex == paramIndex_);
-                if (isLinked) {
-                    initialAmount = existingLink ? existingLink->amount : modPtr->amount;
+                magda::ControlTarget thisTarget =
+                    magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+                if (const auto* existingLink = modPtr->getLink(thisTarget)) {
+                    isLinked = true;
+                    initialAmount = existingLink->amount;
                 }
             }
 
@@ -683,7 +688,8 @@ void ParamSlotComponent::mouseDown(const juce::MouseEvent& e) {
             bool isLinked = false;
 
             if (macroPtr) {
-                magda::MacroTarget thisTarget{deviceId_, paramIndex_};
+                magda::ControlTarget thisTarget =
+                    magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
                 const auto* existingLink = macroPtr->getLink(thisTarget);
                 isLinked = existingLink != nullptr;
                 if (isLinked) {
@@ -742,11 +748,11 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
                                            availableRackMods_, availableTrackMods_);
 
         if (modPtr) {
-            magda::ModTarget thisTarget{deviceId_, paramIndex_};
+            magda::ControlTarget thisTarget =
+                magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
             const auto* existingLink = modPtr->getLink(thisTarget);
-            bool isLinked = existingLink != nullptr || (modPtr->target.deviceId == deviceId_ &&
-                                                        modPtr->target.paramIndex == paramIndex_);
+            bool isLinked = existingLink != nullptr;
 
             if (isLinked) {
                 if (onModAmountChanged) {
@@ -762,7 +768,8 @@ void ParamSlotComponent::mouseDrag(const juce::MouseEvent& e) {
             const auto* macroPtr = resolveMacroPtr(activeMacro_, devicePath_, availableMacros_,
                                                    availableRackMacros_, availableTrackMacros_);
             if (macroPtr) {
-                magda::MacroTarget thisTarget{deviceId_, paramIndex_};
+                magda::ControlTarget thisTarget =
+                    magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
 
                 const auto* existingLink = macroPtr->getLink(thisTarget);
                 bool isLinked = existingLink != nullptr;
@@ -793,8 +800,10 @@ void ParamSlotComponent::mouseUp(const juce::MouseEvent& /*e*/) {
         constexpr float kDefaultLinkAmount = 0.3f;
         const bool noDragHappened = linkModeDragStartAmount_ == linkModeDragCurrentAmount_;
         if (noDragHappened) {
-            magda::ModTarget modTarget{deviceId_, paramIndex_};
-            magda::MacroTarget macroTarget{deviceId_, paramIndex_};
+            magda::ControlTarget modTarget =
+                magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
+            magda::ControlTarget macroTarget =
+                magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
             if (activeMod_.isValid()) {
                 const auto* modPtr = resolveModPtr(activeMod_, devicePath_, availableMods_,
                                                    availableRackMods_, availableTrackMods_);
@@ -852,7 +861,7 @@ void ParamSlotComponent::itemDropped(const SourceDetails& details) {
         }
 
         int modIndex = parts[2].getIntValue();
-        magda::ModTarget target{deviceId_, paramIndex_};
+        magda::ControlTarget target = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
         if (onModLinkedWithAmount) {
             onModLinkedWithAmount(modIndex, target, 0.5f);
         }
@@ -867,9 +876,7 @@ void ParamSlotComponent::itemDropped(const SourceDetails& details) {
         }
 
         int macroIndex = parts[2].getIntValue();
-        magda::MacroTarget target;
-        target.deviceId = deviceId_;
-        target.paramIndex = paramIndex_;
+        magda::ControlTarget target = magda::ControlTarget::pluginParam(devicePath_, paramIndex_);
         if (onMacroLinked) {
             onMacroLinked(macroIndex, target);
         }

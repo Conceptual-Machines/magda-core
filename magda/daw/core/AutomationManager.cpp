@@ -36,26 +36,26 @@ static double deviceCurrentValueToLaneNormalized(float currentValue,
 // Get current normalized value for an automation target
 static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& target) {
     // Get parameter info for proper conversion
-    ParameterInfo paramInfo = target.getParameterInfo();
+    ParameterInfo paramInfo = getParameterInfoForTarget(target);
 
-    switch (target.type) {
-        case AutomationTargetType::TrackVolume: {
-            const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+    switch (target.kind) {
+        case ControlTarget::Kind::TrackVolume: {
+            const auto* track = TrackManager::getInstance().getTrack(target.devicePath.trackId);
             if (track) {
                 float db = gainToDb(track->volume);
                 return static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
             }
             return 0.75;  // Default to unity (0dB)
         }
-        case AutomationTargetType::TrackPan: {
-            const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+        case ControlTarget::Kind::TrackPan: {
+            const auto* track = TrackManager::getInstance().getTrack(target.devicePath.trackId);
             if (track) {
                 return static_cast<double>(ParameterUtils::realToNormalized(track->pan, paramInfo));
             }
             return 0.5;  // Default to center
         }
-        case AutomationTargetType::SendLevel: {
-            const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+        case ControlTarget::Kind::SendLevel: {
+            const auto* track = TrackManager::getInstance().getTrack(target.devicePath.trackId);
             if (!track)
                 return 0.75;
             for (const auto& send : track->sends) {
@@ -66,7 +66,7 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             }
             return 0.75;  // Default to unity when bus not found
         }
-        case AutomationTargetType::DeviceParameter: {
+        case ControlTarget::Kind::PluginParam: {
             auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
             if (!resolved.valid || !resolved.device)
                 return std::nullopt;
@@ -78,8 +78,8 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
                 resolved.device->parameters[static_cast<size_t>(target.paramIndex)].currentValue,
                 paramInfo);
         }
-        case AutomationTargetType::Macro: {
-            const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+        case ControlTarget::Kind::DeviceMacro: {
+            const auto* track = TrackManager::getInstance().getTrack(target.devicePath.trackId);
             if (!track)
                 return std::nullopt;
 
@@ -99,14 +99,14 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             }
             return std::nullopt;
         }
-        case AutomationTargetType::ModParameter: {
+        case ControlTarget::Kind::ModParam: {
             // Resolve the ModInfo by scope — same shape as the playback
             // resolver in PluginManager. Without this, new sync-division /
             // rate lanes would be created with a default 0.5 normalized
             // initial point that doesn't match the modulator's current
             // state — the lane would drift the LFO away from the slider as
             // soon as transport starts.
-            const auto* track = TrackManager::getInstance().getTrack(target.trackId);
+            const auto* track = TrackManager::getInstance().getTrack(target.devicePath.trackId);
             if (!track)
                 return std::nullopt;
             const ModInfo* mod = nullptr;
@@ -190,13 +190,13 @@ void AutomationManager::trackPropertyChanged(int trackId) {
 
     for (auto& lane : lanes_) {
         // Only update lanes for this track
-        if (lane.target.trackId != tid)
+        if (lane.target.devicePath.trackId != tid)
             continue;
 
         // Only process track-level targets driven from TrackInfo
-        if (lane.target.type != AutomationTargetType::TrackVolume &&
-            lane.target.type != AutomationTargetType::TrackPan &&
-            lane.target.type != AutomationTargetType::SendLevel)
+        if (lane.target.kind != ControlTarget::Kind::TrackVolume &&
+            lane.target.kind != ControlTarget::Kind::TrackPan &&
+            lane.target.kind != ControlTarget::Kind::SendLevel)
             continue;
 
         // Only update absolute lanes with points
@@ -233,7 +233,7 @@ AutomationLaneId AutomationManager::createLane(const AutomationTarget& target,
     lane.id = nextLaneId_++;
     lane.target = target;
     lane.type = type;
-    lane.name = target.getDisplayName();
+    lane.name = getDisplayNameForTarget(target);
 
     // For absolute lanes, add an initial point at the current target value
     if (type == AutomationLaneType::Absolute) {
@@ -302,7 +302,7 @@ const AutomationLaneInfo* AutomationManager::getLane(AutomationLaneId laneId) co
 std::vector<AutomationLaneId> AutomationManager::getLanesForTrack(TrackId trackId) const {
     std::vector<AutomationLaneId> result;
     for (const auto& lane : lanes_) {
-        if (lane.target.trackId == trackId) {
+        if (lane.target.devicePath.trackId == trackId) {
             result.push_back(lane.id);
         }
     }
@@ -397,12 +397,11 @@ std::optional<double> AutomationManager::getTouchBaseline(const AutomationTarget
 }
 
 void AutomationManager::clearTouchBaseline(const AutomationTarget& target) {
-    touchBaselines_.erase(
-        std::remove_if(touchBaselines_.begin(), touchBaselines_.end(),
-                       [&](const std::pair<AutomationTarget, double>& e) {
-                           return e.first == target;
-                       }),
-        touchBaselines_.end());
+    touchBaselines_.erase(std::remove_if(touchBaselines_.begin(), touchBaselines_.end(),
+                                         [&](const std::pair<AutomationTarget, double>& e) {
+                                             return e.first == target;
+                                         }),
+                          touchBaselines_.end());
 }
 
 AutomationVisualState AutomationManager::getVisualState(const AutomationTarget& target) const {

@@ -7,27 +7,32 @@ using namespace magda;
 
 // ============================================================================
 // Fixture JSON strings (in-memory, no BinaryData dependency)
+//
+// These represent third-party JSON-driven curated packs. MAGDA's own internal
+// plugin aliases (eq, compressor, ...) ship from code via InternalPluginAliases
+// and are exercised by the dedicated test below; the JSON path tested here is
+// what would be used for a future Pro-Q / Diva / Serum etc. pack.
 // ============================================================================
 
 static const juce::String kIndexJson = R"({
   "version": 1,
   "plugins": [
     {
-      "match": { "name_equals": "Equaliser", "format": "Internal" },
-      "key": "eq",
-      "file": "curated_eq_json"
+      "match": { "name_equals": "Test Equaliser", "format": "VST3" },
+      "key": "test_eq",
+      "file": "curated_test_eq_json"
     },
     {
-      "match": { "name_equals": "Compressor", "format": "Internal" },
-      "key": "compressor",
-      "file": "curated_compressor_json"
+      "match": { "name_equals": "Test Compressor", "format": "VST3" },
+      "key": "test_compressor",
+      "file": "curated_test_compressor_json"
     }
   ]
 })";
 
 static const juce::String kEqJson = R"({
   "version": 1,
-  "pluginKey": "eq",
+  "pluginKey": "test_eq",
   "aliases": {
     "low_shelf_freq": { "paramIndex": 0 },
     "low_shelf_gain": { "paramIndex": 1 },
@@ -42,7 +47,7 @@ static const juce::String kEqJson = R"({
 
 static const juce::String kCompressorJson = R"({
   "version": 1,
-  "pluginKey": "compressor",
+  "pluginKey": "test_compressor",
   "aliases": {
     "threshold": { "paramIndex": 0 },
     "ratio":     { "paramIndex": 1 },
@@ -64,9 +69,9 @@ static const juce::String kCompressorJson = R"({
 // ============================================================================
 
 static juce::String testResolver(const juce::String& filename) {
-    if (filename == "curated_eq_json")
+    if (filename == "curated_test_eq_json")
         return kEqJson;
-    if (filename == "curated_compressor_json")
+    if (filename == "curated_test_compressor_json")
         return kCompressorJson;
     return {};
 }
@@ -75,21 +80,22 @@ static juce::String testResolver(const juce::String& filename) {
 // Tests
 // ============================================================================
 
-TEST_CASE("CuratedAliasLoader - EQ aliases loaded into Curated layer", "[aliases][curated]") {
+TEST_CASE("CuratedAliasLoader - third-party EQ pack loaded into Curated layer",
+          "[aliases][curated]") {
     auto& reg = AliasRegistry::getInstance();
     reg.clearLayer(AliasLayer::Curated);
 
     CuratedAliasLoader::loadFromString(kIndexJson, testResolver);
 
     // Keys should be {pluginKey}.{aliasKey}
-    auto lowFreq = reg.lookupStored("eq.low_shelf_freq");
+    auto lowFreq = reg.lookupStored("test_eq.low_shelf_freq");
     REQUIRE(lowFreq.has_value());
     REQUIRE(lowFreq->paramIndex == 0);
-    REQUIRE(lowFreq->pluginTypeKey == "eq");
+    REQUIRE(lowFreq->pluginTypeKey == "test_eq");
     REQUIRE(lowFreq->paramNameAtSetTime == "Low-shelf freq");
     REQUIRE_FALSE(lowFreq->path.has_value());  // curated = no concrete path
 
-    auto highFreq = reg.lookupStored("eq.high_shelf_freq");
+    auto highFreq = reg.lookupStored("test_eq.high_shelf_freq");
     REQUIRE(highFreq.has_value());
     REQUIRE(highFreq->paramIndex == 9);
     REQUIRE(highFreq->paramNameAtSetTime == "High-shelf freq");
@@ -97,20 +103,20 @@ TEST_CASE("CuratedAliasLoader - EQ aliases loaded into Curated layer", "[aliases
     reg.clearLayer(AliasLayer::Curated);
 }
 
-TEST_CASE("CuratedAliasLoader - Compressor aliases loaded into Curated layer",
+TEST_CASE("CuratedAliasLoader - third-party Compressor pack loaded into Curated layer",
           "[aliases][curated]") {
     auto& reg = AliasRegistry::getInstance();
     reg.clearLayer(AliasLayer::Curated);
 
     CuratedAliasLoader::loadFromString(kIndexJson, testResolver);
 
-    auto threshold = reg.lookupStored("compressor.threshold");
+    auto threshold = reg.lookupStored("test_compressor.threshold");
     REQUIRE(threshold.has_value());
     REQUIRE(threshold->paramIndex == 0);
-    REQUIRE(threshold->pluginTypeKey == "compressor");
+    REQUIRE(threshold->pluginTypeKey == "test_compressor");
     REQUIRE(threshold->paramNameAtSetTime == "Threshold");
 
-    auto makeupGain = reg.lookupStored("compressor.makeup_gain");
+    auto makeupGain = reg.lookupStored("test_compressor.makeup_gain");
     REQUIRE(makeupGain.has_value());
     REQUIRE(makeupGain->paramIndex == 4);
     REQUIRE(makeupGain->paramNameAtSetTime == "Output gain");
@@ -118,7 +124,7 @@ TEST_CASE("CuratedAliasLoader - Compressor aliases loaded into Curated layer",
     reg.clearLayer(AliasLayer::Curated);
 }
 
-TEST_CASE("CuratedAliasLoader - curated aliases are path-absent (no StaticTarget from lookup)",
+TEST_CASE("CuratedAliasLoader - curated aliases are path-absent (no ControlTarget from lookup)",
           "[aliases][curated]") {
     auto& reg = AliasRegistry::getInstance();
     reg.clearLayer(AliasLayer::Curated);
@@ -129,27 +135,29 @@ TEST_CASE("CuratedAliasLoader - curated aliases are path-absent (no StaticTarget
     CuratedAliasLoader::loadFromString(kIndexJson, testResolver);
 
     // lookup() requires a path; curated aliases have none, so result is nullopt
-    auto result = reg.lookup("eq.low_shelf_freq");
+    auto result = reg.lookup("test_eq.low_shelf_freq");
     REQUIRE_FALSE(result.has_value());
 
     // lookupStored() returns the raw entry even without a path
-    auto stored = reg.lookupStored("eq.low_shelf_freq");
+    auto stored = reg.lookupStored("test_eq.low_shelf_freq");
     REQUIRE(stored.has_value());
 
     reg.clearLayer(AliasLayer::Curated);
 }
 
-TEST_CASE("CuratedAliasLoader - replaceLayer clears old entries on reload", "[aliases][curated]") {
+TEST_CASE("CuratedAliasLoader - replaceLayer clears old JSON entries on reload",
+          "[aliases][curated]") {
     auto& reg = AliasRegistry::getInstance();
     reg.clearLayer(AliasLayer::Curated);
 
     // Load once
     CuratedAliasLoader::loadFromString(kIndexJson, testResolver);
-    REQUIRE(reg.lookupStored("eq.low_shelf_freq").has_value());
+    REQUIRE(reg.lookupStored("test_eq.low_shelf_freq").has_value());
 
-    // Reload with empty index
+    // Reload with empty index — JSON-driven entries must be gone, even though
+    // code-driven internal aliases (eq.*, compressor.*) are still seeded.
     CuratedAliasLoader::loadFromString(R"({"version":1,"plugins":[]})", testResolver);
-    REQUIRE_FALSE(reg.lookupStored("eq.low_shelf_freq").has_value());
+    REQUIRE_FALSE(reg.lookupStored("test_eq.low_shelf_freq").has_value());
 
     reg.clearLayer(AliasLayer::Curated);
 }
@@ -173,7 +181,36 @@ TEST_CASE("CuratedAliasLoader - missing plugin file is silently skipped", "[alia
 
     CuratedAliasLoader::loadFromString(kIndexJson, emptyResolver);
 
-    REQUIRE_FALSE(reg.lookupStored("eq.low_shelf_freq").has_value());
+    REQUIRE_FALSE(reg.lookupStored("test_eq.low_shelf_freq").has_value());
+
+    reg.clearLayer(AliasLayer::Curated);
+}
+
+TEST_CASE("CuratedAliasLoader - internal plugin aliases load from code without JSON",
+          "[aliases][curated]") {
+    auto& reg = AliasRegistry::getInstance();
+    reg.clearLayer(AliasLayer::Curated);
+
+    auto noopResolver = [](const juce::String&) -> juce::String { return {}; };
+
+    // Empty index, empty resolver — yet eq/compressor must be present because
+    // they ship in InternalPluginAliases.cpp, not as JSON.
+    CuratedAliasLoader::loadFromString(R"({"version":1,"plugins":[]})", noopResolver);
+
+    auto eqLow = reg.lookupStored("eq.low_shelf_freq");
+    REQUIRE(eqLow.has_value());
+    REQUIRE(eqLow->pluginTypeKey == "eq");
+    REQUIRE(eqLow->paramIndex == 0);
+
+    auto compThreshold = reg.lookupStored("compressor.threshold");
+    REQUIRE(compThreshold.has_value());
+    REQUIRE(compThreshold->pluginTypeKey == "compressor");
+    REQUIRE(compThreshold->paramIndex == 0);
+
+    // Plugins added in the InternalPluginAliases expansion are also present.
+    REQUIRE(reg.lookupStored("reverb.room_size").has_value());
+    REQUIRE(reg.lookupStored("delay.feedback").has_value());
+    REQUIRE(reg.lookupStored("utility.volume").has_value());
 
     reg.clearLayer(AliasLayer::Curated);
 }

@@ -10,13 +10,14 @@
 #include "AudioBridge.hpp"
 #include "AudioEngine.hpp"
 #include "BinaryData.h"
-#include "audio/DrumGridPlugin.hpp"
-#include "audio/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/DrumGridPlugin.hpp"
+#include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "content/AudioClipPropertiesContent.hpp"
 #include "content/ChordPanelContent.hpp"
 #include "content/DrumGridClipContent.hpp"
 #include "content/MidiEditorContent.hpp"
 #include "content/PianoRollContent.hpp"
+#include "content/WaveformEditorContent.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
@@ -290,6 +291,9 @@ void BottomPanel::setupHeaderControls() {
     timeModeButton_->onClick = [this]() {
         relativeTimeMode_ = timeModeButton_->getToggleState();
         timeModeButton_->setButtonText(relativeTimeMode_ ? "REL" : "ABS");
+        DBG("BottomPanel::timeModeButtonClick requestedRelative="
+            << static_cast<int>(relativeTimeMode_)
+            << " activeContent=" << static_cast<int>(getActiveContentType()));
         applyTimeModeToContent();
     };
     addChildComponent(timeModeButton_.get());
@@ -430,6 +434,8 @@ void BottomPanel::setupHeaderControls() {
         auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
         if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
             midiEditor->setSnapEnabledFromUI(isSnapEnabled_);
+        } else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content)) {
+            waveEditor->setSnapEnabledFromUI(isSnapEnabled_);
         } else if (auto* controller = TimelineController::getCurrent()) {
             controller->dispatch(SetSnapEnabledEvent{isSnapEnabled_});
         }
@@ -638,12 +644,16 @@ void BottomPanel::clipSelectionChanged(ClipId /*clipId*/) {
 
 void BottomPanel::clipPropertyChanged(ClipId clipId) {
     // Re-evaluate ABS/REL button state when clip properties change
-    // (e.g. loop toggled on/off)
+    // (e.g. loop toggled on/off, or session-vs-arrangement view switch)
     auto* content = getActiveContent();
-    auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
-    if (midiEditor && midiEditor->getEditingClipId() == clipId) {
+    ClipId activeClipId = INVALID_CLIP_ID;
+    if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content))
+        activeClipId = midiEditor->getEditingClipId();
+    else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
+        activeClipId = waveEditor->getEditingClipId();
+
+    if (activeClipId == clipId)
         applyTimeModeToContent();
-    }
 }
 
 void BottomPanel::tracksChanged() {
@@ -824,10 +834,10 @@ void BottomPanel::updateContentBasedOnSelection() {
     daw::ui::PanelController::getInstance().setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                                targetContent);
 
-    // Apply time mode to new content and sync grid controls
-    if (showEditorTabs_) {
-        applyTimeModeToContent();
-    }
+    // Apply time mode to new content and sync grid controls.
+    // Run regardless of showEditorTabs_ — that flag only tracks MIDI tabs, but the ABS/REL
+    // toggle visibility/enabled state needs to react to audio (WaveformEditor) clips too.
+    applyTimeModeToContent();
     syncGridControlsFromContent();
 
     // Connect auto-grid display callback so num/den labels update during zoom
@@ -991,24 +1001,42 @@ void BottomPanel::applyTimeModeToContent() {
     if (!content)
         return;
 
+    // ABS/REL toggle policy:
+    //   - Session-view clips never expose the toggle (session is always relative — there is no
+    //     arrangement timeline to be absolute against). The button is hidden, not just disabled.
+    //   - Looped arrangement clips force relative mode but keep the button visible-but-disabled
+    //     so the user can see the constraint.
+    //   - Other arrangement clips: button visible and enabled.
+    ClipId activeClipId = INVALID_CLIP_ID;
+    if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content))
+        activeClipId = midiEditor->getEditingClipId();
+    else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
+        activeClipId = waveEditor->getEditingClipId();
+
+    const ClipInfo* clip = (activeClipId != INVALID_CLIP_ID)
+                               ? ClipManager::getInstance().getClip(activeClipId)
+                               : nullptr;
+    const bool isSession = clip && clip->view == ClipView::Session;
+    const bool forceRelative = clip && (isSession || clip->loopEnabled);
+    const bool targetRelative = forceRelative ? true : relativeTimeMode_;
+
+    if (forceRelative)
+        relativeTimeMode_ = true;
+
     if (auto* pianoRoll = dynamic_cast<daw::ui::PianoRollContent*>(content)) {
-        pianoRoll->setRelativeTimeMode(relativeTimeMode_);
+        pianoRoll->setRelativeTimeMode(targetRelative);
     } else if (auto* drumGrid = dynamic_cast<daw::ui::DrumGridClipContent*>(content)) {
-        drumGrid->setRelativeTimeMode(relativeTimeMode_);
+        drumGrid->setRelativeTimeMode(targetRelative);
+    } else if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content)) {
+        waveEditor->setRelativeTimeMode(targetRelative);
     }
 
-    // Disable ABS/REL toggle when clip is in loop mode or session view
-    // (these always force relative mode)
-    auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content);
-    if (midiEditor && midiEditor->getEditingClipId() != INVALID_CLIP_ID) {
-        const auto* clip = ClipManager::getInstance().getClip(midiEditor->getEditingClipId());
-        bool forceRelative = clip && (clip->view == ClipView::Session || clip->loopEnabled);
-        timeModeButton_->setEnabled(!forceRelative);
-        timeModeButton_->setAlpha(forceRelative ? 0.4f : 1.0f);
-    } else {
-        timeModeButton_->setEnabled(true);
-        timeModeButton_->setAlpha(1.0f);
-    }
+    timeModeButton_->setButtonText(relativeTimeMode_ ? "REL" : "ABS");
+    timeModeButton_->setToggleState(relativeTimeMode_, juce::dontSendNotification);
+
+    timeModeButton_->setVisible(!isSession);
+    timeModeButton_->setEnabled(!forceRelative);
+    timeModeButton_->setAlpha(forceRelative ? 0.4f : 1.0f);
 }
 
 void BottomPanel::syncGridControlsFromContent() {
@@ -1037,6 +1065,8 @@ void BottomPanel::syncGridControlsFromContent() {
         gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
                                         juce::dontSendNotification);
     snapButton_->setToggleState(isSnapEnabled_, juce::dontSendNotification);
+    if (auto* waveEditor = dynamic_cast<daw::ui::WaveformEditorContent*>(content))
+        waveEditor->setSnapEnabledFromUI(isSnapEnabled_);
 
     gridNumeratorLabel_->setEnabled(!isAutoGrid_);
     gridDenominatorLabel_->setEnabled(!isAutoGrid_);

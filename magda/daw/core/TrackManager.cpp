@@ -1,17 +1,153 @@
 #include "TrackManager.hpp"
 
 #include <algorithm>
+#include <map>
 
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
-#include "../audio/SidechainTriggerBus.hpp"
+#include "../audio/TracktionHelpers.hpp"
+#include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "ClipManager.hpp"
 #include "Config.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
 #include "SelectionManager.hpp"
 
 namespace magda {
+
+namespace {
+
+struct DuplicateIdRemap {
+    TrackId oldTrackId = INVALID_TRACK_ID;
+    TrackId newTrackId = INVALID_TRACK_ID;
+    std::map<DeviceId, DeviceId> devices;
+    std::map<RackId, RackId> racks;
+    std::map<ChainId, ChainId> chains;
+};
+
+template <typename Id> bool remapDuplicateId(const std::map<Id, Id>& ids, int& value) {
+    auto it = ids.find(value);
+    if (it == ids.end())
+        return false;
+    value = it->second;
+    return true;
+}
+
+void remapDuplicatedPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
+    if (!path.isValid())
+        return;
+
+    bool touched = false;
+    if (path.trackId == remap.oldTrackId) {
+        path.trackId = remap.newTrackId;
+        touched = true;
+    }
+
+    if (path.topLevelDeviceId != INVALID_DEVICE_ID)
+        touched = remapDuplicateId(remap.devices, path.topLevelDeviceId) || touched;
+
+    for (auto& step : path.steps) {
+        switch (step.type) {
+            case ChainStepType::Rack:
+                touched = remapDuplicateId(remap.racks, step.id) || touched;
+                break;
+            case ChainStepType::Chain:
+                touched = remapDuplicateId(remap.chains, step.id) || touched;
+                break;
+            case ChainStepType::Device:
+                touched = remapDuplicateId(remap.devices, step.id) || touched;
+                break;
+        }
+    }
+
+    if (touched || path.trackId == 0)
+        path.trackId = remap.newTrackId;
+}
+
+void remapDuplicatedTarget(ControlTarget& target, const ChainNodePath& ownerPath,
+                           const DuplicateIdRemap& remap) {
+    if (target.kind == ControlTarget::Kind::ModParam && !target.devicePath.isValid()) {
+        target.devicePath = ownerPath;
+        return;
+    }
+
+    if (!target.devicePath.isValid())
+        return;
+
+    remapDuplicatedPath(target.devicePath, remap);
+}
+
+void remapDuplicatedLinks(MacroArray& macros, ModArray& mods, const ChainNodePath& ownerPath,
+                          const DuplicateIdRemap& remap) {
+    for (auto& macro : macros) {
+        for (auto& link : macro.links)
+            remapDuplicatedTarget(link.target, ownerPath, remap);
+    }
+
+    for (auto& mod : mods) {
+        for (auto& link : mod.links)
+            remapDuplicatedTarget(link.target, ownerPath, remap);
+    }
+}
+
+juce::String formatClipIds(const std::vector<ClipId>& clipIds) {
+    juce::String text("[");
+    for (size_t i = 0; i < clipIds.size(); ++i) {
+        if (i > 0)
+            text << ",";
+        text << clipIds[i];
+    }
+    text << "]";
+    return text;
+}
+
+juce::String stripDuplicateRuntimePluginState(const juce::String& pluginState) {
+    if (pluginState.isEmpty())
+        return pluginState;
+
+    auto xml = juce::parseXML(pluginState);
+    if (!xml)
+        return pluginState;
+
+    auto state = juce::ValueTree::fromXml(*xml);
+    if (!state.isValid())
+        return pluginState;
+
+    stripTracktionIdsRecursive(state);
+    stripModifierAssignmentsRecursive(state);
+
+    if (auto strippedXml = state.createXml())
+        return strippedXml->toString();
+
+    return pluginState;
+}
+
+void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
+                             const DuplicateIdRemap& remap) {
+    for (auto& element : elements) {
+        if (magda::isDevice(element)) {
+            auto& device = magda::getDevice(element);
+            auto devicePath = parentPath;
+            if (parentPath.isTrackLevel) {
+                devicePath = ChainNodePath::topLevelDevice(remap.newTrackId, device.id);
+            } else {
+                devicePath = parentPath.withDevice(device.id);
+            }
+            remapDuplicatedLinks(device.macros, device.mods, devicePath, remap);
+            device.pluginState = stripDuplicateRuntimePluginState(device.pluginState);
+        } else if (magda::isRack(element)) {
+            auto& rack = magda::getRack(element);
+            auto rackPath = parentPath.isTrackLevel ? ChainNodePath::rack(remap.newTrackId, rack.id)
+                                                    : parentPath.withRack(rack.id);
+            remapDuplicatedLinks(rack.macros, rack.mods, rackPath, remap);
+            for (auto& chain : rack.chains)
+                remapDuplicatedElements(chain.elements, rackPath.withChain(chain.id), remap);
+        }
+    }
+}
+
+}  // namespace
 
 TrackManager& TrackManager::getInstance() {
     static TrackManager instance;
@@ -145,6 +281,15 @@ void TrackManager::deleteTrack(TrackId trackId) {
     // will become invalid after deletion.
     auto& sm = magda::SelectionManager::getInstance();
     sm.clearSelection();
+
+    auto& clipManager = magda::ClipManager::getInstance();
+    auto clipIds = clipManager.getClipsOnTrack(trackId);
+    DBG("TrackManager::deleteTrack clip cleanup trackId=" << trackId
+                                                          << " clipIds=" << formatClipIds(clipIds));
+    for (auto clipId : clipIds)
+        clipManager.deleteClip(clipId);
+    DBG("TrackManager::deleteTrack clip cleanup complete trackId="
+        << trackId << " remainingClipIds=" << formatClipIds(clipManager.getClipsOnTrack(trackId)));
 
     // If this track has a parent, remove it from parent's children
     if (track->hasParent()) {
@@ -370,22 +515,36 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
 
     // Reassign all device/rack/chain IDs so the duplicate gets its own
     // plugin instances in the audio engine (sharing IDs = no audio).
+    DuplicateIdRemap remap;
+    remap.oldTrackId = trackId;
+    remap.newTrackId = newTrack.id;
+
     std::function<void(std::vector<ChainElement>&)> reassignIds;
     reassignIds = [&](std::vector<ChainElement>& elements) {
         for (auto& element : elements) {
             if (magda::isDevice(element)) {
-                magda::getDevice(element).id = nextDeviceId_++;
+                auto& device = magda::getDevice(element);
+                const auto oldDeviceId = device.id;
+                device.id = nextDeviceId_++;
+                remap.devices[oldDeviceId] = device.id;
             } else if (magda::isRack(element)) {
                 auto& rack = magda::getRack(element);
+                const auto oldRackId = rack.id;
                 rack.id = nextRackId_++;
+                remap.racks[oldRackId] = rack.id;
                 for (auto& chain : rack.chains) {
+                    const auto oldChainId = chain.id;
                     chain.id = nextChainId_++;
+                    remap.chains[oldChainId] = chain.id;
                     reassignIds(chain.elements);
                 }
             }
         }
     };
     reassignIds(newTrack.chainElements);
+    remapDuplicatedLinks(newTrack.macros, newTrack.mods, ChainNodePath::trackLevel(newTrack.id),
+                         remap);
+    remapDuplicatedElements(newTrack.chainElements, ChainNodePath::trackLevel(newTrack.id), remap);
 
     // Log all device IDs after reassignment
     DBG("duplicateTrack: original trackId=" << trackId << " -> newTrackId=" << newTrack.id);

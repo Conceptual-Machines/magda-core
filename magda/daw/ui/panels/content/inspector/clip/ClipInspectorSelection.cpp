@@ -38,8 +38,7 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
                        (clipVolumeValue_ && clipVolumeValue_->isDragging()) ||
                        (clipPanValue_ && clipPanValue_->isDragging()) ||
                        (clipGainValue_ && clipGainValue_->isDragging()) ||
-                       (fadeInValue_ && fadeInValue_->isDragging()) ||
-                       (fadeOutValue_ && fadeOutValue_->isDragging()) ||
+                       (fadesSection_ && fadesSection_->isAnyValueDragging()) ||
                        (beatSensitivityValue_ && beatSensitivityValue_->isDragging()) ||
                        (transientSensitivityValue_ && transientSensitivityValue_->isDragging());
     if (anyDragging) {

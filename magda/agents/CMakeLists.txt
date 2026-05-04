@@ -12,6 +12,7 @@ dsl_grammar.hpp
     dsl_interpreter.hpp
     dsl_interpreter.cpp
     music_helpers.hpp
+    internal_plugins.hpp
     compact_parser.hpp
     compact_parser.cpp
     compact_executor.hpp
@@ -42,6 +43,12 @@ dsl_grammar.hpp
     model_downloader.cpp
     daw_agent.hpp
     daw_agent.cpp
+    four_osc_agent.hpp
+    four_osc_agent.cpp
+    four_osc_apply.hpp
+    four_osc_apply.cpp
+    sound_design_agent.hpp
+    sound_design_agent.cpp
 )
 
 # Create the agents library

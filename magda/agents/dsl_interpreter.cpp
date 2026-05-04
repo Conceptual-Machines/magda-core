@@ -7,6 +7,12 @@
 #include <cstdlib>
 #include <random>
 
+#include "../daw/api/clip_api.hpp"
+#include "../daw/api/magda_api.hpp"
+#include "../daw/api/project_api.hpp"
+#include "../daw/api/selection_api.hpp"
+#include "../daw/api/track_api.hpp"
+#include "../daw/api/undo_api.hpp"
 #include "../daw/audio/AudioThumbnailManager.hpp"
 #include "../daw/core/ClipManager.hpp"
 #include "../daw/core/ClipPropertyCommands.hpp"
@@ -19,6 +25,7 @@
 #include "../daw/engine/AudioEngine.hpp"
 #include "../daw/engine/TracktionEngineWrapper.hpp"
 #include "../daw/project/ProjectManager.hpp"
+#include "internal_plugins.hpp"
 #include "music_helpers.hpp"
 
 namespace magda::dsl {
@@ -325,7 +332,7 @@ bool Params::getBool(const std::string& key, bool def) const {
 // Interpreter Implementation
 // ============================================================================
 
-Interpreter::Interpreter() {}
+Interpreter::Interpreter(MagdaApi& api) : api_(api) {}
 
 bool Interpreter::execute(const char* dslCode) {
     // Interpreter mutates TrackManager/ClipManager/SelectionManager, all of
@@ -344,7 +351,7 @@ bool Interpreter::execute(const char* dslCode) {
     // `fx("reverb")` or `note(...)` targets the selected track/clip. Matches
     // CompactExecutor's behaviour — the two paths must stay in sync or the
     // same request succeeds in one and fails in the other.
-    auto& sm = SelectionManager::getInstance();
+    auto& sm = api_.selection();
     auto selectedTrack = sm.getSelectedTrack();
     if (selectedTrack != INVALID_TRACK_ID && selectedTrack != MASTER_TRACK_ID)
         ctx_.currentTrackId = selectedTrack;
@@ -435,7 +442,7 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
         return false;
     }
 
-    auto& tm = TrackManager::getInstance();
+    auto& tm = api_.tracks();
 
     if (params.has("id")) {
         // Reference existing track by 1-based index
@@ -459,7 +466,7 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
             auto trackType = parseTrackType(params);
             auto trackId = tm.createTrack(name, trackType);
             ctx_.currentTrackId = trackId;
-            SelectionManager::getInstance().selectTrack(trackId);
+            api_.selection().selectTrack(trackId);
             ctx_.addResult("Created track '" + name + "'");
         }
     } else {
@@ -467,7 +474,7 @@ bool Interpreter::parseTrackStatement(Tokenizer& tok) {
         auto trackType = parseTrackType(params);
         auto trackId = tm.createTrack("", trackType);
         ctx_.currentTrackId = trackId;
-        SelectionManager::getInstance().selectTrack(trackId);
+        api_.selection().selectTrack(trackId);
         ctx_.addResult("Created track");
     }
 
@@ -529,7 +536,7 @@ bool Interpreter::parseFilterStatement(Tokenizer& tok) {
     }
 
     // Execute filter: find matching tracks
-    auto& tm = TrackManager::getInstance();
+    auto& tm = api_.tracks();
     ctx_.filteredTrackIds.clear();
 
     if (field.value == "name") {
@@ -798,12 +805,12 @@ bool Interpreter::executeNewClip(const Params& params) {
         // No position specified — place after the last clip on this track
         bar = 1.0;
         double bpm = 120.0;
-        auto* engine = TrackManager::getInstance().getAudioEngine();
+        auto* engine = api_.tracks().getAudioEngine();
         if (engine)
             bpm = engine->getTempo();
         double secondsPerBar = 4.0 * 60.0 / bpm;
 
-        auto& cm = ClipManager::getInstance();
+        auto& cm = api_.clips();
         for (auto cid : cm.getClipsOnTrack(ctx_.currentTrackId)) {
             auto* clip = cm.getClip(cid);
             if (!clip)
@@ -830,7 +837,7 @@ bool Interpreter::executeNewClip(const Params& params) {
     double startBeats = barsToBeats(bar - 1.0);
     double lengthBeats = barsToBeats(lengthBars);
 
-    auto& cm = ClipManager::getInstance();
+    auto& cm = api_.clips();
     auto clipId = cm.createMidiClipBeats(ctx_.currentTrackId, startBeats, lengthBeats);
 
     if (clipId < 0) {
@@ -839,14 +846,14 @@ bool Interpreter::executeNewClip(const Params& params) {
     }
 
     ctx_.currentClipId = clipId;
-    SelectionManager::getInstance().selectClip(clipId);
+    api_.selection().selectClip(clipId);
     ctx_.addResult("Created MIDI clip at bar " + juce::String(bar, 2) + ", length " +
                    juce::String(lengthBars, 2) + " bars");
     return true;
 }
 
 bool Interpreter::executeSetTrack(const Params& params) {
-    auto& tm = TrackManager::getInstance();
+    auto& tm = api_.tracks();
 
     auto applyToTrack = [&](int trackId) {
         if (params.has("name"))
@@ -898,7 +905,7 @@ bool Interpreter::executeSetTrack(const Params& params) {
 }
 
 bool Interpreter::executeDelete() {
-    auto& tm = TrackManager::getInstance();
+    auto& tm = api_.tracks();
 
     if (ctx_.inFilterContext) {
         // Delete in reverse order to avoid index shifting issues
@@ -925,7 +932,7 @@ bool Interpreter::executeDeleteClip(const Params& params) {
         return false;
     }
 
-    auto& cm = ClipManager::getInstance();
+    auto& cm = api_.clips();
     auto clipIds = cm.getClipsOnTrack(ctx_.currentTrackId);
 
     int index = params.getInt("index", 0);
@@ -947,7 +954,7 @@ bool Interpreter::executeRenameClip(const Params& params) {
     }
 
     juce::String newName(params.get("name"));
-    auto& cm = ClipManager::getInstance();
+    auto& cm = api_.clips();
 
     if (params.has("index")) {
         // Rename a specific clip by index on the current track
@@ -965,7 +972,7 @@ bool Interpreter::executeRenameClip(const Params& params) {
         ctx_.addResult("Renamed clip at index " + juce::String(index) + " to '" + newName + "'");
     } else {
         // Rename all currently selected clips
-        auto& sm = SelectionManager::getInstance();
+        auto& sm = api_.selection();
         const auto& selected = sm.getSelectedClips();
         auto singleClip = sm.getSelectedClip();
 
@@ -1018,69 +1025,28 @@ bool Interpreter::executeAddFx(const Params& params) {
     if (fxName.startsWith("<") && fxName.endsWith(">"))
         fxName = fxName.substring(1, fxName.length() - 1);
 
-    // --- Internal plugin lookup (case-insensitive alias map) ---
-    struct InternalAlias {
-        juce::String pluginId;
-        DeviceType deviceType;
-    };
-    static const std::map<juce::String, InternalAlias> internalAliases = {
-        // Effects
-        {"eq", {"eq", DeviceType::Effect}},
-        {"equaliser", {"eq", DeviceType::Effect}},
-        {"equalizer", {"eq", DeviceType::Effect}},
-        {"compressor", {"compressor", DeviceType::Effect}},
-        {"reverb", {"reverb", DeviceType::Effect}},
-        {"delay", {"delay", DeviceType::Effect}},
-        {"chorus", {"chorus", DeviceType::Effect}},
-        {"phaser", {"phaser", DeviceType::Effect}},
-        {"filter", {"lowpass", DeviceType::Effect}},
-        {"lowpass", {"lowpass", DeviceType::Effect}},
-        {"utility", {"utility", DeviceType::Effect}},
-        {"pitch shift", {"pitchshift", DeviceType::Effect}},
-        {"pitchshift", {"pitchshift", DeviceType::Effect}},
-        {"ir reverb", {"impulseresponse", DeviceType::Effect}},
-        {"impulse response", {"impulseresponse", DeviceType::Effect}},
-        // Instruments
-        {"4osc", {"4osc", DeviceType::Instrument}},
-        {"4osc synth", {"4osc", DeviceType::Instrument}},
-        {"fourosc", {"4osc", DeviceType::Instrument}},
-        {"sampler", {"magdasampler", DeviceType::Instrument}},
-        {"magda sampler", {"magdasampler", DeviceType::Instrument}},
-        {"drum grid", {"drumgrid", DeviceType::Instrument}},
-        {"drumgrid", {"drumgrid", DeviceType::Instrument}},
-        {"drum machine", {"drumgrid", DeviceType::Instrument}},
-        // MIDI devices
-        {"chord engine", {"midichordengine", DeviceType::MIDI}},
-        {"chord", {"midichordengine", DeviceType::MIDI}},
-        {"midichordengine", {"midichordengine", DeviceType::MIDI}},
-        {"arpeggiator", {"arpeggiator", DeviceType::MIDI}},
-        {"arp", {"arpeggiator", DeviceType::MIDI}},
-        // Tone generator
-        {"test tone", {"tone", DeviceType::Effect}},
-        {"tone", {"tone", DeviceType::Effect}},
-    };
-
-    auto lowerName = fxName.toLowerCase();
-    auto aliasIt = internalAliases.find(lowerName);
-    if (aliasIt != internalAliases.end()) {
+    // --- Internal plugin lookup ---
+    // Built-in plugins are listed in internal_plugins.hpp — single canonical
+    // alias per plugin, matching the autocomplete dropdown.
+    if (const auto* match = lookupInternalPluginByAlias(fxName)) {
         DeviceInfo device;
-        device.name = fxName;
-        device.pluginId = aliasIt->second.pluginId;
+        device.name = match->displayName;
+        device.pluginId = match->pluginId;
         device.format = PluginFormat::Internal;
-        device.deviceType = aliasIt->second.deviceType;
-        device.isInstrument = (aliasIt->second.deviceType == DeviceType::Instrument);
+        device.deviceType = match->deviceType;
+        device.isInstrument = (match->deviceType == DeviceType::Instrument);
 
-        auto deviceId = TrackManager::getInstance().addDeviceToTrack(ctx_.currentTrackId, device);
+        auto deviceId = api_.tracks().addDeviceToTrack(ctx_.currentTrackId, device);
         if (deviceId == INVALID_DEVICE_ID) {
             ctx_.setError("Failed to add internal FX '" + fxName + "' to track");
             return false;
         }
-        ctx_.addResult("Added internal FX '" + fxName + "'");
+        ctx_.addResult("Added internal FX '" + match->displayName + "'");
         return true;
     }
 
     // --- External plugin lookup via KnownPluginList ---
-    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* engine = api_.tracks().getAudioEngine();
     if (!engine) {
         ctx_.setError("Audio engine not available");
         return false;
@@ -1144,14 +1110,14 @@ bool Interpreter::executeAddFx(const Params& params) {
 
     bestMatch = nullptr;  // no longer safe to dereference
 
-    auto deviceId = TrackManager::getInstance().addDeviceToTrack(ctx_.currentTrackId, device);
+    auto deviceId = api_.tracks().addDeviceToTrack(ctx_.currentTrackId, device);
     if (deviceId == INVALID_DEVICE_ID) {
         ctx_.setError("Failed to add FX '" + fxName + "' to track");
         return false;
     }
 
     // If the track was named with the alias form, rename it to the real plugin name.
-    auto& tm = TrackManager::getInstance();
+    auto& tm = api_.tracks();
     if (auto* trackInfo = tm.getTrack(ctx_.currentTrackId)) {
         if (trackInfo->name.equalsIgnoreCase(fxName) && !fxName.equalsIgnoreCase(matchedName))
             tm.setTrackName(ctx_.currentTrackId, matchedName);
@@ -1234,13 +1200,13 @@ bool Interpreter::executeSelect() {
     if (ctx_.inFilterContext) {
         // Select first matching track
         if (!ctx_.filteredTrackIds.empty()) {
-            SelectionManager::getInstance().selectTrack(ctx_.filteredTrackIds.front());
+            api_.selection().selectTrack(ctx_.filteredTrackIds.front());
             ctx_.addResult("Selected track");
         } else {
             ctx_.addResult("No tracks matched filter");
         }
     } else if (ctx_.currentTrackId >= 0) {
-        SelectionManager::getInstance().selectTrack(ctx_.currentTrackId);
+        api_.selection().selectTrack(ctx_.currentTrackId);
         ctx_.addResult("Selected track");
     } else {
         ctx_.setError("No track context for select");
@@ -1293,7 +1259,7 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
 
     // Get tempo for bar/time conversions
     double bpm = 120.0;
-    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* engine = api_.tracks().getAudioEngine();
     if (engine)
         bpm = engine->getTempo();
     double secondsPerBar = 4.0 * 60.0 / bpm;
@@ -1326,7 +1292,7 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
         return false;
     };
 
-    auto& cm = ClipManager::getInstance();
+    auto& cm = api_.clips();
 
     // Resolve a clip field to either a numeric or string match
     auto matchClip = [&](const ClipInfo* clip) -> bool {
@@ -1386,7 +1352,7 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
     } else if (ctx_.currentTrackId >= 0) {
         allMatched = matchOnTrack(ctx_.currentTrackId);
     } else {
-        auto& tm = TrackManager::getInstance();
+        auto& tm = api_.tracks();
         for (const auto& track : tm.getTracks()) {
             auto m = matchOnTrack(track.id);
             allMatched.insert(m.begin(), m.end());
@@ -1399,10 +1365,10 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
     if (allMatched.empty()) {
         ctx_.addResult("No clips matched the criteria");
     } else if (allMatched.size() == 1) {
-        SelectionManager::getInstance().selectClip(*allMatched.begin());
+        api_.selection().selectClip(*allMatched.begin());
         ctx_.addResult("Selected 1 clip");
     } else {
-        SelectionManager::getInstance().selectClips(allMatched);
+        api_.selection().selectClips(allMatched);
         ctx_.addResult("Selected " + juce::String(static_cast<int>(allMatched.size())) + " clips");
     }
 
@@ -1422,7 +1388,7 @@ TrackType Interpreter::parseTrackType(const Params& params) {
 }
 
 int Interpreter::findTrackByName(const juce::String& name) const {
-    auto& tm = TrackManager::getInstance();
+    auto& tm = api_.tracks();
     for (const auto& track : tm.getTracks()) {
         if (track.name.equalsIgnoreCase(name))
             return track.id;
@@ -1433,7 +1399,7 @@ int Interpreter::findTrackByName(const juce::String& name) const {
 double Interpreter::barsToTime(double bar) const {
     // Convert 1-based bar number to seconds
     double bpm = 120.0;  // fallback
-    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* engine = api_.tracks().getAudioEngine();
     if (engine)
         bpm = engine->getTempo();
 
@@ -1444,7 +1410,7 @@ double Interpreter::barsToTime(double bar) const {
 double Interpreter::barsToBeats(double bars) const {
     // Use project time signature; never assume 4/4 here — the seconds round
     // trip is what got us into trouble under non-4/4 sigs.
-    int beatsPerBar = ProjectManager::getInstance().getCurrentProjectInfo().timeSignatureNumerator;
+    int beatsPerBar = api_.project().getCurrentProjectInfo().timeSignatureNumerator;
     if (beatsPerBar <= 0)
         beatsPerBar = 4;
     return bars * static_cast<double>(beatsPerBar);
@@ -1466,8 +1432,8 @@ bool Interpreter::isContextEnabled() {
     return g_contextEnabled.load(std::memory_order_relaxed);
 }
 
-juce::String Interpreter::buildStateSnapshot() {
-    auto& tm = TrackManager::getInstance();
+juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
+    auto& tm = api.tracks();
 
     auto* root = new juce::DynamicObject();
 
@@ -1491,7 +1457,7 @@ juce::String Interpreter::buildStateSnapshot() {
     if (!g_contextEnabled.load(std::memory_order_relaxed))
         return juce::JSON::toString(juce::var(root), true);
 
-    auto& sm = SelectionManager::getInstance();
+    auto& sm = api.selection();
     auto selTrack = sm.getSelectedTrack();
     if (selTrack != INVALID_TRACK_ID) {
         // Find 1-based index for the selected track
@@ -1505,7 +1471,7 @@ juce::String Interpreter::buildStateSnapshot() {
     }
 
     // Selected clip context
-    auto& cm = ClipManager::getInstance();
+    auto& cm = api.clips();
     auto selClip = sm.getSelectedClip();
     if (selClip != INVALID_CLIP_ID) {
         auto* clip = cm.getClip(selClip);
@@ -1549,7 +1515,7 @@ ClipId Interpreter::getSelectedClipId() const {
         return ctx_.currentClipId;
 
     // Fall back to UI selection
-    auto& sm = SelectionManager::getInstance();
+    auto& sm = api_.selection();
     auto clipId = sm.getSelectedClip();
     if (clipId != INVALID_CLIP_ID)
         return clipId;
@@ -1561,7 +1527,7 @@ ClipId Interpreter::getSelectedClipId() const {
 
     // Fall back to the first clip on the current track
     if (ctx_.currentTrackId >= 0) {
-        auto& cm = ClipManager::getInstance();
+        auto& cm = api_.clips();
         auto clips = cm.getClipsOnTrack(ctx_.currentTrackId);
         if (!clips.empty())
             return clips.front();
@@ -1575,8 +1541,8 @@ ClipId Interpreter::getSelectedClipId() const {
 // ============================================================================
 
 bool Interpreter::ensureNoteSelection() {
-    auto& sm = SelectionManager::getInstance();
-    if (sm.getNoteSelection().isValid())
+    auto& sm = api_.selection();
+    if (sm.hasNoteSelection())
         return true;
 
     // No notes selected — try to auto-select all notes in the current clip
@@ -1584,7 +1550,7 @@ bool Interpreter::ensureNoteSelection() {
     if (clipId == INVALID_CLIP_ID)
         return false;
 
-    auto& cm = ClipManager::getInstance();
+    auto& cm = api_.clips();
     auto* clip = cm.getClip(clipId);
     if (!clip || clip->midiNotes.empty())
         return false;
@@ -1595,7 +1561,7 @@ bool Interpreter::ensureNoteSelection() {
         allIndices.push_back(i);
 
     sm.selectNotes(clipId, allIndices);
-    return sm.getNoteSelection().isValid();
+    return sm.hasNoteSelection();
 }
 
 // ============================================================================
@@ -1651,7 +1617,7 @@ bool Interpreter::executeSelectNotes(Tokenizer& tok) {
         return false;
     }
 
-    auto& cm = ClipManager::getInstance();
+    auto& cm = api_.clips();
     auto* clip = cm.getClip(clipId);
     if (!clip) {
         ctx_.setError("Selected clip not found");
@@ -1711,7 +1677,7 @@ bool Interpreter::executeSelectNotes(Tokenizer& tok) {
             matched.push_back(i);
     }
 
-    auto& sm = SelectionManager::getInstance();
+    auto& sm = api_.selection();
     if (matched.empty()) {
         sm.clearNoteSelection();
         ctx_.addResult("No notes matched the criteria");
@@ -1746,7 +1712,7 @@ bool Interpreter::executeAddNote(const Params& params) {
     double length = params.getFloat("length", 1.0);
     int velocity = params.getInt("velocity", 100);
 
-    UndoManager::getInstance().executeCommand(
+    api_.undo().executeCommand(
         std::make_unique<AddMidiNoteCommand>(clipId, beat, noteNumber, length, velocity));
 
     ctx_.addResult("Added note (pitch=" + juce::String(noteNumber) +
@@ -1803,7 +1769,7 @@ bool Interpreter::executeAddChord(const Params& params) {
         noteNames.add(juce::MidiMessage::getMidiNoteName(n, true, true, 4));
     }
 
-    UndoManager::getInstance().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
+    api_.undo().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
         clipId, std::move(notes),
         "Add " + juce::String(quality) + " chord at beat " + juce::String(beat, 2)));
 
@@ -1870,10 +1836,10 @@ bool Interpreter::executeAddArpeggio(const Params& params) {
     if (params.has("beats")) {
         fillBeats = beat + params.getFloat("beats");
     } else if (fill) {
-        auto* clip = ClipManager::getInstance().getClip(clipId);
+        auto* clip = api_.clips().getClip(clipId);
         if (clip) {
             double bpm = 120.0;
-            auto* engine = TrackManager::getInstance().getAudioEngine();
+            auto* engine = api_.tracks().getAudioEngine();
             if (engine)
                 bpm = engine->getTempo();
             fillBeats = clip->length * bpm / 60.0;
@@ -1901,7 +1867,7 @@ bool Interpreter::executeAddArpeggio(const Params& params) {
         idx++;
     }
 
-    UndoManager::getInstance().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
+    api_.undo().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
         clipId, std::move(notes),
         "Add " + juce::String(quality) + " arpeggio at beat " + juce::String(beat, 2)));
 
@@ -1916,13 +1882,14 @@ bool Interpreter::executeDeleteNotes() {
         return false;
     }
 
-    auto& sm = SelectionManager::getInstance();
-    const auto& noteSel = sm.getNoteSelection();
+    auto& sm = api_.selection();
+    auto noteSelClipId = sm.getNoteSelectionClipId();
+    const auto& noteSelIndices = sm.getNoteSelectionIndices();
 
-    UndoManager::getInstance().executeCommand(
-        std::make_unique<DeleteMultipleMidiNotesCommand>(noteSel.clipId, noteSel.noteIndices));
+    api_.undo().executeCommand(
+        std::make_unique<DeleteMultipleMidiNotesCommand>(noteSelClipId, noteSelIndices));
 
-    int count = static_cast<int>(noteSel.noteIndices.size());
+    int count = static_cast<int>(noteSelIndices.size());
     sm.clearNoteSelection();
     ctx_.addResult("Deleted " + juce::String(count) + " note(s)");
     return true;
@@ -1940,18 +1907,19 @@ bool Interpreter::executeTranspose(const Params& params) {
         return false;
     }
 
-    auto& sm = SelectionManager::getInstance();
-    const auto& noteSel = sm.getNoteSelection();
+    auto& sm = api_.selection();
+    auto noteSelClipId = sm.getNoteSelectionClipId();
+    const auto& noteSelIndices = sm.getNoteSelectionIndices();
 
-    auto& cm = ClipManager::getInstance();
-    auto* clip = cm.getClip(noteSel.clipId);
+    auto& cm = api_.clips();
+    auto* clip = cm.getClip(noteSelClipId);
     if (!clip) {
         ctx_.setError("Clip not found for notes.transpose");
         return false;
     }
 
     std::vector<MoveMultipleMidiNotesCommand::NoteMove> moves;
-    for (auto idx : noteSel.noteIndices) {
+    for (auto idx : noteSelIndices) {
         if (idx < clip->midiNotes.size()) {
             const auto& note = clip->midiNotes[idx];
             int newNote = juce::jlimit(0, 127, note.noteNumber + semitones);
@@ -1960,11 +1928,11 @@ bool Interpreter::executeTranspose(const Params& params) {
     }
 
     if (!moves.empty()) {
-        UndoManager::getInstance().executeCommand(
-            std::make_unique<MoveMultipleMidiNotesCommand>(noteSel.clipId, std::move(moves)));
+        api_.undo().executeCommand(
+            std::make_unique<MoveMultipleMidiNotesCommand>(noteSelClipId, std::move(moves)));
     }
 
-    ctx_.addResult("Transposed " + juce::String(static_cast<int>(noteSel.noteIndices.size())) +
+    ctx_.addResult("Transposed " + juce::String(static_cast<int>(noteSelIndices.size())) +
                    " note(s) by " + juce::String(semitones) + " semitones");
     return true;
 }
@@ -1986,18 +1954,19 @@ bool Interpreter::executeSetPitch(const Params& params) {
         return false;
     }
 
-    auto& sm = SelectionManager::getInstance();
-    const auto& noteSel = sm.getNoteSelection();
+    auto& sm = api_.selection();
+    auto noteSelClipId = sm.getNoteSelectionClipId();
+    const auto& noteSelIndices = sm.getNoteSelectionIndices();
 
-    auto& cm = ClipManager::getInstance();
-    auto* clip = cm.getClip(noteSel.clipId);
+    auto& cm = api_.clips();
+    auto* clip = cm.getClip(noteSelClipId);
     if (!clip) {
         ctx_.setError("Clip not found for notes.set_pitch");
         return false;
     }
 
     std::vector<MoveMultipleMidiNotesCommand::NoteMove> moves;
-    for (auto idx : noteSel.noteIndices) {
+    for (auto idx : noteSelIndices) {
         if (idx < clip->midiNotes.size()) {
             const auto& note = clip->midiNotes[idx];
             moves.push_back({idx, note.startBeat, targetPitch});
@@ -2005,12 +1974,12 @@ bool Interpreter::executeSetPitch(const Params& params) {
     }
 
     if (!moves.empty()) {
-        UndoManager::getInstance().executeCommand(
-            std::make_unique<MoveMultipleMidiNotesCommand>(noteSel.clipId, std::move(moves)));
+        api_.undo().executeCommand(
+            std::make_unique<MoveMultipleMidiNotesCommand>(noteSelClipId, std::move(moves)));
     }
 
     ctx_.addResult("Set pitch to " + juce::String(params.get("pitch")) + " on " +
-                   juce::String(static_cast<int>(noteSel.noteIndices.size())) + " note(s)");
+                   juce::String(static_cast<int>(noteSelIndices.size())) + " note(s)");
     return true;
 }
 
@@ -2023,18 +1992,19 @@ bool Interpreter::executeSetVelocity(const Params& params) {
         return false;
     }
 
-    auto& sm = SelectionManager::getInstance();
-    const auto& noteSel = sm.getNoteSelection();
+    auto& sm = api_.selection();
+    auto noteSelClipId = sm.getNoteSelectionClipId();
+    const auto& noteSelIndices = sm.getNoteSelectionIndices();
 
     std::vector<std::pair<size_t, int>> noteVelocities;
-    for (auto idx : noteSel.noteIndices)
+    for (auto idx : noteSelIndices)
         noteVelocities.emplace_back(idx, velocity);
 
-    UndoManager::getInstance().executeCommand(std::make_unique<SetMultipleNoteVelocitiesCommand>(
-        noteSel.clipId, std::move(noteVelocities)));
+    api_.undo().executeCommand(std::make_unique<SetMultipleNoteVelocitiesCommand>(
+        noteSelClipId, std::move(noteVelocities)));
 
     ctx_.addResult("Set velocity to " + juce::String(velocity) + " on " +
-                   juce::String(static_cast<int>(noteSel.noteIndices.size())) + " note(s)");
+                   juce::String(static_cast<int>(noteSelIndices.size())) + " note(s)");
     return true;
 }
 
@@ -2046,11 +2016,12 @@ bool Interpreter::executeQuantize(const Params& params) {
         return false;
     }
 
-    auto& sm = SelectionManager::getInstance();
-    const auto& noteSel = sm.getNoteSelection();
+    auto& sm = api_.selection();
+    auto noteSelClipId = sm.getNoteSelectionClipId();
+    const auto& noteSelIndices = sm.getNoteSelectionIndices();
 
-    UndoManager::getInstance().executeCommand(std::make_unique<QuantizeMidiNotesCommand>(
-        noteSel.clipId, noteSel.noteIndices, grid, QuantizeMode::StartOnly));
+    api_.undo().executeCommand(std::make_unique<QuantizeMidiNotesCommand>(
+        noteSelClipId, noteSelIndices, grid, QuantizeMode::StartOnly));
 
     juce::String gridName;
     if (std::abs(grid - 0.25) < 0.001)
@@ -2062,7 +2033,7 @@ bool Interpreter::executeQuantize(const Params& params) {
     else
         gridName = juce::String(grid, 2) + " beats";
 
-    ctx_.addResult("Quantized " + juce::String(static_cast<int>(noteSel.noteIndices.size())) +
+    ctx_.addResult("Quantized " + juce::String(static_cast<int>(noteSelIndices.size())) +
                    " note(s) to " + gridName);
     return true;
 }
@@ -2079,17 +2050,18 @@ bool Interpreter::executeResizeNotes(const Params& params) {
         return false;
     }
 
-    auto& sm = SelectionManager::getInstance();
-    const auto& noteSel = sm.getNoteSelection();
+    auto& sm = api_.selection();
+    auto noteSelClipId = sm.getNoteSelectionClipId();
+    const auto& noteSelIndices = sm.getNoteSelectionIndices();
 
     std::vector<std::pair<size_t, double>> noteLengths;
-    for (auto idx : noteSel.noteIndices)
+    for (auto idx : noteSelIndices)
         noteLengths.emplace_back(idx, length);
 
-    UndoManager::getInstance().executeCommand(
-        std::make_unique<ResizeMultipleMidiNotesCommand>(noteSel.clipId, std::move(noteLengths)));
+    api_.undo().executeCommand(
+        std::make_unique<ResizeMultipleMidiNotesCommand>(noteSelClipId, std::move(noteLengths)));
 
-    ctx_.addResult("Resized " + juce::String(static_cast<int>(noteSel.noteIndices.size())) +
+    ctx_.addResult("Resized " + juce::String(static_cast<int>(noteSelIndices.size())) +
                    " note(s) to " + juce::String(length, 2) + " beats");
     return true;
 }
@@ -2175,7 +2147,7 @@ bool Interpreter::executeGrooveNew(const Params& params) {
     }
 
     // Get TE engine
-    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* engine = api_.tracks().getAudioEngine();
     auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
     if (!teWrapper || !teWrapper->getEngine()) {
         ctx_.setError("Audio engine not available");
@@ -2221,9 +2193,9 @@ bool Interpreter::executeGrooveNew(const Params& params) {
     // Refresh clip inspector so new template appears in dropdown immediately
     auto clipId = getSelectedClipId();
     if (clipId != INVALID_CLIP_ID) {
-        auto* clip = ClipManager::getInstance().getClip(clipId);
+        auto* clip = api_.clips().getClip(clipId);
         if (clip && clip->type == ClipType::MIDI)
-            ClipManager::getInstance().setGrooveTemplate(clipId, clip->grooveTemplate);
+            api_.clips().setGrooveTemplate(clipId, clip->grooveTemplate);
     }
 
     return true;
@@ -2244,7 +2216,7 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
                 "groove.extract: no track in context. Use track(...).groove.extract(...)");
             return false;
         }
-        auto& cm = ClipManager::getInstance();
+        auto& cm = api_.clips();
         auto trackClips = cm.getClipsOnTrack(ctx_.currentTrackId);
         if (clipIndex < 0 || clipIndex >= static_cast<int>(trackClips.size())) {
             ctx_.setError("groove.extract: clip index " + juce::String(clipIndex) +
@@ -2261,15 +2233,14 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
         return false;
     }
 
-    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    const auto* clip = api_.clips().getClip(clipId);
     if (!clip || clip->type != ClipType::Audio) {
         ctx_.setError("groove.extract: clip must be an audio clip");
         return false;
     }
 
-    // Get cached transients
-    auto& thumbnailManager = AudioThumbnailManager::getInstance();
-    const auto* transients = thumbnailManager.getCachedTransients(clip->audioFilePath);
+    // Get cached transients via the api
+    const auto* transients = api_.clips().getCachedTransients(clip->audioFilePath);
     if (!transients || transients->isEmpty()) {
         ctx_.setError("groove.extract: no transients detected for this clip. "
                       "Enable warp or detect transients first.");
@@ -2321,7 +2292,7 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     int patternLength = (numSteps >= stepsPerBar) ? stepsPerBar : numSteps;
 
     // Build GrooveTemplate
-    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* engine = api_.tracks().getAudioEngine();
     auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
     if (!teWrapper || !teWrapper->getEngine()) {
         ctx_.setError("Audio engine not available");
@@ -2356,9 +2327,9 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     // Refresh clip inspector so new template appears in dropdown immediately
     auto selClipId = getSelectedClipId();
     if (selClipId != INVALID_CLIP_ID) {
-        auto* selClip = ClipManager::getInstance().getClip(selClipId);
+        auto* selClip = api_.clips().getClip(selClipId);
         if (selClip && selClip->type == ClipType::MIDI)
-            ClipManager::getInstance().setGrooveTemplate(selClipId, selClip->grooveTemplate);
+            api_.clips().setGrooveTemplate(selClipId, selClip->grooveTemplate);
     }
     return true;
 }
@@ -2375,20 +2346,20 @@ bool Interpreter::executeGrooveSet(const Params& params) {
         return false;
     }
 
-    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    const auto* clip = api_.clips().getClip(clipId);
     if (!clip || clip->type != ClipType::MIDI) {
         ctx_.setError("groove.set: clip must be a MIDI clip");
         return false;
     }
 
     if (params.has("template")) {
-        UndoManager::getInstance().executeCommand(
+        api_.undo().executeCommand(
             std::make_unique<SetClipGrooveTemplateCommand>(clipId, juce::String(templateName)));
     }
 
     if (params.has("strength")) {
         float strength = static_cast<float>(params.getFloat("strength", 0.5));
-        UndoManager::getInstance().executeCommand(
+        api_.undo().executeCommand(
             std::make_unique<SetClipGrooveStrengthCommand>(clipId, strength));
     }
 
@@ -2400,7 +2371,7 @@ bool Interpreter::executeGrooveSet(const Params& params) {
 
 // groove.list() — show all available groove templates
 bool Interpreter::executeGrooveList() {
-    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* engine = api_.tracks().getAudioEngine();
     auto* teWrapper = dynamic_cast<TracktionEngineWrapper*>(engine);
     if (!teWrapper || !teWrapper->getEngine()) {
         ctx_.setError("Audio engine not available");

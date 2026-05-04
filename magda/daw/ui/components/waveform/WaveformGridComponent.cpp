@@ -82,7 +82,7 @@ WaveformGridComponent::WaveformLayout WaveformGridComponent::computeWaveformLayo
     double displayStartTime = getDisplayStartTime();
     int positionPixels = timeToPixel(displayStartTime);
 
-    double displayLength = displayInfo_.effectiveSourceExtentSeconds;
+    double displayLength = getDrawableTimelineLength();
 
     int clipEndPixel = timeToPixel(displayStartTime + displayLength);
     int widthPixels = clipEndPixel - positionPixels;
@@ -150,7 +150,9 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
     auto& thumbnailManager = magda::AudioThumbnailManager::getInstance();
     auto* thumbnail = thumbnailManager.getThumbnail(clip.audioFilePath);
     double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
-    auto waveColour = clip.colour.brighter(0.2f);
+    // The waveform editor only ever shows the focused clip, so the waveform is
+    // always rendered as if "selected" — black, to match arrangement-view styling.
+    auto waveColour = juce::Colours::black;
     float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
     auto vertZoom = static_cast<float>(verticalZoom_) * gainLinear;
 
@@ -170,16 +172,20 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
         if (warpMode_ && !warpMarkers_.empty()) {
             paintWarpedWaveform(g, clip, waveformRect, waveColour, vertZoom);
         } else {
-            // Linear drawing: use pre-computed full drawable range
-            double displayStart = displayInfo_.fullDrawStartSeconds;
-            double displayEnd = displayInfo_.fullDrawEndSeconds;
+            // Linear drawing. REL is clip-local: draw only the source region
+            // that plays inside the clip, starting at clip beat 1.
+            double displayStart =
+                relativeMode_ ? displayInfo_.sourceFileStart : displayInfo_.fullDrawStartSeconds;
+            double displayEnd =
+                relativeMode_ ? displayInfo_.sourceFileEnd : displayInfo_.fullDrawEndSeconds;
 
             if (fileDuration > 0.0 && displayEnd > fileDuration)
                 displayEnd = fileDuration;
 
             // Compute the time range for the visible portion only
-            int audioWidthPixels = static_cast<int>(
-                std::ceil(displayInfo_.effectiveSourceExtentSeconds * horizontalZoom_));
+            double drawableTimelineLength = getDrawableTimelineLength();
+            int audioWidthPixels =
+                static_cast<int>(std::ceil(drawableTimelineLength * horizontalZoom_));
             int audioLeft = waveformRect.getX();
             int audioWidth = juce::jmin(audioWidthPixels, waveformRect.getWidth());
 
@@ -325,7 +331,8 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
         return;
 
     double displayStartTime = getDisplayStartTime();
-    double fileExtent = displayInfo_.fullSourceExtentSeconds;
+    double fileExtent =
+        relativeMode_ ? getDrawableTimelineLength() : displayInfo_.fullSourceExtentSeconds;
     int positionPixels = timeToPixel(displayStartTime);
     int widthPixels = static_cast<int>(fileExtent * horizontalZoom_);
     if (widthPixels <= 0)
@@ -345,41 +352,39 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     double secondsPerGrid = gridBeats * secondsPerBeat;
     double beatsPerBar = static_cast<double>(timeRuler_->getTimeSigNumerator());
 
-    // Grid origin in seconds (where bar 1 beat 1 starts).
-    // barOrigin is already in timeline/display seconds — do NOT convert via
-    // sourceToTimeline() which would double-scale for stretched clips.
-    double originTimeline = timeRuler_ ? timeRuler_->getBarOrigin() : 0.0;
+    // Grid origin in display seconds. In REL display time is clip-local, so
+    // active clip start is 0. In ABS display time is project timeline seconds.
+    double originDisplay = timeRuler_ ? timeRuler_->getBarOrigin() : 0.0;
 
     // Compute visible time range from pixel bounds and iterate only that range
     // (avoids iterating the entire file extent for large audio files)
     int visibleLeft = 0;
     int visibleRight = getWidth();
 
-    double visibleStartSecs = pixelToTime(visibleLeft) - displayStartTime;
-    double visibleEndSecs = pixelToTime(visibleRight) - displayStartTime;
+    double visibleStartDisplay = pixelToTime(visibleLeft);
+    double visibleEndDisplay = pixelToTime(visibleRight);
 
     // Clamp to waveform extent
-    double fileStart = 0.0;
-    double fileEnd = fileExtent;
-    visibleStartSecs = juce::jmax(visibleStartSecs, fileStart);
-    visibleEndSecs = juce::jmin(visibleEndSecs, fileEnd);
+    double waveformStartDisplay = displayStartTime;
+    double waveformEndDisplay = displayStartTime + fileExtent;
+    visibleStartDisplay = juce::jmax(visibleStartDisplay, waveformStartDisplay);
+    visibleEndDisplay = juce::jmin(visibleEndDisplay, waveformEndDisplay);
 
     // Find the first grid line at or before the visible start
-    double startK = std::floor((visibleStartSecs - originTimeline) / secondsPerGrid);
-    double iterStart = originTimeline + startK * secondsPerGrid;
-    double iterEnd = visibleEndSecs + secondsPerGrid;
+    double startK = std::floor((visibleStartDisplay - originDisplay) / secondsPerGrid);
+    double iterStart = originDisplay + startK * secondsPerGrid;
+    double iterEnd = visibleEndDisplay + secondsPerGrid;
 
     auto& fontMgr = FontManager::getInstance();
 
-    for (double t = iterStart; t < iterEnd; t += secondsPerGrid) {
-        double displayTime = t + displayStartTime;
+    for (double displayTime = iterStart; displayTime < iterEnd; displayTime += secondsPerGrid) {
         int px = timeToPixel(displayTime);
 
         if (px < waveformRect.getX() || px > waveformRect.getRight())
             continue;
 
         // Beat position relative to the grid origin
-        double beatPos = (t - originTimeline) / secondsPerBeat;
+        double beatPos = (displayTime - originDisplay) / secondsPerBeat;
         // Round to avoid floating-point drift
         double beatPosRounded = std::round(beatPos * 1000.0) / 1000.0;
         bool isBar = (std::fmod(std::abs(beatPosRounded), beatsPerBar) < 0.001);
@@ -585,6 +590,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     auto loopColour = DarkTheme::getColour(DarkTheme::LOOP_MARKER);
 
     double baseTime = getDisplayStartTime();
+    double activeOffset = relativeMode_ ? 0.0 : displayInfo_.offsetPositionSeconds;
 
     // Loop boundaries - only shown when loop is enabled
     if (isLooped && displayInfo_.loopLengthSeconds > 0.0) {
@@ -605,11 +611,15 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.drawText("L", loopEndX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
     }
 
-    // Offset marker (orange) — greyed out when looped (offset is driven by loopStart + phase)
-    {
-        int offsetX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
+    const bool hasVisibleLoopPhase =
+        isLooped && displayInfo_.sourceLength > 0.0 && std::abs(displayInfo_.loopOffset) > 1e-6;
+
+    // Offset marker (orange) — only meaningful in non-loop mode. In loop mode
+    // offset is represented by the phase marker inside the loop region.
+    if (!isLooped) {
+        int offsetX = timeToPixel(baseTime + activeOffset);
         auto offsetColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
-        float offsetAlpha = isLooped ? 0.25f : 0.8f;
+        float offsetAlpha = 0.8f;
         g.setColour(offsetColour.withAlpha(offsetAlpha));
         g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -617,7 +627,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     }
 
     // Loop phase marker (orange) — only visible when looped, shows phase within loop region
-    if (isLooped) {
+    if (hasVisibleLoopPhase) {
         int phaseX = timeToPixel(baseTime + displayInfo_.loopPhasePositionSeconds);
         auto phaseColour = DarkTheme::getColour(DarkTheme::ACCENT_ORANGE);
         g.setColour(phaseColour.withAlpha(0.8f));
@@ -632,7 +642,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         float leftGhostAlpha = showPreLoop_ ? 0.7f : 1.0f;
         float rightGhostAlpha = showPostLoop_ ? 0.7f : 1.0f;
         auto bgColour = DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
-        int clipStartX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
+        int clipStartX = timeToPixel(baseTime + activeOffset);
 
         // In loop mode, the right boundary is the loop end (arrangement clip length is irrelevant)
         // In non-loop mode, it's simply the clip end
@@ -640,8 +650,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         if (isLooped) {
             rightBoundaryX = timeToPixel(baseTime + displayInfo_.loopEndPositionSeconds);
         } else {
-            rightBoundaryX =
-                timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
+            rightBoundaryX = timeToPixel(baseTime + activeOffset + clipLength_);
         }
 
         // Left ghost: dim everything before the active region start
@@ -675,7 +684,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     if (!isLooped) {
         auto markerColour = juce::Colour(0xFFAAAAAA);
 
-        int clipStartX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds);
+        int clipStartX = timeToPixel(baseTime + activeOffset);
         {
             g.setColour(markerColour);
             g.fillRect(clipStartX - 2, 0, 3, bounds.getHeight());
@@ -686,7 +695,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
             g.fillRect(clipStartX - 10, 0, 8, bounds.getHeight());
         }
 
-        int clipEndX = timeToPixel(baseTime + displayInfo_.offsetPositionSeconds + clipLength_);
+        int clipEndX = timeToPixel(baseTime + activeOffset + clipLength_);
         {
             g.setColour(markerColour);
             g.fillRect(clipEndX, 0, 3, bounds.getHeight());
@@ -770,14 +779,16 @@ void WaveformGridComponent::setClip(magda::ClipId clipId) {
     // Always update clip info (even if same clip, properties may have changed)
     const auto* clip = getClip();
     if (clip) {
-        clipStartTime_ = clip->startTime;
-        clipLength_ = clip->length;
+        double bpm = timeRuler_ ? timeRuler_->getTempo() : 120.0;
+        clipStartTime_ = clip->getTimelineStart(bpm);
+        clipLength_ = clip->getTimelineLength(bpm);
     } else {
         clipStartTime_ = 0.0;
         clipLength_ = 0.0;
     }
 
     updateGridSize();
+    debugLogGeometry("setClip");
     repaint();
 }
 
@@ -785,6 +796,7 @@ void WaveformGridComponent::setRelativeMode(bool relative) {
     if (relativeMode_ != relative) {
         relativeMode_ = relative;
         updateGridSize();
+        debugLogGeometry("setRelativeMode");
         repaint();
     }
 }
@@ -816,11 +828,14 @@ void WaveformGridComponent::updateClipPosition(double startTime, double length) 
     clipStartTime_ = startTime;
     clipLength_ = length;
     updateGridSize();
+    debugLogGeometry("updateClipPosition");
     repaint();
 }
 
 void WaveformGridComponent::setDisplayInfo(const magda::ClipDisplayInfo& info) {
     displayInfo_ = info;
+    updateGridSize();
+    debugLogGeometry("setDisplayInfo");
     repaint();
 }
 
@@ -937,7 +952,9 @@ void WaveformGridComponent::updateGridSize() {
     // Calculate total virtual content width based on mode
     double totalTime = 0.0;
     if (relativeMode_) {
-        totalTime = displayInfo_.fullSourceExtentSeconds + 10.0;
+        double displayLength =
+            juce::jmax(displayInfo_.fullSourceExtentSeconds, getDrawableTimelineLength());
+        totalTime = displayLength + 10.0;
     } else {
         double displayClipLength = displayInfo_.effectiveSourceExtentSeconds;
         double leftPaddingTime = std::max(10.0, clipStartTime_ * 0.5);
@@ -972,6 +989,29 @@ int WaveformGridComponent::timeToPixel(double time) const {
 
 double WaveformGridComponent::pixelToTime(int x) const {
     return (x + scrollOffsetX_ - LEFT_PADDING) / horizontalZoom_;
+}
+
+double WaveformGridComponent::getDisplayStartTime() const {
+    if (relativeMode_)
+        return 0.0;
+    return clipStartTime_ - displayInfo_.offsetPositionSeconds;
+}
+
+double WaveformGridComponent::getDrawableTimelineLength() const {
+    if (!relativeMode_)
+        return displayInfo_.effectiveSourceExtentSeconds;
+
+    // In REL mode the editor is source-domain. For looped clips, extending the
+    // arrangement container adds loop cycles; it must not stretch the source
+    // waveform across the longer container.
+    if (displayInfo_.isLooped() && displayInfo_.sourceExtentSeconds > 0.0)
+        return displayInfo_.sourceExtentSeconds;
+
+    return clipLength_;
+}
+
+void WaveformGridComponent::debugLogGeometry(const char* context) const {
+    juce::ignoreUnused(context);
 }
 
 // ============================================================================
@@ -1078,11 +1118,19 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         return;
     }
 
-    // Non-warp mode: standard trim/stretch interaction
-    if (isNearLeftEdge(x, *clip)) {
+    // Non-warp mode: standard trim/stretch interaction.
+    // Phase marker takes priority over edge resize so a click on the "P" marker doesn't
+    // fall through to the source-extent right-edge hit-test (which used to silently shorten
+    // the loop when the phase landed near the file end).
+    if (isNearPhaseMarker(x, *clip)) {
+        dragMode_ = DragMode::PhaseMarker;
+    } else if (isNearLeftEdge(x, *clip)) {
         dragMode_ = shiftHeld ? DragMode::StretchLeft : DragMode::ResizeLeft;
-    } else if (isNearRightEdge(x, *clip)) {
-        dragMode_ = shiftHeld ? DragMode::StretchRight : DragMode::ResizeRight;
+    } else if (isNearRightEdge(x, *clip) && shiftHeld) {
+        // Right-edge resize is intentionally disabled — only Shift+drag (stretch) survives.
+        // Plain right-edge drag used to call resizeSourceExtent → setLoopLengthFromTimeline,
+        // which is the loop-end edit and is handled on the timeline ruler instead.
+        dragMode_ = DragMode::StretchRight;
     } else if (isInsideWaveform(x, *clip)) {
         // Inside waveform but not near edges — zoom drag
         dragMode_ = DragMode::Zoom;
@@ -1103,6 +1151,17 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     dragStartStartTime_ = clip->startTime;
     dragStartSpeedRatio_ = clip->speedRatio;
     dragStartClipLength_ = clip->length;  // Save original clip.length for stretch operations
+
+    if (dragMode_ == DragMode::PhaseMarker) {
+        double phase = clip->offset - clip->loopStart;
+        if (clip->loopLength > 0.0) {
+            phase =
+                std::fmod(std::fmod(phase, clip->loopLength) + clip->loopLength, clip->loopLength);
+        } else {
+            phase = juce::jmax(0.0, phase);
+        }
+        dragStartLoopOffset_ = phase;
+    }
 
     // Use source extent for resize operations (visual boundary in waveform editor)
     // This may differ from clip.length in loop mode
@@ -1207,6 +1266,14 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             if (dragStartFileDuration_ > 0.0)
                 newOffset = juce::jmin(newOffset, dragStartFileDuration_);
             newOffset = juce::jmax(0.0, newOffset);
+            if (snapEnabled_) {
+                double timelineOffset = displayInfo_.sourceToTimeline(newOffset);
+                timelineOffset = snapTimeToGrid(timelineOffset);
+                newOffset = displayInfo_.timelineToSource(timelineOffset);
+                if (dragStartFileDuration_ > 0.0)
+                    newOffset = juce::jmin(newOffset, dragStartFileDuration_);
+                newOffset = juce::jmax(0.0, newOffset);
+            }
 
             if (clip->loopEnabled) {
                 magda::ClipOperations::moveLoopStart(*clip, newOffset, dragStartFileDuration_);
@@ -1231,19 +1298,32 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
             }
             break;
         }
-        case DragMode::ResizeRight: {
-            // Calculate new source extent (in timeline seconds)
-            double newExtent = dragStartLength_ + deltaSeconds;
-            newExtent = juce::jmax(magda::ClipOperations::MIN_CLIP_LENGTH, newExtent);
-
-            // Constrain to file bounds
-            if (dragStartFileDuration_ > 0.0) {
-                double maxExtent =
-                    (dragStartFileDuration_ - dragStartAudioOffset_) / dragStartSpeedRatio_;
-                newExtent = juce::jmin(newExtent, maxExtent);
+        case DragMode::PhaseMarker: {
+            // Phase is in source seconds, wrapped into [0, loopLength). Convert the timeline-
+            // pixel delta to a source-time delta and add it to the captured start phase.
+            double timelineDelta = (event.x - dragStartX_) / horizontalZoom_;
+            double sourceDelta = displayInfo_.timelineToSource(timelineDelta);
+            double newPhase = dragStartLoopOffset_ + sourceDelta;
+            if (clip->loopLength > 0.0) {
+                newPhase = std::fmod(std::fmod(newPhase, clip->loopLength) + clip->loopLength,
+                                     clip->loopLength);
+            } else {
+                newPhase = juce::jmax(0.0, newPhase);
             }
-
-            magda::ClipOperations::resizeSourceExtent(*clip, newExtent);
+            if (snapEnabled_) {
+                double timelinePhase = displayInfo_.sourceToTimeline(newPhase);
+                timelinePhase = snapTimeToGrid(timelinePhase);
+                newPhase = displayInfo_.timelineToSource(timelinePhase);
+                if (clip->loopLength > 0.0) {
+                    newPhase = std::fmod(std::fmod(newPhase, clip->loopLength) + clip->loopLength,
+                                         clip->loopLength);
+                } else {
+                    newPhase = juce::jmax(0.0, newPhase);
+                }
+            }
+            clip->offset = clip->loopStart + newPhase;
+            if (clip->autoTempo && clip->sourceBPM > 0.0)
+                clip->offsetBeats = clip->offset * clip->sourceBPM / 60.0;
             break;
         }
         case DragMode::StretchRight: {
@@ -1284,8 +1364,8 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
     {
         double bpm = timeRuler_ ? timeRuler_->getTempo() : 120.0;
         displayInfo_ = magda::ClipDisplayInfo::from(*clip, bpm, dragStartFileDuration_);
-        clipLength_ = clip->length;
-        clipStartTime_ = clip->startTime;
+        clipLength_ = clip->getTimelineLength(bpm);
+        clipStartTime_ = clip->getTimelineStart(bpm);
     }
 
     // Use fast paint during drag
@@ -1371,12 +1451,20 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
         return;
     }
 
-    if (isNearLeftEdge(x, *clip) || isNearRightEdge(x, *clip)) {
+    if (isNearPhaseMarker(x, *clip)) {
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    } else if (isNearLeftEdge(x, *clip)) {
         if (event.mods.isShiftDown()) {
             setMouseCursor(juce::MouseCursor::UpDownLeftRightResizeCursor);
         } else {
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
         }
+    } else if (isNearRightEdge(x, *clip)) {
+        // Right-edge resize is disabled; only Shift+drag stretches.
+        if (event.mods.isShiftDown())
+            setMouseCursor(juce::MouseCursor::UpDownLeftRightResizeCursor);
+        else
+            setMouseCursor(juce::MouseCursor::NormalCursor);
     } else if (isInsideWaveform(x, *clip)) {
         setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
     } else {
@@ -1398,6 +1486,15 @@ bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) 
     juce::ignoreUnused(clip);
     int rightEdgeX = timeToPixel(getDisplayStartTime() + displayInfo_.effectiveSourceExtentSeconds);
     return std::abs(x - rightEdgeX) <= EDGE_GRAB_DISTANCE;
+}
+
+bool WaveformGridComponent::isNearPhaseMarker(int x, const magda::ClipInfo& clip) const {
+    if (!clip.loopEnabled || displayInfo_.loopLengthSeconds <= 0.0)
+        return false;
+    if (displayInfo_.sourceLength <= 0.0 || std::abs(displayInfo_.loopOffset) <= 1e-6)
+        return false;
+    int phaseX = timeToPixel(getDisplayStartTime() + displayInfo_.loopPhasePositionSeconds);
+    return std::abs(x - phaseX) <= EDGE_GRAB_DISTANCE;
 }
 
 bool WaveformGridComponent::isInsideWaveform(int x, const magda::ClipInfo& clip) const {
@@ -1522,11 +1619,6 @@ double WaveformGridComponent::snapToNearestTransient(double time) const {
 void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
     juce::PopupMenu menu;
 
-    // "Set Beat 1 Here" uses the clip's audio offset (source file seconds)
-    const auto* clip = getClip();
-    double clipOffset = clip ? clip->offset : 0.0;
-
-    menu.addItem(1, "Set Beat 1 at Offset");
     if (timeRuler_ && timeRuler_->getBarOrigin() != 0.0)
         menu.addItem(2, "Reset Beat Grid Origin");
     menu.addSeparator();
@@ -1552,12 +1644,8 @@ void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
     menu.addItem(7, "Slice at Grid In Place", canSliceAtGrid);
     menu.addItem(9, "Slice at Grid to Drum Grid", canSliceAtGrid);
 
-    menu.showMenuAsync(juce::PopupMenu::Options(), [this, markerIndex, clipOffset](int result) {
-        if (result == 1) {
-            if (timeRuler_)
-                timeRuler_->setBarOrigin(clipOffset);
-            repaint();
-        } else if (result == 2) {
+    menu.showMenuAsync(juce::PopupMenu::Options(), [this, markerIndex](int result) {
+        if (result == 2) {
             if (timeRuler_)
                 timeRuler_->setBarOrigin(0.0);
             repaint();

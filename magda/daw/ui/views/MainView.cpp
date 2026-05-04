@@ -10,8 +10,8 @@
 #include "../themes/FontManager.hpp"
 #include "Config.hpp"
 #include "audio/AudioBridge.hpp"
-#include "audio/ControllerParamWriter.hpp"
-#include "audio/ControllerRouter.hpp"
+#include "audio/controllers/ControllerParamWriter.hpp"
+#include "audio/controllers/ControllerRouter.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipManager.hpp"
 #include "core/LinkModeManager.hpp"
@@ -1059,17 +1059,10 @@ bool MainView::keyPressed(const juce::KeyPress& key) {
 }
 
 void MainView::updateContentSizes() {
-    // Use the same content width calculation as ZoomManager for consistency
-    // horizontalZoom is ppb, convert timeline length to beats. Round so the
-    // integer width matches TrackContentPanel::resized()'s own rounded
-    // computation — truncating here while TCP rounds produces a 1 px drift
-    // that fires resized() every frame.
+    // Use the controller's width calculation for every horizontal surface so
+    // the ruler, track content, and scroll limits agree exactly.
     const auto& st = timelineController->getState();
-    double beats = st.secondsToBeats(timelineLength);
-    auto baseWidth = static_cast<int>(std::round(beats * horizontalZoom));
-    auto viewportWidth = timelineViewport->getWidth();
-    auto minWidth = viewportWidth + (viewportWidth / 2);  // 1.5x viewport width for centering
-    auto contentWidth = juce::jmax(baseWidth, minWidth);
+    auto contentWidth = st.getContentWidth();
 
     // getTotalTracksHeight already applies verticalZoom per track, so do NOT
     // multiply again.
@@ -1086,6 +1079,7 @@ void MainView::updateContentSizes() {
     // Tell the content panel the minimum height so its own resized() (which
     // re-computes content size from zoom/timeline) doesn't shrink below the
     // viewport — needed for DnD to work in the empty region below tracks.
+    trackContentPanel->setMinWidth(contentWidth);
     trackContentPanel->setMinHeight(viewportFloor);
 
     // Update timeline size with enhanced content width
@@ -1749,57 +1743,122 @@ void MainView::SelectionOverlayComponent::drawTimeSelection(juce::Graphics& g) {
     startX = juce::jmax(0, startX);
     endX = juce::jmin(getWidth(), endX);
 
-    int selectionWidth = endX - startX;
+    const int selectionWidth = endX - startX;
+    const auto edgeColour = DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.8f);
 
-    // Check if this is an all-tracks selection
+    // Pure colour inversion of whatever is in the band rect — desaturated to
+    // avoid acid complementaries. No translucent fill.
     if (state.selection.isAllTracks()) {
-        // Draw full-height selection (backward compatible behavior)
-        g.setColour(DarkTheme::getColour(DarkTheme::TIME_SELECTION));
-        g.fillRect(startX, 0, selectionWidth, getHeight());
+        paintTimeSelectionBand(g, {startX, 0, selectionWidth, getHeight()});
 
-        // Draw selection edges
-        g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.8f));
+        g.setColour(edgeColour);
         g.drawLine(static_cast<float>(startX), 0.0f, static_cast<float>(startX),
                    static_cast<float>(getHeight()), 2.0f);
         g.drawLine(static_cast<float>(endX), 0.0f, static_cast<float>(endX),
                    static_cast<float>(getHeight()), 2.0f);
     } else {
-        // Per-track selection: draw only on selected tracks
         int scrollY = owner.trackContentViewport->getViewPositionY();
         int numTracks = owner.trackContentPanel->getNumTracks();
 
         for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex) {
             if (state.selection.includesTrack(trackIndex)) {
-                // Get track position and height
                 int trackY = owner.trackContentPanel->getTrackYPosition(trackIndex) - scrollY;
                 int trackHeight = owner.trackContentPanel->getTrackHeight(trackIndex);
-
-                // Apply vertical zoom
                 trackHeight = static_cast<int>(trackHeight * owner.verticalZoom);
 
-                // Skip if track is not visible vertically
                 if (trackY + trackHeight < 0 || trackY > getHeight()) {
                     continue;
                 }
 
-                // Clamp to visible area vertically
                 int drawY = juce::jmax(0, trackY);
                 int drawBottom = juce::jmin(getHeight(), trackY + trackHeight);
                 int drawHeight = drawBottom - drawY;
 
                 if (drawHeight > 0) {
-                    // Draw semi-transparent selection highlight for this track
-                    g.setColour(DarkTheme::getColour(DarkTheme::TIME_SELECTION));
-                    g.fillRect(startX, drawY, selectionWidth, drawHeight);
+                    paintTimeSelectionBand(g, {startX, drawY, selectionWidth, drawHeight});
 
-                    // Draw selection edges within track bounds
-                    g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_BLUE).withAlpha(0.8f));
+                    g.setColour(edgeColour);
                     g.drawLine(static_cast<float>(startX), static_cast<float>(drawY),
                                static_cast<float>(startX), static_cast<float>(drawBottom), 2.0f);
                     g.drawLine(static_cast<float>(endX), static_cast<float>(drawY),
                                static_cast<float>(endX), static_cast<float>(drawBottom), 2.0f);
                 }
             }
+        }
+    }
+}
+
+void MainView::SelectionOverlayComponent::paintTimeSelectionBand(juce::Graphics& g,
+                                                                 juce::Rectangle<int> bandRect) {
+    if (bandRect.isEmpty() || !owner.trackContentPanel || !owner.trackContentViewport)
+        return;
+
+    const int scrollX = owner.trackContentViewport->getViewPositionX();
+    const int scrollY = owner.trackContentViewport->getViewPositionY();
+
+    auto panelRect = bandRect.translated(scrollX, scrollY)
+                         .getIntersection(owner.trackContentPanel->getLocalBounds());
+    if (panelRect.isEmpty())
+        return;
+
+    // RGB-invert clip pixels in the band (with damped saturation so coloured
+    // bodies don't go full acid). Empty TRACK_BACKGROUND pixels are written
+    // transparent so the band passes through to the real panel bg there.
+    auto snapshot = owner.trackContentPanel->createComponentSnapshot(panelRect, false, 1.0f);
+    if (snapshot.isValid() && snapshot.getWidth() > 0 && snapshot.getHeight() > 0) {
+        const auto bg = DarkTheme::getColour(DarkTheme::TRACK_BACKGROUND);
+        const auto bgR = bg.getRed();
+        const auto bgG = bg.getGreen();
+        const auto bgB = bg.getBlue();
+        constexpr float saturationFactor = 0.45f;
+        {
+            juce::Image::BitmapData data(snapshot, juce::Image::BitmapData::readWrite);
+            for (int y = 0; y < data.height; ++y) {
+                for (int x = 0; x < data.width; ++x) {
+                    const auto px = data.getPixelColour(x, y);
+                    if (px.getRed() == bgR && px.getGreen() == bgG && px.getBlue() == bgB) {
+                        data.setPixelColour(x, y, juce::Colours::transparentBlack);
+                        continue;
+                    }
+                    const auto inverted =
+                        juce::Colour::fromRGB(static_cast<juce::uint8>(255 - px.getRed()),
+                                              static_cast<juce::uint8>(255 - px.getGreen()),
+                                              static_cast<juce::uint8>(255 - px.getBlue()));
+                    // Pixels that invert to near-white (originally near-black,
+                    // e.g., waveform/MIDI-note interiors and their AA edges)
+                    // snap to pure white so they don't pick up a muted tint
+                    // from the saturation reduction below.
+                    const juce::Colour finalColour =
+                        (inverted.getBrightness() > 0.85f)
+                            ? juce::Colours::white
+                            : inverted.withSaturation(inverted.getSaturation() * saturationFactor);
+                    data.setPixelColour(x, y, finalColour.withAlpha(px.getAlpha()));
+                }
+            }
+        }
+        g.drawImageAt(snapshot, panelRect.getX() - scrollX, panelRect.getY() - scrollY);
+    }
+
+    // Grid overlay sits between the panel and us in z-order; the inverted
+    // panel snapshot we just drew covered the lines that were on screen.
+    // Snapshot the grid overlay for the band, RGB-invert, and draw on top.
+    if (owner.gridOverlay) {
+        auto gridSnapshot = owner.gridOverlay->createComponentSnapshot(bandRect, false, 1.0f);
+        if (gridSnapshot.isValid() && gridSnapshot.getWidth() > 0 && gridSnapshot.getHeight() > 0) {
+            juce::Image::BitmapData data(gridSnapshot, juce::Image::BitmapData::readWrite);
+            for (int y = 0; y < data.height; ++y) {
+                for (int x = 0; x < data.width; ++x) {
+                    const auto px = data.getPixelColour(x, y);
+                    if (px.getAlpha() == 0)
+                        continue;
+                    const auto inverted =
+                        juce::Colour::fromRGB(static_cast<juce::uint8>(255 - px.getRed()),
+                                              static_cast<juce::uint8>(255 - px.getGreen()),
+                                              static_cast<juce::uint8>(255 - px.getBlue()));
+                    data.setPixelColour(x, y, inverted.withAlpha(px.getAlpha()));
+                }
+            }
+            g.drawImageAt(gridSnapshot, bandRect.getX(), bandRect.getY());
         }
     }
 }

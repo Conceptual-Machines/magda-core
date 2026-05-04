@@ -1,8 +1,10 @@
 #include "MainWindow.hpp"
 
+#include "../../api/magda_api_live.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/SelectionManager.hpp"
+#include "../../engine/TracktionEngineWrapper.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
@@ -25,7 +27,7 @@
 #include "../views/SessionView.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/MidiBridge.hpp"
-#include "audio/QwertyMidiKeyboard.hpp"
+#include "audio/midi/QwertyMidiKeyboard.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
 #include "core/ModulatorEngine.hpp"
@@ -817,6 +819,20 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     };
     positionTimer_->start();  // Start once and keep running
 
+    // Route Lua-script transport calls through the same TimelineController
+    // dispatch the on-screen buttons use, so script play() honours MAGDA's
+    // playhead (issue: script play resumed from Tracktion's stop position
+    // instead of editPosition because it bypassed the TimelineController
+    // -> locate -> play sequence).
+    if (auto* tew = dynamic_cast<TracktionEngineWrapper*>(engine)) {
+        if (auto* live = dynamic_cast<magda::MagdaApiLive*>(&tew->getMagdaApi())) {
+            live->setTransportPlayDispatcher(
+                [this]() { mainView->getTimelineController().dispatch(StartPlaybackEvent{}); });
+            live->setTransportStopDispatcher(
+                [this]() { mainView->getTimelineController().dispatch(StopPlaybackEvent{}); });
+        }
+    }
+
     // Wire transport callbacks - just dispatch events, TimelineController notifies audio engine
     transportPanel->onPlay = [this]() {
         mainView->getTimelineController().dispatch(StartPlaybackEvent{});
@@ -914,8 +930,8 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     transportPanel->onTimeSelectionEdit = [this](double startSec, double endSec) {
         mainView->getTimelineController().dispatch(SetTimeSelectionEvent{startSec, endSec, {}});
     };
-    transportPanel->onEditCursorEdit = [this](double positionSec) {
-        mainView->getTimelineController().dispatch(SetEditCursorEvent{positionSec});
+    transportPanel->onEditCursorEdit = [this](double positionBeats) {
+        mainView->getTimelineController().dispatch(SetEditCursorEvent{positionBeats});
     };
 
     // Punch in/out callbacks
@@ -1311,7 +1327,7 @@ void MainWindow::setupMenuBar() {
 
 void MainWindow::MainComponent::midiLearnStateChanged(const magda::ChainNodePath& /*path*/,
                                                       int /*paramIndex*/,
-                                                      magda::StaticTarget::Owner /*owner*/,
+                                                      magda::ControlTarget::Kind /*owner*/,
                                                       bool learning) {
     if (learning) {
         daw::ui::Toast::showGlobal("MIDI Learn armed - move a controller...", 5000);
@@ -1320,7 +1336,7 @@ void MainWindow::MainComponent::midiLearnStateChanged(const magda::ChainNodePath
 
 void MainWindow::MainComponent::midiLearnCompleted(const magda::ChainNodePath& /*path*/,
                                                    int /*paramIndex*/,
-                                                   magda::StaticTarget::Owner /*owner*/,
+                                                   magda::ControlTarget::Kind /*owner*/,
                                                    const magda::Binding& binding) {
     juce::String msg = "MIDI mapped";
     if (binding.source.msgType == magda::BindingMsgType::CC)
@@ -1332,7 +1348,7 @@ void MainWindow::MainComponent::midiLearnCompleted(const magda::ChainNodePath& /
 
 void MainWindow::MainComponent::midiLearnCleared(const magda::ChainNodePath& /*path*/,
                                                  int /*paramIndex*/,
-                                                 magda::StaticTarget::Owner /*owner*/,
+                                                 magda::ControlTarget::Kind /*owner*/,
                                                  int numRemoved) {
     juce::String msg = numRemoved == 1 ? "MIDI mapping cleared"
                                        : juce::String(numRemoved) + " MIDI mappings cleared";

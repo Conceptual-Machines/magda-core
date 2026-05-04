@@ -5,6 +5,7 @@ set(TEST_SOURCES
     test_audiobridge_plugin_cleanup_bug.cpp
     test_auto_tempo.cpp
     test_audio_clip_stretch.cpp
+    test_clip_bpm_invariant.cpp
     test_audio_source_length.cpp
     test_audio_export.cpp
     test_command.cpp
@@ -16,6 +17,7 @@ set(TEST_SOURCES
     test_nested_racks.cpp
     test_rack_audio.cpp
     test_modulation.cpp
+    test_control_target.cpp
     test_chain_fingerprint.cpp
     test_group_tracks_and_macros.cpp
     test_parameter_utils.cpp
@@ -80,8 +82,18 @@ set(TEST_SOURCES
     test_midi_learn.cpp
     # Controller profile tests (issue #1052)
     test_controller_profile.cpp
+    # Lua runtime tests (issue #29)
+    test_lua_runtime.cpp
+    # Lua bindings tests (issue #30 — bind MagdaApi)
+    test_magda_api_lua_bindings.cpp
+    # Lua controller tests (issue #592 — MIDI dispatch)
+    test_lua_controller.cpp
+    # Focused device API tests
+    test_focused_api_live.cpp
     # SelectionManager listener reentrancy
     test_selection_manager_listeners.cpp
+    # Configurable user data paths
+    test_app_paths.cpp
 )
 
 # Create test executable
@@ -92,6 +104,7 @@ target_link_libraries(magda_tests
     PRIVATE
     magda_daw
     magda_agents
+    magda_scripting
     Catch2::Catch2WithMain
     juce::juce_core
     juce::juce_gui_basics

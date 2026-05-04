@@ -82,6 +82,10 @@ void TimeRuler::setGridResolution(double beatsPerGridLine) {
     repaint();
 }
 
+void TimeRuler::setSnapEnabled(bool enabled) {
+    snapEnabled = enabled;
+}
+
 void TimeRuler::setTimeOffset(double offsetSeconds) {
     timeOffset = offsetSeconds;
     repaint();
@@ -218,6 +222,7 @@ void TimeRuler::mouseDrag(const juce::MouseEvent& event) {
             newPhaseTime -= timeOffset;
         }
         newPhaseTime = juce::jmax(0.0, newPhaseTime);
+        newPhaseTime = snapTimeToGrid(newPhaseTime);
         // Clamp to loop length
         if (loopLength > 0.0) {
             newPhaseTime = juce::jmin(newPhaseTime, loopOffset + loopLength);
@@ -282,6 +287,7 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
             if (!relativeMode)
                 finalPhaseTime -= timeOffset;
             finalPhaseTime = juce::jmax(0.0, finalPhaseTime);
+            finalPhaseTime = snapTimeToGrid(finalPhaseTime);
             if (loopLength > 0.0)
                 finalPhaseTime = juce::jmin(finalPhaseTime, loopOffset + loopLength);
             onPhaseDragEnded(finalPhaseTime);
@@ -529,7 +535,6 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         startStep = 0;
 
     double totalTimelineBeats = timelineLength * tempo / 60.0;
-
     // Determine which musical subdivision level to label (must be power-of-2 division of a beat).
     // We pick the coarsest level where labels fit without overlap (~65px per label).
     // Levels: 1/2 beat, 1/4, 1/8, 1/16, 1/32 — we never label finer than 1/32.
@@ -958,16 +963,21 @@ int TimeRuler::timeToPixel(double time) const {
     return static_cast<int>(std::round(beats * zoom)) - currentScrollOffset + leftPadding;
 }
 
+double TimeRuler::snapTimeToGrid(double time) const {
+    if (!snapEnabled || tempo <= 0.0)
+        return time;
+
+    double secondsPerBeat = 60.0 / tempo;
+    double beat = time / secondsPerBeat;
+    double grid = gridResolutionBeats > 0.0 ? gridResolutionBeats : 1.0;
+    return std::round(beat / grid) * grid * secondsPerBeat;
+}
+
 void TimeRuler::initLoopInteraction() {
     LoopMarkerInteraction::Host host;
     host.pixelToTime = [this](int pixel) { return pixelToTime(pixel); };
     host.timeToPixel = [this](double time) { return timeToPixel(time); };
-    host.snapToGrid = [this](double time) -> double {
-        if (tempo <= 0.0)
-            return time;
-        double secondsPerBeat = 60.0 / tempo;
-        return std::round(time / secondsPerBeat) * secondsPerBeat;
-    };
+    host.snapToGrid = [this](double time) -> double { return snapTimeToGrid(time); };
     host.onLoopChanged = [this](double start, double end) {
         if (onLoopRegionChanged)
             onLoopRegionChanged(start, end);

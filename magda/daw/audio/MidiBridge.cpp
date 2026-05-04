@@ -15,6 +15,11 @@ void MidiBridge::setAudioBridge(AudioBridge* audioBridge) {
 
 MidiBridge::~MidiBridge() {
     stopAllInputs();
+
+    // Tear down outputs after inputs so any in-flight controller-feedback
+    // sends from listener callbacks have already drained.
+    juce::ScopedLock lock(routingLock_);
+    activeMidiOutputs_.clear();
 }
 
 void MidiBridge::stopAllInputs() {
@@ -103,6 +108,47 @@ std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiOutputs() const {
     }
 
     return devices;
+}
+
+bool MidiBridge::sendMidi(const juce::String& deviceNameOrId, const juce::MidiMessage& msg) {
+    if (isShuttingDown_.load(std::memory_order_acquire))
+        return false;
+
+    juce::ScopedLock lock(routingLock_);
+
+    // Re-check under the lock; teardown sets the flag while holding it.
+    if (isShuttingDown_.load(std::memory_order_acquire))
+        return false;
+
+    // Resolve to the JUCE identifier so the cache key is canonical regardless
+    // of whether the caller passed a display name or an identifier.
+    auto available = juce::MidiOutput::getAvailableDevices();
+    juce::String identifier;
+    for (const auto& d : available) {
+        if (d.identifier == deviceNameOrId || d.name == deviceNameOrId) {
+            identifier = d.identifier;
+            break;
+        }
+    }
+    if (identifier.isEmpty())
+        return false;
+
+    auto it = activeMidiOutputs_.find(identifier);
+    if (it == activeMidiOutputs_.end()) {
+        auto out = juce::MidiOutput::openDevice(identifier);
+        if (!out)
+            return false;
+        it = activeMidiOutputs_.emplace(identifier, std::move(out)).first;
+    }
+
+    it->second->sendMessageNow(msg);
+    return true;
+}
+
+bool MidiBridge::sendSysEx(const juce::String& deviceNameOrId, const juce::uint8* data,
+                           size_t numBytes) {
+    return sendMidi(deviceNameOrId,
+                    juce::MidiMessage::createSysExMessage(data, static_cast<int>(numBytes)));
 }
 
 void MidiBridge::enableMidiInput(const juce::String& deviceId) {

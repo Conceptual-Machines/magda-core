@@ -313,6 +313,13 @@ class MainView::SelectionOverlayComponent : public juce::Component {
     void drawLoopRegion(juce::Graphics& g);
     void drawRecordingRegion(juce::Graphics& g);
 
+    // Paints `bandRect` (overlay-local coords) by snapshotting the matching
+    // region of trackContentPanel, inverting RGB with reduced saturation, and
+    // drawing it back. The colour-inversion (rather than a simple blue tint)
+    // is what makes the band readable on a black-painted waveform without
+    // making the whole clip look like a different colour clip.
+    void paintTimeSelectionBand(juce::Graphics& g, juce::Rectangle<int> bandRect);
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SelectionOverlayComponent)
 };
 

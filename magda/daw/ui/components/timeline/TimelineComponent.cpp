@@ -477,7 +477,6 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
     if (deltaY > DRAG_THRESHOLD) {
         // Vertical drag detected - this is a zoom operation
         if (!isZooming) {
-            DBG("STARTING ZOOM MODE (vertical drag detected)");
             isZooming = true;
             isPendingPlayheadClick = false;  // Cancel any pending playhead click
             // Capture the time position under the mouse at zoom start (using initial zoom level)
@@ -485,7 +484,6 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
             zoomAnchorTime = juce::jlimit(0.0, timelineLength, zoomAnchorTime);
             // Capture the screen X position where the mouse is (relative to this component)
             zoomAnchorScreenX = mouseDownX;
-            DBG("ZOOM ANCHOR: time=" << zoomAnchorTime << "s, screenX=" << zoomAnchorScreenX);
             repaint();
         }
 
@@ -525,7 +523,8 @@ void TimelineComponent::mouseDrag(const juce::MouseEvent& event) {
 
         double sensitivity = baseSensitivity;
         if (isShiftHeld) {
-            sensitivity = config.getZoomInSensitivityShift();  // 8.0 - turbo fast
+            sensitivity = deltaY >= 0 ? config.getZoomInSensitivityShift()
+                                      : config.getZoomOutSensitivityShift();
         } else if (isAltHeld) {
             sensitivity = baseSensitivity * 3.0;  // Alt/Option: fine zoom (slower)
         }
