@@ -84,6 +84,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     if (clip.audioFilePath.isNotEmpty()) {
         auto* sourceObj = new juce::DynamicObject();
         sourceObj->setProperty("filePath", clip.audioFilePath);
+        if (clip.sourceDurationSeconds > 0.0)
+            sourceObj->setProperty("durationSeconds", clip.sourceDurationSeconds);
         sourceObj->setProperty("offsetSeconds", clip.offset);
         sourceObj->setProperty("offsetBeats", clip.offsetBeats);
         sourceObj->setProperty("loopStartSeconds", clip.loopStart);
@@ -91,10 +93,10 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         sourceObj->setProperty("loopStartBeats", clip.loopStartBeats);
         sourceObj->setProperty("loopLengthBeats", clip.loopLengthBeats);
         sourceObj->setProperty("speedRatio", clip.speedRatio);
-        if (clip.sourceNumBeats > 0.0)
-            sourceObj->setProperty("sourceNumBeats", clip.sourceNumBeats);
-        if (clip.sourceBPM > 0.0)
-            sourceObj->setProperty("sourceBPM", clip.sourceBPM);
+        if (clip.sourceTotalBeats > 0.0)
+            sourceObj->setProperty("sourceTotalBeats", clip.sourceTotalBeats);
+        if (clip.sourceBpm > 0.0)
+            sourceObj->setProperty("sourceBpm", clip.sourceBpm);
 
         if (clip.warpEnabled) {
             sourceObj->setProperty("warpEnabled", clip.warpEnabled);
@@ -253,6 +255,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     // Audio source properties
     if (auto* sourceObj = obj->getProperty("audioSource").getDynamicObject()) {
         outClip.audioFilePath = sourceObj->getProperty("filePath").toString();
+        outClip.sourceDurationSeconds = sourceObj->getProperty("durationSeconds");
         outClip.offset = sourceObj->getProperty("offsetSeconds");
         outClip.offsetBeats = sourceObj->getProperty("offsetBeats");
         outClip.loopStart = sourceObj->getProperty("loopStartSeconds");
@@ -262,8 +265,12 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         outClip.speedRatio = sourceObj->getProperty("speedRatio");
         if (outClip.speedRatio <= 0.0)
             outClip.speedRatio = 1.0;
-        outClip.sourceNumBeats = sourceObj->getProperty("sourceNumBeats");
-        outClip.sourceBPM = sourceObj->getProperty("sourceBPM");
+        outClip.sourceTotalBeats = sourceObj->getProperty("sourceTotalBeats");
+        outClip.sourceBpm = sourceObj->getProperty("sourceBpm");
+        if (outClip.sourceDurationSeconds <= 0.0 && outClip.sourceBpm > 0.0 &&
+            outClip.sourceTotalBeats > 0.0) {
+            outClip.sourceDurationSeconds = outClip.sourceTotalBeats * 60.0 / outClip.sourceBpm;
+        }
         outClip.warpEnabled = static_cast<bool>(sourceObj->getProperty("warpEnabled"));
         outClip.analogPitch = static_cast<bool>(sourceObj->getProperty("analogPitch"));
         outClip.timeStretchMode = sourceObj->getProperty("timeStretchMode");

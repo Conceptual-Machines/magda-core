@@ -1079,6 +1079,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             dragStartClipSnapshot_ = *clip;
             // Capture original lengths of other selected clips for multi-resize
             dragStartSelectedLengths_.clear();
+            dragStartSelectedResizeSnapshots_.clear();
             multiResizeMaxDelta_ = std::numeric_limits<double>::max();
             const auto& selected = SelectionManager::getInstance().getSelectedClips();
             if (selected.size() > 1 && selected.count(clipId_)) {
@@ -1087,6 +1088,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
                     const auto* c = cm.getClip(cid);
                     if (!c)
                         continue;
+                    dragStartSelectedResizeSnapshots_[cid] = *c;
                     if (cid != clipId_)
                         dragStartSelectedLengths_[cid] = c->length;
 
@@ -1693,14 +1695,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 {
                     auto& cm = ClipManager::getInstance();
                     if (auto* c = cm.getClip(clipId_)) {
-                        c->startTime = dragStartTime_;
-                        c->length = dragStartLength_;
-                        c->offset = dragStartClipSnapshot_.offset;
-                        c->loopStart = dragStartClipSnapshot_.loopStart;
-                        c->midiOffset = dragStartClipSnapshot_.midiOffset;
-                        c->midiTrimOffset = dragStartClipSnapshot_.midiTrimOffset;
-                        c->startBeats = dragStartClipSnapshot_.startBeats;
-                        c->lengthBeats = dragStartClipSnapshot_.lengthBeats;
+                        *c = dragStartClipSnapshot_;
                     }
                 }
 
@@ -1727,12 +1722,13 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 {
                     auto& cm = ClipManager::getInstance();
                     if (auto* c = cm.getClip(clipId_)) {
-                        c->length = dragStartLength_;
+                        *c = dragStartClipSnapshot_;
                     }
-                    for (auto& [cid, origLen] : dragStartSelectedLengths_) {
-                        if (auto* c = cm.getClip(cid)) {
-                            c->length = origLen;
-                        }
+                    for (auto& [cid, snapshot] : dragStartSelectedResizeSnapshots_) {
+                        if (cid == clipId_)
+                            continue;
+                        if (auto* c = cm.getClip(cid))
+                            *c = snapshot;
                     }
                 }
 
@@ -1740,6 +1736,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                     onClipResized(clipId_, finalLength, false);
                 }
                 dragStartSelectedLengths_.clear();
+                dragStartSelectedResizeSnapshots_.clear();
                 break;
             }
 

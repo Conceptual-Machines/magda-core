@@ -848,7 +848,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         clip.offsetBeats = 0.0;
         clip.speedRatio = 1.0;
         clip.autoTempo = true;
-        clip.sourceBPM = 140.0;
+        clip.sourceBpm = 140.0;
 
         // Shrink by 1 second at 120 BPM
         ClipOperations::resizeContainerFromLeft(clip, 3.0, 120.0);
@@ -875,7 +875,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         clip.loopEnabled = true;
         clip.speedRatio = 1.0;
         clip.autoTempo = true;
-        clip.sourceBPM = 140.0;
+        clip.sourceBpm = 140.0;
 
         // Shrink by 1 second at 120 BPM
         ClipOperations::resizeContainerFromLeft(clip, 7.0, 120.0);
@@ -896,7 +896,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         clip.offset = 0.0;
         clip.speedRatio = 2.0;
         clip.autoTempo = false;
-        clip.sourceBPM = 140.0;
+        clip.sourceBpm = 140.0;
 
         ClipOperations::resizeContainerFromLeft(clip, 3.0, 120.0);
 
@@ -913,7 +913,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
         clip.autoTempo = true;
-        clip.sourceBPM = 120.0;  // Same as project
+        clip.sourceBpm = 120.0;  // Same as project
 
         ClipOperations::resizeContainerFromLeft(clip, 3.0, 120.0);
 

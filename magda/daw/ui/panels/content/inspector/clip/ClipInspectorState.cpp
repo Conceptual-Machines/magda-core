@@ -137,14 +137,14 @@ void ClipInspector::updateFromSelectedClip() {
         }
 
         // Show BPM for audio clips (at bottom with WARP)
-        // Prefer clip's sourceBPM (may be user-edited), fall back to detected BPM
+        // Prefer clip's sourceBpm (may be user-edited), fall back to detected BPM
         if (showAudioProps && !isMulti) {
-            double displayBPM = clip->sourceBPM;
+            double displayBPM = clip->sourceBpm;
             double projectBPM =
                 timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
             if (displayBPM <= 0.0 ||
                 (!clip->autoTempo && std::abs(displayBPM - projectBPM) < 0.1)) {
-                // sourceBPM is unset or matches project BPM (defaulted) — use detected.
+                // sourceBpm is unset or matches project BPM (defaulted) — use detected.
                 // Read cached value only; if missing, kick off async detection and refresh
                 // the inspector via the existing clipPropertyChanged listener path.
                 auto& thumbs = magda::AudioThumbnailManager::getInstance();
@@ -178,7 +178,7 @@ void ClipInspector::updateFromSelectedClip() {
             // Issue #1157: display lengthBeats (timeline beats — what the slider
             // writes), not loopLengthBeats (source-beat domain). Showing the
             // source-domain value made this readout drift away from the right-side
-            // Clip panel as soon as sourceBPM differed from project BPM.
+            // Clip panel as soon as sourceBpm differed from project BPM.
             clipBeatsLengthValue_->setValue(clip->lengthBeats, juce::dontSendNotification);
         } else {
             clipBeatsLengthValue_->setVisible(false);
@@ -229,8 +229,8 @@ void ClipInspector::updateFromSelectedClip() {
             if (clip->type == magda::ClipType::MIDI) {
                 clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
             } else if (clip->type == magda::ClipType::Audio) {
-                // Use sourceBPM for source-file positions when available
-                double displayBpm = clip->sourceBPM > 0.0 ? clip->sourceBPM : bpm;
+                // Use sourceBpm for source-file positions when available
+                double displayBpm = clip->sourceBpm > 0.0 ? clip->sourceBpm : bpm;
                 double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->offset, displayBpm);
                 clipContentOffsetValue_->setValue(offsetBeats, juce::dontSendNotification);
             }
@@ -252,9 +252,9 @@ void ClipInspector::updateFromSelectedClip() {
             clipLoopStartLabel_.setVisible(true);
             clipLoopStartValue_->setVisible(true);
             clipLoopStartValue_->setBeatsPerBar(beatsPerBar);
-            // For audio clips, loop start/end are source-file positions — use sourceBPM
-            double loopBpm = (clip->type == magda::ClipType::Audio && clip->sourceBPM > 0.0)
-                                 ? clip->sourceBPM
+            // For audio clips, loop start/end are source-file positions — use sourceBpm
+            double loopBpm = (clip->type == magda::ClipType::Audio && clip->sourceBpm > 0.0)
+                                 ? clip->sourceBpm
                                  : bpm;
             double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, loopBpm);
             clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);

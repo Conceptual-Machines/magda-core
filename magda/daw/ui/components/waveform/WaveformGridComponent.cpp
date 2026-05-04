@@ -1291,8 +1291,8 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
                 clip->length =
                     juce::jmax(magda::ClipOperations::MIN_CLIP_LENGTH, endTime - clip->startTime);
 
-                if (clip->autoTempo && clip->sourceBPM > 0.0)
-                    clip->offsetBeats = clip->offset * clip->sourceBPM / 60.0;
+                if (clip->autoTempo && clip->sourceBpm > 0.0)
+                    clip->offsetBeats = clip->offset * clip->sourceBpm / 60.0;
                 clip->loopStart = clip->offset;
                 clip->clampLengthToSource(dragStartFileDuration_);
             }
@@ -1322,8 +1322,8 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
                 }
             }
             clip->offset = clip->loopStart + newPhase;
-            if (clip->autoTempo && clip->sourceBPM > 0.0)
-                clip->offsetBeats = clip->offset * clip->sourceBPM / 60.0;
+            if (clip->autoTempo && clip->sourceBpm > 0.0)
+                clip->offsetBeats = clip->offset * clip->sourceBpm / 60.0;
             break;
         }
         case DragMode::StretchRight: {

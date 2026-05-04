@@ -162,16 +162,16 @@ struct ClipDisplayInfo {
         //
         // AutoTempo invariant: TE stretches the source so 1 source beat == 1
         // timeline beat. Therefore
-        //     timelineSeconds = sourceSeconds × (sourceBPM / projectBPM)
+        //     timelineSeconds = sourceSeconds × (sourceBpm / projectBPM)
         // The earlier branch I added used the inverted ratio (projectBPM /
-        // sourceBPM), which is what made the green loop bracket span ~9
+        // sourceBpm), which is what made the green loop bracket span ~9
         // bars in the user's screenshot when lengthBeats said 4 bars.
         // Issue #1157.
         //
         // For manual stretch: timelineSeconds = sourceSeconds / speedRatio.
         auto srcToTimeline = [&](double sourceDelta) -> double {
-            if (clip.autoTempo && clip.sourceBPM > 0.0 && bpm > 0.0) {
-                return sourceDelta * clip.sourceBPM / bpm;
+            if (clip.autoTempo && clip.sourceBpm > 0.0 && bpm > 0.0) {
+                return sourceDelta * clip.sourceBpm / bpm;
             }
             if (clip.autoTempo && clipLoopLength > 0.0 && clip.loopLengthBeats > 0.0 && bpm > 0.0) {
                 return sourceDelta * (clip.loopLengthBeats * 60.0 / bpm) / clipLoopLength;

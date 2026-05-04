@@ -230,22 +230,21 @@ class ClipManager {
     // =====================================================================
     // Session audio-clip canonical update path (issue #1157)
     //
-    // For session/autoTempo audio clips, ClipInfo holds two roles:
-    //   - DETECTED METADATA — sourceBPM, sourceNumBeats. Properties of the
-    //     audio file. Only ever written via this struct. Inspector "BPM"
-    //     edits write here (a correction, not a stretch).
-    //   - USER INTENT — lengthBeats (timeline beats the clip occupies on
-    //     the session/timeline), loopStartBeats / loopLengthBeats (sub-loop
-    //     region in source-beat domain), offsetBeats, startBeats. The beat
-    //     slider edits lengthBeats and never touches sourceBPM.
+    // For session/autoTempo audio clips, ClipInfo holds three roles:
+    //   - SOURCE FACTS — sourceDurationSeconds. The file's duration in time.
+    //   - SOURCE INTERPRETATION — sourceBpm, sourceTotalBeats, source loop
+    //     region. User-correctable metadata describing the file musically.
+    //   - CLIP PLACEMENT — placement.lengthBeats/startBeat. Timeline intent.
+    //     Resize/extend edits placement and never touches source interpretation.
     //
     // Time-domain fields (length, startTime, offset, loopStart, loopLength)
     // are DERIVED inside applyAudioClipBeats and must not be set directly
     // by callers in this path. speedRatio is forced to 1.0.
     // =====================================================================
     struct AudioClipBeatsUpdate {
-        std::optional<double> sourceBPM;
-        std::optional<double> sourceNumBeats;
+        std::optional<double> sourceDurationSeconds;
+        std::optional<double> sourceBpm;
+        std::optional<double> sourceTotalBeats;
         std::optional<double> lengthBeats;
         std::optional<double> loopStartBeats;
         std::optional<double> loopLengthBeats;
@@ -259,6 +258,14 @@ class ClipManager {
      *         BPM-detection callbacks. No-op for non-autoTempo / non-audio
      *         clips. */
     void applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update, double projectBPM);
+
+    /** @brief Correct the source interpretation BPM. Uses source duration to
+     *         keep sourceTotalBeats consistent. Does not edit clip placement. */
+    void setAudioSourceBPM(ClipId clipId, double sourceBpm, double projectBPM);
+
+    /** @brief Correct the source interpretation total-beat count. Uses source
+     *         duration to keep sourceBpm consistent. Does not edit placement. */
+    void setAudioSourceTotalBeats(ClipId clipId, double sourceTotalBeats, double projectBPM);
 
     /** @brief Refresh the seconds-domain cache (length, startTime, offset,
      *         loopStart, loopLength) on a beat-authoritative clip from its

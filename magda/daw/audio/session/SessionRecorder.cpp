@@ -233,8 +233,9 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
 
         // Copy beat-mode / auto-tempo properties so the arrangement clip
         // stays in the same time-stretch mode as the session clip.
-        newClip->sourceBPM = sessionClip->sourceBPM;
-        newClip->sourceNumBeats = sessionClip->sourceNumBeats;
+        newClip->sourceDurationSeconds = sessionClip->sourceDurationSeconds;
+        newClip->sourceBpm = sessionClip->sourceBpm;
+        newClip->sourceTotalBeats = sessionClip->sourceTotalBeats;
         newClip->timeStretchMode = sessionClip->timeStretchMode;
         newClip->loopStartBeats = sessionClip->loopStartBeats;
         newClip->loopLengthBeats = sessionClip->loopLengthBeats;

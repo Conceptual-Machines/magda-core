@@ -2248,7 +2248,7 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     }
 
     // Determine clip parameters
-    double clipBPM = clip->sourceBPM > 0.0 ? clip->sourceBPM : 120.0;
+    double clipBPM = clip->sourceBpm > 0.0 ? clip->sourceBpm : 120.0;
     double beatDuration = 60.0 / clipBPM;  // seconds per beat
     double clipStartSec = clip->offset;    // source offset
 

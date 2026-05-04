@@ -78,7 +78,7 @@ class ClipOperations {
         // be updated when the user explicitly changes it, not during tempo-driven resizes.
 
         if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty()) {
-            bool isAutoTempo = clip.autoTempo && clip.sourceBPM > 0.0 && bpm > 0.0;
+            bool isAutoTempo = clip.autoTempo && clip.sourceBpm > 0.0 && bpm > 0.0;
 
             if (isAutoTempo) {
                 // Auto-tempo: work in beats (authoritative), derive seconds
@@ -91,7 +91,7 @@ class ClipOperations {
                                        wrapPhase(relBeats + deltaBeats, clip.loopLengthBeats);
                 }
                 // Derive source-time seconds for paint/display
-                clip.offset = clip.offsetBeats * 60.0 / clip.sourceBPM;
+                clip.offset = clip.offsetBeats * 60.0 / clip.sourceBpm;
                 if (!clip.loopEnabled)
                     clip.loopStart = clip.offset;
             } else {
@@ -341,37 +341,22 @@ class ClipOperations {
     }
 
     /**
-     * @brief Update autoTempo clip for a new total beat count (stretch).
-     * Adjusts sourceBPM so TE stretches the same source audio to fill newBeats.
-     * Mirrors ClipManager::setLengthBeats logic.
+     * @brief Update an auto-tempo clip for a new project-timeline beat count.
+     *
+     * This is clip placement only. Source BPM, source beat count, and source
+     * loop range are file/source metadata and must not be stretched by changing
+     * the clip's displayed duration.
      */
-    static inline void stretchAutoTempoBeats(ClipInfo& clip, double newTotalBeats, double /*bpm*/) {
-        double sourceSeconds = clip.loopLength > 0.0 ? clip.loopLength : clip.getSourceLength();
-        if (sourceSeconds <= 0.0)
+    static inline void stretchAutoTempoBeats(ClipInfo& clip, double newTotalBeats, double bpm) {
+        if (newTotalBeats <= 0.0)
             return;
 
-        // Compute stretch ratio from total beats (handles multiple loop cycles)
-        double oldTotalBeats =
-            clip.placement.lengthBeats > 0.0 ? clip.placement.lengthBeats : clip.loopLengthBeats;
-        if (oldTotalBeats <= 0.0)
-            return;
+        double startBeats = clip.placement.startBeat;
+        if (bpm > 0.0)
+            startBeats = clip.startTime * bpm / 60.0;
 
-        double stretchRatio = newTotalBeats / oldTotalBeats;
-
-        // Scale per-cycle beats proportionally
-        double newLoopBeats = clip.loopLengthBeats * stretchRatio;
-
-        // Update sourceBPM from new per-cycle beats
-        double oldSourceBPM = clip.sourceBPM;
-        clip.sourceBPM = newLoopBeats * 60.0 / sourceSeconds;
-
-        if (oldSourceBPM > 0.0 && clip.sourceNumBeats > 0.0) {
-            clip.sourceNumBeats *= clip.sourceBPM / oldSourceBPM;
-        }
-
-        clip.loopLengthBeats = newLoopBeats;
-        clip.setPlacementBeats(clip.placement.startBeat, newTotalBeats);
-        clip.loopStartBeats = clip.loopStart * clip.sourceBPM / 60.0;
+        clip.setPlacementBeats(startBeats, newTotalBeats);
+        clip.deriveTimesFromBeats(bpm);
     }
 
     /**
@@ -452,13 +437,13 @@ class ClipOperations {
         if (clip.loopLengthBeats > 0.0) {
             double start = clip.loopStartBeats;
             double length = clip.loopLengthBeats;
-            // Clamp to sourceNumBeats (TE can't read beyond the file)
-            if (clip.sourceNumBeats > 0.0) {
-                if (length > clip.sourceNumBeats) {
-                    length = clip.sourceNumBeats;
+            // Clamp to sourceTotalBeats (TE can't read beyond the file)
+            if (clip.sourceTotalBeats > 0.0) {
+                if (length > clip.sourceTotalBeats) {
+                    length = clip.sourceTotalBeats;
                     start = 0.0;
-                } else if (start + length > clip.sourceNumBeats) {
-                    start = clip.sourceNumBeats - length;
+                } else if (start + length > clip.sourceTotalBeats) {
+                    start = clip.sourceTotalBeats - length;
                     if (start < 0.0)
                         start = 0.0;
                 }
@@ -466,21 +451,21 @@ class ClipOperations {
             return {start, length};
         }
 
-        // Derive from source-time seconds using sourceBPM
-        if (clip.sourceBPM > 0.0) {
-            double srcBps = clip.sourceBPM / 60.0;
+        // Derive from source-time seconds using sourceBpm
+        if (clip.sourceBpm > 0.0) {
+            double srcBps = clip.sourceBpm / 60.0;
             double start = clip.loopStart * srcBps;
             double length = clip.loopLength * srcBps;
 
             // TE's setLoopRangeBeats clamps end to loopInfo.getNumBeats().
             // In time-based mode loops can wrap past file end, but beat-based
             // mode cannot. Shift the start back so the full region fits.
-            if (clip.sourceNumBeats > 0.0) {
-                if (length > clip.sourceNumBeats) {
-                    length = clip.sourceNumBeats;
+            if (clip.sourceTotalBeats > 0.0) {
+                if (length > clip.sourceTotalBeats) {
+                    length = clip.sourceTotalBeats;
                     start = 0.0;
-                } else if (start + length > clip.sourceNumBeats) {
-                    start = clip.sourceNumBeats - length;
+                } else if (start + length > clip.sourceTotalBeats) {
+                    start = clip.sourceTotalBeats - length;
                     if (start < 0.0)
                         start = 0.0;
                 }
@@ -542,8 +527,8 @@ class ClipOperations {
                 clip.timeStretchMode = 4;  // soundtouchBetter
 
             // Convert current offset to beats
-            if (clip.sourceBPM > 0.0)
-                clip.offsetBeats = clip.offset * clip.sourceBPM / 60.0;
+            if (clip.sourceBpm > 0.0)
+                clip.offsetBeats = clip.offset * clip.sourceBpm / 60.0;
 
             // Convert current timeline position to beats
             clip.setPlacementBeats((clip.startTime * bpm) / 60.0, clip.placement.lengthBeats);
@@ -555,44 +540,44 @@ class ClipOperations {
                 clip.setLoopLengthFromTimeline(clip.length);
             }
 
-            // Issue #1157: when the file carries tempo metadata (sourceBPM +
-            // sourceNumBeats from TE's loopInfo), default lengthBeats to the
+            // Issue #1157: when the file carries source interpretation
+            // metadata (sourceBpm + total beats), default lengthBeats to the
             // file's intrinsic beat count so a freshly-dropped loop becomes
             // exactly its musical length on toggling BEAT (e.g. a 4-bar loop
             // is 16 beats long, not 24 derived from timeline-seconds × project
             // BPM). For files without metadata, fall back to the
             // length × projectBPM derivation.
-            if (clip.sourceNumBeats > 0.0)
-                clip.setPlacementBeats(clip.placement.startBeat, clip.sourceNumBeats);
+            if (clip.sourceTotalBeats > 0.0)
+                clip.setPlacementBeats(clip.placement.startBeat, clip.sourceTotalBeats);
             else
                 clip.setPlacementBeats(clip.placement.startBeat, clip.getLengthInBeats(bpm));
 
             // loopLengthBeats lives in the SOURCE-beat domain, so it is
-            // derived from sourceBPM (not projectBPM). When sourceBPM is
+            // derived from sourceBpm (not projectBPM). When sourceBpm is
             // unknown we fall back to projectBPM — the two agree until
             // detection / metadata lands.
-            double srcBpm = clip.sourceBPM > 0.0 ? clip.sourceBPM : bpm;
+            double srcBpm = clip.sourceBpm > 0.0 ? clip.sourceBpm : bpm;
             if (clip.loopEnabled && clip.loopLength > 0.0) {
                 clip.loopLengthBeats = clip.loopLength * srcBpm / 60.0;
                 clip.loopStartBeats = clip.loopStart * srcBpm / 60.0;
             } else {
-                clip.loopLengthBeats =
-                    clip.sourceNumBeats > 0.0 ? clip.sourceNumBeats : clip.placement.lengthBeats;
+                clip.loopLengthBeats = clip.sourceTotalBeats > 0.0 ? clip.sourceTotalBeats
+                                                                   : clip.placement.lengthBeats;
                 clip.loopStartBeats = 0.0;
             }
 
-            // Calibrate sourceBPM to the current playback speed so that enabling
+            // Calibrate sourceBpm to the current playback speed so that enabling
             // autoTempo doesn't change the audible playback speed — but only when
-            // sourceBPM matches the project BPM (i.e., was defaulted, not detected).
-            // When sourceBPM is from real BPM detection, preserve it so TE applies
-            // the correct stretch ratio (projectBPM / sourceBPM).
+            // sourceBpm matches the project BPM (i.e., was defaulted, not detected).
+            // When sourceBpm is from real BPM detection, preserve it so TE applies
+            // the correct stretch ratio (projectBPM / sourceBpm).
             double effectiveBPM = bpm / clip.speedRatio;
-            if (std::abs(clip.sourceBPM - effectiveBPM) < 0.1) {
-                if (clip.sourceBPM > 0.0 && clip.sourceNumBeats > 0.0) {
-                    double fileDuration = clip.sourceNumBeats * 60.0 / clip.sourceBPM;
-                    clip.sourceNumBeats = effectiveBPM * fileDuration / 60.0;
+            if (std::abs(clip.sourceBpm - effectiveBPM) < 0.1) {
+                if (clip.sourceDurationSeconds <= 0.0 && clip.sourceBpm > 0.0 &&
+                    clip.sourceTotalBeats > 0.0) {
+                    clip.sourceDurationSeconds = clip.sourceTotalBeats * 60.0 / clip.sourceBpm;
                 }
-                clip.sourceBPM = effectiveBPM;
+                clip.setSourceBpmPreservingDuration(effectiveBPM);
             }
 
             // Force speedRatio to 1.0 (TE requirement for autoTempo)

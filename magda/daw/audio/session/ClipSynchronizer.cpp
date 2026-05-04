@@ -302,8 +302,8 @@ void ClipSynchronizer::clipPropertyChanged(ClipId clipId) {
                     }
 
                 }  // if (teClip)
-            }  // else (already synced)
-        }  // if (sceneIndex >= 0)
+            }      // else (already synced)
+        }          // if (sceneIndex >= 0)
         return;
     }
 
@@ -483,7 +483,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
             auto& loopInfoRef = audioClipPtr->getLoopInfo();
             auto waveInfo = audioClipPtr->getWaveInfo();
             if (auto* mutableClip = cm.getClip(clipId)) {
-                bool sourceBpmWasUnset = mutableClip->sourceBPM <= 0.0;
+                bool sourceBpmWasUnset = mutableClip->sourceBpm <= 0.0;
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
                 if (sourceBpmWasUnset && mutableClip->autoTempo) {
@@ -919,11 +919,11 @@ te::Clip* ClipSynchronizer::getSessionTeClip(ClipId clipId) {
 
 void ClipSynchronizer::configureSessionAutoTempo(te::WaveAudioClip* audioClip,
                                                  const ClipInfo* clip) {
-    // Sync sourceBPM to TE's loopInfo
-    if (clip->sourceBPM > 0.0) {
+    // Sync sourceBpm to TE's loopInfo
+    if (clip->sourceBpm > 0.0) {
         auto waveInfo = audioClip->getWaveInfo();
         auto& li = audioClip->getLoopInfo();
-        li.setBpm(clip->sourceBPM, waveInfo);
+        li.setBpm(clip->sourceBpm, waveInfo);
     }
 
     // Ensure valid stretch mode (autoTempo requires time-stretching)
@@ -1432,7 +1432,7 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             auto waveInfo = audioClipPtr->getWaveInfo();
             auto& cm = ClipManager::getInstance();
             if (auto* mutableClip = cm.getClip(clipId)) {
-                bool sourceBpmWasUnset = mutableClip->sourceBPM <= 0.0;
+                bool sourceBpmWasUnset = mutableClip->sourceBpm <= 0.0;
                 mutableClip->setSourceMetadata(loopInfoRef.getNumBeats(),
                                                loopInfoRef.getBpm(waveInfo));
                 if (sourceBpmWasUnset && mutableClip->autoTempo) {
@@ -1611,16 +1611,16 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
             // Get tempo for beat calculations
             double bpm = edit_.tempoSequence.getTempo(0)->getBpm();
 
-            // Override TE's loopInfo BPM to match our calibrated sourceBPM.
-            // setAutoTempo calibrates sourceBPM = projectBPM / speedRatio so that
+            // Override TE's loopInfo BPM to match our calibrated sourceBpm.
+            // setAutoTempo calibrates sourceBpm = projectBPM / speedRatio so that
             // enabling autoTempo doesn't change playback speed.  TE uses loopInfo
             // to map source beats ↔ source time, so the two must agree.
-            if (clip->sourceBPM > 0.0) {
+            if (clip->sourceBpm > 0.0) {
                 auto waveInfo = audioClipPtr->getWaveInfo();
                 auto& li = audioClipPtr->getLoopInfo();
                 double currentLoopInfoBpm = li.getBpm(waveInfo);
-                if (std::abs(currentLoopInfoBpm - clip->sourceBPM) > 0.1) {
-                    li.setBpm(clip->sourceBPM, waveInfo);
+                if (std::abs(currentLoopInfoBpm - clip->sourceBpm) > 0.1) {
+                    li.setBpm(clip->sourceBpm, waveInfo);
                 }
             }
 

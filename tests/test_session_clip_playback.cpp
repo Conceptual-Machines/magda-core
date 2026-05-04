@@ -962,8 +962,8 @@ TEST_CASE("AutoTempo session clip timing: 172bpm clip in 120bpm project",
     ClipInfo clip;
     clip.type = ClipType::Audio;
     clip.audioFilePath = "loop_172bpm.wav";
-    clip.sourceBPM = 172.0;
-    clip.sourceNumBeats = 8.0;         // 2 bars = 8 beats
+    clip.sourceBpm = 172.0;
+    clip.sourceTotalBeats = 8.0;       // 2 bars = 8 beats
     clip.length = 8.0 * 60.0 / 172.0;  // ~2.79s original duration
     clip.speedRatio = 1.0;
     clip.loopEnabled = true;
@@ -1019,8 +1019,8 @@ TEST_CASE("AutoTempo session clip timing: sub-loop region",
     ClipInfo clip;
     clip.type = ClipType::Audio;
     clip.audioFilePath = "sample.wav";
-    clip.sourceBPM = 140.0;
-    clip.sourceNumBeats = 8.0;
+    clip.sourceBpm = 140.0;
+    clip.sourceTotalBeats = 8.0;
     clip.length = 8.0 * 60.0 / 140.0;
     clip.speedRatio = 1.0;
     clip.loopEnabled = true;
@@ -1034,7 +1034,7 @@ TEST_CASE("AutoTempo session clip timing: sub-loop region",
     auto [clipLen, loopLen] = computeAutoTempoTimings(clip, PROJECT_BPM);
 
     SECTION("Clip length stays at file's musical beat count") {
-        // Issue #1157: lengthBeats = sourceNumBeats. clipLen derives from
+        // Issue #1157: lengthBeats = sourceTotalBeats. clipLen derives from
         // lengthBeats × 60 / projectBPM.
         REQUIRE(clip.lengthBeats == Catch::Approx(8.0));
         REQUIRE(clipLen == Catch::Approx(8.0 * 60.0 / PROJECT_BPM));
@@ -1050,8 +1050,8 @@ TEST_CASE("AutoTempo session clip timing: BPM edge cases",
     ClipInfo clip;
     clip.type = ClipType::Audio;
     clip.audioFilePath = "sample.wav";
-    clip.sourceBPM = 120.0;
-    clip.sourceNumBeats = 4.0;
+    clip.sourceBpm = 120.0;
+    clip.sourceTotalBeats = 4.0;
     clip.length = 2.0;
     clip.speedRatio = 1.0;
     clip.loopEnabled = true;
@@ -1090,8 +1090,8 @@ TEST_CASE("AutoTempo session clip: getAutoTempoBeatRange for session loop",
     ClipInfo clip;
     clip.type = ClipType::Audio;
     clip.audioFilePath = "loop.wav";
-    clip.sourceBPM = 172.0;
-    clip.sourceNumBeats = 8.0;
+    clip.sourceBpm = 172.0;
+    clip.sourceTotalBeats = 8.0;
     clip.length = 8.0 * 60.0 / 172.0;
     clip.speedRatio = 1.0;
     clip.loopEnabled = true;
@@ -1105,7 +1105,7 @@ TEST_CASE("AutoTempo session clip: getAutoTempoBeatRange for session loop",
         auto [startBeats, lengthBeats] = ClipOperations::getAutoTempoBeatRange(clip, PROJECT_BPM);
         REQUIRE(startBeats >= 0.0);
         REQUIRE(lengthBeats > 0.0);
-        REQUIRE(startBeats + lengthBeats <= clip.sourceNumBeats + 0.001);
+        REQUIRE(startBeats + lengthBeats <= clip.sourceTotalBeats + 0.001);
     }
 
     SECTION("Beat range matches stored loopLengthBeats") {

@@ -324,13 +324,13 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // Auto-tempo + beat-domain loop region (clips are beat-authoritative).
         auto* clip = ClipManager::getInstance().getClip(clipId);
         clip->autoTempo = true;
-        clip->sourceBPM = 60.0;
-        clip->sourceNumBeats = 5.0;  // 5s sine WAV at 60 BPM
+        clip->sourceBpm = 60.0;
+        clip->sourceTotalBeats = 5.0;  // 5s sine WAV at 60 BPM
         clip->loopEnabled = true;
         clip->loopStartBeats = 0.0;
         clip->loopLengthBeats = 2.0;
-        clip->loopStart = clip->loopStartBeats * 60.0 / clip->sourceBPM;
-        clip->loopLength = clip->loopLengthBeats * 60.0 / clip->sourceBPM;
+        clip->loopStart = clip->loopStartBeats * 60.0 / clip->sourceBpm;
+        clip->loopLength = clip->loopLengthBeats * 60.0 / clip->sourceBpm;
         f.clipSync->syncClipToEngine(clipId);
 
         expect(teClip->isLooping(), "TE clip should be looping");
@@ -346,7 +346,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
     }
 
     void testLoopTimeBased() {
-        beginTest("Loop with container longer than region (non-integer multiple): partial second cycle plays");
+        beginTest("Loop with container longer than region (non-integer multiple): partial second "
+                  "cycle plays");
 
         // Reproduces the bug from the screenshot:
         //   120 BPM, clip = 3 bars, loop region = 2 bars.
@@ -371,8 +372,8 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // (1.5× the loop region) via setPlacementBeats; deriveTimesFromBeats
         // refreshes the seconds cache so the renderer agrees with TE.
         clip->autoTempo = true;
-        clip->sourceBPM = 60.0;
-        clip->sourceNumBeats = 5.0;
+        clip->sourceBpm = 60.0;
+        clip->sourceTotalBeats = 5.0;
         clip->loopEnabled = true;
         clip->loopStartBeats = 0.0;
         clip->loopLengthBeats = 2.0;

@@ -1984,7 +1984,7 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
         return;  // Only boundary markers
 
     // Disable warp before splitting — splitClip uses a linear formula
-    // (tempo/sourceBPM or speedRatio) to compute source offsets, but warp
+    // (tempo/sourceBpm or speedRatio) to compute source offsets, but warp
     // markers define a non-linear mapping.  With warp off the linear formula
     // is correct, so we convert marker sourceTime values to the linear
     // timeline domain.
@@ -2004,8 +2004,8 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     for (size_t i = 1; i + 1 < markers.size(); ++i) {
         double sourceDelta = markers[i].sourceTime - clipOffset;
         double splitTime;
-        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0) {
-            splitTime = clipStart + sourceDelta * clip->sourceBPM / tempo;
+        if (clip->autoTempo && clip->sourceBpm > 0.0 && tempo > 0.0) {
+            splitTime = clipStart + sourceDelta * clip->sourceBpm / tempo;
         } else {
             splitTime = clipStart + sourceDelta / clip->speedRatio;
         }
@@ -2216,8 +2216,8 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
 
     auto sourceToTimeline = [&](double sourceTime) -> double {
         double sourceDelta = sourceTime - clipOffset;
-        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0)
-            return clipStart + sourceDelta * clip->sourceBPM / tempo;
+        if (clip->autoTempo && clip->sourceBpm > 0.0 && tempo > 0.0)
+            return clipStart + sourceDelta * clip->sourceBpm / tempo;
         else
             return clipStart + sourceDelta / clip->speedRatio;
     };
@@ -2255,8 +2255,8 @@ void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, Aud
     // Convert timeline grid lines to source-file boundaries
     auto timelineToSource = [&](double timelinePos) -> double {
         double delta = timelinePos - clipStart;
-        if (clip->autoTempo && clip->sourceBPM > 0.0 && tempo > 0.0)
-            return clipOffset + delta * tempo / clip->sourceBPM;
+        if (clip->autoTempo && clip->sourceBpm > 0.0 && tempo > 0.0)
+            return clipOffset + delta * tempo / clip->sourceBpm;
         else
             return clipOffset + delta * clip->speedRatio;
     };
