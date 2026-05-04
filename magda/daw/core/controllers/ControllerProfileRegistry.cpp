@@ -3,6 +3,8 @@
 #include <algorithm>
 
 #include "../AppPaths.hpp"
+#include "../Config.hpp"
+#include "ControllerRegistry.hpp"
 
 namespace magda {
 
@@ -101,14 +103,80 @@ juce::File ControllerProfileRegistry::findSourceFileForProfileId(const juce::Str
 
 void ControllerProfileRegistry::load() {
     profiles_.clear();
+    factoryProfileIds_.clear();
 
     // Bundled (factory) pool first; user pool second so user entries override
     // bundled entries with the same id.
-    if (auto bundledDir = findBundledControllersDirectory(); bundledDir.isDirectory())
+    if (auto bundledDir = findBundledControllersDirectory(); bundledDir.isDirectory()) {
         loadFromDirectory(bundledDir);
+        // Snapshot ids from the bundled load — anything in profiles_ at this
+        // point came from the factory pool. Subsequent user-pool loads may
+        // override (same id) but they remain "factory" for view-gating.
+        factoryProfileIds_.reserve(profiles_.size());
+        for (const auto& p : profiles_)
+            factoryProfileIds_.push_back(p.id);
+    }
 
     if (auto userDir = userControllersDirectory(); userDir.isDirectory())
         loadFromDirectory(userDir);
+
+    // One-shot migration: existing controller instances reference factory
+    // profiles by id. Promote those ids into the enabled list so they keep
+    // showing in the Add Profile picker after the gate landed.
+    auto& cfg = Config::getInstance();
+    auto enabled = cfg.getEnabledFactoryProfileIds();
+    juce::StringArray have;
+    for (const auto& id : enabled)
+        have.add(juce::String(id));
+
+    bool changed = false;
+    for (const auto& c : ControllerRegistry::getInstance().all()) {
+        if (c.profileId.isEmpty())
+            continue;
+        if (!isFactoryProfile(c.profileId))
+            continue;
+        if (have.contains(c.profileId))
+            continue;
+        enabled.push_back(c.profileId.toStdString());
+        have.add(c.profileId);
+        changed = true;
+    }
+    if (changed) {
+        cfg.setEnabledFactoryProfileIds(std::move(enabled));
+        cfg.save();
+    }
+}
+
+bool ControllerProfileRegistry::isFactoryProfile(const juce::String& id) const {
+    return std::find(factoryProfileIds_.begin(), factoryProfileIds_.end(), id) !=
+           factoryProfileIds_.end();
+}
+
+std::vector<ControllerProfile> ControllerProfileRegistry::visibleProfiles() const {
+    juce::StringArray enabled;
+    for (const auto& id : Config::getInstance().getEnabledFactoryProfileIds())
+        enabled.add(juce::String(id));
+
+    std::vector<ControllerProfile> out;
+    out.reserve(profiles_.size());
+    for (const auto& p : profiles_) {
+        if (!isFactoryProfile(p.id) || enabled.contains(p.id))
+            out.push_back(p);
+    }
+    return out;
+}
+
+std::vector<ControllerProfile> ControllerProfileRegistry::availableFactoryProfiles() const {
+    juce::StringArray enabled;
+    for (const auto& id : Config::getInstance().getEnabledFactoryProfileIds())
+        enabled.add(juce::String(id));
+
+    std::vector<ControllerProfile> out;
+    for (const auto& p : profiles_) {
+        if (isFactoryProfile(p.id) && !enabled.contains(p.id))
+            out.push_back(p);
+    }
+    return out;
 }
 
 void ControllerProfileRegistry::loadFromDirectory(const juce::File& dir) {

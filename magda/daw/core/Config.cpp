@@ -217,6 +217,12 @@ void Config::save() {
             arr.add(toJuceString(name));
         root->setProperty("enabledFactoryLuaScripts", arr);
     }
+    if (!enabledFactoryProfileIds_.empty()) {
+        juce::Array<juce::var> arr;
+        for (const auto& id : enabledFactoryProfileIds_)
+            arr.add(toJuceString(id));
+        root->setProperty("enabledFactoryProfileIds", arr);
+    }
 
     // Global bindings
     if (!globalBindings_.isVoid())
@@ -540,6 +546,14 @@ void Config::load() {
         if (v.isArray()) {
             for (const auto& item : *v.getArray())
                 enabledFactoryLuaScripts_.push_back(item.toString().toStdString());
+        }
+    }
+    enabledFactoryProfileIds_.clear();
+    if (obj->hasProperty("enabledFactoryProfileIds")) {
+        auto v = obj->getProperty("enabledFactoryProfileIds");
+        if (v.isArray()) {
+            for (const auto& item : *v.getArray())
+                enabledFactoryProfileIds_.push_back(item.toString().toStdString());
         }
     }
 

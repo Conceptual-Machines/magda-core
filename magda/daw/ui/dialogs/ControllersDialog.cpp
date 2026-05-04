@@ -66,6 +66,10 @@ class ControllerProfilesPage : public juce::Component,
         uploadButton_.onClick = [this]() { onUploadClicked(); };
         addAndMakeVisible(uploadButton_);
 
+        enableFactoryButton_.setButtonText(tr("controllers.enable_factory_profile"));
+        enableFactoryButton_.onClick = [this]() { onEnableFactoryClicked(); };
+        addAndMakeVisible(enableFactoryButton_);
+
         addButton_.setButtonText(tr("controllers.add_profile"));
         addButton_.onClick = [this]() { onAddClicked(); };
         addAndMakeVisible(addButton_);
@@ -107,13 +111,16 @@ class ControllerProfilesPage : public juce::Component,
         const int btnGap = 6;
         const int openW = 170;
         const int uploadW = 140;
+        const int enableW = 180;
         const int addW = 120;
 
-        // Left-to-right: Open Folder | Upload | + Add. Same shape as Scripts.
+        // Left-to-right: Open Folder | Upload | + Enable factory | + Add.
         auto buttonRow = bounds.removeFromTop(rowH);
         openFolderButton_.setBounds(buttonRow.removeFromLeft(openW));
         buttonRow.removeFromLeft(btnGap);
         uploadButton_.setBounds(buttonRow.removeFromLeft(uploadW));
+        buttonRow.removeFromLeft(btnGap);
+        enableFactoryButton_.setBounds(buttonRow.removeFromLeft(enableW));
         buttonRow.removeFromLeft(btnGap);
         addButton_.setBounds(buttonRow.removeFromLeft(addW));
         bounds.removeFromTop(8);
@@ -190,6 +197,7 @@ class ControllerProfilesPage : public juce::Component,
     }
 
     void onAddClicked();
+    void onEnableFactoryClicked();
     void onUploadClicked();
     void onOpenFolderClicked();
     void importProfileFile(const juce::File& file, const juce::String& title);
@@ -206,6 +214,7 @@ class ControllerProfilesPage : public juce::Component,
 
     juce::TextButton openFolderButton_;
     juce::TextButton uploadButton_;
+    juce::TextButton enableFactoryButton_;
     juce::TextButton addButton_;
     ControllerListModel listModel_;
     std::unique_ptr<juce::ListBox> list_;
@@ -362,7 +371,7 @@ void ControllerProfilesPage::importProfileFile(const juce::File& file, const juc
 void ControllerProfilesPage::onAddClicked() {
     auto& profileReg = ControllerProfileRegistry::getInstance();
     profileReg.load();
-    auto profiles = profileReg.all();
+    auto profiles = profileReg.visibleProfiles();
     if (profiles.empty()) {
         juce::AlertWindow::showMessageBox(juce::AlertWindow::InfoIcon,
                                           tr("controllers.add_profile"),
@@ -394,6 +403,48 @@ void ControllerProfilesPage::onAddClicked() {
                                return;
                            onProfilePicked(profiles[idx]);
                        });
+}
+
+void ControllerProfilesPage::onEnableFactoryClicked() {
+    auto& profileReg = ControllerProfileRegistry::getInstance();
+    profileReg.load();
+    auto available = profileReg.availableFactoryProfiles();
+    if (available.empty()) {
+        juce::AlertWindow::showMessageBox(juce::AlertWindow::InfoIcon,
+                                          tr("controllers.enable_factory_profile"),
+                                          tr("controllers.no_factory_profiles_available"));
+        return;
+    }
+
+    juce::PopupMenu menu;
+    for (size_t i = 0; i < available.size(); ++i) {
+        const auto& p = available[i];
+        juce::String label = p.vendor.isEmpty() ? p.name : p.vendor + "  \xc2\xb7  " + p.name;
+        menu.addItem(static_cast<int>(i + 1), label);
+    }
+
+    juce::Component::SafePointer<ControllerProfilesPage> self(this);
+    const auto availableCopy = available;
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(&enableFactoryButton_),
+        [self, availableCopy](int result) {
+            if (result <= 0)
+                return;
+            const size_t idx = static_cast<size_t>(result - 1);
+            if (idx >= availableCopy.size())
+                return;
+            auto& cfg = Config::getInstance();
+            auto enabled = cfg.getEnabledFactoryProfileIds();
+            const auto id = availableCopy[idx].id.toStdString();
+            if (std::find(enabled.begin(), enabled.end(), id) == enabled.end()) {
+                enabled.push_back(id);
+                cfg.setEnabledFactoryProfileIds(std::move(enabled));
+                cfg.save();
+            }
+            // The profile is now visible — drop straight into the Add picker.
+            if (auto* page = self.getComponent())
+                page->onAddClicked();
+        });
 }
 
 void ControllerProfilesPage::onProfilePicked(const ControllerProfile& profile) {
@@ -521,9 +572,14 @@ void ControllerProfilesPage::onRowRemoveRequested(int row) {
 
     juce::PopupMenu menu;
     const bool haveProfile = c.profileId.isNotEmpty();
+    const bool isFactory =
+        haveProfile &&
+        ControllerProfileRegistry::getInstance().isFactoryProfile(c.profileId);
     if (haveProfile)
         menu.addItem(2, tr("controllers.show_in_finder"));
     menu.addItem(1, tr("controllers.remove"));
+    if (isFactory)
+        menu.addItem(3, tr("controllers.disable_factory_profile"));
 
     const auto id = c.id;
     const auto name = c.name;
@@ -535,6 +591,17 @@ void ControllerProfilesPage::onRowRemoveRequested(int row) {
                 ControllerProfileRegistry::getInstance().findSourceFileForProfileId(profileId);
             if (file.existsAsFile())
                 file.revealToUser();
+            return;
+        }
+        if (result == 3) {
+            auto& cfg = Config::getInstance();
+            auto enabled = cfg.getEnabledFactoryProfileIds();
+            const auto idStr = profileId.toStdString();
+            enabled.erase(std::remove(enabled.begin(), enabled.end(), idStr), enabled.end());
+            cfg.setEnabledFactoryProfileIds(std::move(enabled));
+            cfg.save();
+            // The instance keeps working — disable only hides the factory
+            // profile from the Add Profile picker for future use.
             return;
         }
         if (result != 1)

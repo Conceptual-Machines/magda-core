@@ -48,8 +48,22 @@ class ControllerProfileRegistry {
     // Queries
     // ========================================================================
 
-    /** Return all profiles loaded from the user directory. */
+    /** Return all profiles loaded from any pool — used by code that must
+     *  resolve any controller instance's profileId, including instances
+     *  whose factory profile is currently disabled in the picker UI. */
     std::vector<ControllerProfile> all() const;
+
+    /** Profiles that should appear in the Add Profile picker — user-imported
+     *  profiles plus factory profiles whose id is in
+     *  Config::enabledFactoryProfileIds. */
+    std::vector<ControllerProfile> visibleProfiles() const;
+
+    /** Factory profiles NOT yet enabled — what the "+ Enable factory profile"
+     *  picker offers. */
+    std::vector<ControllerProfile> availableFactoryProfiles() const;
+
+    /** True iff `id` was loaded from the bundled controllers directory. */
+    bool isFactoryProfile(const juce::String& id) const;
 
     /** Find a profile by stable id string. Returns nullopt if not found. */
     std::optional<ControllerProfile> findById(const juce::String& id) const;
@@ -84,6 +98,11 @@ class ControllerProfileRegistry {
     void loadFromDirectory(const juce::File& dir);
 
     std::vector<ControllerProfile> profiles_;
+
+    /** Ids of profiles loaded from the bundled directory, captured during
+     *  load() so isFactoryProfile() can answer in O(n) without re-reading
+     *  the filesystem. */
+    std::vector<juce::String> factoryProfileIds_;
 };
 
 }  // namespace magda
