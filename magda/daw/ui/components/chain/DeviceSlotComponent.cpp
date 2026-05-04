@@ -1953,10 +1953,10 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
         }
 
         // Additional line below pagination row (for external plugin param grid only)
-        if (!isInternalDevice() ||
+        if (!isInternalDevice() || isFaust_ ||
             !(toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ ||
               compressorUI_ || reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ ||
-              pitchShiftUI_ || impulseResponseUI_ || utilityUI_ || faustUI_ || chordEngineUI_ ||
+              pitchShiftUI_ || impulseResponseUI_ || utilityUI_ || chordEngineUI_ ||
               arpeggiatorUI_ || stepSequencerUI_)) {
             int paginationBottom = headerBottom + PAGINATION_HEIGHT + 4;
             g.drawHorizontalLine(paginationBottom, left, right);
@@ -2141,11 +2141,31 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // (Second header carve + programs combo placement happen in the
     //  `if (!collapsed_)` block above so the dropdown can sit flush right.)
 
+    // Faust uses a hybrid layout: the bespoke header strip (logo /
+    // Load / Edit / DSP name) sits at the top, and the standard
+    // paramGrid_ renders the body — same drag-and-drop / mod / macro
+    // / MIDI Learn / automation behaviour as every other device,
+    // driven by FaustProcessor's per-slot ParameterInfo.
+    if (isFaust_ && faustUI_) {
+        auto headerArea = contentArea.removeFromTop(FaustUI::kHeaderHeight);
+        faustUI_->setBounds(headerArea);
+        faustUI_->setVisible(true);
+
+        auto labelFont = FontManager::getInstance().getUIFont(
+            DebugSettings::getInstance().getParamLabelFontSize());
+        auto valueFont = FontManager::getInstance().getUIFont(
+            DebugSettings::getInstance().getParamValueFontSize());
+        paramGrid_->setBounds(contentArea);
+        paramGrid_->setVisible(true);
+        paramGrid_->layoutContent(labelFont, valueFont);
+        return;
+    }
+
     // Check if this is an internal device with custom UI
     if (isInternalDevice() &&
         (toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ || eqUI_ || compressorUI_ ||
          reverbUI_ || delayUI_ || chorusUI_ || phaserUI_ || filterUI_ || pitchShiftUI_ ||
-         impulseResponseUI_ || utilityUI_ || faustUI_ || chordEngineUI_ || arpeggiatorUI_ ||
+         impulseResponseUI_ || utilityUI_ || chordEngineUI_ || arpeggiatorUI_ ||
          stepSequencerUI_)) {
         // Show custom minimal UI
         if (toneGeneratorUI_) {
@@ -2205,10 +2225,6 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             utilityUI_->setBounds(contentArea.reduced(4));
             utilityUI_->setVisible(true);
         }
-        if (faustUI_) {
-            faustUI_->setBounds(contentArea.reduced(4));
-            faustUI_->setVisible(true);
-        }
         if (chordEngineUI_) {
             chordEngineUI_->setBounds(contentArea.reduced(4));
             chordEngineUI_->setVisible(true);
@@ -2254,8 +2270,6 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
             impulseResponseUI_->setVisible(false);
         if (utilityUI_)
             utilityUI_->setVisible(false);
-        if (faustUI_)
-            faustUI_->setVisible(false);
         if (chordEngineUI_)
             chordEngineUI_->setVisible(false);
         if (arpeggiatorUI_)
@@ -3856,14 +3870,14 @@ void DeviceSlotComponent::createCustomUI() {
             if (auto* bridge = audioEngine->getAudioBridge()) {
                 auto plugin = bridge->getPlugin(device_.id);
                 auto* fp = dynamic_cast<daw::audio::FaustPlugin*>(plugin.get());
-                DBG("[FaustUI] DSC::createCustomUI deviceId="
-                    << (int)device_.id << " plugin=" << (plugin.get() ? "ok" : "NULL")
-                    << " cast=" << (fp ? "ok" : "FAILED")
-                    << " numParams=" << (fp ? fp->getAutomatableParameters().size() : -1));
                 if (fp)
                     faustUI_->setPlugin(fp);
             }
         }
+        // Bind device path so a successful DSP load can fire the
+        // track-devices-changed notification that rebuilds the slot
+        // and re-fetches DeviceInfo.parameters from the new pool.
+        faustUI_->setDevicePath(nodePath_);
         addAndMakeVisible(*faustUI_);
     } else if (device_.pluginId.containsIgnoreCase(
                    daw::audio::MidiChordEnginePlugin::xmlTypeName)) {

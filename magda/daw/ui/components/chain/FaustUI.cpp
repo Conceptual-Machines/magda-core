@@ -6,6 +6,7 @@
 #include "FaustCodeEditorWindow.hpp"
 #include "audio/FaustResources.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
+#include "core/TrackManager.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -25,9 +26,9 @@ FaustUI::FaustUI() {
     nameLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(nameLabel_);
 
-    errorLabel_.setFont(FontManager::getInstance().getMonoFont(10.0f));
+    errorLabel_.setFont(FontManager::getInstance().getMonoFont(9.0f));
     errorLabel_.setColour(juce::Label::textColourId, juce::Colours::red);
-    errorLabel_.setJustificationType(juce::Justification::topLeft);
+    errorLabel_.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(errorLabel_);
 
     loadButton_ = std::make_unique<magda::SvgButton>("Load DSP", BinaryData::folderopen_svg,
@@ -43,64 +44,26 @@ FaustUI::FaustUI() {
     editButton_->setIconPadding(2.0f);
     editButton_->onClick = [this] { showCodeEditor(); };
     addAndMakeVisible(*editButton_);
-
-    startTimerHz(30);
 }
 
-FaustUI::~FaustUI() {
-    stopTimer();
-}
+FaustUI::~FaustUI() = default;
 
 void FaustUI::setPlugin(magda::daw::audio::FaustPlugin* plugin) {
     plugin_ = plugin;
-    rebuildFromPlugin();
+    refreshNameLabel();
 }
 
-void FaustUI::rebuildFromPlugin() {
-    slots_.clear();
-    if (!plugin_) {
-        DBG("[FaustUI] rebuildFromPlugin: plugin_ is null");
+void FaustUI::refreshNameLabel() {
+    if (plugin_ == nullptr) {
+        nameLabel_.setText({}, juce::dontSendNotification);
         return;
     }
-
     nameLabel_.setText(plugin_->state.getProperty("dspName", juce::String()).toString(),
                        juce::dontSendNotification);
-
-    auto params = plugin_->getAutomatableParameters();
-    DBG("[FaustUI] rebuildFromPlugin: found " << params.size() << " params, bounds=(" << getWidth()
-                                              << "x" << getHeight() << ")");
-    for (auto p : params) {
-        auto slot = std::make_unique<ParamSlot>();
-        slot->param = p;
-
-        slot->label.setText(p->getParameterName(), juce::dontSendNotification);
-        slot->label.setFont(FontManager::getInstance().getUIFont(9.0f));
-        slot->label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-        slot->label.setJustificationType(juce::Justification::centred);
-        addAndMakeVisible(slot->label);
-
-        const auto& range = p->valueRange;
-        slot->slider.setSliderStyle(juce::Slider::LinearHorizontal);
-        slot->slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 60, 14);
-        slot->slider.setRange(range.start, range.end,
-                              range.interval > 0.0f ? range.interval : 0.0001);
-        slot->slider.setValue(p->getCurrentValue(), juce::dontSendNotification);
-
-        auto* paramPtr = p;
-        slot->slider.onValueChange = [paramPtr, s = slot.get()]() {
-            paramPtr->setParameter(static_cast<float>(s->slider.getValue()),
-                                   juce::sendNotificationSync);
-        };
-        addAndMakeVisible(slot->slider);
-
-        slots_.push_back(std::move(slot));
-    }
-
-    resized();
 }
 
 bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
-    if (!plugin_)
+    if (plugin_ == nullptr)
         return false;
     juce::String err;
     if (!plugin_->loadDspSource(name, source, err)) {
@@ -108,12 +71,27 @@ bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
         return false;
     }
     errorLabel_.setText({}, juce::dontSendNotification);
-    rebuildFromPlugin();
+    refreshNameLabel();
+
+    // Surface any pool diagnostics (overflow / duplicate idx) in the
+    // header's error label so silent failures don't slip through.
+    const auto& diagnostics = plugin_->getLastRebindDiagnostics();
+    if (!diagnostics.empty())
+        errorLabel_.setText(diagnostics.front(), juce::dontSendNotification);
+
+    // Tell TrackManager the device set changed; that fires the chain
+    // rebuild path which re-creates DeviceSlotComponent against fresh
+    // DeviceInfo, picking up the new pool layout via FaustProcessor.
+    if (devicePath_.trackId != INVALID_TRACK_ID)
+        TrackManager::getInstance().notifyTrackDevicesChanged(devicePath_.trackId);
+
+    if (onDspChanged)
+        onDspChanged();
     return true;
 }
 
 void FaustUI::showLoadMenu() {
-    if (!plugin_)
+    if (plugin_ == nullptr)
         return;
 
     juce::PopupMenu menu;
@@ -149,14 +127,14 @@ void FaustUI::loadFromFile() {
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this](const juce::FileChooser& fc) {
             auto file = fc.getResult();
-            if (!file.existsAsFile() || !plugin_)
+            if (!file.existsAsFile() || plugin_ == nullptr)
                 return;
             tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString());
         });
 }
 
 void FaustUI::showCodeEditor() {
-    if (!plugin_)
+    if (plugin_ == nullptr)
         return;
     if (editorWindow_) {
         editorWindow_->setVisible(true);
@@ -168,35 +146,25 @@ void FaustUI::showCodeEditor() {
     const auto source = plugin_->state.getProperty("dspSource", juce::String()).toString();
     editorWindow_ = std::make_unique<FaustCodeEditorWindow>(
         title, source, [this](const juce::String& src, juce::String& err) -> bool {
-            if (!plugin_)
+            if (plugin_ == nullptr)
                 return false;
             const auto editedName =
                 plugin_->state.getProperty("dspName", juce::String("Custom")).toString();
             if (!plugin_->loadDspSource(editedName, src, err))
                 return false;
             errorLabel_.setText({}, juce::dontSendNotification);
-            rebuildFromPlugin();
+            refreshNameLabel();
+            if (devicePath_.trackId != INVALID_TRACK_ID)
+                TrackManager::getInstance().notifyTrackDevicesChanged(devicePath_.trackId);
+            if (onDspChanged)
+                onDspChanged();
             return true;
         });
 }
 
-void FaustUI::timerCallback() {
-    // Pull external changes (automation playback, project load) back into the
-    // sliders. dontSendNotification avoids re-firing the onValueChange writer.
-    for (auto& s : slots_) {
-        if (!s->param || s->slider.isMouseButtonDown())
-            continue;
-        const float v = s->param->getCurrentValue();
-        if (std::abs(v - static_cast<float>(s->slider.getValue())) > 1e-6f)
-            s->slider.setValue(v, juce::dontSendNotification);
-    }
-}
-
 void FaustUI::paint(juce::Graphics& g) {
-    g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawRect(getLocalBounds(), 1);
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.05f));
-    g.fillRect(getLocalBounds().reduced(1));
+    g.fillRect(getLocalBounds());
 
     if (logo_) {
         logo_->drawWithin(g, logoBounds_,
@@ -209,43 +177,39 @@ void FaustUI::paint(juce::Graphics& g) {
     }
 
     g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-    g.drawHorizontalLine(headerBottomY_, static_cast<float>(getLocalBounds().getX() + 1),
-                         static_cast<float>(getLocalBounds().getRight() - 1));
+    const auto bounds = getLocalBounds();
+    g.drawHorizontalLine(bounds.getBottom() - 1, static_cast<float>(bounds.getX()),
+                         static_cast<float>(bounds.getRight()));
 }
 
 void FaustUI::resized() {
-    auto area = getLocalBounds().reduced(6);
+    auto area = getLocalBounds().reduced(6, 4);
 
-    auto header = area.removeFromTop(24);
-    headerBottomY_ = header.getBottom() + 2;
-    logoBounds_ = header.removeFromLeft(72).toFloat();
-    header.removeFromLeft(6);
+    // Logo on the left.
+    logoBounds_ = area.removeFromLeft(72).toFloat();
+    area.removeFromLeft(6);
+
+    // Edit / Load icons on the right (ordered left-to-right Load,
+    // Edit so removeFromRight in reverse order).
     constexpr int iconSize = 22;
     editButton_->setBounds(
-        header.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-    header.removeFromRight(4);
+        area.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+    area.removeFromRight(4);
     loadButton_->setBounds(
-        header.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-    header.removeFromRight(6);
-    nameBorderBounds_ = header.toFloat().reduced(0.0f, 1.0f);
-    nameLabel_.setBounds(header.reduced(8, 2));
+        area.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+    area.removeFromRight(6);
 
-    if (errorLabel_.getText().isNotEmpty())
-        errorLabel_.setBounds(area.removeFromBottom(28));
-
-    if (slots_.empty())
-        return;
-
-    const int labelHeight = 14;
-    const int sliderHeight = 18;
-    const int n = static_cast<int>(slots_.size());
-    const int colWidth = area.getWidth() / n;
-
-    for (int i = 0; i < n; ++i) {
-        auto col = area.removeFromLeft(colWidth).reduced(2, 0);
-        slots_[i]->label.setBounds(col.removeFromTop(labelHeight));
-        slots_[i]->slider.setBounds(col.removeFromTop(sliderHeight + 16));
+    // Optional error / diagnostic text right of the name; takes a
+    // chunk of width when present.
+    if (errorLabel_.getText().isNotEmpty()) {
+        const int errWidth = juce::jmin(area.getWidth() / 2, 200);
+        errorLabel_.setBounds(area.removeFromRight(errWidth));
+        area.removeFromRight(4);
     }
+
+    // Name box fills the middle.
+    nameBorderBounds_ = area.toFloat().reduced(0.0f, 1.0f);
+    nameLabel_.setBounds(area.reduced(8, 2));
 }
 
 }  // namespace magda::daw::ui

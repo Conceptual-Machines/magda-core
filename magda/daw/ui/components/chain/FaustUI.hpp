@@ -3,13 +3,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
-#include <vector>
 
-namespace tracktion {
-inline namespace engine {
-class AutomatableParameter;
-}
-}  // namespace tracktion
+#include "core/ChainNodePath.hpp"
 
 namespace magda::daw::audio {
 class FaustPlugin;
@@ -21,40 +16,64 @@ class SvgButton;
 
 namespace magda::daw::ui {
 
-// Generic UI for FaustPlugin: a header row with the loaded DSP name and a
-// "Load .dsp" button, plus a row of sliders for whatever
-// AutomatableParameters the plugin currently exposes — so the same UI works
-// for any .dsp the FaustPlugin happens to host.
-class FaustUI : public juce::Component, private juce::Timer {
+/**
+ * @brief Bespoke header strip for FaustPlugin.
+ *
+ * This component renders the Faust-specific header — logo, DSP name
+ * box, Load DSP icon, Edit code icon — and *only* that strip. The
+ * device's parameter widgets are rendered by the standard
+ * DeviceSlotComponent::paramGrid_, driven by the ParameterInfo that
+ * FaustProcessor produces from the FaustPlugin pool. Sharing the
+ * grid with every other device gives Faust mod/macro/automation/MIDI
+ * Learn drag-and-drop for free.
+ *
+ * After a successful Load or Edit-recompile, FaustUI fires
+ * onDspChanged so the host (DeviceSlotComponent) can trigger a
+ * track-devices-changed rebuild — paramGrid_ then re-fetches
+ * DeviceInfo.parameters from the (now refreshed) pool.
+ *
+ * Fixed-height layout: the host carves `kHeaderHeight` from the top
+ * of the content area for this strip, and gives the rest to
+ * paramGrid_.
+ */
+class FaustUI : public juce::Component {
   public:
+    static constexpr int kHeaderHeight = 36;
+
     FaustUI();
     ~FaustUI() override;
 
     void setPlugin(magda::daw::audio::FaustPlugin* plugin);
 
+    /// Path of the device this UI is bound to. Used by the DSP-load
+    /// flow to fire a track-devices-changed notification, which
+    /// makes the standard paramGrid_ rebuild against the new pool
+    /// state.
+    void setDevicePath(const ChainNodePath& path) {
+        devicePath_ = path;
+    }
+
+    /// Fires after a successful loadDspSource (Load button picked a
+    /// new starter or file, or Edit window's Compile succeeded).
+    /// Host wires this to refresh the standard parameter grid.
+    std::function<void()> onDspChanged;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 
   private:
-    void timerCallback() override;
-    void rebuildFromPlugin();
     void showLoadMenu();
     void loadFromFile();
     void showCodeEditor();
     bool tryLoad(const juce::String& name, const juce::String& source);
-
-    struct ParamSlot {
-        juce::Label label;
-        juce::Slider slider;
-        tracktion::engine::AutomatableParameter* param = nullptr;
-    };
+    void refreshNameLabel();
 
     magda::daw::audio::FaustPlugin* plugin_ = nullptr;
-    std::vector<std::unique_ptr<ParamSlot>> slots_;
+    ChainNodePath devicePath_;
+
     std::unique_ptr<juce::Drawable> logo_;
     juce::Rectangle<float> logoBounds_;
     juce::Rectangle<float> nameBorderBounds_;
-    int headerBottomY_ = 0;
     juce::Label nameLabel_;
     juce::Label errorLabel_;
     std::unique_ptr<magda::SvgButton> loadButton_;
