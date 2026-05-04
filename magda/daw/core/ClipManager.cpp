@@ -772,7 +772,8 @@ void ClipManager::setOffset(ClipId clipId, double offset) {
 
 void ClipManager::setLoopPhase(ClipId clipId, double phase) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->isAudio() && clip->loopEnabled) {
+        const bool loopActive = clip->loopEnabled || clip->autoTempo;
+        if (clip->isAudio() && loopActive) {
             clip->offset = clip->loopStart + phase;
             if (clip->autoTempo && clip->audio().interpretation.bpm > 0.0)
                 clip->offsetBeats = clip->offset * clip->audio().interpretation.bpm / 60.0;
@@ -1836,8 +1837,10 @@ void ClipManager::sanitizeAudioClip(ClipInfo& clip) {
     // Clamp offset to file bounds
     clip.offset = juce::jlimit(0.0, fileDuration, clip.offset);
 
-    // Non-loop mode: keep loopStart synced to offset and clamp clip length
-    if (!clip.loopEnabled) {
+    // Non-loop mode: keep loopStart synced to offset and clamp clip length.
+    // Auto-tempo/BEAT mode also uses loopStart/loopLength as an active source
+    // region, even when the explicit loop toggle is not set.
+    if (!clip.loopEnabled && !clip.autoTempo) {
         clip.loopStart = clip.offset;
         clip.clampLengthToSource(fileDuration);
     }

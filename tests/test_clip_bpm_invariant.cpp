@@ -332,6 +332,33 @@ TEST_CASE("applyAudioClipBeats - all derived fields agree after edit", "[clip][b
     REQUIRE(c->speedRatio == Approx(1.0));
 }
 
+TEST_CASE("beat-mode phase edits do not mutate loop length", "[clip][bpm][phase]") {
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    seed.loopEnabled = false;  // BEAT mode owns the active source loop.
+    seed.loopStart = 0.0;
+    seed.loopStartBeats = 0.0;
+    seed.offset = 0.0;
+    seed.offsetBeats = 0.0;
+    seed.loopLengthBeats = 4.0;
+    seed.loopLength = FILE_DURATION;
+    ClipManager::getInstance().restoreClip(seed);
+
+    const double phaseBeats = 1.0;
+    const double phaseSeconds = phaseBeats * 60.0 / DETECTED_BPM;
+    ClipManager::getInstance().setLoopPhase(seed.id, phaseSeconds);
+
+    const auto* c = ClipManager::getInstance().getClip(seed.id);
+    REQUIRE(c != nullptr);
+    REQUIRE(c->offset == Approx(phaseSeconds));
+    REQUIRE(c->offsetBeats == Approx(phaseBeats));
+    REQUIRE(c->loopStart == Approx(0.0));
+    REQUIRE(c->loopStartBeats == Approx(0.0));
+    REQUIRE(c->loopLength == Approx(FILE_DURATION));
+    REQUIRE(c->loopLengthBeats == Approx(4.0));
+}
+
 TEST_CASE("applyAudioClipBeats - no-op for non-autoTempo clips", "[clip][bpm][issue-1157]") {
     ClipManager::getInstance().shutdown();
 
