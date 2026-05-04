@@ -26,7 +26,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
@@ -45,7 +45,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.speedRatio = 2.0;  // 2x faster (speedRatio = speed factor semantics)
@@ -65,7 +65,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         ClipInfo clip;
         clip.startTime = 2.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 2.0;  // Previously trimmed
         clip.speedRatio = 1.0;
@@ -84,7 +84,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         ClipInfo clip;
         clip.startTime = 2.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.5;  // Only 0.5s of offset available
         clip.speedRatio = 1.0;
@@ -103,7 +103,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - trims audio offset", "[clip
         ClipInfo clip;
         clip.startTime = 1.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
@@ -126,7 +126,7 @@ TEST_CASE("ClipOperations::resizeContainerFromRight - audio data unchanged",
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 1.0;
         clip.speedRatio = 1.5;
@@ -145,7 +145,7 @@ TEST_CASE("ClipOperations::resizeContainerFromRight - audio data unchanged",
         ClipInfo clip;
         clip.startTime = 2.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
@@ -179,7 +179,7 @@ TEST_CASE("ClipOperations - Sequential resizes maintain correct audio offset",
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;  // 2 bars at 120 BPM = 8 beats
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "kick_loop.wav";
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
@@ -210,7 +210,7 @@ TEST_CASE("ClipOperations - Sequential resizes maintain correct audio offset",
         ClipInfo clip;
         clip.startTime = 2.0;
         clip.length = 6.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.speedRatio = 1.0;
@@ -398,7 +398,7 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
         ClipInfo originalState;
         originalState.startTime = 0.0;
         originalState.length = 4.0;
-        originalState.type = ClipType::Audio;
+        originalState.setAudioContent();
         originalState.audioFilePath = "test.wav";
         originalState.offset = 0.0;
         originalState.speedRatio = 1.0;
@@ -435,7 +435,7 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
         ClipInfo originalState;
         originalState.startTime = 0.0;
         originalState.length = 8.0;
-        originalState.type = ClipType::Audio;
+        originalState.setAudioContent();
         originalState.audioFilePath = "test.wav";
         originalState.offset = 0.0;
         originalState.speedRatio = 2.0;  // 2x slower (speedRatio = stretchFactor semantics)
@@ -456,7 +456,7 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
         ClipInfo originalState;
         originalState.startTime = 0.0;
         originalState.length = 8.0;
-        originalState.type = ClipType::Audio;
+        originalState.setAudioContent();
         originalState.audioFilePath = "test.wav";
         originalState.offset = 0.0;
         originalState.speedRatio = 1.0;
@@ -490,7 +490,7 @@ TEST_CASE("Left resize with throttled drag updates - offset must use original st
         ClipInfo originalState;
         originalState.startTime = 2.0;
         originalState.length = 4.0;
-        originalState.type = ClipType::Audio;
+        originalState.setAudioContent();
         originalState.audioFilePath = "test.wav";
         originalState.offset = 2.0;  // Previously trimmed
         originalState.speedRatio = 1.0;
@@ -595,7 +595,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart tracks offset for
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.loopStart = 0.0;
@@ -612,7 +612,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart tracks offset for
         ClipInfo clip;
         clip.startTime = 2.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 2.0;
         clip.loopStart = 2.0;
@@ -629,7 +629,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart tracks offset for
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.loopStart = 0.0;
@@ -646,7 +646,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart tracks offset for
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.loopStart = 0.0;
@@ -671,7 +671,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart unchanged for loo
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 1.0;
         clip.loopStart = 0.5;
@@ -694,7 +694,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart unchanged for loo
         ClipInfo clip;
         clip.startTime = 4.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 1.5;
         clip.loopStart = 0.5;
@@ -713,7 +713,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart unchanged for loo
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 1.0;
         clip.loopStart = 0.5;
@@ -740,7 +740,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - loopStart unchanged for loo
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 1.0;
         clip.loopStart = 0.0;
@@ -769,7 +769,7 @@ TEST_CASE("ClipOperations::trimAudioFromLeft - loopStart tracks offset",
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.loopStart = 0.0;
@@ -785,7 +785,7 @@ TEST_CASE("ClipOperations::trimAudioFromLeft - loopStart tracks offset",
         ClipInfo clip;
         clip.startTime = 2.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 2.0;
         clip.loopStart = 2.0;
@@ -801,7 +801,7 @@ TEST_CASE("ClipOperations::trimAudioFromLeft - loopStart tracks offset",
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.loopStart = 0.0;
@@ -818,7 +818,7 @@ TEST_CASE("ClipOperations::trimAudioFromLeft - loopStart tracks offset",
         ClipInfo clip;
         clip.startTime = 1.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.5;
         clip.loopStart = 0.5;
@@ -842,7 +842,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.offsetBeats = 0.0;
@@ -864,7 +864,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 8.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.offsetBeats = 0.0;
@@ -891,7 +891,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.speedRatio = 2.0;
@@ -908,7 +908,7 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
         ClipInfo clip;
         clip.startTime = 0.0;
         clip.length = 4.0;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.speedRatio = 1.0;

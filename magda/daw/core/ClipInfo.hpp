@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
 
+#include <variant>
 #include <vector>
 
 #include "ClipTypes.hpp"
@@ -90,6 +91,12 @@ struct ClipPlacement {
     }
 };
 
+struct AudioClipModel {};
+
+struct MidiClipModel {};
+
+using ClipContent = std::variant<MidiClipModel, AudioClipModel>;
+
 /**
  * @brief Clip data structure containing all clip properties
  */
@@ -98,11 +105,31 @@ struct ClipInfo {
     TrackId trackId = INVALID_TRACK_ID;
     juce::String name;
     juce::Colour colour;
-    ClipType type = ClipType::MIDI;
     ClipView view = ClipView::Arrangement;  // Which view this clip belongs to
+    ClipContent content = MidiClipModel{};
 
     // Timeline position. This is the canonical placement model for every clip type.
     ClipPlacement placement;
+
+    ClipType getType() const {
+        return std::holds_alternative<AudioClipModel>(content) ? ClipType::Audio : ClipType::MIDI;
+    }
+
+    bool isAudio() const {
+        return std::holds_alternative<AudioClipModel>(content);
+    }
+
+    bool isMidi() const {
+        return std::holds_alternative<MidiClipModel>(content);
+    }
+
+    void setAudioContent() {
+        content = AudioClipModel{};
+    }
+
+    void setMidiContent() {
+        content = MidiClipModel{};
+    }
 
     // Derived timeline seconds cache. Kept only for bridge/UI call sites that
     // have not moved to beats yet; do not treat these as model authority.

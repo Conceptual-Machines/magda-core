@@ -72,7 +72,7 @@ void ClipComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
     // Draw based on clip type
-    if (clip->type == ClipType::Audio) {
+    if (clip->isAudio()) {
         paintAudioClip(g, *clip, bounds);
     } else {
         paintMidiClip(g, *clip, bounds);
@@ -159,13 +159,13 @@ void ClipComponent::paint(juce::Graphics& g) {
     }
 
     // Draw fade handles (selected audio clips only)
-    if (isSelected_ && clip->type == ClipType::Audio) {
+    if (isSelected_ && clip->isAudio()) {
         paintFadeHandles(g, *clip, getLocalBounds());
     }
 
     // Draw volume line (audio clips with non-zero volume, or when hovering/dragging)
-    if (clip->type == ClipType::Audio && (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
-                                          dragMode_ == DragMode::VolumeDrag)) {
+    if (clip->isAudio() && (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
+                            dragMode_ == DragMode::VolumeDrag)) {
         auto wfArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
         paintVolumeLine(g, *clip, wfArea);
     }
@@ -575,7 +575,7 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
     }
 
     // Musical mode indicator (auto-tempo)
-    if (clip.autoTempo && clip.type == ClipType::Audio && headerArea.getWidth() > 16) {
+    if (clip.autoTempo && clip.isAudio() && headerArea.getWidth() > 16) {
         auto musicalArea = headerArea.removeFromRight(14).reduced(2);
         g.setColour(headerForeground);
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
@@ -861,7 +861,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         pc.setCollapsed(daw::ui::PanelLocation::Bottom, false);
         // Don't force a specific MIDI editor tab — BottomPanel's clipSelectionChanged
         // handles the PianoRoll vs DrumGrid choice, respecting the user's preference.
-        if (c->type == ClipType::Audio) {
+        if (c->isAudio()) {
             pc.setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                   daw::ui::PanelContentType::WaveformEditor);
         }
@@ -960,7 +960,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
 
     // Cache file duration for resize clamping
     dragStartFileDuration_ = 0.0;
-    if (clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+    if (clip->isAudio() && clip->audioFilePath.isNotEmpty()) {
         auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
         if (thumbnail)
             dragStartFileDuration_ = thumbnail->getTotalLength();
@@ -995,7 +995,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
                 if (cid == clipId_)
                     continue;
                 const auto* c = cm.getClip(cid);
-                if (c && c->type == ClipType::Audio)
+                if (c && c->isAudio())
                     dragStartSelectedFadeSnapshots_[cid] = *c;
             }
         }
@@ -1024,7 +1024,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
                 if (cid == clipId_)
                     continue;
                 const auto* c = cm.getClip(cid);
-                if (c && c->type == ClipType::Audio)
+                if (c && c->isAudio())
                     dragStartSelectedFadeSnapshots_[cid] = *c;
             }
         }
@@ -1046,7 +1046,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
                 if (cid == clipId_)
                     continue;
                 const auto* c = cm.getClip(cid);
-                if (c && c->type == ClipType::Audio)
+                if (c && c->isAudio())
                     dragStartSelectedFadeSnapshots_[cid] = *c;
             }
         }
@@ -1057,8 +1057,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
     // Shift+edge = stretch mode (time-stretches audio source or scales MIDI notes)
     if (isOnLeftEdge(e.x)) {
         if (e.mods.isShiftDown() &&
-            ((clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) ||
-             clip->type == ClipType::MIDI)) {
+            ((clip->isAudio() && clip->audioFilePath.isNotEmpty()) || clip->isMidi())) {
             dragMode_ = DragMode::StretchLeft;
             dragStartSpeedRatio_ = clip->speedRatio;
             dragStartClipSnapshot_ = *clip;
@@ -1069,8 +1068,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         }
     } else if (isOnRightEdge(e.x)) {
         if (e.mods.isShiftDown() &&
-            ((clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) ||
-             clip->type == ClipType::MIDI)) {
+            ((clip->isAudio() && clip->audioFilePath.isNotEmpty()) || clip->isMidi())) {
             dragMode_ = DragMode::StretchRight;
             dragStartSpeedRatio_ = clip->speedRatio;
             dragStartClipSnapshot_ = *clip;
@@ -1290,7 +1288,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             // Compute preview clip from scratch (single source of truth)
             resizePreviewClip_ = dragStartClipSnapshot_;
             ClipOperations::resizeContainerFromLeft(resizePreviewClip_, finalLength, tempoBPM);
-            if (!resizePreviewClip_.loopEnabled && resizePreviewClip_.type == ClipType::Audio) {
+            if (!resizePreviewClip_.loopEnabled && resizePreviewClip_.isAudio()) {
                 resizePreviewClip_.loopStart = resizePreviewClip_.offset;
             }
 
@@ -1418,7 +1416,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
             if (stretchThrottle_.check()) {
                 auto& cm = ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
-                    if (mutableClip->type == ClipType::MIDI) {
+                    if (mutableClip->isMidi()) {
                         // Scale MIDI notes from original snapshot
                         mutableClip->midiNotes = dragStartClipSnapshot_.midiNotes;
                         ClipOperations::stretchMidiNotes(*mutableClip, stretchRatio);
@@ -1545,7 +1543,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                 auto& cm = ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
                     double rightEdge = dragStartTime_ + dragStartLength_;
-                    if (mutableClip->type == ClipType::MIDI) {
+                    if (mutableClip->isMidi()) {
                         mutableClip->midiNotes = dragStartClipSnapshot_.midiNotes;
                         ClipOperations::stretchMidiNotes(*mutableClip, stretchRatio);
                         mutableClip->length = finalLength;
@@ -1904,7 +1902,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
-                    if (clip->type == ClipType::MIDI) {
+                    if (clip->isMidi()) {
                         clip->midiNotes = dragStartClipSnapshot_.midiNotes;
                         ClipOperations::stretchMidiNotes(*clip, stretchRatio);
                         ClipOperations::resizeContainerFromRight(*clip, finalLength, tempo);
@@ -1943,7 +1941,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 double tempoLeft = parentPanel_ ? parentPanel_->getTempo() : 120.0;
                 auto& cm = ClipManager::getInstance();
                 if (auto* clip = cm.getClip(clipId_)) {
-                    if (clip->type == ClipType::MIDI) {
+                    if (clip->isMidi()) {
                         clip->midiNotes = dragStartClipSnapshot_.midiNotes;
                         ClipOperations::stretchMidiNotes(*clip, stretchRatio);
                         clip->length = finalLength;
@@ -2116,7 +2114,7 @@ bool ClipComponent::isOnRightEdge(int x) const {
 
 bool ClipComponent::isOnFadeInHandle(int x, int y) const {
     const auto* clip = getClipInfo();
-    if (!clip || clip->type != ClipType::Audio)
+    if (!clip || !clip->isAudio())
         return false;
 
     auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
@@ -2139,7 +2137,7 @@ bool ClipComponent::isOnFadeInHandle(int x, int y) const {
 
 bool ClipComponent::isOnFadeOutHandle(int x, int y) const {
     const auto* clip = getClipInfo();
-    if (!clip || clip->type != ClipType::Audio)
+    if (!clip || !clip->isAudio())
         return false;
 
     auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
@@ -2162,7 +2160,7 @@ bool ClipComponent::isOnFadeOutHandle(int x, int y) const {
 bool ClipComponent::isOnVolumeHandle(int x, int y) const {
     juce::ignoreUnused(x);
     const auto* clip = getClipInfo();
-    if (!clip || clip->type != ClipType::Audio)
+    if (!clip || !clip->isAudio())
         return false;
 
     auto waveformArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
@@ -2276,7 +2274,7 @@ void ClipComponent::showContextMenu() {
     bool canSliceAtGrid = false;
     if (!isMultiSelection && canEdit) {
         const auto* singleClip = getClipInfo();
-        if (singleClip && singleClip->type == ClipType::Audio) {
+        if (singleClip && singleClip->isAudio()) {
             // Check for warp markers
             if (singleClip->warpEnabled) {
                 auto* audioEngine = TrackManager::getInstance().getAudioEngine();
@@ -2333,14 +2331,14 @@ void ClipComponent::showContextMenu() {
         if (isMultiSelection) {
             for (auto cid : selectionManager.getSelectedClips()) {
                 auto* c = clipManager.getClip(cid);
-                if (c && c->type == ClipType::MIDI && !c->midiNotes.empty()) {
+                if (c && c->isMidi() && !c->midiNotes.empty()) {
                     hasMidi = true;
                     break;
                 }
             }
         } else {
             const auto* ci = getClipInfo();
-            hasMidi = ci && ci->type == ClipType::MIDI && !ci->midiNotes.empty();
+            hasMidi = ci && ci->isMidi() && !ci->midiNotes.empty();
         }
 
         if (hasMidi) {
@@ -2403,14 +2401,14 @@ void ClipComponent::showContextMenu() {
         if (isMultiSelection) {
             for (auto cid : selectionManager.getSelectedClips()) {
                 auto* c = clipManager.getClip(cid);
-                if (!c || c->type != ClipType::Audio) {
+                if (!c || !c->isAudio()) {
                     allAudio = false;
                     break;
                 }
             }
         } else {
             const auto* clipInfo = getClipInfo();
-            allAudio = clipInfo && clipInfo->type == ClipType::Audio;
+            allAudio = clipInfo && clipInfo->isAudio();
         }
         if (allAudio) {
             menu.addSeparator();
@@ -2436,7 +2434,7 @@ void ClipComponent::showContextMenu() {
         bool canBounceInPlace = false;
         if (!isMultiSelection) {
             const auto* clipInfo = getClipInfo();
-            if (clipInfo && clipInfo->type == ClipType::MIDI) {
+            if (clipInfo && clipInfo->isMidi()) {
                 auto* trackInfo = TrackManager::getInstance().getTrack(clipInfo->trackId);
                 canBounceInPlace = trackInfo && trackInfo->hasInstrument();
             }
@@ -2737,7 +2735,7 @@ void ClipComponent::showContextMenu() {
                     std::vector<ClipId> midiClips;
                     for (auto cid : selectedClips) {
                         auto* c = clipManager.getClip(cid);
-                        if (c && c->type == ClipType::MIDI && !c->midiNotes.empty()) {
+                        if (c && c->isMidi() && !c->midiNotes.empty()) {
                             midiClips.push_back(cid);
                         }
                     }
@@ -2781,7 +2779,7 @@ void ClipComponent::showContextMenu() {
                     std::vector<ClipId> midiClips;
                     for (auto cid : selectedClips) {
                         auto* c = clipManager.getClip(cid);
-                        if (c && c->type == ClipType::MIDI && !c->midiNotes.empty()) {
+                        if (c && c->isMidi() && !c->midiNotes.empty()) {
                             midiClips.push_back(cid);
                         }
                     }

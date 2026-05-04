@@ -21,7 +21,7 @@ using namespace magda;
 static ClipInfo makeMidiClip(double startTime, double length, bool looped = false,
                              double loopLengthBeats = 0.0) {
     ClipInfo clip;
-    clip.type = ClipType::MIDI;
+    clip.setMidiContent();
     clip.startTime = startTime;
     clip.length = length;
     clip.midiOffset = 0.0;

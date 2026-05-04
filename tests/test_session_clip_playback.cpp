@@ -310,7 +310,7 @@ TEST_CASE("CreateMidiClip — create via ClipManager and verify type", "[session
 
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
-    REQUIRE(clip->type == ClipType::MIDI);
+    REQUIRE(clip->isMidi());
     REQUIRE(clip->view == ClipView::Session);
     REQUIRE(clip->trackId == 1);
     REQUIRE(clip->length == Catch::Approx(4.0));
@@ -371,7 +371,7 @@ TEST_CASE("SyncMidiClipToSlot — verify ClipManager state for MIDI session clip
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     REQUIRE(clip != nullptr);
     REQUIRE(clip->sceneIndex == 0);
-    REQUIRE(clip->type == ClipType::MIDI);
+    REQUIRE(clip->isMidi());
     REQUIRE(clip->midiNotes.size() == 2);
 
     // Verify the clip is retrievable by slot
@@ -425,12 +425,12 @@ TEST_CASE("StopMidiClipSendsAllNotesOff — verify MIDI clip type is detectable 
     REQUIRE(audioClip != nullptr);
 
     // Only MIDI clips should trigger all-notes-off
-    REQUIRE(midiClip->type == ClipType::MIDI);
-    REQUIRE(audioClip->type == ClipType::Audio);
+    REQUIRE(midiClip->isMidi());
+    REQUIRE(audioClip->isAudio());
 
     // Verify the type check used in AudioBridge::stopSessionClip
-    REQUIRE((midiClip->type == ClipType::MIDI) == true);
-    REQUIRE((audioClip->type == ClipType::MIDI) == false);
+    REQUIRE((midiClip->isMidi()) == true);
+    REQUIRE((audioClip->isMidi()) == false);
 }
 
 TEST_CASE("MidiClipSlotAppearance — clip slot shows as occupied after MIDI clip creation",
@@ -455,7 +455,7 @@ TEST_CASE("MidiClipSlotAppearance — clip slot shows as occupied after MIDI cli
     // Clip should be identifiable as MIDI
     const auto* clip = ClipManager::getInstance().getClip(slotClipId);
     REQUIRE(clip != nullptr);
-    REQUIRE(clip->type == ClipType::MIDI);
+    REQUIRE(clip->isMidi());
 }
 
 TEST_CASE("getClipInSlot stays correct across mutation paths",
@@ -960,7 +960,7 @@ TEST_CASE("AutoTempo session clip timing: 172bpm clip in 120bpm project",
           "[session][auto-tempo][playhead]") {
     // Scenario from the bug report: 2-bar loop at 172bpm, project at 120bpm
     ClipInfo clip;
-    clip.type = ClipType::Audio;
+    clip.setAudioContent();
     clip.audioFilePath = "loop_172bpm.wav";
     clip.sourceBPM = 172.0;
     clip.sourceNumBeats = 8.0;         // 2 bars = 8 beats
@@ -1017,7 +1017,7 @@ TEST_CASE("AutoTempo session clip timing: sub-loop region",
           "[session][auto-tempo][playhead][sub-loop]") {
     // 8-beat source, but only looping 4 beats
     ClipInfo clip;
-    clip.type = ClipType::Audio;
+    clip.setAudioContent();
     clip.audioFilePath = "sample.wav";
     clip.sourceBPM = 140.0;
     clip.sourceNumBeats = 8.0;
@@ -1048,7 +1048,7 @@ TEST_CASE("AutoTempo session clip timing: sub-loop region",
 TEST_CASE("AutoTempo session clip timing: BPM edge cases",
           "[session][auto-tempo][playhead][edge]") {
     ClipInfo clip;
-    clip.type = ClipType::Audio;
+    clip.setAudioContent();
     clip.audioFilePath = "sample.wav";
     clip.sourceBPM = 120.0;
     clip.sourceNumBeats = 4.0;
@@ -1088,7 +1088,7 @@ TEST_CASE("AutoTempo session clip timing: BPM edge cases",
 TEST_CASE("AutoTempo session clip: getAutoTempoBeatRange for session loop",
           "[session][auto-tempo][beat-range]") {
     ClipInfo clip;
-    clip.type = ClipType::Audio;
+    clip.setAudioContent();
     clip.audioFilePath = "loop.wav";
     clip.sourceBPM = 172.0;
     clip.sourceNumBeats = 8.0;

@@ -64,7 +64,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Non-looped clip: source range spans full clip") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
         clip.offset = 1.0;
@@ -83,7 +83,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Looped clip: source range covers one loop cycle") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 8.0;  // clip is 8s long
         clip.speedRatio = 1.0;
@@ -108,7 +108,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Looped clip with stretch: source range accounts for stretch") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 16.0;     // stretched clip
         clip.speedRatio = 2.0;  // 2x faster
@@ -132,7 +132,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Loop active when loopLength is zero but loopEnabled is true") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 1.0;
         clip.offset = 0.0;
@@ -152,7 +152,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Clip shorter than loop cycle: source range covers full loop region") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 1.0;  // 1s clip, shorter than 2s loop cycle
         clip.speedRatio = 1.0;
@@ -172,7 +172,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Looped clip with stretch: clip covers multiple cycles") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 1.0;  // 1s on timeline
         clip.offset = 0.0;
@@ -193,7 +193,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Clip equal to loop cycle: source range not clamped") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 2.0;  // exactly one loop cycle on timeline
         clip.offset = 0.0;
@@ -213,7 +213,7 @@ TEST_CASE("ClipDisplayInfo - looped source file ranges", "[clip][display][loop]"
 
     SECTION("Clip longer than loop cycle: source range not clamped") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.startTime = 0.0;
         clip.length = 6.0;  // 3x the loop cycle
         clip.offset = 0.0;

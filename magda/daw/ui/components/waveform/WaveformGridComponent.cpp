@@ -48,7 +48,7 @@ void WaveformGridComponent::paint(juce::Graphics& g) {
 
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         const auto* clip = getClip();
-        if (clip && clip->type == magda::ClipType::Audio) {
+        if (clip && clip->isAudio()) {
             paintWaveform(g, *clip);
             paintClipBoundaries(g);
         } else {
@@ -1024,7 +1024,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     }
 
     auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-    if (!clip || clip->type != magda::ClipType::Audio || clip->audioFilePath.isEmpty()) {
+    if (!clip || !clip->isAudio() || clip->audioFilePath.isEmpty()) {
         return;
     }
 

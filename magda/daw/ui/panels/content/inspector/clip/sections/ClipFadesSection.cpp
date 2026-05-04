@@ -54,7 +54,7 @@ void ClipFadesSection::initControls() {
         double delta = current - multiFadeInDragStart_;
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio && c->view != magda::ClipView::Session) {
+            if (c && c->isAudio() && c->view != magda::ClipView::Session) {
                 double newVal = juce::jmax(0.0, c->fadeIn + delta);
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetClipFadeInCommand>(cid, newVal));
@@ -78,7 +78,7 @@ void ClipFadesSection::initControls() {
         double delta = current - multiFadeOutDragStart_;
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio && c->view != magda::ClipView::Session) {
+            if (c && c->isAudio() && c->view != magda::ClipView::Session) {
                 double newVal = juce::jmax(0.0, c->fadeOut + delta);
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetClipFadeOutCommand>(cid, newVal));
@@ -220,7 +220,7 @@ void ClipFadesSection::initControls() {
         int samples = msToSamples(launchFadeValue_->getValue());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio && c->view == magda::ClipView::Session)
+            if (c && c->isAudio() && c->view == magda::ClipView::Session)
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetClipLaunchFadeSamplesCommand>(cid, samples));
         }
@@ -252,7 +252,7 @@ void ClipFadesSection::update() {
     }
 
     const auto* clip = magda::ClipManager::getInstance().getClip(pid);
-    if (!clip || clip->type != magda::ClipType::Audio) {
+    if (!clip || !clip->isAudio()) {
         setVisible(false);
         return;
     }
@@ -292,7 +292,7 @@ void ClipFadesSection::update() {
                 if (cid == pid)
                     continue;
                 const auto* c = magda::ClipManager::getInstance().getClip(cid);
-                if (c && c->type == magda::ClipType::Audio) {
+                if (c && c->isAudio()) {
                     minIn = juce::jmin(minIn, (double)c->fadeIn);
                     maxIn = juce::jmax(maxIn, (double)c->fadeIn);
                     minOut = juce::jmin(minOut, (double)c->fadeOut);
@@ -351,7 +351,7 @@ int ClipFadesSection::getPreferredHeight() const {
 
     auto pid = primaryClipId();
     const auto* clip = magda::ClipManager::getInstance().getClip(pid);
-    if (!clip || clip->type != magda::ClipType::Audio)
+    if (!clip || !clip->isAudio())
         return 0;
 
     bool isSession = (clip->view == magda::ClipView::Session);

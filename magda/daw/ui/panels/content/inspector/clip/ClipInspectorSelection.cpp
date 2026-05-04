@@ -45,7 +45,7 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
         // Still update stretch mode combo during drag — pitchChange affects effective mode
         auto pid = primaryClipId();
         const auto* clip = magda::ClipManager::getInstance().getClip(pid);
-        if (clip && clip->type == magda::ClipType::Audio) {
+        if (clip && clip->isAudio()) {
             int effectiveMode = clip->timeStretchMode;
             bool isAnalog = clip->isAnalogPitchActive();
             if (!isAnalog && effectiveMode == 0 &&

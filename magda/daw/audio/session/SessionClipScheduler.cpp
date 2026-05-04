@@ -403,11 +403,11 @@ void SessionClipScheduler::updateLaunchTimings(ClipId clipId, const ClipInfo* cl
     if (bpm <= 0.0)
         bpm = 120.0;
 
-    if (clip->type == ClipType::Audio && clip->autoTempo) {
+    if (clip->isAudio() && clip->autoTempo) {
         data.clipLengthBeats = clip->lengthBeats;
         data.loopLengthBeats =
             (clip->loopLengthBeats > 0.0) ? clip->loopLengthBeats : clip->lengthBeats;
-    } else if (clip->type == ClipType::Audio) {
+    } else if (clip->isAudio()) {
         double srcLength =
             clip->loopLength > 0.0 ? clip->loopLength : clip->length * clip->speedRatio;
         double durationSeconds = srcLength / clip->speedRatio;

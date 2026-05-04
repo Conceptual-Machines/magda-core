@@ -500,7 +500,7 @@ class ProjectSerializerMidiRoundtripTest final : public juce::UnitTest {
 
         // Verify that a clip with no CC/pitchbend data stays empty after roundtrip
         ClipInfo emptyClip;
-        emptyClip.type = ClipType::MIDI;
+        emptyClip.setMidiContent();
         expect(emptyClip.midiCCData.empty(), "New clip CC data should be empty");
         expect(emptyClip.midiPitchBendData.empty(), "New clip PitchBend data should be empty");
 

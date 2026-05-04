@@ -21,7 +21,7 @@ TEST_CASE("MidiNote - Clip-relative storage", "[midi][clip][storage]") {
 
     SECTION("Notes are stored relative to clip start") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 4.0;  // Clip at 4 seconds (bar 2 at 120 BPM)
         clip.length = 8.0;     // 4 bars
 
@@ -44,7 +44,7 @@ TEST_CASE("MidiNote - Clip-relative storage", "[midi][clip][storage]") {
 
     SECTION("Multiple notes at different clip-relative positions") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 8.0;
 
@@ -71,7 +71,7 @@ TEST_CASE("MidiClip - Position changes don't affect notes", "[midi][clip][positi
 
     SECTION("Moving clip preserves note positions") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 8.0;
 
@@ -94,7 +94,7 @@ TEST_CASE("MidiClip - Position changes don't affect notes", "[midi][clip][positi
 
     SECTION("Moving clip multiple times preserves notes") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 4.0;
 
@@ -122,7 +122,7 @@ TEST_CASE("MidiClip - Length changes preserve note positions", "[midi][clip][len
 
     SECTION("Shortening clip from end preserves notes at start") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 16.0;  // 16 seconds = 32 beats = 8 bars at 120 BPM
 
@@ -154,7 +154,7 @@ TEST_CASE("MidiClip - Length changes preserve note positions", "[midi][clip][len
 
     SECTION("Extending clip doesn't shift existing notes") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 2.0;
         clip.length = 2.0;  // 2 seconds = 4 beats = 1 bar at 120 BPM
 
@@ -181,7 +181,7 @@ TEST_CASE("MidiClip - Notes beyond clip boundary", "[midi][clip][boundary]") {
 
     SECTION("Identify notes within clip length") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 4.0;  // 4 seconds = 8 beats = 2 bars at 120 BPM
 
@@ -214,7 +214,7 @@ TEST_CASE("MidiClip - Notes beyond clip boundary", "[midi][clip][boundary]") {
 
     SECTION("Notes at clip boundaries") {
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;
         clip.length = 2.0;  // Exactly 1 bar = 4 beats at 120 BPM
 
@@ -280,7 +280,7 @@ TEST_CASE("MidiClip - Real-world scenario", "[midi][clip][integration]") {
         // - Notes should still play
 
         ClipInfo clip;
-        clip.type = ClipType::MIDI;
+        clip.setMidiContent();
         clip.startTime = 0.0;  // Bar 1
         clip.length = 8.0;     // 8 seconds = 16 beats = 4 bars at 120 BPM
 

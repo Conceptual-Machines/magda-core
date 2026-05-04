@@ -32,7 +32,7 @@ static constexpr double PROJECT_BPM = 69.0;
 
 static ClipInfo makeAmenClip(double startTime = 0.0) {
     ClipInfo clip;
-    clip.type = ClipType::Audio;
+    clip.setAudioContent();
     clip.audioFilePath = "amen_break.wav";
     clip.startTime = startTime;
     clip.length = AMEN_DURATION;  // original duration before stretching
@@ -46,7 +46,7 @@ static ClipInfo makeAmenClip(double startTime = 0.0) {
 // Helper: make a clip where sourceBPM matches projectBPM (defaulted/calibrated case)
 static ClipInfo makeCalibratedClip(double projectBPM = 120.0) {
     ClipInfo clip;
-    clip.type = ClipType::Audio;
+    clip.setAudioContent();
     clip.audioFilePath = "sample.wav";
     clip.startTime = 0.0;
     clip.length = 2.0;
@@ -394,7 +394,7 @@ TEST_CASE("Regression: loop wrapping past file end", "[clip][auto-tempo][regress
     static constexpr double FILE_BEATS = FILE_DURATION * FILE_BPM / 60.0;  // 13.8 beats
 
     ClipInfo clip;
-    clip.type = ClipType::Audio;
+    clip.setAudioContent();
     clip.audioFilePath = "long_loop.wav";
     clip.length = FILE_DURATION;
     clip.offset = 5.0;  // near end of file

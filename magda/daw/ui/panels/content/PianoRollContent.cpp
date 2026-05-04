@@ -186,7 +186,7 @@ void PianoRollContent::setupGridCallbacks() {
 
         // After moving, check if note is still visible in this clip (considering offset)
         auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-        if (clip && clip->type == magda::ClipType::MIDI && noteIndex < clip->midiNotes.size()) {
+        if (clip && clip->isMidi() && noteIndex < clip->midiNotes.size()) {
             const auto& note = clip->midiNotes[noteIndex];
             double tempo = 120.0;
             if (auto* controller = magda::TimelineController::getCurrent()) {
@@ -218,7 +218,7 @@ void PianoRollContent::setupGridCallbacks() {
                 if (destClipId != magda::INVALID_CLIP_ID && destClipId != clipId) {
                     DBG("  -> Would be visible in clip " << destClipId << ", moving it there");
                     auto* destClip = magda::ClipManager::getInstance().getClip(destClipId);
-                    if (destClip && destClip->type == magda::ClipType::MIDI) {
+                    if (destClip && destClip->isMidi()) {
                         // Calculate position in destination clip's content coordinates
                         // absoluteBeat is timeline position, convert to content position
                         double destClipStartBeats = destClip->placement.startBeat;
@@ -363,7 +363,7 @@ void PianoRollContent::setupGridCallbacks() {
             return;
 
         const auto* clip = clipManager.getClip(clipId);
-        if (!clip || clip->type != magda::ClipType::MIDI)
+        if (!clip || !clip->isMidi())
             return;
 
         double pasteOffset = clipManager.getNoteClipboardMinBeat();
@@ -393,7 +393,7 @@ void PianoRollContent::setupGridCallbacks() {
                                               std::vector<size_t> noteIndices) {
         auto& clipManager = magda::ClipManager::getInstance();
         const auto* clip = clipManager.getClip(clipId);
-        if (!clip || clip->type != magda::ClipType::MIDI)
+        if (!clip || !clip->isMidi())
             return;
 
         double minStart = std::numeric_limits<double>::max();
@@ -841,7 +841,7 @@ void PianoRollContent::setRelativeTimeMode(bool relative) {
             auto& clipManager = magda::ClipManager::getInstance();
             auto& selectionManager = magda::SelectionManager::getInstance();
             const auto* clip = clipManager.getClip(editingClipId_);
-            if (clip && clip->type == magda::ClipType::MIDI) {
+            if (clip && clip->isMidi()) {
                 magda::TrackId trackId = clip->trackId;
 
                 // Get all selected clips
@@ -851,7 +851,7 @@ void PianoRollContent::setRelativeTimeMode(bool relative) {
                 // Filter selected clips to only MIDI clips on this track
                 for (magda::ClipId id : selectedClipsSet) {
                     auto* c = clipManager.getClip(id);
-                    if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+                    if (c && c->isMidi() && c->trackId == trackId) {
                         selectedMidiClips.push_back(id);
                     }
                 }
@@ -873,7 +873,7 @@ void PianoRollContent::setRelativeTimeMode(bool relative) {
                     std::vector<magda::ClipId> allMidiClips;
                     for (magda::ClipId id : allClipsOnTrack) {
                         auto* c = clipManager.getClip(id);
-                        if (c && c->type == magda::ClipType::MIDI) {
+                        if (c && c->isMidi()) {
                             allMidiClips.push_back(id);
                         }
                     }
@@ -909,7 +909,7 @@ void PianoRollContent::onActivated() {
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClip);
-        if (clip && clip->type == magda::ClipType::MIDI) {
+        if (clip && clip->isMidi()) {
             editingClipId_ = selectedClip;
             gridComponent_->setClip(selectedClip);
 
@@ -972,7 +972,7 @@ void PianoRollContent::clipsChanged() {
             std::vector<magda::ClipId> selectedMidiClips;
             for (magda::ClipId id : selectedClipsSet) {
                 auto* c = clipManager.getClip(id);
-                if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+                if (c && c->isMidi() && c->trackId == trackId) {
                     selectedMidiClips.push_back(id);
                 }
             }
@@ -988,7 +988,7 @@ void PianoRollContent::clipsChanged() {
                 std::vector<magda::ClipId> allMidiClips;
                 for (magda::ClipId id : allClipsOnTrack) {
                     auto* c = clipManager.getClip(id);
-                    if (c && c->type == magda::ClipType::MIDI) {
+                    if (c && c->isMidi()) {
                         allMidiClips.push_back(id);
                     }
                 }
@@ -1018,7 +1018,7 @@ void PianoRollContent::clipPropertyChanged(magda::ClipId clipId) {
             if (auto* self = safeThis.getComponent()) {
                 // Re-evaluate force-relative mode (loop may have been toggled)
                 const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-                if (clip && clip->type == magda::ClipType::MIDI) {
+                if (clip && clip->isMidi()) {
                     bool forceRelative =
                         (clip->view == magda::ClipView::Session) || clip->loopEnabled;
                     if (forceRelative) {
@@ -1067,7 +1067,7 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
         auto& clipManager = magda::ClipManager::getInstance();
         auto& selectionManager = magda::SelectionManager::getInstance();
         const auto* clip = clipManager.getClip(clipId);
-        if (clip && clip->type == magda::ClipType::MIDI) {
+        if (clip && clip->isMidi()) {
             editingClipId_ = clipId;
 
             magda::TrackId trackId = clip->trackId;
@@ -1081,7 +1081,7 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
             // Filter selected clips to only MIDI clips on this track
             for (magda::ClipId id : selectedClipsSet) {
                 auto* c = clipManager.getClip(id);
-                if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+                if (c && c->isMidi() && c->trackId == trackId) {
                     selectedMidiClips.push_back(id);
                     DBG("  - Selected MIDI clip on track: " << id);
                 }
@@ -1106,7 +1106,7 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
                 std::vector<magda::ClipId> allMidiClips;
                 for (magda::ClipId id : allClipsOnTrack) {
                     auto* c = clipManager.getClip(id);
-                    if (c && c->type == magda::ClipType::MIDI) {
+                    if (c && c->isMidi()) {
                         allMidiClips.push_back(id);
                     }
                 }
@@ -1176,7 +1176,7 @@ void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda:
     // Get the first clip to determine the track
     magda::ClipId firstClipId = *clipIds.begin();
     const auto* firstClip = clipManager.getClip(firstClipId);
-    if (!firstClip || firstClip->type != magda::ClipType::MIDI) {
+    if (!firstClip || !firstClip->isMidi()) {
         return;
     }
 
@@ -1186,7 +1186,7 @@ void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda:
     std::vector<magda::ClipId> selectedMidiClips;
     for (magda::ClipId id : clipIds) {
         auto* c = clipManager.getClip(id);
-        if (c && c->type == magda::ClipType::MIDI && c->trackId == trackId) {
+        if (c && c->isMidi() && c->trackId == trackId) {
             selectedMidiClips.push_back(id);
         }
     }

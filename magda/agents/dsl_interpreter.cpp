@@ -1301,7 +1301,7 @@ bool Interpreter::executeSelectClips(Tokenizer& tok) {
             if (field.value == "name")
                 strVal = clip->name;
             else if (field.value == "type")
-                strVal = (clip->type == ClipType::Audio) ? "audio" : "midi";
+                strVal = (clip->isAudio()) ? "audio" : "midi";
             return compareStr(strVal);
         }
 
@@ -2194,7 +2194,7 @@ bool Interpreter::executeGrooveNew(const Params& params) {
     auto clipId = getSelectedClipId();
     if (clipId != INVALID_CLIP_ID) {
         auto* clip = api_.clips().getClip(clipId);
-        if (clip && clip->type == ClipType::MIDI)
+        if (clip && clip->isMidi())
             api_.clips().setGrooveTemplate(clipId, clip->grooveTemplate);
     }
 
@@ -2234,7 +2234,7 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     }
 
     const auto* clip = api_.clips().getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio) {
+    if (!clip || !clip->isAudio()) {
         ctx_.setError("groove.extract: clip must be an audio clip");
         return false;
     }
@@ -2328,7 +2328,7 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     auto selClipId = getSelectedClipId();
     if (selClipId != INVALID_CLIP_ID) {
         auto* selClip = api_.clips().getClip(selClipId);
-        if (selClip && selClip->type == ClipType::MIDI)
+        if (selClip && selClip->isMidi())
             api_.clips().setGrooveTemplate(selClipId, selClip->grooveTemplate);
     }
     return true;
@@ -2347,7 +2347,7 @@ bool Interpreter::executeGrooveSet(const Params& params) {
     }
 
     const auto* clip = api_.clips().getClip(clipId);
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         ctx_.setError("groove.set: clip must be a MIDI clip");
         return false;
     }

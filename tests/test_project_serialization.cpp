@@ -391,7 +391,7 @@ TEST_CASE("Comprehensive Project Serialization", "[project][serialization][compr
         const auto& clips = clipManager.getClips();
         REQUIRE(clips.size() == 1);
         REQUIRE(clips[0].name == "MIDI 1");  // Default name from createMidiClip
-        REQUIRE(clips[0].type == ClipType::MIDI);
+        REQUIRE(clips[0].getType() == ClipType::MIDI);
         REQUIRE(clips[0].midiNotes.size() == 2);
         REQUIRE(clips[0].midiNotes[0].noteNumber == 60);
         REQUIRE(clips[0].midiNotes[1].noteNumber == 64);

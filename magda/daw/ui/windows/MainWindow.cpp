@@ -597,7 +597,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
             std::vector<ClipId> audioClips;
             for (auto cid : selectedClips) {
                 auto* c = clipManager.getClip(cid);
-                if (c && c->type == ClipType::Audio)
+                if (c && c->isAudio())
                     audioClips.push_back(cid);
             }
             if (audioClips.empty())

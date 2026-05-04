@@ -21,7 +21,7 @@ bool sourceBpmLooksDefaulted(const ClipInfo& clip, double projectBPM) {
 }
 
 bool seedSourceMetadataFromCachedDetection(ClipInfo& clip, double projectBPM) {
-    if (clip.type != ClipType::Audio || clip.audioFilePath.isEmpty() ||
+    if (!clip.isAudio() || clip.audioFilePath.isEmpty() ||
         !sourceBpmLooksDefaulted(clip, projectBPM)) {
         return false;
     }
@@ -63,7 +63,7 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
-    clip.type = ClipType::Audio;
+    clip.setAudioContent();
     clip.view = view;
     if (audioFilePath.isNotEmpty()) {
         clip.name = juce::File(audioFilePath).getFileNameWithoutExtension();
@@ -164,7 +164,7 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
     ClipInfo clip;
     clip.id = nextClipId_++;
     clip.trackId = trackId;
-    clip.type = ClipType::MIDI;
+    clip.setMidiContent();
     clip.view = view;
     clip.name = generateClipName(ClipType::MIDI);
     if (Config::getInstance().getClipColourMode() == 0) {
@@ -395,14 +395,14 @@ void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, do
         if (fromStart) {
             ClipOperations::resizeContainerFromLeft(*clip, newLength, tempo);
             // Non-loop mode: keep loopStart synced to offset
-            if (!clip->loopEnabled && clip->type == ClipType::Audio) {
+            if (!clip->loopEnabled && clip->isAudio()) {
                 clip->loopStart = clip->offset;
             }
         } else {
             ClipOperations::resizeContainerFromRight(*clip, newLength, tempo);
 
             // In non-loop mode, clip length defines the source region — keep loopLength in sync
-            if (!clip->loopEnabled && clip->type == ClipType::Audio) {
+            if (!clip->loopEnabled && clip->isAudio()) {
                 clip->loopLength = clip->timelineToSource(clip->length);
                 if (clip->autoTempo && clip->sourceBPM > 0.0) {
                     clip->loopLengthBeats = clip->loopLength * clip->sourceBPM / 60.0;
@@ -436,7 +436,7 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     rightClip.length = rightLength;
 
     // Adjust offset for right clip (TE-aligned: offset is start position in source)
-    if (rightClip.type == ClipType::Audio) {
+    if (rightClip.isAudio()) {
         // In autoTempo/warp mode, speedRatio is 1.0 but actual stretch is projectBPM/sourceBPM.
         // Use the tempo ratio to convert timeline seconds to source seconds.
         if (clip->isBeatsAuthoritative() && clip->sourceBPM > 0.0 && tempo > 0.0) {
@@ -449,7 +449,7 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     }
 
     // Handle MIDI clip splitting
-    if (rightClip.type == ClipType::MIDI && !rightClip.midiNotes.empty()) {
+    if (rightClip.isMidi() && !rightClip.midiNotes.empty()) {
         if (clip->loopEnabled && clip->loopLengthBeats > 0.0) {
             // Looped MIDI: both halves keep the same notes.
             // If the split falls mid-loop, adjust the right clip's midiOffset
@@ -509,7 +509,7 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
         double leftLenBeats = leftLength * beatsPerSecond;
         if (clip->loopLengthBeats > leftLenBeats) {
             clip->loopLengthBeats = leftLenBeats;
-            if (clip->type == ClipType::Audio) {
+            if (clip->isAudio()) {
                 double srcBpm = clip->sourceBPM > 0.0 ? clip->sourceBPM : tempo;
                 clip->loopLength = clip->loopLengthBeats / srcBpm * 60.0;
             }
@@ -519,7 +519,7 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
         double rightLenBeats = rightLength * beatsPerSecond;
         if (rightClip.loopLengthBeats > rightLenBeats) {
             rightClip.loopLengthBeats = rightLenBeats;
-            if (rightClip.type == ClipType::Audio) {
+            if (rightClip.isAudio()) {
                 double srcBpm = rightClip.sourceBPM > 0.0 ? rightClip.sourceBPM : tempo;
                 if (rightClip.autoTempo && rightClip.sourceBPM > 0.0) {
                     rightClip.loopStartBeats = rightClip.offsetBeats;
@@ -531,7 +531,7 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
                 rightClip.loopLength = rightClip.loopLengthBeats / srcBpm * 60.0;
             }
         }
-    } else if (clip->type == ClipType::Audio) {
+    } else if (clip->isAudio()) {
         // Non-looped audio: sync loopStart/loopLength to actual source extent
         // Left clip: loopStart stays at original value, loopLength shrinks
         clip->loopLength = clip->timelineToSource(clip->length);
@@ -562,7 +562,7 @@ ClipId ClipManager::splitClip(ClipId clipId, double splitTime, double tempo) {
     // split boundary.  The stretcher's overlapping analysis windows bleed audio
     // from beyond the boundary, which sounds like a doubled transient.  A short
     // fade masks this startup/shutdown artifact without being audible.
-    if (clip->type == ClipType::Audio && clip->isBeatsAuthoritative()) {
+    if (clip->isAudio() && clip->isBeatsAuthoritative()) {
         constexpr double kSplitFadeSeconds = 0.005;  // 5 ms
         clip->fadeOut = kSplitFadeSeconds;
         rightClip.fadeIn = kSplitFadeSeconds;
@@ -613,7 +613,7 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
 
         // When enabling loop on MIDI clips, capture current length as loop region
         // Populate both beat and seconds fields so all existing code paths work
-        if (enabled && clip->type == ClipType::MIDI) {
+        if (enabled && clip->isMidi()) {
             double bpm = juce::jmax(1.0, projectBPM);
             if (clip->loopLengthBeats <= 0.0) {
                 clip->loopLengthBeats =
@@ -624,7 +624,7 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
 
         // When enabling loop on audio clips, transfer offset → loopStart
         // The user's current offset becomes the loop start point (phase resets to 0)
-        if (enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+        if (enabled && clip->isAudio() && clip->audioFilePath.isNotEmpty()) {
             clip->loopStart = clip->offset;
 
             // Ensure loopLength is set (preserves source extent in loop mode)
@@ -637,13 +637,13 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
 
         // When disabling loop on MIDI clips, reset midiOffset — the looped
         // phase value has no meaning in non-looped mode.
-        if (!enabled && clip->type == ClipType::MIDI) {
+        if (!enabled && clip->isMidi()) {
             clip->midiOffset = 0.0;
         }
 
         // When disabling loop on audio clips, sync loopStart and clamp length to actual file
         // content
-        if (!enabled && clip->type == ClipType::Audio && clip->audioFilePath.isNotEmpty()) {
+        if (!enabled && clip->isAudio() && clip->audioFilePath.isNotEmpty()) {
             clip->loopStart = clip->offset;
             auto* thumbnail =
                 AudioThumbnailManager::getInstance().getThumbnail(clip->audioFilePath);
@@ -658,7 +658,7 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
 
 void ClipManager::setClipMidiOffset(ClipId clipId, double offsetBeats) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type != ClipType::MIDI) {
+        if (!clip->isMidi()) {
             return;
         }
         clip->midiOffset = juce::jmax(0.0, offsetBeats);
@@ -682,7 +682,7 @@ void ClipManager::setClipLaunchQuantize(ClipId clipId, LaunchQuantize quantize) 
 
 void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio && clip->warpEnabled != enabled) {
+        if (clip->isAudio() && clip->warpEnabled != enabled) {
             clip->warpEnabled = enabled;
             if (enabled)
                 clip->analogPitch = false;  // Analog pitch is incompatible with warp
@@ -693,7 +693,7 @@ void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
 
 void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             if (enabled)
                 seedSourceMetadataFromCachedDetection(*clip, bpm);
 
@@ -717,7 +717,7 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
 
 void ClipManager::setOffset(ClipId clipId, double offset) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::MIDI) {
+        if (clip->isMidi()) {
             // MIDI phase lives in midiOffset (beats) — caller passes beats directly
             clip->midiOffset = juce::jmax(0.0, offset);
         } else {
@@ -732,7 +732,7 @@ void ClipManager::setOffset(ClipId clipId, double offset) {
 
 void ClipManager::setLoopPhase(ClipId clipId, double phase) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio && clip->loopEnabled) {
+        if (clip->isAudio() && clip->loopEnabled) {
             clip->offset = clip->loopStart + phase;
             if (clip->autoTempo && clip->sourceBPM > 0.0)
                 clip->offsetBeats = clip->offset * clip->sourceBPM / 60.0;
@@ -745,7 +745,7 @@ void ClipManager::setLoopPhase(ClipId clipId, double phase) {
 void ClipManager::setLoopStart(ClipId clipId, double loopStart, double bpm) {
     if (auto* clip = getClip(clipId)) {
         clip->loopStart = juce::jmax(0.0, loopStart);
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             if (clip->autoTempo) {
                 // Use sourceBPM for beat conversion — loopStartBeats is in source-beat domain
                 double convBpm = (clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
@@ -760,10 +760,10 @@ void ClipManager::setLoopStart(ClipId clipId, double loopStart, double bpm) {
 void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
     if (auto* clip = getClip(clipId)) {
         clip->loopLength = juce::jmax(0.0, loopLength);
-        if (clip->type == ClipType::MIDI) {
+        if (clip->isMidi()) {
             // MIDI: keep loopLengthBeats in sync using project BPM
             clip->loopLengthBeats = (clip->loopLength * juce::jmax(1.0, bpm)) / 60.0;
-        } else if (clip->type == ClipType::Audio) {
+        } else if (clip->isAudio()) {
             if (clip->autoTempo) {
                 // Use sourceBPM for beat conversion — loopLengthBeats is in source-beat domain
                 double convBpm = (clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
@@ -782,7 +782,7 @@ void ClipManager::setLoopStartAndLength(ClipId clipId, double loopStart, double 
         clip->loopStart = juce::jmax(0.0, loopStart);
         clip->loopLength = juce::jmax(0.0, loopLength);
 
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             // Moving the loop START snaps the phase (clip.offset relative to loopStart) back to 0
             // — the user's drag intent is to relocate the loop, not to compensate for a stale
             // phase. Loop END moves don't touch the phase.
@@ -798,7 +798,7 @@ void ClipManager::setLoopStartAndLength(ClipId clipId, double loopStart, double 
                     clip->offsetBeats = clip->offset * clip->sourceBPM / 60.0;
             }
             sanitizeAudioClip(*clip);
-        } else if (clip->type == ClipType::MIDI) {
+        } else if (clip->isMidi()) {
             clip->loopLengthBeats = (clip->loopLength * juce::jmax(1.0, bpm)) / 60.0;
         }
 
@@ -808,7 +808,7 @@ void ClipManager::setLoopStartAndLength(ClipId clipId, double loopStart, double 
 
 void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
     auto* clip = getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio || !clip->autoTempo || bpm <= 0.0)
+    if (!clip || !clip->isAudio() || !clip->autoTempo || bpm <= 0.0)
         return;
 
     // Issue #1157: the beat-length slider edits USER INTENT only — how many
@@ -832,7 +832,7 @@ void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
 void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update,
                                       double projectBPM) {
     auto* clip = getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio || !clip->autoTempo)
+    if (!clip || !clip->isAudio() || !clip->autoTempo)
         return;
 
     // (1) Detected metadata — write-only role. Inspector "BPM" corrections
@@ -888,19 +888,19 @@ void ClipManager::refreshDerivedSeconds(ClipId clipId, double projectBPM) {
     // loopLength uses projectBPM. When sourceBPM is unknown (detection
     // pending), leave the source-domain seconds alone — readers fall back to
     // the lengthBeats × 60 / projectBPM path.
-    if (clip->type == ClipType::Audio && clip->autoTempo && clip->sourceBPM > 0.0) {
+    if (clip->isAudio() && clip->autoTempo && clip->sourceBPM > 0.0) {
         clip->offset = clip->offsetBeats * 60.0 / clip->sourceBPM;
         clip->loopStart = clip->loopStartBeats * 60.0 / clip->sourceBPM;
         if (clip->loopLengthBeats > 0.0)
             clip->loopLength = clip->loopLengthBeats * 60.0 / clip->sourceBPM;
-    } else if (clip->type == ClipType::MIDI && projectBPM > 0.0 && clip->loopLengthBeats > 0.0) {
+    } else if (clip->isMidi() && projectBPM > 0.0 && clip->loopLengthBeats > 0.0) {
         clip->loopLength = clip->loopLengthBeats * 60.0 / projectBPM;
     }
 }
 
 void ClipManager::setSpeedRatio(ClipId clipId, double speedRatio) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             double oldSourceExtent = clip->timelineToSource(clip->length);
             clip->speedRatio = juce::jlimit(ClipOperations::MIN_SPEED_RATIO,
                                             ClipOperations::MAX_SPEED_RATIO, speedRatio);
@@ -918,7 +918,7 @@ void ClipManager::setSpeedRatio(ClipId clipId, double speedRatio) {
 
 void ClipManager::setTimeStretchMode(ClipId clipId, int mode) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->timeStretchMode = mode;
             notifyClipPropertyChanged(clipId);
         }
@@ -931,7 +931,7 @@ void ClipManager::setTimeStretchMode(ClipId clipId, int mode) {
 
 void ClipManager::setAutoPitch(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->autoPitch = enabled;
             notifyClipPropertyChanged(clipId);
         }
@@ -940,7 +940,7 @@ void ClipManager::setAutoPitch(ClipId clipId, bool enabled) {
 
 void ClipManager::setAnalogPitch(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->analogPitch = enabled;
             if (enabled && !clip->autoTempo && !clip->warpEnabled) {
                 // Recompute speedRatio from current pitchChange
@@ -956,7 +956,7 @@ void ClipManager::setAnalogPitch(ClipId clipId, bool enabled) {
 
 void ClipManager::setAutoPitchMode(ClipId clipId, int mode) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->autoPitchMode = juce::jlimit(0, 2, mode);
             notifyClipPropertyChanged(clipId);
         }
@@ -965,7 +965,7 @@ void ClipManager::setAutoPitchMode(ClipId clipId, int mode) {
 
 void ClipManager::setPitchChange(ClipId clipId, float semitones) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             float old = clip->pitchChange;
             clip->pitchChange = juce::jlimit(-48.0f, 48.0f, semitones);
 
@@ -984,7 +984,7 @@ void ClipManager::setPitchChange(ClipId clipId, float semitones) {
 
 void ClipManager::setTranspose(ClipId clipId, int semitones) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->transpose = juce::jlimit(-24, 24, semitones);
             notifyClipPropertyChanged(clipId);
         }
@@ -997,7 +997,7 @@ void ClipManager::setTranspose(ClipId clipId, int semitones) {
 
 void ClipManager::setAutoDetectBeats(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->autoDetectBeats = enabled;
             notifyClipPropertyChanged(clipId);
         }
@@ -1006,7 +1006,7 @@ void ClipManager::setAutoDetectBeats(ClipId clipId, bool enabled) {
 
 void ClipManager::setBeatSensitivity(ClipId clipId, float sensitivity) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->beatSensitivity = juce::jlimit(0.0f, 1.0f, sensitivity);
             notifyClipPropertyChanged(clipId);
         }
@@ -1019,7 +1019,7 @@ void ClipManager::setBeatSensitivity(ClipId clipId, float sensitivity) {
 
 void ClipManager::setIsReversed(ClipId clipId, bool reversed) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->isReversed = reversed;
             notifyClipPropertyChanged(clipId);
         }
@@ -1032,7 +1032,7 @@ void ClipManager::setIsReversed(ClipId clipId, bool reversed) {
 
 void ClipManager::setGrooveTemplate(ClipId clipId, const juce::String& templateName) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::MIDI) {
+        if (clip->isMidi()) {
             clip->grooveTemplate = templateName;
             notifyClipPropertyChanged(clipId);
         }
@@ -1041,7 +1041,7 @@ void ClipManager::setGrooveTemplate(ClipId clipId, const juce::String& templateN
 
 void ClipManager::setGrooveStrength(ClipId clipId, float strength) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::MIDI) {
+        if (clip->isMidi()) {
             clip->grooveStrength = juce::jlimit(0.0f, 1.0f, strength);
             notifyClipPropertyChanged(clipId);
         }
@@ -1054,7 +1054,7 @@ void ClipManager::setGrooveStrength(ClipId clipId, float strength) {
 
 void ClipManager::setClipVolumeDB(ClipId clipId, float dB) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->volumeDB = juce::jlimit(-100.0f, 0.0f, dB);
             notifyClipPropertyChanged(clipId);
         }
@@ -1063,7 +1063,7 @@ void ClipManager::setClipVolumeDB(ClipId clipId, float dB) {
 
 void ClipManager::setClipGainDB(ClipId clipId, float dB) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->gainDB = juce::jlimit(0.0f, 24.0f, dB);
             notifyClipPropertyChanged(clipId);
         }
@@ -1072,7 +1072,7 @@ void ClipManager::setClipGainDB(ClipId clipId, float dB) {
 
 void ClipManager::setClipPan(ClipId clipId, float pan) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->pan = juce::jlimit(-1.0f, 1.0f, pan);
             notifyClipPropertyChanged(clipId);
         }
@@ -1085,7 +1085,7 @@ void ClipManager::setClipPan(ClipId clipId, float pan) {
 
 void ClipManager::setFadeIn(ClipId clipId, double seconds) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->fadeIn = juce::jmax(0.0, seconds);
             notifyClipPropertyChanged(clipId);
         }
@@ -1094,7 +1094,7 @@ void ClipManager::setFadeIn(ClipId clipId, double seconds) {
 
 void ClipManager::setFadeOut(ClipId clipId, double seconds) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->fadeOut = juce::jmax(0.0, seconds);
             notifyClipPropertyChanged(clipId);
         }
@@ -1103,7 +1103,7 @@ void ClipManager::setFadeOut(ClipId clipId, double seconds) {
 
 void ClipManager::setFadeInType(ClipId clipId, int type) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->fadeInType = juce::jlimit(1, 4, type);
             notifyClipPropertyChanged(clipId);
         }
@@ -1112,7 +1112,7 @@ void ClipManager::setFadeInType(ClipId clipId, int type) {
 
 void ClipManager::setFadeOutType(ClipId clipId, int type) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->fadeOutType = juce::jlimit(1, 4, type);
             notifyClipPropertyChanged(clipId);
         }
@@ -1121,7 +1121,7 @@ void ClipManager::setFadeOutType(ClipId clipId, int type) {
 
 void ClipManager::setFadeInBehaviour(ClipId clipId, int behaviour) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->fadeInBehaviour = juce::jlimit(0, 1, behaviour);
             notifyClipPropertyChanged(clipId);
         }
@@ -1130,7 +1130,7 @@ void ClipManager::setFadeInBehaviour(ClipId clipId, int behaviour) {
 
 void ClipManager::setFadeOutBehaviour(ClipId clipId, int behaviour) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->fadeOutBehaviour = juce::jlimit(0, 1, behaviour);
             notifyClipPropertyChanged(clipId);
         }
@@ -1139,7 +1139,7 @@ void ClipManager::setFadeOutBehaviour(ClipId clipId, int behaviour) {
 
 void ClipManager::setAutoCrossfade(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->autoCrossfade = enabled;
             notifyClipPropertyChanged(clipId);
         }
@@ -1148,7 +1148,7 @@ void ClipManager::setAutoCrossfade(ClipId clipId, bool enabled) {
 
 void ClipManager::setLaunchFadeSamples(ClipId clipId, int samples) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->launchFadeSamples = juce::jlimit(0, 16384, samples);
             notifyClipPropertyChanged(clipId);
         }
@@ -1161,7 +1161,7 @@ void ClipManager::setLaunchFadeSamples(ClipId clipId, int samples) {
 
 void ClipManager::setLeftChannelActive(ClipId clipId, bool active) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->leftChannelActive = active;
             notifyClipPropertyChanged(clipId);
         }
@@ -1170,7 +1170,7 @@ void ClipManager::setLeftChannelActive(ClipId clipId, bool active) {
 
 void ClipManager::setRightChannelActive(ClipId clipId, bool active) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             clip->rightChannelActive = active;
             notifyClipPropertyChanged(clipId);
         }
@@ -1204,7 +1204,7 @@ void ClipManager::setClipSnapEnabled(ClipId clipId, bool enabled) {
 
 void ClipManager::trimAudioLeft(ClipId clipId, double trimAmount, double fileDuration) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             ClipOperations::trimAudioFromLeft(*clip, trimAmount, fileDuration);
             notifyClipPropertyChanged(clipId);
         }
@@ -1213,7 +1213,7 @@ void ClipManager::trimAudioLeft(ClipId clipId, double trimAmount, double fileDur
 
 void ClipManager::trimAudioRight(ClipId clipId, double trimAmount, double fileDuration) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             ClipOperations::trimAudioFromRight(*clip, trimAmount, fileDuration);
             notifyClipPropertyChanged(clipId);
         }
@@ -1223,7 +1223,7 @@ void ClipManager::trimAudioRight(ClipId clipId, double trimAmount, double fileDu
 void ClipManager::stretchAudioLeft(ClipId clipId, double newLength, double oldLength,
                                    double originalSpeedRatio, double bpm) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             ClipOperations::stretchAudioFromLeft(*clip, newLength, oldLength, originalSpeedRatio);
             if (bpm > 0.0)
                 clip->startBeats = clip->startTime * bpm / 60.0;
@@ -1238,7 +1238,7 @@ void ClipManager::stretchAudioLeft(ClipId clipId, double newLength, double oldLe
 void ClipManager::stretchAudioRight(ClipId clipId, double newLength, double oldLength,
                                     double originalSpeedRatio, double bpm) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             ClipOperations::stretchAudioFromRight(*clip, newLength, oldLength, originalSpeedRatio);
             if (clip->isBeatsAuthoritative() && bpm > 0.0) {
                 clip->lengthBeats = clip->length * bpm / 60.0;
@@ -1250,7 +1250,7 @@ void ClipManager::stretchAudioRight(ClipId clipId, double newLength, double oldL
 
 void ClipManager::addMidiNote(ClipId clipId, const MidiNote& note) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::MIDI) {
+        if (clip->isMidi()) {
             clip->midiNotes.push_back(note);
             notifyClipPropertyChanged(clipId);
         }
@@ -1259,7 +1259,7 @@ void ClipManager::addMidiNote(ClipId clipId, const MidiNote& note) {
 
 void ClipManager::removeMidiNote(ClipId clipId, int noteIndex) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::MIDI && noteIndex >= 0 &&
+        if (clip->isMidi() && noteIndex >= 0 &&
             noteIndex < static_cast<int>(clip->midiNotes.size())) {
             clip->midiNotes.erase(clip->midiNotes.begin() + noteIndex);
             notifyClipPropertyChanged(clipId);
@@ -1269,7 +1269,7 @@ void ClipManager::removeMidiNote(ClipId clipId, int noteIndex) {
 
 void ClipManager::clearMidiNotes(ClipId clipId) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::MIDI) {
+        if (clip->isMidi()) {
             clip->midiNotes.clear();
             notifyClipPropertyChanged(clipId);
         }
@@ -1278,7 +1278,7 @@ void ClipManager::clearMidiNotes(ClipId clipId) {
 
 void ClipManager::addChordAnnotation(ClipId clipId, const ClipInfo::ChordAnnotation& annotation) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::MIDI) {
+        if (clip->isMidi()) {
             clip->chordAnnotations.push_back(annotation);
             notifyClipPropertyChanged(clipId);
         }
@@ -1287,7 +1287,7 @@ void ClipManager::addChordAnnotation(ClipId clipId, const ClipInfo::ChordAnnotat
 
 void ClipManager::removeChordAnnotation(ClipId clipId, size_t index) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::MIDI && index < clip->chordAnnotations.size()) {
+        if (clip->isMidi() && index < clip->chordAnnotations.size()) {
             clip->chordAnnotations.erase(clip->chordAnnotations.begin() +
                                          static_cast<ptrdiff_t>(index));
             notifyClipPropertyChanged(clipId);
@@ -1297,7 +1297,7 @@ void ClipManager::removeChordAnnotation(ClipId clipId, size_t index) {
 
 void ClipManager::clearChordAnnotations(ClipId clipId) {
     if (auto* clip = getClip(clipId)) {
-        if (clip->type == ClipType::MIDI) {
+        if (clip->isMidi()) {
             clip->chordAnnotations.clear();
             notifyClipPropertyChanged(clipId);
         }
@@ -1706,7 +1706,7 @@ void ClipManager::notifyClipDragPreview(ClipId clipId, double previewStartTime,
 juce::String ClipManager::generateClipName(ClipType type) const {
     int count = 1;
     for (const auto& [id, clip] : clips_) {
-        if (clip.type == type)
+        if (clip.getType() == type)
             count++;
     }
 
@@ -1718,7 +1718,7 @@ juce::String ClipManager::generateClipName(ClipType type) const {
 }
 
 void ClipManager::sanitizeAudioClip(ClipInfo& clip) {
-    if (clip.type != ClipType::Audio || clip.audioFilePath.isEmpty())
+    if (!clip.isAudio() || clip.audioFilePath.isEmpty())
         return;
 
     auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(clip.audioFilePath);
@@ -1812,7 +1812,7 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
         trimmed.length = overlapEnd - overlapStart;
         trimmed.startTime = overlapStart;
 
-        if (clip.type == ClipType::Audio) {
+        if (clip.isAudio()) {
             // Adjust offset for the trimmed start position
             double trimFromLeft = overlapStart - clip.startTime;
             if (clip.isBeatsAuthoritative() && clip.sourceBPM > 0.0 && tempoBPM > 0.0) {
@@ -1833,7 +1833,7 @@ void ClipManager::copyTimeRangeToClipboard(double startTime, double endTime,
                 }
                 trimmed.loopLength = trimmed.timelineToSource(trimmed.length);
             }
-        } else if (clip.type == ClipType::MIDI && !clip.midiNotes.empty()) {
+        } else if (clip.isMidi() && !clip.midiNotes.empty()) {
             // Filter MIDI notes to those within the overlap range
             double bps = tempoBPM / 60.0;
             // Notes are in beats relative to clip start. Convert overlap bounds to beats.
@@ -1878,7 +1878,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
 
         // Create new clip based on type, using targetView instead of clipData.view
         ClipId newClipId = INVALID_CLIP_ID;
-        if (clipData.type == ClipType::Audio) {
+        if (clipData.isAudio()) {
             if (clipData.audioFilePath.isNotEmpty()) {
                 newClipId = createAudioClip(newTrackId, newStartTime, clipData.length,
                                             clipData.audioFilePath, targetView);
@@ -1897,7 +1897,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                 newClip->loopEnabled = clipData.loopEnabled;
 
                 // Copy MIDI data
-                if (clipData.type == ClipType::MIDI) {
+                if (clipData.isMidi()) {
                     newClip->midiNotes = clipData.midiNotes;
                     newClip->midiOffset = clipData.midiOffset;
                     newClip->midiCCData = clipData.midiCCData;
@@ -1910,7 +1910,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                 bool crossViewToSession =
                     (targetView == ClipView::Session && clipData.view == ClipView::Arrangement);
 
-                if (clipData.type == ClipType::Audio && !crossViewToSession) {
+                if (clipData.isAudio() && !crossViewToSession) {
                     newClip->offset = clipData.offset;
                     newClip->loopStart = clipData.loopStart;
                     newClip->loopLength = clipData.loopLength;
@@ -2042,7 +2042,7 @@ void ClipManager::copyNotesToClipboard(ClipId clipId, const std::vector<size_t>&
     noteClipboardMinBeat_ = 0.0;
 
     const auto* clip = getClip(clipId);
-    if (!clip || clip->type != ClipType::MIDI || noteIndices.empty()) {
+    if (!clip || !clip->isMidi() || noteIndices.empty()) {
         return;
     }
 
