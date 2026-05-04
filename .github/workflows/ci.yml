@@ -333,16 +333,12 @@ jobs:
           exit 1
         fi
 
-    - name: Run JUCE integration tests
-      run: |
-        JUCE_TEST_BIN=$(find build-debug -name "magda_juce_tests" -type f | head -1)
-        if [ -n "$JUCE_TEST_BIN" ]; then
-          echo "Running JUCE integration tests..."
-          "$JUCE_TEST_BIN"
-        else
-          echo "❌ magda_juce_tests executable not found"
-          exit 1
-        fi
+    # JUCE integration tests are intentionally skipped on the macOS
+    # self-hosted runner: SharedTestEngine calls the production
+    # TracktionEngineWrapper::initialize(), which loads the runner host's
+    # real ~/Library/MAGDA settings, opens real CoreAudio + MIDI devices,
+    # and hangs on async playback-graph reallocation. Re-enable once the
+    # engine has a sandboxed test-init path. Tracking: #1172.
 
     - name: Configure CMake (Release)
       run: |
