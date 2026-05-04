@@ -614,7 +614,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     }
 
     const bool hasVisibleLoopPhase =
-        isLooped && displayInfo_.sourceLength > 0.0 && std::abs(displayInfo_.loopOffset) > 1e-6;
+        isLooped && displayInfo_.sourceLength > 0.0 && displayInfo_.loopLengthSeconds > 0.0;
 
     // Offset marker (orange) — only meaningful in non-loop mode. In loop mode
     // offset is represented by the phase marker inside the loop region.
@@ -1124,11 +1124,15 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     // Phase marker takes priority over edge resize so a click on the "P" marker doesn't
     // fall through to the source-extent right-edge hit-test (which used to silently shorten
     // the loop when the phase landed near the file end).
-    if (isNearPhaseMarker(x, *clip)) {
+    const bool nearPhaseMarker = isNearPhaseMarker(x, *clip);
+    const bool nearLeftEdge = isNearLeftEdge(x, *clip);
+    const bool nearRightEdge = isNearRightEdge(x, *clip);
+
+    if (nearPhaseMarker) {
         dragMode_ = DragMode::PhaseMarker;
-    } else if (isNearLeftEdge(x, *clip)) {
+    } else if (nearLeftEdge) {
         dragMode_ = shiftHeld ? DragMode::StretchLeft : DragMode::ResizeLeft;
-    } else if (isNearRightEdge(x, *clip) && shiftHeld) {
+    } else if (nearRightEdge && shiftHeld) {
         // Right-edge resize is intentionally disabled — only Shift+drag (stretch) survives.
         // Plain right-edge drag used to call resizeSourceExtent → setLoopLengthFromTimeline,
         // which is the loop-end edit and is handled on the timeline ruler instead.
@@ -1492,9 +1496,8 @@ bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) 
 }
 
 bool WaveformGridComponent::isNearPhaseMarker(int x, const magda::ClipInfo& clip) const {
-    if (!clip.loopEnabled || displayInfo_.loopLengthSeconds <= 0.0)
-        return false;
-    if (displayInfo_.sourceLength <= 0.0 || std::abs(displayInfo_.loopOffset) <= 1e-6)
+    const bool loopActive = clip.loopEnabled || clip.autoTempo;
+    if (!loopActive || displayInfo_.loopLengthSeconds <= 0.0 || displayInfo_.sourceLength <= 0.0)
         return false;
     int phaseX = timeToPixel(getDisplayStartTime() + displayInfo_.loopPhasePositionSeconds);
     return std::abs(x - phaseX) <= EDGE_GRAB_DISTANCE;
