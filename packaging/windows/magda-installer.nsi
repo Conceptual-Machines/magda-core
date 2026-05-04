@@ -38,6 +38,11 @@ Section "Install"
     File /r "${__FILEDIR__}\lang\*.*"
     SetOutPath $INSTDIR
 
+    ; Controller profiles + Lua scripts - registry probes <exe>/controllers/
+    SetOutPath "$INSTDIR\controllers"
+    File /r "${__FILEDIR__}\controllers\*.*"
+    SetOutPath $INSTDIR
+
     ; Create uninstaller
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -74,6 +79,7 @@ Section "Uninstall"
     Delete "$INSTDIR\magda_plugin_scanner.exe"
     Delete "$INSTDIR\Uninstall.exe"
     RMDir /r "$INSTDIR\lang"
+    RMDir /r "$INSTDIR\controllers"
     RMDir "$INSTDIR"
 
     Delete "$SMPROGRAMS\MAGDA\*.*"
