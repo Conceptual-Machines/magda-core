@@ -68,7 +68,7 @@ endif()
 
 # Options
 option(MAGDA_BUILD_TESTS "Build tests" ON)
-option(MAGDA_BUILD_EXAMPLES "Build examples" ON)
+option(MAGDA_BUILD_EXAMPLES "Build developer example tools (e.g. lua_smoke REPL)" OFF)
 option(MAGDA_BUILD_JUCE_ADAPTER "Build JUCE/Tracktion adapter" OFF)
 
 # Find packages
