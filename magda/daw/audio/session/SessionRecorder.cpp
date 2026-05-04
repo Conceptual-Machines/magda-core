@@ -50,7 +50,7 @@ void SessionRecorder::setArmed(bool armed) {
                     preview.trackId = clip.trackId;
                     preview.startTime = launchTime;
                     preview.currentLength = 0.0;
-                    preview.isAudioRecording = (clip.type == ClipType::Audio);
+                    preview.isAudioRecording = (clip.isAudio());
                     (*recordingPreviews_)[clip.trackId] = preview;
                 }
             }
@@ -76,7 +76,7 @@ void SessionRecorder::updatePreviews() {
 
         // Populate preview notes from the session clip's MIDI data
         const auto* sessionClip = clipManager.getClip(rec.sessionClipId);
-        if (!sessionClip || sessionClip->type != ClipType::MIDI || sessionClip->midiNotes.empty())
+        if (!sessionClip || !sessionClip->isMidi() || sessionClip->midiNotes.empty())
             continue;
 
         double clipLengthBeats = sessionClip->lengthBeats;
@@ -175,7 +175,7 @@ void SessionRecorder::clipPlaybackStateChanged(ClipId clipId) {
             preview.trackId = clip->trackId;
             preview.startTime = launchTime;
             preview.currentLength = 0.0;
-            preview.isAudioRecording = (clip->type == ClipType::Audio);
+            preview.isAudioRecording = (clip->isAudio());
             (*recordingPreviews_)[clip->trackId] = preview;
         }
     } else if (state == SessionClipPlayState::Stopped) {
@@ -203,7 +203,7 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
     // Create arrangement clip with the session clip's content
     ClipId newClipId = INVALID_CLIP_ID;
 
-    if (sessionClip->type == ClipType::Audio) {
+    if (sessionClip->isAudio()) {
         if (sessionClip->audioFilePath.isNotEmpty()) {
             newClipId =
                 clipManager.createAudioClip(rec.trackId, rec.arrangementStartTime, duration,
@@ -225,7 +225,7 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
     newClip->name = sessionClip->name;
     newClip->colour = sessionClip->colour;
 
-    if (sessionClip->type == ClipType::Audio) {
+    if (sessionClip->isAudio()) {
         newClip->offset = sessionClip->offset;
         newClip->loopStart = sessionClip->loopStart;
         newClip->loopLength = sessionClip->loopLength;
@@ -259,7 +259,7 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
         if (sessionClip->loopEnabled && duration > onePassDuration) {
             newClip->loopEnabled = true;
         }
-    } else if (sessionClip->type == ClipType::MIDI) {
+    } else if (sessionClip->isMidi()) {
         // For MIDI: tile notes across the played duration if looping
         double clipLengthBeats = sessionClip->lengthBeats;
         if (clipLengthBeats <= 0.0)

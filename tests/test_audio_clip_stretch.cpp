@@ -281,7 +281,7 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
 
     SECTION("Multiple stretch events maintain fixed right edge") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.startTime = 10.0;
@@ -336,7 +336,7 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
 
     SECTION("Stretch factor clamping doesn't break right edge anchoring") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.startTime = 5.0;
@@ -364,7 +364,7 @@ TEST_CASE("ClipOperations - stretchAudioFromLeft right edge anchoring",
 
     SECTION("Stretch with pre-stretched audio maintains correct calculations") {
         ClipInfo clip;
-        clip.type = ClipType::Audio;
+        clip.setAudioContent();
         clip.audioFilePath = "test.wav";
         clip.offset = 0.0;
         clip.startTime = 20.0;

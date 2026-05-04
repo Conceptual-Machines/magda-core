@@ -31,7 +31,7 @@ class SessionClipEditor::WaveformDisplay : public juce::Component {
 
         // Get clip info
         const auto* clip = ClipManager::getInstance().getClip(clipId_);
-        if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty()) {
+        if (!clip || !clip->isAudio() || clip->audioFilePath.isEmpty()) {
             // No waveform to show
             g.setColour(DarkTheme::getSecondaryTextColour());
             g.setFont(FontManager::getInstance().getUIFont(14.0f));

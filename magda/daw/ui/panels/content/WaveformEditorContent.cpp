@@ -559,7 +559,7 @@ WaveformEditorContent::WaveformEditorContent() {
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClip);
-        if (clip && clip->type == magda::ClipType::Audio) {
+        if (clip && clip->isAudio()) {
             setClip(selectedClip);
         }
     }
@@ -648,7 +648,7 @@ void WaveformEditorContent::onActivated() {
     magda::ClipId selectedClip = magda::ClipManager::getInstance().getSelectedClip();
     if (selectedClip != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(selectedClip);
-        if (clip && clip->type == magda::ClipType::Audio) {
+        if (clip && clip->isAudio()) {
             setClip(selectedClip);
         }
     }
@@ -832,8 +832,7 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
         }
 
         // Check if cached transients were invalidated (e.g. sensitivity changed)
-        if (transientsCached_ && clip->type == magda::ClipType::Audio &&
-            !clip->audioFilePath.isEmpty()) {
+        if (transientsCached_ && clip->isAudio() && !clip->audioFilePath.isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
                 clip->audioFilePath);
             if (!cached) {
@@ -855,7 +854,7 @@ void WaveformEditorContent::clipSelectionChanged(magda::ClipId clipId) {
     // Auto-switch to the selected clip if it's an audio clip
     if (clipId != magda::INVALID_CLIP_ID) {
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-        if (clip && clip->type == magda::ClipType::Audio) {
+        if (clip && clip->isAudio()) {
             setClip(clipId);
         }
     }
@@ -1009,7 +1008,7 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
         }
 
         // Check for cached transients or start polling
-        if (clip && clip->type == magda::ClipType::Audio && !clip->audioFilePath.isEmpty()) {
+        if (clip && clip->isAudio() && !clip->audioFilePath.isEmpty()) {
             auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
                 clip->audioFilePath);
             if (cached) {

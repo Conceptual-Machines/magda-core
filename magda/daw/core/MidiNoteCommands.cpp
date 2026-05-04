@@ -28,9 +28,9 @@ void AddMidiNoteCommand::execute() {
         DBG("AddMidiNoteCommand: clip " + juce::String(clipId_) + " NOT FOUND — note dropped");
         return;
     }
-    if (clip->type != ClipType::MIDI) {
+    if (!clip->isMidi()) {
         DBG("AddMidiNoteCommand: clip " + juce::String(clipId_) +
-            " type=" + juce::String(static_cast<int>(clip->type)) + " != MIDI — note dropped");
+            " type=" + juce::String(static_cast<int>(clip->getType())) + " != MIDI — note dropped");
         return;
     }
 
@@ -73,7 +73,7 @@ void MoveMidiNoteCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI || noteIndex_ >= clip->midiNotes.size()) {
+    if (!clip || !clip->isMidi() || noteIndex_ >= clip->midiNotes.size()) {
         return;
     }
 
@@ -92,7 +92,7 @@ void MoveMidiNoteCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI || noteIndex_ >= clip->midiNotes.size()) {
+    if (!clip || !clip->isMidi() || noteIndex_ >= clip->midiNotes.size()) {
         return;
     }
 
@@ -132,7 +132,7 @@ void ResizeMidiNoteCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI || noteIndex_ >= clip->midiNotes.size()) {
+    if (!clip || !clip->isMidi() || noteIndex_ >= clip->midiNotes.size()) {
         return;
     }
 
@@ -150,7 +150,7 @@ void ResizeMidiNoteCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI || noteIndex_ >= clip->midiNotes.size()) {
+    if (!clip || !clip->isMidi() || noteIndex_ >= clip->midiNotes.size()) {
         return;
     }
 
@@ -198,7 +198,7 @@ void DeleteMidiNoteCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -228,7 +228,7 @@ void SetMidiNoteVelocityCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI || noteIndex_ >= clip->midiNotes.size()) {
+    if (!clip || !clip->isMidi() || noteIndex_ >= clip->midiNotes.size()) {
         return;
     }
 
@@ -246,7 +246,7 @@ void SetMidiNoteVelocityCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI || noteIndex_ >= clip->midiNotes.size()) {
+    if (!clip || !clip->isMidi() || noteIndex_ >= clip->midiNotes.size()) {
         return;
     }
 
@@ -280,7 +280,7 @@ void SetMultipleNoteVelocitiesCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -314,7 +314,7 @@ void SetMultipleNoteVelocitiesCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -340,7 +340,7 @@ void MoveMultipleMidiNotesCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -376,7 +376,7 @@ void MoveMultipleMidiNotesCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -404,7 +404,7 @@ void ResizeMultipleMidiNotesCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -438,7 +438,7 @@ void ResizeMultipleMidiNotesCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -478,15 +478,14 @@ void MoveMidiNoteBetweenClipsCommand::execute() {
 
     // Get source clip
     auto* sourceClip = clipManager.getClip(sourceClipId_);
-    if (!sourceClip || sourceClip->type != ClipType::MIDI ||
-        sourceNoteIndex_ >= sourceClip->midiNotes.size()) {
+    if (!sourceClip || !sourceClip->isMidi() || sourceNoteIndex_ >= sourceClip->midiNotes.size()) {
         DBG("MoveMidiNoteBetweenClipsCommand::execute() - validation failed");
         return;
     }
 
     // Get destination clip
     auto* destClip = clipManager.getClip(destClipId_);
-    if (!destClip || destClip->type != ClipType::MIDI) {
+    if (!destClip || !destClip->isMidi()) {
         DBG("MoveMidiNoteBetweenClipsCommand::execute() - dest clip validation failed");
         return;
     }
@@ -524,7 +523,7 @@ void MoveMidiNoteBetweenClipsCommand::undo() {
 
     // Re-add to source clip at original position
     auto* sourceClip = clipManager.getClip(sourceClipId_);
-    if (!sourceClip || sourceClip->type != ClipType::MIDI) {
+    if (!sourceClip || !sourceClip->isMidi()) {
         return;
     }
 
@@ -550,7 +549,7 @@ void QuantizeMidiNotesCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -598,7 +597,7 @@ void QuantizeMidiNotesCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -626,7 +625,7 @@ DeleteMultipleMidiNotesCommand::DeleteMultipleMidiNotesCommand(ClipId clipId,
 
     // Capture note data for undo
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    if (clip && clip->type == ClipType::MIDI) {
+    if (clip && clip->isMidi()) {
         for (size_t idx : noteIndices_) {
             if (idx < clip->midiNotes.size()) {
                 deleted_.emplace_back(idx, clip->midiNotes[idx]);
@@ -639,7 +638,7 @@ void DeleteMultipleMidiNotesCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -662,7 +661,7 @@ void DeleteMultipleMidiNotesCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -688,7 +687,7 @@ void AddMultipleMidiNotesCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -711,7 +710,7 @@ void AddMultipleMidiNotesCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -738,7 +737,7 @@ void TransposeMidiClipCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI || clip->midiNotes.empty()) {
+    if (!clip || !clip->isMidi() || clip->midiNotes.empty()) {
         return;
     }
 
@@ -768,7 +767,7 @@ void TransposeMidiClipCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI) {
+    if (!clip || !clip->isMidi()) {
         return;
     }
 
@@ -802,7 +801,7 @@ AddMidiCCEventCommand::AddMidiCCEventCommand(ClipId clipId, MidiCCData event)
 void AddMidiCCEventCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     clip->midiCCData.push_back(event_);
@@ -815,7 +814,7 @@ void AddMidiCCEventCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || clip->midiCCData.empty())
+    if (!clip || !clip->isMidi() || clip->midiCCData.empty())
         return;
 
     clip->midiCCData.pop_back();
@@ -837,7 +836,7 @@ EditMidiCCEventCommand::EditMidiCCEventCommand(ClipId clipId, size_t eventIndex,
 void EditMidiCCEventCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiCCData.size())
+    if (!clip || !clip->isMidi() || eventIndex_ >= clip->midiCCData.size())
         return;
 
     clip->midiCCData[eventIndex_].value = newValue_;
@@ -850,7 +849,7 @@ void EditMidiCCEventCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiCCData.size())
+    if (!clip || !clip->isMidi() || eventIndex_ >= clip->midiCCData.size())
         return;
 
     clip->midiCCData[eventIndex_].value = oldValue_;
@@ -883,7 +882,7 @@ DeleteMidiCCEventCommand::DeleteMidiCCEventCommand(ClipId clipId, size_t eventIn
 void DeleteMidiCCEventCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiCCData.size())
+    if (!clip || !clip->isMidi() || eventIndex_ >= clip->midiCCData.size())
         return;
 
     clip->midiCCData.erase(clip->midiCCData.begin() + static_cast<std::ptrdiff_t>(eventIndex_));
@@ -896,7 +895,7 @@ void DeleteMidiCCEventCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     size_t insertPos = std::min(eventIndex_, clip->midiCCData.size());
@@ -915,7 +914,7 @@ DrawMidiCCEventsCommand::DrawMidiCCEventsCommand(ClipId clipId, std::vector<Midi
 void DrawMidiCCEventsCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     insertStartIndex_ = clip->midiCCData.size();
@@ -931,7 +930,7 @@ void DrawMidiCCEventsCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     if (insertStartIndex_ <= clip->midiCCData.size()) {
@@ -962,7 +961,7 @@ MoveMidiCCEventCommand::MoveMidiCCEventCommand(ClipId clipId, size_t eventIndex,
 void MoveMidiCCEventCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiCCData.size())
+    if (!clip || !clip->isMidi() || eventIndex_ >= clip->midiCCData.size())
         return;
 
     clip->midiCCData[eventIndex_].beatPosition = newBeatPosition_;
@@ -976,7 +975,7 @@ void MoveMidiCCEventCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiCCData.size())
+    if (!clip || !clip->isMidi() || eventIndex_ >= clip->midiCCData.size())
         return;
 
     clip->midiCCData[eventIndex_].beatPosition = oldBeatPosition_;
@@ -1017,7 +1016,7 @@ MoveMidiPitchBendEventCommand::MoveMidiPitchBendEventCommand(ClipId clipId, size
 void MoveMidiPitchBendEventCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiPitchBendData.size())
+    if (!clip || !clip->isMidi() || eventIndex_ >= clip->midiPitchBendData.size())
         return;
 
     clip->midiPitchBendData[eventIndex_].beatPosition = newBeatPosition_;
@@ -1031,7 +1030,7 @@ void MoveMidiPitchBendEventCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiPitchBendData.size())
+    if (!clip || !clip->isMidi() || eventIndex_ >= clip->midiPitchBendData.size())
         return;
 
     clip->midiPitchBendData[eventIndex_].beatPosition = oldBeatPosition_;
@@ -1064,7 +1063,7 @@ DeleteMultipleMidiCCEventsCommand::DeleteMultipleMidiCCEventsCommand(
 
     // Capture event data for undo
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    if (clip && clip->type == ClipType::MIDI) {
+    if (clip && clip->isMidi()) {
         for (size_t idx : eventIndices_) {
             if (idx < clip->midiCCData.size()) {
                 deleted_.emplace_back(idx, clip->midiCCData[idx]);
@@ -1076,7 +1075,7 @@ DeleteMultipleMidiCCEventsCommand::DeleteMultipleMidiCCEventsCommand(
 void DeleteMultipleMidiCCEventsCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     for (size_t idx : eventIndices_) {
@@ -1094,7 +1093,7 @@ void DeleteMultipleMidiCCEventsCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     // Re-insert in reverse order (ascending index) to restore original positions
@@ -1117,7 +1116,7 @@ AddMidiPitchBendEventCommand::AddMidiPitchBendEventCommand(ClipId clipId, MidiPi
 void AddMidiPitchBendEventCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     clip->midiPitchBendData.push_back(event_);
@@ -1130,7 +1129,7 @@ void AddMidiPitchBendEventCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || clip->midiPitchBendData.empty())
+    if (!clip || !clip->isMidi() || clip->midiPitchBendData.empty())
         return;
 
     clip->midiPitchBendData.pop_back();
@@ -1153,7 +1152,7 @@ EditMidiPitchBendEventCommand::EditMidiPitchBendEventCommand(ClipId clipId, size
 void EditMidiPitchBendEventCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiPitchBendData.size())
+    if (!clip || !clip->isMidi() || eventIndex_ >= clip->midiPitchBendData.size())
         return;
 
     clip->midiPitchBendData[eventIndex_].value = newValue_;
@@ -1166,7 +1165,7 @@ void EditMidiPitchBendEventCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiPitchBendData.size())
+    if (!clip || !clip->isMidi() || eventIndex_ >= clip->midiPitchBendData.size())
         return;
 
     clip->midiPitchBendData[eventIndex_].value = oldValue_;
@@ -1199,7 +1198,7 @@ DeleteMidiPitchBendEventCommand::DeleteMidiPitchBendEventCommand(ClipId clipId, 
 void DeleteMidiPitchBendEventCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || eventIndex_ >= clip->midiPitchBendData.size())
+    if (!clip || !clip->isMidi() || eventIndex_ >= clip->midiPitchBendData.size())
         return;
 
     clip->midiPitchBendData.erase(clip->midiPitchBendData.begin() +
@@ -1213,7 +1212,7 @@ void DeleteMidiPitchBendEventCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     size_t insertPos = std::min(eventIndex_, clip->midiPitchBendData.size());
@@ -1233,7 +1232,7 @@ DrawMidiPitchBendEventsCommand::DrawMidiPitchBendEventsCommand(
 void DrawMidiPitchBendEventsCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     insertStartIndex_ = clip->midiPitchBendData.size();
@@ -1249,7 +1248,7 @@ void DrawMidiPitchBendEventsCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     if (insertStartIndex_ <= clip->midiPitchBendData.size()) {
@@ -1272,7 +1271,7 @@ DeleteMultipleMidiPitchBendEventsCommand::DeleteMultipleMidiPitchBendEventsComma
 
     // Capture event data for undo
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
-    if (clip && clip->type == ClipType::MIDI) {
+    if (clip && clip->isMidi()) {
         for (size_t idx : eventIndices_) {
             if (idx < clip->midiPitchBendData.size()) {
                 deleted_.emplace_back(idx, clip->midiPitchBendData[idx]);
@@ -1284,7 +1283,7 @@ DeleteMultipleMidiPitchBendEventsCommand::DeleteMultipleMidiPitchBendEventsComma
 void DeleteMultipleMidiPitchBendEventsCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     for (size_t idx : eventIndices_) {
@@ -1303,7 +1302,7 @@ void DeleteMultipleMidiPitchBendEventsCommand::undo() {
         return;
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     // Re-insert in reverse order (ascending index) to restore original positions
@@ -1478,7 +1477,7 @@ void BendNoteTimingCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI || noteIndices_.size() < 2)
+    if (!clip || !clip->isMidi() || noteIndices_.size() < 2)
         return;
 
     // Capture old values on first execute
@@ -1544,7 +1543,7 @@ void BendNoteTimingCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
 
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     for (size_t i = 0; i < noteIndices_.size() && i < oldStartBeats_.size(); ++i) {

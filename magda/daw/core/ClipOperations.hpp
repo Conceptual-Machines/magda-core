@@ -77,7 +77,7 @@ class ClipOperations {
         // loopLengthBeats is the authoritative source of truth and should only
         // be updated when the user explicitly changes it, not during tempo-driven resizes.
 
-        if (clip.type == ClipType::Audio && !clip.audioFilePath.isEmpty()) {
+        if (clip.isAudio() && !clip.audioFilePath.isEmpty()) {
             bool isAutoTempo = clip.autoTempo && clip.sourceBPM > 0.0 && bpm > 0.0;
 
             if (isAutoTempo) {
@@ -112,7 +112,7 @@ class ClipOperations {
                     }
                 }
             }
-        } else if (clip.type == ClipType::MIDI) {
+        } else if (clip.isMidi()) {
             // MIDI phase lives in midiOffset (beats). Do NOT touch clip.offset.
             double beatsPerSecond = bpm / 60.0;
             double deltaBeat = actualDelta * beatsPerSecond;
@@ -286,7 +286,7 @@ class ClipOperations {
      * @param newLength New clip length
      */
     static inline void stretchClipFromLeft(ClipInfo& clip, double newLength) {
-        if (clip.type != ClipType::Audio || clip.audioFilePath.isEmpty()) {
+        if (!clip.isAudio() || clip.audioFilePath.isEmpty()) {
             resizeContainerFromLeft(clip, newLength);
             return;
         }
@@ -310,7 +310,7 @@ class ClipOperations {
      * @param newLength New clip length
      */
     static inline void stretchClipFromRight(ClipInfo& clip, double newLength) {
-        if (clip.type != ClipType::Audio || clip.audioFilePath.isEmpty()) {
+        if (!clip.isAudio() || clip.audioFilePath.isEmpty()) {
             resizeContainerFromRight(clip, newLength);
             return;
         }
@@ -742,7 +742,7 @@ class ClipOperations {
      * After flattening, looping is disabled and offsets are reset to 0.
      */
     static inline void flattenMidiClip(ClipInfo& clip) {
-        if (clip.type != ClipType::MIDI)
+        if (!clip.isMidi())
             return;
 
         std::vector<MidiNote> flatNotes;

@@ -24,7 +24,7 @@ TimeBendPopup::TimeBendPopup(magda::ClipId clipId, std::vector<size_t> noteIndic
     : clipId_(clipId), noteIndices_(std::move(noteIndices)) {
     // Capture original positions for preview/restore
     auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
-    if (clip && clip->type == magda::ClipType::MIDI) {
+    if (clip && clip->isMidi()) {
         originalStartBeats_.reserve(noteIndices_.size());
         for (size_t index : noteIndices_) {
             if (index < clip->midiNotes.size())
@@ -198,7 +198,7 @@ TimeBendPopup::~TimeBendPopup() {
 void TimeBendPopup::applyPreview(float depth, float skew, int cycles, float quantize,
                                  int quantizeSub, bool hardAngle) {
     auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
-    if (!clip || clip->type != magda::ClipType::MIDI || originalStartBeats_.size() < 2)
+    if (!clip || !clip->isMidi() || originalStartBeats_.size() < 2)
         return;
 
     // Identity curve with no quantize — restore exact originals to avoid float drift
@@ -243,7 +243,7 @@ void TimeBendPopup::applyPreview(float depth, float skew, int cycles, float quan
 
 void TimeBendPopup::restoreOriginals() {
     auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
-    if (!clip || clip->type != magda::ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     for (size_t i = 0; i < noteIndices_.size() && i < originalStartBeats_.size(); ++i) {

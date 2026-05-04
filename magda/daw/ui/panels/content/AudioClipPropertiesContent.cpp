@@ -148,7 +148,7 @@ void AudioClipPropertiesContent::createControls() {
 
         const bool sourceBpmLooksDefaulted =
             clip->sourceBPM <= 0.0 || (bpm > 0.0 && std::abs(clip->sourceBPM - bpm) < 0.1);
-        if (enable && clip->type == magda::ClipType::Audio && sourceBpmLooksDefaulted) {
+        if (enable && clip->isAudio() && sourceBpmLooksDefaulted) {
             // Issue #1157: only seed from AudioThumbnailManager when the
             // file didn't carry tempo metadata. setSourceMetadata (from TE's
             // loopInfo) is authoritative when present.
@@ -443,7 +443,7 @@ void AudioClipPropertiesContent::createControls() {
 
 void AudioClipPropertiesContent::updateFromClip() {
     const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
-    bool hasClip = clip != nullptr && clip->type == magda::ClipType::Audio;
+    bool hasClip = clip != nullptr && clip->isAudio();
 
     warpToggle_->setToggleState(hasClip && clip->warpEnabled, juce::dontSendNotification);
     autoTempoToggle_->setToggleState(hasClip && clip->autoTempo, juce::dontSendNotification);

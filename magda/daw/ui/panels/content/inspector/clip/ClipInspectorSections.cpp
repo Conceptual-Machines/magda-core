@@ -357,7 +357,7 @@ void ClipInspector::initClipPropertiesSection() {
     clipBpmValue_.setEditable(true);
     clipBpmValue_.onTextChange = [this]() {
         auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-        if (!clip || clip->type != magda::ClipType::Audio)
+        if (!clip || !clip->isAudio())
             return;
 
         // Parse BPM from text (strip " BPM" suffix if present)
@@ -523,10 +523,10 @@ void ClipInspector::initClipPropertiesSection() {
         if (!clip)
             return;
 
-        if (clip->type == magda::ClipType::MIDI) {
+        if (clip->isMidi()) {
             double newOffsetBeats = clipContentOffsetValue_->getValue();
             magda::ClipManager::getInstance().setClipMidiOffset(primaryClipId(), newOffsetBeats);
-        } else if (clip->type == magda::ClipType::Audio) {
+        } else if (clip->isAudio()) {
             double bpm = 120.0;
             if (timelineController_) {
                 bpm = timelineController_->getState().tempo.bpm;
@@ -651,7 +651,7 @@ void ClipInspector::initClipPropertiesSection() {
         // applyAudioClipBeats once autoTempo is on.
         const bool sourceBpmLooksDefaulted =
             clip->sourceBPM <= 0.0 || (bpm > 0.0 && std::abs(clip->sourceBPM - bpm) < 0.1);
-        if (enable && clip->type == magda::ClipType::Audio && sourceBpmLooksDefaulted) {
+        if (enable && clip->isAudio() && sourceBpmLooksDefaulted) {
             // Issue #1157: only seed from AudioThumbnailManager when the file
             // didn't carry tempo metadata. setSourceMetadata (from TE's
             // loopInfo) is authoritative when present; TempoDetect can be
@@ -746,7 +746,7 @@ void ClipInspector::initClipPropertiesSection() {
         double delta = currentValue - multiSpeedRatioDragStart_;
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio) {
+            if (c && c->isAudio()) {
                 double newVal = juce::jlimit(0.25, 4.0, c->speedRatio + delta);
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetClipSpeedRatioCommand>(cid, newVal));
@@ -808,8 +808,7 @@ void ClipInspector::initClipPropertiesSection() {
         }
         // Preserve current phase when moving loop start
         // Use sourceBPM for audio source-file positions
-        double loopBpm =
-            (clip->type == magda::ClipType::Audio && clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
+        double loopBpm = (clip->isAudio() && clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
         double currentPhase = clip->offset - clip->loopStart;
         double newLoopStartBeats = clipLoopStartValue_->getValue();
         double newLoopStartSeconds =
@@ -851,8 +850,7 @@ void ClipInspector::initClipPropertiesSection() {
 
         // Compute new loop length from loop end - loop start
         // Use sourceBPM for audio source-file positions
-        double loopBpm =
-            (clip->type == magda::ClipType::Audio && clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
+        double loopBpm = (clip->isAudio() && clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
         double newLoopEndBeats = clipLoopEndValue_->getValue();
         double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, loopBpm);
         double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
@@ -907,7 +905,7 @@ void ClipInspector::initClipPropertiesSection() {
             return;
 
         double newPhaseBeats = std::max(0.0, clipLoopPhaseValue_->getValue());
-        if (clip->type == magda::ClipType::MIDI) {
+        if (clip->isMidi()) {
             // MIDI phase lives in midiOffset (beats)
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetClipOffsetCommand>(primaryClipId(), newPhaseBeats));
@@ -1077,7 +1075,7 @@ void ClipInspector::initPitchSection() {
             magda::UndoManager::getInstance().beginCompoundOperation("Transpose MIDI Clips");
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::MIDI) {
+            if (c && c->isMidi()) {
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::TransposeMidiClipCommand>(cid, semitones));
             }
@@ -1127,7 +1125,7 @@ void ClipInspector::initPitchSection() {
         double delta = currentValue - multiPitchChangeDragStart_;
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio) {
+            if (c && c->isAudio()) {
                 float newVal =
                     juce::jlimit(-48.0f, 48.0f, c->pitchChange + static_cast<float>(delta));
                 magda::UndoManager::getInstance().executeCommand(
@@ -1177,7 +1175,7 @@ void ClipInspector::initGrooveSection() {
         float newStrength = static_cast<float>(grooveStrengthValue_->getValue());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::MIDI) {
+            if (c && c->isMidi()) {
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetClipGrooveStrengthCommand>(cid, newStrength));
             }
@@ -1259,7 +1257,7 @@ void ClipInspector::onGrooveTemplateSelected(const juce::String& templateName) {
 
     for (auto cid : selectedClipIds_) {
         const auto* c = magda::ClipManager::getInstance().getClip(cid);
-        if (c && c->type == magda::ClipType::MIDI) {
+        if (c && c->isMidi()) {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetClipGrooveTemplateCommand>(cid, name));
         }
@@ -1287,7 +1285,7 @@ void ClipInspector::initMixSection() {
         double delta = currentValue - multiVolumeDragStart_;
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio) {
+            if (c && c->isAudio()) {
                 float newVal = juce::jlimit(-100.0f, 0.0f, c->volumeDB + static_cast<float>(delta));
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetClipVolumeDBCommand>(cid, newVal));
@@ -1308,7 +1306,7 @@ void ClipInspector::initMixSection() {
         double delta = currentValue - multiPanDragStart_;
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio) {
+            if (c && c->isAudio()) {
                 float newVal = juce::jlimit(-1.0f, 1.0f, c->pan + static_cast<float>(delta));
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetClipPanCommand>(cid, newVal));
@@ -1330,7 +1328,7 @@ void ClipInspector::initMixSection() {
         double delta = currentValue - multiGainDragStart_;
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
-            if (c && c->type == magda::ClipType::Audio) {
+            if (c && c->isAudio()) {
                 float newVal = juce::jlimit(0.0f, 24.0f, c->gainDB + static_cast<float>(delta));
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetClipGainDBCommand>(cid, newVal));

@@ -14,7 +14,7 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("trackId", clip.trackId);
     obj->setProperty("name", clip.name);
     obj->setProperty("colour", colourToString(clip.colour));
-    obj->setProperty("type", static_cast<int>(clip.type));
+    obj->setProperty("type", static_cast<int>(clip.getType()));
     obj->setProperty("view", static_cast<int>(clip.view));
     obj->setProperty("loopEnabled", clip.loopEnabled);
     obj->setProperty("sceneIndex", clip.sceneIndex);
@@ -178,7 +178,11 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.trackId = obj->getProperty("trackId");
     outClip.name = obj->getProperty("name").toString();
     outClip.colour = stringToColour(obj->getProperty("colour").toString());
-    outClip.type = static_cast<ClipType>(static_cast<int>(obj->getProperty("type")));
+    auto clipType = static_cast<ClipType>(static_cast<int>(obj->getProperty("type")));
+    if (clipType == ClipType::Audio)
+        outClip.setAudioContent();
+    else
+        outClip.setMidiContent();
     outClip.view = static_cast<ClipView>(static_cast<int>(obj->getProperty("view")));
 
     auto* placementObj = obj->getProperty("placement").getDynamicObject();

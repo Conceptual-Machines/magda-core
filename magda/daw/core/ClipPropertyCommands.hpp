@@ -40,7 +40,7 @@ class SetClipOffsetCommand : public UndoableCommand {
     SetClipOffsetCommand(ClipId clipId, double newOffset) : clipId_(clipId), newOffset_(newOffset) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            oldOffset_ = (clip->type == ClipType::MIDI) ? clip->midiOffset : clip->offset;
+            oldOffset_ = (clip->isMidi()) ? clip->midiOffset : clip->offset;
     }
 
     void execute() override {
@@ -162,7 +162,7 @@ class SetClipLoopRangeCommand : public UndoableCommand {
         if (auto* clip = ClipManager::getInstance().getClip(clipId)) {
             oldLoopStart_ = clip->loopStart;
             oldLoopLength_ = clip->loopLength;
-            oldOffset_ = (clip->type == ClipType::MIDI) ? clip->midiOffset : clip->offset;
+            oldOffset_ = (clip->isMidi()) ? clip->midiOffset : clip->offset;
         }
     }
 

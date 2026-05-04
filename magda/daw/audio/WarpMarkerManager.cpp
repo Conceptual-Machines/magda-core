@@ -40,7 +40,7 @@ void WarpMarkerManager::setTransientSensitivity(
     te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId, ClipId clipId,
     float sensitivity) {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty())
+    if (!clip || !clip->isAudio() || clip->audioFilePath.isEmpty())
         return;
 
     te::WaveAudioClip* audioClipPtr = findWaveAudioClip(edit, clipIdToEngineId, clipId);
@@ -64,7 +64,7 @@ bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
                                           ClipId clipId) {
     // Get clip info for file path
     const auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty()) {
+    if (!clip || !clip->isAudio() || clip->audioFilePath.isEmpty()) {
         return false;
     }
 

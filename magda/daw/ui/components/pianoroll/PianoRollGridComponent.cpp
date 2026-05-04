@@ -853,7 +853,7 @@ bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
             delta *= 12;
 
         const auto* clip = ClipManager::getInstance().getClip(noteSel.clipId);
-        if (!clip || clip->type != ClipType::MIDI)
+        if (!clip || !clip->isMidi())
             return false;
 
         // Check all notes stay within valid range
@@ -889,7 +889,7 @@ bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
             return false;
 
         const auto* clip = ClipManager::getInstance().getClip(noteSel.clipId);
-        if (!clip || clip->type != ClipType::MIDI)
+        if (!clip || !clip->isMidi())
             return false;
 
         double nudge = gridResolutionBeats_;
@@ -1078,7 +1078,7 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
                 tempo = controller->getState().tempo.bpm;
             }
             double clipStartBeats = clip->startTime * (tempo / 60.0);
-            double trimCompensation = (clip->type == ClipType::MIDI) ? clip->midiTrimOffset : 0.0;
+            double trimCompensation = (clip->isMidi()) ? clip->midiTrimOffset : 0.0;
             displayBeat = clipStartBeats + beat - trimCompensation;
         } else {
             displayBeat = clipStartBeats_ + beat;
@@ -1391,7 +1391,7 @@ void PianoRollGridComponent::createNoteComponents() {
     // Iterate through all clips
     for (ClipId clipId : clipIds_) {
         const auto* clip = clipManager.getClip(clipId);
-        if (!clip || clip->type != ClipType::MIDI) {
+        if (!clip || !clip->isMidi()) {
             continue;
         }
 
@@ -1771,7 +1771,7 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
             } else {
                 clipOffsetBeats = clipStartBeats_;
             }
-            double trimCompensation = (clip->type == ClipType::MIDI) ? clip->midiTrimOffset : 0.0;
+            double trimCompensation = (clip->isMidi()) ? clip->midiTrimOffset : 0.0;
             displayBeat = clipOffsetBeats + note.startBeat - trimCompensation;
         }
 

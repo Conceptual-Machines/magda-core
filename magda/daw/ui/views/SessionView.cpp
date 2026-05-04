@@ -2698,7 +2698,7 @@ void SessionView::openClipEditor(int trackIndex, int sceneIndex) {
         // For audio clips, explicitly switch to waveform editor.
         // For MIDI clips, BottomPanel's clipSelectionChanged handles the
         // PianoRoll vs DrumGrid choice, respecting the user's preference.
-        if (clip->type == ClipType::Audio) {
+        if (clip->isAudio()) {
             panelController.setActiveTabByType(daw::ui::PanelLocation::Bottom,
                                                daw::ui::PanelContentType::WaveformEditor);
         }

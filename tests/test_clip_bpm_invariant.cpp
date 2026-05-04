@@ -27,7 +27,7 @@ ClipInfo makeSessionAutoTempoClip(ClipId id = 1) {
     ClipInfo clip;
     clip.id = id;
     clip.trackId = 1;
-    clip.type = ClipType::Audio;
+    clip.setAudioContent();
     clip.view = ClipView::Session;
     clip.audioFilePath = "fake.wav";
     clip.autoTempo = true;
@@ -210,7 +210,7 @@ TEST_CASE("setAutoTempo adopts cached detected BPM when clip BPM is project defa
     ClipInfo seed;
     seed.id = 77;
     seed.trackId = 1;
-    seed.type = ClipType::Audio;
+    seed.setAudioContent();
     seed.view = ClipView::Arrangement;
     seed.audioFilePath = path;
     seed.loopEnabled = false;

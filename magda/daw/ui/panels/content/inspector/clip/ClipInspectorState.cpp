@@ -38,8 +38,7 @@ void ClipInspector::updateFromSelectedClip() {
     // Only for single-clip selection to avoid sanitization conflicts
     if (!isMulti) {
         auto* mutableClip = magda::ClipManager::getInstance().getClip(pid);
-        if (mutableClip && mutableClip->type == magda::ClipType::Audio &&
-            !mutableClip->audioFilePath.isEmpty()) {
+        if (mutableClip && mutableClip->isAudio() && !mutableClip->audioFilePath.isEmpty()) {
             auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
                 mutableClip->audioFilePath);
             if (thumbnail) {
@@ -101,7 +100,7 @@ void ClipInspector::updateFromSelectedClip() {
             swatch->setColour(clip->colour);
 
         // File path label: show audio filename for arrangement audio clips only.
-        if (clip->type == magda::ClipType::Audio && clip->audioFilePath.isNotEmpty() &&
+        if (clip->isAudio() && clip->audioFilePath.isNotEmpty() &&
             clip->view != magda::ClipView::Session && !isMulti) {
             juce::File audioFile(clip->audioFilePath);
             clipFilePathLabel_.setText(audioFile.getFileName(), juce::dontSendNotification);
@@ -112,7 +111,7 @@ void ClipInspector::updateFromSelectedClip() {
         }
 
         // Update type icon based on clip type
-        bool isAudioClip = (clip->type == magda::ClipType::Audio);
+        bool isAudioClip = (clip->isAudio());
         bool showAudioProps = isAudioClip && !audioPropsCollapsed_;
         audioPropsCollapseToggle_.setVisible(isAudioClip);
         audioPropsLabel_.setVisible(isAudioClip);
@@ -226,9 +225,9 @@ void ClipInspector::updateFromSelectedClip() {
             clipEndValue_->setValue(clip->getEndBeats(bpm), juce::dontSendNotification);
 
             // Offset value
-            if (clip->type == magda::ClipType::MIDI) {
+            if (clip->isMidi()) {
                 clipContentOffsetValue_->setValue(clip->midiOffset, juce::dontSendNotification);
-            } else if (clip->type == magda::ClipType::Audio) {
+            } else if (clip->isAudio()) {
                 // Use sourceBPM for source-file positions when available
                 double displayBpm = clip->sourceBPM > 0.0 ? clip->sourceBPM : bpm;
                 double offsetBeats = magda::TimelineUtils::secondsToBeats(clip->offset, displayBpm);
@@ -253,9 +252,7 @@ void ClipInspector::updateFromSelectedClip() {
             clipLoopStartValue_->setVisible(true);
             clipLoopStartValue_->setBeatsPerBar(beatsPerBar);
             // For audio clips, loop start/end are source-file positions — use sourceBPM
-            double loopBpm = (clip->type == magda::ClipType::Audio && clip->sourceBPM > 0.0)
-                                 ? clip->sourceBPM
-                                 : bpm;
+            double loopBpm = (clip->isAudio() && clip->sourceBPM > 0.0) ? clip->sourceBPM : bpm;
             double loopStartBeats = magda::TimelineUtils::secondsToBeats(clip->loopStart, loopBpm);
             clipLoopStartValue_->setValue(loopStartBeats, juce::dontSendNotification);
             clipLoopStartValue_->setEnabled(true);
@@ -283,7 +280,7 @@ void ClipInspector::updateFromSelectedClip() {
             clipLoopPhaseLabel_.setVisible(true);
             clipLoopPhaseValue_->setVisible(true);
             clipLoopPhaseValue_->setBeatsPerBar(beatsPerBar);
-            if (clip->type == magda::ClipType::MIDI) {
+            if (clip->isMidi()) {
                 clipLoopPhaseValue_->setValue(clip->midiOffset, juce::dontSendNotification);
             } else {
                 double phaseSeconds = clip->offset - clip->loopStart;
@@ -374,7 +371,7 @@ void ClipInspector::updateFromSelectedClip() {
         // ====================================================================
 
         // Pitch/Transpose section (audio + MIDI clips)
-        bool isMidiClip = (clip->type == magda::ClipType::MIDI);
+        bool isMidiClip = (clip->isMidi());
         pitchSectionLabel_.setVisible(showAudioProps);
         autoPitchToggle_.setVisible(false);     // hidden for now
         autoPitchModeCombo_.setVisible(false);  // hidden for now
@@ -597,9 +594,9 @@ void ClipInspector::computeClipRange() {
         if (!c)
             continue;
 
-        if (c->type != magda::ClipType::Audio)
+        if (!c->isAudio())
             clipRange_.allAudio = false;
-        if (c->type != magda::ClipType::MIDI)
+        if (!c->isMidi())
             clipRange_.allMidi = false;
         if (c->view != magda::ClipView::Arrangement)
             clipRange_.allArrangement = false;

@@ -708,7 +708,7 @@ void AudioBridge::captureAllPluginStates() {
 void AudioBridge::captureWarpMarkerStates() {
     auto& cm = ClipManager::getInstance();
     for (auto& clip : cm.getArrangementClips()) {
-        if (clip.type == ClipType::Audio && clip.warpEnabled) {
+        if (clip.isAudio() && clip.warpEnabled) {
             auto markers = clipSynchronizer_.getWarpMarkers(clip.id);
             DBG("captureWarpMarkerStates: clip " << clip.id
                                                  << " warpEnabled=" << (int)clip.warpEnabled

@@ -638,7 +638,7 @@ bool JoinClipsCommand::canExecute() const {
     // Must be same track, same type
     if (left->trackId != right->trackId)
         return false;
-    if (left->type != right->type)
+    if (left->getType() != right->getType())
         return false;
 
     // Must be adjacent (left ends where right starts)
@@ -687,7 +687,7 @@ void JoinClipsCommand::performAction() {
     if (!left || !right)
         return;
 
-    if (left->type == ClipType::MIDI) {
+    if (left->isMidi()) {
         // MIDI join: copy right clip's notes into left, adjusting beat positions
         const double beatsPerSecond = tempo_ / 60.0;
         double beatOffset = (right->startTime - left->startTime) * beatsPerSecond;
@@ -697,7 +697,7 @@ void JoinClipsCommand::performAction() {
             adjustedNote.startBeat += beatOffset;
             left->midiNotes.push_back(adjustedNote);
         }
-    } else if (left->type == ClipType::Audio) {
+    } else if (left->isAudio()) {
         // Audio join: extend left clip length to cover both clips
         // (offset and speedRatio remain from left clip)
     }
@@ -828,7 +828,7 @@ RenderClipCommand::RenderClipCommand(ClipId clipId, TracktionEngineWrapper* engi
 void RenderClipCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::Audio || !engine_) {
+    if (!clip || !clip->isAudio() || !engine_) {
         DBG("RenderClipCommand: invalid clip or engine");
         return;
     }
@@ -1053,7 +1053,7 @@ void RenderTimeSelectionCommand::execute() {
         bool allAudio = true;
         for (auto cid : overlappingIds) {
             auto* c = clipManager.getClip(cid);
-            if (!c || c->type != ClipType::Audio) {
+            if (!c || !c->isAudio()) {
                 allAudio = false;
                 break;
             }
@@ -1235,7 +1235,7 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
         liveClip->length -= trimAmount;
 
         // Adjust midiOffset (phase) for the trimmed portion
-        if (clip.type == ClipType::MIDI && clip.loopLength > 0.0) {
+        if (clip.isMidi() && clip.loopLength > 0.0) {
             double bpm = 120.0;
             if (auto* controller = magda::TimelineController::getCurrent()) {
                 bpm = controller->getState().tempo.bpm;
@@ -1498,7 +1498,7 @@ BounceInPlaceCommand::BounceInPlaceCommand(ClipId clipId, TracktionEngineWrapper
 void BounceInPlaceCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI || !engine_) {
+    if (!clip || !clip->isMidi() || !engine_) {
         DBG("BounceInPlaceCommand: invalid clip (must be MIDI) or engine");
         return;
     }
@@ -1880,7 +1880,7 @@ FlattenMidiClipCommand::FlattenMidiClipCommand(ClipId clipId) : clipId_(clipId) 
 void FlattenMidiClipCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-    if (!clip || clip->type != ClipType::MIDI)
+    if (!clip || !clip->isMidi())
         return;
 
     beforeSnapshot_ = *clip;
@@ -1976,7 +1976,7 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio)
+    if (!clip || !clip->isAudio())
         return;
 
     auto markers = bridge->getWarpMarkers(clipId);
@@ -2179,7 +2179,7 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo, AudioBridge* bridge
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty())
+    if (!clip || !clip->isAudio() || clip->audioFilePath.isEmpty())
         return;
 
     auto markers = bridge->getWarpMarkers(clipId);
@@ -2241,7 +2241,7 @@ void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo, Aud
         return;
 
     auto* clip = ClipManager::getInstance().getClip(clipId);
-    if (!clip || clip->type != ClipType::Audio || clip->audioFilePath.isEmpty())
+    if (!clip || !clip->isAudio() || clip->audioFilePath.isEmpty())
         return;
 
     juce::File audioFile(clip->audioFilePath);
