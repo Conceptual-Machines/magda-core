@@ -63,6 +63,7 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     void initFadesSection();
     void initChannelsSection();
     void initViewport();
+    void updateAudioSourceValueDisplays(const magda::ClipInfo& clip);
 
     // Current selection (supports single and multi-clip)
     std::unordered_set<magda::ClipId> selectedClipIds_;

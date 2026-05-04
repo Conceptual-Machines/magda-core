@@ -42,10 +42,14 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
                        (beatSensitivityValue_ && beatSensitivityValue_->isDragging()) ||
                        (transientSensitivityValue_ && transientSensitivityValue_->isDragging());
     if (anyDragging) {
-        // Still update stretch mode combo during drag — pitchChange affects effective mode
+        // Still update dependent readouts during drag without relayout. Loop-length edits drive
+        // source total beats while unlocked, so the Beats field must follow live.
         auto pid = primaryClipId();
         const auto* clip = magda::ClipManager::getInstance().getClip(pid);
         if (clip && clip->isAudio()) {
+            updateAudioSourceValueDisplays(*clip);
+
+            // PitchChange affects effective mode.
             int effectiveMode = clip->timeStretchMode;
             bool isAnalog = clip->isAnalogPitchActive();
             if (!isAnalog && effectiveMode == 0 &&

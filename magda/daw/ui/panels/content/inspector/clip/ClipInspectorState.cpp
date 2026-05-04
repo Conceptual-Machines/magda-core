@@ -11,6 +11,37 @@
 
 namespace magda::daw::ui {
 
+void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) {
+    if (!clip.isAudio()) {
+        return;
+    }
+
+    const bool showAudioProps = !audioPropsCollapsed_ && clip.isAudio();
+    if (showAudioProps) {
+        double displayBPM = clip.audio().interpretation.bpm;
+        double projectBPM = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
+        if (displayBPM <= 0.0 || (!clip.autoTempo && std::abs(displayBPM - projectBPM) < 0.1)) {
+            displayBPM = magda::AudioThumbnailManager::getInstance().getCachedBPM(
+                clip.audio().source.filePath);
+        }
+
+        if (displayBPM > 0.0) {
+            clipBpmValue_.setText(juce::String(displayBPM, 1), juce::dontSendNotification);
+        } else {
+            clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),
+                                  juce::dontSendNotification);
+        }
+    }
+
+    if (showAudioProps && clip.autoTempo && clipBeatsLengthValue_ &&
+        !clipBeatsLengthValue_->isDragging()) {
+        clipBeatsLengthValue_->setValue(clip.audio().interpretation.totalBeats > 0.0
+                                            ? clip.audio().interpretation.totalBeats
+                                            : 4.0,
+                                        juce::dontSendNotification);
+    }
+}
+
 void ClipInspector::updateFromSelectedClip() {
     auto pid = primaryClipId();
     if (pid == magda::INVALID_CLIP_ID) {
@@ -160,12 +191,7 @@ void ClipInspector::updateFromSelectedClip() {
             }
             clipBpmValue_.setVisible(true);
             clipBpmUnitLabel_.setVisible(true);
-            if (displayBPM > 0.0) {
-                clipBpmValue_.setText(juce::String(displayBPM, 1), juce::dontSendNotification);
-            } else {
-                clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),  // em dash
-                                      juce::dontSendNotification);
-            }
+            updateAudioSourceValueDisplays(*clip);
             DBG("[InspectorTrace] clipInspector:bpmDisplay id="
                 << clip->id << " text='" << clipBpmValue_.getText()
                 << "' source.interpretation.bpm=" << clip->audio().interpretation.bpm
@@ -185,10 +211,7 @@ void ClipInspector::updateFromSelectedClip() {
             clipBeatsUnitLabel_.setVisible(true);
             clipBeatsLengthValue_->setEnabled(true);
             clipBeatsLengthValue_->setAlpha(1.0f);
-            clipBeatsLengthValue_->setValue(clip->audio().interpretation.totalBeats > 0.0
-                                                ? clip->audio().interpretation.totalBeats
-                                                : 4.0,
-                                            juce::dontSendNotification);
+            updateAudioSourceValueDisplays(*clip);
             DBG("[InspectorTrace] clipInspector:sourceBeatsDisplay id="
                 << clip->id << " ui.value=" << clipBeatsLengthValue_->getValue()
                 << " boundField=source.interpretation.totalBeats"
@@ -254,12 +277,13 @@ void ClipInspector::updateFromSelectedClip() {
             }
         }
 
-        clipLoopToggle_->setActive(clip->loopEnabled);
-        // Beat mode forces loop on — disable the toggle so user can't turn it off
-        clipLoopToggle_->setEnabled(!clip->autoTempo);
+        clipLoopToggle_->setActive(clip->loopEnabled || clip->autoTempo);
+        // Beat mode forces loop on, but the button should still read as active rather than
+        // disabled. Click handling ignores attempts to toggle it while auto-tempo owns looping.
+        clipLoopToggle_->setEnabled(true);
 
         // Loop state determines offset interactivity and loop row visibility
-        bool loopOn = isSessionClip || clip->loopEnabled;
+        bool loopOn = isSessionClip || clip->loopEnabled || clip->autoTempo;
 
         if (loopOn) {
             // Loop ON: offset in position row becomes disabled/greyed

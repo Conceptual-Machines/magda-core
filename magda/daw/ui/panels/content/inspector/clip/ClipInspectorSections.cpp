@@ -616,8 +616,9 @@ void ClipInspector::initClipPropertiesSection() {
         if (!clip)
             return;
 
-        // Beat mode requires loop — don't allow disabling
-        if (clip->autoTempo && clipLoopToggle_->isActive())
+        // Beat mode owns looping. Keep the button visually active, but don't let a click
+        // make the model appear to toggle out from under auto-tempo playback.
+        if (clip->autoTempo)
             return;
 
         bool newState = !clipLoopToggle_->isActive();
