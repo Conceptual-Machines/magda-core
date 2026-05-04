@@ -451,12 +451,16 @@ jobs:
           Write-Error "controllers/ missing next to MAGDA.exe at $controllersSrc"
           exit 1
         }
-        New-Item -ItemType Directory -Path $controllersDst | Out-Null
-        Copy-Item -Recurse "$controllersSrc\*" $controllersDst
+        New-Item -ItemType Directory -Path $controllersDst -ErrorAction Stop | Out-Null
+        Copy-Item -Recurse "$controllersSrc\*" $controllersDst -ErrorAction Stop
         Write-Output "Staged controllers/ for installer"
 
         if (-not (Test-Path "$controllersDst\profiles")) {
           Write-Error "controllers/profiles missing from installer staging"
+          exit 1
+        }
+        if (-not (Test-Path "$controllersDst\scripts")) {
+          Write-Error "controllers/scripts missing from installer staging"
           exit 1
         }
 
@@ -621,6 +625,8 @@ jobs:
 
         test -d "$APPDIR/usr/bin/controllers/profiles" \
           || { echo "controllers/profiles missing from AppDir staging"; exit 1; }
+        test -d "$APPDIR/usr/bin/controllers/scripts" \
+          || { echo "controllers/scripts missing from AppDir staging"; exit 1; }
 
         # Copy icon
         cp assets/app_icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/magda.png"

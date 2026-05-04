@@ -38,7 +38,9 @@ Section "Install"
     File /r "${__FILEDIR__}\lang\*.*"
     SetOutPath $INSTDIR
 
-    ; Controller profiles + Lua scripts - registry probes <exe>/controllers/
+    ; Controller profiles + Lua scripts - registry probes
+    ; <exe>/controllers/profiles and LuaScriptStore probes
+    ; <exe>/controllers/scripts. File /r preserves both subdirs.
     SetOutPath "$INSTDIR\controllers"
     File /r "${__FILEDIR__}\controllers\*.*"
     SetOutPath $INSTDIR
