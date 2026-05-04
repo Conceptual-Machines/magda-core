@@ -5,6 +5,9 @@
 
 #include "../../core/TrackManager.hpp"
 #include "plugins/ArpeggiatorPlugin.hpp"
+#include "plugins/FaustParamInfo.hpp"
+#include "plugins/FaustParamPool.hpp"
+#include "plugins/FaustPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 
 namespace magda {
@@ -599,6 +602,50 @@ float FourOscProcessor::getParameterByIndex(int paramIndex) const {
     if (!plugin_)
         return 0.0f;
 
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex >= 0 && paramIndex < params.size())
+        return params[paramIndex]->getCurrentValue();
+    return 0.0f;
+}
+
+// =============================================================================
+// FaustProcessor
+// =============================================================================
+
+FaustProcessor::FaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
+
+int FaustProcessor::getParameterCount() const {
+    return daw::audio::FaustParamPool::kSize;
+}
+
+ParameterInfo FaustProcessor::getParameterInfo(int index) const {
+    auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin_.get());
+    if (faust == nullptr || index < 0 || index >= daw::audio::FaustParamPool::kSize)
+        return {};
+    return daw::audio::paramInfoFromSlot(faust->getPool().slot(index));
+}
+
+void FaustProcessor::populateParameters(DeviceInfo& info) const {
+    info.parameters.clear();
+    auto* faust = dynamic_cast<daw::audio::FaustPlugin*>(plugin_.get());
+    if (faust == nullptr)
+        return;
+    for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i)
+        info.parameters.push_back(daw::audio::paramInfoFromSlot(faust->getPool().slot(i)));
+}
+
+void FaustProcessor::setParameterByIndex(int paramIndex, float value) {
+    if (!plugin_)
+        return;
+    auto params = plugin_->getAutomatableParameters();
+    if (paramIndex >= 0 && paramIndex < params.size())
+        params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
+}
+
+float FaustProcessor::getParameterByIndex(int paramIndex) const {
+    if (!plugin_)
+        return 0.0f;
     auto params = plugin_->getAutomatableParameters();
     if (paramIndex >= 0 && paramIndex < params.size())
         return params[paramIndex]->getCurrentValue();

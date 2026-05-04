@@ -275,6 +275,27 @@ class FourOscProcessor : public DeviceProcessor {
 };
 
 /**
+ * @brief Processor for the MAGDA-native Faust DSP host.
+ *
+ * Faust's parameters live in a fixed pool of 64 lifetime-stable
+ * AutomatableParameters managed by FaustPlugin. ParameterInfo per
+ * slot comes from `paramInfoFromSlot(slot)`; inactive slots return a
+ * placeholder so paramIndex (== slot index) stays addressable for
+ * automation lane lookups.
+ */
+class FaustProcessor : public DeviceProcessor {
+  public:
+    FaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
+
+    int getParameterCount() const override;
+    ParameterInfo getParameterInfo(int index) const override;
+    void populateParameters(DeviceInfo& info) const override;
+
+    void setParameterByIndex(int paramIndex, float value);
+    float getParameterByIndex(int paramIndex) const;
+};
+
+/**
  * @brief Processor for the built-in 4-Band Equaliser
  *
  * Enumerates parameters generically from plugin->getAutomatableParameters().

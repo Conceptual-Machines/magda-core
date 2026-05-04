@@ -1600,6 +1600,8 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
         processor = std::make_unique<ToneGeneratorProcessor>(deviceId, plugin);
     } else if (dynamic_cast<te::VolumeAndPanPlugin*>(plugin.get())) {
         processor = std::make_unique<UtilityProcessor>(deviceId, plugin);
+    } else if (dynamic_cast<daw::audio::FaustPlugin*>(plugin.get())) {
+        processor = std::make_unique<FaustProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
         processor = std::make_unique<MagdaSamplerProcessor>(deviceId, plugin);
     } else if (dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get())) {
