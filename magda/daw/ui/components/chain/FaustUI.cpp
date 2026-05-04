@@ -4,9 +4,12 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "FaustCodeEditorWindow.hpp"
+#include "audio/AudioBridge.hpp"
 #include "audio/FaustResources.hpp"
+#include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "core/TrackManager.hpp"
+#include "engine/AudioEngine.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -79,11 +82,21 @@ bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
     if (!diagnostics.empty())
         errorLabel_.setText(diagnostics.front(), juce::dontSendNotification);
 
-    // Tell TrackManager the device set changed; that fires the chain
-    // rebuild path which re-creates DeviceSlotComponent against fresh
-    // DeviceInfo, picking up the new pool layout via FaustProcessor.
+    // Push the now-active pool layout into TrackManager.DeviceInfo so
+    // the slot rebuild reads fresh ParameterInfo from FaustProcessor.
+    // populateParameters runs once at processor registration; we have
+    // to nudge it here because Faust's parameter set changes at
+    // runtime. Then notify so the chain UI rebuilds against the new
+    // DeviceInfo.
+    auto& tm = TrackManager::getInstance();
+    if (auto* dev = tm.getDeviceInChainByPath(devicePath_)) {
+        if (auto* engine = tm.getAudioEngine()) {
+            if (auto* bridge = engine->getAudioBridge())
+                bridge->getPluginManager().refreshDeviceParameters(dev->id);
+        }
+    }
     if (devicePath_.trackId != INVALID_TRACK_ID)
-        TrackManager::getInstance().notifyTrackDevicesChanged(devicePath_.trackId);
+        tm.notifyTrackDevicesChanged(devicePath_.trackId);
 
     if (onDspChanged)
         onDspChanged();
@@ -154,8 +167,15 @@ void FaustUI::showCodeEditor() {
                 return false;
             errorLabel_.setText({}, juce::dontSendNotification);
             refreshNameLabel();
+            auto& tm = TrackManager::getInstance();
+            if (auto* dev = tm.getDeviceInChainByPath(devicePath_)) {
+                if (auto* engine = tm.getAudioEngine()) {
+                    if (auto* bridge = engine->getAudioBridge())
+                        bridge->getPluginManager().refreshDeviceParameters(dev->id);
+                }
+            }
             if (devicePath_.trackId != INVALID_TRACK_ID)
-                TrackManager::getInstance().notifyTrackDevicesChanged(devicePath_.trackId);
+                tm.notifyTrackDevicesChanged(devicePath_.trackId);
             if (onDspChanged)
                 onDspChanged();
             return true;

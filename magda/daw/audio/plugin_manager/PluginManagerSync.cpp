@@ -1626,6 +1626,21 @@ void PluginManager::registerRackPluginProcessor(DeviceId deviceId, te::Plugin::P
     }
 }
 
+void PluginManager::refreshDeviceParameters(DeviceId deviceId) {
+    DeviceProcessor* processor = nullptr;
+    {
+        juce::ScopedLock lock(pluginLock_);
+        auto it = syncedDevices_.find(deviceId);
+        if (it == syncedDevices_.end() || it->second.processor == nullptr)
+            return;
+        processor = it->second.processor.get();
+    }
+    DeviceInfo tempInfo;
+    processor->populateParameters(tempInfo);
+    TrackManager::getInstance().updateDeviceParameters(deviceId, tempInfo.parameters);
+    AutoAliasGenerator::regenerateForDevice(deviceId);
+}
+
 // =============================================================================
 // Internal Implementation
 // =============================================================================

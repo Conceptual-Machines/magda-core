@@ -219,6 +219,17 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener {
                                      const DeviceInfo& device);
 
     /**
+     * @brief Refresh DeviceInfo.parameters for a device whose processor's
+     *        parameter set changed at runtime.
+     *
+     * Re-runs `populateParameters` on the device's processor and pushes
+     * the result into TrackManager. Used by plugins that swap their
+     * parameter layout post-construction (FaustPlugin reloading a
+     * .dsp). No-op if no processor is registered for the device.
+     */
+    void refreshDeviceParameters(DeviceId deviceId);
+
+    /**
      * @brief Sync a multi-output track's plugin chain
      * Creates/manages the RackInstance for the output pair on the TE track.
      * @param trackId The multi-out track ID
