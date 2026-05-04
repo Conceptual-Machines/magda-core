@@ -20,6 +20,7 @@ TEST_CASE("Audio clip - Stretch factor basics", "[audio][clip][stretch]") {
 
     SECTION("Default stretch factor is 1.0") {
         ClipInfo clip;
+        clip.setAudioContent();
         clip.audio().source.filePath = "test.wav";
         clip.length = 4.0;
         clip.speedRatio = 1.0;
@@ -31,6 +32,7 @@ TEST_CASE("Audio clip - Stretch factor basics", "[audio][clip][stretch]") {
 
     SECTION("Stretch factor affects file time window") {
         ClipInfo clip;
+        clip.setAudioContent();
         clip.audio().source.filePath = "test.wav";
         clip.offset = 0.0;
         clip.length = 4.0;
@@ -45,6 +47,7 @@ TEST_CASE("Audio clip - Stretch factor basics", "[audio][clip][stretch]") {
 
     SECTION("Stretch factor 0.5 = 2x slower") {
         ClipInfo clip;
+        clip.setAudioContent();
         clip.audio().source.filePath = "test.wav";
         clip.offset = 0.0;
         clip.length = 8.0;

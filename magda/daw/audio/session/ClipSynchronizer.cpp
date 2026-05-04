@@ -1339,6 +1339,13 @@ void ClipSynchronizer::syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip)
 void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip) {
     namespace te = tracktion;
 
+    DBG("[ClipLengthTrace] syncAudioClipToEngine:entry id="
+        << clipId << " placement.lengthBeats=" << clip->placement.lengthBeats
+        << " mirror.lengthBeats=" << clip->lengthBeats << " timeline.lengthSeconds=" << clip->length
+        << " loopLengthBeats=" << clip->loopLengthBeats << " loopLengthSeconds=" << clip->loopLength
+        << " interpretation.bpm=" << clip->audio().interpretation.bpm
+        << " interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
+
     // 1. Get Tracktion track
     auto* audioTrack = trackController_.getAudioTrack(clip->trackId);
     if (!audioTrack) {
@@ -1504,6 +1511,10 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
         std::abs(currentStart - engineStart) > 0.001 || std::abs(currentEnd - engineEnd) > 0.001;
 
     if (needsPositionUpdate) {
+        DBG("[ClipLengthTrace] syncAudioClipToEngine:setPosition id="
+            << clipId << " engineStart=" << engineStart << " engineEnd=" << engineEnd
+            << " placement.lengthBeats=" << clip->placement.lengthBeats
+            << " interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
         auto newTimeRange = te::TimeRange(te::TimePosition::fromSeconds(engineStart),
                                           te::TimePosition::fromSeconds(engineEnd));
         audioClipPtr->setPosition(te::ClipPosition{newTimeRange, currentPos.getOffset()});
@@ -1616,14 +1627,29 @@ void ClipSynchronizer::syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip
                 auto waveInfo = audioClipPtr->getWaveInfo();
                 auto& li = audioClipPtr->getLoopInfo();
                 double currentLoopInfoBpm = li.getBpm(waveInfo);
+                DBG("[ClipLengthTrace] syncAudioClipToEngine:loopInfoBefore id="
+                    << clipId << " teLoopInfo.bpm=" << currentLoopInfoBpm
+                    << " teLoopInfo.numBeats=" << li.getNumBeats() << " model.interpretation.bpm="
+                    << clip->audio().interpretation.bpm << " model.interpretation.totalBeats="
+                    << clip->audio().interpretation.totalBeats);
                 if (std::abs(currentLoopInfoBpm - clip->audio().interpretation.bpm) > 0.1) {
                     li.setBpm(clip->audio().interpretation.bpm, waveInfo);
                 }
+                DBG("[ClipLengthTrace] syncAudioClipToEngine:loopInfoAfter id="
+                    << clipId << " teLoopInfo.bpm=" << li.getBpm(waveInfo)
+                    << " teLoopInfo.numBeats=" << li.getNumBeats()
+                    << " model.interpretation.totalBeats="
+                    << clip->audio().interpretation.totalBeats);
             }
 
             auto [loopStartBeats, loopLengthBeats] =
                 ClipOperations::getAutoTempoBeatRange(*clip, bpm);
 
+            DBG("[ClipLengthTrace] syncAudioClipToEngine:setLoopRangeBeats id="
+                << clipId << " loopStartBeats=" << loopStartBeats << " loopLengthBeats="
+                << loopLengthBeats << " placement.lengthBeats=" << clip->placement.lengthBeats
+                << " model.loopLengthBeats=" << clip->loopLengthBeats
+                << " model.interpretation.totalBeats=" << clip->audio().interpretation.totalBeats);
             auto loopRange = te::BeatRange(te::BeatPosition::fromBeats(loopStartBeats),
                                            te::BeatDuration::fromBeats(loopLengthBeats));
             audioClipPtr->setLoopRangeBeats(loopRange);

@@ -273,11 +273,8 @@ void AudioClipPropertiesContent::createControls() {
 
         double newBPM = bpmValue_->getValue();
 
-        // Issue #1157: BPM edit is a CORRECTION of detected file metadata,
-        // not a stretch control. Mirror ClipInspectorSections — for autoTempo
-        // clips, route through the canonical setter so length/loopLengthBeats
-        // are not clobbered. Use the file's actual duration (not the loop
-        // region) to derive source interpretation total beats.
+        // BPM and source beats are independent user-editable interpretation fields.
+        // A BPM correction must not silently rewrite the source beat count.
         if (clip->autoTempo) {
             double bpm = 120.0;
             if (auto* tc = magda::TimelineController::getCurrent())
@@ -287,10 +284,8 @@ void AudioClipPropertiesContent::createControls() {
             if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
                     clip->audio().source.filePath)) {
                 double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0) {
+                if (fileDuration > 0.0 && clip->audio().source.durationSeconds <= 0.0)
                     u.sourceDurationSeconds = fileDuration;
-                    u.interpretationTotalBeats = fileDuration * newBPM / 60.0;
-                }
             }
             magda::ClipManager::getInstance().applyAudioClipBeats(clipId_, u, bpm);
         } else {
@@ -302,7 +297,6 @@ void AudioClipPropertiesContent::createControls() {
                 if (fileDuration > 0.0) {
                     if (clip->audio().source.durationSeconds <= 0.0)
                         clip->audio().source.durationSeconds = fileDuration;
-                    clip->audio().interpretation.totalBeats = fileDuration * newBPM / 60.0;
                 }
             }
             magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
@@ -310,11 +304,11 @@ void AudioClipPropertiesContent::createControls() {
     };
     addAndMakeVisible(*bpmValue_);
 
-    beatsLabel_ = makeLabel("Beats");
+    beatsLabel_ = makeLabel("Source Beats");
     beatsValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
-    beatsValue_->setRange(0.25, 128.0, 4.0);
+    beatsValue_->setRange(0.25, 4096.0, 4.0);
     beatsValue_->setDecimalPlaces(2);
-    beatsValue_->setSuffix(" beats");
+    beatsValue_->setSuffix(" source beats");
     beatsValue_->setSnapToInteger(true);
     beatsValue_->setDrawBackground(false);
     beatsValue_->setDrawBorder(true);
@@ -324,12 +318,48 @@ void AudioClipPropertiesContent::createControls() {
     beatsValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
             return;
-        double bpm = 120.0;
+        auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+        if (!clip || !clip->isAudio())
+            return;
+
+        const double newSourceBeats = beatsValue_->getValue();
+        double projectBpm = 120.0;
         if (auto* tc = magda::TimelineController::getCurrent())
-            bpm = tc->getState().tempo.bpm;
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetClipLengthBeatsCommand>(clipId_, beatsValue_->getValue(),
-                                                               bpm));
+            projectBpm = tc->getState().tempo.bpm;
+
+        double durationSeconds = clip->audio().source.durationSeconds;
+        if (durationSeconds <= 0.0) {
+            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                    clip->audio().source.filePath)) {
+                durationSeconds = thumb->getTotalLength();
+            }
+        }
+
+        magda::ClipManager::AudioClipBeatsUpdate u;
+        u.interpretationTotalBeats = newSourceBeats;
+        if (durationSeconds > 0.0 && clip->audio().source.durationSeconds <= 0.0)
+            u.sourceDurationSeconds = durationSeconds;
+
+        DBG("[InspectorTrace] audioClipProperties:sourceBeatsEdit id="
+            << clip->id << " newUiValue=" << newSourceBeats
+            << " targetField=source.interpretation.totalBeats"
+            << " before.source.interpretation.totalBeats="
+            << clip->audio().interpretation.totalBeats
+            << " before.source.interpretation.bpm=" << clip->audio().interpretation.bpm
+            << " before.placement.lengthBeats=" << clip->placement.lengthBeats
+            << " before.loopLengthBeats=" << clip->loopLengthBeats
+            << " durationSeconds=" << durationSeconds);
+
+        magda::ClipManager::getInstance().applyAudioClipBeats(clipId_, u, projectBpm);
+
+        if (auto* afterClip = magda::ClipManager::getInstance().getClip(clipId_)) {
+            DBG("[InspectorTrace] audioClipProperties:sourceBeatsEditApplied id="
+                << afterClip->id << " after.source.interpretation.totalBeats="
+                << afterClip->audio().interpretation.totalBeats
+                << " after.source.interpretation.bpm=" << afterClip->audio().interpretation.bpm
+                << " after.placement.lengthBeats=" << afterClip->placement.lengthBeats
+                << " after.loopLengthBeats=" << afterClip->loopLengthBeats);
+        }
     };
     addAndMakeVisible(*beatsValue_);
 
@@ -469,8 +499,18 @@ void AudioClipPropertiesContent::updateFromClip() {
         bpmValue_->setValue(
             clip->audio().interpretation.bpm > 0.0 ? clip->audio().interpretation.bpm : 120.0,
             juce::dontSendNotification);
-        beatsValue_->setValue(clip->placement.lengthBeats > 0.0 ? clip->placement.lengthBeats : 4.0,
+        beatsValue_->setValue(clip->audio().interpretation.totalBeats > 0.0
+                                  ? clip->audio().interpretation.totalBeats
+                                  : 4.0,
                               juce::dontSendNotification);
+        DBG("[InspectorTrace] audioClipProperties:sourceBeatsDisplay id="
+            << clip->id << " ui.value=" << beatsValue_->getValue()
+            << " boundField=source.interpretation.totalBeats"
+            << " source.interpretation.totalBeats=" << clip->audio().interpretation.totalBeats
+            << " source.interpretation.bpm=" << clip->audio().interpretation.bpm
+            << " source.durationSeconds=" << clip->audio().source.durationSeconds
+            << " placement.lengthBeats=" << clip->placement.lengthBeats
+            << " loopLengthBeats=" << clip->loopLengthBeats);
         pitchValue_->setValue(static_cast<double>(clip->pitchChange), juce::dontSendNotification);
         volumeValue_->setValue(static_cast<double>(clip->volumeDB), juce::dontSendNotification);
         gainValue_->setValue(static_cast<double>(clip->gainDB), juce::dontSendNotification);
@@ -484,7 +524,7 @@ void AudioClipPropertiesContent::updateFromClip() {
     stretchValue_->setEnabled(enabled && !isAutoTempo);
     stretchModeCombo_->setEnabled(enabled);
     bpmValue_->setEnabled(enabled);
-    beatsValue_->setEnabled(enabled && isAutoTempo);
+    beatsValue_->setEnabled(enabled);
     pitchValue_->setEnabled(enabled);
     analogPitchToggle_->setEnabled(enabled && !isAutoTempo && !(hasClip && clip->warpEnabled));
     transientSensValue_->setEnabled(enabled);

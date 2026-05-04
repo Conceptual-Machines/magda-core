@@ -563,21 +563,6 @@ class ClipOperations {
                 clip.loopStartBeats = 0.0;
             }
 
-            // Calibrate the source interpretation BPM to the current playback
-            // speed only when it still looks like the project-tempo placeholder.
-            // Preserve real detection/user values so TE applies the intended
-            // projectBPM / source interpretation BPM stretch ratio.
-            double effectiveBPM = bpm / clip.speedRatio;
-            if (std::abs(clip.audio().interpretation.bpm - effectiveBPM) < 0.1) {
-                if (clip.audio().interpretation.bpm > 0.0 &&
-                    clip.audio().interpretation.totalBeats > 0.0) {
-                    double fileDuration = clip.audio().interpretation.totalBeats * 60.0 /
-                                          clip.audio().interpretation.bpm;
-                    clip.audio().interpretation.totalBeats = effectiveBPM * fileDuration / 60.0;
-                }
-                clip.audio().interpretation.bpm = effectiveBPM;
-            }
-
             // Force speedRatio to 1.0 (TE requirement for autoTempo)
             clip.speedRatio = 1.0;
         } else {

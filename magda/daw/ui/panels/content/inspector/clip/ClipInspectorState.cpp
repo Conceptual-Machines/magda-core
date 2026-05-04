@@ -166,21 +166,34 @@ void ClipInspector::updateFromSelectedClip() {
                 clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"),  // em dash
                                       juce::dontSendNotification);
             }
+            DBG("[InspectorTrace] clipInspector:bpmDisplay id="
+                << clip->id << " text='" << clipBpmValue_.getText()
+                << "' source.interpretation.bpm=" << clip->audio().interpretation.bpm
+                << " source.interpretation.totalBeats=" << clip->audio().interpretation.totalBeats
+                << " source.durationSeconds=" << clip->audio().source.durationSeconds
+                << " placement.lengthBeats=" << clip->placement.lengthBeats
+                << " loopLengthBeats=" << clip->loopLengthBeats);
         } else {
             clipBpmValue_.setVisible(false);
         }
 
-        // Show length in beats for audio clips with auto-tempo enabled (read-only display)
+        // Show source interpretation total beats for audio clips with auto-tempo enabled.
+        // Clip placement length is already represented by start/end and by the clip body itself.
         if (showAudioProps && clip->autoTempo && !isMulti) {
             clipBeatsLengthValue_->setVisible(true);
             clipBeatsLengthValue_->setEnabled(true);
             clipBeatsLengthValue_->setAlpha(1.0f);
-            // Issue #1157: display lengthBeats (timeline beats — what the slider
-            // writes), not loopLengthBeats (source-beat domain). Showing the
-            // source-domain value made this readout drift away from the right-side
-            // Clip panel as soon as source interpretation BPM differed from project BPM.
-            clipBeatsLengthValue_->setValue(clip->placement.lengthBeats,
+            clipBeatsLengthValue_->setValue(clip->audio().interpretation.totalBeats > 0.0
+                                                ? clip->audio().interpretation.totalBeats
+                                                : 4.0,
                                             juce::dontSendNotification);
+            DBG("[InspectorTrace] clipInspector:sourceBeatsDisplay id="
+                << clip->id << " ui.value=" << clipBeatsLengthValue_->getValue()
+                << " boundField=source.interpretation.totalBeats"
+                << " placement.lengthBeats=" << clip->placement.lengthBeats
+                << " source.interpretation.totalBeats=" << clip->audio().interpretation.totalBeats
+                << " source.interpretation.bpm=" << clip->audio().interpretation.bpm
+                << " loopLengthBeats=" << clip->loopLengthBeats);
         } else {
             clipBeatsLengthValue_->setVisible(false);
         }

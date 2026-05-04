@@ -363,31 +363,41 @@ void ClipInspector::initClipPropertiesSection() {
         // Parse BPM from text (strip " BPM" suffix if present)
         juce::String text = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
         double newBPM = text.getDoubleValue();
+        DBG("[InspectorTrace] clipInspector:bpmEdit id="
+            << clip->id << " rawText='" << clipBpmValue_.getText() << "' parsedBpm=" << newBPM
+            << " before.source.interpretation.bpm=" << clip->audio().interpretation.bpm
+            << " before.source.interpretation.totalBeats="
+            << clip->audio().interpretation.totalBeats << " before.placement.lengthBeats="
+            << clip->placement.lengthBeats << " before.loopLengthBeats=" << clip->loopLengthBeats
+            << " autoTempo=" << static_cast<int>(clip->autoTempo));
         if (newBPM < 20.0 || newBPM > 999.0)
             return;
 
         double bpm = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
 
-        // Issue #1157: BPM edit is a CORRECTION of the detected file metadata,
-        // not a stretch control. We write only source interpretation BPM (and recompute
-        // source interpretation total beats from the file's true duration). Timeline length and
-        // loop region are user-intent and untouched — TE will adapt the
-        // playback stretch ratio to the new source interpretation BPM at the next sync.
+        // BPM and source beats are independent user-editable interpretation fields.
+        // A BPM correction must not silently rewrite the source beat count.
         if (clip->autoTempo) {
             magda::ClipManager::AudioClipBeatsUpdate u;
             u.interpretationBpm = newBPM;
             if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
                     clip->audio().source.filePath)) {
                 double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0) {
+                if (fileDuration > 0.0 && clip->audio().source.durationSeconds <= 0.0)
                     u.sourceDurationSeconds = fileDuration;
-                    u.interpretationTotalBeats = fileDuration * newBPM / 60.0;
-                }
             }
             magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u, bpm);
+            if (auto* afterClip = magda::ClipManager::getInstance().getClip(primaryClipId())) {
+                DBG("[InspectorTrace] clipInspector:bpmEditApplied id="
+                    << afterClip->id
+                    << " after.source.interpretation.bpm=" << afterClip->audio().interpretation.bpm
+                    << " after.source.interpretation.totalBeats="
+                    << afterClip->audio().interpretation.totalBeats
+                    << " after.placement.lengthBeats=" << afterClip->placement.lengthBeats
+                    << " after.loopLengthBeats=" << afterClip->loopLengthBeats);
+            }
         } else {
-            // Non-autoTempo audio: source interpretation BPM is just stored metadata, no
-            // dependent fields to recompute. Direct write is fine.
+            // Non-autoTempo audio: source interpretation BPM is just stored metadata.
             clip->audio().interpretation.bpm = newBPM;
             if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
                     clip->audio().source.filePath)) {
@@ -395,10 +405,15 @@ void ClipInspector::initClipPropertiesSection() {
                 if (fileDuration > 0.0) {
                     if (clip->audio().source.durationSeconds <= 0.0)
                         clip->audio().source.durationSeconds = fileDuration;
-                    clip->audio().interpretation.totalBeats = fileDuration * newBPM / 60.0;
                 }
             }
             magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(primaryClipId());
+            DBG("[InspectorTrace] clipInspector:bpmEditApplied id="
+                << clip->id << " after.source.interpretation.bpm="
+                << clip->audio().interpretation.bpm << " after.source.interpretation.totalBeats="
+                << clip->audio().interpretation.totalBeats
+                << " after.placement.lengthBeats=" << clip->placement.lengthBeats
+                << " after.loopLengthBeats=" << clip->loopLengthBeats);
         }
 
         // Re-display with suffix
@@ -407,10 +422,10 @@ void ClipInspector::initClipPropertiesSection() {
     };
     clipPropsContainer_.addChildComponent(clipBpmValue_);
 
-    // Length in beats (shown next to BPM when auto-tempo is enabled)
+    // Source interpretation total beats (shown next to source BPM when auto-tempo is enabled)
     clipBeatsLengthValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
-    clipBeatsLengthValue_->setRange(0.25, 128.0, 4.0);  // Min 0.25 beats, max 128 beats
-    clipBeatsLengthValue_->setSuffix(" beats");
+    clipBeatsLengthValue_->setRange(0.25, 4096.0, 4.0);
+    clipBeatsLengthValue_->setSuffix(" source beats");
     clipBeatsLengthValue_->setDecimalPlaces(2);
     clipBeatsLengthValue_->setSnapToInteger(true);
     clipBeatsLengthValue_->setDrawBackground(false);
@@ -420,13 +435,46 @@ void ClipInspector::initClipPropertiesSection() {
         if (primaryClipId() != magda::INVALID_CLIP_ID) {
             auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
             if (clip && clip->autoTempo) {
-                double newBeats = clipBeatsLengthValue_->getValue();
-                double bpm =
+                double newSourceBeats = clipBeatsLengthValue_->getValue();
+                double projectBpm =
                     timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-                // Stretch: keep source audio constant, change how many beats it fills
-                magda::UndoManager::getInstance().executeCommand(
-                    std::make_unique<magda::SetClipLengthBeatsCommand>(primaryClipId(), newBeats,
-                                                                       bpm));
+
+                double durationSeconds = clip->audio().source.durationSeconds;
+                if (durationSeconds <= 0.0) {
+                    if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                            clip->audio().source.filePath)) {
+                        durationSeconds = thumb->getTotalLength();
+                    }
+                }
+
+                magda::ClipManager::AudioClipBeatsUpdate u;
+                u.interpretationTotalBeats = newSourceBeats;
+                if (durationSeconds > 0.0 && clip->audio().source.durationSeconds <= 0.0)
+                    u.sourceDurationSeconds = durationSeconds;
+
+                DBG("[InspectorTrace] clipInspector:sourceBeatsEdit id="
+                    << clip->id << " newUiValue=" << newSourceBeats
+                    << " targetField=source.interpretation.totalBeats"
+                    << " before.placement.lengthBeats=" << clip->placement.lengthBeats
+                    << " before.source.interpretation.totalBeats="
+                    << clip->audio().interpretation.totalBeats
+                    << " before.source.interpretation.bpm=" << clip->audio().interpretation.bpm
+                    << " before.loopLengthBeats=" << clip->loopLengthBeats
+                    << " durationSeconds=" << durationSeconds);
+
+                magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u,
+                                                                      projectBpm);
+
+                if (auto* afterClip = magda::ClipManager::getInstance().getClip(primaryClipId())) {
+                    DBG("[InspectorTrace] clipInspector:sourceBeatsEditApplied id="
+                        << afterClip->id
+                        << " after.placement.lengthBeats=" << afterClip->placement.lengthBeats
+                        << " after.source.interpretation.totalBeats="
+                        << afterClip->audio().interpretation.totalBeats
+                        << " after.source.interpretation.bpm="
+                        << afterClip->audio().interpretation.bpm
+                        << " after.loopLengthBeats=" << afterClip->loopLengthBeats);
+                }
             }
         }
     };

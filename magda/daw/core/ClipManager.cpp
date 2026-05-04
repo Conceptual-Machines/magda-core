@@ -20,6 +20,24 @@ bool sourceInterpretationBpmLooksDefaulted(const ClipInfo& clip, double projectB
     return projectBPM > 0.0 && std::abs(clip.audio().interpretation.bpm - projectBPM) < 0.1;
 }
 
+void traceAudioClipLengthState(const char* label, const ClipInfo& clip, double projectBPM) {
+    if (!clip.isAudio())
+        return;
+
+    DBG("[ClipLengthTrace] "
+        << label << " id=" << clip.id << " projectBPM=" << projectBPM << " autoTempo="
+        << static_cast<int>(clip.autoTempo) << " loopEnabled=" << static_cast<int>(clip.loopEnabled)
+        << " placement.startBeat=" << clip.placement.startBeat
+        << " placement.lengthBeats=" << clip.placement.lengthBeats
+        << " mirror.startBeats=" << clip.startBeats << " mirror.lengthBeats=" << clip.lengthBeats
+        << " timeline.startTime=" << clip.startTime << " timeline.lengthSeconds=" << clip.length
+        << " loopStartBeats=" << clip.loopStartBeats << " loopLengthBeats=" << clip.loopLengthBeats
+        << " loopStartSeconds=" << clip.loopStart << " loopLengthSeconds=" << clip.loopLength
+        << " source.durationSeconds=" << clip.audio().source.durationSeconds
+        << " interpretation.bpm=" << clip.audio().interpretation.bpm
+        << " interpretation.totalBeats=" << clip.audio().interpretation.totalBeats);
+}
+
 bool seedSourceMetadataFromCachedDetection(ClipInfo& clip, double projectBPM) {
     if (!clip.isAudio() || clip.audio().source.filePath.isEmpty() ||
         !sourceInterpretationBpmLooksDefaulted(clip, projectBPM)) {
@@ -397,6 +415,10 @@ void ClipManager::moveClipToTrack(ClipId clipId, TrackId newTrackId) {
 
 void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, double tempo) {
     if (auto* clip = getClip(clipId)) {
+        traceAudioClipLengthState("resizeClip:before", *clip, tempo);
+        DBG("[ClipLengthTrace] resizeClip request id="
+            << clipId << " newLengthSeconds=" << newLength
+            << " fromStart=" << static_cast<int>(fromStart) << " projectBPM=" << tempo);
         if (fromStart) {
             ClipOperations::resizeContainerFromLeft(*clip, newLength, tempo);
             // Non-loop mode: keep loopStart synced to offset
@@ -415,6 +437,7 @@ void ClipManager::resizeClip(ClipId clipId, double newLength, bool fromStart, do
                 }
             }
         }
+        traceAudioClipLengthState("resizeClip:after", *clip, tempo);
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -836,6 +859,10 @@ void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
     if (!clip || !clip->isAudio() || !clip->autoTempo || bpm <= 0.0)
         return;
 
+    traceAudioClipLengthState("setLengthBeats:before", *clip, bpm);
+    DBG("[ClipLengthTrace] setLengthBeats request id=" << clipId << " newPlacementLengthBeats="
+                                                       << newBeats << " projectBPM=" << bpm);
+
     // Issue #1157: the beat-length slider edits USER INTENT only — how many
     // timeline beats the clip occupies. Source-file metadata (source interpretation BPM /
     // source interpretation total beats) is NOT touched here. Stretch is determined by TE from
@@ -852,6 +879,20 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
     auto* clip = getClip(clipId);
     if (!clip || !clip->isAudio() || !clip->autoTempo)
         return;
+
+    traceAudioClipLengthState("applyAudioClipBeats:before", *clip, projectBPM);
+    DBG("[ClipLengthTrace] applyAudioClipBeats request id="
+        << clipId << " hasLengthBeats=" << static_cast<int>(update.lengthBeats.has_value())
+        << " lengthBeats=" << (update.lengthBeats ? *update.lengthBeats : -1.0)
+        << " hasLoopLengthBeats=" << static_cast<int>(update.loopLengthBeats.has_value())
+        << " loopLengthBeats=" << (update.loopLengthBeats ? *update.loopLengthBeats : -1.0)
+        << " hasInterpretationBpm=" << static_cast<int>(update.interpretationBpm.has_value())
+        << " interpretationBpm=" << (update.interpretationBpm ? *update.interpretationBpm : -1.0)
+        << " hasInterpretationTotalBeats="
+        << static_cast<int>(update.interpretationTotalBeats.has_value())
+        << " interpretationTotalBeats="
+        << (update.interpretationTotalBeats ? *update.interpretationTotalBeats : -1.0)
+        << " projectBPM=" << projectBPM);
 
     // (1) Detected metadata — write-only role. Inspector "BPM" corrections
     // and BPM-detection callbacks land here. Never touched by the beat slider.
@@ -886,6 +927,7 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
     // (3) Recompute the seconds cache from beats atomically.
     refreshDerivedSeconds(clipId, projectBPM);
 
+    traceAudioClipLengthState("applyAudioClipBeats:after", *clip, projectBPM);
     notifyClipPropertyChanged(clipId);
 }
 
@@ -893,6 +935,8 @@ void ClipManager::refreshDerivedSeconds(ClipId clipId, double projectBPM) {
     auto* clip = getClip(clipId);
     if (!clip)
         return;
+
+    traceAudioClipLengthState("refreshDerivedSeconds:before", *clip, projectBPM);
 
     // TE requires speedRatio == 1.0 in autoTempo mode.
     if (clip->autoTempo)
@@ -921,6 +965,8 @@ void ClipManager::refreshDerivedSeconds(ClipId clipId, double projectBPM) {
     } else if (clip->isMidi() && projectBPM > 0.0 && clip->loopLengthBeats > 0.0) {
         clip->loopLength = clip->loopLengthBeats * 60.0 / projectBPM;
     }
+
+    traceAudioClipLengthState("refreshDerivedSeconds:after", *clip, projectBPM);
 }
 
 void ClipManager::setSpeedRatio(ClipId clipId, double speedRatio) {
@@ -1958,12 +2004,14 @@ std::vector<ClipId> ClipManager::pasteFromClipboard(double pasteTime, TrackId ta
                     newClip->timeStretchMode = clipData.timeStretchMode;
                 }
 
-                // Source file metadata (always copy — these describe the file itself)
-                if (clipData.audio().interpretation.bpm > 0.0)
-                    newClip->audio().interpretation.bpm = clipData.audio().interpretation.bpm;
-                if (clipData.audio().interpretation.totalBeats > 0.0)
-                    newClip->audio().interpretation.totalBeats =
-                        clipData.audio().interpretation.totalBeats;
+                // Source file metadata describes audio files only.
+                if (clipData.isAudio()) {
+                    if (clipData.audio().interpretation.bpm > 0.0)
+                        newClip->audio().interpretation.bpm = clipData.audio().interpretation.bpm;
+                    if (clipData.audio().interpretation.totalBeats > 0.0)
+                        newClip->audio().interpretation.totalBeats =
+                            clipData.audio().interpretation.totalBeats;
+                }
 
                 // Pitch
                 newClip->autoPitch = clipData.autoPitch;

@@ -175,6 +175,12 @@ struct ClipInfo {
     /// source loop region state.
     void setSourceMetadata(double numBeats, double bpm) {
         auto& source = audio();
+        DBG("[ClipLengthTrace] setSourceMetadata:before id="
+            << id << " incoming.numBeats=" << numBeats << " incoming.bpm=" << bpm
+            << " placement.lengthBeats=" << placement.lengthBeats
+            << " mirror.lengthBeats=" << lengthBeats << " loopLengthBeats=" << loopLengthBeats
+            << " interpretation.bpm=" << source.interpretation.bpm
+            << " interpretation.totalBeats=" << source.interpretation.totalBeats);
         if (numBeats > 0.0 && source.interpretation.totalBeats <= 0.0)
             source.interpretation.totalBeats = numBeats;
         if (bpm > 0.0 && source.interpretation.bpm <= 0.0)
@@ -184,6 +190,12 @@ struct ClipInfo {
             source.source.durationSeconds =
                 source.interpretation.totalBeats * 60.0 / source.interpretation.bpm;
         }
+        DBG("[ClipLengthTrace] setSourceMetadata:after id="
+            << id << " placement.lengthBeats=" << placement.lengthBeats
+            << " mirror.lengthBeats=" << lengthBeats << " loopLengthBeats=" << loopLengthBeats
+            << " source.durationSeconds=" << source.source.durationSeconds
+            << " interpretation.bpm=" << source.interpretation.bpm
+            << " interpretation.totalBeats=" << source.interpretation.totalBeats);
     }
 
     // =========================================================================
